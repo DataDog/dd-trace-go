@@ -1,0 +1,25 @@
+machine:
+  environment:
+    IMPORT_PATH: "/home/ubuntu/.go_workspace/src/github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
+    GO15VENDOREXPERIMENT: "1"
+
+dependencies:
+  pre:
+    # install requirements
+    - rm -Rf /home/ubuntu/.go_workspace/src/*
+    - go get github.com/Masterminds/glide
+    - go get -u github.com/golang/lint/golint
+
+  override:
+    # put the package in the right $GOPATH
+    - mkdir -p "$IMPORT_PATH"
+    - rsync -azr --delete ./ "$IMPORT_PATH"
+    - cd "$IMPORT_PATH" && glide up
+
+test:
+  override:
+    - cd "$IMPORT_PATH" && rake test
+
+  post:
+    # add the coverage HTML report as CircleCI artifact
+    - cd "$IMPORT_PATH" && go tool cover -html=profile.cov -o $CIRCLE_ARTIFACTS/coverage.html
