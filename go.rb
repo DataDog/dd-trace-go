@@ -1,0 +1,60 @@
+def go_build(package, opts={})
+  default_cmd = "go build -a"
+  if ENV["INCREMENTAL_BUILD"] then
+    default_cmd = "go build -i"
+  end
+  opts = {
+    :cmd => default_cmd
+  }.merge(opts)
+
+  dd = 'main'
+  commit = `git rev-parse --short HEAD`.strip
+  branch = `git rev-parse --abbrev-ref HEAD`.strip
+  date = `date`.strip
+  goversion = `go version`.strip
+  traceversion = ENV["TRACE_GO_VERSION"] || "0.1.0"
+
+  ldflags = {
+    "#{dd}.BuildDate" => "#{date}",
+    "#{dd}.GitCommit" => "#{commit}",
+    "#{dd}.GitBranch" => "#{branch}",
+    "#{dd}.GoVersion" => "#{goversion}",
+    "#{dd}.Version" => "#{traceversion}",
+  }.map do |k,v|
+    if goversion.include?("1.4")
+      "-X #{k} '#{v}'"
+    else
+      "-X '#{k}=#{v}'"
+    end
+  end.join ' '
+
+  cmd = opts[:cmd]
+  sh "#{cmd} -ldflags \"#{ldflags}\" #{package}"
+end
+
+def go_fmt(path)
+  out = `go fmt #{path}`
+  errors = out.split("\n")
+  if errors.length > 0
+    puts out
+    fail
+  end
+end
+
+def go_lint(path)
+  out = `golint #{path}/*.go`
+  errors = out.split("\n")
+  puts "#{errors.length} linting issues found"
+  if errors.length > 0
+    puts out
+    fail
+  end
+end
+
+def go_vet(path)
+  sh "go vet #{path}"
+end
+
+def go_test(profile, path)
+  sh "go test -short -covermode=count -coverprofile=#{profile} #{path}"
+end
