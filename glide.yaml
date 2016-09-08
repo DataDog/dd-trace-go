@@ -1,0 +1,2 @@
+package: github.com/DataDog/dd-trace-go
+import: []
