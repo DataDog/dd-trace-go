@@ -4,6 +4,7 @@ require './go'
 ORG_PATH="github.com/DataDog"
 REPO_PATH="#{ORG_PATH}/dd-trace-go"
 TARGETS = %w[
+  ./pkg/tracer
 ]
 
 CLOBBER.include("*.cov")
