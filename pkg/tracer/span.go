@@ -4,6 +4,10 @@ import (
 	"math/rand"
 )
 
+const (
+	defaultErrorMeta = "go.errorstack"
+)
+
 // Span is the common struct we use to represent a dapper-like span.
 // More information about the structure of the Span can be found
 // here: http://research.google.com/pubs/pub36356.html
@@ -64,6 +68,20 @@ func (s *Span) SetMeta(key, value string) {
 		s.Meta = make(map[string]string)
 	}
 	s.Meta[key] = value
+}
+
+// SetError stores an error object within the span. The Error status is
+// updated and the error.Error() string is included with a default tag
+func (s *Span) SetError(err error) {
+	s.SetErrorMeta(defaultErrorMeta, err)
+}
+
+// SetErrorMeta stores an error object within the span. The Error status is
+// updated and the error.Error() string is included with a user defined
+// meta
+func (s *Span) SetErrorMeta(meta string, err error) {
+	s.Error = 1
+	s.SetMeta(meta, err.Error())
 }
 
 // IsFinished returns true if the span.Finish() method has been called.
