@@ -30,9 +30,7 @@ type Span struct {
 
 // NewSpan creates a new Span with the given arguments, and sets
 // the internal Start field.
-// TODO: because leaving the user to set the outgoingPacket is dangerous, probably it's
-// better to keep it private and let user collects their Span using only the tracer.Trace() API.
-func NewSpan(spanID, traceID, parentID uint64, service, name, resource string, outgoingPacket chan *Span) *Span {
+func newSpan(spanID, traceID, parentID uint64, service, name, resource string, outgoingPacket chan *Span) *Span {
 	return &Span{
 		SpanID:         spanID,
 		TraceID:        traceID,
@@ -43,14 +41,6 @@ func NewSpan(spanID, traceID, parentID uint64, service, name, resource string, o
 		Start:          Now(),
 		outgoingPacket: outgoingPacket,
 	}
-}
-
-// Nest returns a new span that is child of the current Span instance
-// This high-level API is commonly used to create a nested span in the
-// current tracing session.
-func (s *Span) Nest(service, name, resource string) *Span {
-	spanID := nextSpanID()
-	return NewSpan(spanID, s.TraceID, s.ParentID, service, name, resource, s.outgoingPacket)
 }
 
 // SetMeta adds an arbitrary meta field to the current Span.

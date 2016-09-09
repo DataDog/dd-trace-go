@@ -38,9 +38,9 @@ func NewTracer() *Tracer {
 	}
 }
 
-// Trace creates a new root Span with a random identifier. This high-level API is commonly
+// NewSpan creates a new root Span with a random identifier. This high-level API is commonly
 // used to start a new tracing session.
-func (t *Tracer) Trace(service, name, resource string) *Span {
+func (t *Tracer) NewSpan(service, name, resource string) *Span {
 	// this check detects if this is the first time we are using this tracer;
 	// in that case, initialize the outgoing channel and start a background
 	// worker that manages spans delivery
@@ -51,7 +51,15 @@ func (t *Tracer) Trace(service, name, resource string) *Span {
 
 	// create and return the Span
 	spanID := nextSpanID()
-	return NewSpan(spanID, spanID, 0, service, name, resource, t.outgoingPacket)
+	return newSpan(spanID, spanID, 0, service, name, resource, t.outgoingPacket)
+}
+
+// NewChildSpan returns a new span that is child of the Span passed as argument.
+// This high-level API is commonly used to create a nested span in the current
+// tracing session.
+func (t *Tracer) NewChildSpan(parent *Span, service, name, resource string) *Span {
+	spanID := nextSpanID()
+	return newSpan(spanID, parent.TraceID, parent.SpanID, service, name, resource, t.outgoingPacket)
 }
 
 // Wait for the messages delivery. This method assures that all messages have been
@@ -100,11 +108,18 @@ func (t *HTTPTransport) Send(url, header string, spans []*Span) error {
 // DefaultTracer is a default *Tracer instance
 var DefaultTracer = NewTracer()
 
-// Trace is an helper function that is used to create a RootSpan, through
+// NewSpan is an helper function that is used to create a RootSpan, through
 // the DefaultTracer client. If the default client doesn't fit your needs,
 // you can create a new Tracer through the NewTracer function.
-func Trace(service, name, resource string) *Span {
-	return DefaultTracer.Trace(service, name, resource)
+func NewSpan(service, name, resource string) *Span {
+	return DefaultTracer.NewSpan(service, name, resource)
+}
+
+// NewChildSpan is an helper function that is used to create a child Span, through
+// the DefaultTracer client. If the default client doesn't fit your needs,
+// you can create a new Tracer through the NewTracer function.
+func NewChildSpan(parent *Span, service, name, resource string) *Span {
+	return DefaultTracer.NewChildSpan(parent, service, name, resource)
 }
 
 // Wait helper function that waits for the message delivery of the
