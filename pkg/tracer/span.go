@@ -55,6 +55,18 @@ func (s *Span) SetMeta(key, value string) {
 	s.Meta[key] = value
 }
 
+// SetMetrics adds a metric field to the current Span.
+// This method is not thread-safe and the Span should not be modified
+// by multiple go routine.
+func (s *Span) SetMetrics(key string, value float64) {
+	// TODO: should we make the Span thread-safe? this means adding a
+	// sync.Mutex to the Span struct
+	if s.Metrics == nil {
+		s.Metrics = make(map[string]float64)
+	}
+	s.Metrics[key] = value
+}
+
 // SetError stores an error object within the span. The Error status is
 // updated and the error.Error() string is included with a default tag
 func (s *Span) SetError(err error) {
