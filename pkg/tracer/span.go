@@ -2,10 +2,14 @@ package tracer
 
 import (
 	"math/rand"
+	"time"
+
+	log "github.com/cihub/seelog"
 )
 
 const (
 	defaultErrorMeta = "go.error"
+	defaultTimeout   = 50 * time.Millisecond // TODO[manu]: this is a random value; profiling is required for a correct choice
 )
 
 // Span is the common struct we use to represent a dapper-like span.
@@ -100,11 +104,18 @@ func (s *Span) Finish() {
 	if !s.IsFinished() {
 		s.Duration = Now() - s.Start
 
+		// TODO[manu]: spawning a new goroutine ensures that the user code runs
+		// faster without delays but it could increase the memory occupation
+		// in high traffic services. If the profiling process gives bad results,
+		// use a shared memory approach with a Lock/Unlock.
 		go func() {
-			// in a separate go routine, send the message to the
-			// pipeline. This call may be blocking or we can change that
-			// with a buffered channel
-			s.outgoingPacket <- s
+			// in a separate go routine, enqueue the message in the
+			// sending pipeline; a timeout is used to prevent a permanent lock
+			select {
+			case s.outgoingPacket <- s:
+			case <-time.After(defaultTimeout):
+				log.Infof("go routine timeout for span: %d", s.SpanID)
+			}
 		}()
 	}
 }
