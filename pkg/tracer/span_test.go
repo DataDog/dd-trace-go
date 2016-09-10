@@ -102,3 +102,17 @@ func TestSpanFinish(t *testing.T) {
 	assert.True(span.IsFinished())
 	assert.True(span.Duration > int64(wait))
 }
+
+func TestSpanFinishTwice(t *testing.T) {
+	assert := assert.New(t)
+	wait := time.Millisecond * 2
+	span := NewSpan("pylons", "pylons.request", "/")
+
+	// the finish must be idempotent
+	time.Sleep(wait)
+	span.Finish()
+	previousDuration := span.Duration
+	time.Sleep(wait)
+	span.Finish()
+	assert.Equal(span.Duration, previousDuration)
+}
