@@ -2,12 +2,14 @@ package tracer
 
 import (
 	"sync"
+	"time"
 
 	log "github.com/cihub/seelog"
 )
 
 const (
 	defaultDeliveryURL = "http://localhost:7777/spans"
+	tracerWaitTimeout  = 5 * time.Second
 )
 
 // Transport interface to Send spans to the given URL
@@ -63,9 +65,22 @@ func (t *Tracer) NewChildSpan(parent *Span, service, name, resource string) *Spa
 }
 
 // Wait for the messages delivery. This method assures that all messages have been
-// delivered before exiting the process.
+// delivered before exiting the process. If for any reasons Wait() hangs for more
+// than tracerWaitTimeout, the process exits anyway.
 func (t *Tracer) Wait() {
-	t.wg.Wait()
+	// the channel will be closed after the Wait() returns
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		t.wg.Wait()
+	}()
+
+	// wait until a timeout elapses
+	select {
+	case <-c:
+	case <-time.After(tracerWaitTimeout):
+		log.Warn("Giving up on submitting remaining traces!")
+	}
 }
 
 // Background worker that handles data delivery through the Transport instance
