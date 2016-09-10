@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	defaultErrorMeta = "go.errorstack"
+	defaultErrorMeta = "go.error"
 )
 
 // Span is the common struct we use to represent a dapper-like span.
