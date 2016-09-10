@@ -67,18 +67,23 @@ func (s *Span) SetMetrics(key string, value float64) {
 	s.Metrics[key] = value
 }
 
-// SetError stores an error object within the span. The Error status is
-// updated and the error.Error() string is included with a default tag
+// SetError stores an error object within the span meta. The Error status is
+// updated and the error.Error() string is included with a default meta key.
 func (s *Span) SetError(err error) {
-	s.SetErrorMeta(defaultErrorMeta, err)
+	// TODO[manu]: provide a better error handling
+	if err != nil {
+		s.Error = 1
+		s.SetMeta(defaultErrorMeta, err.Error())
+	}
 }
 
-// SetErrorMeta stores an error object within the span. The Error status is
-// updated and the error.Error() string is included with a user defined
-// meta
+// SetErrorMeta stores an error object within the span meta. The error.Error()
+// string is included in the user defined meta key.
 func (s *Span) SetErrorMeta(meta string, err error) {
-	s.Error = 1
-	s.SetMeta(meta, err.Error())
+	// TODO[manu]: provide a better error handling
+	if err != nil {
+		s.SetMeta(meta, err.Error())
+	}
 }
 
 // IsFinished returns true if the span.Finish() method has been called.
