@@ -11,6 +11,12 @@ func TestDefaultTracer(t *testing.T) {
 
 	// the default client must be available
 	assert.NotNil(DefaultTracer)
+
+	// package free functions must proxy the calls to the
+	// default client
+	root := NewSpan("pylons", "pylons.request", "/")
+	NewChildSpan(root, "pylons", "pylons.request", "/")
+	Wait()
 }
 
 func TestNewSpan(t *testing.T) {
