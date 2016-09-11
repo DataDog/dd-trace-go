@@ -44,7 +44,7 @@ func NewHTTPTransport(url string) *HTTPTransport {
 // spans list to a local/remote agent.
 func (t *HTTPTransport) Send(spans []*Span) error {
 	if t.URL == "" {
-		log.Debugf("Empty Transport URL; giving up!")
+		log.Info("Empty Transport URL; giving up!")
 		return nil
 	}
 
@@ -59,12 +59,13 @@ func (t *HTTPTransport) Send(spans []*Span) error {
 	req, _ := http.NewRequest("POST", t.URL, buffReader)
 	req.Header.Set("Content-Type", "application/json")
 	response, err := t.client.Do(req)
-	defer response.Body.Close()
 
 	// HTTP error handling
 	if err != nil {
 		log.Debugf("Error sending the spans payload: %s", err)
+		return err
 	}
 
+	defer response.Body.Close()
 	return err
 }

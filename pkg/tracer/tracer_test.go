@@ -39,10 +39,10 @@ func TestNewSpanChild(t *testing.T) {
 func TestSpanShareChannel(t *testing.T) {
 	assert := assert.New(t)
 
-	// all spans must share the same outgoingPacket channel
+	// all spans must share the same tracer
 	tracer := NewTracer()
 	parent := tracer.NewSpan("pylons", "pylons.request", "/")
 	child := tracer.NewChildSpan(parent, "redis", "redis.command", "GET")
-	assert.Equal(parent.outgoingPacket, tracer.outgoingPacket)
-	assert.Equal(child.outgoingPacket, tracer.outgoingPacket)
+	assert.Equal(parent.tracer, tracer)
+	assert.Equal(child.tracer, tracer)
 }

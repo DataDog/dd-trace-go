@@ -8,14 +8,20 @@ import (
 )
 
 const (
-	defaultDeliveryURL = "http://localhost:7777/spans"
-	tracerWaitTimeout  = 5 * time.Second
+	defaultDeliveryURL  = "http://localhost:7777/spans"
+	numberOfDispatchers = 1
+	tracerWaitTimeout   = 5 * time.Second
+	flushInterval       = 2 * time.Second
 )
 
 // Tracer is the common struct we use to collect, buffer
 type Tracer struct {
-	Transport      Transport  // is the transport mechanism used to delivery spans to the agent
-	outgoingPacket chan *Span // the channel that sends the Span into the sending pipeline
+	Transport     Transport    // is the transport mechanism used to delivery spans to the agent
+	dispatch      chan []*Span // the channel that sends a list of spans to the agent
+	finishedSpans []*Span      // a list of finished spans
+
+	ticker *time.Ticker // ticker used to Tick() the flush interval
+	mu     sync.Mutex   // used to gain/release the lock for finishedSpans array
 
 	// A WaitGroup tracks the current status of the message
 	// pipeline so that at any time the Tracer and the internal
@@ -32,6 +38,7 @@ type Tracer struct {
 func NewTracer() *Tracer {
 	return &Tracer{
 		Transport: NewHTTPTransport(defaultDeliveryURL),
+		ticker:    time.NewTicker(flushInterval),
 	}
 }
 
@@ -39,16 +46,19 @@ func NewTracer() *Tracer {
 // used to start a new tracing session.
 func (t *Tracer) NewSpan(service, name, resource string) *Span {
 	// this check detects if this is the first time we are using this tracer;
-	// in that case, initialize the outgoing channel and start a background
-	// worker that manages spans delivery
-	if t.outgoingPacket == nil {
-		t.outgoingPacket = make(chan *Span)
+	// in that case, initialize the dispatch channel and start a background
+	// worker and a pool of dispatchers that manages spans delivery
+	if t.dispatch == nil {
+		t.dispatch = make(chan []*Span)
 		go t.worker()
+		for i := 0; i < numberOfDispatchers; i++ {
+			go t.dispatcher()
+		}
 	}
 
 	// create and return the Span
 	spanID := nextSpanID()
-	return newSpan(spanID, spanID, 0, service, name, resource, t.outgoingPacket)
+	return newSpan(spanID, spanID, 0, service, name, resource, t)
 }
 
 // NewChildSpan returns a new span that is child of the Span passed as argument.
@@ -56,7 +66,7 @@ func (t *Tracer) NewSpan(service, name, resource string) *Span {
 // tracing session.
 func (t *Tracer) NewChildSpan(parent *Span, service, name, resource string) *Span {
 	spanID := nextSpanID()
-	return newSpan(spanID, parent.TraceID, parent.SpanID, service, name, resource, t.outgoingPacket)
+	return newSpan(spanID, parent.TraceID, parent.SpanID, service, name, resource, t)
 }
 
 // Wait for the messages delivery. This method assures that all messages have been
@@ -78,13 +88,43 @@ func (t *Tracer) Wait() {
 	}
 }
 
-// Background worker that handles data delivery through the Transport instance
+// Background worker that handles data delivery through the Transport instance.
+// It waits for a flush interval and then it tries to find an available dispatcher
+// if there is something to send.
+// TODO[manu]: the worker must shutdown if an exit channel is closed
 func (t *Tracer) worker() {
-	for span := range t.outgoingPacket {
-		t.wg.Add(1)
-		log.Infof("Working on span %d ", span.SpanID)
-		// TODO: marshall and/or send it somewhere else. The fact is that
-		// when the Span is sent, we should call the t.wg.Done()
+	for _ = range t.ticker.C {
+		t.mu.Lock()
+		if len(t.finishedSpans) > 0 {
+			select {
+			case t.dispatch <- t.finishedSpans:
+				t.wg.Add(1)
+				t.finishedSpans = nil
+			default:
+				// the pool doesn't have an available dispatcher
+				// so we try to send the list of spans later
+				log.Warn("[WORKER] No available dispatchers. Retrying later.")
+			}
+		}
+		t.mu.Unlock()
+	}
+}
+
+// Background worker that sends data to the local/remote agent. It listens
+// forever the dispatch channel until an exit command is received.
+// TODO[manu]: the dispatcher must shutdown if an exit channel is closed
+func (t *Tracer) dispatcher() {
+	for finishedSpans := range t.dispatch {
+		err := t.Transport.Send(finishedSpans)
+
+		if err != nil {
+			// TODO[manu]: we have an error during the send and we must
+			// decide how to handle such kind of errors
+		}
+
+		// notify that this dispatcher has done the job
+		log.Infof("[DISPATCHER] flushed %d spans", len(finishedSpans))
+		t.wg.Done()
 	}
 }
 

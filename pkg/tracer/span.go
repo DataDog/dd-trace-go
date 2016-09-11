@@ -2,14 +2,10 @@ package tracer
 
 import (
 	"math/rand"
-	"time"
-
-	log "github.com/cihub/seelog"
 )
 
 const (
 	defaultErrorMeta = "go.error"
-	defaultTimeout   = 50 * time.Millisecond // TODO[manu]: this is a random value; profiling is required for a correct choice
 )
 
 // Span is the common struct we use to represent a dapper-like span.
@@ -29,21 +25,21 @@ type Span struct {
 	TraceID  uint64             `json:"trace_id"`  // identifier of the root span
 	ParentID uint64             `json:"parent_id"` // identifier of the span's direct parent
 
-	outgoingPacket chan *Span // is the entrypoint for the sending pipeline
+	tracer *Tracer // the tracer that generated this span
 }
 
 // NewSpan creates a new Span with the given arguments, and sets
 // the internal Start field.
-func newSpan(spanID, traceID, parentID uint64, service, name, resource string, outgoingPacket chan *Span) *Span {
+func newSpan(spanID, traceID, parentID uint64, service, name, resource string, tracer *Tracer) *Span {
 	return &Span{
-		SpanID:         spanID,
-		TraceID:        traceID,
-		ParentID:       parentID,
-		Service:        service,
-		Name:           name,
-		Resource:       resource,
-		Start:          Now(),
-		outgoingPacket: outgoingPacket,
+		SpanID:   spanID,
+		TraceID:  traceID,
+		ParentID: parentID,
+		Service:  service,
+		Name:     name,
+		Resource: resource,
+		Start:    Now(),
+		tracer:   tracer,
 	}
 }
 
@@ -104,19 +100,10 @@ func (s *Span) Finish() {
 	if !s.IsFinished() {
 		s.Duration = Now() - s.Start
 
-		// TODO[manu]: spawning a new goroutine ensures that the user code runs
-		// faster without delays but it could increase the memory occupation
-		// in high traffic services. If the profiling process gives bad results,
-		// use a shared memory approach with a Lock/Unlock.
-		go func() {
-			// in a separate go routine, enqueue the message in the
-			// sending pipeline; a timeout is used to prevent a permanent lock
-			select {
-			case s.outgoingPacket <- s:
-			case <-time.After(defaultTimeout):
-				log.Infof("go routine timeout for span: %d", s.SpanID)
-			}
-		}()
+		// add the span to the list of finished spans
+		s.tracer.mu.Lock()
+		defer s.tracer.mu.Unlock()
+		s.tracer.finishedSpans = append(s.tracer.finishedSpans, s)
 	}
 }
 
