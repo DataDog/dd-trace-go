@@ -122,7 +122,7 @@ func (t *Tracer) dispatcher() {
 		}
 
 		// notify that this dispatcher has done the job
-		log.Infof("[DISPATCHER] flushed %d spans", len(finishedSpans))
+		log.Debugf("[DISPATCHER] flushed %d spans", len(finishedSpans))
 		t.wg.Done()
 	}
 }
