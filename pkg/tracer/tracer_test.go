@@ -61,7 +61,7 @@ func (t *DummyTransport) Send(spans []*Span) error { return nil }
 func BenchmarkTracerAddSpans(b *testing.B) {
 	// create a new tracer with a DummyTransport
 	tracer := NewTracer()
-	tracer.Transport = &DummyTransport{}
+	tracer.transport = &DummyTransport{}
 
 	for n := 0; n < b.N; n++ {
 		span := tracer.Trace("pylons", "pylons.request", "/", nil)

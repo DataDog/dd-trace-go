@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	defaultErrorMeta = "go.error"
+	defaultErrorMeta = "error.msg"
 )
 
 // Span is the common struct we use to represent a dapper-like span.
@@ -70,7 +70,6 @@ func (s *Span) SetMetrics(key string, value float64) {
 // SetError stores an error object within the span meta. The Error status is
 // updated and the error.Error() string is included with a default meta key.
 func (s *Span) SetError(err error) {
-	// TODO[manu]: provide a better error handling
 	if err != nil {
 		s.Error = 1
 		s.SetMeta(defaultErrorMeta, err.Error())
@@ -80,7 +79,6 @@ func (s *Span) SetError(err error) {
 // SetErrorMeta stores an error object within the span meta. The error.Error()
 // string is included in the user defined meta key.
 func (s *Span) SetErrorMeta(meta string, err error) {
-	// TODO[manu]: provide a better error handling
 	if err != nil {
 		s.SetMeta(meta, err.Error())
 	}

@@ -16,9 +16,9 @@ const (
 
 // Tracer is the common struct we use to collect, buffer
 type Tracer struct {
-	Transport Transport    // is the transport mechanism used to delivery spans to the agent
-	ticker    *time.Ticker // ticker used to Tick() the flush interval
-	dispatch  chan []*Span // the channel that sends a list of spans to the agent
+	transport   Transport    // is the transport mechanism used to delivery spans to the agent
+	flushTicker *time.Ticker // ticker used to Tick() the flush interval
+	dispatch    chan []*Span // the channel that sends a list of spans to the agent
 
 	finishedSpans []*Span    // a list of finished spans
 	mu            sync.Mutex // used to gain/release the lock for finishedSpans array
@@ -34,11 +34,11 @@ type Tracer struct {
 // NewTracer returns a Tracer instance that owns a span delivery system. Each Tracer starts
 // a new go routing that handles the delivery. It's safe to create new tracers, but it's
 // advisable only if the default client doesn't fit your needs.
-// TODO: make possible to create a Tracer with a different Transport system
+// TODO: make possible to create a Tracer with a different transport system
 func NewTracer() *Tracer {
 	return &Tracer{
-		Transport: NewHTTPTransport(defaultDeliveryURL),
-		ticker:    time.NewTicker(flushInterval),
+		transport:   NewHTTPTransport(defaultDeliveryURL),
+		flushTicker: time.NewTicker(flushInterval),
 	}
 }
 
@@ -92,7 +92,7 @@ func (t *Tracer) Wait() {
 // if there is something to send.
 // TODO[manu]: the worker must shutdown if an exit channel is closed
 func (t *Tracer) worker() {
-	for _ = range t.ticker.C {
+	for _ = range t.flushTicker.C {
 		t.mu.Lock()
 		if len(t.finishedSpans) > 0 {
 			select {
@@ -114,7 +114,7 @@ func (t *Tracer) worker() {
 // TODO[manu]: the dispatcher must shutdown if an exit channel is closed
 func (t *Tracer) dispatcher() {
 	for finishedSpans := range t.dispatch {
-		err := t.Transport.Send(finishedSpans)
+		err := t.transport.Send(finishedSpans)
 
 		if err != nil {
 			// TODO[manu]: we have an error during the send and we must

@@ -49,7 +49,7 @@ func TestSpanError(t *testing.T) {
 	span.SetError(err)
 	assert.Equal(span.Error, int32(1))
 	assert.Equal(len(span.Meta), 1)
-	assert.Equal(span.Meta["go.error"], "Something wrong")
+	assert.Equal(span.Meta["error.msg"], "Something wrong")
 }
 
 func TestSpanErrorNil(t *testing.T) {
