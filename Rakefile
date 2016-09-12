@@ -32,6 +32,18 @@ task :vet do
   end
 end
 
+desc "Run benchmarks on #{TARGETS} and output profiles"
+task :benchmark do
+  TARGETS.each do |t|
+    go_benchmark(t)
+  end
+end
+
+desc "Run pprof available profiles"
+task :pprof do
+  go_pprof_text()
+end
+
 desc "Run testsuite"
 task :test => %w[fmt lint vet] do
   PROFILE = "profile.cov"  # collect global coverage data in this file
