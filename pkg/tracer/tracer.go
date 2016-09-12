@@ -16,12 +16,12 @@ const (
 
 // Tracer is the common struct we use to collect, buffer
 type Tracer struct {
-	Transport     Transport    // is the transport mechanism used to delivery spans to the agent
-	dispatch      chan []*Span // the channel that sends a list of spans to the agent
-	finishedSpans []*Span      // a list of finished spans
+	Transport Transport    // is the transport mechanism used to delivery spans to the agent
+	ticker    *time.Ticker // ticker used to Tick() the flush interval
+	dispatch  chan []*Span // the channel that sends a list of spans to the agent
 
-	ticker *time.Ticker // ticker used to Tick() the flush interval
-	mu     sync.Mutex   // used to gain/release the lock for finishedSpans array
+	finishedSpans []*Span    // a list of finished spans
+	mu            sync.Mutex // used to gain/release the lock for finishedSpans array
 
 	// A WaitGroup tracks the current status of the message
 	// pipeline so that at any time the Tracer and the internal

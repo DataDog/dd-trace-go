@@ -23,6 +23,5 @@ func NewJSONEncoder() *JSONEncoder {
 // Encode returns a byte array related to the marshalling
 // of a list of spans.
 func (e *JSONEncoder) Encode(spans []*Span) ([]byte, error) {
-	res, err := json.Marshal(spans)
-	return res, err
+	return json.Marshal(spans)
 }

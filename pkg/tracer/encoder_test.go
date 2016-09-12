@@ -16,7 +16,7 @@ func TestJSONEncoder(t *testing.T) {
 	spans = append(spans, span)
 
 	// the encoder must return a valid JSON byte array
-	const want = `[{"name":"pylons.request","service":"pylons","resource":"/","type":"","start":0,"duration":0,"error":0,"meta":null,"metrics":null,"span_id":0,"trace_id":0,"parent_id":0}]`
+	const want = `[{"name":"pylons.request","service":"pylons","resource":"/","type":"","start":0,"duration":0,"error":0,"span_id":0,"trace_id":0,"parent_id":0}]`
 	encoder := NewJSONEncoder()
 	res, err := encoder.Encode(spans)
 	assert.Nil(err)
