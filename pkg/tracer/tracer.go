@@ -68,6 +68,15 @@ func (t *Tracer) Trace(service, name, resource string, parent *Span) *Span {
 	return newSpan(spanID, parent.TraceID, parent.SpanID, service, name, resource, t)
 }
 
+// Record stores the span in the array of finished spans.
+func (t *Tracer) Record(span *Span) {
+	if !span.IsFinished() {
+		t.mu.Lock()
+		t.finishedSpans = append(t.finishedSpans, span)
+		t.mu.Unlock()
+	}
+}
+
 // Wait for the messages delivery. This method assures that all messages have been
 // delivered before exiting the process. If for any reasons Wait() hangs for more
 // than tracerWaitTimeout, the process exits anyway.

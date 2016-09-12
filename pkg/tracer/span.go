@@ -102,11 +102,7 @@ func (s *Span) IsFinished() bool {
 func (s *Span) Finish() {
 	if !s.IsFinished() {
 		s.Duration = Now() - s.Start
-
-		// add the span to the list of finished spans
-		s.tracer.mu.Lock()
-		s.tracer.finishedSpans = append(s.tracer.finishedSpans, s)
-		s.tracer.mu.Unlock()
+		s.tracer.Record(s)
 	}
 }
 
