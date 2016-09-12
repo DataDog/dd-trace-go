@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"math/rand"
+	"sync"
 )
 
 const (
@@ -26,6 +27,8 @@ type Span struct {
 	ParentID uint64             `json:"parent_id"`         // identifier of the span's direct parent
 
 	tracer *Tracer // the tracer that generated this span
+
+	mu sync.Mutex // lock the Span to make it thread-safe
 }
 
 // NewSpan creates a new Span with the given arguments, and sets
@@ -47,8 +50,9 @@ func newSpan(spanID, traceID, parentID uint64, service, name, resource string, t
 // This method is not thread-safe and the Span should not be modified
 // by multiple go routine.
 func (s *Span) SetMeta(key, value string) {
-	// TODO: should we make the Span thread-safe? this means adding a
-	// sync.Mutex to the Span struct
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.Meta == nil {
 		s.Meta = make(map[string]string)
 	}
@@ -59,8 +63,9 @@ func (s *Span) SetMeta(key, value string) {
 // This method is not thread-safe and the Span should not be modified
 // by multiple go routine.
 func (s *Span) SetMetrics(key string, value float64) {
-	// TODO: should we make the Span thread-safe? this means adding a
-	// sync.Mutex to the Span struct
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.Metrics == nil {
 		s.Metrics = make(map[string]float64)
 	}
