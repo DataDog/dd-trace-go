@@ -2,10 +2,9 @@ package tracer
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"time"
-
-	log "github.com/cihub/seelog"
 )
 
 const (
@@ -44,8 +43,7 @@ func NewHTTPTransport(url string) *HTTPTransport {
 // spans list to a local/remote agent.
 func (t *HTTPTransport) Send(spans []*Span) error {
 	if t.URL == "" {
-		log.Info("Empty Transport URL; giving up!")
-		return nil
+		return errors.New("provided an empty URL, giving up")
 	}
 
 	// encode the spans and return the error if any
@@ -62,7 +60,6 @@ func (t *HTTPTransport) Send(spans []*Span) error {
 
 	// HTTP error handling
 	if err != nil {
-		log.Debugf("Error sending the spans payload: %s", err)
 		return err
 	}
 

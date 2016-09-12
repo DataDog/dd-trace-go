@@ -16,7 +16,6 @@ func TestDefaultTracer(t *testing.T) {
 	// default client
 	root := Trace("pylons", "pylons.request", "/", nil)
 	Trace("pylons", "pylons.request", "/", root)
-	Wait()
 }
 
 func TestNewSpan(t *testing.T) {
