@@ -33,14 +33,14 @@ type Span struct {
 
 // NewSpan creates a new Span with the given arguments, and sets
 // the internal Start field.
-func newSpan(spanID, traceID, parentID uint64, service, name, resource string, tracer *Tracer) *Span {
+func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *Span {
 	return &Span{
+		Name:     name,
+		Service:  service,
+		Resource: resource,
 		SpanID:   spanID,
 		TraceID:  traceID,
 		ParentID: parentID,
-		Service:  service,
-		Name:     name,
-		Resource: resource,
 		Start:    Now(),
 		tracer:   tracer,
 	}

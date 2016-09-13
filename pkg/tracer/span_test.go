@@ -11,7 +11,7 @@ import (
 func TestSpanStart(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons", "pylons.request", "/")
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
 
 	// a new span sets the Start after the initialization
 	assert.NotEqual(span.Start, int64(0))
@@ -20,7 +20,7 @@ func TestSpanStart(t *testing.T) {
 func TestSpanSetMeta(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons", "pylons.request", "/")
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
 
 	// check the map is properly initialized
 	span.SetMeta("status.code", "200")
@@ -31,7 +31,7 @@ func TestSpanSetMeta(t *testing.T) {
 func TestSpanSetMetrics(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons", "pylons.request", "/")
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
 
 	// check the map is properly initialized
 	span.SetMetrics("bytes", 1024.42)
@@ -42,7 +42,7 @@ func TestSpanSetMetrics(t *testing.T) {
 func TestSpanError(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons", "pylons.request", "/")
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
 
 	// check the error is set in the default meta
 	err := errors.New("Something wrong")
@@ -55,7 +55,7 @@ func TestSpanError(t *testing.T) {
 func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons", "pylons.request", "/")
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
 
 	// don't set the error if it's nil
 	span.SetError(nil)
@@ -66,7 +66,7 @@ func TestSpanErrorNil(t *testing.T) {
 func TestSpanErrorMeta(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons", "pylons.request", "/")
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
 
 	// check the error is set (but not the Error field)
 	// using a custom meta
@@ -80,7 +80,7 @@ func TestSpanErrorMeta(t *testing.T) {
 func TestSpanErrorMetaNil(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons", "pylons.request", "/")
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
 
 	// don't set the error if it's nil
 	span.SetErrorMeta("cache_get", nil)
@@ -91,7 +91,7 @@ func TestSpanErrorMetaNil(t *testing.T) {
 func TestSpanIsFinished(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons", "pylons.request", "/")
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
 
 	assert.False(span.IsFinished())
 	// a span is finished if the duration is greater than 0
@@ -103,7 +103,7 @@ func TestSpanFinish(t *testing.T) {
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons", "pylons.request", "/")
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
 
 	// the finish should set the duration
 	time.Sleep(wait)
@@ -116,7 +116,7 @@ func TestSpanFinishTwice(t *testing.T) {
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons", "pylons.request", "/")
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
 
 	// the finish must be idempotent
 	time.Sleep(wait)

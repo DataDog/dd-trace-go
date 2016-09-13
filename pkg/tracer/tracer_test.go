@@ -14,8 +14,8 @@ func TestDefaultTracer(t *testing.T) {
 
 	// package free functions must proxy the calls to the
 	// default client
-	root := NewSpan("pylons", "pylons.request", "/")
-	NewChildSpan(root, "pylons", "pylons.request", "/")
+	root := NewSpan("pylons.request", "pylons", "/")
+	NewChildSpan("pylons.request", root)
 }
 
 func TestNewSpan(t *testing.T) {
@@ -23,7 +23,7 @@ func TestNewSpan(t *testing.T) {
 
 	// the tracer must create root spans
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons", "pylons.request", "/")
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
 	assert.Equal(span.ParentID, uint64(0))
 	assert.Equal(span.Service, "pylons")
 	assert.Equal(span.Name, "pylons.request")
@@ -35,8 +35,8 @@ func TestNewSpanChild(t *testing.T) {
 
 	// the tracer must create child spans
 	tracer := NewTracer()
-	parent := tracer.NewSpan("pylons", "pylons.request", "/")
-	child := tracer.NewChildSpan(parent, "redis", "redis.command", "GET")
+	parent := tracer.NewSpan("pylons.request", "pylons", "/")
+	child := tracer.NewChildSpan("redis.command", parent)
 	assert.Equal(child.ParentID, parent.SpanID)
 	assert.Equal(child.TraceID, parent.TraceID)
 }
@@ -46,8 +46,8 @@ func TestSpanShareTracer(t *testing.T) {
 
 	// all spans must share the same tracer
 	tracer := NewTracer()
-	parent := tracer.NewSpan("pylons", "pylons.request", "/")
-	child := tracer.NewChildSpan(parent, "redis", "redis.command", "GET")
+	parent := tracer.NewSpan("pylons.request", "pylons", "/")
+	child := tracer.NewChildSpan("redis.command", parent)
 	assert.Equal(parent.tracer, tracer)
 	assert.Equal(child.tracer, tracer)
 }
@@ -63,7 +63,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	tracer.transport = &DummyTransport{}
 
 	for n := 0; n < b.N; n++ {
-		span := tracer.NewSpan("pylons", "pylons.request", "/")
+		span := tracer.NewSpan("pylons.request", "pylons", "/")
 		span.Finish()
 	}
 }
