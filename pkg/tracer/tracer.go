@@ -37,18 +37,19 @@ func NewTracer() *Tracer {
 	return t
 }
 
-// Trace creates a new Span with a random identifier. This high-level API allows to
-// create a new root span if the parent attribute is set to nil; otherwise, a child
-// of that span is created.
-func (t *Tracer) Trace(service, name, resource string, parent *Span) *Span {
+// NewSpan creates a new root Span with a random identifier. This high-level API is commonly
+// used to start a new tracing session.
+func (t *Tracer) NewSpan(service, name, resource string) *Span {
+	// create and return the Span
 	spanID := nextSpanID()
+	return newSpan(spanID, spanID, 0, service, name, resource, t)
+}
 
-	if parent == nil {
-		// we create a root span
-		return newSpan(spanID, spanID, 0, service, name, resource, t)
-	}
-
-	// we create a child span
+// NewChildSpan returns a new span that is child of the Span passed as argument.
+// This high-level API is commonly used to create a nested span in the current
+// tracing session.
+func (t *Tracer) NewChildSpan(parent *Span, service, name, resource string) *Span {
+	spanID := nextSpanID()
 	return newSpan(spanID, parent.TraceID, parent.SpanID, service, name, resource, t)
 }
 
@@ -84,9 +85,16 @@ func (t *Tracer) worker() {
 // DefaultTracer is a default *Tracer instance
 var DefaultTracer = NewTracer()
 
-// Trace is an helper function that is used to create a root span or a child
-// span, through the DefaultTracer client. If the default client doesn't fit your needs,
+// NewSpan is an helper function that is used to create a RootSpan, through
+// the DefaultTracer client. If the default client doesn't fit your needs,
 // you can create a new Tracer through the NewTracer function.
-func Trace(service, name, resource string, parent *Span) *Span {
-	return DefaultTracer.Trace(service, name, resource, parent)
+func NewSpan(service, name, resource string) *Span {
+	return DefaultTracer.NewSpan(service, name, resource)
+}
+
+// NewChildSpan is an helper function that is used to create a child Span, through
+// the DefaultTracer client. If the default client doesn't fit your needs,
+// you can create a new Tracer through the NewTracer function.
+func NewChildSpan(parent *Span, service, name, resource string) *Span {
+	return DefaultTracer.NewChildSpan(parent, service, name, resource)
 }
