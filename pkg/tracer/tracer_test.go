@@ -16,6 +16,7 @@ func TestDefaultTracer(t *testing.T) {
 	// default client
 	root := NewSpan("pylons.request", "pylons", "/")
 	NewChildSpan("pylons.request", root)
+	SetEnabled(true)
 }
 
 func TestNewSpan(t *testing.T) {
@@ -50,6 +51,31 @@ func TestSpanShareTracer(t *testing.T) {
 	child := tracer.NewChildSpan("redis.command", parent)
 	assert.Equal(parent.tracer, tracer)
 	assert.Equal(child.tracer, tracer)
+}
+
+func TestTracerDisabled(t *testing.T) {
+	assert := assert.New(t)
+
+	// disable the tracer and be sure that the span is not added
+	tracer := NewTracer()
+	tracer.SetEnabled(false)
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	span.Finish()
+	assert.Equal(len(tracer.finishedSpans), 0)
+}
+
+func TestTracerEnabledAgain(t *testing.T) {
+	assert := assert.New(t)
+
+	// disable the tracer and enable it again
+	tracer := NewTracer()
+	tracer.SetEnabled(false)
+	preSpan := tracer.NewSpan("pylons.request", "pylons", "/")
+	preSpan.Finish()
+	tracer.SetEnabled(true)
+	postSpan := tracer.NewSpan("pylons.request", "pylons", "/")
+	postSpan.Finish()
+	assert.Equal(len(tracer.finishedSpans), 1)
 }
 
 // Mock Transport

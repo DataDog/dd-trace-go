@@ -17,6 +17,7 @@ const (
 type Tracer struct {
 	transport   Transport    // is the transport mechanism used to delivery spans to the agent
 	flushTicker *time.Ticker // ticker used to Tick() the flush interval
+	enabled     bool         // defines if the Tracer is enabled or not; prevents adding finished spans
 
 	finishedSpans []*Span    // a list of finished spans
 	mu            sync.Mutex // used to gain/release the lock for finishedSpans array
@@ -30,11 +31,19 @@ func NewTracer() *Tracer {
 	t := &Tracer{
 		transport:   NewHTTPTransport(defaultDeliveryURL),
 		flushTicker: time.NewTicker(flushInterval),
+		enabled:     true,
 	}
 
 	// start a background worker
 	go t.worker()
 	return t
+}
+
+// SetEnabled activates or deactivates the tracer according to the given status. A disabled
+// tracer stops recording finished spans so that no spans are sent after a disabling statement.
+// By default, a tracer is always enabled after the creation.
+func (t *Tracer) SetEnabled(status bool) {
+	t.enabled = status
 }
 
 // NewSpan creates a new root Span with a random identifier. This high-level API is commonly
@@ -55,9 +64,11 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 
 // record stores the span in the array of finished spans.
 func (t *Tracer) record(span *Span) {
-	t.mu.Lock()
-	t.finishedSpans = append(t.finishedSpans, span)
-	t.mu.Unlock()
+	if t.enabled {
+		t.mu.Lock()
+		t.finishedSpans = append(t.finishedSpans, span)
+		t.mu.Unlock()
+	}
 }
 
 // Background worker that handles data delivery through the Transport instance.
@@ -97,4 +108,10 @@ func NewSpan(name, service, resource string) *Span {
 // you can create a new Tracer through the NewTracer function.
 func NewChildSpan(name string, parent *Span) *Span {
 	return DefaultTracer.NewChildSpan(name, parent)
+}
+
+// SetEnabled is an helper function that is used to proxy the SetEnabled call to the
+// DefaultTracer client.
+func SetEnabled(status bool) {
+	DefaultTracer.SetEnabled(status)
 }
