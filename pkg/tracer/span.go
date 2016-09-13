@@ -102,7 +102,7 @@ func (s *Span) IsFinished() bool {
 func (s *Span) Finish() {
 	if !s.IsFinished() {
 		s.Duration = Now() - s.Start
-		s.tracer.Record(s)
+		s.tracer.record(s)
 	}
 }
 

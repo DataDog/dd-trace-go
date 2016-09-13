@@ -52,13 +52,11 @@ func (t *Tracer) Trace(service, name, resource string, parent *Span) *Span {
 	return newSpan(spanID, parent.TraceID, parent.SpanID, service, name, resource, t)
 }
 
-// Record stores the span in the array of finished spans.
-func (t *Tracer) Record(span *Span) {
-	if !span.IsFinished() {
-		t.mu.Lock()
-		t.finishedSpans = append(t.finishedSpans, span)
-		t.mu.Unlock()
-	}
+// record stores the span in the array of finished spans.
+func (t *Tracer) record(span *Span) {
+	t.mu.Lock()
+	t.finishedSpans = append(t.finishedSpans, span)
+	t.mu.Unlock()
 }
 
 // Background worker that handles data delivery through the Transport instance.
