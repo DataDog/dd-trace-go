@@ -102,7 +102,14 @@ func (s *Span) IsFinished() bool {
 func (s *Span) Finish() {
 	if !s.IsFinished() {
 		s.Duration = Now() - s.Start
-		s.tracer.record(s)
+
+		// validity check that prevents the span to be enqueued in the
+		// buffer list if some fields are missing. The trace agent
+		// will discard this span in any case so it's better to prevent
+		// more useless work.
+		if s.Name != "" && s.Service != "" && s.Resource != "" {
+			s.tracer.record(s)
+		}
 	}
 }
 

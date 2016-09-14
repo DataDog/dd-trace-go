@@ -59,6 +59,16 @@ func (t *Tracer) NewSpan(name, service, resource string) *Span {
 // tracing session.
 func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	spanID := nextSpanID()
+
+	// when we're using parenting in inner functions, it's possible that
+	// a nil pointer is sent to this function as argument. To prevent a crash,
+	// it's better to be defensive and to produce a wrongly configured span
+	// that is not sent to the trace agent.
+	if parent == nil {
+		return newSpan(name, "", "", spanID, spanID, spanID, nil)
+	}
+
+	// child that is correctly configured
 	return newSpan(name, parent.Service, parent.Resource, spanID, parent.TraceID, parent.SpanID, parent.tracer)
 }
 

@@ -44,3 +44,22 @@ func TestSpanFromContextNil(t *testing.T) {
 	assert.False(ok)
 	assert.Nil(span)
 }
+
+func TestSpanMissingParent(t *testing.T) {
+	assert := assert.New(t)
+	tracer := NewTracer()
+
+	// assuming we're in an inner function and we
+	// forget the nil or ok checks
+	ctx := context.Background()
+	span, _ := SpanFromContext(ctx)
+
+	// span is nil according to the API
+	child := tracer.NewChildSpan("redis.command", span)
+	child.Finish()
+
+	// the child is finished but it's not recorded in
+	// the tracer buffer
+	assert.True(child.Duration > 0)
+	assert.Equal(len(tracer.finishedSpans), 0)
+}
