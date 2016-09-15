@@ -64,9 +64,7 @@ def go_test(profile, path)
 end
 
 def go_benchmark(path)
-  sh "go test -run=NONE -bench=. -memprofile=mem.out #{path}"
-  sh "go test -run=NONE -bench=. -cpuprofile=cpu.out #{path}"
-  sh "go test -run=NONE -bench=. -blockprofile=block.out #{path}"
+  sh "go test -run=NONE -bench=. -memprofile=mem.out -cpuprofile=cpu.out -blockprofile=block.out #{path}"
 end
 
 def go_pprof_text()
