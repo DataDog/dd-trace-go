@@ -16,9 +16,8 @@ const (
 
 // Tracer is the common struct we use to collect, buffer
 type Tracer struct {
-	enabled     int32        // acts as bool to define if the Tracer is enabled or not
-	transport   Transport    // is the transport mechanism used to delivery spans to the agent
-	flushTicker *time.Ticker // ticker used to Tick() the flush interval
+	enabled   int32     // acts as bool to define if the Tracer is enabled or not
+	transport Transport // is the transport mechanism used to delivery spans to the agent
 
 	finishedSpans []*Span    // a list of finished spans
 	mu            sync.Mutex // used to gain/release the lock for finishedSpans array
@@ -30,9 +29,8 @@ type Tracer struct {
 func NewTracer() *Tracer {
 	// initialize the Tracer
 	t := &Tracer{
-		enabled:     1,
-		transport:   NewHTTPTransport(defaultDeliveryURL),
-		flushTicker: time.NewTicker(flushInterval),
+		enabled:   1,
+		transport: NewHTTPTransport(defaultDeliveryURL),
 	}
 
 	// start a background worker
@@ -92,7 +90,7 @@ func (t *Tracer) record(span *Span) {
 // It waits for a flush interval and then it tries to find an available dispatcher
 // if there is something to send.
 func (t *Tracer) worker() {
-	for _ = range t.flushTicker.C {
+	for range time.Tick(flushInterval) {
 		if len(t.finishedSpans) > 0 {
 			t.mu.Lock()
 			spans := t.finishedSpans
