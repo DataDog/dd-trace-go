@@ -1,8 +1,13 @@
+# go
 vendor/
 bin/
 
+# profiling
+*.test
+*.out
+
+# generic
 .DS_Store
 *.cov
 *.lock
-*.pyc
 *.swp

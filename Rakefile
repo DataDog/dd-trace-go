@@ -4,6 +4,7 @@ require './go'
 ORG_PATH="github.com/DataDog"
 REPO_PATH="#{ORG_PATH}/dd-trace-go"
 TARGETS = %w[
+  ./pkg/tracer
 ]
 
 CLOBBER.include("*.cov")
@@ -31,6 +32,18 @@ task :vet do
   end
 end
 
+desc "Run benchmarks on #{TARGETS} and output profiles"
+task :benchmark do
+  TARGETS.each do |t|
+    go_benchmark(t)
+  end
+end
+
+desc "Run pprof available profiles"
+task :pprof do
+  go_pprof_text()
+end
+
 desc "Run testsuite"
 task :test => %w[fmt lint vet] do
   PROFILE = "profile.cov"  # collect global coverage data in this file
@@ -40,6 +53,7 @@ task :test => %w[fmt lint vet] do
     next if Dir.glob(File.join(pkg_folder, "*.go")).length == 0  # folder is a package if contains go modules
     profile_tmp = "#{pkg_folder}/profile.tmp"  # temp file to collect coverage data
     go_test(profile_tmp, pkg_folder)
+    go_test_race_condition(pkg_folder)
     if File.file?(profile_tmp)
       `cat #{profile_tmp} | tail -n +2 >> #{PROFILE}`
       File.delete(profile_tmp)
