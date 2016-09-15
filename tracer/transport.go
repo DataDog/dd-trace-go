@@ -63,6 +63,6 @@ func (t *HTTPTransport) Send(spans []*Span) error {
 		return err
 	}
 
-	defer response.Body.Close()
+	response.Body.Close()
 	return err
 }
