@@ -1,10 +1,9 @@
 package tracer
 
 import (
+	"log"
 	"sync"
 	"time"
-
-	log "github.com/cihub/seelog"
 )
 
 const (
@@ -99,9 +98,9 @@ func (t *Tracer) worker() {
 			err := t.transport.Send(spans)
 
 			if err == nil {
-				log.Debugf("[WORKER] flushed %d spans", len(spans))
+				log.Printf("[WORKER] flushed %d spans", len(spans))
 			} else {
-				log.Errorf("[WORKER] flush failed, lost %s spans", err)
+				log.Printf("[WORKER] flush failed, lost %s spans", err)
 			}
 		}
 	}
