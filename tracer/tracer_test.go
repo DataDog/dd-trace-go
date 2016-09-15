@@ -41,15 +41,8 @@ func TestNewSpanChild(t *testing.T) {
 	child := tracer.NewChildSpan("redis.command", parent)
 	assert.Equal(child.ParentID, parent.SpanID)
 	assert.Equal(child.TraceID, parent.TraceID)
-}
-
-func TestSpanShareTracer(t *testing.T) {
-	assert := assert.New(t)
-
-	// all spans must share the same tracer
-	tracer := NewTracer()
-	parent := tracer.NewSpan("pylons.request", "pylons", "/")
-	child := tracer.NewChildSpan("redis.command", parent)
+	assert.Equal(child.Service, parent.Service)
+	assert.Equal(child.Resource, "")
 	assert.Equal(parent.tracer, tracer)
 	assert.Equal(child.tracer, tracer)
 }

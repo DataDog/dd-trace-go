@@ -72,7 +72,7 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	}
 
 	// child that is correctly configured
-	return newSpan(name, parent.Service, parent.Resource, spanID, parent.TraceID, parent.SpanID, parent.tracer)
+	return newSpan(name, parent.Service, "", spanID, parent.TraceID, parent.SpanID, parent.tracer)
 }
 
 // record stores the span in the array of finished spans.
