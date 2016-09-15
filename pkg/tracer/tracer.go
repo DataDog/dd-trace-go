@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	log "github.com/cihub/seelog"
@@ -15,9 +16,9 @@ const (
 
 // Tracer is the common struct we use to collect, buffer
 type Tracer struct {
+	enabled     int32        // acts as bool to define if the Tracer is enabled or not
 	transport   Transport    // is the transport mechanism used to delivery spans to the agent
 	flushTicker *time.Ticker // ticker used to Tick() the flush interval
-	enabled     bool         // defines if the Tracer is enabled or not; prevents adding finished spans
 
 	finishedSpans []*Span    // a list of finished spans
 	mu            sync.Mutex // used to gain/release the lock for finishedSpans array
@@ -29,9 +30,9 @@ type Tracer struct {
 func NewTracer() *Tracer {
 	// initialize the Tracer
 	t := &Tracer{
+		enabled:     1,
 		transport:   NewHTTPTransport(defaultDeliveryURL),
 		flushTicker: time.NewTicker(flushInterval),
-		enabled:     true,
 	}
 
 	// start a background worker
@@ -39,11 +40,17 @@ func NewTracer() *Tracer {
 	return t
 }
 
-// SetEnabled activates or deactivates the tracer according to the given status. A disabled
-// tracer stops recording finished spans so that no spans are sent after a disabling statement.
+// Enable activates the tracer so that Spans are appended in the tracer buffer.
 // By default, a tracer is always enabled after the creation.
-func (t *Tracer) SetEnabled(status bool) {
-	t.enabled = status
+func (t *Tracer) Enable() {
+	atomic.StoreInt32(&t.enabled, 1)
+}
+
+// Disable deactivates the tracer so that Spans are not appended in the tracer buffer.
+// This means that *Span can be used as usual but the span.Finish() call will not
+// put the span in a buffer.
+func (t *Tracer) Disable() {
+	atomic.StoreInt32(&t.enabled, 0)
 }
 
 // NewSpan creates a new root Span with a random identifier. This high-level API is commonly
@@ -74,7 +81,7 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 
 // record stores the span in the array of finished spans.
 func (t *Tracer) record(span *Span) {
-	if t.enabled {
+	if atomic.LoadInt32(&t.enabled) == 1 {
 		t.mu.Lock()
 		t.finishedSpans = append(t.finishedSpans, span)
 		t.mu.Unlock()
@@ -120,8 +127,14 @@ func NewChildSpan(name string, parent *Span) *Span {
 	return DefaultTracer.NewChildSpan(name, parent)
 }
 
-// SetEnabled is an helper function that is used to proxy the SetEnabled call to the
+// Enable is an helper function that is used to proxy the Enable() call to the
 // DefaultTracer client.
-func SetEnabled(status bool) {
-	DefaultTracer.SetEnabled(status)
+func Enable() {
+	DefaultTracer.Enable()
+}
+
+// Disable is an helper function that is used to proxy the Disable() call to the
+// DefaultTracer client.
+func Disable() {
+	DefaultTracer.Disable()
 }

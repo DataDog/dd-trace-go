@@ -16,7 +16,8 @@ func TestDefaultTracer(t *testing.T) {
 	// default client
 	root := NewSpan("pylons.request", "pylons", "/")
 	NewChildSpan("pylons.request", root)
-	SetEnabled(true)
+	Disable()
+	Enable()
 }
 
 func TestNewSpan(t *testing.T) {
@@ -58,7 +59,7 @@ func TestTracerDisabled(t *testing.T) {
 
 	// disable the tracer and be sure that the span is not added
 	tracer := NewTracer()
-	tracer.SetEnabled(false)
+	tracer.Disable()
 	span := tracer.NewSpan("pylons.request", "pylons", "/")
 	span.Finish()
 	assert.Equal(len(tracer.finishedSpans), 0)
@@ -69,10 +70,10 @@ func TestTracerEnabledAgain(t *testing.T) {
 
 	// disable the tracer and enable it again
 	tracer := NewTracer()
-	tracer.SetEnabled(false)
+	tracer.Disable()
 	preSpan := tracer.NewSpan("pylons.request", "pylons", "/")
 	preSpan.Finish()
-	tracer.SetEnabled(true)
+	tracer.Enable()
 	postSpan := tracer.NewSpan("pylons.request", "pylons", "/")
 	postSpan.Finish()
 	assert.Equal(len(tracer.finishedSpans), 1)
