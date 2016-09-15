@@ -2,7 +2,6 @@ package tracer
 
 import (
 	"sync"
-	"sync/atomic"
 	"time"
 
 	log "github.com/cihub/seelog"
@@ -16,7 +15,7 @@ const (
 
 // Tracer is the common struct we use to collect, buffer
 type Tracer struct {
-	enabled   int32     // acts as bool to define if the Tracer is enabled or not
+	enabled   bool      // defines if the Tracer is enabled or not
 	transport Transport // is the transport mechanism used to delivery spans to the agent
 
 	finishedSpans []*Span    // a list of finished spans
@@ -29,7 +28,7 @@ type Tracer struct {
 func NewTracer() *Tracer {
 	// initialize the Tracer
 	t := &Tracer{
-		enabled:   1,
+		enabled:   true,
 		transport: NewHTTPTransport(defaultDeliveryURL),
 	}
 
@@ -41,14 +40,14 @@ func NewTracer() *Tracer {
 // Enable activates the tracer so that Spans are appended in the tracer buffer.
 // By default, a tracer is always enabled after the creation.
 func (t *Tracer) Enable() {
-	atomic.StoreInt32(&t.enabled, 1)
+	t.enabled = true
 }
 
 // Disable deactivates the tracer so that Spans are not appended in the tracer buffer.
 // This means that *Span can be used as usual but the span.Finish() call will not
 // put the span in a buffer.
 func (t *Tracer) Disable() {
-	atomic.StoreInt32(&t.enabled, 0)
+	t.enabled = false
 }
 
 // NewSpan creates a new root Span with a random identifier. This high-level API is commonly
@@ -80,7 +79,7 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 
 // record stores the span in the array of finished spans.
 func (t *Tracer) record(span *Span) {
-	if atomic.LoadInt32(&t.enabled) == 1 {
+	if t.enabled {
 		t.mu.Lock()
 		t.finishedSpans = append(t.finishedSpans, span)
 		t.mu.Unlock()
