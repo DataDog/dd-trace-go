@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultHTTPTimeout = time.Second // TODO[manu]: this value must be set properly
+	defaultHTTPTimeout = time.Second // defines the current timeout before giving up with the send process
 )
 
 // Transport interface to Send spans to the given URL

@@ -70,6 +70,7 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	// it's better to be defensive and to produce a wrongly configured span
 	// that is not sent to the trace agent.
 	if parent == nil {
+		// TODO[manu]: maybe pass a kind of DevNullTracer instead of nil
 		return newSpan(name, "", "", spanID, spanID, spanID, nil)
 	}
 
