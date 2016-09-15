@@ -17,7 +17,7 @@ func TestContextWithSpan(t *testing.T) {
 	span := tracer.NewSpan("pylons.request", "pylons", "/")
 	ctx = ContextWithSpan(ctx, span)
 
-	assert.Equal(ctx.Value(datadogActiveSpanKey), span)
+	assert.Equal(ctx.Value(datadogSpanKey), span)
 }
 
 func TestSpanFromContext(t *testing.T) {
