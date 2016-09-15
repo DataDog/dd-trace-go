@@ -53,6 +53,7 @@ task :test => %w[fmt lint vet] do
     next if Dir.glob(File.join(pkg_folder, "*.go")).length == 0  # folder is a package if contains go modules
     profile_tmp = "#{pkg_folder}/profile.tmp"  # temp file to collect coverage data
     go_test(profile_tmp, pkg_folder)
+    go_test_race_condition(pkg_folder)
     if File.file?(profile_tmp)
       `cat #{profile_tmp} | tail -n +2 >> #{PROFILE}`
       File.delete(profile_tmp)

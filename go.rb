@@ -55,6 +55,10 @@ def go_vet(path)
   sh "go vet #{path}"
 end
 
+def go_test_race_condition(path)
+  sh "go test -race #{path}"
+end
+
 def go_test(profile, path)
   sh "go test -short -covermode=count -coverprofile=#{profile} #{path}"
 end
