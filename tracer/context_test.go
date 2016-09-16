@@ -59,7 +59,7 @@ func TestSpanMissingParent(t *testing.T) {
 	child.Finish()
 
 	// the child is finished but it's not recorded in
-	// the tracer buffer
+	// the tracer buffer because the service is missing
 	assert.True(child.Duration > 0)
 	assert.Equal(len(tracer.finishedSpans), 0)
 }

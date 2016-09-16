@@ -39,10 +39,13 @@ func TestNewSpanChild(t *testing.T) {
 	tracer := NewTracer()
 	parent := tracer.NewSpan("pylons.request", "pylons", "/")
 	child := tracer.NewChildSpan("redis.command", parent)
+	// ids and services are inherited
 	assert.Equal(child.ParentID, parent.SpanID)
 	assert.Equal(child.TraceID, parent.TraceID)
 	assert.Equal(child.Service, parent.Service)
+	// the resource is not inherited and defaults to the name
 	assert.Equal(child.Resource, "redis.command")
+	// the tracer instance is the same
 	assert.Equal(parent.tracer, tracer)
 	assert.Equal(child.tracer, tracer)
 }
@@ -72,7 +75,7 @@ func TestTracerEnabledAgain(t *testing.T) {
 	assert.Equal(len(tracer.finishedSpans), 1)
 }
 
-// Mock Transport
+// Mock Transport with a real Encoder
 type DummyTransport struct {
 	pool *encoderPool
 }
