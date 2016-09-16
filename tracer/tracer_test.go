@@ -74,18 +74,19 @@ func TestTracerEnabledAgain(t *testing.T) {
 
 // Mock Transport
 type DummyTransport struct {
-	Encoder Encoder
+	pool *encoderPool
 }
 
 func (t *DummyTransport) Send(spans []*Span) error {
-	_, err := t.Encoder.Encode(spans)
-	return err
+	encoder := t.pool.Borrow()
+	defer t.pool.Return(encoder)
+	return encoder.Encode(spans)
 }
 
 func BenchmarkTracerAddSpans(b *testing.B) {
 	// create a new tracer with a DummyTransport
 	tracer := NewTracer()
-	tracer.transport = &DummyTransport{Encoder: NewJSONEncoder()}
+	tracer.transport = &DummyTransport{pool: newEncoderPool(encoderPoolSize)}
 
 	for n := 0; n < b.N; n++ {
 		span := tracer.NewSpan("pylons.request", "pylons", "/")

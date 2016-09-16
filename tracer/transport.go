@@ -1,7 +1,6 @@
 package tracer
 
 import (
-	"bytes"
 	"errors"
 	"net/http"
 	"time"
@@ -9,30 +8,31 @@ import (
 
 const (
 	defaultHTTPTimeout = time.Second // defines the current timeout before giving up with the send process
+	encoderPoolSize    = 5           // how many encoders are available
 )
 
-// Transport interface to Send spans to the given URL
-type Transport interface {
+// transport interface to Send spans to the tracer agent
+type transport interface {
 	Send(spans []*Span) error
 }
 
-// HTTPTransport provides the default implementation to send the span list using
+// httpTransport provides the default implementation to send the span list using
 // a HTTP/TCP connection. The transport expects to know which is the delivery URL
 // and an Encoder is used to marshal the list of spans
-type HTTPTransport struct {
-	URL     string       // the delivery URL
-	Encoder Encoder      // the encoder used in the Marshalling process
-	client  *http.Client // the HTTP client used in the POST
+type httpTransport struct {
+	url    string       // the delivery URL
+	pool   *encoderPool // encoding allocates lot of buffers (which might then be resized) so we use a pool so they can be re-used
+	client *http.Client // the HTTP client used in the POST
 }
 
-// NewHTTPTransport creates a new delivery instance that honors the Transport interface.
+// newHTTPTransport creates a new delivery instance that honors the Transport interface.
 // This function is used to send data to an agent available in a local or remote location;
 // if there is a delay during the send, the client gives up according to the defaultHTTPTimeout
 // const.
-func NewHTTPTransport(url string) *HTTPTransport {
-	return &HTTPTransport{
-		URL:     url,
-		Encoder: NewJSONEncoder(),
+func newHTTPTransport(url string) *httpTransport {
+	return &httpTransport{
+		url:  url,
+		pool: newEncoderPool(encoderPoolSize),
 		client: &http.Client{
 			Timeout: defaultHTTPTimeout,
 		},
@@ -41,20 +41,23 @@ func NewHTTPTransport(url string) *HTTPTransport {
 
 // Send is the implementation of the Transport interface and hosts the logic to send the
 // spans list to a local/remote agent.
-func (t *HTTPTransport) Send(spans []*Span) error {
-	if t.URL == "" {
+func (t *httpTransport) Send(spans []*Span) error {
+	if t.url == "" {
 		return errors.New("provided an empty URL, giving up")
 	}
 
+	// borrow an encoder
+	encoder := t.pool.Borrow()
+	defer t.pool.Return(encoder)
+
 	// encode the spans and return the error if any
-	payload, err := t.Encoder.Encode(spans)
+	err := encoder.Encode(spans)
 	if err != nil {
 		return err
 	}
 
 	// prepare the client and send the payload
-	buffReader := bytes.NewReader(payload)
-	req, _ := http.NewRequest("POST", t.URL, buffReader)
+	req, _ := http.NewRequest("POST", t.url, encoder)
 	req.Header.Set("Content-Type", "application/json")
 	response, err := t.client.Do(req)
 

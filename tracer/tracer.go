@@ -15,7 +15,7 @@ const (
 // Tracer is the common struct we use to collect, buffer
 type Tracer struct {
 	enabled   bool      // defines if the Tracer is enabled or not
-	transport Transport // is the transport mechanism used to delivery spans to the agent
+	transport transport // is the transport mechanism used to delivery spans to the agent
 
 	finishedSpans []*Span    // a list of finished spans
 	mu            sync.Mutex // used to gain/release the lock for finishedSpans array
@@ -28,7 +28,7 @@ func NewTracer() *Tracer {
 	// initialize the Tracer
 	t := &Tracer{
 		enabled:   true,
-		transport: NewHTTPTransport(defaultDeliveryURL),
+		transport: newHTTPTransport(defaultDeliveryURL),
 	}
 
 	// start a background worker

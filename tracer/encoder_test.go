@@ -15,10 +15,12 @@ func TestJSONEncoder(t *testing.T) {
 	span.Start = 0
 	spans = append(spans, span)
 
-	// the encoder must return a valid JSON byte array
-	const want = `[{"name":"pylons.request","service":"pylons","resource":"/","type":"","start":0,"duration":0,"error":0,"span_id":0,"trace_id":0,"parent_id":0}]`
-	encoder := NewJSONEncoder()
-	res, err := encoder.Encode(spans)
+	// the encoder must return a valid JSON byte array that ends with a \n
+	want := `[{"name":"pylons.request","service":"pylons","resource":"/","type":"","start":0,"duration":0,"error":0,"span_id":0,"trace_id":0,"parent_id":0}]`
+	want += "\n"
+
+	encoder := newJSONEncoder()
+	err := encoder.Encode(spans)
 	assert.Nil(err)
-	assert.Equal(string(res), want)
+	assert.Equal(encoder.b.String(), want)
 }
