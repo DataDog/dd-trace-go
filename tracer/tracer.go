@@ -75,9 +75,15 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	return newSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
 }
 
-// record stores the span in the array of finished spans.
+// record stores the span in the array of finished spans; it includes
+// some validity check to prevent adding the *Span when the tracer is
+// disabled or when the *Span payload is incomplete.
 func (t *Tracer) record(span *Span) {
-	if t.enabled {
+	// validity check that prevents the span to be enqueued in the
+	// buffer list if some fields are missing. The trace agent
+	// will discard this span in any case so it's better to prevent
+	// more useless work.
+	if t.enabled && span.Name != "" && span.Service != "" && span.Resource != "" {
 		t.mu.Lock()
 		t.finishedSpans = append(t.finishedSpans, span)
 		t.mu.Unlock()
