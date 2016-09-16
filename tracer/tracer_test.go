@@ -42,7 +42,7 @@ func TestNewSpanChild(t *testing.T) {
 	assert.Equal(child.ParentID, parent.SpanID)
 	assert.Equal(child.TraceID, parent.TraceID)
 	assert.Equal(child.Service, parent.Service)
-	assert.Equal(child.Resource, "")
+	assert.Equal(child.Resource, "redis.command")
 	assert.Equal(parent.tracer, tracer)
 	assert.Equal(child.tracer, tracer)
 }

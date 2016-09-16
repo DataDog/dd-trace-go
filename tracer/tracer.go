@@ -68,11 +68,11 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	// it's better to be defensive and to produce a wrongly configured span
 	// that is not sent to the trace agent.
 	if parent == nil {
-		return newSpan(name, "", "", spanID, spanID, spanID, t)
+		return newSpan(name, "", name, spanID, spanID, spanID, t)
 	}
 
 	// child that is correctly configured
-	return newSpan(name, parent.Service, "", spanID, parent.TraceID, parent.SpanID, parent.tracer)
+	return newSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
 }
 
 // record stores the span in the array of finished spans.
