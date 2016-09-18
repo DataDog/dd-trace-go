@@ -53,7 +53,6 @@ func (p *encoderPool) Borrow() *jsonEncoder {
 
 	select {
 	case encoder = <-p.pool:
-		log.Println("[POOL] Reusing the encoder")
 	default:
 		log.Println("[POOL] Creating a new encoder")
 		encoder = newJSONEncoder()
@@ -65,7 +64,6 @@ func (p *encoderPool) Borrow() *jsonEncoder {
 func (p *encoderPool) Return(e *jsonEncoder) {
 	select {
 	case p.pool <- e:
-		log.Println("[POOL] Returning the encoder")
 	default:
 		log.Println("[POOL] The encoding pool is full")
 	}

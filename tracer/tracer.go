@@ -103,9 +103,7 @@ func (t *Tracer) worker() {
 
 			err := t.transport.Send(spans)
 
-			if err == nil {
-				log.Printf("[WORKER] flushed %d spans", len(spans))
-			} else {
+			if err != nil {
 				log.Printf("[WORKER] flush failed, lost %s spans", err)
 			}
 		}
