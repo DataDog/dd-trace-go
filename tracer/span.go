@@ -48,6 +48,10 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 
 // SetMeta adds an arbitrary meta field to the current Span.
 func (s *Span) SetMeta(key, value string) {
+	if s == nil {
+		return
+	}
+
 	s.mu.Lock()
 
 	if s.Meta == nil {
@@ -60,8 +64,11 @@ func (s *Span) SetMeta(key, value string) {
 
 // SetMetrics adds a metric field to the current Span.
 func (s *Span) SetMetrics(key string, value float64) {
-	s.mu.Lock()
+	if s == nil {
+		return
+	}
 
+	s.mu.Lock()
 	if s.Metrics == nil {
 		s.Metrics = make(map[string]float64)
 	}
@@ -73,6 +80,10 @@ func (s *Span) SetMetrics(key string, value float64) {
 // SetError stores an error object within the span meta. The Error status is
 // updated and the error.Error() string is included with a default meta key.
 func (s *Span) SetError(err error) {
+	if s == nil {
+		return
+	}
+
 	if err != nil {
 		s.Error = 1
 		s.SetMeta(defaultErrorMeta, err.Error())
@@ -82,6 +93,10 @@ func (s *Span) SetError(err error) {
 // SetErrorMeta stores an error object within the span meta. The error.Error()
 // string is included in the user defined meta key.
 func (s *Span) SetErrorMeta(meta string, err error) {
+	if s == nil {
+		return
+	}
+
 	if err != nil {
 		s.SetMeta(meta, err.Error())
 	}
@@ -90,6 +105,10 @@ func (s *Span) SetErrorMeta(meta string, err error) {
 // IsFinished returns true if the span.Finish() method has been called.
 // Under the hood, any Span with a Duration has to be considered closed.
 func (s *Span) IsFinished() bool {
+	if s == nil {
+		return false
+	}
+
 	return s.Duration > 0
 }
 
@@ -98,6 +117,10 @@ func (s *Span) IsFinished() bool {
 // calling this method multiple times is safe and doesn't update the
 // current Span.
 func (s *Span) Finish() {
+	if s == nil {
+		return
+	}
+
 	s.mu.Lock()
 
 	if s.Duration <= 0 {
