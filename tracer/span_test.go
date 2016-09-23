@@ -52,6 +52,17 @@ func TestSpanError(t *testing.T) {
 	assert.Equal(span.Meta["error.msg"], "Something wrong")
 }
 
+func TestEmptySpan(t *testing.T) {
+	// ensure the empty span won't crash the app
+	var span Span
+	span.SetMeta("a", "b")
+	span.Finish()
+
+	span = Span{}
+	span.SetMeta("a", "b")
+	span.Finish()
+}
+
 func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()

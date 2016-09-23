@@ -47,29 +47,27 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 }
 
 // SetMeta adds an arbitrary meta field to the current Span.
-// This method is not thread-safe and the Span should not be modified
-// by multiple go routine.
 func (s *Span) SetMeta(key, value string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if s.Meta == nil {
 		s.Meta = make(map[string]string)
 	}
 	s.Meta[key] = value
+
+	s.mu.Unlock()
 }
 
 // SetMetrics adds a metric field to the current Span.
-// This method is not thread-safe and the Span should not be modified
-// by multiple go routine.
 func (s *Span) SetMetrics(key string, value float64) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if s.Metrics == nil {
 		s.Metrics = make(map[string]float64)
 	}
 	s.Metrics[key] = value
+
+	s.mu.Unlock()
 }
 
 // SetError stores an error object within the span meta. The Error status is
@@ -100,8 +98,16 @@ func (s *Span) IsFinished() bool {
 // calling this method multiple times is safe and doesn't update the
 // current Span.
 func (s *Span) Finish() {
-	if !s.IsFinished() {
+	s.mu.Lock()
+
+	if s.Duration <= 0 {
 		s.Duration = Now() - s.Start
+	}
+
+	s.mu.Unlock()
+
+	// don't crap out on empty spans
+	if s.tracer != nil {
 		s.tracer.record(s)
 	}
 }
