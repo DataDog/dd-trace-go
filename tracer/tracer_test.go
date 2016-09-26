@@ -58,7 +58,7 @@ func TestTracerDisabled(t *testing.T) {
 	tracer.Disable()
 	span := tracer.NewSpan("pylons.request", "pylons", "/")
 	span.Finish()
-	assert.Equal(len(tracer.finishedSpans), 0)
+	assert.Equal(tracer.buffer.Len(), 0)
 }
 
 func TestTracerEnabledAgain(t *testing.T) {
@@ -72,7 +72,7 @@ func TestTracerEnabledAgain(t *testing.T) {
 	tracer.Enable()
 	postSpan := tracer.NewSpan("pylons.request", "pylons", "/")
 	postSpan.Finish()
-	assert.Equal(len(tracer.finishedSpans), 1)
+	assert.Equal(tracer.buffer.Len(), 1)
 }
 
 // Mock Transport with a real Encoder
