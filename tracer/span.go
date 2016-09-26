@@ -1,8 +1,11 @@
 package tracer
 
 import (
+	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -133,6 +136,25 @@ func (s *Span) Finish() {
 	if s.tracer != nil {
 		s.tracer.record(s)
 	}
+}
+
+// Strin returns a human readable representation of the span. Not for
+// production, just debugging.
+func (s *Span) String() string {
+	lines := []string{
+		fmt.Sprintf("Name: %s", s.Name),
+		fmt.Sprintf("Service: %s", s.Service),
+		fmt.Sprintf("Resource: %s", s.Resource),
+		fmt.Sprintf("SpanID: %d", s.TraceID),
+		fmt.Sprintf("TraceID: %d", s.SpanID),
+		fmt.Sprintf("ParentID: %d", s.ParentID),
+		fmt.Sprintf("Start: %s", time.Unix(0, s.Start)),
+		fmt.Sprintf("Duration: %s", time.Duration(s.Duration)),
+		fmt.Sprintf("Error: %d", s.Error),
+		fmt.Sprintf("Type: %s", s.Type),
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // nextSpanID returns a new random identifier. It is meant to be used as a

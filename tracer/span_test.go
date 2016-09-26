@@ -17,6 +17,16 @@ func TestSpanStart(t *testing.T) {
 	assert.NotEqual(span.Start, int64(0))
 }
 
+func TestSpanString(t *testing.T) {
+	assert := assert.New(t)
+	tracer := NewTracer()
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	// don't bother checking the contents, just make sure it works.
+	assert.NotEqual("", span.String())
+	span.Finish()
+	assert.NotEqual("", span.String())
+}
+
 func TestSpanSetMeta(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
