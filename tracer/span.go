@@ -124,15 +124,13 @@ func (s *Span) Finish() {
 	}
 
 	s.mu.Lock()
-
-	if s.Duration <= 0 {
+	finished := s.Duration > 0
+	if !finished {
 		s.Duration = Now() - s.Start
 	}
-
 	s.mu.Unlock()
 
-	// don't crap out on empty spans
-	if s.tracer != nil {
+	if s.tracer != nil && !finished {
 		s.tracer.record(s)
 	}
 }
