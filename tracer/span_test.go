@@ -68,10 +68,6 @@ func TestEmptySpan(t *testing.T) {
 	span.SetMeta("a", "b")
 	span.Finish()
 
-	span = Span{}
-	span.SetMeta("a", "b")
-	span.Finish()
-
 	var s *Span
 	s.SetMeta("a", "b")
 	s.SetError(nil)
