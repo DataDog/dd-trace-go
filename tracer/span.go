@@ -135,6 +135,16 @@ func (s *Span) Finish() {
 	}
 }
 
+// FinishWithErr marks a span finished and sets the given error if it's
+// non-nil.
+func (s *Span) FinishWithErr(err error) {
+	if s == nil {
+		return
+	}
+	s.SetError(err)
+	s.Finish()
+}
+
 // String returns a human readable representation of the span. Not for
 // production, just debugging.
 func (s *Span) String() string {
