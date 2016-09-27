@@ -66,6 +66,7 @@ func TestEmptySpan(t *testing.T) {
 	// ensure the empty span won't crash the app
 	var span Span
 	span.SetMeta("a", "b")
+	span.SetError(nil)
 	span.Finish()
 
 	var s *Span

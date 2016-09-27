@@ -76,7 +76,6 @@ func (s *Span) SetMetrics(key string, value float64) {
 		s.Metrics = make(map[string]float64)
 	}
 	s.Metrics[key] = value
-
 	s.mu.Unlock()
 }
 
@@ -145,8 +144,8 @@ func (s *Span) String() string {
 		fmt.Sprintf("Name: %s", s.Name),
 		fmt.Sprintf("Service: %s", s.Service),
 		fmt.Sprintf("Resource: %s", s.Resource),
-		fmt.Sprintf("SpanID: %d", s.TraceID),
-		fmt.Sprintf("TraceID: %d", s.SpanID),
+		fmt.Sprintf("TraceID: %d", s.TraceID),
+		fmt.Sprintf("SpanID: %d", s.SpanID),
 		fmt.Sprintf("ParentID: %d", s.ParentID),
 		fmt.Sprintf("Start: %s", time.Unix(0, s.Start)),
 		fmt.Sprintf("Duration: %s", time.Duration(s.Duration)),
