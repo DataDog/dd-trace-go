@@ -30,7 +30,7 @@ func NewTracer() *Tracer {
 		enabled:             true,
 		transport:           newHTTPTransport(defaultDeliveryURL),
 		buffer:              newSpansBuffer(spanBufferDefaultMaxSize),
-		DebugLoggingEnabled: true,
+		DebugLoggingEnabled: false,
 	}
 
 	// start a background worker
