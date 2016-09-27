@@ -13,6 +13,8 @@ const (
 
 // Tracer is the common struct we use to collect, buffer
 type Tracer struct {
+	DebugLoggingEnabled bool
+
 	enabled   bool      // defines if the Tracer is enabled or not
 	transport transport // is the transport mechanism used to delivery spans to the agent
 
@@ -25,9 +27,10 @@ type Tracer struct {
 func NewTracer() *Tracer {
 	// initialize the Tracer
 	t := &Tracer{
-		enabled:   true,
-		transport: newHTTPTransport(defaultDeliveryURL),
-		buffer:    newSpansBuffer(spanBufferDefaultMaxSize),
+		enabled:             true,
+		transport:           newHTTPTransport(defaultDeliveryURL),
+		buffer:              newSpansBuffer(spanBufferDefaultMaxSize),
+		DebugLoggingEnabled: true,
 	}
 
 	// start a background worker
@@ -88,14 +91,12 @@ func (t *Tracer) worker() {
 
 		spans := t.buffer.Pop()
 
-		// t.DebugLoggingEnabled = true
-
-		// if t.DebugLoggingEnabled {
-		// 	log.Printf("Sending %d spans", len(spans))
-		// 	for _, s := range spans {
-		// 		log.Printf("SPAN:\n%s", s.String())
-		// 	}
-		// }
+		if t.DebugLoggingEnabled {
+			log.Printf("Sending %d spans", len(spans))
+			for _, s := range spans {
+				log.Printf("SPAN:\n%s", s.String())
+			}
+		}
 
 		if t.enabled && t.transport != nil && 0 < len(spans) {
 			err := t.transport.Send(spans)
