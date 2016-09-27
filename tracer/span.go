@@ -137,7 +137,7 @@ func (s *Span) Finish() {
 	}
 }
 
-// Strin returns a human readable representation of the span. Not for
+// String returns a human readable representation of the span. Not for
 // production, just debugging.
 func (s *Span) String() string {
 	lines := []string{

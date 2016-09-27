@@ -78,14 +78,14 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	return newSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
 }
 
-// record queues the span for
+// record queues the finished span for further processing.
 func (t *Tracer) record(span *Span) {
 	if t.enabled {
 		t.buffer.Push(span)
 	}
 }
 
-// worker flushes
+// worker periodically flushes traces to the transport.
 func (t *Tracer) worker() {
 	for range time.Tick(flushInterval) {
 
