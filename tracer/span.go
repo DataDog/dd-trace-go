@@ -1,8 +1,11 @@
 package tracer
 
 import (
+	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -47,34 +50,42 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 }
 
 // SetMeta adds an arbitrary meta field to the current Span.
-// This method is not thread-safe and the Span should not be modified
-// by multiple go routine.
 func (s *Span) SetMeta(key, value string) {
+	if s == nil {
+		return
+	}
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if s.Meta == nil {
 		s.Meta = make(map[string]string)
 	}
 	s.Meta[key] = value
+
+	s.mu.Unlock()
 }
 
 // SetMetrics adds a metric field to the current Span.
-// This method is not thread-safe and the Span should not be modified
-// by multiple go routine.
 func (s *Span) SetMetrics(key string, value float64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if s == nil {
+		return
+	}
 
+	s.mu.Lock()
 	if s.Metrics == nil {
 		s.Metrics = make(map[string]float64)
 	}
 	s.Metrics[key] = value
+	s.mu.Unlock()
 }
 
 // SetError stores an error object within the span meta. The Error status is
 // updated and the error.Error() string is included with a default meta key.
 func (s *Span) SetError(err error) {
+	if s == nil {
+		return
+	}
+
 	if err != nil {
 		s.Error = 1
 		s.SetMeta(defaultErrorMeta, err.Error())
@@ -84,6 +95,10 @@ func (s *Span) SetError(err error) {
 // SetErrorMeta stores an error object within the span meta. The error.Error()
 // string is included in the user defined meta key.
 func (s *Span) SetErrorMeta(meta string, err error) {
+	if s == nil {
+		return
+	}
+
 	if err != nil {
 		s.SetMeta(meta, err.Error())
 	}
@@ -92,6 +107,10 @@ func (s *Span) SetErrorMeta(meta string, err error) {
 // IsFinished returns true if the span.Finish() method has been called.
 // Under the hood, any Span with a Duration has to be considered closed.
 func (s *Span) IsFinished() bool {
+	if s == nil {
+		return false
+	}
+
 	return s.Duration > 0
 }
 
@@ -100,10 +119,41 @@ func (s *Span) IsFinished() bool {
 // calling this method multiple times is safe and doesn't update the
 // current Span.
 func (s *Span) Finish() {
-	if !s.IsFinished() {
+	if s == nil {
+		return
+	}
+
+	s.mu.Lock()
+
+	if s.Duration <= 0 {
 		s.Duration = Now() - s.Start
+	}
+
+	s.mu.Unlock()
+
+	// don't crap out on empty spans
+	if s.tracer != nil {
 		s.tracer.record(s)
 	}
+}
+
+// Strin returns a human readable representation of the span. Not for
+// production, just debugging.
+func (s *Span) String() string {
+	lines := []string{
+		fmt.Sprintf("Name: %s", s.Name),
+		fmt.Sprintf("Service: %s", s.Service),
+		fmt.Sprintf("Resource: %s", s.Resource),
+		fmt.Sprintf("TraceID: %d", s.TraceID),
+		fmt.Sprintf("SpanID: %d", s.SpanID),
+		fmt.Sprintf("ParentID: %d", s.ParentID),
+		fmt.Sprintf("Start: %s", time.Unix(0, s.Start)),
+		fmt.Sprintf("Duration: %s", time.Duration(s.Duration)),
+		fmt.Sprintf("Error: %d", s.Error),
+		fmt.Sprintf("Type: %s", s.Type),
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // nextSpanID returns a new random identifier. It is meant to be used as a

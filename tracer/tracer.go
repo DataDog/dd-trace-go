@@ -2,7 +2,6 @@ package tracer
 
 import (
 	"log"
-	"sync"
 	"time"
 )
 
@@ -14,11 +13,12 @@ const (
 
 // Tracer is the common struct we use to collect, buffer
 type Tracer struct {
+	DebugLoggingEnabled bool
+
 	enabled   bool      // defines if the Tracer is enabled or not
 	transport transport // is the transport mechanism used to delivery spans to the agent
 
-	finishedSpans []*Span    // a list of finished spans
-	mu            sync.Mutex // used to gain/release the lock for finishedSpans array
+	buffer *spansBuffer
 }
 
 // NewTracer returns a Tracer instance that owns a span delivery system. Each Tracer starts
@@ -27,12 +27,15 @@ type Tracer struct {
 func NewTracer() *Tracer {
 	// initialize the Tracer
 	t := &Tracer{
-		enabled:   true,
-		transport: newHTTPTransport(defaultDeliveryURL),
+		enabled:             true,
+		transport:           newHTTPTransport(defaultDeliveryURL),
+		buffer:              newSpansBuffer(spanBufferDefaultMaxSize),
+		DebugLoggingEnabled: true,
 	}
 
 	// start a background worker
 	go t.worker()
+
 	return t
 }
 
@@ -75,34 +78,28 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	return newSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
 }
 
-// record stores the span in the array of finished spans; it includes
-// some validity check to prevent adding the *Span when the tracer is
-// disabled or when the *Span payload is incomplete.
+// record queues the span for
 func (t *Tracer) record(span *Span) {
-	// validity check that prevents the span to be enqueued in the
-	// buffer list if some fields are missing. The trace agent
-	// will discard this span in any case so it's better to prevent
-	// more useless work.
-	if t.enabled && span.Name != "" && span.Service != "" && span.Resource != "" {
-		t.mu.Lock()
-		t.finishedSpans = append(t.finishedSpans, span)
-		t.mu.Unlock()
+	if t.enabled {
+		t.buffer.Push(span)
 	}
 }
 
-// Background worker that handles data delivery through the Transport instance.
-// It waits for a flush interval and then it tries to find an available dispatcher
-// if there is something to send.
+// worker flushes
 func (t *Tracer) worker() {
 	for range time.Tick(flushInterval) {
-		if len(t.finishedSpans) > 0 {
-			t.mu.Lock()
-			spans := t.finishedSpans
-			t.finishedSpans = nil
-			t.mu.Unlock()
 
+		spans := t.buffer.Pop()
+
+		if t.DebugLoggingEnabled {
+			log.Printf("Sending %d spans", len(spans))
+			for _, s := range spans {
+				log.Printf("SPAN:\n%s", s.String())
+			}
+		}
+
+		if t.enabled && t.transport != nil && 0 < len(spans) {
 			err := t.transport.Send(spans)
-
 			if err != nil {
 				log.Printf("[WORKER] flush failed, lost %s spans", err)
 			}

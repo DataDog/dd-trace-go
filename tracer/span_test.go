@@ -17,6 +17,16 @@ func TestSpanStart(t *testing.T) {
 	assert.NotEqual(span.Start, int64(0))
 }
 
+func TestSpanString(t *testing.T) {
+	assert := assert.New(t)
+	tracer := NewTracer()
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	// don't bother checking the contents, just make sure it works.
+	assert.NotEqual("", span.String())
+	span.Finish()
+	assert.NotEqual("", span.String())
+}
+
 func TestSpanSetMeta(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
@@ -50,6 +60,19 @@ func TestSpanError(t *testing.T) {
 	assert.Equal(span.Error, int32(1))
 	assert.Equal(len(span.Meta), 1)
 	assert.Equal(span.Meta["error.msg"], "Something wrong")
+}
+
+func TestEmptySpan(t *testing.T) {
+	// ensure the empty span won't crash the app
+	var span Span
+	span.SetMeta("a", "b")
+	span.SetError(nil)
+	span.Finish()
+
+	var s *Span
+	s.SetMeta("a", "b")
+	s.SetError(nil)
+	s.Finish()
 }
 
 func TestSpanErrorNil(t *testing.T) {
