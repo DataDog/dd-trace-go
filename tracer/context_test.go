@@ -8,16 +8,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestContextWithSpan(t *testing.T) {
+func TestContextWithSpanDefault(t *testing.T) {
 	assert := assert.New(t)
 
 	// create a new context with a span
-	ctx := context.Background()
-	tracer := NewTracer()
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
-	ctx = ContextWithSpan(ctx, span)
+	span := SpanFromContextDefault(nil)
+	assert.Nil(span)
 
-	assert.Equal(ctx.Value(datadogSpanKey), span)
+	ctx := context.Background()
+	assert.NotNil(SpanFromContextDefault(ctx))
 }
 
 func TestSpanFromContext(t *testing.T) {

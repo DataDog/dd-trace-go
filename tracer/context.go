@@ -21,3 +21,19 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 	span, ok := ctx.Value(datadogSpanKey).(*Span)
 	return span, ok
 }
+
+// SpanFromContextDefault returns the stored *Span from the Context. If not, it
+// will return an empty span that will do nothing.
+func SpanFromContextDefault(ctx context.Context) *Span {
+
+	// FIXME[matt] is it better to return a singleton empty span?
+	if ctx == nil {
+		return &Span{}
+	}
+
+	span, ok := ctx.Value(datadogSpanKey).(*Span)
+	if !ok {
+		return &Span{}
+	}
+	return span
+}
