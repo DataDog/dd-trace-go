@@ -13,7 +13,7 @@ func TestContextWithSpanDefault(t *testing.T) {
 
 	// create a new context with a span
 	span := SpanFromContextDefault(nil)
-	assert.Nil(span)
+	assert.NotNil(span)
 
 	ctx := context.Background()
 	assert.NotNil(SpanFromContextDefault(ctx))
