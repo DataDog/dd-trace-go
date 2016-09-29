@@ -138,10 +138,8 @@ func TestSpanFinish(t *testing.T) {
 func TestSpanFinishTwice(t *testing.T) {
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
-	tracer := &Tracer{
-		enabled: true,
-		buffer:  newSpansBuffer(10),
-	}
+
+	tracer := getTestTracer()
 
 	assert.Equal(tracer.buffer.Len(), 0)
 

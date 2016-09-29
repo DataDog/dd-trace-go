@@ -96,3 +96,12 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 		span.Finish()
 	}
 }
+
+// getTestTracer returns a tracer which will buffer but not submit spans.
+func getTestTracer() *Tracer {
+	return &Tracer{
+		enabled: true,
+		buffer:  newSpansBuffer(10),
+	}
+
+}
