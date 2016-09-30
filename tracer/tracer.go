@@ -62,7 +62,7 @@ func (t *Tracer) SetSampleRate(sampleRate float64) {
 	} else if sampleRate >= 0 && sampleRate < 1 {
 		t.sampler = newRateSampler(sampleRate)
 	} else {
-		log.Printf("Invalid sample rate %f, must be between 0 and 1", sampleRate)
+		log.Printf("tracer.SetSampleRate rate must be between 0 and 1, now: %f", sampleRate)
 	}
 }
 
