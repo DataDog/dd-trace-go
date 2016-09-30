@@ -6,6 +6,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// getTestTracer returns a tracer which will buffer but not submit spans.
+func getTestTracer() *Tracer {
+	return &Tracer{
+		enabled: true,
+		buffer:  newSpansBuffer(10),
+		sampler: newAllSampler(),
+	}
+
+}
+
 func TestDefaultTracer(t *testing.T) {
 	assert := assert.New(t)
 
@@ -131,13 +141,4 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 		span := tracer.NewSpan("pylons.request", "pylons", "/")
 		span.Finish()
 	}
-}
-
-// getTestTracer returns a tracer which will buffer but not submit spans.
-func getTestTracer() *Tracer {
-	return &Tracer{
-		enabled: true,
-		buffer:  newSpansBuffer(10),
-	}
-
 }
