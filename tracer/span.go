@@ -29,6 +29,8 @@ type Span struct {
 	TraceID  uint64             `json:"trace_id"`          // identifier of the root span
 	ParentID uint64             `json:"parent_id"`         // identifier of the span's direct parent
 
+	Sampled bool `json:"-"` // if this span is sampled (and should be kept/recorded) or not
+
 	tracer *Tracer // the tracer that generated this span
 
 	mu sync.Mutex // lock the Span to make it thread-safe
@@ -45,6 +47,7 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 		TraceID:  traceID,
 		ParentID: parentID,
 		Start:    Now(),
+		Sampled:  true,
 		tracer:   tracer,
 	}
 }

@@ -13,12 +13,13 @@ const (
 
 // Tracer is the common struct we use to collect, buffer
 type Tracer struct {
-	DebugLoggingEnabled bool
-
 	enabled   bool      // defines if the Tracer is enabled or not
 	transport transport // is the transport mechanism used to delivery spans to the agent
+	sampler   sampler   // is the trace sampler to only keep some samples
 
 	buffer *spansBuffer
+
+	DebugLoggingEnabled bool
 }
 
 // NewTracer returns a Tracer instance that owns a span delivery system. Each Tracer starts
@@ -30,6 +31,7 @@ func NewTracer() *Tracer {
 		enabled:             true,
 		transport:           newHTTPTransport(defaultDeliveryURL),
 		buffer:              newSpansBuffer(spanBufferDefaultMaxSize),
+		sampler:             newAllSampler(),
 		DebugLoggingEnabled: false,
 	}
 
@@ -52,12 +54,26 @@ func (t *Tracer) Disable() {
 	t.enabled = false
 }
 
+// SetSampleRate sets a sample rate for all the future traces.
+// sampleRate has to be between 0 (sample nothing) and 1 (sample everything).
+func (t *Tracer) SetSampleRate(sampleRate float64) {
+	if sampleRate == 1 {
+		t.sampler = newAllSampler()
+	} else if sampleRate >= 0 && sampleRate < 1 {
+		t.sampler = newRateSampler(sampleRate)
+	} else {
+		log.Printf("tracer.SetSampleRate rate must be between 0 and 1, now: %f", sampleRate)
+	}
+}
+
 // NewSpan creates a new root Span with a random identifier. This high-level API is commonly
 // used to start a new tracing session.
 func (t *Tracer) NewSpan(name, service, resource string) *Span {
 	// create and return the Span
 	spanID := nextSpanID()
-	return newSpan(name, service, resource, spanID, spanID, 0, t)
+	span := newSpan(name, service, resource, spanID, spanID, 0, t)
+	t.sampler.Sample(span)
+	return span
 }
 
 // NewChildSpan returns a new span that is child of the Span passed as argument.
@@ -71,16 +87,22 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	// it's better to be defensive and to produce a wrongly configured span
 	// that is not sent to the trace agent.
 	if parent == nil {
-		return newSpan(name, "", name, spanID, spanID, spanID, t)
+		span := newSpan(name, "", name, spanID, spanID, spanID, t)
+		t.sampler.Sample(span)
+		return span
 	}
 
 	// child that is correctly configured
-	return newSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
+	span := newSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
+	// child sampling same as the parent
+	span.Sampled = parent.Sampled
+
+	return span
 }
 
 // record queues the finished span for further processing.
 func (t *Tracer) record(span *Span) {
-	if t.enabled {
+	if t.enabled && span.Sampled {
 		t.buffer.Push(span)
 	}
 }

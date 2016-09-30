@@ -75,6 +75,42 @@ func TestTracerEnabledAgain(t *testing.T) {
 	assert.Equal(tracer.buffer.Len(), 1)
 }
 
+func TestTracerSampler(t *testing.T) {
+	assert := assert.New(t)
+
+	sampleRate := 0.5
+	tracer := NewTracer()
+	tracer.SetSampleRate(sampleRate)
+
+	span := tracer.NewSpan("pylons.request", "pylons", "/")
+
+	// The span might be sampled or not, we don't know, but at least it should have the sample rate metric
+	assert.Equal(sampleRate, span.Metrics[SampleRateMetricKey])
+}
+
+func TestTracerEdgeSampler(t *testing.T) {
+	assert := assert.New(t)
+
+	// a sample rate of 0 should sample nothing
+	tracer0 := NewTracer()
+	tracer0.SetSampleRate(0)
+	// a sample rate of 1 should sample everything
+	tracer1 := NewTracer()
+	tracer1.SetSampleRate(1)
+
+	count := 10000
+
+	for i := 0; i < count; i++ {
+		span0 := tracer0.NewSpan("pylons.request", "pylons", "/")
+		span0.Finish()
+		span1 := tracer1.NewSpan("pylons.request", "pylons", "/")
+		span1.Finish()
+	}
+
+	assert.Equal(0, tracer0.buffer.Len())
+	assert.Equal(count, tracer1.buffer.Len())
+}
+
 // Mock Transport with a real Encoder
 type DummyTransport struct {
 	pool *encoderPool
