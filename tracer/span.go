@@ -59,13 +59,23 @@ func (s *Span) SetMeta(key, value string) {
 	}
 
 	s.mu.Lock()
-
 	if s.Meta == nil {
 		s.Meta = make(map[string]string)
 	}
 	s.Meta[key] = value
-
 	s.mu.Unlock()
+}
+
+func (s *Span) GetMeta(key string) string {
+	if s == nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Meta == nil {
+		return ""
+	}
+	return s.Meta[key]
 }
 
 // SetMetrics adds a metric field to the current Span.

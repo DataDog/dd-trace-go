@@ -14,35 +14,69 @@ func TestMuxTracer200(t *testing.T) {
 	assert := assert.New(t)
 
 	// setup
-	tracer, transport := getTestTracer()
-	mt := NewMuxTracer("my-service", tracer)
-	r := mux.NewRouter()
-	r.HandleFunc("/200", mt.TraceHandlerFunc(handler200))
+	tracer, transport, router := setup()
 
 	// SEnd and verify a 200 request
 	req := httptest.NewRequest("GET", "/200", nil)
 	writer := httptest.NewRecorder()
-	r.ServeHTTP(writer, req)
+	router.ServeHTTP(writer, req)
 	assert.Equal(writer.Code, 200)
 	assert.Equal(writer.Body.String(), "200!")
 
 	// ensure properly traced
 	tracer.Flush()
-	assert.Empty(transport.spans)
+	spans := transport.spans
+	assert.Len(spans, 1)
 
+	s := spans[0]
+	assert.Equal(s.Name, "mux.request")
+	assert.Equal(s.Service, "my-service")
+	assert.Equal(s.Resource, "GET /200")
+	assert.Equal(s.GetMeta("http.status_code"), "200")
 }
 
-func handler200WithStatus(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(200)
-	w.Write([]byte("200!"))
+func TestMuxTracer500(t *testing.T) {
+	assert := assert.New(t)
+
+	// setup
+	tracer, transport, router := setup()
+
+	// SEnd and verify a 200 request
+	req := httptest.NewRequest("GET", "/500", nil)
+	writer := httptest.NewRecorder()
+	router.ServeHTTP(writer, req)
+	assert.Equal(writer.Code, 500)
+	assert.Equal(writer.Body.String(), "500!\n")
+
+	// ensure properly traced
+	tracer.Flush()
+	spans := transport.spans
+	assert.Len(spans, 1)
+
+	s := spans[0]
+	assert.Equal(s.Name, "mux.request")
+	assert.Equal(s.Service, "my-service")
+	assert.Equal(s.Resource, "GET /500")
+	assert.Equal(s.GetMeta("http.status_code"), "500")
 }
+
+// test handlers
 
 func handler200(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("200!"))
 }
 
 func handler500(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "200", http.StatusInternalServerError)
+	http.Error(w, "500!", http.StatusInternalServerError)
+}
+
+func setup() (*tracer.Tracer, *dummyTransport, *mux.Router) {
+	tracer, transport := getTestTracer()
+	mt := NewMuxTracer("my-service", tracer)
+	r := mux.NewRouter()
+	r.HandleFunc("/200", mt.TraceHandlerFunc(handler200))
+	r.HandleFunc("/500", mt.TraceHandlerFunc(handler500))
+	return tracer, transport, r
 }
 
 // getTestTracer returns a tracer which will buffer but not submit spans.

@@ -65,5 +65,6 @@ func (t *tracedResponseWriter) Write(b []byte) (int, error) {
 
 func (t *tracedResponseWriter) WriteHeader(status int) {
 	t.w.WriteHeader(status)
+	t.status = status
 	t.span.SetMeta("http.status_code", strconv.Itoa(status))
 }
