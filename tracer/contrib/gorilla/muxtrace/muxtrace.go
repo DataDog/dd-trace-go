@@ -46,6 +46,8 @@ func getResource(req *http.Request) string {
 	return req.Method + " " + path
 }
 
+// tracedResponseWriter is a small wrapper around an http response writer that will
+// intercept and store the status of a request.
 type tracedResponseWriter struct {
 	span   *tracer.Span
 	w      http.ResponseWriter
