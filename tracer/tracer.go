@@ -14,7 +14,7 @@ const (
 // Tracer is the common struct we use to collect, buffer
 type Tracer struct {
 	enabled   bool      // defines if the Tracer is enabled or not
-	transport transport // is the transport mechanism used to delivery spans to the agent
+	transport Transport // is the transport mechanism used to delivery spans to the agent
 	sampler   sampler   // is the trace sampler to only keep some samples
 
 	buffer *spansBuffer
@@ -27,9 +27,13 @@ type Tracer struct {
 // advisable only if the default client doesn't fit your needs.
 func NewTracer() *Tracer {
 	// initialize the Tracer
+	return NewTracerTransport(NewHTTPTransport(defaultDeliveryURL))
+}
+
+func NewTracerTransport(transport Transport) *Tracer {
 	t := &Tracer{
 		enabled:             true,
-		transport:           newHTTPTransport(defaultDeliveryURL),
+		transport:           transport,
 		buffer:              newSpansBuffer(spanBufferDefaultMaxSize),
 		sampler:             newAllSampler(),
 		DebugLoggingEnabled: false,
@@ -107,24 +111,31 @@ func (t *Tracer) record(span *Span) {
 	}
 }
 
+func (t *Tracer) Flush() error {
+	spans := t.buffer.Pop()
+
+	if t.DebugLoggingEnabled {
+		log.Printf("Sending %d spans", len(spans))
+		for _, s := range spans {
+			log.Printf("SPAN:\n%s", s.String())
+		}
+	}
+
+	// bal if there's nothing to do
+	if !t.enabled || t.transport == nil || len(spans) == 0 {
+		return nil
+	}
+
+	return t.transport.Send(spans)
+
+}
+
 // worker periodically flushes traces to the transport.
 func (t *Tracer) worker() {
 	for range time.Tick(flushInterval) {
-
-		spans := t.buffer.Pop()
-
-		if t.DebugLoggingEnabled {
-			log.Printf("Sending %d spans", len(spans))
-			for _, s := range spans {
-				log.Printf("SPAN:\n%s", s.String())
-			}
-		}
-
-		if t.enabled && t.transport != nil && 0 < len(spans) {
-			err := t.transport.Send(spans)
-			if err != nil {
-				log.Printf("[WORKER] flush failed, lost %s spans", err)
-			}
+		err := t.Flush()
+		if err != nil {
+			log.Printf("[WORKER] flush failed, lost spans", err)
 		}
 	}
 }
