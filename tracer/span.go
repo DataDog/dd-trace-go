@@ -162,7 +162,15 @@ func (s *Span) String() string {
 		fmt.Sprintf("Duration: %s", time.Duration(s.Duration)),
 		fmt.Sprintf("Error: %d", s.Error),
 		fmt.Sprintf("Type: %s", s.Type),
+		"Tags:",
 	}
+
+	s.mu.Lock()
+	for key, val := range s.Meta {
+		lines = append(lines, fmt.Sprintf("\t%s:%s", key, val))
+
+	}
+	s.mu.Unlock()
 
 	return strings.Join(lines, "\n")
 }
