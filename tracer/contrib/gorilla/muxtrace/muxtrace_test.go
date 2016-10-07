@@ -66,7 +66,8 @@ func TestMuxTracer500(t *testing.T) {
 func handler200(t *testing.T) http.HandlerFunc {
 	assert := assert.New(t)
 	return func(w http.ResponseWriter, r *http.Request) {
-		assert.Nil(w.Write([]byte("200!")))
+		_, err := w.Write([]byte("200!"))
+		assert.Nil(err)
 		span := tracer.SpanFromContextDefault(r.Context())
 		assert.Equal(span.Service, "my-service")
 		assert.Equal(span.Duration, int64(0))
