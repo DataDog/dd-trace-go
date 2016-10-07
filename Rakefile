@@ -52,6 +52,11 @@ end
 
 namespace :lint do
 
+  # a few options for the slow cmds
+  #  - gotype is a bit of a pain to run
+  #  - dupl had only false positives
+  slow_opts = "--deadline 60s --disable dupl --disable gotype"
+
   task :install do
     sh "go get -u github.com/alecthomas/gometalinter"
     sh "gometalinter --install"
@@ -66,12 +71,12 @@ namespace :lint do
 
   desc "Lint everything"
   task :errors => :install do
-    sh "gometalinter --errors --deadline=20s --disable=gotype ./..."
+    sh "gometalinter --errors #{slow_opts} ./..."
   end
 
   desc "Lint everything with warnings"
   task :warn => :install do
-    sh "gometalinter --deadline=20s --disable=gotype ./..."
+    sh "gometalinter #{slow_opts} ./..."
   end
 
 end
