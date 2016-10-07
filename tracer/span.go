@@ -66,6 +66,8 @@ func (s *Span) SetMeta(key, value string) {
 	s.mu.Unlock()
 }
 
+// GetMeta will return the value for the given tag or the empty string if it
+// doesn't exist.
 func (s *Span) GetMeta(key string) string {
 	if s == nil {
 		return ""

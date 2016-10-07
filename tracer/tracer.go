@@ -30,6 +30,7 @@ func NewTracer() *Tracer {
 	return NewTracerTransport(NewHTTPTransport(defaultDeliveryURL))
 }
 
+// NewTracerTransport create a new Tracer with the given transport.
 func NewTracerTransport(transport Transport) *Tracer {
 	t := &Tracer{
 		enabled:             true,
@@ -111,6 +112,7 @@ func (t *Tracer) record(span *Span) {
 	}
 }
 
+// Flush will push any currently buffered traces to the server.
 func (t *Tracer) Flush() error {
 	spans := t.buffer.Pop()
 
