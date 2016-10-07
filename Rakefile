@@ -71,7 +71,7 @@ namespace :lint do
 
   desc "Lint everything with warnings"
   task :warn => :install do
-    sh "gometalinter deadline=20s --disable=gotype ./..."
+    sh "gometalinter --deadline=20s --disable=gotype ./..."
   end
 
 end
