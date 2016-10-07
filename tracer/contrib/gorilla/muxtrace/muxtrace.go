@@ -1,7 +1,6 @@
 package muxtrace
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 
@@ -9,37 +8,43 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// MuxTracer is used to trace requests in a mux server.
 type MuxTracer struct {
 	tracer  *tracer.Tracer
 	service string
 }
 
+// NewMuxTracer creates a MuxTracer for the given service and tracer.
 func NewMuxTracer(service string, t *tracer.Tracer) *MuxTracer {
-	log.Println("new mux tracer") // KILLME
 	return &MuxTracer{
 		tracer:  t,
 		service: service,
 	}
 }
 
+// TraceHandlerFunc will return a HandlerFunc that will wrap tracing around the
+// given handler func.
 func (m *MuxTracer) TraceHandlerFunc(handler http.HandlerFunc) http.HandlerFunc {
 
-	return func(w http.ResponseWriter, req *http.Request) {
+	return func(writer http.ResponseWriter, req *http.Request) {
 
 		// trace the request
-		span := m.span(req)
+		treq, span := m.trace(req)
 		defer span.Finish()
-		writer := newTracedResponseWriter(span, w)
+		// trace the response
+		twriter := newTracedResponseWriter(span, writer)
 
 		// run the request
-		handler(writer, req)
+		handler(twriter, treq)
 	}
 }
 
 // span will create a span for the given request.
-func (m *MuxTracer) span(req *http.Request) *tracer.Span {
+func (m *MuxTracer) trace(req *http.Request) (*http.Request, *tracer.Span) {
 	resource := getResource(req)
 	span := m.tracer.NewSpan("mux.request", m.service, resource)
+	treq := setOnRequestContext(req, span) // patch the span o
+	return treq, span
 }
 
 // getResource returns a resource name for the given http requests. Must be

@@ -14,7 +14,7 @@ func TestMuxTracer200(t *testing.T) {
 	assert := assert.New(t)
 
 	// setup
-	tracer, transport, router := setup()
+	tracer, transport, router := setup(t)
 
 	// SEnd and verify a 200 request
 	req := httptest.NewRequest("GET", "/200", nil)
@@ -39,7 +39,7 @@ func TestMuxTracer500(t *testing.T) {
 	assert := assert.New(t)
 
 	// setup
-	tracer, transport, router := setup()
+	tracer, transport, router := setup(t)
 
 	// SEnd and verify a 200 request
 	req := httptest.NewRequest("GET", "/500", nil)
@@ -62,20 +62,33 @@ func TestMuxTracer500(t *testing.T) {
 
 // test handlers
 
-func handler200(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("200!"))
+func handler200(t *testing.T) http.HandlerFunc {
+	assert := assert.New(t)
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("200!"))
+		span := tracer.SpanFromContextDefault(r.Context())
+		assert.Equal(span.Service, "my-service")
+		assert.Equal(span.Duration, int64(0))
+	}
 }
 
-func handler500(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "500!", http.StatusInternalServerError)
+func handler500(t *testing.T) http.HandlerFunc {
+	assert := assert.New(t)
+	return func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "500!", http.StatusInternalServerError)
+		span := tracer.SpanFromContextDefault(r.Context())
+		assert.Equal(span.Service, "my-service")
+		assert.Equal(span.Duration, int64(0))
+	}
 }
 
-func setup() (*tracer.Tracer, *dummyTransport, *mux.Router) {
+func setup(t *testing.T) (*tracer.Tracer, *dummyTransport, *mux.Router) {
 	tracer, transport := getTestTracer()
 	mt := NewMuxTracer("my-service", tracer)
 	r := mux.NewRouter()
-	r.HandleFunc("/200", mt.TraceHandlerFunc(handler200))
-	r.HandleFunc("/500", mt.TraceHandlerFunc(handler500))
+
+	r.HandleFunc("/200", mt.TraceHandlerFunc(handler200(t)))
+	r.HandleFunc("/500", mt.TraceHandlerFunc(handler500(t)))
 	return tracer, transport, r
 }
 
