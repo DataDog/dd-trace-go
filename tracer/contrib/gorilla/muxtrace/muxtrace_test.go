@@ -24,7 +24,7 @@ func TestMuxTracer200(t *testing.T) {
 	assert.Equal(writer.Body.String(), "200!")
 
 	// ensure properly traced
-	tracer.Flush()
+	assert.Nil(tracer.Flush())
 	spans := transport.spans
 	assert.Len(spans, 1)
 
@@ -50,7 +50,7 @@ func TestMuxTracer500(t *testing.T) {
 	assert.Equal(writer.Body.String(), "500!\n")
 
 	// ensure properly traced
-	tracer.Flush()
+	assert.Nil(tracer.Flush())
 	spans := transport.spans
 	assert.Len(spans, 1)
 
@@ -66,7 +66,7 @@ func TestMuxTracer500(t *testing.T) {
 func handler200(t *testing.T) http.HandlerFunc {
 	assert := assert.New(t)
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("200!"))
+		assert.Nil(w.Write([]byte("200!")))
 		span := tracer.SpanFromContextDefault(r.Context())
 		assert.Equal(span.Service, "my-service")
 		assert.Equal(span.Duration, int64(0))

@@ -7,7 +7,6 @@ import (
 
 const (
 	defaultDeliveryURL = "http://localhost:7777/spans"
-	tracerWaitTimeout  = 5 * time.Second
 	flushInterval      = 2 * time.Second
 )
 
@@ -137,7 +136,7 @@ func (t *Tracer) worker() {
 	for range time.Tick(flushInterval) {
 		err := t.Flush()
 		if err != nil {
-			log.Printf("[WORKER] flush failed, lost spans", err)
+			log.Printf("[WORKER] flush failed, lost spans: %s", err)
 		}
 	}
 }

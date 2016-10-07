@@ -8,7 +8,7 @@ dependencies:
     # install requirements
     - rm -Rf /home/ubuntu/.go_workspace/src/*
     - go get github.com/Masterminds/glide
-    - go get -u github.com/golang/lint/golint
+    - rake lint:install
 
   override:
     # put the package in the right $GOPATH
@@ -18,7 +18,7 @@ dependencies:
 
 test:
   override:
-    - cd "$IMPORT_PATH" && rake test
+    - cd "$IMPORT_PATH" && rake ci
 
   post:
     # add the coverage HTML report as CircleCI artifact

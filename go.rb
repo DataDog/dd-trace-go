@@ -1,5 +1,6 @@
 def go_build(package, opts={})
   default_cmd = "go build -a"
+  B
   if ENV["INCREMENTAL_BUILD"] then
     default_cmd = "go build -i"
   end
@@ -30,29 +31,6 @@ def go_build(package, opts={})
 
   cmd = opts[:cmd]
   sh "#{cmd} -ldflags \"#{ldflags}\" #{package}"
-end
-
-def go_fmt(path)
-  out = `go fmt #{path}`
-  errors = out.split("\n")
-  if errors.length > 0
-    puts out
-    fail
-  end
-end
-
-def go_lint(path)
-  out = `golint #{path}/*.go`
-  errors = out.split("\n")
-  puts "#{errors.length} linting issues found"
-  if errors.length > 0
-    puts out
-    fail
-  end
-end
-
-def go_vet(path)
-  sh "go vet #{path}"
 end
 
 def go_test_race_condition(path)

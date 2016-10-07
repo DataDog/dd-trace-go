@@ -11,26 +11,6 @@ CLOBBER.include("*.cov")
 
 task default: %w[test build]
 
-desc "Run go fmt on #{TARGETS}"
-task :fmt do
-  TARGETS.each do |t|
-    go_fmt(t)
-  end
-end
-
-desc "Run golint on #{TARGETS}"
-task :lint do
-  TARGETS.each do |t|
-    go_lint(t)
-  end
-end
-
-desc "Run go vet on #{TARGETS}"
-task :vet do
-  TARGETS.each do |t|
-    go_vet(t)
-  end
-end
 
 desc "Run benchmarks on #{TARGETS} and output profiles"
 task :benchmark do
@@ -45,7 +25,7 @@ task :pprof do
 end
 
 desc "Run testsuite"
-task :test => %w[fmt lint vet] do
+task :ci => :'lint:errors' do
   PROFILE = "profile.cov"  # collect global coverage data in this file
   `echo "mode: count" > #{PROFILE}`
 
@@ -69,3 +49,33 @@ task :build do
     go_build(t)
   end
 end
+
+namespace :lint do
+
+  task :install do
+    sh "go get -u github.com/alecthomas/gometalinter"
+    sh "gometalinter --install"
+  end
+
+  desc "Lint the fast things"
+  task :fast do
+    enabled = %w{govet errcheck gofmt}
+    enabled_opts = enabled.map{|e| "--enable=#{e}"}.join(" ")
+    sh "gometalinter --disable-all #{enabled_opts} --deadline=5s ./..."
+  end
+
+  desc "Lint everything"
+  task :errors => :install do
+    sh "gometalinter --errors --deadline=20s --disable=gotype ./..."
+  end
+
+  desc "Lint everything with warnings"
+  task :warn => :install do
+    sh "gometalinter deadline=20s --disable=gotype ./..."
+  end
+
+end
+
+task :lint => :'lint:fast'
+
+

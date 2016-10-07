@@ -66,6 +66,8 @@ func (t *HTTPTransport) Send(spans []*Span) error {
 		return err
 	}
 
-	response.Body.Close()
+	// ignore any errors here
+	_ = response.Body.Close()
+
 	return err
 }
