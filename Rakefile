@@ -24,23 +24,32 @@ task :pprof do
   go_pprof_text()
 end
 
-desc "Run testsuite"
-task :ci => :'lint:errors' do
-  PROFILE = "profile.cov"  # collect global coverage data in this file
-  `echo "mode: count" > #{PROFILE}`
+
+desc "test"
+task :test do
+  sh "go test ./..."
+end
+
+desc "test race"
+task :race do
+  sh "go test -race ./..."
+end
+
+desc "Run coverage report"
+task :cover do
+  profile = "profile.cov"  # collect global coverage data in this file
+  `echo "mode: count" > #{profile}`
 
   TARGETS.each do |pkg_folder|
     next if Dir.glob(File.join(pkg_folder, "*.go")).length == 0  # folder is a package if contains go modules
     profile_tmp = "#{pkg_folder}/profile.tmp"  # temp file to collect coverage data
     go_test(profile_tmp, pkg_folder)
-    go_test_race_condition(pkg_folder)
     if File.file?(profile_tmp)
-      `cat #{profile_tmp} | tail -n +2 >> #{PROFILE}`
+      `cat #{profile_tmp} | tail -n +2 >> #{profile}`
       File.delete(profile_tmp)
     end
   end
-
-  sh("go tool cover -func #{PROFILE}")
+  sh("go tool cover -func #{profile}")
 end
 
 desc "Build dd-trace-go"
@@ -49,6 +58,8 @@ task :build do
     go_build(t)
   end
 end
+
+task :ci => [:'lint:errors', :cover, :test, :race]
 
 namespace :lint do
 
@@ -82,5 +93,4 @@ namespace :lint do
 end
 
 task :lint => :'lint:fast'
-
 
