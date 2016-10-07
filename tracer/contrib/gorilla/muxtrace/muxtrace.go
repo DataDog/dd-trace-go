@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"github.com/gorilla/mux"
 )
 
@@ -42,8 +43,13 @@ func (m *MuxTracer) TraceHandlerFunc(handler http.HandlerFunc) http.HandlerFunc 
 // span will create a span for the given request.
 func (m *MuxTracer) trace(req *http.Request) (*http.Request, *tracer.Span) {
 	resource := getResource(req)
+
 	span := m.tracer.NewSpan("mux.request", m.service, resource)
-	treq := setOnRequestContext(req, span) // patch the span o
+	span.Type = ext.HTTPType
+	span.SetMeta(ext.HTTPMethod, req.Method)
+
+	// patch the span onto the request context.
+	treq := setOnRequestContext(req, span)
 	return treq, span
 }
 
@@ -86,5 +92,5 @@ func (t *tracedResponseWriter) Write(b []byte) (int, error) {
 func (t *tracedResponseWriter) WriteHeader(status int) {
 	t.w.WriteHeader(status)
 	t.status = status
-	t.span.SetMeta("http.status_code", strconv.Itoa(status))
+	t.span.SetMeta(ext.HTTPCode, strconv.Itoa(status))
 }

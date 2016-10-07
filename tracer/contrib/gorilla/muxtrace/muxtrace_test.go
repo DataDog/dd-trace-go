@@ -33,6 +33,7 @@ func TestMuxTracer200(t *testing.T) {
 	assert.Equal(s.Service, "my-service")
 	assert.Equal(s.Resource, "GET /200")
 	assert.Equal(s.GetMeta("http.status_code"), "200")
+	assert.Equal(s.GetMeta("http.method"), "GET")
 }
 
 func TestMuxTracer500(t *testing.T) {
