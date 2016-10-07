@@ -22,17 +22,24 @@ func NewMuxTracer(service string, t *tracer.Tracer) *MuxTracer {
 	}
 }
 
-func (m *MuxTracer) TraceHandlerFunc(f http.HandlerFunc) http.HandlerFunc {
+func (m *MuxTracer) TraceHandlerFunc(handler http.HandlerFunc) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, req *http.Request) {
-		resource := getResource(req)
-		span := m.tracer.NewSpan("mux.request", m.service, resource)
 
-		trw := &tracedResponseWriter{span: span, w: w}
-		f(trw, req)
-		span.Finish()
+		// trace the request
+		span := m.span(req)
+		defer span.Finish()
+		writer := newTracedResponseWriter(span, w)
+
+		// run the request
+		handler(writer, req)
 	}
+}
 
+// span will create a span for the given request.
+func (m *MuxTracer) span(req *http.Request) *tracer.Span {
+	resource := getResource(req)
+	span := m.tracer.NewSpan("mux.request", m.service, resource)
 }
 
 // getResource returns a resource name for the given http requests. Must be
@@ -52,6 +59,12 @@ type tracedResponseWriter struct {
 	span   *tracer.Span
 	w      http.ResponseWriter
 	status int
+}
+
+func newTracedResponseWriter(span *tracer.Span, w http.ResponseWriter) *tracedResponseWriter {
+	return &tracedResponseWriter{
+		span: span,
+		w:    w}
 }
 
 func (t *tracedResponseWriter) Header() http.Header {
