@@ -23,9 +23,9 @@ func NewMuxTracer(service string, t *tracer.Tracer) *MuxTracer {
 	}
 }
 
-// TraceHandlerFunc will return a HandlerFunc that will wrap tracing around the
+// TraceHandleFunc will return a HandlerFunc that will wrap tracing around the
 // given handler func.
-func (m *MuxTracer) TraceHandlerFunc(handler http.HandlerFunc) http.HandlerFunc {
+func (m *MuxTracer) TraceHandleFunc(handler http.HandlerFunc) http.HandlerFunc {
 
 	return func(writer http.ResponseWriter, req *http.Request) {
 
@@ -38,6 +38,11 @@ func (m *MuxTracer) TraceHandlerFunc(handler http.HandlerFunc) http.HandlerFunc 
 		// run the request
 		handler(twriter, treq)
 	}
+}
+
+// HandleFunc will add a traced version of the given handler to the router.
+func (m *MuxTracer) HandleFunc(router *mux.Router, pattern string, handler http.HandlerFunc) *mux.Route {
+	return router.HandleFunc(pattern, m.TraceHandleFunc(handler))
 }
 
 // span will create a span for the given request.

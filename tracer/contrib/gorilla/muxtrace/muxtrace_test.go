@@ -89,8 +89,12 @@ func setup(t *testing.T) (*tracer.Tracer, *dummyTransport, *mux.Router) {
 	mt := NewMuxTracer("my-service", tracer)
 	r := mux.NewRouter()
 
-	r.HandleFunc("/200", mt.TraceHandlerFunc(handler200(t)))
-	r.HandleFunc("/500", mt.TraceHandlerFunc(handler500(t)))
+	// Ensure we can use HandleFunc and it returns a route
+	mt.HandleFunc(r, "/200", handler200(t)).Methods("Get")
+
+	// And we can allso handle a bare func
+	r.HandleFunc("/500", mt.TraceHandleFunc(handler500(t)))
+
 	return tracer, transport, r
 }
 
