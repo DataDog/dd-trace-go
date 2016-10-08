@@ -9,9 +9,6 @@ TARGETS = %w[
 
 CLOBBER.include("*.cov")
 
-task default: %w[test build]
-
-
 desc "Run benchmarks on #{TARGETS} and output profiles"
 task :benchmark do
   TARGETS.each do |t|
@@ -23,7 +20,6 @@ desc "Run pprof available profiles"
 task :pprof do
   go_pprof_text()
 end
-
 
 desc "test"
 task :test do
@@ -94,3 +90,4 @@ end
 
 task :lint => :'lint:fast'
 
+task :default => [:test, :lint]

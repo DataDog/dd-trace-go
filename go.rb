@@ -1,6 +1,5 @@
 def go_build(package, opts={})
   default_cmd = "go build -a"
-  B
   if ENV["INCREMENTAL_BUILD"] then
     default_cmd = "go build -i"
   end
