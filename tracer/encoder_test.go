@@ -16,7 +16,7 @@ func TestJSONEncoder(t *testing.T) {
 	spans = append(spans, span)
 
 	// the encoder must return a valid JSON byte array that ends with a \n
-	want := `[{"name":"pylons.request","service":"pylons","resource":"/","type":"","start":0,"duration":0,"error":0,"span_id":0,"trace_id":0,"parent_id":0}]`
+	want := `[{"name":"pylons.request","service":"pylons","resource":"/","type":"","start":0,"duration":0,"span_id":0,"trace_id":0,"parent_id":0,"error":0}]`
 	want += "\n"
 
 	encoder := newJSONEncoder()
@@ -44,7 +44,7 @@ func TestJSONRead(t *testing.T) {
 	_, err := encoder.Read(buff)
 
 	// it should match the encoding payload
-	want := `[{"name":"pylons.request","service":"pylons","resource":"/","type":"","start":0,"duration":0,"error":0,"span_id":0,"trace_id":0,"parent_id":0}]`
+	want := `[{"name":"pylons.request","service":"pylons","resource":"/","type":"","start":0,"duration":0,"span_id":0,"trace_id":0,"parent_id":0,"error":0}]`
 	want += "\n"
 	assert.Nil(err)
 	assert.Equal(string(buff), want)

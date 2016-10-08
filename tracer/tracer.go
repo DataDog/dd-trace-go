@@ -12,13 +12,13 @@ const (
 
 // Tracer is the common struct we use to collect, buffer
 type Tracer struct {
-	enabled   bool      // defines if the Tracer is enabled or not
 	transport Transport // is the transport mechanism used to delivery spans to the agent
 	sampler   sampler   // is the trace sampler to only keep some samples
 
 	buffer *spansBuffer
 
 	DebugLoggingEnabled bool
+	enabled             bool // defines if the Tracer is enabled or not
 }
 
 // NewTracer returns a Tracer instance that owns a span delivery system. Each Tracer starts

@@ -22,14 +22,14 @@ type Span struct {
 	Type     string             `json:"type"`              // protocol associated with the span
 	Start    int64              `json:"start"`             // span start time expressed in nanoseconds since epoch
 	Duration int64              `json:"duration"`          // duration of the span expressed in nanoseconds
-	Error    int32              `json:"error"`             // error status of the span; 0 means no errors
 	Meta     map[string]string  `json:"meta,omitempty"`    // arbitrary map of metadata
 	Metrics  map[string]float64 `json:"metrics,omitempty"` // arbitrary map of numeric metrics
 	SpanID   uint64             `json:"span_id"`           // identifier of this span
 	TraceID  uint64             `json:"trace_id"`          // identifier of the root span
 	ParentID uint64             `json:"parent_id"`         // identifier of the span's direct parent
 
-	Sampled bool `json:"-"` // if this span is sampled (and should be kept/recorded) or not
+	Error   int32 `json:"error"` // error status of the span; 0 means no errors
+	Sampled bool  `json:"-"`     // if this span is sampled (and should be kept/recorded) or not
 
 	tracer *Tracer // the tracer that generated this span
 
