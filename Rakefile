@@ -56,7 +56,7 @@ task :build do
 end
 
 task :get do
-  sh "go get ./..."
+  sh "go get -t ./..."
 end
 
 task :ci => [:get, :'lint:errors', :cover, :test, :race]
@@ -71,7 +71,6 @@ namespace :lint do
   task :install do
     sh "go get -u github.com/alecthomas/gometalinter"
     sh "gometalinter --install"
-    sh "go get github.com/stretchr/testify/assert"
   end
 
   desc "Lint the fast things"
