@@ -71,6 +71,7 @@ namespace :lint do
   task :install do
     sh "go get -u github.com/alecthomas/gometalinter"
     sh "gometalinter --install"
+    sh "go get github.com/stretchr/testify/assert"
   end
 
   desc "Lint the fast things"
