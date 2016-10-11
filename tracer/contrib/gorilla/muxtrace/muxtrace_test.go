@@ -10,13 +10,39 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestMuxTracerSubrequest(t *testing.T) {
+	assert := assert.New(t)
+
+	// setup
+	tracer, transport, router := setup(t)
+
+	// Send and verify a 200 request
+	req := httptest.NewRequest("GET", "/sub/child1", nil)
+	writer := httptest.NewRecorder()
+	router.ServeHTTP(writer, req)
+	assert.Equal(writer.Code, 200)
+	assert.Equal(writer.Body.String(), "200!")
+
+	// ensure properly traced
+	assert.Nil(tracer.Flush())
+	spans := transport.spans
+	assert.Len(spans, 1)
+
+	s := spans[0]
+	assert.Equal(s.Name, "mux.request")
+	assert.Equal(s.Service, "my-service")
+	assert.Equal(s.Resource, "GET /sub/child1")
+	assert.Equal(s.GetMeta("http.status_code"), "200")
+	assert.Equal(s.GetMeta("http.method"), "GET")
+}
+
 func TestMuxTracer200(t *testing.T) {
 	assert := assert.New(t)
 
 	// setup
 	tracer, transport, router := setup(t)
 
-	// SEnd and verify a 200 request
+	// Send and verify a 200 request
 	req := httptest.NewRequest("GET", "/200", nil)
 	writer := httptest.NewRecorder()
 	router.ServeHTTP(writer, req)
@@ -89,11 +115,18 @@ func setup(t *testing.T) (*tracer.Tracer, *dummyTransport, *mux.Router) {
 	mt := NewMuxTracer("my-service", tracer)
 	r := mux.NewRouter()
 
-	// Ensure we can use HandleFunc and it returns a route
-	mt.HandleFunc(r, "/200", handler200(t)).Methods("Get")
+	h200 := handler200(t)
+	h500 := handler500(t)
 
+	// Ensure we can use HandleFunc and it returns a route
+	mt.HandleFunc(r, "/200", h200).Methods("Get")
 	// And we can allso handle a bare func
-	r.HandleFunc("/500", mt.TraceHandleFunc(handler500(t)))
+	r.HandleFunc("/500", mt.TraceHandleFunc(h500))
+
+	// do a subrouter
+	s := r.PathPrefix("/sub").Subrouter()
+	s.HandleFunc("/child1", mt.TraceHandleFunc(h200))
+	s.HandleFunc("/chidl2", mt.TraceHandleFunc(h200))
 
 	return tracer, transport, r
 }

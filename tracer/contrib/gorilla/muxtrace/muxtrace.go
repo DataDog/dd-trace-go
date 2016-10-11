@@ -30,13 +30,14 @@ func (m *MuxTracer) TraceHandleFunc(handler http.HandlerFunc) http.HandlerFunc {
 	return func(writer http.ResponseWriter, req *http.Request) {
 
 		// trace the request
-		treq, span := m.trace(req)
+		tracedRequest, span := m.trace(req)
 		defer span.Finish()
+
 		// trace the response
-		twriter := newTracedResponseWriter(span, writer)
+		tracedWriter := newTracedResponseWriter(span, writer)
 
 		// run the request
-		handler(twriter, treq)
+		handler(tracedWriter, tracedRequest)
 	}
 }
 
