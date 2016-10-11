@@ -10,7 +10,10 @@ const (
 	flushInterval      = 2 * time.Second
 )
 
-// Tracer is the common struct we use to collect, buffer
+// Tracer creates, buffers and submits Spans which are used to time blocks of
+// compuration.
+//
+// When a tracer is disabled, it will not submit spans for processing.
 type Tracer struct {
 	transport Transport // is the transport mechanism used to delivery spans to the agent
 	sampler   sampler   // is the trace sampler to only keep some samples
@@ -45,17 +48,19 @@ func NewTracerTransport(transport Transport) *Tracer {
 	return t
 }
 
-// Enable activates the tracer so that Spans are appended in the tracer buffer.
-// By default, a tracer is always enabled after the creation.
+// Enable will enable the tracer.
 func (t *Tracer) Enable() {
 	t.enabled = true
 }
 
-// Disable deactivates the tracer so that Spans are not appended in the tracer buffer.
-// This means that *Span can be used as usual but the span.Finish() call will not
-// put the span in a buffer.
+// Disable disables the tracer.
 func (t *Tracer) Disable() {
 	t.enabled = false
+}
+
+// Enabled returns whether or not a tracer is enabled.
+func (t *Tracer) Enabled() bool {
+	return t.enabled
 }
 
 // SetSampleRate sets a sample rate for all the future traces.

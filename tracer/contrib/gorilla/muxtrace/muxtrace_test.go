@@ -1,7 +1,6 @@
 package muxtrace
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,6 +9,34 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestMuxTracerDisabled(t *testing.T) {
+	assert := assert.New(t)
+
+	testTracer, testTransport, muxTracer := getTestTracer("disabled-service")
+	router := mux.NewRouter()
+	muxTracer.HandleFunc(router, "/disabled", func(w http.ResponseWriter, r *http.Request) {
+		_, err := w.Write([]byte("disabled!"))
+		assert.Nil(err)
+		// Ensure we have no tracing context.
+		span, ok := tracer.SpanFromContext(r.Context())
+		assert.Nil(span)
+		assert.False(ok)
+	})
+	testTracer.Disable() // the key line in this test.
+
+	// make the request
+	req := httptest.NewRequest("GET", "/disabled", nil)
+	writer := httptest.NewRecorder()
+	router.ServeHTTP(writer, req)
+	assert.Equal(writer.Code, 200)
+	assert.Equal(writer.Body.String(), "disabled!")
+
+	// assert nothing was traced.
+	assert.Nil(testTracer.Flush())
+	spans := testTransport.spans
+	assert.Len(spans, 0)
+}
 
 func TestMuxTracerSubrequest(t *testing.T) {
 	assert := assert.New(t)
@@ -30,7 +57,6 @@ func TestMuxTracerSubrequest(t *testing.T) {
 		assert.Len(spans, 1)
 
 		s := spans[0]
-		fmt.Printf(s.String())
 		assert.Equal(s.Name, "mux.request")
 		assert.Equal(s.Service, "my-service")
 		assert.Equal(s.Resource, "GET "+url)
@@ -114,8 +140,7 @@ func handler500(t *testing.T) http.HandlerFunc {
 }
 
 func setup(t *testing.T) (*tracer.Tracer, *dummyTransport, *mux.Router) {
-	tracer, transport := getTestTracer()
-	mt := NewMuxTracer("my-service", tracer)
+	tracer, transport, mt := getTestTracer("my-service")
 	r := mux.NewRouter()
 
 	h200 := handler200(t)
@@ -135,10 +160,11 @@ func setup(t *testing.T) (*tracer.Tracer, *dummyTransport, *mux.Router) {
 }
 
 // getTestTracer returns a tracer which will buffer but not submit spans.
-func getTestTracer() (*tracer.Tracer, *dummyTransport) {
-	trans := &dummyTransport{}
-	trac := tracer.NewTracerTransport(trans)
-	return trac, trans
+func getTestTracer(service string) (*tracer.Tracer, *dummyTransport, *MuxTracer) {
+	testTransport := &dummyTransport{}
+	testTracer := tracer.NewTracerTransport(testTransport)
+	testMuxTracer := NewMuxTracer(service, testTracer)
+	return testTracer, testTransport, testMuxTracer
 }
 
 // dummyTransport is a transport that just buffers spans.
@@ -149,4 +175,10 @@ type dummyTransport struct {
 func (d *dummyTransport) Send(s []*tracer.Span) error {
 	d.spans = append(d.spans, s...)
 	return nil
+}
+
+func (d *dummyTransport) Spans() []*tracer.Span {
+	s := d.spans
+	d.spans = nil
+	return s
 }

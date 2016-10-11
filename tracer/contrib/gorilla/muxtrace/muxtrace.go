@@ -29,6 +29,12 @@ func (m *MuxTracer) TraceHandleFunc(handler http.HandlerFunc) http.HandlerFunc {
 
 	return func(writer http.ResponseWriter, req *http.Request) {
 
+		// bail our if tracing isn't enabled.
+		if !m.tracer.Enabled() {
+			handler(writer, req)
+			return
+		}
+
 		// trace the request
 		tracedRequest, span := m.trace(req)
 		defer span.Finish()
