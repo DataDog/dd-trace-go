@@ -1,17 +1,16 @@
 require 'rake/clean'
 require './go'
 
-ORG_PATH="github.com/DataDog"
-REPO_PATH="#{ORG_PATH}/dd-trace-go"
-TARGETS = %w[
-  ./tracer
-]
 
 CLOBBER.include("*.cov")
 
-desc "Run benchmarks on #{TARGETS} and output profiles"
+def packages
+   return `go list ./...`.split("\n")
+end
+
+desc "Run benchmarks"
 task :benchmark do
-  TARGETS.each do |t|
+  packages.each do |t|
     go_benchmark(t)
   end
 end
@@ -33,26 +32,19 @@ end
 
 desc "Run coverage report"
 task :cover do
-  profile = "profile.cov"  # collect global coverage data in this file
-  `echo "mode: count" > #{profile}`
+  profile = "/tmp/dd-trace-go-profile.cov"  # collect global coverage data in this file
 
-  TARGETS.each do |pkg_folder|
-    next if Dir.glob(File.join(pkg_folder, "*.go")).length == 0  # folder is a package if contains go modules
-    profile_tmp = "#{pkg_folder}/profile.tmp"  # temp file to collect coverage data
+  `echo "mode: count" > #{profile}`
+  packages().each do |pkg_folder|
+    profile_tmp = "/tmp/profile.tmp"  # temp file to collect coverage data
     go_test(profile_tmp, pkg_folder)
     if File.file?(profile_tmp)
       `cat #{profile_tmp} | tail -n +2 >> #{profile}`
       File.delete(profile_tmp)
     end
   end
-  sh("go tool cover -func #{profile}")
-end
 
-desc "Build dd-trace-go"
-task :build do
-  TARGETS.each do |t|
-    go_build(t)
-  end
+  sh("go tool cover -func #{profile}")
 end
 
 task :get do
@@ -66,8 +58,9 @@ namespace :lint do
   # a few options for the slow cmds
   #  - gotype is a bit of a pain to run
   #  - dupl had only false positives
-  slow_opts = "--deadline 60s --disable dupl --disable gotype"
+  disable = "--disable dupl --disable gotype"
 
+  desc "install metalinters"
   task :install do
     sh "go get -u github.com/alecthomas/gometalinter"
     sh "gometalinter --install"
@@ -75,19 +68,17 @@ namespace :lint do
 
   desc "Lint the fast things"
   task :fast do
-    enabled = %w{govet errcheck gofmt}
-    enabled_opts = enabled.map{|e| "--enable=#{e}"}.join(" ")
-    sh "gometalinter --disable-all #{enabled_opts} --deadline=5s ./..."
+    sh "gometalinter --fast #{disable} --deadline=5s ./..."
   end
 
   desc "Lint everything"
-  task :errors => :install do
-    sh "gometalinter --errors #{slow_opts} ./..."
+  task :errors do
+    sh "gometalinter --deadline 60s --errors #{disable} ./..."
   end
 
   desc "Lint everything with warnings"
-  task :warn => :install do
-    sh "gometalinter #{slow_opts} ./..."
+  task :warn do
+    sh "gometalinter --deadline 60s #{disable} ./..."
   end
 
 end
