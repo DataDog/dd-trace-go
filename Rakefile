@@ -32,7 +32,7 @@ end
 
 desc "Run coverage report"
 task :cover do
-  profile = "/tmp/dd-trace-go-profile.cov"  # collect global coverage data in this file
+  profile = "profile.cov"  # collect global coverage data in this file
 
   `echo "mode: count" > #{profile}`
   packages().each do |pkg_folder|
