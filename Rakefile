@@ -55,7 +55,11 @@ task :build do
   end
 end
 
-task :ci => [:'lint:errors', :cover, :test, :race]
+task :get do
+  sh "go get ./..."
+end
+
+task :ci => [:get, :'lint:errors', :cover, :test, :race]
 
 namespace :lint do
 

@@ -13,9 +13,6 @@ dependencies:
   pre:
     # install requirements
     - rm -Rf /home/ubuntu/.go_workspace/src/*
-    - go get github.com/Masterminds/glide
-    # FIXME[matt] remove in go 1.8 https://github.com/golang/go/issues/14450
-    - go get golang.org/x/text/encoding
     - rake lint:install
 
   override:
