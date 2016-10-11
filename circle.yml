@@ -19,7 +19,6 @@ dependencies:
     # put the package in the right $GOPATH
     - mkdir -p "$IMPORT_PATH"
     - rsync -azr --delete ./ "$IMPORT_PATH"
-    - cd "$IMPORT_PATH" && glide up
 
 test:
   override:
