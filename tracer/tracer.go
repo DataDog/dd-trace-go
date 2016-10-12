@@ -109,7 +109,7 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 // or doesn't contain a span, but it will not have a service specified.
 func (t *Tracer) NewChildSpanFromContext(name string, ctx context.Context) *Span {
 	span, _ := SpanFromContext(ctx) // tolerate nil spans
-	return NewChildSpan(name, span)
+	return t.NewChildSpan(name, span)
 }
 
 // record queues the finished span for further processing.
@@ -149,7 +149,8 @@ func (t *Tracer) worker() {
 	}
 }
 
-// DefaultTracer is a default *Tracer instance
+// DefaultTracer is a global Tracer instance that is running by default. You
+// can use it with the shorthand functions.
 var DefaultTracer = NewTracer()
 
 // NewSpan is an helper function that is used to create a RootSpan, through
@@ -164,6 +165,12 @@ func NewSpan(name, service, resource string) *Span {
 // you can create a new Tracer through the NewTracer function.
 func NewChildSpan(name string, parent *Span) *Span {
 	return DefaultTracer.NewChildSpan(name, parent)
+}
+
+// NewChildSpanFromContext will create a child span of the span contained in
+// the given context.
+func NewChildSpanFromContext(name string, ctx context.Context) *Span {
+	return DefaultTracer.NewChildSpanFromContext(name, ctx)
 }
 
 // Enable is an helper function that is used to proxy the Enable() call to the
