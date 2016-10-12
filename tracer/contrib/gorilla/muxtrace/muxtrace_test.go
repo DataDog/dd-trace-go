@@ -23,7 +23,7 @@ func TestMuxTracerDisabled(t *testing.T) {
 		assert.Nil(span)
 		assert.False(ok)
 	})
-	testTracer.Disable() // the key line in this test.
+	testTracer.SetEnabled(false) // the key line in this test.
 
 	// make the request
 	req := httptest.NewRequest("GET", "/disabled", nil)
