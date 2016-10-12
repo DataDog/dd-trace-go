@@ -48,14 +48,9 @@ func NewTracerTransport(transport Transport) *Tracer {
 	return t
 }
 
-// Enable will enable the tracer.
-func (t *Tracer) Enable() {
-	t.enabled = true
-}
-
-// Disable disables the tracer.
-func (t *Tracer) Disable() {
-	t.enabled = false
+// SetEnabled will enable or disable the tracer.
+func (t *Tracer) SetEnabled(enabled bool) {
+	t.enabled = enabled
 }
 
 // Enabled returns whether or not a tracer is enabled.
@@ -166,11 +161,11 @@ func NewChildSpan(name string, parent *Span) *Span {
 // Enable is an helper function that is used to proxy the Enable() call to the
 // DefaultTracer client.
 func Enable() {
-	DefaultTracer.Enable()
+	DefaultTracer.SetEnabled(true)
 }
 
 // Disable is an helper function that is used to proxy the Disable() call to the
 // DefaultTracer client.
 func Disable() {
-	DefaultTracer.Disable()
+	DefaultTracer.SetEnabled(false)
 }
