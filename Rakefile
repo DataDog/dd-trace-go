@@ -1,40 +1,11 @@
 require 'rake/clean'
-require './go'
-
-ORG_PATH="github.com/DataDog"
-REPO_PATH="#{ORG_PATH}/dd-trace-go"
-TARGETS = %w[
-  ./tracer
-]
 
 CLOBBER.include("*.cov")
 
-task default: %w[test build]
 
-desc "Run go fmt on #{TARGETS}"
-task :fmt do
-  TARGETS.each do |t|
-    go_fmt(t)
-  end
-end
-
-desc "Run golint on #{TARGETS}"
-task :lint do
-  TARGETS.each do |t|
-    go_lint(t)
-  end
-end
-
-desc "Run go vet on #{TARGETS}"
-task :vet do
-  TARGETS.each do |t|
-    go_vet(t)
-  end
-end
-
-desc "Run benchmarks on #{TARGETS} and output profiles"
+desc "Run benchmarks"
 task :benchmark do
-  TARGETS.each do |t|
+  go_packages.each do |t|
     go_benchmark(t)
   end
 end
@@ -44,28 +15,86 @@ task :pprof do
   go_pprof_text()
 end
 
-desc "Run testsuite"
-task :test => %w[fmt lint vet] do
-  PROFILE = "profile.cov"  # collect global coverage data in this file
-  `echo "mode: count" > #{PROFILE}`
+desc "test"
+task :test do
+  sh "go test ./..."
+end
 
-  TARGETS.each do |pkg_folder|
-    next if Dir.glob(File.join(pkg_folder, "*.go")).length == 0  # folder is a package if contains go modules
-    profile_tmp = "#{pkg_folder}/profile.tmp"  # temp file to collect coverage data
+desc "test race"
+task :race do
+  sh "go test -race ./..."
+end
+
+desc "Run coverage report"
+task :cover do
+  profile = "profile.cov"  # collect global coverage data in this file
+  `echo "mode: count" > #{profile}`
+  go_packages().each do |pkg_folder|
+    profile_tmp = "/tmp/profile.tmp"  # temp file to collect coverage data
     go_test(profile_tmp, pkg_folder)
-    go_test_race_condition(pkg_folder)
     if File.file?(profile_tmp)
-      `cat #{profile_tmp} | tail -n +2 >> #{PROFILE}`
+      `cat #{profile_tmp} | tail -n +2 >> #{profile}`
       File.delete(profile_tmp)
     end
   end
 
-  sh("go tool cover -func #{PROFILE}")
+  sh("go tool cover -func #{profile}")
 end
 
-desc "Build dd-trace-go"
-task :build do
-  TARGETS.each do |t|
-    go_build(t)
+task :get do
+  sh "go get -t ./..."
+end
+
+task :ci => [:get, :'lint:errors', :cover, :test, :race]
+
+namespace :lint do
+
+  # a few options for the slow cmds
+  #  - gotype is a bit of a pain to run
+  #  - dupl had only false positives
+  disable = "--disable dupl --disable gotype"
+
+  desc "install metalinters"
+  task :install do
+    sh "go get -u github.com/alecthomas/gometalinter"
+    sh "gometalinter --install"
   end
+
+  desc "Lint the fast things"
+  task :fast do
+    sh "gometalinter --fast #{disable} --deadline=5s ./..."
+  end
+
+  desc "Lint everything"
+  task :errors do
+    sh "gometalinter --deadline 60s --errors #{disable} ./..."
+  end
+
+  desc "Lint everything with warnings"
+  task :warn do
+    sh "gometalinter --deadline 60s #{disable} ./..."
+  end
+
+end
+
+task :lint => :'lint:fast'
+
+task :default => [:test, :lint]
+
+def go_packages
+   return `go list ./...`.split("\n")
+end
+
+def go_test(profile, path)
+  sh "go test -short -covermode=count -coverprofile=#{profile} #{path}"
+end
+
+def go_benchmark(path)
+  sh "go test -run=NONE -bench=. -memprofile=mem.out -cpuprofile=cpu.out -blockprofile=block.out #{path}"
+end
+
+def go_pprof_text()
+  sh "go tool pprof -text -nodecount=10 -cum ./tracer.test cpu.out"
+  sh "go tool pprof -text -nodecount=10 -cum ./tracer.test block.out"
+  sh "go tool pprof -text -nodecount=10 -cum -inuse_space ./tracer.test mem.out"
 end

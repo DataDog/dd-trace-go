@@ -65,7 +65,7 @@ func TestTracerDisabled(t *testing.T) {
 
 	// disable the tracer and be sure that the span is not added
 	tracer := NewTracer()
-	tracer.Disable()
+	tracer.SetEnabled(false)
 	span := tracer.NewSpan("pylons.request", "pylons", "/")
 	span.Finish()
 	assert.Equal(tracer.buffer.Len(), 0)
@@ -76,10 +76,10 @@ func TestTracerEnabledAgain(t *testing.T) {
 
 	// disable the tracer and enable it again
 	tracer := NewTracer()
-	tracer.Disable()
+	tracer.SetEnabled(false)
 	preSpan := tracer.NewSpan("pylons.request", "pylons", "/")
 	preSpan.Finish()
-	tracer.Enable()
+	tracer.SetEnabled(true)
 	postSpan := tracer.NewSpan("pylons.request", "pylons", "/")
 	postSpan.Finish()
 	assert.Equal(tracer.buffer.Len(), 1)

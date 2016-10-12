@@ -1,24 +1,28 @@
 machine:
   environment:
+    GODIST: "go1.7.linux-amd64.tar.gz"
     IMPORT_PATH: "/home/ubuntu/.go_workspace/src/github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
     GO15VENDOREXPERIMENT: "1"
+  post:
+    - mkdir -p download
+    - test -e download/$GODIST || curl -o download/$GODIST https://storage.googleapis.com/golang/$GODIST
+    - sudo rm -rf /usr/local/go
+    - sudo tar -C /usr/local -xzf download/$GODIST
 
 dependencies:
   pre:
     # install requirements
     - rm -Rf /home/ubuntu/.go_workspace/src/*
-    - go get github.com/Masterminds/glide
-    - go get -u github.com/golang/lint/golint
+    - rake lint:install
 
   override:
     # put the package in the right $GOPATH
     - mkdir -p "$IMPORT_PATH"
     - rsync -azr --delete ./ "$IMPORT_PATH"
-    - cd "$IMPORT_PATH" && glide up
 
 test:
   override:
-    - cd "$IMPORT_PATH" && rake test
+    - cd "$IMPORT_PATH" && rake ci
 
   post:
     # add the coverage HTML report as CircleCI artifact

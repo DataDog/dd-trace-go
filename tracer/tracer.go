@@ -7,19 +7,21 @@ import (
 
 const (
 	defaultDeliveryURL = "http://localhost:7777/spans"
-	tracerWaitTimeout  = 5 * time.Second
 	flushInterval      = 2 * time.Second
 )
 
-// Tracer is the common struct we use to collect, buffer
+// Tracer creates, buffers and submits Spans which are used to time blocks of
+// compuration.
+//
+// When a tracer is disabled, it will not submit spans for processing.
 type Tracer struct {
-	enabled   bool      // defines if the Tracer is enabled or not
-	transport transport // is the transport mechanism used to delivery spans to the agent
+	transport Transport // is the transport mechanism used to delivery spans to the agent
 	sampler   sampler   // is the trace sampler to only keep some samples
 
 	buffer *spansBuffer
 
 	DebugLoggingEnabled bool
+	enabled             bool // defines if the Tracer is enabled or not
 }
 
 // NewTracer returns a Tracer instance that owns a span delivery system. Each Tracer starts
@@ -27,9 +29,14 @@ type Tracer struct {
 // advisable only if the default client doesn't fit your needs.
 func NewTracer() *Tracer {
 	// initialize the Tracer
+	return NewTracerTransport(NewHTTPTransport(defaultDeliveryURL))
+}
+
+// NewTracerTransport create a new Tracer with the given transport.
+func NewTracerTransport(transport Transport) *Tracer {
 	t := &Tracer{
 		enabled:             true,
-		transport:           newHTTPTransport(defaultDeliveryURL),
+		transport:           transport,
 		buffer:              newSpansBuffer(spanBufferDefaultMaxSize),
 		sampler:             newAllSampler(),
 		DebugLoggingEnabled: false,
@@ -41,17 +48,14 @@ func NewTracer() *Tracer {
 	return t
 }
 
-// Enable activates the tracer so that Spans are appended in the tracer buffer.
-// By default, a tracer is always enabled after the creation.
-func (t *Tracer) Enable() {
-	t.enabled = true
+// SetEnabled will enable or disable the tracer.
+func (t *Tracer) SetEnabled(enabled bool) {
+	t.enabled = enabled
 }
 
-// Disable deactivates the tracer so that Spans are not appended in the tracer buffer.
-// This means that *Span can be used as usual but the span.Finish() call will not
-// put the span in a buffer.
-func (t *Tracer) Disable() {
-	t.enabled = false
+// Enabled returns whether or not a tracer is enabled.
+func (t *Tracer) Enabled() bool {
+	return t.enabled
 }
 
 // SetSampleRate sets a sample rate for all the future traces.
@@ -107,24 +111,32 @@ func (t *Tracer) record(span *Span) {
 	}
 }
 
+// Flush will push any currently buffered traces to the server.
+func (t *Tracer) Flush() error {
+	spans := t.buffer.Pop()
+
+	if t.DebugLoggingEnabled {
+		log.Printf("Sending %d spans", len(spans))
+		for _, s := range spans {
+			log.Printf("SPAN:\n%s", s.String())
+		}
+	}
+
+	// bal if there's nothing to do
+	if !t.enabled || t.transport == nil || len(spans) == 0 {
+		return nil
+	}
+
+	return t.transport.Send(spans)
+
+}
+
 // worker periodically flushes traces to the transport.
 func (t *Tracer) worker() {
 	for range time.Tick(flushInterval) {
-
-		spans := t.buffer.Pop()
-
-		if t.DebugLoggingEnabled {
-			log.Printf("Sending %d spans", len(spans))
-			for _, s := range spans {
-				log.Printf("SPAN:\n%s", s.String())
-			}
-		}
-
-		if t.enabled && t.transport != nil && 0 < len(spans) {
-			err := t.transport.Send(spans)
-			if err != nil {
-				log.Printf("[WORKER] flush failed, lost %s spans", err)
-			}
+		err := t.Flush()
+		if err != nil {
+			log.Printf("[WORKER] flush failed, lost spans: %s", err)
 		}
 	}
 }
@@ -149,11 +161,11 @@ func NewChildSpan(name string, parent *Span) *Span {
 // Enable is an helper function that is used to proxy the Enable() call to the
 // DefaultTracer client.
 func Enable() {
-	DefaultTracer.Enable()
+	DefaultTracer.SetEnabled(true)
 }
 
 // Disable is an helper function that is used to proxy the Disable() call to the
 // DefaultTracer client.
 func Disable() {
-	DefaultTracer.Disable()
+	DefaultTracer.SetEnabled(false)
 }
