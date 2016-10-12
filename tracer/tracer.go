@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"context"
 	"log"
 	"time"
 )
@@ -80,9 +81,8 @@ func (t *Tracer) NewSpan(name, service, resource string) *Span {
 	return span
 }
 
-// NewChildSpan returns a new span that is child of the Span passed as argument.
-// This high-level API is commonly used to create a nested span in the current
-// tracing session.
+// NewChildSpan returns a new span that is child of the Span passed as
+// argument.
 func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	spanID := nextSpanID()
 
@@ -102,6 +102,14 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	span.Sampled = parent.Sampled
 
 	return span
+}
+
+// NewChildSpanFromContext returns a new span that is the child of the current
+// span in the given context. The program will not crash if the context is nil
+// or doesn't contain a span, but it will not have a service specified.
+func (t *Tracer) NewChildSpanFromContext(name string, ctx context.Context) *Span {
+	span, _ := SpanFromContext(ctx) // tolerate nil spans
+	return NewChildSpan(name, span)
 }
 
 // record queues the finished span for further processing.

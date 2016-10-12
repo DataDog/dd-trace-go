@@ -18,6 +18,9 @@ func ContextWithSpan(ctx context.Context, span *Span) context.Context {
 // SpanFromContext returns the stored *Span from the Context if it's available.
 // This helper returns also the ok value that is true if the span is present.
 func SpanFromContext(ctx context.Context) (*Span, bool) {
+	if ctx == nil {
+		return nil, false
+	}
 	span, ok := ctx.Value(spanKey).(*Span)
 	return span, ok
 }
