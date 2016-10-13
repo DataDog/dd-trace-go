@@ -3,6 +3,8 @@ package tracer
 import (
 	"log"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 const (
@@ -80,9 +82,8 @@ func (t *Tracer) NewSpan(name, service, resource string) *Span {
 	return span
 }
 
-// NewChildSpan returns a new span that is child of the Span passed as argument.
-// This high-level API is commonly used to create a nested span in the current
-// tracing session.
+// NewChildSpan returns a new span that is child of the Span passed as
+// argument.
 func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	spanID := nextSpanID()
 
@@ -102,6 +103,14 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	span.Sampled = parent.Sampled
 
 	return span
+}
+
+// NewChildSpanFromContext returns a new span that is the child of the current
+// span in the given context. The program will not crash if the context is nil
+// or doesn't contain a span, but it will not have a service specified.
+func (t *Tracer) NewChildSpanFromContext(name string, ctx context.Context) *Span {
+	span, _ := SpanFromContext(ctx) // tolerate nil spans
+	return t.NewChildSpan(name, span)
 }
 
 // record queues the finished span for further processing.
@@ -141,7 +150,8 @@ func (t *Tracer) worker() {
 	}
 }
 
-// DefaultTracer is a default *Tracer instance
+// DefaultTracer is a global Tracer instance that is running by default. You
+// can use it with the shorthand functions.
 var DefaultTracer = NewTracer()
 
 // NewSpan is an helper function that is used to create a RootSpan, through
@@ -156,6 +166,12 @@ func NewSpan(name, service, resource string) *Span {
 // you can create a new Tracer through the NewTracer function.
 func NewChildSpan(name string, parent *Span) *Span {
 	return DefaultTracer.NewChildSpan(name, parent)
+}
+
+// NewChildSpanFromContext will create a child span of the span contained in
+// the given context.
+func NewChildSpanFromContext(name string, ctx context.Context) *Span {
+	return DefaultTracer.NewChildSpanFromContext(name, ctx)
 }
 
 // Enable is an helper function that is used to proxy the Enable() call to the

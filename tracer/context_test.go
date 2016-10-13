@@ -42,6 +42,11 @@ func TestSpanFromContextNil(t *testing.T) {
 	span, ok := SpanFromContext(ctx)
 	assert.False(ok)
 	assert.Nil(span)
+
+	span, ok = SpanFromContext(nil)
+	assert.False(ok)
+	assert.Nil(span)
+
 }
 
 func TestSpanMissingParent(t *testing.T) {

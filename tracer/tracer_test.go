@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"golang.org/x/net/context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -40,6 +41,41 @@ func TestNewSpan(t *testing.T) {
 	assert.Equal(span.Service, "pylons")
 	assert.Equal(span.Name, "pylons.request")
 	assert.Equal(span.Resource, "/")
+}
+
+func TestNewSpanFromContextNil(t *testing.T) {
+	assert := assert.New(t)
+	tracer := NewTracer()
+
+	child := tracer.NewChildSpanFromContext("abc", nil)
+	assert.Equal(child.Name, "abc")
+	assert.Equal(child.Service, "")
+
+	child = tracer.NewChildSpanFromContext("def", context.Background())
+	assert.Equal(child.Name, "def")
+	assert.Equal(child.Service, "")
+
+}
+
+func TestNewSpanFromContext(t *testing.T) {
+	assert := assert.New(t)
+
+	// the tracer must create child spans
+	tracer := NewTracer()
+	parent := tracer.NewSpan("pylons.request", "pylons", "/")
+	ctx := ContextWithSpan(context.Background(), parent)
+
+	child := tracer.NewChildSpanFromContext("redis.command", ctx)
+	// ids and services are inherited
+	assert.Equal(child.ParentID, parent.SpanID)
+	assert.Equal(child.TraceID, parent.TraceID)
+	assert.Equal(child.Service, parent.Service)
+	// the resource is not inherited and defaults to the name
+	assert.Equal(child.Resource, "redis.command")
+	// the tracer instance is the same
+	assert.Equal(parent.tracer, tracer)
+	assert.Equal(child.tracer, tracer)
+
 }
 
 func TestNewSpanChild(t *testing.T) {
