@@ -1,7 +1,7 @@
 package tracer
 
 import (
-	"context"
+	"golang.org/x/net/context"
 )
 
 type datadogContextKey struct{}

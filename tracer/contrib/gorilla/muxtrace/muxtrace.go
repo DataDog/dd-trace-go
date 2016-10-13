@@ -61,7 +61,7 @@ func (m *MuxTracer) trace(req *http.Request) (*http.Request, *tracer.Span) {
 	span.SetMeta(ext.HTTPMethod, req.Method)
 
 	// patch the span onto the request context.
-	treq := setOnRequestContext(req, span)
+	treq := SetRequestSpan(req, span)
 	return treq, span
 }
 

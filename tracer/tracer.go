@@ -1,9 +1,10 @@
 package tracer
 
 import (
-	"context"
 	"log"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 const (
