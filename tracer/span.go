@@ -27,13 +27,12 @@ type Span struct {
 	SpanID   uint64             `json:"span_id"`           // identifier of this span
 	TraceID  uint64             `json:"trace_id"`          // identifier of the root span
 	ParentID uint64             `json:"parent_id"`         // identifier of the span's direct parent
+	Error    int32              `json:"error"`             // error status of the span; 0 means no errors
+	Sampled  bool               `json:"-"`                 // if this span is sampled (and should be kept/recorded) or not
 
-	Error   int32 `json:"error"` // error status of the span; 0 means no errors
-	Sampled bool  `json:"-"`     // if this span is sampled (and should be kept/recorded) or not
-
-	tracer *Tracer // the tracer that generated this span
-
-	mu sync.Mutex // lock the Span to make it thread-safe
+	finished bool       // true if the span has been submitted to a tracer.
+	tracer   *Tracer    // the tracer that generated this span
+	mu       sync.Mutex // lock the Span to make it thread-safe
 }
 
 // NewSpan creates a new Span with the given arguments, and sets
@@ -46,7 +45,7 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 		SpanID:   spanID,
 		TraceID:  traceID,
 		ParentID: parentID,
-		Start:    Now(),
+		Start:    now(),
 		Sampled:  true,
 		tracer:   tracer,
 	}
@@ -81,7 +80,16 @@ func (s *Span) GetMeta(key string) string {
 }
 
 // SetMetrics adds a metric field to the current Span.
+// DEPRECATED: Use SetMetric
 func (s *Span) SetMetrics(key string, value float64) {
+	if s == nil {
+		return
+	}
+	s.SetMetric(key, value)
+}
+
+// SetMetric adds a metric field to the current Span.
+func (s *Span) SetMetric(key string, val float64) {
 	if s == nil {
 		return
 	}
@@ -90,7 +98,7 @@ func (s *Span) SetMetrics(key string, value float64) {
 	if s.Metrics == nil {
 		s.Metrics = make(map[string]float64)
 	}
-	s.Metrics[key] = value
+	s.Metrics[key] = val
 	s.mu.Unlock()
 }
 
@@ -139,9 +147,12 @@ func (s *Span) Finish() {
 	}
 
 	s.mu.Lock()
-	finished := s.Duration > 0
+	finished := s.finished
 	if !finished {
-		s.Duration = Now() - s.Start
+		if s.Duration == 0 {
+			s.Duration = now() - s.Start
+		}
+		s.finished = true
 	}
 	s.mu.Unlock()
 
@@ -192,4 +203,9 @@ func (s *Span) String() string {
 // package.
 func nextSpanID() uint64 {
 	return uint64(rand.Int63())
+}
+
+// now returns current UTC time in nanos.
+func now() int64 {
+	return time.Now().UTC().UnixNano()
 }
