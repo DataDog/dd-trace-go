@@ -1,7 +1,7 @@
 package tracer
 
 import (
-	"golang.org/x/net/context"
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
