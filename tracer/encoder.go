@@ -3,7 +3,6 @@ package tracer
 import (
 	"bytes"
 	"encoding/json"
-	"log"
 )
 
 // jsonEncoder encodes a list of spans in JSON format.
@@ -54,7 +53,6 @@ func (p *encoderPool) Borrow() *jsonEncoder {
 	select {
 	case encoder = <-p.pool:
 	default:
-		log.Println("[POOL] Creating a new encoder")
 		encoder = newJSONEncoder()
 	}
 	return encoder
@@ -65,6 +63,5 @@ func (p *encoderPool) Return(e *jsonEncoder) {
 	select {
 	case p.pool <- e:
 	default:
-		log.Println("[POOL] The encoding pool is full")
 	}
 }
