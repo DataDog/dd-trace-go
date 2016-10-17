@@ -26,15 +26,13 @@ type Tracer struct {
 	enabled             bool // defines if the Tracer is enabled or not
 }
 
-// NewTracer returns a Tracer instance that owns a span delivery system. Each Tracer starts
-// a new go routing that handles the delivery. It's safe to create new tracers, but it's
-// advisable only if the default client doesn't fit your needs.
+// NewTracer creates a new Tracer. Most users should use the package's
+// DefaultTracer instance.
 func NewTracer() *Tracer {
-	// initialize the Tracer
 	return NewTracerTransport(NewHTTPTransport(defaultDeliveryURL))
 }
 
-// NewTracerTransport create a new Tracer with the given transport.
+// NewTracerTransport create a new Tracer with
 func NewTracerTransport(transport Transport) *Tracer {
 	t := &Tracer{
 		enabled:             true,
@@ -72,10 +70,16 @@ func (t *Tracer) SetSampleRate(sampleRate float64) {
 	}
 }
 
-// NewSpan creates a new root Span with a random identifier. This high-level API is commonly
-// used to start a new tracing session.
+// NewSpan creates a new root Span.
+// DEPRECATED: use NewRootSpan instead.
 func (t *Tracer) NewSpan(name, service, resource string) *Span {
 	// create and return the Span
+	return t.NewRootSpan(name, service, resource)
+}
+
+// NewRootSpan creates a span with no parent. It's ids will be randomly
+// assigned.
+func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 	spanID := nextSpanID()
 	span := newSpan(name, service, resource, spanID, spanID, 0, t)
 	t.sampler.Sample(span)
@@ -105,9 +109,9 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	return span
 }
 
-// NewChildSpanFromContext returns a new span that is the child of the current
-// span in the given context. The program will not crash if the context is nil
-// or doesn't contain a span, but it will not have a service specified.
+// NewChildSpanFromContext will create a child span of the span contained in
+// the given context. If the context contains to span, a span with
+// no service or resource will be returned.
 func (t *Tracer) NewChildSpanFromContext(name string, ctx context.Context) *Span {
 	span, _ := SpanFromContext(ctx) // tolerate nil spans
 	return t.NewChildSpan(name, span)
@@ -150,26 +154,31 @@ func (t *Tracer) worker() {
 	}
 }
 
-// DefaultTracer is a global Tracer instance that is running by default. You
-// can use it with the shorthand functions.
+// DefaultTracer is a global tracer that is enabled by default. It can be used
+// with the packages top level functions like NewSpan.
 var DefaultTracer = NewTracer()
 
 // NewSpan is an helper function that is used to create a RootSpan, through
-// the DefaultTracer client. If the default client doesn't fit your needs,
-// you can create a new Tracer through the NewTracer function.
+// DEPRECATED: Use NewRootSpan instead.
 func NewSpan(name, service, resource string) *Span {
 	return DefaultTracer.NewSpan(name, service, resource)
 }
 
-// NewChildSpan is an helper function that is used to create a child Span, through
-// the DefaultTracer client. If the default client doesn't fit your needs,
-// you can create a new Tracer through the NewTracer function.
+// NewRootSpan creates a span with no parent. It's ids will be randomly
+// assigned.
+func NewRootSpan(name, service, resource string) *Span {
+	return DefaultTracer.NewRootSpan(name, service, resource)
+}
+
+// NewChildSpan creates a span that is a child of parent. It will inherit the
+// parent's service and resource.
 func NewChildSpan(name string, parent *Span) *Span {
 	return DefaultTracer.NewChildSpan(name, parent)
 }
 
 // NewChildSpanFromContext will create a child span of the span contained in
-// the given context.
+// the given context. If the context contains to span, a span with
+// no service or resource will be returned.
 func NewChildSpanFromContext(name string, ctx context.Context) *Span {
 	return DefaultTracer.NewChildSpanFromContext(name, ctx)
 }
