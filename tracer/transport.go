@@ -11,24 +11,17 @@ const (
 	encoderPoolSize    = 5           // how many encoders are available
 )
 
-// Transport interface to Send spans to the tracer agent
+// Transport is an interface for span submission to the agent.
 type Transport interface {
 	Send(spans []*Span) error
 }
 
-// httpTransport provides the default implementation to send the span list using
-// a HTTP/TCP connection. The Transport expects to know which is the delivery URL
-// and an Encoder is used to marshal the list of spans
 type httpTransport struct {
 	url    string       // the delivery URL
 	pool   *encoderPool // encoding allocates lot of buffers (which might then be resized) so we use a pool so they can be re-used
 	client *http.Client // the HTTP client used in the POST
 }
 
-// NewhttpTransport creates a new delivery instance that honors the Transport interface.
-// This function is used to send data to an agent available in a local or remote location;
-// if there is a delay during the send, the client gives up according to the defaultHTTPTimeout
-// const.
 func newHTTPTransport(url string) *httpTransport {
 	return &httpTransport{
 		url:  url,
@@ -39,8 +32,6 @@ func newHTTPTransport(url string) *httpTransport {
 	}
 }
 
-// Send is the implementation of the Transport interface and hosts the logic to send the
-// spans list to a local/remote agent.
 func (t *httpTransport) Send(spans []*Span) error {
 	if t.url == "" {
 		return errors.New("provided an empty URL, giving up")
