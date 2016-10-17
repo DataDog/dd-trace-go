@@ -8,9 +8,7 @@ type datadogContextKey struct{}
 
 var spanKey = datadogContextKey{}
 
-// ContextWithSpan populates the given Context with a Span using an internal
-// datadogActiveSpanKey. This method is a good helper to pass parent spans
-// in a new function call, to simplify the creation of a child span.
+// ContextWithSpan will return a new context that includes the given span.
 func ContextWithSpan(ctx context.Context, span *Span) context.Context {
 	return context.WithValue(ctx, spanKey, span)
 }

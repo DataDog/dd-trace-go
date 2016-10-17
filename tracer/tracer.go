@@ -154,8 +154,12 @@ func (t *Tracer) worker() {
 	}
 }
 
-// DefaultTracer is a global tracer that is enabled by default. It can be used
-// with the packages top level functions like NewSpan.
+// DefaultTracer is a global tracer that is enabled by default. All of the
+// packages top level NewSpan functions use the default tracer.
+//
+//	span := tracer.NewRootSpan("sql.query", "user-db", "select * from foo where id = ?")
+//	defer span.Finish()
+//
 var DefaultTracer = NewTracer()
 
 // NewSpan is an helper function that is used to create a RootSpan, through
@@ -183,14 +187,12 @@ func NewChildSpanFromContext(name string, ctx context.Context) *Span {
 	return DefaultTracer.NewChildSpanFromContext(name, ctx)
 }
 
-// Enable is an helper function that is used to proxy the Enable() call to the
-// DefaultTracer client.
+// Enable will enable the default tracer.
 func Enable() {
 	DefaultTracer.SetEnabled(true)
 }
 
-// Disable is an helper function that is used to proxy the Disable() call to the
-// DefaultTracer client.
+// Disable will disable the default tracer.
 func Disable() {
 	DefaultTracer.SetEnabled(false)
 }
