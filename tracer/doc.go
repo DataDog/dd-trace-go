@@ -1,17 +1,10 @@
+// Package tracer contains Datadog's tracing client. It is used to trace
+// requests as they flow across web servers, databases and microservices so
+// that developers have visibility into bottlenecks and troublesome
+// requests.
+//
+// Package tracer has two core objects: Tracers and Spans. Spans represent
+// a chunk of computation time. They have names, durations, timestamps and
+// other metadata. Tracers are used to create hierarchies of spans in a
+// request, buffer and submit them to the server.
 package tracer
-
-/*
-
-Package tracer provides Datadog's Go tracing client.
-
-The core idea o
-
-
-If you need finer grained control, create and use your own tracer:
-
-	t := tracer.NewTracer()
-	span := t.NewSpan("http.request", "datadog-web", "/user/home")
-	defer span.Finish()
-
-
-*/
