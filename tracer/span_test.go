@@ -38,13 +38,13 @@ func TestSpanSetMeta(t *testing.T) {
 	assert.Equal(span.Meta["status.code"], "200")
 }
 
-func TestSpanSetMetrics(t *testing.T) {
+func TestSpanSetMetric(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
 	span := tracer.NewSpan("pylons.request", "pylons", "/")
 
 	// check the map is properly initialized
-	span.SetMetrics("bytes", 1024.42)
+	span.SetMetric("bytes", 1024.42)
 	assert.Equal(len(span.Metrics), 1)
 	assert.Equal(span.Metrics["bytes"], 1024.42)
 }

@@ -12,9 +12,7 @@ const (
 	defaultErrorMeta = "error.msg"
 )
 
-// Span is the common struct we use to represent a dapper-like span.
-// More information about the structure of the Span can be found
-// here: http://research.google.com/pubs/pub36356.html
+// Span represents a unit of comptation
 type Span struct {
 	Name     string             `json:"name"`              // the name of what we're monitoring (e.g. redis.command)
 	Service  string             `json:"service"`           // the service related to this trace (e.g. redis)
@@ -30,13 +28,12 @@ type Span struct {
 	Error    int32              `json:"error"`             // error status of the span; 0 means no errors
 	Sampled  bool               `json:"-"`                 // if this span is sampled (and should be kept/recorded) or not
 
-	finished bool       // true if the span has been submitted to a tracer.
 	tracer   *Tracer    // the tracer that generated this span
 	mu       sync.Mutex // lock the Span to make it thread-safe
+	finished bool       // true if the span has been submitted to a tracer.
 }
 
 // NewSpan creates a new Span with the given arguments, and sets
-// the internal Start field.
 func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *Span {
 	return &Span{
 		Name:     name,
@@ -198,9 +195,7 @@ func (s *Span) String() string {
 	return strings.Join(lines, "\n")
 }
 
-// nextSpanID returns a new random identifier. It is meant to be used as a
-// SpanID for the Span struct. Changing this function impacts the whole
-// package.
+// nextSpanID returns a new random span id.
 func nextSpanID() uint64 {
 	return uint64(rand.Int63())
 }
