@@ -29,7 +29,7 @@ type Tracer struct {
 // NewTracer creates a new Tracer. Most users should use the package's
 // DefaultTracer instance.
 func NewTracer() *Tracer {
-	return NewTracerTransport(NewHTTPTransport(defaultDeliveryURL))
+	return NewTracerTransport(newHTTPTransport(defaultDeliveryURL))
 }
 
 // NewTracerTransport create a new Tracer with
