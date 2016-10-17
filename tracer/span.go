@@ -112,18 +112,6 @@ func (s *Span) SetError(err error) {
 	}
 }
 
-// SetErrorMeta stores an error object within the span meta. The error.Error()
-// string is included in the user defined meta key.
-func (s *Span) SetErrorMeta(meta string, err error) {
-	if s == nil {
-		return
-	}
-
-	if err != nil {
-		s.SetMeta(meta, err.Error())
-	}
-}
-
 // IsFinished returns true if the span.Finish() method has been called.
 // Under the hood, any Span with a Duration has to be considered closed.
 func (s *Span) IsFinished() bool {

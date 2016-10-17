@@ -86,31 +86,6 @@ func TestSpanErrorNil(t *testing.T) {
 	assert.Equal(len(span.Meta), 0)
 }
 
-func TestSpanErrorMeta(t *testing.T) {
-	assert := assert.New(t)
-	tracer := NewTracer()
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
-
-	// check the error is set (but not the Error field)
-	// using a custom meta
-	err := errors.New("Something wrong")
-	span.SetErrorMeta("cache_get", err)
-	assert.Equal(span.Error, int32(0))
-	assert.Equal(len(span.Meta), 1)
-	assert.Equal(span.Meta["cache_get"], "Something wrong")
-}
-
-func TestSpanErrorMetaNil(t *testing.T) {
-	assert := assert.New(t)
-	tracer := NewTracer()
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
-
-	// don't set the error if it's nil
-	span.SetErrorMeta("cache_get", nil)
-	assert.Equal(span.Error, int32(0))
-	assert.Equal(len(span.Meta), 0)
-}
-
 func TestSpanIsFinished(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
