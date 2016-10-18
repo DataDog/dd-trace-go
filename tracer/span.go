@@ -126,14 +126,12 @@ func (s *Span) SetMetric(key string, val float64) {
 // SetError stores an error object within the span meta. The Error status is
 // updated and the error.Error() string is included with a default meta key.
 func (s *Span) SetError(err error) {
-	if s == nil {
+	if err == nil || s == nil {
 		return
 	}
 
-	if err != nil {
-		s.Error = 1
-		s.SetMeta(errorMsgKey, err.Error())
-	}
+	s.Error = 1
+	s.SetMeta(errorMsgKey, err.Error())
 }
 
 // Finish closes this Span (but not its children) providing the duration
