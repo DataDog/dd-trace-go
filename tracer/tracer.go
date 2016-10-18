@@ -32,7 +32,7 @@ func NewTracer() *Tracer {
 	return NewTracerTransport(newHTTPTransport(defaultDeliveryURL))
 }
 
-// NewTracerTransport create a new Tracer with
+// NewTracerTransport create a new Tracer with the given transport.
 func NewTracerTransport(transport Transport) *Tracer {
 	t := &Tracer{
 		enabled:             true,
