@@ -109,9 +109,7 @@ func (t *tracedResponseWriter) WriteHeader(status int) {
 	t.span.SetMeta(ext.HTTPCode, strconv.Itoa(status))
 }
 
-// SetRequestSpan sets the span on the request's context. Under the hood,
-// it will use request.Context() if it's available, otherwise falling back
-// to using gorilla/context.
+// SetRequestSpan sets the span on the request's context.
 func SetRequestSpan(r *http.Request, span *tracer.Span) *http.Request {
 	if r == nil || span == nil {
 		return r
