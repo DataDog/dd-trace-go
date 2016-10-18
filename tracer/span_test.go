@@ -86,17 +86,6 @@ func TestSpanErrorNil(t *testing.T) {
 	assert.Equal(len(span.Meta), 0)
 }
 
-func TestSpanIsFinished(t *testing.T) {
-	assert := assert.New(t)
-	tracer := NewTracer()
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
-
-	assert.False(span.IsFinished())
-	// a span is finished if the duration is greater than 0
-	span.Duration = 1
-	assert.True(span.IsFinished())
-}
-
 func TestSpanFinish(t *testing.T) {
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
@@ -106,7 +95,6 @@ func TestSpanFinish(t *testing.T) {
 	// the finish should set the duration
 	time.Sleep(wait)
 	span.Finish()
-	assert.True(span.IsFinished())
 	assert.True(span.Duration > int64(wait))
 }
 
