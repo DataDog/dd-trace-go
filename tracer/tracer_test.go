@@ -131,7 +131,7 @@ func TestTracerSampler(t *testing.T) {
 	span := tracer.NewSpan("pylons.request", "pylons", "/")
 
 	// The span might be sampled or not, we don't know, but at least it should have the sample rate metric
-	assert.Equal(sampleRate, span.Metrics[SampleRateMetricKey])
+	assert.Equal(sampleRate, span.Metrics[sampleRateMetricKey])
 }
 
 func TestTracerEdgeSampler(t *testing.T) {

@@ -1,3 +1,5 @@
+// Package muxtrace allows out of the box tracing of http servers that use
+// the mux router.
 package muxtrace
 
 import (
@@ -105,4 +107,21 @@ func (t *tracedResponseWriter) WriteHeader(status int) {
 	t.w.WriteHeader(status)
 	t.status = status
 	t.span.SetMeta(ext.HTTPCode, strconv.Itoa(status))
+}
+
+// SetRequestSpan sets the span on the request's context.
+func SetRequestSpan(r *http.Request, span *tracer.Span) *http.Request {
+	if r == nil || span == nil {
+		return r
+	}
+
+	ctx := tracer.ContextWithSpan(r.Context(), span)
+	return r.WithContext(ctx)
+}
+
+// GetRequestSpan will return the span associated with the given request. It
+// will return nil/false if it doesn't exist.
+func GetRequestSpan(r *http.Request) (*tracer.Span, bool) {
+	span, ok := tracer.SpanFromContext(r.Context())
+	return span, ok
 }

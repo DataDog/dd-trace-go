@@ -1,8 +1,8 @@
 package tracer
 
 const (
-	// SampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.
-	SampleRateMetricKey = "_sample_rate"
+	// sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.
+	sampleRateMetricKey = "_sample_rate"
 
 	// constants used for the Knuth hashing, same constants as the Agent.
 	maxTraceID      = ^uint64(0)
@@ -42,14 +42,14 @@ func newRateSampler(sampleRate float64) *rateSampler {
 // Sample samples a span
 func (s *rateSampler) Sample(span *Span) {
 	if s.SampleRate < 1 {
-		span.Sampled = SampleByRate(span.TraceID, s.SampleRate)
-		span.SetMetrics(SampleRateMetricKey, s.SampleRate)
+		span.Sampled = sampleByRate(span.TraceID, s.SampleRate)
+		span.SetMetric(sampleRateMetricKey, s.SampleRate)
 	}
 }
 
-// SampleByRate tells if a trace (from its ID) with a given rate should be sampled.
+// sampleByRate tells if a trace (from its ID) with a given rate should be sampled.
 // Its implementation has to be the same as the Trace Agent.
-func SampleByRate(traceID uint64, sampleRate float64) bool {
+func sampleByRate(traceID uint64, sampleRate float64) bool {
 	if sampleRate < 1 {
 		return traceID*samplerHasher < uint64(sampleRate*maxTraceIDFloat)
 	}

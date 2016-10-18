@@ -9,16 +9,39 @@ import (
 )
 
 const (
-	defaultErrorMeta = "error.msg"
+	errorMsgKey = "error.msg"
 )
 
-// Span is the common struct we use to represent a dapper-like span.
-// More information about the structure of the Span can be found
-// here: http://research.google.com/pubs/pub36356.html
+// Span represents a computation. Callers must call Finish when a span is
+// complete to ensure it's submitted.
+//
+//	span := tracer.NewRootSpan("web.request", "datadog.com", "/user/{id}")
+//	defer span.Finish()  // or FinishWithErr(err)
+//
+// In general, spans should be created with the tracer.NewSpan* functions,
+//  so they will be submitted on completion.
 type Span struct {
-	Name     string             `json:"name"`              // the name of what we're monitoring (e.g. redis.command)
-	Service  string             `json:"service"`           // the service related to this trace (e.g. redis)
-	Resource string             `json:"resource"`          // the natural key of what we measure (e.g. GET)
+	// Name is the name of the operation being measured. Some examples
+	// might be "http.handler", "fileserver.upload" or "video.decompress".
+	// Name should be set on every span.
+	Name string `json:"name"`
+
+	// Service is the name of the process doing a particular job. Some
+	// examples might be "user-database" or "datadog-web-app". Services
+	// will be inherited from parents, so only set this in your app's
+	// top level span.
+	Service string `json:"service"`
+
+	// Resource is a query to a service. A web application might use
+	// resources like "/user/{user_id}". A sql database might use resources
+	// like "select * from user where id = ?".
+	//
+	// You can track thousands of resources (not millions or billions) so
+	// prefer normalized resources like "/user/{id}" to "/user/123".
+	//
+	// Resources should only be set on an app's top level spans.
+	Resource string `json:"resource"`
+
 	Type     string             `json:"type"`              // protocol associated with the span
 	Start    int64              `json:"start"`             // span start time expressed in nanoseconds since epoch
 	Duration int64              `json:"duration"`          // duration of the span expressed in nanoseconds
@@ -30,13 +53,11 @@ type Span struct {
 	Error    int32              `json:"error"`             // error status of the span; 0 means no errors
 	Sampled  bool               `json:"-"`                 // if this span is sampled (and should be kept/recorded) or not
 
-	finished bool       // true if the span has been submitted to a tracer.
 	tracer   *Tracer    // the tracer that generated this span
 	mu       sync.Mutex // lock the Span to make it thread-safe
+	finished bool       // true if the span has been submitted to a tracer.
 }
 
-// NewSpan creates a new Span with the given arguments, and sets
-// the internal Start field.
 func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *Span {
 	return &Span{
 		Name:     name,
@@ -105,36 +126,12 @@ func (s *Span) SetMetric(key string, val float64) {
 // SetError stores an error object within the span meta. The Error status is
 // updated and the error.Error() string is included with a default meta key.
 func (s *Span) SetError(err error) {
-	if s == nil {
+	if err == nil || s == nil {
 		return
 	}
 
-	if err != nil {
-		s.Error = 1
-		s.SetMeta(defaultErrorMeta, err.Error())
-	}
-}
-
-// SetErrorMeta stores an error object within the span meta. The error.Error()
-// string is included in the user defined meta key.
-func (s *Span) SetErrorMeta(meta string, err error) {
-	if s == nil {
-		return
-	}
-
-	if err != nil {
-		s.SetMeta(meta, err.Error())
-	}
-}
-
-// IsFinished returns true if the span.Finish() method has been called.
-// Under the hood, any Span with a Duration has to be considered closed.
-func (s *Span) IsFinished() bool {
-	if s == nil {
-		return false
-	}
-
-	return s.Duration > 0
+	s.Error = 1
+	s.SetMeta(errorMsgKey, err.Error())
 }
 
 // Finish closes this Span (but not its children) providing the duration
@@ -198,9 +195,7 @@ func (s *Span) String() string {
 	return strings.Join(lines, "\n")
 }
 
-// nextSpanID returns a new random identifier. It is meant to be used as a
-// SpanID for the Span struct. Changing this function impacts the whole
-// package.
+// nextSpanID returns a new random span id.
 func nextSpanID() uint64 {
 	return uint64(rand.Int63())
 }
