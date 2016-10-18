@@ -22,11 +22,14 @@ const (
 //  so they will be submitted on completion.
 type Span struct {
 	// Name is the name of the operation being measured. Some examples
-	// might be "http.handler", "fileserver.upload" or "video.decompress"
+	// might be "http.handler", "fileserver.upload" or "video.decompress".
+	// Name should be set on every span.
 	Name string `json:"name"`
 
 	// Service is the name of the process doing a particular job. Some
-	// examples might be "user-database" or "datadog-web-app"
+	// examples might be "user-database" or "datadog-web-app". Services
+	// will be inherited from parents, so only set this in your app's
+	// top level span.
 	Service string `json:"service"`
 
 	// Resource is a query to a service. A web application might use
@@ -36,7 +39,8 @@ type Span struct {
 	// You can track thousands of resources (not millions or billions) so
 	// prefer normalized resources like "/user/{id}" to "/user/123".
 	//
-	Resource string `json:"resource"` // the natural key of what we measure (e.g. GET)
+	// Resources should only be set on an app's top level spans.
+	Resource string `json:"resource"`
 
 	Type     string             `json:"type"`              // protocol associated with the span
 	Start    int64              `json:"start"`             // span start time expressed in nanoseconds since epoch
