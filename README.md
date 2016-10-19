@@ -2,7 +2,7 @@
 
 [![CircleCI](https://circleci.com/gh/DataDog/dd-trace-go.svg?style=svg&circle-token=dafe5c53a48e2719deeaf28b61f8d46e740c9c25)](https://circleci.com/gh/DataDog/dd-trace-go)
 
-A Go tracing package.
+A Go tracing package. Currently requires at least Go 1.7.
 
 ## Docs
 
@@ -21,5 +21,5 @@ curl http://localhost:6060/pkg/github.com/DataDog/dd-trace-go/tracer/
 
 ## Install
 
-While we're in private beta, I'd recommend checking in this repository
-into your `vendor` folder.
+While we're in private beta, please check this repository
+into your `vendor` folder. If this doesn't work for you, let us know.
