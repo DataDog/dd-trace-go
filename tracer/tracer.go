@@ -77,7 +77,7 @@ func (t *Tracer) NewSpan(name, service, resource string) *Span {
 	return t.NewRootSpan(name, service, resource)
 }
 
-// NewRootSpan creates a span with no parent. It's ids will be randomly
+// NewRootSpan creates a span with no parent. Its ids will be randomly
 // assigned.
 func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 	spanID := nextSpanID()
@@ -110,8 +110,8 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 }
 
 // NewChildSpanFromContext will create a child span of the span contained in
-// the given context. If the context contains to span, a span with
-// no service or resource will be returned.
+// the given context. If the context contains no span, an empty span will be
+// returned.
 func (t *Tracer) NewChildSpanFromContext(name string, ctx context.Context) *Span {
 	span, _ := SpanFromContext(ctx) // tolerate nil spans
 	return t.NewChildSpan(name, span)
