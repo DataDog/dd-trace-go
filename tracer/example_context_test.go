@@ -60,7 +60,7 @@ func saveFileHandler(w http.ResponseWriter, r *http.Request) {
 // Tracing the hierarchy of spans in a request is a key part of tracing. This, for example,
 // let's a developer associate all of the database calls in a web request. As of Go 1.7,
 // the standard way of doing this is with the context package. Along with supporting
-// deadlines, cancellation signals and more, Context's are perfect for passing (optional)
+// deadlines, cancellation signals and more, Contexts are perfect for passing (optional)
 // telemetry data through your stack.
 //
 // Read more about contexts here: https://golang.org/pkg/context/

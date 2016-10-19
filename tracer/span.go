@@ -19,7 +19,7 @@ const (
 //	defer span.Finish()  // or FinishWithErr(err)
 //
 // In general, spans should be created with the tracer.NewSpan* functions,
-//  so they will be submitted on completion.
+// so they will be submitted on completion.
 type Span struct {
 	// Name is the name of the operation being measured. Some examples
 	// might be "http.handler", "fileserver.upload" or "video.decompress".
