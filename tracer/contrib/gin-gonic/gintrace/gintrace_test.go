@@ -16,13 +16,14 @@ func TestTrace200(t *testing.T) {
 	transport := &dummyTransport{}
 	testTracer := getTestTracer(transport)
 
-	middleware := NewMiddleware("foobar", testTracer)
+	middleware := NewMiddlewareTracer("foobar", testTracer)
 
 	router := gin.New()
 	router.Use(middleware.Handle)
 	router.GET("/user/:id", func(c *gin.Context) {
 		// assert we patch the span on the request context.
 		span := SpanDefault(c)
+		span.SetMeta("test.gin", "ginny")
 		assert.Equal(span.Service, "foobar")
 		id := c.Param("id")
 		c.Writer.Write([]byte(id))
@@ -48,6 +49,10 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(s.Name, "gin.request")
 	// FIXME[matt] would be much nicer to have "/user/:id" here
 	assert.True(strings.Contains(s.Resource, "gintrace.TestTrace200"))
+	assert.Equal(s.GetMeta("test.gin"), "ginny")
+	assert.Equal(s.GetMeta("http.status_code"), "200")
+	assert.Equal(s.GetMeta("http.method"), "GET")
+
 }
 
 func getTestTracer(transport tracer.Transport) *tracer.Tracer {
