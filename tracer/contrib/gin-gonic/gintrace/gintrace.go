@@ -10,33 +10,37 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Key is the string that we'll use to store spans in the tracer. Override it
-// you want.
-var Key = "datadog_trace_span"
+// key is the string that we'll use to store spans in the tracer.
+var key = "datadog_trace_span"
 
-// Middleware is a tracing middleware for the Gin framework.
-type Middleware struct {
+// Middleware returns middleware that will trace requests with the default
+// tracer.
+func Middleware(service string) gin.HandlerFunc {
+	return MiddlewareTracer(service, tracer.DefaultTracer)
+}
+
+// MiddlewareTracer returns middleware that will trace requests with the given
+// tracer.
+func MiddlewareTracer(service string, t *tracer.Tracer) gin.HandlerFunc {
+	mw := newMiddleware(service, t)
+	return mw.Handle
+}
+
+// middleware implements gin middleware.
+type middleware struct {
 	service string
 	trc     *tracer.Tracer
 }
 
-// NewMiddleware creates a Middleware that will trace the given service with
-// the default tracer.
-func NewMiddleware(service string) *Middleware {
-	return NewMiddlewareTracer(service, tracer.DefaultTracer)
-}
-
-// NewMiddlewareTracer creates a new Middleware that will trace the given
-// service with the given tracer.
-func NewMiddlewareTracer(service string, trc *tracer.Tracer) *Middleware {
-	return &Middleware{
+func newMiddleware(service string, trc *tracer.Tracer) *middleware {
+	return &middleware{
 		service: service,
 		trc:     trc,
 	}
 }
 
 // Handle is a gin HandlerFunc that will add tracing to the given request.
-func (m *Middleware) Handle(c *gin.Context) {
+func (m *middleware) Handle(c *gin.Context) {
 
 	// bail if not enabled
 	if !m.trc.Enabled() {
@@ -54,7 +58,7 @@ func (m *Middleware) Handle(c *gin.Context) {
 
 	// Create our span and patch it to the context for downstream.
 	span := m.trc.NewRootSpan("gin.request", m.service, resource)
-	c.Set(Key, span)
+	c.Set(key, span)
 
 	// Pass along the request.
 	c.Next()
@@ -80,7 +84,7 @@ func Span(c *gin.Context) (*tracer.Span, bool) {
 		return nil, false
 	}
 
-	s, ok := c.Get(Key)
+	s, ok := c.Get(key)
 	if !ok {
 		return nil, false
 	}

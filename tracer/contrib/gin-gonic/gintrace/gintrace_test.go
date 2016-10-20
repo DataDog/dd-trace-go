@@ -24,7 +24,7 @@ func TestTrace200(t *testing.T) {
 	transport := &dummyTransport{}
 	testTracer := getTestTracer(transport)
 
-	middleware := NewMiddlewareTracer("foobar", testTracer)
+	middleware := newMiddleware("foobar", testTracer)
 
 	router := gin.New()
 	router.Use(middleware.Handle)
@@ -70,7 +70,7 @@ func TestDisabled(t *testing.T) {
 	testTracer := getTestTracer(transport)
 	testTracer.SetEnabled(false)
 
-	middleware := NewMiddlewareTracer("foobar", testTracer)
+	middleware := newMiddleware("foobar", testTracer)
 
 	router := gin.New()
 	router.Use(middleware.Handle)
@@ -101,7 +101,7 @@ func TestError(t *testing.T) {
 	// setup
 	testTransport := &dummyTransport{}
 	testTracer := getTestTracer(testTransport)
-	middleware := NewMiddlewareTracer("foobar", testTracer)
+	middleware := newMiddleware("foobar", testTracer)
 	router := gin.New()
 	router.Use(middleware.Handle)
 
@@ -136,7 +136,7 @@ func TestHTML(t *testing.T) {
 	// setup
 	testTransport := &dummyTransport{}
 	testTracer := getTestTracer(testTransport)
-	middleware := NewMiddlewareTracer("tmplservice", testTracer)
+	middleware := newMiddleware("tmplservice", testTracer)
 
 	router := gin.New()
 	router.Use(middleware.Handle)
