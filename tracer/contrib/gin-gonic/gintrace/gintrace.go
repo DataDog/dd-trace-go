@@ -40,8 +40,8 @@ func (m *Middleware) Handle(c *gin.Context) {
 	// under the hood. might be better to tackle this task and do it right
 	// so we can end up with "user/:user/whatever" instead of
 	// "github.com/foobar/blah"
-	//.
-	// "github.com/foobar/blah"onic/gin/issues/649
+	//
+	// See here: https://github.com/gin-gonic/gin/issues/649
 	resource := c.HandlerName()
 
 	// Create our span and patch it to the context for downstream.
@@ -51,10 +51,18 @@ func (m *Middleware) Handle(c *gin.Context) {
 	// Pass along.
 	c.Next()
 
-	// wrap it up.
+	// Set http tags.
 	span.SetMeta(ext.HTTPCode, strconv.Itoa(c.Writer.Status()))
 	span.SetMeta(ext.HTTPMethod, c.Request.Method)
-	span.Finish()
+	span.SetMeta(ext.HTTPURL, c.Request.URL.Path)
+
+	// Set any error information.
+	var err error
+	if len(c.Errors) > 0 {
+		span.SetMeta("gin.errors", c.Errors.String()) // set all errors
+		err = c.Errors[0]                             // but use the first for standard fields
+	}
+	span.FinishWithErr(err)
 }
 
 // Span returns the Span stored in the given Context and true. If it doesn't exist,
@@ -84,4 +92,14 @@ func SpanDefault(c *gin.Context) *tracer.Span {
 		return &tracer.Span{}
 	}
 	return span
+}
+
+// NewChildSpan will create a span that is the child of the span stored in
+// the context.
+func NewChildSpan(name string, c *gin.Context) *tracer.Span {
+	span, ok := Span(c)
+	if !ok {
+		return &tracer.Span{}
+	}
+	return span.Tracer().NewChildSpan(name, span)
 }
