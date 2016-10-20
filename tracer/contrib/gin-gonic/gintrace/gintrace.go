@@ -2,6 +2,7 @@
 package gintrace
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/DataDog/dd-trace-go/tracer"
@@ -55,7 +56,7 @@ func (m *Middleware) Handle(c *gin.Context) {
 	span := m.trc.NewRootSpan("gin.request", m.service, resource)
 	c.Set(Key, span)
 
-	// Pass along.
+	// Pass along the request.
 	c.Next()
 
 	// Set http tags.
@@ -109,4 +110,29 @@ func NewChildSpan(name string, c *gin.Context) *tracer.Span {
 		return &tracer.Span{}
 	}
 	return span.Tracer().NewChildSpan(name, span)
+}
+
+// HTML will trace the rendering of the template as a child of the span in the
+// given context.
+func HTML(c *gin.Context, code int, name string, obj interface{}) {
+	span, _ := Span(c)
+	if span == nil {
+		c.HTML(code, name, obj)
+		return
+	}
+
+	child := span.Tracer().NewChildSpan("gin.render.html", span)
+	child.SetMeta("go.template", name)
+	defer func() {
+		if r := recover(); r != nil {
+			err := fmt.Errorf("error rendering tmpl:%s: %s", name, r)
+			child.FinishWithErr(err)
+			panic(r)
+		} else {
+			child.Finish()
+		}
+	}()
+
+	// render
+	c.HTML(code, name, obj)
 }
