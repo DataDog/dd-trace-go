@@ -36,6 +36,13 @@ func NewMiddlewareTracer(service string, trc *tracer.Tracer) *Middleware {
 
 // Handle is a gin HandlerFunc that will add tracing to the given request.
 func (m *Middleware) Handle(c *gin.Context) {
+
+	// bail if not enabled
+	if !m.trc.Enabled() {
+		c.Next()
+		return
+	}
+
 	// FIXME[matt] the handler name is a bit unwieldy and uses reflection
 	// under the hood. might be better to tackle this task and do it right
 	// so we can end up with "user/:user/whatever" instead of

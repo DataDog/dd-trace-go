@@ -61,6 +61,38 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(s.GetMeta("http.url"), "/user/123")
 }
 
+func TestDisabled(t *testing.T) {
+	assert := assert.New(t)
+
+	transport := &dummyTransport{}
+	testTracer := getTestTracer(transport)
+	testTracer.SetEnabled(false)
+
+	middleware := NewMiddlewareTracer("foobar", testTracer)
+
+	router := gin.New()
+	router.Use(middleware.Handle)
+	router.GET("/ping", func(c *gin.Context) {
+		span, ok := Span(c)
+		assert.Nil(span)
+		assert.False(ok)
+		c.Writer.Write([]byte("ok"))
+	})
+
+	r := httptest.NewRequest("GET", "/ping", nil)
+	w := httptest.NewRecorder()
+
+	// do and verify the request
+	router.ServeHTTP(w, r)
+	response := w.Result()
+	assert.Equal(response.StatusCode, 200)
+
+	// verify traces look good
+	testTracer.Flush()
+	spans := transport.Spans()
+	assert.Len(spans, 0)
+}
+
 func TestError(t *testing.T) {
 	assert := assert.New(t)
 
