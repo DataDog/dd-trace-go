@@ -195,6 +195,11 @@ func (s *Span) String() string {
 	return strings.Join(lines, "\n")
 }
 
+// Tracer returns the tracer that created this span.
+func (s *Span) Tracer() *Tracer {
+	return s.tracer
+}
+
 // nextSpanID returns a new random span id.
 func nextSpanID() uint64 {
 	return uint64(rand.Int63())

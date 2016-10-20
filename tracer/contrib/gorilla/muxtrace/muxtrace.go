@@ -1,5 +1,4 @@
-// Package muxtrace allows out of the box tracing of http servers that use
-// the mux router.
+// Package muxtrace provides tracing functions for the Gorilla Mux framework.
 package muxtrace
 
 import (
