@@ -125,7 +125,7 @@ func TestError(t *testing.T) {
 	assert.Equal(s.Name, "gin.request")
 	assert.Equal(s.GetMeta("http.status_code"), "500")
 	assert.Equal(s.GetMeta(ext.ErrorMsg), "oh no")
-	assert.Equal(s.Error, 1)
+	assert.Equal(s.Error, int32(1))
 }
 
 func TestGetSpanNotInstrumented(t *testing.T) {
