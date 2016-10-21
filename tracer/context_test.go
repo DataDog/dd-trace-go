@@ -19,6 +19,26 @@ func TestContextWithSpanDefault(t *testing.T) {
 	assert.NotNil(SpanFromContextDefault(ctx))
 }
 
+func TestContextWithNewChildSpan(t *testing.T) {
+	assert := assert.New(t)
+
+	// Context with no child
+	ctx := context.Background()
+	topSpan, newCTX := ContextWithNewChildSpan("foo", ctx)
+
+	spanFromNewCTX, ok := SpanFromContext(newCTX)
+	assert.True(ok)
+	assert.Equal(topSpan, spanFromNewCTX)
+
+	// Context with child
+	childSpan, newerCTX := ContextWithNewChildSpan("bar", newCTX)
+
+	spanFromNewerCTX, ok := SpanFromContext(newerCTX)
+	assert.True(ok)
+	assert.Equal(childSpan, spanFromNewerCTX)
+	assert.Equal(childSpan.ParentID, topSpan.SpanID)
+}
+
 func TestSpanFromContext(t *testing.T) {
 	assert := assert.New(t)
 
