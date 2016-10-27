@@ -46,7 +46,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(response.StatusCode, 200)
 
 	// verify traces look good
-	testTracer.Flush()
+	assert.Nil(testTracer.Flush())
 	spans := transport.Spans()
 	assert.Len(spans, 1)
 	if len(spans) < 1 {
