@@ -76,8 +76,8 @@ func getIDs(ctx context.Context) (traceID, parentID uint64) {
 // getID parses an id from the metadata.
 func getID(md metadata.MD, name string) uint64 {
 	for _, str := range md[name] {
-		id, _ := strconv.Atoi(str)
-		if id > 0 {
+		id, err := strconv.Atoi(str)
+		if err == nil {
 			return uint64(id)
 		}
 	}
