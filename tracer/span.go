@@ -58,7 +58,8 @@ type Span struct {
 	finished bool       // true if the span has been submitted to a tracer.
 }
 
-func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *Span {
+// NewSpan creates a new span.
+func NewSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *Span {
 	return &Span{
 		Name:     name,
 		Service:  service,

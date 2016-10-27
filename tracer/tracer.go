@@ -70,18 +70,11 @@ func (t *Tracer) SetSampleRate(sampleRate float64) {
 	}
 }
 
-// NewSpan creates a new root Span.
-// DEPRECATED: use NewRootSpan instead.
-func (t *Tracer) NewSpan(name, service, resource string) *Span {
-	// create and return the Span
-	return t.NewRootSpan(name, service, resource)
-}
-
 // NewRootSpan creates a span with no parent. Its ids will be randomly
 // assigned.
 func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 	spanID := nextSpanID()
-	span := newSpan(name, service, resource, spanID, spanID, 0, t)
+	span := NewSpan(name, service, resource, spanID, spanID, 0, t)
 	t.sampler.Sample(span)
 	return span
 }
@@ -96,13 +89,13 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	// it's better to be defensive and to produce a wrongly configured span
 	// that is not sent to the trace agent.
 	if parent == nil {
-		span := newSpan(name, "", name, spanID, spanID, spanID, t)
+		span := NewSpan(name, "", name, spanID, spanID, spanID, t)
 		t.sampler.Sample(span)
 		return span
 	}
 
 	// child that is correctly configured
-	span := newSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
+	span := NewSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
 	// child sampling same as the parent
 	span.Sampled = parent.Sampled
 
@@ -161,12 +154,6 @@ func (t *Tracer) worker() {
 //	defer span.Finish()
 //
 var DefaultTracer = NewTracer()
-
-// NewSpan is an helper function that is used to create a RootSpan, through
-// DEPRECATED: Use NewRootSpan instead.
-func NewSpan(name, service, resource string) *Span {
-	return DefaultTracer.NewSpan(name, service, resource)
-}
 
 // NewRootSpan creates a span with no parent. It's ids will be randomly
 // assigned.
