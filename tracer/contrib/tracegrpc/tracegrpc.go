@@ -12,10 +12,15 @@ import (
 )
 
 // Interceptor returns a UnaryServerInterceptor which will trace requests.
-func Interceptor(tracer *tracer.Tracer) grpc.UnaryServerInterceptor {
+func Interceptor(t *tracer.Tracer) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		span := grpcSpan(tracer, ctx, info.FullMethod)
-		resp, err := handler(ctx, req)
+
+		if !t.Enabled() {
+			return handler(ctx, req)
+		}
+
+		span := grpcSpan(t, ctx, info.FullMethod)
+		resp, err := handler(tracer.ContextWithSpan(ctx, span), req)
 		span.FinishWithErr(err)
 		return resp, err
 	}
@@ -28,6 +33,7 @@ func grpcSpan(t *tracer.Tracer, ctx context.Context, method string) *tracer.Span
 
 	span := t.NewRootSpan("grpc.server", service, resource)
 	span.SetMeta("gprc.method", method)
+	span.Type = "go"
 
 	traceID, parentID := getIDs(ctx)
 	if traceID != 0 && parentID != 0 {

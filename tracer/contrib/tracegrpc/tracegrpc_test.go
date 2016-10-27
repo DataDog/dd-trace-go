@@ -13,12 +13,17 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestServer(t *testing.T) {
+const (
+	debug = false
+)
+
+func TestDisabled(t *testing.T) {
 	assert := assert.New(t)
 
 	testTransport := &dummyTransport{}
 	testTracer := getTestTracer(testTransport)
-	testTracer.DebugLoggingEnabled = true
+	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetEnabled(false)
 
 	rig, err := newRig(testTracer)
 	if err != nil {
@@ -27,13 +32,76 @@ func TestServer(t *testing.T) {
 	defer rig.Close()
 
 	client := rig.client
-	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "foo"})
+	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "disabled"})
 	assert.Nil(err)
-	assert.Equal(resp.Message, "Fixture foo")
+	assert.Equal(resp.Message, "disabled")
 	assert.Nil(testTracer.Flush())
 	spans := testTransport.Spans()
-	assert.NotNil(nil)
+	assert.Nil(spans)
+}
+
+func TestChild(t *testing.T) {
+	assert := assert.New(t)
+
+	testTransport := &dummyTransport{}
+	testTracer := getTestTracer(testTransport)
+	testTracer.DebugLoggingEnabled = debug
+
+	rig, err := newRig(testTracer)
+	if err != nil {
+		t.Fatalf("error setting up rig: %s", err)
+	}
+	defer rig.Close()
+
+	client := rig.client
+	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "child"})
+	assert.Nil(err)
+	assert.Equal(resp.Message, "child")
+	assert.Nil(testTracer.Flush())
+	spans := testTransport.Spans()
+	assert.Len(spans, 2)
+
+	s := spans[0]
+	assert.Equal(s.Error, int32(0))
+	assert.Equal(s.Service, "tracegrpc.Fixture")
+	assert.Equal(s.Resource, "child")
+	assert.True(s.Duration > 0)
+
+	s = spans[1]
+	assert.Equal(s.Error, int32(0))
+	assert.Equal(s.Service, "tracegrpc.Fixture")
+	assert.Equal(s.Resource, "Ping")
+	assert.True(s.Duration > 0)
+}
+
+func TestPass(t *testing.T) {
+	assert := assert.New(t)
+
+	testTransport := &dummyTransport{}
+	testTracer := getTestTracer(testTransport)
+	testTracer.DebugLoggingEnabled = debug
+
+	rig, err := newRig(testTracer)
+	if err != nil {
+		t.Fatalf("error setting up rig: %s", err)
+	}
+	defer rig.Close()
+
+	client := rig.client
+	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+	assert.Nil(err)
+	assert.Equal(resp.Message, "passed")
+	assert.Nil(testTracer.Flush())
+	spans := testTransport.Spans()
 	assert.Len(spans, 1)
+
+	s := spans[0]
+	assert.Equal(s.Error, int32(0))
+	assert.Equal(s.Name, "grpc.server")
+	assert.Equal(s.Service, "tracegrpc.Fixture")
+	assert.Equal(s.Resource, "Ping")
+	assert.Equal(s.Type, "go")
+	assert.True(s.Duration > 0)
 }
 
 // fixtureServer a dummy implemenation of our grpc fixtureServer.
@@ -42,8 +110,25 @@ type fixtureServer struct{}
 func newFixtureServer() *fixtureServer {
 	return &fixtureServer{}
 }
+
 func (s *fixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureReply, error) {
-	return &FixtureReply{Message: "Fixture " + in.Name}, nil
+	switch {
+	case in.Name == "child":
+		span, ok := tracer.SpanFromContext(ctx)
+		if ok {
+			t := span.Tracer()
+			t.NewChildSpan("child", span).Finish()
+		}
+		return &FixtureReply{Message: "child"}, nil
+	case in.Name == "disabled":
+		_, ok := tracer.SpanFromContext(ctx)
+		if ok {
+			panic("should be disabled")
+		}
+		return &FixtureReply{Message: "disabled"}, nil
+	}
+
+	return &FixtureReply{Message: "passed"}, nil
 }
 
 // ensure it's a fixtureServer
@@ -60,8 +145,8 @@ type rig struct {
 
 func (r *rig) Close() {
 	r.server.Stop()
-	r.listener.Close()
 	r.conn.Close()
+	r.listener.Close()
 }
 
 func newRig(t *tracer.Tracer) (*rig, error) {
