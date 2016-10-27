@@ -57,7 +57,7 @@ func (m *MuxTracer) HandleFunc(router *mux.Router, pattern string, handler http.
 func (m *MuxTracer) trace(req *http.Request) (*http.Request, *tracer.Span) {
 	resource := getResource(req)
 
-	span := m.tracer.NewSpan("mux.request", m.service, resource)
+	span := m.tracer.NewRootSpan("mux.request", m.service, resource)
 	span.Type = ext.HTTPType
 	span.SetMeta(ext.HTTPMethod, req.Method)
 

@@ -11,7 +11,7 @@ func TestJSONEncoder(t *testing.T) {
 
 	// create a spans list with a single span
 	var spans []*Span
-	span := newSpan("pylons.request", "pylons", "/", 0, 0, 0, nil)
+	span := NewSpan("pylons.request", "pylons", "/", 0, 0, 0, nil)
 	span.Start = 0
 	spans = append(spans, span)
 
@@ -30,7 +30,7 @@ func TestJSONRead(t *testing.T) {
 
 	// create a spans list with a single span
 	var spans []*Span
-	span := newSpan("pylons.request", "pylons", "/", 0, 0, 0, nil)
+	span := NewSpan("pylons.request", "pylons", "/", 0, 0, 0, nil)
 	span.Start = 0
 	spans = append(spans, span)
 

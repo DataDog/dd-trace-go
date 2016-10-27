@@ -25,7 +25,7 @@ func TestDefaultTracer(t *testing.T) {
 
 	// package free functions must proxy the calls to the
 	// default client
-	root := NewSpan("pylons.request", "pylons", "/")
+	root := NewRootSpan("pylons.request", "pylons", "/")
 	NewChildSpan("pylons.request", root)
 	Disable()
 	Enable()
@@ -36,7 +36,7 @@ func TestNewSpan(t *testing.T) {
 
 	// the tracer must create root spans
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	assert.Equal(span.ParentID, uint64(0))
 	assert.Equal(span.Service, "pylons")
 	assert.Equal(span.Name, "pylons.request")
@@ -62,7 +62,7 @@ func TestNewSpanFromContext(t *testing.T) {
 
 	// the tracer must create child spans
 	tracer := NewTracer()
-	parent := tracer.NewSpan("pylons.request", "pylons", "/")
+	parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	ctx := ContextWithSpan(context.Background(), parent)
 
 	child := tracer.NewChildSpanFromContext("redis.command", ctx)
@@ -83,7 +83,7 @@ func TestNewSpanChild(t *testing.T) {
 
 	// the tracer must create child spans
 	tracer := NewTracer()
-	parent := tracer.NewSpan("pylons.request", "pylons", "/")
+	parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	child := tracer.NewChildSpan("redis.command", parent)
 	// ids and services are inherited
 	assert.Equal(child.ParentID, parent.SpanID)
@@ -102,7 +102,7 @@ func TestTracerDisabled(t *testing.T) {
 	// disable the tracer and be sure that the span is not added
 	tracer := NewTracer()
 	tracer.SetEnabled(false)
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	span.Finish()
 	assert.Equal(tracer.buffer.Len(), 0)
 }
@@ -113,10 +113,10 @@ func TestTracerEnabledAgain(t *testing.T) {
 	// disable the tracer and enable it again
 	tracer := NewTracer()
 	tracer.SetEnabled(false)
-	preSpan := tracer.NewSpan("pylons.request", "pylons", "/")
+	preSpan := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	preSpan.Finish()
 	tracer.SetEnabled(true)
-	postSpan := tracer.NewSpan("pylons.request", "pylons", "/")
+	postSpan := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	postSpan.Finish()
 	assert.Equal(tracer.buffer.Len(), 1)
 }
@@ -128,7 +128,7 @@ func TestTracerSampler(t *testing.T) {
 	tracer := NewTracer()
 	tracer.SetSampleRate(sampleRate)
 
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 
 	// The span might be sampled or not, we don't know, but at least it should have the sample rate metric
 	assert.Equal(sampleRate, span.Metrics[sampleRateMetricKey])
@@ -147,9 +147,9 @@ func TestTracerEdgeSampler(t *testing.T) {
 	count := 10000
 
 	for i := 0; i < count; i++ {
-		span0 := tracer0.NewSpan("pylons.request", "pylons", "/")
+		span0 := tracer0.NewRootSpan("pylons.request", "pylons", "/")
 		span0.Finish()
-		span1 := tracer1.NewSpan("pylons.request", "pylons", "/")
+		span1 := tracer1.NewRootSpan("pylons.request", "pylons", "/")
 		span1.Finish()
 	}
 
@@ -174,7 +174,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	tracer.transport = &DummyTransport{pool: newEncoderPool(encoderPoolSize)}
 
 	for n := 0; n < b.N; n++ {
-		span := tracer.NewSpan("pylons.request", "pylons", "/")
+		span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 		span.Finish()
 	}
 }

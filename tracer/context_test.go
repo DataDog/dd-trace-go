@@ -25,7 +25,7 @@ func TestSpanFromContext(t *testing.T) {
 	// create a new context with a span
 	ctx := context.Background()
 	tracer := NewTracer()
-	expectedSpan := tracer.NewSpan("pylons.request", "pylons", "/")
+	expectedSpan := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	ctx = ContextWithSpan(ctx, expectedSpan)
 
 	span, ok := SpanFromContext(ctx)

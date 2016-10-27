@@ -11,7 +11,7 @@ import (
 func TestSpanStart(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 
 	// a new span sets the Start after the initialization
 	assert.NotEqual(span.Start, int64(0))
@@ -20,7 +20,7 @@ func TestSpanStart(t *testing.T) {
 func TestSpanString(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	// don't bother checking the contents, just make sure it works.
 	assert.NotEqual("", span.String())
 	span.Finish()
@@ -30,7 +30,7 @@ func TestSpanString(t *testing.T) {
 func TestSpanSetMeta(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 
 	// check the map is properly initialized
 	span.SetMeta("status.code", "200")
@@ -41,7 +41,7 @@ func TestSpanSetMeta(t *testing.T) {
 func TestSpanSetMetric(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 
 	// check the map is properly initialized
 	span.SetMetric("bytes", 1024.42)
@@ -52,7 +52,7 @@ func TestSpanSetMetric(t *testing.T) {
 func TestSpanError(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 
 	// check the error is set in the default meta
 	err := errors.New("Something wrong")
@@ -78,7 +78,7 @@ func TestEmptySpan(t *testing.T) {
 func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 
 	// don't set the error if it's nil
 	span.SetError(nil)
@@ -90,7 +90,7 @@ func TestSpanFinish(t *testing.T) {
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
 	tracer := NewTracer()
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 
 	// the finish should set the duration
 	time.Sleep(wait)
@@ -107,7 +107,7 @@ func TestSpanFinishTwice(t *testing.T) {
 	assert.Equal(tracer.buffer.Len(), 0)
 
 	// the finish must be idempotent
-	span := tracer.NewSpan("pylons.request", "pylons", "/")
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	time.Sleep(wait)
 	span.Finish()
 	assert.Equal(tracer.buffer.Len(), 1)
