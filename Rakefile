@@ -62,7 +62,7 @@ namespace :lint do
 
   desc "Lint the fast things"
   task :fast do
-    sh "gometalinter --fast #{disable} --deadline=5s ./..."
+    sh "gometalinter --fast #{disable} --errors --deadline=5s ./..."
   end
 
   desc "Lint everything"
