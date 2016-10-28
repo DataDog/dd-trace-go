@@ -17,6 +17,42 @@ const (
 	debug = false
 )
 
+func TestClient(t *testing.T) {
+	assert := assert.New(t)
+
+	testTransport := &dummyTransport{}
+	testTracer := getTestTracer(testTransport)
+	testTracer.DebugLoggingEnabled = debug
+
+	rig, err := newRig(testTracer, true)
+	if err != nil {
+		t.Fatalf("error setting up rig: %s", err)
+	}
+	defer rig.Close()
+	client := rig.client
+
+	span := testTracer.NewRootSpan("a", "b", "c")
+	ctx := tracer.ContextWithSpan(context.Background(), span)
+	resp, err := client.Ping(ctx, &FixtureRequest{Name: "pass"})
+	span.Finish()
+	assert.Equal(resp.Message, "passed")
+
+	testTracer.Flush()
+	spans := testTransport.Spans()
+	assert.Len(spans, 3)
+
+	sspan := spans[0]
+	assert.Equal(sspan.Name, "grpc.server")
+
+	cspan := spans[1]
+	assert.Equal(cspan.Name, "grpc.client")
+
+	tspan := spans[2]
+	assert.Equal(tspan.Name, "a")
+	assert.Equal(cspan.TraceID, tspan.TraceID)
+	assert.Equal(sspan.TraceID, tspan.TraceID)
+}
+
 func TestDisabled(t *testing.T) {
 	assert := assert.New(t)
 
@@ -25,7 +61,7 @@ func TestDisabled(t *testing.T) {
 	testTracer.DebugLoggingEnabled = debug
 	testTracer.SetEnabled(false)
 
-	rig, err := newRig(testTracer)
+	rig, err := newRig(testTracer, true)
 	if err != nil {
 		t.Fatalf("error setting up rig: %s", err)
 	}
@@ -47,7 +83,7 @@ func TestChild(t *testing.T) {
 	testTracer := getTestTracer(testTransport)
 	testTracer.DebugLoggingEnabled = debug
 
-	rig, err := newRig(testTracer)
+	rig, err := newRig(testTracer, false)
 	if err != nil {
 		t.Fatalf("error setting up rig: %s", err)
 	}
@@ -81,7 +117,7 @@ func TestPass(t *testing.T) {
 	testTracer := getTestTracer(testTransport)
 	testTracer.DebugLoggingEnabled = debug
 
-	rig, err := newRig(testTracer)
+	rig, err := newRig(testTracer, false)
 	if err != nil {
 		t.Fatalf("error setting up rig: %s", err)
 	}
@@ -149,9 +185,9 @@ func (r *rig) Close() {
 	r.listener.Close()
 }
 
-func newRig(t *tracer.Tracer) (*rig, error) {
+func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
 
-	ti := Interceptor(t)
+	ti := UnaryServerInterceptor(t)
 
 	server := grpc.NewServer(grpc.UnaryInterceptor(ti))
 
@@ -165,7 +201,15 @@ func newRig(t *tracer.Tracer) (*rig, error) {
 	// start our test fixtureServer.
 	go server.Serve(li)
 
-	conn, err := grpc.Dial(li.Addr().String(), grpc.WithInsecure())
+	opts := []grpc.DialOption{
+		grpc.WithInsecure(),
+	}
+
+	if traceClient {
+		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor(t)))
+	}
+
+	conn, err := grpc.Dial(li.Addr().String(), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error dialing: %s", err)
 	}

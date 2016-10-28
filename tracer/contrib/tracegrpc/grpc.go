@@ -1,6 +1,7 @@
 package tracegrpc
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -11,24 +12,44 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// Interceptor returns a UnaryServerInterceptor which will trace requests.
-func Interceptor(t *tracer.Tracer) grpc.UnaryServerInterceptor {
+// UnaryServerInterceptor will trace requests.
+func UnaryServerInterceptor(t *tracer.Tracer) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-
 		if !t.Enabled() {
 			return handler(ctx, req)
 		}
 
-		span := grpcSpan(t, ctx, info.FullMethod)
+		span := serverSpan(t, ctx, info.FullMethod)
 		resp, err := handler(tracer.ContextWithSpan(ctx, span), req)
 		span.FinishWithErr(err)
 		return resp, err
 	}
 }
 
-// grpcSpan returns a new grpc span for the given request.
-func grpcSpan(t *tracer.Tracer, ctx context.Context, method string) *tracer.Span {
+func UnaryClientInterceptor(t *tracer.Tracer) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		child := t.NewChildSpanFromContext("grpc.client", ctx)
 
+		if child.Service != "" {
+			md := metadata.New(map[string]string{
+				"trace_id":  fmt.Sprint(child.TraceID),
+				"parent_id": fmt.Sprint(child.ParentID),
+			})
+			if existing, ok := metadata.FromContext(ctx); ok {
+				md = metadata.Join(existing, md)
+			}
+			ctx = metadata.NewContext(ctx, md)
+		}
+
+		err := invoker(
+			tracer.ContextWithSpan(ctx, child),
+			method, req, reply, cc, opts...)
+		child.FinishWithErr(err)
+		return err
+	}
+}
+
+func serverSpan(t *tracer.Tracer, ctx context.Context, method string) *tracer.Span {
 	service, resource := parseMethod(method)
 
 	span := t.NewRootSpan("grpc.server", service, resource)
@@ -60,7 +81,23 @@ func parseMethod(method string) (service, resource string) {
 	return "", ""
 }
 
-// getIDs will return ids embededd in the context.
+// setIDs will set the trace ids on the context{
+func setIDs(span *tracer.Span, ctx context.Context) context.Context {
+	if span == nil || span.TraceID == 0 {
+		return ctx
+	}
+
+	md := metadata.New(map[string]string{
+		"trace_id":  fmt.Sprint(span.TraceID),
+		"parent_id": fmt.Sprint(span.ParentID),
+	})
+	if existing, ok := metadata.FromContext(ctx); ok {
+		md = metadata.Join(existing, md)
+	}
+	return metadata.NewContext(ctx, md)
+}
+
+// getIDs will return ids embededd an ahe context.
 func getIDs(ctx context.Context) (traceID, parentID uint64) {
 	if md, ok := metadata.FromContext(ctx); ok {
 		if id := getID(md, "trace_id"); id > 0 {
