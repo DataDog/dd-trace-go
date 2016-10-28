@@ -97,10 +97,10 @@ type FixtureServer interface {
 }
 
 func RegisterFixtureServer(s *grpc.Server, srv FixtureServer) {
-	s.RegisterService(&_Fixture_serviceDesc, srv)
+	s.RegisterService(&fixtureServiceDesc, srv)
 }
 
-func _Fixture_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func fixturePingHandler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(FixtureRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -118,13 +118,13 @@ func _Fixture_Ping_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
-var _Fixture_serviceDesc = grpc.ServiceDesc{
+var fixtureServiceDesc = grpc.ServiceDesc{
 	ServiceName: "tracegrpc.Fixture",
 	HandlerType: (*FixtureServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "Ping",
-			Handler:    _Fixture_Ping_Handler,
+			Handler:    fixturePingHandler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
