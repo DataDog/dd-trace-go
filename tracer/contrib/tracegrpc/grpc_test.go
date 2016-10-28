@@ -34,6 +34,7 @@ func TestClient(t *testing.T) {
 	span := testTracer.NewRootSpan("a", "b", "c")
 	ctx := tracer.ContextWithSpan(context.Background(), span)
 	resp, err := client.Ping(ctx, &FixtureRequest{Name: "pass"})
+	assert.Nil(err)
 	span.Finish()
 	assert.Equal(resp.Message, "passed")
 
