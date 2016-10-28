@@ -9,8 +9,12 @@ type datadogContextKey struct{}
 var spanKey = datadogContextKey{}
 
 // ContextWithSpan will return a new context that includes the given span.
+// DE
 func ContextWithSpan(ctx context.Context, span *Span) context.Context {
-	return context.WithValue(ctx, spanKey, span)
+	if span == nil {
+		return ctx
+	}
+	return span.Context(ctx)
 }
 
 // SpanFromContext returns the stored *Span from the Context if it's available.

@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -117,4 +118,19 @@ func TestSpanFinishTwice(t *testing.T) {
 	span.Finish()
 	assert.Equal(span.Duration, previousDuration)
 	assert.Equal(tracer.buffer.Len(), 1)
+}
+
+func TestSpanContext(t *testing.T) {
+	ctx := context.Background()
+	_, ok := SpanFromContext(ctx)
+	assert.False(t, ok)
+
+	tracer := NewTracer()
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
+
+	ctx = span.Context(ctx)
+	s2, ok := SpanFromContext(ctx)
+	assert.True(t, ok)
+	assert.Equal(t, s2.SpanID, span.SpanID)
+
 }

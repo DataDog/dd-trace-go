@@ -43,7 +43,7 @@ func saveFileHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Add the span to the request's context so we can pass the tracing information
 	// down the stack.
-	ctx := tracer.ContextWithSpan(r.Context(), span)
+	ctx := span.Context(r.Context())
 
 	// Do the work.
 	err := saveFile(ctx, "/tmp/example", r.Body)
