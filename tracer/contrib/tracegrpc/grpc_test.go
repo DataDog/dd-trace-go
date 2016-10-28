@@ -46,6 +46,7 @@ func TestClient(t *testing.T) {
 
 	cspan := spans[1]
 	assert.Equal(cspan.Name, "grpc.client")
+	assert.Equal(cspan.GetMeta("grpc.code"), "OK")
 
 	tspan := spans[2]
 	assert.Equal(tspan.Name, "a")
@@ -187,9 +188,7 @@ func (r *rig) Close() {
 
 func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
 
-	ti := UnaryServerInterceptor(t)
-
-	server := grpc.NewServer(grpc.UnaryInterceptor(ti))
+	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerInterceptor(t)))
 
 	RegisterFixtureServer(server, newFixtureServer())
 
@@ -206,7 +205,7 @@ func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
 	}
 
 	if traceClient {
-		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor(t)))
+		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor()))
 	}
 
 	conn, err := grpc.Dial(li.Addr().String(), opts...)

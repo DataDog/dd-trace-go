@@ -12,6 +12,12 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+// pass trace ids with these headers
+const (
+	traceIDKey  = "x-datadog-trace-id"
+	parentIDKey = "x-datadog-parent-id"
+)
+
 // UnaryServerInterceptor will trace requests.
 func UnaryServerInterceptor(t *tracer.Tracer) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
@@ -26,29 +32,33 @@ func UnaryServerInterceptor(t *tracer.Tracer) grpc.UnaryServerInterceptor {
 	}
 }
 
-func UnaryClientInterceptor(t *tracer.Tracer) grpc.UnaryClientInterceptor {
+func UnaryClientInterceptor() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		child := t.NewChildSpanFromContext("grpc.client", ctx)
 
-		if child.Service != "" {
-			md := metadata.New(map[string]string{
-				"trace_id":  fmt.Sprint(child.TraceID),
-				"parent_id": fmt.Sprint(child.ParentID),
-			})
-			if existing, ok := metadata.FromContext(ctx); ok {
-				md = metadata.Join(existing, md)
-			}
-			ctx = metadata.NewContext(ctx, md)
+		var child *tracer.Span
+		span, ok := tracer.SpanFromContext(ctx)
+
+		// only trace the request if this is already part of a trace.
+		// does this make sense?
+		if ok && span.Tracer() != nil {
+			t := span.Tracer()
+			child = t.NewChildSpan("grpc.client", span)
+			child.SetMeta("grpc.method", method)
+			ctx = setIDs(child, ctx)
+			ctx = tracer.ContextWithSpan(ctx, child)
 		}
 
-		err := invoker(
-			tracer.ContextWithSpan(ctx, child),
-			method, req, reply, cc, opts...)
-		child.FinishWithErr(err)
+		err := invoker(ctx, method, req, reply, cc, opts...)
+		if child != nil {
+			child.SetMeta("grpc.code", grpc.Code(err).String())
+			child.FinishWithErr(err)
+
+		}
 		return err
 	}
 }
 
+// serverSpan will creata
 func serverSpan(t *tracer.Tracer, ctx context.Context, method string) *tracer.Span {
 	service, resource := parseMethod(method)
 
@@ -88,8 +98,8 @@ func setIDs(span *tracer.Span, ctx context.Context) context.Context {
 	}
 
 	md := metadata.New(map[string]string{
-		"trace_id":  fmt.Sprint(span.TraceID),
-		"parent_id": fmt.Sprint(span.ParentID),
+		traceIDKey:  fmt.Sprint(span.TraceID),
+		parentIDKey: fmt.Sprint(span.ParentID),
 	})
 	if existing, ok := metadata.FromContext(ctx); ok {
 		md = metadata.Join(existing, md)
@@ -100,10 +110,10 @@ func setIDs(span *tracer.Span, ctx context.Context) context.Context {
 // getIDs will return ids embededd an ahe context.
 func getIDs(ctx context.Context) (traceID, parentID uint64) {
 	if md, ok := metadata.FromContext(ctx); ok {
-		if id := getID(md, "trace_id"); id > 0 {
+		if id := getID(md, traceIDKey); id > 0 {
 			traceID = id
 		}
-		if id := getID(md, "parent_id"); id > 0 {
+		if id := getID(md, parentIDKey); id > 0 {
 			parentID = id
 		}
 	}
