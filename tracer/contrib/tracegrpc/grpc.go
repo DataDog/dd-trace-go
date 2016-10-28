@@ -46,6 +46,8 @@ func UnaryClientInterceptor() grpc.UnaryClientInterceptor {
 			child.SetMeta("grpc.method", method)
 			ctx = setIDs(child, ctx)
 			ctx = tracer.ContextWithSpan(ctx, child)
+			// FIXME[matt] add the host / port information here
+			// https://github.com/grpc/grpc-go/issues/951
 		}
 
 		err := invoker(ctx, method, req, reply, cc, opts...)
