@@ -18,7 +18,7 @@ const (
 	parentIDKey = "x-datadog-parent-id"
 )
 
-// UnaryServerInterceptor will trace requests.
+// UnaryServerInterceptor will trace requests to the given grpc server.
 func UnaryServerInterceptor(t *tracer.Tracer) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if !t.Enabled() {
@@ -32,6 +32,7 @@ func UnaryServerInterceptor(t *tracer.Tracer) grpc.UnaryServerInterceptor {
 	}
 }
 
+// UnaryClientInterceptor will add tracing to a gprc client.
 func UnaryClientInterceptor() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 
@@ -60,7 +61,6 @@ func UnaryClientInterceptor() grpc.UnaryClientInterceptor {
 	}
 }
 
-// serverSpan will creata
 func serverSpan(t *tracer.Tracer, ctx context.Context, method string) *tracer.Span {
 	service, resource := parseMethod(method)
 
