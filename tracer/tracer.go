@@ -168,7 +168,7 @@ func NewChildSpan(name string, parent *Span) *Span {
 }
 
 // NewChildSpanFromContext will create a child span of the span contained in
-// the given context. If the context contains to span, a span with
+// the given context. If the context contains no span, a span with
 // no service or resource will be returned.
 func NewChildSpanFromContext(name string, ctx context.Context) *Span {
 	return DefaultTracer.NewChildSpanFromContext(name, ctx)

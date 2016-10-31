@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -196,8 +197,20 @@ func (s *Span) String() string {
 	return strings.Join(lines, "\n")
 }
 
+// Context returns a copy of the given context that includes this span.
+// This span can be accessed downstream with SpanFromContext and friends.
+func (s *Span) Context(ctx context.Context) context.Context {
+	if s == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, spanKey, s)
+}
+
 // Tracer returns the tracer that created this span.
 func (s *Span) Tracer() *Tracer {
+	if s == nil {
+		return nil
+	}
 	return s.tracer
 }
 
