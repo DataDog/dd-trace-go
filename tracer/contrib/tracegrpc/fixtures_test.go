@@ -44,6 +44,13 @@ func (m *FixtureRequest) String() string            { return proto.CompactTextSt
 func (*FixtureRequest) ProtoMessage()               {}
 func (*FixtureRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
 
+func (m *FixtureRequest) GetName() string {
+	if m != nil {
+		return m.Name
+	}
+	return ""
+}
+
 // The response message containing the greetings
 type FixtureReply struct {
 	Message string `protobuf:"bytes,1,opt,name=message" json:"message,omitempty"`
@@ -53,6 +60,13 @@ func (m *FixtureReply) Reset()                    { *m = FixtureReply{} }
 func (m *FixtureReply) String() string            { return proto.CompactTextString(m) }
 func (*FixtureReply) ProtoMessage()               {}
 func (*FixtureReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+
+func (m *FixtureReply) GetMessage() string {
+	if m != nil {
+		return m.Message
+	}
+	return ""
+}
 
 func init() {
 	proto.RegisterType((*FixtureRequest)(nil), "tracegrpc.FixtureRequest")
@@ -65,7 +79,7 @@ var _ grpc.ClientConn
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion3
+const _ = grpc.SupportPackageIsVersion4
 
 // Client API for Fixture service
 
@@ -128,7 +142,7 @@ var fixtureServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: fileDescriptor0,
+	Metadata: "fixtures.proto",
 }
 
 func init() { proto.RegisterFile("fixtures.proto", fileDescriptor0) }
