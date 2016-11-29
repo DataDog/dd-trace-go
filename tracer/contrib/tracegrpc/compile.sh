@@ -2,7 +2,7 @@
 
 # compiles test fixtures
 set -e
-protoc3 -I . fixtures.proto --go_out=plugins=grpc:.
+protoc -I . fixtures.proto --go_out=plugins=grpc:.
 
 # FIXME[matt] hacks to move the fixtures into the testing package
 # and make it pass our lint rules. This is cheesy but very simple.
