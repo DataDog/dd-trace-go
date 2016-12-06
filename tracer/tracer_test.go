@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -162,10 +163,10 @@ type DummyTransport struct {
 	pool *encoderPool
 }
 
-func (t *DummyTransport) Send(spans []*Span) error {
+func (t *DummyTransport) Send(spans []*Span) (*http.Response, error) {
 	encoder := t.pool.Borrow()
 	defer t.pool.Return(encoder)
-	return encoder.Encode(spans)
+	return nil, encoder.Encode(spans)
 }
 
 func BenchmarkTracerAddSpans(b *testing.B) {

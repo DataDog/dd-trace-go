@@ -172,9 +172,9 @@ type dummyTransport struct {
 	spans []*tracer.Span
 }
 
-func (d *dummyTransport) Send(s []*tracer.Span) error {
+func (d *dummyTransport) Send(s []*tracer.Span) (*http.Response, error) {
 	d.spans = append(d.spans, s...)
-	return nil
+	return nil, nil
 }
 
 func (d *dummyTransport) Spans() []*tracer.Span {
