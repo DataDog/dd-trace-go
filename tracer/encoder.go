@@ -25,9 +25,9 @@ func newJSONEncoder() *jsonEncoder {
 // Encode returns a byte array related to the marshalling
 // of a list of spans. It resets the JSONEncoder internal buffer
 // and proceeds with the encoding.
-func (e *jsonEncoder) Encode(spans []*Span) error {
+func (e *jsonEncoder) Encode(traces [][]*Span) error {
 	e.b.Reset()
-	return e.j.Encode(spans)
+	return e.j.Encode(traces)
 }
 
 // Read values from the internal buffer

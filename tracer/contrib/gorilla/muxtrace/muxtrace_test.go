@@ -34,8 +34,8 @@ func TestMuxTracerDisabled(t *testing.T) {
 
 	// assert nothing was traced.
 	assert.Nil(testTracer.Flush())
-	spans := testTransport.spans
-	assert.Len(spans, 0)
+	traces := testTransport.Traces()
+	assert.Len(traces, 0)
 }
 
 func TestMuxTracerSubrequest(t *testing.T) {
@@ -43,7 +43,6 @@ func TestMuxTracerSubrequest(t *testing.T) {
 
 	// Send and verify a 200 request
 	for _, url := range []string{"/sub/child1", "/sub/child2"} {
-
 		tracer, transport, router := setup(t)
 		req := httptest.NewRequest("GET", url, nil)
 		writer := httptest.NewRecorder()
@@ -53,7 +52,9 @@ func TestMuxTracerSubrequest(t *testing.T) {
 
 		// ensure properly traced
 		assert.Nil(tracer.Flush())
-		spans := transport.spans
+		traces := transport.Traces()
+		assert.Len(traces, 1)
+		spans := traces[0]
 		assert.Len(spans, 1)
 
 		s := spans[0]
@@ -80,7 +81,9 @@ func TestMuxTracer200(t *testing.T) {
 
 	// ensure properly traced
 	assert.Nil(tracer.Flush())
-	spans := transport.spans
+	traces := transport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
 	assert.Len(spans, 1)
 
 	s := spans[0]
@@ -106,7 +109,9 @@ func TestMuxTracer500(t *testing.T) {
 
 	// ensure properly traced
 	assert.Nil(tracer.Flush())
-	spans := transport.spans
+	traces := transport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
 	assert.Len(spans, 1)
 
 	s := spans[0]
@@ -159,26 +164,26 @@ func setup(t *testing.T) (*tracer.Tracer, *dummyTransport, *mux.Router) {
 	return tracer, transport, r
 }
 
-// getTestTracer returns a tracer which will buffer but not submit spans.
+// getTestTracer returns a Tracer with a DummyTransport
 func getTestTracer(service string) (*tracer.Tracer, *dummyTransport, *MuxTracer) {
-	testTransport := &dummyTransport{}
-	testTracer := tracer.NewTracerTransport(testTransport)
-	testMuxTracer := NewMuxTracer(service, testTracer)
-	return testTracer, testTransport, testMuxTracer
+	transport := &dummyTransport{}
+	tracer := tracer.NewTracerTransport(transport)
+	muxTracer := NewMuxTracer(service, tracer)
+	return tracer, transport, muxTracer
 }
 
-// dummyTransport is a transport that just buffers spans.
+// dummyTransport is a transport that just buffers spans and encoding
 type dummyTransport struct {
-	spans []*tracer.Span
+	traces [][]*tracer.Span
 }
 
-func (d *dummyTransport) Send(s []*tracer.Span) (*http.Response, error) {
-	d.spans = append(d.spans, s...)
+func (t *dummyTransport) Send(traces [][]*tracer.Span) (*http.Response, error) {
+	t.traces = append(t.traces, traces...)
 	return nil, nil
 }
 
-func (d *dummyTransport) Spans() []*tracer.Span {
-	s := d.spans
-	d.spans = nil
-	return s
+func (t *dummyTransport) Traces() [][]*tracer.Span {
+	traces := t.traces
+	t.traces = nil
+	return traces
 }

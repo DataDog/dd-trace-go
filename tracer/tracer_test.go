@@ -163,10 +163,10 @@ type DummyTransport struct {
 	pool *encoderPool
 }
 
-func (t *DummyTransport) Send(spans []*Span) (*http.Response, error) {
+func (t *DummyTransport) Send(traces [][]*Span) (*http.Response, error) {
 	encoder := t.pool.Borrow()
 	defer t.pool.Return(encoder)
-	return nil, encoder.Encode(spans)
+	return nil, encoder.Encode(traces)
 }
 
 func BenchmarkTracerAddSpans(b *testing.B) {

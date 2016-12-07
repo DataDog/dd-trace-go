@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultDeliveryURL = "http://localhost:7777/v0.1/spans"
+	defaultDeliveryURL = "http://localhost:7777/v0.3/traces"
 	flushInterval      = 2 * time.Second
 )
 
@@ -133,7 +133,10 @@ func (t *Tracer) Flush() error {
 		return nil
 	}
 
-	_, err := t.transport.Send(spans)
+	// TODO[manu]: this doesn't make sense! change it with a proper buffer
+	var traces [][]*Span
+	traces = append(traces, spans)
+	_, err := t.transport.Send(traces)
 	return err
 
 }
