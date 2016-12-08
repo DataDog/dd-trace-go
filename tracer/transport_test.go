@@ -46,6 +46,9 @@ func TestTracesAgentIntegration(t *testing.T) {
 		payload [][]*Span
 	}{
 		{getTestTrace(1, 1)},
+		{getTestTrace(10, 1)},
+		{getTestTrace(1, 10)},
+		{getTestTrace(10, 10)},
 	}
 
 	for _, tc := range testCases {
