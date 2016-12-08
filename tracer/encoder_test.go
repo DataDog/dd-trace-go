@@ -8,6 +8,22 @@ import (
 	"github.com/ugorji/go/codec"
 )
 
+func TestEncoderContentType(t *testing.T) {
+	assert := assert.New(t)
+
+	testCases := []struct {
+		encoder     Encoder
+		contentType string
+	}{
+		{newJSONEncoder(), "application/json"},
+		{newMsgpackEncoder(), "application/msgpack"},
+	}
+
+	for _, tc := range testCases {
+		assert.Equal(tc.contentType, tc.encoder.ContentType())
+	}
+}
+
 func TestJSONEncoding(t *testing.T) {
 	assert := assert.New(t)
 
@@ -29,7 +45,7 @@ func TestJSONEncoding(t *testing.T) {
 
 		// decode to check the right encoding
 		var traces [][]*Span
-		dec := json.NewDecoder(encoder.b)
+		dec := json.NewDecoder(encoder.buffer)
 		err = dec.Decode(&traces)
 		assert.Nil(err)
 		assert.Len(traces, tc.traces)
