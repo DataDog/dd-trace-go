@@ -2,7 +2,6 @@ package tracer
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -17,8 +16,8 @@ func getTestSpan() *Span {
 		Service:  "high.throughput",
 		Name:     "sending.events",
 		Resource: "SEND /data",
-		Start:    time.Now().UnixNano(),
-		Duration: time.Second.Nanoseconds(),
+		Start:    1481215590883401105,
+		Duration: 1000000000,
 		Meta:     map[string]string{"http.host": "192.168.0.1"},
 		Metrics:  map[string]float64{"http.monitor": 41.99},
 	}
