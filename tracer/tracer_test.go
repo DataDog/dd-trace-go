@@ -236,6 +236,24 @@ func (t *dummyTransport) Traces() [][]*Span {
 	return traces
 }
 
+func BenchmarkConcurrentTracing(b *testing.B) {
+	// Create b.N traces with 10 spans each
+	tracer := NewTracer()
+	tracer.transport = &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		go func() {
+			parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+			defer parent.Finish()
+
+			for i := 0; i < 10; i++ {
+				tracer.NewChildSpan("redis.command", parent).Finish()
+			}
+		}()
+	}
+}
+
 func BenchmarkTracerAddSpans(b *testing.B) {
 	// create a new tracer with a DummyTransport
 	tracer := NewTracer()
