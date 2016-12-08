@@ -3,20 +3,11 @@ package tracer
 import (
 	"context"
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
-
-// getTestTracer returns a tracer which will buffer but not submit spans.
-func getTestTracer() *Tracer {
-	return &Tracer{
-		enabled: true,
-		buffer:  newSpansBuffer(10),
-		sampler: newAllSampler(),
-	}
-
-}
 
 func TestDefaultTracer(t *testing.T) {
 	assert := assert.New(t)
@@ -158,21 +149,64 @@ func TestTracerEdgeSampler(t *testing.T) {
 	assert.Equal(count, tracer1.buffer.Len())
 }
 
-// Mock Transport with a real Encoder
-type DummyTransport struct {
-	pool *encoderPool
+func TestTracerConcurrent(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport := getTestTracer()
+
+	// Wait for three different Go routine that should create
+	// three different traces
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		tracer.NewRootSpan("pylons.request", "pylons", "/").Finish()
+	}()
+	go func() {
+		defer wg.Done()
+		tracer.NewRootSpan("pylons.request", "pylons", "/home").Finish()
+	}()
+	go func() {
+		defer wg.Done()
+		tracer.NewRootSpan("pylons.request", "pylons", "/trace").Finish()
+	}()
+
+	// TODO[manu]: check each single trace when tests pass
+	wg.Wait()
+	tracer.Flush()
+	traces := transport.Traces()
+	assert.Len(traces, 3)
 }
 
-func (t *DummyTransport) Send(traces [][]*Span) (*http.Response, error) {
+// getTestTracer returns a Tracer with a DummyTransport
+func getTestTracer() (*Tracer, *dummyTransport) {
+	transport := &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
+	tracer := NewTracerTransport(transport)
+	return tracer, transport
+}
+
+// Mock Transport with a real Encoder
+type dummyTransport struct {
+	pool   *encoderPool
+	traces [][]*Span
+}
+
+func (t *dummyTransport) Send(traces [][]*Span) (*http.Response, error) {
+	t.traces = append(t.traces, traces...)
 	encoder := t.pool.Borrow()
 	defer t.pool.Return(encoder)
 	return nil, encoder.Encode(traces)
 }
 
+func (t *dummyTransport) Traces() [][]*Span {
+	traces := t.traces
+	t.traces = nil
+	return traces
+}
+
 func BenchmarkTracerAddSpans(b *testing.B) {
 	// create a new tracer with a DummyTransport
 	tracer := NewTracer()
-	tracer.transport = &DummyTransport{pool: newEncoderPool(encoderPoolSize)}
+	tracer.transport = &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
 
 	for n := 0; n < b.N; n++ {
 		span := tracer.NewRootSpan("pylons.request", "pylons", "/")
