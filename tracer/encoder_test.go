@@ -58,7 +58,7 @@ func TestPoolBorrowCreate(t *testing.T) {
 	assert := assert.New(t)
 
 	// borrow an encoder from the pool
-	pool := newEncoderPool(1)
+	pool := newAgentEncoderPool(JSON_ENCODER, 1)
 	encoder := pool.Borrow()
 	assert.NotNil(encoder)
 }
@@ -67,7 +67,7 @@ func TestPoolReturn(t *testing.T) {
 	assert := assert.New(t)
 
 	// an encoder can return in the pool
-	pool := newEncoderPool(1)
+	pool := newAgentEncoderPool(JSON_ENCODER, 1)
 	encoder := newJSONEncoder()
 	pool.pool <- encoder
 	pool.Return(encoder)
@@ -81,7 +81,7 @@ func TestPoolReuseEncoder(t *testing.T) {
 	assert := assert.New(t)
 
 	// borrow, return and borrow again an encoder from the pool
-	pool := newEncoderPool(1)
+	pool := newAgentEncoderPool(JSON_ENCODER, 1)
 	encoder := pool.Borrow()
 	pool.Return(encoder)
 	anotherEncoder := pool.Borrow()
@@ -89,7 +89,7 @@ func TestPoolReuseEncoder(t *testing.T) {
 }
 
 func TestPoolSize(t *testing.T) {
-	pool := newEncoderPool(1)
+	pool := newAgentEncoderPool(JSON_ENCODER, 1)
 	encoder := newJSONEncoder()
 	anotherEncoder := newJSONEncoder()
 

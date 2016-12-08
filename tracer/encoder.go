@@ -3,9 +3,49 @@ package tracer
 import (
 	"bytes"
 	"encoding/json"
+
+	"github.com/ugorji/go/codec"
 )
 
-// jsonEncoder encodes a list of spans in JSON format.
+// Encoder is a generic interface that expects an Encode() method
+// for the encoding process, and a Read() method that will be used
+// by the http handler
+type Encoder interface {
+	Encode(traces [][]*Span) error
+	Read(p []byte) (int, error)
+}
+
+var mh codec.MsgpackHandle
+
+// msgpackEncoder encodes a list of traces in Msgpack format
+type msgpackEncoder struct {
+	buffer  *bytes.Buffer
+	encoder *codec.Encoder
+}
+
+func newMsgpackEncoder() *msgpackEncoder {
+	buffer := &bytes.Buffer{}
+	encoder := codec.NewEncoder(buffer, &mh)
+
+	return &msgpackEncoder{
+		buffer:  buffer,
+		encoder: encoder,
+	}
+}
+
+// Encode serializes the given traces list into the internal
+// buffer, returning the error if any
+func (e *msgpackEncoder) Encode(traces [][]*Span) error {
+	e.buffer.Reset()
+	return e.encoder.Encode(traces)
+}
+
+// Read values from the internal buffer
+func (e *msgpackEncoder) Read(p []byte) (int, error) {
+	return e.buffer.Read(p)
+}
+
+// jsonEncoder encodes a list of traces in JSON format
 type jsonEncoder struct {
 	j *json.Encoder // the JSON encoder
 	b *bytes.Buffer // the reusable buffer
@@ -22,9 +62,8 @@ func newJSONEncoder() *jsonEncoder {
 	}
 }
 
-// Encode returns a byte array related to the marshalling
-// of a list of spans. It resets the JSONEncoder internal buffer
-// and proceeds with the encoding.
+// Encode serializes the given traces list into the internal
+// buffer, returning the error if any
 func (e *jsonEncoder) Encode(traces [][]*Span) error {
 	e.b.Reset()
 	return e.j.Encode(traces)
@@ -35,31 +74,50 @@ func (e *jsonEncoder) Read(p []byte) (int, error) {
 	return e.b.Read(p)
 }
 
-// encoderPool is a pool meant to share the buffers required to encode traces.
+// EncoderPool is a pool meant to share the buffers required to encode traces.
 // It naively tries to cap the number of active encoders, but doesn't enforce
-// the limit.
-type encoderPool struct {
-	pool chan *jsonEncoder
+// the limit. To use a pool, you should Borrow() for an encoder and then
+// Return() that encoder to the pool. Encoders in that pool should honor
+// the Encoder interface.
+type EncoderPool interface {
+	Borrow() Encoder
+	Return(e Encoder)
 }
 
-func newEncoderPool(size int) *encoderPool {
-	return &encoderPool{pool: make(chan *jsonEncoder, size)}
+const (
+	JSON_ENCODER = iota
+	MSGPACK_ENCODER
+)
+
+type agentEncoderPool struct {
+	encoderType int
+	pool        chan Encoder
 }
 
-// Borrow returns an available encoders or creates a new one
-func (p *encoderPool) Borrow() *jsonEncoder {
-	var encoder *jsonEncoder
+func newAgentEncoderPool(encoderType, size int) *agentEncoderPool {
+	return &agentEncoderPool{
+		encoderType: encoderType,
+		pool:        make(chan Encoder, size),
+	}
+}
+
+func (p *agentEncoderPool) Borrow() Encoder {
+	var encoder Encoder
 
 	select {
 	case encoder = <-p.pool:
 	default:
-		encoder = newJSONEncoder()
+		switch p.encoderType {
+		case JSON_ENCODER:
+			encoder = newJSONEncoder()
+		case MSGPACK_ENCODER:
+			encoder = newMsgpackEncoder()
+		}
 	}
 	return encoder
 }
 
-// Return is called when from the code an Encoder is released in the pool.
-func (p *encoderPool) Return(e *jsonEncoder) {
+func (p *agentEncoderPool) Return(e Encoder) {
 	select {
 	case p.pool <- e:
 	default:

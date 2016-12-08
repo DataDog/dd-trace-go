@@ -18,14 +18,17 @@ type Transport interface {
 
 type httpTransport struct {
 	url    string       // the delivery URL
-	pool   *encoderPool // encoding allocates lot of buffers (which might then be resized) so we use a pool so they can be re-used
+	pool   EncoderPool  // encoding allocates lot of buffers (which might then be resized) so we use a pool so they can be re-used
 	client *http.Client // the HTTP client used in the POST
 }
 
 func newHTTPTransport(url string) *httpTransport {
+	// initialize the default EncoderPool
+	pool := newAgentEncoderPool(JSON_ENCODER, encoderPoolSize)
+
 	return &httpTransport{
 		url:  url,
-		pool: newEncoderPool(encoderPoolSize),
+		pool: pool,
 		client: &http.Client{
 			Timeout: defaultHTTPTimeout,
 		},

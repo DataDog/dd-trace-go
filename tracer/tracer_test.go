@@ -213,8 +213,7 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
-	tracer := NewTracer()
-	tracer.transport = &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
+	tracer, _ := getTestTracer()
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
@@ -232,8 +231,7 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 // BenchmarkTracerAddSpans tests the performance of creating and finishing a root
 // span. It should include the encoding overhead.
 func BenchmarkTracerAddSpans(b *testing.B) {
-	tracer := NewTracer()
-	tracer.transport = &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
+	tracer, _ := getTestTracer()
 
 	for n := 0; n < b.N; n++ {
 		span := tracer.NewRootSpan("pylons.request", "pylons", "/")
@@ -243,14 +241,15 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 
 // getTestTracer returns a Tracer with a DummyTransport
 func getTestTracer() (*Tracer, *dummyTransport) {
-	transport := &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
+	pool := newAgentEncoderPool(JSON_ENCODER, encoderPoolSize)
+	transport := &dummyTransport{pool: pool}
 	tracer := NewTracerTransport(transport)
 	return tracer, transport
 }
 
 // Mock Transport with a real Encoder
 type dummyTransport struct {
-	pool   *encoderPool
+	pool   EncoderPool
 	traces [][]*Span
 }
 
