@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	defaultHTTPTimeout = time.Second // defines the current timeout before giving up with the send process
-	encoderPoolSize    = 5           // how many encoders are available
+	defaultEncoder     = MSGPACK_ENCODER // defines the default encoder used when the Transport is initialized
+	defaultHTTPTimeout = time.Second     // defines the current timeout before giving up with the send process
+	encoderPoolSize    = 5               // how many encoders are available
 )
 
 // Transport is an interface for span submission to the agent.
@@ -24,7 +25,7 @@ type httpTransport struct {
 
 func newHTTPTransport(url string) *httpTransport {
 	// initialize the default EncoderPool
-	pool := newAgentEncoderPool(JSON_ENCODER, encoderPoolSize)
+	pool := newAgentEncoderPool(defaultEncoder, encoderPoolSize)
 
 	return &httpTransport{
 		url:  url,
@@ -52,7 +53,7 @@ func (t *httpTransport) Send(traces [][]*Span) (*http.Response, error) {
 
 	// prepare the client and send the payload
 	req, _ := http.NewRequest("POST", t.url, encoder)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/msgpack")
 	response, err := t.client.Do(req)
 
 	// if we have an error, return an empty Response to protect against nil pointer dereference
