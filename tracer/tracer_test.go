@@ -170,11 +170,44 @@ func TestTracerConcurrent(t *testing.T) {
 		tracer.NewRootSpan("pylons.request", "pylons", "/trace").Finish()
 	}()
 
-	// TODO[manu]: check each single trace when tests pass
 	wg.Wait()
 	tracer.Flush()
 	traces := transport.Traces()
 	assert.Len(traces, 3)
+	assert.Len(traces[0], 1)
+	assert.Len(traces[1], 1)
+	assert.Len(traces[2], 1)
+}
+
+func TestTracerConcurrentMultipleSpans(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport := getTestTracer()
+
+	// Wait for three different Go routine that should create
+	// three different traces
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+		child := tracer.NewChildSpan("redis.command", parent)
+		child.Finish()
+		parent.Finish()
+	}()
+	go func() {
+		defer wg.Done()
+		parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+		child := tracer.NewChildSpan("redis.command", parent)
+		child.Finish()
+		parent.Finish()
+	}()
+
+	wg.Wait()
+	tracer.Flush()
+	traces := transport.Traces()
+	assert.Len(traces, 2)
+	assert.Len(traces[0], 2)
+	assert.Len(traces[1], 2)
 }
 
 // getTestTracer returns a Tracer with a DummyTransport
