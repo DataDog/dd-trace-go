@@ -1,7 +1,10 @@
 machine:
+  services:
+    - docker
   environment:
     GODIST: "go1.7.linux-amd64.tar.gz"
     IMPORT_PATH: "/home/ubuntu/.go_workspace/src/github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
+    AGENT_BUILD_PATH: "/home/ubuntu/agent"
     GO15VENDOREXPERIMENT: "1"
   post:
     - mkdir -p download
@@ -14,6 +17,11 @@ dependencies:
     # install requirements
     - rm -Rf /home/ubuntu/.go_workspace/src/*
     - rake lint:install
+    # prepare and run the trace agent
+    # TODO[manu]: remove this part when everything will be open source
+    - git clone git@github.com:DataDog/raclette.git $AGENT_BUILD_PATH
+    - cd $AGENT_BUILD_PATH && docker build -t datadog/trace-agent .
+    - docker run -d -e DD_API_KEY=invalid_key_but_this_is_fine -e DD_BIND_HOST=0.0.0.0 -p 127.0.0.1:7777:7777 datadog/trace-agent
 
   override:
     # put the package in the right $GOPATH

@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultDeliveryURL = "http://localhost:7777/spans"
+	defaultDeliveryURL = "http://localhost:7777/v0.1/spans"
 	flushInterval      = 2 * time.Second
 )
 
@@ -133,7 +133,8 @@ func (t *Tracer) Flush() error {
 		return nil
 	}
 
-	return t.transport.Send(spans)
+	_, err := t.transport.Send(spans)
+	return err
 
 }
 
