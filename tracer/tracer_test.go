@@ -153,8 +153,8 @@ func TestTracerConcurrent(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport := getTestTracer()
 
-	// Wait for three different Go routine that should create
-	// three different traces
+	// Wait for three different goroutines that should create
+	// three different traces with one child each
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
@@ -183,8 +183,8 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport := getTestTracer()
 
-	// Wait for three different Go routine that should create
-	// three different traces
+	// Wait for two different goroutines that should create
+	// two traces with two children each
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
@@ -208,6 +208,37 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	assert.Len(traces, 2)
 	assert.Len(traces[0], 2)
 	assert.Len(traces[1], 2)
+}
+
+// BenchmarkConcurrentTracing tests the performance of spawning a lot of
+// goroutines where each one creates a trace with a parent and a child.
+func BenchmarkConcurrentTracing(b *testing.B) {
+	tracer := NewTracer()
+	tracer.transport = &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		go func() {
+			parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+			defer parent.Finish()
+
+			for i := 0; i < 10; i++ {
+				tracer.NewChildSpan("redis.command", parent).Finish()
+			}
+		}()
+	}
+}
+
+// BenchmarkTracerAddSpans tests the performance of creating and finishing a root
+// span. It should include the encoding overhead.
+func BenchmarkTracerAddSpans(b *testing.B) {
+	tracer := NewTracer()
+	tracer.transport = &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
+
+	for n := 0; n < b.N; n++ {
+		span := tracer.NewRootSpan("pylons.request", "pylons", "/")
+		span.Finish()
+	}
 }
 
 // getTestTracer returns a Tracer with a DummyTransport
@@ -234,33 +265,4 @@ func (t *dummyTransport) Traces() [][]*Span {
 	traces := t.traces
 	t.traces = nil
 	return traces
-}
-
-func BenchmarkConcurrentTracing(b *testing.B) {
-	// Create b.N traces with 10 spans each
-	tracer := NewTracer()
-	tracer.transport = &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
-
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		go func() {
-			parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
-			defer parent.Finish()
-
-			for i := 0; i < 10; i++ {
-				tracer.NewChildSpan("redis.command", parent).Finish()
-			}
-		}()
-	}
-}
-
-func BenchmarkTracerAddSpans(b *testing.B) {
-	// create a new tracer with a DummyTransport
-	tracer := NewTracer()
-	tracer.transport = &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
-
-	for n := 0; n < b.N; n++ {
-		span := tracer.NewRootSpan("pylons.request", "pylons", "/")
-		span.Finish()
-	}
 }
