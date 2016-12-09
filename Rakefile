@@ -17,12 +17,12 @@ end
 
 desc "test"
 task :test do
-  sh "go test ./..."
+  sh "go test ./tracer/..."
 end
 
 desc "test race"
 task :race do
-  sh "go test -race ./..."
+  sh "go test -race ./tracer/..."
 end
 
 desc "Run coverage report"
@@ -42,7 +42,7 @@ task :cover do
 end
 
 task :get do
-  sh "go get -t ./..."
+  sh "go get -t ./tracer/..."
 end
 
 task :ci => [:get, :lint, :cover, :test, :race]
@@ -62,17 +62,17 @@ namespace :lint do
 
   desc "Lint the fast things"
   task :fast do
-    sh "gometalinter --fast #{disable} --errors --deadline=5s ./..."
+    sh "gometalinter --fast #{disable} --errors --deadline=5s ./tracer/..."
   end
 
   desc "Lint everything"
   task :errors do
-    sh "gometalinter --deadline 60s --errors #{disable} ./..."
+    sh "gometalinter --deadline 60s --errors #{disable} ./tracer/..."
   end
 
   desc "Lint everything with warnings"
   task :warn do
-    sh "gometalinter --deadline 60s #{disable} ./..."
+    sh "gometalinter --deadline 60s #{disable} ./tracer/..."
   end
 
 end
@@ -82,7 +82,7 @@ task :lint => :'lint:fast'
 task :default => [:test, :lint]
 
 def go_packages
-   return `go list ./...`.split("\n")
+   return `go list ./tracer/...`.split("\n")
 end
 
 def go_test(profile, path)
