@@ -241,7 +241,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 
 // getTestTracer returns a Tracer with a DummyTransport
 func getTestTracer() (*Tracer, *dummyTransport) {
-	pool := newAgentEncoderPool(JSON_ENCODER, encoderPoolSize)
+	pool, _ := newAgentEncoderPool(JSON_ENCODER, encoderPoolSize)
 	transport := &dummyTransport{pool: pool}
 	tracer := NewTracerTransport(transport)
 	return tracer, transport
@@ -265,3 +265,5 @@ func (t *dummyTransport) Traces() [][]*Span {
 	t.traces = nil
 	return traces
 }
+
+func (t *dummyTransport) SetHeader(key, value string) {}

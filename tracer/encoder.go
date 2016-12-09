@@ -109,11 +109,18 @@ type agentEncoderPool struct {
 	pool        chan Encoder
 }
 
-func newAgentEncoderPool(encoderType, size int) *agentEncoderPool {
-	return &agentEncoderPool{
+func newAgentEncoderPool(encoderType, size int) (*agentEncoderPool, string) {
+	pool := &agentEncoderPool{
 		encoderType: encoderType,
 		pool:        make(chan Encoder, size),
 	}
+
+	// Borrow an encoder to retrieve the default ContentType
+	encoder := pool.Borrow()
+	pool.Return(encoder)
+
+	contentType := encoder.ContentType()
+	return pool, contentType
 }
 
 func (p *agentEncoderPool) Borrow() Encoder {

@@ -117,33 +117,16 @@ func TestPoolBorrowCreate(t *testing.T) {
 	assert := assert.New(t)
 
 	// borrow an encoder from the pool
-	// the fact that we're using a JSON_ENCODER is an implementation detail
-	pool := newAgentEncoderPool(JSON_ENCODER, 1)
+	pool, _ := newAgentEncoderPool(MSGPACK_ENCODER, 1)
 	encoder := pool.Borrow()
 	assert.NotNil(encoder)
-}
-
-func TestPoolReturn(t *testing.T) {
-	assert := assert.New(t)
-
-	// an encoder can return in the pool
-	// the fact that we're using a JSON_ENCODER is an implementation detail
-	pool := newAgentEncoderPool(JSON_ENCODER, 1)
-	encoder := newJSONEncoder()
-	pool.pool <- encoder
-	pool.Return(encoder)
-
-	// the encoder is the one we get before
-	returnedEncoder := <-pool.pool
-	assert.Equal(returnedEncoder, encoder)
 }
 
 func TestPoolReuseEncoder(t *testing.T) {
 	assert := assert.New(t)
 
 	// borrow, return and borrow again an encoder from the pool
-	// the fact that we're using a JSON_ENCODER is an implementation detail
-	pool := newAgentEncoderPool(JSON_ENCODER, 1)
+	pool, _ := newAgentEncoderPool(MSGPACK_ENCODER, 1)
 	encoder := pool.Borrow()
 	pool.Return(encoder)
 	anotherEncoder := pool.Borrow()
@@ -151,13 +134,26 @@ func TestPoolReuseEncoder(t *testing.T) {
 }
 
 func TestPoolSize(t *testing.T) {
-	// the fact that we're using a JSON_ENCODER is an implementation detail
-	pool := newAgentEncoderPool(JSON_ENCODER, 1)
-	encoder := newJSONEncoder()
-	anotherEncoder := newJSONEncoder()
+	pool, _ := newAgentEncoderPool(MSGPACK_ENCODER, 1)
+	encoder := newMsgpackEncoder()
+	anotherEncoder := newMsgpackEncoder()
 
 	// put two encoders in the pool with a maximum size of 1
 	// doesn't hang the caller
 	pool.Return(encoder)
 	pool.Return(anotherEncoder)
+}
+
+func TestPoolReturn(t *testing.T) {
+	assert := assert.New(t)
+
+	// an encoder can return in the pool
+	pool, _ := newAgentEncoderPool(MSGPACK_ENCODER, 5)
+	encoder := newMsgpackEncoder()
+	pool.pool <- encoder
+	pool.Return(encoder)
+
+	// the encoder is the one we get before
+	returnedEncoder := <-pool.pool
+	assert.Equal(returnedEncoder, encoder)
 }
