@@ -1,87 +1,132 @@
 package tracer
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/ugorji/go/codec"
 )
 
-func TestJSONEncoder(t *testing.T) {
+func TestEncoderContentType(t *testing.T) {
 	assert := assert.New(t)
 
-	// create a traces list with a single span
-	var traces [][]*Span
-	var spans []*Span
-	span := NewSpan("pylons.request", "pylons", "/", 0, 0, 0, nil)
-	span.Start = 0
-	spans = append(spans, span)
-	traces = append(traces, spans)
+	testCases := []struct {
+		encoder     Encoder
+		contentType string
+	}{
+		{newJSONEncoder(), "application/json"},
+		{newMsgpackEncoder(), "application/msgpack"},
+	}
 
-	// the encoder must return a valid JSON byte array that ends with a \n
-	want := `[[{"name":"pylons.request","service":"pylons","resource":"/","type":"","start":0,"duration":0,"span_id":0,"trace_id":0,"parent_id":0,"error":0}]]`
-	want += "\n"
-
-	encoder := newJSONEncoder()
-	err := encoder.Encode(traces)
-	assert.Nil(err)
-	assert.Equal(want, encoder.b.String())
+	for _, tc := range testCases {
+		assert.Equal(tc.contentType, tc.encoder.ContentType())
+	}
 }
 
-func TestJSONRead(t *testing.T) {
+func TestJSONEncoding(t *testing.T) {
 	assert := assert.New(t)
 
-	// create a traces list with a single span
-	var traces [][]*Span
-	var spans []*Span
-	span := NewSpan("pylons.request", "pylons", "/", 0, 0, 0, nil)
-	span.Start = 0
-	spans = append(spans, span)
-	traces = append(traces, spans)
+	testCases := []struct {
+		traces int
+		size   int
+	}{
+		{1, 1},
+		{3, 1},
+		{1, 3},
+		{3, 3},
+	}
 
-	// fill the encoder internal buffer
-	encoder := newJSONEncoder()
-	_ = encoder.Encode(traces)
-	expectedSize := encoder.b.Len()
+	for _, tc := range testCases {
+		payload := getTestTrace(tc.traces, tc.size)
+		encoder := newJSONEncoder()
+		err := encoder.Encode(payload)
+		assert.Nil(err)
 
-	// the Read function must be used to get the value of the internal buffer
-	buff := make([]byte, expectedSize)
-	_, err := encoder.Read(buff)
+		// decode to check the right encoding
+		var traces [][]*Span
+		dec := json.NewDecoder(encoder.buffer)
+		err = dec.Decode(&traces)
+		assert.Nil(err)
+		assert.Len(traces, tc.traces)
 
-	// it should match the encoding payload
-	want := `[[{"name":"pylons.request","service":"pylons","resource":"/","type":"","start":0,"duration":0,"span_id":0,"trace_id":0,"parent_id":0,"error":0}]]`
-	want += "\n"
-	assert.Nil(err)
-	assert.Equal(want, string(buff))
+		for _, trace := range traces {
+			assert.Len(trace, tc.size)
+			span := trace[0]
+			assert.Equal(uint64(42), span.TraceID)
+			assert.Equal(uint64(52), span.SpanID)
+			assert.Equal(uint64(42), span.ParentID)
+			assert.Equal("web", span.Type)
+			assert.Equal("high.throughput", span.Service)
+			assert.Equal("sending.events", span.Name)
+			assert.Equal("SEND /data", span.Resource)
+			assert.Equal(int64(1481215590883401105), span.Start)
+			assert.Equal(int64(1000000000), span.Duration)
+			assert.Equal("192.168.0.1", span.Meta["http.host"])
+			assert.Equal(float64(41.99), span.Metrics["http.monitor"])
+		}
+	}
+}
+
+func TestMsgpackEncoding(t *testing.T) {
+	assert := assert.New(t)
+
+	testCases := []struct {
+		traces int
+		size   int
+	}{
+		{1, 1},
+		{3, 1},
+		{1, 3},
+		{3, 3},
+	}
+
+	for _, tc := range testCases {
+		payload := getTestTrace(tc.traces, tc.size)
+		encoder := newMsgpackEncoder()
+		err := encoder.Encode(payload)
+		assert.Nil(err)
+
+		// decode to check the right encoding
+		var traces [][]*Span
+		var mh codec.MsgpackHandle
+		dec := codec.NewDecoder(encoder.buffer, &mh)
+		err = dec.Decode(&traces)
+		assert.Nil(err)
+		assert.Len(traces, tc.traces)
+
+		for _, trace := range traces {
+			assert.Len(trace, tc.size)
+			span := trace[0]
+			assert.Equal(uint64(42), span.TraceID)
+			assert.Equal(uint64(52), span.SpanID)
+			assert.Equal(uint64(42), span.ParentID)
+			assert.Equal("web", span.Type)
+			assert.Equal("high.throughput", span.Service)
+			assert.Equal("sending.events", span.Name)
+			assert.Equal("SEND /data", span.Resource)
+			assert.Equal(int64(1481215590883401105), span.Start)
+			assert.Equal(int64(1000000000), span.Duration)
+			assert.Equal("192.168.0.1", span.Meta["http.host"])
+			assert.Equal(float64(41.99), span.Metrics["http.monitor"])
+		}
+	}
 }
 
 func TestPoolBorrowCreate(t *testing.T) {
 	assert := assert.New(t)
 
 	// borrow an encoder from the pool
-	pool := newEncoderPool(1)
+	pool, _ := newEncoderPool(MSGPACK_ENCODER, 1)
 	encoder := pool.Borrow()
 	assert.NotNil(encoder)
-}
-
-func TestPoolReturn(t *testing.T) {
-	assert := assert.New(t)
-
-	// an encoder can return in the pool
-	pool := newEncoderPool(1)
-	encoder := newJSONEncoder()
-	pool.pool <- encoder
-	pool.Return(encoder)
-
-	// the encoder is the one we get before
-	returnedEncoder := <-pool.pool
-	assert.Equal(returnedEncoder, encoder)
 }
 
 func TestPoolReuseEncoder(t *testing.T) {
 	assert := assert.New(t)
 
 	// borrow, return and borrow again an encoder from the pool
-	pool := newEncoderPool(1)
+	pool, _ := newEncoderPool(MSGPACK_ENCODER, 1)
 	encoder := pool.Borrow()
 	pool.Return(encoder)
 	anotherEncoder := pool.Borrow()
@@ -89,12 +134,26 @@ func TestPoolReuseEncoder(t *testing.T) {
 }
 
 func TestPoolSize(t *testing.T) {
-	pool := newEncoderPool(1)
-	encoder := newJSONEncoder()
-	anotherEncoder := newJSONEncoder()
+	pool, _ := newEncoderPool(MSGPACK_ENCODER, 1)
+	encoder := newMsgpackEncoder()
+	anotherEncoder := newMsgpackEncoder()
 
 	// put two encoders in the pool with a maximum size of 1
 	// doesn't hang the caller
 	pool.Return(encoder)
 	pool.Return(anotherEncoder)
+}
+
+func TestPoolReturn(t *testing.T) {
+	assert := assert.New(t)
+
+	// an encoder can return in the pool
+	pool, _ := newEncoderPool(MSGPACK_ENCODER, 5)
+	encoder := newMsgpackEncoder()
+	pool.pool <- encoder
+	pool.Return(encoder)
+
+	// the encoder is the one we get before
+	returnedEncoder := <-pool.pool
+	assert.Equal(returnedEncoder, encoder)
 }

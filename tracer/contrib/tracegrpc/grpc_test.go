@@ -246,3 +246,5 @@ func (t *dummyTransport) Traces() [][]*tracer.Span {
 	t.traces = nil
 	return traces
 }
+
+func (t *dummyTransport) SetHeader(key, value string) {}

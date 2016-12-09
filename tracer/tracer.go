@@ -8,8 +8,7 @@ import (
 )
 
 const (
-	defaultDeliveryURL = "http://localhost:7777/v0.3/traces"
-	flushInterval      = 2 * time.Second
+	flushInterval = 2 * time.Second
 )
 
 // Tracer creates, buffers and submits Spans which are used to time blocks of
@@ -29,7 +28,7 @@ type Tracer struct {
 // NewTracer creates a new Tracer. Most users should use the package's
 // DefaultTracer instance.
 func NewTracer() *Tracer {
-	return NewTracerTransport(newHTTPTransport(defaultDeliveryURL))
+	return NewTracerTransport(newDefaultTransport())
 }
 
 // NewTracerTransport create a new Tracer with the given transport.

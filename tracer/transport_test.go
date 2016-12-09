@@ -2,7 +2,6 @@ package tracer
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -17,8 +16,8 @@ func getTestSpan() *Span {
 		Service:  "high.throughput",
 		Name:     "sending.events",
 		Resource: "SEND /data",
-		Start:    time.Now().UnixNano(),
-		Duration: time.Second.Nanoseconds(),
+		Start:    1481215590883401105,
+		Duration: 1000000000,
 		Meta:     map[string]string{"http.host": "192.168.0.1"},
 		Metrics:  map[string]float64{"http.monitor": 41.99},
 	}
@@ -58,4 +57,58 @@ func TestTracesAgentIntegration(t *testing.T) {
 		assert.NotNil(response)
 		assert.Equal(200, response.StatusCode)
 	}
+}
+
+func TestAPIDowngrade(t *testing.T) {
+	assert := assert.New(t)
+	transport := newHTTPTransport("http://localhost:7777/v0.0/traces")
+
+	// if we get a 404 we should downgrade the API
+	traces := getTestTrace(2, 2)
+	response, err := transport.Send(traces)
+	assert.Nil(err)
+	assert.NotNil(response)
+	assert.Equal(200, response.StatusCode)
+}
+
+func TestEncoderDowngrade(t *testing.T) {
+	assert := assert.New(t)
+	transport := newHTTPTransport("http://localhost:7777/v0.2/traces")
+
+	// if we get a 415 because of a wrong encoder, we should downgrade the encoder
+	traces := getTestTrace(2, 2)
+	response, err := transport.Send(traces)
+	assert.Nil(err)
+	assert.NotNil(response)
+	assert.Equal(200, response.StatusCode)
+}
+
+func TestTransportHeaders(t *testing.T) {
+	assert := assert.New(t)
+	transport := newHTTPTransport(defaultDeliveryURL)
+
+	// msgpack is the default Header
+	contentType := transport.headers["Content-Type"]
+	assert.Equal("application/msgpack", contentType)
+}
+
+func TestTransportEncoderPool(t *testing.T) {
+	assert := assert.New(t)
+	transport := newHTTPTransport(defaultDeliveryURL)
+
+	// MsgpackEncoder is the default encoder of the pool
+	encoder := transport.pool.Borrow()
+	assert.Equal("application/msgpack", encoder.ContentType())
+}
+
+func TestTransportSwitchEncoder(t *testing.T) {
+	assert := assert.New(t)
+	transport := newHTTPTransport(defaultDeliveryURL)
+	transport.changeEncoder(JSON_ENCODER)
+
+	// MsgpackEncoder is the default encoder of the pool
+	encoder := transport.pool.Borrow()
+	contentType := transport.headers["Content-Type"]
+	assert.Equal("application/json", encoder.ContentType())
+	assert.Equal("application/json", contentType)
 }
