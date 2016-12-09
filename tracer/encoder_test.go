@@ -117,7 +117,7 @@ func TestPoolBorrowCreate(t *testing.T) {
 	assert := assert.New(t)
 
 	// borrow an encoder from the pool
-	pool, _ := newAgentEncoderPool(MSGPACK_ENCODER, 1)
+	pool, _ := newEncoderPool(MSGPACK_ENCODER, 1)
 	encoder := pool.Borrow()
 	assert.NotNil(encoder)
 }
@@ -126,7 +126,7 @@ func TestPoolReuseEncoder(t *testing.T) {
 	assert := assert.New(t)
 
 	// borrow, return and borrow again an encoder from the pool
-	pool, _ := newAgentEncoderPool(MSGPACK_ENCODER, 1)
+	pool, _ := newEncoderPool(MSGPACK_ENCODER, 1)
 	encoder := pool.Borrow()
 	pool.Return(encoder)
 	anotherEncoder := pool.Borrow()
@@ -134,7 +134,7 @@ func TestPoolReuseEncoder(t *testing.T) {
 }
 
 func TestPoolSize(t *testing.T) {
-	pool, _ := newAgentEncoderPool(MSGPACK_ENCODER, 1)
+	pool, _ := newEncoderPool(MSGPACK_ENCODER, 1)
 	encoder := newMsgpackEncoder()
 	anotherEncoder := newMsgpackEncoder()
 
@@ -148,7 +148,7 @@ func TestPoolReturn(t *testing.T) {
 	assert := assert.New(t)
 
 	// an encoder can return in the pool
-	pool, _ := newAgentEncoderPool(MSGPACK_ENCODER, 5)
+	pool, _ := newEncoderPool(MSGPACK_ENCODER, 5)
 	encoder := newMsgpackEncoder()
 	pool.pool <- encoder
 	pool.Return(encoder)

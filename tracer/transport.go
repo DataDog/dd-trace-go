@@ -29,7 +29,7 @@ func newDefaultTransport() Transport {
 
 type httpTransport struct {
 	url               string            // the delivery URL
-	pool              EncoderPool       // encoding allocates lot of buffers (which might then be resized) so we use a pool so they can be re-used
+	pool              *encoderPool      // encoding allocates lot of buffers (which might then be resized) so we use a pool so they can be re-used
 	client            *http.Client      // the HTTP client used in the POST
 	headers           map[string]string // the Transport headers
 	compatibilityMode bool              // the Agent targets a legacy API for compatibility reasons
@@ -38,7 +38,7 @@ type httpTransport struct {
 // newHTTPTransport returns an httpTransport for the given endpoint
 func newHTTPTransport(url string) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
-	pool, contentType := newAgentEncoderPool(defaultEncoder, encoderPoolSize)
+	pool, contentType := newEncoderPool(defaultEncoder, encoderPoolSize)
 	defaultHeaders := make(map[string]string)
 	defaultHeaders["Content-Type"] = contentType
 
@@ -99,7 +99,7 @@ func (t *httpTransport) SetHeader(key, value string) {
 // changeEncoder switches the internal encoders pool so that a different API with different
 // format can be targeted, preventing failures because of outdated agents
 func (t *httpTransport) changeEncoder(encoderType int) {
-	pool, contentType := newAgentEncoderPool(encoderType, encoderPoolSize)
+	pool, contentType := newEncoderPool(encoderType, encoderPoolSize)
 	t.pool = pool
 	t.headers["Content-Type"] = contentType
 }

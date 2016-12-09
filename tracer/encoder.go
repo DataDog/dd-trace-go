@@ -89,28 +89,23 @@ func (e *jsonEncoder) ContentType() string {
 	return e.contentType
 }
 
-// EncoderPool is a pool meant to share the buffers required to encode traces.
-// It naively tries to cap the number of active encoders, but doesn't enforce
-// the limit. To use a pool, you should Borrow() for an encoder and then
-// Return() that encoder to the pool. Encoders in that pool should honor
-// the Encoder interface.
-type EncoderPool interface {
-	Borrow() Encoder
-	Return(e Encoder)
-}
-
 const (
 	JSON_ENCODER = iota
 	MSGPACK_ENCODER
 )
 
-type agentEncoderPool struct {
+// EncoderPool is a pool meant to share the buffers required to encode traces.
+// It naively tries to cap the number of active encoders, but doesn't enforce
+// the limit. To use a pool, you should Borrow() for an encoder and then
+// Return() that encoder to the pool. Encoders in that pool should honor
+// the Encoder interface.
+type encoderPool struct {
 	encoderType int
 	pool        chan Encoder
 }
 
-func newAgentEncoderPool(encoderType, size int) (*agentEncoderPool, string) {
-	pool := &agentEncoderPool{
+func newEncoderPool(encoderType, size int) (*encoderPool, string) {
+	pool := &encoderPool{
 		encoderType: encoderType,
 		pool:        make(chan Encoder, size),
 	}
@@ -123,7 +118,7 @@ func newAgentEncoderPool(encoderType, size int) (*agentEncoderPool, string) {
 	return pool, contentType
 }
 
-func (p *agentEncoderPool) Borrow() Encoder {
+func (p *encoderPool) Borrow() Encoder {
 	var encoder Encoder
 
 	select {
@@ -139,7 +134,7 @@ func (p *agentEncoderPool) Borrow() Encoder {
 	return encoder
 }
 
-func (p *agentEncoderPool) Return(e Encoder) {
+func (p *encoderPool) Return(e Encoder) {
 	select {
 	case p.pool <- e:
 	default:
