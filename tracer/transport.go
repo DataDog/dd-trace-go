@@ -13,7 +13,7 @@ const (
 
 // Transport is an interface for span submission to the agent.
 type Transport interface {
-	Send(spans []*Span) (*http.Response, error)
+	Send(spans [][]*Span) (*http.Response, error)
 }
 
 type httpTransport struct {
@@ -32,7 +32,7 @@ func newHTTPTransport(url string) *httpTransport {
 	}
 }
 
-func (t *httpTransport) Send(spans []*Span) (*http.Response, error) {
+func (t *httpTransport) Send(traces [][]*Span) (*http.Response, error) {
 	if t.url == "" {
 		return nil, errors.New("provided an empty URL, giving up")
 	}
@@ -42,7 +42,7 @@ func (t *httpTransport) Send(spans []*Span) (*http.Response, error) {
 	defer t.pool.Return(encoder)
 
 	// encode the spans and return the error if any
-	err := encoder.Encode(spans)
+	err := encoder.Encode(traces)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,12 @@ func (t *httpTransport) Send(spans []*Span) (*http.Response, error) {
 	req, _ := http.NewRequest("POST", t.url, encoder)
 	req.Header.Set("Content-Type", "application/json")
 	response, err := t.client.Do(req)
-	response.Body.Close()
 
+	// if we have an error, return an empty Response to protect against nil pointer dereference
+	if err != nil {
+		return &http.Response{StatusCode: 0}, err
+	}
+
+	response.Body.Close()
 	return response, err
 }

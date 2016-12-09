@@ -21,8 +21,7 @@ const (
 func TestClient(t *testing.T) {
 	assert := assert.New(t)
 
-	testTransport := &dummyTransport{}
-	testTracer := getTestTracer(testTransport)
+	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
 	rig, err := newRig(testTracer, true)
@@ -40,7 +39,9 @@ func TestClient(t *testing.T) {
 	assert.Equal(resp.Message, "passed")
 
 	testTracer.Flush()
-	spans := testTransport.Spans()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
 	assert.Len(spans, 3)
 
 	sspan := spans[0]
@@ -58,9 +59,7 @@ func TestClient(t *testing.T) {
 
 func TestDisabled(t *testing.T) {
 	assert := assert.New(t)
-
-	testTransport := &dummyTransport{}
-	testTracer := getTestTracer(testTransport)
+	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 	testTracer.SetEnabled(false)
 
@@ -75,15 +74,13 @@ func TestDisabled(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(resp.Message, "disabled")
 	assert.Nil(testTracer.Flush())
-	spans := testTransport.Spans()
-	assert.Nil(spans)
+	traces := testTransport.Traces()
+	assert.Nil(traces)
 }
 
 func TestChild(t *testing.T) {
 	assert := assert.New(t)
-
-	testTransport := &dummyTransport{}
-	testTracer := getTestTracer(testTransport)
+	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
 	rig, err := newRig(testTracer, false)
@@ -97,7 +94,9 @@ func TestChild(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(resp.Message, "child")
 	assert.Nil(testTracer.Flush())
-	spans := testTransport.Spans()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
 	assert.Len(spans, 2)
 
 	s := spans[0]
@@ -115,9 +114,7 @@ func TestChild(t *testing.T) {
 
 func TestPass(t *testing.T) {
 	assert := assert.New(t)
-
-	testTransport := &dummyTransport{}
-	testTracer := getTestTracer(testTransport)
+	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
 	rig, err := newRig(testTracer, false)
@@ -131,7 +128,9 @@ func TestPass(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(resp.Message, "passed")
 	assert.Nil(testTracer.Flush())
-	spans := testTransport.Spans()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
 	assert.Len(spans, 1)
 
 	s := spans[0]
@@ -225,23 +224,25 @@ func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
 	return r, err
 }
 
-func getTestTracer(transport tracer.Transport) *tracer.Tracer {
-	testTracer := tracer.NewTracerTransport(transport)
-	return testTracer
+// getTestTracer returns a Tracer with a DummyTransport
+func getTestTracer() (*tracer.Tracer, *dummyTransport) {
+	transport := &dummyTransport{}
+	tracer := tracer.NewTracerTransport(transport)
+	return tracer, transport
 }
 
-// dummyTransport is a transport that just buffers spans.
+// dummyTransport is a transport that just buffers spans and encoding
 type dummyTransport struct {
-	spans []*tracer.Span
+	traces [][]*tracer.Span
 }
 
-func (d *dummyTransport) Send(s []*tracer.Span) (*http.Response, error) {
-	d.spans = append(d.spans, s...)
+func (t *dummyTransport) Send(traces [][]*tracer.Span) (*http.Response, error) {
+	t.traces = append(t.traces, traces...)
 	return nil, nil
 }
 
-func (d *dummyTransport) Spans() []*tracer.Span {
-	s := d.spans
-	d.spans = nil
-	return s
+func (t *dummyTransport) Traces() [][]*tracer.Span {
+	traces := t.traces
+	t.traces = nil
+	return traces
 }

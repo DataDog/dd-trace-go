@@ -3,20 +3,11 @@ package tracer
 import (
 	"context"
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
-
-// getTestTracer returns a tracer which will buffer but not submit spans.
-func getTestTracer() *Tracer {
-	return &Tracer{
-		enabled: true,
-		buffer:  newSpansBuffer(10),
-		sampler: newAllSampler(),
-	}
-
-}
 
 func TestDefaultTracer(t *testing.T) {
 	assert := assert.New(t)
@@ -158,24 +149,120 @@ func TestTracerEdgeSampler(t *testing.T) {
 	assert.Equal(count, tracer1.buffer.Len())
 }
 
-// Mock Transport with a real Encoder
-type DummyTransport struct {
-	pool *encoderPool
+func TestTracerConcurrent(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport := getTestTracer()
+
+	// Wait for three different goroutines that should create
+	// three different traces with one child each
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		tracer.NewRootSpan("pylons.request", "pylons", "/").Finish()
+	}()
+	go func() {
+		defer wg.Done()
+		tracer.NewRootSpan("pylons.request", "pylons", "/home").Finish()
+	}()
+	go func() {
+		defer wg.Done()
+		tracer.NewRootSpan("pylons.request", "pylons", "/trace").Finish()
+	}()
+
+	wg.Wait()
+	tracer.Flush()
+	traces := transport.Traces()
+	assert.Len(traces, 3)
+	assert.Len(traces[0], 1)
+	assert.Len(traces[1], 1)
+	assert.Len(traces[2], 1)
 }
 
-func (t *DummyTransport) Send(spans []*Span) (*http.Response, error) {
-	encoder := t.pool.Borrow()
-	defer t.pool.Return(encoder)
-	return nil, encoder.Encode(spans)
+func TestTracerConcurrentMultipleSpans(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport := getTestTracer()
+
+	// Wait for two different goroutines that should create
+	// two traces with two children each
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+		child := tracer.NewChildSpan("redis.command", parent)
+		child.Finish()
+		parent.Finish()
+	}()
+	go func() {
+		defer wg.Done()
+		parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+		child := tracer.NewChildSpan("redis.command", parent)
+		child.Finish()
+		parent.Finish()
+	}()
+
+	wg.Wait()
+	tracer.Flush()
+	traces := transport.Traces()
+	assert.Len(traces, 2)
+	assert.Len(traces[0], 2)
+	assert.Len(traces[1], 2)
 }
 
-func BenchmarkTracerAddSpans(b *testing.B) {
-	// create a new tracer with a DummyTransport
+// BenchmarkConcurrentTracing tests the performance of spawning a lot of
+// goroutines where each one creates a trace with a parent and a child.
+func BenchmarkConcurrentTracing(b *testing.B) {
 	tracer := NewTracer()
-	tracer.transport = &DummyTransport{pool: newEncoderPool(encoderPoolSize)}
+	tracer.transport = &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		go func() {
+			parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+			defer parent.Finish()
+
+			for i := 0; i < 10; i++ {
+				tracer.NewChildSpan("redis.command", parent).Finish()
+			}
+		}()
+	}
+}
+
+// BenchmarkTracerAddSpans tests the performance of creating and finishing a root
+// span. It should include the encoding overhead.
+func BenchmarkTracerAddSpans(b *testing.B) {
+	tracer := NewTracer()
+	tracer.transport = &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
 
 	for n := 0; n < b.N; n++ {
 		span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 		span.Finish()
 	}
+}
+
+// getTestTracer returns a Tracer with a DummyTransport
+func getTestTracer() (*Tracer, *dummyTransport) {
+	transport := &dummyTransport{pool: newEncoderPool(encoderPoolSize)}
+	tracer := NewTracerTransport(transport)
+	return tracer, transport
+}
+
+// Mock Transport with a real Encoder
+type dummyTransport struct {
+	pool   *encoderPool
+	traces [][]*Span
+}
+
+func (t *dummyTransport) Send(traces [][]*Span) (*http.Response, error) {
+	t.traces = append(t.traces, traces...)
+	encoder := t.pool.Borrow()
+	defer t.pool.Return(encoder)
+	return nil, encoder.Encode(traces)
+}
+
+func (t *dummyTransport) Traces() [][]*Span {
+	traces := t.traces
+	t.traces = nil
+	return traces
 }

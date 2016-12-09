@@ -24,30 +24,38 @@ func getTestSpan() *Span {
 	}
 }
 
-// getTestTrace returns a []Span that is composed by ``size`` number of spans
-func getTestTrace(size int) []*Span {
-	spans := []*Span{}
+// getTestTrace returns a list of traces that is composed by ``traceN`` number
+// of traces, each one composed by ``size`` number of spans.
+func getTestTrace(traceN, size int) [][]*Span {
+	var traces [][]*Span
 
-	for i := 0; i < size; i++ {
-		spans = append(spans, getTestSpan())
+	for i := 0; i < traceN; i++ {
+		trace := []*Span{}
+		for j := 0; j < size; j++ {
+			trace = append(trace, getTestSpan())
+		}
+		traces = append(traces, trace)
 	}
-	return spans
+	return traces
 }
 
 func TestTracesAgentIntegration(t *testing.T) {
 	assert := assert.New(t)
 
 	testCases := []struct {
-		payload []*Span
+		payload [][]*Span
 	}{
-		{getTestTrace(1)},
-		{getTestTrace(10)},
+		{getTestTrace(1, 1)},
+		{getTestTrace(10, 1)},
+		{getTestTrace(1, 10)},
+		{getTestTrace(10, 10)},
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport("http://localhost:7777/v0.1/spans")
+		transport := newHTTPTransport(defaultDeliveryURL)
 		response, err := transport.Send(tc.payload)
 		assert.Nil(err)
+		assert.NotNil(response)
 		assert.Equal(200, response.StatusCode)
 	}
 }

@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultDeliveryURL = "http://localhost:7777/v0.1/spans"
+	defaultDeliveryURL = "http://localhost:7777/v0.3/traces"
 	flushInterval      = 2 * time.Second
 )
 
@@ -133,9 +133,22 @@ func (t *Tracer) Flush() error {
 		return nil
 	}
 
-	_, err := t.transport.Send(spans)
-	return err
+	// rebuild the traces list; this operation is done in the Flush() instead
+	// after each record() because this avoids a huge number of initializations
+	// and RW mutex locks, keeping the same performance as before (except for this
+	// little overhead). The overall optimization (and idiomatic code) could be
+	// reached replacing all our buffers with channels.
+	var traces [][]*Span
+	traceBuffer := make(map[uint64][]*Span)
+	for _, s := range spans {
+		traceBuffer[s.TraceID] = append(traceBuffer[s.TraceID], s)
+	}
+	for _, t := range traceBuffer {
+		traces = append(traces, t)
+	}
 
+	_, err := t.transport.Send(traces)
+	return err
 }
 
 // worker periodically flushes traces to the transport.

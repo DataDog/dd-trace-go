@@ -21,9 +21,7 @@ func init() {
 
 func TestTrace200(t *testing.T) {
 	assert := assert.New(t)
-
-	transport := &dummyTransport{}
-	testTracer := getTestTracer(transport)
+	testTracer, testTransport := getTestTracer()
 
 	middleware := newMiddleware("foobar", testTracer)
 
@@ -48,7 +46,9 @@ func TestTrace200(t *testing.T) {
 
 	// verify traces look good
 	assert.Nil(testTracer.Flush())
-	spans := transport.Spans()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
 	assert.Len(spans, 1)
 	if len(spans) < 1 {
 		t.Fatalf("no spans")
@@ -66,9 +66,7 @@ func TestTrace200(t *testing.T) {
 
 func TestDisabled(t *testing.T) {
 	assert := assert.New(t)
-
-	transport := &dummyTransport{}
-	testTracer := getTestTracer(transport)
+	testTracer, testTransport := getTestTracer()
 	testTracer.SetEnabled(false)
 
 	middleware := newMiddleware("foobar", testTracer)
@@ -92,16 +90,15 @@ func TestDisabled(t *testing.T) {
 
 	// verify traces look good
 	testTracer.Flush()
-	spans := transport.Spans()
+	spans := testTransport.Traces()
 	assert.Len(spans, 0)
 }
 
 func TestError(t *testing.T) {
 	assert := assert.New(t)
+	testTracer, testTransport := getTestTracer()
 
 	// setup
-	testTransport := &dummyTransport{}
-	testTracer := getTestTracer(testTransport)
 	middleware := newMiddleware("foobar", testTracer)
 	router := gin.New()
 	router.Use(middleware.Handle)
@@ -118,7 +115,9 @@ func TestError(t *testing.T) {
 
 	// verify the errors and status are correct
 	testTracer.Flush()
-	spans := testTransport.Spans()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
 	assert.Len(spans, 1)
 	if len(spans) < 1 {
 		t.Fatalf("no spans")
@@ -133,10 +132,9 @@ func TestError(t *testing.T) {
 
 func TestHTML(t *testing.T) {
 	assert := assert.New(t)
+	testTracer, testTransport := getTestTracer()
 
 	// setup
-	testTransport := &dummyTransport{}
-	testTracer := getTestTracer(testTransport)
 	middleware := newMiddleware("tmplservice", testTracer)
 
 	router := gin.New()
@@ -159,7 +157,9 @@ func TestHTML(t *testing.T) {
 
 	// verify the errors and status are correct
 	testTracer.Flush()
-	spans := testTransport.Spans()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
 	assert.Len(spans, 2)
 	for _, s := range spans {
 		assert.Equal(s.Service, "tmplservice")
@@ -191,23 +191,25 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	assert.Equal(response.StatusCode, 200)
 }
 
-func getTestTracer(transport tracer.Transport) *tracer.Tracer {
-	testTracer := tracer.NewTracerTransport(transport)
-	return testTracer
+// getTestTracer returns a Tracer with a DummyTransport
+func getTestTracer() (*tracer.Tracer, *dummyTransport) {
+	transport := &dummyTransport{}
+	tracer := tracer.NewTracerTransport(transport)
+	return tracer, transport
 }
 
-// dummyTransport is a transport that just buffers spans.
+// dummyTransport is a transport that just buffers spans and encoding
 type dummyTransport struct {
-	spans []*tracer.Span
+	traces [][]*tracer.Span
 }
 
-func (d *dummyTransport) Send(s []*tracer.Span) (*http.Response, error) {
-	d.spans = append(d.spans, s...)
+func (t *dummyTransport) Send(traces [][]*tracer.Span) (*http.Response, error) {
+	t.traces = append(t.traces, traces...)
 	return nil, nil
 }
 
-func (d *dummyTransport) Spans() []*tracer.Span {
-	s := d.spans
-	d.spans = nil
-	return s
+func (t *dummyTransport) Traces() [][]*tracer.Span {
+	traces := t.traces
+	t.traces = nil
+	return traces
 }
