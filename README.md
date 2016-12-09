@@ -4,9 +4,3 @@
  [![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/github.com/DataDog/dd-trace-go/tracer)
 
 A Go tracing package. Currently requires at least Go 1.7.
-
-## Requirements
-
-This library vendors the following libraries:
-
-* https://github.com/ugorji/go for msgpack encoding
