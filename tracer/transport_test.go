@@ -51,7 +51,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultDeliveryURL)
+		transport := newHTTPTransport(defaultHostname, defaultPort)
 		response, err := transport.Send(tc.payload)
 		assert.Nil(err)
 		assert.NotNil(response)
@@ -61,7 +61,8 @@ func TestTracesAgentIntegration(t *testing.T) {
 
 func TestAPIDowngrade(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport("http://localhost:7777/v0.0/traces")
+	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport.url = "http://localhost:7777/v0.0/traces"
 
 	// if we get a 404 we should downgrade the API
 	traces := getTestTrace(2, 2)
@@ -73,7 +74,8 @@ func TestAPIDowngrade(t *testing.T) {
 
 func TestEncoderDowngrade(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport("http://localhost:7777/v0.2/traces")
+	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport.url = "http://localhost:7777/v0.2/traces"
 
 	// if we get a 415 because of a wrong encoder, we should downgrade the encoder
 	traces := getTestTrace(2, 2)
@@ -85,7 +87,7 @@ func TestEncoderDowngrade(t *testing.T) {
 
 func TestTransportHeaders(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport(defaultDeliveryURL)
+	transport := newHTTPTransport(defaultHostname, defaultPort)
 
 	// msgpack is the default Header
 	contentType := transport.headers["Content-Type"]
@@ -94,7 +96,7 @@ func TestTransportHeaders(t *testing.T) {
 
 func TestTransportEncoderPool(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport(defaultDeliveryURL)
+	transport := newHTTPTransport(defaultHostname, defaultPort)
 
 	// MsgpackEncoder is the default encoder of the pool
 	encoder := transport.pool.Borrow()
@@ -103,7 +105,7 @@ func TestTransportEncoderPool(t *testing.T) {
 
 func TestTransportSwitchEncoder(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport(defaultDeliveryURL)
+	transport := newHTTPTransport(defaultHostname, defaultPort)
 	transport.changeEncoder(JSON_ENCODER)
 
 	// MsgpackEncoder is the default encoder of the pool
