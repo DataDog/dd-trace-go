@@ -1,6 +1,9 @@
 package tracer
 
 import (
+	"io/ioutil"
+	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -111,4 +114,59 @@ func TestTransportSwitchEncoder(t *testing.T) {
 	contentType := transport.headers["Content-Type"]
 	assert.Equal("application/json", encoder.ContentType())
 	assert.Equal("application/json", contentType)
+}
+
+type envLookup func(key string) (string, bool)
+type env map[string]string
+
+// var fakeEnv = make(map[string]string)
+
+func fakeLookup(fakeEnv env) envLookup {
+	return func(key string) (string, bool) {
+		s, ok := fakeEnv[key]
+		return s, ok
+	}
+}
+
+// Run TestCustomTarget in a separate process since it messes with global state.
+func TestCustomTarget(t *testing.T) {
+	if os.Getenv("TEST") == "TestCustomTarget" {
+		testCustomTarget(t)
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestCustomTarget")
+	cmd.Env = append(os.Environ(), "TEST=TestCustomTarget")
+
+	stdout, _ := cmd.StdoutPipe()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	rawBytes, _ := ioutil.ReadAll(stdout)
+	output := string(rawBytes)
+
+	err := cmd.Wait()
+	if err != nil {
+		e, ok := err.(*exec.ExitError)
+		if !ok || !e.Success() {
+			t.Fatalf("Subprocess completed with %v\n%s", err, output)
+		}
+	}
+}
+
+func testCustomTarget(t *testing.T) {
+	assert := assert.New(t)
+	fakeEnv := make(env)
+	lookup := fakeLookup(fakeEnv)
+
+	// Test defaults
+	URL := "http://localhost:7777/v0.3/traces"
+	initTransportVars(lookup)
+	assert.Equal(URL, defaultDeliveryURL)
+
+	// Test custom target
+	URL = "http://foo:9000/v0.3/traces"
+	fakeEnv[agentHostnameVar] = "foo"
+	fakeEnv[agentPortVar] = "9000"
+	initTransportVars(lookup)
+	assert.Equal(URL, defaultDeliveryURL)
 }

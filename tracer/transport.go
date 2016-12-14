@@ -2,19 +2,49 @@ package tracer
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 )
 
 const (
-	defaultDeliveryURL = "http://localhost:7777/v0.3/traces"
-	legacyDeliveryURL  = "http://localhost:7777/v0.2/traces"
-	defaultEncoder     = MSGPACK_ENCODER // defines the default encoder used when the Transport is initialized
-	legacyEncoder      = JSON_ENCODER    // defines the legacy encoder used with earlier agent versions
-	defaultHTTPTimeout = time.Second     // defines the current timeout before giving up with the send process
-	encoderPoolSize    = 5               // how many encoders are available
+	defaultAgentHostname = "localhost"
+	defaultAgentPort     = "7777"
+	agentHostnameVar     = "DATADOG_AGENT_HOSTNAME"
+	agentPortVar         = "DATADOG_AGENT_PORT"
+	deliveryURLTemplate  = "http://%s:%s/v0.3/traces"
+	legacyDeliveryURL    = "http://localhost:7777/v0.2/traces" // don't even bother supporting hostname and port
+	defaultEncoder       = MSGPACK_ENCODER                     // defines the default encoder used when the Transport is initialized
+	legacyEncoder        = JSON_ENCODER                        // defines the legacy encoder used with earlier agent versions
+	defaultHTTPTimeout   = time.Second                         // defines the current timeout before giving up with the send process
+	encoderPoolSize      = 5                                   // how many encoders are available
 )
+
+var (
+	agentHostname      = defaultAgentHostname
+	agentPort          = defaultAgentPort
+	defaultDeliveryURL = ""
+)
+
+// Initialize globals based on environment variables.
+// Moved out of init() and accepting a function argument so it can be tested.
+func initTransportVars(lookup func(key string) (string, bool)) {
+	hostname, found := lookup(agentHostnameVar)
+	if found {
+		agentHostname = hostname
+	}
+	port, found := lookup(agentPortVar)
+	if found {
+		agentPort = port
+	}
+	defaultDeliveryURL = fmt.Sprintf(deliveryURLTemplate, agentHostname, agentPort)
+}
+
+func init() {
+	initTransportVars(os.LookupEnv)
+}
 
 // Transport is an interface for span submission to the agent.
 type Transport interface {

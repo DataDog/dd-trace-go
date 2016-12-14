@@ -2,7 +2,10 @@ package tracer
 
 import (
 	"context"
+	"io/ioutil"
 	"net/http"
+	"os"
+	"os/exec"
 	"sync"
 	"testing"
 
@@ -111,6 +114,50 @@ func TestTracerEnabledAgain(t *testing.T) {
 	postSpan := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	postSpan.Finish()
 	assert.Equal(tracer.buffer.Len(), 1)
+}
+
+// Run TestTraceEnabledVar in a separate process since it messes with global state.
+func TestTraceEnabledVar(t *testing.T) {
+	if os.Getenv("TEST") == "TestTraceEnabledVar" {
+		testTraceEnabledVar(t)
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestTraceEnabledVar")
+	cmd.Env = append(os.Environ(), "TEST=TestTraceEnabledVar")
+
+	stdout, _ := cmd.StdoutPipe()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	rawBytes, _ := ioutil.ReadAll(stdout)
+	output := string(rawBytes)
+
+	err := cmd.Wait()
+	if err != nil {
+		e, ok := err.(*exec.ExitError)
+		if !ok || !e.Success() {
+			t.Fatalf("Subprocess completed with %v\n%s", err, output)
+		}
+	}
+}
+
+func testTraceEnabledVar(t *testing.T) {
+	assert := assert.New(t)
+
+	fakeEnv := make(env)
+	lookup := fakeLookup(fakeEnv)
+	initTracerVars(lookup)
+
+	// Test enabling/disabling
+	tracer := NewTracer()
+	// Enabled by default
+	assert.Equal(true, tracer.enabled)
+	fakeEnv[traceEnabledVar] = "false"
+	initTracerVars(lookup)
+	// Test disabling both the global variable and newly created tracers
+	assert.Equal(false, traceEnabled)
+	tracer = NewTracer()
+	assert.Equal(false, tracer.enabled)
 }
 
 func TestTracerSampler(t *testing.T) {
