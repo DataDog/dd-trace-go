@@ -2,14 +2,15 @@ package tracer
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
 )
 
 const (
-	defaultDeliveryURL = "http://localhost:7777/v0.3/traces"
-	legacyDeliveryURL  = "http://localhost:7777/v0.2/traces"
+	defaultHostname    = "localhost"
+	defaultPort        = "7777"
 	defaultEncoder     = MSGPACK_ENCODER // defines the default encoder used when the Transport is initialized
 	legacyEncoder      = JSON_ENCODER    // defines the legacy encoder used with earlier agent versions
 	defaultHTTPTimeout = time.Second     // defines the current timeout before giving up with the send process
@@ -22,13 +23,31 @@ type Transport interface {
 	SetHeader(key, value string)
 }
 
+// NewTransport returns a new Transport implementation that sends traces to a
+// trace agent running on the given hostname and port. If the zero values for
+// hostname and port are provided, the default values will be used ("localhost"
+// for hostname, and "7777" for port).
+//
+// In general, using this method is only necessary if you have a trace agent
+// running on a non-default port or if it's located on another machine.
+func NewTransport(hostname, port string) Transport {
+	if hostname == "" {
+		hostname = defaultHostname
+	}
+	if port == "" {
+		port = defaultPort
+	}
+	return newHTTPTransport(hostname, port)
+}
+
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() Transport {
-	return newHTTPTransport(defaultDeliveryURL)
+	return newHTTPTransport(defaultHostname, defaultPort)
 }
 
 type httpTransport struct {
 	url               string            // the delivery URL
+	legacyURL         string            // legacy delivery URL
 	pool              *encoderPool      // encoding allocates lot of buffers (which might then be resized) so we use a pool so they can be re-used
 	client            *http.Client      // the HTTP client used in the POST
 	headers           map[string]string // the Transport headers
@@ -36,15 +55,16 @@ type httpTransport struct {
 }
 
 // newHTTPTransport returns an httpTransport for the given endpoint
-func newHTTPTransport(url string) *httpTransport {
+func newHTTPTransport(hostname, port string) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
 	pool, contentType := newEncoderPool(defaultEncoder, encoderPoolSize)
 	defaultHeaders := make(map[string]string)
 	defaultHeaders["Content-Type"] = contentType
 
 	return &httpTransport{
-		url:  url,
-		pool: pool,
+		url:       fmt.Sprintf("http://%s:%s/v0.3/traces", hostname, port),
+		legacyURL: fmt.Sprintf("http://%s:%s/v0.2/traces", hostname, port),
+		pool:      pool,
 		client: &http.Client{
 			Timeout: defaultHTTPTimeout,
 		},
@@ -110,6 +130,6 @@ func (t *httpTransport) changeEncoder(encoderType int) {
 // executed only once.
 func (t *httpTransport) apiDowngrade() {
 	t.compatibilityMode = true
-	t.url = legacyDeliveryURL
+	t.url = t.legacyURL
 	t.changeEncoder(legacyEncoder)
 }
