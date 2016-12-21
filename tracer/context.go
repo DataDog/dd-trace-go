@@ -6,7 +6,7 @@ import (
 
 type datadogContextKey struct{}
 
-var spanKey = datadogContextKey{}
+var spanKey = "datadog_trace_span"
 
 // ContextWithSpan will return a new context that includes the given span.
 // DEPRECATED: use span.Context(ctx) instead.
