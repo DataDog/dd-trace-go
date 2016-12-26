@@ -106,6 +106,9 @@ func (t *tracedResponseWriter) WriteHeader(status int) {
 	t.w.WriteHeader(status)
 	t.status = status
 	t.span.SetMeta(ext.HTTPCode, strconv.Itoa(status))
+	if status >= 500 && status < 600 {
+		t.span.Error = 1
+	}
 }
 
 // SetRequestSpan sets the span on the request's context.
