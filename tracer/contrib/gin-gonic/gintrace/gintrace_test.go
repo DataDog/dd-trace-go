@@ -19,6 +19,26 @@ func init() {
 	gin.SetMode(gin.ReleaseMode) // silence annoying log msgs
 }
 
+func TestChildSpan(t *testing.T) {
+	assert := assert.New(t)
+	testTracer, _ := getTestTracer()
+
+	middleware := newMiddleware("foobar", testTracer)
+
+	router := gin.New()
+	router.Use(middleware.Handle)
+	router.GET("/user/:id", func(c *gin.Context) {
+		span, ok := tracer.SpanFromContext(c)
+		assert.True(ok)
+		assert.NotNil(span)
+	})
+
+	r := httptest.NewRequest("GET", "/user/123", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, r)
+}
+
 func TestTrace200(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
