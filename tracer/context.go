@@ -4,8 +4,6 @@ import (
 	"context"
 )
 
-type datadogContextKey struct{}
-
 var spanKey = "datadog_trace_span"
 
 // ContextWithSpan will return a new context that includes the given span.
