@@ -63,6 +63,7 @@ func TestMuxTracerSubrequest(t *testing.T) {
 		assert.Equal(s.Resource, "GET "+url)
 		assert.Equal(s.GetMeta("http.status_code"), "200")
 		assert.Equal(s.GetMeta("http.method"), "GET")
+		assert.Equal(s.Error, int32(0))
 	}
 }
 
@@ -92,6 +93,7 @@ func TestMuxTracer200(t *testing.T) {
 	assert.Equal(s.Resource, "GET /200")
 	assert.Equal(s.GetMeta("http.status_code"), "200")
 	assert.Equal(s.GetMeta("http.method"), "GET")
+	assert.Equal(s.Error, int32(0))
 }
 
 func TestMuxTracer500(t *testing.T) {
@@ -119,6 +121,7 @@ func TestMuxTracer500(t *testing.T) {
 	assert.Equal(s.Service, "my-service")
 	assert.Equal(s.Resource, "GET /500")
 	assert.Equal(s.GetMeta("http.status_code"), "500")
+	assert.Equal(s.Error, int32(1))
 }
 
 // test handlers
