@@ -2,14 +2,35 @@ package tracer
 
 import (
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"context"
 )
 
 const (
-	flushInterval = 2 * time.Second
+	defaultTraceEnabled = true
+	traceEnabledVar     = "DATADOG_TRACE_ENABLED"
+	flushInterval       = 2 * time.Second
 )
+
+var (
+	traceEnabled = defaultTraceEnabled
+)
+
+// Initialize globals based on environment variables.
+// Moved out of init() and accepting a function argument so it can be tested.
+func initTracerVars(lookup func(key string) (string, bool)) {
+	enabled, found := lookup(traceEnabledVar)
+	if found {
+		traceEnabled = (strings.ToLower(enabled) == "true")
+	}
+}
+
+func init() {
+	initTracerVars(os.LookupEnv)
+}
 
 // Tracer creates, buffers and submits Spans which are used to time blocks of
 // compuration.
@@ -34,7 +55,7 @@ func NewTracer() *Tracer {
 // NewTracerTransport create a new Tracer with the given transport.
 func NewTracerTransport(transport Transport) *Tracer {
 	t := &Tracer{
-		enabled:             true,
+		enabled:             traceEnabled,
 		transport:           transport,
 		buffer:              newSpansBuffer(spanBufferDefaultMaxSize),
 		sampler:             newAllSampler(),
