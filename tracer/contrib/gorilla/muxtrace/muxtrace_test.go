@@ -33,7 +33,7 @@ func TestMuxTracerDisabled(t *testing.T) {
 	assert.Equal(writer.Body.String(), "disabled!")
 
 	// assert nothing was traced.
-	assert.Nil(testTracer.Flush())
+	assert.Nil(testTracer.FlushTraces())
 	traces := testTransport.Traces()
 	assert.Len(traces, 0)
 }
@@ -51,7 +51,7 @@ func TestMuxTracerSubrequest(t *testing.T) {
 		assert.Equal(writer.Body.String(), "200!")
 
 		// ensure properly traced
-		assert.Nil(tracer.Flush())
+		assert.Nil(tracer.FlushTraces())
 		traces := transport.Traces()
 		assert.Len(traces, 1)
 		spans := traces[0]
@@ -81,7 +81,7 @@ func TestMuxTracer200(t *testing.T) {
 	assert.Equal(writer.Body.String(), "200!")
 
 	// ensure properly traced
-	assert.Nil(tracer.Flush())
+	assert.Nil(tracer.FlushTraces())
 	traces := transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -110,7 +110,7 @@ func TestMuxTracer500(t *testing.T) {
 	assert.Equal(writer.Body.String(), "500!\n")
 
 	// ensure properly traced
-	assert.Nil(tracer.Flush())
+	assert.Nil(tracer.FlushTraces())
 	traces := transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -177,11 +177,17 @@ func getTestTracer(service string) (*tracer.Tracer, *dummyTransport, *MuxTracer)
 
 // dummyTransport is a transport that just buffers spans and encoding
 type dummyTransport struct {
-	traces [][]*tracer.Span
+	traces   [][]*tracer.Span
+	services map[string]tracer.Service
 }
 
-func (t *dummyTransport) Send(traces [][]*tracer.Span) (*http.Response, error) {
+func (t *dummyTransport) SendTraces(traces [][]*tracer.Span) (*http.Response, error) {
 	t.traces = append(t.traces, traces...)
+	return nil, nil
+}
+
+func (t *dummyTransport) SendServices(services map[string]tracer.Service) (*http.Response, error) {
+	t.services = services
 	return nil, nil
 }
 

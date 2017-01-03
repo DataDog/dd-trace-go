@@ -65,7 +65,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(response.StatusCode, 200)
 
 	// verify traces look good
-	assert.Nil(testTracer.Flush())
+	assert.Nil(testTracer.FlushTraces())
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -109,7 +109,7 @@ func TestDisabled(t *testing.T) {
 	assert.Equal(response.StatusCode, 200)
 
 	// verify traces look good
-	testTracer.Flush()
+	testTracer.FlushTraces()
 	spans := testTransport.Traces()
 	assert.Len(spans, 0)
 }
@@ -134,7 +134,7 @@ func TestError(t *testing.T) {
 	assert.Equal(response.StatusCode, 500)
 
 	// verify the errors and status are correct
-	testTracer.Flush()
+	testTracer.FlushTraces()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -176,7 +176,7 @@ func TestHTML(t *testing.T) {
 	assert.Equal("hello world", w.Body.String())
 
 	// verify the errors and status are correct
-	testTracer.Flush()
+	testTracer.FlushTraces()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -220,11 +220,17 @@ func getTestTracer() (*tracer.Tracer, *dummyTransport) {
 
 // dummyTransport is a transport that just buffers spans and encoding
 type dummyTransport struct {
-	traces [][]*tracer.Span
+	traces   [][]*tracer.Span
+	services map[string]tracer.Service
 }
 
-func (t *dummyTransport) Send(traces [][]*tracer.Span) (*http.Response, error) {
+func (t *dummyTransport) SendTraces(traces [][]*tracer.Span) (*http.Response, error) {
 	t.traces = append(t.traces, traces...)
+	return nil, nil
+}
+
+func (t *dummyTransport) SendServices(services map[string]tracer.Service) (*http.Response, error) {
+	t.services = services
 	return nil, nil
 }
 
