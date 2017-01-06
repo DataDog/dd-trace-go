@@ -40,7 +40,7 @@ func TestJSONEncoding(t *testing.T) {
 	for _, tc := range testCases {
 		payload := getTestTrace(tc.traces, tc.size)
 		encoder := newJSONEncoder()
-		err := encoder.Encode(payload)
+		err := encoder.EncodeTraces(payload)
 		assert.Nil(err)
 
 		// decode to check the right encoding
@@ -84,7 +84,7 @@ func TestMsgpackEncoding(t *testing.T) {
 	for _, tc := range testCases {
 		payload := getTestTrace(tc.traces, tc.size)
 		encoder := newMsgpackEncoder()
-		err := encoder.Encode(payload)
+		err := encoder.EncodeTraces(payload)
 		assert.Nil(err)
 
 		// decode to check the right encoding

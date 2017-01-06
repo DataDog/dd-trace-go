@@ -18,6 +18,7 @@ type MuxTracer struct {
 
 // NewMuxTracer creates a MuxTracer for the given service and tracer.
 func NewMuxTracer(service string, t *tracer.Tracer) *MuxTracer {
+	t.SetServiceInfo(service, "gorilla", ext.AppTypeWeb)
 	return &MuxTracer{
 		tracer:  t,
 		service: service,

@@ -171,7 +171,7 @@ func TestTracerConcurrent(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.Flush()
+	tracer.FlushTraces()
 	traces := transport.Traces()
 	assert.Len(traces, 3)
 	assert.Len(traces[0], 1)
@@ -203,11 +203,47 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.Flush()
+	tracer.FlushTraces()
 	traces := transport.Traces()
 	assert.Len(traces, 2)
 	assert.Len(traces[0], 2)
 	assert.Len(traces[1], 2)
+}
+
+func TestTracerServices(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport := getTestTracer()
+
+	tracer.SetServiceInfo("svc1", "a", "b")
+	tracer.SetServiceInfo("svc2", "c", "d")
+	tracer.SetServiceInfo("svc1", "e", "f")
+
+	tracer.Stop()
+
+	assert.Equal(2, len(transport.services))
+
+	svc1 := transport.services["svc1"]
+	assert.NotNil(svc1)
+	assert.Equal("svc1", svc1.Name)
+	assert.Equal("e", svc1.App)
+	assert.Equal("f", svc1.AppType)
+
+	svc2 := transport.services["svc2"]
+	assert.NotNil(svc2)
+	assert.Equal("svc2", svc2.Name)
+	assert.Equal("c", svc2.App)
+	assert.Equal("d", svc2.AppType)
+}
+
+func TestTracerServicesDisabled(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport := getTestTracer()
+
+	tracer.SetEnabled(false)
+	tracer.SetServiceInfo("svc1", "a", "b")
+	tracer.Stop()
+
+	assert.Equal(0, len(transport.services))
 }
 
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
@@ -249,15 +285,23 @@ func getTestTracer() (*Tracer, *dummyTransport) {
 
 // Mock Transport with a real Encoder
 type dummyTransport struct {
-	pool   *encoderPool
-	traces [][]*Span
+	pool     *encoderPool
+	traces   [][]*Span
+	services map[string]Service
 }
 
-func (t *dummyTransport) Send(traces [][]*Span) (*http.Response, error) {
+func (t *dummyTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	t.traces = append(t.traces, traces...)
 	encoder := t.pool.Borrow()
 	defer t.pool.Return(encoder)
-	return nil, encoder.Encode(traces)
+	return nil, encoder.EncodeTraces(traces)
+}
+
+func (t *dummyTransport) SendServices(services map[string]Service) (*http.Response, error) {
+	t.services = services
+	encoder := t.pool.Borrow()
+	defer t.pool.Return(encoder)
+	return nil, encoder.EncodeServices(services)
 }
 
 func (t *dummyTransport) Traces() [][]*Span {

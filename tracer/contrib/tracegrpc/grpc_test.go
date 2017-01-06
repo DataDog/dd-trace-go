@@ -38,7 +38,7 @@ func TestClient(t *testing.T) {
 	span.Finish()
 	assert.Equal(resp.Message, "passed")
 
-	testTracer.Flush()
+	testTracer.FlushTraces()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -73,7 +73,7 @@ func TestDisabled(t *testing.T) {
 	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "disabled"})
 	assert.Nil(err)
 	assert.Equal(resp.Message, "disabled")
-	assert.Nil(testTracer.Flush())
+	assert.Nil(testTracer.FlushTraces())
 	traces := testTransport.Traces()
 	assert.Nil(traces)
 }
@@ -93,7 +93,7 @@ func TestChild(t *testing.T) {
 	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "child"})
 	assert.Nil(err)
 	assert.Equal(resp.Message, "child")
-	assert.Nil(testTracer.Flush())
+	assert.Nil(testTracer.FlushTraces())
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -127,7 +127,7 @@ func TestPass(t *testing.T) {
 	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
 	assert.Nil(err)
 	assert.Equal(resp.Message, "passed")
-	assert.Nil(testTracer.Flush())
+	assert.Nil(testTracer.FlushTraces())
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -189,7 +189,7 @@ func (r *rig) Close() {
 
 func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
 
-	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerInterceptor(t)))
+	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerInterceptor("foo", t)))
 
 	RegisterFixtureServer(server, newFixtureServer())
 
@@ -206,7 +206,7 @@ func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
 	}
 
 	if traceClient {
-		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor()))
+		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor("foo", t)))
 	}
 
 	conn, err := grpc.Dial(li.Addr().String(), opts...)
@@ -233,11 +233,17 @@ func getTestTracer() (*tracer.Tracer, *dummyTransport) {
 
 // dummyTransport is a transport that just buffers spans and encoding
 type dummyTransport struct {
-	traces [][]*tracer.Span
+	traces   [][]*tracer.Span
+	services map[string]tracer.Service
 }
 
-func (t *dummyTransport) Send(traces [][]*tracer.Span) (*http.Response, error) {
+func (t *dummyTransport) SendTraces(traces [][]*tracer.Span) (*http.Response, error) {
 	t.traces = append(t.traces, traces...)
+	return nil, nil
+}
+
+func (t *dummyTransport) SendServices(services map[string]tracer.Service) (*http.Response, error) {
+	t.services = services
 	return nil, nil
 }
 

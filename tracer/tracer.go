@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"log"
+	"sync"
 	"time"
 
 	"context"
@@ -10,6 +11,16 @@ import (
 const (
 	flushInterval = 2 * time.Second
 )
+
+type Service struct {
+	Name    string `json:"-"`        // the internal of the service (e.g. acme_search, datadog_web)
+	App     string `json:"app"`      // the name of the application (e.g. rails, postgres, custom-app)
+	AppType string `json:"app_type"` // the type of the application (e.g. db, web)
+}
+
+func (s Service) Equal(s2 Service) bool {
+	return s.Name == s2.Name && s.App == s2.App && s.AppType == s2.AppType
+}
 
 // Tracer creates, buffers and submits Spans which are used to time blocks of
 // compuration.
@@ -23,6 +34,13 @@ type Tracer struct {
 
 	DebugLoggingEnabled bool
 	enabled             bool // defines if the Tracer is enabled or not
+
+	services         map[string]Service // name -> service
+	servicesModified bool
+	serviceChan      chan Service
+
+	exit   chan struct{}
+	exitWG *sync.WaitGroup
 }
 
 // NewTracer creates a new Tracer. Most users should use the package's
@@ -39,12 +57,25 @@ func NewTracerTransport(transport Transport) *Tracer {
 		buffer:              newSpansBuffer(spanBufferDefaultMaxSize),
 		sampler:             newAllSampler(),
 		DebugLoggingEnabled: false,
+
+		services:    make(map[string]Service),
+		serviceChan: make(chan Service, 10), // we don't want to block when a flush is in progress
+
+		exit:   make(chan struct{}),
+		exitWG: &sync.WaitGroup{},
 	}
 
 	// start a background worker
+	t.exitWG.Add(1)
 	go t.worker()
 
 	return t
+}
+
+// Stop stops the tracer.
+func (t *Tracer) Stop() {
+	close(t.exit)
+	t.exitWG.Wait()
 }
 
 // SetEnabled will enable or disable the tracer.
@@ -66,6 +97,16 @@ func (t *Tracer) SetSampleRate(sampleRate float64) {
 		t.sampler = newRateSampler(sampleRate)
 	} else {
 		log.Printf("tracer.SetSampleRate rate must be between 0 and 1, now: %f", sampleRate)
+	}
+}
+
+// SetServiceInfo update the application and application type for the given
+// service.
+func (t *Tracer) SetServiceInfo(name, app, appType string) {
+	t.serviceChan <- Service{
+		Name:    name,
+		App:     app,
+		AppType: appType,
 	}
 }
 
@@ -116,8 +157,10 @@ func (t *Tracer) record(span *Span) {
 	}
 }
 
-// Flush will push any currently buffered traces to the server.
-func (t *Tracer) Flush() error {
+// FlushTraces will push any currently buffered traces to the server.
+// XXX Note that it is currently exported because some tests use it. They
+// really should not.
+func (t *Tracer) FlushTraces() error {
 	spans := t.buffer.Pop()
 
 	if t.DebugLoggingEnabled {
@@ -132,7 +175,7 @@ func (t *Tracer) Flush() error {
 		return nil
 	}
 
-	// rebuild the traces list; this operation is done in the Flush() instead
+	// rebuild the traces list; this operation is done in the FlushTraces() instead
 	// after each record() because this avoids a huge number of initializations
 	// and RW mutex locks, keeping the same performance as before (except for this
 	// little overhead). The overall optimization (and idiomatic code) could be
@@ -146,16 +189,76 @@ func (t *Tracer) Flush() error {
 		traces = append(traces, t)
 	}
 
-	_, err := t.transport.Send(traces)
+	_, err := t.transport.SendTraces(traces)
 	return err
 }
 
-// worker periodically flushes traces to the transport.
+func (t *Tracer) flushServices() error {
+	if !t.enabled || !t.servicesModified {
+		return nil
+	}
+
+	if _, err := t.transport.SendServices(t.services); err != nil {
+		return err
+	}
+
+	t.servicesModified = false
+	return nil
+}
+
+func (t *Tracer) flush() {
+	nbSpans := t.buffer.Len()
+	if err := t.FlushTraces(); err != nil {
+		log.Printf("cannot flush traces: %v", err)
+		log.Printf("lost %d spans", nbSpans)
+	}
+
+	if err := t.flushServices(); err != nil {
+		log.Printf("cannot flush services: %v", err)
+	}
+}
+
+func (t *Tracer) appendService(service Service) {
+	if s, found := t.services[service.Name]; !found || !s.Equal(service) {
+		t.services[service.Name] = service
+		t.servicesModified = true
+	}
+}
+
+func (t *Tracer) drainServices() {
+	for {
+		select {
+		case service := <-t.serviceChan:
+			t.appendService(service)
+		default:
+			return
+		}
+	}
+}
+
+// worker periodically flushes traces and services to the transport.
 func (t *Tracer) worker() {
-	for range time.Tick(flushInterval) {
-		err := t.Flush()
-		if err != nil {
-			log.Printf("[WORKER] flush failed, lost spans: %s", err)
+	defer t.exitWG.Done()
+
+	flushTicker := time.NewTicker(flushInterval)
+	defer flushTicker.Stop()
+
+	for {
+		select {
+		case <-flushTicker.C:
+			t.flush()
+
+		case service := <-t.serviceChan:
+			t.appendService(service)
+
+		case <-t.exit:
+			// serviceChan being buffered, we drain it before the
+			// last flush to make sure we have all information. It
+			// is an edge case, but it is important for tests.
+			t.drainServices()
+
+			t.flush()
+			return
 		}
 	}
 }

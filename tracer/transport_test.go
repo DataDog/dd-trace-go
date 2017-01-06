@@ -38,6 +38,13 @@ func getTestTrace(traceN, size int) [][]*Span {
 	return traces
 }
 
+func getTestServices() map[string]Service {
+	return map[string]Service{
+		"svc1": Service{Name: "scv1", App: "a", AppType: "b"},
+		"svc2": Service{Name: "scv2", App: "c", AppType: "d"},
+	}
+}
+
 func TestTracesAgentIntegration(t *testing.T) {
 	assert := assert.New(t)
 
@@ -52,7 +59,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 
 	for _, tc := range testCases {
 		transport := newHTTPTransport(defaultHostname, defaultPort)
-		response, err := transport.Send(tc.payload)
+		response, err := transport.SendTraces(tc.payload)
 		assert.Nil(err)
 		assert.NotNil(response)
 		assert.Equal(200, response.StatusCode)
@@ -62,11 +69,11 @@ func TestTracesAgentIntegration(t *testing.T) {
 func TestAPIDowngrade(t *testing.T) {
 	assert := assert.New(t)
 	transport := newHTTPTransport(defaultHostname, defaultPort)
-	transport.url = "http://localhost:7777/v0.0/traces"
+	transport.traceURL = "http://localhost:7777/v0.0/traces"
 
 	// if we get a 404 we should downgrade the API
 	traces := getTestTrace(2, 2)
-	response, err := transport.Send(traces)
+	response, err := transport.SendTraces(traces)
 	assert.Nil(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
@@ -75,11 +82,46 @@ func TestAPIDowngrade(t *testing.T) {
 func TestEncoderDowngrade(t *testing.T) {
 	assert := assert.New(t)
 	transport := newHTTPTransport(defaultHostname, defaultPort)
-	transport.url = "http://localhost:7777/v0.2/traces"
+	transport.traceURL = "http://localhost:7777/v0.2/traces"
 
 	// if we get a 415 because of a wrong encoder, we should downgrade the encoder
 	traces := getTestTrace(2, 2)
-	response, err := transport.Send(traces)
+	response, err := transport.SendTraces(traces)
+	assert.Nil(err)
+	assert.NotNil(response)
+	assert.Equal(200, response.StatusCode)
+}
+
+func TestTransportServices(t *testing.T) {
+	assert := assert.New(t)
+
+	transport := newHTTPTransport(defaultHostname, defaultPort)
+
+	response, err := transport.SendServices(getTestServices())
+	assert.Nil(err)
+	assert.NotNil(response)
+	assert.Equal(200, response.StatusCode)
+}
+
+func TestTransportServicesDowngrade_0_0(t *testing.T) {
+	assert := assert.New(t)
+
+	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport.serviceURL = "http://localhost:7777/v0.0/services"
+
+	response, err := transport.SendServices(getTestServices())
+	assert.Nil(err)
+	assert.NotNil(response)
+	assert.Equal(200, response.StatusCode)
+}
+
+func TestTransportServicesDowngrade_0_2(t *testing.T) {
+	assert := assert.New(t)
+
+	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport.serviceURL = "http://localhost:7777/v0.2/services"
+
+	response, err := transport.SendServices(getTestServices())
 	assert.Nil(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)

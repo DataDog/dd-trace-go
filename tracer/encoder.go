@@ -7,11 +7,11 @@ import (
 	"github.com/ugorji/go/codec"
 )
 
-// Encoder is a generic interface that expects an Encode() method
-// for the encoding process, and a Read() method that will be used
-// by the http handler
+// Encoder is a generic interface that expects encoding methods for traces and
+// services, and a Read() method that will be used by the http handler
 type Encoder interface {
-	Encode(traces [][]*Span) error
+	EncodeTraces(traces [][]*Span) error
+	EncodeServices(services map[string]Service) error
 	Read(p []byte) (int, error)
 	ContentType() string
 }
@@ -36,11 +36,17 @@ func newMsgpackEncoder() *msgpackEncoder {
 	}
 }
 
-// Encode serializes the given traces list into the internal
-// buffer, returning the error if any
-func (e *msgpackEncoder) Encode(traces [][]*Span) error {
+// EncodeTraces serializes the given trace list into the internal buffer,
+// returning the error if any.
+func (e *msgpackEncoder) EncodeTraces(traces [][]*Span) error {
 	e.buffer.Reset()
 	return e.encoder.Encode(traces)
+}
+
+// EncodeServices serializes a service map into the internal buffer.
+func (e *msgpackEncoder) EncodeServices(services map[string]Service) error {
+	e.buffer.Reset()
+	return e.encoder.Encode(services)
 }
 
 // Read values from the internal buffer
@@ -72,11 +78,17 @@ func newJSONEncoder() *jsonEncoder {
 	}
 }
 
-// Encode serializes the given traces list into the internal
-// buffer, returning the error if any
-func (e *jsonEncoder) Encode(traces [][]*Span) error {
+// EncodeTraces serializes the given trace list into the internal buffer,
+// returning the error if any.
+func (e *jsonEncoder) EncodeTraces(traces [][]*Span) error {
 	e.buffer.Reset()
 	return e.encoder.Encode(traces)
+}
+
+// EncodeServices serializes a service map into the internal buffer.
+func (e *jsonEncoder) EncodeServices(services map[string]Service) error {
+	e.buffer.Reset()
+	return e.encoder.Encode(services)
 }
 
 // Read values from the internal buffer

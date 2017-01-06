@@ -19,7 +19,8 @@ const (
 
 // Transport is an interface for span submission to the agent.
 type Transport interface {
-	Send(spans [][]*Span) (*http.Response, error)
+	SendTraces(spans [][]*Span) (*http.Response, error)
+	SendServices(services map[string]Service) (*http.Response, error)
 	SetHeader(key, value string)
 }
 
@@ -46,8 +47,10 @@ func newDefaultTransport() Transport {
 }
 
 type httpTransport struct {
-	url               string            // the delivery URL
-	legacyURL         string            // legacy delivery URL
+	traceURL          string            // the delivery URL for traces
+	legacyTraceURL    string            // the legacy delivery URL for traces
+	serviceURL        string            // the delivery URL for services
+	legacyServiceURL  string            // the legacy delivery URL for services
 	pool              *encoderPool      // encoding allocates lot of buffers (which might then be resized) so we use a pool so they can be re-used
 	client            *http.Client      // the HTTP client used in the POST
 	headers           map[string]string // the Transport headers
@@ -62,9 +65,11 @@ func newHTTPTransport(hostname, port string) *httpTransport {
 	defaultHeaders["Content-Type"] = contentType
 
 	return &httpTransport{
-		url:       fmt.Sprintf("http://%s:%s/v0.3/traces", hostname, port),
-		legacyURL: fmt.Sprintf("http://%s:%s/v0.2/traces", hostname, port),
-		pool:      pool,
+		traceURL:         fmt.Sprintf("http://%s:%s/v0.3/traces", hostname, port),
+		legacyTraceURL:   fmt.Sprintf("http://%s:%s/v0.2/traces", hostname, port),
+		serviceURL:       fmt.Sprintf("http://%s:%s/v0.3/services", hostname, port),
+		legacyServiceURL: fmt.Sprintf("http://%s:%s/v0.2/services", hostname, port),
+		pool:             pool,
 		client: &http.Client{
 			Timeout: defaultHTTPTimeout,
 		},
@@ -73,8 +78,8 @@ func newHTTPTransport(hostname, port string) *httpTransport {
 	}
 }
 
-func (t *httpTransport) Send(traces [][]*Span) (*http.Response, error) {
-	if t.url == "" {
+func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
+	if t.traceURL == "" {
 		return nil, errors.New("provided an empty URL, giving up")
 	}
 
@@ -83,13 +88,13 @@ func (t *httpTransport) Send(traces [][]*Span) (*http.Response, error) {
 	defer t.pool.Return(encoder)
 
 	// encode the spans and return the error if any
-	err := encoder.Encode(traces)
+	err := encoder.EncodeTraces(traces)
 	if err != nil {
 		return nil, err
 	}
 
 	// prepare the client and send the payload
-	req, _ := http.NewRequest("POST", t.url, encoder)
+	req, _ := http.NewRequest("POST", t.traceURL, encoder)
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
@@ -102,9 +107,47 @@ func (t *httpTransport) Send(traces [][]*Span) (*http.Response, error) {
 
 	// if we got a 404 we should downgrade the API to a stable version (at most once)
 	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
-		log.Printf("calling the endpoint '%s' but received %d; downgrading the API\n", t.url, response.StatusCode)
+		log.Printf("calling the endpoint '%s' but received %d; downgrading the API\n", t.traceURL, response.StatusCode)
 		t.apiDowngrade()
-		return t.Send(traces)
+		return t.SendTraces(traces)
+	}
+
+	response.Body.Close()
+	return response, err
+}
+
+func (t *httpTransport) SendServices(services map[string]Service) (*http.Response, error) {
+	if t.serviceURL == "" {
+		return nil, errors.New("provided an empty URL, giving up")
+	}
+
+	// Encode the service table
+	encoder := t.pool.Borrow()
+	defer t.pool.Return(encoder)
+
+	if err := encoder.EncodeServices(services); err != nil {
+		return nil, err
+	}
+
+	// Send it
+	req, err := http.NewRequest("POST", t.serviceURL, encoder)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create http request: %v", err)
+	}
+	for header, value := range t.headers {
+		req.Header.Set(header, value)
+	}
+
+	response, err := t.client.Do(req)
+	if err != nil {
+		return &http.Response{StatusCode: 0}, err
+	}
+
+	// Downgrade if necessary
+	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
+		log.Printf("calling the endpoint '%s' but received %d; downgrading the API\n", t.traceURL, response.StatusCode)
+		t.apiDowngrade()
+		return t.SendServices(services)
 	}
 
 	response.Body.Close()
@@ -130,6 +173,7 @@ func (t *httpTransport) changeEncoder(encoderType int) {
 // executed only once.
 func (t *httpTransport) apiDowngrade() {
 	t.compatibilityMode = true
-	t.url = t.legacyURL
+	t.traceURL = t.legacyTraceURL
+	t.serviceURL = t.legacyServiceURL
 	t.changeEncoder(legacyEncoder)
 }
