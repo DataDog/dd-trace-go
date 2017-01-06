@@ -22,6 +22,7 @@ func Middleware(service string) gin.HandlerFunc {
 // MiddlewareTracer returns middleware that will trace requests with the given
 // tracer.
 func MiddlewareTracer(service string, t *tracer.Tracer) gin.HandlerFunc {
+	t.SetServiceInfo(service, "gin-gonic", ext.AppTypeWeb)
 	mw := newMiddleware(service, t)
 	return mw.Handle
 }

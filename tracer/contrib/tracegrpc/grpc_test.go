@@ -189,7 +189,7 @@ func (r *rig) Close() {
 
 func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
 
-	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerInterceptor(t)))
+	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerInterceptor("foo", t)))
 
 	RegisterFixtureServer(server, newFixtureServer())
 
@@ -206,7 +206,7 @@ func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
 	}
 
 	if traceClient {
-		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor()))
+		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor("foo", t)))
 	}
 
 	conn, err := grpc.Dial(li.Addr().String(), opts...)

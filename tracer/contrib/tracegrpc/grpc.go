@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -19,7 +20,8 @@ const (
 )
 
 // UnaryServerInterceptor will trace requests to the given grpc server.
-func UnaryServerInterceptor(t *tracer.Tracer) grpc.UnaryServerInterceptor {
+func UnaryServerInterceptor(service string, t *tracer.Tracer) grpc.UnaryServerInterceptor {
+	t.SetServiceInfo(service, "grpc-server", ext.AppTypeRPC)
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if !t.Enabled() {
 			return handler(ctx, req)
@@ -33,7 +35,8 @@ func UnaryServerInterceptor(t *tracer.Tracer) grpc.UnaryServerInterceptor {
 }
 
 // UnaryClientInterceptor will add tracing to a gprc client.
-func UnaryClientInterceptor() grpc.UnaryClientInterceptor {
+func UnaryClientInterceptor(service string, t *tracer.Tracer) grpc.UnaryClientInterceptor {
+	t.SetServiceInfo(service, "grpc-client", ext.AppTypeRPC)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 
 		var child *tracer.Span
