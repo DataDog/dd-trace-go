@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	errorMsgKey   = "error.msg"
-	errorTypeKey  = "error.type"
-	errorStackKey = "error.stack"
+	errorMsgKey    = "error.msg"
+	errorTypeKey   = "error.type"
+	errorStackKey  = "error.stack"
+	defaultService = "go"
 )
 
 // Span represents a computation. Callers must call Finish when a span is
