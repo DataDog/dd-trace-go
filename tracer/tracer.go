@@ -153,9 +153,6 @@ func (t *Tracer) NewChildSpanFromContext(name string, ctx context.Context) *Span
 // record queues the finished span for further processing.
 func (t *Tracer) record(span *Span) {
 	if t.enabled && span.Sampled {
-		if span.Service == "" {
-			span.Service = defaultService
-		}
 		t.buffer.Push(span)
 	}
 }

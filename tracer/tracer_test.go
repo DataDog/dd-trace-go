@@ -210,21 +210,6 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	assert.Len(traces[1], 2)
 }
 
-func TestTracerSpanDefaultService(t *testing.T) {
-	assert := assert.New(t)
-	tracer, transport := getTestTracer()
-
-	trace := tracer.NewRootSpan("http.serve", "", "/")
-	trace.Finish()
-
-	tracer.FlushTraces()
-	traces := transport.Traces()
-	assert.Len(traces, 1)
-	assert.Len(traces[0], 1)
-	span := traces[0][0]
-	assert.Equal("go", span.Service)
-}
-
 func TestTracerServices(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport := getTestTracer()
