@@ -100,6 +100,14 @@ func (t *Tracer) SetSampleRate(sampleRate float64) {
 	}
 }
 
+func (t *Tracer) SetSpansBufferSize(maxSize int) {
+	if maxSize > 0 {
+		t.buffer = newSpansBuffer(maxSize)
+	} else {
+		log.Printf("tracer.SetSpansBufferSize max size must be greater than 0, current: %d", t.buffer.maxSize)
+	}
+}
+
 // SetServiceInfo update the application and application type for the given
 // service.
 func (t *Tracer) SetServiceInfo(name, app, appType string) {
