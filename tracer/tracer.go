@@ -89,7 +89,9 @@ func (t *Tracer) Enabled() bool {
 }
 
 // SetSampleRate sets a sample rate for all the future traces.
-// sampleRate has to be between 0 (sample nothing) and 1 (sample everything).
+// sampleRate has to be between 0.0 and 1.0 and represents the ratio of traces
+// that will be sampled. 0.0 means that the tracer won't send any trace. 1.0
+// means that the tracer will send all traces.
 func (t *Tracer) SetSampleRate(sampleRate float64) {
 	if sampleRate == 1 {
 		t.sampler = newAllSampler()

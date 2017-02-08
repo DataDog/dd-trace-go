@@ -7,4 +7,8 @@
 // a chunk of computation time. They have names, durations, timestamps and
 // other metadata. Tracers are used to create hierarchies of spans in a
 // request, buffer and submit them to the server.
+//
+// The tracing client can perform trace sampling. While the trace agent
+// already samples traces to reduce bandwidth usage, client sampling reduces
+// performance overhead.
 package tracer
