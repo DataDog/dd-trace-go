@@ -149,6 +149,23 @@ func TestTracerEdgeSampler(t *testing.T) {
 	assert.Equal(count, tracer1.buffer.Len())
 }
 
+func TestTracerBuffer(t *testing.T) {
+	assert := assert.New(t)
+
+	bufferSize := 1000
+	incorrectBufferSize := -1
+	defaultBufferSize := 10000
+
+	tracer0 := NewTracer()
+	tracer0.SetSpansBufferSize(bufferSize)
+
+	tracer1 := NewTracer()
+	tracer1.SetSpansBufferSize(incorrectBufferSize)
+
+	assert.Equal(bufferSize, tracer0.buffer.maxSize)
+	assert.Equal(defaultBufferSize, tracer1.buffer.maxSize)
+}
+
 func TestTracerConcurrent(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport := getTestTracer()
