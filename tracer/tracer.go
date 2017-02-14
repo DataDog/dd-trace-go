@@ -100,9 +100,9 @@ func (t *Tracer) SetSampleRate(sampleRate float64) {
 	}
 }
 
-// SetSpansBufferSize sets a buffer size for the tracer
-// this abandons the old buffer so this should be called in an init function
-// otherwise already recorded spans will be lost
+// SetSpansBufferSize sets a buffer size for the tracer.
+// This abandons the old buffer so this should be called in an init function
+// otherwise already recorded spans will be lost.
 // maxSize must be greater than 0
 func (t *Tracer) SetSpansBufferSize(maxSize int) {
 	if maxSize > 0 {
