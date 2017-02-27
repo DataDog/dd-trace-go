@@ -63,6 +63,7 @@ func TestMuxTracerSubrequest(t *testing.T) {
 		assert.Equal(s.Resource, "GET "+url)
 		assert.Equal(s.GetMeta("http.status_code"), "200")
 		assert.Equal(s.GetMeta("http.method"), "GET")
+		assert.Equal(s.GetMeta("http.url"), url)
 		assert.Equal(s.Error, int32(0))
 	}
 }
@@ -74,7 +75,8 @@ func TestMuxTracer200(t *testing.T) {
 	tracer, transport, router := setup(t)
 
 	// Send and verify a 200 request
-	req := httptest.NewRequest("GET", "/200", nil)
+	url := "/200"
+	req := httptest.NewRequest("GET", url, nil)
 	writer := httptest.NewRecorder()
 	router.ServeHTTP(writer, req)
 	assert.Equal(writer.Code, 200)
@@ -90,9 +92,10 @@ func TestMuxTracer200(t *testing.T) {
 	s := spans[0]
 	assert.Equal(s.Name, "mux.request")
 	assert.Equal(s.Service, "my-service")
-	assert.Equal(s.Resource, "GET /200")
+	assert.Equal(s.Resource, "GET "+url)
 	assert.Equal(s.GetMeta("http.status_code"), "200")
 	assert.Equal(s.GetMeta("http.method"), "GET")
+	assert.Equal(s.GetMeta("http.url"), url)
 	assert.Equal(s.Error, int32(0))
 }
 
@@ -103,7 +106,8 @@ func TestMuxTracer500(t *testing.T) {
 	tracer, transport, router := setup(t)
 
 	// SEnd and verify a 200 request
-	req := httptest.NewRequest("GET", "/500", nil)
+	url := "/500"
+	req := httptest.NewRequest("GET", url, nil)
 	writer := httptest.NewRecorder()
 	router.ServeHTTP(writer, req)
 	assert.Equal(writer.Code, 500)
@@ -119,8 +123,10 @@ func TestMuxTracer500(t *testing.T) {
 	s := spans[0]
 	assert.Equal(s.Name, "mux.request")
 	assert.Equal(s.Service, "my-service")
-	assert.Equal(s.Resource, "GET /500")
+	assert.Equal(s.Resource, "GET "+url)
 	assert.Equal(s.GetMeta("http.status_code"), "500")
+	assert.Equal(s.GetMeta("http.method"), "GET")
+	assert.Equal(s.GetMeta("http.url"), url)
 	assert.Equal(s.Error, int32(1))
 }
 
