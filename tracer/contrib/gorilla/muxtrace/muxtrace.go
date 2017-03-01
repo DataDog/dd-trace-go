@@ -59,7 +59,8 @@ func (m *MuxTracer) trace(req *http.Request) (*http.Request, *tracer.Span) {
 	route := mux.CurrentRoute(req)
 	path, err := route.GetPathTemplate()
 	if err != nil {
-		path = "unknown" // FIXME[matt] when will this happen?
+		// when route doesn't define a path
+		path = "unknown"
 	}
 
 	resource := req.Method + " " + path
