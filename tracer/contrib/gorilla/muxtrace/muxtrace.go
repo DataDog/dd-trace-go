@@ -56,26 +56,23 @@ func (m *MuxTracer) HandleFunc(router *mux.Router, pattern string, handler http.
 
 // span will create a span for the given request.
 func (m *MuxTracer) trace(req *http.Request) (*http.Request, *tracer.Span) {
-	resource := getResource(req)
+	route := mux.CurrentRoute(req)
+	path, err := route.GetPathTemplate()
+	if err != nil {
+		// when route doesn't define a path
+		path = "unknown"
+	}
+
+	resource := req.Method + " " + path
 
 	span := m.tracer.NewRootSpan("mux.request", m.service, resource)
 	span.Type = ext.HTTPType
 	span.SetMeta(ext.HTTPMethod, req.Method)
+	span.SetMeta(ext.HTTPURL, path)
 
 	// patch the span onto the request context.
 	treq := SetRequestSpan(req, span)
 	return treq, span
-}
-
-// getResource returns a resource name for the given http requests. Must be
-// called in the scope of a mux handler.
-func getResource(req *http.Request) string {
-	route := mux.CurrentRoute(req)
-	path, err := route.GetPathTemplate()
-	if err != nil {
-		path = "unknown" // FIXME[matt] when will this happen?
-	}
-	return req.Method + " " + path
 }
 
 // tracedResponseWriter is a small wrapper around an http response writer that will
