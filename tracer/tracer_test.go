@@ -12,6 +12,8 @@ import (
 func TestDefaultTracer(t *testing.T) {
 	assert := assert.New(t)
 
+	var wg sync.WaitGroup
+
 	// the default client must be available
 	assert.NotNil(DefaultTracer)
 
@@ -19,8 +21,25 @@ func TestDefaultTracer(t *testing.T) {
 	// default client
 	root := NewRootSpan("pylons.request", "pylons", "/")
 	NewChildSpan("pylons.request", root)
-	Disable()
-	Enable()
+
+	wg.Add(2)
+
+	go func() {
+		for i := 0; i < 1000; i++ {
+			Disable()
+			Enable()
+		}
+		wg.Done()
+	}()
+
+	go func() {
+		for i := 0; i < 1000; i++ {
+			_ = DefaultTracer.Enabled()
+		}
+		wg.Done()
+	}()
+
+	wg.Wait()
 }
 
 func TestNewSpan(t *testing.T) {
