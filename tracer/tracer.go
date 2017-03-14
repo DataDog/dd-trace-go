@@ -34,6 +34,7 @@ type Tracer struct {
 
 	DebugLoggingEnabled bool
 	enabled             bool // defines if the Tracer is enabled or not
+	enableMu            sync.RWMutex
 
 	services         map[string]Service // name -> service
 	servicesModified bool
@@ -80,11 +81,15 @@ func (t *Tracer) Stop() {
 
 // SetEnabled will enable or disable the tracer.
 func (t *Tracer) SetEnabled(enabled bool) {
+	t.enableMu.Lock()
+	defer t.enableMu.Unlock()
 	t.enabled = enabled
 }
 
 // Enabled returns whether or not a tracer is enabled.
 func (t *Tracer) Enabled() bool {
+	t.enableMu.RLock()
+	defer t.enableMu.RUnlock()
 	return t.enabled
 }
 
@@ -166,7 +171,7 @@ func (t *Tracer) NewChildSpanFromContext(name string, ctx context.Context) *Span
 
 // record queues the finished span for further processing.
 func (t *Tracer) record(span *Span) {
-	if t.enabled && span.Sampled {
+	if t.Enabled() && span.Sampled {
 		t.buffer.Push(span)
 	}
 }
@@ -185,7 +190,7 @@ func (t *Tracer) FlushTraces() error {
 	}
 
 	// bal if there's nothing to do
-	if !t.enabled || t.transport == nil || len(spans) == 0 {
+	if !t.Enabled() || t.transport == nil || len(spans) == 0 {
 		return nil
 	}
 
@@ -208,7 +213,7 @@ func (t *Tracer) FlushTraces() error {
 }
 
 func (t *Tracer) flushServices() error {
-	if !t.enabled || !t.servicesModified {
+	if !t.Enabled() || !t.servicesModified {
 		return nil
 	}
 
