@@ -10,7 +10,7 @@ import (
 
 const (
 	defaultHostname    = "localhost"
-	defaultPort        = "7777"
+	defaultPort        = "8126"
 	defaultEncoder     = MSGPACK_ENCODER // defines the default encoder used when the Transport is initialized
 	legacyEncoder      = JSON_ENCODER    // defines the legacy encoder used with earlier agent versions
 	defaultHTTPTimeout = time.Second     // defines the current timeout before giving up with the send process
@@ -27,7 +27,7 @@ type Transport interface {
 // NewTransport returns a new Transport implementation that sends traces to a
 // trace agent running on the given hostname and port. If the zero values for
 // hostname and port are provided, the default values will be used ("localhost"
-// for hostname, and "7777" for port).
+// for hostname, and "8126" for port).
 //
 // In general, using this method is only necessary if you have a trace agent
 // running on a non-default port or if it's located on another machine.
