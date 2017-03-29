@@ -182,6 +182,18 @@ func (t *Tracer) record(span *Span) {
 func (t *Tracer) FlushTraces() error {
 	spans := t.buffer.Pop()
 
+	// Though it doesn't make a lot of sense to change a span after it's been
+	// added to the buffer, there's nothing preventing the user from doing
+	// this. Avoid data races by locking the spans before they're sent.
+	for _, s := range spans {
+		s.mu.Lock()
+	}
+	defer func() {
+		for _, s := range spans {
+			s.mu.Unlock()
+		}
+	}()
+
 	if t.DebugLoggingEnabled {
 		log.Printf("Sending %d spans", len(spans))
 		for _, s := range spans {
