@@ -59,38 +59,3 @@ func createWrapperWithContext(ctx context.Context, t *tracer.Tracer) func(oldPro
 		}
 	}
 }
-
-func ExampleNewClient() *redis.Client {
-	client := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
-	return client
-	// Output: PONG <nil>
-}
-
-func main() {
-	opt := &redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	}
-	ctx := context.Background()
-	t := tracer.NewTracer()
-	span := t.NewChildSpanFromContext("first_span", ctx)
-	span.SetMeta("MetaMeta", "22")
-
-	ctx = tracer.ContextWithSpan(ctx, span)
-
-	client := NewTracedClient(opt, ctx, t)
-
-	client.Set("test", 3, 0)
-	result, _ := client.Get("test").Result()
-	fmt.Printf("%s", span.String())
-	s2, _ := tracer.SpanFromContext(ctx)
-	fmt.Printf(s2.String())
-	span.Finish()
-	fmt.Printf(result)
-}

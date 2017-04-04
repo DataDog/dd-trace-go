@@ -39,6 +39,40 @@ func TestClient(t *testing.T) {
 	assert.Equal(span.GetMeta("redis.raw_command"), "set test_key test_value: ")
 }
 
+func TestChildSpan(t *testing.T) {
+	default_opt := &redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	}
+	assert := assert.New(t)
+	testTracer, testTransport := getTestTracer()
+	testTracer.DebugLoggingEnabled = debug
+
+	// Parent span
+	ctx := context.Background()
+	parent_span := testTracer.NewChildSpanFromContext("parent_span", ctx)
+	ctx = tracer.ContextWithSpan(ctx, parent_span)
+	client := NewTracedClient(default_opt, ctx, testTracer)
+	client.Set("test_key", "test_value", 0)
+	parent_span.Finish()
+
+	testTracer.FlushTraces()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 2)
+
+	pspan := spans[1]
+	assert.Equal(pspan.Name, "parent_span")
+	child_span := spans[0]
+	assert.Equal(child_span.ParentID, pspan.SpanID)
+	assert.Equal(child_span.Name, "redis.command")
+	assert.Equal(child_span.GetMeta("host"), "localhost")
+	assert.Equal(child_span.GetMeta("port"), "6379")
+	assert.Equal(child_span.GetMeta("redis.raw_command"), "set test_key test_value: ")
+}
+
 // getTestTracer returns a Tracer with a DummyTransport
 func getTestTracer() (*tracer.Tracer, *dummyTransport) {
 	transport := &dummyTransport{}
