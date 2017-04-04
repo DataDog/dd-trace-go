@@ -15,7 +15,7 @@ const (
 
 func TestClient(t *testing.T) {
 	default_opt := &redis.Options{
-		Addr:     "127.0.0.1:6379",
+		Addr:     "localhost:6379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	}
@@ -34,14 +34,14 @@ func TestClient(t *testing.T) {
 
 	span := spans[0]
 	assert.Equal(span.Name, "redis.command")
-	assert.Equal(span.GetMeta("host"), "127.0.0.1")
+	assert.Equal(span.GetMeta("host"), "localhost")
 	assert.Equal(span.GetMeta("port"), "6379")
 	assert.Equal(span.GetMeta("redis.raw_command"), "set test_key test_value: ")
 }
 
 func TestChildSpan(t *testing.T) {
 	default_opt := &redis.Options{
-		Addr:     "127.0.0.1:6379",
+		Addr:     "localhost:6379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	}
@@ -68,14 +68,14 @@ func TestChildSpan(t *testing.T) {
 	assert.Equal(pspan.Name, "parent_span")
 	assert.Equal(child_span.ParentID, pspan.SpanID)
 	assert.Equal(child_span.Name, "redis.command")
-	assert.Equal(child_span.GetMeta("host"), "127.0.0.1")
+	assert.Equal(child_span.GetMeta("host"), "localhost")
 	assert.Equal(child_span.GetMeta("port"), "6379")
 	assert.Equal(child_span.GetMeta("redis.raw_command"), "set test_key test_value: ")
 }
 
 func TestMultipleCommands(t *testing.T) {
 	default_opt := &redis.Options{
-		Addr:     "127.0.0.1:6379",
+		Addr:     "localhost:6379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	}
@@ -103,7 +103,7 @@ func TestMultipleCommands(t *testing.T) {
 
 func TestError(t *testing.T) {
 	default_opt := &redis.Options{
-		Addr:     "127.0.0.1:6379",
+		Addr:     "localhost:6379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	}
@@ -124,7 +124,7 @@ func TestError(t *testing.T) {
 	assert.Equal(span.Error, 1)
 	assert.Equal(span.GetMeta("error.msg"), err.Err())
 	assert.Equal(span.Name, "redis.command")
-	assert.Equal(span.GetMeta("host"), "127.0.0.1")
+	assert.Equal(span.GetMeta("host"), "localhost")
 	assert.Equal(span.GetMeta("port"), "6379")
 	assert.Equal(span.GetMeta("redis.raw_command"), "get non_existent_key: ")
 }
