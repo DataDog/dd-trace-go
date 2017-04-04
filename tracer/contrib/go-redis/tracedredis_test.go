@@ -101,6 +101,34 @@ func TestMultipleCommands(t *testing.T) {
 
 }
 
+func TestError(t *testing.T) {
+	default_opt := &redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	}
+	assert := assert.New(t)
+	testTracer, testTransport := getTestTracer()
+	testTracer.DebugLoggingEnabled = debug
+
+	client := NewTracedClient(default_opt, context.Background(), testTracer)
+	err := client.Get("non_existent_key")
+
+	testTracer.FlushTraces()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+	span := spans[0]
+
+	assert.Equal(span.Error, 1)
+	assert.Equal(span.GetMeta("error.msg"), err.Err())
+	assert.Equal(span.Name, "redis.command")
+	assert.Equal(span.GetMeta("host"), "localhost")
+	assert.Equal(span.GetMeta("port"), "6379")
+	assert.Equal(span.GetMeta("redis.raw_command"), "get non_existent_key: ")
+}
+
 // getTestTracer returns a Tracer with a DummyTransport
 func getTestTracer() (*tracer.Tracer, *dummyTransport) {
 	transport := &dummyTransport{}
