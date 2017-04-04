@@ -63,14 +63,42 @@ func TestChildSpan(t *testing.T) {
 	spans := traces[0]
 	assert.Len(spans, 2)
 
+	child_span := spans[0]
 	pspan := spans[1]
 	assert.Equal(pspan.Name, "parent_span")
-	child_span := spans[0]
 	assert.Equal(child_span.ParentID, pspan.SpanID)
 	assert.Equal(child_span.Name, "redis.command")
 	assert.Equal(child_span.GetMeta("host"), "localhost")
 	assert.Equal(child_span.GetMeta("port"), "6379")
 	assert.Equal(child_span.GetMeta("redis.raw_command"), "set test_key test_value: ")
+}
+
+func TestMultipleCommands(t *testing.T) {
+	default_opt := &redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	}
+	assert := assert.New(t)
+	testTracer, testTransport := getTestTracer()
+	testTracer.DebugLoggingEnabled = debug
+
+	client := NewTracedClient(default_opt, context.Background(), testTracer)
+	client.Set("test_key", "test_value", 0)
+	client.Get("test_key")
+	client.Incr("int_key")
+	client.ClientList()
+
+	testTracer.FlushTraces()
+	traces := testTransport.Traces()
+	assert.Len(traces, 4)
+	spans := traces[0]
+	assert.Len(spans, 1)
+	assert.Equal(traces[0][0].GetMeta("redis.raw_command"), "set test_key test_value: ")
+	assert.Equal(traces[1][0].GetMeta("redis.raw_command"), "get test_key: ")
+	assert.Equal(traces[2][0].GetMeta("redis.raw_command"), "incr int_key: 0")
+	assert.Equal(traces[3][0].GetMeta("redis.raw_command"), "client list: ")
+
 }
 
 // getTestTracer returns a Tracer with a DummyTransport
