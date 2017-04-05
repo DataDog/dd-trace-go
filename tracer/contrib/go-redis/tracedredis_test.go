@@ -15,7 +15,7 @@ const (
 
 func TestClient(t *testing.T) {
 	default_opt := &redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     "127.0.0.1:56379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	}
@@ -41,7 +41,7 @@ func TestClient(t *testing.T) {
 
 func TestChildSpan(t *testing.T) {
 	default_opt := &redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     "127.0.0.1:56379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	}
@@ -75,7 +75,7 @@ func TestChildSpan(t *testing.T) {
 
 func TestMultipleCommands(t *testing.T) {
 	default_opt := &redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     "127.0.0.1:56379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	}
@@ -103,7 +103,7 @@ func TestMultipleCommands(t *testing.T) {
 
 func TestError(t *testing.T) {
 	default_opt := &redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     "127.0.0.1:56379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	}
