@@ -94,11 +94,16 @@ func TestMultipleCommands(t *testing.T) {
 	assert.Len(traces, 4)
 	spans := traces[0]
 	assert.Len(spans, 1)
-	// assert.Equal(traces[0][0].GetMeta("redis.raw_command"), "set test_key test_value: ")
-	// assert.Equal(traces[1][0].GetMeta("redis.raw_command"), "get test_key: ")
-	// assert.Equal(traces[2][0].GetMeta("redis.raw_command"), "incr int_key: 0")
-	// assert.Equal(traces[3][0].GetMeta("redis.raw_command"), "client list: ")
 
+	// Checking all commands were recorded
+	var commands [4]string
+	for i := 0; i < 4; i++ {
+		commands[i] = traces[i][0].GetMeta("redis.raw_command")
+	}
+	assert.Contains(commands, "set test_key test_value: ")
+	assert.Contains(commands, "get test_key: ")
+	assert.Contains(commands, "incr int_key: 0")
+	assert.Contains(commands, "client list: ")
 }
 
 func TestError(t *testing.T) {
