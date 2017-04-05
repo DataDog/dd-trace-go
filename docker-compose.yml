@@ -1,0 +1,13 @@
+# File for develipment/ testing purposes
+redis:
+        image: redis:3.2
+        ports:
+                - "127.0.0.1:6379:6379"
+ddagent:
+        image: datadog/docker-dd-agent
+        environment:
+                - DD_APM_ENABLED=true
+                - DD_BIND_HOST=0.0.0.0
+                - DD_API_KEY=invalid_key_but_this_is_fine
+        ports:
+                - "127.0.0.1:8126:8126"
