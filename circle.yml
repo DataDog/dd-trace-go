@@ -19,7 +19,7 @@ dependencies:
     - rake lint:install
     # run the agent
     - docker run -d -e DD_API_KEY=invalid_key_but_this_is_fine -e DD_BIND_HOST=0.0.0.0 -e DD_APM_ENABLED=true -p 127.0.0.1:8126:8126 datadog/docker-dd-agent
-    - docker run --name redis-client -d redis -p 127.0.0.1:6379:6379
+    - docker run --name redis-client -d redis -p 6379:6379
     - redis-cli ping
     - redis-cli
     - set mykey somevalue
