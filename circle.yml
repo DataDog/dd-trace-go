@@ -19,10 +19,6 @@ dependencies:
     - rake lint:install
     # run the agent
     - docker-compose up -d | cat
-    - redis-cli ping
-    - redis-cli
-    - set mykey somevalue
-    - redis-cli shutdown
 
   override:
     # put the package in the right $GOPATH
