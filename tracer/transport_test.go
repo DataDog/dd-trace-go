@@ -60,7 +60,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	for _, tc := range testCases {
 		transport := newHTTPTransport(defaultHostname, defaultPort)
 		response, err := transport.SendTraces(tc.payload)
-		assert.Nil(err)
+		assert.NoError(err)
 		assert.NotNil(response)
 		assert.Equal(200, response.StatusCode)
 	}
@@ -74,7 +74,7 @@ func TestAPIDowngrade(t *testing.T) {
 	// if we get a 404 we should downgrade the API
 	traces := getTestTrace(2, 2)
 	response, err := transport.SendTraces(traces)
-	assert.Nil(err)
+	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
 }
@@ -87,7 +87,7 @@ func TestEncoderDowngrade(t *testing.T) {
 	// if we get a 415 because of a wrong encoder, we should downgrade the encoder
 	traces := getTestTrace(2, 2)
 	response, err := transport.SendTraces(traces)
-	assert.Nil(err)
+	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
 }
@@ -98,7 +98,7 @@ func TestTransportServices(t *testing.T) {
 	transport := newHTTPTransport(defaultHostname, defaultPort)
 
 	response, err := transport.SendServices(getTestServices())
-	assert.Nil(err)
+	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
 }
@@ -110,7 +110,7 @@ func TestTransportServicesDowngrade_0_0(t *testing.T) {
 	transport.serviceURL = "http://localhost:8126/v0.0/services"
 
 	response, err := transport.SendServices(getTestServices())
-	assert.Nil(err)
+	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
 }
@@ -122,7 +122,7 @@ func TestTransportServicesDowngrade_0_2(t *testing.T) {
 	transport.serviceURL = "http://localhost:8126/v0.2/services"
 
 	response, err := transport.SendServices(getTestServices())
-	assert.Nil(err)
+	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
 }
