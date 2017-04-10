@@ -15,15 +15,14 @@ func NewTracedClient(opt *redis.Options, ctx context.Context, t *tracer.Tracer) 
 	host = addr[0]
 	port = addr[1]
 	db := strconv.Itoa(opt.DB)
-	ctx = context.WithValue(ctx, "_datadog_host", host)
-	ctx = context.WithValue(ctx, "_datadog_port", port)
-	ctx = context.WithValue(ctx, "_datadog_db", db)
+	ctx = context.WithValue(ctx, "_datadog_redis_host", host)
+	ctx = context.WithValue(ctx, "_datadog_redis_port", port)
+	ctx = context.WithValue(ctx, "_datadog_redis_db", db)
 	client := redis.NewClient(opt)
 	client.WithContext(ctx)
 	client.WrapProcess(createWrapperWithContext(ctx, t))
 
 	return client
-
 }
 
 func createWrapperWithContext(ctx context.Context, t *tracer.Tracer) func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
@@ -36,18 +35,13 @@ func createWrapperWithContext(ctx context.Context, t *tracer.Tracer) func(oldPro
 			span.Resource = resource
 			span.SetMeta("redis.raw_command", cmd.String())
 
-			host_str, ok_host := ctx.Value("_datadog_host").(string)
-			port_str, ok_port := ctx.Value("_datadog_port").(string)
-			db_str, ok_db := ctx.Value("_datadog_db").(string)
-
-			if ok_host {
-				span.SetMeta("host", host_str)
-			}
-			if ok_port {
-				span.SetMeta("port", port_str)
-			}
-			if ok_db {
-				span.SetMeta("db", db_str)
+			metas := map[string]string{"out.host": "_datadog_redis_host",
+				"out.port": "_datadog_redis_port",
+				"out.db":   "_datadog_redis_db"}
+			for k, v := range metas {
+				if val, ok := ctx.Value(v).(string); ok {
+					span.SetMeta(k, val)
+				}
 			}
 			err := oldProcess(cmd)
 			if err != nil {
