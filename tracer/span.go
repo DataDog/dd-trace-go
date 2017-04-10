@@ -3,7 +3,6 @@ package tracer
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"reflect"
 	"runtime/debug"
 	"strings"
@@ -219,11 +218,6 @@ func (s *Span) Tracer() *Tracer {
 		return nil
 	}
 	return s.tracer
-}
-
-// nextSpanID returns a new random span id.
-func nextSpanID() uint64 {
-	return uint64(rand.Int63())
 }
 
 // now returns current UTC time in nanos.

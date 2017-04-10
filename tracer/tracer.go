@@ -1,11 +1,12 @@
 package tracer
 
 import (
+	"context"
+	"fmt"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
-
-	"context"
 )
 
 const (
@@ -42,6 +43,8 @@ type Tracer struct {
 
 	exit   chan struct{}
 	exitWG *sync.WaitGroup
+
+	randGen *rand.Rand
 }
 
 // NewTracer creates a new Tracer. Most users should use the package's
@@ -52,6 +55,12 @@ func NewTracer() *Tracer {
 
 // NewTracerTransport create a new Tracer with the given transport.
 func NewTracerTransport(transport Transport) *Tracer {
+	randSource, err := newRandSource()
+	if err != nil {
+		panic(fmt.Sprintf("cannot create random source: %v", err))
+	}
+	randGen := rand.New(randSource)
+
 	t := &Tracer{
 		enabled:             true,
 		transport:           transport,
@@ -64,6 +73,8 @@ func NewTracerTransport(transport Transport) *Tracer {
 
 		exit:   make(chan struct{}),
 		exitWG: &sync.WaitGroup{},
+
+		randGen: randGen,
 	}
 
 	// start a background worker
@@ -132,7 +143,7 @@ func (t *Tracer) SetServiceInfo(name, app, appType string) {
 // NewRootSpan creates a span with no parent. Its ids will be randomly
 // assigned.
 func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
-	spanID := nextSpanID()
+	spanID := t.nextSpanID()
 	span := NewSpan(name, service, resource, spanID, spanID, 0, t)
 	t.sampler.Sample(span)
 	return span
@@ -141,7 +152,7 @@ func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 // NewChildSpan returns a new span that is child of the Span passed as
 // argument.
 func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
-	spanID := nextSpanID()
+	spanID := t.nextSpanID()
 
 	// when we're using parenting in inner functions, it's possible that
 	// a nil pointer is sent to this function as argument. To prevent a crash,
@@ -210,6 +221,11 @@ func (t *Tracer) FlushTraces() error {
 
 	_, err := t.transport.SendTraces(traces)
 	return err
+}
+
+// nextSpanID returns a new random span id.
+func (t *Tracer) nextSpanID() uint64 {
+	return uint64(t.randGen.Int63())
 }
 
 func (t *Tracer) flushServices() error {
