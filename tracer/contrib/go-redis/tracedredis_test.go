@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"testing"
+	"time"
 )
 
 const (
@@ -17,7 +18,7 @@ func TestClient(t *testing.T) {
 	opts := &redis.Options{
 		Addr:     "127.0.0.1:6379",
 		Password: "", // no password set
-		DB:       0,  // use default DB
+		DB:       0,  // use default db
 	}
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
@@ -37,6 +38,36 @@ func TestClient(t *testing.T) {
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(span.GetMeta("out.port"), "6379")
 	assert.Equal(span.GetMeta("redis.raw_command"), "set test_key test_value: ")
+	assert.Equal(span.GetMeta("redis.args_length"), "3")
+}
+
+func TestPipeline(t *testing.T) {
+	opts := &redis.Options{
+		Addr:     "127.0.0.1:6379",
+		Password: "", // no password set
+		DB:       0,  // use default db
+	}
+	assert := assert.New(t)
+	testTracer, testTransport := getTestTracer()
+	testTracer.DebugLoggingEnabled = debug
+
+	client := NewTracedClient(opts, context.Background(), testTracer)
+	pipeline := client.TracedPipeline()
+	pipeline.Incr("pipeline_counter")
+	pipeline.Expire("pipeline_counter", time.Hour)
+	pipeline.TracedExec(context.Background())
+
+	testTracer.FlushTraces()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+
+	span := spans[0]
+	assert.Equal(span.Name, "redis.command")
+	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
+	assert.Equal(span.GetMeta("out.port"), "6379")
+	assert.Equal(span.GetMeta("redis.pipeline_length"), "2")
 }
 
 func TestChildSpan(t *testing.T) {
