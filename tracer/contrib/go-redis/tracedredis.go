@@ -46,9 +46,9 @@ type TracedPipeline struct {
 	tracer *tracer.Tracer
 }
 
-func (c *TracedClient) TracedPipeline() *TracedPipeline {
+func (c *TracedClient) Pipeline() *TracedPipeline {
 	return &TracedPipeline{
-		c.Pipeline(),
+		c.Client.Pipeline(),
 		c.host,
 		c.port,
 		c.db,

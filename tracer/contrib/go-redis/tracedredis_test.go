@@ -52,7 +52,7 @@ func TestPipeline(t *testing.T) {
 	testTracer.DebugLoggingEnabled = debug
 
 	client := NewTracedClient(opts, context.Background(), testTracer)
-	pipeline := client.TracedPipeline()
+	pipeline := client.Pipeline()
 	pipeline.Incr("pipeline_counter")
 	pipeline.Expire("pipeline_counter", time.Hour)
 	pipeline.TracedExec(context.Background())
