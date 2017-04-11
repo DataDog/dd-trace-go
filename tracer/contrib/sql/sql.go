@@ -71,14 +71,14 @@ func (d TracedDSN) Format() string {
 }
 
 type TracedDriver struct {
-	name    string
-	parent  driver.Driver
-	tracer  *tracer.Tracer
+	name   string
+	parent driver.Driver
+	tracer *tracer.Tracer
 }
 
 func NewTracedDriver(name string, driver driver.Driver, t *tracer.Tracer) TracedDriver {
 	return TracedDriver{
-		name: name,
+		name:   name,
 		parent: driver,
 		tracer: t,
 	}
@@ -124,7 +124,7 @@ func (c TracedConn) Begin() (driver.Tx, error) {
 }
 
 func (c TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
-	span := c.tracer.NewChildSpanFromContext(c.name + ".connection.begin", ctx)
+	span := c.tracer.NewChildSpanFromContext(c.name+".connection.begin", ctx)
 	span.Service = c.service
 	defer func() {
 		span.SetError(err)
@@ -177,7 +177,7 @@ func (c TracedConn) Exec(query string, args []driver.Value) (driver.Result, erro
 }
 
 func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
-	span := c.tracer.NewChildSpanFromContext(c.name + ".connection.exec", ctx)
+	span := c.tracer.NewChildSpanFromContext(c.name+".connection.exec", ctx)
 	span.Service = c.service
 	span.SetMeta("query", query)
 	span.SetMeta("args_length", strconv.Itoa(len(args)))
@@ -193,7 +193,7 @@ func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver
 			return nil, err
 		}
 
-		return TracedResult{name: c.name, service: c.service, parent:res, tracer: c.tracer, ctx: ctx}, nil
+		return TracedResult{name: c.name, service: c.service, parent: res, tracer: c.tracer, ctx: ctx}, nil
 	}
 
 	// Fallback implementation
@@ -234,7 +234,7 @@ func (c TracedConn) Query(query string, args []driver.Value) (driver.Rows, error
 }
 
 func (c TracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
-	span := c.tracer.NewChildSpanFromContext(c.name + ".connection.query", ctx)
+	span := c.tracer.NewChildSpanFromContext(c.name+".connection.query", ctx)
 	span.Service = c.service
 	span.SetMeta("query", query)
 	span.SetMeta("args_length", strconv.Itoa(len(args)))
@@ -276,7 +276,7 @@ type TracedTx struct {
 }
 
 func (t TracedTx) Commit() (err error) {
-	span := t.tracer.NewChildSpanFromContext(t.name + ".transaction.commit", t.ctx)
+	span := t.tracer.NewChildSpanFromContext(t.name+".transaction.commit", t.ctx)
 	span.Service = t.service
 	defer func() {
 		span.SetError(err)
@@ -287,7 +287,7 @@ func (t TracedTx) Commit() (err error) {
 }
 
 func (t TracedTx) Rollback() (err error) {
-	span := t.tracer.NewChildSpanFromContext(t.name + ".transaction.rollback", t.ctx)
+	span := t.tracer.NewChildSpanFromContext(t.name+".transaction.rollback", t.ctx)
 	span.Service = t.service
 	defer func() {
 		span.SetError(err)
@@ -296,7 +296,6 @@ func (t TracedTx) Rollback() (err error) {
 
 	return t.parent.Rollback()
 }
-
 
 type TracedStmt struct {
 	name    string
@@ -308,7 +307,7 @@ type TracedStmt struct {
 }
 
 func (s TracedStmt) Close() (err error) {
-	span := s.tracer.NewChildSpanFromContext(s.name + ".statement.close", s.ctx)
+	span := s.tracer.NewChildSpanFromContext(s.name+".statement.close", s.ctx)
 	span.Service = s.service
 	defer func() {
 		span.SetError(err)
@@ -323,7 +322,7 @@ func (s TracedStmt) NumInput() int {
 }
 
 func (s TracedStmt) Exec(args []driver.Value) (res driver.Result, err error) {
-	span := s.tracer.NewChildSpanFromContext(s.name + ".statement.exec", s.ctx)
+	span := s.tracer.NewChildSpanFromContext(s.name+".statement.exec", s.ctx)
 	span.Service = s.service
 	span.SetMeta("query", s.query)
 	span.SetMeta("args_length", strconv.Itoa(len(args)))
@@ -338,11 +337,11 @@ func (s TracedStmt) Exec(args []driver.Value) (res driver.Result, err error) {
 		return nil, err
 	}
 
-	return TracedResult{name: s.name, service: s.service, parent:res, tracer: s.tracer, ctx: s.ctx}, nil
+	return TracedResult{name: s.name, service: s.service, parent: res, tracer: s.tracer, ctx: s.ctx}, nil
 }
 
 func (s TracedStmt) Query(args []driver.Value) (rows driver.Rows, err error) {
-	span := s.tracer.NewChildSpanFromContext(s.name + ".statement.query", s.ctx)
+	span := s.tracer.NewChildSpanFromContext(s.name+".statement.query", s.ctx)
 	span.Service = s.service
 	span.SetMeta("query", s.query)
 	span.SetMeta("args_length", strconv.Itoa(len(args)))
@@ -361,7 +360,7 @@ func (s TracedStmt) Query(args []driver.Value) (rows driver.Rows, err error) {
 }
 
 func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
-	span := s.tracer.NewChildSpanFromContext(s.name + ".statement.exec", ctx)
+	span := s.tracer.NewChildSpanFromContext(s.name+".statement.exec", ctx)
 	span.Service = s.service
 	span.SetMeta("query", s.query)
 	span.SetMeta("args_length", strconv.Itoa(len(args)))
@@ -396,7 +395,7 @@ func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (
 }
 
 func (s TracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
-	span := s.tracer.NewChildSpanFromContext(s.name + ".statement.query", s.ctx)
+	span := s.tracer.NewChildSpanFromContext(s.name+".statement.query", s.ctx)
 	span.Service = s.service
 	span.SetMeta("query", s.query)
 	span.SetMeta("args_length", strconv.Itoa(len(args)))
@@ -430,7 +429,6 @@ func (s TracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) 
 	return s.Query(dargs)
 }
 
-
 type TracedResult struct {
 	name    string
 	service string
@@ -440,7 +438,7 @@ type TracedResult struct {
 }
 
 func (r TracedResult) LastInsertId() (id int64, err error) {
-	span := r.tracer.NewChildSpanFromContext(r.name + ".result.last_insert_id", r.ctx)
+	span := r.tracer.NewChildSpanFromContext(r.name+".result.last_insert_id", r.ctx)
 	span.Service = r.service
 	defer func() {
 		span.SetError(err)
@@ -451,7 +449,7 @@ func (r TracedResult) LastInsertId() (id int64, err error) {
 }
 
 func (r TracedResult) RowsAffected() (num int64, err error) {
-	span := r.tracer.NewChildSpanFromContext(r.name + ".result.rows_affected", r.ctx)
+	span := r.tracer.NewChildSpanFromContext(r.name+".result.rows_affected", r.ctx)
 	span.Service = r.service
 	defer func() {
 		span.SetError(err)
@@ -460,7 +458,6 @@ func (r TracedResult) RowsAffected() (num int64, err error) {
 
 	return r.parent.RowsAffected()
 }
-
 
 type TracedRows struct {
 	name    string
@@ -482,7 +479,7 @@ func (r TracedRows) Close() error {
 
 func (r *TracedRows) Next(dest []driver.Value) (err error) {
 	if r.span == nil {
-		r.span = r.tracer.NewChildSpanFromContext(r.name + ".rows.iter", r.ctx)
+		r.span = r.tracer.NewChildSpanFromContext(r.name+".rows.iter", r.ctx)
 		r.span.Service = r.service
 	}
 
