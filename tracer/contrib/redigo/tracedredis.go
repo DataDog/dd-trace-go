@@ -25,7 +25,12 @@ func TracedDial(tracer *tracer.Tracer, network, address string, options ...redis
 	return tc, err
 }
 
-func (tc TracedConn) TraceDo(ctx context.Context, commandName string, args ...interface{}) (reply interface{}, err error) {
+func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
+	ctx, ok := args[len(args)-1].(context.Context)
+	if !ok {
+		return tc.Conn.Do(commandName, args...)
+	}
+	args = args[:len(args)-1]
 	span := tc.tracer.NewChildSpanFromContext("redis.command", ctx)
 	span.SetMeta("out.network", tc.network)
 	span.SetMeta("out.port", tc.port)
@@ -37,7 +42,7 @@ func (tc TracedConn) TraceDo(ctx context.Context, commandName string, args ...in
 		raw_command += " " + arg.(string)
 	}
 	span.SetMeta("redis.raw_command", raw_command)
-	ret, err := tc.Do(commandName, args...)
+	ret, err := tc.Conn.Do(commandName, args...)
 
 	if err != nil {
 		span.SetError(err)

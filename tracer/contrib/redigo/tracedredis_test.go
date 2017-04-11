@@ -16,9 +16,10 @@ func TestClient(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
+	ctx := context.Background()
 
 	c, _ := TracedDial(testTracer, "tcp", "127.0.0.1:6379")
-	c.TraceDo(context.Background(), "SET", "fleet", "truck")
+	c.Do("SET", "fleet", "truck", ctx)
 
 	testTracer.FlushTraces()
 	traces := testTransport.Traces()
@@ -40,7 +41,7 @@ func TestError(t *testing.T) {
 	testTracer.DebugLoggingEnabled = debug
 
 	c, _ := TracedDial(testTracer, "tcp", "127.0.0.1:6379")
-	_, err := c.TraceDo(context.Background(), "NOT_A_COMMAND")
+	_, err := c.Do("NOT_A_COMMAND", context.Background())
 
 	testTracer.FlushTraces()
 	traces := testTransport.Traces()
@@ -67,7 +68,7 @@ func TestInheritance(t *testing.T) {
 	parent_span := testTracer.NewChildSpanFromContext("parent_span", ctx)
 	ctx = tracer.ContextWithSpan(ctx, parent_span)
 	client, _ := TracedDial(testTracer, "tcp", "127.0.0.1:6379")
-	client.TraceDo(ctx, "SET water bottle")
+	client.Do("SET water bottle", ctx)
 	parent_span.Finish()
 
 	testTracer.FlushTraces()
