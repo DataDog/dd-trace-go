@@ -50,7 +50,7 @@ func TestError(t *testing.T) {
 	span := spans[0]
 
 	assert.Equal(int32(span.Error), int32(1))
-	assert.Equal(span.GetMeta("error.msg"), err)
+	assert.Equal(span.GetMeta("error.msg"), err.Error())
 	assert.Equal(span.Name, "redis.command")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(span.GetMeta("out.port"), "6379")
