@@ -50,16 +50,15 @@ func TracedDialURL(service string, tracer *tracer.Tracer, rawurl string, options
 }
 
 func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
-	if len(args) == 0 {
-		return tc.Conn.Do(commandName, args...)
+	span := tc.tracer.NewRootSpan("redis.command", tc.service, "")
+	if len(args) > 0 {
+		ctx, ok := args[len(args)-1].(context.Context)
+		if ok {
+			span = tc.tracer.NewChildSpanFromContext("redis.command", ctx)
+			span.Service = tc.service
+			args = args[:len(args)-1]
+		}
 	}
-	ctx, ok := args[len(args)-1].(context.Context)
-	if !ok {
-		return tc.Conn.Do(commandName, args...)
-	}
-	args = args[:len(args)-1]
-	span := tc.tracer.NewChildSpanFromContext("redis.command", ctx)
-	span.Service = tc.service
 	span.SetMeta("out.network", tc.network)
 	span.SetMeta("out.port", tc.port)
 	span.SetMeta("out.host", tc.host)

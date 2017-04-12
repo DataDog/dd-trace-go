@@ -19,7 +19,7 @@ func TestClient(t *testing.T) {
 	testTracer.DebugLoggingEnabled = debug
 
 	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
-	c.Do("SET", "fleet", "truck", context.Background())
+	c.Do("SET", "fleet", "truck")
 
 	testTracer.FlushTraces()
 	traces := testTransport.Traces()
