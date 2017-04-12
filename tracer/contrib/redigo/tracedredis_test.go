@@ -3,6 +3,7 @@ package tracedredis
 import (
 	"context"
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/garyburd/redigo/redis"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"testing"
@@ -16,10 +17,9 @@ func TestClient(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
-	ctx := context.Background()
 
 	c, _ := TracedDial(testTracer, "tcp", "127.0.0.1:6379")
-	c.Do("SET", "fleet", "truck", ctx)
+	c.Do("SET", "fleet", "truck", context.Background())
 
 	testTracer.FlushTraces()
 	traces := testTransport.Traces()
@@ -84,6 +84,32 @@ func TestInheritance(t *testing.T) {
 	assert.Equal(child_span.Name, "redis.command")
 	assert.Equal(child_span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(child_span.GetMeta("out.port"), "6379")
+}
+
+func TestPool(t *testing.T) {
+	assert := assert.New(t)
+	testTracer, testTransport := getTestTracer()
+	testTracer.DebugLoggingEnabled = debug
+
+	pool := &redis.Pool{
+		MaxIdle:     2,
+		MaxActive:   3,
+		IdleTimeout: 23,
+		Wait:        true,
+		Dial: func() (redis.Conn, error) {
+			return TracedDial(testTracer, "tcp", "127.0.0.1:6379")
+		},
+	}
+
+	pc := pool.Get()
+	pc.Do("SET whiskey glass", context.Background())
+	testTracer.FlushTraces()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+	span := spans[0]
+	assert.Equal(span.GetMeta("out.network"), "tcp")
 }
 
 // getTestTracer returns a Tracer with a DummyTransport
