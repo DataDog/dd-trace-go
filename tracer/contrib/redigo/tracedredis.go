@@ -66,7 +66,12 @@ func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interfac
 
 	raw_command := commandName
 	for _, arg := range args {
-		raw_command += " " + arg.(string)
+		switch arg := arg.(type) {
+		case string:
+			raw_command += " " + arg
+		case int:
+			raw_command += " " + strconv.Itoa(arg)
+		}
 	}
 	span.Resource = raw_command
 	ret, err := tc.Conn.Do(commandName, args...)

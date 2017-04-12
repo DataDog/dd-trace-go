@@ -19,7 +19,7 @@ func TestClient(t *testing.T) {
 	testTracer.DebugLoggingEnabled = debug
 
 	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
-	c.Do("SET", "fleet", "truck")
+	c.Do("SET", 1, "truck")
 
 	testTracer.FlushTraces()
 	traces := testTransport.Traces()
@@ -32,7 +32,7 @@ func TestClient(t *testing.T) {
 	assert.Equal(span.Service, "my-service")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(span.GetMeta("out.port"), "6379")
-	assert.Equal(span.Resource, "SET fleet truck")
+	assert.Equal(span.Resource, "SET 1 truck")
 	assert.Equal(span.GetMeta("redis.args_length"), "2")
 }
 
