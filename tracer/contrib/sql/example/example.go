@@ -6,15 +6,15 @@ import (
 	"log"
 	"time"
 
-	st "github.com/Datadog/dd-trace-go/tracer/contrib/sql"
+	tracedsql "github.com/Datadog/dd-trace-go/tracer/contrib/sql"
 	mysql "github.com/go-sql-driver/mysql"
 )
 
 func main() {
-	st.RegisterTraced("mysql", &mysql.MySQLDriver{})
+	tracedsql.Register("mysql", &mysql.MySQLDriver{})
 	fmt.Printf("Drivers registered: %s", sql.Drivers())
 
-	db, err := st.OpenTraced("mysql", "mysql", "root:3Z3ruyudg@tcp(127.0.0.1:3306)/employees")
+	db, err := tracedsql.Open("mysql", "mysql", "root:3Z3ruyudg@tcp(127.0.0.1:3306)/employees")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -22,6 +22,7 @@ func main() {
 
 	for {
 		selectItems(db)
+		time.Sleep(1 * time.Second)
 	}
 }
 
@@ -30,7 +31,7 @@ func selectItems(db *sql.DB) {
 		emp_no     int
 		first_name string
 	)
-	rows, err := db.Query("select emp_no, first_name from employees limit 10")
+	rows, err := db.Query("select emp_no, first_name from employees limit 4")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,5 +47,4 @@ func selectItems(db *sql.DB) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	time.Sleep(10000)
 }
