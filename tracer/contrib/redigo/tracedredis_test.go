@@ -18,7 +18,7 @@ func TestClient(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
-	c, _ := TracedDial(testTracer, "tcp", "127.0.0.1:6379")
+	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
 	c.Do("SET", "fleet", "truck", context.Background())
 
 	testTracer.FlushTraces()
@@ -29,9 +29,10 @@ func TestClient(t *testing.T) {
 	assert.Len(spans, 1)
 	span := spans[0]
 	assert.Equal(span.Name, "redis.command")
+	assert.Equal(span.Service, "my-service")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(span.GetMeta("out.port"), "6379")
-	assert.Equal(span.GetMeta("redis.raw_command"), "SET fleet truck")
+	assert.Equal(span.Resource, "SET fleet truck")
 	assert.Equal(span.GetMeta("redis.args_length"), "2")
 }
 
@@ -40,7 +41,7 @@ func TestError(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
-	c, _ := TracedDial(testTracer, "tcp", "127.0.0.1:6379")
+	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
 	_, err := c.Do("NOT_A_COMMAND", context.Background())
 
 	testTracer.FlushTraces()
@@ -53,9 +54,10 @@ func TestError(t *testing.T) {
 	assert.Equal(int32(span.Error), int32(1))
 	assert.Equal(span.GetMeta("error.msg"), err.Error())
 	assert.Equal(span.Name, "redis.command")
+	assert.Equal(span.Service, "my-service")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(span.GetMeta("out.port"), "6379")
-	assert.Equal(span.GetMeta("redis.raw_command"), "NOT_A_COMMAND")
+	assert.Equal(span.Resource, "NOT_A_COMMAND")
 }
 
 func TestInheritance(t *testing.T) {
@@ -67,8 +69,8 @@ func TestInheritance(t *testing.T) {
 	ctx := context.Background()
 	parent_span := testTracer.NewChildSpanFromContext("parent_span", ctx)
 	ctx = tracer.ContextWithSpan(ctx, parent_span)
-	client, _ := TracedDial(testTracer, "tcp", "127.0.0.1:6379")
-	client.Do("SET water bottle", ctx)
+	client, _ := TracedDial("my_service", testTracer, "tcp", "127.0.0.1:6379")
+	client.Do("SET", "water", "bottle", ctx)
 	parent_span.Finish()
 
 	testTracer.FlushTraces()
@@ -97,12 +99,12 @@ func TestPool(t *testing.T) {
 		IdleTimeout: 23,
 		Wait:        true,
 		Dial: func() (redis.Conn, error) {
-			return TracedDial(testTracer, "tcp", "127.0.0.1:6379")
+			return TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
 		},
 	}
 
 	pc := pool.Get()
-	pc.Do("SET whiskey glass", context.Background())
+	pc.Do("SET", " whiskey", " glass", context.Background())
 	testTracer.FlushTraces()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
@@ -110,6 +112,19 @@ func TestPool(t *testing.T) {
 	assert.Len(spans, 1)
 	span := spans[0]
 	assert.Equal(span.GetMeta("out.network"), "tcp")
+}
+
+func TestTracingDialUrl(t *testing.T) {
+	assert := assert.New(t)
+	testTracer, testTransport := getTestTracer()
+	testTracer.DebugLoggingEnabled = debug
+	url := "redis://127.0.0.1:6379"
+	client, _ := TracedDialURL("redis-service", testTracer, url)
+	client.Do("SET", "ONE", " TWO", context.Background())
+
+	testTracer.FlushTraces()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
 }
 
 // getTestTracer returns a Tracer with a DummyTransport
