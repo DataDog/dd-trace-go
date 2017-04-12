@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func NewTracedClient(opt *redis.Options, ctx context.Context, t *tracer.Tracer, service string) *TracedClient {
+func NewTracedClient(opt *redis.Options, t *tracer.Tracer, service string) *TracedClient {
 	var host, port string
 	addr := strings.Split(opt.Addr, ":")
 	host = addr[0]
@@ -16,26 +16,27 @@ func NewTracedClient(opt *redis.Options, ctx context.Context, t *tracer.Tracer, 
 	db := strconv.Itoa(opt.DB)
 
 	client := redis.NewClient(opt)
-	client.WithContext(ctx)
 
 	tc := &TracedClient{
 		client,
 		host,
 		port,
 		db,
+		service,
 		t,
 	}
 
-	tc.Client.WrapProcess(createWrapperWithContext(tc, service))
+	tc.Client.WrapProcess(createWrapperFromClient(tc))
 	return tc
 }
 
 type TracedClient struct {
 	*redis.Client
-	host   string
-	port   string
-	db     string
-	tracer *tracer.Tracer
+	host    string
+	port    string
+	db      string
+	service string
+	tracer  *tracer.Tracer
 }
 
 func (c *TracedClient) SetContext(ctx context.Context) {
@@ -44,10 +45,11 @@ func (c *TracedClient) SetContext(ctx context.Context) {
 
 type TracedPipeline struct {
 	*redis.Pipeline
-	host   string
-	port   string
-	db     string
-	tracer *tracer.Tracer
+	host    string
+	port    string
+	db      string
+	service string
+	tracer  *tracer.Tracer
 }
 
 func (c *TracedClient) Pipeline() *TracedPipeline {
@@ -56,12 +58,14 @@ func (c *TracedClient) Pipeline() *TracedPipeline {
 		c.host,
 		c.port,
 		c.db,
+		c.service,
 		c.tracer,
 	}
 }
 
 func (c *TracedPipeline) TracedExec(ctx context.Context) ([]redis.Cmder, error) {
 	span := c.tracer.NewChildSpanFromContext("redis.command", ctx)
+	span.Service = c.service
 
 	span.SetMeta("out.host", c.host)
 	span.SetMeta("out.port", c.port)
@@ -77,7 +81,7 @@ func (c *TracedPipeline) TracedExec(ctx context.Context) ([]redis.Cmder, error) 
 
 }
 
-func createWrapperWithContext(tc *TracedClient, service string) func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+func createWrapperFromClient(tc *TracedClient) func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
 	return func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
 		return func(cmd redis.Cmder) error {
 			ctx := tc.Client.Context()
@@ -87,7 +91,7 @@ func createWrapperWithContext(tc *TracedClient, service string) func(oldProcess 
 			args_length := len(strings.Split(cmd.String(), " ")) - 1
 			span := tc.tracer.NewChildSpanFromContext("redis.command", ctx)
 
-			span.Service = service
+			span.Service = tc.service
 			span.Resource = resource
 
 			span.SetMeta("redis.raw_command", cmd.String())

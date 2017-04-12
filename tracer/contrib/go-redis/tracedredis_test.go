@@ -24,7 +24,7 @@ func TestClient(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
-	client := NewTracedClient(opts, context.Background(), testTracer)
+	client := NewTracedClient(opts, testTracer, "my-redis")
 	client.Set("test_key", "test_value", 0)
 
 	testTracer.FlushTraces()
@@ -34,6 +34,7 @@ func TestClient(t *testing.T) {
 	assert.Len(spans, 1)
 
 	span := spans[0]
+	assert.Equal(span.Service, "my-redis")
 	assert.Equal(span.Name, "redis.command")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(span.GetMeta("out.port"), "6379")
@@ -51,7 +52,7 @@ func TestPipeline(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
-	client := NewTracedClient(opts, context.Background(), testTracer)
+	client := NewTracedClient(opts, testTracer, "my-redis")
 	pipeline := client.Pipeline()
 	pipeline.Incr("pipeline_counter")
 	pipeline.Expire("pipeline_counter", time.Hour)
@@ -64,6 +65,7 @@ func TestPipeline(t *testing.T) {
 	assert.Len(spans, 1)
 
 	span := spans[0]
+	assert.Equal(span.Service, "my-redis")
 	assert.Equal(span.Name, "redis.command")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(span.GetMeta("out.port"), "6379")
@@ -84,7 +86,10 @@ func TestChildSpan(t *testing.T) {
 	ctx := context.Background()
 	parent_span := testTracer.NewChildSpanFromContext("parent_span", ctx)
 	ctx = tracer.ContextWithSpan(ctx, parent_span)
-	client := NewTracedClient(opts, ctx, testTracer)
+
+	client := NewTracedClient(opts, testTracer, "my-redis")
+	client.SetContext(ctx)
+
 	client.Set("test_key", "test_value", 0)
 	parent_span.Finish()
 
@@ -113,7 +118,7 @@ func TestMultipleCommands(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
-	client := NewTracedClient(opts, context.Background(), testTracer)
+	client := NewTracedClient(opts, testTracer, "my-redis")
 	client.Set("test_key", "test_value", 0)
 	client.Get("test_key")
 	client.Incr("int_key")
@@ -146,7 +151,7 @@ func TestError(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
-	client := NewTracedClient(opts, context.Background(), testTracer)
+	client := NewTracedClient(opts, testTracer, "my-redis")
 	err := client.Get("non_existent_key")
 
 	testTracer.FlushTraces()
