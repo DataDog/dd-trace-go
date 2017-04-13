@@ -14,7 +14,7 @@ func main() {
 	tracedsql.RegisterTracedDriver("MySQL", "mysql-test", &mysql.MySQLDriver{}, nil)
 	fmt.Printf("Drivers registered: %v", sql.Drivers())
 
-	db, err := tracedsql.Open("MySQL", "mysql", "root:3Z3ruyudg@tcp(127.0.0.1:3306)/employees")
+	db, err := sql.Open("MySQL", "root:3Z3ruyudg@tcp(127.0.0.1:3306)/employees")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func selectItems(db *sql.DB) {
 		emp_no     int
 		first_name string
 	)
-	rows, err := db.Query("select emp_no, first_name from employees limit 4")
+	rows, err := db.Query("select emp_no, first_name from employees limit 6")
 	if err != nil {
 		log.Fatal(err)
 	}

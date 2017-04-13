@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"strings"
 
 	t "github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
@@ -38,18 +37,6 @@ func RegisterTracedDriver(name, service string, driver driver.Driver, tracer *t.
 	}
 }
 
-// Open function opens a DB using the tracing wrapper of the driver
-func Open(name, service, dsn string) (*sql.DB, error) {
-	// Add tracing info in the DSN to pass it along until the driver.
-	// TracedDriver will try to parse this info and use default parameters
-	// otherwise
-	tracedDSN := TracedDSN{
-		service: service,
-		dsn:     dsn,
-	}
-	return sql.Open(name, tracedDSN.Format())
-}
-
 // TracedDriver is a driver we use as a middleware between the database/sql package
 // and the driver chosen (e.g. mysql, postgresql...).
 // It implements the driver.Driver interface and add the tracing features on top
@@ -62,49 +49,15 @@ type TracedDriver struct {
 }
 
 func (d TracedDriver) Open(dsn string) (driver.Conn, error) {
-	tracedDSN := ParseTracedDSN(dsn)
-
-	// default to SGBD name if no service has been passed in the DSN
-	service := d.name
-	if tracedDSN.service != "" {
-		service = tracedDSN.service
-	}
-
 	// Register the service to Datadog tracing API
-	d.tracer.SetServiceInfo(service, d.name, ext.AppTypeDB)
+	d.tracer.SetServiceInfo(d.service, d.name, ext.AppTypeDB)
 
-	conn, err := d.parent.Open(tracedDSN.dsn)
+	conn, err := d.parent.Open(dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	return TracedConn{name: d.name, service: service, parent: conn, tracer: d.tracer}, nil
-}
-
-// TracedDSN is used to pass the service information through the DSN.
-type TracedDSN struct {
-	service string
-	dsn     string
-}
-
-func ParseTracedDSN(dsn string) TracedDSN {
-	if strings.HasPrefix(dsn, "service=") {
-		dsnParts := strings.SplitN(dsn, "|", 2)
-		if len(dsnParts) == 2 {
-			return TracedDSN{
-				service: dsnParts[0][8:],
-				dsn:     dsnParts[1],
-			}
-		}
-	}
-
-	return TracedDSN{
-		dsn: dsn,
-	}
-}
-
-func (d TracedDSN) Format() string {
-	return fmt.Sprintf("service=%s|%s", d.service, d.dsn)
+	return TracedConn{name: d.name, service: d.service, parent: conn, tracer: d.tracer}, nil
 }
 
 type TracedConn struct {
