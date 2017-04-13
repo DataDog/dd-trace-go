@@ -3,6 +3,7 @@ package tracedredis
 import (
 	"context"
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 	redis "github.com/garyburd/redigo/redis"
 	"net"
 	"net/url"
@@ -24,7 +25,7 @@ func TracedDial(service string, tracer *tracer.Tracer, network, address string, 
 	addr := strings.Split(address, ":")
 	host := addr[0]
 	port := addr[1]
-
+	tracer.SetServiceInfo(service, "redis", ext.AppTypeDB)
 	tc := TracedConn{c, tracer, service, network, host, port}
 	return tc, err
 }
