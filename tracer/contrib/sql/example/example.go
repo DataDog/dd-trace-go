@@ -11,10 +11,10 @@ import (
 )
 
 func main() {
-	tracedsql.NewTracedDriver("mysqlTraced", &mysql.MySQLDriver{}, nil)
-	fmt.Printf("Drivers registered: %s", sql.Drivers())
+	tracedsql.RegisterTracedDriver("MySQL", "mysql-test", &mysql.MySQLDriver{}, nil)
+	fmt.Printf("Drivers registered: %v", sql.Drivers())
 
-	db, err := tracedsql.Open("mysqlTraced", "mysql", "root:3Z3ruyudg@tcp(127.0.0.1:3306)/employees")
+	db, err := tracedsql.Open("MySQL", "mysql", "root:3Z3ruyudg@tcp(127.0.0.1:3306)/employees")
 	if err != nil {
 		log.Fatal(err)
 	}
