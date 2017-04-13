@@ -30,6 +30,10 @@ func TracedDial(service string, tracer *tracer.Tracer, network, address string, 
 	return tc, err
 }
 
+func (tc *TracedConn) SetService(service string) {
+	tc.service = service
+}
+
 func TracedDialURL(service string, tracer *tracer.Tracer, rawurl string, options ...redis.DialOption) (TracedConn, error) {
 	u, err := url.Parse(rawurl)
 	if err != nil {
