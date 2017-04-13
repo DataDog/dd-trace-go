@@ -2,15 +2,49 @@ package sql
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/tracer"
+	t "github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
+
+// TracedDriver is a driver we use as a middleware between the database/sql package
+// and the driver chosen (e.g. mysql, postgresql...).
+// It implements the driver.Driver interface and add the tracing features on top
+// of the driver's methods.
+type TracedDriver struct {
+	parent driver.Driver
+	name   string
+	tracer *t.Tracer
+}
+
+// Warning: the `name` must be different from the name used by the initial driver.
+// E.g. for the mysql driver you can't use "mysql, but you can use "tracedMysql".
+func NewTracedDriver(name string, driver driver.Driver, tracer *t.Tracer) TracedDriver {
+	if driver == nil {
+		panic("sql.Register(): driver is nil")
+	}
+	if tracer == nil {
+		tracer = t.NewTracer()
+	}
+	td := TracedDriver{
+		parent: driver,
+		name:   name,
+		tracer: tracer,
+	}
+
+	// If the new tracedDriver is not registered, we do it.
+	// It panics if we try to register twice the same driver.
+	if !stringInSlice(name, sql.Drivers()) {
+		sql.Register(name, td)
+	}
+	return td
+}
 
 func (d TracedDriver) Open(dsn string) (driver.Conn, error) {
 	tracedDSN := ParseTracedDSN(dsn)
@@ -58,29 +92,11 @@ func (d TracedDSN) Format() string {
 	return fmt.Sprintf("service=%s|%s", d.service, d.dsn)
 }
 
-// TracedDriver is a driver we use as a middleware between the database/sql package
-// and the driver chosen (e.g. mysql, postgresql...).
-// It implements the driver.Driver interface and add the tracing features on top
-// of the driver's methods.
-type TracedDriver struct {
-	name   string
-	parent driver.Driver
-	tracer *tracer.Tracer
-}
-
-func NewTracedDriver(name string, driver driver.Driver, t *tracer.Tracer) TracedDriver {
-	return TracedDriver{
-		name:   name,
-		parent: driver,
-		tracer: t,
-	}
-}
-
 type TracedConn struct {
 	name    string
 	service string
 	parent  driver.Conn
-	tracer  *tracer.Tracer
+	tracer  *t.Tracer
 }
 
 func (c TracedConn) Prepare(query string) (driver.Stmt, error) {
@@ -237,7 +253,7 @@ type TracedTx struct {
 	name    string
 	service string
 	parent  driver.Tx
-	tracer  *tracer.Tracer
+	tracer  *t.Tracer
 	ctx     context.Context
 }
 
@@ -268,7 +284,7 @@ type TracedStmt struct {
 	service string
 	query   string
 	parent  driver.Stmt
-	tracer  *tracer.Tracer
+	tracer  *t.Tracer
 	ctx     context.Context
 }
 
@@ -387,7 +403,7 @@ type TracedResult struct {
 	name    string
 	service string
 	parent  driver.Result
-	tracer  *tracer.Tracer
+	tracer  *t.Tracer
 	ctx     context.Context
 }
 
@@ -418,8 +434,8 @@ type TracedRows struct {
 	service string
 	rows    int
 	parent  driver.Rows
-	tracer  *tracer.Tracer
-	span    *tracer.Span
+	tracer  *t.Tracer
+	span    *t.Span
 	ctx     context.Context
 }
 

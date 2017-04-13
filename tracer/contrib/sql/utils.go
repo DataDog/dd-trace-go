@@ -39,7 +39,7 @@ func getSpan(name, service, query string, args interface{}, tracer *tracer.Trace
 	return span
 }
 
-// namedValueToValue is a helper function copied from the database/sql package
+// Helper function copied from the database/sql package
 func namedValueToValue(named []driver.NamedValue) ([]driver.Value, error) {
 	dargs := make([]driver.Value, len(named))
 	for n, param := range named {
@@ -49,4 +49,14 @@ func namedValueToValue(named []driver.NamedValue) ([]driver.Value, error) {
 		dargs[n] = param.Value
 	}
 	return dargs, nil
+}
+
+// Check if a string is in a []string
+func stringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }
