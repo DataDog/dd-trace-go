@@ -2,7 +2,6 @@ package tracer
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"math/rand"
 	"sync"
@@ -55,11 +54,7 @@ func NewTracer() *Tracer {
 
 // NewTracerTransport create a new Tracer with the given transport.
 func NewTracerTransport(transport Transport) *Tracer {
-	randSource, err := newRandSource()
-	if err != nil {
-		panic(fmt.Sprintf("cannot create random source: %v", err))
-	}
-	randGen := rand.New(randSource)
+	randGen := rand.New(newRandSource())
 
 	t := &Tracer{
 		enabled:             true,

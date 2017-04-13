@@ -15,7 +15,7 @@ type randSource struct {
 	sync.Mutex
 }
 
-func newRandSource() (*randSource, error) {
+func newRandSource() *randSource {
 	var seed int64
 
 	max := big.NewInt(math.MaxInt64)
@@ -29,7 +29,7 @@ func newRandSource() (*randSource, error) {
 
 	source := rand.NewSource(seed)
 
-	return &randSource{source: source}, nil
+	return &randSource{source: source}
 }
 
 func (rs *randSource) Int63() int64 {
