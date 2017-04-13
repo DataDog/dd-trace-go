@@ -14,9 +14,9 @@ ddagent:
 mysql:
         image: mysql:5.7
         environment:
-                - MYSQL_ROOT_PASSWORD=$TEST_MYSQL_ROOT_PASSWORD
-                - MYSQL_PASSWORD=$TEST_MYSQL_PASSWORD
-                - MYSQL_USER=$TEST_MYSQL_USER
-                - MYSQL_DATABASE=$TEST_MYSQL_DATABASE
+                - MYSQL_ROOT_PASSWORD=admin
+                - MYSQL_PASSWORD=test
+                - MYSQL_USER=test
+                - MYSQL_DATABASE=test
         ports:
-                - "127.0.0.1:${TEST_MYSQL_PORT}:3306"
+                - "127.0.0.1:3306:3306"

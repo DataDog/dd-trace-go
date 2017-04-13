@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/contrib"
 	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 )
@@ -19,7 +20,7 @@ func TestConnectionQuery(t *testing.T) {
 	testTracer.DebugLoggingEnabled = DEBUG
 	RegisterTracedDriver("MySQL", "mysql-test", &mysql.MySQLDriver{}, testTracer)
 
-	db, err := sql.Open("MySQL", "test:test@tcp(127.0.0.1:53306)/test")
+	db, err := sql.Open("MySQL", contrib.MYSQL_CONFIG.DSN())
 	if err != nil {
 		log.Fatal(err)
 	}
