@@ -3,7 +3,6 @@ package sql
 import (
 	"context"
 	"database/sql/driver"
-	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -122,8 +121,8 @@ func (c TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driv
 }
 
 func (c TracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
-	span := c.tracer.NewChildSpanFromContext(fmt.Sprintf("%s.connection.prepare", c.name), ctx)
-	span.Service = c.service
+	name := fmt.Sprintf("%s.connection.prepare", c.name)
+	span := getSpan(name, c.service, query, nil, c.tracer, ctx)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -150,12 +149,8 @@ func (c TracedConn) Exec(query string, args []driver.Value) (driver.Result, erro
 }
 
 func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
-	span := c.tracer.NewChildSpanFromContext(c.name+".connection.exec", ctx)
-	span.Service = c.service
-	span.Resource = query
-	span.SetMeta("query", query)
-	span.SetMeta("args_length", strconv.Itoa(len(args)))
-	span.SetMeta("args", fmt.Sprintf("%v", args))
+	name := fmt.Sprintf("%s.connection.exec", c.name)
+	span := getSpan(name, c.service, query, args, c.tracer, ctx)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -205,16 +200,6 @@ func (c TracedConn) Query(query string, args []driver.Value) (driver.Rows, error
 	}
 
 	return nil, driver.ErrSkip
-}
-
-func getSpan(name, service, query string, args []driver.NamedValue, tracer *tracer.Tracer, ctx context.Context) *tracer.Span {
-	span := tracer.NewChildSpanFromContext(name, ctx)
-	span.Service = service
-	span.Resource = query
-	span.SetMeta("sql.query", query)
-	span.SetMeta("args", fmt.Sprintf("%v", args))
-	span.SetMeta("args_length", strconv.Itoa(len(args)))
-	return span
 }
 
 func (c TracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
@@ -303,12 +288,8 @@ func (s TracedStmt) NumInput() int {
 }
 
 func (s TracedStmt) Exec(args []driver.Value) (res driver.Result, err error) {
-	span := s.tracer.NewChildSpanFromContext(s.name+".statement.exec", s.ctx)
-	span.Service = s.service
-	span.Resource = s.query
-	span.SetMeta("query", s.query)
-	span.SetMeta("args_length", strconv.Itoa(len(args)))
-	span.SetMeta("args", fmt.Sprintf("%v", args))
+	name := fmt.Sprintf("%s.statement.exec", s.name)
+	span := getSpan(name, s.service, s.query, args, s.tracer, s.ctx)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -323,12 +304,8 @@ func (s TracedStmt) Exec(args []driver.Value) (res driver.Result, err error) {
 }
 
 func (s TracedStmt) Query(args []driver.Value) (rows driver.Rows, err error) {
-	span := s.tracer.NewChildSpanFromContext(s.name+".statement.query", s.ctx)
-	span.Service = s.service
-	span.Resource = s.query
-	span.SetMeta("query", s.query)
-	span.SetMeta("args_length", strconv.Itoa(len(args)))
-	span.SetMeta("args", fmt.Sprintf("%v", args))
+	name := fmt.Sprintf("%s.statement.query", s.name)
+	span := getSpan(name, s.service, s.query, args, s.tracer, s.ctx)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -343,12 +320,8 @@ func (s TracedStmt) Query(args []driver.Value) (rows driver.Rows, err error) {
 }
 
 func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
-	span := s.tracer.NewChildSpanFromContext(s.name+".statement.exec", ctx)
-	span.Service = s.service
-	span.Resource = s.query
-	span.SetMeta("query", s.query)
-	span.SetMeta("args_length", strconv.Itoa(len(args)))
-	span.SetMeta("args", fmt.Sprintf("%v", args))
+	name := fmt.Sprintf("%s.statement.exec", s.name)
+	span := getSpan(name, s.service, s.query, args, s.tracer, s.ctx)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -379,12 +352,8 @@ func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (
 }
 
 func (s TracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
-	span := s.tracer.NewChildSpanFromContext(s.name+".statement.query", s.ctx)
-	span.Service = s.service
-	span.Resource = s.query
-	span.SetMeta("query", s.query)
-	span.SetMeta("args_length", strconv.Itoa(len(args)))
-	span.SetMeta("args", fmt.Sprintf("%v", args))
+	name := fmt.Sprintf("%s.statement.query", s.name)
+	span := getSpan(name, s.service, s.query, args, s.tracer, ctx)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -480,16 +449,4 @@ func (r *TracedRows) Next(dest []driver.Value) (err error) {
 	}()
 
 	return r.parent.Next(dest)
-}
-
-// namedValueToValue is a helper function copied from the database/sql package
-func namedValueToValue(named []driver.NamedValue) ([]driver.Value, error) {
-	dargs := make([]driver.Value, len(named))
-	for n, param := range named {
-		if len(param.Name) > 0 {
-			return nil, errors.New("sql: driver does not support the use of Named Parameters")
-		}
-		dargs[n] = param.Value
-	}
-	return dargs, nil
 }
