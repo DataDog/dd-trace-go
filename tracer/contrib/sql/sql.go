@@ -23,9 +23,9 @@ func RegisterTracedDriver(name, service string, driver driver.Driver, tracer *t.
 	}
 
 	td := TracedDriver{
+		Driver:  driver,
 		name:    name,
 		service: service,
-		parent:  driver,
 		tracer:  tracer,
 	}
 	// If the new tracedDriver is not registered, we do it.
@@ -42,9 +42,9 @@ func RegisterTracedDriver(name, service string, driver driver.Driver, tracer *t.
 // It implements the driver.Driver interface and add the tracing features on top
 // of the driver's methods.
 type TracedDriver struct {
+	driver.Driver
 	name    string
 	service string
-	parent  driver.Driver
 	tracer  *t.Tracer
 }
 
@@ -52,31 +52,19 @@ func (d TracedDriver) Open(dsn string) (driver.Conn, error) {
 	// Register the service to Datadog tracing API
 	d.tracer.SetServiceInfo(d.service, d.name, ext.AppTypeDB)
 
-	conn, err := d.parent.Open(dsn)
+	conn, err := d.Driver.Open(dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	return TracedConn{name: d.name, service: d.service, parent: conn, tracer: d.tracer}, nil
+	return TracedConn{Conn: conn, name: d.name, service: d.service, tracer: d.tracer}, nil
 }
 
 type TracedConn struct {
+	driver.Conn
 	name    string
 	service string
-	parent  driver.Conn
 	tracer  *t.Tracer
-}
-
-func (c TracedConn) Prepare(query string) (driver.Stmt, error) {
-	return c.parent.Prepare(query)
-}
-
-func (c TracedConn) Close() error {
-	return c.parent.Close()
-}
-
-func (c TracedConn) Begin() (driver.Tx, error) {
-	return c.parent.Begin()
 }
 
 func (c TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
@@ -87,7 +75,7 @@ func (c TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driv
 		span.Finish()
 	}()
 
-	if connBeginTx, ok := c.parent.(driver.ConnBeginTx); ok {
+	if connBeginTx, ok := c.Conn.(driver.ConnBeginTx); ok {
 		tx, err = connBeginTx.BeginTx(ctx, opts)
 		if err != nil {
 			return nil, err
@@ -96,7 +84,7 @@ func (c TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driv
 		return TracedTx{name: c.name, service: c.service, parent: tx, tracer: c.tracer, ctx: ctx}, nil
 	}
 
-	tx, err = c.parent.Begin()
+	tx, err = c.Conn.Begin()
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +100,7 @@ func (c TracedConn) PrepareContext(ctx context.Context, query string) (stmt driv
 		span.Finish()
 	}()
 
-	if connPrepareCtx, ok := c.parent.(driver.ConnPrepareContext); ok {
+	if connPrepareCtx, ok := c.Conn.(driver.ConnPrepareContext); ok {
 		stmt, err := connPrepareCtx.PrepareContext(ctx, query)
 		if err != nil {
 			return nil, err
@@ -125,7 +113,7 @@ func (c TracedConn) PrepareContext(ctx context.Context, query string) (stmt driv
 }
 
 func (c TracedConn) Exec(query string, args []driver.Value) (driver.Result, error) {
-	if execer, ok := c.parent.(driver.Execer); ok {
+	if execer, ok := c.Conn.(driver.Execer); ok {
 		return execer.Exec(query, args)
 	}
 
@@ -140,7 +128,7 @@ func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver
 		span.Finish()
 	}()
 
-	if execContext, ok := c.parent.(driver.ExecerContext); ok {
+	if execContext, ok := c.Conn.(driver.ExecerContext); ok {
 		res, err := execContext.ExecContext(ctx, query, args)
 		if err != nil {
 			return nil, err
@@ -165,7 +153,7 @@ func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver
 }
 
 func (c TracedConn) Ping(ctx context.Context) (err error) {
-	if pinger, ok := c.parent.(driver.Pinger); ok {
+	if pinger, ok := c.Conn.(driver.Pinger); ok {
 		span := c.tracer.NewChildSpanFromContext(fmt.Sprintf("%s.connection.ping", c.name), ctx)
 		defer func() {
 			span.SetError(err)
@@ -179,7 +167,7 @@ func (c TracedConn) Ping(ctx context.Context) (err error) {
 }
 
 func (c TracedConn) Query(query string, args []driver.Value) (driver.Rows, error) {
-	if queryer, ok := c.parent.(driver.Queryer); ok {
+	if queryer, ok := c.Conn.(driver.Queryer); ok {
 		return queryer.Query(query, args)
 	}
 
@@ -194,7 +182,7 @@ func (c TracedConn) QueryContext(ctx context.Context, query string, args []drive
 		span.Finish()
 	}()
 
-	if queryerContext, ok := c.parent.(driver.QueryerContext); ok {
+	if queryerContext, ok := c.Conn.(driver.QueryerContext); ok {
 		rows, err := queryerContext.QueryContext(ctx, query, args)
 		if err != nil {
 			return nil, err

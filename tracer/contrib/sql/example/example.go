@@ -31,7 +31,7 @@ func selectItems(db *sql.DB) {
 		emp_no     int
 		first_name string
 	)
-	rows, err := db.Query("select emp_no, first_name from employees limit 6")
+	rows, err := db.Query("select emp_no, first_name from employees limit 7")
 	if err != nil {
 		log.Fatal(err)
 	}
