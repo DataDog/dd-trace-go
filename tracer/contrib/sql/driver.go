@@ -12,6 +12,26 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
+func (d TracedDriver) Open(dsn string) (driver.Conn, error) {
+	tracedDSN := ParseTracedDSN(dsn)
+
+	// default to SGBD name if no service has been passed in the DSN
+	service := d.name
+	if tracedDSN.service != "" {
+		service = tracedDSN.service
+	}
+
+	// Register the service to Datadog tracing API
+	d.tracer.SetServiceInfo(service, d.name, ext.AppTypeDB)
+
+	conn, err := d.parent.Open(tracedDSN.dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	return TracedConn{name: d.name, service: service, parent: conn, tracer: d.tracer}, nil
+}
+
 // TracedDSN is used to pass the service information through the DSN.
 type TracedDSN struct {
 	service string
@@ -54,26 +74,6 @@ func NewTracedDriver(name string, driver driver.Driver, t *tracer.Tracer) Traced
 		parent: driver,
 		tracer: t,
 	}
-}
-
-func (d TracedDriver) Open(dsn string) (driver.Conn, error) {
-	tracedDSN := ParseTracedDSN(dsn)
-
-	// default to SGBD name if no service has been passed in the DSN
-	service := d.name
-	if tracedDSN.service != "" {
-		service = tracedDSN.service
-	}
-
-	// Register the service to Datadog tracing API
-	d.tracer.SetServiceInfo(service, d.name, ext.AppTypeDB)
-
-	conn, err := d.parent.Open(tracedDSN.dsn)
-	if err != nil {
-		return nil, err
-	}
-
-	return TracedConn{name: d.name, service: service, parent: conn, tracer: d.tracer}, nil
 }
 
 type TracedConn struct {
