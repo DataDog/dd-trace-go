@@ -220,6 +220,11 @@ func (s *Span) Tracer() *Tracer {
 	return s.tracer
 }
 
+// NextSpanID returns a new random span id.
+func NextSpanID() uint64 {
+	return uint64(randGen.Int63())
+}
+
 // now returns current UTC time in nanos.
 func now() int64 {
 	return time.Now().UTC().UnixNano()

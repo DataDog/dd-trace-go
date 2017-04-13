@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// randGen is the global thread safe random number generator
+var randGen *rand.Rand
+
 type randSource struct {
 	source rand.Source
 	sync.Mutex
