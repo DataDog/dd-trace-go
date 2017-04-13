@@ -3,6 +3,7 @@ package tracedredis
 import (
 	"context"
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"github.com/go-redis/redis"
 	"strconv"
 	"strings"
@@ -16,7 +17,7 @@ func NewTracedClient(opt *redis.Options, t *tracer.Tracer, service string) *Trac
 	db := strconv.Itoa(opt.DB)
 
 	client := redis.NewClient(opt)
-
+	t.SetServiceInfo(service, "redis", ext.AppTypeDB)
 	tc := &TracedClient{
 		client,
 		host,
