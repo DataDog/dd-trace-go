@@ -1,16 +1,20 @@
 package tracer
 
 import (
+	"context"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
-
-	"context"
 )
 
 const (
 	flushInterval = 2 * time.Second
 )
+
+func init() {
+	randGen = rand.New(newRandSource())
+}
 
 type Service struct {
 	Name    string `json:"-"`        // the internal of the service (e.g. acme_search, datadog_web)
@@ -132,7 +136,7 @@ func (t *Tracer) SetServiceInfo(name, app, appType string) {
 // NewRootSpan creates a span with no parent. Its ids will be randomly
 // assigned.
 func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
-	spanID := nextSpanID()
+	spanID := NextSpanID()
 	span := NewSpan(name, service, resource, spanID, spanID, 0, t)
 	t.sampler.Sample(span)
 	return span
@@ -141,7 +145,7 @@ func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 // NewChildSpan returns a new span that is child of the Span passed as
 // argument.
 func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
-	spanID := nextSpanID()
+	spanID := NextSpanID()
 
 	// when we're using parenting in inner functions, it's possible that
 	// a nil pointer is sent to this function as argument. To prevent a crash,
