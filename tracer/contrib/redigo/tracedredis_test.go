@@ -30,9 +30,10 @@ func TestClient(t *testing.T) {
 	span := spans[0]
 	assert.Equal(span.Name, "redis.command")
 	assert.Equal(span.Service, "my-service")
+	assert.Equal(span.Resource, "SET")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(span.GetMeta("out.port"), "6379")
-	assert.Equal(span.Resource, "SET 1 truck")
+	assert.Equal(span.GetMeta("redis.raw_command"), "SET 1 truck")
 	assert.Equal(span.GetMeta("redis.args_length"), "2")
 }
 
@@ -55,9 +56,10 @@ func TestError(t *testing.T) {
 	assert.Equal(span.GetMeta("error.msg"), err.Error())
 	assert.Equal(span.Name, "redis.command")
 	assert.Equal(span.Service, "my-service")
+	assert.Equal(span.Resource, "NOT_A_COMMAND")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(span.GetMeta("out.port"), "6379")
-	assert.Equal(span.Resource, "NOT_A_COMMAND")
+	assert.Equal(span.GetMeta("redis.raw_command"), "NOT_A_COMMAND")
 }
 
 func TestInheritance(t *testing.T) {

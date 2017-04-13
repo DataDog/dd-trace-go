@@ -63,7 +63,7 @@ func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interfac
 	span.SetMeta("out.port", tc.port)
 	span.SetMeta("out.host", tc.host)
 	span.SetMeta("redis.args_length", strconv.Itoa(len(args)))
-
+	span.Resource = commandName
 	raw_command := commandName
 	for _, arg := range args {
 		switch arg := arg.(type) {
@@ -73,7 +73,7 @@ func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interfac
 			raw_command += " " + strconv.Itoa(arg)
 		}
 	}
-	span.Resource = raw_command
+	span.SetMeta("redis.raw_command", raw_command)
 	ret, err := tc.Conn.Do(commandName, args...)
 
 	if err != nil {
