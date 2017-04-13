@@ -8,42 +8,48 @@ import (
 	"strings"
 )
 
-func NewTracedClient(opt *redis.Options, ctx context.Context, t *tracer.Tracer) *TracedClient {
+func NewTracedClient(opt *redis.Options, t *tracer.Tracer, service string) *TracedClient {
 	var host, port string
 	addr := strings.Split(opt.Addr, ":")
 	host = addr[0]
 	port = addr[1]
 	db := strconv.Itoa(opt.DB)
-	ctx = context.WithValue(ctx, "_datadog_redis_host", host)
-	ctx = context.WithValue(ctx, "_datadog_redis_port", port)
-	ctx = context.WithValue(ctx, "_datadog_redis_db", db)
-	client := redis.NewClient(opt)
-	client.WithContext(ctx)
-	client.WrapProcess(createWrapperWithContext(ctx, t))
 
-	return &TracedClient{
+	client := redis.NewClient(opt)
+
+	tc := &TracedClient{
 		client,
 		host,
 		port,
 		db,
+		service,
 		t,
 	}
+
+	tc.Client.WrapProcess(createWrapperFromClient(tc))
+	return tc
 }
 
 type TracedClient struct {
 	*redis.Client
-	host   string
-	port   string
-	db     string
-	tracer *tracer.Tracer
+	host    string
+	port    string
+	db      string
+	service string
+	tracer  *tracer.Tracer
+}
+
+func (c *TracedClient) SetContext(ctx context.Context) {
+	c.Client = c.Client.WithContext(ctx)
 }
 
 type TracedPipeline struct {
 	*redis.Pipeline
-	host   string
-	port   string
-	db     string
-	tracer *tracer.Tracer
+	host    string
+	port    string
+	db      string
+	service string
+	tracer  *tracer.Tracer
 }
 
 func (c *TracedClient) Pipeline() *TracedPipeline {
@@ -52,13 +58,15 @@ func (c *TracedClient) Pipeline() *TracedPipeline {
 		c.host,
 		c.port,
 		c.db,
+		c.service,
 		c.tracer,
 	}
 }
 
 func (c *TracedPipeline) TracedExec(ctx context.Context) ([]redis.Cmder, error) {
-	t := c.tracer
-	span := t.NewChildSpanFromContext("redis.command", ctx)
+	span := c.tracer.NewChildSpanFromContext("redis.command", ctx)
+	span.Service = c.service
+
 	span.SetMeta("out.host", c.host)
 	span.SetMeta("out.port", c.port)
 	span.SetMeta("out.db", c.db)
@@ -73,26 +81,25 @@ func (c *TracedPipeline) TracedExec(ctx context.Context) ([]redis.Cmder, error) 
 
 }
 
-func createWrapperWithContext(ctx context.Context, t *tracer.Tracer) func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+func createWrapperFromClient(tc *TracedClient) func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
 	return func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
 		return func(cmd redis.Cmder) error {
+			ctx := tc.Client.Context()
 
 			var resource string
 			resource = strings.Split(cmd.String(), " ")[0]
 			args_length := len(strings.Split(cmd.String(), " ")) - 1
-			span := t.NewChildSpanFromContext("redis.command", ctx)
+			span := tc.tracer.NewChildSpanFromContext("redis.command", ctx)
+
+			span.Service = tc.service
 			span.Resource = resource
+
 			span.SetMeta("redis.raw_command", cmd.String())
 			span.SetMeta("redis.args_length", strconv.Itoa(args_length))
+			span.SetMeta("out.host", tc.host)
+			span.SetMeta("out.port", tc.port)
+			span.SetMeta("out.db", tc.db)
 
-			metas := map[string]string{"out.host": "_datadog_redis_host",
-				"out.port": "_datadog_redis_port",
-				"out.db":   "_datadog_redis_db"}
-			for k, v := range metas {
-				if val, ok := ctx.Value(v).(string); ok {
-					span.SetMeta(k, val)
-				}
-			}
 			err := oldProcess(cmd)
 			if err != nil {
 				span.SetError(err)
