@@ -10,6 +10,7 @@ import (
 func TestPostgres(t *testing.T) {
 	// Initializing database
 	db := NewDB("Postgres", "postgres-test", &pq.Driver{}, contrib.POSTGRES_CONFIG)
+	defer db.Close()
 
 	// Testing MySQL driver
 	AllTests(t, db)

@@ -22,7 +22,7 @@ func AllTests(t *testing.T, db *DB) {
 func testConnectionQuery(t *testing.T, db *DB) {
 	assert := assert.New(t)
 
-	const query = "select ID, Name, Population from city limit 5"
+	const query = "select id, name, population from city limit 5"
 	rows, err := db.Query(query)
 	if err != nil {
 		log.Fatal(err)
@@ -63,7 +63,6 @@ func NewDB(name, service string, driver driver.Driver, config contrib.Config) *D
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
 
 	return &DB{
 		db,

@@ -10,7 +10,7 @@ var MYSQL_CONFIG = MySQLConfig{
 }
 
 var POSTGRES_CONFIG = PostgresConfig{
-	"Ubuntu",
+	"ubuntu",
 	"",
 	"127.0.0.1:5432",
 	"circle_test",
@@ -36,5 +36,5 @@ func (c MySQLConfig) Format() string {
 type PostgresConfig Cfg
 
 func (c PostgresConfig) Format() string {
-	return fmt.Sprintf("postgres://%s:%s@%s/%s", c.User, c.Password, c.Address, c.Database)
+	return fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", c.User, c.Password, c.Address, c.Database)
 }

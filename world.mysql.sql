@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS `city`;
 
 CREATE TABLE `city` (
 	`id` INT(11) NOT NULL AUTO_INCREMENT,
-	`mame` CHAR(35) NOT NULL DEFAULT '',
+	`name` CHAR(35) NOT NULL DEFAULT '',
 	`countrycode` CHAR(3) NOT NULL DEFAULT '',
 	`district` CHAR(20) NOT NULL DEFAULT '',
 	`population` INT(11) NOT NULL DEFAULT '0',

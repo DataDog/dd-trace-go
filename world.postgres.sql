@@ -10,8 +10,7 @@ CREATE TABLE city (
 	population integer NOT NULL
 );
 
-INSERT INTO city
-VALUES
+INSERT INTO city VALUES
 (1, 'Kabul', 'AFG', 'Kabol', 1780000),
 (2, 'Qandahar', 'AFG', 'Qandahar', 237500),
 (3, 'Herat', 'AFG', 'Herat', 186800),
