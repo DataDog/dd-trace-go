@@ -14,7 +14,7 @@ import (
 
 // Warning: the `name` must be different from the name used by the initial driver.
 // E.g. for the mysql driver you can't use "mysql, but you can use "tracedMysql".
-func RegisterTracedDriver(name, service string, driver driver.Driver, tracer *t.Tracer) {
+func Register(name, service string, driver driver.Driver, tracer *t.Tracer) {
 	if driver == nil {
 		panic("RegisterTracedDriver: driver is nil")
 	}
