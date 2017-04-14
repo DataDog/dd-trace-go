@@ -3,11 +3,10 @@ package contrib
 import "fmt"
 
 type MysqlConfig struct {
-	RootPassword string
-	Password     string
-	User         string
-	Database     string
-	Address      string
+	User     string
+	Password string
+	Address  string
+	Database string
 }
 
 func (mc *MysqlConfig) DSN() string {
@@ -15,9 +14,8 @@ func (mc *MysqlConfig) DSN() string {
 }
 
 var MYSQL_CONFIG = MysqlConfig{
-	"admin",
-	"test",
-	"test",
-	"test",
+	"ubuntu",
+	"",
 	"127.0.0.1:3306",
+	"circle_test",
 }

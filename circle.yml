@@ -25,6 +25,10 @@ dependencies:
     - mkdir -p "$IMPORT_PATH"
     - rsync -azr --delete ./ "$IMPORT_PATH"
 
+database:
+  override:
+    - mysql -u ubuntu circle_test < test.sql
+
 test:
   override:
     - cd "$IMPORT_PATH" && rake ci

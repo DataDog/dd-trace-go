@@ -26,7 +26,8 @@ func TestConnectionQuery(t *testing.T) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query("select emp_no, first_name from employees limit 1")
+	const query = "select ID, Name, Population from city limit 5"
+	rows, err := db.Query(query)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -41,9 +42,9 @@ func TestConnectionQuery(t *testing.T) {
 	expectedSpan := &tracer.Span{
 		Name:     "MySQL.connection.query",
 		Service:  "mysql-test",
-		Resource: "select emp_no, first_name from employees limit 1",
+		Resource: query,
 	}
-	expectedSpan.SetMeta("sql.query", "select emp_no, first_name from employees limit 1")
+	expectedSpan.SetMeta("sql.query", query)
 	expectedSpan.SetMeta("args", "[]")
 	expectedSpan.SetMeta("args_length", "0")
 	compareSpan(t, expectedSpan, actualSpan)

@@ -11,12 +11,3 @@ ddagent:
                 - DD_API_KEY=invalid_key_but_this_is_fine
         ports:
                 - "127.0.0.1:8126:8126"
-mysql:
-        image: mysql:5.7
-        environment:
-                - MYSQL_ROOT_PASSWORD=admin
-                - MYSQL_PASSWORD=test
-                - MYSQL_USER=test
-                - MYSQL_DATABASE=test
-        ports:
-                - "127.0.0.1:3306:3306"
