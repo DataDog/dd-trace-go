@@ -2,7 +2,7 @@ machine:
   services:
     - docker
   environment:
-    GODIST: "go1.7.linux-amd64.tar.gz"
+    GODIST: "go1.8.linux-amd64.tar.gz"
     IMPORT_PATH: "/home/ubuntu/.go_workspace/src/github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
     AGENT_BUILD_PATH: "/home/ubuntu/agent"
     GO15VENDOREXPERIMENT: "1"
@@ -24,6 +24,11 @@ dependencies:
     # put the package in the right $GOPATH
     - mkdir -p "$IMPORT_PATH"
     - rsync -azr --delete ./ "$IMPORT_PATH"
+
+database:
+  override:
+    - mysql -u ubuntu circle_test < world.mysql.sql
+    - psql -U ubuntu -d circle_test -f world.postgres.sql
 
 test:
   override:
