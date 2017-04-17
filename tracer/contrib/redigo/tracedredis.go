@@ -68,7 +68,14 @@ func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interfac
 	span.SetMeta("out.port", tc.port)
 	span.SetMeta("out.host", tc.host)
 	span.SetMeta("redis.args_length", strconv.Itoa(len(args)))
-	span.Resource = commandName
+
+	if len(commandName) > 0 {
+		span.Resource = commandName
+	} else {
+		// According to redigo doc: when the command argument to the Do method is "",
+		// then the Do method will flush the output buffer
+		span.Resource = "redigo.Conn.Flush"
+	}
 	raw_command := commandName
 	for _, arg := range args {
 		switch arg := arg.(type) {
