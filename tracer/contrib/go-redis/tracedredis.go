@@ -64,7 +64,7 @@ func (c *TracedClient) Pipeline() *TracedPipeline {
 	}
 }
 
-func (c *TracedPipeline) TracedExec(ctx context.Context) ([]redis.Cmder, error) {
+func (c *TracedPipeline) ExecWithContext(ctx context.Context) ([]redis.Cmder, error) {
 	span := c.tracer.NewChildSpanFromContext("redis.command", ctx)
 	span.Service = c.service
 
@@ -72,14 +72,39 @@ func (c *TracedPipeline) TracedExec(ctx context.Context) ([]redis.Cmder, error) 
 	span.SetMeta("out.port", c.port)
 	span.SetMeta("out.db", c.db)
 
-	cmds, err := c.Exec()
+	cmds, err := c.Pipeline.Exec()
 	if err != nil {
 		span.SetError(err)
 	}
+	span.Resource = String(cmds)
 	span.SetMeta("redis.pipeline_length", strconv.Itoa(len(cmds)))
 	span.Finish()
 	return cmds, err
+}
 
+func (c *TracedPipeline) Exec() ([]redis.Cmder, error) {
+	span := c.tracer.NewRootSpan("redis.command", c.service, "redis")
+
+	span.SetMeta("out.host", c.host)
+	span.SetMeta("out.port", c.port)
+	span.SetMeta("out.db", c.db)
+
+	cmds, err := c.Pipeline.Exec()
+	if err != nil {
+		span.SetError(err)
+	}
+	span.Resource = String(cmds)
+	span.SetMeta("redis.pipeline_length", strconv.Itoa(len(cmds)))
+	span.Finish()
+	return cmds, err
+}
+
+func String(cmds []redis.Cmder) string {
+	cmd_string := ""
+	for _, cmd := range cmds {
+		cmd_string += cmd.String() + "\n"
+	}
+	return cmd_string
 }
 
 func createWrapperFromClient(tc *TracedClient) func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {

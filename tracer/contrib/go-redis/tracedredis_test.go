@@ -54,9 +54,10 @@ func TestPipeline(t *testing.T) {
 
 	client := NewTracedClient(opts, testTracer, "my-redis")
 	pipeline := client.Pipeline()
-	pipeline.Incr("pipeline_counter")
 	pipeline.Expire("pipeline_counter", time.Hour)
-	pipeline.TracedExec(context.Background())
+
+	// Exec with context test
+	pipeline.ExecWithContext(context.Background())
 
 	testTracer.FlushTraces()
 	traces := testTransport.Traces()
@@ -67,9 +68,27 @@ func TestPipeline(t *testing.T) {
 	span := spans[0]
 	assert.Equal(span.Service, "my-redis")
 	assert.Equal(span.Name, "redis.command")
-	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(span.GetMeta("out.port"), "6379")
+	assert.Equal(span.GetMeta("redis.pipeline_length"), "1")
+	assert.Equal(span.Resource, "expire pipeline_counter 3600: true\n")
+
+	pipeline.Expire("pipeline_counter", time.Hour)
+	pipeline.Expire("pipeline_counter_1", time.Minute)
+
+	// Rewriting Exec
+	pipeline.Exec()
+
+	testTracer.FlushTraces()
+	traces = testTransport.Traces()
+	assert.Len(traces, 1)
+	spans = traces[0]
+	assert.Len(spans, 1)
+
+	span = spans[0]
+	assert.Equal(span.Service, "my-redis")
+	assert.Equal(span.Name, "redis.command")
 	assert.Equal(span.GetMeta("redis.pipeline_length"), "2")
+	assert.Equal(span.Resource, "expire pipeline_counter 3600: true\nexpire pipeline_counter_1 60: true\n")
 }
 
 func TestChildSpan(t *testing.T) {
