@@ -69,6 +69,7 @@ type TracedConn struct {
 
 func (c TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
 	span := c.tracer.NewChildSpanFromContext(c.name+".connection.begin", ctx)
+	span.Resource = "Begin"
 	span.Service = c.service
 	defer func() {
 		span.SetError(err)

@@ -7,8 +7,24 @@ import (
 	"strconv"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/lib/pq"
 	"golang.org/x/net/context"
 )
+
+// Returns all information relative to the DSN
+func parseDSN(driver interface{}, dsn string) (o map[string]string, err error) {
+	o = make(map[string]string)
+	err = nil
+
+	switch driver.(type) {
+	case pq.Driver:
+		if url, err := pq.ParseURL(dsn); err == nil {
+			err = parseOpts(url, o)
+		}
+	}
+
+	return o, err
+}
 
 // Useful function returning a prefilled span
 func getSpan(name, service, query string, args interface{}, tracer *tracer.Tracer, ctx context.Context) *tracer.Span {
