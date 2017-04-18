@@ -20,7 +20,7 @@ func TestParsesDSN(t *testing.T) {
 		"dbname":   "mydb",
 		"sslmode":  "verify-full",
 	}
-	o, err := parseDSN(pq.Driver{}, "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full")
+	o, err := parseDSN(&pq.Driver{}, "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full")
 	assert.Equal(nil, err)
 	assert.True(reflect.DeepEqual(expectedPostgres, o))
 
@@ -30,7 +30,7 @@ func TestParsesDSN(t *testing.T) {
 		"port":   "5432",
 		"dbname": "mydb",
 	}
-	o, err = parseDSN(mysql.MySQLDriver{}, "bob:secret@tcp(1.2.3.4:5432)/mydb")
+	o, err = parseDSN(&mysql.MySQLDriver{}, "bob:secret@tcp(1.2.3.4:5432)/mydb")
 	assert.Equal(nil, err)
 	assert.True(reflect.DeepEqual(expectedMySQL, o))
 }

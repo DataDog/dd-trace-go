@@ -37,7 +37,7 @@ func testConnectionQuery(t *testing.T, db *DB) {
 	actualSpan := spans[0]
 
 	expectedSpan := &tracer.Span{
-		Name:     db.Name + ".connection.query",
+		Name:     db.Name + ".conn.query",
 		Service:  db.Service,
 		Resource: query,
 	}

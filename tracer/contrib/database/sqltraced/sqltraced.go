@@ -8,25 +8,25 @@ import (
 	"io"
 	"strconv"
 
-	t "github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
 // Warning: the `name` must be different from the name used by the initial driver.
 // E.g. for the mysql driver you can't use "mysql, but you can use "tracedMysql".
-func Register(name, service string, driver driver.Driver, tracer *t.Tracer) {
+func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 	if driver == nil {
 		panic("RegisterTracedDriver: driver is nil")
 	}
-	if tracer == nil {
-		tracer = t.NewTracer()
+	if trc == nil {
+		trc = tracer.NewTracer()
 	}
 
 	td := TracedDriver{
 		Driver:  driver,
 		name:    name,
 		service: service,
-		tracer:  tracer,
+		tracer:  trc,
 	}
 	// If the new tracedDriver is not registered, we do it.
 	// It panics if we try to register twice the same driver.
@@ -45,32 +45,80 @@ type TracedDriver struct {
 	driver.Driver
 	name    string
 	service string
-	tracer  *t.Tracer
+	tracer  *tracer.Tracer
 }
 
-func (d TracedDriver) Open(dsn string) (driver.Conn, error) {
+func (d TracedDriver) Open(dsn string) (tc driver.Conn, err error) {
+	var info map[string]string
+	var conn driver.Conn
+
 	// Register the service to Datadog tracing API
 	d.tracer.SetServiceInfo(d.service, d.name, ext.AppTypeDB)
 
-	conn, err := d.Driver.Open(dsn)
+	// Get all kinds of information from the DSN
+	info, err = parseDSN(d.Driver, dsn)
+	if err != nil {
+		println("bite")
+		println(dsn)
+		return nil, err
+	}
+
+	conn, err = d.Driver.Open(dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	return TracedConn{Conn: conn, name: d.name, service: d.service, tracer: d.tracer}, nil
+	trc := Trace{
+		name:    d.name,
+		service: d.service,
+		tracer:  d.tracer,
+		user:    info["user"],
+		host:    info["host"],
+		port:    info["port"],
+		dbname:  info["dbname"],
+	}
+	return &TracedConn{conn, trc}, err
+}
+
+type Trace struct {
+	name     string
+	service  string
+	resource string
+	tracer   *tracer.Tracer
+	user     string
+	host     string
+	port     string
+	dbname   string
+}
+
+func (t Trace) getSpan(ctx context.Context, suffix string) *tracer.Span {
+	name := fmt.Sprintf("%s.%s", t.name, suffix)
+	span := t.tracer.NewChildSpanFromContext(name, ctx)
+	span.Service = t.service
+	span.SetMeta("db.name", t.dbname)
+	span.SetMeta("db.user", t.user)
+	span.SetMeta("out.host", t.host)
+	span.SetMeta("out.port", t.port)
+	return span
+}
+
+func (t Trace) getQuerySpan(ctx context.Context, suffix string, query string, args interface{}, nbargs int) *tracer.Span {
+	span := t.getSpan(ctx, suffix)
+	span.Resource = query
+	span.SetMeta("sql.query", query)
+	span.SetMeta("args", fmt.Sprintf("%v", args))
+	span.SetMeta("args_length", strconv.Itoa(nbargs))
+	return span
 }
 
 type TracedConn struct {
 	driver.Conn
-	name    string
-	service string
-	tracer  *t.Tracer
+	Trace
 }
 
 func (c TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
-	span := c.tracer.NewChildSpanFromContext(c.name+".connection.begin", ctx)
+	span := c.getSpan(ctx, "conn.begin")
 	span.Resource = "Begin"
-	span.Service = c.service
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -94,8 +142,7 @@ func (c TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driv
 }
 
 func (c TracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
-	name := fmt.Sprintf("%s.connection.prepare", c.name)
-	span := getSpan(name, c.service, query, nil, c.tracer, ctx)
+	span := c.getQuerySpan(ctx, "conn.prepare", query, nil, 0)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -122,8 +169,7 @@ func (c TracedConn) Exec(query string, args []driver.Value) (driver.Result, erro
 }
 
 func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
-	name := fmt.Sprintf("%s.connection.exec", c.name)
-	span := getSpan(name, c.service, query, args, c.tracer, ctx)
+	span := c.getQuerySpan(ctx, "conn.exec", query, args, len(args))
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -155,7 +201,7 @@ func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver
 
 func (c TracedConn) Ping(ctx context.Context) (err error) {
 	if pinger, ok := c.Conn.(driver.Pinger); ok {
-		span := c.tracer.NewChildSpanFromContext(fmt.Sprintf("%s.connection.ping", c.name), ctx)
+		span := c.getSpan(ctx, "conn.ping")
 		defer func() {
 			span.SetError(err)
 			span.Finish()
@@ -176,8 +222,7 @@ func (c TracedConn) Query(query string, args []driver.Value) (driver.Rows, error
 }
 
 func (c TracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
-	name := fmt.Sprintf("%s.connection.query", c.name)
-	span := getSpan(name, c.service, query, args, c.tracer, ctx)
+	span := c.getQuerySpan(ctx, "conn.query", query, args, len(args))
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -210,7 +255,7 @@ type TracedTx struct {
 	name    string
 	service string
 	parent  driver.Tx
-	tracer  *t.Tracer
+	tracer  *tracer.Tracer
 	ctx     context.Context
 }
 
@@ -241,7 +286,7 @@ type TracedStmt struct {
 	service string
 	query   string
 	parent  driver.Stmt
-	tracer  *t.Tracer
+	tracer  *tracer.Tracer
 	ctx     context.Context
 }
 
@@ -360,7 +405,7 @@ type TracedResult struct {
 	name    string
 	service string
 	parent  driver.Result
-	tracer  *t.Tracer
+	tracer  *tracer.Tracer
 	ctx     context.Context
 }
 
@@ -391,8 +436,8 @@ type TracedRows struct {
 	service string
 	rows    int
 	parent  driver.Rows
-	tracer  *t.Tracer
-	span    *t.Span
+	tracer  *tracer.Tracer
+	span    *tracer.Span
 	ctx     context.Context
 }
 

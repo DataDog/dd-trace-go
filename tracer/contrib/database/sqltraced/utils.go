@@ -22,9 +22,9 @@ import (
 // }
 func parseDSN(driver interface{}, dsn string) (map[string]string, error) {
 	switch driver.(type) {
-	case pq.Driver:
+	case *pq.Driver:
 		return parsePostgresDSN(dsn)
-	case mysql.MySQLDriver:
+	case *mysql.MySQLDriver:
 		return parseMySQLDSN(dsn)
 	}
 	return nil, errors.New("DSN format unknown.")
