@@ -20,24 +20,34 @@ import (
 // 	"port",
 // 	"dbname",
 // }
-func parseDSN(driver interface{}, dsn string) (map[string]string, error) {
+func parseDSN(driver interface{}, dsn string) (meta map[string]string, err error) {
 	switch driver.(type) {
 	case *pq.Driver:
-		return parsePostgresDSN(dsn)
+		meta, err = parsePostgresDSN(dsn)
 	case *mysql.MySQLDriver:
-		return parseMySQLDSN(dsn)
+		meta, err = parseMySQLDSN(dsn)
 	}
-	return nil, errors.New("DSN format unknown.")
+	// Delete the entry "password" for security reasons
+	delete(meta, "password")
+	return
 }
 
 func parsePostgresDSN(dsn string) (map[string]string, error) {
-	if url, err := pq.ParseURL(dsn); err == nil {
-		o := make(map[string]string)
-		err = parseOpts(url, o)
-		return o, err
-	} else {
+	var err error
+	o := make(map[string]string)
+
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		dsn, err = pq.ParseURL(dsn)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if err := parseOpts(dsn, o); err != nil {
 		return nil, err
 	}
+
+	return o, nil
 }
 
 func parseMySQLDSN(dsn string) (map[string]string, error) {
