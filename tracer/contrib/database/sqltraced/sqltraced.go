@@ -58,8 +58,6 @@ func (d TracedDriver) Open(dsn string) (tc driver.Conn, err error) {
 	// Get all kinds of information from the DSN
 	info, err = parseDSN(d.Driver, dsn)
 	if err != nil {
-		println("bite")
-		println(dsn)
 		return nil, err
 	}
 
