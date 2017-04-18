@@ -68,7 +68,12 @@ func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interfac
 		}
 	}
 	span := tc.tracer.NewChildSpanFromContext("redis.command", ctx)
-	defer span.FinishWithErr(&err)
+	defer func() {
+		if err != nil {
+			span.SetError(err)
+		}
+		span.Finish()
+	}()
 
 	span.Service = tc.service
 	span.SetMeta("out.network", tc.network)
