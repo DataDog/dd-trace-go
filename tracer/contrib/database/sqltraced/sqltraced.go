@@ -49,14 +49,14 @@ type TracedDriver struct {
 }
 
 func (d TracedDriver) Open(dsn string) (tc driver.Conn, err error) {
-	var info map[string]string
+	var meta map[string]string
 	var conn driver.Conn
 
 	// Register the service to Datadog tracing API
 	d.tracer.SetServiceInfo(d.service, d.name, ext.AppTypeDB)
 
 	// Get all kinds of information from the DSN
-	info, err = parseDSN(d.Driver, dsn)
+	meta, err = parseDSN(d.Driver, dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -70,10 +70,7 @@ func (d TracedDriver) Open(dsn string) (tc driver.Conn, err error) {
 		name:    d.name,
 		service: d.service,
 		tracer:  d.tracer,
-		user:    info["user"],
-		host:    info["host"],
-		port:    info["port"],
-		dbname:  info["dbname"],
+		meta:    meta,
 	}
 	return &TracedConn{conn, trc}, err
 }
@@ -83,20 +80,16 @@ type Trace struct {
 	service  string
 	resource string
 	tracer   *tracer.Tracer
-	user     string
-	host     string
-	port     string
-	dbname   string
+	meta     map[string]string
 }
 
 func (t Trace) getSpan(ctx context.Context, suffix string) *tracer.Span {
 	name := fmt.Sprintf("%s.%s", t.name, suffix)
 	span := t.tracer.NewChildSpanFromContext(name, ctx)
 	span.Service = t.service
-	span.SetMeta("db.name", t.dbname)
-	span.SetMeta("db.user", t.user)
-	span.SetMeta("out.host", t.host)
-	span.SetMeta("out.port", t.port)
+	for k, v := range t.meta {
+		span.SetMeta(k, v)
+	}
 	return span
 }
 
