@@ -5,25 +5,54 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	"golang.org/x/net/context"
 )
 
-// Returns all information relative to the DSN
-func parseDSN(driver interface{}, dsn string) (o map[string]string, err error) {
-	o = make(map[string]string)
-	err = nil
-
+// Returns all information relative to the DSN:
+// map[string]string{
+// 	"user",
+// 	"host",
+// 	"port",
+// 	"dbname",
+// }
+func parseDSN(driver interface{}, dsn string) (map[string]string, error) {
 	switch driver.(type) {
 	case pq.Driver:
-		if url, err := pq.ParseURL(dsn); err == nil {
-			err = parseOpts(url, o)
-		}
+		return parsePostgresDSN(dsn)
+	case mysql.MySQLDriver:
+		return parseMySQLDSN(dsn)
 	}
+	return nil, errors.New("DSN format unknown.")
+}
 
-	return o, err
+func parsePostgresDSN(dsn string) (map[string]string, error) {
+	if url, err := pq.ParseURL(dsn); err == nil {
+		o := make(map[string]string)
+		err = parseOpts(url, o)
+		return o, err
+	} else {
+		return nil, err
+	}
+}
+
+func parseMySQLDSN(dsn string) (map[string]string, error) {
+	if cfg, err := mysql.ParseDSN(dsn); err == nil {
+		addr := strings.Split(cfg.Addr, ":")
+		o := map[string]string{
+			"user":   cfg.User,
+			"host":   addr[0],
+			"port":   addr[1],
+			"dbname": cfg.DBName,
+		}
+		return o, nil
+	} else {
+		return nil, err
+	}
 }
 
 // Useful function returning a prefilled span
