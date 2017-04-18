@@ -13,13 +13,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-// Returns all information relative to the DSN:
-// map[string]string{
-// 	"user",
-// 	"host",
-// 	"port",
-// 	"dbname",
-// }
+// Return all information passed through the DSN:
 func parseDSN(driver interface{}, dsn string) (meta map[string]string, err error) {
 	switch driver.(type) {
 	case *pq.Driver:
@@ -27,9 +21,34 @@ func parseDSN(driver interface{}, dsn string) (meta map[string]string, err error
 	case *mysql.MySQLDriver:
 		meta, err = parseMySQLDSN(dsn)
 	}
+	meta = normalize(meta)
+	return
+}
+
+func normalize(meta map[string]string) map[string]string {
 	// Delete the entry "password" for security reasons
 	delete(meta, "password")
-	return
+
+	m := make(map[string]string)
+	for k, v := range meta {
+		m[normalizeKey(k)] = v
+	}
+	return m
+}
+
+func normalizeKey(k string) string {
+	switch k {
+	case "user":
+		return "db." + k
+	case "application_name":
+		return "db.application"
+	case "dbname":
+		return "db.name"
+	case "host", "port":
+		return "out." + k
+	default:
+		return "meta." + k
+	}
 }
 
 func parsePostgresDSN(dsn string) (map[string]string, error) {
