@@ -1,6 +1,7 @@
 package tracedredis
 
 import (
+	"bytes"
 	"context"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
@@ -40,6 +41,8 @@ func TracedDialURL(service string, tracer *tracer.Tracer, rawurl string, options
 	if err != nil {
 		return TracedConn{}, err
 	}
+
+	// Getting host and port, usind code from https://github.com/garyburd/redigo/blob/master/redis/conn.go#L226
 	host, port, err := net.SplitHostPort(u.Host)
 	if err != nil {
 		host = u.Host
@@ -56,15 +59,14 @@ func TracedDialURL(service string, tracer *tracer.Tracer, rawurl string, options
 }
 
 func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
-	ctx := context.Background()
-	ok := false
+	var ctx context.Context
+	var ok bool
 	if len(args) > 0 {
 		ctx, ok = args[len(args)-1].(context.Context)
 		if ok {
 			args = args[:len(args)-1]
 		}
 	}
-
 	span := tc.tracer.NewChildSpanFromContext("redis.command", ctx)
 	defer func() {
 		if err != nil {
@@ -82,20 +84,21 @@ func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interfac
 	if len(commandName) > 0 {
 		span.Resource = commandName
 	} else {
-		// According to redigo doc: when the command argument to the Do method is "",
-		// then the Do method will flush the output buffer
+		// When the command argument to the Do method is "", then the Do method will flush the output buffer
+		// check Pipelining in https://godoc.org/github.com/garyburd/redigo/redis
 		span.Resource = "redigo.Conn.Flush"
 	}
-	raw_command := commandName
+	var b bytes.Buffer
+	b.WriteString(commandName)
 	for _, arg := range args {
+		b.WriteString(" ")
 		switch arg := arg.(type) {
 		case string:
-			raw_command += " " + arg
+			b.WriteString(arg)
 		case int:
-			raw_command += " " + strconv.Itoa(arg)
+			b.WriteString(strconv.Itoa(arg))
 		}
 	}
-	span.SetMeta("redis.raw_command", raw_command)
-	ret, err := tc.Conn.Do(commandName, args...)
-	return ret, err
+	span.SetMeta("redis.raw_command", b.String())
+	return tc.Conn.Do(commandName, args...)
 }
