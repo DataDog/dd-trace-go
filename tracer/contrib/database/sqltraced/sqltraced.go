@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
@@ -83,22 +84,18 @@ type Trace struct {
 	meta     map[string]string
 }
 
-func (t Trace) getSpan(ctx context.Context, suffix string) *tracer.Span {
-	name := fmt.Sprintf("%s.%s", t.name, suffix)
+func (t Trace) getSpan(ctx context.Context, suffix string, query ...string) *tracer.Span {
+	name := fmt.Sprintf("%s.%s", strings.ToLower(t.name), suffix)
 	span := t.tracer.NewChildSpanFromContext(name, ctx)
+	span.Type = ext.SQLType
 	span.Service = t.service
+	if len(query) > 0 {
+		span.Resource = query[0]
+		span.SetMeta(ext.SQLQuery, query[0])
+	}
 	for k, v := range t.meta {
 		span.SetMeta(k, v)
 	}
-	return span
-}
-
-func (t Trace) getQuerySpan(ctx context.Context, suffix string, query string, args interface{}, nbargs int) *tracer.Span {
-	span := t.getSpan(ctx, suffix)
-	span.Resource = query
-	span.SetMeta("sql.query", query)
-	span.SetMeta("args", fmt.Sprintf("%v", args))
-	span.SetMeta("args_length", strconv.Itoa(nbargs))
 	return span
 }
 
@@ -108,7 +105,7 @@ type TracedConn struct {
 }
 
 func (c TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
-	span := c.getSpan(ctx, "conn.begin")
+	span := c.getSpan(ctx, "begin")
 	span.Resource = "Begin"
 	defer func() {
 		span.SetError(err)
@@ -133,7 +130,7 @@ func (c TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driv
 }
 
 func (c TracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
-	span := c.getQuerySpan(ctx, "conn.prepare", query, nil, 0)
+	span := c.getSpan(ctx, "prepare", query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -160,7 +157,7 @@ func (c TracedConn) Exec(query string, args []driver.Value) (driver.Result, erro
 }
 
 func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
-	span := c.getQuerySpan(ctx, "conn.exec", query, args, len(args))
+	span := c.getSpan(ctx, "exec", query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -192,7 +189,7 @@ func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver
 
 func (c TracedConn) Ping(ctx context.Context) (err error) {
 	if pinger, ok := c.Conn.(driver.Pinger); ok {
-		span := c.getSpan(ctx, "conn.ping")
+		span := c.getSpan(ctx, "ping")
 		defer func() {
 			span.SetError(err)
 			span.Finish()
@@ -213,7 +210,7 @@ func (c TracedConn) Query(query string, args []driver.Value) (driver.Rows, error
 }
 
 func (c TracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
-	span := c.getQuerySpan(ctx, "conn.query", query, args, len(args))
+	span := c.getSpan(ctx, "query", query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
