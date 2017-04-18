@@ -70,7 +70,7 @@ func TestPipeline(t *testing.T) {
 	assert.Equal(span.Name, "redis.command")
 	assert.Equal(span.GetMeta("out.port"), "6379")
 	assert.Equal(span.GetMeta("redis.pipeline_length"), "1")
-	assert.Equal(span.Resource, "expire pipeline_counter 3600: true\n")
+	assert.Equal(span.Resource, "expire pipeline_counter 3600: false\n")
 
 	pipeline.Expire("pipeline_counter", time.Hour)
 	pipeline.Expire("pipeline_counter_1", time.Minute)
@@ -88,7 +88,7 @@ func TestPipeline(t *testing.T) {
 	assert.Equal(span.Service, "my-redis")
 	assert.Equal(span.Name, "redis.command")
 	assert.Equal(span.GetMeta("redis.pipeline_length"), "2")
-	assert.Equal(span.Resource, "expire pipeline_counter 3600: true\nexpire pipeline_counter_1 60: true\n")
+	assert.Equal(span.Resource, "expire pipeline_counter 3600: false\nexpire pipeline_counter_1 60: false\n")
 }
 
 func TestChildSpan(t *testing.T) {
