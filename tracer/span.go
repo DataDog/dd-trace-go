@@ -167,12 +167,15 @@ func (s *Span) Finish() {
 }
 
 // FinishWithErr marks a span finished and sets the given error if it's
-// non-nil.
-func (s *Span) FinishWithErr(err error) {
+// non-nil. On defer the variable is evaluated on spot, use a pointer to
+// the error variable to correctly propagate it
+func (s *Span) FinishWithErr(perr *error) {
 	if s == nil {
 		return
 	}
-	s.SetError(err)
+	if *perr != nil {
+		s.SetError(*perr)
+	}
 	s.Finish()
 }
 
