@@ -12,8 +12,14 @@ import (
 	"strings"
 )
 
+// TracedConn is used to trace requests made to redis, it implements the interface redis.Conn.
 type TracedConn struct {
 	redis.Conn
+	traceParams TraceParams
+}
+
+// TraceParams contains the params useful for tracing.
+type TraceParams struct {
 	tracer  *tracer.Tracer
 	service string
 	network string
@@ -21,21 +27,24 @@ type TracedConn struct {
 	port    string
 }
 
+// TracedDial will return a TracedConn, it is meant to replace the redis.Dial function.
 func TracedDial(service string, tracer *tracer.Tracer, network, address string, options ...redis.DialOption) (TracedConn, error) {
 	c, err := redis.Dial(network, address)
 	addr := strings.Split(address, ":")
 	host := addr[0]
 	port := addr[1]
 	tracer.SetServiceInfo(service, "redis", ext.AppTypeDB)
-	tc := TracedConn{c, tracer, service, network, host, port}
+	tc := TracedConn{c, TraceParams{tracer, service, network, host, port}}
 	return tc, err
 }
 
+// SetService allows to change the spans service set in TracedDial on a TracedConn.
 func (tc *TracedConn) SetService(service string) {
-	tc.tracer.SetServiceInfo(service, "redis", ext.AppTypeDB)
-	tc.service = service
+	tc.traceParams.tracer.SetServiceInfo(service, "redis", ext.AppTypeDB)
+	tc.traceParams.service = service
 }
 
+// TracedDialURL will return a TracedConn, this is the traced version of redis.DialURL.
 func TracedDialURL(service string, tracer *tracer.Tracer, rawurl string, options ...redis.DialOption) (TracedConn, error) {
 	u, err := url.Parse(rawurl)
 	if err != nil {
@@ -54,10 +63,11 @@ func TracedDialURL(service string, tracer *tracer.Tracer, rawurl string, options
 	// Set in redis.DialUrl source code
 	network := "tcp"
 	c, err := redis.DialURL(rawurl, options...)
-	tc := TracedConn{c, tracer, service, network, host, port}
+	tc := TracedConn{c, TraceParams{tracer, service, network, host, port}}
 	return tc, err
 }
 
+// Do overwrites redis.Do function and sends a span to the tracer.
 func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
 	var ctx context.Context
 	var ok bool
@@ -67,7 +77,7 @@ func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interfac
 			args = args[:len(args)-1]
 		}
 	}
-	span := tc.tracer.NewChildSpanFromContext("redis.command", ctx)
+	span := tc.traceParams.tracer.NewChildSpanFromContext("redis.command", ctx)
 	defer func() {
 		if err != nil {
 			span.SetError(err)
@@ -75,10 +85,10 @@ func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interfac
 		span.Finish()
 	}()
 
-	span.Service = tc.service
-	span.SetMeta("out.network", tc.network)
-	span.SetMeta("out.port", tc.port)
-	span.SetMeta("out.host", tc.host)
+	span.Service = tc.traceParams.service
+	span.SetMeta("out.network", tc.traceParams.network)
+	span.SetMeta("out.port", tc.traceParams.port)
+	span.SetMeta("out.host", tc.traceParams.host)
 	span.SetMeta("redis.args_length", strconv.Itoa(len(args)))
 
 	if len(commandName) > 0 {
