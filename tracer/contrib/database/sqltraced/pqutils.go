@@ -1,13 +1,11 @@
+// All of the following code is copied from the package "github.com/lib/pq:conn.go"
+
 package sqltraced
 
 import (
 	"fmt"
 	"unicode"
 )
-
-// ********************************************************************************
-// All of the following code is copied from the package "github.com/lib/pq:conn.go"
-// ********************************************************************************
 
 type values map[string]string
 

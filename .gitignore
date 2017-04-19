@@ -1,6 +1,5 @@
 # go
 bin/
-test/
 
 # profiling
 *.test

@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -22,13 +23,10 @@ func parseDSN(driver interface{}, dsn string) (meta map[string]string, err error
 		meta, err = parseMySQLDSN(dsn)
 	}
 	meta = normalize(meta)
-	return
+	return meta, err
 }
 
 func normalize(meta map[string]string) map[string]string {
-	// Delete the entry "password" for security reasons
-	delete(meta, "password")
-
 	m := make(map[string]string)
 	for k, v := range meta {
 		m[normalizeKey(k)] = v
@@ -39,7 +37,7 @@ func normalize(meta map[string]string) map[string]string {
 func normalizeKey(k string) string {
 	switch k {
 	case "user":
-		return "db." + k
+		return "db.user"
 	case "application_name":
 		return "db.application"
 	case "dbname":
@@ -53,7 +51,7 @@ func normalizeKey(k string) string {
 
 func parsePostgresDSN(dsn string) (map[string]string, error) {
 	var err error
-	o := make(map[string]string)
+	meta := make(map[string]string)
 
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
 		dsn, err = pq.ParseURL(dsn)
@@ -62,11 +60,14 @@ func parsePostgresDSN(dsn string) (map[string]string, error) {
 		}
 	}
 
-	if err := parseOpts(dsn, o); err != nil {
+	if err := parseOpts(dsn, meta); err != nil {
 		return nil, err
 	}
 
-	return o, nil
+	// Ensure that we don't pass the password to the spans
+	delete(meta, "password")
+
+	return meta, nil
 }
 
 func parseMySQLDSN(dsn string) (map[string]string, error) {
@@ -125,12 +126,9 @@ func namedValueToValue(named []driver.NamedValue) ([]driver.Value, error) {
 	return dargs, nil
 }
 
-// Check if a string is in a []string
-func stringInSlice(a string, list []string) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
+// stringInSlice returns true if the string s is in the list.
+func stringInSlice(list []string, s string) bool {
+	sort.Strings(list)
+	i := sort.SearchStrings(list, s)
+	return i < len(list) && list[i] == s
 }

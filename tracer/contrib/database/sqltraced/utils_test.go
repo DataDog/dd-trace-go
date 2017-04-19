@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestParsesDSN(t *testing.T) {
+func TestParseDSN(t *testing.T) {
 	assert := assert.New(t)
 
 	expected := map[string]string{
@@ -47,4 +47,12 @@ func TestParsesDSN(t *testing.T) {
 	o, err = parseDSN(&pq.Driver{}, dsn)
 	assert.Equal(nil, err)
 	assert.True(reflect.DeepEqual(expected, o))
+}
+
+func TestStringInSlice(t *testing.T) {
+	assert := assert.New(t)
+
+	list := []string{"mysql", "postgres", "pq"}
+	assert.True(stringInSlice(list, "pq"))
+	assert.False(stringInSlice(list, "Postgres"))
 }

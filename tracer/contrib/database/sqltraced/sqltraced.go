@@ -20,7 +20,7 @@ func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 		panic("RegisterTracedDriver: driver is nil")
 	}
 	if trc == nil {
-		trc = tracer.NewTracer()
+		trc = tracer.DefaultTracer
 	}
 
 	trace := Trace{
@@ -32,7 +32,7 @@ func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 
 	// If the new tracedDriver is not registered, we do it.
 	// It panics if we try to register twice the same driver.
-	if !stringInSlice(name, sql.Drivers()) {
+	if !stringInSlice(sql.Drivers(), name) {
 		sql.Register(name, td)
 	} else {
 		panic("RegisterTracedDriver: " + name + "already registered")
