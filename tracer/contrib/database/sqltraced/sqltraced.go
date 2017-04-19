@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -80,7 +81,8 @@ func (td TracedDriver) Open(dsn string) (c driver.Conn, err error) {
 	td.tracer.SetServiceInfo(td.service, td.name, ext.AppTypeDB)
 
 	// Get all kinds of information from the DSN
-	meta, err = parseDSN(td.Driver, dsn)
+	driverType := fmt.Sprintf("%s", reflect.TypeOf(td.Driver))
+	meta, err = parseDSN(driverType, dsn)
 	if err != nil {
 		return nil, err
 	}

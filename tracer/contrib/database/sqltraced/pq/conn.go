@@ -1,6 +1,4 @@
-// All of the following code is copied from the package "github.com/lib/pq:conn.go"
-
-package sqltraced
+package pq
 
 import (
 	"fmt"
@@ -41,10 +39,9 @@ func (s *scanner) SkipSpaces() (rune, bool) {
 	return r, ok
 }
 
-// parseOpts parses the options from name and adds them to the values.
-//
+// ParseOpts parses the options from name and adds them to the values.
 // The parsing code is based on conninfo_parse from libpq's fe-connect.c
-func parseOpts(name string, o values) error {
+func ParseOpts(name string, o values) error {
 	s := newScanner(name)
 
 	for {
