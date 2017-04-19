@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"log"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
@@ -37,7 +38,7 @@ func testConnectionQuery(t *testing.T, db *DB) {
 	actualSpan := spans[0]
 
 	expectedSpan := &tracer.Span{
-		Name:     db.Name + ".connection.query",
+		Name:     strings.ToLower(db.Name) + ".query",
 		Service:  db.Service,
 		Resource: query,
 	}
@@ -80,8 +81,6 @@ func compareSpan(t *testing.T, expectedSpan, actualSpan *tracer.Span) {
 	assert.Equal(expectedSpan.Service, actualSpan.Service)
 	assert.Equal(expectedSpan.Resource, actualSpan.Resource)
 	assert.Equal(expectedSpan.GetMeta("sql.query"), actualSpan.GetMeta("sql.query"))
-	assert.Equal(expectedSpan.GetMeta("args"), actualSpan.GetMeta("args"))
-	assert.Equal(expectedSpan.GetMeta("args_length"), actualSpan.GetMeta("args_length"))
 }
 
 // Return a Tracer with a DummyTransport
