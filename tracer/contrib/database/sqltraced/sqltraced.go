@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -13,69 +14,35 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
-// Warning: the `name` must be different from the name used by the initial driver.
-// E.g. for the mysql driver you can't use "mysql, but you can use "tracedMysql".
+// Register takes a driver and registers a traced version of this one.
+// However, user must take care not using the same name of the original driver
+// E.g. setting the name to "mysql" for tracing the mysql driver will make the program
+// panic. You can use the name "MySQL" to avoid that.
 func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 	if driver == nil {
 		panic("RegisterTracedDriver: driver is nil")
 	}
 	if trc == nil {
-		trc = tracer.NewTracer()
+		trc = tracer.DefaultTracer
 	}
 
-	td := TracedDriver{
-		Driver:  driver,
+	trace := Trace{
 		name:    name,
 		service: service,
 		tracer:  trc,
 	}
+	td := TracedDriver{driver, trace}
+
 	// If the new tracedDriver is not registered, we do it.
 	// It panics if we try to register twice the same driver.
-	if !stringInSlice(name, sql.Drivers()) {
+	if !stringInSlice(sql.Drivers(), name) {
 		sql.Register(name, td)
 	} else {
 		panic("RegisterTracedDriver: " + name + "already registered")
 	}
 }
 
-// TracedDriver is a driver we use as a middleware between the database/sql package
-// and the driver chosen (e.g. mysql, postgresql...).
-// It implements the driver.Driver interface and add the tracing features on top
-// of the driver's methods.
-type TracedDriver struct {
-	driver.Driver
-	name    string
-	service string
-	tracer  *tracer.Tracer
-}
-
-func (d TracedDriver) Open(dsn string) (tc driver.Conn, err error) {
-	var meta map[string]string
-	var conn driver.Conn
-
-	// Register the service to Datadog tracing API
-	d.tracer.SetServiceInfo(d.service, d.name, ext.AppTypeDB)
-
-	// Get all kinds of information from the DSN
-	meta, err = parseDSN(d.Driver, dsn)
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err = d.Driver.Open(dsn)
-	if err != nil {
-		return nil, err
-	}
-
-	trc := Trace{
-		name:    d.name,
-		service: d.service,
-		tracer:  d.tracer,
-		meta:    meta,
-	}
-	return &TracedConn{conn, trc}, err
-}
-
+// Struct used to store all information relative to the tracing
 type Trace struct {
 	name     string
 	service  string
@@ -97,6 +64,43 @@ func (t Trace) getSpan(ctx context.Context, suffix string, query ...string) *tra
 		span.SetMeta(k, v)
 	}
 	return span
+}
+
+// TracedDriver is a driver we use as a middleware between the database/sql package
+// and the driver chosen (e.g. mysql, postgresql...).
+// It implements the driver.Driver interface and add the tracing features on top
+// of the driver's methods.
+type TracedDriver struct {
+	driver.Driver
+	Trace
+}
+
+func (td TracedDriver) Open(dsn string) (c driver.Conn, err error) {
+	var meta map[string]string
+	var conn driver.Conn
+
+	// Register the service to Datadog tracing API
+	td.tracer.SetServiceInfo(td.service, td.name, ext.AppTypeDB)
+
+	// Get all kinds of information from the DSN
+	driverType := fmt.Sprintf("%s", reflect.TypeOf(td.Driver))
+	meta, err = parseDSN(driverType, dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err = td.Driver.Open(dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	trace := Trace{
+		name:    td.name,
+		service: td.service,
+		tracer:  td.tracer,
+		meta:    meta,
+	}
+	return &TracedConn{conn, trace}, err
 }
 
 type TracedConn struct {
