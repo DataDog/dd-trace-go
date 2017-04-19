@@ -14,8 +14,10 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
-// Warning: the `name` must be different from the name used by the initial driver.
-// E.g. for the mysql driver you can't use "mysql, but you can use "tracedMysql".
+// Register takes a driver and registers a traced version of this one.
+// However, user must take care not using the same name of the original driver
+// E.g. setting the name to "mysql" for tracing the mysql driver will make the program
+// panic. You can use the name "MySQL" to avoid that.
 func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 	if driver == nil {
 		panic("RegisterTracedDriver: driver is nil")
