@@ -31,12 +31,12 @@ func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 		trc = tracer.DefaultTracer
 	}
 
-	trace := Trace{
+	ti := TraceInfo{
 		name:    name,
 		service: service,
 		tracer:  trc,
 	}
-	td := TracedDriver{driver, trace}
+	td := TracedDriver{driver, ti}
 
 	if !stringInSlice(sql.Drivers(), name) {
 		sql.Register(name, td)
@@ -46,7 +46,7 @@ func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 }
 
 // Struct used to store all information relative to the tracing
-type Trace struct {
+type TraceInfo struct {
 	name     string
 	service  string
 	resource string
@@ -54,16 +54,16 @@ type Trace struct {
 	meta     map[string]string
 }
 
-func (t Trace) getSpan(ctx context.Context, suffix string, query ...string) *tracer.Span {
-	name := fmt.Sprintf("%s.%s", strings.ToLower(t.name), suffix)
-	span := t.tracer.NewChildSpanFromContext(name, ctx)
+func (ti TraceInfo) getSpan(ctx context.Context, suffix string, query ...string) *tracer.Span {
+	name := fmt.Sprintf("%s.%s", strings.ToLower(ti.name), suffix)
+	span := ti.tracer.NewChildSpanFromContext(name, ctx)
 	span.Type = ext.SQLType
-	span.Service = t.service
+	span.Service = ti.service
 	if len(query) > 0 {
 		span.Resource = query[0]
 		span.SetMeta(ext.SQLQuery, query[0])
 	}
-	for k, v := range t.meta {
+	for k, v := range ti.meta {
 		span.SetMeta(k, v)
 	}
 	return span
@@ -75,7 +75,7 @@ func (t Trace) getSpan(ctx context.Context, suffix string, query ...string) *tra
 // of the driver's methods.
 type TracedDriver struct {
 	driver.Driver
-	Trace
+	TraceInfo
 }
 
 func (td TracedDriver) Open(dsn string) (c driver.Conn, err error) {
@@ -97,86 +97,86 @@ func (td TracedDriver) Open(dsn string) (c driver.Conn, err error) {
 		return nil, err
 	}
 
-	trace := Trace{
+	ti := TraceInfo{
 		name:    td.name,
 		service: td.service,
 		tracer:  td.tracer,
 		meta:    meta,
 	}
-	return &TracedConn{conn, trace}, err
+	return &TracedConn{conn, ti}, err
 }
 
 type TracedConn struct {
 	driver.Conn
-	Trace
+	TraceInfo
 }
 
-func (c TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
-	span := c.getSpan(ctx, "begin")
+func (tc TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
+	span := tc.getSpan(ctx, "begin")
 	span.Resource = "Begin"
 	defer func() {
 		span.SetError(err)
 		span.Finish()
 	}()
 
-	if connBeginTx, ok := c.Conn.(driver.ConnBeginTx); ok {
+	if connBeginTx, ok := tc.Conn.(driver.ConnBeginTx); ok {
 		tx, err = connBeginTx.BeginTx(ctx, opts)
 		if err != nil {
 			return nil, err
 		}
 
-		return TracedTx{name: c.name, service: c.service, parent: tx, tracer: c.tracer, ctx: ctx}, nil
+		return TracedTx{name: tc.name, service: tc.service, parent: tx, tracer: tc.tracer, ctx: ctx}, nil
 	}
 
-	tx, err = c.Conn.Begin()
+	tx, err = tc.Conn.Begin()
 	if err != nil {
 		return nil, err
 	}
 
-	return TracedTx{name: c.name, service: c.service, parent: tx, tracer: c.tracer, ctx: ctx}, nil
+	return TracedTx{name: tc.name, service: tc.service, parent: tx, tracer: tc.tracer, ctx: ctx}, nil
 }
 
-func (c TracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
-	span := c.getSpan(ctx, "prepare", query)
+func (tc TracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
+	span := tc.getSpan(ctx, "prepare", query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
 	}()
 
-	if connPrepareCtx, ok := c.Conn.(driver.ConnPrepareContext); ok {
+	if connPrepareCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
 		stmt, err := connPrepareCtx.PrepareContext(ctx, query)
 		if err != nil {
 			return nil, err
 		}
 
-		return TracedStmt{name: c.name, service: c.service, parent: stmt, tracer: c.tracer, ctx: ctx}, nil
+		return TracedStmt{name: tc.name, service: tc.service, parent: stmt, tracer: tc.tracer, ctx: ctx}, nil
 	}
 
-	return c.Prepare(query)
+	return tc.Prepare(query)
 }
 
-func (c TracedConn) Exec(query string, args []driver.Value) (driver.Result, error) {
-	if execer, ok := c.Conn.(driver.Execer); ok {
+func (tc TracedConn) Exec(query string, args []driver.Value) (driver.Result, error) {
+	if execer, ok := tc.Conn.(driver.Execer); ok {
 		return execer.Exec(query, args)
 	}
 
 	return nil, driver.ErrSkip
 }
 
-func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
-	span := c.getSpan(ctx, "exec", query)
+func (tc TracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
+	span := tc.getSpan(ctx, "exec", query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
 	}()
 
-	if execContext, ok := c.Conn.(driver.ExecerContext); ok {
+	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
 		res, err := execContext.ExecContext(ctx, query, args)
 		if err != nil {
 			return nil, err
 		}
 
-		return TracedResult{name: c.name, service: c.service, parent: res, tracer: c.tracer, ctx: ctx}, nil
+		return TracedResult{name: tc.name, service: tc.service, parent: res, tracer: tc.tracer, ctx: ctx}, nil
 	}
 
 	// Fallback implementation
@@ -191,7 +191,7 @@ func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver
 		return nil, ctx.Err()
 	}
 
-	return c.Exec(query, dargs)
+	return tc.Exec(query, dargs)
 }
 
 // TracedConn has a Ping method in order to implement the pinger interface
