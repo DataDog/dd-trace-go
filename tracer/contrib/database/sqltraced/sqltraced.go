@@ -196,6 +196,7 @@ func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver
 
 func (c TracedConn) Ping(ctx context.Context) (err error) {
 	if pinger, ok := c.Conn.(driver.Pinger); ok {
+		println("biiiiiiiiiiiiiiiiiiite")
 		span := c.getSpan(ctx, "ping")
 		defer func() {
 			span.SetError(err)
@@ -205,6 +206,7 @@ func (c TracedConn) Ping(ctx context.Context) (err error) {
 		return pinger.Ping(ctx)
 	}
 
+	println("looooooooooooooool")
 	return nil
 }
 
