@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	log "github.com/cihub/seelog"
+
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
@@ -20,7 +22,8 @@ import (
 // panic. You can use the name "MySQL" to avoid that.
 func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 	if driver == nil {
-		panic("RegisterTracedDriver: driver is nil")
+		log.Error("RegisterTracedDriver: driver is nil")
+		return
 	}
 	if trc == nil {
 		trc = tracer.DefaultTracer
@@ -38,7 +41,7 @@ func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 	if !stringInSlice(sql.Drivers(), name) {
 		sql.Register(name, td)
 	} else {
-		panic("RegisterTracedDriver: " + name + "already registered")
+		log.Errorf("RegisterTracedDriver: %s already registered", name)
 	}
 }
 
