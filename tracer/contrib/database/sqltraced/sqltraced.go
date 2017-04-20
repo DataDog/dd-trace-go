@@ -21,6 +21,8 @@ import (
 // E.g. setting the name to "mysql" for tracing the mysql driver will make the program
 // panic. You can use the name "MySQL" to avoid that.
 func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
+	log.Infof("sqltraced.Register: name=%s, service=%s", name, service)
+
 	if driver == nil {
 		log.Error("RegisterTracedDriver: driver is nil")
 		return
