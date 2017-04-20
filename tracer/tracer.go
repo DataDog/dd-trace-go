@@ -162,7 +162,7 @@ func (t *Tracer) getAllMeta() map[string]string {
 
 	t.metaMu.RLock()
 	if t.meta != nil {
-		meta = make(map[string]string)
+		meta = make(map[string]string, len(t.meta))
 		for key, value := range t.meta {
 			meta[key] = value
 		}
