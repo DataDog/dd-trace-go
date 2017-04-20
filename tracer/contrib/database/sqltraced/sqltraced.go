@@ -36,8 +36,6 @@ func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 	}
 	td := TracedDriver{driver, trace}
 
-	// If the new tracedDriver is not registered, we do it.
-	// It panics if we try to register twice the same driver.
 	if !stringInSlice(sql.Drivers(), name) {
 		sql.Register(name, td)
 	} else {
