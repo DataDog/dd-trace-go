@@ -21,7 +21,7 @@ import (
 // E.g. setting the name to "mysql" for tracing the mysql driver will make the program
 // panic. You can use the name "MySQL" to avoid that.
 func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
-	log.Infof("sqltraced.Register: name=%s, service=%s", name, service)
+	log.Infof("RegisterTracedDriver: name=%s, service=%s", name, service)
 
 	if driver == nil {
 		log.Error("RegisterTracedDriver: driver is nil")
@@ -194,18 +194,19 @@ func (c TracedConn) ExecContext(ctx context.Context, query string, args []driver
 	return c.Exec(query, dargs)
 }
 
-func (c TracedConn) Ping(ctx context.Context) (err error) {
-	if pinger, ok := c.Conn.(driver.Pinger); ok {
-		span := c.getSpan(ctx, "ping")
-		defer func() {
-			span.SetError(err)
-			span.Finish()
-		}()
+// TracedConn has a Ping method in order to implement the pinger interface
+func (tc TracedConn) Ping(ctx context.Context) (err error) {
+	span := tc.getSpan(ctx, "ping")
+	defer func() {
+		span.SetError(err)
+		span.Finish()
+	}()
 
-		return pinger.Ping(ctx)
+	if pinger, ok := tc.Conn.(driver.Pinger); ok {
+		err = pinger.Ping(ctx)
 	}
 
-	return nil
+	return err
 }
 
 func (c TracedConn) Query(query string, args []driver.Value) (driver.Rows, error) {

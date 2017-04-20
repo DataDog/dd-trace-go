@@ -17,7 +17,22 @@ const DEBUG = true
 
 // Complete sequence of tests to run for each driver
 func AllTests(t *testing.T, db *DB) {
+	testPing(t, db)
 	testConnectionQuery(t, db)
+}
+
+func testPing(t *testing.T, db *DB) {
+	assert := assert.New(t)
+
+	err := db.Ping()
+	assert.Equal(err, nil)
+
+	db.Tracer.FlushTraces()
+	traces := db.Transport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+	//actualSpan := spans[0]
 }
 
 func testConnectionQuery(t *testing.T, db *DB) {
