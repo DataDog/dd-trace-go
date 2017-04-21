@@ -3,11 +3,11 @@ BEGIN;
 DROP TABLE IF EXISTS city;
 
 CREATE TABLE city (
-	id integer NOT NULL,
-	name text NOT NULL,
-	countrycode character(3) NOT NULL,
-	district text NOT NULL,
-	population integer NOT NULL
+	id integer NOT NULL DEFAULT '0',
+	name text,
+	countrycode character(3),
+	district text,
+	population integer
 );
 
 INSERT INTO city VALUES
@@ -31,7 +31,5 @@ INSERT INTO city VALUES
 (18, 'Arnhem', 'NLD', 'Gelderland', 138020),
 (19, 'Zaanstad', 'NLD', 'NoordHolland', 135621),
 (20, 'Hertogenbosch', 'NLD', 'NoordBrabant', 129170);
-
-ALTER TABLE ONLY city ADD CONSTRAINT city_pkey PRIMARY KEY (id);
 
 COMMIT;

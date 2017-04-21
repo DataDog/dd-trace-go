@@ -18,8 +18,9 @@ const DEBUG = true
 
 // Complete sequence of tests to run for each driver
 func AllTests(t *testing.T, db *DB, expectedSpan tracer.Span) {
-	testPing(t, db, expectedSpan)
-	testConnectionQuery(t, db, expectedSpan)
+	//testPing(t, db, expectedSpan)
+	//testConnectionQuery(t, db, expectedSpan)
+	testStatement(t, db, expectedSpan)
 }
 
 func testPing(t *testing.T, db *DB, expectedSpan tracer.Span) {
@@ -38,6 +39,43 @@ func testPing(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	expectedSpan.Name += "ping"
 	expectedSpan.Resource = expectedSpan.Name
 	compareSpan(t, &expectedSpan, actualSpan)
+}
+
+func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
+	assert := assert.New(t)
+	query := "INSERT INTO city(name) VALUES(%s)"
+	if db.Name == "Postgres" {
+		query = fmt.Sprintf(query, "$1")
+	} else {
+		query = fmt.Sprintf(query, "?")
+	}
+
+	stmt, err := db.Prepare(query)
+	assert.Equal(nil, err)
+
+	res, err2 := stmt.Exec("New York")
+	assert.Equal(nil, err2)
+
+	lastId, err3 := res.LastInsertId()
+	if db.Name != "Postgres" {
+		assert.Equal(nil, err3)
+		assert.Equal(0, lastId)
+	}
+
+	rowCnt, err4 := res.RowsAffected()
+	assert.Equal(nil, err4)
+	assert.NotEqual(0, rowCnt)
+
+	db.Tracer.FlushTraces()
+	traces := db.Transport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+
+	//actualSpan := spans[0]
+	//expectedSpan.Name += "ping"
+	//expectedSpan.Resource = expectedSpan.Name
+	//compareSpan(t, &expectedSpan, actualSpan)
 }
 
 func testConnectionQuery(t *testing.T, db *DB, expectedSpan tracer.Span) {
