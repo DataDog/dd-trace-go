@@ -41,6 +41,29 @@ func testPing(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	compareSpan(t, &expectedSpan, actualSpan)
 }
 
+func testConnectionQuery(t *testing.T, db *DB, expectedSpan tracer.Span) {
+	assert := assert.New(t)
+
+	const query = "select id, name, population from city limit 5"
+	rows, err := db.Query(query)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	db.Tracer.FlushTraces()
+	traces := db.Transport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+
+	actualSpan := spans[0]
+	expectedSpan.Name += "query"
+	expectedSpan.Resource = query
+	expectedSpan.SetMeta("sql.query", query)
+	compareSpan(t, &expectedSpan, actualSpan)
+}
+
 func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert := assert.New(t)
 	query := "INSERT INTO city(name) VALUES(%s)"
@@ -72,30 +95,8 @@ func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	spans := traces[0]
 	assert.Len(spans, 1)
 
-	//actualSpan := spans[0]
-	//expectedSpan.Name += "ping"
-	//expectedSpan.Resource = expectedSpan.Name
-	//compareSpan(t, &expectedSpan, actualSpan)
-}
-
-func testConnectionQuery(t *testing.T, db *DB, expectedSpan tracer.Span) {
-	assert := assert.New(t)
-
-	const query = "select id, name, population from city limit 5"
-	rows, err := db.Query(query)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-
-	db.Tracer.FlushTraces()
-	traces := db.Transport.Traces()
-	assert.Len(traces, 1)
-	spans := traces[0]
-	assert.Len(spans, 1)
-
 	actualSpan := spans[0]
-	expectedSpan.Name += "query"
+	expectedSpan.Name += "prepare"
 	expectedSpan.Resource = query
 	expectedSpan.SetMeta("sql.query", query)
 	compareSpan(t, &expectedSpan, actualSpan)
