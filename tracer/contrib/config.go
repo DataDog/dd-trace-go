@@ -2,39 +2,33 @@ package contrib
 
 import "fmt"
 
-var MYSQL_CONFIG = MySQLConfig{
-	"ubuntu",
-	"",
-	"127.0.0.1:3306",
-	"circle_test",
-}
-
-var POSTGRES_CONFIG = PostgresConfig{
-	"ubuntu",
-	"",
-	"127.0.0.1:5432",
-	"circle_test",
-}
-
-type Config interface {
-	Format() string
-}
-
-type Cfg struct {
+type Config struct {
+	Template string
 	User     string
 	Password string
-	Address  string
-	Database string
+	Host     string
+	Port     string
+	DBName   string
 }
 
-type MySQLConfig Cfg
-
-func (c MySQLConfig) Format() string {
-	return fmt.Sprintf("%s:%s@tcp(%s)/%s", c.User, c.Password, c.Address, c.Database)
+func (c Config) DSN() string {
+	return fmt.Sprintf(c.Template, c.User, c.Password, c.Host, c.Port, c.DBName)
 }
 
-type PostgresConfig Cfg
+var MYSQL_CONFIG = Config{
+	"%s:%s@tcp(%s:%s)/%s",
+	"ubuntu",
+	"",
+	"127.0.0.1",
+	"3306",
+	"circle_test",
+}
 
-func (c PostgresConfig) Format() string {
-	return fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", c.User, c.Password, c.Address, c.Database)
+var POSTGRES_CONFIG = Config{
+	"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+	"ubuntu",
+	"",
+	"127.0.0.1",
+	"5432",
+	"circle_test",
 }

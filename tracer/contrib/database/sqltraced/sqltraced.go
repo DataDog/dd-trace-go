@@ -45,7 +45,7 @@ func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 	}
 }
 
-// Struct used to store all information relative to the tracing
+// TraceInfo stores all information relative to the tracing
 type TraceInfo struct {
 	name     string
 	service  string

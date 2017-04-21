@@ -3,9 +3,10 @@ package sqltraced
 import (
 	"database/sql"
 	"database/sql/driver"
+	"fmt"
 	"log"
 	"net/http"
-	"strings"
+	"reflect"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
@@ -16,16 +17,16 @@ import (
 const DEBUG = true
 
 // Complete sequence of tests to run for each driver
-func AllTests(t *testing.T, db *DB) {
-	testPing(t, db)
-	testConnectionQuery(t, db)
+func AllTests(t *testing.T, db *DB, expectedSpan tracer.Span) {
+	testPing(t, db, expectedSpan)
+	testConnectionQuery(t, db, expectedSpan)
 }
 
-func testPing(t *testing.T, db *DB) {
+func testPing(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert := assert.New(t)
 
 	err := db.Ping()
-	assert.Equal(err, nil)
+	assert.Equal(nil, err)
 
 	db.Tracer.FlushTraces()
 	traces := db.Transport.Traces()
@@ -35,7 +36,7 @@ func testPing(t *testing.T, db *DB) {
 	//actualSpan := spans[0]
 }
 
-func testConnectionQuery(t *testing.T, db *DB) {
+func testConnectionQuery(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert := assert.New(t)
 
 	const query = "select id, name, population from city limit 5"
@@ -52,19 +53,17 @@ func testConnectionQuery(t *testing.T, db *DB) {
 	assert.Len(spans, 1)
 	actualSpan := spans[0]
 
-	expectedSpan := &tracer.Span{
-		Name:     strings.ToLower(db.Name) + ".query",
-		Service:  db.Service,
-		Resource: query,
-	}
+	expectedSpan.Resource = query
 	expectedSpan.SetMeta("sql.query", query)
-	expectedSpan.SetMeta("args", "[]")
-	expectedSpan.SetMeta("args_length", "0")
-	compareSpan(t, expectedSpan, actualSpan)
+	if DEBUG {
+		fmt.Printf("-> ExpectedSpan: \n%s\n\n", &expectedSpan)
+	}
+	compareSpan(t, &expectedSpan, actualSpan)
 }
 
 type DB struct {
 	*sql.DB
+	contrib.Config
 	Name      string
 	Service   string
 	Tracer    *tracer.Tracer
@@ -75,13 +74,14 @@ func NewDB(name, service string, driver driver.Driver, config contrib.Config) *D
 	tracer, transport := getTestTracer()
 	tracer.DebugLoggingEnabled = DEBUG
 	Register(name, service, driver, tracer)
-	db, err := sql.Open(name, config.Format())
+	db, err := sql.Open(name, config.DSN())
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	return &DB{
 		db,
+		config,
 		name,
 		service,
 		tracer,
@@ -95,7 +95,8 @@ func compareSpan(t *testing.T, expectedSpan, actualSpan *tracer.Span) {
 	assert.Equal(expectedSpan.Name, actualSpan.Name)
 	assert.Equal(expectedSpan.Service, actualSpan.Service)
 	assert.Equal(expectedSpan.Resource, actualSpan.Resource)
-	assert.Equal(expectedSpan.GetMeta("sql.query"), actualSpan.GetMeta("sql.query"))
+	assert.Equal(expectedSpan.Type, actualSpan.Type)
+	assert.True(reflect.DeepEqual(expectedSpan.Meta, actualSpan.Meta))
 }
 
 // Return a Tracer with a DummyTransport
