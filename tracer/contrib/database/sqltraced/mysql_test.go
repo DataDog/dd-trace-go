@@ -15,7 +15,7 @@ func TestMySQL(t *testing.T) {
 
 	// Expected span
 	expectedSpan := tracer.Span{
-		Name:    "mysql.query",
+		Name:    "mysql.",
 		Service: "mysql-test",
 		Type:    "sql",
 	}

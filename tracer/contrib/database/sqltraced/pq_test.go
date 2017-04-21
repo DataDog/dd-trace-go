@@ -15,7 +15,7 @@ func TestPostgres(t *testing.T) {
 
 	// Expected span
 	expectedSpan := tracer.Span{
-		Name:    "postgres.query",
+		Name:    "postgres.",
 		Service: "postgres-test",
 		Type:    "sql",
 	}

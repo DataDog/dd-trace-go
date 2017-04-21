@@ -33,7 +33,11 @@ func testPing(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert.Len(traces, 1)
 	spans := traces[0]
 	assert.Len(spans, 1)
-	//actualSpan := spans[0]
+
+	actualSpan := spans[0]
+	expectedSpan.Name += "ping"
+	expectedSpan.Resource = expectedSpan.Name
+	compareSpan(t, &expectedSpan, actualSpan)
 }
 
 func testConnectionQuery(t *testing.T, db *DB, expectedSpan tracer.Span) {
@@ -51,13 +55,11 @@ func testConnectionQuery(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert.Len(traces, 1)
 	spans := traces[0]
 	assert.Len(spans, 1)
-	actualSpan := spans[0]
 
+	actualSpan := spans[0]
+	expectedSpan.Name += "query"
 	expectedSpan.Resource = query
 	expectedSpan.SetMeta("sql.query", query)
-	if DEBUG {
-		fmt.Printf("-> ExpectedSpan: \n%s\n\n", &expectedSpan)
-	}
 	compareSpan(t, &expectedSpan, actualSpan)
 }
 
@@ -91,6 +93,9 @@ func NewDB(name, service string, driver driver.Driver, config contrib.Config) *D
 
 // Test all fields of the span
 func compareSpan(t *testing.T, expectedSpan, actualSpan *tracer.Span) {
+	if DEBUG {
+		fmt.Printf("-> ExpectedSpan: \n%s\n\n", expectedSpan)
+	}
 	assert := assert.New(t)
 	assert.Equal(expectedSpan.Name, actualSpan.Name)
 	assert.Equal(expectedSpan.Service, actualSpan.Service)
