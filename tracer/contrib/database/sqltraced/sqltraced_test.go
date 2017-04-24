@@ -109,7 +109,6 @@ func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	//execSpan.SetMeta("sql.query", query)
 	//compareSpan(assert, &execSpan, actualSpan)
 	//delete(expectedSpan.Meta, "sql.query")
-
 	//lastId, err3 := res.LastInsertId()
 	//if db.Name != "Postgres" {
 	//	assert.Equal(nil, err3)

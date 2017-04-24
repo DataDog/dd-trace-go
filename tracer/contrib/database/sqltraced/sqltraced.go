@@ -5,9 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
-	"io"
 	"reflect"
-	"strconv"
 	"strings"
 
 	log "github.com/cihub/seelog"
@@ -118,7 +116,6 @@ func (tc TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dri
 		span.SetError(err)
 		span.Finish()
 	}()
-
 	if connBeginTx, ok := tc.Conn.(driver.ConnBeginTx); ok {
 		tx, err = connBeginTx.BeginTx(ctx, opts)
 		if err != nil {
@@ -230,7 +227,7 @@ func (c TracedConn) QueryContext(ctx context.Context, query string, args []drive
 			return nil, err
 		}
 
-		return &TracedRows{name: c.name, service: c.service, parent: rows, tracer: c.tracer, ctx: ctx}, nil
+		return rows, nil
 	}
 
 	dargs, err := namedValueToValue(args)
@@ -318,7 +315,7 @@ func (s TracedStmt) Query(args []driver.Value) (rows driver.Rows, err error) {
 		return nil, err
 	}
 
-	return &TracedRows{name: s.name, service: s.service, parent: rows, tracer: s.tracer, ctx: s.ctx}, nil
+	return rows, nil
 }
 
 func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
@@ -365,7 +362,7 @@ func (s TracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) 
 			return nil, err
 		}
 
-		return &TracedRows{name: s.name, service: s.service, parent: rows, tracer: s.tracer, ctx: ctx}, nil
+		return rows, nil
 	}
 
 	// Fallback implementation
@@ -411,42 +408,4 @@ func (r TracedResult) RowsAffected() (num int64, err error) {
 	}()
 
 	return r.parent.RowsAffected()
-}
-
-type TracedRows struct {
-	name    string
-	service string
-	rows    int
-	parent  driver.Rows
-	tracer  *tracer.Tracer
-	span    *tracer.Span
-	ctx     context.Context
-}
-
-func (r TracedRows) Columns() []string {
-	return r.parent.Columns()
-}
-
-func (r TracedRows) Close() error {
-	return r.parent.Close()
-}
-
-func (r *TracedRows) Next(dest []driver.Value) (err error) {
-	if r.span == nil {
-		r.span = r.tracer.NewChildSpanFromContext(r.name+".rows.iter", r.ctx)
-		r.span.Service = r.service
-	}
-
-	defer func() {
-		if err != nil {
-			if err != io.EOF {
-				r.span.SetError(err)
-			}
-			r.span.SetMeta("rows", strconv.Itoa(r.rows))
-			r.span.Finish()
-		}
-		r.rows++
-	}()
-
-	return r.parent.Next(dest)
 }
