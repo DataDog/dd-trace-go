@@ -37,7 +37,7 @@ func TestClient(t *testing.T) {
 	assert.Equal(span.GetMeta("redis.args_length"), "2")
 }
 
-func TestError(t *testing.T) {
+func TestCommandError(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
@@ -61,6 +61,16 @@ func TestError(t *testing.T) {
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(span.GetMeta("out.port"), "6379")
 	assert.Equal(span.GetMeta("redis.raw_command"), "NOT_A_COMMAND")
+}
+
+func TestConnectionError(t *testing.T) {
+	assert := assert.New(t)
+	testTracer, _ := getTestTracer()
+	testTracer.DebugLoggingEnabled = debug
+
+	_, err := TracedDial("redis-service", testTracer, "tcp", "000.0.0:1111")
+
+	assert.Equal(err.Error(), "dial tcp: lookup 000.0.0: no such host")
 }
 
 func TestInheritance(t *testing.T) {

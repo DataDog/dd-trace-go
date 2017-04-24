@@ -31,8 +31,13 @@ type TraceParams struct {
 func TracedDial(service string, tracer *tracer.Tracer, network, address string, options ...redis.DialOption) (TracedConn, error) {
 	c, err := redis.Dial(network, address)
 	addr := strings.Split(address, ":")
-	host := addr[0]
-	port := addr[1]
+	var host, port string
+	if len(addr) == 2 && addr[1] != "" {
+		port = addr[1]
+	} else {
+		port = "6379"
+	}
+	host = addr[0]
 	tracer.SetServiceInfo(service, "redis", ext.AppTypeDB)
 	tc := TracedConn{c, TraceParams{tracer, service, network, host, port}}
 	return tc, err
