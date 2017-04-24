@@ -35,8 +35,12 @@ type TraceParams struct {
 func NewTracedClient(opt *redis.Options, t *tracer.Tracer, service string) *TracedClient {
 	var host, port string
 	addr := strings.Split(opt.Addr, ":")
+	if len(addr) == 2 && addr[1] != "" {
+		port = addr[1]
+	} else {
+		port = "6379"
+	}
 	host = addr[0]
-	port = addr[1]
 	db := strconv.Itoa(opt.DB)
 
 	client := redis.NewClient(opt)

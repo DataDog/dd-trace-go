@@ -6,7 +6,6 @@ redis:
 ddagent:
         image: datadog/docker-dd-agent
         environment:
-                - DD_APM_ENABLED=true
                 - DD_BIND_HOST=0.0.0.0
                 - DD_API_KEY=invalid_key_but_this_is_fine
         ports:
