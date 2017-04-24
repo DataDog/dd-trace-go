@@ -149,7 +149,7 @@ func (tc TracedConn) PrepareContext(ctx context.Context, query string) (stmt dri
 			return nil, err
 		}
 
-		return TracedStmt{name: tc.name, service: tc.service, parent: stmt, tracer: tc.tracer, ctx: ctx}, nil
+		return TracedStmt{stmt, tc.TraceInfo, ctx}, nil
 	}
 
 	return tc.Prepare(query)
@@ -276,38 +276,29 @@ func (t TracedTx) Rollback() (err error) {
 }
 
 type TracedStmt struct {
-	name    string
-	service string
-	query   string
-	parent  driver.Stmt
-	tracer  *tracer.Tracer
-	ctx     context.Context
+	driver.Stmt
+	TraceInfo
+	ctx context.Context
 }
 
 func (s TracedStmt) Close() (err error) {
-	span := s.tracer.NewChildSpanFromContext(s.name+".statement.close", s.ctx)
-	span.Service = s.service
+	span := s.getSpan(s.ctx, "statement.close")
 	defer func() {
 		span.SetError(err)
 		span.Finish()
 	}()
 
-	return s.parent.Close()
-}
-
-func (s TracedStmt) NumInput() int {
-	return s.parent.NumInput()
+	return s.Stmt.Close()
 }
 
 func (s TracedStmt) Exec(args []driver.Value) (res driver.Result, err error) {
-	name := fmt.Sprintf("%s.statement.exec", s.name)
-	span := getSpan(name, s.service, s.query, args, s.tracer, s.ctx)
+	span := s.getSpan(s.ctx, "statement.exec")
 	defer func() {
 		span.SetError(err)
 		span.Finish()
 	}()
 
-	res, err = s.parent.Exec(args)
+	res, err = s.Stmt.Exec(args)
 	if err != nil {
 		return nil, err
 	}
@@ -316,14 +307,13 @@ func (s TracedStmt) Exec(args []driver.Value) (res driver.Result, err error) {
 }
 
 func (s TracedStmt) Query(args []driver.Value) (rows driver.Rows, err error) {
-	name := fmt.Sprintf("%s.statement.query", s.name)
-	span := getSpan(name, s.service, s.query, args, s.tracer, s.ctx)
+	span := s.getSpan(s.ctx, "statement.query")
 	defer func() {
 		span.SetError(err)
 		span.Finish()
 	}()
 
-	rows, err = s.parent.Query(args)
+	rows, err = s.Stmt.Query(args)
 	if err != nil {
 		return nil, err
 	}
@@ -332,14 +322,13 @@ func (s TracedStmt) Query(args []driver.Value) (rows driver.Rows, err error) {
 }
 
 func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
-	name := fmt.Sprintf("%s.statement.exec", s.name)
-	span := getSpan(name, s.service, s.query, args, s.tracer, s.ctx)
+	span := s.getSpan(ctx, "ExecContext")
 	defer func() {
 		span.SetError(err)
 		span.Finish()
 	}()
 
-	if stmtExecContext, ok := s.parent.(driver.StmtExecContext); ok {
+	if stmtExecContext, ok := s.Stmt.(driver.StmtExecContext); ok {
 		res, err = stmtExecContext.ExecContext(ctx, args)
 		if err != nil {
 			return nil, err
@@ -364,14 +353,13 @@ func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (
 }
 
 func (s TracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
-	name := fmt.Sprintf("%s.statement.query", s.name)
-	span := getSpan(name, s.service, s.query, args, s.tracer, ctx)
+	span := s.getSpan(ctx, "statement.querycontext")
 	defer func() {
 		span.SetError(err)
 		span.Finish()
 	}()
 
-	if stmtQueryContext, ok := s.parent.(driver.StmtQueryContext); ok {
+	if stmtQueryContext, ok := s.Stmt.(driver.StmtQueryContext); ok {
 		rows, err = stmtQueryContext.QueryContext(ctx, args)
 		if err != nil {
 			return nil, err

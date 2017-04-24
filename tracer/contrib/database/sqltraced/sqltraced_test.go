@@ -39,7 +39,7 @@ func testPing(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	actualSpan := spans[0]
 	expectedSpan.Name += "ping"
 	expectedSpan.Resource = expectedSpan.Name
-	compareSpan(t, &expectedSpan, actualSpan)
+	compareSpan(assert, &expectedSpan, actualSpan)
 }
 
 func testConnectionQuery(t *testing.T, db *DB, expectedSpan tracer.Span) {
@@ -62,7 +62,7 @@ func testConnectionQuery(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	expectedSpan.Name += "query"
 	expectedSpan.Resource = query
 	expectedSpan.SetMeta("sql.query", query)
-	compareSpan(t, &expectedSpan, actualSpan)
+	compareSpan(assert, &expectedSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 }
 
@@ -75,7 +75,8 @@ func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
 		query = fmt.Sprintf(query, "?")
 	}
 
-	stmt, err := db.Prepare(query)
+	// Test TracedConn.PrepareContext
+	_, err := db.Prepare(query)
 	assert.Equal(nil, err)
 
 	db.Tracer.FlushTraces()
@@ -83,26 +84,47 @@ func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert.Len(traces, 1)
 	spans := traces[0]
 	assert.Len(spans, 1)
-
-	res, err2 := stmt.Exec("New York")
-	assert.Equal(nil, err2)
-
-	lastId, err3 := res.LastInsertId()
-	if db.Name != "Postgres" {
-		assert.Equal(nil, err3)
-		assert.Equal(0, lastId)
-	}
-
-	rowCnt, err4 := res.RowsAffected()
-	assert.Equal(nil, err4)
-	assert.NotEqual(0, rowCnt)
-
 	actualSpan := spans[0]
-	expectedSpan.Name += "prepare"
-	expectedSpan.Resource = query
-	expectedSpan.SetMeta("sql.query", query)
-	compareSpan(t, &expectedSpan, actualSpan)
+	prepareSpan := expectedSpan
+	prepareSpan.Name += "prepare"
+	prepareSpan.Resource = query
+	prepareSpan.SetMeta("sql.query", query)
+	compareSpan(assert, &prepareSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
+
+	// Test Exec
+	//_, err2 := stmt.Exec("New York")
+	//assert.Equal(nil, err2)
+
+	//db.Tracer.FlushTraces()
+	//traces = db.Transport.Traces()
+	//assert.Len(traces, 1)
+	//spans = traces[0]
+	//assert.Len(spans, 1)
+	//actualSpan = spans[0]
+
+	//execSpan := expectedSpan
+	//execSpan.Name += "exec"
+	//execSpan.Resource = query
+	//execSpan.SetMeta("sql.query", query)
+	//compareSpan(assert, &execSpan, actualSpan)
+	//delete(expectedSpan.Meta, "sql.query")
+
+	//lastId, err3 := res.LastInsertId()
+	//if db.Name != "Postgres" {
+	//	assert.Equal(nil, err3)
+	//	assert.Equal(0, lastId)
+	//}
+
+	//rowCnt, err4 := res.RowsAffected()
+	//assert.Equal(nil, err4)
+	//assert.NotEqual(0, rowCnt)
+	//actualSpan = spans[0]
+	//expectedSpan.Name += "prepare"
+	//expectedSpan.Resource = query
+	//expectedSpan.SetMeta("sql.query", query)
+	//compareSpan(assert, &expectedSpan, actualSpan)
+	//delete(expectedSpan.Meta, "sql.query")
 }
 
 func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
@@ -122,7 +144,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	beginSpan := expectedSpan
 	beginSpan.Name += "begin"
 	beginSpan.Resource = "Begin"
-	compareSpan(t, &beginSpan, actualSpan)
+	compareSpan(assert, &beginSpan, actualSpan)
 
 	// Test Rollback
 	err = tx.Rollback()
@@ -137,7 +159,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	rollbackSpan := expectedSpan
 	rollbackSpan.Name += "rollback"
 	rollbackSpan.Resource = "Rollback"
-	compareSpan(t, &rollbackSpan, actualSpan)
+	compareSpan(assert, &rollbackSpan, actualSpan)
 
 	// Test Exec
 	tx, err = db.Begin()
@@ -155,7 +177,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	execSpan.Name += "exec"
 	execSpan.Resource = query
 	execSpan.SetMeta("sql.query", query)
-	compareSpan(t, &execSpan, actualSpan)
+	compareSpan(assert, &execSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 
 	// Test Commit
@@ -171,7 +193,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	commitSpan := expectedSpan
 	commitSpan.Name += "commit"
 	commitSpan.Resource = "Commit"
-	compareSpan(t, &commitSpan, actualSpan)
+	compareSpan(assert, &commitSpan, actualSpan)
 }
 
 type DB struct {
@@ -203,11 +225,10 @@ func NewDB(name, service string, driver driver.Driver, config contrib.Config) *D
 }
 
 // Test all fields of the span
-func compareSpan(t *testing.T, expectedSpan, actualSpan *tracer.Span) {
+func compareSpan(assert *assert.Assertions, expectedSpan, actualSpan *tracer.Span) {
 	if DEBUG {
 		fmt.Printf("-> ExpectedSpan: \n%s\n\n", expectedSpan)
 	}
-	assert := assert.New(t)
 	assert.Equal(expectedSpan.Name, actualSpan.Name)
 	assert.Equal(expectedSpan.Service, actualSpan.Service)
 	assert.Equal(expectedSpan.Resource, actualSpan.Resource)
