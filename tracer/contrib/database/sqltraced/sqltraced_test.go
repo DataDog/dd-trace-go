@@ -18,9 +18,10 @@ const DEBUG = true
 
 // Complete sequence of tests to run for each driver
 func AllTests(t *testing.T, db *DB, expectedSpan tracer.Span) {
-	//testPing(t, db, expectedSpan)
-	//testConnectionQuery(t, db, expectedSpan)
+	testPing(t, db, expectedSpan)
+	testConnectionQuery(t, db, expectedSpan)
 	testStatement(t, db, expectedSpan)
+	testTransaction(t, db, expectedSpan)
 }
 
 func testPing(t *testing.T, db *DB, expectedSpan tracer.Span) {
@@ -62,6 +63,7 @@ func testConnectionQuery(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	expectedSpan.Resource = query
 	expectedSpan.SetMeta("sql.query", query)
 	compareSpan(t, &expectedSpan, actualSpan)
+	delete(expectedSpan.Meta, "sql.query")
 }
 
 func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
@@ -76,6 +78,12 @@ func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	stmt, err := db.Prepare(query)
 	assert.Equal(nil, err)
 
+	db.Tracer.FlushTraces()
+	traces := db.Transport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+
 	res, err2 := stmt.Exec("New York")
 	assert.Equal(nil, err2)
 
@@ -89,17 +97,81 @@ func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert.Equal(nil, err4)
 	assert.NotEqual(0, rowCnt)
 
-	db.Tracer.FlushTraces()
-	traces := db.Transport.Traces()
-	assert.Len(traces, 1)
-	spans := traces[0]
-	assert.Len(spans, 1)
-
 	actualSpan := spans[0]
 	expectedSpan.Name += "prepare"
 	expectedSpan.Resource = query
 	expectedSpan.SetMeta("sql.query", query)
 	compareSpan(t, &expectedSpan, actualSpan)
+	delete(expectedSpan.Meta, "sql.query")
+}
+
+func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
+	assert := assert.New(t)
+	query := "INSERT INTO city(name) VALUES('New York')"
+
+	// Test Begin
+	tx, err := db.Begin()
+	assert.Equal(nil, err)
+
+	db.Tracer.FlushTraces()
+	traces := db.Transport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+	actualSpan := spans[0]
+	beginSpan := expectedSpan
+	beginSpan.Name += "begin"
+	beginSpan.Resource = "Begin"
+	compareSpan(t, &beginSpan, actualSpan)
+
+	// Test Rollback
+	err = tx.Rollback()
+	assert.Equal(nil, err)
+
+	db.Tracer.FlushTraces()
+	traces = db.Transport.Traces()
+	assert.Len(traces, 1)
+	spans = traces[0]
+	assert.Len(spans, 1)
+	actualSpan = spans[0]
+	rollbackSpan := expectedSpan
+	rollbackSpan.Name += "rollback"
+	rollbackSpan.Resource = "Rollback"
+	compareSpan(t, &rollbackSpan, actualSpan)
+
+	// Test Exec
+	tx, err = db.Begin()
+	assert.Equal(nil, err)
+	_, err = tx.Exec(query)
+	assert.Equal(nil, err)
+
+	db.Tracer.FlushTraces()
+	traces = db.Transport.Traces()
+	assert.Len(traces, 2)
+	spans = traces[1]
+	assert.Len(spans, 1)
+	actualSpan = spans[0]
+	execSpan := expectedSpan
+	execSpan.Name += "exec"
+	execSpan.Resource = query
+	execSpan.SetMeta("sql.query", query)
+	compareSpan(t, &execSpan, actualSpan)
+	delete(expectedSpan.Meta, "sql.query")
+
+	// Test Commit
+	err = tx.Commit()
+	assert.Equal(nil, err)
+
+	db.Tracer.FlushTraces()
+	traces = db.Transport.Traces()
+	assert.Len(traces, 1)
+	spans = traces[0]
+	assert.Len(spans, 1)
+	actualSpan = spans[0]
+	commitSpan := expectedSpan
+	commitSpan.Name += "commit"
+	commitSpan.Resource = "Commit"
+	compareSpan(t, &commitSpan, actualSpan)
 }
 
 type DB struct {

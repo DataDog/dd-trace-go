@@ -125,7 +125,7 @@ func (tc TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dri
 			return nil, err
 		}
 
-		return TracedTx{name: tc.name, service: tc.service, parent: tx, tracer: tc.tracer, ctx: ctx}, nil
+		return TracedTx{tx, tc.TraceInfo, ctx}, nil
 	}
 
 	tx, err = tc.Conn.Begin()
@@ -133,7 +133,7 @@ func (tc TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dri
 		return nil, err
 	}
 
-	return TracedTx{name: tc.name, service: tc.service, parent: tx, tracer: tc.tracer, ctx: ctx}, nil
+	return TracedTx{tx, tc.TraceInfo, ctx}, nil
 }
 
 func (tc TracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
@@ -248,33 +248,31 @@ func (c TracedConn) QueryContext(ctx context.Context, query string, args []drive
 }
 
 type TracedTx struct {
-	name    string
-	service string
-	parent  driver.Tx
-	tracer  *tracer.Tracer
-	ctx     context.Context
+	driver.Tx
+	TraceInfo
+	ctx context.Context
 }
 
 func (t TracedTx) Commit() (err error) {
-	span := t.tracer.NewChildSpanFromContext(t.name+".transaction.commit", t.ctx)
-	span.Service = t.service
+	span := t.getSpan(t.ctx, "commit")
+	span.Resource = "Commit"
 	defer func() {
 		span.SetError(err)
 		span.Finish()
 	}()
 
-	return t.parent.Commit()
+	return t.Tx.Commit()
 }
 
 func (t TracedTx) Rollback() (err error) {
-	span := t.tracer.NewChildSpanFromContext(t.name+".transaction.rollback", t.ctx)
-	span.Service = t.service
+	span := t.getSpan(t.ctx, "rollback")
+	span.Resource = "Rollback"
 	defer func() {
 		span.SetError(err)
 		span.Finish()
 	}()
 
-	return t.parent.Rollback()
+	return t.Tx.Rollback()
 }
 
 type TracedStmt struct {
