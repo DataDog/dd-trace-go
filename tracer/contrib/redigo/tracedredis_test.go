@@ -70,7 +70,7 @@ func TestConnectionError(t *testing.T) {
 
 	_, err := TracedDial("redis-service", testTracer, "tcp", "000.0.0:1111")
 
-	assert.Equal(err.Error(), "dial tcp: lookup 000.0.0: no such host")
+	assert.Contains(err.Error(), "dial tcp: lookup 000.0.0:")
 }
 
 func TestInheritance(t *testing.T) {
