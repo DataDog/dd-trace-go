@@ -12,19 +12,20 @@ import (
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/contrib"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"github.com/stretchr/testify/assert"
 )
 
 const DEBUG = true
 
 // Complete sequence of tests to run for each driver
-func AllTests(t *testing.T, db *DB, expectedSpan tracer.Span) {
+func AllTests(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	testDB(t, db, expectedSpan)
 	testStatement(t, db, expectedSpan)
 	testTransaction(t, db, expectedSpan)
 }
 
-func testDB(t *testing.T, db *DB, expectedSpan tracer.Span) {
+func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert := assert.New(t)
 	const query = "select id, name, population from city limit 5"
 
@@ -39,10 +40,10 @@ func testDB(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert.Len(spans, 1)
 
 	actualSpan := spans[0]
-	pingSpan := expectedSpan
+	pingSpan := copySpan(expectedSpan, db.Tracer)
 	pingSpan.Name += "ping"
 	pingSpan.Resource = "Ping"
-	compareSpan(assert, &pingSpan, actualSpan)
+	compareSpan(t, pingSpan, actualSpan)
 
 	// Test db.Query
 	rows, err := db.Query(query)
@@ -56,15 +57,15 @@ func testDB(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert.Len(spans, 1)
 
 	actualSpan = spans[0]
-	querySpan := expectedSpan
+	querySpan := copySpan(expectedSpan, db.Tracer)
 	querySpan.Name += "query"
 	querySpan.Resource = query
 	querySpan.SetMeta("sql.query", query)
-	compareSpan(assert, &querySpan, actualSpan)
+	compareSpan(t, querySpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 }
 
-func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
+func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert := assert.New(t)
 	query := "INSERT INTO city(name) VALUES(%s)"
 	if db.Name == "Postgres" {
@@ -84,11 +85,11 @@ func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert.Len(spans, 1)
 
 	actualSpan := spans[0]
-	prepareSpan := expectedSpan
+	prepareSpan := copySpan(expectedSpan, db.Tracer)
 	prepareSpan.Name += "prepare"
 	prepareSpan.Resource = query
 	prepareSpan.SetMeta("sql.query", query)
-	compareSpan(assert, &prepareSpan, actualSpan)
+	compareSpan(t, prepareSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 
 	// Test Exec
@@ -102,15 +103,15 @@ func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert.Len(spans, 1)
 	actualSpan = spans[0]
 
-	execSpan := expectedSpan
+	execSpan := copySpan(expectedSpan, db.Tracer)
 	execSpan.Name += "exec"
 	execSpan.Resource = query
 	execSpan.SetMeta("sql.query", query)
-	compareSpan(assert, &execSpan, actualSpan)
+	compareSpan(t, execSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 }
 
-func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
+func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert := assert.New(t)
 	query := "INSERT INTO city(name) VALUES('New York')"
 
@@ -123,11 +124,12 @@ func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert.Len(traces, 1)
 	spans := traces[0]
 	assert.Len(spans, 1)
+
 	actualSpan := spans[0]
-	beginSpan := expectedSpan
+	beginSpan := copySpan(expectedSpan, db.Tracer)
 	beginSpan.Name += "begin"
 	beginSpan.Resource = "Begin"
-	compareSpan(assert, &beginSpan, actualSpan)
+	compareSpan(t, beginSpan, actualSpan)
 
 	// Test Rollback
 	err = tx.Rollback()
@@ -139,10 +141,10 @@ func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	spans = traces[0]
 	assert.Len(spans, 1)
 	actualSpan = spans[0]
-	rollbackSpan := expectedSpan
+	rollbackSpan := copySpan(expectedSpan, db.Tracer)
 	rollbackSpan.Name += "rollback"
 	rollbackSpan.Resource = "Rollback"
-	compareSpan(assert, &rollbackSpan, actualSpan)
+	compareSpan(t, rollbackSpan, actualSpan)
 
 	// Test Exec
 	parentSpan := db.Tracer.NewRootSpan("test.parent", "test", "parent")
@@ -164,18 +166,18 @@ func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert.Len(spans, 3)
 
 	actualSpan = spans[1]
-	execSpan := expectedSpan
+	execSpan := copySpan(expectedSpan, db.Tracer)
 	execSpan.Name += "exec"
 	execSpan.Resource = query
 	execSpan.SetMeta("sql.query", query)
-	compareSpan(assert, &execSpan, actualSpan)
+	compareSpan(t, execSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 
 	actualSpan = spans[2]
-	commitSpan := expectedSpan
+	commitSpan := copySpan(expectedSpan, db.Tracer)
 	commitSpan.Name += "commit"
 	commitSpan.Resource = "Commit"
-	compareSpan(assert, &commitSpan, actualSpan)
+	compareSpan(t, commitSpan, actualSpan)
 }
 
 type DB struct {
@@ -206,8 +208,16 @@ func NewDB(name, service string, driver driver.Driver, config contrib.Config) *D
 	}
 }
 
+func copySpan(span *tracer.Span, trc *tracer.Tracer) *tracer.Span {
+	newSpan := tracer.NewSpan(span.Name, span.Service, span.Resource, span.SpanID, span.TraceID, span.ParentID, trc)
+	newSpan.Type = ext.SQLType
+	newSpan.Meta = span.Meta
+	return newSpan
+}
+
 // Test all fields of the span
-func compareSpan(assert *assert.Assertions, expectedSpan, actualSpan *tracer.Span) {
+func compareSpan(t *testing.T, expectedSpan, actualSpan *tracer.Span) {
+	assert := assert.New(t)
 	if DEBUG {
 		fmt.Printf("-> ExpectedSpan: \n%s\n\n", expectedSpan)
 	}

@@ -14,7 +14,7 @@ func TestPostgres(t *testing.T) {
 	defer db.Close()
 
 	// Expected span
-	expectedSpan := tracer.Span{
+	expectedSpan := &tracer.Span{
 		Name:    "postgres.",
 		Service: "postgres-test",
 		Type:    "sql",

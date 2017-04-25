@@ -14,7 +14,7 @@ func TestMySQL(t *testing.T) {
 	defer db.Close()
 
 	// Expected span
-	expectedSpan := tracer.Span{
+	expectedSpan := &tracer.Span{
 		Name:    "mysql.",
 		Service: "mysql-test",
 		Type:    "sql",
