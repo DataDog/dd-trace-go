@@ -34,7 +34,7 @@ func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 		service: service,
 		tracer:  trc,
 	}
-	td := TracedDriver{driver, ti}
+	td := tracedDriver{driver, ti}
 
 	if !stringInSlice(sql.Drivers(), name) {
 		sql.Register(name, td)
@@ -67,16 +67,18 @@ func (ti TraceInfo) getSpan(ctx context.Context, suffix string, query ...string)
 	return span
 }
 
-// TracedDriver is a driver we use as a middleware between the database/sql package
+// tracedDriver is a driver we use as a middleware between the database/sql package
 // and the driver chosen (e.g. mysql, postgresql...).
 // It implements the driver.Driver interface and add the tracing features on top
 // of the driver's methods.
-type TracedDriver struct {
+type tracedDriver struct {
 	driver.Driver
 	TraceInfo
 }
 
-func (td TracedDriver) Open(dsn string) (c driver.Conn, err error) {
+// Open returns a tracedConn  so that we can pass all the info we get from the DSN
+// all along the tracing
+func (td tracedDriver) Open(dsn string) (c driver.Conn, err error) {
 	var meta map[string]string
 	var conn driver.Conn
 
@@ -101,15 +103,15 @@ func (td TracedDriver) Open(dsn string) (c driver.Conn, err error) {
 		tracer:  td.tracer,
 		meta:    meta,
 	}
-	return &TracedConn{conn, ti}, err
+	return &tracedConn{conn, ti}, err
 }
 
-type TracedConn struct {
+type tracedConn struct {
 	driver.Conn
 	TraceInfo
 }
 
-func (tc TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
+func (tc tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
 	span := tc.getSpan(ctx, "begin")
 	span.Resource = "Begin"
 	defer func() {
@@ -122,7 +124,7 @@ func (tc TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dri
 			return nil, err
 		}
 
-		return TracedTx{tx, tc.TraceInfo, ctx}, nil
+		return tracedTx{tx, tc.TraceInfo, ctx}, nil
 	}
 
 	tx, err = tc.Conn.Begin()
@@ -130,10 +132,10 @@ func (tc TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dri
 		return nil, err
 	}
 
-	return TracedTx{tx, tc.TraceInfo, ctx}, nil
+	return tracedTx{tx, tc.TraceInfo, ctx}, nil
 }
 
-func (tc TracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
+func (tc tracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
 	span := tc.getSpan(ctx, "prepare", query)
 	defer func() {
 		span.SetError(err)
@@ -146,7 +148,7 @@ func (tc TracedConn) PrepareContext(ctx context.Context, query string) (stmt dri
 		if err != nil {
 			return nil, err
 		}
-		return TracedStmt{stmt, tc.TraceInfo, ctx, query}, nil
+		return tracedStmt{stmt, tc.TraceInfo, ctx, query}, nil
 	}
 
 	// If the driver does not implement PrepareContex (lib/pq for example)
@@ -154,10 +156,10 @@ func (tc TracedConn) PrepareContext(ctx context.Context, query string) (stmt dri
 	if err != nil {
 		return nil, err
 	}
-	return TracedStmt{stmt, tc.TraceInfo, ctx, query}, nil
+	return tracedStmt{stmt, tc.TraceInfo, ctx, query}, nil
 }
 
-func (tc TracedConn) Exec(query string, args []driver.Value) (driver.Result, error) {
+func (tc tracedConn) Exec(query string, args []driver.Value) (driver.Result, error) {
 	if execer, ok := tc.Conn.(driver.Execer); ok {
 		return execer.Exec(query, args)
 	}
@@ -165,7 +167,7 @@ func (tc TracedConn) Exec(query string, args []driver.Value) (driver.Result, err
 	return nil, driver.ErrSkip
 }
 
-func (tc TracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
+func (tc tracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
 	span := tc.getSpan(ctx, "exec", query)
 	defer func() {
 		span.SetError(err)
@@ -196,8 +198,8 @@ func (tc TracedConn) ExecContext(ctx context.Context, query string, args []drive
 	return tc.Exec(query, dargs)
 }
 
-// TracedConn has a Ping method in order to implement the pinger interface
-func (tc TracedConn) Ping(ctx context.Context) (err error) {
+// tracedConn has a Ping method in order to implement the pinger interface
+func (tc tracedConn) Ping(ctx context.Context) (err error) {
 	span := tc.getSpan(ctx, "ping")
 	span.Resource = "Ping"
 	defer func() {
@@ -212,22 +214,22 @@ func (tc TracedConn) Ping(ctx context.Context) (err error) {
 	return err
 }
 
-func (c TracedConn) Query(query string, args []driver.Value) (driver.Rows, error) {
-	if queryer, ok := c.Conn.(driver.Queryer); ok {
+func (tc tracedConn) Query(query string, args []driver.Value) (driver.Rows, error) {
+	if queryer, ok := tc.Conn.(driver.Queryer); ok {
 		return queryer.Query(query, args)
 	}
 
 	return nil, driver.ErrSkip
 }
 
-func (c TracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
-	span := c.getSpan(ctx, "query", query)
+func (tc tracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
+	span := tc.getSpan(ctx, "query", query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
 	}()
 
-	if queryerContext, ok := c.Conn.(driver.QueryerContext); ok {
+	if queryerContext, ok := tc.Conn.(driver.QueryerContext); ok {
 		rows, err := queryerContext.QueryContext(ctx, query, args)
 		if err != nil {
 			return nil, err
@@ -247,16 +249,16 @@ func (c TracedConn) QueryContext(ctx context.Context, query string, args []drive
 		return nil, ctx.Err()
 	}
 
-	return c.Query(query, dargs)
+	return tc.Query(query, dargs)
 }
 
-type TracedTx struct {
+type tracedTx struct {
 	driver.Tx
 	TraceInfo
 	ctx context.Context
 }
 
-func (t TracedTx) Commit() (err error) {
+func (t tracedTx) Commit() (err error) {
 	span := t.getSpan(t.ctx, "commit")
 	span.Resource = "Commit"
 	defer func() {
@@ -267,7 +269,7 @@ func (t TracedTx) Commit() (err error) {
 	return t.Tx.Commit()
 }
 
-func (t TracedTx) Rollback() (err error) {
+func (t tracedTx) Rollback() (err error) {
 	span := t.getSpan(t.ctx, "rollback")
 	span.Resource = "Rollback"
 	defer func() {
@@ -278,14 +280,14 @@ func (t TracedTx) Rollback() (err error) {
 	return t.Tx.Rollback()
 }
 
-type TracedStmt struct {
+type tracedStmt struct {
 	driver.Stmt
 	TraceInfo
 	ctx   context.Context
 	query string
 }
 
-func (s TracedStmt) Close() (err error) {
+func (s tracedStmt) Close() (err error) {
 	span := s.getSpan(s.ctx, "close")
 	span.Resource = "Close"
 	defer func() {
@@ -297,7 +299,7 @@ func (s TracedStmt) Close() (err error) {
 }
 
 // ExecContext is needed to implement the driver.StmtExecContext interface
-func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
+func (s tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
 	span := s.getSpan(s.ctx, "exec", s.query)
 	defer func() {
 		span.SetError(err)
@@ -329,7 +331,7 @@ func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (
 }
 
 // QueryContext is needed to implement the driver.StmtQueryContext interface
-func (s TracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
+func (s tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
 	span := s.getSpan(s.ctx, "query", s.query)
 	defer func() {
 		span.SetError(err)

@@ -10,7 +10,7 @@ import (
 
 func TestMySQL(t *testing.T) {
 	// Initializing mysql database
-	db := NewDB("MySQL", "mysql-test", &mysql.MySQLDriver{}, contrib.MYSQL_CONFIG)
+	db := NewDB("MySQL", "mysql-test", &mysql.MySQLDriver{}, contrib.MySQLConfig)
 	defer db.Close()
 
 	// Expected span

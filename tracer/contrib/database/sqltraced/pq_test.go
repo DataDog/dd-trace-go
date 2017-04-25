@@ -10,7 +10,7 @@ import (
 
 func TestPostgres(t *testing.T) {
 	// Initializing database
-	db := NewDB("Postgres", "postgres-test", &pq.Driver{}, contrib.POSTGRES_CONFIG)
+	db := NewDB("Postgres", "postgres-test", &pq.Driver{}, contrib.PostgresConfig)
 	defer db.Close()
 
 	// Expected span

@@ -2,6 +2,7 @@ package contrib
 
 import "fmt"
 
+// Config stores the configuration of mysql and postgres databases for testing purposes
 type Config struct {
 	Template string
 	User     string
@@ -11,11 +12,13 @@ type Config struct {
 	DBName   string
 }
 
+// DSN returns the formatted DSN corresponding to each configuration
 func (c Config) DSN() string {
 	return fmt.Sprintf(c.Template, c.User, c.Password, c.Host, c.Port, c.DBName)
 }
 
-var MYSQL_CONFIG = Config{
+// MySQLConfig stores the configuration of our mysql test server
+var MySQLConfig = Config{
 	"%s:%s@tcp(%s:%s)/%s",
 	"ubuntu",
 	"",
@@ -24,7 +27,8 @@ var MYSQL_CONFIG = Config{
 	"circle_test",
 }
 
-var POSTGRES_CONFIG = Config{
+// PostgresConfig stores the configuration of our postgres test server
+var PostgresConfig = Config{
 	"postgres://%s:%s@%s:%s/%s?sslmode=disable",
 	"ubuntu",
 	"",
