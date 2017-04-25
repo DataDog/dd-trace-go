@@ -140,16 +140,21 @@ func (tc TracedConn) PrepareContext(ctx context.Context, query string) (stmt dri
 		span.Finish()
 	}()
 
+	// Check if the driver implements PrepareContext
 	if connPrepareCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
 		stmt, err := connPrepareCtx.PrepareContext(ctx, query)
 		if err != nil {
 			return nil, err
 		}
-
-		return TracedStmt{stmt, tc.TraceInfo, ctx}, nil
+		return TracedStmt{stmt, tc.TraceInfo, ctx, query}, nil
 	}
 
-	return tc.Prepare(query)
+	// If the driver does not implement PrepareContex (lib/pq for example)
+	stmt, err = tc.Prepare(query)
+	if err != nil {
+		return nil, err
+	}
+	return TracedStmt{stmt, tc.TraceInfo, ctx, query}, nil
 }
 
 func (tc TracedConn) Exec(query string, args []driver.Value) (driver.Result, error) {
@@ -173,7 +178,7 @@ func (tc TracedConn) ExecContext(ctx context.Context, query string, args []drive
 			return nil, err
 		}
 
-		return TracedResult{name: tc.name, service: tc.service, parent: res, tracer: tc.tracer, ctx: ctx}, nil
+		return res, nil
 	}
 
 	// Fallback implementation
@@ -275,11 +280,12 @@ func (t TracedTx) Rollback() (err error) {
 type TracedStmt struct {
 	driver.Stmt
 	TraceInfo
-	ctx context.Context
+	ctx   context.Context
+	query string
 }
 
 func (s TracedStmt) Close() (err error) {
-	span := s.getSpan(s.ctx, "statement.close")
+	span := s.getSpan(s.ctx, "close")
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -289,7 +295,7 @@ func (s TracedStmt) Close() (err error) {
 }
 
 func (s TracedStmt) Exec(args []driver.Value) (res driver.Result, err error) {
-	span := s.getSpan(s.ctx, "statement.exec")
+	span := s.getSpan(s.ctx, "exec", s.query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -300,27 +306,13 @@ func (s TracedStmt) Exec(args []driver.Value) (res driver.Result, err error) {
 		return nil, err
 	}
 
-	return TracedResult{name: s.name, service: s.service, parent: res, tracer: s.tracer, ctx: s.ctx}, nil
-}
-
-func (s TracedStmt) Query(args []driver.Value) (rows driver.Rows, err error) {
-	span := s.getSpan(s.ctx, "statement.query")
-	defer func() {
-		span.SetError(err)
-		span.Finish()
-	}()
-
-	rows, err = s.Stmt.Query(args)
-	if err != nil {
-		return nil, err
-	}
-
-	return rows, nil
+	return res, nil
 }
 
 func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
-	span := s.getSpan(ctx, "ExecContext")
+	span := s.getSpan(s.ctx, "execcontext", s.query)
 	defer func() {
+		println(span.String())
 		span.SetError(err)
 		span.Finish()
 	}()
@@ -331,7 +323,7 @@ func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (
 			return nil, err
 		}
 
-		return TracedResult{name: s.name, service: s.service, parent: res, tracer: s.tracer, ctx: ctx}, nil
+		return res, nil
 	}
 
 	// Fallback implementation
@@ -349,8 +341,25 @@ func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (
 	return s.Exec(dargs)
 }
 
+// Query is needed to inplement the driver.Stmt interface
+func (s TracedStmt) Query(args []driver.Value) (rows driver.Rows, err error) {
+	span := s.getSpan(s.ctx, "query", s.query)
+	defer func() {
+		span.SetError(err)
+		span.Finish()
+	}()
+
+	rows, err = s.Stmt.Query(args)
+	if err != nil {
+		return nil, err
+	}
+
+	return rows, nil
+}
+
+// QueryContext is needed to implement the StmtQueryContext interface
 func (s TracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
-	span := s.getSpan(ctx, "statement.querycontext")
+	span := s.getSpan(s.ctx, "querycontext", s.query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -378,34 +387,4 @@ func (s TracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) 
 	}
 
 	return s.Query(dargs)
-}
-
-type TracedResult struct {
-	name    string
-	service string
-	parent  driver.Result
-	tracer  *tracer.Tracer
-	ctx     context.Context
-}
-
-func (r TracedResult) LastInsertId() (id int64, err error) {
-	span := r.tracer.NewChildSpanFromContext(r.name+".result.last_insert_id", r.ctx)
-	span.Service = r.service
-	defer func() {
-		span.SetError(err)
-		span.Finish()
-	}()
-
-	return r.parent.LastInsertId()
-}
-
-func (r TracedResult) RowsAffected() (num int64, err error) {
-	span := r.tracer.NewChildSpanFromContext(r.name+".result.rows_affected", r.ctx)
-	span.Service = r.service
-	defer func() {
-		span.SetError(err)
-		span.Finish()
-	}()
-
-	return r.parent.RowsAffected()
 }
