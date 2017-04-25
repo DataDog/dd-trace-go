@@ -16,8 +16,8 @@ import (
 
 // Register takes a driver and registers a traced version of this one.
 // However, user must take care not using the same name of the original driver
-// E.g. setting the name to "mysql" for tracing the mysql driver will make the program
-// panic. You can use the name "MySQL" to avoid that.
+// E.g. setting the name to "mysql" for tracing the mysql driver will not work.
+// You can use the name "MySQL" to avoid that.
 func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 	log.Infof("RegisterTracedDriver: name=%s, service=%s", name, service)
 
@@ -199,6 +199,7 @@ func (tc TracedConn) ExecContext(ctx context.Context, query string, args []drive
 // TracedConn has a Ping method in order to implement the pinger interface
 func (tc TracedConn) Ping(ctx context.Context) (err error) {
 	span := tc.getSpan(ctx, "ping")
+	span.Resource = "Ping"
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -286,6 +287,7 @@ type TracedStmt struct {
 
 func (s TracedStmt) Close() (err error) {
 	span := s.getSpan(s.ctx, "close")
+	span.Resource = "Close"
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -294,25 +296,10 @@ func (s TracedStmt) Close() (err error) {
 	return s.Stmt.Close()
 }
 
-func (s TracedStmt) Exec(args []driver.Value) (res driver.Result, err error) {
+// ExecContext is needed to implement the driver.StmtExecContext interface
+func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
 	span := s.getSpan(s.ctx, "exec", s.query)
 	defer func() {
-		span.SetError(err)
-		span.Finish()
-	}()
-
-	res, err = s.Stmt.Exec(args)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
-}
-
-func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
-	span := s.getSpan(s.ctx, "execcontext", s.query)
-	defer func() {
-		println(span.String())
 		span.SetError(err)
 		span.Finish()
 	}()
@@ -341,25 +328,9 @@ func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (
 	return s.Exec(dargs)
 }
 
-// Query is needed to inplement the driver.Stmt interface
-func (s TracedStmt) Query(args []driver.Value) (rows driver.Rows, err error) {
-	span := s.getSpan(s.ctx, "query", s.query)
-	defer func() {
-		span.SetError(err)
-		span.Finish()
-	}()
-
-	rows, err = s.Stmt.Query(args)
-	if err != nil {
-		return nil, err
-	}
-
-	return rows, nil
-}
-
-// QueryContext is needed to implement the StmtQueryContext interface
+// QueryContext is needed to implement the driver.StmtQueryContext interface
 func (s TracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
-	span := s.getSpan(s.ctx, "querycontext", s.query)
+	span := s.getSpan(s.ctx, "query", s.query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
