@@ -19,10 +19,10 @@ import (
 // E.g. setting the name to "mysql" for tracing the mysql driver will not work.
 // You can use the name "MySQL" to avoid that.
 func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
-	log.Infof("RegisterTracedDriver: name=%s, service=%s", name, service)
+	log.Infof("Register: name=%s, service=%s", name, service)
 
 	if driver == nil {
-		log.Error("RegisterTracedDriver: driver is nil")
+		log.Error("Register: driver is nil")
 		return
 	}
 	if trc == nil {
@@ -39,7 +39,7 @@ func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 	if !stringInSlice(sql.Drivers(), name) {
 		sql.Register(name, td)
 	} else {
-		log.Errorf("RegisterTracedDriver: %s already registered", name)
+		log.Errorf("Register: %s already registered", name)
 	}
 }
 
