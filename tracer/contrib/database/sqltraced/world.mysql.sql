@@ -3,12 +3,11 @@ SET AUTOCOMMIT=0;
 DROP TABLE IF EXISTS `city`;
 
 CREATE TABLE `city` (
-	`id` INT(11) NOT NULL AUTO_INCREMENT,
+	`id` INT(11) NOT NULL DEFAULT '0',
 	`name` CHAR(35) NOT NULL DEFAULT '',
 	`countrycode` CHAR(3) NOT NULL DEFAULT '',
 	`district` CHAR(20) NOT NULL DEFAULT '',
-	`population` INT(11) NOT NULL DEFAULT '0',
-	PRIMARY KEY (`id`)
+	`population` INT(11) NOT NULL DEFAULT '0'
 ); 
 
 INSERT INTO `city` VALUES (1,'Kabul','AFG','Kabol',1780000);

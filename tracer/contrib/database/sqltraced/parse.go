@@ -63,17 +63,17 @@ func parsePQDSN(dsn string) (map[string]string, error) {
 	return meta, nil
 }
 
-func parseMySQLDSN(dsn string) (map[string]string, error) {
-	if cfg, err := mysql.ParseDSN(dsn); err == nil {
+func parseMySQLDSN(dsn string) (m map[string]string, err error) {
+	var cfg *mysql.Config
+	if cfg, err = mysql.ParseDSN(dsn); err == nil {
 		addr := strings.Split(cfg.Addr, ":")
-		o := map[string]string{
+		m = map[string]string{
 			"user":   cfg.User,
 			"host":   addr[0],
 			"port":   addr[1],
 			"dbname": cfg.DBName,
 		}
-		return o, nil
-	} else {
-		return nil, err
+		return m, nil
 	}
+	return nil, err
 }
