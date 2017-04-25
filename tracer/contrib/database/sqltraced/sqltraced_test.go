@@ -1,6 +1,7 @@
 package sqltraced
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
@@ -18,15 +19,16 @@ const DEBUG = true
 
 // Complete sequence of tests to run for each driver
 func AllTests(t *testing.T, db *DB, expectedSpan tracer.Span) {
-	testPing(t, db, expectedSpan)
-	testConnectionQuery(t, db, expectedSpan)
+	testDB(t, db, expectedSpan)
 	testStatement(t, db, expectedSpan)
 	testTransaction(t, db, expectedSpan)
 }
 
-func testPing(t *testing.T, db *DB, expectedSpan tracer.Span) {
+func testDB(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert := assert.New(t)
+	const query = "select id, name, population from city limit 5"
 
+	// Test db.Ping
 	err := db.Ping()
 	assert.Equal(nil, err)
 
@@ -37,32 +39,28 @@ func testPing(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert.Len(spans, 1)
 
 	actualSpan := spans[0]
-	expectedSpan.Name += "ping"
-	expectedSpan.Resource = expectedSpan.Name
-	compareSpan(assert, &expectedSpan, actualSpan)
-}
+	pingSpan := expectedSpan
+	pingSpan.Name += "ping"
+	pingSpan.Resource = "Ping"
+	compareSpan(assert, &pingSpan, actualSpan)
 
-func testConnectionQuery(t *testing.T, db *DB, expectedSpan tracer.Span) {
-	assert := assert.New(t)
-
-	const query = "select id, name, population from city limit 5"
+	// Test db.Query
 	rows, err := db.Query(query)
-	if err != nil {
-		log.Fatal(err)
-	}
 	defer rows.Close()
+	assert.Equal(nil, err)
 
 	db.Tracer.FlushTraces()
-	traces := db.Transport.Traces()
+	traces = db.Transport.Traces()
 	assert.Len(traces, 1)
-	spans := traces[0]
+	spans = traces[0]
 	assert.Len(spans, 1)
 
-	actualSpan := spans[0]
-	expectedSpan.Name += "query"
-	expectedSpan.Resource = query
-	expectedSpan.SetMeta("sql.query", query)
-	compareSpan(assert, &expectedSpan, actualSpan)
+	actualSpan = spans[0]
+	querySpan := expectedSpan
+	querySpan.Name += "query"
+	querySpan.Resource = query
+	querySpan.SetMeta("sql.query", query)
+	compareSpan(assert, &querySpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 }
 
@@ -76,7 +74,7 @@ func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	}
 
 	// Test TracedConn.PrepareContext
-	_, err := db.Prepare(query)
+	stmt, err := db.Prepare(query)
 	assert.Equal(nil, err)
 
 	db.Tracer.FlushTraces()
@@ -84,6 +82,7 @@ func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	assert.Len(traces, 1)
 	spans := traces[0]
 	assert.Len(spans, 1)
+
 	actualSpan := spans[0]
 	prepareSpan := expectedSpan
 	prepareSpan.Name += "prepare"
@@ -93,37 +92,22 @@ func testStatement(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	delete(expectedSpan.Meta, "sql.query")
 
 	// Test Exec
-	//_, err2 := stmt.Exec("New York")
-	//assert.Equal(nil, err2)
+	_, err2 := stmt.Exec("New York")
+	assert.Equal(nil, err2)
 
-	//db.Tracer.FlushTraces()
-	//traces = db.Transport.Traces()
-	//assert.Len(traces, 1)
-	//spans = traces[0]
-	//assert.Len(spans, 1)
-	//actualSpan = spans[0]
+	db.Tracer.FlushTraces()
+	traces = db.Transport.Traces()
+	assert.Len(traces, 1)
+	spans = traces[0]
+	assert.Len(spans, 1)
+	actualSpan = spans[0]
 
-	//execSpan := expectedSpan
-	//execSpan.Name += "exec"
-	//execSpan.Resource = query
-	//execSpan.SetMeta("sql.query", query)
-	//compareSpan(assert, &execSpan, actualSpan)
-	//delete(expectedSpan.Meta, "sql.query")
-	//lastId, err3 := res.LastInsertId()
-	//if db.Name != "Postgres" {
-	//	assert.Equal(nil, err3)
-	//	assert.Equal(0, lastId)
-	//}
-
-	//rowCnt, err4 := res.RowsAffected()
-	//assert.Equal(nil, err4)
-	//assert.NotEqual(0, rowCnt)
-	//actualSpan = spans[0]
-	//expectedSpan.Name += "prepare"
-	//expectedSpan.Resource = query
-	//expectedSpan.SetMeta("sql.query", query)
-	//compareSpan(assert, &expectedSpan, actualSpan)
-	//delete(expectedSpan.Meta, "sql.query")
+	execSpan := expectedSpan
+	execSpan.Name += "exec"
+	execSpan.Resource = query
+	execSpan.SetMeta("sql.query", query)
+	compareSpan(assert, &execSpan, actualSpan)
+	delete(expectedSpan.Meta, "sql.query")
 }
 
 func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
@@ -161,25 +145,15 @@ func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	compareSpan(assert, &rollbackSpan, actualSpan)
 
 	// Test Exec
-	tx, err = db.Begin()
-	assert.Equal(nil, err)
-	_, err = tx.Exec(query)
+	parentSpan := db.Tracer.NewRootSpan("test.parent", "test", "parent")
+	ctx := tracer.ContextWithSpan(context.Background(), parentSpan)
+
+	tx, err = db.BeginTx(ctx, nil)
 	assert.Equal(nil, err)
 
-	db.Tracer.FlushTraces()
-	traces = db.Transport.Traces()
-	assert.Len(traces, 2)
-	spans = traces[1]
-	assert.Len(spans, 1)
-	actualSpan = spans[0]
-	execSpan := expectedSpan
-	execSpan.Name += "exec"
-	execSpan.Resource = query
-	execSpan.SetMeta("sql.query", query)
-	compareSpan(assert, &execSpan, actualSpan)
-	delete(expectedSpan.Meta, "sql.query")
+	_, err = tx.ExecContext(ctx, query)
+	assert.Equal(nil, err)
 
-	// Test Commit
 	err = tx.Commit()
 	assert.Equal(nil, err)
 
@@ -187,8 +161,17 @@ func testTransaction(t *testing.T, db *DB, expectedSpan tracer.Span) {
 	traces = db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans = traces[0]
-	assert.Len(spans, 1)
-	actualSpan = spans[0]
+	assert.Len(spans, 3)
+
+	actualSpan = spans[1]
+	execSpan := expectedSpan
+	execSpan.Name += "exec"
+	execSpan.Resource = query
+	execSpan.SetMeta("sql.query", query)
+	compareSpan(assert, &execSpan, actualSpan)
+	delete(expectedSpan.Meta, "sql.query")
+
+	actualSpan = spans[2]
 	commitSpan := expectedSpan
 	commitSpan.Name += "commit"
 	commitSpan.Resource = "Commit"
