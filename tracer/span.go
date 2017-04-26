@@ -68,6 +68,7 @@ func NewSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 		Name:     name,
 		Service:  service,
 		Resource: resource,
+		Meta:     tracer.getAllMeta(),
 		SpanID:   spanID,
 		TraceID:  traceID,
 		ParentID: parentID,
