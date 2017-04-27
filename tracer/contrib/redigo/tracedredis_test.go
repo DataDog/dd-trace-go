@@ -37,13 +37,12 @@ func TestClient(t *testing.T) {
 	assert.Equal(span.GetMeta("redis.args_length"), "2")
 }
 
-func TestError(t *testing.T) {
+func TestCommandError(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
 	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
-	c.SetService("another-service")
 	_, err := c.Do("NOT_A_COMMAND", context.Background())
 
 	testTracer.FlushTraces()
@@ -56,11 +55,21 @@ func TestError(t *testing.T) {
 	assert.Equal(int32(span.Error), int32(1))
 	assert.Equal(span.GetMeta("error.msg"), err.Error())
 	assert.Equal(span.Name, "redis.command")
-	assert.Equal(span.Service, "another-service")
+	assert.Equal(span.Service, "my-service")
 	assert.Equal(span.Resource, "NOT_A_COMMAND")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(span.GetMeta("out.port"), "6379")
 	assert.Equal(span.GetMeta("redis.raw_command"), "NOT_A_COMMAND")
+}
+
+func TestConnectionError(t *testing.T) {
+	assert := assert.New(t)
+	testTracer, _ := getTestTracer()
+	testTracer.DebugLoggingEnabled = debug
+
+	_, err := TracedDial("redis-service", testTracer, "tcp", "000.0.0:1111")
+
+	assert.Contains(err.Error(), "dial tcp: lookup 000.0.0:")
 }
 
 func TestInheritance(t *testing.T) {
