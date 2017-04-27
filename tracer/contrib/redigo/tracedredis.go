@@ -28,7 +28,7 @@ type TraceParams struct {
 }
 
 // TracedDial will return a TracedConn, it is meant to replace the redis.Dial function.
-func TracedDial(service string, tracer *tracer.Tracer, network, address string, options ...redis.DialOption) (TracedConn, error) {
+func TracedDial(service string, tracer *tracer.Tracer, network, address string, options ...redis.DialOption) (redis.Conn, error) {
 	c, err := redis.Dial(network, address)
 	addr := strings.Split(address, ":")
 	var host, port string
@@ -43,14 +43,8 @@ func TracedDial(service string, tracer *tracer.Tracer, network, address string, 
 	return tc, err
 }
 
-// SetService allows to change the spans service set in TracedDial on a TracedConn.
-func (tc *TracedConn) SetService(service string) {
-	tc.traceParams.tracer.SetServiceInfo(service, "redis", ext.AppTypeDB)
-	tc.traceParams.service = service
-}
-
 // TracedDialURL will return a TracedConn, this is the traced version of redis.DialURL.
-func TracedDialURL(service string, tracer *tracer.Tracer, rawurl string, options ...redis.DialOption) (TracedConn, error) {
+func TracedDialURL(service string, tracer *tracer.Tracer, rawurl string, options ...redis.DialOption) (redis.Conn, error) {
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		return TracedConn{}, err
