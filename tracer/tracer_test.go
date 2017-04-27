@@ -2,7 +2,6 @@ package tracer
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"sync"
 	"testing"
@@ -245,34 +244,6 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	assert.Len(traces, 2)
 	assert.Len(traces[0], 2)
 	assert.Len(traces[1], 2)
-}
-
-// Prior to a bug fix, this failed when running `go test -race`
-func TestTracerConcurrentMetricsAccess(t *testing.T) {
-	tracer, _ := getTestTracer()
-
-	done := make(chan struct{})
-	go func() {
-		span := tracer.NewRootSpan("pylons.request", "pylons", "/")
-		span.Finish()
-		// It doesn't make much sense to update the span after it's been finished,
-		// but an error in a user's code could lead to this.
-		span.SetMeta("race_test", "true")
-		span.SetMetric("race_test2", 133.7)
-		span.SetMetrics("race_test3", 133.7)
-		span.SetError(errors.New("t"))
-		done <- struct{}{}
-	}()
-
-	run := true
-	for run {
-		select {
-		case <-done:
-			run = false
-		default:
-			tracer.FlushTraces()
-		}
-	}
 }
 
 func TestTracerServices(t *testing.T) {

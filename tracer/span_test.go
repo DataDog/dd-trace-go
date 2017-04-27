@@ -37,6 +37,12 @@ func TestSpanSetMeta(t *testing.T) {
 	span.SetMeta("status.code", "200")
 	assert.Equal(len(span.Meta), 1)
 	assert.Equal(span.Meta["status.code"], "200")
+
+	// operating on a finished span is a no-op
+	span.finished = true
+	span.SetMeta("finished.test", "true")
+	assert.Equal(len(span.Meta), 1)
+	assert.Equal(span.Meta["finished.test"], "")
 }
 
 func TestSpanSetMetric(t *testing.T) {
@@ -48,6 +54,12 @@ func TestSpanSetMetric(t *testing.T) {
 	span.SetMetric("bytes", 1024.42)
 	assert.Equal(len(span.Metrics), 1)
 	assert.Equal(span.Metrics["bytes"], 1024.42)
+
+	// operating on a finished span is a no-op
+	span.finished = true
+	span.SetMetric("finished.test", 1337)
+	assert.Equal(len(span.Metrics), 1)
+	assert.Equal(span.Metrics["finished.test"], 0.0)
 }
 
 func TestSpanError(t *testing.T) {
@@ -62,6 +74,15 @@ func TestSpanError(t *testing.T) {
 	assert.Equal(len(span.Meta), 3)
 	assert.Equal(span.Meta["error.msg"], "Something wrong")
 	assert.Equal(span.Meta["error.type"], "*errors.errorString")
+
+	// operating on a finished span is a no-op
+	span = tracer.NewRootSpan("flask.request", "flask", "/")
+	span.finished = true
+	span.SetError(err)
+	assert.Equal(span.Error, int32(0))
+	assert.Equal(len(span.Meta), 0)
+	assert.Equal(span.Meta["error.msg"], "")
+	assert.Equal(span.Meta["error.type"], "")
 }
 
 func TestSpanError_Typed(t *testing.T) {
@@ -108,10 +129,11 @@ func TestSpanFinish(t *testing.T) {
 	tracer := NewTracer()
 	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 
-	// the finish should set the duration
+	// the finish should set finished and the duration
 	time.Sleep(wait)
 	span.Finish()
 	assert.True(span.Duration > int64(wait))
+	assert.True(span.finished)
 }
 
 func TestSpanFinishTwice(t *testing.T) {
@@ -148,6 +170,34 @@ func TestSpanContext(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, s2.SpanID, span.SpanID)
 
+}
+
+// Prior to a bug fix, this failed when running `go test -race`
+func TestSpanModifyWhileFlushing(t *testing.T) {
+	tracer, _ := getTestTracer()
+
+	done := make(chan struct{})
+	go func() {
+		span := tracer.NewRootSpan("pylons.request", "pylons", "/")
+		span.Finish()
+		// It doesn't make much sense to update the span after it's been finished,
+		// but an error in a user's code could lead to this.
+		span.SetMeta("race_test", "true")
+		span.SetMetric("race_test2", 133.7)
+		span.SetMetrics("race_test3", 133.7)
+		span.SetError(errors.New("t"))
+		done <- struct{}{}
+	}()
+
+	run := true
+	for run {
+		select {
+		case <-done:
+			run = false
+		default:
+			tracer.FlushTraces()
+		}
+	}
 }
 
 type boomError struct{}
