@@ -85,11 +85,19 @@ func (s *Span) SetMeta(key, value string) {
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		return
+	}
+
 	if s.Meta == nil {
 		s.Meta = make(map[string]string)
 	}
 	s.Meta[key] = value
-	s.mu.Unlock()
 }
 
 // GetMeta will return the value for the given tag or the empty string if it
@@ -122,11 +130,19 @@ func (s *Span) SetMetric(key string, val float64) {
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		return
+	}
+
 	if s.Metrics == nil {
 		s.Metrics = make(map[string]float64)
 	}
 	s.Metrics[key] = val
-	s.mu.Unlock()
 }
 
 // SetError stores an error object within the span meta. The Error status is
@@ -136,7 +152,20 @@ func (s *Span) SetError(err error) {
 		return
 	}
 
+	// FIXME: We acquire and release the lock several times over the course of
+	// this function; we may want to refactor the code to only acquire the lock
+	// once.
+	s.mu.Lock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		s.mu.Unlock()
+		return
+	}
 	s.Error = 1
+	s.mu.Unlock()
+
 	s.SetMeta(errorMsgKey, err.Error())
 	s.SetMeta(errorTypeKey, reflect.TypeOf(err).String())
 	stack := debug.Stack()
