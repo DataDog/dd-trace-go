@@ -124,7 +124,7 @@ func (tc tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dri
 			return nil, err
 		}
 
-		return tracedTx{tx, tc.TraceInfo, ctx}, nil
+		return TracedTx{tx, tc.TraceInfo, ctx}, nil
 	}
 
 	tx, err = tc.Conn.Begin()
@@ -132,7 +132,7 @@ func (tc tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dri
 		return nil, err
 	}
 
-	return tracedTx{tx, tc.TraceInfo, ctx}, nil
+	return TracedTx{tx, tc.TraceInfo, ctx}, nil
 }
 
 func (tc tracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
@@ -148,7 +148,7 @@ func (tc tracedConn) PrepareContext(ctx context.Context, query string) (stmt dri
 		if err != nil {
 			return nil, err
 		}
-		return tracedStmt{stmt, tc.TraceInfo, ctx, query}, nil
+		return TracedStmt{stmt, tc.TraceInfo, ctx, query}, nil
 	}
 
 	// If the driver does not implement PrepareContex (lib/pq for example)
@@ -156,7 +156,7 @@ func (tc tracedConn) PrepareContext(ctx context.Context, query string) (stmt dri
 	if err != nil {
 		return nil, err
 	}
-	return tracedStmt{stmt, tc.TraceInfo, ctx, query}, nil
+	return TracedStmt{stmt, tc.TraceInfo, ctx, query}, nil
 }
 
 func (tc tracedConn) Exec(query string, args []driver.Value) (driver.Result, error) {
@@ -252,13 +252,15 @@ func (tc tracedConn) QueryContext(ctx context.Context, query string, args []driv
 	return tc.Query(query, dargs)
 }
 
-type tracedTx struct {
+// TracedTx is a traced version of sql.Tx
+type TracedTx struct {
 	driver.Tx
 	TraceInfo
 	ctx context.Context
 }
 
-func (t tracedTx) Commit() (err error) {
+// Commit sends a span at the end of the transaction
+func (t TracedTx) Commit() (err error) {
 	span := t.getSpan(t.ctx, "commit")
 	span.Resource = "Commit"
 	defer func() {
@@ -269,7 +271,8 @@ func (t tracedTx) Commit() (err error) {
 	return t.Tx.Commit()
 }
 
-func (t tracedTx) Rollback() (err error) {
+// Rollback sends a span if the connection is aborted
+func (t TracedTx) Rollback() (err error) {
 	span := t.getSpan(t.ctx, "rollback")
 	span.Resource = "Rollback"
 	defer func() {
@@ -280,14 +283,16 @@ func (t tracedTx) Rollback() (err error) {
 	return t.Tx.Rollback()
 }
 
-type tracedStmt struct {
+// TracedStmt is traced version of sql.Stmt
+type TracedStmt struct {
 	driver.Stmt
 	TraceInfo
 	ctx   context.Context
 	query string
 }
 
-func (s tracedStmt) Close() (err error) {
+// Close sends a span before closing a statement
+func (s TracedStmt) Close() (err error) {
 	span := s.getSpan(s.ctx, "close")
 	span.Resource = "Close"
 	defer func() {
@@ -299,7 +304,7 @@ func (s tracedStmt) Close() (err error) {
 }
 
 // ExecContext is needed to implement the driver.StmtExecContext interface
-func (s tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
+func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
 	span := s.getSpan(s.ctx, "exec", s.query)
 	defer func() {
 		span.SetError(err)
@@ -331,7 +336,7 @@ func (s tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (
 }
 
 // QueryContext is needed to implement the driver.StmtQueryContext interface
-func (s tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
+func (s TracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
 	span := s.getSpan(s.ctx, "query", s.query)
 	defer func() {
 		span.SetError(err)

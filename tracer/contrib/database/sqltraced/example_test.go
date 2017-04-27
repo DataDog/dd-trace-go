@@ -3,27 +3,17 @@ package sqltraced
 import (
 	"context"
 	"database/sql"
-	"time"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/contrib"
 	"github.com/lib/pq"
 )
 
-func Example() {
+func ExampleDB() {
 	Register("Postgres", "test", &pq.Driver{}, nil)
 	db, _ := sql.Open("Postgres", contrib.PostgresConfig.DSN())
 	defer db.Close()
 
-	for {
-		ExampleDB(db)
-		ExampleStatement(db)
-		ExampleTransaction(db)
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
-func ExampleDB(db *sql.DB) {
 	span := tracer.NewRootSpan("postgres.parent", "test", "query-parent")
 	ctx := tracer.ContextWithSpan(context.Background(), span)
 
@@ -34,7 +24,11 @@ func ExampleDB(db *sql.DB) {
 	span.Finish()
 }
 
-func ExampleStatement(db *sql.DB) {
+func ExampleTracedStmt() {
+	Register("Postgres", "test", &pq.Driver{}, nil)
+	db, _ := sql.Open("Postgres", contrib.PostgresConfig.DSN())
+	defer db.Close()
+
 	span := tracer.NewRootSpan("postgres.parent", "test", "statement-parent")
 	ctx := tracer.ContextWithSpan(context.Background(), span)
 
@@ -48,7 +42,11 @@ func ExampleStatement(db *sql.DB) {
 	span.Finish()
 }
 
-func ExampleTransaction(db *sql.DB) {
+func ExampleTracedTx() {
+	Register("Postgres", "test", &pq.Driver{}, nil)
+	db, _ := sql.Open("Postgres", contrib.PostgresConfig.DSN())
+	defer db.Close()
+
 	span := tracer.NewRootSpan("postgres.parent", "test", "transaction-parent")
 	ctx := tracer.ContextWithSpan(context.Background(), span)
 
