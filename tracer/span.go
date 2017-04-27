@@ -78,14 +78,12 @@ func NewSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 	}
 }
 
-// SetMeta adds an arbitrary meta field to the current Span.
-func (s *Span) SetMeta(key, value string) {
+// setMeta adds an arbitrary meta field to the current Span. The span
+// must be locked outside of this function
+func (s *Span) setMeta(key, value string) {
 	if s == nil {
 		return
 	}
-
-	s.Lock()
-	defer s.Unlock()
 
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
@@ -98,6 +96,20 @@ func (s *Span) SetMeta(key, value string) {
 		s.Meta = make(map[string]string)
 	}
 	s.Meta[key] = value
+
+}
+
+// SetMeta adds an arbitrary meta field to the current Span.
+func (s *Span) SetMeta(key, value string) {
+	if s == nil {
+		return
+	}
+
+	s.Lock()
+	defer s.Unlock()
+
+	s.setMeta(key, value)
+
 }
 
 // GetMeta will return the value for the given tag or the empty string if it
@@ -152,24 +164,20 @@ func (s *Span) SetError(err error) {
 		return
 	}
 
-	// FIXME: We acquire and release the lock several times over the course of
-	// this function; we may want to refactor the code to only acquire the lock
-	// once.
 	s.Lock()
+	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
-		s.Unlock()
 		return
 	}
 	s.Error = 1
-	s.Unlock()
 
-	s.SetMeta(errorMsgKey, err.Error())
-	s.SetMeta(errorTypeKey, reflect.TypeOf(err).String())
+	s.setMeta(errorMsgKey, err.Error())
+	s.setMeta(errorTypeKey, reflect.TypeOf(err).String())
 	stack := debug.Stack()
-	s.SetMeta(errorStackKey, string(stack))
+	s.setMeta(errorStackKey, string(stack))
 }
 
 // Finish closes this Span (but not its children) providing the duration
