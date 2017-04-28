@@ -7,7 +7,7 @@ import (
 	"github.com/garyburd/redigo/redis"
 )
 
-func Example() {
+func ExampleTracedDial() {
 	tr := tracer.DefaultTracer
 	c, _ := tracedredis.TracedDial("my-service-name", tr, "tcp", "127.0.0.1:6379")
 
@@ -20,7 +20,7 @@ func Example() {
 
 }
 
-func ExamplePool() {
+func Example() {
 	tr := tracer.DefaultTracer
 	pool := &redis.Pool{
 		MaxIdle:     2,
