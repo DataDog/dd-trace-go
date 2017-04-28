@@ -39,7 +39,7 @@ func TestSpanSetMeta(t *testing.T) {
 	assert.Equal(span.Meta["status.code"], "200")
 
 	// operating on a finished span is a no-op
-	span.finished = true
+	span.Finish()
 	span.SetMeta("finished.test", "true")
 	assert.Equal(len(span.Meta), 1)
 	assert.Equal(span.Meta["finished.test"], "")
@@ -56,7 +56,7 @@ func TestSpanSetMetric(t *testing.T) {
 	assert.Equal(span.Metrics["bytes"], 1024.42)
 
 	// operating on a finished span is a no-op
-	span.finished = true
+	span.Finish()
 	span.SetMetric("finished.test", 1337)
 	assert.Equal(len(span.Metrics), 1)
 	assert.Equal(span.Metrics["finished.test"], 0.0)
@@ -77,7 +77,7 @@ func TestSpanError(t *testing.T) {
 
 	// operating on a finished span is a no-op
 	span = tracer.NewRootSpan("flask.request", "flask", "/")
-	span.finished = true
+	span.Finish()
 	span.SetError(err)
 	assert.Equal(span.Error, int32(0))
 	assert.Equal(len(span.Meta), 0)
