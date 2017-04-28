@@ -52,13 +52,13 @@ type TraceInfo struct {
 	meta     map[string]string
 }
 
-func (ti TraceInfo) getSpan(ctx context.Context, suffix string, query ...string) *tracer.Span {
-	name := fmt.Sprintf("%s.%s", strings.ToLower(ti.name), suffix)
+func (ti TraceInfo) getSpan(ctx context.Context, resource string, query ...string) *tracer.Span {
+	name := fmt.Sprintf("%s.%s", strings.ToLower(ti.name), "query")
 	span := ti.tracer.NewChildSpanFromContext(name, ctx)
 	span.Type = ext.SQLType
 	span.Service = ti.service
+	span.Resource = resource
 	if len(query) > 0 {
-		span.Resource = query[0]
 		span.SetMeta(ext.SQLQuery, query[0])
 	}
 	for k, v := range ti.meta {
@@ -112,8 +112,7 @@ type tracedConn struct {
 }
 
 func (tc tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
-	span := tc.getSpan(ctx, "begin")
-	span.Resource = "Begin"
+	span := tc.getSpan(ctx, "Begin")
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -136,7 +135,7 @@ func (tc tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dri
 }
 
 func (tc tracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
-	span := tc.getSpan(ctx, "prepare", query)
+	span := tc.getSpan(ctx, "Prepare", query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -168,7 +167,7 @@ func (tc tracedConn) Exec(query string, args []driver.Value) (driver.Result, err
 }
 
 func (tc tracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
-	span := tc.getSpan(ctx, "exec", query)
+	span := tc.getSpan(ctx, "Exec", query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -200,8 +199,7 @@ func (tc tracedConn) ExecContext(ctx context.Context, query string, args []drive
 
 // tracedConn has a Ping method in order to implement the pinger interface
 func (tc tracedConn) Ping(ctx context.Context) (err error) {
-	span := tc.getSpan(ctx, "ping")
-	span.Resource = "Ping"
+	span := tc.getSpan(ctx, "Ping")
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -223,7 +221,7 @@ func (tc tracedConn) Query(query string, args []driver.Value) (driver.Rows, erro
 }
 
 func (tc tracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
-	span := tc.getSpan(ctx, "query", query)
+	span := tc.getSpan(ctx, "Query", query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -261,8 +259,7 @@ type TracedTx struct {
 
 // Commit sends a span at the end of the transaction
 func (t TracedTx) Commit() (err error) {
-	span := t.getSpan(t.ctx, "commit")
-	span.Resource = "Commit"
+	span := t.getSpan(t.ctx, "Commit")
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -273,7 +270,7 @@ func (t TracedTx) Commit() (err error) {
 
 // Rollback sends a span if the connection is aborted
 func (t TracedTx) Rollback() (err error) {
-	span := t.getSpan(t.ctx, "rollback")
+	span := t.getSpan(t.ctx, "Rollback")
 	span.Resource = "Rollback"
 	defer func() {
 		span.SetError(err)
@@ -293,7 +290,7 @@ type TracedStmt struct {
 
 // Close sends a span before closing a statement
 func (s TracedStmt) Close() (err error) {
-	span := s.getSpan(s.ctx, "close")
+	span := s.getSpan(s.ctx, "Close")
 	span.Resource = "Close"
 	defer func() {
 		span.SetError(err)
@@ -305,7 +302,7 @@ func (s TracedStmt) Close() (err error) {
 
 // ExecContext is needed to implement the driver.StmtExecContext interface
 func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
-	span := s.getSpan(s.ctx, "exec", s.query)
+	span := s.getSpan(s.ctx, "Exec", s.query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -337,7 +334,7 @@ func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (
 
 // QueryContext is needed to implement the driver.StmtQueryContext interface
 func (s TracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
-	span := s.getSpan(s.ctx, "query", s.query)
+	span := s.getSpan(s.ctx, "Query", s.query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
