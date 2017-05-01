@@ -10,7 +10,7 @@ import (
 func TestPostgres(t *testing.T) {
 	// Initializing database
 	dsn := "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable"
-	db := NewDB("Postgres", "postgres-test", &pq.Driver{}, dsn)
+	db := newDB("Postgres", "postgres-test", &pq.Driver{}, dsn)
 	defer db.Close()
 
 	// Expected span

@@ -4,14 +4,15 @@ import (
 	"database/sql/driver"
 	"log"
 
+	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced"
 )
 
-const DEBUG = true
+const debug = true
 
-func NewDB(name, service string, driver driver.Driver, dsn string) *sqltraced.DB {
-	tracer, transport := sqltraced.GetTestTracer()
-	tracer.DebugLoggingEnabled = DEBUG
+func newDB(name, service string, driver driver.Driver, dsn string) *sqltraced.DB {
+	tracer, transport := tracer.GetTestTracer()
+	tracer.DebugLoggingEnabled = debug
 	Register(name, service, driver, tracer)
 	dbx, err := Open(name, dsn)
 	if err != nil {
