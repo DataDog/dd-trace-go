@@ -1,4 +1,4 @@
-// sqltraced provides a traced version of any driver implementing the database/sql/driver interface
+// Package sqltraced provides a traced version of any driver implementing the database/sql/driver interface
 package sqltraced
 
 import (
