@@ -5,13 +5,13 @@ import (
 	"database/sql"
 
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib"
+	"github.com/DataDog/dd-trace-go/tracer/test"
 	"github.com/lib/pq"
 )
 
 func ExampleDB() {
 	Register("Postgres", "test", &pq.Driver{}, nil)
-	db, _ := sql.Open("Postgres", contrib.PostgresConfig.DSN())
+	db, _ := sql.Open("Postgres", test.PostgresConfig.DSN())
 	defer db.Close()
 
 	span := tracer.NewRootSpan("postgres.parent", "test", "query-parent")
@@ -26,7 +26,7 @@ func ExampleDB() {
 
 func ExampleTracedStmt() {
 	Register("Postgres", "test", &pq.Driver{}, nil)
-	db, _ := sql.Open("Postgres", contrib.PostgresConfig.DSN())
+	db, _ := sql.Open("Postgres", test.PostgresConfig.DSN())
 	defer db.Close()
 
 	span := tracer.NewRootSpan("postgres.parent", "test", "statement-parent")
@@ -44,7 +44,7 @@ func ExampleTracedStmt() {
 
 func ExampleTracedTx() {
 	Register("Postgres", "test", &pq.Driver{}, nil)
-	db, _ := sql.Open("Postgres", contrib.PostgresConfig.DSN())
+	db, _ := sql.Open("Postgres", test.PostgresConfig.DSN())
 	defer db.Close()
 
 	span := tracer.NewRootSpan("postgres.parent", "test", "transaction-parent")

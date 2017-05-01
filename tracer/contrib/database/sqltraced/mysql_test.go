@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib"
+	"github.com/DataDog/dd-trace-go/tracer/test"
 	"github.com/go-sql-driver/mysql"
 )
 
 func TestMySQL(t *testing.T) {
 	// Initializing mysql database
-	db := NewDB("MySQL", "mysql-test", &mysql.MySQLDriver{}, contrib.MySQLConfig)
+	db := NewDB("MySQL", "mysql-test", &mysql.MySQLDriver{}, test.MySQLConfig)
 	defer db.Close()
 
 	// Expected span

@@ -1,4 +1,4 @@
-package contrib
+package test
 
 import "fmt"
 

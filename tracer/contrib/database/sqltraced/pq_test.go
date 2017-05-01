@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib"
+	"github.com/DataDog/dd-trace-go/tracer/test"
 	"github.com/lib/pq"
 )
 
 func TestPostgres(t *testing.T) {
 	// Initializing database
-	db := NewDB("Postgres", "postgres-test", &pq.Driver{}, contrib.PostgresConfig)
+	db := NewDB("Postgres", "postgres-test", &pq.Driver{}, test.PostgresConfig)
 	defer db.Close()
 
 	// Expected span

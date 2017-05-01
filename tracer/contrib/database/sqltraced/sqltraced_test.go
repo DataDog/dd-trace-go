@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/tracer/test"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -174,14 +174,14 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 
 type DB struct {
 	*sql.DB
-	contrib.Config
+	test.Config
 	Name      string
 	Service   string
 	Tracer    *tracer.Tracer
 	Transport *dummyTransport
 }
 
-func NewDB(name, service string, driver driver.Driver, config contrib.Config) *DB {
+func NewDB(name, service string, driver driver.Driver, config test.Config) *DB {
 	tracer, transport := getTestTracer()
 	tracer.DebugLoggingEnabled = DEBUG
 	Register(name, service, driver, tracer)
