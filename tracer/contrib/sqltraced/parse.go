@@ -1,7 +1,7 @@
 package sqltraced
 
 import (
-	"github.com/DataDog/dd-trace-go/tracer/contrib/database/sqltraced/parsedsn"
+	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/parsedsn"
 )
 
 // parseDSN returns all information passed through the DSN:
