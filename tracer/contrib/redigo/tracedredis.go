@@ -1,4 +1,5 @@
-package tracedredis
+// Package redigotrace provides tracing for the Redigo Redis client (https://github.com/garyburd/redigo)
+package redigotrace
 
 import (
 	"bytes"

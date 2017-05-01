@@ -1,43 +1,44 @@
-package tracedredis_test
+package redigotrace_test
 
 import (
 	"context"
 	"github.com/DataDog/dd-trace-go/tracer"
-	tracedredis "github.com/DataDog/dd-trace-go/tracer/contrib/redigo"
+	redigotrace "github.com/DataDog/dd-trace-go/tracer/contrib/redigo"
 	"github.com/garyburd/redigo/redis"
 )
 
-func ExampleTracedDial() {
-	tr := tracer.DefaultTracer
-	c, _ := tracedredis.TracedDial("my-service-name", tr, "tcp", "127.0.0.1:6379")
+// To start tracing Redis commands, use the TracedDial function to create a connection,
+// passing in a service name of choice.
+func Example() {
+	c, _ := redigotrace.TracedDial("my-redis-backend", tracer.DefaultTracer, "tcp", "127.0.0.1:6379")
 
-	// This call will create a basic span with no parent
-	c.Do("SET", 1, "truck")
+	// Emit spans per command by using your Redis connection as usual
+	c.Do("SET", "vehicle", "truck")
 
-	ctx := context.Background()
-	// This will a create a span that inherits from the span in the context if exists
-	c.Do("SET", 2, "cheese", ctx)
+	// Use a context to pass information down the call chain
+	root := tracer.NewRootSpan("parent.request", "web", "/home")
+	ctx := root.Context(context.Background())
 
+	// When passed a context as the final argument, c.Do will emit a span inheriting from 'parent.request'
+	c.Do("SET", "food", "cheese", ctx)
+	root.Finish()
 }
 
-func Example() {
-	tr := tracer.DefaultTracer
+// Alternatively, provide a redis URL to the TracedDialURL function
+func Example_dialURL() {
+	c, _ := redigotrace.TracedDialURL("my-redis-backend", tracer.DefaultTracer, "redis://127.0.0.1:6379")
+	c.Do("SET", "vehicle", "truck")
+}
+
+// When using a redigo Pool, set your Dial function to return a traced connection
+func Example_pool() {
 	pool := &redis.Pool{
-		MaxIdle:     2,
-		MaxActive:   3,
-		IdleTimeout: 23,
-		Wait:        true,
 		Dial: func() (redis.Conn, error) {
-			return tracedredis.TracedDial("my-service-name", tr, "tcp", "127.0.0.1:6379")
+			return redigotrace.TracedDial("my-redis-backend", tracer.DefaultTracer, "tcp", "127.0.0.1:6379")
 		},
 	}
 
-	pc := pool.Get()
+	c := pool.Get()
 
-	// Span with no parents created with this call
-	pc.Do("SET", " whiskey", " glass")
-
-	// Span with parents if exists in the context
-	ctx := context.Background()
-	pc.Do("GET", "whiskey", ctx)
+	c.Do("SET", " whiskey", " glass")
 }
