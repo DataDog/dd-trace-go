@@ -68,7 +68,7 @@ func TracedDialURL(service string, tracer *tracer.Tracer, rawurl string, options
 }
 
 // NewChildSpan creates a span inheriting from the given context. It adds to the span useful metadata about the traced Redis connection
-func (tc TracedConn) NewChildSpan(ctx context.Context) {
+func (tc TracedConn) NewChildSpan(ctx context.Context) *tracer.Span {
 	span := tc.p.tracer.NewChildSpanFromContext("redis.command", ctx)
 	span.Service = tc.p.service
 	span.SetMeta("out.network", tc.p.network)
