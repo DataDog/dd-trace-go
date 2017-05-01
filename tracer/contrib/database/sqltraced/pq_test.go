@@ -20,11 +20,10 @@ func TestPostgres(t *testing.T) {
 		Type:    "sql",
 	}
 	expectedSpan.Meta = map[string]string{
-		"out.host":     db.Host,
-		"out.port":     db.Port,
-		"db.name":      db.DBName,
-		"db.user":      db.User,
-		"meta.sslmode": "disable",
+		"out.host": db.Host,
+		"out.port": db.Port,
+		"db.name":  db.DBName,
+		"db.user":  db.User,
 	}
 
 	// Testing MySQL driver

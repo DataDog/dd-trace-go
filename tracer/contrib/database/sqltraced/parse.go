@@ -22,23 +22,25 @@ func parseDSN(driverType, dsn string) (meta map[string]string, err error) {
 func normalize(meta map[string]string) map[string]string {
 	m := make(map[string]string)
 	for k, v := range meta {
-		m[normalizeKey(k)] = v
+		if nk, ok := normalizeKey(k); ok {
+			m[nk] = v
+		}
 	}
 	return m
 }
 
-func normalizeKey(k string) string {
+func normalizeKey(k string) (string, bool) {
 	switch k {
 	case "user":
-		return "db.user"
+		return "db.user", true
 	case "application_name":
-		return "db.application"
+		return "db.application", true
 	case "dbname":
-		return "db.name"
+		return "db.name", true
 	case "host", "port":
-		return "out." + k
+		return "out." + k, true
 	default:
-		return "meta." + k
+		return "", false
 	}
 }
 
