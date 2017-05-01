@@ -28,7 +28,7 @@ dependencies:
 database:
   override:
     - mysql -u ubuntu circle_test < tracer/test/world.mysql.sql
-    - psql -U ubuntu -d circle_test -f tracer/test/sqltraced/world.postgres.sql
+    - psql -U ubuntu -d circle_test -f tracer/test/world.postgres.sql
 
 test:
   override:
