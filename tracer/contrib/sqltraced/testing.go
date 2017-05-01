@@ -8,18 +8,18 @@ import (
 	"log"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
-	"github.com/DataDog/dd-trace-go/tracer/test"
 	"github.com/stretchr/testify/assert"
 )
 
 const DEBUG = true
 
 // Complete sequence of tests to run for each driver
-func AllTests(t *testing.T, db *DB, expectedSpan *tracer.Span) {
+func AllSQLTests(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	testDB(t, db, expectedSpan)
 	testStatement(t, db, expectedSpan)
 	testTransaction(t, db, expectedSpan)
@@ -66,9 +66,10 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert := assert.New(t)
 	query := "INSERT INTO city(name) VALUES(%s)"
-	if db.Name == "Postgres" {
+	switch strings.ToLower(db.Name) {
+	case "postgres":
 		query = fmt.Sprintf(query, "$1")
-	} else {
+	case "mysql":
 		query = fmt.Sprintf(query, "?")
 	}
 
@@ -174,25 +175,23 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 
 type DB struct {
 	*sql.DB
-	test.Config
 	Name      string
 	Service   string
 	Tracer    *tracer.Tracer
-	Transport *dummyTransport
+	Transport *DummyTransport
 }
 
-func NewDB(name, service string, driver driver.Driver, config test.Config) *DB {
-	tracer, transport := getTestTracer()
+func NewDB(name, service string, driver driver.Driver, dsn string) *DB {
+	tracer, transport := GetTestTracer()
 	tracer.DebugLoggingEnabled = DEBUG
 	Register(name, service, driver, tracer)
-	db, err := sql.Open(name, config.DSN())
+	db, err := sql.Open(name, dsn)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	return &DB{
 		db,
-		config,
 		name,
 		service,
 		tracer,
@@ -221,32 +220,32 @@ func compareSpan(t *testing.T, expectedSpan, actualSpan *tracer.Span) {
 }
 
 // Return a Tracer with a DummyTransport
-func getTestTracer() (*tracer.Tracer, *dummyTransport) {
-	transport := &dummyTransport{}
+func GetTestTracer() (*tracer.Tracer, *DummyTransport) {
+	transport := &DummyTransport{}
 	tracer := tracer.NewTracerTransport(transport)
 	return tracer, transport
 }
 
 // dummyTransport is a transport that just buffers spans and encoding
-type dummyTransport struct {
+type DummyTransport struct {
 	traces   [][]*tracer.Span
 	services map[string]tracer.Service
 }
 
-func (t *dummyTransport) SendTraces(traces [][]*tracer.Span) (*http.Response, error) {
+func (t *DummyTransport) SendTraces(traces [][]*tracer.Span) (*http.Response, error) {
 	t.traces = append(t.traces, traces...)
 	return nil, nil
 }
 
-func (t *dummyTransport) SendServices(services map[string]tracer.Service) (*http.Response, error) {
+func (t *DummyTransport) SendServices(services map[string]tracer.Service) (*http.Response, error) {
 	t.services = services
 	return nil, nil
 }
 
-func (t *dummyTransport) Traces() [][]*tracer.Span {
+func (t *DummyTransport) Traces() [][]*tracer.Span {
 	traces := t.traces
 	t.traces = nil
 	return traces
 }
 
-func (t *dummyTransport) SetHeader(key, value string) {}
+func (t *DummyTransport) SetHeader(key, value string) {}

@@ -1,16 +1,17 @@
-package sqltraced
+package sqlxtraced
 
 import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced"
 	"github.com/lib/pq"
 )
 
 func TestPostgres(t *testing.T) {
 	// Initializing database
 	dsn := "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable"
-	db := NewDB("Postgres", "postgres-test", &pq.Driver{}, dsn)
+	db := NewDB("postgres", "postgres-test", &pq.Driver{}, dsn)
 	defer db.Close()
 
 	// Expected span
@@ -27,5 +28,5 @@ func TestPostgres(t *testing.T) {
 	}
 
 	// Testing MySQL driver
-	AllSQLTests(t, db, expectedSpan)
+	sqltraced.AllSQLTests(t, db, expectedSpan)
 }
