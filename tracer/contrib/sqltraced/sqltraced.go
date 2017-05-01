@@ -43,7 +43,7 @@ func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 	if !stringInSlice(sql.Drivers(), name) {
 		sql.Register(name, td)
 	} else {
-		log.Errorf("Register: %s already registered", name)
+		log.Warnf("Register: %s already registered", name)
 	}
 }
 

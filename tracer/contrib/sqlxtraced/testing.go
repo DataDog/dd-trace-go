@@ -20,10 +20,10 @@ func newDB(name, service string, driver driver.Driver, dsn string) *sqltraced.DB
 	}
 
 	return &sqltraced.DB{
-		dbx.DB,
-		name,
-		service,
-		tracer,
-		transport,
+		DB:        dbx.DB,
+		Name:      name,
+		Service:   service,
+		Tracer:    tracer,
+		Transport: transport,
 	}
 }
