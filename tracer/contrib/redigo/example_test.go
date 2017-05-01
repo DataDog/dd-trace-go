@@ -24,6 +24,21 @@ func Example() {
 	root.Finish()
 }
 
+func ExampleTracedConn() {
+	c, _ := redigotrace.TracedDial("my-redis-backend", tracer.DefaultTracer, "tcp", "127.0.0.1:6379")
+
+	// Emit spans per command by using your Redis connection as usual
+	c.Do("SET", "vehicle", "truck")
+
+	// Use a context to pass information down the call chain
+	root := tracer.NewRootSpan("parent.request", "web", "/home")
+	ctx := root.Context(context.Background())
+
+	// When passed a context as the final argument, c.Do will emit a span inheriting from 'parent.request'
+	c.Do("SET", "food", "cheese", ctx)
+	root.Finish()
+}
+
 // Alternatively, provide a redis URL to the TracedDialURL function
 func Example_dialURL() {
 	c, _ := redigotrace.TracedDialURL("my-redis-backend", tracer.DefaultTracer, "redis://127.0.0.1:6379")
