@@ -276,7 +276,6 @@ func (t tracedTx) Commit() (err error) {
 // Rollback sends a span if the connection is aborted
 func (t tracedTx) Rollback() (err error) {
 	span := t.getSpan(t.ctx, "Rollback")
-	span.Resource = "Rollback"
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -296,7 +295,6 @@ type tracedStmt struct {
 // Close sends a span before closing a statement
 func (s tracedStmt) Close() (err error) {
 	span := s.getSpan(s.ctx, "Close")
-	span.Resource = "Close"
 	defer func() {
 		span.SetError(err)
 		span.Finish()
