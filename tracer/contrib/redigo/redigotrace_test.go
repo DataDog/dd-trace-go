@@ -1,4 +1,4 @@
-package tracedredis
+package redigotrace
 
 import (
 	"context"
