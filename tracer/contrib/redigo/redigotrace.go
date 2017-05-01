@@ -1,4 +1,5 @@
-package tracedredis
+// Package redigotrace provides tracing for the Redigo Redis client (https://github.com/garyburd/redigo)
+package redigotrace
 
 import (
 	"bytes"
@@ -12,14 +13,14 @@ import (
 	"strings"
 )
 
-// TracedConn is used to trace requests made to redis, it implements the interface redis.Conn.
+// TracedConn is an implementation of the redis.Conn interface that supports tracing
 type TracedConn struct {
 	redis.Conn
-	traceParams TraceParams
+	p traceParams
 }
 
-// TraceParams contains the params useful for tracing.
-type TraceParams struct {
+// traceParams contains fields and metadata useful for command tracing
+type traceParams struct {
 	tracer  *tracer.Tracer
 	service string
 	network string
@@ -27,7 +28,7 @@ type TraceParams struct {
 	port    string
 }
 
-// TracedDial will return a TracedConn, it is meant to replace the redis.Dial function.
+// TracedDial takes a Conn returned by redis.Dial and configures it to emit spans with the given service name
 func TracedDial(service string, tracer *tracer.Tracer, network, address string, options ...redis.DialOption) (redis.Conn, error) {
 	c, err := redis.Dial(network, address)
 	addr := strings.Split(address, ":")
@@ -39,11 +40,11 @@ func TracedDial(service string, tracer *tracer.Tracer, network, address string, 
 	}
 	host = addr[0]
 	tracer.SetServiceInfo(service, "redis", ext.AppTypeDB)
-	tc := TracedConn{c, TraceParams{tracer, service, network, host, port}}
+	tc := TracedConn{c, traceParams{tracer, service, network, host, port}}
 	return tc, err
 }
 
-// TracedDialURL will return a TracedConn, this is the traced version of redis.DialURL.
+// TracedDialURL takes a Conn returned by redis.DialURL and configures it to emit spans with the given service name
 func TracedDialURL(service string, tracer *tracer.Tracer, rawurl string, options ...redis.DialOption) (redis.Conn, error) {
 	u, err := url.Parse(rawurl)
 	if err != nil {
@@ -62,11 +63,24 @@ func TracedDialURL(service string, tracer *tracer.Tracer, rawurl string, options
 	// Set in redis.DialUrl source code
 	network := "tcp"
 	c, err := redis.DialURL(rawurl, options...)
-	tc := TracedConn{c, TraceParams{tracer, service, network, host, port}}
+	tc := TracedConn{c, traceParams{tracer, service, network, host, port}}
 	return tc, err
 }
 
-// Do overwrites redis.Do function and sends a span to the tracer.
+// NewChildSpan creates a span inheriting from the given context. It adds to the span useful metadata about the traced Redis connection
+func (tc TracedConn) NewChildSpan(ctx context.Context) *tracer.Span {
+	span := tc.p.tracer.NewChildSpanFromContext("redis.command", ctx)
+	span.Service = tc.p.service
+	span.SetMeta("out.network", tc.p.network)
+	span.SetMeta("out.port", tc.p.port)
+	span.SetMeta("out.host", tc.p.host)
+	return span
+}
+
+// Do wraps redis.Conn.Do. It sends a command to the Redis server and returns the received reply.
+// In the process it emits a span containing key information about the command sent.
+// When passed a context.Context as the final argument, Do will ensure that any span created
+// inherits from this context. The rest of the arguments are passed through to the Redis server unchanged
 func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
 	var ctx context.Context
 	var ok bool
@@ -76,7 +90,8 @@ func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interfac
 			args = args[:len(args)-1]
 		}
 	}
-	span := tc.traceParams.tracer.NewChildSpanFromContext("redis.command", ctx)
+
+	span := tc.NewChildSpan(ctx)
 	defer func() {
 		if err != nil {
 			span.SetError(err)
@@ -84,17 +99,13 @@ func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interfac
 		span.Finish()
 	}()
 
-	span.Service = tc.traceParams.service
-	span.SetMeta("out.network", tc.traceParams.network)
-	span.SetMeta("out.port", tc.traceParams.port)
-	span.SetMeta("out.host", tc.traceParams.host)
 	span.SetMeta("redis.args_length", strconv.Itoa(len(args)))
 
 	if len(commandName) > 0 {
 		span.Resource = commandName
 	} else {
 		// When the command argument to the Do method is "", then the Do method will flush the output buffer
-		// check Pipelining in https://godoc.org/github.com/garyburd/redigo/redis
+		// See https://godoc.org/github.com/garyburd/redigo/redis#hdr-Pipelining
 		span.Resource = "redigo.Conn.Flush"
 	}
 	var b bytes.Buffer
