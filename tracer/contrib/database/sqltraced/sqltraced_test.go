@@ -41,7 +41,6 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 
 	actualSpan := spans[0]
 	pingSpan := copySpan(expectedSpan, db.Tracer)
-	pingSpan.Name += "ping"
 	pingSpan.Resource = "Ping"
 	compareSpan(t, pingSpan, actualSpan)
 
@@ -58,7 +57,6 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 
 	actualSpan = spans[0]
 	querySpan := copySpan(expectedSpan, db.Tracer)
-	querySpan.Name += "query"
 	querySpan.Resource = query
 	querySpan.SetMeta("sql.query", query)
 	compareSpan(t, querySpan, actualSpan)
@@ -86,7 +84,6 @@ func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 
 	actualSpan := spans[0]
 	prepareSpan := copySpan(expectedSpan, db.Tracer)
-	prepareSpan.Name += "prepare"
 	prepareSpan.Resource = query
 	prepareSpan.SetMeta("sql.query", query)
 	compareSpan(t, prepareSpan, actualSpan)
@@ -104,7 +101,6 @@ func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	actualSpan = spans[0]
 
 	execSpan := copySpan(expectedSpan, db.Tracer)
-	execSpan.Name += "exec"
 	execSpan.Resource = query
 	execSpan.SetMeta("sql.query", query)
 	compareSpan(t, execSpan, actualSpan)
@@ -127,7 +123,6 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 
 	actualSpan := spans[0]
 	beginSpan := copySpan(expectedSpan, db.Tracer)
-	beginSpan.Name += "begin"
 	beginSpan.Resource = "Begin"
 	compareSpan(t, beginSpan, actualSpan)
 
@@ -142,7 +137,6 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert.Len(spans, 1)
 	actualSpan = spans[0]
 	rollbackSpan := copySpan(expectedSpan, db.Tracer)
-	rollbackSpan.Name += "rollback"
 	rollbackSpan.Resource = "Rollback"
 	compareSpan(t, rollbackSpan, actualSpan)
 
@@ -167,7 +161,6 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 
 	actualSpan = spans[1]
 	execSpan := copySpan(expectedSpan, db.Tracer)
-	execSpan.Name += "exec"
 	execSpan.Resource = query
 	execSpan.SetMeta("sql.query", query)
 	compareSpan(t, execSpan, actualSpan)
@@ -175,7 +168,6 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 
 	actualSpan = spans[2]
 	commitSpan := copySpan(expectedSpan, db.Tracer)
-	commitSpan.Name += "commit"
 	commitSpan.Resource = "Commit"
 	compareSpan(t, commitSpan, actualSpan)
 }

@@ -59,6 +59,7 @@ func (ti TraceInfo) getSpan(ctx context.Context, resource string, query ...strin
 	span.Service = ti.service
 	span.Resource = resource
 	if len(query) > 0 {
+		span.Resource = query[0]
 		span.SetMeta(ext.SQLQuery, query[0])
 	}
 	for k, v := range ti.meta {
