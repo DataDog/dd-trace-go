@@ -1,4 +1,5 @@
-package tracedredis
+// Package goredistrace provides tracing for the go-redis Redis client (https://github.com/go-redis/redis)
+package goredistrace
 
 import (
 	"bytes"
@@ -13,17 +14,16 @@ import (
 // TracedClient is used to trace requests to a redis server.
 type TracedClient struct {
 	*redis.Client
-	traceParams TraceParams
+	traceParams traceParams
 }
 
 // TracedPipeline is used to trace pipelines with a redis server.
 type TracedPipeline struct {
 	*redis.Pipeline
-	traceParams TraceParams
+	traceParams traceParams
 }
 
-// TraceParams contains the tracer and params that we want to trace.
-type TraceParams struct {
+type traceParams struct {
 	host    string
 	port    string
 	db      string
@@ -47,7 +47,7 @@ func NewTracedClient(opt *redis.Options, t *tracer.Tracer, service string) *Trac
 	t.SetServiceInfo(service, "redis", ext.AppTypeDB)
 	tc := &TracedClient{
 		client,
-		TraceParams{
+		traceParams{
 			host,
 			port,
 			db,
@@ -104,7 +104,7 @@ func (c *TracedPipeline) Exec() ([]redis.Cmder, error) {
 	return cmds, err
 }
 
-// String is a used to return a string of all the comands, one comand per line.
+// String returns a string representation of a slice of redis Commands, separated by newlines
 func String(cmds []redis.Cmder) string {
 	var b bytes.Buffer
 	for _, cmd := range cmds {

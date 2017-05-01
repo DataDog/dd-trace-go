@@ -1,4 +1,4 @@
-package tracedredis
+package goredistrace
 
 import (
 	"context"
