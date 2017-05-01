@@ -1,4 +1,7 @@
-// Package sqltraced provides a traced version of any driver implementing the database/sql/driver interface
+// Package sqltraced provides a traced version of any driver implementing the database/sql/driver interface.
+// Be careful if your using this package to trace sqlx calls, it won't work.
+// Indeed the BindType function used in the jmoiron/sqlx package relies on hardcoded driver names and is incompatible with our package.
+// Use "github.com/DataDog/dd-trace-go/tracer/contrib/sqlxtraced" instead.
 package sqltraced
 
 import (
@@ -16,9 +19,9 @@ import (
 )
 
 // Register takes a driver and registers a traced version of this one.
-// However, user must take care not using the same name of the original driver
-// E.g. setting the name to "mysql" for tracing the mysql driver will not work.
-// You can use the name "MySQL" to avoid that.
+// However, user must take care not using the same name of the original driver.
+// E.g. use "MySQL" instead of "mysql".
+// Usage: you need to register a traced driver before any try to open a connection with it.
 func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 	log.Infof("Register: name=%s, service=%s", name, service)
 
@@ -30,7 +33,7 @@ func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 		trc = tracer.DefaultTracer
 	}
 
-	ti := TraceInfo{
+	ti := traceInfo{
 		name:    name,
 		service: service,
 		tracer:  trc,
@@ -44,8 +47,8 @@ func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
 	}
 }
 
-// TraceInfo stores all information relative to the tracing
-type TraceInfo struct {
+// traceInfo stores all information relative to the tracing
+type traceInfo struct {
 	name     string
 	service  string
 	resource string
@@ -53,7 +56,7 @@ type TraceInfo struct {
 	meta     map[string]string
 }
 
-func (ti TraceInfo) getSpan(ctx context.Context, resource string, query ...string) *tracer.Span {
+func (ti traceInfo) getSpan(ctx context.Context, resource string, query ...string) *tracer.Span {
 	name := fmt.Sprintf("%s.%s", strings.ToLower(ti.name), "query")
 	span := ti.tracer.NewChildSpanFromContext(name, ctx)
 	span.Type = ext.SQLType
@@ -75,7 +78,7 @@ func (ti TraceInfo) getSpan(ctx context.Context, resource string, query ...strin
 // of the driver's methods.
 type tracedDriver struct {
 	driver.Driver
-	TraceInfo
+	traceInfo
 }
 
 // Open returns a tracedConn  so that we can pass all the info we get from the DSN
@@ -99,7 +102,7 @@ func (td tracedDriver) Open(dsn string) (c driver.Conn, err error) {
 		return nil, err
 	}
 
-	ti := TraceInfo{
+	ti := traceInfo{
 		name:    td.name,
 		service: td.service,
 		tracer:  td.tracer,
@@ -110,7 +113,7 @@ func (td tracedDriver) Open(dsn string) (c driver.Conn, err error) {
 
 type tracedConn struct {
 	driver.Conn
-	TraceInfo
+	traceInfo
 }
 
 func (tc tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
@@ -125,7 +128,7 @@ func (tc tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dri
 			return nil, err
 		}
 
-		return TracedTx{tx, tc.TraceInfo, ctx}, nil
+		return tracedTx{tx, tc.traceInfo, ctx}, nil
 	}
 
 	tx, err = tc.Conn.Begin()
@@ -133,7 +136,7 @@ func (tc tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dri
 		return nil, err
 	}
 
-	return TracedTx{tx, tc.TraceInfo, ctx}, nil
+	return tracedTx{tx, tc.traceInfo, ctx}, nil
 }
 
 func (tc tracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
@@ -149,7 +152,7 @@ func (tc tracedConn) PrepareContext(ctx context.Context, query string) (stmt dri
 		if err != nil {
 			return nil, err
 		}
-		return TracedStmt{stmt, tc.TraceInfo, ctx, query}, nil
+		return tracedStmt{stmt, tc.traceInfo, ctx, query}, nil
 	}
 
 	// If the driver does not implement PrepareContex (lib/pq for example)
@@ -157,7 +160,7 @@ func (tc tracedConn) PrepareContext(ctx context.Context, query string) (stmt dri
 	if err != nil {
 		return nil, err
 	}
-	return TracedStmt{stmt, tc.TraceInfo, ctx, query}, nil
+	return tracedStmt{stmt, tc.traceInfo, ctx, query}, nil
 }
 
 func (tc tracedConn) Exec(query string, args []driver.Value) (driver.Result, error) {
@@ -252,15 +255,15 @@ func (tc tracedConn) QueryContext(ctx context.Context, query string, args []driv
 	return tc.Query(query, dargs)
 }
 
-// TracedTx is a traced version of sql.Tx
-type TracedTx struct {
+// tracedTx is a traced version of sql.Tx
+type tracedTx struct {
 	driver.Tx
-	TraceInfo
+	traceInfo
 	ctx context.Context
 }
 
 // Commit sends a span at the end of the transaction
-func (t TracedTx) Commit() (err error) {
+func (t tracedTx) Commit() (err error) {
 	span := t.getSpan(t.ctx, "Commit")
 	defer func() {
 		span.SetError(err)
@@ -271,7 +274,7 @@ func (t TracedTx) Commit() (err error) {
 }
 
 // Rollback sends a span if the connection is aborted
-func (t TracedTx) Rollback() (err error) {
+func (t tracedTx) Rollback() (err error) {
 	span := t.getSpan(t.ctx, "Rollback")
 	span.Resource = "Rollback"
 	defer func() {
@@ -282,16 +285,16 @@ func (t TracedTx) Rollback() (err error) {
 	return t.Tx.Rollback()
 }
 
-// TracedStmt is traced version of sql.Stmt
-type TracedStmt struct {
+// tracedStmt is traced version of sql.Stmt
+type tracedStmt struct {
 	driver.Stmt
-	TraceInfo
+	traceInfo
 	ctx   context.Context
 	query string
 }
 
 // Close sends a span before closing a statement
-func (s TracedStmt) Close() (err error) {
+func (s tracedStmt) Close() (err error) {
 	span := s.getSpan(s.ctx, "Close")
 	span.Resource = "Close"
 	defer func() {
@@ -303,7 +306,7 @@ func (s TracedStmt) Close() (err error) {
 }
 
 // ExecContext is needed to implement the driver.StmtExecContext interface
-func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
+func (s tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
 	span := s.getSpan(s.ctx, "Exec", s.query)
 	defer func() {
 		span.SetError(err)
@@ -335,7 +338,7 @@ func (s TracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (
 }
 
 // QueryContext is needed to implement the driver.StmtQueryContext interface
-func (s TracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
+func (s tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
 	span := s.getSpan(s.ctx, "Query", s.query)
 	defer func() {
 		span.SetError(err)
