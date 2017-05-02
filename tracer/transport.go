@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 )
 
 const (
 	defaultHostname    = "localhost"
 	defaultPort        = "8126"
-	defaultEncoder     = MSGPACK_ENCODER // defines the default encoder used when the Transport is initialized
-	legacyEncoder      = JSON_ENCODER    // defines the legacy encoder used with earlier agent versions
-	defaultHTTPTimeout = time.Second     // defines the current timeout before giving up with the send process
-	encoderPoolSize    = 5               // how many encoders are available
+	defaultEncoder     = MSGPACK_ENCODER         // defines the default encoder used when the Transport is initialized
+	legacyEncoder      = JSON_ENCODER            // defines the legacy encoder used with earlier agent versions
+	defaultHTTPTimeout = time.Second             // defines the current timeout before giving up with the send process
+	encoderPoolSize    = 5                       // how many encoders are available
+	traceCountHeader   = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
 )
 
 // Transport is an interface for span submission to the agent.
@@ -98,6 +100,7 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
+	req.Header.Set(traceCountHeader, strconv.Itoa(len(traces)))
 	response, err := t.client.Do(req)
 
 	// if we have an error, return an empty Response to protect against nil pointer dereference
