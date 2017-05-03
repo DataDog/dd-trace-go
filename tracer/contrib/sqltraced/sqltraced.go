@@ -97,7 +97,7 @@ func (td tracedDriver) Open(dsnAndService string) (c driver.Conn, err error) {
 	}
 
 	ti := traceInfo{
-		tracer:     td.Tracer,
+		tracer:     td.tracer,
 		driverName: td.driverName,
 		service:    service,
 		meta:       meta,
