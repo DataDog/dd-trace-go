@@ -1,21 +1,37 @@
-package sqltraced
+package sqltraced_test
 
 import (
 	"context"
+	"log"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced"
 	"github.com/DataDog/dd-trace-go/tracer/test"
 	"github.com/lib/pq"
 )
 
 func Example() {
-	// You first have to register a traced version of the driver.
-	// Make sure the `name` you register it is different from the
-	// original driver name. E.g. "Postgres" != "postgres"
-	Register("Postgres", &pq.Driver{}, nil)
+	// First register a traced version of your driver of choice.
+	sqltraced.Register("postgres", &pq.Driver{})
 
-	// When calling sql.Open(), you need to specify the name of the traced driver.
-	db, _ := Open("Postgres", test.PostgresConfig.DSN(), "test")
+	// Open a connection to your database, passing in a service name
+	// that identifies your DB
+	db, _ := sqltraced.Open("postgres", test.PostgresConfig.DSN(), "web-backend")
+	defer db.Close()
+
+	// Now use the connection as usual
+	age := 27
+	rows, err := db.Query("SELECT name FROM users WHERE age=?", age)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+}
+
+func Example_context() {
+	// Register and Open a connection with sqltraced
+	sqltraced.Register("postgres", &pq.Driver{})
+	db, _ := sqltraced.Open("postgres", test.PostgresConfig.DSN(), "web-backend")
 	defer db.Close()
 
 	// We create here a parent span for the purpose of the example
