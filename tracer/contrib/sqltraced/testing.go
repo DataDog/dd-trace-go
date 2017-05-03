@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const debug = true
+
 // AllSQLTests applies a sequence of unit tests to check the correct tracing of sql features.
 func AllSQLTests(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	testDB(t, db, expectedSpan)
@@ -37,7 +39,7 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	actualSpan := spans[0]
 	pingSpan := tracer.CopySpan(expectedSpan, db.Tracer)
 	pingSpan.Resource = "Ping"
-	tracer.CompareSpan(t, pingSpan, actualSpan)
+	tracer.CompareSpan(t, pingSpan, actualSpan, debug)
 
 	// Test db.Query
 	rows, err := db.Query(query)
@@ -168,8 +170,6 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	tracer.CompareSpan(t, commitSpan, actualSpan)
 }
 
-const debug = true
-
 // DB is a struct dedicated for testing
 type DB struct {
 	*sql.DB
@@ -182,8 +182,8 @@ type DB struct {
 func newDB(name, service string, driver driver.Driver, dsn string) *DB {
 	tracer, transport := tracer.GetTestTracer()
 	tracer.DebugLoggingEnabled = debug
-	Register(name, service, driver, tracer)
-	db, err := sql.Open(name, dsn)
+	Register(name, driver, tracer)
+	db, err := Open(name, dsn, service)
 	if err != nil {
 		log.Fatal(err)
 	}

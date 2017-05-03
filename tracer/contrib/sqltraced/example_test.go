@@ -2,7 +2,6 @@ package sqltraced
 
 import (
 	"context"
-	"database/sql"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/test"
@@ -13,10 +12,10 @@ func Example() {
 	// You first have to register a traced version of the driver.
 	// Make sure the `name` you register it is different from the
 	// original driver name. E.g. "Postgres" != "postgres"
-	Register("Postgres", "test", &pq.Driver{}, nil)
+	Register("Postgres", &pq.Driver{}, nil)
 
 	// When calling sql.Open(), you need to specify the name of the traced driver.
-	db, _ := sql.Open("Postgres", test.PostgresConfig.DSN())
+	db, _ := Open("Postgres", test.PostgresConfig.DSN(), "test")
 	defer db.Close()
 
 	// We create here a parent span for the purpose of the example

@@ -5,12 +5,12 @@ import (
 )
 
 // parseDSN returns all information passed through the DSN:
-func parseDSN(driverType, dsn string) (meta map[string]string, err error) {
-	switch driverType {
-	case "*pq.Driver":
-		meta, err = parsedsn.Postgres(dsn)
-	case "*mysql.MySQLDriver":
+func parseDSN(driverName, dsn string) (meta map[string]string, err error) {
+	switch driverName {
+	case "mysql":
 		meta, err = parsedsn.MySQL(dsn)
+	case "postgres":
+		meta, err = parsedsn.Postgres(dsn)
 	}
 	meta = normalize(meta)
 	return meta, err

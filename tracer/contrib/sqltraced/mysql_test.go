@@ -10,7 +10,7 @@ import (
 func TestMySQL(t *testing.T) {
 	// Initializing mysql database
 	dsn := "ubuntu@tcp(127.0.0.1:3306)/circle_test"
-	db := newDB("MySQL", "mysql-test", &mysql.MySQLDriver{}, dsn)
+	db := newDB("mysql", "mysql-test", &mysql.MySQLDriver{}, dsn)
 	defer db.Close()
 
 	// Expected span

@@ -3,8 +3,40 @@ package sqltraced
 import (
 	"database/sql/driver"
 	"errors"
+	"fmt"
+	"reflect"
 	"sort"
+	"strings"
 )
+
+func GetDriverName(driver driver.Driver) string {
+	if driver == nil {
+		return ""
+	}
+
+	driverType := fmt.Sprintf("%s", reflect.TypeOf(driver))
+	switch driverType {
+	case "*mysql.MySQLDriver":
+		return "mysql"
+	case "*pq.Driver":
+		return "postgres"
+	default:
+		return ""
+	}
+}
+
+func GetTracedDriverName(driverName string) string {
+	return driverName + "Traced"
+}
+
+func newDNSAndService(dsn, service string) string {
+	return dsn + "|" + service
+}
+
+func parseDNSAndService(dsnAndService string) (dsn, service string) {
+	tab := strings.Split(dsnAndService, "|")
+	return tab[0], tab[1]
+}
 
 // namedValueToValue is a helper function copied from the database/sql package
 func namedValueToValue(named []driver.NamedValue) ([]driver.Value, error) {

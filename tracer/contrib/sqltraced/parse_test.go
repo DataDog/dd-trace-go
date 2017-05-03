@@ -16,9 +16,9 @@ func TestParseDSN(t *testing.T) {
 		"out.port": "5432",
 		"db.name":  "mydb",
 	}
-	o, err := parseDSN("*pq.Driver", "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full")
+	m, err := parseDSN("postgres", "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full")
 	assert.Equal(nil, err)
-	assert.True(reflect.DeepEqual(expected, o))
+	assert.True(reflect.DeepEqual(expected, m))
 
 	expected = map[string]string{
 		"db.user":  "bob",
@@ -26,9 +26,9 @@ func TestParseDSN(t *testing.T) {
 		"out.port": "5432",
 		"db.name":  "mydb",
 	}
-	o, err = parseDSN("*mysql.MySQLDriver", "bob:secret@tcp(1.2.3.4:5432)/mydb")
+	m, err = parseDSN("mysql", "bob:secret@tcp(1.2.3.4:5432)/mydb")
 	assert.Equal(nil, err)
-	assert.True(reflect.DeepEqual(expected, o))
+	assert.True(reflect.DeepEqual(expected, m))
 
 	expected = map[string]string{
 		"out.port":       "5433",
@@ -38,7 +38,7 @@ func TestParseDSN(t *testing.T) {
 		"db.user":        "dog",
 	}
 	dsn := "connect_timeout=0 binary_parameters=no password=zMWmQz26GORmgVVKEbEl dbname=dogdatastaging application_name=trace-api port=5433 sslmode=disable host=master-db-master-active.postgres.service.consul user=dog"
-	o, err = parseDSN("*pq.Driver", dsn)
+	m, err = parseDSN("postgres", dsn)
 	assert.Equal(nil, err)
-	assert.True(reflect.DeepEqual(expected, o))
+	assert.True(reflect.DeepEqual(expected, m))
 }

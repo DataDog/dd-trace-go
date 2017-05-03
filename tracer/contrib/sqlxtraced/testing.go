@@ -13,8 +13,8 @@ const debug = true
 func newDB(name, service string, driver driver.Driver, dsn string) *sqltraced.DB {
 	tracer, transport := tracer.GetTestTracer()
 	tracer.DebugLoggingEnabled = debug
-	Register(name, service, driver, tracer)
-	dbx, err := Open(name, dsn)
+	Register(name, driver, tracer)
+	dbx, err := Open(name, dsn, service)
 	if err != nil {
 		log.Fatal(err)
 	}

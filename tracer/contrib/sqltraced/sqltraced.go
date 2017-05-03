@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
-	"reflect"
 	"strings"
 
 	log "github.com/cihub/seelog"
@@ -22,42 +21,91 @@ import (
 // However, user must take care not using the same name of the original driver.
 // E.g. use "MySQL" instead of "mysql".
 // Usage: you need to register a traced driver before any try to open a connection with it.
-func Register(name, service string, driver driver.Driver, trc *tracer.Tracer) {
-	log.Infof("Register: name=%s, service=%s", name, service)
-
+func Register(driverName string, driver driver.Driver, trc *tracer.Tracer) {
 	if driver == nil {
-		log.Error("Register: driver is nil")
+		log.Error("RegisterTracedDriver: driver is nil")
 		return
 	}
 	if trc == nil {
 		trc = tracer.DefaultTracer
 	}
 
-	ti := traceInfo{
-		name:    name,
-		service: service,
-		tracer:  trc,
-	}
-	td := tracedDriver{driver, ti}
-
-	if !stringInSlice(sql.Drivers(), name) {
-		sql.Register(name, td)
+	tracedDriverName := GetTracedDriverName(driverName)
+	if !stringInSlice(sql.Drivers(), tracedDriverName) {
+		td := tracedDriver{
+			Driver:     driver,
+			Tracer:     trc,
+			driverName: driverName,
+		}
+		sql.Register(tracedDriverName, td)
+		log.Infof("Register %s driver", tracedDriverName)
 	} else {
-		log.Warnf("Register: %s already registered", name)
+		log.Warnf("RegisterTracedDriver: %s already registered", tracedDriverName)
 	}
+}
+
+// Open extends the usual API of sql.Open so that users can specify the service
+// which opens the connection.
+func Open(driverName, dataSourceName, service string) (*sql.DB, error) {
+	tracedDriverName := GetTracedDriverName(driverName)
+	// The service is passed through the DSN
+	tracedDSN := newDNSAndService(dataSourceName, service)
+
+	return sql.Open(tracedDriverName, tracedDSN)
+}
+
+// tracedDriver is a driver we use as a middleware between the database/sql package
+// and the driver chosen (e.g. mysql, postgresql...).
+// It implements the driver.Driver interface and add the tracing features on top
+// of the driver's methods.
+type tracedDriver struct {
+	driver.Driver
+	*tracer.Tracer
+	driverName string
+}
+
+// Open returns a tracedConn so that we can pass all the info we get from the DSN
+// all along the tracing
+func (td tracedDriver) Open(dnsAndService string) (c driver.Conn, err error) {
+	var meta map[string]string
+	var conn driver.Conn
+
+	dsn, service := parseDNSAndService(dnsAndService)
+
+	// Register the service to Datadog tracing API
+	td.Tracer.SetServiceInfo(service, td.driverName, ext.AppTypeDB)
+
+	// Get all kinds of information from the DSN
+	meta, err = parseDSN(td.driverName, dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err = td.Driver.Open(dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	ti := traceInfo{
+		driverName: td.driverName,
+		service:    service,
+		tracer:     td.Tracer,
+		meta:       meta,
+	}
+	return &tracedConn{conn, ti}, err
 }
 
 // traceInfo stores all information relative to the tracing
 type traceInfo struct {
-	name     string
-	service  string
-	resource string
-	tracer   *tracer.Tracer
-	meta     map[string]string
+	driverName string
+	service    string
+	resource   string
+	tracer     *tracer.Tracer
+	meta       map[string]string
 }
 
 func (ti traceInfo) getSpan(ctx context.Context, resource string, query ...string) *tracer.Span {
-	name := fmt.Sprintf("%s.%s", strings.ToLower(ti.name), "query")
+	name := fmt.Sprintf("%s.%s", strings.ToLower(ti.driverName), "query")
 	span := ti.tracer.NewChildSpanFromContext(name, ctx)
 	span.Type = ext.SQLType
 	span.Service = ti.service
@@ -70,45 +118,6 @@ func (ti traceInfo) getSpan(ctx context.Context, resource string, query ...strin
 		span.SetMeta(k, v)
 	}
 	return span
-}
-
-// tracedDriver is a driver we use as a middleware between the database/sql package
-// and the driver chosen (e.g. mysql, postgresql...).
-// It implements the driver.Driver interface and add the tracing features on top
-// of the driver's methods.
-type tracedDriver struct {
-	driver.Driver
-	traceInfo
-}
-
-// Open returns a tracedConn  so that we can pass all the info we get from the DSN
-// all along the tracing
-func (td tracedDriver) Open(dsn string) (c driver.Conn, err error) {
-	var meta map[string]string
-	var conn driver.Conn
-
-	// Register the service to Datadog tracing API
-	td.tracer.SetServiceInfo(td.service, td.name, ext.AppTypeDB)
-
-	// Get all kinds of information from the DSN
-	driverType := fmt.Sprintf("%s", reflect.TypeOf(td.Driver))
-	meta, err = parseDSN(driverType, dsn)
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err = td.Driver.Open(dsn)
-	if err != nil {
-		return nil, err
-	}
-
-	ti := traceInfo{
-		name:    td.name,
-		service: td.service,
-		tracer:  td.tracer,
-		meta:    meta,
-	}
-	return &tracedConn{conn, ti}, err
 }
 
 type tracedConn struct {

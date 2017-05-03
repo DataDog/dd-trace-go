@@ -12,8 +12,8 @@ func Example() {
 	// Make sure the `name` you register is equal to the original driver name.
 	// Indeed it is due to the implementation of the BindType function of the sqlx package
 	// which relies on hardcoded driver names.
-	Register("postgres", "postgres-test", &pq.Driver{}, nil)
-	db, err := Open("postgres", "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable")
+	Register("postgres", &pq.Driver{}, nil)
+	db, err := Open("postgres", "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable", "postgres-test")
 
 	// You can then use all the API of sqlx and all underlying sql calls will be traced.
 	orgid := 2
