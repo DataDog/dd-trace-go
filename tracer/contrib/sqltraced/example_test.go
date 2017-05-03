@@ -2,6 +2,7 @@ package sqltraced_test
 
 import (
 	"context"
+	"log"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced"
