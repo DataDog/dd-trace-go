@@ -1,19 +1,14 @@
-package sqltraced
+package sqlutils
 
 import (
 	"context"
 	"database/sql"
-	"database/sql/driver"
 	"fmt"
-	"log"
-	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/stretchr/testify/assert"
 )
-
-const debug = true
 
 // AllSQLTests applies a sequence of unit tests to check the correct tracing of sql features.
 func AllSQLTests(t *testing.T, db *DB, expectedSpan *tracer.Span) {
@@ -39,7 +34,7 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	actualSpan := spans[0]
 	pingSpan := tracer.CopySpan(expectedSpan, db.Tracer)
 	pingSpan.Resource = "Ping"
-	tracer.CompareSpan(t, pingSpan, actualSpan, debug)
+	tracer.CompareSpan(t, pingSpan, actualSpan)
 
 	// Test db.Query
 	rows, err := db.Query(query)
@@ -63,7 +58,7 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert := assert.New(t)
 	query := "INSERT INTO city(name) VALUES(%s)"
-	switch strings.ToLower(db.Name) {
+	switch db.DriverName {
 	case "postgres":
 		query = fmt.Sprintf(query, "$1")
 	case "mysql":
@@ -173,25 +168,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 // DB is a struct dedicated for testing
 type DB struct {
 	*sql.DB
-	Name      string
-	Service   string
-	Tracer    *tracer.Tracer
-	Transport *tracer.DummyTransport
-}
-
-func newDB(name, service string, driver driver.Driver, dsn string) *DB {
-	tracer, transport := tracer.GetTestTracer()
-	tracer.DebugLoggingEnabled = debug
-	db, err := OpenTraced(driver, dsn, service, tracer)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return &DB{
-		db,
-		name,
-		service,
-		tracer,
-		transport,
-	}
+	Tracer     *tracer.Tracer
+	Transport  *tracer.DummyTransport
+	DriverName string
 }

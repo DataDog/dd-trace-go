@@ -3,8 +3,6 @@ package sqltraced
 import (
 	"testing"
 
-	"github.com/go-sql-driver/mysql"
-	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -14,14 +12,6 @@ func TestStringInSlice(t *testing.T) {
 	list := []string{"mysql", "postgres", "pq"}
 	assert.True(stringInSlice(list, "pq"))
 	assert.False(stringInSlice(list, "Postgres"))
-}
-
-func TestGetDriverName(t *testing.T) {
-	assert := assert.New(t)
-
-	assert.Equal("postgres", GetDriverName(&pq.Driver{}))
-	assert.Equal("mysql", GetDriverName(&mysql.MySQLDriver{}))
-	assert.Equal("", GetDriverName(nil))
 }
 
 func TestDSNAndService(t *testing.T) {

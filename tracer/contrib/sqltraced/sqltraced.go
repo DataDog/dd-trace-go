@@ -7,18 +7,18 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
-	"strings"
 
 	log "github.com/cihub/seelog"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqlutils"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
 // OpenTraced will first register the traced version of the `driver` if not yet and will then open a connection with it.
 // This is usually the only function to use when there is no need for the granularity offered by Register and Open.
 func OpenTraced(driver driver.Driver, dataSourceName, service string, trcv ...*tracer.Tracer) (*sql.DB, error) {
-	driverName := GetDriverName(driver)
+	driverName := sqlutils.GetDriverName(driver)
 	Register(driverName, driver, trcv...)
 	return Open(driverName, dataSourceName, service)
 }
@@ -39,7 +39,7 @@ func Register(driverName string, driver driver.Driver, trcv ...*tracer.Tracer) {
 		trc = trcv[0]
 	}
 
-	tracedDriverName := GetTracedDriverName(driverName)
+	tracedDriverName := sqlutils.GetTracedDriverName(driverName)
 	if !stringInSlice(sql.Drivers(), tracedDriverName) {
 		td := tracedDriver{
 			Driver:     driver,
@@ -56,7 +56,7 @@ func Register(driverName string, driver driver.Driver, trcv ...*tracer.Tracer) {
 // Open extends the usual API of sql.Open so that users can specify the service
 // which opens the connection.
 func Open(driverName, dataSourceName, service string) (*sql.DB, error) {
-	tracedDriverName := GetTracedDriverName(driverName)
+	tracedDriverName := sqlutils.GetTracedDriverName(driverName)
 	// The service is passed through the DSN
 	dsnAndService := newDSNAndService(dataSourceName, service)
 	return sql.Open(tracedDriverName, dsnAndService)
@@ -113,7 +113,7 @@ type traceInfo struct {
 }
 
 func (ti traceInfo) getSpan(ctx context.Context, resource string, query ...string) *tracer.Span {
-	name := fmt.Sprintf("%s.%s", strings.ToLower(ti.driverName), "query")
+	name := fmt.Sprintf("%s.%s", ti.driverName, "query")
 	span := ti.tracer.NewChildSpanFromContext(name, ctx)
 	span.Type = ext.SQLType
 	span.Service = ti.service

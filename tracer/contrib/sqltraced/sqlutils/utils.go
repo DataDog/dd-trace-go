@@ -1,11 +1,34 @@
-package sqltraced
+package sqlutils
 
 import (
 	"database/sql/driver"
 	"errors"
+	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 )
+
+// GetDriverName returns the driver type.
+func GetDriverName(driver driver.Driver) string {
+	if driver == nil {
+		return ""
+	}
+	driverType := fmt.Sprintf("%s", reflect.TypeOf(driver))
+	switch driverType {
+	case "*mysql.MySQLDriver":
+		return "mysql"
+	case "*pq.Driver":
+		return "postgres"
+	default:
+		return ""
+	}
+}
+
+// GetTracedDriverName add the suffix "Traced" to the driver name.
+func GetTracedDriverName(driverName string) string {
+	return driverName + "Traced"
+}
 
 func newDSNAndService(dsn, service string) string {
 	return dsn + "|" + service
