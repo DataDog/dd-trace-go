@@ -30,11 +30,11 @@ func GetTracedDriverName(driverName string) string {
 	return driverName + "Traced"
 }
 
-func newDNSAndService(dsn, service string) string {
+func newDSNAndService(dsn, service string) string {
 	return dsn + "|" + service
 }
 
-func parseDNSAndService(dsnAndService string) (dsn, service string) {
+func parseDSNAndService(dsnAndService string) (dsn, service string) {
 	tab := strings.Split(dsnAndService, "|")
 	return tab[0], tab[1]
 }

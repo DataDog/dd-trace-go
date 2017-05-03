@@ -60,8 +60,8 @@ func Register(driverName string, driver driver.Driver, trcv ...*tracer.Tracer) {
 func Open(driverName, dataSourceName, service string) (*sql.DB, error) {
 	tracedDriverName := GetTracedDriverName(driverName)
 	// The service is passed through the DSN
-	tracedDSN := newDNSAndService(dataSourceName, service)
-	return sql.Open(tracedDriverName, tracedDSN)
+	dsnAndService := newDSNAndService(dataSourceName, service)
+	return sql.Open(tracedDriverName, dsnAndService)
 }
 
 // tracedDriver is a driver we use as a middleware between the database/sql package
@@ -76,11 +76,11 @@ type tracedDriver struct {
 
 // Open returns a tracedConn so that we can pass all the info we get from the DSN
 // all along the tracing
-func (td tracedDriver) Open(dnsAndService string) (c driver.Conn, err error) {
+func (td tracedDriver) Open(dsnAndService string) (c driver.Conn, err error) {
 	var meta map[string]string
 	var conn driver.Conn
 
-	dsn, service := parseDNSAndService(dnsAndService)
+	dsn, service := parseDSNAndService(dsnAndService)
 
 	// Register the service to Datadog tracing API
 	td.Tracer.SetServiceInfo(service, td.driverName, ext.AppTypeDB)

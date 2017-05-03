@@ -24,16 +24,16 @@ func TestGetDriverName(t *testing.T) {
 	assert.Equal("", GetDriverName(nil))
 }
 
-func TestDNSAndService(t *testing.T) {
+func TestDSNAndService(t *testing.T) {
 	assert := assert.New(t)
 
-	dns := "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable"
+	dsn := "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable"
 	service := "master-db"
 
-	dnsAndService := "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable|master-db"
-	assert.Equal(dnsAndService, newDNSAndService(dns, service))
+	dsnAndService := "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable|master-db"
+	assert.Equal(dsnAndService, newDSNAndService(dsn, service))
 
-	actualDNS, actualService := parseDNSAndService(dnsAndService)
-	assert.Equal(dns, actualDNS)
+	actualDSN, actualService := parseDSNAndService(dsnAndService)
+	assert.Equal(dsn, actualDSN)
 	assert.Equal(service, actualService)
 }
