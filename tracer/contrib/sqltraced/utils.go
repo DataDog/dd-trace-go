@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// GetDriverName returns driver type.
+// GetDriverName returns the driver type.
 func GetDriverName(driver driver.Driver) string {
 	if driver == nil {
 		return ""
@@ -25,7 +25,7 @@ func GetDriverName(driver driver.Driver) string {
 	}
 }
 
-// GetTracedDriverName add the suffix "Traced" to get the traced driver name.
+// GetTracedDriverName add the suffix "Traced" to the driver name.
 func GetTracedDriverName(driverName string) string {
 	return driverName + "Traced"
 }

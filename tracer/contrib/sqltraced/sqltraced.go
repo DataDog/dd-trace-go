@@ -1,5 +1,5 @@
 // Package sqltraced provides a traced version of any driver implementing the database/sql/driver interface.
-// To trace calls via jmoiron/sqlx , use "github.com/DataDog/dd-trace-go/tracer/contrib/sqlxtraced" instead.
+// To trace jmoiron/sqlx, use "github.com/DataDog/dd-trace-go/tracer/contrib/sqlxtraced".
 package sqltraced
 
 import (
