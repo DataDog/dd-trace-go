@@ -45,7 +45,7 @@ func Register(driverName string, driver driver.Driver, trcv ...*tracer.Tracer) {
 	if !stringInSlice(sql.Drivers(), tracedDriverName) {
 		td := tracedDriver{
 			Driver:     driver,
-			Tracer:     trc,
+			tracer:     trc,
 			driverName: driverName,
 		}
 		sql.Register(tracedDriverName, td)
@@ -70,7 +70,7 @@ func Open(driverName, dataSourceName, service string) (*sql.DB, error) {
 // of the driver's methods.
 type tracedDriver struct {
 	driver.Driver
-	*tracer.Tracer
+	tracer     *tracer.Tracer
 	driverName string
 }
 
@@ -83,7 +83,7 @@ func (td tracedDriver) Open(dsnAndService string) (c driver.Conn, err error) {
 	dsn, service := parseDSNAndService(dsnAndService)
 
 	// Register the service to Datadog tracing API
-	td.Tracer.SetServiceInfo(service, td.driverName, ext.AppTypeDB)
+	td.tracer.SetServiceInfo(service, td.driverName, ext.AppTypeDB)
 
 	// Get all kinds of information from the DSN
 	meta, err = parseDSN(td.driverName, dsn)
