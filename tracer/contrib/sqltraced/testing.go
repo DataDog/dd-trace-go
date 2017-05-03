@@ -182,8 +182,7 @@ type DB struct {
 func newDB(name, service string, driver driver.Driver, dsn string) *DB {
 	tracer, transport := tracer.GetTestTracer()
 	tracer.DebugLoggingEnabled = debug
-	Register(name, driver, tracer)
-	db, err := Open(name, dsn, service)
+	db, err := OpenTraced(driver, dsn, service, tracer)
 	if err != nil {
 		log.Fatal(err)
 	}

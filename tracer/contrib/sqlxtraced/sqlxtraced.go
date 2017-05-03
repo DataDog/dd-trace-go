@@ -9,10 +9,18 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+// OpenTraced will first register the traced version of the `driver` if not yet and will then open a connection with it.
+// This is usually the only function to use when there is no need for the granularity offered by Register and Open.
+func OpenTraced(driver driver.Driver, dataSourceName, service string, trcv ...*tracer.Tracer) (*sqlx.DB, error) {
+	driverName := sqltraced.GetDriverName(driver)
+	Register(driverName, driver, trcv...)
+	return Open(driverName, dataSourceName, service)
+}
+
 // Register registers a traced version of `driver`.
 // See "github.com/DataDog/dd-trace-go/tracer/contrib/database/sqltraced" for more information.
-func Register(driverName string, driver driver.Driver, trc *tracer.Tracer) {
-	sqltraced.Register(driverName, driver, trc)
+func Register(driverName string, driver driver.Driver, trcv ...*tracer.Tracer) {
+	sqltraced.Register(driverName, driver, trcv...)
 }
 
 // Open returns a traced version of *sqlx.DB.

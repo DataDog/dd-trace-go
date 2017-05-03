@@ -17,17 +17,28 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
+// OpenTraced will first register the traced version of the `driver` if not yet and will then open a connection with it.
+// This is usually the only function to use when there is no need for the granularity offered by Register and Open.
+func OpenTraced(driver driver.Driver, dataSourceName, service string, trcv ...*tracer.Tracer) (*sql.DB, error) {
+	driverName := GetDriverName(driver)
+	Register(driverName, driver, trcv...)
+	return Open(driverName, dataSourceName, service)
+}
+
 // Register takes a driver and registers a traced version of this one.
 // However, user must take care not using the same name of the original driver.
 // E.g. use "MySQL" instead of "mysql".
 // Usage: you need to register a traced driver before any try to open a connection with it.
-func Register(driverName string, driver driver.Driver, trc *tracer.Tracer) {
+func Register(driverName string, driver driver.Driver, trcv ...*tracer.Tracer) {
 	if driver == nil {
 		log.Error("RegisterTracedDriver: driver is nil")
 		return
 	}
-	if trc == nil {
+	var trc *tracer.Tracer
+	if len(trcv) == 0 || (len(trcv) > 0 && trcv[0] == nil) {
 		trc = tracer.DefaultTracer
+	} else {
+		trc = trcv[0]
 	}
 
 	tracedDriverName := GetTracedDriverName(driverName)
@@ -50,7 +61,6 @@ func Open(driverName, dataSourceName, service string) (*sql.DB, error) {
 	tracedDriverName := GetTracedDriverName(driverName)
 	// The service is passed through the DSN
 	tracedDSN := newDNSAndService(dataSourceName, service)
-
 	return sql.Open(tracedDriverName, tracedDSN)
 }
 
@@ -87,9 +97,9 @@ func (td tracedDriver) Open(dnsAndService string) (c driver.Conn, err error) {
 	}
 
 	ti := traceInfo{
+		tracer:     td.Tracer,
 		driverName: td.driverName,
 		service:    service,
-		tracer:     td.Tracer,
 		meta:       meta,
 	}
 	return &tracedConn{conn, ti}, err
@@ -97,10 +107,10 @@ func (td tracedDriver) Open(dnsAndService string) (c driver.Conn, err error) {
 
 // traceInfo stores all information relative to the tracing
 type traceInfo struct {
+	tracer     *tracer.Tracer
 	driverName string
 	service    string
 	resource   string
-	tracer     *tracer.Tracer
 	meta       map[string]string
 }
 

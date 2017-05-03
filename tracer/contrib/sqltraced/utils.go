@@ -9,11 +9,11 @@ import (
 	"strings"
 )
 
+// GetDriverName returns driver type.
 func GetDriverName(driver driver.Driver) string {
 	if driver == nil {
 		return ""
 	}
-
 	driverType := fmt.Sprintf("%s", reflect.TypeOf(driver))
 	switch driverType {
 	case "*mysql.MySQLDriver":
@@ -25,6 +25,7 @@ func GetDriverName(driver driver.Driver) string {
 	}
 }
 
+// GetTracedDriverName add the suffix "Traced" to get the traced driver name.
 func GetTracedDriverName(driverName string) string {
 	return driverName + "Traced"
 }
@@ -38,7 +39,7 @@ func parseDNSAndService(dsnAndService string) (dsn, service string) {
 	return tab[0], tab[1]
 }
 
-// namedValueToValue is a helper function copied from the database/sql package
+// namedValueToValue is a helper function copied from the database/sql package.
 func namedValueToValue(named []driver.NamedValue) ([]driver.Value, error) {
 	dargs := make([]driver.Value, len(named))
 	for n, param := range named {
