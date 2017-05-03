@@ -8,11 +8,11 @@ import (
 )
 
 // The API to trace sqlx calls is the same as sqltraced.
-// See "github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced" for more information on how to use it.
+// See https://godoc.org/github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced for more information on how to use it.
 func Example() {
-	// OpenTraced will first register a traced version of the postgres driver and then will return the
-	// connection with it. The third argument is used to specify the name of the service
-	// under which traces will appear in the Datadog app.
+	// OpenTraced will first register a traced version of the driver and then will return the sqlx.DB object
+	// that holds the connection with the database.
+	// The third argument is used to specify the name of the service under which traces will appear in the Datadog app.
 	db, _ := sqlxtraced.OpenTraced(&pq.Driver{}, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
 
 	// All calls through sqlx API will be traced.

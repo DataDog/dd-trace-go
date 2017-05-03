@@ -14,9 +14,9 @@ import (
 // To trace the sql calls, you just need to open your sql.DB with OpenTraced.
 // All calls through this sql.DB object will then be traced.
 func Example() {
-	// OpenTraced will first register a traced version of the postgres driver and then will return the
-	// connection with it. The third argument is used to specify the name of the service
-	// under which traces will appear in the Datadog app.
+	// OpenTraced will first register a traced version of the driver and then will return the sql.DB object
+	// that holds the connection with the database.
+	// The third argument is used to specify the name of the service under which traces will appear in the Datadog app.
 	db, err := sqltraced.OpenTraced(&pq.Driver{}, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
 	if err != nil {
 		log.Fatal(err)
@@ -34,9 +34,9 @@ func Example() {
 // the context version of the database/sql API.
 // Just make sure you are passing the parent span within the context.
 func Example_context() {
-	// OpenTraced will first register a traced version of the postgres driver and then will return the
-	// connection with it. The third argument is used to specify the name of the service
-	// under which traces will appear in the Datadog app.
+	// OpenTraced will first register a traced version of the driver and then will return the sql.DB object
+	// that holds the connection with the database.
+	// The third argument is used to specify the name of the service under which traces will appear in the Datadog app.
 	db, err := sqltraced.OpenTraced(&pq.Driver{}, "user:password@/dbname", "web-backend")
 	if err != nil {
 		log.Fatal(err)
@@ -77,9 +77,9 @@ func Example_context() {
 // You can trace all drivers implementing the database/sql/driver interface.
 // For example, you can trace the go-sql-driver/mysql with the following code.
 func Example_mySQL() {
-	// OpenTraced will first register a traced version of the mysql driver and then will return the
-	// connection with it. The third argument is used to specify the name of the service
-	// under which traces will appear in the Datadog app.
+	// OpenTraced will first register a traced version of the driver and then will return the sql.DB object
+	// that holds the connection with the database.
+	// The third argument is used to specify the name of the service under which traces will appear in the Datadog app.
 	db, err := sqltraced.OpenTraced(&mysql.MySQLDriver{}, "user:password@/dbname", "web-backend")
 	if err != nil {
 		log.Fatal(err)
