@@ -1,7 +1,5 @@
 // Package sqltraced provides a traced version of any driver implementing the database/sql/driver interface.
-// Be careful if your using this package to trace sqlx calls, it won't work.
-// Indeed the BindType function used in the jmoiron/sqlx package relies on hardcoded driver names and is incompatible with our package.
-// Use "github.com/DataDog/dd-trace-go/tracer/contrib/sqlxtraced" instead.
+// To trace calls via jmoiron/sqlx , use "github.com/DataDog/dd-trace-go/tracer/contrib/sqlxtraced" instead.
 package sqltraced
 
 import (
