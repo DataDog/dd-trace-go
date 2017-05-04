@@ -114,7 +114,8 @@ func ExampleOpenTraced() {
 
 // You can use a custom tracer by passing it through the optional last argument of OpenTraced.
 func ExampleOpenTraced_tracer() {
-	// Create and customize a new tracer that will send only half of traces to the agent.
+	// Create and customize a new tracer that will forward 50% of generated traces to the agent.
+	// (useful to manage resource usage in high-throughput environments)
 	trc := tracer.NewTracer()
 	trc.SetSampleRate(0.5)
 
