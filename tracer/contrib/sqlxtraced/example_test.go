@@ -15,7 +15,7 @@ func Example() {
 	// The third argument is used to specify the name of the service under which traces will appear in the Datadog app.
 	db, _ := sqlxtraced.OpenTraced(&pq.Driver{}, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
 
-	// All calls through sqlx API will be traced.
+	// All calls through sqlx API will then be traced.
 	query, args, _ := sqlx.In("SELECT * FROM users WHERE level IN (?);", []int{4, 6, 7})
 	query = db.Rebind(query)
 	rows, _ := db.Query(query, args...)
