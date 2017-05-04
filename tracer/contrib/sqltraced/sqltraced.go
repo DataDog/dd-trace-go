@@ -1,5 +1,5 @@
 // Package sqltraced provides a traced version of any driver implementing the database/sql/driver interface.
-// To trace calls via jmoiron/sqlx , use "github.com/DataDog/dd-trace-go/tracer/contrib/sqlxtraced" instead.
+// To trace jmoiron/sqlx, see https://godoc.org/github.com/DataDog/dd-trace-go/tracer/contrib/sqlxtraced.
 package sqltraced
 
 import (
@@ -7,26 +7,25 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
-	"strings"
 
 	log "github.com/cihub/seelog"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqlutils"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
-// OpenTraced will first register the traced version of the `driver` if not yet and will then open a connection with it.
+// OpenTraced will first register the traced version of the `driver` if not yet registered and will then open a connection with it.
 // This is usually the only function to use when there is no need for the granularity offered by Register and Open.
+// The last parameter is optional and enables you to use a custom tracer.
 func OpenTraced(driver driver.Driver, dataSourceName, service string, trcv ...*tracer.Tracer) (*sql.DB, error) {
-	driverName := GetDriverName(driver)
+	driverName := sqlutils.GetDriverName(driver)
 	Register(driverName, driver, trcv...)
 	return Open(driverName, dataSourceName, service)
 }
 
 // Register takes a driver and registers a traced version of this one.
-// However, user must take care not using the same name of the original driver.
-// E.g. use "MySQL" instead of "mysql".
-// Usage: you need to register a traced driver before any try to open a connection with it.
+// The last parameter is optional and enables you to use a custom tracer.
 func Register(driverName string, driver driver.Driver, trcv ...*tracer.Tracer) {
 	if driver == nil {
 		log.Error("RegisterTracedDriver: driver is nil")
@@ -39,7 +38,7 @@ func Register(driverName string, driver driver.Driver, trcv ...*tracer.Tracer) {
 		trc = trcv[0]
 	}
 
-	tracedDriverName := GetTracedDriverName(driverName)
+	tracedDriverName := sqlutils.GetTracedDriverName(driverName)
 	if !stringInSlice(sql.Drivers(), tracedDriverName) {
 		td := tracedDriver{
 			Driver:     driver,
@@ -53,10 +52,10 @@ func Register(driverName string, driver driver.Driver, trcv ...*tracer.Tracer) {
 	}
 }
 
-// Open extends the usual API of sql.Open so that users can specify the service
-// which opens the connection.
+// Open extends the usual API of sql.Open so you can specify the name of the service
+// under which the traces will appear in the datadog app.
 func Open(driverName, dataSourceName, service string) (*sql.DB, error) {
-	tracedDriverName := GetTracedDriverName(driverName)
+	tracedDriverName := sqlutils.GetTracedDriverName(driverName)
 	// The service is passed through the DSN
 	dsnAndService := newDSNAndService(dataSourceName, service)
 	return sql.Open(tracedDriverName, dsnAndService)
@@ -113,7 +112,7 @@ type traceInfo struct {
 }
 
 func (ti traceInfo) getSpan(ctx context.Context, resource string, query ...string) *tracer.Span {
-	name := fmt.Sprintf("%s.%s", strings.ToLower(ti.driverName), "query")
+	name := fmt.Sprintf("%s.%s", ti.driverName, "query")
 	span := ti.tracer.NewChildSpanFromContext(name, ctx)
 	span.Type = ext.SQLType
 	span.Service = ti.service

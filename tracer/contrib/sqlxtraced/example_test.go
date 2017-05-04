@@ -1,40 +1,23 @@
-package sqlxtraced
+package sqlxtraced_test
 
 import (
-	"log"
-
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
+
+	"github.com/DataDog/dd-trace-go/tracer/contrib/sqlxtraced"
 )
 
+// The API to trace sqlx calls is the same as sqltraced.
+// See https://godoc.org/github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced for more information on how to use it.
 func Example() {
-	// You first have to register a traced version of the driver.
-	// Make sure the `name` you register is equal to the original driver name.
-	// Indeed it is due to the implementation of the BindType function of the sqlx package
-	// which relies on hardcoded driver names.
-	Register("postgres", &pq.Driver{}, nil)
-	db, err := Open("postgres", "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable", "postgres-test")
+	// OpenTraced will first register a traced version of the driver and then will return the sqlx.DB object
+	// that holds the connection with the database.
+	// The third argument is used to specify the name of the service under which traces will appear in the Datadog app.
+	db, _ := sqlxtraced.OpenTraced(&pq.Driver{}, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
 
-	// You can then use all the API of sqlx and all underlying sql calls will be traced.
-	orgid := 2
-	name := "master-db"
-	sql, params, err := sqlx.In(`select meta from trace_services_metadata where org_id = ? and name = ?`,
-		orgid, name)
-
-	// This is especially the call to db.Rebind (and then BindType) that makes it impossible
-	// to use the sqltraced package for tracing sqlx
-	rows, err := db.Query(db.Rebind(sql), params...)
-	if err != nil {
-		log.Println(err)
-	}
+	// All calls through sqlx API will then be traced.
+	query, args, _ := sqlx.In("SELECT * FROM users WHERE level IN (?);", []int{4, 6, 7})
+	query = db.Rebind(query)
+	rows, _ := db.Query(query, args...)
 	defer rows.Close()
-
-	var meta string
-	for rows.Next() {
-		err := rows.Scan(&meta)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Println(meta)
-	}
 }

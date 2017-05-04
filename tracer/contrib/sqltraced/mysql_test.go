@@ -1,19 +1,29 @@
 package sqltraced
 
 import (
+	"log"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqlutils"
 	"github.com/go-sql-driver/mysql"
 )
 
 func TestMySQL(t *testing.T) {
-	// Initializing mysql database
-	dsn := "ubuntu@tcp(127.0.0.1:3306)/circle_test"
-	db := newDB("mysql", "mysql-test", &mysql.MySQLDriver{}, dsn)
+	trc, transport := tracer.GetTestTracer()
+	db, err := OpenTraced(&mysql.MySQLDriver{}, "ubuntu@tcp(127.0.0.1:3306)/circle_test", "mysql-test", trc)
+	if err != nil {
+		log.Fatal(err)
+	}
 	defer db.Close()
 
-	// Expected span
+	testDB := &sqlutils.DB{
+		DB:         db,
+		Tracer:     trc,
+		Transport:  transport,
+		DriverName: "mysql",
+	}
+
 	expectedSpan := &tracer.Span{
 		Name:    "mysql.query",
 		Service: "mysql-test",
@@ -26,6 +36,5 @@ func TestMySQL(t *testing.T) {
 		"db.name":  "circle_test",
 	}
 
-	// Testing MySQL driver
-	AllSQLTests(t, db, expectedSpan)
+	sqlutils.AllSQLTests(t, testDB, expectedSpan)
 }

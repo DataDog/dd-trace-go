@@ -1,20 +1,29 @@
 package sqlxtraced
 
 import (
+	"log"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced"
+	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqlutils"
 	"github.com/lib/pq"
 )
 
 func TestPostgres(t *testing.T) {
-	// Initializing database
-	dsn := "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable"
-	db := newDB("postgres", "postgres-test", &pq.Driver{}, dsn)
-	defer db.Close()
+	trc, transport := tracer.GetTestTracer()
+	dbx, err := OpenTraced(&pq.Driver{}, "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable", "postgres-test", trc)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer dbx.Close()
 
-	// Expected span
+	testDB := &sqlutils.DB{
+		DB:         dbx.DB,
+		Tracer:     trc,
+		Transport:  transport,
+		DriverName: "postgres",
+	}
+
 	expectedSpan := &tracer.Span{
 		Name:    "postgres.query",
 		Service: "postgres-test",
@@ -27,6 +36,5 @@ func TestPostgres(t *testing.T) {
 		"db.name":  "circle_test",
 	}
 
-	// Testing MySQL driver
-	sqltraced.AllSQLTests(t, db, expectedSpan)
+	sqlutils.AllSQLTests(t, testDB, expectedSpan)
 }
