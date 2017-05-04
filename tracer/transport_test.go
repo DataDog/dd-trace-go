@@ -1,6 +1,11 @@
 package tracer
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -45,6 +50,26 @@ func getTestServices() map[string]Service {
 	}
 }
 
+type mockDatadogAPIHandler struct {
+	t *testing.T
+}
+
+func (m mockDatadogAPIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	assert := assert.New(m.t)
+
+	header := r.Header.Get("X-Datadog-Trace-Count")
+	assert.NotEqual("", header, "X-Datadog-Trace-Count header should be here")
+	count, err := strconv.Atoi(header)
+	assert.Nil(err, "header should be an int")
+	assert.NotEqual(0, count, "there should be a non-zero amount of traces")
+}
+
+func mockDatadogAPINewServer(t *testing.T) *httptest.Server {
+	handler := mockDatadogAPIHandler{t: t}
+	server := httptest.NewServer(handler)
+	return server
+}
+
 func TestTracesAgentIntegration(t *testing.T) {
 	assert := assert.New(t)
 
@@ -60,7 +85,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	for _, tc := range testCases {
 		transport := newHTTPTransport(defaultHostname, defaultPort)
 		response, err := transport.SendTraces(tc.payload)
-		assert.Nil(err)
+		assert.NoError(err)
 		assert.NotNil(response)
 		assert.Equal(200, response.StatusCode)
 	}
@@ -74,7 +99,7 @@ func TestAPIDowngrade(t *testing.T) {
 	// if we get a 404 we should downgrade the API
 	traces := getTestTrace(2, 2)
 	response, err := transport.SendTraces(traces)
-	assert.Nil(err)
+	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
 }
@@ -87,7 +112,7 @@ func TestEncoderDowngrade(t *testing.T) {
 	// if we get a 415 because of a wrong encoder, we should downgrade the encoder
 	traces := getTestTrace(2, 2)
 	response, err := transport.SendTraces(traces)
-	assert.Nil(err)
+	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
 }
@@ -98,7 +123,7 @@ func TestTransportServices(t *testing.T) {
 	transport := newHTTPTransport(defaultHostname, defaultPort)
 
 	response, err := transport.SendServices(getTestServices())
-	assert.Nil(err)
+	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
 }
@@ -110,7 +135,7 @@ func TestTransportServicesDowngrade_0_0(t *testing.T) {
 	transport.serviceURL = "http://localhost:8126/v0.0/services"
 
 	response, err := transport.SendServices(getTestServices())
-	assert.Nil(err)
+	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
 }
@@ -122,7 +147,7 @@ func TestTransportServicesDowngrade_0_2(t *testing.T) {
 	transport.serviceURL = "http://localhost:8126/v0.2/services"
 
 	response, err := transport.SendServices(getTestServices())
-	assert.Nil(err)
+	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
 }
@@ -155,4 +180,34 @@ func TestTransportSwitchEncoder(t *testing.T) {
 	contentType := transport.headers["Content-Type"]
 	assert.Equal("application/json", encoder.ContentType())
 	assert.Equal("application/json", contentType)
+}
+
+func TestTraceCountHeader(t *testing.T) {
+	assert := assert.New(t)
+
+	testCases := []struct {
+		payload [][]*Span
+	}{
+		{getTestTrace(1, 1)},
+		{getTestTrace(10, 1)},
+		{getTestTrace(100, 10)},
+	}
+
+	receiver := mockDatadogAPINewServer(t)
+	parsedURL, err := url.Parse(receiver.URL)
+	assert.NoError(err)
+	host := parsedURL.Host
+	hostItems := strings.Split(host, ":")
+	assert.Equal(2, len(hostItems), "port should be given, as it's chosen randomly")
+	hostname := hostItems[0]
+	port := hostItems[1]
+	for _, tc := range testCases {
+		transport := newHTTPTransport(hostname, port)
+		response, err := transport.SendTraces(tc.payload)
+		assert.NoError(err)
+		assert.NotNil(response)
+		assert.Equal(200, response.StatusCode)
+	}
+
+	receiver.Close()
 }

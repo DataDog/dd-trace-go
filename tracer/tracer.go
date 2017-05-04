@@ -1,16 +1,20 @@
 package tracer
 
 import (
+	"context"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
-
-	"context"
 )
 
 const (
 	flushInterval = 2 * time.Second
 )
+
+func init() {
+	randGen = rand.New(newRandSource())
+}
 
 type Service struct {
 	Name    string `json:"-"`        // the internal of the service (e.g. acme_search, datadog_web)
@@ -35,6 +39,9 @@ type Tracer struct {
 	DebugLoggingEnabled bool
 	enabled             bool // defines if the Tracer is enabled or not
 	enableMu            sync.RWMutex
+
+	meta   map[string]string
+	metaMu sync.RWMutex
 
 	services         map[string]Service // name -> service
 	servicesModified bool
@@ -129,10 +136,46 @@ func (t *Tracer) SetServiceInfo(name, app, appType string) {
 	}
 }
 
+// SetMeta adds an arbitrary meta field at the tracer level.
+// This will append those tags to each span created by the tracer.
+func (t *Tracer) SetMeta(key, value string) {
+	if t == nil { // Defensive, span could be initialized with nil tracer
+		return
+	}
+
+	t.metaMu.Lock()
+	if t.meta == nil {
+		t.meta = make(map[string]string)
+	}
+	t.meta[key] = value
+	t.metaMu.Unlock()
+}
+
+// getAllMeta returns all the meta set by this tracer.
+// In most cases, it is nil.
+func (t *Tracer) getAllMeta() map[string]string {
+	if t == nil { // Defensive, span could be initialized with nil tracer
+		return nil
+	}
+
+	var meta map[string]string
+
+	t.metaMu.RLock()
+	if t.meta != nil {
+		meta = make(map[string]string, len(t.meta))
+		for key, value := range t.meta {
+			meta[key] = value
+		}
+	}
+	t.metaMu.RUnlock()
+
+	return meta
+}
+
 // NewRootSpan creates a span with no parent. Its ids will be randomly
 // assigned.
 func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
-	spanID := nextSpanID()
+	spanID := NextSpanID()
 	span := NewSpan(name, service, resource, spanID, spanID, 0, t)
 	t.sampler.Sample(span)
 	return span
@@ -141,7 +184,7 @@ func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 // NewChildSpan returns a new span that is child of the Span passed as
 // argument.
 func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
-	spanID := nextSpanID()
+	spanID := NextSpanID()
 
 	// when we're using parenting in inner functions, it's possible that
 	// a nil pointer is sent to this function as argument. To prevent a crash,

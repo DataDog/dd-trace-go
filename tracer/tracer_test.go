@@ -282,6 +282,42 @@ func TestTracerServicesDisabled(t *testing.T) {
 	assert.Equal(0, len(transport.services))
 }
 
+func TestTracerMeta(t *testing.T) {
+	assert := assert.New(t)
+
+	var nilTracer *Tracer
+	nilTracer.SetMeta("key", "value")
+	assert.Nil(nilTracer.getAllMeta(), "nil tracer should return nil meta")
+
+	tracer, _ := getTestTracer()
+	assert.Nil(tracer.getAllMeta(), "by default, no meta")
+	tracer.SetMeta("env", "staging")
+
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	assert.Equal("staging", span.GetMeta("env"))
+	assert.Equal("", span.GetMeta("component"))
+	span.Finish()
+	assert.Equal(map[string]string{"env": "staging"}, tracer.getAllMeta(), "there should be one meta")
+
+	tracer.SetMeta("component", "core")
+	span = tracer.NewRootSpan("pylons.request", "pylons", "/")
+	assert.Equal("staging", span.GetMeta("env"))
+	assert.Equal("core", span.GetMeta("component"))
+	span.Finish()
+	assert.Equal(map[string]string{"env": "staging", "component": "core"}, tracer.getAllMeta(), "there should be two entries")
+
+	tracer.SetMeta("env", "prod")
+	span = tracer.NewRootSpan("pylons.request", "pylons", "/")
+	assert.Equal("prod", span.GetMeta("env"))
+	assert.Equal("core", span.GetMeta("component"))
+	span.SetMeta("env", "sandbox")
+	assert.Equal("sandbox", span.GetMeta("env"))
+	assert.Equal("core", span.GetMeta("component"))
+	span.Finish()
+
+	assert.Equal(map[string]string{"env": "prod", "component": "core"}, tracer.getAllMeta(), "key1 should have been updated")
+}
+
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
