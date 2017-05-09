@@ -18,8 +18,8 @@ type TracedClient struct {
 }
 
 // TracedPipeline is used to trace pipelines executed on a redis server.
-type TracedPipeline struct {
-	*redis.Pipeline
+type TracedPipeliner struct {
+	redis.Pipeliner
 	traceParams traceParams
 }
 
@@ -60,8 +60,8 @@ func NewTracedClient(opt *redis.Options, t *tracer.Tracer, service string) *Trac
 }
 
 // Pipeline creates a TracedPipeline from a TracedClient
-func (c *TracedClient) Pipeline() *TracedPipeline {
-	return &TracedPipeline{
+func (c *TracedClient) Pipeline() *TracedPipeliner {
+	return &TracedPipeliner{
 		c.Client.Pipeline(),
 		c.traceParams,
 	}
@@ -69,7 +69,7 @@ func (c *TracedClient) Pipeline() *TracedPipeline {
 
 // ExecWithContext calls Pipeline.Exec(). It ensures that the resulting Redis calls
 // are traced, and that emitted spans are children of the given Context
-func (c *TracedPipeline) ExecWithContext(ctx context.Context) ([]redis.Cmder, error) {
+func (c *TracedPipeliner) ExecWithContext(ctx context.Context) ([]redis.Cmder, error) {
 	span := c.traceParams.tracer.NewChildSpanFromContext("redis.command", ctx)
 	span.Service = c.traceParams.service
 
@@ -77,7 +77,7 @@ func (c *TracedPipeline) ExecWithContext(ctx context.Context) ([]redis.Cmder, er
 	span.SetMeta("out.port", c.traceParams.port)
 	span.SetMeta("out.db", c.traceParams.db)
 
-	cmds, err := c.Pipeline.Exec()
+	cmds, err := c.Pipeliner.Exec()
 	if err != nil {
 		span.SetError(err)
 	}
@@ -88,14 +88,14 @@ func (c *TracedPipeline) ExecWithContext(ctx context.Context) ([]redis.Cmder, er
 }
 
 // Exec calls Pipeline.Exec() ensuring that the resulting Redis calls are traced
-func (c *TracedPipeline) Exec() ([]redis.Cmder, error) {
+func (c *TracedPipeliner) Exec() ([]redis.Cmder, error) {
 	span := c.traceParams.tracer.NewRootSpan("redis.command", c.traceParams.service, "redis")
 
 	span.SetMeta("out.host", c.traceParams.host)
 	span.SetMeta("out.port", c.traceParams.port)
 	span.SetMeta("out.db", c.traceParams.db)
 
-	cmds, err := c.Pipeline.Exec()
+	cmds, err := c.Pipeliner.Exec()
 	if err != nil {
 		span.SetError(err)
 	}
