@@ -3,7 +3,9 @@ package goredistrace_test
 import (
 	"context"
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/contrib/gin-gonic/gintrace"
 	"github.com/DataDog/dd-trace-go/tracer/contrib/go-redis"
+	"github.com/gin-gonic/gin"
 	redis "github.com/go-redis/redis"
 	"time"
 )
@@ -28,6 +30,17 @@ func Example() {
 	c.SetContext(ctx)
 	c.Set("food", "cheese", 0)
 	root.Finish()
+
+	// Contexts can be easily passed between Datadog integrations
+	r := gin.Default()
+	r.Use(gintrace.Middleware("web-admin"))
+	client := goredistrace.NewTracedClient(opts, tracer.DefaultTracer, "redis-img-backend")
+
+	r.GET("/user/settings/:id", func(ctx *gin.Context) {
+		// create a span that is a child of your http request
+		client.SetContext(ctx)
+		client.Get("cached_user_details", ctx.Param("id"))
+	})
 }
 
 // You can also trace Redis Pipelines

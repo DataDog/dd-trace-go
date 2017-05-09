@@ -17,7 +17,7 @@ type TracedClient struct {
 	traceParams traceParams
 }
 
-// TracedPipeline is used to trace pipelines with a redis server.
+// TracedPipeline is used to trace pipelines executed on a redis server.
 type TracedPipeline struct {
 	*redis.Pipeline
 	traceParams traceParams
@@ -31,7 +31,7 @@ type traceParams struct {
 	tracer  *tracer.Tracer
 }
 
-// NewTracedClient needs to be called instead of NewClient to trace the calls.
+// NewTracedClient takes a Client returned by redis.NewClient and configures it to emit spans under the given service name
 func NewTracedClient(opt *redis.Options, t *tracer.Tracer, service string) *TracedClient {
 	var host, port string
 	addr := strings.Split(opt.Addr, ":")
@@ -59,7 +59,7 @@ func NewTracedClient(opt *redis.Options, t *tracer.Tracer, service string) *Trac
 	return tc
 }
 
-// Pipeline overwrites redis.Pipeline function to create a TracedPipeline.
+// Pipeline creates a TracedPipeline from a TracedClient
 func (c *TracedClient) Pipeline() *TracedPipeline {
 	return &TracedPipeline{
 		c.Client.Pipeline(),
@@ -67,7 +67,8 @@ func (c *TracedClient) Pipeline() *TracedPipeline {
 	}
 }
 
-// ExecWithContext executes traced Exec call with a particular context.
+// ExecWithContext calls Pipeline.Exec(). It ensures that the resulting Redis calls
+// are traced, and that emitted spans are children of the given Context
 func (c *TracedPipeline) ExecWithContext(ctx context.Context) ([]redis.Cmder, error) {
 	span := c.traceParams.tracer.NewChildSpanFromContext("redis.command", ctx)
 	span.Service = c.traceParams.service
@@ -86,7 +87,7 @@ func (c *TracedPipeline) ExecWithContext(ctx context.Context) ([]redis.Cmder, er
 	return cmds, err
 }
 
-// Exec overwrites redis.Exec so that calls made via a TracedClient are traced.
+// Exec calls Pipeline.Exec() ensuring that the resulting Redis calls are traced
 func (c *TracedPipeline) Exec() ([]redis.Cmder, error) {
 	span := c.traceParams.tracer.NewRootSpan("redis.command", c.traceParams.service, "redis")
 
@@ -114,7 +115,7 @@ func String(cmds []redis.Cmder) string {
 	return b.String()
 }
 
-// SetContext allows to set a context to a TracedClient.
+// SetContext sets a context on a TracedClient. Use it to ensure that emitted spans have the correct parent
 func (c *TracedClient) SetContext(ctx context.Context) {
 	c.Client = c.Client.WithContext(ctx)
 }
