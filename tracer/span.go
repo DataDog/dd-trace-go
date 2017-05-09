@@ -100,6 +100,7 @@ func (s *Span) setMeta(key, value string) {
 }
 
 // SetMeta adds an arbitrary meta field to the current Span.
+// If the Span has been finished, it will not be modified by the method.
 func (s *Span) SetMeta(key, value string) {
 	if s == nil {
 		return
@@ -135,7 +136,8 @@ func (s *Span) SetMetrics(key string, value float64) {
 	s.SetMetric(key, value)
 }
 
-// SetMetric adds a metric field to the current Span.
+// SetMetric adds a metric field to the current Span. If the Span has been
+// finished, it will not be modified by this method.
 func (s *Span) SetMetric(key string, val float64) {
 	if s == nil {
 		return
@@ -159,6 +161,7 @@ func (s *Span) SetMetric(key string, val float64) {
 
 // SetError stores an error object within the span meta. The Error status is
 // updated and the error.Error() string is included with a default meta key.
+// If the Span has been finished, it will not be modified by this method.
 func (s *Span) SetError(err error) {
 	if err == nil || s == nil {
 		return
@@ -183,7 +186,8 @@ func (s *Span) SetError(err error) {
 // Finish closes this Span (but not its children) providing the duration
 // of this part of the tracing session. This method is idempotent so
 // calling this method multiple times is safe and doesn't update the
-// current Span.
+// current Span. Once a Span has been finished, methods that modify the Span
+// will become no-ops.
 func (s *Span) Finish() {
 	if s == nil {
 		return
