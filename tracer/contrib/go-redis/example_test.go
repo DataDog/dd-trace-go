@@ -40,7 +40,7 @@ func Example() {
 	r.GET("/user/settings/:id", func(ctx *gin.Context) {
 		// create a span that is a child of your http request
 		client.SetContext(ctx)
-		client.Get(fmt.Sprintf("cached_user_details_%d", ctx.Param("id")))
+		client.Get(fmt.Sprintf("cached_user_details_%s", ctx.Param("id")))
 	})
 }
 
