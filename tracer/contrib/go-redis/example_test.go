@@ -2,6 +2,7 @@ package goredistrace_test
 
 import (
 	"context"
+	"fmt"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/contrib/gin-gonic/gintrace"
 	"github.com/DataDog/dd-trace-go/tracer/contrib/go-redis"
@@ -39,7 +40,7 @@ func Example() {
 	r.GET("/user/settings/:id", func(ctx *gin.Context) {
 		// create a span that is a child of your http request
 		client.SetContext(ctx)
-		client.Get("cached_user_details", ctx.Param("id"))
+		client.Get(fmt.Sprintf("cached_user_details_%d", ctx.Param("id")))
 	})
 }
 
