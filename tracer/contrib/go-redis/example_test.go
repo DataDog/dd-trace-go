@@ -52,7 +52,7 @@ func Example_pipeline() {
 		DB:       0,  // use default db
 	}
 	c := goredistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
-	// p is a TracedPipeliner
+	// pipe is a TracedPipeliner
 	pipe := c.Pipeline()
 	pipe.Incr("pipeline_counter")
 	pipe.Expire("pipeline_counter", time.Hour)
