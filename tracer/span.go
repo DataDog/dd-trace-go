@@ -57,9 +57,9 @@ type Span struct {
 	Error    int32              `json:"error"`             // error status of the span; 0 means no errors
 	Sampled  bool               `json:"-"`                 // if this span is sampled (and should be kept/recorded) or not
 
-	tracer   *Tracer    // the tracer that generated this span
-	mu       sync.Mutex // lock the Span to make it thread-safe
-	finished bool       // true if the span has been submitted to a tracer.
+	sync.RWMutex
+	tracer   *Tracer // the tracer that generated this span
+	finished bool    // true if the span has been submitted to a tracer.
 }
 
 // NewSpan creates a new span.
@@ -78,18 +78,39 @@ func NewSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 	}
 }
 
+// setMeta adds an arbitrary meta field to the current Span. The span
+// must be locked outside of this function
+func (s *Span) setMeta(key, value string) {
+	if s == nil {
+		return
+	}
+
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		return
+	}
+
+	if s.Meta == nil {
+		s.Meta = make(map[string]string)
+	}
+	s.Meta[key] = value
+
+}
+
 // SetMeta adds an arbitrary meta field to the current Span.
+// If the Span has been finished, it will not be modified by the method.
 func (s *Span) SetMeta(key, value string) {
 	if s == nil {
 		return
 	}
 
-	s.mu.Lock()
-	if s.Meta == nil {
-		s.Meta = make(map[string]string)
-	}
-	s.Meta[key] = value
-	s.mu.Unlock()
+	s.Lock()
+	defer s.Unlock()
+
+	s.setMeta(key, value)
+
 }
 
 // GetMeta will return the value for the given tag or the empty string if it
@@ -98,8 +119,8 @@ func (s *Span) GetMeta(key string) string {
 	if s == nil {
 		return ""
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.RLock()
+	defer s.RUnlock()
 	if s.Meta == nil {
 		return ""
 	}
@@ -115,44 +136,64 @@ func (s *Span) SetMetrics(key string, value float64) {
 	s.SetMetric(key, value)
 }
 
-// SetMetric adds a metric field to the current Span.
+// SetMetric adds a metric field to the current Span. If the Span has been
+// finished, it will not be modified by this method.
 func (s *Span) SetMetric(key string, val float64) {
 	if s == nil {
 		return
 	}
 
-	s.mu.Lock()
+	s.Lock()
+	defer s.Unlock()
+
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		return
+	}
+
 	if s.Metrics == nil {
 		s.Metrics = make(map[string]float64)
 	}
 	s.Metrics[key] = val
-	s.mu.Unlock()
 }
 
 // SetError stores an error object within the span meta. The Error status is
 // updated and the error.Error() string is included with a default meta key.
+// If the Span has been finished, it will not be modified by this method.
 func (s *Span) SetError(err error) {
 	if err == nil || s == nil {
 		return
 	}
 
+	s.Lock()
+	defer s.Unlock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		return
+	}
 	s.Error = 1
-	s.SetMeta(errorMsgKey, err.Error())
-	s.SetMeta(errorTypeKey, reflect.TypeOf(err).String())
+
+	s.setMeta(errorMsgKey, err.Error())
+	s.setMeta(errorTypeKey, reflect.TypeOf(err).String())
 	stack := debug.Stack()
-	s.SetMeta(errorStackKey, string(stack))
+	s.setMeta(errorStackKey, string(stack))
 }
 
 // Finish closes this Span (but not its children) providing the duration
 // of this part of the tracing session. This method is idempotent so
 // calling this method multiple times is safe and doesn't update the
-// current Span.
+// current Span. Once a Span has been finished, methods that modify the Span
+// will become no-ops.
 func (s *Span) Finish() {
 	if s == nil {
 		return
 	}
 
-	s.mu.Lock()
+	s.Lock()
 	finished := s.finished
 	if !finished {
 		if s.Duration == 0 {
@@ -160,7 +201,7 @@ func (s *Span) Finish() {
 		}
 		s.finished = true
 	}
-	s.mu.Unlock()
+	s.Unlock()
 
 	if s.tracer != nil && !finished {
 		s.tracer.record(s)
@@ -194,12 +235,12 @@ func (s *Span) String() string {
 		"Tags:",
 	}
 
-	s.mu.Lock()
+	s.RLock()
 	for key, val := range s.Meta {
 		lines = append(lines, fmt.Sprintf("\t%s:%s", key, val))
 
 	}
-	s.mu.Unlock()
+	s.RUnlock()
 
 	return strings.Join(lines, "\n")
 }
