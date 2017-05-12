@@ -361,6 +361,14 @@ func NewChildSpanFromContext(name string, ctx context.Context) *Span {
 	return DefaultTracer.NewChildSpanFromContext(name, ctx)
 }
 
+// NewChildSpanWithContext will create and return a child span of the span contained in the given
+// context, as well as a copy of the parent context containing the created
+// child span. If the context contains no span, an empty root span will be returned.
+// If nil is passed in for the context, a context will be created.
+func NewChildSpanWithContext(name string, ctx context.Context) (*Span, context.Context) {
+	return DefaultTracer.NewChildSpanWithContext(name, ctx)
+}
+
 // Enable will enable the default tracer.
 func Enable() {
 	DefaultTracer.SetEnabled(true)
