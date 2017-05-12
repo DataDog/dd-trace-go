@@ -68,12 +68,12 @@ func TestNewSpanFromContextNil(t *testing.T) {
 
 }
 
-func TestSpan(t *testing.T) {
+func TestNewChildSpanWithContext(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
 
 	// nil context
-	span, ctx := tracer.Span("abc", nil)
+	span, ctx := tracer.NewChildSpanWithContext("abc", nil)
 	assert.Equal("abc", span.Name)
 	assert.Equal("", span.Service)
 	assert.Equal(span.ParentID, span.SpanID) // it should be a root span
@@ -84,7 +84,7 @@ func TestSpan(t *testing.T) {
 	assert.Equal(span, ctxSpan)
 
 	// context without span
-	span, ctx = tracer.Span("abc", context.Background())
+	span, ctx = tracer.NewChildSpanWithContext("abc", context.Background())
 	assert.Equal("abc", span.Name)
 	assert.Equal("", span.Service)
 	assert.Equal(span.ParentID, span.SpanID) // it should be a root span
@@ -97,7 +97,7 @@ func TestSpan(t *testing.T) {
 	// context with span
 	parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	parentCTX := ContextWithSpan(context.Background(), parent)
-	span, ctx = tracer.Span("def", parentCTX)
+	span, ctx = tracer.NewChildSpanWithContext("def", parentCTX)
 	assert.Equal("def", span.Name)
 	assert.Equal("pylons", span.Service)
 	assert.Equal(parent.Service, span.Service)
