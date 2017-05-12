@@ -212,6 +212,15 @@ func (t *Tracer) NewChildSpanFromContext(name string, ctx context.Context) *Span
 	return t.NewChildSpan(name, span)
 }
 
+// NewChildSpanWithContext will create and return a child span of the span contained in the given
+// context, as well as a copy of the parent context containing the created
+// child span. If the context contains no span, an empty root span will be returned.
+// If nil is passed in for the context, a context will be created.
+func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Span, context.Context) {
+	span := NewChildSpanFromContext(name, ctx)
+	return span, span.Context(ctx)
+}
+
 // record queues the finished span for further processing.
 func (t *Tracer) record(span *Span) {
 	if t.Enabled() && span.Sampled {
@@ -350,6 +359,14 @@ func NewChildSpan(name string, parent *Span) *Span {
 // no service or resource will be returned.
 func NewChildSpanFromContext(name string, ctx context.Context) *Span {
 	return DefaultTracer.NewChildSpanFromContext(name, ctx)
+}
+
+// NewChildSpanWithContext will create and return a child span of the span contained in the given
+// context, as well as a copy of the parent context containing the created
+// child span. If the context contains no span, an empty root span will be returned.
+// If nil is passed in for the context, a context will be created.
+func NewChildSpanWithContext(name string, ctx context.Context) (*Span, context.Context) {
+	return DefaultTracer.NewChildSpanWithContext(name, ctx)
 }
 
 // Enable will enable the default tracer.

@@ -68,6 +68,48 @@ func TestNewSpanFromContextNil(t *testing.T) {
 
 }
 
+func TestNewChildSpanWithContext(t *testing.T) {
+	assert := assert.New(t)
+	tracer := NewTracer()
+
+	// nil context
+	span, ctx := tracer.NewChildSpanWithContext("abc", nil)
+	assert.Equal("abc", span.Name)
+	assert.Equal("", span.Service)
+	assert.Equal(span.ParentID, span.SpanID) // it should be a root span
+	// the returned ctx should contain the created span
+	assert.NotNil(ctx)
+	ctxSpan, ok := SpanFromContext(ctx)
+	assert.True(ok)
+	assert.Equal(span, ctxSpan)
+
+	// context without span
+	span, ctx = tracer.NewChildSpanWithContext("abc", context.Background())
+	assert.Equal("abc", span.Name)
+	assert.Equal("", span.Service)
+	assert.Equal(span.ParentID, span.SpanID) // it should be a root span
+	// the returned ctx should contain the created span
+	assert.NotNil(ctx)
+	ctxSpan, ok = SpanFromContext(ctx)
+	assert.True(ok)
+	assert.Equal(span, ctxSpan)
+
+	// context with span
+	parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	parentCTX := ContextWithSpan(context.Background(), parent)
+	span, ctx = tracer.NewChildSpanWithContext("def", parentCTX)
+	assert.Equal("def", span.Name)
+	assert.Equal("pylons", span.Service)
+	assert.Equal(parent.Service, span.Service)
+	// the created span should be a child of the parent span
+	assert.Equal(span.ParentID, parent.SpanID)
+	// the returned ctx should contain the created span
+	assert.NotNil(ctx)
+	ctxSpan, ok = SpanFromContext(ctx)
+	assert.True(ok)
+	assert.Equal(ctxSpan, span)
+}
+
 func TestNewSpanFromContext(t *testing.T) {
 	assert := assert.New(t)
 

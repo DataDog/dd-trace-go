@@ -12,9 +12,10 @@ import (
 )
 
 func saveFile(ctx context.Context, path string, r io.Reader) error {
-	// Start a new span that is the child of the span stored in the context. If the span
-	// has no context, it will return an empty one.
-	span := tracer.NewChildSpanFromContext("filestore.saveFile", ctx)
+	// Start a new span that is the child of the span stored in the context, and
+	// attach it to the current context. If the context has no span, it will
+	// return an empty root span.
+	span, ctx := tracer.NewChildSpanWithContext("filestore.saveFile", ctx)
 	defer span.Finish()
 
 	// save the file contents.
