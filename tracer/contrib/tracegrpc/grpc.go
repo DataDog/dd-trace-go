@@ -27,7 +27,7 @@ func UnaryServerInterceptor(service string, t *tracer.Tracer) grpc.UnaryServerIn
 			return handler(ctx, req)
 		}
 
-		span := serverSpan(t, ctx, info.FullMethod)
+		span := serverSpan(t, ctx, info.FullMethod, service)
 		resp, err := handler(tracer.ContextWithSpan(ctx, span), req)
 		span.FinishWithErr(err)
 		return resp, err
@@ -64,8 +64,8 @@ func UnaryClientInterceptor(service string, t *tracer.Tracer) grpc.UnaryClientIn
 	}
 }
 
-func serverSpan(t *tracer.Tracer, ctx context.Context, method string) *tracer.Span {
-	service, resource := parseMethod(method)
+func serverSpan(t *tracer.Tracer, ctx context.Context, method, service string) *tracer.Span {
+	resource := parseMethod(method)
 
 	span := t.NewRootSpan("grpc.server", service, resource)
 	span.SetMeta("gprc.method", method)
@@ -80,20 +80,12 @@ func serverSpan(t *tracer.Tracer, ctx context.Context, method string) *tracer.Sp
 	return span
 }
 
-func parseMethod(method string) (service, resource string) {
-
-	start := 0
-	if len(method) > 0 && method[0] == '/' {
-		start = 1
-	}
-
+func parseMethod(method string) (resource string) {
 	if idx := strings.LastIndexByte(method, '/'); idx > 0 {
-		service = method[start:idx]
-		method = method[idx+1:]
-		return service, method
+		return method[idx+1:]
 	}
 
-	return "", ""
+	return ""
 }
 
 // setIDs will set the trace ids on the context{
