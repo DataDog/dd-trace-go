@@ -101,14 +101,14 @@ func TestChild(t *testing.T) {
 
 	s := spans[0]
 	assert.Equal(s.Error, int32(0))
-	assert.Equal(s.Service, "tracegrpc.Fixture")
+	assert.Equal(s.Service, "tracegrpc")
 	assert.Equal(s.Resource, "child")
 	assert.True(s.Duration > 0)
 
 	s = spans[1]
 	assert.Equal(s.Error, int32(0))
-	assert.Equal(s.Service, "tracegrpc.Fixture")
-	assert.Equal(s.Resource, "Ping")
+	assert.Equal(s.Service, "tracegrpc")
+	assert.Equal(s.Resource, "/tracegrpc.Fixture/Ping")
 	assert.True(s.Duration > 0)
 }
 
@@ -136,8 +136,8 @@ func TestPass(t *testing.T) {
 	s := spans[0]
 	assert.Equal(s.Error, int32(0))
 	assert.Equal(s.Name, "grpc.server")
-	assert.Equal(s.Service, "tracegrpc.Fixture")
-	assert.Equal(s.Resource, "Ping")
+	assert.Equal(s.Service, "tracegrpc")
+	assert.Equal(s.Resource, "/tracegrpc.Fixture/Ping")
 	assert.Equal(s.Type, "go")
 	assert.True(s.Duration > 0)
 }
@@ -189,7 +189,7 @@ func (r *rig) Close() {
 
 func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
 
-	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerInterceptor("foo", t)))
+	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerInterceptor("tracegrpc", t)))
 
 	RegisterFixtureServer(server, newFixtureServer())
 
@@ -206,7 +206,7 @@ func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
 	}
 
 	if traceClient {
-		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor("foo", t)))
+		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor("tracegrpc", t)))
 	}
 
 	conn, err := grpc.Dial(li.Addr().String(), opts...)
