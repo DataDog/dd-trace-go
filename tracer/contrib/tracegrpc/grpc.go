@@ -3,7 +3,6 @@ package tracegrpc
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
@@ -65,9 +64,7 @@ func UnaryClientInterceptor(service string, t *tracer.Tracer) grpc.UnaryClientIn
 }
 
 func serverSpan(t *tracer.Tracer, ctx context.Context, method, service string) *tracer.Span {
-	resource := parseMethod(method)
-
-	span := t.NewRootSpan("grpc.server", service, resource)
+	span := t.NewRootSpan("grpc.server", service, method)
 	span.SetMeta("gprc.method", method)
 	span.Type = "go"
 
@@ -78,14 +75,6 @@ func serverSpan(t *tracer.Tracer, ctx context.Context, method, service string) *
 	}
 
 	return span
-}
-
-func parseMethod(method string) (resource string) {
-	if idx := strings.LastIndexByte(method, '/'); idx > 0 {
-		return method[idx+1:]
-	}
-
-	return ""
 }
 
 // setIDs will set the trace ids on the context{

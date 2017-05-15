@@ -108,7 +108,7 @@ func TestChild(t *testing.T) {
 	s = spans[1]
 	assert.Equal(s.Error, int32(0))
 	assert.Equal(s.Service, "tracegrpc")
-	assert.Equal(s.Resource, "Ping")
+	assert.Equal(s.Resource, "/tracegrpc.Fixture/Ping")
 	assert.True(s.Duration > 0)
 }
 
@@ -137,7 +137,7 @@ func TestPass(t *testing.T) {
 	assert.Equal(s.Error, int32(0))
 	assert.Equal(s.Name, "grpc.server")
 	assert.Equal(s.Service, "tracegrpc")
-	assert.Equal(s.Resource, "Ping")
+	assert.Equal(s.Resource, "/tracegrpc.Fixture/Ping")
 	assert.Equal(s.Type, "go")
 	assert.True(s.Duration > 0)
 }
