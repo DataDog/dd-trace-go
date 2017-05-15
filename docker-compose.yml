@@ -1,8 +1,45 @@
-# File for develipment/ testing purposes
+# File for development/ testing purposes
 redis:
         image: redis:3.2
         ports:
                 - "127.0.0.1:6379:6379"
+elasticsearch-v5:
+        image: elasticsearch:5-alpine
+        container_name: elasticsearch5
+        environment:
+                - cluster.name=docker-cluster
+                - bootstrap.memory_lock=true
+                - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+                - xpack.security.enabled=false
+                - bootstrap.ignore_system_bootstrap_checks=true
+        ports:
+                - 9200:9200
+        ulimits:
+                nofile:
+                        soft: 65536
+                        hard: 65536
+        mem_limit: 1g
+        cap_add:
+                - IPC_LOCK
+elasticsearch-v2:
+        image: elasticsearch:2-alpine
+        container_name: elasticsearch2
+        environment:
+                - cluster.name=docker-cluster
+                - bootstrap.memory_lock=true
+                - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+                - xpack.security.enabled=false
+                - bootstrap.ignore_system_bootstrap_checks=true
+        command: "elasticsearch -Des.http.port=9201"
+        ports:
+                - 9201:9201
+        ulimits:
+                nofile:
+                        soft: 65536
+                        hard: 65536
+        mem_limit: 1g
+        cap_add:
+                - IPC_LOCK
 ddagent:
         image: datadog/docker-dd-agent
         environment:
