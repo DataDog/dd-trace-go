@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // TracedConn is an implementation of the redis.Conn interface that supports tracing
@@ -118,6 +119,12 @@ func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interfac
 			b.WriteString(arg)
 		case int:
 			b.WriteString(strconv.Itoa(arg))
+		case int32:
+			b.WriteString(strconv.FormatInt(int64(arg), 10))
+		case int64:
+			b.WriteString(strconv.FormatInt(arg, 10))
+		case time.Time:
+			b.WriteString(strconv.FormatInt(arg.Unix(), 10))
 		case fmt.Stringer:
 			b.WriteString(arg.String())
 		}
