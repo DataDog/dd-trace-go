@@ -34,18 +34,17 @@ func TestClientV5(t *testing.T) {
 		BodyString(`{"user": "test", "message": "hello"}`).
 		Do(context.TODO())
 	assert.NoError(err)
+	checkPUTTrace(assert, testTracer, testTransport)
 
 	_, err = client.Get().Index("twitter").Type("tweet").
 		Id("1").Do(context.TODO())
 	assert.NoError(err)
-
-	checkOKTraces(assert, testTracer, testTransport)
+	checkGETTrace(assert, testTracer, testTransport)
 
 	_, err = client.Get().Index("not-real-index").
 		Id("1").Do(context.TODO())
 	assert.Error(err)
-
-	checkErrorTraces(assert, testTracer, testTransport)
+	checkErrTrace(assert, testTracer, testTransport)
 }
 
 func TestClientV3(t *testing.T) {
@@ -68,43 +67,45 @@ func TestClientV3(t *testing.T) {
 		BodyString(`{"user": "test", "message": "hello"}`).
 		DoC(context.TODO())
 	assert.NoError(err)
+	checkPUTTrace(assert, testTracer, testTransport)
 
 	_, err = client.Get().Index("twitter").Type("tweet").
 		Id("1").DoC(context.TODO())
 	assert.NoError(err)
-
-	checkOKTraces(assert, testTracer, testTransport)
+	checkGETTrace(assert, testTracer, testTransport)
 
 	_, err = client.Get().Index("not-real-index").
 		Id("1").DoC(context.TODO())
 	assert.Error(err)
-
-	checkErrorTraces(assert, testTracer, testTransport)
+	checkErrTrace(assert, testTracer, testTransport)
 }
 
-func checkOKTraces(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracer.DummyTransport) {
+func checkPUTTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracer.DummyTransport) {
 	tracer.FlushTraces()
 	traces := transport.Traces()
-	assert.Len(traces, 2)
-
+	assert.Len(traces, 1)
 	spans := traces[0]
 	assert.Equal("my-es-service", spans[0].Service)
 	assert.Equal("PUT /twitter/tweet/?", spans[0].Resource)
 	assert.Equal("/twitter/tweet/1", spans[0].GetMeta("elasticsearch.url"))
 	assert.Equal("PUT", spans[0].GetMeta("elasticsearch.method"))
+}
 
-	spans = traces[1]
+func checkGETTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracer.DummyTransport) {
+	tracer.FlushTraces()
+	traces := transport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
 	assert.Equal("my-es-service", spans[0].Service)
 	assert.Equal("GET /twitter/tweet/?", spans[0].Resource)
 	assert.Equal("/twitter/tweet/1", spans[0].GetMeta("elasticsearch.url"))
 	assert.Equal("GET", spans[0].GetMeta("elasticsearch.method"))
 }
 
-func checkErrorTraces(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracer.DummyTransport) {
+func checkErrTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracer.DummyTransport) {
 	tracer.FlushTraces()
 	traces := transport.Traces()
 	assert.Len(traces, 1)
-
 	spans := traces[0]
 	assert.Equal("my-es-service", spans[0].Service)
 	assert.Equal("GET /not-real-index/_all/?", spans[0].Resource)
