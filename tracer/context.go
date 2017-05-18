@@ -15,6 +15,13 @@ func ContextWithSpan(ctx context.Context, span *Span) context.Context {
 	return span.Context(ctx)
 }
 
+// ContextWithNewChildSpan will create a new child span, and returns the
+// created span and a new context that includes the created span.
+func ContextWithNewChildSpan(name string, ctx context.Context) (*Span, context.Context) {
+	span := NewChildSpanFromContext(name, ctx)
+	return span, context.WithValue(ctx, spanKey, span)
+}
+
 // SpanFromContext returns the stored *Span from the Context if it's available.
 // This helper returns also the ok value that is true if the span is present.
 func SpanFromContext(ctx context.Context) (*Span, bool) {
