@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // TracedConn is an implementation of the redis.Conn interface that supports tracing
