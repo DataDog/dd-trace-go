@@ -2,6 +2,7 @@ package redigotrace
 
 import (
 	"context"
+	"fmt"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/garyburd/redigo/redis"
 	"github.com/stretchr/testify/assert"
@@ -100,6 +101,30 @@ func TestInheritance(t *testing.T) {
 	assert.Equal(child_span.GetMeta("out.port"), "6379")
 }
 
+func TestCommandsToSring(t *testing.T) {
+	assert := assert.New(t)
+	testTracer, testTransport := getTestTracer()
+	testTracer.DebugLoggingEnabled = debug
+
+	stringify_test := TestStruct{Cpython: 57, Cgo: 8}
+	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
+	c.Do("SADD", "testSet", "a", int(0), int32(1), int64(2), stringify_test, context.Background())
+
+	testTracer.FlushTraces()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+	span := spans[0]
+
+	assert.Equal(span.Name, "redis.command")
+	assert.Equal(span.Service, "my-service")
+	assert.Equal(span.Resource, "SADD")
+	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
+	assert.Equal(span.GetMeta("out.port"), "6379")
+	assert.Equal(span.GetMeta("redis.raw_command"), "SADD testSet a 0 1 2 [57, 8]")
+}
+
 func TestPool(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
@@ -137,6 +162,16 @@ func TestTracingDialUrl(t *testing.T) {
 	testTracer.FlushTraces()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
+}
+
+// TestStruct implements String interface
+type TestStruct struct {
+	Cpython int
+	Cgo     int
+}
+
+func (ts TestStruct) String() string {
+	return fmt.Sprintf("[%d, %d]", ts.Cpython, ts.Cgo)
 }
 
 // getTestTracer returns a Tracer with a DummyTransport
