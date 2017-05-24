@@ -2,6 +2,9 @@
 package muxtrace
 
 import (
+	"bufio"
+	"errors"
+	"net"
 	"net/http"
 	"strconv"
 
@@ -107,6 +110,14 @@ func (t *tracedResponseWriter) WriteHeader(status int) {
 	if status >= 500 && status < 600 {
 		t.span.Error = 1
 	}
+}
+
+func (t *tracedResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := t.w.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("the ResponseWriter doesn't support the Hijacker interface")
+	}
+	return hijacker.Hijack()
 }
 
 // SetRequestSpan sets the span on the request's context.
