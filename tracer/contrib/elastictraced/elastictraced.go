@@ -49,12 +49,17 @@ func (t *TracedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	// Run the request using the standard transport.
 	res, err := t.Transport.RoundTrip(req)
+	if res != nil {
+		span.SetMeta(ext.HTTPCode, strconv.Itoa(res.StatusCode))
+	}
 
-	span.SetMeta(ext.HTTPCode, strconv.Itoa(res.StatusCode))
 	if err != nil {
 		span.SetError(err)
 		return res, err
-	} else if res.StatusCode < 200 || res.StatusCode > 299 {
+	}
+
+	// handle status codes that are not 200
+	if res.StatusCode < 200 || res.StatusCode > 299 {
 		buf, err := ioutil.ReadAll(res.Body)
 		if err != nil {
 			// Status text is best we can do if if we can't read the body.
