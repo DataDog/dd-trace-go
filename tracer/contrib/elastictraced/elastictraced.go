@@ -55,11 +55,7 @@ func (t *TracedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	if err != nil {
 		span.SetError(err)
-		return res, err
-	}
-
-	// handle status codes that are not 200
-	if res.StatusCode < 200 || res.StatusCode > 299 {
+	} else if res.StatusCode < 200 || res.StatusCode > 299 {
 		buf, err := ioutil.ReadAll(res.Body)
 		if err != nil {
 			// Status text is best we can do if if we can't read the body.

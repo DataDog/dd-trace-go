@@ -107,7 +107,7 @@ func TestClientV3Failure(t *testing.T) {
 	assert.Len(traces, 1)
 	spans := traces[0]
 	assert.Equal("my-es-service", spans[0].Service)
-	assert.Equal("elasticsearch.query", spans[0].Resource)
+	assert.Equal("PUT /twitter/tweet/?", spans[0].Resource)
 	assert.Equal("/twitter/tweet/1", spans[0].GetMeta("elasticsearch.url"))
 	assert.Equal("PUT", spans[0].GetMeta("elasticsearch.method"))
 
@@ -142,7 +142,7 @@ func TestClientV5Failure(t *testing.T) {
 	assert.Len(traces, 1)
 	spans := traces[0]
 	assert.Equal("my-es-service", spans[0].Service)
-	assert.Equal("elasticsearch.query", spans[0].Resource)
+	assert.Equal("PUT /twitter/tweet/?", spans[0].Resource)
 	assert.Equal("/twitter/tweet/1", spans[0].GetMeta("elasticsearch.url"))
 	assert.Equal("PUT", spans[0].GetMeta("elasticsearch.method"))
 
