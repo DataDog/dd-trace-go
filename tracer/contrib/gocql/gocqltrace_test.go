@@ -5,7 +5,7 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 	//"github.com/gocql/gocql"
-	"github.com/gocql/gocql"
+	"github.com/furmmon/gocql"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -14,6 +14,19 @@ const (
 	debug = false
 )
 
+// TestMain sets up the Keyspace and table if they do not exist
+func TestMain(m *testing.M) {
+	cluster := gocql.NewCluster("127.0.0.1")
+	session, _ := cluster.CreateSession()
+
+	// Ensures test keyspace and table person exists.
+	session.Query("CREATE KEYSPACE if not exists test WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor': 1}").Exec()
+	session.Query("CREATE TABLE if not exists test.person (name text PRIMARY KEY, age int, description text)").Exec()
+	session.Query("INSERT INTO test.person (name, age, description) VALUES ('Cassandra', 100, 'A cruel mistress')").Exec()
+
+	m.Run()
+}
+
 func TestErrorWrapper(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
@@ -21,23 +34,21 @@ func TestErrorWrapper(t *testing.T) {
 
 	cluster := gocql.NewCluster("127.0.0.1")
 	session, _ := cluster.CreateSession()
-	q := session.Query("CREATE KEYSPACE TestKeySpace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	TraceQuery("Test_service_name", testTracer, q).Exec()
-	q = session.Query("CREATE KEYSPACE TestKeySpace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	err := TraceQuery("Test_service_name", testTracer, q).Exec()
+	q := session.Query("CREATE KEYSPACE test WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	err := TraceQuery("ServiceName", testTracer, q).Exec()
 
 	testTracer.FlushTraces()
 	traces := testTransport.Traces()
-	assert.Len(traces, 2)
-	spans := traces[1]
+	assert.Len(traces, 1)
+	spans := traces[0]
 	assert.Len(spans, 1)
 	span := spans[0]
 
 	assert.Equal(int32(span.Error), int32(1))
 	assert.Equal(span.GetMeta("error.msg"), err.Error())
 	assert.Equal(span.Name, ext.CassandraQuery)
-	assert.Equal(span.Resource, "CREATE KEYSPACE TestKeySpace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	assert.Equal(span.Service, "Test_service_name")
+	assert.Equal(span.Resource, "CREATE KEYSPACE test WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	assert.Equal(span.Service, "ServiceName")
 	assert.Equal(span.GetMeta(ext.CassandraConsistencyLevel), "4")
 	assert.Equal(span.GetMeta(ext.CassandraPaginated), "false")
 
@@ -54,36 +65,34 @@ func TestError(t *testing.T) {
 	testTracer.DebugLoggingEnabled = debug
 
 	cluster := NewTracedCluster("127.0.0.1")
-	session, _ := cluster.CreateTracedSession("Test_service_name", testTracer)
-	q := session.Query("CREATE KEYSPACE TestKeySpace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	q.Exec()
-	q = session.Query("CREATE KEYSPACE TestKeySpace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	session, _ := cluster.CreateTracedSession("ServiceName", testTracer)
+	q := session.Query("CREATE KEYSPACE test WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
 	err := q.Exec()
 
 	testTracer.FlushTraces()
 	traces := testTransport.Traces()
-	assert.Len(traces, 2)
-	spans := traces[1]
+	assert.Len(traces, 1)
+	spans := traces[0]
 	assert.Len(spans, 1)
 	span := spans[0]
 
 	assert.Equal(int32(span.Error), int32(1))
 	assert.Equal(span.GetMeta("error.msg"), err.Error())
 	assert.Equal(span.Name, ext.CassandraQuery)
-	assert.Equal(span.Resource, "CREATE KEYSPACE TestKeySpace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	assert.Equal(span.Service, "Test_service_name")
+	assert.Equal(span.Resource, "CREATE KEYSPACE test WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	assert.Equal(span.Service, "ServiceName")
 	assert.Equal(span.GetMeta(ext.CassandraConsistencyLevel), "4")
 	assert.Equal(span.GetMeta(ext.CassandraPaginated), "false")
-	assert.Equal(span.GetMeta(ext.TargetPort), "9042")
 
 	// Not Working
+	assert.Equal(span.GetMeta(ext.TargetPort), "")
 	assert.Equal(span.GetMeta(ext.TargetHost), "")
 	assert.Equal(span.GetMeta(ext.CassandraCluster), "")
 	assert.Equal(span.GetMeta(ext.CassandraKeyspace), "")
 
 }
 
-func TestChildSPan(t *testing.T) {
+func TestChildSpan(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
@@ -94,8 +103,8 @@ func TestChildSPan(t *testing.T) {
 	ctx = tracer.ContextWithSpan(ctx, parent_span)
 
 	cluster := NewTracedCluster("127.0.0.1")
-	session, _ := cluster.CreateTracedSession("Test_service_name", testTracer)
-	q := session.Query("CREATE KEYSPACE TestKeySpace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	session, _ := cluster.CreateTracedSession("ServiceName", testTracer)
+	q := session.Query("CREATE TABLE if not exists test.person (name text PRIMARY KEY, age int, description text)")
 	q.WithContext(ctx).Exec()
 	parent_span.Finish()
 
@@ -111,7 +120,7 @@ func TestChildSPan(t *testing.T) {
 	assert.Equal(child_span.ParentID, pspan.SpanID)
 	assert.Equal(child_span.Name, ext.CassandraQuery)
 	assert.Equal(child_span.GetMeta(ext.TargetPort), "9042")
-	assert.Equal(child_span.Resource, "CREATE KEYSPACE TestKeySpace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	assert.Equal(child_span.Resource, "CREATE TABLE if not exists test.person (name text PRIMARY KEY, age int, description text)")
 }
 
 func TestChildWrapperSpan(t *testing.T) {
@@ -126,7 +135,7 @@ func TestChildWrapperSpan(t *testing.T) {
 
 	cluster := gocql.NewCluster("127.0.0.1")
 	session, _ := cluster.CreateSession()
-	q := session.Query("CREATE KEYSPACE TestKeySpace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	q := session.Query("SELECT * from test.person")
 	tq := TraceQuery("Test_service_name", testTracer, q)
 	tq.WithContext(ctx).Exec()
 	parent_span.Finish()
@@ -142,8 +151,12 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Equal(pspan.Name, "parent_span")
 	assert.Equal(child_span.ParentID, pspan.SpanID)
 	assert.Equal(child_span.Name, ext.CassandraQuery)
-	assert.Equal(child_span.GetMeta(ext.TargetPort), "")
-	assert.Equal(child_span.Resource, "CREATE KEYSPACE TestKeySpace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	assert.Equal(child_span.Resource, "SELECT * from test.person")
+
+	assert.Equal(child_span.GetMeta(ext.TargetPort), "9042")
+	assert.Equal(child_span.GetMeta(ext.TargetHost), "127.0.0.1")
+	assert.Equal(child_span.GetMeta(ext.CassandraCluster), "datacenter1")
+	assert.Equal(child_span.GetMeta(ext.CassandraKeyspace), "test")
 }
 
 // getTestTracer returns a Tracer with a DummyTransport

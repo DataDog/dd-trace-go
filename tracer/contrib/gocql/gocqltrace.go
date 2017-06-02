@@ -5,26 +5,28 @@ import (
 	"context"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
-	"github.com/gocql/gocql"
+	"github.com/furmmon/gocql"
 	"strconv"
 	"strings"
 )
 
+// TracedQuery inherits from gocql.Query, it keeps the tracer and the context.
 type TracedQuery struct {
 	*gocql.Query
 	p            traceParams
 	traceContext context.Context
 }
 
+// TracedIter inherits from gocql.Iter and contains a span.
 type TracedIter struct {
 	*gocql.Iter
 	span *tracer.Span
 }
 
+// traceParams containes fields and metadata useful for command tracing
 type traceParams struct {
 	tracer      *tracer.Tracer
 	service     string
-	port        string
 	keyspace    string
 	paginated   string
 	consistancy string
@@ -32,6 +34,12 @@ type traceParams struct {
 }
 
 // Without wrapper code
+
+type TracedBatch struct {
+	*gocql.Batch
+	p            traceParams
+	traceContext context.Context
+}
 
 type TracedClusterConfig struct {
 	*gocql.ClusterConfig
@@ -47,20 +55,24 @@ func NewTracedCluster(hosts ...string) *TracedClusterConfig {
 	return tcfg
 }
 
+// NewTracedClusterConfig necessary to use CreateTracedSession.
 func NewTracedClusterConfig(clg *gocql.ClusterConfig) *TracedClusterConfig {
 	return &TracedClusterConfig{clg}
 }
 
+// CreateTracedSession creates from a TracedClusterConfig a new TracedSession.
 func (tcfg *TracedClusterConfig) CreateTracedSession(service string, tracer *tracer.Tracer) (*TracedSession, error) {
 	return NewTracedSession(service, tracer, *tcfg.ClusterConfig)
 }
 
+// NewTracedSession allows to add service and tracer on a new TracedSession from config.
 func NewTracedSession(service string, tracer *tracer.Tracer, cfg gocql.ClusterConfig) (*TracedSession, error) {
 	s, err := gocql.NewSession(cfg)
-	ts := &TracedSession{s, traceParams{tracer, service, strconv.Itoa(cfg.Port), cfg.Keyspace, "false", "", ""}}
+	ts := &TracedSession{s, traceParams{tracer, service, cfg.Keyspace, "false", "", ""}}
 	return ts, err
 }
 
+// Query creates a TracedQuery.
 func (ts *TracedSession) Query(stmt string, values ...interface{}) *TracedQuery {
 	q := ts.Session.Query(stmt, values...)
 	p := ts.p
@@ -69,6 +81,7 @@ func (ts *TracedSession) Query(stmt string, values ...interface{}) *TracedQuery 
 	return tq
 }
 
+// Bind creates a TracedQuery from a session.
 func (ts *TracedSession) Bind(stmt string, b func(q *gocql.QueryInfo) ([]interface{}, error)) *TracedQuery {
 	q := ts.Session.Bind(stmt, b)
 	tq := &TracedQuery{q, ts.p, context.Background()}
@@ -77,16 +90,18 @@ func (ts *TracedSession) Bind(stmt string, b func(q *gocql.QueryInfo) ([]interfa
 
 // Wrapper
 
+// TraceQuery wraps a gocql.Query into a TracedQuery
 func TraceQuery(service string, tracer *tracer.Tracer, q *gocql.Query) *TracedQuery {
 	string_query := strings.SplitN(q.String(), "\"", 3)[1]
 	q.NoSkipMetadata()
-	tq := &TracedQuery{q, traceParams{tracer, service, "", "", "false", strconv.Itoa(int(q.GetConsistency())), string_query}, context.Background()}
+	tq := &TracedQuery{q, traceParams{tracer, service, "", "false", strconv.Itoa(int(q.GetConsistency())), string_query}, context.Background()}
 	tracer.SetServiceInfo(service, ext.CassandraType, ext.AppTypeDB)
 	return tq
 }
 
 // Common code
 
+// WithContext rewrites the original function so that ctx can be used for inheritance
 func (tq *TracedQuery) WithContext(ctx context.Context) *TracedQuery {
 	tq.traceContext = ctx
 	tq.Query.WithContext(ctx)
@@ -99,6 +114,7 @@ func (tq *TracedQuery) PageState(state []byte) *TracedQuery {
 	return tq
 }
 
+// NewChildSpan creates a new span from the traceParams and the context.
 func (tq *TracedQuery) NewChildSpan(ctx context.Context) *tracer.Span {
 	span := tq.p.tracer.NewChildSpanFromContext(ext.CassandraQuery, ctx)
 	span.Type = ext.CassandraType
@@ -106,14 +122,15 @@ func (tq *TracedQuery) NewChildSpan(ctx context.Context) *tracer.Span {
 	span.Resource = tq.p.query
 	span.SetMeta(ext.CassandraPaginated, tq.p.paginated)
 	span.SetMeta(ext.CassandraKeyspace, tq.p.keyspace)
-	span.SetMeta(ext.TargetPort, tq.p.port)
 	return span
 }
 
+// Exec is rewritten so that it passes by our custom Iter
 func (tq *TracedQuery) Exec() error {
 	return tq.Iter().Close()
 }
 
+// MapScan wraps in a span query.MapScan call.
 func (tq *TracedQuery) MapScan(m map[string]interface{}) error {
 	span := tq.NewChildSpan(tq.traceContext)
 	defer span.Finish()
@@ -124,6 +141,7 @@ func (tq *TracedQuery) MapScan(m map[string]interface{}) error {
 	return err
 }
 
+// Scan wraps in a span query.Scan call.
 func (tq *TracedQuery) Scan(dest ...interface{}) error {
 	span := tq.NewChildSpan(tq.traceContext)
 	defer span.Finish()
@@ -134,6 +152,7 @@ func (tq *TracedQuery) Scan(dest ...interface{}) error {
 	return err
 }
 
+// ScanCAS wraps in a span query.ScanCAS call.
 func (tq *TracedQuery) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	span := tq.NewChildSpan(tq.traceContext)
 	defer span.Finish()
@@ -144,6 +163,7 @@ func (tq *TracedQuery) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	return applied, err
 }
 
+// Iter starts a new span at query.Iter call.
 func (tq *TracedQuery) Iter() *TracedIter {
 	span := tq.NewChildSpan(tq.traceContext)
 	iter := tq.Query.Iter()
@@ -165,6 +185,7 @@ func (tq *TracedQuery) Iter() *TracedIter {
 	return tIter
 }
 
+// Close closes the TracedIter and finish the span created on Iter call.
 func (tIter *TracedIter) Close() error {
 	columns := tIter.Iter.Columns()
 	if len(columns) > 0 {
@@ -175,7 +196,7 @@ func (tIter *TracedIter) Close() error {
 		tIter.span.SetError(err)
 	}
 	if tIter.Host() != nil {
-		tIter.span.SetMeta(ext.TargetHost, tIter.Iter.Host().HostID())
+		tIter.span.SetMeta(ext.TargetHost, tIter.Iter.Host().Peer().String())
 		tIter.span.SetMeta(ext.TargetPort, strconv.Itoa(tIter.Iter.Host().Port()))
 		tIter.span.SetMeta(ext.CassandraCluster, tIter.Iter.Host().DataCenter())
 	}
