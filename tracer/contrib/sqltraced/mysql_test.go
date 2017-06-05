@@ -6,11 +6,12 @@ import (
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqlutils"
+	"github.com/DataDog/dd-trace-go/tracer/tracertest"
 	"github.com/go-sql-driver/mysql"
 )
 
 func TestMySQL(t *testing.T) {
-	trc, transport := tracer.GetTestTracer()
+	trc, transport := tracertest.GetTestTracer()
 	db, err := OpenTraced(&mysql.MySQLDriver{}, "ubuntu@tcp(127.0.0.1:3306)/circle_test", "mysql-test", trc)
 	if err != nil {
 		log.Fatal(err)
