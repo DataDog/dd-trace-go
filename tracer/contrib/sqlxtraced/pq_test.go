@@ -6,11 +6,12 @@ import (
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqlutils"
+	"github.com/DataDog/dd-trace-go/tracer/tracertest"
 	"github.com/lib/pq"
 )
 
 func TestPostgres(t *testing.T) {
-	trc, transport := tracer.GetTestTracer()
+	trc, transport := tracertest.GetTestTracer()
 	dbx, err := OpenTraced(&pq.Driver{}, "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable", "postgres-test", trc)
 	if err != nil {
 		log.Fatal(err)
