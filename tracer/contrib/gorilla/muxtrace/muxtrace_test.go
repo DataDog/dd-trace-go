@@ -1,19 +1,20 @@
 package muxtrace
 
 import (
+	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/test"
+	"github.com/gorilla/mux"
+	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/gorilla/mux"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestMuxTracerDisabled(t *testing.T) {
 	assert := assert.New(t)
 
-	testTracer, testTransport, muxTracer := getTestTracer("disabled-service")
+	testTracer, testTransport := test.GetTestTracer()
+	muxTracer := NewMuxTracer("disabled-service", testTracer)
 	router := mux.NewRouter()
 	muxTracer.HandleFunc(router, "/disabled", func(w http.ResponseWriter, r *http.Request) {
 		_, err := w.Write([]byte("disabled!"))
@@ -153,8 +154,10 @@ func handler500(t *testing.T) http.HandlerFunc {
 	}
 }
 
-func setup(t *testing.T) (*tracer.Tracer, *dummyTransport, *mux.Router) {
-	tracer, transport, mt := getTestTracer("my-service")
+func setup(t *testing.T) (*tracer.Tracer, *test.DummyTransport, *mux.Router) {
+	tracer, transport := test.GetTestTracer()
+	mt := NewMuxTracer("my-service", tracer)
+
 	r := mux.NewRouter()
 
 	h200 := handler200(t)
@@ -172,35 +175,3 @@ func setup(t *testing.T) (*tracer.Tracer, *dummyTransport, *mux.Router) {
 
 	return tracer, transport, r
 }
-
-// getTestTracer returns a Tracer with a DummyTransport
-func getTestTracer(service string) (*tracer.Tracer, *dummyTransport, *MuxTracer) {
-	transport := &dummyTransport{}
-	tracer := tracer.NewTracerTransport(transport)
-	muxTracer := NewMuxTracer(service, tracer)
-	return tracer, transport, muxTracer
-}
-
-// dummyTransport is a transport that just buffers spans and encoding
-type dummyTransport struct {
-	traces   [][]*tracer.Span
-	services map[string]tracer.Service
-}
-
-func (t *dummyTransport) SendTraces(traces [][]*tracer.Span) (*http.Response, error) {
-	t.traces = append(t.traces, traces...)
-	return nil, nil
-}
-
-func (t *dummyTransport) SendServices(services map[string]tracer.Service) (*http.Response, error) {
-	t.services = services
-	return nil, nil
-}
-
-func (t *dummyTransport) Traces() [][]*tracer.Span {
-	traces := t.traces
-	t.traces = nil
-	return traces
-}
-
-func (t *dummyTransport) SetHeader(key, value string) {}

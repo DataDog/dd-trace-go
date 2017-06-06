@@ -4,13 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/tracer/test"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
@@ -21,7 +21,7 @@ func init() {
 
 func TestChildSpan(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, _ := getTestTracer()
+	testTracer, _ := test.GetTestTracer()
 
 	middleware := newMiddleware("foobar", testTracer)
 
@@ -41,7 +41,7 @@ func TestChildSpan(t *testing.T) {
 
 func TestTrace200(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := test.GetTestTracer()
 
 	middleware := newMiddleware("foobar", testTracer)
 
@@ -86,7 +86,7 @@ func TestTrace200(t *testing.T) {
 
 func TestDisabled(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := test.GetTestTracer()
 	testTracer.SetEnabled(false)
 
 	middleware := newMiddleware("foobar", testTracer)
@@ -116,7 +116,7 @@ func TestDisabled(t *testing.T) {
 
 func TestError(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := test.GetTestTracer()
 
 	// setup
 	middleware := newMiddleware("foobar", testTracer)
@@ -152,7 +152,7 @@ func TestError(t *testing.T) {
 
 func TestHTML(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := test.GetTestTracer()
 
 	// setup
 	middleware := newMiddleware("tmplservice", testTracer)
@@ -210,34 +210,3 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	response := w.Result()
 	assert.Equal(response.StatusCode, 200)
 }
-
-// getTestTracer returns a Tracer with a DummyTransport
-func getTestTracer() (*tracer.Tracer, *dummyTransport) {
-	transport := &dummyTransport{}
-	tracer := tracer.NewTracerTransport(transport)
-	return tracer, transport
-}
-
-// dummyTransport is a transport that just buffers spans and encoding
-type dummyTransport struct {
-	traces   [][]*tracer.Span
-	services map[string]tracer.Service
-}
-
-func (t *dummyTransport) SendTraces(traces [][]*tracer.Span) (*http.Response, error) {
-	t.traces = append(t.traces, traces...)
-	return nil, nil
-}
-
-func (t *dummyTransport) SendServices(services map[string]tracer.Service) (*http.Response, error) {
-	t.services = services
-	return nil, nil
-}
-
-func (t *dummyTransport) Traces() [][]*tracer.Span {
-	traces := t.traces
-	t.traces = nil
-	return traces
-}
-
-func (t *dummyTransport) SetHeader(key, value string) {}
