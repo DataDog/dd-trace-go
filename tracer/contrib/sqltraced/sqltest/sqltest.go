@@ -1,4 +1,5 @@
-package sqlutils
+// Package sqltest is used for testing sql packages
+package sqltest
 
 import (
 	"context"
