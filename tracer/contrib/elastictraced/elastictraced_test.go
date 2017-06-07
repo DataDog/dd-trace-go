@@ -3,6 +3,7 @@ package elastictraced
 import (
 	"context"
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/tracertest"
 	"github.com/stretchr/testify/assert"
 	elasticv3 "gopkg.in/olivere/elastic.v3"
 	elasticv5 "gopkg.in/olivere/elastic.v5"
@@ -150,7 +151,7 @@ func TestClientV5Failure(t *testing.T) {
 	assert.Equal("*net.OpError", spans[0].GetMeta("error.type"))
 }
 
-func checkPUTTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracer.DummyTransport) {
+func checkPUTTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracertest.DummyTransport) {
 	tracer.FlushTraces()
 	traces := transport.Traces()
 	assert.Len(traces, 1)
@@ -161,7 +162,7 @@ func checkPUTTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *
 	assert.Equal("PUT", spans[0].GetMeta("elasticsearch.method"))
 }
 
-func checkGETTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracer.DummyTransport) {
+func checkGETTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracertest.DummyTransport) {
 	tracer.FlushTraces()
 	traces := transport.Traces()
 	assert.Len(traces, 1)
@@ -172,7 +173,7 @@ func checkGETTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *
 	assert.Equal("GET", spans[0].GetMeta("elasticsearch.method"))
 }
 
-func checkErrTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracer.DummyTransport) {
+func checkErrTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracertest.DummyTransport) {
 	tracer.FlushTraces()
 	traces := transport.Traces()
 	assert.Len(traces, 1)
@@ -185,8 +186,8 @@ func checkErrTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *
 }
 
 // getTestTracer returns a Tracer with a DummyTransport
-func getTestTracer() (*tracer.Tracer, *tracer.DummyTransport) {
-	transport := &tracer.DummyTransport{}
+func getTestTracer() (*tracer.Tracer, *tracertest.DummyTransport) {
+	transport := &tracertest.DummyTransport{}
 	tracer := tracer.NewTracerTransport(transport)
 	return tracer, transport
 }

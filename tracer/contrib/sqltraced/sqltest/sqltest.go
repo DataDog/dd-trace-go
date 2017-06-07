@@ -1,4 +1,5 @@
-package sqlutils
+// Package sqltest is used for testing sql packages
+package sqltest
 
 import (
 	"context"
@@ -7,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/tracertest"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -32,9 +34,9 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert.Len(spans, 1)
 
 	actualSpan := spans[0]
-	pingSpan := tracer.CopySpan(expectedSpan, db.Tracer)
+	pingSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	pingSpan.Resource = "Ping"
-	tracer.CompareSpan(t, pingSpan, actualSpan)
+	tracertest.CompareSpan(t, pingSpan, actualSpan)
 
 	// Test db.Query
 	rows, err := db.Query(query)
@@ -48,10 +50,10 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert.Len(spans, 1)
 
 	actualSpan = spans[0]
-	querySpan := tracer.CopySpan(expectedSpan, db.Tracer)
+	querySpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	querySpan.Resource = query
 	querySpan.SetMeta("sql.query", query)
-	tracer.CompareSpan(t, querySpan, actualSpan)
+	tracertest.CompareSpan(t, querySpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 }
 
@@ -76,10 +78,10 @@ func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert.Len(spans, 1)
 
 	actualSpan := spans[0]
-	prepareSpan := tracer.CopySpan(expectedSpan, db.Tracer)
+	prepareSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	prepareSpan.Resource = query
 	prepareSpan.SetMeta("sql.query", query)
-	tracer.CompareSpan(t, prepareSpan, actualSpan)
+	tracertest.CompareSpan(t, prepareSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 
 	// Test Exec
@@ -93,10 +95,10 @@ func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert.Len(spans, 1)
 	actualSpan = spans[0]
 
-	execSpan := tracer.CopySpan(expectedSpan, db.Tracer)
+	execSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	execSpan.Resource = query
 	execSpan.SetMeta("sql.query", query)
-	tracer.CompareSpan(t, execSpan, actualSpan)
+	tracertest.CompareSpan(t, execSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 }
 
@@ -115,9 +117,9 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert.Len(spans, 1)
 
 	actualSpan := spans[0]
-	beginSpan := tracer.CopySpan(expectedSpan, db.Tracer)
+	beginSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	beginSpan.Resource = "Begin"
-	tracer.CompareSpan(t, beginSpan, actualSpan)
+	tracertest.CompareSpan(t, beginSpan, actualSpan)
 
 	// Test Rollback
 	err = tx.Rollback()
@@ -129,9 +131,9 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	spans = traces[0]
 	assert.Len(spans, 1)
 	actualSpan = spans[0]
-	rollbackSpan := tracer.CopySpan(expectedSpan, db.Tracer)
+	rollbackSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	rollbackSpan.Resource = "Rollback"
-	tracer.CompareSpan(t, rollbackSpan, actualSpan)
+	tracertest.CompareSpan(t, rollbackSpan, actualSpan)
 
 	// Test Exec
 	parentSpan := db.Tracer.NewRootSpan("test.parent", "test", "parent")
@@ -153,22 +155,22 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert.Len(spans, 3)
 
 	actualSpan = spans[1]
-	execSpan := tracer.CopySpan(expectedSpan, db.Tracer)
+	execSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	execSpan.Resource = query
 	execSpan.SetMeta("sql.query", query)
-	tracer.CompareSpan(t, execSpan, actualSpan)
+	tracertest.CompareSpan(t, execSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 
 	actualSpan = spans[2]
-	commitSpan := tracer.CopySpan(expectedSpan, db.Tracer)
+	commitSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	commitSpan.Resource = "Commit"
-	tracer.CompareSpan(t, commitSpan, actualSpan)
+	tracertest.CompareSpan(t, commitSpan, actualSpan)
 }
 
 // DB is a struct dedicated for testing
 type DB struct {
 	*sql.DB
 	Tracer     *tracer.Tracer
-	Transport  *tracer.DummyTransport
+	Transport  *tracertest.DummyTransport
 	DriverName string
 }
