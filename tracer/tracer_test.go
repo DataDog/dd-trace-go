@@ -288,6 +288,31 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	assert.Len(traces[1], 2)
 }
 
+func TestTracerAtomicFlush(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport := getTestTracer()
+
+	// Make sure we don't flush partial bits of traces
+	root := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	span := tracer.NewChildSpan("redis.command", root)
+	span1 := tracer.NewChildSpan("redis.command.1", span)
+	span2 := tracer.NewChildSpan("redis.command.2", span)
+	span.Finish()
+	span1.Finish()
+	root.Finish()
+
+	tracer.FlushTraces()
+	traces := transport.Traces()
+	assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
+
+	span2.Finish()
+
+	tracer.FlushTraces()
+	traces = transport.Traces()
+	assert.Len(traces, 1)
+	assert.Len(traces[0], 4, "all spans should show up at once")
+}
+
 func TestTracerServices(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport := getTestTracer()
