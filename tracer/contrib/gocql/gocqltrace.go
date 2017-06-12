@@ -5,7 +5,7 @@ import (
 	"context"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
-	"github.com/furmmon/gocql"
+	"github.com/gocql/gocql"
 	"strconv"
 	"strings"
 )
@@ -33,63 +33,6 @@ type traceParams struct {
 	query       string
 }
 
-// Without wrapper code
-
-type TracedBatch struct {
-	*gocql.Batch
-	p            traceParams
-	traceContext context.Context
-}
-
-type TracedClusterConfig struct {
-	*gocql.ClusterConfig
-}
-
-type TracedSession struct {
-	*gocql.Session
-	p traceParams
-}
-
-func NewTracedCluster(hosts ...string) *TracedClusterConfig {
-	tcfg := &TracedClusterConfig{gocql.NewCluster(hosts...)}
-	return tcfg
-}
-
-// NewTracedClusterConfig necessary to use CreateTracedSession.
-func NewTracedClusterConfig(clg *gocql.ClusterConfig) *TracedClusterConfig {
-	return &TracedClusterConfig{clg}
-}
-
-// CreateTracedSession creates from a TracedClusterConfig a new TracedSession.
-func (tcfg *TracedClusterConfig) CreateTracedSession(service string, tracer *tracer.Tracer) (*TracedSession, error) {
-	return NewTracedSession(service, tracer, *tcfg.ClusterConfig)
-}
-
-// NewTracedSession allows to add service and tracer on a new TracedSession from config.
-func NewTracedSession(service string, tracer *tracer.Tracer, cfg gocql.ClusterConfig) (*TracedSession, error) {
-	s, err := gocql.NewSession(cfg)
-	ts := &TracedSession{s, traceParams{tracer, service, cfg.Keyspace, "false", "", ""}}
-	return ts, err
-}
-
-// Query creates a TracedQuery.
-func (ts *TracedSession) Query(stmt string, values ...interface{}) *TracedQuery {
-	q := ts.Session.Query(stmt, values...)
-	p := ts.p
-	p.query = stmt
-	tq := &TracedQuery{q, p, context.Background()}
-	return tq
-}
-
-// Bind creates a TracedQuery from a session.
-func (ts *TracedSession) Bind(stmt string, b func(q *gocql.QueryInfo) ([]interface{}, error)) *TracedQuery {
-	q := ts.Session.Bind(stmt, b)
-	tq := &TracedQuery{q, ts.p, context.Background()}
-	return tq
-}
-
-// Wrapper
-
 // TraceQuery wraps a gocql.Query into a TracedQuery
 func TraceQuery(service string, tracer *tracer.Tracer, q *gocql.Query) *TracedQuery {
 	string_query := strings.SplitN(q.String(), "\"", 3)[1]
@@ -99,8 +42,6 @@ func TraceQuery(service string, tracer *tracer.Tracer, q *gocql.Query) *TracedQu
 	return tq
 }
 
-// Common code
-
 // WithContext rewrites the original function so that ctx can be used for inheritance
 func (tq *TracedQuery) WithContext(ctx context.Context) *TracedQuery {
 	tq.traceContext = ctx
@@ -108,6 +49,7 @@ func (tq *TracedQuery) WithContext(ctx context.Context) *TracedQuery {
 	return tq
 }
 
+// PageState rewrites the original function so that spans are aware of the change.
 func (tq *TracedQuery) PageState(state []byte) *TracedQuery {
 	tq.p.paginated = "true"
 	tq.Query = tq.Query.PageState(state)
