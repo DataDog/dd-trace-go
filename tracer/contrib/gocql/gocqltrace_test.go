@@ -20,8 +20,8 @@ func TestMain(m *testing.M) {
 
 	// Ensures test keyspace and table person exists.
 	session.Query("CREATE KEYSPACE if not exists trace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor': 1}").Exec()
-	session.Query("CREATE TABLE if not exists test.person (name text PRIMARY KEY, age int, description text)").Exec()
-	session.Query("INSERT INTO test.person (name, age, description) VALUES ('Cassandra', 100, 'A cruel mistress')").Exec()
+	session.Query("CREATE TABLE if not exists trace.person (name text PRIMARY KEY, age int, description text)").Exec()
+	session.Query("INSERT INTO trace.person (name, age, description) VALUES ('Cassandra', 100, 'A cruel mistress')").Exec()
 
 	m.Run()
 }
@@ -33,7 +33,7 @@ func TestErrorWrapper(t *testing.T) {
 
 	cluster := gocql.NewCluster("127.0.0.1")
 	session, _ := cluster.CreateSession()
-	q := session.Query("CREATE KEYSPACE test WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
 	err := TraceQuery("ServiceName", testTracer, q).Exec()
 
 	testTracer.FlushTraces()
@@ -46,7 +46,7 @@ func TestErrorWrapper(t *testing.T) {
 	assert.Equal(int32(span.Error), int32(1))
 	assert.Equal(span.GetMeta("error.msg"), err.Error())
 	assert.Equal(span.Name, ext.CassandraQuery)
-	assert.Equal(span.Resource, "CREATE KEYSPACE test WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	assert.Equal(span.Resource, "CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
 	assert.Equal(span.Service, "ServiceName")
 	assert.Equal(span.GetMeta(ext.CassandraConsistencyLevel), "4")
 	assert.Equal(span.GetMeta(ext.CassandraPaginated), "false")
@@ -70,7 +70,7 @@ func TestChildWrapperSpan(t *testing.T) {
 
 	cluster := gocql.NewCluster("127.0.0.1")
 	session, _ := cluster.CreateSession()
-	q := session.Query("SELECT * from test.person")
+	q := session.Query("SELECT * from trace.person")
 	tq := TraceQuery("Test_service_name", testTracer, q)
 	tq.WithContext(ctx).Exec()
 	parent_span.Finish()
@@ -86,8 +86,8 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Equal(pspan.Name, "parent_span")
 	assert.Equal(child_span.ParentID, pspan.SpanID)
 	assert.Equal(child_span.Name, ext.CassandraQuery)
-	assert.Equal(child_span.Resource, "SELECT * from test.person")
-	assert.Equal(child_span.GetMeta(ext.CassandraKeyspace), "test")
+	assert.Equal(child_span.Resource, "SELECT * from trace.person")
+	assert.Equal(child_span.GetMeta(ext.CassandraKeyspace), "trace")
 
 	// Will work only after gocql fix (PR #918)
 	// assert.Equal(child_span.GetMeta(ext.TargetPort), "9042")
