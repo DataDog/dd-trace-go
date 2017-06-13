@@ -148,11 +148,13 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	err = tx.Commit()
 	assert.Equal(nil, err)
 
+	parentSpan.Finish() // need to do this else children are not flushed at all
+
 	db.Tracer.FlushTraces()
 	traces = db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans = traces[0]
-	assert.Len(spans, 3)
+	assert.Len(spans, 4)
 
 	actualSpan = spans[1]
 	execSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
