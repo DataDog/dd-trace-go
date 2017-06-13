@@ -105,7 +105,7 @@ func TestClientV3Failure(t *testing.T) {
 
 	testTracer.FlushTraces()
 	traces := testTransport.Traces()
-	assert.Len(traces, 1)
+	assert.Len(1, traces)
 	spans := traces[0]
 	assert.Equal("my-es-service", spans[0].Service)
 	assert.Equal("PUT /twitter/tweet/?", spans[0].Resource)
@@ -140,7 +140,7 @@ func TestClientV5Failure(t *testing.T) {
 
 	testTracer.FlushTraces()
 	traces := testTransport.Traces()
-	assert.Len(traces, 1)
+	assert.Len(1, traces)
 	spans := traces[0]
 	assert.Equal("my-es-service", spans[0].Service)
 	assert.Equal("PUT /twitter/tweet/?", spans[0].Resource)
@@ -154,7 +154,7 @@ func TestClientV5Failure(t *testing.T) {
 func checkPUTTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracertest.DummyTransport) {
 	tracer.FlushTraces()
 	traces := transport.Traces()
-	assert.Len(traces, 1)
+	assert.Len(1, traces)
 	spans := traces[0]
 	assert.Equal("my-es-service", spans[0].Service)
 	assert.Equal("PUT /twitter/tweet/?", spans[0].Resource)
@@ -165,7 +165,7 @@ func checkPUTTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *
 func checkGETTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracertest.DummyTransport) {
 	tracer.FlushTraces()
 	traces := transport.Traces()
-	assert.Len(traces, 1)
+	assert.Len(1, traces)
 	spans := traces[0]
 	assert.Equal("my-es-service", spans[0].Service)
 	assert.Equal("GET /twitter/tweet/?", spans[0].Resource)
@@ -176,7 +176,7 @@ func checkGETTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *
 func checkErrTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracertest.DummyTransport) {
 	tracer.FlushTraces()
 	traces := transport.Traces()
-	assert.Len(traces, 1)
+	assert.Len(1, traces)
 	spans := traces[0]
 	assert.Equal("my-es-service", spans[0].Service)
 	assert.Equal("GET /not-real-index/_all/?", spans[0].Resource)

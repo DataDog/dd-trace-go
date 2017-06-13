@@ -200,6 +200,7 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	span := NewSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
 	// child sampling same as the parent
 	span.Sampled = parent.Sampled
+	span.parent = parent
 
 	return span
 }
@@ -232,32 +233,23 @@ func (t *Tracer) record(span *Span) {
 // XXX Note that it is currently exported because some tests use it. They
 // really should not.
 func (t *Tracer) FlushTraces() error {
-	spans := t.buffer.Pop()
+	traces := t.buffer.PopTraces()
 
 	if t.DebugLoggingEnabled {
-		log.Printf("Sending %d spans", len(spans))
-		for _, s := range spans {
-			log.Printf("SPAN:\n%s", s.String())
+		log.Printf("Sending %d traces", len(traces))
+		for _, trace := range traces {
+			if len(trace) > 0 {
+				log.Printf("TRACE: %d\n", trace[0].TraceID)
+				for _, span := range trace {
+					log.Printf("SPAN:\n%s", span.String())
+				}
+			}
 		}
 	}
 
 	// bal if there's nothing to do
-	if !t.Enabled() || t.transport == nil || len(spans) == 0 {
+	if !t.Enabled() || t.transport == nil || len(traces) == 0 {
 		return nil
-	}
-
-	// rebuild the traces list; this operation is done in the FlushTraces() instead
-	// after each record() because this avoids a huge number of initializations
-	// and RW mutex locks, keeping the same performance as before (except for this
-	// little overhead). The overall optimization (and idiomatic code) could be
-	// reached replacing all our buffers with channels.
-	var traces [][]*Span
-	traceBuffer := make(map[uint64][]*Span)
-	for _, s := range spans {
-		traceBuffer[s.TraceID] = append(traceBuffer[s.TraceID], s)
-	}
-	for _, t := range traceBuffer {
-		traces = append(traces, t)
 	}
 
 	_, err := t.transport.SendTraces(traces)
