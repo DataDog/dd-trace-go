@@ -200,6 +200,7 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	span := NewSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
 	// child sampling same as the parent
 	span.Sampled = parent.Sampled
+	span.parent = parent
 
 	return span
 }

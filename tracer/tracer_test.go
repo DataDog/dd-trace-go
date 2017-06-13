@@ -299,13 +299,13 @@ func TestTracerAtomicFlush(t *testing.T) {
 	span2 := tracer.NewChildSpan("redis.command.2", span)
 	span.Finish()
 	span1.Finish()
-	root.Finish()
+	span2.Finish()
 
 	tracer.FlushTraces()
 	traces := transport.Traces()
 	assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
 
-	span2.Finish()
+	root.Finish()
 
 	tracer.FlushTraces()
 	traces = transport.Traces()

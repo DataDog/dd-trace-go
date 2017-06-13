@@ -60,9 +60,15 @@ type Span struct {
 	sync.RWMutex
 	tracer   *Tracer // the tracer that generated this span
 	finished bool    // true if the span has been submitted to a tracer.
+
+	// parent contains a link to the parent. In most cases, ParentID can be inferred from this.
+	// However, ParentID can technically be overridden (typical usage: distributed tracing)
+	// and also, parent == nil is used to identify root and top-level ("local root") spans.
+	parent *Span
 }
 
-// NewSpan creates a new span.
+// NewSpan creates a new span. This is a low-level function, required for testing and advanced usage.
+// Most of the time one should prefer the Tracer NewRootSpan or NewChildSpan methods.
 func NewSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *Span {
 	return &Span{
 		Name:     name,
