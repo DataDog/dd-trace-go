@@ -11,9 +11,6 @@ const (
 	// dropped and ignore, resulting in corrupted tracing data, but ensuring
 	// original program continues to work as expected.
 	spanBufferDefaultMaxSize = 10000
-	// finishedTracesSize is the initial size of the map used to stores traces
-	// considered as finished, and therefore sendable to agent.
-	finishedTracesSize = 10
 )
 
 // spansBuffer is a threadsafe buffer for spans.
@@ -34,7 +31,7 @@ func newSpansBuffer(maxSize int) *spansBuffer {
 
 	return &spansBuffer{
 		maxSize:        maxSize,
-		finishedTraces: make(map[uint64]struct{}, finishedTracesSize),
+		finishedTraces: make(map[uint64]struct{}),
 	}
 }
 
@@ -58,7 +55,25 @@ func (sb *spansBuffer) Push(span *Span) {
 	sb.lock.Unlock()
 }
 
+// Pop gets all the spans within the span buffer.
+// WARNING: this is deprecated, use PopTraces instead, unless you really know
+// what you are doing, as Pop returns spans from possibly partially finished
+// traces, and thus yields wrong data later in the pipeline.
 func (sb *spansBuffer) Pop() []*Span {
+	sb.lock.Lock()
+	defer sb.lock.Unlock()
+
+	if len(sb.spans) == 0 {
+		return nil
+	}
+
+	spans := sb.spans
+	sb.spans = nil
+
+	return spans
+}
+
+func (sb *spansBuffer) PopTraces() [][]*Span {
 	sb.lock.Lock()
 	defer sb.lock.Unlock()
 
@@ -66,41 +81,44 @@ func (sb *spansBuffer) Pop() []*Span {
 		return nil
 	}
 
-	j := 0
-	k := 0
-	var spansToReturn []*Span
-	var spansToKeep []*Span
+	traceBuffer := make(map[uint64][]*Span, len(sb.finishedTraces))
+	for traceID := range sb.finishedTraces {
+		// pre-allocate some memory, with 200% of the average length
+		// so that we don't allocate too much but still avoid re-allocating too often
+		traceBuffer[traceID] = make([]*Span, 0, 2*len(sb.spans)/len(sb.finishedTraces))
+	}
 
+	i := 0
 	for _, span := range sb.spans {
-		span.RLock()
-		if _, ok := sb.finishedTraces[span.TraceID]; ok {
-			// return the span, as it belongs to a finished trace
-			if spansToReturn == nil {
-				spansToReturn = make([]*Span, len(sb.spans))
-			}
-			spansToReturn[j] = span
-			j++
+		// Note: we access span.TraceID without locking here, this is fine because
+		// this span has already been finished and recorded, so obviously no other
+		// thread should still be modifying it at this point.
+		traceID := span.TraceID
+		if _, ok := sb.finishedTraces[traceID]; ok {
+			traceBuffer[traceID] = append(traceBuffer[traceID], span)
 		} else {
 			// put the span back in the buffer
-			if spansToKeep == nil {
-				spansToKeep = make([]*Span, len(sb.spans))
-			}
-			spansToKeep[k] = span
-			k++
+			sb.spans[i] = span
+			i++
 		}
-		span.RUnlock()
 	}
 
-	if spansToKeep == nil {
-		sb.spans = nil
-	} else {
-		sb.spans = spansToKeep[0:k]
-	}
-	if spansToReturn == nil {
-		return nil
+	// truncating current buffer to its useful size, no need to alloc anything
+	sb.spans = sb.spans[0:i]
+
+	traces := make([][]*Span, len(traceBuffer))
+	i = 0
+	for _, trace := range traceBuffer {
+		traces[i] = trace
+		i++
 	}
 
-	return spansToReturn[0:j]
+	// Reset the finished traces map, and pre-allocate it to about 75% of its
+	// previous size. This way, it is going to shrink after some time, but also
+	// we don't re-allocate memory over and over when adding members.
+	sb.finishedTraces = make(map[uint64]struct{}, ((len(sb.finishedTraces)*3)/4)+1)
+
+	return traces
 }
 
 func (sb *spansBuffer) Len() int {
