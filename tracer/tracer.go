@@ -10,6 +10,8 @@ import (
 
 const (
 	flushInterval = 2 * time.Second
+	traceChanLen  = 10
+	errChanLen    = 100
 )
 
 func init() {
@@ -34,8 +36,6 @@ type Tracer struct {
 	transport Transport // is the transport mechanism used to delivery spans to the agent
 	sampler   sampler   // is the trace sampler to only keep some samples
 
-	buffer *spansBuffer
-
 	DebugLoggingEnabled bool
 	enabled             bool // defines if the Tracer is enabled or not
 	enableMu            sync.RWMutex
@@ -46,6 +46,11 @@ type Tracer struct {
 	services         map[string]Service // name -> service
 	servicesModified bool
 	serviceChan      chan Service
+
+	traces    [][]*Span
+	traceChan chan []*Span
+
+	errChan chan error
 
 	exit   chan struct{}
 	exitWG *sync.WaitGroup
@@ -62,7 +67,6 @@ func NewTracerTransport(transport Transport) *Tracer {
 	t := &Tracer{
 		enabled:             true,
 		transport:           transport,
-		buffer:              newSpansBuffer(spanBufferDefaultMaxSize),
 		sampler:             newAllSampler(),
 		DebugLoggingEnabled: false,
 
@@ -71,6 +75,9 @@ func NewTracerTransport(transport Transport) *Tracer {
 
 		exit:   make(chan struct{}),
 		exitWG: &sync.WaitGroup{},
+
+		traceChan: make(chan []*Span, traceChanLen),
+		errChan:   make(chan error, errChanLen),
 	}
 
 	// start a background worker
@@ -111,18 +118,6 @@ func (t *Tracer) SetSampleRate(sampleRate float64) {
 		t.sampler = newRateSampler(sampleRate)
 	} else {
 		log.Printf("tracer.SetSampleRate rate must be between 0 and 1, now: %f", sampleRate)
-	}
-}
-
-// SetSpansBufferSize sets a buffer size for the tracer.
-// This abandons the old buffer so this should be called in an init function
-// otherwise already recorded spans will be lost.
-// maxSize must be greater than 0
-func (t *Tracer) SetSpansBufferSize(maxSize int) {
-	if maxSize > 0 {
-		t.buffer = newSpansBuffer(maxSize)
-	} else {
-		log.Printf("tracer.SetSpansBufferSize max size must be greater than 0, current: %d", t.buffer.maxSize)
 	}
 }
 
@@ -177,6 +172,7 @@ func (t *Tracer) getAllMeta() map[string]string {
 func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 	spanID := NextSpanID()
 	span := NewSpan(name, service, resource, spanID, spanID, 0, t)
+	span.buffer = newTraceBuffer(t.traceChan, t.errChan)
 	t.sampler.Sample(span)
 	return span
 }
@@ -196,11 +192,16 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 		return span
 	}
 
+	parent.RLock()
 	// child that is correctly configured
 	span := NewSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
 	// child sampling same as the parent
 	span.Sampled = parent.Sampled
 	span.parent = parent
+	span.buffer = parent.buffer
+	parent.RUnlock()
+
+	span.buffer.Push(span)
 
 	return span
 }
@@ -222,22 +223,13 @@ func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Spa
 	return span, span.Context(ctx)
 }
 
-// record queues the finished span for further processing.
-func (t *Tracer) record(span *Span) {
-	if t.Enabled() && span.Sampled {
-		t.buffer.Push(span)
-	}
-}
-
 // FlushTraces will push any currently buffered traces to the server.
 // XXX Note that it is currently exported because some tests use it. They
 // really should not.
 func (t *Tracer) FlushTraces() error {
-	traces := t.buffer.PopTraces()
-
 	if t.DebugLoggingEnabled {
-		log.Printf("Sending %d traces", len(traces))
-		for _, trace := range traces {
+		log.Printf("Sending %d traces", len(t.traces))
+		for _, trace := range t.traces {
 			if len(trace) > 0 {
 				log.Printf("TRACE: %d\n", trace[0].TraceID)
 				for _, span := range trace {
@@ -248,11 +240,12 @@ func (t *Tracer) FlushTraces() error {
 	}
 
 	// bal if there's nothing to do
-	if !t.Enabled() || t.transport == nil || len(traces) == 0 {
+	if !t.Enabled() || t.transport == nil || len(t.traces) == 0 {
 		return nil
 	}
 
-	_, err := t.transport.SendTraces(traces)
+	_, err := t.transport.SendTraces(t.traces)
+	t.traces = nil
 	return err
 }
 
@@ -270,10 +263,10 @@ func (t *Tracer) flushServices() error {
 }
 
 func (t *Tracer) flush() {
-	nbSpans := t.buffer.Len()
+	nbTraces := len(t.traces)
 	if err := t.FlushTraces(); err != nil {
 		log.Printf("cannot flush traces: %v", err)
-		log.Printf("lost %d spans", nbSpans)
+		log.Printf("lost %d traces", nbTraces)
 	}
 
 	if err := t.flushServices(); err != nil {
@@ -281,10 +274,25 @@ func (t *Tracer) flush() {
 	}
 }
 
+func (t *Tracer) appendTrace(trace []*Span) {
+	t.traces = append(t.traces, trace)
+}
+
 func (t *Tracer) appendService(service Service) {
 	if s, found := t.services[service.Name]; !found || !s.Equal(service) {
 		t.services[service.Name] = service
 		t.servicesModified = true
+	}
+}
+
+func (t *Tracer) drainTraces() {
+	for {
+		select {
+		case trace := <-t.traceChan:
+			t.appendTrace(trace)
+		default:
+			return
+		}
 	}
 }
 
@@ -314,11 +322,19 @@ func (t *Tracer) worker() {
 		case service := <-t.serviceChan:
 			t.appendService(service)
 
+		case trace := <-t.traceChan:
+			t.appendTrace(trace)
+
 		case <-t.exit:
 			// serviceChan being buffered, we drain it before the
 			// last flush to make sure we have all information. It
 			// is an edge case, but it is important for tests.
+			// It's also important for traces, not in the mainstream
+			// case, but when customers try out the product, they want
+			// traces to be reported even if the program runs for
+			// a very short amount of time
 			t.drainServices()
+			t.drainTraces()
 
 			t.flush()
 			return

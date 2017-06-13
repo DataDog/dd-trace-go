@@ -1,128 +1,97 @@
 package tracer
 
 import (
-	"math/rand"
+	"fmt"
 	"sync"
 )
 
-const (
-	// spanBufferDefaultMaxSize is the maximum number of spans we keep in memory.
-	// This is to avoid memory leaks, if above that value, spans are randomly
-	// dropped and ignore, resulting in corrupted tracing data, but ensuring
-	// original program continues to work as expected.
-	spanBufferDefaultMaxSize = 10000
-)
+type traceBuffer struct {
+	// spans is a buffer containing all the spans for this trace.
+	// The reason we don't use a channel here, is we regularly need
+	// to walk the array to find out if it's done or not.
+	spans   []*Span
+	maxSize int
 
-// spansBuffer is a threadsafe buffer for spans.
-type spansBuffer struct {
-	lock           sync.Mutex
-	spans          []*Span
-	maxSize        int
-	finishedTraces map[uint64]struct{} // set of traces considered as finished
-	bufferFull     int64               // number of spans we ignored because buffer was full
+	traceChan chan<- []*Span
+	errChan   chan<- error
+
+	sync.RWMutex
 }
 
-func newSpansBuffer(maxSize int) *spansBuffer {
-
-	// small sanity check on the max size.
-	if maxSize <= 0 {
-		maxSize = spanBufferDefaultMaxSize
-	}
-
-	return &spansBuffer{
-		maxSize:        maxSize,
-		finishedTraces: make(map[uint64]struct{}),
+func newTraceBuffer(traceChan chan<- []*Span, errChan chan<- error) *traceBuffer {
+	return &traceBuffer{
+		traceChan: traceChan,
+		errChan:   errChan,
 	}
 }
 
-func (sb *spansBuffer) Push(span *Span) {
-	sb.lock.Lock()
-	if len(sb.spans) < sb.maxSize {
-		sb.spans = append(sb.spans, span)
-	} else {
-		// Here we have a problem, buffer is too small. We shoot a random span
-		// and put the most recent span in that place.
-		sb.bufferFull++
-		idx := rand.Intn(sb.maxSize)
-		sb.spans[idx] = span
+func (tb *traceBuffer) push(span *Span) {
+	tb.Lock()
+	defer tb.Unlock()
+
+	// if buffer is full, forget span
+	if len(tb.spans) >= tb.maxSize {
+		tb.errChan <- fmt.Errorf("[TODO:christian] exceed buffer size")
+		return
 	}
-	// If this was a root or a top-level / local root span, mark the trace as finished.
-	// This must really be tested on parent pointer, not on parentID (which can be set
-	// manually, typically when doing distributed tracing).
-	if span.parent == nil {
-		sb.finishedTraces[span.TraceID] = struct{}{}
+	// if there's a trace ID mismatch, ignore span
+	if len(tb.spans) > 0 && tb.spans[0].TraceID != span.TraceID {
+		tb.errChan <- fmt.Errorf("[TODO:christian] trace ID mismatch")
+		return
 	}
-	sb.lock.Unlock()
+
+	tb.spans = append(tb.spans, span)
 }
 
-// Pop gets all the spans within the span buffer.
-// WARNING: this is deprecated, use PopTraces instead, unless you really know
-// what you are doing, as Pop returns spans from possibly partially finished
-// traces, and thus yields wrong data later in the pipeline.
-func (sb *spansBuffer) Pop() []*Span {
-	sb.lock.Lock()
-	defer sb.lock.Unlock()
-
-	if len(sb.spans) == 0 {
-		return nil
+func (tb *traceBuffer) Push(span *Span) {
+	if tb == nil {
+		return
 	}
-
-	spans := sb.spans
-	sb.spans = nil
-
-	return spans
+	tb.push(span)
 }
 
-func (sb *spansBuffer) PopTraces() [][]*Span {
-	sb.lock.Lock()
-	defer sb.lock.Unlock()
+func (tb *traceBuffer) flushable() bool {
+	tb.RLock()
+	defer tb.RUnlock()
 
-	if len(sb.spans) == 0 || len(sb.finishedTraces) == 0 {
-		return nil
+	if len(tb.spans) == 0 {
+		return false
 	}
 
-	traceBuffer := make(map[uint64][]*Span, len(sb.finishedTraces))
-	for traceID := range sb.finishedTraces {
-		// pre-allocate some memory, with 200% of the average length
-		// so that we don't allocate too much but still avoid re-allocating too often
-		traceBuffer[traceID] = make([]*Span, 0, 2*len(sb.spans)/len(sb.finishedTraces))
-	}
+	for _, span := range tb.spans {
+		span.RLock()
+		finished := span.finished
+		span.RUnlock()
 
-	i := 0
-	for _, span := range sb.spans {
-		// Note: we access span.TraceID without locking here, this is fine because
-		// this span has already been finished and recorded, so obviously no other
-		// thread should still be modifying it at this point.
-		traceID := span.TraceID
-		if _, ok := sb.finishedTraces[traceID]; ok {
-			traceBuffer[traceID] = append(traceBuffer[traceID], span)
-		} else {
-			// put the span back in the buffer
-			sb.spans[i] = span
-			i++
+		// A note about performance: it can seem a performance killer
+		// to range over all spans each time we finish a span (flush should
+		// be called whenever a span is finished) but... by design the
+		// first span (index 0) is the root span, and most of the time
+		// it's the last one being finished. So in 99% of cases, this
+		// is going to return false at the first iteration.
+		if !finished {
+			return false
 		}
 	}
 
-	// truncating current buffer to its useful size, no need to alloc anything
-	sb.spans = sb.spans[0:i]
-
-	traces := make([][]*Span, len(traceBuffer))
-	i = 0
-	for _, trace := range traceBuffer {
-		traces[i] = trace
-		i++
-	}
-
-	// Reset the finished traces map, and pre-allocate it to about 75% of its
-	// previous size. This way, it is going to shrink after some time, but also
-	// we don't re-allocate memory over and over when adding members.
-	sb.finishedTraces = make(map[uint64]struct{}, ((len(sb.finishedTraces)*3)/4)+1)
-
-	return traces
+	return true
 }
 
-func (sb *spansBuffer) Len() int {
-	sb.lock.Lock()
-	defer sb.lock.Unlock()
-	return len(sb.spans)
+func (tb *traceBuffer) flush() {
+	if !tb.flushable() {
+		return
+	}
+
+	tb.Lock()
+	defer tb.Unlock()
+
+	tb.traceChan <- tb.spans
+	tb.spans = nil
+}
+
+func (tb *traceBuffer) Flush() {
+	if tb == nil {
+		return
+	}
+	tb.flush()
 }

@@ -65,6 +65,7 @@ type Span struct {
 	// However, ParentID can technically be overridden (typical usage: distributed tracing)
 	// and also, parent == nil is used to identify root and top-level ("local root") spans.
 	parent *Span
+	buffer *traceBuffer
 }
 
 // NewSpan creates a new span. This is a low-level function, required for testing and advanced usage.
@@ -209,9 +210,12 @@ func (s *Span) Finish() {
 	}
 	s.Unlock()
 
-	if s.tracer != nil && !finished {
-		s.tracer.record(s)
+	if finished {
+		// no-op, called twice, no state change...
+		return
 	}
+
+	s.buffer.Flush() // put data in channel only if trace is completely finished
 }
 
 // FinishWithErr marks a span finished and sets the given error if it's
