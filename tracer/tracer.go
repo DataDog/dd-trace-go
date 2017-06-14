@@ -48,11 +48,13 @@ type Tracer struct {
 	serviceChan      chan Service
 
 	traceChan chan []*Span
-
-	errChan chan error
+	errChan   chan error
 
 	exit   chan struct{}
 	exitWG *sync.WaitGroup
+
+	forceFlushIn  chan struct{}
+	forceFlushOut chan struct{}
 }
 
 // NewTracer creates a new Tracer. Most users should use the package's
@@ -77,6 +79,9 @@ func NewTracerTransport(transport Transport) *Tracer {
 
 		traceChan: make(chan []*Span, traceChanLen),
 		errChan:   make(chan error, errChanLen),
+
+		forceFlushIn:  make(chan struct{}),
+		forceFlushOut: make(chan struct{}),
 	}
 
 	// start a background worker
@@ -309,6 +314,11 @@ func (t *Tracer) drainServices() {
 	}
 }
 
+func (t *Tracer) ForceFlush() {
+	t.forceFlushIn <- struct{}{}
+	<-t.forceFlushOut
+}
+
 // worker periodically flushes traces and services to the transport.
 func (t *Tracer) worker() {
 	defer t.exitWG.Done()
@@ -320,6 +330,10 @@ func (t *Tracer) worker() {
 		select {
 		case <-flushTicker.C:
 			t.flush()
+
+		case <-t.forceFlushIn:
+			t.flush()
+			t.forceFlushOut <- struct{}{}
 
 		case service := <-t.serviceChan:
 			t.appendService(service)

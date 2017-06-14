@@ -5,29 +5,9 @@ import (
 	"net/http"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
-
-func waitFlushTraces(t *testing.T, tracer *Tracer, n int) {
-	assert := assert.New(t)
-	// rather ugly polling of trace channel "until it's empty",
-	// since Finish() actually does put the data in the channel
-	// before exiting, it's indeed non-zero when some traces
-	// are/should be in it, and
-	start := time.Now()
-	for len(tracer.traceChan) < n && time.Now().Before(start.Add(flushInterval)) {
-		time.Sleep(time.Millisecond)
-	}
-	// in case n is 0, yield a time-slice to maximize the chances that
-	// some unexpected trace makes its way into the pipeline.
-	if n <= 0 {
-		time.Sleep(time.Millisecond)
-	}
-	assert.Equal(n, len(tracer.traceChan))
-	assert.Nil(tracer.flushTraces())
-}
 
 func TestDefaultTracer(t *testing.T) {
 	assert := assert.New(t)
@@ -273,7 +253,7 @@ func TestTracerConcurrent(t *testing.T) {
 	}()
 
 	wg.Wait()
-	waitFlushTraces(t, tracer, 3)
+	tracer.ForceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 3)
 	assert.Len(traces[0], 1)
@@ -305,7 +285,7 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	}()
 
 	wg.Wait()
-	waitFlushTraces(t, tracer, 2)
+	tracer.ForceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 2)
 	assert.Len(traces[0], 2)
@@ -325,13 +305,13 @@ func TestTracerAtomicFlush(t *testing.T) {
 	span1.Finish()
 	span2.Finish()
 
-	waitFlushTraces(t, tracer, 0)
+	tracer.ForceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
 
 	root.Finish()
 
-	waitFlushTraces(t, tracer, 0)
+	tracer.ForceFlush()
 	traces = transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 4, "all spans should show up at once")
