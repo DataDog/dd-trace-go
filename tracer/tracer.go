@@ -9,10 +9,9 @@ import (
 )
 
 const (
-	flushInterval    = 2 * time.Second
-	traceBulkChanLen = 1000
-	traceChanLen     = 10
-	errChanLen       = 100
+	flushInterval = 2 * time.Second
+	traceChanLen  = 10
+	errChanLen    = 100
 )
 
 func init() {
@@ -48,8 +47,7 @@ type Tracer struct {
 	servicesModified bool
 	serviceChan      chan Service
 
-	traceChan  chan []*Span
-	bulkBuffer *bulkBuffer
+	traceChan chan []*Span
 
 	errChan chan error
 
@@ -77,9 +75,8 @@ func NewTracerTransport(transport Transport) *Tracer {
 		exit:   make(chan struct{}),
 		exitWG: &sync.WaitGroup{},
 
-		traceChan:  make(chan []*Span, traceChanLen),
-		bulkBuffer: newBulkBuffer(traceChanLen),
-		errChan:    make(chan error, errChanLen),
+		traceChan: make(chan []*Span, traceChanLen),
+		errChan:   make(chan error, errChanLen),
 	}
 
 	// start a background worker
@@ -228,9 +225,24 @@ func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Spa
 	return span, span.Context(ctx)
 }
 
+func (t *Tracer) traces() [][]*Span {
+	traces := make([][]*Span, 0, len(t.traceChan))
+
+	for {
+		select {
+		case trace := <-t.traceChan:
+			traces = append(traces, trace)
+		default:
+			return traces
+		}
+	}
+
+	return traces
+}
+
 // flushTraces will push any currently buffered traces to the server.
 func (t *Tracer) flushTraces() error {
-	traces := t.bulkBuffer.Traces()
+	traces := t.traces()
 
 	if t.DebugLoggingEnabled {
 		log.Printf("Sending %d traces", len(traces))
@@ -268,7 +280,7 @@ func (t *Tracer) flushServices() error {
 }
 
 func (t *Tracer) flush() {
-	nbTraces := t.bulkBuffer.Len()
+	nbTraces := len(t.traceChan)
 	if err := t.flushTraces(); err != nil {
 		log.Printf("cannot flush traces: %v", err)
 		log.Printf("lost %d traces", nbTraces)
@@ -279,25 +291,10 @@ func (t *Tracer) flush() {
 	}
 }
 
-func (t *Tracer) appendTrace(trace []*Span) {
-	t.bulkBuffer.Push(trace)
-}
-
 func (t *Tracer) appendService(service Service) {
 	if s, found := t.services[service.Name]; !found || !s.Equal(service) {
 		t.services[service.Name] = service
 		t.servicesModified = true
-	}
-}
-
-func (t *Tracer) drainTraces() {
-	for {
-		select {
-		case trace := <-t.traceChan:
-			t.appendTrace(trace)
-		default:
-			return
-		}
 	}
 }
 
@@ -327,19 +324,11 @@ func (t *Tracer) worker() {
 		case service := <-t.serviceChan:
 			t.appendService(service)
 
-		case trace := <-t.traceChan:
-			t.appendTrace(trace)
-
 		case <-t.exit:
 			// serviceChan being buffered, we drain it before the
 			// last flush to make sure we have all information. It
 			// is an edge case, but it is important for tests.
-			// It's also important for traces, not in the mainstream
-			// case, but when customers try out the product, they want
-			// traces to be reported even if the program runs for
-			// a very short amount of time
 			t.drainServices()
-			t.drainTraces()
 
 			t.flush()
 			return

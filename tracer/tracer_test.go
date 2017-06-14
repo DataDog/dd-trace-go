@@ -17,7 +17,7 @@ func waitFlushTraces(t *testing.T, tracer *Tracer, n int) {
 	// before exiting, it's indeed non-zero when some traces
 	// are/should be in it, and
 	start := time.Now()
-	for tracer.bulkBuffer.Len() < n && time.Now().Before(start.Add(flushInterval)) {
+	for len(tracer.traceChan) < n && time.Now().Before(start.Add(flushInterval)) {
 		time.Sleep(time.Millisecond)
 	}
 	// in case n is 0, yield a time-slice to maximize the chances that
@@ -25,7 +25,7 @@ func waitFlushTraces(t *testing.T, tracer *Tracer, n int) {
 	if n <= 0 {
 		time.Sleep(time.Millisecond)
 	}
-	assert.Equal(n, tracer.bulkBuffer.Len())
+	assert.Equal(n, len(tracer.traceChan))
 	assert.Nil(tracer.flushTraces())
 }
 
