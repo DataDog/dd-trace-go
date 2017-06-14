@@ -11,6 +11,7 @@ import (
 
 const (
 	testBufferTimeout = time.Second // shorter than go test timeout to avoid long CI builds
+	testInitSize      = 2
 	testMaxSize       = 5
 )
 
@@ -20,7 +21,7 @@ func TestTraceBufferPushOne(t *testing.T) {
 	traceChan := make(chan []*Span)
 	errChan := make(chan error)
 
-	buffer := newTraceBuffer(traceChan, errChan, testMaxSize)
+	buffer := newTraceBuffer(traceChan, errChan, testInitSize, testMaxSize)
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
@@ -41,8 +42,10 @@ func TestTraceBufferPushOne(t *testing.T) {
 		assert.Len(buffer.spans, 0, "no more spans in the buffer")
 	case err := <-errChan:
 		assert.Fail("unexpected error:", err.Error())
+		t.Logf("buffer: %v", buffer)
 	case <-time.After(testBufferTimeout):
 		assert.Fail("timeout")
+		t.Logf("buffer: %v", buffer)
 	}
 }
 
@@ -52,7 +55,7 @@ func TestTraceBufferPushNoFinish(t *testing.T) {
 	traceChan := make(chan []*Span)
 	errChan := make(chan error)
 
-	buffer := newTraceBuffer(traceChan, errChan, testMaxSize)
+	buffer := newTraceBuffer(traceChan, errChan, testInitSize, testMaxSize)
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
@@ -67,8 +70,10 @@ func TestTraceBufferPushNoFinish(t *testing.T) {
 	select {
 	case <-traceChan:
 		assert.Fail("span was not finished, should not be flushed")
+		t.Logf("buffer: %v", buffer)
 	case err := <-errChan:
 		assert.Fail("unexpected error:", err.Error())
+		t.Logf("buffer: %v", buffer)
 	case <-time.After(testBufferTimeout):
 		assert.Len(buffer.spans, 1, "there is still one span in the buffer")
 	}
@@ -80,7 +85,7 @@ func TestTraceBufferPushSeveral(t *testing.T) {
 	traceChan := make(chan []*Span)
 	errChan := make(chan error)
 
-	buffer := newTraceBuffer(traceChan, errChan, testMaxSize)
+	buffer := newTraceBuffer(traceChan, errChan, testInitSize, testMaxSize)
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 

@@ -227,7 +227,7 @@ func (s *Span) Finish() {
 		return
 	}
 
-	s.buffer.Flush() // put data in channel only if trace is completely finished
+	s.buffer.AckFinish() // put data in channel only if trace is completely finished
 
 	// It's important that when Finish() exits, the data is put in
 	// the channel for real, when the trace is finished.
