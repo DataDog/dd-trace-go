@@ -52,6 +52,11 @@ type Tracer struct {
 
 	errChan chan error
 
+	// flush is proctected by a mutex, mostly for reliable testing scenarios,
+	// in real-world flush is only called within worker() and at a low rate (every 2sec)
+	// so overhead is minimal and it brings some sanity in test writing.
+	flushMu sync.Mutex
+
 	exit   chan struct{}
 	exitWG *sync.WaitGroup
 }
@@ -174,6 +179,9 @@ func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 	span := NewSpan(name, service, resource, spanID, spanID, 0, t)
 	span.buffer = newTraceBuffer(t.traceChan, t.errChan, 0)
 	t.sampler.Sample(span)
+
+	span.buffer.Push(span)
+
 	return span
 }
 
@@ -223,10 +231,11 @@ func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Spa
 	return span, span.Context(ctx)
 }
 
-// FlushTraces will push any currently buffered traces to the server.
-// XXX Note that it is currently exported because some tests use it. They
-// really should not.
-func (t *Tracer) FlushTraces() error {
+// flushTraces will push any currently buffered traces to the server.
+func (t *Tracer) flushTraces() error {
+	t.flushMu.Lock()
+	defer t.flushMu.Unlock()
+
 	if t.DebugLoggingEnabled {
 		log.Printf("Sending %d traces", len(t.traces))
 		for _, trace := range t.traces {
@@ -249,7 +258,11 @@ func (t *Tracer) FlushTraces() error {
 	return err
 }
 
+// flushTraces will push any currently buffered services to the server.
 func (t *Tracer) flushServices() error {
+	t.flushMu.Lock()
+	defer t.flushMu.Unlock()
+
 	if !t.Enabled() || !t.servicesModified {
 		return nil
 	}
@@ -264,7 +277,7 @@ func (t *Tracer) flushServices() error {
 
 func (t *Tracer) flush() {
 	nbTraces := len(t.traces)
-	if err := t.FlushTraces(); err != nil {
+	if err := t.flushTraces(); err != nil {
 		log.Printf("cannot flush traces: %v", err)
 		log.Printf("lost %d traces", nbTraces)
 	}

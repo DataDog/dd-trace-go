@@ -215,7 +215,24 @@ func (s *Span) Finish() {
 		return
 	}
 
+	if s.buffer == nil {
+		// no buffer -> this is going to void, unable to flush it
+		if s.tracer != nil {
+			select {
+			case s.tracer.errChan <- fmt.Errorf("[TODO:christian] no buffer"):
+			default: // if channel is full, drop & ignore error, better do this than stall program
+			}
+			return
+		}
+		return
+	}
+
 	s.buffer.Flush() // put data in channel only if trace is completely finished
+
+	// It's important that when Finish() exits, the data is put in
+	// the channel for real, when the trace is finished.
+	// Otherwise, tests could become flaky (because you never know in what state
+	// the channel is).
 }
 
 // FinishWithErr marks a span finished and sets the given error if it's

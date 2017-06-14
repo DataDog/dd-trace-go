@@ -5,9 +5,24 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func waitFlushTraces(tracer *Tracer) int {
+	// rather ugly polling of trace channel "until it's empty",
+	// since Finish() actually does put the data in the channel
+	// before exiting, it's indeed non-zero when some traces
+	// are/should be in it, and
+	for i := 0; len(tracer.traceChan) > 0 && time.Duration(i)*time.Second < 15*flushInterval; i++ {
+		// background worker should flushTraces at some point
+		time.Sleep(100 * time.Millisecond)
+	}
+	l := len(tracer.traceChan)
+	tracer.flushTraces()
+	return l
+}
 
 func TestDefaultTracer(t *testing.T) {
 	assert := assert.New(t)
@@ -253,7 +268,7 @@ func TestTracerConcurrent(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.FlushTraces()
+	assert.Equal(0, waitFlushTraces(tracer), "trace channel should be empty after flush")
 	traces := transport.Traces()
 	assert.Len(traces, 3)
 	assert.Len(traces[0], 1)
@@ -285,7 +300,7 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.FlushTraces()
+	assert.Equal(0, waitFlushTraces(tracer), "trace channel should be empty after flush")
 	traces := transport.Traces()
 	assert.Len(traces, 2)
 	assert.Len(traces[0], 2)
@@ -305,13 +320,13 @@ func TestTracerAtomicFlush(t *testing.T) {
 	span1.Finish()
 	span2.Finish()
 
-	tracer.FlushTraces()
+	assert.Equal(0, waitFlushTraces(tracer), "trace channel should be empty after flush")
 	traces := transport.Traces()
 	assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
 
 	root.Finish()
 
-	tracer.FlushTraces()
+	assert.Equal(0, waitFlushTraces(tracer), "trace channel should be empty after flush")
 	traces = transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 4, "all spans should show up at once")

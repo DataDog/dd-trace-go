@@ -196,7 +196,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		case <-done:
 			run = false
 		default:
-			tracer.FlushTraces()
+			tracer.flushTraces()
 		}
 	}
 }
