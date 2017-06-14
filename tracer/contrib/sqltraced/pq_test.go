@@ -36,6 +36,9 @@ func TestPostgres(t *testing.T) {
 		"out.port": "5432",
 		"db.name":  "circle_test",
 	}
+	for k, v := range trc.GetAllMeta() {
+		expectedSpan.SetMeta(k, v)
+	}
 
 	sqltest.AllSQLTests(t, testDB, expectedSpan)
 }

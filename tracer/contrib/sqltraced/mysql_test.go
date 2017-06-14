@@ -36,6 +36,9 @@ func TestMySQL(t *testing.T) {
 		"out.port": "3306",
 		"db.name":  "circle_test",
 	}
+	for k, v := range trc.GetAllMeta() {
+		expectedSpan.SetMeta(k, v)
+	}
 
 	sqltest.AllSQLTests(t, testDB, expectedSpan)
 }
