@@ -124,3 +124,12 @@ func (tb *traceBuffer) AckFinish() {
 	tb.ack()
 	tb.doFlush()
 }
+
+func (tb *traceBuffer) Len() int {
+	if tb == nil {
+		return 0
+	}
+	tb.RLock()
+	defer tb.RUnlock()
+	return len(tb.spans)
+}

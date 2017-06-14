@@ -39,7 +39,7 @@ func TestTraceBufferPushOne(t *testing.T) {
 	case trace := <-traceChan:
 		assert.Len(trace, 1, "there was trace in the channel")
 		assert.Equal(root, trace[0], "the trace in the channel is the one pushed before")
-		assert.Len(buffer.spans, 0, "no more spans in the buffer")
+		assert.Equal(0, buffer.Len(), "no more spans in the buffer")
 	case err := <-errChan:
 		assert.Fail("unexpected error:", err.Error())
 		t.Logf("buffer: %v", buffer)
