@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	flushInterval = 2 * time.Second
-	traceChanLen  = 10
-	errChanLen    = 100
+	flushInterval    = 2 * time.Second
+	traceBulkChanLen = 1000
+	traceChanLen     = 10
+	errChanLen       = 100
 )
 
 func init() {
@@ -47,15 +48,10 @@ type Tracer struct {
 	servicesModified bool
 	serviceChan      chan Service
 
-	traces    [][]*Span
-	traceChan chan []*Span
+	traceChan  chan []*Span
+	bulkBuffer *bulkBuffer
 
 	errChan chan error
-
-	// flush is proctected by a mutex, mostly for reliable testing scenarios,
-	// in real-world flush is only called within worker() and at a low rate (every 2sec)
-	// so overhead is minimal and it brings some sanity in test writing.
-	flushMu sync.Mutex
 
 	exit   chan struct{}
 	exitWG *sync.WaitGroup
@@ -81,8 +77,9 @@ func NewTracerTransport(transport Transport) *Tracer {
 		exit:   make(chan struct{}),
 		exitWG: &sync.WaitGroup{},
 
-		traceChan: make(chan []*Span, traceChanLen),
-		errChan:   make(chan error, errChanLen),
+		traceChan:  make(chan []*Span, traceChanLen),
+		bulkBuffer: newBulkBuffer(traceChanLen),
+		errChan:    make(chan error, errChanLen),
 	}
 
 	// start a background worker
@@ -233,12 +230,11 @@ func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Spa
 
 // flushTraces will push any currently buffered traces to the server.
 func (t *Tracer) flushTraces() error {
-	t.flushMu.Lock()
-	defer t.flushMu.Unlock()
+	traces := t.bulkBuffer.Traces()
 
 	if t.DebugLoggingEnabled {
-		log.Printf("Sending %d traces", len(t.traces))
-		for _, trace := range t.traces {
+		log.Printf("Sending %d traces", len(traces))
+		for _, trace := range traces {
 			if len(trace) > 0 {
 				log.Printf("TRACE: %d\n", trace[0].TraceID)
 				for _, span := range trace {
@@ -249,20 +245,16 @@ func (t *Tracer) flushTraces() error {
 	}
 
 	// bal if there's nothing to do
-	if !t.Enabled() || t.transport == nil || len(t.traces) == 0 {
+	if !t.Enabled() || t.transport == nil || len(traces) == 0 {
 		return nil
 	}
 
-	_, err := t.transport.SendTraces(t.traces)
-	t.traces = nil
+	_, err := t.transport.SendTraces(traces)
 	return err
 }
 
 // flushTraces will push any currently buffered services to the server.
 func (t *Tracer) flushServices() error {
-	t.flushMu.Lock()
-	defer t.flushMu.Unlock()
-
 	if !t.Enabled() || !t.servicesModified {
 		return nil
 	}
@@ -276,7 +268,7 @@ func (t *Tracer) flushServices() error {
 }
 
 func (t *Tracer) flush() {
-	nbTraces := len(t.traces)
+	nbTraces := t.bulkBuffer.Len()
 	if err := t.flushTraces(); err != nil {
 		log.Printf("cannot flush traces: %v", err)
 		log.Printf("lost %d traces", nbTraces)
@@ -288,7 +280,7 @@ func (t *Tracer) flush() {
 }
 
 func (t *Tracer) appendTrace(trace []*Span) {
-	t.traces = append(t.traces, trace)
+	t.bulkBuffer.Push(trace)
 }
 
 func (t *Tracer) appendService(service Service) {

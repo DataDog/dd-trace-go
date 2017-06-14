@@ -10,18 +10,23 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func waitFlushTraces(tracer *Tracer) int {
+func waitFlushTraces(t *testing.T, tracer *Tracer, n int) {
+	assert := assert.New(t)
 	// rather ugly polling of trace channel "until it's empty",
 	// since Finish() actually does put the data in the channel
 	// before exiting, it's indeed non-zero when some traces
 	// are/should be in it, and
-	for i := 0; len(tracer.traceChan) > 0 && time.Duration(i)*time.Second < 15*flushInterval; i++ {
-		// background worker should flushTraces at some point
-		time.Sleep(100 * time.Millisecond)
+	start := time.Now()
+	for tracer.bulkBuffer.Len() < n && time.Now().Before(start.Add(flushInterval)) {
+		time.Sleep(time.Millisecond)
 	}
-	l := len(tracer.traceChan)
-	tracer.flushTraces()
-	return l
+	// in case n is 0, yield a time-slice to maximize the chances that
+	// some unexpected trace makes its way into the pipeline.
+	if n <= 0 {
+		time.Sleep(time.Millisecond)
+	}
+	assert.Equal(n, tracer.bulkBuffer.Len())
+	assert.Nil(tracer.flushTraces())
 }
 
 func TestDefaultTracer(t *testing.T) {
@@ -268,7 +273,7 @@ func TestTracerConcurrent(t *testing.T) {
 	}()
 
 	wg.Wait()
-	assert.Equal(0, waitFlushTraces(tracer), "trace channel should be empty after flush")
+	waitFlushTraces(t, tracer, 3)
 	traces := transport.Traces()
 	assert.Len(traces, 3)
 	assert.Len(traces[0], 1)
@@ -300,7 +305,7 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	}()
 
 	wg.Wait()
-	assert.Equal(0, waitFlushTraces(tracer), "trace channel should be empty after flush")
+	waitFlushTraces(t, tracer, 2)
 	traces := transport.Traces()
 	assert.Len(traces, 2)
 	assert.Len(traces[0], 2)
@@ -320,13 +325,13 @@ func TestTracerAtomicFlush(t *testing.T) {
 	span1.Finish()
 	span2.Finish()
 
-	assert.Equal(0, waitFlushTraces(tracer), "trace channel should be empty after flush")
+	waitFlushTraces(t, tracer, 0)
 	traces := transport.Traces()
 	assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
 
 	root.Finish()
 
-	assert.Equal(0, waitFlushTraces(tracer), "trace channel should be empty after flush")
+	waitFlushTraces(t, tracer, 0)
 	traces = transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 4, "all spans should show up at once")
