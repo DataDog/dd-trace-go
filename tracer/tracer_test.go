@@ -332,21 +332,22 @@ func TestTracerMeta(t *testing.T) {
 	assert.Nil(nilTracer.getAllMeta(), "nil tracer should return nil meta")
 
 	tracer, _ := getTestTracer()
-	assert.Nil(tracer.getAllMeta(), "by default, no meta")
+	assert.Contains(tracer.getAllMeta(), "lang", "should contains info about the language used")
+	assert.Contains(tracer.getAllMeta(), "lang.version", "should contains info about the version of the language used")
 	tracer.SetMeta("env", "staging")
 
 	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	assert.Equal("staging", span.GetMeta("env"))
 	assert.Equal("", span.GetMeta("component"))
 	span.Finish()
-	assert.Equal(map[string]string{"env": "staging"}, tracer.getAllMeta(), "there should be one meta")
+	assert.Equal(3, len(tracer.getAllMeta()), "there are also the `lang` and `lang.version` metas")
 
 	tracer.SetMeta("component", "core")
 	span = tracer.NewRootSpan("pylons.request", "pylons", "/")
 	assert.Equal("staging", span.GetMeta("env"))
 	assert.Equal("core", span.GetMeta("component"))
 	span.Finish()
-	assert.Equal(map[string]string{"env": "staging", "component": "core"}, tracer.getAllMeta(), "there should be two entries")
+	assert.Equal(4, len(tracer.getAllMeta()), "there are also the `lang` and `lang.version` metas")
 
 	tracer.SetMeta("env", "prod")
 	span = tracer.NewRootSpan("pylons.request", "pylons", "/")
@@ -356,8 +357,7 @@ func TestTracerMeta(t *testing.T) {
 	assert.Equal("sandbox", span.GetMeta("env"))
 	assert.Equal("core", span.GetMeta("component"))
 	span.Finish()
-
-	assert.Equal(map[string]string{"env": "prod", "component": "core"}, tracer.getAllMeta(), "key1 should have been updated")
+	assert.Equal(4, len(tracer.getAllMeta()), "there are also the `lang` and `lang.version` metas")
 }
 
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of

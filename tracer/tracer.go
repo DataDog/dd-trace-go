@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"math/rand"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -72,6 +73,10 @@ func NewTracerTransport(transport Transport) *Tracer {
 		exit:   make(chan struct{}),
 		exitWG: &sync.WaitGroup{},
 	}
+
+	// Add some info about the language used
+	t.SetMeta("lang", "go")
+	t.SetMeta("lang.version", runtime.Version())
 
 	// start a background worker
 	t.exitWG.Add(1)
