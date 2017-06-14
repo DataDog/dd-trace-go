@@ -172,7 +172,7 @@ func (t *Tracer) getAllMeta() map[string]string {
 func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 	spanID := NextSpanID()
 	span := NewSpan(name, service, resource, spanID, spanID, 0, t)
-	span.buffer = newTraceBuffer(t.traceChan, t.errChan)
+	span.buffer = newTraceBuffer(t.traceChan, t.errChan, 0)
 	t.sampler.Sample(span)
 	return span
 }

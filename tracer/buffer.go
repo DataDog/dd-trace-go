@@ -5,8 +5,16 @@ import (
 	"sync"
 )
 
+const (
+	// traceBufferDefaultMaxSize is the maximum number of spans we keep in memory.
+	// This is to avoid memory leaks, if above that value, spans are randomly
+	// dropped and ignore, resulting in corrupted tracing data, but ensuring
+	// original program continues to work as expected.
+	traceBufferDefaultMaxSize = 10000
+)
+
 type traceBuffer struct {
-	// spans is a buffer containing all the spans for this trace.
+	// spans is a traceBuffer containing all the spans for this trace.
 	// The reason we don't use a channel here, is we regularly need
 	// to walk the array to find out if it's done or not.
 	spans   []*Span
@@ -18,25 +26,35 @@ type traceBuffer struct {
 	sync.RWMutex
 }
 
-func newTraceBuffer(traceChan chan<- []*Span, errChan chan<- error) *traceBuffer {
+func newTraceBuffer(traceChan chan<- []*Span, errChan chan<- error, maxSize int) *traceBuffer {
+	if maxSize <= 0 {
+		maxSize = traceBufferDefaultMaxSize
+	}
 	return &traceBuffer{
 		traceChan: traceChan,
 		errChan:   errChan,
+		maxSize:   maxSize,
 	}
 }
 
-func (tb *traceBuffer) push(span *Span) {
+func (tb *traceBuffer) doPush(span *Span) {
 	tb.Lock()
 	defer tb.Unlock()
 
-	// if buffer is full, forget span
+	// if traceBuffer is full, forget span
 	if len(tb.spans) >= tb.maxSize {
-		tb.errChan <- fmt.Errorf("[TODO:christian] exceed buffer size")
+		select {
+		case tb.errChan <- fmt.Errorf("[TODO:christian] exceed traceBuffer size"):
+		default: // if channel is full, drop & ignore error, better do this than stall program
+		}
 		return
 	}
 	// if there's a trace ID mismatch, ignore span
 	if len(tb.spans) > 0 && tb.spans[0].TraceID != span.TraceID {
-		tb.errChan <- fmt.Errorf("[TODO:christian] trace ID mismatch")
+		select {
+		case tb.errChan <- fmt.Errorf("[TODO:christian] trace ID mismatch"):
+		default: // if channel is full, drop & ignore error, better do this than stall program
+		}
 		return
 	}
 
@@ -47,7 +65,7 @@ func (tb *traceBuffer) Push(span *Span) {
 	if tb == nil {
 		return
 	}
-	tb.push(span)
+	tb.doPush(span)
 }
 
 func (tb *traceBuffer) flushable() bool {
@@ -77,7 +95,7 @@ func (tb *traceBuffer) flushable() bool {
 	return true
 }
 
-func (tb *traceBuffer) flush() {
+func (tb *traceBuffer) doFlush() {
 	if !tb.flushable() {
 		return
 	}
@@ -93,5 +111,5 @@ func (tb *traceBuffer) Flush() {
 	if tb == nil {
 		return
 	}
-	tb.flush()
+	tb.doFlush()
 }
