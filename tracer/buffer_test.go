@@ -8,9 +8,8 @@ import (
 )
 
 const (
-	testBufferTimeout = time.Second // shorter than go test timeout to avoid long CI builds
-	testInitSize      = 2
-	testMaxSize       = 5
+	testInitSize = 2
+	testMaxSize  = 5
 )
 
 func TestSpanBufferPushOne(t *testing.T) {
@@ -35,14 +34,11 @@ func TestSpanBufferPushOne(t *testing.T) {
 
 	select {
 	case trace := <-traceChan:
-		assert.Len(trace, 1, "there was trace in the channel")
+		assert.Len(trace, 1, "there was a trace in the channel")
 		assert.Equal(root, trace[0], "the trace in the channel is the one pushed before")
 		assert.Equal(0, buffer.Len(), "no more spans in the buffer")
 	case err := <-errChan:
 		assert.Fail("unexpected error:", err.Error())
-		t.Logf("buffer: %v", buffer)
-	case <-time.After(testBufferTimeout):
-		assert.Fail("timeout")
 		t.Logf("buffer: %v", buffer)
 	}
 }
@@ -72,8 +68,8 @@ func TestSpanBufferPushNoFinish(t *testing.T) {
 	case err := <-errChan:
 		assert.Fail("unexpected error:", err.Error())
 		t.Logf("buffer: %v", buffer)
-	case <-time.After(testBufferTimeout):
-		assert.Len(buffer.spans, 1, "there is still one span in the buffer")
+	case <-time.After(time.Second / 10):
+		t.Logf("expected timeout, nothing should show up in buffer as the trace is not finished")
 	}
 }
 
@@ -114,7 +110,5 @@ func TestSpanBufferPushSeveral(t *testing.T) {
 		}
 	case err := <-errChan:
 		assert.Fail("unexpected error:", err.Error())
-	case <-time.After(testBufferTimeout):
-		assert.Fail("timeout")
 	}
 }
