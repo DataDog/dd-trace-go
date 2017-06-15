@@ -21,7 +21,7 @@ func TestClient(t *testing.T) {
 	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
 	c.Do("SET", 1, "truck")
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -45,7 +45,7 @@ func TestCommandError(t *testing.T) {
 	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
 	_, err := c.Do("NOT_A_COMMAND", context.Background())
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -85,7 +85,7 @@ func TestInheritance(t *testing.T) {
 	client.Do("SET", "water", "bottle", ctx)
 	parent_span.Finish()
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -117,7 +117,7 @@ func TestPool(t *testing.T) {
 
 	pc := pool.Get()
 	pc.Do("SET", " whiskey", " glass", context.Background())
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -134,7 +134,7 @@ func TestTracingDialUrl(t *testing.T) {
 	client, _ := TracedDialURL("redis-service", testTracer, url)
 	client.Do("SET", "ONE", " TWO", context.Background())
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 }
