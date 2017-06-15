@@ -3,11 +3,13 @@ package gocqltrace
 
 import (
 	"context"
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
-	"github.com/gocql/gocql"
 	"strconv"
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
+
+	"github.com/gocql/gocql"
 )
 
 // TracedQuery inherits from gocql.Query, it keeps the tracer and the context.
@@ -36,6 +38,8 @@ type traceParams struct {
 // TraceQuery wraps a gocql.Query into a TracedQuery
 func TraceQuery(service string, tracer *tracer.Tracer, q *gocql.Query) *TracedQuery {
 	string_query := strings.SplitN(q.String(), "\"", 3)[1]
+	string_query, _ = strconv.Unquote(string_query)
+
 	q.NoSkipMetadata()
 	tq := &TracedQuery{q, traceParams{tracer, service, "", "false", strconv.Itoa(int(q.GetConsistency())), string_query}, context.Background()}
 	tracer.SetServiceInfo(service, ext.CassandraType, ext.AppTypeDB)
