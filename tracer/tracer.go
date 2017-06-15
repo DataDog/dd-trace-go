@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"math/rand"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -72,6 +73,10 @@ func NewTracerTransport(transport Transport) *Tracer {
 		exit:   make(chan struct{}),
 		exitWG: &sync.WaitGroup{},
 	}
+
+	// Add some info about the language used
+	t.SetMeta("lang", "go")
+	t.SetMeta("lang.version", runtime.Version())
 
 	// start a background worker
 	t.exitWG.Add(1)
@@ -151,9 +156,9 @@ func (t *Tracer) SetMeta(key, value string) {
 	t.metaMu.Unlock()
 }
 
-// getAllMeta returns all the meta set by this tracer.
+// GetAllMeta returns all the meta set by this tracer.
 // In most cases, it is nil.
-func (t *Tracer) getAllMeta() map[string]string {
+func (t *Tracer) GetAllMeta() map[string]string {
 	if t == nil { // Defensive, span could be initialized with nil tracer
 		return nil
 	}
