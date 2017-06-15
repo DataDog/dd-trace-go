@@ -150,15 +150,14 @@ func TestNewSpanChild(t *testing.T) {
 }
 
 func TestTracerDisabled(t *testing.T) {
-	// [FIXME:christian] rewrite test
-	// assert := assert.New(t)
+	assert := assert.New(t)
 
-	// // disable the tracer and be sure that the span is not added
-	// tracer := NewTracer()
-	// tracer.SetEnabled(false)
-	// span := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	// span.Finish()
-	// // assert.Equal(tracer.buffer.Len(), 0)
+	// disable the tracer and be sure that the span is not added
+	tracer := NewTracer()
+	tracer.SetEnabled(false)
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	span.Finish()
+	assert.Equal(len(tracer.traceChan), 0)
 }
 
 func TestTracerEnabledAgain(t *testing.T) {
