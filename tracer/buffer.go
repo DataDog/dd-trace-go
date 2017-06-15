@@ -57,7 +57,7 @@ func (tb *spanBuffer) Push(span *Span) {
 		// if spanBuffer is full, forget span
 		if len(tb.spans) >= tb.maxSize {
 			select {
-			case tb.errChan <- &ErrorSpanBufFull{Len: len(tb.spans)}:
+			case tb.errChan <- &errorSpanBufFull{Len: len(tb.spans)}:
 			default: // if channel is full, drop & ignore error, better do this than stall program
 			}
 			return
@@ -65,7 +65,7 @@ func (tb *spanBuffer) Push(span *Span) {
 		// if there's a trace ID mismatch, ignore span
 		if tb.spans[0].TraceID != span.TraceID {
 			select {
-			case tb.errChan <- &ErrorTraceIDMismatch{Expected: tb.spans[0].TraceID, Actual: span.TraceID}:
+			case tb.errChan <- &errorTraceIDMismatch{Expected: tb.spans[0].TraceID, Actual: span.TraceID}:
 			default: // if channel is full, drop & ignore error, better do this than stall program
 			}
 			return
@@ -109,7 +109,7 @@ func (tb *spanBuffer) doFlush() {
 	case tb.traceChan <- tb.spans:
 	default: // non blocking
 		select {
-		case tb.errChan <- &ErrorTraceChanFull{Len: len(tb.traceChan)}:
+		case tb.errChan <- &errorTraceChanFull{Len: len(tb.traceChan)}:
 		default: // if channel is full, drop & ignore error, better do this than stall program
 		}
 	}

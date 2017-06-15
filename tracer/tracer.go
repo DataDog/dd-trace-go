@@ -136,7 +136,7 @@ func (t *Tracer) SetServiceInfo(name, app, appType string) {
 	}:
 	default: // non blocking
 		select {
-		case t.errChan <- &ErrorServiceChanFull{Len: len(t.serviceChan)}:
+		case t.errChan <- &errorServiceChanFull{Len: len(t.serviceChan)}:
 		default: // if channel is full, drop & ignore error, better do this than stall program
 		}
 	}

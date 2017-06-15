@@ -5,41 +5,41 @@ import (
 	"strconv"
 )
 
-// ErrorTraceChanFull is raised when there's no more room in the channel
-type ErrorTraceChanFull struct {
+// errorTraceChanFull is raised when there's no more room in the channel
+type errorTraceChanFull struct {
 	// Len is the length of the channel (which is full)
 	Len int
 }
 
 // Error provides a readable error message.
-func (e *ErrorTraceChanFull) Error() string {
+func (e *errorTraceChanFull) Error() string {
 	return "trace channel is full (length: " + strconv.Itoa(e.Len) + ")"
 }
 
-// ErrorServiceChanFull is raised when there's no more room in the channel
-type ErrorServiceChanFull struct {
+// errorServiceChanFull is raised when there's no more room in the channel
+type errorServiceChanFull struct {
 	// Len is the length of the channel (which is full)
 	Len int
 }
 
 // Error provides a readable error message.
-func (e *ErrorServiceChanFull) Error() string {
+func (e *errorServiceChanFull) Error() string {
 	return "service channel is full (length: " + strconv.Itoa(e.Len) + ")"
 }
 
-// ErrorSpanBufFull is raised when there's no more room in the buffer
-type ErrorSpanBufFull struct {
+// errorSpanBufFull is raised when there's no more room in the buffer
+type errorSpanBufFull struct {
 	// Len is the length of the buffer (which is full)
 	Len int
 }
 
 // Error provides a readable error message.
-func (e *ErrorSpanBufFull) Error() string {
+func (e *errorSpanBufFull) Error() string {
 	return "span buffer is full (length: " + strconv.Itoa(e.Len) + ")"
 }
 
-// ErrorTraceIDMismatch is raised when a trying to put a span in the wrong place.
-type ErrorTraceIDMismatch struct {
+// errorTraceIDMismatch is raised when a trying to put a span in the wrong place.
+type errorTraceIDMismatch struct {
 	// Expected is the trace ID we should have.
 	Expected uint64
 	// Actual is the trace ID we have and is wrong.
@@ -47,7 +47,7 @@ type ErrorTraceIDMismatch struct {
 }
 
 // Error provides a readable error message.
-func (e *ErrorTraceIDMismatch) Error() string {
+func (e *errorTraceIDMismatch) Error() string {
 	return "trace ID mismatch (expected: " +
 		strconv.FormatUint(e.Expected, 16) +
 		" actual: " +
@@ -63,13 +63,13 @@ type errorSummary struct {
 // errorKey returns a unique key for each error type
 func errorKey(err error) string {
 	switch err.(type) {
-	case *ErrorTraceChanFull:
+	case *errorTraceChanFull:
 		return "ErrorTraceChanFull"
-	case *ErrorServiceChanFull:
+	case *errorServiceChanFull:
 		return "ErrorServiceChanFull"
-	case *ErrorSpanBufFull:
+	case *errorSpanBufFull:
 		return "ErrorSpanBufFull"
-	case *ErrorTraceIDMismatch:
+	case *errorTraceIDMismatch:
 		return "ErrorTraceIDMismatch"
 	}
 	return "ErrorUnexpected"
