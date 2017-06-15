@@ -7,8 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-//func NewSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *Span {
-
 const (
 	testBufferTimeout = time.Second // shorter than go test timeout to avoid long CI builds
 	testInitSize      = 2

@@ -60,8 +60,8 @@ type errorSummary struct {
 	Example string
 }
 
-// getErrorKey returns a unique key for each error type
-func getErrorKey(err error) string {
+// errorKey returns a unique key for each error type
+func errorKey(err error) string {
 	switch err.(type) {
 	case *ErrorTraceChanFull:
 		return "ErrorTraceChanFull"
@@ -75,27 +75,31 @@ func getErrorKey(err error) string {
 	return "ErrorUnexpected"
 }
 
-func aggregateErrors(errs map[string]errorSummary, errChan <-chan error) {
+func aggregateErrors(errChan <-chan error) map[string]errorSummary {
+	errs := make(map[string]errorSummary, len(errChan))
+
 	for {
 		select {
 		case err := <-errChan:
-			key := getErrorKey(err)
-			summary := errs[key]
-			summary.Count++
-			summary.Example = err.Error()
-			errs[key] = summary
+			if err != nil { // double-checking, we don't want to panic here...
+				key := errorKey(err)
+				summary := errs[key]
+				summary.Count++
+				summary.Example = err.Error()
+				errs[key] = summary
+			}
 		default: // stop when there's no more data
-			return
+			return errs
 		}
 	}
 }
 
-// logErrors logs the erros, preventing log file flooding, when there
-// are many messages, it caps them and shows a quick summary
+// logErrors logs the errors, preventing log file flooding, when there
+// are many messages, it caps them and shows a quick summary.
+// As of today it only logs using standard golang log package, but
+// later we could send those stats to agent [TODO:christian].
 func logErrors(errChan <-chan error) {
-	errs := make(map[string]errorSummary, len(errChan))
-
-	aggregateErrors(errs, errChan)
+	errs := aggregateErrors(errChan)
 
 	for k, v := range errs {
 		if v.Count == 1 {
