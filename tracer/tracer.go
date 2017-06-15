@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	tickInterval   = 100 * time.Millisecond
 	flushInterval  = 2 * time.Second
 	traceChanLen   = 1000
 	serviceChanLen = 10
@@ -350,14 +351,25 @@ func (t *Tracer) ForceFlush() error {
 func (t *Tracer) worker() {
 	defer t.exitWG.Done()
 
-	flushTicker := time.NewTicker(flushInterval)
+	flushTicker := time.NewTicker(tickInterval)
 	defer flushTicker.Stop()
 
+	lastFlush := time.Now()
 	for {
 		select {
-		case <-flushTicker.C:
-			t.flush()
-
+		case now := <-flushTicker.C:
+			// We flush either if:
+			// - flushInterval is elapsed since last flush
+			// - one of the buffers is at least 50% full
+			// One of the reason of doing this is that under heavy load,
+			// payloads might get *really* big if we do only time-based flushes.
+			if lastFlush.Add(flushInterval).Before(now) ||
+				len(t.traceChan) > cap(t.traceChan)/2 ||
+				len(t.serviceChan) > cap(t.serviceChan)/2 ||
+				len(t.errChan) > cap(t.errChan)/2 {
+				t.flush()
+				lastFlush = now
+			}
 		case <-t.forceFlushIn:
 			t.forceFlushOut <- t.flush()
 
