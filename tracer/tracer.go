@@ -176,9 +176,9 @@ func (t *Tracer) getAllMeta() map[string]string {
 func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 	spanID := NextSpanID()
 	span := NewSpan(name, service, resource, spanID, spanID, 0, t)
+
 	span.buffer = newTraceBuffer(t.traceChan, t.errChan, 0, 0)
 	t.sampler.Sample(span)
-
 	span.buffer.Push(span)
 
 	return span
@@ -195,7 +195,13 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	// that is not sent to the trace agent.
 	if parent == nil {
 		span := NewSpan(name, "", name, spanID, spanID, spanID, t)
+
+		// [TODO:christian] write a test to check this code path, ie
+		// "NewChilSpan with nil parent"
+		span.buffer = newTraceBuffer(t.traceChan, t.errChan, 0, 0)
 		t.sampler.Sample(span)
+		span.buffer.Push(span)
+
 		return span
 	}
 
