@@ -489,13 +489,10 @@ func TestTracerMassiveParallel(t *testing.T) {
 func TestWorker(t *testing.T) {
 	assert := assert.New(t)
 
-	if testing.Short() {
-		t.Skip()
-	}
 	tracer, transport := getTestTracer()
 	defer tracer.Stop()
 
-	n := traceChanLen * 100 // put more traces than the chan size, on purpose
+	n := traceChanLen * 10 // put more traces than the chan size, on purpose
 	for i := 0; i < n; i++ {
 		root := tracer.NewRootSpan("pylons.request", "pylons", "/")
 		child := tracer.NewChildSpan("redis.command", root)
@@ -505,7 +502,7 @@ func TestWorker(t *testing.T) {
 
 	now := time.Now()
 	count := 0
-	for time.Now().Before(now.Add(3*flushInterval)) && count < traceChanLen {
+	for time.Now().Before(now.Add(time.Minute)) && count < traceChanLen {
 		nbTraces := len(transport.Traces())
 		if nbTraces > 0 {
 			t.Logf("popped %d traces", nbTraces)
