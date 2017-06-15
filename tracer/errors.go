@@ -120,7 +120,7 @@ func logErrors(errChan <-chan error) {
 	for _, v := range errs {
 		var repeat string
 		if v.Count > 1 {
-			repeat = "(repeated " + strconv.Itoa(v.Count) + " times)"
+			repeat = " (repeated " + strconv.Itoa(v.Count) + " times)"
 		}
 		log.Println("Tracer Error: " + v.Example + repeat)
 	}

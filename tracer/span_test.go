@@ -137,25 +137,25 @@ func TestSpanFinish(t *testing.T) {
 }
 
 func TestSpanFinishTwice(t *testing.T) {
-	// [FIXME:christian] rewrite test
-	// assert := assert.New(t)
-	// wait := time.Millisecond * 2
+	assert := assert.New(t)
+	wait := time.Millisecond * 2
 
-	// tracer, _ := getTestTracer()
+	tracer, _ := getTestTracer()
+	defer tracer.Stop()
 
-	// assert.Equal(tracer.buffer.Len(), 0)
+	assert.Len(tracer.traceChan, 0)
 
-	// // the finish must be idempotent
-	// span := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	// time.Sleep(wait)
-	// span.Finish()
-	// assert.Equal(tracer.buffer.Len(), 1)
+	// the finish must be idempotent
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	time.Sleep(wait)
+	span.Finish()
+	assert.Len(tracer.traceChan, 1)
 
-	// previousDuration := span.Duration
-	// time.Sleep(wait)
-	// span.Finish()
-	// assert.Equal(span.Duration, previousDuration)
-	// assert.Equal(tracer.buffer.Len(), 1)
+	previousDuration := span.Duration
+	time.Sleep(wait)
+	span.Finish()
+	assert.Equal(span.Duration, previousDuration)
+	assert.Len(tracer.traceChan, 1)
 }
 
 func TestSpanContext(t *testing.T) {
@@ -176,6 +176,7 @@ func TestSpanContext(t *testing.T) {
 // Prior to a bug fix, this failed when running `go test -race`
 func TestSpanModifyWhileFlushing(t *testing.T) {
 	tracer, _ := getTestTracer()
+	defer tracer.Stop()
 
 	done := make(chan struct{})
 	go func() {

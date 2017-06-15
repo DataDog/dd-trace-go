@@ -12,7 +12,7 @@ const (
 	tickInterval   = 100 * time.Millisecond
 	flushInterval  = 2 * time.Second
 	traceChanLen   = 1000
-	serviceChanLen = 10
+	serviceChanLen = 100
 	errChanLen     = 100
 )
 
@@ -363,13 +363,16 @@ func (t *Tracer) worker() {
 			// - one of the buffers is at least 50% full
 			// One of the reason of doing this is that under heavy load,
 			// payloads might get *really* big if we do only time-based flushes.
+			// It's not perfect as a trace can have many spans so estimating the
+			// number of traces can be misleading.
 			if lastFlush.Add(flushInterval).Before(now) ||
-				len(t.traceChan) > cap(t.traceChan)/2 ||
-				len(t.serviceChan) > cap(t.serviceChan)/2 ||
-				len(t.errChan) > cap(t.errChan)/2 {
+				len(t.traceChan) > cap(t.traceChan)/5 || // 200 traces
+				len(t.serviceChan) > cap(t.serviceChan)/2 || // 50 services
+				len(t.errChan) > cap(t.errChan)/2 { // 50 errors
 				t.flush()
 				lastFlush = now
 			}
+
 		case <-t.forceFlushIn:
 			t.forceFlushOut <- t.flush()
 

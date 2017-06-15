@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -216,6 +217,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 func TestTracerConcurrent(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport := getTestTracer()
+	defer tracer.Stop()
 
 	// Wait for three different goroutines that should create
 	// three different traces with one child each
@@ -246,6 +248,7 @@ func TestTracerConcurrent(t *testing.T) {
 func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport := getTestTracer()
+	defer tracer.Stop()
 
 	// Wait for two different goroutines that should create
 	// two traces with two children each
@@ -277,6 +280,7 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 func TestTracerAtomicFlush(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport := getTestTracer()
+	defer tracer.Stop()
 
 	// Make sure we don't flush partial bits of traces
 	root := tracer.NewRootSpan("pylons.request", "pylons", "/")
@@ -343,6 +347,8 @@ func TestTracerMeta(t *testing.T) {
 	assert.Nil(nilTracer.getAllMeta(), "nil tracer should return nil meta")
 
 	tracer, _ := getTestTracer()
+	defer tracer.Stop()
+
 	assert.Nil(tracer.getAllMeta(), "by default, no meta")
 	tracer.SetMeta("env", "staging")
 
@@ -375,6 +381,7 @@ func TestTracerMassiveParallel(t *testing.T) {
 	assert := assert.New(t)
 
 	tracer, transport := getTestTracer()
+	defer tracer.Stop()
 
 	total := (traceChanLen / 3) * 3
 	var wg sync.WaitGroup
@@ -475,10 +482,50 @@ func TestTracerMassiveParallel(t *testing.T) {
 	}
 }
 
+// TestWorker is definitely a flaky test, as here we test that the worker
+// background task actually does flush things. Most other tests are and should
+// be using ForceFlush() to make sure things are really sent to transport.
+// Here, we just wait until things show up, as we would do with a real program.
+func TestWorker(t *testing.T) {
+	assert := assert.New(t)
+
+	if testing.Short() {
+		t.Skip()
+	}
+	tracer, transport := getTestTracer()
+	defer tracer.Stop()
+
+	n := traceChanLen * 100 // put more traces than the chan size, on purpose
+	for i := 0; i < n; i++ {
+		root := tracer.NewRootSpan("pylons.request", "pylons", "/")
+		child := tracer.NewChildSpan("redis.command", root)
+		child.Finish()
+		root.Finish()
+	}
+
+	now := time.Now()
+	count := 0
+	for time.Now().Before(now.Add(3*flushInterval)) && count < traceChanLen {
+		nbTraces := len(transport.Traces())
+		if nbTraces > 0 {
+			t.Logf("popped %d traces", nbTraces)
+		}
+		count += nbTraces
+		time.Sleep(time.Millisecond)
+	}
+	// here we just check that we have "enough traces". In practice, lots of them
+	// are dropped, it's another interesting side-effect of this test: it does
+	// trigger error messages (which are repeated, so it aggregates them etc.)
+	if count < traceChanLen {
+		assert.Fail(fmt.Sprintf("timeout, not enough traces in buffer (%d/%d)", count, n))
+	}
+}
+
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
 	tracer, _ := getTestTracer()
+	defer tracer.Stop()
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
@@ -497,6 +544,7 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 // span. It should include the encoding overhead.
 func BenchmarkTracerAddSpans(b *testing.B) {
 	tracer, _ := getTestTracer()
+	defer tracer.Stop()
 
 	for n := 0; n < b.N; n++ {
 		span := tracer.NewRootSpan("pylons.request", "pylons", "/")
@@ -517,23 +565,34 @@ type dummyTransport struct {
 	pool     *encoderPool
 	traces   [][]*Span
 	services map[string]Service
+
+	sync.RWMutex // required because of some poll-testing (eg: worker)
 }
 
 func (t *dummyTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
+	t.Lock()
 	t.traces = append(t.traces, traces...)
+	t.Unlock()
+
 	encoder := t.pool.Borrow()
 	defer t.pool.Return(encoder)
 	return nil, encoder.EncodeTraces(traces)
 }
 
 func (t *dummyTransport) SendServices(services map[string]Service) (*http.Response, error) {
+	t.Lock()
 	t.services = services
+	t.Unlock()
+
 	encoder := t.pool.Borrow()
 	defer t.pool.Return(encoder)
 	return nil, encoder.EncodeServices(services)
 }
 
 func (t *dummyTransport) Traces() [][]*Span {
+	t.Lock()
+	defer t.Unlock()
+
 	traces := t.traces
 	t.traces = nil
 	return traces
