@@ -135,7 +135,7 @@ func (t *Tracer) SetServiceInfo(name, app, appType string) {
 		App:     app,
 		AppType: appType,
 	}:
-	default:
+	default: // non blocking
 		select {
 		case t.errChan <- fmt.Errorf("[TODO:christian] service buffer full"):
 		default: // if channel is full, drop & ignore error, better do this than stall program

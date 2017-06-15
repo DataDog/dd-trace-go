@@ -185,8 +185,15 @@ func TestHTML(t *testing.T) {
 		assert.Equal(s.Service, "tmplservice")
 	}
 
-	tspan := spans[0]
-	assert.Equal(tspan.Name, "gin.render.html")
+	var tspan *tracer.Span
+	for _, s := range spans {
+		// we need to pick up the span we're searching for, as the
+		// order is not garanteed within the buffer
+		if s.Name == "gin.render.html" {
+			tspan = s
+		}
+	}
+	assert.NotNil(tspan, "we should have found a span with name gin.render.html")
 	assert.Equal(tspan.GetMeta("go.template"), "hello")
 	fmt.Println(spans)
 }

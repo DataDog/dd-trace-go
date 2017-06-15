@@ -108,7 +108,7 @@ func (tb *traceBuffer) doFlush() {
 
 	select {
 	case tb.traceChan <- tb.spans:
-	default:
+	default: // non blocking
 		select {
 		case tb.errChan <- fmt.Errorf("[TODO:christian] trace buffer full"):
 		default: // if channel is full, drop & ignore error, better do this than stall program
