@@ -55,6 +55,17 @@ func (e *errorTraceIDMismatch) Error() string {
 		")"
 }
 
+// errorNoSpanBuf is raised when trying to finish/push a span that has no buffer associated to it.
+type errorNoSpanBuf struct {
+	// SpanName is the name of the span which could not be pushed (hint for the log reader).
+	SpanName string
+}
+
+// Error provides a readable error message.
+func (e *errorNoSpanBuf) Error() string {
+	return "no span buffer (span name: '" + e.SpanName + "')"
+}
+
 type errorSummary struct {
 	Count   int
 	Example string
@@ -71,6 +82,8 @@ func errorKey(err error) string {
 		return "ErrorSpanBufFull"
 	case *errorTraceIDMismatch:
 		return "ErrorTraceIDMismatch"
+	case *errorNoSpanBuf:
+		return "ErrorNoSpanBuf"
 	}
 	return "ErrorUnexpected"
 }

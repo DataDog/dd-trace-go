@@ -39,6 +39,13 @@ func TestErrorTraceIDMismatch(t *testing.T) {
 	assert.Equal("ErrorTraceIDMismatch", errorKey(err))
 }
 
+func TestErrorNoSpanBuf(t *testing.T) {
+	assert := assert.New(t)
+
+	err := &errorNoSpanBuf{SpanName: "do"}
+	assert.Equal("no span buffer (span name: 'do')", err.Error())
+}
+
 func TestErrorKey(t *testing.T) {
 	assert := assert.New(t)
 

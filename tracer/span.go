@@ -219,7 +219,7 @@ func (s *Span) Finish() {
 		// no buffer -> this is going to void, unable to flush it
 		if s.tracer != nil {
 			select {
-			case s.tracer.errChan <- fmt.Errorf("[TODO:christian] no buffer"):
+			case s.tracer.errChan <- &errorNoSpanBuf{SpanName: s.Name}:
 			default: // if channel is full, drop & ignore error, better do this than stall program
 			}
 			return
