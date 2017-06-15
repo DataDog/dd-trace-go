@@ -156,14 +156,26 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	spans = traces[0]
 	assert.Len(spans, 4)
 
-	actualSpan = spans[1]
+	for _, s := range spans {
+		if s.Name == expectedSpan.Name && s.Resource == query {
+			actualSpan = s
+		}
+	}
+
+	assert.NotNil(actualSpan)
 	execSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	execSpan.Resource = query
 	execSpan.SetMeta("sql.query", query)
 	tracertest.CompareSpan(t, execSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 
-	actualSpan = spans[2]
+	for _, s := range spans {
+		if s.Name == expectedSpan.Name && s.Resource == "Commit" {
+			actualSpan = s
+		}
+	}
+
+	assert.NotNil(actualSpan)
 	commitSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	commitSpan.Resource = "Commit"
 	tracertest.CompareSpan(t, commitSpan, actualSpan)
