@@ -38,7 +38,7 @@ func TestClient(t *testing.T) {
 	span.Finish()
 	assert.Equal(resp.Message, "passed")
 
-	testTracer.ForceFlush()
+	assert.Nil(testTracer.ForceFlush())
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]

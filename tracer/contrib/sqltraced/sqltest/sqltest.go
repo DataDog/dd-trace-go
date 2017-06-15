@@ -27,7 +27,7 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	err := db.Ping()
 	assert.Equal(nil, err)
 
-	db.Tracer.ForceFlush()
+	assert.Nil(db.Tracer.ForceFlush())
 	traces := db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -43,7 +43,7 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	defer rows.Close()
 	assert.Equal(nil, err)
 
-	db.Tracer.ForceFlush()
+	assert.Nil(db.Tracer.ForceFlush())
 	traces = db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans = traces[0]
@@ -71,7 +71,7 @@ func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	stmt, err := db.Prepare(query)
 	assert.Equal(nil, err)
 
-	db.Tracer.ForceFlush()
+	assert.Nil(db.Tracer.ForceFlush())
 	traces := db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -88,7 +88,7 @@ func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	_, err2 := stmt.Exec("New York")
 	assert.Equal(nil, err2)
 
-	db.Tracer.ForceFlush()
+	assert.Nil(db.Tracer.ForceFlush())
 	traces = db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans = traces[0]
@@ -110,7 +110,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	tx, err := db.Begin()
 	assert.Equal(nil, err)
 
-	db.Tracer.ForceFlush()
+	assert.Nil(db.Tracer.ForceFlush())
 	traces := db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -125,7 +125,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	err = tx.Rollback()
 	assert.Equal(nil, err)
 
-	db.Tracer.ForceFlush()
+	assert.Nil(db.Tracer.ForceFlush())
 	traces = db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans = traces[0]
@@ -150,7 +150,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 
 	parentSpan.Finish() // need to do this else children are not flushed at all
 
-	db.Tracer.ForceFlush()
+	assert.Nil(db.Tracer.ForceFlush())
 	traces = db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans = traces[0]

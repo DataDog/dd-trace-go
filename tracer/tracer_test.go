@@ -253,7 +253,7 @@ func TestTracerConcurrent(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.ForceFlush()
+	assert.Nil(tracer.ForceFlush())
 	traces := transport.Traces()
 	assert.Len(traces, 3)
 	assert.Len(traces[0], 1)
@@ -285,7 +285,7 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.ForceFlush()
+	assert.Nil(tracer.ForceFlush())
 	traces := transport.Traces()
 	assert.Len(traces, 2)
 	assert.Len(traces[0], 2)
@@ -305,13 +305,13 @@ func TestTracerAtomicFlush(t *testing.T) {
 	span1.Finish()
 	span2.Finish()
 
-	tracer.ForceFlush()
+	assert.Nil(tracer.ForceFlush())
 	traces := transport.Traces()
 	assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
 
 	root.Finish()
 
-	tracer.ForceFlush()
+	assert.Nil(tracer.ForceFlush())
 	traces = transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 4, "all spans should show up at once")

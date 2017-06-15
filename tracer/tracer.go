@@ -54,7 +54,7 @@ type Tracer struct {
 	exitWG *sync.WaitGroup
 
 	forceFlushIn  chan struct{}
-	forceFlushOut chan struct{}
+	forceFlushOut chan error
 }
 
 // NewTracer creates a new Tracer. Most users should use the package's
@@ -81,7 +81,7 @@ func NewTracerTransport(transport Transport) *Tracer {
 		errChan:   make(chan error, errChanLen),
 
 		forceFlushIn:  make(chan struct{}),
-		forceFlushOut: make(chan struct{}),
+		forceFlushOut: make(chan error),
 	}
 
 	// start a background worker
@@ -288,16 +288,25 @@ func (t *Tracer) flushServices() error {
 	return nil
 }
 
-func (t *Tracer) flush() {
+func (t *Tracer) flush() error {
+	var retErr error
+
 	nbTraces := len(t.traceChan)
 	if err := t.flushTraces(); err != nil {
 		log.Printf("cannot flush traces: %v", err)
 		log.Printf("lost %d traces", nbTraces)
+		retErr = err
 	}
 
 	if err := t.flushServices(); err != nil {
 		log.Printf("cannot flush services: %v", err)
+		// give priority to flushTraces error, more important if we have both
+		if retErr == nil {
+			retErr = err
+		}
 	}
+
+	return retErr
 }
 
 func (t *Tracer) appendService(service Service) {
@@ -318,9 +327,12 @@ func (t *Tracer) drainServices() {
 	}
 }
 
-func (t *Tracer) ForceFlush() {
+// ForceFlush forces a flush of data (traces and services) to the agent.
+// Flushes are done by a background task on a regular basis, so you never
+// need to call this manually, mostly useful for testing and debugging.
+func (t *Tracer) ForceFlush() error {
 	t.forceFlushIn <- struct{}{}
-	<-t.forceFlushOut
+	return <-t.forceFlushOut
 }
 
 // worker periodically flushes traces and services to the transport.
@@ -336,8 +348,7 @@ func (t *Tracer) worker() {
 			t.flush()
 
 		case <-t.forceFlushIn:
-			t.flush()
-			t.forceFlushOut <- struct{}{}
+			t.forceFlushOut <- t.flush()
 
 		case service := <-t.serviceChan:
 			t.appendService(service)
