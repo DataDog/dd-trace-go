@@ -157,22 +157,22 @@ func TestTracerDisabled(t *testing.T) {
 	tracer.SetEnabled(false)
 	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	span.Finish()
-	assert.Equal(len(tracer.traceChan), 0)
+	assert.Len(tracer.traceChan, 0)
 }
 
 func TestTracerEnabledAgain(t *testing.T) {
-	// [FIXME:christian] rewrite test
-	// assert := assert.New(t)
+	assert := assert.New(t)
 
-	// // disable the tracer and enable it again
-	// tracer := NewTracer()
-	// tracer.SetEnabled(false)
-	// preSpan := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	// preSpan.Finish()
-	// tracer.SetEnabled(true)
-	// postSpan := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	// postSpan.Finish()
-	// // assert.Equal(tracer.buffer.Len(), 1)
+	// disable the tracer and enable it again
+	tracer := NewTracer()
+	tracer.SetEnabled(false)
+	preSpan := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	preSpan.Finish()
+	assert.Len(tracer.traceChan, 0)
+	tracer.SetEnabled(true)
+	postSpan := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	postSpan.Finish()
+	assert.Len(tracer.traceChan, 1)
 }
 
 func TestTracerSampler(t *testing.T) {
@@ -189,45 +189,26 @@ func TestTracerSampler(t *testing.T) {
 }
 
 func TestTracerEdgeSampler(t *testing.T) {
-	// [FIXME:christian] rewrite test
-	// assert := assert.New(t)
+	assert := assert.New(t)
 
-	// // a sample rate of 0 should sample nothing
-	// tracer0 := NewTracer()
-	// tracer0.SetSampleRate(0)
-	// // a sample rate of 1 should sample everything
-	// tracer1 := NewTracer()
-	// tracer1.SetSampleRate(1)
+	// a sample rate of 0 should sample nothing
+	tracer0 := NewTracer()
+	tracer0.SetSampleRate(0)
+	// a sample rate of 1 should sample everything
+	tracer1 := NewTracer()
+	tracer1.SetSampleRate(1)
 
-	// count := 10000
+	count := traceChanLen
 
-	// for i := 0; i < count; i++ {
-	// 	span0 := tracer0.NewRootSpan("pylons.request", "pylons", "/")
-	// 	span0.Finish()
-	// 	span1 := tracer1.NewRootSpan("pylons.request", "pylons", "/")
-	// 	span1.Finish()
-	// }
+	for i := 0; i < count; i++ {
+		span0 := tracer0.NewRootSpan("pylons.request", "pylons", "/")
+		span0.Finish()
+		span1 := tracer1.NewRootSpan("pylons.request", "pylons", "/")
+		span1.Finish()
+	}
 
-	// assert.Equal(0, tracer0.buffer.Len())
-	// assert.Equal(count, tracer1.buffer.Len())
-}
-
-func TestTracerBuffer(t *testing.T) {
-	// [FIXME:christian] rewrite test
-	// assert := assert.New(t)
-
-	// bufferSize := 1000
-	// incorrectBufferSize := -1
-	// defaultBufferSize := 10000
-
-	// tracer0 := NewTracer()
-	// tracer0.SetSpansBufferSize(bufferSize)
-
-	// tracer1 := NewTracer()
-	// tracer1.SetSpansBufferSize(incorrectBufferSize)
-
-	// assert.Equal(bufferSize, tracer0.buffer.maxSize)
-	// assert.Equal(defaultBufferSize, tracer1.buffer.maxSize)
+	assert.Len(tracer0.traceChan, 0)
+	assert.Len(tracer1.traceChan, count)
 }
 
 func TestTracerConcurrent(t *testing.T) {
@@ -326,7 +307,7 @@ func TestTracerServices(t *testing.T) {
 
 	tracer.Stop()
 
-	assert.Equal(2, len(transport.services))
+	assert.Len(transport.services, 2)
 
 	svc1 := transport.services["svc1"]
 	assert.NotNil(svc1)
@@ -349,7 +330,7 @@ func TestTracerServicesDisabled(t *testing.T) {
 	tracer.SetServiceInfo("svc1", "a", "b")
 	tracer.Stop()
 
-	assert.Equal(0, len(transport.services))
+	assert.Len(transport.services, 0)
 }
 
 func TestTracerMeta(t *testing.T) {

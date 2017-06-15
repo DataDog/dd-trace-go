@@ -232,6 +232,11 @@ func (s *Span) Finish() {
 		return
 	}
 
+	// If not sampled, drop it
+	if !s.Sampled {
+		return
+	}
+
 	s.buffer.AckFinish() // put data in channel only if trace is completely finished
 
 	// It's important that when Finish() exits, the data is put in
