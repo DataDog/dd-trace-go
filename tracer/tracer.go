@@ -156,7 +156,7 @@ func (t *Tracer) SetMeta(key, value string) {
 	t.metaMu.Unlock()
 }
 
-// getAllMeta returns all the meta set by this tracer.
+// GetAllMeta returns all the meta set by this tracer.
 // In most cases, it is nil.
 func (t *Tracer) GetAllMeta() map[string]string {
 	if t == nil { // Defensive, span could be initialized with nil tracer
