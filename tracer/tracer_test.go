@@ -3,8 +3,10 @@ package tracer
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -367,6 +369,110 @@ func TestTracerMeta(t *testing.T) {
 	span.Finish()
 
 	assert.Equal(map[string]string{"env": "prod", "component": "core"}, tracer.getAllMeta(), "key1 should have been updated")
+}
+
+func TestTracerMassiveParallel(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer, transport := getTestTracer()
+
+	total := (traceChanLen / 3) * 3
+	var wg sync.WaitGroup
+	wg.Add(total)
+
+	// Trying to be quite brutal here, firing lots of concurrent things, finishing in
+	// different orders, and modifying spans after creation.
+	for n := 0; n < total; n++ {
+		i := n // keep local copy
+		odd := ((i % 2) != 0)
+		go func() {
+			if i%11 == 0 {
+				time.Sleep(time.Microsecond)
+			}
+
+			tracer.SetMeta("foo", "bar")
+
+			parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+
+			NewChildSpan("redis.command", parent).Finish()
+			child := NewChildSpan("async.service", parent)
+
+			if i%13 == 0 {
+				time.Sleep(time.Microsecond)
+			}
+
+			if odd {
+				parent.SetMeta("odd", "true")
+				parent.SetMetric("oddity", 1)
+				parent.Finish()
+			} else {
+				child.SetMeta("odd", "false")
+				child.SetMetric("oddity", 0)
+				child.Finish()
+			}
+
+			if i%17 == 0 {
+				time.Sleep(time.Microsecond)
+			}
+
+			if odd {
+				child.Resource = "HGETALL"
+				child.SetMeta("odd", "false")
+				child.SetMetric("oddity", 0)
+			} else {
+				parent.Resource = "/" + strconv.Itoa(i) + ".html"
+				parent.SetMeta("odd", "true")
+				parent.SetMetric("oddity", 1)
+			}
+
+			if i%19 == 0 {
+				time.Sleep(time.Microsecond)
+			}
+
+			if odd {
+				child.Finish()
+			} else {
+				parent.Finish()
+			}
+
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+
+	assert.Nil(tracer.ForceFlush())
+	traces := transport.Traces()
+	assert.Len(traces, total, "we should have exactly as many traces as expected")
+	for _, trace := range traces {
+		assert.Len(trace, 3, "each trace should have exactly 3 spans")
+		var parent, child, redis *Span
+		for _, span := range trace {
+			assert.Equal("bar", span.GetMeta("foo"), "tracer meta should have been applied to all spans")
+			switch span.Name {
+			case "pylons.request":
+				parent = span
+			case "async.service":
+				child = span
+			case "redis.command":
+				redis = span
+			default:
+				assert.Fail("unexpected span", span)
+			}
+		}
+		assert.NotNil(parent)
+		assert.NotNil(child)
+		assert.NotNil(redis)
+
+		assert.Equal(uint64(0), parent.ParentID)
+		assert.Equal(parent.TraceID, parent.SpanID)
+
+		assert.Equal(parent.TraceID, redis.TraceID)
+		assert.Equal(parent.TraceID, child.TraceID)
+
+		assert.Equal(parent.TraceID, redis.ParentID)
+		assert.Equal(parent.TraceID, child.ParentID)
+	}
 }
 
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
