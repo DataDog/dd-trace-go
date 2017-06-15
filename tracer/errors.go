@@ -73,6 +73,9 @@ type errorSummary struct {
 
 // errorKey returns a unique key for each error type
 func errorKey(err error) string {
+	if err == nil {
+		return ""
+	}
 	switch err.(type) {
 	case *errorTraceChanFull:
 		return "ErrorTraceChanFull"
@@ -85,7 +88,7 @@ func errorKey(err error) string {
 	case *errorNoSpanBuf:
 		return "ErrorNoSpanBuf"
 	}
-	return "ErrorUnexpected"
+	return err.Error() // possibly high cardinality, but this is unexpected
 }
 
 func aggregateErrors(errChan <-chan error) map[string]errorSummary {
@@ -114,11 +117,11 @@ func aggregateErrors(errChan <-chan error) map[string]errorSummary {
 func logErrors(errChan <-chan error) {
 	errs := aggregateErrors(errChan)
 
-	for k, v := range errs {
-		if v.Count == 1 {
-			log.Printf("%s: %s", k, v.Example)
-		} else {
-			log.Printf("%s: %s (repeated %d times)", k, v.Example, v.Count)
+	for _, v := range errs {
+		var repeat string
+		if v.Count > 1 {
+			repeat = "(repeated " + strconv.Itoa(v.Count) + " times)"
 		}
+		log.Println("Tracer Error: " + v.Example + repeat)
 	}
 }

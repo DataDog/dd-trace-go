@@ -49,8 +49,8 @@ func TestErrorNoSpanBuf(t *testing.T) {
 func TestErrorKey(t *testing.T) {
 	assert := assert.New(t)
 
-	assert.Equal("ErrorUnexpected", errorKey(fmt.Errorf("this is something unexpected")))
-	assert.Equal("ErrorUnexpected", errorKey(nil))
+	assert.Equal("this is something unexpected", errorKey(fmt.Errorf("this is something unexpected")))
+	assert.Equal("", errorKey(nil))
 }
 
 func TestAggregateErrors(t *testing.T) {
