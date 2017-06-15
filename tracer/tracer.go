@@ -2,7 +2,6 @@ package tracer
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"math/rand"
 	"sync"
@@ -137,7 +136,7 @@ func (t *Tracer) SetServiceInfo(name, app, appType string) {
 	}:
 	default: // non blocking
 		select {
-		case t.errChan <- fmt.Errorf("[TODO:christian] service buffer full"):
+		case t.errChan <- &ErrorServiceChanFull{Len: len(t.serviceChan)}:
 		default: // if channel is full, drop & ignore error, better do this than stall program
 		}
 	}
@@ -185,7 +184,7 @@ func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 	spanID := NextSpanID()
 	span := NewSpan(name, service, resource, spanID, spanID, 0, t)
 
-	span.buffer = newTraceBuffer(t.traceChan, t.errChan, 0, 0)
+	span.buffer = newSpanBuffer(t.traceChan, t.errChan, 0, 0)
 	t.sampler.Sample(span)
 	span.buffer.Push(span)
 
@@ -206,7 +205,7 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 
 		// [TODO:christian] write a test to check this code path, ie
 		// "NewChilSpan with nil parent"
-		span.buffer = newTraceBuffer(t.traceChan, t.errChan, 0, 0)
+		span.buffer = newSpanBuffer(t.traceChan, t.errChan, 0, 0)
 		t.sampler.Sample(span)
 		span.buffer.Push(span)
 
@@ -311,6 +310,11 @@ func (t *Tracer) flushServices() error {
 	return err
 }
 
+// flushErrors will process log messages that were queued
+func (t *Tracer) flushErrors() {
+	logErrors(t.errChan)
+}
+
 func (t *Tracer) flush() error {
 	var retErr error
 
@@ -328,6 +332,8 @@ func (t *Tracer) flush() error {
 			retErr = err
 		}
 	}
+
+	t.flushErrors()
 
 	return retErr
 }

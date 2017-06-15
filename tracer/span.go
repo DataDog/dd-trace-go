@@ -65,7 +65,7 @@ type Span struct {
 	// However, ParentID can technically be overridden (typical usage: distributed tracing)
 	// and also, parent == nil is used to identify root and top-level ("local root") spans.
 	parent *Span
-	buffer *traceBuffer
+	buffer *spanBuffer
 }
 
 // NewSpan creates a new span. This is a low-level function, required for testing and advanced usage.

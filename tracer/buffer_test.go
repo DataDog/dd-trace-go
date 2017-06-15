@@ -15,13 +15,13 @@ const (
 	testMaxSize       = 5
 )
 
-func TestTraceBufferPushOne(t *testing.T) {
+func TestSpanBufferPushOne(t *testing.T) {
 	assert := assert.New(t)
 
 	traceChan := make(chan []*Span)
 	errChan := make(chan error)
 
-	buffer := newTraceBuffer(traceChan, errChan, testInitSize, testMaxSize)
+	buffer := newSpanBuffer(traceChan, errChan, testInitSize, testMaxSize)
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
@@ -49,13 +49,13 @@ func TestTraceBufferPushOne(t *testing.T) {
 	}
 }
 
-func TestTraceBufferPushNoFinish(t *testing.T) {
+func TestSpanBufferPushNoFinish(t *testing.T) {
 	assert := assert.New(t)
 
 	traceChan := make(chan []*Span)
 	errChan := make(chan error)
 
-	buffer := newTraceBuffer(traceChan, errChan, testInitSize, testMaxSize)
+	buffer := newSpanBuffer(traceChan, errChan, testInitSize, testMaxSize)
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
@@ -79,13 +79,13 @@ func TestTraceBufferPushNoFinish(t *testing.T) {
 	}
 }
 
-func TestTraceBufferPushSeveral(t *testing.T) {
+func TestSpanBufferPushSeveral(t *testing.T) {
 	assert := assert.New(t)
 
 	traceChan := make(chan []*Span)
 	errChan := make(chan error)
 
-	buffer := newTraceBuffer(traceChan, errChan, testInitSize, testMaxSize)
+	buffer := newSpanBuffer(traceChan, errChan, testInitSize, testMaxSize)
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
