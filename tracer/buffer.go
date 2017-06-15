@@ -106,7 +106,14 @@ func (tb *traceBuffer) doFlush() {
 	tb.Lock()
 	defer tb.Unlock()
 
-	tb.traceChan <- tb.spans
+	select {
+	case tb.traceChan <- tb.spans:
+	default:
+		select {
+		case tb.errChan <- fmt.Errorf("[TODO:christian] trace buffer full"):
+		default: // if channel is full, drop & ignore error, better do this than stall program
+		}
+	}
 	tb.spans = nil
 }
 

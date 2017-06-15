@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math/rand"
 	"sync"
@@ -9,9 +10,10 @@ import (
 )
 
 const (
-	flushInterval = 2 * time.Second
-	traceChanLen  = 10
-	errChanLen    = 100
+	flushInterval  = 2 * time.Second
+	traceChanLen   = 1000
+	serviceChanLen = 10
+	errChanLen     = 100
 )
 
 func init() {
@@ -43,12 +45,11 @@ type Tracer struct {
 	meta   map[string]string
 	metaMu sync.RWMutex
 
-	services         map[string]Service // name -> service
-	servicesModified bool
-	serviceChan      chan Service
+	traceChan   chan []*Span
+	serviceChan chan Service
+	errChan     chan error
 
-	traceChan chan []*Span
-	errChan   chan error
+	services map[string]Service // name -> service
 
 	exit   chan struct{}
 	exitWG *sync.WaitGroup
@@ -71,14 +72,14 @@ func NewTracerTransport(transport Transport) *Tracer {
 		sampler:             newAllSampler(),
 		DebugLoggingEnabled: false,
 
-		services:    make(map[string]Service),
-		serviceChan: make(chan Service, 10), // we don't want to block when a flush is in progress
+		traceChan:   make(chan []*Span, traceChanLen),
+		serviceChan: make(chan Service, serviceChanLen),
+		errChan:     make(chan error, errChanLen),
+
+		services: make(map[string]Service),
 
 		exit:   make(chan struct{}),
 		exitWG: &sync.WaitGroup{},
-
-		traceChan: make(chan []*Span, traceChanLen),
-		errChan:   make(chan error, errChanLen),
 
 		forceFlushIn:  make(chan struct{}),
 		forceFlushOut: make(chan error),
@@ -128,10 +129,17 @@ func (t *Tracer) SetSampleRate(sampleRate float64) {
 // SetServiceInfo update the application and application type for the given
 // service.
 func (t *Tracer) SetServiceInfo(name, app, appType string) {
-	t.serviceChan <- Service{
+	select {
+	case t.serviceChan <- Service{
 		Name:    name,
 		App:     app,
 		AppType: appType,
+	}:
+	default:
+		select {
+		case t.errChan <- fmt.Errorf("[TODO:christian] service buffer full"):
+		default: // if channel is full, drop & ignore error, better do this than stall program
+		}
 	}
 }
 
@@ -236,14 +244,14 @@ func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Spa
 	return span, span.Context(ctx)
 }
 
-func (t *Tracer) traces() [][]*Span {
+func (t *Tracer) getTraces() [][]*Span {
 	traces := make([][]*Span, 0, len(t.traceChan))
 
 	for {
 		select {
 		case trace := <-t.traceChan:
 			traces = append(traces, trace)
-		default:
+		default: // return when there's no more data
 			return traces
 		}
 	}
@@ -251,7 +259,7 @@ func (t *Tracer) traces() [][]*Span {
 
 // flushTraces will push any currently buffered traces to the server.
 func (t *Tracer) flushTraces() error {
-	traces := t.traces()
+	traces := t.getTraces()
 
 	if t.DebugLoggingEnabled {
 		log.Printf("Sending %d traces", len(traces))
@@ -271,21 +279,36 @@ func (t *Tracer) flushTraces() error {
 	}
 
 	_, err := t.transport.SendTraces(traces)
+
 	return err
+}
+
+func (t *Tracer) updateServices() bool {
+	servicesModified := false
+	for {
+		select {
+		case service := <-t.serviceChan:
+			if s, found := t.services[service.Name]; !found || !s.Equal(service) {
+				t.services[service.Name] = service
+				servicesModified = true
+			}
+		default: // return when there's no more data
+			return servicesModified
+		}
+	}
 }
 
 // flushTraces will push any currently buffered services to the server.
 func (t *Tracer) flushServices() error {
-	if !t.Enabled() || !t.servicesModified {
+	servicesModified := t.updateServices()
+
+	if !t.Enabled() || !servicesModified {
 		return nil
 	}
 
-	if _, err := t.transport.SendServices(t.services); err != nil {
-		return err
-	}
+	_, err := t.transport.SendServices(t.services)
 
-	t.servicesModified = false
-	return nil
+	return err
 }
 
 func (t *Tracer) flush() error {
@@ -307,24 +330,6 @@ func (t *Tracer) flush() error {
 	}
 
 	return retErr
-}
-
-func (t *Tracer) appendService(service Service) {
-	if s, found := t.services[service.Name]; !found || !s.Equal(service) {
-		t.services[service.Name] = service
-		t.servicesModified = true
-	}
-}
-
-func (t *Tracer) drainServices() {
-	for {
-		select {
-		case service := <-t.serviceChan:
-			t.appendService(service)
-		default:
-			return
-		}
-	}
 }
 
 // ForceFlush forces a flush of data (traces and services) to the agent.
@@ -350,15 +355,7 @@ func (t *Tracer) worker() {
 		case <-t.forceFlushIn:
 			t.forceFlushOut <- t.flush()
 
-		case service := <-t.serviceChan:
-			t.appendService(service)
-
 		case <-t.exit:
-			// serviceChan being buffered, we drain it before the
-			// last flush to make sure we have all information. It
-			// is an edge case, but it is important for tests.
-			t.drainServices()
-
 			t.flush()
 			return
 		}
