@@ -91,11 +91,20 @@ func TestInheritance(t *testing.T) {
 	spans := traces[0]
 	assert.Len(spans, 2)
 
-	child_span := spans[0]
-	pspan := spans[1]
-	assert.Equal(pspan.Name, "parent_span")
+	var child_span, pspan *tracer.Span
+	for _, s := range spans {
+		// order of traces in buffer is not garanteed
+		switch s.Name {
+		case "redis.command":
+			child_span = s
+		case "parent_span":
+			pspan = s
+		}
+	}
+	assert.NotNil(child_span, "there should be a child redis.command span")
+	assert.NotNil(child_span, "there should be a parent span")
+
 	assert.Equal(child_span.ParentID, pspan.SpanID)
-	assert.Equal(child_span.Name, "redis.command")
 	assert.Equal(child_span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(child_span.GetMeta("out.port"), "6379")
 }
