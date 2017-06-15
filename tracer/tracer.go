@@ -241,8 +241,6 @@ func (t *Tracer) traces() [][]*Span {
 			return traces
 		}
 	}
-
-	return traces
 }
 
 // flushTraces will push any currently buffered traces to the server.
