@@ -1,11 +1,27 @@
 package tracer
 
 const (
-	traceChanLen   = 1000
+	// traceChanLen is the capacity of the trace channel. This channels is emptied
+	// on a regular basis (worker thread) or when it reaches 50% of its capacity.
+	// If it's full, then data is simply dropped and ignored, with a log message.
+	// This only happens under heavy load,
+	traceChanLen = 1000
+	// serviceChanLen is the length of the service channel. As for the trace channel,
+	// it's emptied by worker thread or when it reaches 50%. Note that there should
+	// be much less data here, as service data does not be to be updated that often.
 	serviceChanLen = 50
-	errChanLen     = 200
+	// errChanLen is the number of errors we keep in the error channel. When this
+	// one is full, errors are just ignored, dropped, nothing left. At some point,
+	// there's already a whole lot of errors in the backlog, there's no real point
+	// in keeping millions of errors, a representative sample is enough. And we
+	// don't want to block user code and/or bloat memory or log files with redundant data.
+	errChanLen = 200
 )
 
+// traceChans holds most tracer channels together, it's mostly used to
+// pass them together to the span buffer/context. It's obviously safe
+// to access it concurrently as it contains channels only. And it's convenient
+// to have it isolated from tracer, for the sake of unit testing.
 type tracerChans struct {
 	trace        chan []*Span
 	service      chan Service
