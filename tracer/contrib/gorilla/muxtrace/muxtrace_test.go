@@ -33,7 +33,7 @@ func TestMuxTracerDisabled(t *testing.T) {
 	assert.Equal(writer.Body.String(), "disabled!")
 
 	// assert nothing was traced.
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 0)
 }
@@ -51,7 +51,7 @@ func TestMuxTracerSubrequest(t *testing.T) {
 		assert.Equal(writer.Body.String(), "200!")
 
 		// ensure properly traced
-		assert.Nil(tracer.ForceFlush())
+		tracer.ForceFlush()
 		traces := transport.Traces()
 		assert.Len(traces, 1)
 		spans := traces[0]
@@ -83,7 +83,7 @@ func TestMuxTracer200(t *testing.T) {
 	assert.Equal(writer.Body.String(), "200!")
 
 	// ensure properly traced
-	assert.Nil(tracer.ForceFlush())
+	tracer.ForceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -114,7 +114,7 @@ func TestMuxTracer500(t *testing.T) {
 	assert.Equal(writer.Body.String(), "500!\n")
 
 	// ensure properly traced
-	assert.Nil(tracer.ForceFlush())
+	tracer.ForceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]

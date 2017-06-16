@@ -143,19 +143,19 @@ func TestSpanFinishTwice(t *testing.T) {
 	tracer, _ := getTestTracer()
 	defer tracer.Stop()
 
-	assert.Len(tracer.traceChan, 0)
+	assert.Len(tracer.channels.trace, 0)
 
 	// the finish must be idempotent
 	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	time.Sleep(wait)
 	span.Finish()
-	assert.Len(tracer.traceChan, 1)
+	assert.Len(tracer.channels.trace, 1)
 
 	previousDuration := span.Duration
 	time.Sleep(wait)
 	span.Finish()
 	assert.Equal(span.Duration, previousDuration)
-	assert.Len(tracer.traceChan, 1)
+	assert.Len(tracer.channels.trace, 1)
 }
 
 func TestSpanContext(t *testing.T) {

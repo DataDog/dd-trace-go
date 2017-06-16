@@ -7,22 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestErrorTraceChanFull(t *testing.T) {
-	assert := assert.New(t)
-
-	err := &errorTraceChanFull{Len: 42}
-	assert.Equal("trace channel is full (length: 42)", err.Error())
-	assert.Equal("ErrorTraceChanFull", errorKey(err))
-}
-
-func TestErrorServiceChanFull(t *testing.T) {
-	assert := assert.New(t)
-
-	err := &errorServiceChanFull{Len: 42}
-	assert.Equal("service channel is full (length: 42)", err.Error())
-	assert.Equal("ErrorServiceChanFull", errorKey(err))
-}
-
 func TestErrorSpanBufFull(t *testing.T) {
 	assert := assert.New(t)
 
@@ -46,6 +30,20 @@ func TestErrorNoSpanBuf(t *testing.T) {
 	assert.Equal("no span buffer (span name: 'do')", err.Error())
 }
 
+func TestErrorFlushLostTraces(t *testing.T) {
+	assert := assert.New(t)
+
+	err := &errorFlushLostTraces{Nb: 100}
+	assert.Equal("unable to flush traces, lost 100 traces", err.Error())
+}
+
+func TestErrorFlushLostServices(t *testing.T) {
+	assert := assert.New(t)
+
+	err := &errorFlushLostServices{Nb: 100}
+	assert.Equal("unable to flush services, lost 100 services", err.Error())
+}
+
 func TestErrorKey(t *testing.T) {
 	assert := assert.New(t)
 
@@ -57,28 +55,28 @@ func TestAggregateErrors(t *testing.T) {
 	assert := assert.New(t)
 
 	errChan := make(chan error, 100)
-	errChan <- &errorTraceChanFull{Len: 1000}
-	errChan <- &errorTraceChanFull{Len: 1000}
-	errChan <- &errorTraceChanFull{Len: 1000}
-	errChan <- &errorTraceChanFull{Len: 1000}
-	errChan <- &errorServiceChanFull{Len: 10}
+	errChan <- &errorSpanBufFull{Len: 1000}
+	errChan <- &errorSpanBufFull{Len: 1000}
+	errChan <- &errorSpanBufFull{Len: 1000}
+	errChan <- &errorSpanBufFull{Len: 1000}
+	errChan <- &errorFlushLostTraces{Nb: 42}
 	errChan <- &errorTraceIDMismatch{Expected: 42, Actual: 1}
 	errChan <- &errorTraceIDMismatch{Expected: 42, Actual: 4095}
 
 	errs := aggregateErrors(errChan)
 
 	assert.Equal(map[string]errorSummary{
-		"ErrorTraceChanFull": errorSummary{
+		"ErrorSpanBufFull": errorSummary{
 			Count:   4,
-			Example: "trace channel is full (length: 1000)",
-		},
-		"ErrorServiceChanFull": errorSummary{
-			Count:   1,
-			Example: "service channel is full (length: 10)",
+			Example: "span buffer is full (length: 1000)",
 		},
 		"ErrorTraceIDMismatch": errorSummary{
 			Count:   2,
 			Example: "trace ID mismatch (expected: 2a actual: fff)",
+		},
+		"ErrorFlushLostTraces": errorSummary{
+			Count:   1,
+			Example: "unable to flush traces, lost 42 traces",
 		},
 	}, errs)
 }

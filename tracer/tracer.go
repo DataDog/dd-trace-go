@@ -9,11 +9,7 @@ import (
 )
 
 const (
-	tickInterval   = 100 * time.Millisecond
-	flushInterval  = 2 * time.Second
-	traceChanLen   = 1000
-	serviceChanLen = 100
-	errChanLen     = 100
+	flushInterval = 2 * time.Second
 )
 
 func init() {
@@ -45,17 +41,14 @@ type Tracer struct {
 	meta   map[string]string
 	metaMu sync.RWMutex
 
-	traceChan   chan []*Span
-	serviceChan chan Service
-	errChan     chan error
-
+	channels tracerChans
 	services map[string]Service // name -> service
 
 	exit   chan struct{}
 	exitWG *sync.WaitGroup
 
 	forceFlushIn  chan struct{}
-	forceFlushOut chan error
+	forceFlushOut chan struct{}
 }
 
 // NewTracer creates a new Tracer. Most users should use the package's
@@ -72,17 +65,15 @@ func NewTracerTransport(transport Transport) *Tracer {
 		sampler:             newAllSampler(),
 		DebugLoggingEnabled: false,
 
-		traceChan:   make(chan []*Span, traceChanLen),
-		serviceChan: make(chan Service, serviceChanLen),
-		errChan:     make(chan error, errChanLen),
+		channels: newTracerChans(),
 
 		services: make(map[string]Service),
 
 		exit:   make(chan struct{}),
 		exitWG: &sync.WaitGroup{},
 
-		forceFlushIn:  make(chan struct{}),
-		forceFlushOut: make(chan error),
+		forceFlushIn:  make(chan struct{}, 0), // must be size 0 (blocking)
+		forceFlushOut: make(chan struct{}, 0), // must be size 0 (blocking)
 	}
 
 	// start a background worker
@@ -129,18 +120,11 @@ func (t *Tracer) SetSampleRate(sampleRate float64) {
 // SetServiceInfo update the application and application type for the given
 // service.
 func (t *Tracer) SetServiceInfo(name, app, appType string) {
-	select {
-	case t.serviceChan <- Service{
+	t.channels.pushService(Service{
 		Name:    name,
 		App:     app,
 		AppType: appType,
-	}:
-	default: // non blocking
-		select {
-		case t.errChan <- &errorServiceChanFull{Len: len(t.serviceChan)}:
-		default: // if channel is full, drop & ignore error, better do this than stall program
-		}
-	}
+	})
 }
 
 // SetMeta adds an arbitrary meta field at the tracer level.
@@ -185,7 +169,7 @@ func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 	spanID := NextSpanID()
 	span := NewSpan(name, service, resource, spanID, spanID, 0, t)
 
-	span.buffer = newSpanBuffer(t.traceChan, t.errChan, 0, 0)
+	span.buffer = newSpanBuffer(t.channels, 0, 0)
 	t.sampler.Sample(span)
 	span.buffer.Push(span)
 
@@ -206,7 +190,7 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 
 		// [TODO:christian] write a test to check this code path, ie
 		// "NewChilSpan with nil parent"
-		span.buffer = newSpanBuffer(t.traceChan, t.errChan, 0, 0)
+		span.buffer = newSpanBuffer(t.channels, 0, 0)
 		t.sampler.Sample(span)
 		span.buffer.Push(span)
 
@@ -245,11 +229,11 @@ func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Spa
 }
 
 func (t *Tracer) getTraces() [][]*Span {
-	traces := make([][]*Span, 0, len(t.traceChan))
+	traces := make([][]*Span, 0, len(t.channels.trace))
 
 	for {
 		select {
-		case trace := <-t.traceChan:
+		case trace := <-t.channels.trace:
 			traces = append(traces, trace)
 		default: // return when there's no more data
 			return traces
@@ -258,7 +242,7 @@ func (t *Tracer) getTraces() [][]*Span {
 }
 
 // flushTraces will push any currently buffered traces to the server.
-func (t *Tracer) flushTraces() error {
+func (t *Tracer) flushTraces() {
 	traces := t.getTraces()
 
 	if t.DebugLoggingEnabled {
@@ -275,19 +259,21 @@ func (t *Tracer) flushTraces() error {
 
 	// bal if there's nothing to do
 	if !t.Enabled() || t.transport == nil || len(traces) == 0 {
-		return nil
+		return
 	}
 
 	_, err := t.transport.SendTraces(traces)
-
-	return err
+	if err != nil {
+		t.channels.pushErr(err)
+		t.channels.pushErr(&errorFlushLostTraces{Nb: len(traces)}) // explicit log messages with nb of lost traces
+	}
 }
 
 func (t *Tracer) updateServices() bool {
 	servicesModified := false
 	for {
 		select {
-		case service := <-t.serviceChan:
+		case service := <-t.channels.service:
 			if s, found := t.services[service.Name]; !found || !s.Equal(service) {
 				t.services[service.Name] = service
 				servicesModified = true
@@ -299,82 +285,63 @@ func (t *Tracer) updateServices() bool {
 }
 
 // flushTraces will push any currently buffered services to the server.
-func (t *Tracer) flushServices() error {
+func (t *Tracer) flushServices() {
 	servicesModified := t.updateServices()
 
 	if !t.Enabled() || !servicesModified {
-		return nil
+		return
 	}
 
 	_, err := t.transport.SendServices(t.services)
-
-	return err
+	if err != nil {
+		t.channels.pushErr(err)
+		t.channels.pushErr(&errorFlushLostServices{Nb: len(t.services)}) // explicit log messages with nb of lost services
+	}
 }
 
-// flushErrors will process log messages that were queued
-func (t *Tracer) flushErrors() {
-	logErrors(t.errChan)
+// flushErrs will process log messages that were queued
+func (t *Tracer) flushErrs() {
+	logErrors(t.channels.err)
 }
 
-func (t *Tracer) flush() error {
-	var retErr error
-
-	nbTraces := len(t.traceChan)
-	if err := t.flushTraces(); err != nil {
-		log.Printf("cannot flush traces: %v", err)
-		log.Printf("lost %d traces", nbTraces)
-		retErr = err
-	}
-
-	if err := t.flushServices(); err != nil {
-		log.Printf("cannot flush services: %v", err)
-		// give priority to flushTraces error, more important if we have both
-		if retErr == nil {
-			retErr = err
-		}
-	}
-
-	t.flushErrors()
-
-	return retErr
+func (t *Tracer) flush() {
+	t.flushTraces()
+	t.flushServices()
+	t.flushErrs()
 }
 
 // ForceFlush forces a flush of data (traces and services) to the agent.
 // Flushes are done by a background task on a regular basis, so you never
 // need to call this manually, mostly useful for testing and debugging.
-func (t *Tracer) ForceFlush() error {
+func (t *Tracer) ForceFlush() {
 	t.forceFlushIn <- struct{}{}
-	return <-t.forceFlushOut
+	<-t.forceFlushOut
 }
 
 // worker periodically flushes traces and services to the transport.
 func (t *Tracer) worker() {
 	defer t.exitWG.Done()
 
-	flushTicker := time.NewTicker(tickInterval)
+	flushTicker := time.NewTicker(flushInterval)
 	defer flushTicker.Stop()
 
-	lastFlush := time.Now()
 	for {
 		select {
-		case now := <-flushTicker.C:
-			// We flush either if:
-			// - flushInterval is elapsed since last flush
-			// - one of the buffers is at least 50% full
-			// One of the reason of doing this is that under heavy load,
-			// payloads might get *really* big if we do only time-based flushes.
-			// It's not perfect as a trace can have many spans so estimating the
-			// number of traces can be misleading.
-			if lastFlush.Add(flushInterval).Before(now) ||
-				len(t.traceChan) > cap(t.traceChan)/5 || // 200 traces
-				len(t.serviceChan) > cap(t.serviceChan)/2 || // 50 services
-				len(t.errChan) > cap(t.errChan)/2 { // 50 errors
-				t.flush()
-				lastFlush = now
-			}
+		case <-flushTicker.C:
+			t.flush()
 
 		case <-t.forceFlushIn:
-			t.forceFlushOut <- t.flush()
+			t.flush()
+			t.forceFlushOut <- struct{}{} // caller blocked until this is done
+
+		case <-t.channels.traceFlush:
+			t.flushTraces()
+
+		case <-t.channels.serviceFlush:
+			t.flushServices()
+
+		case <-t.channels.errFlush:
+			t.flushErrs()
 
 		case <-t.exit:
 			t.flush()

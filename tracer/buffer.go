@@ -18,8 +18,7 @@ const (
 )
 
 type spanBuffer struct {
-	traceChan chan<- []*Span
-	errChan   chan<- error
+	channels tracerChans
 
 	spans         []*Span
 	finishedSpans int
@@ -30,7 +29,7 @@ type spanBuffer struct {
 	sync.RWMutex
 }
 
-func newSpanBuffer(traceChan chan<- []*Span, errChan chan<- error, initSize, maxSize int) *spanBuffer {
+func newSpanBuffer(channels tracerChans, initSize, maxSize int) *spanBuffer {
 	if initSize <= 0 {
 		initSize = spanBufferDefaultInitSize
 	}
@@ -38,10 +37,9 @@ func newSpanBuffer(traceChan chan<- []*Span, errChan chan<- error, initSize, max
 		maxSize = spanBufferDefaultMaxSize
 	}
 	return &spanBuffer{
-		traceChan: traceChan,
-		errChan:   errChan,
-		initSize:  initSize,
-		maxSize:   maxSize,
+		channels: channels,
+		initSize: initSize,
+		maxSize:  maxSize,
 	}
 }
 
@@ -56,18 +54,12 @@ func (tb *spanBuffer) Push(span *Span) {
 	if len(tb.spans) > 0 {
 		// if spanBuffer is full, forget span
 		if len(tb.spans) >= tb.maxSize {
-			select {
-			case tb.errChan <- &errorSpanBufFull{Len: len(tb.spans)}:
-			default: // if channel is full, drop & ignore error, better do this than stall program
-			}
+			tb.channels.pushErr(&errorSpanBufFull{Len: len(tb.spans)})
 			return
 		}
 		// if there's a trace ID mismatch, ignore span
 		if tb.spans[0].TraceID != span.TraceID {
-			select {
-			case tb.errChan <- &errorTraceIDMismatch{Expected: tb.spans[0].TraceID, Actual: span.TraceID}:
-			default: // if channel is full, drop & ignore error, better do this than stall program
-			}
+			tb.channels.pushErr(&errorTraceIDMismatch{Expected: tb.spans[0].TraceID, Actual: span.TraceID})
 			return
 		}
 	}
@@ -105,14 +97,7 @@ func (tb *spanBuffer) doFlush() {
 	tb.Lock()
 	defer tb.Unlock()
 
-	select {
-	case tb.traceChan <- tb.spans:
-	default: // non blocking
-		select {
-		case tb.errChan <- &errorTraceChanFull{Len: len(tb.traceChan)}:
-		default: // if channel is full, drop & ignore error, better do this than stall program
-		}
-	}
+	tb.channels.pushTrace(tb.spans)
 	tb.spans = nil
 }
 

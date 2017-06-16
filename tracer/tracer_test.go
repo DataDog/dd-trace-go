@@ -160,7 +160,7 @@ func TestTracerDisabled(t *testing.T) {
 	tracer.SetEnabled(false)
 	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	span.Finish()
-	assert.Len(tracer.traceChan, 0)
+	assert.Len(tracer.channels.trace, 0)
 }
 
 func TestTracerEnabledAgain(t *testing.T) {
@@ -171,11 +171,11 @@ func TestTracerEnabledAgain(t *testing.T) {
 	tracer.SetEnabled(false)
 	preSpan := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	preSpan.Finish()
-	assert.Len(tracer.traceChan, 0)
+	assert.Len(tracer.channels.trace, 0)
 	tracer.SetEnabled(true)
 	postSpan := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	postSpan.Finish()
-	assert.Len(tracer.traceChan, 1)
+	assert.Len(tracer.channels.trace, 1)
 }
 
 func TestTracerSampler(t *testing.T) {
@@ -201,7 +201,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 	tracer1 := NewTracer()
 	tracer1.SetSampleRate(1)
 
-	count := traceChanLen
+	count := traceChanLen / 3
 
 	for i := 0; i < count; i++ {
 		span0 := tracer0.NewRootSpan("pylons.request", "pylons", "/")
@@ -210,8 +210,11 @@ func TestTracerEdgeSampler(t *testing.T) {
 		span1.Finish()
 	}
 
-	assert.Len(tracer0.traceChan, 0)
-	assert.Len(tracer1.traceChan, count)
+	assert.Len(tracer0.channels.trace, 0)
+	assert.Len(tracer1.channels.trace, count)
+
+	tracer0.Stop()
+	tracer1.Stop()
 }
 
 func TestTracerConcurrent(t *testing.T) {
@@ -237,7 +240,7 @@ func TestTracerConcurrent(t *testing.T) {
 	}()
 
 	wg.Wait()
-	assert.Nil(tracer.ForceFlush())
+	tracer.ForceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 3)
 	assert.Len(traces[0], 1)
@@ -270,7 +273,7 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	}()
 
 	wg.Wait()
-	assert.Nil(tracer.ForceFlush())
+	tracer.ForceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 2)
 	assert.Len(traces[0], 2)
@@ -291,13 +294,13 @@ func TestTracerAtomicFlush(t *testing.T) {
 	span1.Finish()
 	span2.Finish()
 
-	assert.Nil(tracer.ForceFlush())
+	tracer.ForceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
 
 	root.Finish()
 
-	assert.Nil(tracer.ForceFlush())
+	tracer.ForceFlush()
 	traces = transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 4, "all spans should show up at once")
@@ -377,13 +380,13 @@ func TestTracerMeta(t *testing.T) {
 	assert.Equal(map[string]string{"env": "prod", "component": "core"}, tracer.getAllMeta(), "key1 should have been updated")
 }
 
-func TestTracerMassiveParallel(t *testing.T) {
+func TestTracerRace(t *testing.T) {
 	assert := assert.New(t)
 
 	tracer, transport := getTestTracer()
 	defer tracer.Stop()
 
-	total := (traceChanLen / 3) * 3
+	total := (traceChanLen / 3) / 10
 	var wg sync.WaitGroup
 	wg.Add(total)
 
@@ -448,7 +451,7 @@ func TestTracerMassiveParallel(t *testing.T) {
 
 	wg.Wait()
 
-	assert.Nil(tracer.ForceFlush())
+	tracer.ForceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, total, "we should have exactly as many traces as expected")
 	for _, trace := range traces {

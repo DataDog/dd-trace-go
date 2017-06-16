@@ -65,7 +65,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(response.StatusCode, 200)
 
 	// verify traces look good
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -109,7 +109,7 @@ func TestDisabled(t *testing.T) {
 	assert.Equal(response.StatusCode, 200)
 
 	// verify traces look good
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	spans := testTransport.Traces()
 	assert.Len(spans, 0)
 }
@@ -134,7 +134,7 @@ func TestError(t *testing.T) {
 	assert.Equal(response.StatusCode, 500)
 
 	// verify the errors and status are correct
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -176,7 +176,7 @@ func TestHTML(t *testing.T) {
 	assert.Equal("hello world", w.Body.String())
 
 	// verify the errors and status are correct
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]

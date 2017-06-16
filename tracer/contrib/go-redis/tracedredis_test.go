@@ -27,7 +27,7 @@ func TestClient(t *testing.T) {
 	client := NewTracedClient(opts, testTracer, "my-redis")
 	client.Set("test_key", "test_value", 0)
 
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -59,7 +59,7 @@ func TestPipeline(t *testing.T) {
 	// Exec with context test
 	pipeline.ExecWithContext(context.Background())
 
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -78,7 +78,7 @@ func TestPipeline(t *testing.T) {
 	// Rewriting Exec
 	pipeline.Exec()
 
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces = testTransport.Traces()
 	assert.Len(traces, 1)
 	spans = traces[0]
@@ -112,7 +112,7 @@ func TestChildSpan(t *testing.T) {
 	client.Set("test_key", "test_value", 0)
 	parent_span.Finish()
 
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -152,7 +152,7 @@ func TestMultipleCommands(t *testing.T) {
 	client.Incr("int_key")
 	client.ClientList()
 
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 4)
 	spans := traces[0]
@@ -182,7 +182,7 @@ func TestError(t *testing.T) {
 	client := NewTracedClient(opts, testTracer, "my-redis")
 	err := client.Get("non_existent_key")
 
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]

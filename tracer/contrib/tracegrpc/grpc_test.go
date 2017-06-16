@@ -38,7 +38,7 @@ func TestClient(t *testing.T) {
 	span.Finish()
 	assert.Equal(resp.Message, "passed")
 
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 
 	// A word here about what is going on: this is technically a
@@ -99,7 +99,7 @@ func TestDisabled(t *testing.T) {
 	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "disabled"})
 	assert.Nil(err)
 	assert.Equal(resp.Message, "disabled")
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Nil(traces)
 }
@@ -119,7 +119,7 @@ func TestChild(t *testing.T) {
 	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "child"})
 	assert.Nil(err)
 	assert.Equal(resp.Message, "child")
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -165,7 +165,7 @@ func TestPass(t *testing.T) {
 	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
 	assert.Nil(err)
 	assert.Equal(resp.Message, "passed")
-	assert.Nil(testTracer.ForceFlush())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
