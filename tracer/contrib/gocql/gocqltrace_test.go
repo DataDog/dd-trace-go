@@ -2,11 +2,13 @@ package gocqltrace
 
 import (
 	"context"
+	"net/http"
+	"testing"
+
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"github.com/gocql/gocql"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 const (
@@ -36,7 +38,7 @@ func TestErrorWrapper(t *testing.T) {
 	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
 	err := TraceQuery("ServiceName", testTracer, q).Exec()
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -75,7 +77,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	tq.WithContext(ctx).Exec()
 	parent_span.Finish()
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -96,8 +98,31 @@ func TestChildWrapperSpan(t *testing.T) {
 }
 
 // getTestTracer returns a Tracer with a DummyTransport
-func getTestTracer() (*tracer.Tracer, *tracer.DummyTransport) {
-	transport := &tracer.DummyTransport{}
+func getTestTracer() (*tracer.Tracer, *dummyTransport) {
+	transport := &dummyTransport{}
 	tracer := tracer.NewTracerTransport(transport)
 	return tracer, transport
 }
+
+// dummyTransport is a transport that just buffers spans and encoding
+type dummyTransport struct {
+	traces   [][]*tracer.Span
+	services map[string]tracer.Service
+}
+
+func (t *dummyTransport) SendTraces(traces [][]*tracer.Span) (*http.Response, error) {
+	t.traces = append(t.traces, traces...)
+	return nil, nil
+}
+
+func (t *dummyTransport) SendServices(services map[string]tracer.Service) (*http.Response, error) {
+	t.services = services
+	return nil, nil
+}
+
+func (t *dummyTransport) Traces() [][]*tracer.Span {
+	traces := t.traces
+	t.traces = nil
+	return traces
+}
+func (t *dummyTransport) SetHeader(key, value string) {}
