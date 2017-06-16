@@ -38,6 +38,14 @@ func TestPushTrace(t *testing.T) {
 	}
 	assert.Len(channels.trace, many, "all traces should be in the channel, not yet blocking")
 	assert.Len(channels.traceFlush, 1, "a trace flush should have been requested")
+
+	for i := 0; i < cap(channels.trace); i++ {
+		channels.pushTrace(make([]*Span, i))
+	}
+	assert.Len(channels.trace, traceChanLen, "buffer should be full")
+	assert.NotEqual(0, len(channels.err), "there should be an error logged")
+	err := <-channels.err
+	assert.Equal(&errorTraceChanFull{Len: traceChanLen}, err)
 }
 
 func TestPushService(t *testing.T) {
@@ -68,6 +76,18 @@ func TestPushService(t *testing.T) {
 	}
 	assert.Len(channels.service, many, "all services should be in the channel, not yet blocking")
 	assert.Len(channels.serviceFlush, 1, "a service flush should have been requested")
+
+	for i := 0; i < cap(channels.service); i++ {
+		channels.pushService(Service{
+			Name:    fmt.Sprintf("service%d", i),
+			App:     "custom",
+			AppType: "web",
+		})
+	}
+	assert.Len(channels.service, serviceChanLen, "buffer should be full")
+	assert.NotEqual(0, len(channels.err), "there should be an error logged")
+	err := <-channels.err
+	assert.Equal(&errorServiceChanFull{Len: serviceChanLen}, err)
 }
 
 func TestPushErr(t *testing.T) {
@@ -90,4 +110,8 @@ func TestPushErr(t *testing.T) {
 	}
 	assert.Len(channels.err, many, "all errs should be in the channel, not yet blocking")
 	assert.Len(channels.errFlush, 1, "a err flush should have been requested")
+	for i := 0; i < cap(channels.err); i++ {
+		channels.pushErr(fmt.Errorf("err %d", i))
+	}
+	// if we reach this, means pushErr is not blocking, which is what we want to double-check
 }

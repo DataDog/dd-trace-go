@@ -15,6 +15,22 @@ func TestErrorSpanBufFull(t *testing.T) {
 	assert.Equal("ErrorSpanBufFull", errorKey(err))
 }
 
+func TestErrorTraceChanFull(t *testing.T) {
+	assert := assert.New(t)
+
+	err := &errorTraceChanFull{Len: 42}
+	assert.Equal("trace channel is full (length: 42)", err.Error())
+	assert.Equal("ErrorTraceChanFull", errorKey(err))
+}
+
+func TestErrorServiceChanFull(t *testing.T) {
+	assert := assert.New(t)
+
+	err := &errorServiceChanFull{Len: 42}
+	assert.Equal("service channel is full (length: 42)", err.Error())
+	assert.Equal("ErrorServiceChanFull", errorKey(err))
+}
+
 func TestErrorTraceIDMismatch(t *testing.T) {
 	assert := assert.New(t)
 

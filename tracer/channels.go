@@ -33,7 +33,11 @@ func (tc *tracerChans) pushTrace(trace []*Span) {
 		default: // a flush was already requested, skip
 		}
 	}
-	tc.trace <- trace // blocking if channel is full, until next flush
+	select {
+	case tc.trace <- trace:
+	default: // never block user code
+		tc.pushErr(&errorTraceChanFull{Len: len(tc.trace)})
+	}
 }
 
 func (tc *tracerChans) pushService(service Service) {
@@ -43,7 +47,11 @@ func (tc *tracerChans) pushService(service Service) {
 		default: // a flush was already requested, skip
 		}
 	}
-	tc.service <- service // blocking if channel is full, until next flush
+	select {
+	case tc.service <- service:
+	default: // never block user code
+		tc.pushErr(&errorServiceChanFull{Len: len(tc.service)})
+	}
 }
 
 func (tc *tracerChans) pushErr(err error) {
@@ -53,5 +61,12 @@ func (tc *tracerChans) pushErr(err error) {
 		default: // a flush was already requested, skip
 		}
 	}
-	tc.err <- err // blocking if channel is full, until next flush
+	select {
+	case tc.err <- err:
+	default:
+		// OK, if we get this, our error error buffer is full,
+		// we can assume it is filled with meaningful messages which
+		// are going to be logged and hopefully read, nothing better
+		// we can do, blocking would make things worse.
+	}
 }

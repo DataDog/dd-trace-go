@@ -5,6 +5,10 @@ import (
 	"strconv"
 )
 
+const (
+	errorPrefix = "Datadog Tracer Error: "
+)
+
 // errorSpanBufFull is raised when there's no more room in the buffer
 type errorSpanBufFull struct {
 	// Len is the length of the buffer (which is full)
@@ -14,6 +18,28 @@ type errorSpanBufFull struct {
 // Error provides a readable error message.
 func (e *errorSpanBufFull) Error() string {
 	return "span buffer is full (length: " + strconv.Itoa(e.Len) + ")"
+}
+
+// errorTraceChanFull is raised when there's no more room in the channel
+type errorTraceChanFull struct {
+	// Len is the length of the channel (which is full)
+	Len int
+}
+
+// Error provides a readable error message.
+func (e *errorTraceChanFull) Error() string {
+	return "trace channel is full (length: " + strconv.Itoa(e.Len) + ")"
+}
+
+// errorServiceChanFull is raised when there's no more room in the channel
+type errorServiceChanFull struct {
+	// Len is the length of the channel (which is full)
+	Len int
+}
+
+// Error provides a readable error message.
+func (e *errorServiceChanFull) Error() string {
+	return "service channel is full (length: " + strconv.Itoa(e.Len) + ")"
 }
 
 // errorTraceIDMismatch is raised when a trying to put a span in the wrong place.
@@ -79,6 +105,10 @@ func errorKey(err error) string {
 	switch err.(type) {
 	case *errorSpanBufFull:
 		return "ErrorSpanBufFull"
+	case *errorTraceChanFull:
+		return "ErrorTraceChanFull"
+	case *errorServiceChanFull:
+		return "ErrorServiceChanFull"
 	case *errorTraceIDMismatch:
 		return "ErrorTraceIDMismatch"
 	case *errorNoSpanBuf:
@@ -122,6 +152,6 @@ func logErrors(errChan <-chan error) {
 		if v.Count > 1 {
 			repeat = " (repeated " + strconv.Itoa(v.Count) + " times)"
 		}
-		log.Println("Tracer Error: " + v.Example + repeat)
+		log.Println(errorPrefix + v.Example + repeat)
 	}
 }
