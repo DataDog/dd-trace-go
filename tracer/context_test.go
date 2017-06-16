@@ -50,21 +50,20 @@ func TestSpanFromContextNil(t *testing.T) {
 }
 
 func TestSpanMissingParent(t *testing.T) {
-	// [FIXME:christian] rewrite test
-	// assert := assert.New(t)
-	// tracer := NewTracer()
+	assert := assert.New(t)
+	tracer := NewTracer()
 
-	// // assuming we're in an inner function and we
-	// // forget the nil or ok checks
-	// ctx := context.Background()
-	// span, _ := SpanFromContext(ctx)
+	// assuming we're in an inner function and we
+	// forget the nil or ok checks
+	ctx := context.Background()
+	span, _ := SpanFromContext(ctx)
 
-	// // span is nil according to the API
-	// child := tracer.NewChildSpan("redis.command", span)
-	// child.Finish()
+	// span is nil according to the API
+	child := tracer.NewChildSpan("redis.command", span)
+	child.Finish()
 
-	// // the child is finished but it's not recorded in
-	// // the tracer buffer because the service is missing
-	// assert.True(child.Duration > 0)
-	// assert.Equal(tracer.buffer.Len(), 1)
+	// the child is finished but it's not recorded in
+	// the tracer buffer because the service is missing
+	assert.True(child.Duration > 0)
+	assert.Equal(len(tracer.channels.trace), 1)
 }

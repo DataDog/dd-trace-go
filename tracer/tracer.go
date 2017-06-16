@@ -188,8 +188,6 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	if parent == nil {
 		span := NewSpan(name, "", name, spanID, spanID, spanID, t)
 
-		// [TODO:christian] write a test to check this code path, ie
-		// "NewChilSpan with nil parent"
 		span.buffer = newSpanBuffer(t.channels, 0, 0)
 		t.sampler.Sample(span)
 		span.buffer.Push(span)
