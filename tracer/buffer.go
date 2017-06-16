@@ -99,6 +99,7 @@ func (tb *spanBuffer) doFlush() {
 
 	tb.channels.pushTrace(tb.spans)
 	tb.spans = nil
+	tb.finishedSpans = 0 // important, because a buffer can be used for several flushes
 }
 
 func (tb *spanBuffer) Flush() {

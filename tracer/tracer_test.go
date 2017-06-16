@@ -248,6 +248,34 @@ func TestTracerConcurrent(t *testing.T) {
 	assert.Len(traces[2], 1)
 }
 
+func TestTracerParentFinishBeforeChild(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport := getTestTracer()
+	defer tracer.Stop()
+
+	// Testing an edge case: a child refers to a parent that is already closed.
+
+	parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	parent.Finish()
+
+	tracer.ForceFlush()
+	traces := transport.Traces()
+	assert.Len(traces, 1)
+	assert.Len(traces[0], 1)
+	assert.Equal(parent, traces[0][0])
+
+	child := tracer.NewChildSpan("redis.command", parent)
+	child.Finish()
+
+	tracer.ForceFlush()
+
+	traces = transport.Traces()
+	assert.Len(traces, 1)
+	assert.Len(traces[0], 1)
+	assert.Equal(child, traces[0][0])
+	assert.Equal(parent.SpanID, traces[0][0].ParentID, "child should refer to parent, even if they have been flushed separately")
+}
+
 func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport := getTestTracer()

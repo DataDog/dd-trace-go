@@ -27,7 +27,7 @@ func TestSpanBufferPushOne(t *testing.T) {
 	assert.Len(buffer.spans, 1, "there is one span in the buffer")
 	assert.Equal(root, buffer.spans[0], "the span is the one pushed before")
 
-	go root.Finish() // use a goroutine as channel has size 0
+	root.Finish()
 
 	select {
 	case trace := <-buffer.channels.trace:
@@ -90,7 +90,7 @@ func TestSpanBufferPushSeveral(t *testing.T) {
 	}
 
 	for _, span := range spans {
-		go span.Finish() // use a goroutine as channel has size 0
+		span.Finish()
 	}
 
 	select {
