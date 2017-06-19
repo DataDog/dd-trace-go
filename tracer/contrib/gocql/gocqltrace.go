@@ -137,18 +137,9 @@ func (tq *TracedQuery) Iter() *TracedIter {
 
 // Close closes the TracedIter and finish the span created on Iter call.
 func (tIter *TracedIter) Close() error {
-	columns := tIter.Iter.Columns()
-	if len(columns) > 0 {
-		tIter.span.SetMeta(ext.CassandraKeyspace, columns[0].Keyspace)
-	}
 	err := tIter.Iter.Close()
 	if err != nil {
 		tIter.span.SetError(err)
-	}
-	if tIter.Host() != nil {
-		tIter.span.SetMeta(ext.TargetHost, tIter.Iter.Host().Peer().String())
-		tIter.span.SetMeta(ext.TargetPort, strconv.Itoa(tIter.Iter.Host().Port()))
-		tIter.span.SetMeta(ext.CassandraCluster, tIter.Iter.Host().DataCenter())
 	}
 	tIter.span.Finish()
 	return err
