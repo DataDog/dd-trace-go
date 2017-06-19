@@ -119,7 +119,7 @@ func TestCommandsToSring(t *testing.T) {
 	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
 	c.Do("SADD", "testSet", "a", int(0), int32(1), int64(2), stringify_test, context.Background())
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
