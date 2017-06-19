@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"golang.org/x/sys/windows"
+	"log"
 	"time"
 )
 
@@ -14,7 +15,7 @@ func highPrecisionNow() int64 {
 	return ft.Nanoseconds()
 }
 
-func lowPrecisonNow() int64 {
+func lowPrecisionNow() int64 {
 	return time.Now().UTC().UnixNano()
 }
 
@@ -24,8 +25,10 @@ var now func() int64
 // precise implementation based on time.Now()
 func init() {
 	if err := windows.LoadGetSystemTimePreciseAsFileTime(); err != nil {
-		now = lowPrecisonNow
+		log.Printf("Unable to load high precison timer, defaulting to time.Now()")
+		now = lowPrecisionNow
 	} else {
+		log.Printf("Using high precision timer")
 		now = highPrecisionNow
 	}
 }
