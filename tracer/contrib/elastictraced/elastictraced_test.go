@@ -103,7 +103,7 @@ func TestClientV3Failure(t *testing.T) {
 		DoC(context.TODO())
 	assert.Error(err)
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -138,7 +138,7 @@ func TestClientV5Failure(t *testing.T) {
 		Do(context.TODO())
 	assert.Error(err)
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -152,7 +152,7 @@ func TestClientV5Failure(t *testing.T) {
 }
 
 func checkPUTTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracertest.DummyTransport) {
-	tracer.FlushTraces()
+	tracer.ForceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -163,7 +163,7 @@ func checkPUTTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *
 }
 
 func checkGETTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracertest.DummyTransport) {
-	tracer.FlushTraces()
+	tracer.ForceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -174,7 +174,7 @@ func checkGETTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *
 }
 
 func checkErrTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracertest.DummyTransport) {
-	tracer.FlushTraces()
+	tracer.ForceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]

@@ -27,7 +27,7 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	err := db.Ping()
 	assert.Equal(nil, err)
 
-	db.Tracer.FlushTraces()
+	db.Tracer.ForceFlush()
 	traces := db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -43,7 +43,7 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	defer rows.Close()
 	assert.Equal(nil, err)
 
-	db.Tracer.FlushTraces()
+	db.Tracer.ForceFlush()
 	traces = db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans = traces[0]
@@ -71,7 +71,7 @@ func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	stmt, err := db.Prepare(query)
 	assert.Equal(nil, err)
 
-	db.Tracer.FlushTraces()
+	db.Tracer.ForceFlush()
 	traces := db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -88,7 +88,7 @@ func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	_, err2 := stmt.Exec("New York")
 	assert.Equal(nil, err2)
 
-	db.Tracer.FlushTraces()
+	db.Tracer.ForceFlush()
 	traces = db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans = traces[0]
@@ -110,7 +110,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	tx, err := db.Begin()
 	assert.Equal(nil, err)
 
-	db.Tracer.FlushTraces()
+	db.Tracer.ForceFlush()
 	traces := db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -125,7 +125,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	err = tx.Rollback()
 	assert.Equal(nil, err)
 
-	db.Tracer.FlushTraces()
+	db.Tracer.ForceFlush()
 	traces = db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans = traces[0]
@@ -148,20 +148,34 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	err = tx.Commit()
 	assert.Equal(nil, err)
 
-	db.Tracer.FlushTraces()
+	parentSpan.Finish() // need to do this else children are not flushed at all
+
+	db.Tracer.ForceFlush()
 	traces = db.Transport.Traces()
 	assert.Len(traces, 1)
 	spans = traces[0]
-	assert.Len(spans, 3)
+	assert.Len(spans, 4)
 
-	actualSpan = spans[1]
+	for _, s := range spans {
+		if s.Name == expectedSpan.Name && s.Resource == query {
+			actualSpan = s
+		}
+	}
+
+	assert.NotNil(actualSpan)
 	execSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	execSpan.Resource = query
 	execSpan.SetMeta("sql.query", query)
 	tracertest.CompareSpan(t, execSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 
-	actualSpan = spans[2]
+	for _, s := range spans {
+		if s.Name == expectedSpan.Name && s.Resource == "Commit" {
+			actualSpan = s
+		}
+	}
+
+	assert.NotNil(actualSpan)
 	commitSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	commitSpan.Resource = "Commit"
 	tracertest.CompareSpan(t, commitSpan, actualSpan)

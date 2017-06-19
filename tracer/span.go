@@ -60,9 +60,16 @@ type Span struct {
 	sync.RWMutex
 	tracer   *Tracer // the tracer that generated this span
 	finished bool    // true if the span has been submitted to a tracer.
+
+	// parent contains a link to the parent. In most cases, ParentID can be inferred from this.
+	// However, ParentID can technically be overridden (typical usage: distributed tracing)
+	// and also, parent == nil is used to identify root and top-level ("local root") spans.
+	parent *Span
+	buffer *spanBuffer
 }
 
-// NewSpan creates a new span.
+// NewSpan creates a new span. This is a low-level function, required for testing and advanced usage.
+// Most of the time one should prefer the Tracer NewRootSpan or NewChildSpan methods.
 func NewSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *Span {
 	return &Span{
 		Name:     name,
@@ -203,9 +210,34 @@ func (s *Span) Finish() {
 	}
 	s.Unlock()
 
-	if s.tracer != nil && !finished {
-		s.tracer.record(s)
+	if finished {
+		// no-op, called twice, no state change...
+		return
 	}
+
+	if s.buffer == nil {
+		if s.tracer != nil {
+			s.tracer.channels.pushErr(&errorNoSpanBuf{SpanName: s.Name})
+		}
+		return
+	}
+
+	// If tracer is explicitely disabled, stop now
+	if s.tracer != nil && !s.tracer.Enabled() {
+		return
+	}
+
+	// If not sampled, drop it
+	if !s.Sampled {
+		return
+	}
+
+	s.buffer.AckFinish() // put data in channel only if trace is completely finished
+
+	// It's important that when Finish() exits, the data is put in
+	// the channel for real, when the trace is finished.
+	// Otherwise, tests could become flaky (because you never know in what state
+	// the channel is).
 }
 
 // FinishWithErr marks a span finished and sets the given error if it's

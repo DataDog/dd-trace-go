@@ -21,7 +21,7 @@ func TestClient(t *testing.T) {
 	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
 	c.Do("SET", 1, "truck")
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -45,7 +45,7 @@ func TestCommandError(t *testing.T) {
 	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
 	_, err := c.Do("NOT_A_COMMAND", context.Background())
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -85,17 +85,26 @@ func TestInheritance(t *testing.T) {
 	client.Do("SET", "water", "bottle", ctx)
 	parent_span.Finish()
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
 	assert.Len(spans, 2)
 
-	child_span := spans[0]
-	pspan := spans[1]
-	assert.Equal(pspan.Name, "parent_span")
+	var child_span, pspan *tracer.Span
+	for _, s := range spans {
+		// order of traces in buffer is not garanteed
+		switch s.Name {
+		case "redis.command":
+			child_span = s
+		case "parent_span":
+			pspan = s
+		}
+	}
+	assert.NotNil(child_span, "there should be a child redis.command span")
+	assert.NotNil(child_span, "there should be a parent span")
+
 	assert.Equal(child_span.ParentID, pspan.SpanID)
-	assert.Equal(child_span.Name, "redis.command")
 	assert.Equal(child_span.GetMeta("out.host"), "127.0.0.1")
 	assert.Equal(child_span.GetMeta("out.port"), "6379")
 }
@@ -117,7 +126,7 @@ func TestPool(t *testing.T) {
 
 	pc := pool.Get()
 	pc.Do("SET", " whiskey", " glass", context.Background())
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -134,7 +143,7 @@ func TestTracingDialUrl(t *testing.T) {
 	client, _ := TracedDialURL("redis-service", testTracer, url)
 	client.Do("SET", "ONE", " TWO", context.Background())
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 }

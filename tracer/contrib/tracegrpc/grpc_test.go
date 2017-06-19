@@ -38,21 +38,47 @@ func TestClient(t *testing.T) {
 	span.Finish()
 	assert.Equal(resp.Message, "passed")
 
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
-	assert.Len(traces, 1)
-	spans := traces[0]
+
+	// A word here about what is going on: this is technically a
+	// distributed trace, while we're in this example in the Go world
+	// and within the same exec, client could know about server details.
+	// But this is not the general cases. So, as we only connect client
+	// and server through their span IDs, they can be flushed as independant
+	// traces. They could also be flushed at once, this is an implementation
+	// detail, what is important is that all of it is flushed, at some point.
+	if len(traces) == 0 {
+		assert.Fail("there should be at least one trace")
+	}
+	var spans []*tracer.Span
+	for _, trace := range traces {
+		for _, span := range trace {
+			spans = append(spans, span)
+		}
+	}
 	assert.Len(spans, 3)
 
-	sspan := spans[0]
-	assert.Equal(sspan.Name, "grpc.server")
+	var sspan, cspan, tspan *tracer.Span
 
-	cspan := spans[1]
-	assert.Equal(cspan.Name, "grpc.client")
+	for _, s := range spans {
+		// order of traces in buffer is not garanteed
+		switch s.Name {
+		case "grpc.server":
+			sspan = s
+		case "grpc.client":
+			cspan = s
+		case "a":
+			tspan = s
+		}
+	}
+
+	assert.NotNil(sspan, "there should be a span with 'grpc.server' as Name")
+
+	assert.NotNil(cspan, "there should be a span with 'grpc.client' as Name")
 	assert.Equal(cspan.GetMeta("grpc.code"), "OK")
 
-	tspan := spans[2]
-	assert.Equal(tspan.Name, "a")
+	assert.NotNil(tspan, "there should be a span with 'a' as Name")
 	assert.Equal(cspan.TraceID, tspan.TraceID)
 	assert.Equal(sspan.TraceID, tspan.TraceID)
 }
@@ -73,7 +99,7 @@ func TestDisabled(t *testing.T) {
 	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "disabled"})
 	assert.Nil(err)
 	assert.Equal(resp.Message, "disabled")
-	assert.Nil(testTracer.FlushTraces())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Nil(traces)
 }
@@ -93,23 +119,35 @@ func TestChild(t *testing.T) {
 	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "child"})
 	assert.Nil(err)
 	assert.Equal(resp.Message, "child")
-	assert.Nil(testTracer.FlushTraces())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
 	assert.Len(spans, 2)
 
-	s := spans[0]
-	assert.Equal(s.Error, int32(0))
-	assert.Equal(s.Service, "tracegrpc")
-	assert.Equal(s.Resource, "child")
-	assert.True(s.Duration > 0)
+	var sspan, cspan *tracer.Span
 
-	s = spans[1]
-	assert.Equal(s.Error, int32(0))
-	assert.Equal(s.Service, "tracegrpc")
-	assert.Equal(s.Resource, "/tracegrpc.Fixture/Ping")
-	assert.True(s.Duration > 0)
+	for _, s := range spans {
+		// order of traces in buffer is not garanteed
+		switch s.Name {
+		case "grpc.server":
+			sspan = s
+		case "child":
+			cspan = s
+		}
+	}
+
+	assert.NotNil(cspan, "there should be a span with 'child' as Name")
+	assert.Equal(cspan.Error, int32(0))
+	assert.Equal(cspan.Service, "tracegrpc")
+	assert.Equal(cspan.Resource, "child")
+	assert.True(cspan.Duration > 0)
+
+	assert.NotNil(sspan, "there should be a span with 'grpc.server' as Name")
+	assert.Equal(sspan.Error, int32(0))
+	assert.Equal(sspan.Service, "tracegrpc")
+	assert.Equal(sspan.Resource, "/tracegrpc.Fixture/Ping")
+	assert.True(sspan.Duration > 0)
 }
 
 func TestPass(t *testing.T) {
@@ -127,7 +165,7 @@ func TestPass(t *testing.T) {
 	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
 	assert.Nil(err)
 	assert.Equal(resp.Message, "passed")
-	assert.Nil(testTracer.FlushTraces())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]

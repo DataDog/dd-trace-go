@@ -34,8 +34,6 @@ type Tracer struct {
 	transport Transport // is the transport mechanism used to delivery spans to the agent
 	sampler   sampler   // is the trace sampler to only keep some samples
 
-	buffer *spansBuffer
-
 	DebugLoggingEnabled bool
 	enabled             bool // defines if the Tracer is enabled or not
 	enableMu            sync.RWMutex
@@ -43,12 +41,14 @@ type Tracer struct {
 	meta   map[string]string
 	metaMu sync.RWMutex
 
-	services         map[string]Service // name -> service
-	servicesModified bool
-	serviceChan      chan Service
+	channels tracerChans
+	services map[string]Service // name -> service
 
 	exit   chan struct{}
 	exitWG *sync.WaitGroup
+
+	forceFlushIn  chan struct{}
+	forceFlushOut chan struct{}
 }
 
 // NewTracer creates a new Tracer. Most users should use the package's
@@ -62,15 +62,18 @@ func NewTracerTransport(transport Transport) *Tracer {
 	t := &Tracer{
 		enabled:             true,
 		transport:           transport,
-		buffer:              newSpansBuffer(spanBufferDefaultMaxSize),
 		sampler:             newAllSampler(),
 		DebugLoggingEnabled: false,
 
-		services:    make(map[string]Service),
-		serviceChan: make(chan Service, 10), // we don't want to block when a flush is in progress
+		channels: newTracerChans(),
+
+		services: make(map[string]Service),
 
 		exit:   make(chan struct{}),
 		exitWG: &sync.WaitGroup{},
+
+		forceFlushIn:  make(chan struct{}, 0), // must be size 0 (blocking)
+		forceFlushOut: make(chan struct{}, 0), // must be size 0 (blocking)
 	}
 
 	// start a background worker
@@ -114,26 +117,14 @@ func (t *Tracer) SetSampleRate(sampleRate float64) {
 	}
 }
 
-// SetSpansBufferSize sets a buffer size for the tracer.
-// This abandons the old buffer so this should be called in an init function
-// otherwise already recorded spans will be lost.
-// maxSize must be greater than 0
-func (t *Tracer) SetSpansBufferSize(maxSize int) {
-	if maxSize > 0 {
-		t.buffer = newSpansBuffer(maxSize)
-	} else {
-		log.Printf("tracer.SetSpansBufferSize max size must be greater than 0, current: %d", t.buffer.maxSize)
-	}
-}
-
 // SetServiceInfo update the application and application type for the given
 // service.
 func (t *Tracer) SetServiceInfo(name, app, appType string) {
-	t.serviceChan <- Service{
+	t.channels.pushService(Service{
 		Name:    name,
 		App:     app,
 		AppType: appType,
-	}
+	})
 }
 
 // SetMeta adds an arbitrary meta field at the tracer level.
@@ -177,7 +168,11 @@ func (t *Tracer) getAllMeta() map[string]string {
 func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 	spanID := NextSpanID()
 	span := NewSpan(name, service, resource, spanID, spanID, 0, t)
+
+	span.buffer = newSpanBuffer(t.channels, 0, 0)
 	t.sampler.Sample(span)
+	span.buffer.Push(span)
+
 	return span
 }
 
@@ -192,14 +187,24 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 	// that is not sent to the trace agent.
 	if parent == nil {
 		span := NewSpan(name, "", name, spanID, spanID, spanID, t)
+
+		span.buffer = newSpanBuffer(t.channels, 0, 0)
 		t.sampler.Sample(span)
+		span.buffer.Push(span)
+
 		return span
 	}
 
+	parent.RLock()
 	// child that is correctly configured
 	span := NewSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
 	// child sampling same as the parent
 	span.Sampled = parent.Sampled
+	span.parent = parent
+	span.buffer = parent.buffer
+	parent.RUnlock()
+
+	span.buffer.Push(span)
 
 	return span
 }
@@ -221,90 +226,94 @@ func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Spa
 	return span, span.Context(ctx)
 }
 
-// record queues the finished span for further processing.
-func (t *Tracer) record(span *Span) {
-	if t.Enabled() && span.Sampled {
-		t.buffer.Push(span)
+func (t *Tracer) getTraces() [][]*Span {
+	traces := make([][]*Span, 0, len(t.channels.trace))
+
+	for {
+		select {
+		case trace := <-t.channels.trace:
+			traces = append(traces, trace)
+		default: // return when there's no more data
+			return traces
+		}
 	}
 }
 
-// FlushTraces will push any currently buffered traces to the server.
-// XXX Note that it is currently exported because some tests use it. They
-// really should not.
-func (t *Tracer) FlushTraces() error {
-	spans := t.buffer.Pop()
+// flushTraces will push any currently buffered traces to the server.
+func (t *Tracer) flushTraces() {
+	traces := t.getTraces()
 
 	if t.DebugLoggingEnabled {
-		log.Printf("Sending %d spans", len(spans))
-		for _, s := range spans {
-			log.Printf("SPAN:\n%s", s.String())
+		log.Printf("Sending %d traces", len(traces))
+		for _, trace := range traces {
+			if len(trace) > 0 {
+				log.Printf("TRACE: %d\n", trace[0].TraceID)
+				for _, span := range trace {
+					log.Printf("SPAN:\n%s", span.String())
+				}
+			}
 		}
 	}
 
 	// bal if there's nothing to do
-	if !t.Enabled() || t.transport == nil || len(spans) == 0 {
-		return nil
-	}
-
-	// rebuild the traces list; this operation is done in the FlushTraces() instead
-	// after each record() because this avoids a huge number of initializations
-	// and RW mutex locks, keeping the same performance as before (except for this
-	// little overhead). The overall optimization (and idiomatic code) could be
-	// reached replacing all our buffers with channels.
-	var traces [][]*Span
-	traceBuffer := make(map[uint64][]*Span)
-	for _, s := range spans {
-		traceBuffer[s.TraceID] = append(traceBuffer[s.TraceID], s)
-	}
-	for _, t := range traceBuffer {
-		traces = append(traces, t)
+	if !t.Enabled() || t.transport == nil || len(traces) == 0 {
+		return
 	}
 
 	_, err := t.transport.SendTraces(traces)
-	return err
+	if err != nil {
+		t.channels.pushErr(err)
+		t.channels.pushErr(&errorFlushLostTraces{Nb: len(traces)}) // explicit log messages with nb of lost traces
+	}
 }
 
-func (t *Tracer) flushServices() error {
-	if !t.Enabled() || !t.servicesModified {
-		return nil
+func (t *Tracer) updateServices() bool {
+	servicesModified := false
+	for {
+		select {
+		case service := <-t.channels.service:
+			if s, found := t.services[service.Name]; !found || !s.Equal(service) {
+				t.services[service.Name] = service
+				servicesModified = true
+			}
+		default: // return when there's no more data
+			return servicesModified
+		}
+	}
+}
+
+// flushTraces will push any currently buffered services to the server.
+func (t *Tracer) flushServices() {
+	servicesModified := t.updateServices()
+
+	if !t.Enabled() || !servicesModified {
+		return
 	}
 
-	if _, err := t.transport.SendServices(t.services); err != nil {
-		return err
+	_, err := t.transport.SendServices(t.services)
+	if err != nil {
+		t.channels.pushErr(err)
+		t.channels.pushErr(&errorFlushLostServices{Nb: len(t.services)}) // explicit log messages with nb of lost services
 	}
+}
 
-	t.servicesModified = false
-	return nil
+// flushErrs will process log messages that were queued
+func (t *Tracer) flushErrs() {
+	logErrors(t.channels.err)
 }
 
 func (t *Tracer) flush() {
-	nbSpans := t.buffer.Len()
-	if err := t.FlushTraces(); err != nil {
-		log.Printf("cannot flush traces: %v", err)
-		log.Printf("lost %d spans", nbSpans)
-	}
-
-	if err := t.flushServices(); err != nil {
-		log.Printf("cannot flush services: %v", err)
-	}
+	t.flushTraces()
+	t.flushServices()
+	t.flushErrs()
 }
 
-func (t *Tracer) appendService(service Service) {
-	if s, found := t.services[service.Name]; !found || !s.Equal(service) {
-		t.services[service.Name] = service
-		t.servicesModified = true
-	}
-}
-
-func (t *Tracer) drainServices() {
-	for {
-		select {
-		case service := <-t.serviceChan:
-			t.appendService(service)
-		default:
-			return
-		}
-	}
+// ForceFlush forces a flush of data (traces and services) to the agent.
+// Flushes are done by a background task on a regular basis, so you never
+// need to call this manually, mostly useful for testing and debugging.
+func (t *Tracer) ForceFlush() {
+	t.forceFlushIn <- struct{}{}
+	<-t.forceFlushOut
 }
 
 // worker periodically flushes traces and services to the transport.
@@ -319,15 +328,20 @@ func (t *Tracer) worker() {
 		case <-flushTicker.C:
 			t.flush()
 
-		case service := <-t.serviceChan:
-			t.appendService(service)
+		case <-t.forceFlushIn:
+			t.flush()
+			t.forceFlushOut <- struct{}{} // caller blocked until this is done
+
+		case <-t.channels.traceFlush:
+			t.flushTraces()
+
+		case <-t.channels.serviceFlush:
+			t.flushServices()
+
+		case <-t.channels.errFlush:
+			t.flushErrs()
 
 		case <-t.exit:
-			// serviceChan being buffered, we drain it before the
-			// last flush to make sure we have all information. It
-			// is an edge case, but it is important for tests.
-			t.drainServices()
-
 			t.flush()
 			return
 		}

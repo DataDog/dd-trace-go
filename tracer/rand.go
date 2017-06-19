@@ -26,7 +26,7 @@ func newRandSource() *randSource {
 	if err == nil {
 		seed = n.Int64()
 	} else {
-		log.Printf("cannot generate random seed: %v; using current time\n", err)
+		log.Printf("%scannot generate random seed: %v; using current time\n", errorPrefix, err)
 		seed = time.Now().UnixNano()
 	}
 

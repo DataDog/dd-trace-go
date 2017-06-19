@@ -65,7 +65,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(response.StatusCode, 200)
 
 	// verify traces look good
-	assert.Nil(testTracer.FlushTraces())
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -109,7 +109,7 @@ func TestDisabled(t *testing.T) {
 	assert.Equal(response.StatusCode, 200)
 
 	// verify traces look good
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	spans := testTransport.Traces()
 	assert.Len(spans, 0)
 }
@@ -134,7 +134,7 @@ func TestError(t *testing.T) {
 	assert.Equal(response.StatusCode, 500)
 
 	// verify the errors and status are correct
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -176,7 +176,7 @@ func TestHTML(t *testing.T) {
 	assert.Equal("hello world", w.Body.String())
 
 	// verify the errors and status are correct
-	testTracer.FlushTraces()
+	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 	spans := traces[0]
@@ -185,8 +185,15 @@ func TestHTML(t *testing.T) {
 		assert.Equal(s.Service, "tmplservice")
 	}
 
-	tspan := spans[0]
-	assert.Equal(tspan.Name, "gin.render.html")
+	var tspan *tracer.Span
+	for _, s := range spans {
+		// we need to pick up the span we're searching for, as the
+		// order is not garanteed within the buffer
+		if s.Name == "gin.render.html" {
+			tspan = s
+		}
+	}
+	assert.NotNil(tspan, "we should have found a span with name gin.render.html")
 	assert.Equal(tspan.GetMeta("go.template"), "hello")
 	fmt.Println(spans)
 }
