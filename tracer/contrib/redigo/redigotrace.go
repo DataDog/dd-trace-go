@@ -4,6 +4,7 @@ package redigotrace
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 	redis "github.com/garyburd/redigo/redis"
@@ -117,6 +118,12 @@ func (tc TracedConn) Do(commandName string, args ...interface{}) (reply interfac
 			b.WriteString(arg)
 		case int:
 			b.WriteString(strconv.Itoa(arg))
+		case int32:
+			b.WriteString(strconv.FormatInt(int64(arg), 10))
+		case int64:
+			b.WriteString(strconv.FormatInt(arg, 10))
+		case fmt.Stringer:
+			b.WriteString(arg.String())
 		}
 	}
 	span.SetMeta("redis.raw_command", b.String())
