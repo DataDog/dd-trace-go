@@ -37,16 +37,15 @@ type traceParams struct {
 
 // TraceQuery wraps a gocql.Query into a TracedQuery
 func TraceQuery(service string, tracer *tracer.Tracer, q *gocql.Query) *TracedQuery {
-	string_query := `"` + strings.SplitN(q.String(), "\"", 3)[1] + `"`
-	string_query, err := strconv.Unquote(string_query)
+	stringQuery := `"` + strings.SplitN(q.String(), "\"", 3)[1] + `"`
+	stringQuery, err := strconv.Unquote(stringQuery)
 	if err != nil {
 		// An invalid string, so that the trace is not dropped
 		// due to having an empty resource
-		string_query = "_"
+		stringQuery = "_"
 	}
 
-	q.NoSkipMetadata()
-	tq := &TracedQuery{q, traceParams{tracer, service, "", "false", strconv.Itoa(int(q.GetConsistency())), string_query}, context.Background()}
+	tq := &TracedQuery{q, traceParams{tracer, service, "", "false", strconv.Itoa(int(q.GetConsistency())), stringQuery}, context.Background()}
 	tracer.SetServiceInfo(service, ext.CassandraType, ext.AppTypeDB)
 	return tq
 }
