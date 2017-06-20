@@ -298,8 +298,3 @@ func (s *Span) Tracer() *Tracer {
 func NextSpanID() uint64 {
 	return uint64(randGen.Int63())
 }
-
-// now returns current UTC time in nanos.
-func now() int64 {
-	return time.Now().UTC().UnixNano()
-}
