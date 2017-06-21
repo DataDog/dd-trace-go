@@ -67,15 +67,15 @@ func TestChildWrapperSpan(t *testing.T) {
 
 	// Parent span
 	ctx := context.Background()
-	parent_span := testTracer.NewChildSpanFromContext("parent_span", ctx)
-	ctx = tracer.ContextWithSpan(ctx, parent_span)
+	parentSpan := testTracer.NewChildSpanFromContext("parentSpan", ctx)
+	ctx = tracer.ContextWithSpan(ctx, parentSpan)
 
 	cluster := gocql.NewCluster("127.0.0.1")
 	session, _ := cluster.CreateSession()
 	q := session.Query("SELECT * from trace.person")
-	tq := TraceQuery("Test_service_name", testTracer, q)
+	tq := TraceQuery("TestServiceName", testTracer, q)
 	tq.WithContext(ctx).Exec()
-	parent_span.Finish()
+	parentSpan.Finish()
 
 	testTracer.ForceFlush()
 	traces := testTransport.Traces()
@@ -83,18 +83,22 @@ func TestChildWrapperSpan(t *testing.T) {
 	spans := traces[0]
 	assert.Len(spans, 2)
 
-	child_span := spans[0]
-	pspan := spans[1]
-	assert.Equal(pspan.Name, "parent_span")
-	assert.Equal(child_span.ParentID, pspan.SpanID)
-	assert.Equal(child_span.Name, ext.CassandraQuery)
-	assert.Equal(child_span.Resource, "SELECT * from trace.person")
-	assert.Equal(child_span.GetMeta(ext.CassandraKeyspace), "trace")
-
-	// Will work only after gocql fix (PR #918)
-	// assert.Equal(child_span.GetMeta(ext.TargetPort), "9042")
-	// assert.Equal(child_span.GetMeta(ext.TargetHost), "127.0.0.1")
-	// assert.Equal(child_span.GetMeta(ext.CassandraCluster), "datacenter1")
+	var childSpan, pSpan *tracer.Span
+	if spans[0].ParentID == spans[1].SpanID {
+		childSpan = spans[0]
+		pSpan = spans[1]
+	} else {
+		childSpan = spans[1]
+		pSpan = spans[0]
+	}
+	assert.Equal(pSpan.Name, "parentSpan")
+	assert.Equal(childSpan.ParentID, pSpan.SpanID)
+	assert.Equal(childSpan.Name, ext.CassandraQuery)
+	assert.Equal(childSpan.Resource, "SELECT * from trace.person")
+	assert.Equal(childSpan.GetMeta(ext.CassandraKeyspace), "trace")
+	assert.Equal(childSpan.GetMeta(ext.TargetPort), "9042")
+	assert.Equal(childSpan.GetMeta(ext.TargetHost), "127.0.0.1")
+	assert.Equal(childSpan.GetMeta(ext.CassandraCluster), "datacenter1")
 }
 
 // getTestTracer returns a Tracer with a DummyTransport

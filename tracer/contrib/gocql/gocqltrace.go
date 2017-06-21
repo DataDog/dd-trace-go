@@ -37,16 +37,15 @@ type traceParams struct {
 
 // TraceQuery wraps a gocql.Query into a TracedQuery
 func TraceQuery(service string, tracer *tracer.Tracer, q *gocql.Query) *TracedQuery {
-	string_query := `"` + strings.SplitN(q.String(), "\"", 3)[1] + `"`
-	string_query, err := strconv.Unquote(string_query)
+	stringQuery := `"` + strings.SplitN(q.String(), "\"", 3)[1] + `"`
+	stringQuery, err := strconv.Unquote(stringQuery)
 	if err != nil {
 		// An invalid string, so that the trace is not dropped
 		// due to having an empty resource
-		string_query = "_"
+		stringQuery = "_"
 	}
 
-	q.NoSkipMetadata()
-	tq := &TracedQuery{q, traceParams{tracer, service, "", "false", strconv.Itoa(int(q.GetConsistency())), string_query}, context.Background()}
+	tq := &TracedQuery{q, traceParams{tracer, service, "", "false", strconv.Itoa(int(q.GetConsistency())), stringQuery}, context.Background()}
 	tracer.SetServiceInfo(service, ext.CassandraType, ext.AppTypeDB)
 	return tq
 }
@@ -138,18 +137,9 @@ func (tq *TracedQuery) Iter() *TracedIter {
 
 // Close closes the TracedIter and finish the span created on Iter call.
 func (tIter *TracedIter) Close() error {
-	columns := tIter.Iter.Columns()
-	if len(columns) > 0 {
-		tIter.span.SetMeta(ext.CassandraKeyspace, columns[0].Keyspace)
-	}
 	err := tIter.Iter.Close()
 	if err != nil {
 		tIter.span.SetError(err)
-	}
-	if tIter.Host() != nil {
-		tIter.span.SetMeta(ext.TargetHost, tIter.Iter.Host().Peer().String())
-		tIter.span.SetMeta(ext.TargetPort, strconv.Itoa(tIter.Iter.Host().Port()))
-		tIter.span.SetMeta(ext.CassandraCluster, tIter.Iter.Host().DataCenter())
 	}
 	tIter.span.Finish()
 	return err
