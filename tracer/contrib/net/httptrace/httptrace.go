@@ -23,9 +23,17 @@ func NewHttpTracer(service string, t *tracer.Tracer) *HttpTracer {
 	}
 }
 
-// TraceHandleFunc will return a HandlerFunc that will wrap tracing around the
+// Handler will return a Handler that will wrap tracing around the
+// given handler.
+func (h *HttpTracer) Handler(handler http.Handler) http.Handler {
+	return h.TraceHandlerFunc(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		handler.ServeHTTP(writer, req)
+	}))
+}
+
+// TraceHandlerFunc will return a HandlerFunc that will wrap tracing around the
 // given handler func.
-func (h *HttpTracer) Handler(handler http.HandlerFunc) http.HandlerFunc {
+func (h *HttpTracer) TraceHandlerFunc(handler http.HandlerFunc) http.HandlerFunc {
 
 	return func(writer http.ResponseWriter, req *http.Request) {
 
