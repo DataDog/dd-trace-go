@@ -37,7 +37,7 @@ func (h *HttpTracer) TraceHandlerFunc(handler http.HandlerFunc) http.HandlerFunc
 
 	return func(writer http.ResponseWriter, req *http.Request) {
 
-		// bail our if tracing isn't enabled.
+		// bail out if tracing isn't enabled.
 		if !h.tracer.Enabled() {
 			handler(writer, req)
 			return
