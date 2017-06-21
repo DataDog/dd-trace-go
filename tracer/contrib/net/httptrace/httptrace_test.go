@@ -13,7 +13,7 @@ func TestHttpTracerDisabled(t *testing.T) {
 	assert := assert.New(t)
 
 	testTracer, testTransport, httpTracer := getTestTracer("disabled-service")
-	handler := httpTracer.Handler(func(w http.ResponseWriter, r *http.Request) {
+	handler := httpTracer.TraceHandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := w.Write([]byte("disabled!"))
 		assert.Nil(err)
 		// Ensure we have no tracing context.
