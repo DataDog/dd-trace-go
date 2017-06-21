@@ -16,8 +16,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 func Example() {
 	mux := http.NewServeMux()
-	mux.Handle("/users", hander)
-	mux.Handle("/anything", hander)
+	mux.Handle("/users", handler)
+	mux.Handle("/anything", handler)
 	httpTracer := httptrace.NewHttpTracer("fake-service", tracer.DefaultTracer)
 
 	http.ListenAndServe(":8080", httpTracer.Handler(mux))
