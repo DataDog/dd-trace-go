@@ -228,7 +228,7 @@ func (t *Tracer) NewChildSpanFromContext(name string, ctx context.Context) *Span
 // child span. If the context contains no span, an empty root span will be returned.
 // If nil is passed in for the context, a context will be created.
 func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Span, context.Context) {
-	span := NewChildSpanFromContext(name, ctx)
+	span := t.NewChildSpanFromContext(name, ctx)
 	return span, span.Context(ctx)
 }
 
