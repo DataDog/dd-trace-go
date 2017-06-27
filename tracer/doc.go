@@ -11,4 +11,9 @@
 // The tracing client can perform trace sampling. While the trace agent
 // already samples traces to reduce bandwidth usage, client sampling reduces
 // performance overhead.
+//
+// To enable APM and/or tracing of supported integrations, follow the instructions for
+// the appropriate package: https://godoc.org/github.com/DataDog/dd-trace-go/tracer#pkg-subdirectories
+//
+// Sample code is available in the two examples below:
 package tracer
