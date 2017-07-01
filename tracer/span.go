@@ -120,6 +120,14 @@ func (s *Span) SetMeta(key, value string) {
 
 }
 
+// SetMetas adds arbitrary meta fields from a given map to the current Span.
+// If the Span has been finished, it will not be modified by the method.
+func (s *Span) SetMetas(metas map[string]string) {
+	for k, v := range metas {
+		s.SetMeta(k, v)
+	}
+}
+
 // GetMeta will return the value for the given tag or the empty string if it
 // doesn't exist.
 func (s *Span) GetMeta(key string) string {
