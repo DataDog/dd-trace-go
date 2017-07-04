@@ -1,55 +1,43 @@
 # File for development/ testing purposes
 
 cassandra:
-        image: cassandra:3.7
-        ports:
-                - "127.0.0.1:9042:9042"
+    image: cassandra:3.7
+    ports:
+        - "127.0.0.1:${TEST_CASSANDRA_PORT}:9042"
+mysql:
+    image: mysql:5.7
+    environment:
+        - MYSQL_ROOT_PASSWORD=$TEST_MYSQL_ROOT_PASSWORD
+        - MYSQL_PASSWORD=$TEST_MYSQL_PASSWORD
+        - MYSQL_USER=$TEST_MYSQL_USER
+        - MYSQL_DATABASE=$TEST_MYSQL_DATABASE
+    ports:
+        - "127.0.0.1:${TEST_MYSQL_PORT}:3306"
+postgres:
+    image: postgres:9.5
+    environment:
+        - POSTGRES_PASSWORD=$TEST_POSTGRES_PASSWORD
+        - POSTGRES_USER=$TEST_POSTGRES_USER
+        - POSTGRES_DB=$TEST_POSTGRES_DB
+    ports:
+        - "127.0.0.1:${TEST_POSTGRES_PORT}:5432"
 redis:
-        image: redis:3.2
-        ports:
-                - "127.0.0.1:6379:6379"
+    image: redis:3.2
+    ports:
+        - "127.0.0.1:${TEST_REDIS_PORT}:6379"
 elasticsearch-v5:
-        image: elasticsearch:5-alpine
-        container_name: elasticsearch5
-        environment:
-                - cluster.name=docker-cluster
-                - bootstrap.memory_lock=true
-                - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-                - xpack.security.enabled=false
-                - bootstrap.ignore_system_bootstrap_checks=true
-        ports:
-                - 9200:9200
-        ulimits:
-                nofile:
-                        soft: 65536
-                        hard: 65536
-        mem_limit: 1g
-        cap_add:
-                - IPC_LOCK
+    image: elasticsearch:5
+    ports:
+        - "127.0.0.1:${TEST_ELASTICSEARCH5_PORT}:9200"
 elasticsearch-v2:
-        image: elasticsearch:2-alpine
-        container_name: elasticsearch2
-        environment:
-                - cluster.name=docker-cluster
-                - bootstrap.memory_lock=true
-                - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-                - xpack.security.enabled=false
-                - bootstrap.ignore_system_bootstrap_checks=true
-        command: "elasticsearch -Des.http.port=9201"
-        ports:
-                - 9201:9201
-        ulimits:
-                nofile:
-                        soft: 65536
-                        hard: 65536
-        mem_limit: 1g
-        cap_add:
-                - IPC_LOCK
+    image: elasticsearch:2
+    ports:
+        - "127.0.0.1:${TEST_ELASTICSEARCH2_PORT}:9200"
 ddagent:
-        image: datadog/docker-dd-agent
-        environment:
-                - DD_APM_ENABLED=true
-                - DD_BIND_HOST=0.0.0.0
-                - DD_API_KEY=invalid_key_but_this_is_fine
-        ports:
-                - "127.0.0.1:8126:8126"
+    image: datadog/docker-dd-agent
+    environment:
+        - DD_APM_ENABLED=true
+        - DD_BIND_HOST=0.0.0.0
+        - DD_API_KEY=invalid_key_but_this_is_fine
+    ports:
+        - "127.0.0.1:8126:8126"
