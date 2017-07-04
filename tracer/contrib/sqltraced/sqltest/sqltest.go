@@ -12,8 +12,29 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// setupTestCase initializes MySQL or Postgres databases and returns a
+// teardown function that must be executed via `defer`
+func setupTestCase(t *testing.T, db *DB) func(t *testing.T, db *DB) {
+	// creates the database
+	db.Exec("DROP TABLE IF EXISTS city")
+	db.Exec("CREATE TABLE city (id integer NOT NULL DEFAULT '0', name text)")
+
+	// Empty the tracer
+	db.Tracer.ForceFlush()
+	db.Transport.Traces()
+
+	return func(t *testing.T, db *DB) {
+		// drop the table
+		db.Exec("DROP TABLE city")
+	}
+}
+
 // AllSQLTests applies a sequence of unit tests to check the correct tracing of sql features.
 func AllSQLTests(t *testing.T, db *DB, expectedSpan *tracer.Span) {
+	// database setup and cleanup
+	tearDown := setupTestCase(t, db)
+	defer tearDown(t, db)
+
 	testDB(t, db, expectedSpan)
 	testStatement(t, db, expectedSpan)
 	testTransaction(t, db, expectedSpan)
@@ -21,7 +42,7 @@ func AllSQLTests(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 
 func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert := assert.New(t)
-	const query = "select id, name, population from city limit 5"
+	const query = "SELECT id, name FROM city LIMIT 5"
 
 	// Test db.Ping
 	err := db.Ping()
