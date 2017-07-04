@@ -10,15 +10,40 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-/*func TestRouteWithParams(t *testing.T) {
+func TestRouteWithParams(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport, ht, router := getTestTracer("my-service")
-}*/
+	router.GET("/test/:id/foo/:id2", ht.TraceHandle(handlerParams(t)))
+	// Send and verify a request with a named parameter in the URL
+	url := "/test/42/foo/41"
+	req := httptest.NewRequest("GET", url, nil)
+	writer := httptest.NewRecorder()
+	router.ServeHTTP(writer, req)
+	assert.Equal(200, writer.Code)
+	assert.Equal("200!", writer.Body.String())
 
-func handlerParams(t *testing.T) http.HandlerFunc {
+	// ensure properly traced
+	tracer.ForceFlush()
+	traces := transport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+
+	s := spans[0]
+	assert.Equal("http.request", s.Name)
+	assert.Equal("my-service", s.Service)
+	assert.Equal("GET /test/:id/foo/:id2", s.Resource)
+	assert.Equal("200", s.GetMeta("http.status_code"))
+	assert.Equal("GET", s.GetMeta("http.method"))
+	assert.Equal(url, s.GetMeta("http.url"))
+	assert.Equal(int32(0), s.Error)
+}
+
+func handlerParams(t *testing.T) httprouter.Handle {
 	assert := assert.New(t)
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		n, err := w.Write([]byte("200!"))
+		assert.Equal("42", ps.ByName("id"))
 		assert.Nil(err)
 		assert.Equal(4, n)
 		span := tracer.SpanFromContextDefault(r.Context())

@@ -5,6 +5,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"strings"
+
+	"fmt"
+
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"github.com/julienschmidt/httprouter"
@@ -36,10 +40,14 @@ func SetRequestSpan(r *http.Request, span *tracer.Span) *http.Request {
 	return r.WithContext(ctx)
 }
 
-// span will create a span for the given request.
+// trace will create a span for the given request.
 func (ht *HTTPRouterTracer) trace(req *http.Request) (*http.Request, *tracer.Span) {
 	path := req.URL.Path
+	_, ps, _ := ht.router.Lookup(req.Method, path)
 	resource := req.Method + " " + path
+	for _, param := range ps {
+		resource = strings.Replace(resource, param.Value, fmt.Sprintf(":%s", param.Key), 1)
+	}
 	span := ht.tracer.NewRootSpan("http.request", ht.service, resource)
 	span.Type = ext.HTTPType
 	span.SetMeta(ext.HTTPMethod, req.Method)
