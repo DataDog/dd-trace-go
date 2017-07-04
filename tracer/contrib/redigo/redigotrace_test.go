@@ -68,9 +68,9 @@ func TestConnectionError(t *testing.T) {
 	testTracer, _ := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
-	_, err := TracedDial("redis-service", testTracer, "tcp", "000.0.0:1111")
+	_, err := TracedDial("redis-service", testTracer, "tcp", "127.0.0.1:1000")
 
-	assert.Contains(err.Error(), "getsockopt: connection refused")
+	assert.Contains(err.Error(), "dial tcp 127.0.0.1:1000")
 }
 
 func TestInheritance(t *testing.T) {
