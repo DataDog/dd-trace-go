@@ -115,7 +115,7 @@ func SetRequestSpan(r *http.Request, span *tracer.Span) *http.Request {
 		return r
 	}
 
-	ctx := tracer.ContextWithSpan(r.Context(), span)
+	ctx := span.Context(r.Context())
 	return r.WithContext(ctx)
 }
 

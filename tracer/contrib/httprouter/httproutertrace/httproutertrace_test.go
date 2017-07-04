@@ -10,6 +10,40 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestMiddleware(t *testing.T) {
+	assert := assert.New(t)
+	h200, h500 := handler200(t), handler500(t)
+	router := httprouter.New()
+	tracer, transport, ht := getTestTracer("my-service", router)
+	router.HandlerFunc("GET", "/500", h500)
+	router.HandlerFunc("GET", "/200", h200)
+	tr := ht.Middleware()(router) // Wrap the router with a traced middleware
+	// Send and verify a 200 request
+	url := "/200"
+	req := httptest.NewRequest("GET", url, nil)
+	writer := httptest.NewRecorder()
+	tr.ServeHTTP(writer, req)
+	assert.Equal(writer.Code, 200)
+	assert.Equal(writer.Body.String(), "200!")
+
+	// ensure properly traced
+	tracer.ForceFlush()
+	traces := transport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+
+	s := spans[0]
+	assert.Equal(s.Name, "http.request")
+	assert.Equal(s.Service, "my-service")
+	assert.Equal(s.Resource, "GET "+url)
+	assert.Equal(s.GetMeta("http.status_code"), "200")
+	assert.Equal(s.GetMeta("http.method"), "GET")
+	assert.Equal(s.GetMeta("http.url"), url)
+	assert.Equal(s.Error, int32(0))
+
+}
+
 func TestHTTPRouterTracerDisabled(t *testing.T) {
 	assert := assert.New(t)
 	router := httprouter.New()
@@ -129,8 +163,7 @@ func setup(t *testing.T) (*tracer.Tracer, *dummyTransport, *httprouter.Router) {
 	h200 := handler200(t)
 	h500 := handler500(t)
 
-	// Ensure we can use HandleFunc and it returns a route
-	r.HandlerFunc("GET", "/200", ht.TraceHandlerFunc(h200)) // And we can allso handle a bare func
+	r.HandlerFunc("GET", "/200", ht.TraceHandlerFunc(h200))
 	r.HandlerFunc("GET", "/500", ht.TraceHandlerFunc(h500))
 
 	return tracer, transport, r
