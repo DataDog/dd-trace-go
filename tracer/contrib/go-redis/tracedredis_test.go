@@ -16,7 +16,7 @@ const (
 
 func TestClient(t *testing.T) {
 	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
+		Addr:     "127.0.0.1:56379",
 		Password: "", // no password set
 		DB:       0,  // use default db
 	}
@@ -37,14 +37,14 @@ func TestClient(t *testing.T) {
 	assert.Equal(span.Service, "my-redis")
 	assert.Equal(span.Name, "redis.command")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
-	assert.Equal(span.GetMeta("out.port"), "6379")
+	assert.Equal(span.GetMeta("out.port"), "56379")
 	assert.Equal(span.GetMeta("redis.raw_command"), "set test_key test_value: ")
 	assert.Equal(span.GetMeta("redis.args_length"), "3")
 }
 
 func TestPipeline(t *testing.T) {
 	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
+		Addr:     "127.0.0.1:56379",
 		Password: "", // no password set
 		DB:       0,  // use default db
 	}
@@ -68,7 +68,7 @@ func TestPipeline(t *testing.T) {
 	span := spans[0]
 	assert.Equal(span.Service, "my-redis")
 	assert.Equal(span.Name, "redis.command")
-	assert.Equal(span.GetMeta("out.port"), "6379")
+	assert.Equal(span.GetMeta("out.port"), "56379")
 	assert.Equal(span.GetMeta("redis.pipeline_length"), "1")
 	assert.Equal(span.Resource, "expire pipeline_counter 3600: false\n")
 
@@ -93,7 +93,7 @@ func TestPipeline(t *testing.T) {
 
 func TestChildSpan(t *testing.T) {
 	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
+		Addr:     "127.0.0.1:56379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	}
@@ -133,12 +133,12 @@ func TestChildSpan(t *testing.T) {
 
 	assert.Equal(child_span.ParentID, pspan.SpanID)
 	assert.Equal(child_span.GetMeta("out.host"), "127.0.0.1")
-	assert.Equal(child_span.GetMeta("out.port"), "6379")
+	assert.Equal(child_span.GetMeta("out.port"), "56379")
 }
 
 func TestMultipleCommands(t *testing.T) {
 	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
+		Addr:     "127.0.0.1:56379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	}
@@ -171,7 +171,7 @@ func TestMultipleCommands(t *testing.T) {
 
 func TestError(t *testing.T) {
 	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
+		Addr:     "127.0.0.1:56379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	}
@@ -193,7 +193,7 @@ func TestError(t *testing.T) {
 	assert.Equal(span.GetMeta("error.msg"), err.Err().Error())
 	assert.Equal(span.Name, "redis.command")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
-	assert.Equal(span.GetMeta("out.port"), "6379")
+	assert.Equal(span.GetMeta("out.port"), "56379")
 	assert.Equal(span.GetMeta("redis.raw_command"), "get non_existent_key: ")
 }
 

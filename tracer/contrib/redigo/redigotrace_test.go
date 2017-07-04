@@ -19,7 +19,7 @@ func TestClient(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
-	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
+	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:56379")
 	c.Do("SET", 1, "truck")
 
 	testTracer.ForceFlush()
@@ -33,7 +33,7 @@ func TestClient(t *testing.T) {
 	assert.Equal(span.Service, "my-service")
 	assert.Equal(span.Resource, "SET")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
-	assert.Equal(span.GetMeta("out.port"), "6379")
+	assert.Equal(span.GetMeta("out.port"), "56379")
 	assert.Equal(span.GetMeta("redis.raw_command"), "SET 1 truck")
 	assert.Equal(span.GetMeta("redis.args_length"), "2")
 }
@@ -43,7 +43,7 @@ func TestCommandError(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
-	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
+	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:56379")
 	_, err := c.Do("NOT_A_COMMAND", context.Background())
 
 	testTracer.ForceFlush()
@@ -59,7 +59,7 @@ func TestCommandError(t *testing.T) {
 	assert.Equal(span.Service, "my-service")
 	assert.Equal(span.Resource, "NOT_A_COMMAND")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
-	assert.Equal(span.GetMeta("out.port"), "6379")
+	assert.Equal(span.GetMeta("out.port"), "56379")
 	assert.Equal(span.GetMeta("redis.raw_command"), "NOT_A_COMMAND")
 }
 
@@ -70,7 +70,7 @@ func TestConnectionError(t *testing.T) {
 
 	_, err := TracedDial("redis-service", testTracer, "tcp", "000.0.0:1111")
 
-	assert.Contains(err.Error(), "dial tcp: lookup 000.0.0:")
+	assert.Contains(err.Error(), "getsockopt: connection refused")
 }
 
 func TestInheritance(t *testing.T) {
@@ -82,7 +82,7 @@ func TestInheritance(t *testing.T) {
 	ctx := context.Background()
 	parent_span := testTracer.NewChildSpanFromContext("parent_span", ctx)
 	ctx = tracer.ContextWithSpan(ctx, parent_span)
-	client, _ := TracedDial("my_service", testTracer, "tcp", "127.0.0.1:6379")
+	client, _ := TracedDial("my_service", testTracer, "tcp", "127.0.0.1:56379")
 	client.Do("SET", "water", "bottle", ctx)
 	parent_span.Finish()
 
@@ -107,7 +107,7 @@ func TestInheritance(t *testing.T) {
 
 	assert.Equal(child_span.ParentID, pspan.SpanID)
 	assert.Equal(child_span.GetMeta("out.host"), "127.0.0.1")
-	assert.Equal(child_span.GetMeta("out.port"), "6379")
+	assert.Equal(child_span.GetMeta("out.port"), "56379")
 }
 
 func TestCommandsToSring(t *testing.T) {
@@ -116,7 +116,7 @@ func TestCommandsToSring(t *testing.T) {
 	testTracer.DebugLoggingEnabled = debug
 
 	stringify_test := TestStruct{Cpython: 57, Cgo: 8}
-	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
+	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:56379")
 	c.Do("SADD", "testSet", "a", int(0), int32(1), int64(2), stringify_test, context.Background())
 
 	testTracer.ForceFlush()
@@ -130,7 +130,7 @@ func TestCommandsToSring(t *testing.T) {
 	assert.Equal(span.Service, "my-service")
 	assert.Equal(span.Resource, "SADD")
 	assert.Equal(span.GetMeta("out.host"), "127.0.0.1")
-	assert.Equal(span.GetMeta("out.port"), "6379")
+	assert.Equal(span.GetMeta("out.port"), "56379")
 	assert.Equal(span.GetMeta("redis.raw_command"), "SADD testSet a 0 1 2 [57, 8]")
 }
 
@@ -145,7 +145,7 @@ func TestPool(t *testing.T) {
 		IdleTimeout: 23,
 		Wait:        true,
 		Dial: func() (redis.Conn, error) {
-			return TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
+			return TracedDial("my-service", testTracer, "tcp", "127.0.0.1:56379")
 		},
 	}
 
@@ -164,7 +164,7 @@ func TestTracingDialUrl(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
-	url := "redis://127.0.0.1:6379"
+	url := "redis://127.0.0.1:56379"
 	client, _ := TracedDialURL("redis-service", testTracer, url)
 	client.Do("SET", "ONE", " TWO", context.Background())
 
