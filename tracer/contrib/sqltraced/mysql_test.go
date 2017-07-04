@@ -12,7 +12,7 @@ import (
 
 func TestMySQL(t *testing.T) {
 	trc, transport := tracertest.GetTestTracer()
-	db, err := OpenTraced(&mysql.MySQLDriver{}, "ubuntu@tcp(127.0.0.1:3306)/circle_test", "mysql-test", trc)
+	db, err := OpenTraced(&mysql.MySQLDriver{}, "test:test@tcp(127.0.0.1:53306)/test", "mysql-test", trc)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -31,10 +31,10 @@ func TestMySQL(t *testing.T) {
 		Type:    "sql",
 	}
 	expectedSpan.Meta = map[string]string{
-		"db.user":  "ubuntu",
+		"db.user":  "test",
 		"out.host": "127.0.0.1",
-		"out.port": "3306",
-		"db.name":  "circle_test",
+		"out.port": "53306",
+		"db.name":  "test",
 	}
 
 	sqltest.AllSQLTests(t, testDB, expectedSpan)
