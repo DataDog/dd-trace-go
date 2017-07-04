@@ -57,14 +57,13 @@ func (ht *HTTPRouterTracer) Middleware() func(http.Handler) http.Handler {
 	}
 }
 
-// TraceHandlerFunc will return a HandlerFunc that will wrap tracing around the
-// given handler func.
-func (ht *HTTPRouterTracer) TraceHandlerFunc(handler http.HandlerFunc) http.HandlerFunc {
-	return func(writer http.ResponseWriter, req *http.Request) {
-
+// TraceHandle will return a Handle that will wrap tracing around the
+// given Handle.
+func (ht *HTTPRouterTracer) TraceHandle(handle httprouter.Handle) httprouter.Handle {
+	return func(writer http.ResponseWriter, req *http.Request, ps httprouter.Params) {
 		// bail our if tracing isn't enabled.
 		if !ht.tracer.Enabled() {
-			handler(writer, req)
+			handle(writer, req, ps)
 			return
 		}
 
@@ -76,7 +75,17 @@ func (ht *HTTPRouterTracer) TraceHandlerFunc(handler http.HandlerFunc) http.Hand
 		tracedWriter := newTracedResponseWriter(span, writer)
 
 		// run the request
-		handler(tracedWriter, tracedRequest)
+		handle(tracedWriter, tracedRequest, ps)
+	}
+}
+
+// TraceHandlerFunc will return a HandlerFunc that will wrap tracing around the
+// given handler func.
+func (ht *HTTPRouterTracer) TraceHandlerFunc(handler http.HandlerFunc) http.HandlerFunc {
+	return func(writer http.ResponseWriter, req *http.Request) {
+		ht.TraceHandle(func(writer http.ResponseWriter, req *http.Request, _ httprouter.Params) {
+			handler(writer, req)
+		})(writer, req, nil)
 	}
 }
 
