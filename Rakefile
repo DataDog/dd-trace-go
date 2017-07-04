@@ -82,7 +82,7 @@ namespace :lint do
 
   desc "Lint the fast things"
   task :fast do
-    sh "gometalinter --fast #{disable} --errors --deadline=5s ./tracer/..."
+    sh "gometalinter --fast #{disable} --errors --deadline=10s ./tracer/..."
   end
 
   desc "Lint everything"
