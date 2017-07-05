@@ -1,6 +1,7 @@
 package ext
 
-// Standard error message metadata fields.
+// Standard system metadata names
 const (
+	// The pid of the traced process
 	Pid = "system.pid"
 )
