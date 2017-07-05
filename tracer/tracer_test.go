@@ -3,7 +3,9 @@ package tracer
 import (
 	"context"
 	"fmt"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"testing"
@@ -150,6 +152,25 @@ func TestNewSpanChild(t *testing.T) {
 	// the tracer instance is the same
 	assert.Equal(parent.tracer, tracer)
 	assert.Equal(child.tracer, tracer)
+}
+
+func TestNewRootSpanHasPid(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer := NewTracer()
+	root := tracer.NewRootSpan("pylons.request", "pylons", "/")
+
+	assert.Equal(strconv.Itoa(os.Getpid()), root.GetMeta(ext.Pid))
+}
+
+func TestNewChildHasNoPid(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer := NewTracer()
+	root := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	child := tracer.NewChildSpan("redis.command", root)
+
+	assert.Equal("", child.GetMeta(ext.Pid))
 }
 
 func TestTracerDisabled(t *testing.T) {
