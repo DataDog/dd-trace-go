@@ -30,7 +30,7 @@ func TestSpanFromContext(t *testing.T) {
 
 	span, ok := SpanFromContext(ctx)
 	assert.True(ok)
-	assert.Equal(span, expectedSpan)
+	assert.Equal(expectedSpan, span)
 }
 
 func TestSpanFromContextNil(t *testing.T) {
@@ -65,5 +65,5 @@ func TestSpanMissingParent(t *testing.T) {
 	// the child is finished but it's not recorded in
 	// the tracer buffer because the service is missing
 	assert.True(child.Duration > 0)
-	assert.Equal(len(tracer.channels.trace), 1)
+	assert.Equal(1, len(tracer.channels.trace))
 }

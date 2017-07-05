@@ -15,7 +15,7 @@ func TestSpanStart(t *testing.T) {
 	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
 
 	// a new span sets the Start after the initialization
-	assert.NotEqual(span.Start, int64(0))
+	assert.NotEqual(int64(0), span.Start)
 }
 
 func TestSpanString(t *testing.T) {
@@ -35,7 +35,7 @@ func TestSpanSetMeta(t *testing.T) {
 
 	// check the map is properly initialized
 	span.SetMeta("status.code", "200")
-	assert.Equal(span.Meta["status.code"], "200")
+	assert.Equal("200", span.Meta["status.code"])
 
 	// operating on a finished span is a no-op
 	nMeta := len(span.Meta)
@@ -52,14 +52,14 @@ func TestSpanSetMetric(t *testing.T) {
 
 	// check the map is properly initialized
 	span.SetMetric("bytes", 1024.42)
-	assert.Equal(len(span.Metrics), 1)
-	assert.Equal(span.Metrics["bytes"], 1024.42)
+	assert.Equal(1, len(span.Metrics))
+	assert.Equal(1024.42, span.Metrics["bytes"])
 
 	// operating on a finished span is a no-op
 	span.Finish()
 	span.SetMetric("finished.test", 1337)
-	assert.Equal(len(span.Metrics), 1)
-	assert.Equal(span.Metrics["finished.test"], 0.0)
+	assert.Equal(1, len(span.Metrics))
+	assert.Equal(0.0, span.Metrics["finished.test"])
 }
 
 func TestSpanError(t *testing.T) {
@@ -70,21 +70,21 @@ func TestSpanError(t *testing.T) {
 	// check the error is set in the default meta
 	err := errors.New("Something wrong")
 	span.SetError(err)
-	assert.Equal(span.Error, int32(1))
-	assert.Equal(span.Meta["error.msg"], "Something wrong")
-	assert.Equal(span.Meta["error.type"], "*errors.errorString")
-	assert.NotEqual(span.Meta["error.stack"], "")
+	assert.Equal(int32(1), span.Error)
+	assert.Equal("Something wrong", span.Meta["error.msg"])
+	assert.Equal("*errors.errorString", span.Meta["error.type"])
+	assert.NotEqual("", span.Meta["error.stack"])
 
 	// operating on a finished span is a no-op
 	span = tracer.NewRootSpan("flask.request", "flask", "/")
 	nMeta := len(span.Meta)
 	span.Finish()
 	span.SetError(err)
-	assert.Equal(span.Error, int32(0))
-	assert.Equal(len(span.Meta), nMeta)
-	assert.Equal(span.Meta["error.msg"], "")
-	assert.Equal(span.Meta["error.type"], "")
-	assert.Equal(span.Meta["error.stack"], "")
+	assert.Equal(int32(0), span.Error)
+	assert.Equal(nMeta, len(span.Meta))
+	assert.Equal("", span.Meta["error.msg"])
+	assert.Equal("", span.Meta["error.type"])
+	assert.Equal("", span.Meta["error.stack"])
 }
 
 func TestSpanError_Typed(t *testing.T) {
@@ -95,10 +95,10 @@ func TestSpanError_Typed(t *testing.T) {
 	// check the error is set in the default meta
 	err := &boomError{}
 	span.SetError(err)
-	assert.Equal(span.Error, int32(1))
-	assert.Equal(span.Meta["error.msg"], "boom")
-	assert.Equal(span.Meta["error.type"], "*tracer.boomError")
-	assert.NotEqual(span.Meta["error.stack"], "")
+	assert.Equal(int32(1), span.Error)
+	assert.Equal("boom", span.Meta["error.msg"])
+	assert.Equal("*tracer.boomError", span.Meta["error.type"])
+	assert.NotEqual("", span.Meta["error.stack"])
 }
 
 func TestEmptySpan(t *testing.T) {
@@ -122,8 +122,8 @@ func TestSpanErrorNil(t *testing.T) {
 	// don't set the error if it's nil
 	nMeta := len(span.Meta)
 	span.SetError(nil)
-	assert.Equal(span.Error, int32(0))
-	assert.Equal(len(span.Meta), nMeta)
+	assert.Equal(int32(0), span.Error)
+	assert.Equal(nMeta, len(span.Meta))
 }
 
 func TestSpanFinish(t *testing.T) {
@@ -157,7 +157,7 @@ func TestSpanFinishTwice(t *testing.T) {
 	previousDuration := span.Duration
 	time.Sleep(wait)
 	span.Finish()
-	assert.Equal(span.Duration, previousDuration)
+	assert.Equal(previousDuration, span.Duration)
 	assert.Len(tracer.channels.trace, 1)
 }
 
@@ -172,7 +172,7 @@ func TestSpanContext(t *testing.T) {
 	ctx = span.Context(ctx)
 	s2, ok := SpanFromContext(ctx)
 	assert.True(t, ok)
-	assert.Equal(t, s2.SpanID, span.SpanID)
+	assert.Equal(t, span.SpanID, s2.SpanID)
 
 }
 
