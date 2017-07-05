@@ -12,7 +12,7 @@ import (
 
 func TestPostgres(t *testing.T) {
 	trc, transport := tracertest.GetTestTracer()
-	dbx, err := OpenTraced(&pq.Driver{}, "postgres://ubuntu@127.0.0.1:5432/circle_test?sslmode=disable", "postgres-test", trc)
+	dbx, err := OpenTraced(&pq.Driver{}, "postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable", "postgres-test", trc)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -31,10 +31,10 @@ func TestPostgres(t *testing.T) {
 		Type:    "sql",
 	}
 	expectedSpan.Meta = map[string]string{
-		"db.user":  "ubuntu",
+		"db.user":  "postgres",
 		"out.host": "127.0.0.1",
-		"out.port": "5432",
-		"db.name":  "circle_test",
+		"out.port": "55432",
+		"db.name":  "postgres",
 	}
 
 	sqltest.AllSQLTests(t, testDB, expectedSpan)

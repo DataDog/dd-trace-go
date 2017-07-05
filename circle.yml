@@ -17,21 +17,21 @@ dependencies:
     # install requirements
     - rm -Rf /home/ubuntu/.go_workspace/src/*
     - rake lint:install
-    # run the agent
-    - docker-compose up -d | cat
+    # we should use an old docker-compose because CircleCI supports
+    # only docker-engine==1.9
+    - pip install docker-compose==1.7.1
 
   override:
     # put the package in the right $GOPATH
     - mkdir -p "$IMPORT_PATH"
     - rsync -azr --delete ./ "$IMPORT_PATH"
 
-database:
-  override:
-    - mysql -u ubuntu circle_test < tracer/contrib/sqltraced/sqltest/world.mysql.sql
-    - psql -U ubuntu -d circle_test -f tracer/contrib/sqltraced/sqltest/world.postgres.sql
-
 test:
   override:
+    # run the agent and backing services
+    - docker-compose up -d | cat
+    # wait for external services and execute tests
+    - cd "$IMPORT_PATH" && ./wait-for-services.sh
     - cd "$IMPORT_PATH" && rake ci
 
   post:

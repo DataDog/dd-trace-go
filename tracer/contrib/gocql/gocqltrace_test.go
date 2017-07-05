@@ -17,7 +17,7 @@ const (
 
 // TestMain sets up the Keyspace and table if they do not exist
 func TestMain(m *testing.M) {
-	cluster := gocql.NewCluster("127.0.0.1")
+	cluster := gocql.NewCluster("127.0.0.1:59042")
 	session, _ := cluster.CreateSession()
 
 	// Ensures test keyspace and table person exists.
@@ -33,7 +33,7 @@ func TestErrorWrapper(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.DebugLoggingEnabled = debug
 
-	cluster := gocql.NewCluster("127.0.0.1")
+	cluster := gocql.NewCluster("127.0.0.1:59042")
 	session, _ := cluster.CreateSession()
 	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
 	err := TraceQuery("ServiceName", testTracer, q).Exec()
@@ -70,7 +70,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	parentSpan := testTracer.NewChildSpanFromContext("parentSpan", ctx)
 	ctx = tracer.ContextWithSpan(ctx, parentSpan)
 
-	cluster := gocql.NewCluster("127.0.0.1")
+	cluster := gocql.NewCluster("127.0.0.1:59042")
 	session, _ := cluster.CreateSession()
 	q := session.Query("SELECT * from trace.person")
 	tq := TraceQuery("TestServiceName", testTracer, q)
@@ -96,7 +96,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Equal(childSpan.Name, ext.CassandraQuery)
 	assert.Equal(childSpan.Resource, "SELECT * from trace.person")
 	assert.Equal(childSpan.GetMeta(ext.CassandraKeyspace), "trace")
-	assert.Equal(childSpan.GetMeta(ext.TargetPort), "9042")
+	assert.Equal(childSpan.GetMeta(ext.TargetPort), "59042")
 	assert.Equal(childSpan.GetMeta(ext.TargetHost), "127.0.0.1")
 	assert.Equal(childSpan.GetMeta(ext.CassandraCluster), "datacenter1")
 }
