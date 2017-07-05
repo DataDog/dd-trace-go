@@ -143,8 +143,9 @@ func (s *Span) SetMetrics(key string, value float64) {
 	s.SetMetric(key, value)
 }
 
-// SetMetric adds a metric field to the current Span. If the Span has been
-// finished, it will not be modified by this method.
+// SetMetric sets a float64 value for the given key. It acts
+// like `set_meta()` and it simply add a tag without further processing.
+// This method doesn't create a Datadog metric.
 func (s *Span) SetMetric(key string, val float64) {
 	if s == nil {
 		return
