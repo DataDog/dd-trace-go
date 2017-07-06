@@ -3,7 +3,9 @@ package tracer
 import (
 	"context"
 	"fmt"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"testing"
@@ -51,10 +53,10 @@ func TestNewSpan(t *testing.T) {
 	// the tracer must create root spans
 	tracer := NewTracer()
 	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	assert.Equal(span.ParentID, uint64(0))
-	assert.Equal(span.Service, "pylons")
-	assert.Equal(span.Name, "pylons.request")
-	assert.Equal(span.Resource, "/")
+	assert.Equal(uint64(0), span.ParentID)
+	assert.Equal("pylons", span.Service)
+	assert.Equal("pylons.request", span.Name)
+	assert.Equal("/", span.Resource)
 }
 
 func TestNewSpanFromContextNil(t *testing.T) {
@@ -62,12 +64,12 @@ func TestNewSpanFromContextNil(t *testing.T) {
 	tracer := NewTracer()
 
 	child := tracer.NewChildSpanFromContext("abc", nil)
-	assert.Equal(child.Name, "abc")
-	assert.Equal(child.Service, "")
+	assert.Equal("abc", child.Name)
+	assert.Equal("", child.Service)
 
 	child = tracer.NewChildSpanFromContext("def", context.Background())
-	assert.Equal(child.Name, "def")
-	assert.Equal(child.Service, "")
+	assert.Equal("def", child.Name)
+	assert.Equal("", child.Service)
 
 }
 
@@ -123,14 +125,14 @@ func TestNewSpanFromContext(t *testing.T) {
 
 	child := tracer.NewChildSpanFromContext("redis.command", ctx)
 	// ids and services are inherited
-	assert.Equal(child.ParentID, parent.SpanID)
-	assert.Equal(child.TraceID, parent.TraceID)
-	assert.Equal(child.Service, parent.Service)
+	assert.Equal(parent.SpanID, child.ParentID)
+	assert.Equal(parent.TraceID, child.TraceID)
+	assert.Equal(parent.Service, child.Service)
 	// the resource is not inherited and defaults to the name
-	assert.Equal(child.Resource, "redis.command")
+	assert.Equal("redis.command", child.Resource)
 	// the tracer instance is the same
-	assert.Equal(parent.tracer, tracer)
-	assert.Equal(child.tracer, tracer)
+	assert.Equal(tracer, parent.tracer)
+	assert.Equal(tracer, child.tracer)
 
 }
 
@@ -142,14 +144,33 @@ func TestNewSpanChild(t *testing.T) {
 	parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	child := tracer.NewChildSpan("redis.command", parent)
 	// ids and services are inherited
-	assert.Equal(child.ParentID, parent.SpanID)
-	assert.Equal(child.TraceID, parent.TraceID)
-	assert.Equal(child.Service, parent.Service)
+	assert.Equal(parent.SpanID, child.ParentID)
+	assert.Equal(parent.TraceID, child.TraceID)
+	assert.Equal(parent.Service, child.Service)
 	// the resource is not inherited and defaults to the name
-	assert.Equal(child.Resource, "redis.command")
+	assert.Equal("redis.command", child.Resource)
 	// the tracer instance is the same
-	assert.Equal(parent.tracer, tracer)
-	assert.Equal(child.tracer, tracer)
+	assert.Equal(tracer, parent.tracer)
+	assert.Equal(tracer, child.tracer)
+}
+
+func TestNewRootSpanHasPid(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer := NewTracer()
+	root := tracer.NewRootSpan("pylons.request", "pylons", "/")
+
+	assert.Equal(strconv.Itoa(os.Getpid()), root.GetMeta(ext.Pid))
+}
+
+func TestNewChildHasNoPid(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer := NewTracer()
+	root := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	child := tracer.NewChildSpan("redis.command", root)
+
+	assert.Equal("", child.GetMeta(ext.Pid))
 }
 
 func TestTracerDisabled(t *testing.T) {

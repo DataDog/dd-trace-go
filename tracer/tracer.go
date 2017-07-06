@@ -2,8 +2,11 @@ package tracer
 
 import (
 	"context"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"log"
 	"math/rand"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -172,6 +175,9 @@ func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 	span.buffer = newSpanBuffer(t.channels, 0, 0)
 	t.sampler.Sample(span)
 	span.buffer.Push(span)
+
+	// Add the process id to all root spans
+	span.SetMeta(ext.Pid, strconv.Itoa(os.Getpid()))
 
 	return span
 }
