@@ -82,6 +82,7 @@ func TestNewChildSpanWithContext(t *testing.T) {
 	assert.Equal("abc", span.Name)
 	assert.Equal("", span.Service)
 	assert.Equal(span.ParentID, span.SpanID) // it should be a root span
+	assert.Equal(span.Tracer(), tracer)
 	// the returned ctx should contain the created span
 	assert.NotNil(ctx)
 	ctxSpan, ok := SpanFromContext(ctx)
