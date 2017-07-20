@@ -45,6 +45,38 @@ func TestSpanSetMeta(t *testing.T) {
 	assert.Equal(span.Meta["finished.test"], "")
 }
 
+func TestSpanSetMetas(t *testing.T) {
+	assert := assert.New(t)
+	tracer := NewTracer()
+	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	metas := map[string]string{
+		"error.msg":   "Something wrong",
+		"error.type":  "*errors.errorString",
+		"status.code": "200",
+	}
+	nopMetas := map[string]string{
+		"nopKey1": "nopValue1",
+		"nopKey2": "nopValue2",
+	}
+
+	// check the map is properly initialized
+	span.SetMetas(metas)
+	assert.Equal(len(span.Meta), len(metas))
+	for k := range metas {
+		assert.Equal(metas[k], span.Meta[k])
+	}
+	assert.Equal(span.Meta["status.code"], "200")
+
+	// operating on a finished span is a no-op
+	span.Finish()
+	span.SetMetas(nopMetas)
+	assert.Equal(len(span.Meta), len(metas))
+	for k := range nopMetas {
+		assert.Equal("", span.Meta[k])
+	}
+
+}
+
 func TestSpanSetMetric(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
