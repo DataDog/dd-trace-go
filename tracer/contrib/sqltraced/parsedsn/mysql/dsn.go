@@ -12,7 +12,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -292,23 +291,9 @@ func parseDSNParams(cfg *Config, params string) (err error) {
 				cfg.TLSConfig = vl
 				cfg.tls = &tls.Config{InsecureSkipVerify: true}
 			} else {
-				name, err := url.QueryUnescape(value)
+				_, err := url.QueryUnescape(value)
 				if err != nil {
 					return fmt.Errorf("invalid value for TLS config name: %v", err)
-				}
-
-				if tlsConfig, ok := tlsConfigRegister[name]; ok {
-					if len(tlsConfig.ServerName) == 0 && !tlsConfig.InsecureSkipVerify {
-						host, _, err := net.SplitHostPort(cfg.Addr)
-						if err == nil {
-							tlsConfig.ServerName = host
-						}
-					}
-
-					cfg.TLSConfig = name
-					cfg.tls = tlsConfig
-				} else {
-					return errors.New("invalid value / unknown config name: " + name)
 				}
 			}
 
