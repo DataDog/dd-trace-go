@@ -53,6 +53,7 @@ func TestSpanSetMetas(t *testing.T) {
 		"error.msg":   "Something wrong",
 		"error.type":  "*errors.errorString",
 		"status.code": "200",
+		"system.pid":  "29176",
 	}
 	nopMetas := map[string]string{
 		"nopKey1": "nopValue1",
