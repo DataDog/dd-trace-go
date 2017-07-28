@@ -94,7 +94,6 @@ func (t *httpTransport) SendTraces(traces [][]*Span) error {
 	// encode the spans and return the error if any
 	err := encoder.EncodeTraces(traces)
 	if err != nil {
-		// TODO: errors.wrap?
 		return err
 	}
 
