@@ -8,7 +8,7 @@ import (
 )
 
 // Encoder is a generic interface that expects encoding methods for traces and
-// services, and a Read() method that will be used by the http handler
+// services, and a Read() method
 type Encoder interface {
 	EncodeTraces(traces [][]*Span) error
 	EncodeServices(services map[string]Service) error
