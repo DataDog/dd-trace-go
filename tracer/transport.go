@@ -3,6 +3,8 @@ package tracer
 import (
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
@@ -107,7 +109,14 @@ func (t *httpTransport) SendTraces(traces [][]*Span) error {
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() {
+		// The default HTTP client's Transport does not
+		// attempt to reuse HTTP/1.0 or HTTP/1.1 TCP connections
+		// ("keep-alive") unless the Body is read to completion and is
+		// closed.
+		io.Copy(ioutil.Discard, response.Body)
+		response.Body.Close()
+	}()
 
 	// if we got a 404 we should downgrade the API to a stable version (at most once)
 	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
@@ -149,7 +158,14 @@ func (t *httpTransport) SendServices(services map[string]Service) error {
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() {
+		// The default HTTP client's Transport does not
+		// attempt to reuse HTTP/1.0 or HTTP/1.1 TCP connections
+		// ("keep-alive") unless the Body is read to completion and is
+		// closed.
+		io.Copy(ioutil.Discard, response.Body)
+		response.Body.Close()
+	}()
 
 	// Downgrade if necessary
 	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
