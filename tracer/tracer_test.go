@@ -3,13 +3,13 @@ package tracer
 import (
 	"context"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
-	"net/http"
 	"os"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -619,24 +619,24 @@ type dummyTransport struct {
 	sync.RWMutex // required because of some poll-testing (eg: worker)
 }
 
-func (t *dummyTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
+func (t *dummyTransport) SendTraces(traces [][]*Span) error {
 	t.Lock()
 	t.traces = append(t.traces, traces...)
 	t.Unlock()
 
 	encoder := t.pool.Borrow()
 	defer t.pool.Return(encoder)
-	return nil, encoder.EncodeTraces(traces)
+	return encoder.EncodeTraces(traces)
 }
 
-func (t *dummyTransport) SendServices(services map[string]Service) (*http.Response, error) {
+func (t *dummyTransport) SendServices(services map[string]Service) error {
 	t.Lock()
 	t.services = services
 	t.Unlock()
 
 	encoder := t.pool.Borrow()
 	defer t.pool.Return(encoder)
-	return nil, encoder.EncodeServices(services)
+	return encoder.EncodeServices(services)
 }
 
 func (t *dummyTransport) Traces() [][]*Span {

@@ -2,13 +2,14 @@ package tracer
 
 import (
 	"context"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"log"
 	"math/rand"
 	"os"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
 const (
@@ -266,7 +267,7 @@ func (t *Tracer) flushTraces() {
 		return
 	}
 
-	_, err := t.transport.SendTraces(traces)
+	err := t.transport.SendTraces(traces)
 	if err != nil {
 		t.channels.pushErr(err)
 		t.channels.pushErr(&errorFlushLostTraces{Nb: len(traces)}) // explicit log messages with nb of lost traces
@@ -296,7 +297,7 @@ func (t *Tracer) flushServices() {
 		return
 	}
 
-	_, err := t.transport.SendServices(t.services)
+	err := t.transport.SendServices(t.services)
 	if err != nil {
 		t.channels.pushErr(err)
 		t.channels.pushErr(&errorFlushLostServices{Nb: len(t.services)}) // explicit log messages with nb of lost services

@@ -21,8 +21,8 @@ const (
 
 // Transport is an interface for span submission to the agent.
 type Transport interface {
-	SendTraces(spans [][]*Span) (*http.Response, error)
-	SendServices(services map[string]Service) (*http.Response, error)
+	SendTraces(spans [][]*Span) error
+	SendServices(services map[string]Service) error
 	SetHeader(key, value string)
 }
 
@@ -80,9 +80,9 @@ func newHTTPTransport(hostname, port string) *httpTransport {
 	}
 }
 
-func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
+func (t *httpTransport) SendTraces(traces [][]*Span) error {
 	if t.traceURL == "" {
-		return nil, errors.New("provided an empty URL, giving up")
+		return errors.New("provided an empty URL, giving up")
 	}
 
 	// borrow an encoder
@@ -92,7 +92,8 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	// encode the spans and return the error if any
 	err := encoder.EncodeTraces(traces)
 	if err != nil {
-		return nil, err
+		// TODO: errors.wrap?
+		return err
 	}
 
 	// prepare the client and send the payload
@@ -103,9 +104,8 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	req.Header.Set(traceCountHeader, strconv.Itoa(len(traces)))
 	response, err := t.client.Do(req)
 
-	// if we have an error, return an empty Response to protect against nil pointer dereference
 	if err != nil {
-		return &http.Response{StatusCode: 0}, err
+		return err
 	}
 	defer response.Body.Close()
 
@@ -116,12 +116,16 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 		return t.SendTraces(traces)
 	}
 
-	return response, err
+	if sc := response.StatusCode; sc != 200 {
+		return fmt.Errorf("SendTraces expected response code 200, received %v", sc)
+	}
+
+	return err
 }
 
-func (t *httpTransport) SendServices(services map[string]Service) (*http.Response, error) {
+func (t *httpTransport) SendServices(services map[string]Service) error {
 	if t.serviceURL == "" {
-		return nil, errors.New("provided an empty URL, giving up")
+		return errors.New("provided an empty URL, giving up")
 	}
 
 	// Encode the service table
@@ -129,13 +133,13 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 	defer t.pool.Return(encoder)
 
 	if err := encoder.EncodeServices(services); err != nil {
-		return nil, err
+		return err
 	}
 
 	// Send it
 	req, err := http.NewRequest("POST", t.serviceURL, encoder)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create http request: %v", err)
+		return fmt.Errorf("cannot create http request: %v", err)
 	}
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
@@ -143,7 +147,7 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 
 	response, err := t.client.Do(req)
 	if err != nil {
-		return &http.Response{StatusCode: 0}, err
+		return err
 	}
 	defer response.Body.Close()
 
@@ -154,7 +158,11 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 		return t.SendServices(services)
 	}
 
-	return response, err
+	if sc := response.StatusCode; sc != 200 {
+		return fmt.Errorf("SendServices expected response code 200, received %v", sc)
+	}
+
+	return err
 }
 
 // SetHeader sets the internal header for the httpTransport
