@@ -107,6 +107,7 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	if err != nil {
 		return &http.Response{StatusCode: 0}, err
 	}
+	defer response.Body.Close()
 
 	// if we got a 404 we should downgrade the API to a stable version (at most once)
 	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
@@ -115,7 +116,6 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 		return t.SendTraces(traces)
 	}
 
-	response.Body.Close()
 	return response, err
 }
 
@@ -145,6 +145,7 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 	if err != nil {
 		return &http.Response{StatusCode: 0}, err
 	}
+	defer response.Body.Close()
 
 	// Downgrade if necessary
 	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
@@ -153,7 +154,6 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 		return t.SendServices(services)
 	}
 
-	response.Body.Close()
 	return response, err
 }
 
