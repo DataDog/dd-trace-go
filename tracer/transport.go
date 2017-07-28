@@ -1,7 +1,6 @@
 package tracer
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -97,17 +96,7 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	}
 
 	// prepare the client and send the payload
-
-	// despite it being an io.reader, we can't pass the encoder directly to the
-	// http handler as we may read the body in the dialConn routine after we
-	// return the encoder to the pool, resulting in a data race
-	var body []byte
-	_, err = encoder.Read(body)
-	if err != nil {
-		return nil, err
-	}
-
-	req, _ := http.NewRequest("POST", t.traceURL, bytes.NewReader(body))
+	req, _ := http.NewRequest("POST", t.traceURL, encoder)
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
@@ -144,17 +133,7 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 	}
 
 	// Send it
-
-	// despite it being an io.reader, we can't pass the encoder directly to the
-	// http handler as we may read the body in the dialConn routine after we
-	// return the encoder to the pool, resulting in a data race
-	var body []byte
-	_, err := encoder.Read(body)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", t.serviceURL, bytes.NewReader(body))
+	req, err := http.NewRequest("POST", t.serviceURL, encoder)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %v", err)
 	}
