@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -23,8 +24,8 @@ const (
 
 // Transport is an interface for span submission to the agent.
 type Transport interface {
-	SendTraces(spans [][]*Span) error
-	SendServices(services map[string]Service) error
+	SendTraces(spans [][]*Span) (*http.Response, error)
+	SendServices(services map[string]Service) (*http.Response, error)
 	SetHeader(key, value string)
 }
 
@@ -82,9 +83,9 @@ func newHTTPTransport(hostname, port string) *httpTransport {
 	}
 }
 
-func (t *httpTransport) SendTraces(traces [][]*Span) error {
+func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	if t.traceURL == "" {
-		return errors.New("provided an empty URL, giving up")
+		return nil, errors.New("provided an empty URL, giving up")
 	}
 
 	// borrow an encoder
@@ -94,7 +95,7 @@ func (t *httpTransport) SendTraces(traces [][]*Span) error {
 	// encode the spans and return the error if any
 	err := encoder.EncodeTraces(traces)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// prepare the client and send the payload
@@ -105,16 +106,21 @@ func (t *httpTransport) SendTraces(traces [][]*Span) error {
 	req.Header.Set(traceCountHeader, strconv.Itoa(len(traces)))
 	response, err := t.client.Do(req)
 
+	// if we have an error, return an empty Response to protect against nil pointer dereference
 	if err != nil {
-		return err
+		return &http.Response{StatusCode: 0}, err
 	}
 	defer func() {
 		// The default HTTP client's Transport does not
 		// attempt to reuse HTTP/1.0 or HTTP/1.1 TCP connections
 		// ("keep-alive") unless the Body is read to completion and is
 		// closed.
-		io.Copy(ioutil.Discard, response.Body)
+		// Buffer the response body so the caller doesn't need to worry about
+		// reading and closing the response.
+		var buf bytes.Buffer
+		io.Copy(&buf, response.Body)
 		response.Body.Close()
+		response.Body = ioutil.NopCloser(&buf)
 	}()
 
 	// if we got a 404 we should downgrade the API to a stable version (at most once)
@@ -125,15 +131,15 @@ func (t *httpTransport) SendTraces(traces [][]*Span) error {
 	}
 
 	if sc := response.StatusCode; sc != 200 {
-		return fmt.Errorf("SendTraces expected response code 200, received %v", sc)
+		return response, fmt.Errorf("SendTraces expected response code 200, received %v", sc)
 	}
 
-	return err
+	return response, err
 }
 
-func (t *httpTransport) SendServices(services map[string]Service) error {
+func (t *httpTransport) SendServices(services map[string]Service) (*http.Response, error) {
 	if t.serviceURL == "" {
-		return errors.New("provided an empty URL, giving up")
+		return nil, errors.New("provided an empty URL, giving up")
 	}
 
 	// Encode the service table
@@ -141,13 +147,13 @@ func (t *httpTransport) SendServices(services map[string]Service) error {
 	defer t.pool.Return(encoder)
 
 	if err := encoder.EncodeServices(services); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Send it
 	req, err := http.NewRequest("POST", t.serviceURL, encoder)
 	if err != nil {
-		return fmt.Errorf("cannot create http request: %v", err)
+		return nil, fmt.Errorf("cannot create http request: %v", err)
 	}
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
@@ -155,15 +161,19 @@ func (t *httpTransport) SendServices(services map[string]Service) error {
 
 	response, err := t.client.Do(req)
 	if err != nil {
-		return err
+		return &http.Response{StatusCode: 0}, err
 	}
 	defer func() {
 		// The default HTTP client's Transport does not
 		// attempt to reuse HTTP/1.0 or HTTP/1.1 TCP connections
 		// ("keep-alive") unless the Body is read to completion and is
 		// closed.
-		io.Copy(ioutil.Discard, response.Body)
+		// Buffer the response body so the caller doesn't need to worry about
+		// reading and closing the response.
+		var buf bytes.Buffer
+		io.Copy(&buf, response.Body)
 		response.Body.Close()
+		response.Body = ioutil.NopCloser(&buf)
 	}()
 
 	// Downgrade if necessary
@@ -174,10 +184,10 @@ func (t *httpTransport) SendServices(services map[string]Service) error {
 	}
 
 	if sc := response.StatusCode; sc != 200 {
-		return fmt.Errorf("SendServices expected response code 200, received %v", sc)
+		return response, fmt.Errorf("SendServices expected response code 200, received %v", sc)
 	}
 
-	return err
+	return response, err
 }
 
 // SetHeader sets the internal header for the httpTransport
