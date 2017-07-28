@@ -116,7 +116,8 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 		// ("keep-alive") unless the Body is read to completion and is
 		// closed.
 		// Buffer the response body so the caller doesn't need to worry about
-		// reading and closing the response.
+		// reading and closing the response. This isn't very expensive because
+		// the responses from the Agent are always short.
 		var buf bytes.Buffer
 		io.Copy(&buf, response.Body)
 		response.Body.Close()
@@ -169,7 +170,8 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 		// ("keep-alive") unless the Body is read to completion and is
 		// closed.
 		// Buffer the response body so the caller doesn't need to worry about
-		// reading and closing the response.
+		// reading and closing the response. This isn't very expensive because
+		// the responses from the Agent are always short.
 		var buf bytes.Buffer
 		io.Copy(&buf, response.Body)
 		response.Body.Close()
