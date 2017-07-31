@@ -1,8 +1,11 @@
 package tracer
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
@@ -107,6 +110,19 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	if err != nil {
 		return &http.Response{StatusCode: 0}, err
 	}
+	defer func() {
+		// The default HTTP client's Transport does not
+		// attempt to reuse HTTP/1.0 or HTTP/1.1 TCP connections
+		// ("keep-alive") unless the Body is read to completion and is
+		// closed.
+		// Buffer the response body so the caller doesn't need to worry about
+		// reading and closing the response. This isn't very expensive because
+		// the responses from the Agent are always short.
+		var buf bytes.Buffer
+		io.Copy(&buf, response.Body)
+		response.Body.Close()
+		response.Body = ioutil.NopCloser(&buf)
+	}()
 
 	// if we got a 404 we should downgrade the API to a stable version (at most once)
 	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
@@ -115,7 +131,10 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 		return t.SendTraces(traces)
 	}
 
-	response.Body.Close()
+	if sc := response.StatusCode; sc != 200 {
+		return response, fmt.Errorf("SendTraces expected response code 200, received %v", sc)
+	}
+
 	return response, err
 }
 
@@ -145,6 +164,19 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 	if err != nil {
 		return &http.Response{StatusCode: 0}, err
 	}
+	defer func() {
+		// The default HTTP client's Transport does not
+		// attempt to reuse HTTP/1.0 or HTTP/1.1 TCP connections
+		// ("keep-alive") unless the Body is read to completion and is
+		// closed.
+		// Buffer the response body so the caller doesn't need to worry about
+		// reading and closing the response. This isn't very expensive because
+		// the responses from the Agent are always short.
+		var buf bytes.Buffer
+		io.Copy(&buf, response.Body)
+		response.Body.Close()
+		response.Body = ioutil.NopCloser(&buf)
+	}()
 
 	// Downgrade if necessary
 	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
@@ -153,7 +185,10 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 		return t.SendServices(services)
 	}
 
-	response.Body.Close()
+	if sc := response.StatusCode; sc != 200 {
+		return response, fmt.Errorf("SendServices expected response code 200, received %v", sc)
+	}
+
 	return response, err
 }
 
