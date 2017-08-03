@@ -7,7 +7,7 @@ import (
 
 const (
 	Lang          = "go"
-	Interpreter   = runtime.Compiler + "_" + runtime.GOOS + "_" + runtime.GOARCH
+	Interpreter   = runtime.Compiler + "-" + runtime.GOARCH + "-" + runtime.GOOS
 	TracerVersion = "v0.5.0"
 )
 
