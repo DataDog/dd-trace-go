@@ -2,13 +2,14 @@ package tracer
 
 import (
 	"context"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"log"
 	"math/rand"
 	"os"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
 const (

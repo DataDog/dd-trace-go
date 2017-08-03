@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
 const (
@@ -66,8 +68,13 @@ type httpTransport struct {
 func newHTTPTransport(hostname, port string) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
 	pool, contentType := newEncoderPool(defaultEncoder, encoderPoolSize)
-	defaultHeaders := make(map[string]string)
-	defaultHeaders["Content-Type"] = contentType
+	defaultHeaders := map[string]string{
+		"Content-Type":                  contentType,
+		"Datadog-Meta-Lang":             ext.Lang,
+		"Datadog-Meta-Lang-Version":     ext.LangVersion,
+		"Datadog-Meta-Lang-Interpreter": ext.Interpreter,
+		"Datadog-Meta-Tracer-Version":   ext.TracerVersion,
+	}
 
 	return &httpTransport{
 		traceURL:         fmt.Sprintf("http://%s:%s/v0.3/traces", hostname, port),
