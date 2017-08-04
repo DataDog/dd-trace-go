@@ -68,9 +68,10 @@ func serverSpan(t *tracer.Tracer, ctx context.Context, method, service string) *
 	span.SetMeta("gprc.method", method)
 	span.Type = "go"
 
-	traceID, parentID := getIDs(ctx)
+	traceID, parentID, isSampled := getIDs(ctx)
 	if traceID != 0 && parentID != 0 {
 		span.TraceID = traceID
+		t.Sample(span) // depends on trace ID so needs to be updated to maximize the chances we get complete traces
 		span.ParentID = parentID
 	}
 
@@ -94,12 +95,15 @@ func setIDs(span *tracer.Span, ctx context.Context) context.Context {
 }
 
 // getIDs will return ids embededd an ahe context.
-func getIDs(ctx context.Context) (traceID, parentID uint64) {
+func getIDs(ctx context.Context) (traceID, parentID uint64, isSampled bool) {
 	if md, ok := metadata.FromContext(ctx); ok {
 		if id := getID(md, traceIDKey); id > 0 {
 			traceID = id
 		}
 		if id := getID(md, parentIDKey); id > 0 {
+			parentID = id
+		}
+		if b, found := getBool(md, isSampledKey); found {
 			parentID = id
 		}
 	}
@@ -115,4 +119,18 @@ func getID(md metadata.MD, name string) uint64 {
 		}
 	}
 	return 0
+}
+
+// getBool gets a bool from the metadata (0 or 1 converted to bool).
+func getBool(md metadata.MD, name string) (bool, bool) {
+	for _, str := range md[name] {
+		if str == "0" {
+			return false, true
+		}
+		n, err := strconv.Atoi(str)
+		if err == nil && n > 0 {
+			return true, true
+		}
+	}
+	return true, false
 }
