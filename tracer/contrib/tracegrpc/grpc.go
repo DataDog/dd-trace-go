@@ -48,8 +48,7 @@ func UnaryClientInterceptor(service string, t *tracer.Tracer) grpc.UnaryClientIn
 			t := span.Tracer()
 			child = t.NewChildSpan("grpc.client", span)
 			child.SetMeta("grpc.method", method)
-			ctx = setIDs(child, ctx)
-			ctx = setIsSampled(child, ctx) // [TODO:christian] merge with call above
+			ctx = setCtxMeta(child, ctx)
 			ctx = tracer.ContextWithSpan(ctx, child)
 			// FIXME[matt] add the host / port information here
 			// https://github.com/grpc/grpc-go/issues/951
@@ -83,15 +82,20 @@ func serverSpan(t *tracer.Tracer, ctx context.Context, method, service string) *
 	return span
 }
 
-// setIDs will set the trace ids on the context.
-func setIDs(span *tracer.Span, ctx context.Context) context.Context {
+// setCtxMeta will set the trace ids and the IsSampled attribute on the context.
+func setCtxMeta(span *tracer.Span, ctx context.Context) context.Context {
 	if span == nil || span.TraceID == 0 {
 		return ctx
 	}
 
+	isSampled := "0"
+	if span.DistributedSampled {
+		isSampled = "1"
+	}
 	md := metadata.New(map[string]string{
-		traceIDKey:  fmt.Sprint(span.TraceID),
-		parentIDKey: fmt.Sprint(span.ParentID),
+		traceIDKey:   fmt.Sprint(span.TraceID),
+		parentIDKey:  fmt.Sprint(span.ParentID),
+		isSampledKey: isSampled,
 	})
 	if existing, ok := metadata.FromContext(ctx); ok {
 		md = metadata.Join(existing, md)
@@ -110,26 +114,6 @@ func getIDs(ctx context.Context) (traceID, parentID uint64) {
 		}
 	}
 	return traceID, parentID
-}
-
-// setIsSampled will set the trace isSampled flag on the context.
-// [TODO:christian] refactor this so that it's merged with setIDs
-func setIsSampled(span *tracer.Span, ctx context.Context) context.Context {
-	if span == nil || span.TraceID == 0 {
-		return ctx
-	}
-
-	isSampled := "0"
-	if span.DistributedSampled {
-		isSampled = "1"
-	}
-	md := metadata.New(map[string]string{
-		isSampledKey: isSampled,
-	})
-	if existing, ok := metadata.FromContext(ctx); ok {
-		md = metadata.Join(existing, md)
-	}
-	return metadata.NewContext(ctx, md)
 }
 
 // getIsSampled will return the isSampled embedded in a context.
