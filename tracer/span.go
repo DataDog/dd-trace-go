@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,8 @@ const (
 	errorMsgKey   = "error.msg"
 	errorTypeKey  = "error.type"
 	errorStackKey = "error.stack"
+
+	samplingPriorityKey = "sampling.priority"
 )
 
 // Span represents a computation. Callers must call Finish when a span is
@@ -56,11 +59,6 @@ type Span struct {
 	ParentID uint64             `json:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `json:"error"`             // error status of the span; 0 means no errors
 	Sampled  bool               `json:"-"`                 // if this span is sampled (and should be kept/recorded) or not
-	// Ideally we would put distributed_sampled on root spans only. But this requires either
-	// writing the marshaller manually or use hacky "hiding" of the field,
-	// see http://attilaolah.eu/2014/09/10/json-and-struct-composition-in-go/ on how to do this.
-	// For now, keep it as is, send it all the time, it's minor network overhead.
-	DistributedSampled bool `json:"distributed_sampled"` // if this span is sampled (as in distributed tracing, all parts must be kept) or not
 
 	sync.RWMutex
 	tracer   *Tracer // the tracer that generated this span
@@ -77,17 +75,16 @@ type Span struct {
 // Most of the time one should prefer the Tracer NewRootSpan or NewChildSpan methods.
 func NewSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *Span {
 	return &Span{
-		Name:               name,
-		Service:            service,
-		Resource:           resource,
-		Meta:               tracer.getAllMeta(),
-		SpanID:             spanID,
-		TraceID:            traceID,
-		ParentID:           parentID,
-		Start:              now(),
-		Sampled:            true,
-		DistributedSampled: true,
-		tracer:             tracer,
+		Name:     name,
+		Service:  service,
+		Resource: resource,
+		Meta:     tracer.getAllMeta(),
+		SpanID:   spanID,
+		TraceID:  traceID,
+		ParentID: parentID,
+		Start:    now(),
+		Sampled:  true,
+		tracer:   tracer,
 	}
 }
 
@@ -307,6 +304,23 @@ func (s *Span) Tracer() *Tracer {
 		return nil
 	}
 	return s.tracer
+}
+
+// SetSamplingPriority sets the sampling priority.
+// Default is 0, any higher value is interpreted as a hint on
+// how interesting this span is, and should be kept by the backend.
+func (s *Span) SetSamplingPriority(priority int) {
+	if priority > 0 {
+		s.SetMeta(samplingPriorityKey, strconv.Itoa(priority))
+	} else {
+		delete(s.Meta, samplingPriorityKey)
+	}
+}
+
+// GetSamplingPriority gets the sampling priority.
+func (s *Span) GetSamplingPriority() int {
+	priority, _ := strconv.Atoi(s.GetMeta(samplingPriorityKey))
+	return priority
 }
 
 // NextSpanID returns a new random span id.

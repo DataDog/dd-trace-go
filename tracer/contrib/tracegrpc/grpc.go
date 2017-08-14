@@ -1,7 +1,6 @@
 package tracegrpc
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/DataDog/dd-trace-go/tracer"
@@ -14,9 +13,9 @@ import (
 
 // pass trace ids with these headers
 const (
-	traceIDKey   = "x-datadog-trace-id"
-	parentIDKey  = "x-datadog-parent-id"
-	isSampledKey = "x-datadog-is-sampled"
+	traceIDKey          = "x-datadog-trace-id"
+	parentIDKey         = "x-datadog-parent-id"
+	samplingPriorityKey = "x-datadog-sampling-priority"
 )
 
 // UnaryServerInterceptor will trace requests to the given grpc server.
@@ -69,33 +68,27 @@ func serverSpan(t *tracer.Tracer, ctx context.Context, method, service string) *
 	span.SetMeta("gprc.method", method)
 	span.Type = "go"
 
-	traceID, parentID := getIDs(ctx)
+	traceID, parentID, samplingPriority := getCtxMeta(ctx)
 	if traceID != 0 && parentID != 0 {
 		span.TraceID = traceID
 		t.Sample(span) // depends on trace ID so needs to be updated to maximize the chances we get complete traces
 		span.ParentID = parentID
-		if isSampled, ok := getIsSampled(ctx); ok {
-			span.DistributedSampled = isSampled
-		}
+		span.SetSamplingPriority(samplingPriority)
 	}
 
 	return span
 }
 
-// setCtxMeta will set the trace ids and the IsSampled attribute on the context.
+// setCtxMeta will set the trace ids and the sampling priority on the context.
 func setCtxMeta(span *tracer.Span, ctx context.Context) context.Context {
 	if span == nil || span.TraceID == 0 {
 		return ctx
 	}
 
-	isSampled := "0"
-	if span.DistributedSampled {
-		isSampled = "1"
-	}
 	md := metadata.New(map[string]string{
-		traceIDKey:   fmt.Sprint(span.TraceID),
-		parentIDKey:  fmt.Sprint(span.ParentID),
-		isSampledKey: isSampled,
+		traceIDKey:          strconv.FormatUint(span.TraceID, 10),
+		parentIDKey:         strconv.FormatUint(span.ParentID, 10),
+		samplingPriorityKey: strconv.Itoa(span.GetSamplingPriority()),
 	})
 	if existing, ok := metadata.FromContext(ctx); ok {
 		md = metadata.Join(existing, md)
@@ -103,8 +96,8 @@ func setCtxMeta(span *tracer.Span, ctx context.Context) context.Context {
 	return metadata.NewContext(ctx, md)
 }
 
-// getIDs will return ids embedded in a context.
-func getIDs(ctx context.Context) (traceID, parentID uint64) {
+// getCtxMeta will return ids and sampling priority embedded in a context.
+func getCtxMeta(ctx context.Context) (traceID, parentID uint64, samplingPriority int) {
 	if md, ok := metadata.FromContext(ctx); ok {
 		if id := getID(md, traceIDKey); id > 0 {
 			traceID = id
@@ -112,21 +105,11 @@ func getIDs(ctx context.Context) (traceID, parentID uint64) {
 		if id := getID(md, parentIDKey); id > 0 {
 			parentID = id
 		}
-	}
-	return traceID, parentID
-}
-
-// getIsSampled will return the isSampled embedded in a context.
-func getIsSampled(ctx context.Context) (isSampled, ok bool) {
-	if md, ok := metadata.FromContext(ctx); ok {
-		if b, found := getBool(md, isSampledKey); found {
-			ok = true
-			isSampled = b
-		} else {
-			isSampled = true
+		if v := getInt(md, samplingPriorityKey); v > 0 {
+			samplingPriority = v
 		}
 	}
-	return isSampled, ok
+	return traceID, parentID, samplingPriority
 }
 
 // getID parses an id from the metadata.
@@ -141,15 +124,12 @@ func getID(md metadata.MD, name string) uint64 {
 }
 
 // getBool gets a bool from the metadata (0 or 1 converted to bool).
-func getBool(md metadata.MD, name string) (bool, bool) {
+func getInt(md metadata.MD, name string) int {
 	for _, str := range md[name] {
-		if str == "0" {
-			return false, true
-		}
-		n, err := strconv.Atoi(str)
-		if err == nil && n > 0 {
-			return true, true
+		v, err := strconv.Atoi(str)
+		if err == nil {
+			return int(v)
 		}
 	}
-	return true, false
+	return 0
 }
