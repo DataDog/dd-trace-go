@@ -14,8 +14,9 @@ import (
 
 // pass trace ids with these headers
 const (
-	traceIDKey  = "x-datadog-trace-id"
-	parentIDKey = "x-datadog-parent-id"
+	traceIDKey   = "x-datadog-trace-id"
+	parentIDKey  = "x-datadog-parent-id"
+	isSampledKey = "x-datadog-is-sampled"
 )
 
 // UnaryServerInterceptor will trace requests to the given grpc server.
@@ -48,6 +49,7 @@ func UnaryClientInterceptor(service string, t *tracer.Tracer) grpc.UnaryClientIn
 			child = t.NewChildSpan("grpc.client", span)
 			child.SetMeta("grpc.method", method)
 			ctx = setIDs(child, ctx)
+			ctx = setIsSampled(child, ctx) // [TODO:christian] merge with call above
 			ctx = tracer.ContextWithSpan(ctx, child)
 			// FIXME[matt] add the host / port information here
 			// https://github.com/grpc/grpc-go/issues/951
@@ -68,17 +70,20 @@ func serverSpan(t *tracer.Tracer, ctx context.Context, method, service string) *
 	span.SetMeta("gprc.method", method)
 	span.Type = "go"
 
-	traceID, parentID, isSampled := getIDs(ctx)
+	traceID, parentID := getIDs(ctx)
 	if traceID != 0 && parentID != 0 {
 		span.TraceID = traceID
 		t.Sample(span) // depends on trace ID so needs to be updated to maximize the chances we get complete traces
 		span.ParentID = parentID
+		if isSampled, ok := getIsSampled(ctx); ok {
+			span.DistributedSampled = isSampled
+		}
 	}
 
 	return span
 }
 
-// setIDs will set the trace ids on the context{
+// setIDs will set the trace ids on the context.
 func setIDs(span *tracer.Span, ctx context.Context) context.Context {
 	if span == nil || span.TraceID == 0 {
 		return ctx
@@ -94,8 +99,8 @@ func setIDs(span *tracer.Span, ctx context.Context) context.Context {
 	return metadata.NewContext(ctx, md)
 }
 
-// getIDs will return ids embededd an ahe context.
-func getIDs(ctx context.Context) (traceID, parentID uint64, isSampled bool) {
+// getIDs will return ids embedded in a context.
+func getIDs(ctx context.Context) (traceID, parentID uint64) {
 	if md, ok := metadata.FromContext(ctx); ok {
 		if id := getID(md, traceIDKey); id > 0 {
 			traceID = id
@@ -103,11 +108,41 @@ func getIDs(ctx context.Context) (traceID, parentID uint64, isSampled bool) {
 		if id := getID(md, parentIDKey); id > 0 {
 			parentID = id
 		}
-		if b, found := getBool(md, isSampledKey); found {
-			parentID = id
-		}
 	}
 	return traceID, parentID
+}
+
+// setIsSampled will set the trace isSampled flag on the context.
+// [TODO:christian] refactor this so that it's merged with setIDs
+func setIsSampled(span *tracer.Span, ctx context.Context) context.Context {
+	if span == nil || span.TraceID == 0 {
+		return ctx
+	}
+
+	isSampled := "0"
+	if span.DistributedSampled {
+		isSampled = "1"
+	}
+	md := metadata.New(map[string]string{
+		isSampledKey: isSampled,
+	})
+	if existing, ok := metadata.FromContext(ctx); ok {
+		md = metadata.Join(existing, md)
+	}
+	return metadata.NewContext(ctx, md)
+}
+
+// getIsSampled will return the isSampled embedded in a context.
+func getIsSampled(ctx context.Context) (isSampled, ok bool) {
+	if md, ok := metadata.FromContext(ctx); ok {
+		if b, found := getBool(md, isSampledKey); found {
+			ok = true
+			isSampled = b
+		} else {
+			isSampled = true
+		}
+	}
+	return isSampled, ok
 }
 
 // getID parses an id from the metadata.
