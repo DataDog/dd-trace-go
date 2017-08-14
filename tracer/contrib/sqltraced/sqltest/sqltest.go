@@ -57,6 +57,7 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	actualSpan := spans[0]
 	pingSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	pingSpan.Resource = "Ping"
+	pingSpan.SetSamplingPriority(1)
 	tracertest.CompareSpan(t, pingSpan, actualSpan)
 
 	// Test db.Query
@@ -74,6 +75,7 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	querySpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	querySpan.Resource = query
 	querySpan.SetMeta("sql.query", query)
+	querySpan.SetSamplingPriority(1)
 	tracertest.CompareSpan(t, querySpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 }
@@ -102,6 +104,7 @@ func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	prepareSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	prepareSpan.Resource = query
 	prepareSpan.SetMeta("sql.query", query)
+	prepareSpan.SetSamplingPriority(1)
 	tracertest.CompareSpan(t, prepareSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 
@@ -119,6 +122,7 @@ func testStatement(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	execSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	execSpan.Resource = query
 	execSpan.SetMeta("sql.query", query)
+	execSpan.SetSamplingPriority(1)
 	tracertest.CompareSpan(t, execSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 }
@@ -140,6 +144,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	actualSpan := spans[0]
 	beginSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	beginSpan.Resource = "Begin"
+	beginSpan.SetSamplingPriority(1)
 	tracertest.CompareSpan(t, beginSpan, actualSpan)
 
 	// Test Rollback
@@ -154,6 +159,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	actualSpan = spans[0]
 	rollbackSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	rollbackSpan.Resource = "Rollback"
+	rollbackSpan.SetSamplingPriority(1)
 	tracertest.CompareSpan(t, rollbackSpan, actualSpan)
 
 	// Test Exec
@@ -187,6 +193,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	execSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	execSpan.Resource = query
 	execSpan.SetMeta("sql.query", query)
+	execSpan.SetSamplingPriority(1)
 	tracertest.CompareSpan(t, execSpan, actualSpan)
 	delete(expectedSpan.Meta, "sql.query")
 
@@ -199,6 +206,7 @@ func testTransaction(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	assert.NotNil(actualSpan)
 	commitSpan := tracertest.CopySpan(expectedSpan, db.Tracer)
 	commitSpan.Resource = "Commit"
+	commitSpan.SetSamplingPriority(1)
 	tracertest.CompareSpan(t, commitSpan, actualSpan)
 }
 

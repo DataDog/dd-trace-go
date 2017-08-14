@@ -18,6 +18,7 @@ func CopySpan(span *tracer.Span, trc *tracer.Tracer) *tracer.Span {
 	newSpan := tracer.NewSpan(span.Name, span.Service, span.Resource, span.SpanID, span.TraceID, span.ParentID, trc)
 	newSpan.Type = ext.SQLType
 	newSpan.Meta = span.Meta
+	// newSpan.SetSamplingPriority(span.GetSamplingPriority())
 	return newSpan
 }
 
@@ -31,7 +32,7 @@ func CompareSpan(t *testing.T, expectedSpan, actualSpan *tracer.Span, debug ...b
 	assert.Equal(expectedSpan.Service, actualSpan.Service)
 	assert.Equal(expectedSpan.Resource, actualSpan.Resource)
 	assert.Equal(expectedSpan.Type, actualSpan.Type)
-	assert.True(reflect.DeepEqual(expectedSpan.Meta, actualSpan.Meta))
+	assert.True(reflect.DeepEqual(expectedSpan.Meta, actualSpan.Meta), fmt.Sprintf("%v != %v", expectedSpan.Meta, actualSpan.Meta))
 }
 
 // Return a Tracer with a DummyTransport
