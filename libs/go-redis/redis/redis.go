@@ -1,5 +1,5 @@
-// Package goredistrace provides tracing for the go-redis Redis client (https://github.com/go-redis/redis)
-package goredistrace
+// Package redis provides tracing for the go-redis Redis client (https://github.com/go-redis/redis)
+package redis
 
 import (
 	"bytes"

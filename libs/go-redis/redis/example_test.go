@@ -1,13 +1,13 @@
-package goredistrace_test
+package redis_test
 
 import (
 	"context"
 	"fmt"
+	redistrace "github.com/DataDog/dd-trace-go/libs/go-redis/redis"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/contrib/gin-gonic/gintrace"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/go-redis"
 	"github.com/gin-gonic/gin"
-	redis "github.com/go-redis/redis"
+	"github.com/go-redis/redis"
 	"time"
 )
 
@@ -19,7 +19,7 @@ func Example() {
 		Password: "", // no password set
 		DB:       0,  // use default db
 	}
-	c := goredistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
+	c := redistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
 	// Emit spans per command by using your Redis connection as usual
 	c.Set("test_key", "test_value", 0)
 
@@ -35,7 +35,7 @@ func Example() {
 	// Contexts can be easily passed between Datadog integrations
 	r := gin.Default()
 	r.Use(gintrace.Middleware("web-admin"))
-	client := goredistrace.NewTracedClient(opts, tracer.DefaultTracer, "redis-img-backend")
+	client := redistrace.NewTracedClient(opts, tracer.DefaultTracer, "redis-img-backend")
 
 	r.GET("/user/settings/:id", func(ctx *gin.Context) {
 		// create a span that is a child of your http request
@@ -51,7 +51,7 @@ func Example_pipeline() {
 		Password: "", // no password set
 		DB:       0,  // use default db
 	}
-	c := goredistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
+	c := redistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
 	// pipe is a TracedPipeliner
 	pipe := c.Pipeline()
 	pipe.Incr("pipeline_counter")
@@ -66,7 +66,7 @@ func ExampleNewTracedClient() {
 		Password: "", // no password set
 		DB:       0,  // use default db
 	}
-	c := goredistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
+	c := redistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
 	// Emit spans per command by using your Redis connection as usual
 	c.Set("test_key", "test_value", 0)
 

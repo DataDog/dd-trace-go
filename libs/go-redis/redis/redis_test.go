@@ -1,4 +1,4 @@
-package goredistrace
+package redis
 
 import (
 	"context"
