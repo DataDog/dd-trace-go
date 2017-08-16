@@ -3,7 +3,7 @@
 // DO NOT EDIT!
 
 /*
-Package tracegrpc is a generated protocol buffer package.
+Package grpc is a generated protocol buffer package.
 
 It is generated from these files:
 	fixtures.proto
@@ -12,7 +12,7 @@ It has these top-level messages:
 	FixtureRequest
 	FixtureReply
 */
-package tracegrpc
+package grpc
 
 import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
@@ -69,8 +69,8 @@ func (m *FixtureReply) GetMessage() string {
 }
 
 func init() {
-	proto.RegisterType((*FixtureRequest)(nil), "tracegrpc.FixtureRequest")
-	proto.RegisterType((*FixtureReply)(nil), "tracegrpc.FixtureReply")
+	proto.RegisterType((*FixtureRequest)(nil), "grpc.FixtureRequest")
+	proto.RegisterType((*FixtureReply)(nil), "grpc.FixtureReply")
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -97,7 +97,7 @@ func NewFixtureClient(cc *grpc.ClientConn) FixtureClient {
 
 func (c *fixtureClient) Ping(ctx context.Context, in *FixtureRequest, opts ...grpc.CallOption) (*FixtureReply, error) {
 	out := new(FixtureReply)
-	err := grpc.Invoke(ctx, "/tracegrpc.Fixture/Ping", in, out, c.cc, opts...)
+	err := grpc.Invoke(ctx, "/grpc.Fixture/Ping", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func fixturePingHandler(srv interface{}, ctx context.Context, dec func(interface
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/tracegrpc.Fixture/Ping",
+		FullMethod: "/grpc.Fixture/Ping",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(FixtureServer).Ping(ctx, req.(*FixtureRequest))
@@ -133,7 +133,7 @@ func fixturePingHandler(srv interface{}, ctx context.Context, dec func(interface
 }
 
 var fixtureServiceDesc = grpc.ServiceDesc{
-	ServiceName: "tracegrpc.Fixture",
+	ServiceName: "grpc.Fixture",
 	HandlerType: (*FixtureServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

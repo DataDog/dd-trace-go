@@ -1,4 +1,4 @@
-package tracegrpc
+package grpc
 
 import (
 	"fmt"
