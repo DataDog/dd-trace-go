@@ -1,4 +1,4 @@
-package sqlxtraced
+package sqlx
 
 import (
 	"log"
@@ -7,12 +7,12 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqltest"
 	"github.com/DataDog/dd-trace-go/tracer/tracertest"
-	"github.com/lib/pq"
+	"github.com/go-sql-driver/mysql"
 )
 
-func TestPostgres(t *testing.T) {
+func TestMySQL(t *testing.T) {
 	trc, transport := tracertest.GetTestTracer()
-	dbx, err := OpenTraced(&pq.Driver{}, "postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable", "postgres-test", trc)
+	dbx, err := OpenTraced(&mysql.MySQLDriver{}, "test:test@tcp(127.0.0.1:53306)/test", "mysql-test", trc)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -22,19 +22,19 @@ func TestPostgres(t *testing.T) {
 		DB:         dbx.DB,
 		Tracer:     trc,
 		Transport:  transport,
-		DriverName: "postgres",
+		DriverName: "mysql",
 	}
 
 	expectedSpan := &tracer.Span{
-		Name:    "postgres.query",
-		Service: "postgres-test",
+		Name:    "mysql.query",
+		Service: "mysql-test",
 		Type:    "sql",
 	}
 	expectedSpan.Meta = map[string]string{
-		"db.user":  "postgres",
+		"db.user":  "test",
 		"out.host": "127.0.0.1",
-		"out.port": "55432",
-		"db.name":  "postgres",
+		"out.port": "53306",
+		"db.name":  "test",
 	}
 
 	sqltest.AllSQLTests(t, testDB, expectedSpan)
