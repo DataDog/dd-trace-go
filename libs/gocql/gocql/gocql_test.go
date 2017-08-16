@@ -1,4 +1,4 @@
-package gocqltrace
+package gocql
 
 import (
 	"context"

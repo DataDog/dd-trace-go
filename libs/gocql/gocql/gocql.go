@@ -1,5 +1,5 @@
-// Package gocqltrace provides tracing for the Cassandra Gocql client (https://github.com/gocql/gocql)
-package gocqltrace
+// Package gocql provides tracing for the Cassandra Gocql client (https://github.com/gocql/gocql)
+package gocql
 
 import (
 	"context"
