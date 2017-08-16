@@ -1,4 +1,4 @@
-package redigotrace
+package redigo
 
 import (
 	"context"

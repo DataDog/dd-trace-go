@@ -1,9 +1,9 @@
-package redigotrace_test
+package redigo_test
 
 import (
 	"context"
+	redigotrace "github.com/DataDog/dd-trace-go/libs/garyburd/redigo"
 	"github.com/DataDog/dd-trace-go/tracer"
-	redigotrace "github.com/DataDog/dd-trace-go/tracer/contrib/redigo"
 	"github.com/garyburd/redigo/redis"
 )
 
