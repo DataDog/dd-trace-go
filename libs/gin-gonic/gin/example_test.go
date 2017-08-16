@@ -1,14 +1,13 @@
-package gintrace_test
+package gin_test
 
 import (
+	gintrace "github.com/DataDog/dd-trace-go/libs/gin-gonic/gin"
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/gin-gonic/gintrace"
 	"github.com/gin-gonic/gin"
 )
 
 // To start tracing requests, add the trace middleware to your Gin router.
 func Example() {
-
 	// Create your router and use the middleware.
 	r := gin.New()
 	r.Use(gintrace.Middleware("my-web-app"))

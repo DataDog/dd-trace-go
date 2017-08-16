@@ -1,5 +1,5 @@
-// Package gintrace provides tracing middleware for the Gin web framework.
-package gintrace
+// Package gin provides tracing middleware for the Gin web framework.
+package gin
 
 import (
 	"fmt"

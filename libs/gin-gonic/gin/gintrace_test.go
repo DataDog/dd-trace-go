@@ -1,4 +1,4 @@
-package gintrace
+package gin
 
 import (
 	"errors"
@@ -77,7 +77,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(s.Service, "foobar")
 	assert.Equal(s.Name, "gin.request")
 	// FIXME[matt] would be much nicer to have "/user/:id" here
-	assert.True(strings.Contains(s.Resource, "gintrace.TestTrace200"))
+	assert.True(strings.Contains(s.Resource, "gin.TestTrace200"))
 	assert.Equal(s.GetMeta("test.gin"), "ginny")
 	assert.Equal(s.GetMeta("http.status_code"), "200")
 	assert.Equal(s.GetMeta("http.method"), "GET")
