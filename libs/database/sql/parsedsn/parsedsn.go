@@ -4,8 +4,8 @@ package parsedsn
 import (
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/parsedsn/mysql"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/parsedsn/pq"
+	"github.com/DataDog/dd-trace-go/libs/database/sql/parsedsn/mysql"
+	"github.com/DataDog/dd-trace-go/libs/database/sql/parsedsn/pq"
 )
 
 // Postgres parses a postgres-type dsn into a map

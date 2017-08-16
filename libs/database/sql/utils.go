@@ -1,4 +1,4 @@
-package sqltraced
+package sql
 
 import (
 	"database/sql/driver"
