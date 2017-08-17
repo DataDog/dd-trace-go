@@ -10,6 +10,6 @@ List of integrations: https://godoc.org/github.com/DataDog/dd-trace-go/tracer#pk
 
 ## Directory structure
 
-- [tracer](https://github.com/DataDog/dd-trace-go/tree/gabin/contributions/tracer): contains the low level API used to trace the different libraries.
+- [tracer](https://github.com/DataDog/dd-trace-go/tree/master/tracer): contains the low level API used to trace the different libraries.
 
-- [libs](https://github.com/DataDog/dd-trace-go/tree/gabin/contributions/libs): contains the different libraries supported by our APM solution.
+- [libs](https://github.com/DataDog/dd-trace-go/tree/master/libs): contains the different libraries supported by our APM solution.
