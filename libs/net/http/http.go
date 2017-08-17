@@ -8,35 +8,38 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
-// Handler is a handler that traces all incoming requests.
-// It implements the http.Handler interface.
-type Handler struct {
-	http.Handler
+// ServeMux is an HTTP request multiplexer that traces all the incoming requests.
+type ServeMux struct {
+	*http.ServeMux
 	*tracer.Tracer
 	service string
 }
 
-// NewHandler allocates and returns a new Handler.
-func NewHandler(h http.Handler, service string, t *tracer.Tracer) *Handler {
+// NewServeMux allocates and returns a new ServeMux.
+func NewServeMux(service string, t *tracer.Tracer) *ServeMux {
 	if t == nil {
 		t = tracer.DefaultTracer
 	}
 	t.SetServiceInfo(service, "net/http", ext.AppTypeWeb)
-	return &Handler{h, t, service}
+	return &ServeMux{http.NewServeMux(), t, service}
 }
 
-// ServeHTTP creates a new span for each incoming request
-// and pass them through the underlying handler.
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// ServeHTTP dispatches the request to the handler whose
+// pattern most closely matches the request URL.
+// We only needed to rewrite this method to be able to trace the multiplexer.
+func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// bail out if tracing isn't enabled
-	if !h.Tracer.Enabled() {
-		h.Handler.ServeHTTP(w, r)
+	if !mux.Tracer.Enabled() {
+		mux.ServeMux.ServeHTTP(w, r)
 		return
 	}
 
+	// get the route associated to this request
+	_, route := mux.Handler(r)
+
 	// create a new span
-	resource := r.Method + " " + r.URL.Path
-	span := h.Tracer.NewRootSpan("http.request", h.service, resource)
+	resource := r.Method + " " + route
+	span := mux.Tracer.NewRootSpan("http.request", mux.service, resource)
 	defer span.Finish()
 
 	span.Type = ext.HTTPType
@@ -50,8 +53,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// trace the response to get the status code
 	traceWriter := NewResponseWriter(w, span)
 
-	// run the request
-	h.Handler.ServeHTTP(traceWriter, traceRequest)
+	// serve the request to the underlying multiplexer
+	mux.ServeMux.ServeHTTP(traceWriter, traceRequest)
 }
 
 // ResponseWriter is a small wrapper around an http response writer that will

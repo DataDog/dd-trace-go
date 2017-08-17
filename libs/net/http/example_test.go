@@ -11,8 +11,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func Example() {
-	mux := http.NewServeMux()
+	mux := httptrace.NewServeMux("web-service", nil)
 	mux.HandleFunc("/", handler)
-
-	http.ListenAndServe(":8080", httptrace.NewHandler(mux, "web-service", nil))
+	http.ListenAndServe(":8080", mux)
 }
