@@ -12,7 +12,7 @@ import (
 
 func TestPostgres(t *testing.T) {
 	trc, transport := tracertest.GetTestTracer()
-	db, err := OpenTraced(&pq.Driver{}, "postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable", "postgres-test", trc)
+	db, err := Open(&pq.Driver{}, "postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable", "postgres-test", trc)
 	if err != nil {
 		log.Fatal(err)
 	}

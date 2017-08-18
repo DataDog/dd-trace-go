@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sort"
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/tracer"
 )
 
 func newDSNAndService(dsn, service string) string {
@@ -33,4 +35,15 @@ func stringInSlice(list []string, s string) bool {
 	sort.Strings(list)
 	i := sort.SearchStrings(list, s)
 	return i < len(list) && list[i] == s
+}
+
+// Get tracer from variadic arguments
+func getTracer(tracers []*tracer.Tracer) *tracer.Tracer {
+	var t *tracer.Tracer
+	if len(tracers) == 0 || (len(tracers) > 0 && tracers[0] == nil) {
+		t = tracer.DefaultTracer
+	} else {
+		t = tracers[0]
+	}
+	return t
 }

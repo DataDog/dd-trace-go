@@ -12,7 +12,7 @@ import (
 
 func TestMySQL(t *testing.T) {
 	trc, transport := tracertest.GetTestTracer()
-	db, err := OpenTraced(&mysql.MySQLDriver{}, "test:test@tcp(127.0.0.1:53306)/test", "mysql-test", trc)
+	db, err := Open(&mysql.MySQLDriver{}, "test:test@tcp(127.0.0.1:53306)/test", "mysql-test", trc)
 	if err != nil {
 		log.Fatal(err)
 	}

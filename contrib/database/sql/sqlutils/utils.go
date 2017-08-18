@@ -25,8 +25,8 @@ func GetDriverName(driver driver.Driver) string {
 	}
 }
 
-// GetTracedDriverName add the suffix "Traced" to the driver name.
-func GetTracedDriverName(driverName string) string {
+// GetTraceDriverName add the suffix "Traced" to the driver name.
+func GetTraceDriverName(driverName string) string {
 	return driverName + "Traced"
 }
 
