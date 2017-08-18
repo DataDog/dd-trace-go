@@ -16,7 +16,7 @@ func TestParseDSN(t *testing.T) {
 		"out.port": "5432",
 		"db.name":  "mydb",
 	}
-	m, err := ParseDSN("postgres", "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full")
+	m, err := Parse("postgres", "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full")
 	assert.Equal(nil, err)
 	assert.True(reflect.DeepEqual(expected, m))
 
@@ -26,7 +26,7 @@ func TestParseDSN(t *testing.T) {
 		"out.port": "5432",
 		"db.name":  "mydb",
 	}
-	m, err = ParseDSN("mysql", "bob:secret@tcp(1.2.3.4:5432)/mydb")
+	m, err = Parse("mysql", "bob:secret@tcp(1.2.3.4:5432)/mydb")
 	assert.Equal(nil, err)
 	assert.True(reflect.DeepEqual(expected, m))
 
@@ -38,7 +38,7 @@ func TestParseDSN(t *testing.T) {
 		"db.user":        "dog",
 	}
 	dsn := "connect_timeout=0 binary_parameters=no password=zMWmQz26GORmgVVKEbEl dbname=dogdatastaging application_name=trace-api port=5433 sslmode=disable host=master-db-master-active.postgres.service.consul user=dog"
-	m, err = ParseDSN("postgres", dsn)
+	m, err = Parse("postgres", dsn)
 	assert.Equal(nil, err)
 	assert.True(reflect.DeepEqual(expected, m))
 }
