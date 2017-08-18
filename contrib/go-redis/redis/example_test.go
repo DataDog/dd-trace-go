@@ -19,7 +19,7 @@ func Example() {
 		Password: "", // no password set
 		DB:       0,  // use default db
 	}
-	c := redistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
+	c := redistrace.NewClient(opts, "my-redis-backend", tracer.DefaultTracer)
 	// Emit spans per command by using your Redis connection as usual
 	c.Set("test_key", "test_value", 0)
 
@@ -35,7 +35,7 @@ func Example() {
 	// Contexts can be easily passed between Datadog integrations
 	r := gin.Default()
 	r.Use(gintrace.Middleware("web-admin"))
-	client := redistrace.NewTracedClient(opts, tracer.DefaultTracer, "redis-img-backend")
+	client := redistrace.NewClient(opts, "redis-img-backend", tracer.DefaultTracer)
 
 	r.GET("/user/settings/:id", func(ctx *gin.Context) {
 		// create a span that is a child of your http request
@@ -51,8 +51,7 @@ func Example_pipeline() {
 		Password: "", // no password set
 		DB:       0,  // use default db
 	}
-	c := redistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
-	// pipe is a TracedPipeliner
+	c := redistrace.NewClient(opts, "my-redis-backend", tracer.DefaultTracer)
 	pipe := c.Pipeline()
 	pipe.Incr("pipeline_counter")
 	pipe.Expire("pipeline_counter", time.Hour)
@@ -60,13 +59,13 @@ func Example_pipeline() {
 	pipe.Exec()
 }
 
-func ExampleNewTracedClient() {
+func ExampleNewClient() {
 	opts := &redis.Options{
 		Addr:     "127.0.0.1:6379",
 		Password: "", // no password set
 		DB:       0,  // use default db
 	}
-	c := redistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
+	c := redistrace.NewClient(opts, "my-redis-backend", tracer.DefaultTracer)
 	// Emit spans per command by using your Redis connection as usual
 	c.Set("test_key", "test_value", 0)
 
