@@ -3,8 +3,8 @@ package mux
 
 import (
 	"net/http"
-	"strconv"
 
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"github.com/gorilla/mux"
@@ -29,13 +29,24 @@ func NewRouter(service string, trc ...*tracer.Tracer) *Router {
 // whose pattern most closely matches the request URL.
 // We only need to rewrite this function to be able to trace
 // all the incoming requests to the underlying multiplexer
-func (r *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	var match mux.RouteMatch
+	var route string
+	var err error
+
 	// get the resource associated to this request
-	_, route := mux.Handler(r)
-	resource := r.Method + " " + route
+	if r.Match(req, &match) {
+		route, err = match.Route.GetPathTemplate()
+		if err != nil {
+			route = "unkown"
+		}
+	} else {
+		route = "unkown"
+	}
+	resource := req.Method + " " + route
 
 	// we need to wrap the ServeHTTP method to be able to trace it
-	Trace(r.Router.ServeHTTP, w, r, r.service, resource, r.Tracer)
+	httptrace.Trace(r.Router.ServeHTTP, w, req, r.service, resource, r.Tracer)
 }
 
 // getTracer returns either the tracer passed as the last argument or a default tracer.
