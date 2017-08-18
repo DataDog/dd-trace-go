@@ -26,11 +26,11 @@ type traceParams struct {
 }
 
 // NewClient takes a Client returned by redis.NewClient and configures it to emit spans under the given service name
-func NewClient(opt *redis.Options, service string, t *tracer.Tracer) *Client {
+// The last parameter is optional and allows to pass a custom tracer.
+func NewClient(opt *redis.Options, service string, trc ...*tracer.Tracer) *Client {
 	var port string
-	if t == nil {
-		t = tracer.DefaultTracer
-	}
+
+	t := getTracer(trc)
 	t.SetServiceInfo(service, "redis", ext.AppTypeDB)
 
 	addr := strings.Split(opt.Addr, ":")
@@ -133,6 +133,17 @@ func createWrapperFromClient(c *Client) func(oldProcess func(cmd redis.Cmder) er
 			return err
 		}
 	}
+}
+
+// getTracer returns either the tracer passed as the last argument or a default tracer.
+func getTracer(tracers []*tracer.Tracer) *tracer.Tracer {
+	var t *tracer.Tracer
+	if len(tracers) == 0 || (len(tracers) > 0 && tracers[0] == nil) {
+		t = tracer.DefaultTracer
+	} else {
+		t = tracers[0]
+	}
+	return t
 }
 
 // String returns a string representation of a slice of redis Commands, separated by newlines
