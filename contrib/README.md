@@ -18,7 +18,7 @@ import "github.com/DataDog/dd-trace-go/contrib/net/http"
 ```
 
 3. Read through the `example_test.go` present in each folder of the libraries to understand how to trace your app.  
-*ex:* for `net/http`, see [net/http/example_test.go]()
+*ex:* for `net/http`, see [net/http/example_test.go](https://github.com/DataDog/dd-trace-go/blob/master/contrib/net/http/example_test.go)
 
 ## Contribution guidelines
 
