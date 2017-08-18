@@ -42,7 +42,7 @@ func Register(driver driver.Driver, t *tracer.Tracer) (traceDriverName string) {
 
 // Open will first register the  version of the `driver` if not yet registered and will then open a connection with it.
 // This is usually the only function to use when there is no need for the granularity offered by Register and OpenWithService.
-// The last parameter is optional and enables you to pass a custom tracer
+// The last parameter is optional and allows you to pass a custom tracer
 func Open(driver driver.Driver, dsn, service string, t ...*tracer.Tracer) (*sql.DB, error) {
 	// we first register the driver
 	traceDriver := Register(driver, getTracer(t))

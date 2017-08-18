@@ -37,7 +37,7 @@ func stringInSlice(list []string, s string) bool {
 	return i < len(list) && list[i] == s
 }
 
-// Get tracer from variadic arguments
+// getTracer returns either the tracer passed as the last argument or a default tracer.
 func getTracer(tracers []*tracer.Tracer) *tracer.Tracer {
 	var t *tracer.Tracer
 	if len(tracers) == 0 || (len(tracers) > 0 && tracers[0] == nil) {
