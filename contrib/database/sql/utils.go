@@ -3,6 +3,8 @@ package sql
 import (
 	"database/sql/driver"
 	"errors"
+	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -46,4 +48,25 @@ func getTracer(tracers []*tracer.Tracer) *tracer.Tracer {
 		t = tracers[0]
 	}
 	return t
+}
+
+// getDriverName returns the driver type.
+func getDriverName(driver driver.Driver) string {
+	if driver == nil {
+		return ""
+	}
+	driverType := fmt.Sprintf("%s", reflect.TypeOf(driver))
+	switch driverType {
+	case "*mysql.MySQLDriver":
+		return "mysql"
+	case "*pq.Driver":
+		return "postgres"
+	default:
+		return ""
+	}
+}
+
+// getTraceDriverName add the suffix "Traced" to the driver name.
+func getTraceDriverName(driverName string) string {
+	return driverName + "Traced"
 }

@@ -10,7 +10,7 @@ import (
 
 	log "github.com/cihub/seelog"
 
-	"github.com/DataDog/dd-trace-go/contrib/database/sql/sqlutils"
+	"github.com/DataDog/dd-trace-go/contrib/database/sql/parsedsn"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
@@ -26,8 +26,8 @@ func Register(driver driver.Driver, t *tracer.Tracer) (traceDriverName string) {
 	if t == nil {
 		t = tracer.DefaultTracer
 	}
-	driverName := sqlutils.GetDriverName(driver)
-	traceDriverName = sqlutils.GetTraceDriverName(driverName)
+	driverName := getDriverName(driver)
+	traceDriverName = getTraceDriverName(driverName)
 
 	// if no driver is registered under the traceDriverName, we register it
 	if !stringInSlice(sql.Drivers(), traceDriverName) {
@@ -81,7 +81,7 @@ func (d Driver) Open(dsnAndService string) (c driver.Conn, err error) {
 	d.tracer.SetServiceInfo(service, d.driverName, ext.AppTypeDB)
 
 	// Get all kinds of information from the DSN
-	meta, err = parseDSN(d.driverName, dsn)
+	meta, err = parsedsn.Parse(d.driverName, dsn)
 	if err != nil {
 		return nil, err
 	}

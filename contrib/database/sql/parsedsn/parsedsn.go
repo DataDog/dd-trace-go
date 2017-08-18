@@ -8,8 +8,8 @@ import (
 	"github.com/DataDog/dd-trace-go/contrib/database/sql/parsedsn/pq"
 )
 
-// ParseDSN returns a map of string containing all normalized information passed through the DSN.
-func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
+// Parse returns a map of string containing all normalized information passed through the DSN.
+func Parse(driverName, dsn string) (meta map[string]string, err error) {
 	switch driverName {
 	case "mysql":
 		meta, err = ParseMySQL(dsn)
