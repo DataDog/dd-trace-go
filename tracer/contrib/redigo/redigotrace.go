@@ -31,7 +31,7 @@ type traceParams struct {
 
 // TracedDial takes a Conn returned by redis.Dial and configures it to emit spans with the given service name
 func TracedDial(service string, tracer *tracer.Tracer, network, address string, options ...redis.DialOption) (redis.Conn, error) {
-	c, err := redis.Dial(network, address)
+	c, err := redis.Dial(network, address, options...)
 	addr := strings.Split(address, ":")
 	var host, port string
 	if len(addr) == 2 && addr[1] != "" {
