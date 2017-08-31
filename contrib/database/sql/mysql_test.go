@@ -31,10 +31,11 @@ func TestMySQL(t *testing.T) {
 		Type:    "sql",
 	}
 	expectedSpan.Meta = map[string]string{
-		"db.user":  "test",
-		"out.host": "127.0.0.1",
-		"out.port": "53306",
-		"db.name":  "test",
+		"db.user":           "test",
+		"out.host":          "127.0.0.1",
+		"out.port":          "53306",
+		"db.name":           "test",
+		"sampling.priority": "1",
 	}
 
 	sqltest.AllSQLTests(t, testDB, expectedSpan)
