@@ -22,7 +22,7 @@ func TestClient(t *testing.T) {
 	assert := assert.New(t)
 
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	rig, err := newRig(testTracer, true)
 	if err != nil {
@@ -86,7 +86,7 @@ func TestClient(t *testing.T) {
 func TestDisabled(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 	testTracer.SetEnabled(false)
 
 	rig, err := newRig(testTracer, true)
@@ -107,7 +107,7 @@ func TestDisabled(t *testing.T) {
 func TestChild(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	rig, err := newRig(testTracer, false)
 	if err != nil {
@@ -153,7 +153,7 @@ func TestChild(t *testing.T) {
 func TestPass(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	rig, err := newRig(testTracer, false)
 	if err != nil {
