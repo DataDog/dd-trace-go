@@ -33,6 +33,11 @@ type traceParams struct {
 
 // NewTracedClient takes a Client returned by redis.NewClient and configures it to emit spans under the given service name
 func NewTracedClient(opt *redis.Options, t *tracer.Tracer, service string) *TracedClient {
+	return NewCustomTracedClient(nil, opt, t, service)
+}
+
+// NewCustomTracedClient allows to pass a custom *redis.Client to be traced
+func NewCustomTracedClient(client *redis.Client, opt *redis.Options, t *tracer.Tracer, service string) *TracedClient {
 	var host, port string
 	addr := strings.Split(opt.Addr, ":")
 	if len(addr) == 2 && addr[1] != "" {
@@ -43,7 +48,9 @@ func NewTracedClient(opt *redis.Options, t *tracer.Tracer, service string) *Trac
 	host = addr[0]
 	db := strconv.Itoa(opt.DB)
 
-	client := redis.NewClient(opt)
+	if client == nil {
+		client = redis.NewClient(opt)
+	}
 	t.SetServiceInfo(service, "redis", ext.AppTypeDB)
 	tc := &TracedClient{
 		client,
