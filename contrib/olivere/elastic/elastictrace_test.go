@@ -18,7 +18,7 @@ const (
 func TestClientV5(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	tc := NewTracedHTTPClient("my-es-service", testTracer)
 	client, err := elasticv5.NewClient(
@@ -51,7 +51,7 @@ func TestClientV5(t *testing.T) {
 func TestClientV3(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	tc := NewTracedHTTPClient("my-es-service", testTracer)
 	client, err := elasticv3.NewClient(
@@ -84,7 +84,7 @@ func TestClientV3(t *testing.T) {
 func TestClientV3Failure(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	tc := NewTracedHTTPClient("my-es-service", testTracer)
 	client, err := elasticv3.NewClient(
@@ -119,7 +119,7 @@ func TestClientV3Failure(t *testing.T) {
 func TestClientV5Failure(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	tc := NewTracedHTTPClient("my-es-service", testTracer)
 	client, err := elasticv5.NewClient(

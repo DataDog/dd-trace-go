@@ -22,7 +22,7 @@ func TestClient(t *testing.T) {
 	}
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	client := NewTracedClient(opts, testTracer, "my-redis")
 	client.Set("test_key", "test_value", 0)
@@ -50,7 +50,7 @@ func TestPipeline(t *testing.T) {
 	}
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	client := NewTracedClient(opts, testTracer, "my-redis")
 	pipeline := client.Pipeline()
@@ -99,7 +99,7 @@ func TestChildSpan(t *testing.T) {
 	}
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	// Parent span
 	ctx := context.Background()
@@ -144,7 +144,7 @@ func TestMultipleCommands(t *testing.T) {
 	}
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	client := NewTracedClient(opts, testTracer, "my-redis")
 	client.Set("test_key", "test_value", 0)
@@ -177,7 +177,7 @@ func TestError(t *testing.T) {
 	}
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	client := NewTracedClient(opts, testTracer, "my-redis")
 	err := client.Get("non_existent_key")
