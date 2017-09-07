@@ -17,7 +17,7 @@ const (
 func TestClient(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:56379")
 	c.Do("SET", 1, "truck")
@@ -41,7 +41,7 @@ func TestClient(t *testing.T) {
 func TestCommandError(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:56379")
 	_, err := c.Do("NOT_A_COMMAND", context.Background())
@@ -66,7 +66,7 @@ func TestCommandError(t *testing.T) {
 func TestConnectionError(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, _ := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	_, err := TracedDial("redis-service", testTracer, "tcp", "127.0.0.1:1000")
 
@@ -76,7 +76,7 @@ func TestConnectionError(t *testing.T) {
 func TestInheritance(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	// Parent span
 	ctx := context.Background()
@@ -113,7 +113,7 @@ func TestInheritance(t *testing.T) {
 func TestCommandsToSring(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	stringify_test := TestStruct{Cpython: 57, Cgo: 8}
 	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:56379")
@@ -137,7 +137,7 @@ func TestCommandsToSring(t *testing.T) {
 func TestPool(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	pool := &redis.Pool{
 		MaxIdle:     2,
@@ -163,7 +163,7 @@ func TestPool(t *testing.T) {
 func TestTracingDialUrl(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 	url := "redis://127.0.0.1:56379"
 	client, _ := TracedDialURL("redis-service", testTracer, url)
 	client.Do("SET", "ONE", " TWO", context.Background())

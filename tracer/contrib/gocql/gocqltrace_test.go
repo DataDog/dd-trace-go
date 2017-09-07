@@ -31,7 +31,7 @@ func TestMain(m *testing.M) {
 func TestErrorWrapper(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	cluster := gocql.NewCluster("127.0.0.1:59042")
 	session, _ := cluster.CreateSession()
@@ -63,7 +63,7 @@ func TestErrorWrapper(t *testing.T) {
 func TestChildWrapperSpan(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
-	testTracer.DebugLoggingEnabled = debug
+	testTracer.SetDebugLogging(debug)
 
 	// Parent span
 	ctx := context.Background()
