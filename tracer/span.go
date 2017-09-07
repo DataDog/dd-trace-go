@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,7 +15,7 @@ const (
 	errorTypeKey  = "error.type"
 	errorStackKey = "error.stack"
 
-	samplingPriorityKey = "sampling.priority"
+	samplingPriorityKey = "_sampling_priority_v1"
 )
 
 // Span represents a computation. Callers must call Finish when a span is
@@ -310,17 +309,14 @@ func (s *Span) Tracer() *Tracer {
 // Default is 0, any higher value is interpreted as a hint on
 // how interesting this span is, and should be kept by the backend.
 func (s *Span) SetSamplingPriority(priority int) {
-	if priority > 0 {
-		s.SetMeta(samplingPriorityKey, strconv.Itoa(priority))
-	} else {
-		delete(s.Meta, samplingPriorityKey)
+	if priority >= 0 {
+		s.SetMetric(samplingPriorityKey, float64(priority))
 	}
 }
 
 // GetSamplingPriority gets the sampling priority.
 func (s *Span) GetSamplingPriority() int {
-	priority, _ := strconv.Atoi(s.GetMeta(samplingPriorityKey))
-	return priority
+	return int(s.Metrics[samplingPriorityKey])
 }
 
 // NextSpanID returns a new random span id.

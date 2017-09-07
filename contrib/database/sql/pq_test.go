@@ -35,7 +35,6 @@ func TestPostgres(t *testing.T) {
 		"out.host":          "127.0.0.1",
 		"out.port":          "55432",
 		"db.name":           "postgres",
-		"sampling.priority": "1",
 	}
 
 	sqltest.AllSQLTests(t, testDB, expectedSpan)

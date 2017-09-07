@@ -35,7 +35,6 @@ func TestMySQL(t *testing.T) {
 		"out.host":          "127.0.0.1",
 		"out.port":          "53306",
 		"db.name":           "test",
-		"sampling.priority": "1",
 	}
 
 	sqltest.AllSQLTests(t, testDB, expectedSpan)
