@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/tracer/ext"
@@ -58,7 +57,6 @@ type httpTransport struct {
 	serviceURL        string            // the delivery URL for services
 	legacyServiceURL  string            // the legacy delivery URL for services
 	pool              *encoderPool      // encoding allocates lot of buffers (which might then be resized) so we use a pool so they can be re-used
-	bufferPool        *bufferPool       // we use this buffer pool to avoid race conditions when sending the encoder through the network
 	client            *http.Client      // the HTTP client used in the POST
 	headers           map[string]string // the Transport headers
 	compatibilityMode bool              // the Agent targets a legacy API for compatibility reasons
@@ -82,7 +80,6 @@ func newHTTPTransport(hostname, port string) *httpTransport {
 		serviceURL:       fmt.Sprintf("http://%s:%s/v0.3/services", hostname, port),
 		legacyServiceURL: fmt.Sprintf("http://%s:%s/v0.2/services", hostname, port),
 		pool:             pool,
-		bufferPool:       newBufferPool(),
 		client: &http.Client{
 			Timeout: defaultHTTPTimeout,
 		},
@@ -115,8 +112,8 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	// can theoretically read the underlying buffer whereas the encoder has been returned to the pool.
 	// This can lead to a race condition and make the app panicking.
 	// That's why we create a new buffer here, though we use the same slice of bytes to avoid allocating new memory.
-	// It's fine here because the two functions that can happen at the same time are bytes.Reset and bytes.Read,
-	// and they doesn't modify the underlying data.
+	// It's fine here because the two functions that can happen at the same time (bytes.Reset and bytes.Read),
+	// doesn't modify the underlying data.
 	encoder.SetBuffer(bytes.NewBuffer(encoderBuffer.Bytes()))
 
 	// prepare the client and send the payload
@@ -224,23 +221,4 @@ func (t *httpTransport) apiDowngrade() {
 	t.traceURL = t.legacyTraceURL
 	t.serviceURL = t.legacyServiceURL
 	t.changeEncoder(legacyEncoder)
-}
-
-type bufferPool struct {
-	*sync.Pool
-}
-
-func newBufferPool() *bufferPool {
-	pool := &sync.Pool{
-		New: func() interface{} {
-			return new(bytes.Buffer)
-		},
-	}
-	return &bufferPool{pool}
-}
-
-func (p *bufferPool) Get() *bytes.Buffer {
-	b := p.Pool.Get().(*bytes.Buffer)
-	b.Reset()
-	return b
 }
