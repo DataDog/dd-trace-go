@@ -23,12 +23,10 @@ func TestChildSpan(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, _ := getTestTracer()
 
-	middleware := newMiddleware("foobar", testTracer)
-
 	router := gin.New()
-	router.Use(middleware.Handle)
+	router.Use(Trace("foobar", testTracer))
 	router.GET("/user/:id", func(c *gin.Context) {
-		span, ok := tracer.SpanFromContext(c)
+		span, ok := SpanFromContext(c)
 		assert.True(ok)
 		assert.NotNil(span)
 	})
@@ -43,13 +41,11 @@ func TestTrace200(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := getTestTracer()
 
-	middleware := newMiddleware("foobar", testTracer)
-
 	router := gin.New()
-	router.Use(middleware.Handle)
+	router.Use(Trace("foobar", testTracer))
 	router.GET("/user/:id", func(c *gin.Context) {
 		// assert we patch the span on the request context.
-		span := SpanDefault(c)
+		span, _ := SpanFromContext(c)
 		span.SetMeta("test.gin", "ginny")
 		assert.Equal(span.Service, "foobar")
 		id := c.Param("id")
@@ -75,7 +71,7 @@ func TestTrace200(t *testing.T) {
 	}
 	s := spans[0]
 	assert.Equal(s.Service, "foobar")
-	assert.Equal(s.Name, "gin.request")
+	assert.Equal(s.Name, "http.request")
 	// FIXME[matt] would be much nicer to have "/user/:id" here
 	assert.True(strings.Contains(s.Resource, "gin.TestTrace200"))
 	assert.Equal(s.GetMeta("test.gin"), "ginny")
@@ -89,12 +85,10 @@ func TestDisabled(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.SetEnabled(false)
 
-	middleware := newMiddleware("foobar", testTracer)
-
 	router := gin.New()
-	router.Use(middleware.Handle)
+	router.Use(Trace("foobar", testTracer))
 	router.GET("/ping", func(c *gin.Context) {
-		span, ok := Span(c)
+		span, ok := SpanFromContext(c)
 		assert.Nil(span)
 		assert.False(ok)
 		c.Writer.Write([]byte("ok"))
@@ -119,9 +113,8 @@ func TestError(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 
 	// setup
-	middleware := newMiddleware("foobar", testTracer)
 	router := gin.New()
-	router.Use(middleware.Handle)
+	router.Use(Trace("foobar", testTracer))
 
 	// a handler with an error and make the requests
 	router.GET("/err", func(c *gin.Context) {
@@ -144,8 +137,8 @@ func TestError(t *testing.T) {
 	}
 	s := spans[0]
 	assert.Equal(s.Service, "foobar")
-	assert.Equal(s.Name, "gin.request")
-	assert.Equal(s.GetMeta("http.status_code"), "500")
+	assert.Equal(s.Name, "http.request")
+	assert.Equal(s.GetMeta(ext.HTTPCode), "500")
 	assert.Equal(s.GetMeta(ext.ErrorMsg), "oh no")
 	assert.Equal(s.Error, int32(1))
 }
@@ -155,10 +148,8 @@ func TestHTML(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 
 	// setup
-	middleware := newMiddleware("tmplservice", testTracer)
-
 	router := gin.New()
-	router.Use(middleware.Handle)
+	router.Use(Trace("foobar", testTracer))
 
 	// add a template
 	tmpl := template.Must(template.New("hello").Parse("hello {{.}}"))
@@ -182,7 +173,7 @@ func TestHTML(t *testing.T) {
 	spans := traces[0]
 	assert.Len(spans, 2)
 	for _, s := range spans {
-		assert.Equal(s.Service, "tmplservice")
+		assert.Equal(s.Service, "foobar")
 	}
 
 	var tspan *tracer.Span
@@ -203,12 +194,9 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	router := gin.New()
 	router.GET("/ping", func(c *gin.Context) {
 		// Assert we don't have a span on the context.
-		s, ok := Span(c)
+		s, ok := SpanFromContext(c)
 		assert.False(ok)
 		assert.Nil(s)
-		// and the default span is empty
-		s = SpanDefault(c)
-		assert.Equal(s.Service, "")
 		c.Writer.Write([]byte("ok"))
 	})
 	r := httptest.NewRequest("GET", "/ping", nil)
