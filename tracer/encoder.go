@@ -66,6 +66,8 @@ func (e *msgpackEncoder) ContentType() string {
 }
 
 func (e *msgpackEncoder) Buffer() *bytes.Buffer {
+	e.Lock()
+	defer e.Unlock()
 	return e.buffer
 }
 
