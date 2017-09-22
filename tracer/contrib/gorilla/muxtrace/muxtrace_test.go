@@ -1,12 +1,16 @@
 package muxtrace
 
 import (
+	"bufio"
+	"io/ioutil"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -130,6 +134,56 @@ func TestMuxTracer500(t *testing.T) {
 	assert.Equal(s.Error, int32(1))
 }
 
+type hijackableResponseRecorder struct {
+	*httptest.ResponseRecorder
+}
+
+func (rw *hijackableResponseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	client, server := net.Pipe()
+	go func() {
+		// Read the full stream so the "upgrade" finishes.
+		ioutil.ReadAll(server)
+		server.Close()
+	}()
+
+	r := bufio.NewReader(rw.Body)
+	w := bufio.NewWriter(rw.Body)
+	return client, bufio.NewReadWriter(r, w), nil
+}
+
+func TestMuxWebsocket(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport, router := setup(t)
+
+	// Send a request and verify it can be upgraded for websockets.
+	url := "/ws"
+	req := httptest.NewRequest("GET", url, nil)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Sec-WebSocket-Version", "13")
+	req.Header.Set("Sec-WebSocket-Key", "MzNtIX+zoRXb2oCOpFPNWQ==")
+	writer := &hijackableResponseRecorder{httptest.NewRecorder()}
+	router.ServeHTTP(writer, req)
+	assert.Equal(writer.Code, 200)
+	assert.Equal(writer.Body.String(), "Upgraded!\n")
+
+	// ensure properly traced
+	assert.Nil(tracer.FlushTraces())
+	traces := transport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+
+	s := spans[0]
+	assert.Equal(s.Name, "mux.request")
+	assert.Equal(s.Service, "my-service")
+	assert.Equal(s.Resource, "GET "+url)
+	assert.Equal(s.GetMeta("http.status_code"), "200")
+	assert.Equal(s.GetMeta("http.method"), "GET")
+	assert.Equal(s.GetMeta("http.url"), url)
+	assert.Equal(s.Error, int32(0))
+}
+
 // test handlers
 
 func handler200(t *testing.T) http.HandlerFunc {
@@ -153,6 +207,27 @@ func handler500(t *testing.T) http.HandlerFunc {
 	}
 }
 
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+func handlerWs(t *testing.T) http.HandlerFunc {
+	assert := assert.New(t)
+	return func(w http.ResponseWriter, r *http.Request) {
+		_, err := upgrader.Upgrade(w, r, nil)
+		assert.NoError(err)
+		if err != nil {
+			http.Error(w, "could not upgrade connection", http.StatusInternalServerError)
+		} else {
+			_, err := w.Write([]byte("Upgraded!\n"))
+			assert.NoError(err)
+		}
+		span := tracer.SpanFromContextDefault(r.Context())
+		assert.Equal(span.Service, "my-service")
+		assert.Equal(span.Duration, int64(0))
+	}
+}
+
 func setup(t *testing.T) (*tracer.Tracer, *dummyTransport, *mux.Router) {
 	tracer, transport, mt := getTestTracer("my-service")
 	r := mux.NewRouter()
@@ -164,6 +239,8 @@ func setup(t *testing.T) (*tracer.Tracer, *dummyTransport, *mux.Router) {
 	mt.HandleFunc(r, "/200", h200).Methods("Get")
 	// And we can allso handle a bare func
 	r.HandleFunc("/500", mt.TraceHandleFunc(h500))
+	// And that Websocket upgrades work
+	r.HandleFunc("/ws", mt.TraceHandleFunc(handlerWs(t)))
 
 	// do a subrouter (one in each way)
 	sub := r.PathPrefix("/sub").Subrouter()
