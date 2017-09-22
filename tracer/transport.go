@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
@@ -97,13 +95,26 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 
 	// borrow an encoder
 	encoder := t.pool.Borrow()
-	defer t.pool.Return(encoder)
+	encoderBuffer := encoder.Buffer()
+	defer func() {
+		// We set the encoder's buffer to the old one before returning the encoder to the pool
+		encoder.SetBuffer(encoderBuffer)
+		t.pool.Return(encoder)
+	}()
 
 	// encode the spans and return the error if any
 	err := encoder.EncodeTraces(traces)
 	if err != nil {
 		return nil, err
 	}
+
+	// When we send the encoder as the request body, the persistConn.writeLoop() goroutine
+	// can theoretically read the underlying buffer whereas the encoder has been returned to the pool.
+	// This can lead to a race condition and make the app panicking.
+	// That's why we create a new buffer here, though we use the same slice of bytes to avoid allocating new memory.
+	// It's fine here because the two functions that can happen at the same time (bytes.Reset and bytes.Read),
+	// doesn't modify the underlying data.
+	encoder.SetBuffer(bytes.NewBuffer(encoderBuffer.Bytes()))
 
 	// prepare the client and send the payload
 	req, _ := http.NewRequest("POST", t.traceURL, encoder)
@@ -117,19 +128,7 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	if err != nil {
 		return &http.Response{StatusCode: 0}, err
 	}
-	defer func() {
-		// The default HTTP client's Transport does not
-		// attempt to reuse HTTP/1.0 or HTTP/1.1 TCP connections
-		// ("keep-alive") unless the Body is read to completion and is
-		// closed.
-		// Buffer the response body so the caller doesn't need to worry about
-		// reading and closing the response. This isn't very expensive because
-		// the responses from the Agent are always short.
-		var buf bytes.Buffer
-		io.Copy(&buf, response.Body)
-		response.Body.Close()
-		response.Body = ioutil.NopCloser(&buf)
-	}()
+	defer response.Body.Close()
 
 	// if we got a 404 we should downgrade the API to a stable version (at most once)
 	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
@@ -152,11 +151,24 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 
 	// Encode the service table
 	encoder := t.pool.Borrow()
-	defer t.pool.Return(encoder)
+	encoderBuffer := encoder.Buffer()
+	defer func() {
+		// We set the encoder's buffer to the old one before returning the encoder to the pool
+		encoder.SetBuffer(encoderBuffer)
+		t.pool.Return(encoder)
+	}()
 
 	if err := encoder.EncodeServices(services); err != nil {
 		return nil, err
 	}
+
+	// When we send the encoder as the request body, the persistConn.writeLoop() goroutine
+	// can theoretically read the underlying buffer whereas the encoder has been returned to the pool.
+	// This can lead to a race condition and make the app panicking.
+	// That's why we create a new buffer here, though we use the same slice of bytes to avoid allocating new memory.
+	// It's fine here because the two functions that can happen at the same time are bytes.Reset and bytes.Read,
+	// and they doesn't modify the underlying data.
+	encoder.SetBuffer(bytes.NewBuffer(encoderBuffer.Bytes()))
 
 	// Send it
 	req, err := http.NewRequest("POST", t.serviceURL, encoder)
@@ -171,19 +183,7 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 	if err != nil {
 		return &http.Response{StatusCode: 0}, err
 	}
-	defer func() {
-		// The default HTTP client's Transport does not
-		// attempt to reuse HTTP/1.0 or HTTP/1.1 TCP connections
-		// ("keep-alive") unless the Body is read to completion and is
-		// closed.
-		// Buffer the response body so the caller doesn't need to worry about
-		// reading and closing the response. This isn't very expensive because
-		// the responses from the Agent are always short.
-		var buf bytes.Buffer
-		io.Copy(&buf, response.Body)
-		response.Body.Close()
-		response.Body = ioutil.NopCloser(&buf)
-	}()
+	defer response.Body.Close()
 
 	// Downgrade if necessary
 	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
