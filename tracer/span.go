@@ -314,6 +314,13 @@ func (s *Span) SetSamplingPriority(priority int) {
 	}
 }
 
+// HasSamplingPriority returns true if sampling priority is set.
+// It can be defined to either zero or non-zero.
+func (s *Span) HasSamplingPriority() bool {
+	_, hasSamplingPriority := s.Metrics[samplingPriorityKey]
+	return hasSamplingPriority
+}
+
 // GetSamplingPriority gets the sampling priority.
 func (s *Span) GetSamplingPriority() int {
 	return int(s.Metrics[samplingPriorityKey])

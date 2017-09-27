@@ -177,7 +177,7 @@ func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
 
 	span.buffer = newSpanBuffer(t.channels, 0, 0)
 	t.Sample(span)
-	span.SetSamplingPriority(1) // [TODO:christian] introduce distributed sampling here
+	// [TODO:christian] introduce distributed sampling here
 	span.buffer.Push(span)
 
 	// Add the process id to all root spans
@@ -200,7 +200,7 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 
 		span.buffer = newSpanBuffer(t.channels, 0, 0)
 		t.Sample(span)
-		span.SetSamplingPriority(1) // [TODO:christian] introduce distributed sampling here
+		// [TODO:christian] introduce distributed sampling here
 		span.buffer.Push(span)
 
 		return span
@@ -212,7 +212,9 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 
 	// child sampling same as the parent
 	span.Sampled = parent.Sampled
-	span.SetSamplingPriority(parent.GetSamplingPriority())
+	if parent.HasSamplingPriority() {
+		span.SetSamplingPriority(parent.GetSamplingPriority())
+	}
 
 	span.parent = parent
 	span.buffer = parent.buffer

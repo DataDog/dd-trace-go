@@ -98,16 +98,14 @@ func TestSpanSetMetric(t *testing.T) {
 
 	// check the map is properly initialized
 	span.SetMetric("bytes", 1024.42)
-	assert.Equal(2, len(span.Metrics))
+	assert.Equal(1, len(span.Metrics))
 	assert.Equal(1024.42, span.Metrics["bytes"])
-	assert.Equal(0.0, span.Metrics["_sampling_priority"]) // [FIXME:christian] audit this
 
 	// operating on a finished span is a no-op
 	span.Finish()
 	span.SetMetric("finished.test", 1337)
-	assert.Equal(2, len(span.Metrics))
+	assert.Equal(1, len(span.Metrics))
 	assert.Equal(0.0, span.Metrics["finished.test"])
-	assert.Equal(0.0, span.Metrics["_sampling_priority"]) // [FIXME:christian] audit this
 }
 
 func TestSpanError(t *testing.T) {
@@ -258,10 +256,13 @@ func TestSpanSamplingPriority(t *testing.T) {
 	tracer := NewTracer()
 
 	span := tracer.NewRootSpan("my.name", "my.service", "my.resource")
-	assert.Equal(1.0, span.Metrics["_sampling_priority_v1"], "default sampling priority for root spans is 0")
-	assert.Equal(1, span.GetSamplingPriority(), "default sampling priority for root spans is 1")
+	assert.Equal(0.0, span.Metrics["_sampling_priority_v1"], "default sampling priority if undefined is 0")
+	assert.False(span.HasSamplingPriority(), "by default, sampling priority is undefined")
+	assert.Equal(0, span.GetSamplingPriority(), "default sampling priority for root spans is 0")
+
 	childSpan := tracer.NewChildSpan("my.child", span)
 	assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
+	assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
 	assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
 
 	span.SetSamplingPriority(0)
@@ -269,6 +270,7 @@ func TestSpanSamplingPriority(t *testing.T) {
 	assert.Equal(0, span.GetSamplingPriority(), "by default, sampling priority is 0")
 	childSpan = tracer.NewChildSpan("my.child", span)
 	assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
+	assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
 	assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
 
 	span.SetSamplingPriority(-1)
@@ -276,6 +278,7 @@ func TestSpanSamplingPriority(t *testing.T) {
 	assert.Equal(0, span.GetSamplingPriority(), "by default, sampling priority can't be negative")
 	childSpan = tracer.NewChildSpan("my.child", span)
 	assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
+	assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
 	assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
 
 	span.SetSamplingPriority(1)
@@ -283,6 +286,7 @@ func TestSpanSamplingPriority(t *testing.T) {
 	assert.Equal(1, span.GetSamplingPriority(), "sampling priority is now 1")
 	childSpan = tracer.NewChildSpan("my.child", span)
 	assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
+	assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
 	assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
 
 	span.SetSamplingPriority(42)
@@ -290,6 +294,7 @@ func TestSpanSamplingPriority(t *testing.T) {
 	assert.Equal(42, span.GetSamplingPriority(), "sampling priority works for values above 1")
 	childSpan = tracer.NewChildSpan("my.child", span)
 	assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
+	assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
 	assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
 }
 
