@@ -3,7 +3,6 @@ package tracer
 import (
 	"bytes"
 	"encoding/json"
-	"sync"
 
 	"github.com/ugorji/go/codec"
 )
@@ -15,15 +14,13 @@ type Encoder interface {
 	EncodeServices(services map[string]Service) error
 	Read(p []byte) (int, error)
 	ContentType() string
-	Buffer() *bytes.Buffer
-	SetBuffer(*bytes.Buffer)
+	Reset()
 }
 
 var mh codec.MsgpackHandle
 
 // msgpackEncoder encodes a list of traces in Msgpack format
 type msgpackEncoder struct {
-	sync.Mutex
 	buffer      *bytes.Buffer
 	encoder     *codec.Encoder
 	contentType string
@@ -43,20 +40,16 @@ func newMsgpackEncoder() *msgpackEncoder {
 // EncodeTraces serializes the given trace list into the internal buffer,
 // returning the error if any.
 func (e *msgpackEncoder) EncodeTraces(traces [][]*Span) error {
-	e.buffer.Reset()
 	return e.encoder.Encode(traces)
 }
 
 // EncodeServices serializes a service map into the internal buffer.
 func (e *msgpackEncoder) EncodeServices(services map[string]Service) error {
-	e.buffer.Reset()
 	return e.encoder.Encode(services)
 }
 
 // Read values from the internal buffer
 func (e *msgpackEncoder) Read(p []byte) (int, error) {
-	e.Lock()
-	defer e.Unlock()
 	return e.buffer.Read(p)
 }
 
@@ -65,16 +58,10 @@ func (e *msgpackEncoder) ContentType() string {
 	return e.contentType
 }
 
-func (e *msgpackEncoder) Buffer() *bytes.Buffer {
-	e.Lock()
-	defer e.Unlock()
-	return e.buffer
-}
-
-func (e *msgpackEncoder) SetBuffer(b *bytes.Buffer) {
-	e.Lock()
-	defer e.Unlock()
-	e.buffer = b
+// Reset redirects the output of the encoder to a newly allocated buffer
+func (e *msgpackEncoder) Reset() {
+	var b bytes.Buffer
+	e.encoder.Reset(&b)
 }
 
 // jsonEncoder encodes a list of traces in JSON format
@@ -99,13 +86,11 @@ func newJSONEncoder() *jsonEncoder {
 // EncodeTraces serializes the given trace list into the internal buffer,
 // returning the error if any.
 func (e *jsonEncoder) EncodeTraces(traces [][]*Span) error {
-	e.buffer.Reset()
 	return e.encoder.Encode(traces)
 }
 
 // EncodeServices serializes a service map into the internal buffer.
 func (e *jsonEncoder) EncodeServices(services map[string]Service) error {
-	e.buffer.Reset()
 	return e.encoder.Encode(services)
 }
 
@@ -119,12 +104,11 @@ func (e *jsonEncoder) ContentType() string {
 	return e.contentType
 }
 
-func (e *jsonEncoder) Buffer() *bytes.Buffer {
-	return e.buffer
-}
-
-func (e *jsonEncoder) SetBuffer(b *bytes.Buffer) {
-	e.buffer = b
+// Reset will allocate a new JSON encoder and a new Buffer
+func (e *jsonEncoder) Reset() {
+	var b bytes.Buffer
+	e.buffer = &b
+	e.encoder = json.NewEncoder(&b)
 }
 
 const (
@@ -161,6 +145,11 @@ func (p *encoderPool) Borrow() Encoder {
 
 	select {
 	case encoder = <-p.pool:
+		// When we send the encoder as the request body, the persistConn.writeLoop() goroutine
+		// can theoretically read the underlying buffer whereas the encoder has been returned to the pool.
+		// This can lead to a race condition and make the app panicking.
+		// That's why we reset the encoder here to use a newly allocated buffer.
+		encoder.Reset()
 	default:
 		switch p.encoderType {
 		case JSON_ENCODER:

@@ -1,7 +1,6 @@
 package tracer
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -95,26 +94,13 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 
 	// borrow an encoder
 	encoder := t.pool.Borrow()
-	encoderBuffer := encoder.Buffer()
-	defer func() {
-		// We set the encoder's buffer to the old one before returning the encoder to the pool
-		encoder.SetBuffer(encoderBuffer)
-		t.pool.Return(encoder)
-	}()
+	defer t.pool.Return(encoder)
 
 	// encode the spans and return the error if any
 	err := encoder.EncodeTraces(traces)
 	if err != nil {
 		return nil, err
 	}
-
-	// When we send the encoder as the request body, the persistConn.writeLoop() goroutine
-	// can theoretically read the underlying buffer whereas the encoder has been returned to the pool.
-	// This can lead to a race condition and make the app panicking.
-	// That's why we create a new buffer here, though we use the same slice of bytes to avoid allocating new memory.
-	// It's fine here because the two functions that can happen at the same time (bytes.Reset and bytes.Read),
-	// doesn't modify the underlying data.
-	encoder.SetBuffer(bytes.NewBuffer(encoderBuffer.Bytes()))
 
 	// prepare the client and send the payload
 	req, _ := http.NewRequest("POST", t.traceURL, encoder)
@@ -151,24 +137,11 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 
 	// Encode the service table
 	encoder := t.pool.Borrow()
-	encoderBuffer := encoder.Buffer()
-	defer func() {
-		// We set the encoder's buffer to the old one before returning the encoder to the pool
-		encoder.SetBuffer(encoderBuffer)
-		t.pool.Return(encoder)
-	}()
+	defer t.pool.Return(encoder)
 
 	if err := encoder.EncodeServices(services); err != nil {
 		return nil, err
 	}
-
-	// When we send the encoder as the request body, the persistConn.writeLoop() goroutine
-	// can theoretically read the underlying buffer whereas the encoder has been returned to the pool.
-	// This can lead to a race condition and make the app panicking.
-	// That's why we create a new buffer here, though we use the same slice of bytes to avoid allocating new memory.
-	// It's fine here because the two functions that can happen at the same time are bytes.Reset and bytes.Read,
-	// and they doesn't modify the underlying data.
-	encoder.SetBuffer(bytes.NewBuffer(encoderBuffer.Bytes()))
 
 	// Send it
 	req, err := http.NewRequest("POST", t.serviceURL, encoder)
