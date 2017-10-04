@@ -14,7 +14,6 @@ type Encoder interface {
 	EncodeServices(services map[string]Service) error
 	Read(p []byte) (int, error)
 	ContentType() string
-	Reset()
 }
 
 var mh codec.MsgpackHandle
@@ -33,7 +32,7 @@ func newMsgpackEncoder() *msgpackEncoder {
 	return &msgpackEncoder{
 		buffer:      buffer,
 		encoder:     encoder,
-		contentType: "application/msgpack",
+		contentType: contentType(msgpackType),
 	}
 }
 
@@ -58,12 +57,6 @@ func (e *msgpackEncoder) ContentType() string {
 	return e.contentType
 }
 
-// Reset redirects the output of the encoder to a newly allocated buffer
-func (e *msgpackEncoder) Reset() {
-	var b bytes.Buffer
-	e.encoder.Reset(&b)
-}
-
 // jsonEncoder encodes a list of traces in JSON format
 type jsonEncoder struct {
 	buffer      *bytes.Buffer
@@ -79,7 +72,7 @@ func newJSONEncoder() *jsonEncoder {
 	return &jsonEncoder{
 		buffer:      buffer,
 		encoder:     encoder,
-		contentType: "application/json",
+		contentType: contentType(jsonType),
 	}
 }
 
@@ -104,66 +97,41 @@ func (e *jsonEncoder) ContentType() string {
 	return e.contentType
 }
 
-// Reset will allocate a new JSON encoder and a new Buffer
-func (e *jsonEncoder) Reset() {
-	var b bytes.Buffer
-	e.buffer = &b
-	e.encoder = json.NewEncoder(&b)
-}
-
 const (
-	JSON_ENCODER = iota
-	MSGPACK_ENCODER
+	jsonType = iota
+	msgpackType
 )
 
-// EncoderPool is a pool meant to share the buffers required to encode traces.
-// It naively tries to cap the number of active encoders, but doesn't enforce
-// the limit. To use a pool, you should Borrow() for an encoder and then
-// Return() that encoder to the pool. Encoders in that pool should honor
-// the Encoder interface.
-type encoderPool struct {
-	encoderType int
-	pool        chan Encoder
-}
-
-func newEncoderPool(encoderType, size int) (*encoderPool, string) {
-	pool := &encoderPool{
-		encoderType: encoderType,
-		pool:        make(chan Encoder, size),
-	}
-
-	// Borrow an encoder to retrieve the default ContentType
-	encoder := pool.Borrow()
-	pool.Return(encoder)
-
-	contentType := encoder.ContentType()
-	return pool, contentType
-}
-
-func (p *encoderPool) Borrow() Encoder {
-	var encoder Encoder
-
-	select {
-	case encoder = <-p.pool:
-		// When we send the encoder as the request body, the persistConn.writeLoop() goroutine
-		// can theoretically read the underlying buffer whereas the encoder has been returned to the pool.
-		// This can lead to a race condition and make the app panicking.
-		// That's why we reset the encoder here to use a newly allocated buffer.
-		encoder.Reset()
+func contentType(encoderType int) string {
+	switch encoderType {
+	case jsonType:
+		return "application/json"
+	case msgpackType:
+		return "application/msgpack"
 	default:
-		switch p.encoderType {
-		case JSON_ENCODER:
-			encoder = newJSONEncoder()
-		case MSGPACK_ENCODER:
-			encoder = newMsgpackEncoder()
-		}
+		return ""
 	}
-	return encoder
 }
 
-func (p *encoderPool) Return(e Encoder) {
-	select {
-	case p.pool <- e:
+// encoderFactory will provide a new encoder each time we want to flush traces or services.
+type encoderFactory struct {
+	EncoderType int
+}
+
+func newEncoderFactory(encoderType int) (*encoderFactory, string) {
+	return &encoderFactory{
+		EncoderType: encoderType,
+	}, contentType(encoderType)
+}
+
+// Get allocates and returns a new encoder
+func (f *encoderFactory) Get() Encoder {
+	switch f.EncoderType {
+	case jsonType:
+		return newJSONEncoder()
+	case msgpackType:
+		return newMsgpackEncoder()
 	default:
+		return nil
 	}
 }

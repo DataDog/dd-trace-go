@@ -14,10 +14,9 @@ import (
 const (
 	defaultHostname    = "localhost"
 	defaultPort        = "8126"
-	defaultEncoder     = MSGPACK_ENCODER         // defines the default encoder used when the Transport is initialized
-	legacyEncoder      = JSON_ENCODER            // defines the legacy encoder used with earlier agent versions
+	defaultEncoder     = msgpackType             // defines the default encoder used when the Transport is initialized
+	legacyEncoder      = jsonType                // defines the legacy encoder used with earlier agent versions
 	defaultHTTPTimeout = time.Second             // defines the current timeout before giving up with the send process
-	encoderPoolSize    = 5                       // how many encoders are available
 	traceCountHeader   = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
 )
 
@@ -55,16 +54,23 @@ type httpTransport struct {
 	legacyTraceURL    string            // the legacy delivery URL for traces
 	serviceURL        string            // the delivery URL for services
 	legacyServiceURL  string            // the legacy delivery URL for services
-	pool              *encoderPool      // encoding allocates lot of buffers (which might then be resized) so we use a pool so they can be re-used
 	client            *http.Client      // the HTTP client used in the POST
 	headers           map[string]string // the Transport headers
 	compatibilityMode bool              // the Agent targets a legacy API for compatibility reasons
+
+	// [WARNING] We tried to reuse encoders thanks to a pool, but that led us to having race conditions.
+	// Indeed, when we send the encoder as the request body, the persistConn.writeLoop() goroutine
+	// can theoretically read the underlying buffer whereas the encoder has been returned to the pool.
+	// Since the underlying bytes.Buffer is not thread safe, this can make the app panicking.
+	// since this method will later on spawn a goroutine referencing this buffer.
+	// That's why we prefer the less performant yet SAFE implementation of allocating a new encoder every time we flush.
+	encoderFactory *encoderFactory
 }
 
 // newHTTPTransport returns an httpTransport for the given endpoint
 func newHTTPTransport(hostname, port string) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
-	pool, contentType := newEncoderPool(defaultEncoder, encoderPoolSize)
+	encoderFactory, contentType := newEncoderFactory(defaultEncoder)
 	defaultHeaders := map[string]string{
 		"Content-Type":                  contentType,
 		"Datadog-Meta-Lang":             ext.Lang,
@@ -78,7 +84,7 @@ func newHTTPTransport(hostname, port string) *httpTransport {
 		legacyTraceURL:   fmt.Sprintf("http://%s:%s/v0.2/traces", hostname, port),
 		serviceURL:       fmt.Sprintf("http://%s:%s/v0.3/services", hostname, port),
 		legacyServiceURL: fmt.Sprintf("http://%s:%s/v0.2/services", hostname, port),
-		pool:             pool,
+		encoderFactory:   encoderFactory,
 		client: &http.Client{
 			Timeout: defaultHTTPTimeout,
 		},
@@ -92,9 +98,7 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 		return nil, errors.New("provided an empty URL, giving up")
 	}
 
-	// borrow an encoder
-	encoder := t.pool.Borrow()
-	defer t.pool.Return(encoder)
+	encoder := t.encoderFactory.Get()
 
 	// encode the spans and return the error if any
 	err := encoder.EncodeTraces(traces)
@@ -135,9 +139,7 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 		return nil, errors.New("provided an empty URL, giving up")
 	}
 
-	// Encode the service table
-	encoder := t.pool.Borrow()
-	defer t.pool.Return(encoder)
+	encoder := t.encoderFactory.Get()
 
 	if err := encoder.EncodeServices(services); err != nil {
 		return nil, err
@@ -180,9 +182,8 @@ func (t *httpTransport) SetHeader(key, value string) {
 // changeEncoder switches the internal encoders pool so that a different API with different
 // format can be targeted, preventing failures because of outdated agents
 func (t *httpTransport) changeEncoder(encoderType int) {
-	pool, contentType := newEncoderPool(encoderType, encoderPoolSize)
-	t.pool = pool
-	t.headers["Content-Type"] = contentType
+	t.encoderFactory.EncoderType = encoderType
+	t.headers["Content-Type"] = contentType(encoderType)
 }
 
 // apiDowngrade downgrades the used encoder and API level. This method must fallback to a safe
