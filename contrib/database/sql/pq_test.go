@@ -31,10 +31,10 @@ func TestPostgres(t *testing.T) {
 		Type:    "sql",
 	}
 	expectedSpan.Meta = map[string]string{
-		"db.user":           "postgres",
-		"out.host":          "127.0.0.1",
-		"out.port":          "55432",
-		"db.name":           "postgres",
+		"db.user":  "postgres",
+		"out.host": "127.0.0.1",
+		"out.port": "55432",
+		"db.name":  "postgres",
 	}
 
 	sqltest.AllSQLTests(t, testDB, expectedSpan)
