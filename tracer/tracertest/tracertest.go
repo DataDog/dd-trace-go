@@ -18,7 +18,6 @@ func CopySpan(span *tracer.Span, trc *tracer.Tracer) *tracer.Span {
 	newSpan := tracer.NewSpan(span.Name, span.Service, span.Resource, span.SpanID, span.TraceID, span.ParentID, trc)
 	newSpan.Type = ext.SQLType
 	newSpan.Meta = span.Meta
-	// newSpan.SetSamplingPriority(span.GetSamplingPriority())
 	return newSpan
 }
 
