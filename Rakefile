@@ -77,6 +77,7 @@ namespace :lint do
   desc "install metalinters"
   task :install do
     sh "go get -u github.com/alecthomas/gometalinter"
+    sh "cd ~/.go_workspace/src/github.com/alecthomas/gometalinter && git checkout v1.2.1 && go install && cd -"
     sh "gometalinter --install"
   end
 
