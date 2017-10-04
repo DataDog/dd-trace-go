@@ -31,7 +31,7 @@ func CompareSpan(t *testing.T, expectedSpan, actualSpan *tracer.Span, debug ...b
 	assert.Equal(expectedSpan.Service, actualSpan.Service)
 	assert.Equal(expectedSpan.Resource, actualSpan.Resource)
 	assert.Equal(expectedSpan.Type, actualSpan.Type)
-	assert.True(reflect.DeepEqual(expectedSpan.Meta, actualSpan.Meta))
+	assert.True(reflect.DeepEqual(expectedSpan.Meta, actualSpan.Meta), fmt.Sprintf("%v != %v", expectedSpan.Meta, actualSpan.Meta))
 }
 
 // Return a Tracer with a DummyTransport

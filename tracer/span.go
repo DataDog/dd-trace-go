@@ -14,6 +14,8 @@ const (
 	errorMsgKey   = "error.msg"
 	errorTypeKey  = "error.type"
 	errorStackKey = "error.stack"
+
+	samplingPriorityKey = "_sampling_priority_v1"
 )
 
 // Span represents a computation. Callers must call Finish when a span is
@@ -301,6 +303,27 @@ func (s *Span) Tracer() *Tracer {
 		return nil
 	}
 	return s.tracer
+}
+
+// SetSamplingPriority sets the sampling priority.
+// Default is 0, any higher value is interpreted as a hint on
+// how interesting this span is, and should be kept by the backend.
+func (s *Span) SetSamplingPriority(priority int) {
+	if priority >= 0 {
+		s.SetMetric(samplingPriorityKey, float64(priority))
+	}
+}
+
+// HasSamplingPriority returns true if sampling priority is set.
+// It can be defined to either zero or non-zero.
+func (s *Span) HasSamplingPriority() bool {
+	_, hasSamplingPriority := s.Metrics[samplingPriorityKey]
+	return hasSamplingPriority
+}
+
+// GetSamplingPriority gets the sampling priority.
+func (s *Span) GetSamplingPriority() int {
+	return int(s.Metrics[samplingPriorityKey])
 }
 
 // NextSpanID returns a new random span id.

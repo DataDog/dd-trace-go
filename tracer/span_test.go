@@ -49,11 +49,16 @@ func TestSpanSetMetas(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
 	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	span.SetSamplingPriority(0) // avoid interferences with "_sampling_priority_v1" meta
 	metas := map[string]string{
 		"error.msg":   "Something wrong",
 		"error.type":  "*errors.errorString",
 		"status.code": "200",
 		"system.pid":  "29176",
+	}
+	extraMetas := map[string]string{
+		"custom.1": "something custom",
+		"custom.2": "something even more special",
 	}
 	nopMetas := map[string]string{
 		"nopKey1": "nopValue1",
@@ -62,16 +67,24 @@ func TestSpanSetMetas(t *testing.T) {
 
 	// check the map is properly initialized
 	span.SetMetas(metas)
-	assert.Equal(len(span.Meta), len(metas))
+	assert.Equal(len(metas), len(span.Meta))
 	for k := range metas {
 		assert.Equal(metas[k], span.Meta[k])
 	}
+
+	// check a second call adds the new metas, but does not remove old ones
+	span.SetMetas(extraMetas)
+	assert.Equal(len(metas)+len(extraMetas), len(span.Meta))
+	for k := range extraMetas {
+		assert.Equal(extraMetas[k], span.Meta[k])
+	}
+
 	assert.Equal(span.Meta["status.code"], "200")
 
 	// operating on a finished span is a no-op
 	span.Finish()
 	span.SetMetas(nopMetas)
-	assert.Equal(len(span.Meta), len(metas))
+	assert.Equal(len(metas)+len(extraMetas), len(span.Meta))
 	for k := range nopMetas {
 		assert.Equal("", span.Meta[k])
 	}
@@ -236,6 +249,53 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 			tracer.flushTraces()
 		}
 	}
+}
+
+func TestSpanSamplingPriority(t *testing.T) {
+	assert := assert.New(t)
+	tracer := NewTracer()
+
+	span := tracer.NewRootSpan("my.name", "my.service", "my.resource")
+	assert.Equal(0.0, span.Metrics["_sampling_priority_v1"], "default sampling priority if undefined is 0")
+	assert.False(span.HasSamplingPriority(), "by default, sampling priority is undefined")
+	assert.Equal(0, span.GetSamplingPriority(), "default sampling priority for root spans is 0")
+
+	childSpan := tracer.NewChildSpan("my.child", span)
+	assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
+	assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
+	assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
+
+	span.SetSamplingPriority(0)
+	assert.Equal(0.0, span.Metrics["_sampling_priority_v1"], "key has been deleted")
+	assert.Equal(0, span.GetSamplingPriority(), "by default, sampling priority is 0")
+	childSpan = tracer.NewChildSpan("my.child", span)
+	assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
+	assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
+	assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
+
+	span.SetSamplingPriority(-1)
+	assert.Equal(0.0, span.Metrics["_sampling_priority_v1"], "key has been deleted")
+	assert.Equal(0, span.GetSamplingPriority(), "by default, sampling priority can't be negative")
+	childSpan = tracer.NewChildSpan("my.child", span)
+	assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
+	assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
+	assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
+
+	span.SetSamplingPriority(1)
+	assert.Equal(1.0, span.Metrics["_sampling_priority_v1"], "sampling priority is now 1")
+	assert.Equal(1, span.GetSamplingPriority(), "sampling priority is now 1")
+	childSpan = tracer.NewChildSpan("my.child", span)
+	assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
+	assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
+	assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
+
+	span.SetSamplingPriority(42)
+	assert.Equal(42.0, span.Metrics["_sampling_priority_v1"], "sampling priority works for values above 1")
+	assert.Equal(42, span.GetSamplingPriority(), "sampling priority works for values above 1")
+	childSpan = tracer.NewChildSpan("my.child", span)
+	assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
+	assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
+	assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
 }
 
 type boomError struct{}
