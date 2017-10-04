@@ -68,12 +68,14 @@ func serverSpan(t *tracer.Tracer, ctx context.Context, method, service string) *
 	span.SetMeta("gprc.method", method)
 	span.Type = "go"
 
-	traceID, parentID, samplingPriority := getCtxMeta(ctx)
+	traceID, parentID, samplingPriority, hasSamplingPriority := getCtxMeta(ctx)
 	if traceID != 0 && parentID != 0 {
 		span.TraceID = traceID
 		t.Sample(span) // depends on trace ID so needs to be updated to maximize the chances we get complete traces
 		span.ParentID = parentID
-		span.SetSamplingPriority(samplingPriority)
+		if hasSamplingPriority {
+			span.SetSamplingPriority(samplingPriority)
+		}
 	}
 
 	return span
@@ -85,51 +87,61 @@ func setCtxMeta(span *tracer.Span, ctx context.Context) context.Context {
 		return ctx
 	}
 
-	md := metadata.New(map[string]string{
-		traceIDKey:          strconv.FormatUint(span.TraceID, 10),
-		parentIDKey:         strconv.FormatUint(span.ParentID, 10),
-		samplingPriorityKey: strconv.Itoa(span.GetSamplingPriority()),
-	})
+	var md metadata.MD
+
+	if span.HasSamplingPriority() {
+		md = metadata.New(map[string]string{
+			traceIDKey:          strconv.FormatUint(span.TraceID, 10),
+			parentIDKey:         strconv.FormatUint(span.ParentID, 10),
+			samplingPriorityKey: strconv.Itoa(span.GetSamplingPriority()),
+		})
+	} else {
+		md = metadata.New(map[string]string{
+			traceIDKey:  strconv.FormatUint(span.TraceID, 10),
+			parentIDKey: strconv.FormatUint(span.ParentID, 10),
+		})
+	}
 	if existing, ok := metadata.FromContext(ctx); ok {
 		md = metadata.Join(existing, md)
 	}
 	return metadata.NewContext(ctx, md)
 }
 
-// getCtxMeta will return ids and sampling priority embedded in a context.
-func getCtxMeta(ctx context.Context) (traceID, parentID uint64, samplingPriority int) {
+// getCtxMeta will return ids embedded in a context.
+func getCtxMeta(ctx context.Context) (traceID, parentID uint64, samplingPriority int, hasSamplingPriority bool) {
 	if md, ok := metadata.FromContext(ctx); ok {
-		if id := getID(md, traceIDKey); id > 0 {
+		if id, ok := getID(md, traceIDKey); id > 0 && ok {
 			traceID = id
 		}
-		if id := getID(md, parentIDKey); id > 0 {
+		if id, ok := getID(md, parentIDKey); id > 0 && ok {
 			parentID = id
 		}
-		if v := getInt(md, samplingPriorityKey); v > 0 {
-			samplingPriority = v
+		if i, ok := getInt(md, samplingPriorityKey); ok {
+			samplingPriority = i
+			hasSamplingPriority = true
 		}
 	}
-	return traceID, parentID, samplingPriority
+	return traceID, parentID, samplingPriority, hasSamplingPriority
 }
 
 // getID parses an id from the metadata.
-func getID(md metadata.MD, name string) uint64 {
+func getID(md metadata.MD, name string) (uint64, bool) {
 	for _, str := range md[name] {
 		id, err := strconv.Atoi(str)
 		if err == nil {
-			return uint64(id)
+			return uint64(id), true
 		}
 	}
-	return 0
+	return 0, false
 }
 
-// getBool gets a bool from the metadata (0 or 1 converted to bool).
-func getInt(md metadata.MD, name string) int {
+// getInt gets an int from the metadata (0 or 1 converted to bool).
+func getInt(md metadata.MD, name string) (int, bool) {
 	for _, str := range md[name] {
 		v, err := strconv.Atoi(str)
 		if err == nil {
-			return int(v)
+			return int(v), true
 		}
 	}
-	return 0
+	return 0, false
 }

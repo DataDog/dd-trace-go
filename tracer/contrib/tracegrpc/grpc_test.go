@@ -142,12 +142,94 @@ func TestChild(t *testing.T) {
 	assert.Equal(cspan.Service, "tracegrpc")
 	assert.Equal(cspan.Resource, "child")
 	assert.True(cspan.Duration > 0)
+	assert.False(cspan.HasSamplingPriority(), "the sampling priority should not be defined by default")
 
 	assert.NotNil(sspan, "there should be a span with 'grpc.server' as Name")
 	assert.Equal(sspan.Error, int32(0))
 	assert.Equal(sspan.Service, "tracegrpc")
 	assert.Equal(sspan.Resource, "/tracegrpc.Fixture/Ping")
 	assert.True(sspan.Duration > 0)
+	assert.False(sspan.HasSamplingPriority(), "the sampling priority should not be defined by default")
+}
+
+func testSamplingPriority(t *testing.T, samplingPriority int) {
+	assert := assert.New(t)
+
+	testTracer, testTransport := getTestTracer()
+	testTracer.SetDebugLogging(debug)
+
+	rig, err := newRig(testTracer, true)
+	if err != nil {
+		t.Fatalf("error setting up rig: %s", err)
+	}
+	defer rig.Close()
+	client := rig.client
+
+	span := testTracer.NewRootSpan("a", "b", "c")
+	span.SetSamplingPriority(samplingPriority) // activate sampling priority
+
+	ctx := tracer.ContextWithSpan(context.Background(), span)
+	resp, err := client.Ping(ctx, &FixtureRequest{Name: "pass"})
+	assert.Nil(err)
+	span.Finish()
+	assert.Equal(resp.Message, "passed")
+
+	testTracer.ForceFlush()
+	traces := testTransport.Traces()
+
+	// A word here about what is going on: this is technically a
+	// distributed trace, while we're in this example in the Go world
+	// and within the same exec, client could know about server details.
+	// But this is not the general cases. So, as we only connect client
+	// and server through their span IDs, they can be flushed as independant
+	// traces. They could also be flushed at once, this is an implementation
+	// detail, what is important is that all of it is flushed, at some point.
+	if len(traces) == 0 {
+		assert.Fail("there should be at least one trace")
+	}
+	var spans []*tracer.Span
+	for _, trace := range traces {
+		for _, span := range trace {
+			spans = append(spans, span)
+		}
+	}
+	assert.Len(spans, 3)
+
+	var sspan, cspan, tspan *tracer.Span
+
+	for _, s := range spans {
+		// order of traces in buffer is not garanteed
+		switch s.Name {
+		case "grpc.server":
+			sspan = s
+		case "grpc.client":
+			cspan = s
+		case "a":
+			tspan = s
+		}
+	}
+
+	assert.NotNil(sspan, "there should be a span with 'grpc.server' as Name")
+
+	assert.NotNil(cspan, "there should be a span with 'grpc.client' as Name")
+	assert.Equal(cspan.GetMeta("grpc.code"), "OK")
+
+	assert.NotNil(tspan, "there should be a span with 'a' as Name")
+	assert.Equal(cspan.TraceID, tspan.TraceID)
+	assert.Equal(sspan.TraceID, tspan.TraceID)
+
+	// Now the most important part of the test, check that sampling
+	// priority made it all the way down the pipeline.
+	for _, span := range spans {
+		assert.True(span.HasSamplingPriority())
+		assert.Equal(samplingPriority, span.GetSamplingPriority())
+	}
+}
+
+func TestSamplingPriority(t *testing.T) {
+	testSamplingPriority(t, 0)
+	testSamplingPriority(t, 1)
+	testSamplingPriority(t, 42)
 }
 
 func TestPass(t *testing.T) {
