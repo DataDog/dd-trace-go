@@ -12,4 +12,4 @@ List of integrations: https://godoc.org/github.com/DataDog/dd-trace-go/tracer#pk
 
 - [tracer](https://github.com/DataDog/dd-trace-go/tree/master/tracer): contains the low level API used to trace the different libraries.
 
-- [libs](https://github.com/DataDog/dd-trace-go/tree/master/libs): contains the different libraries supported by our APM solution.
+- [contrib](https://github.com/DataDog/dd-trace-go/tree/master/contrib): contains the different libraries supported by our APM solution.
