@@ -15,48 +15,54 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
-// Register takes a driver, registers a traced version of this one and
-// then returns the name of the traced driver.
-// The last parameter enables you to use a custom tracer.
-func Register(driver driver.Driver, t *tracer.Tracer) (traceDriverName string) {
-	if driver == nil {
-		log.Error("RegisterDriver: driver is nil")
-		return ""
-	}
-	if t == nil {
-		t = tracer.DefaultTracer
-	}
-	driverName := getDriverName(driver)
-	traceDriverName = getTraceDriverName(driverName)
-
-	// if no driver is registered under the traceDriverName, we register it
-	if !stringInSlice(sql.Drivers(), traceDriverName) {
-		d := Driver{driver, t, driverName}
-		sql.Register(traceDriverName, d)
-		log.Infof("Register %s driver", traceDriverName)
-	} else {
-		log.Warnf("Register: %s already registered", traceDriverName)
-	}
-	return traceDriverName
-}
-
 // Open will first register the  version of the `driver` if not yet registered and will then open a connection with it.
 // This is usually the only function to use when there is no need for the granularity offered by Register and OpenWithService.
 // The last parameter is optional and allows you to pass a custom tracer
 func Open(driver driver.Driver, dsn, service string, t ...*tracer.Tracer) (*sql.DB, error) {
-	// we first register the driver
-	traceDriver := Register(driver, getTracer(t))
+	// Get the generic name of the driver
+	driverName, err := DriverName(driver)
+	if err != nil {
+		return nil, err
+	}
 
-	// once the  driver is registered, we return the sql.DB to connect to our traced driver
-	return OpenWithService(traceDriver, dsn, service)
+	// Register a traced version of the driver
+	Register(driverName, driver, t...)
+
+	// Once the  driver is registered, we return the sql.DB to connect to our traced driver.
+	return OpenWithService(driverName, dsn, service)
 }
 
-// Open extends the usual API of sql.Open so you can specify the name of the service
+// Register takes a driver and registers a traced version of this one under the name "nameTraced".
+// The last parameter enables you to use a custom tracer.
+func Register(name string, driver driver.Driver, t ...*tracer.Tracer) {
+	if driver == nil {
+		log.Error("RegisterDriver: driver is nil")
+		return
+	}
+
+	// Add suffix "Traced" to `name` to avoid a collision with the original name
+	// which registered automatically when we import the driver packages.
+	// For instance in the "github.com/lib/pq" package, the Register() function is called in the init() function.
+	tracedDriverName := TracedName(name)
+
+	// If no driver is registered under the tracedDriverName, we register it.
+	if !stringInSlice(sql.Drivers(), tracedDriverName) {
+		d := Driver{driver, getTracer(t), name}
+		sql.Register(tracedDriverName, d)
+		log.Infof("Register %s driver", tracedDriverName)
+	} else {
+		log.Warnf("Register: %s already registered", tracedDriverName)
+	}
+}
+
+// OpenWithService extends the usual API of sql.Open so you can specify the name of the service
 // under which the traces will appear in the datadog app.
+// It returns a connection to the previously registered traced driver.
+// Note: You should always call Register() before OpenWithService().
 func OpenWithService(driverName, dsn, service string) (*sql.DB, error) {
 	// The service is passed through the DSN
 	dsnAndService := newDSNAndService(dsn, service)
-	return sql.Open(driverName, dsnAndService)
+	return sql.Open(TracedName(driverName), dsnAndService)
 }
 
 // Driver is a driver we use as a middleware between the database/sql package

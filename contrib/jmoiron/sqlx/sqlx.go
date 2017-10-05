@@ -14,16 +14,22 @@ import (
 // This is usually the only function to use when there is no need for the granularity offered by Register and Open.
 // The last argument is optional and allows you to pass a custom tracer.
 func Open(driver driver.Driver, dsn, service string, t ...*tracer.Tracer) (*sqlx.DB, error) {
-	// we first register the driver
-	traceDriver := Register(driver, getTracer(t))
+	// Get the generic name of the driver
+	driverName, err := sql.DriverName(driver)
+	if err != nil {
+		return nil, err
+	}
 
-	// once the  driver is registered, we return the sqlx.DB to connect to our traced driver
-	return OpenWithService(traceDriver, dsn, service)
+	// Register a traced version of the driver
+	Register(driverName, driver, getTracer(t))
+
+	// Return a connection to our traced driver
+	return OpenWithService(driverName, dsn, service)
 }
 
-// Register registers a traced version of `driver`.
-func Register(driver driver.Driver, t *tracer.Tracer) (traceDriverName string) {
-	return sql.Register(driver, t)
+// Register registers a traced version of the driver under the name `nameTraced`.
+func Register(name string, driver driver.Driver, t ...*tracer.Tracer) {
+	sql.Register(name, driver, t...)
 }
 
 // OpenWithService returns a traced version of *sqlx.DB.
@@ -32,7 +38,11 @@ func OpenWithService(driverName, dsn, service string) (*sqlx.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sqlx.NewDb(db, driverName), err
+
+	// WARN: We need to call sqlx.NewDb with the original driver name (without the suffix "Traced"),
+	// because under the hood sqlx uses the hardcoded original driver names to resolve the placeholders.
+	// See the BindType() function for more information: github.com/jmoiron/sqlx/bind.go
+	return sqlx.NewDb(db, sql.UntracedName(driverName)), err
 }
 
 // getTracer returns either the tracer passed as the last argument or a default tracer.

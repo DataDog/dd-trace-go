@@ -50,23 +50,28 @@ func getTracer(tracers []*tracer.Tracer) *tracer.Tracer {
 	return t
 }
 
-// getDriverName returns the driver type.
-func getDriverName(driver driver.Driver) string {
+// DriverName returns the generic driver name for the drivers supported by this package.
+func DriverName(driver driver.Driver) (string, error) {
 	if driver == nil {
-		return ""
+		return "", errors.New("Driver is nil.")
 	}
 	driverType := fmt.Sprintf("%s", reflect.TypeOf(driver))
 	switch driverType {
 	case "*mysql.MySQLDriver":
-		return "mysql"
+		return "mysql", nil
 	case "*pq.Driver":
-		return "postgres"
+		return "postgres", nil
 	default:
-		return ""
+		return "", errors.New("Driver not yet supported.")
 	}
 }
 
-// getTraceDriverName add the suffix "Traced" to the driver name.
-func getTraceDriverName(driverName string) string {
+// TracedName add the suffix "Traced" to the driver name.
+func TracedName(driverName string) string {
 	return driverName + "Traced"
+}
+
+// UntracedName removes the suffix "Traced" from the traced driver name.
+func UntracedName(tracedDriverName string) string {
+	return strings.TrimSuffix(tracedDriverName, "Traced")
 }

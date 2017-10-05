@@ -27,3 +27,10 @@ func TestDSNAndService(t *testing.T) {
 	assert.Equal(dsn, actualDSN)
 	assert.Equal(service, actualService)
 }
+
+func TestTracedName(t *testing.T) {
+	assert := assert.New(t)
+
+	assert.Equal("postgresTraced", TracedName("postgres"))
+	assert.Equal("postgres", UntracedName("postgresTraced"))
+}
