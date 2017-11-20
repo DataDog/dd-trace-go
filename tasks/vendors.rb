@@ -4,7 +4,7 @@ task :init do
   sh 'go get -u github.com/alecthomas/gometalinter'
   sh 'gometalinter --install'
 
-  sh "go get -v ./contrib/..."
+  sh "go get -t -v ./contrib/..."
 end
 
 namespace :vendors do
