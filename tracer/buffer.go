@@ -14,7 +14,7 @@ const (
 	// This is to avoid memory leaks, if above that value, spans are randomly
 	// dropped and ignore, resulting in corrupted tracing data, but ensuring
 	// original program continues to work as expected.
-	spanBufferDefaultMaxSize = 10000
+	spanBufferDefaultMaxSize = 1e5
 )
 
 type spanBuffer struct {
