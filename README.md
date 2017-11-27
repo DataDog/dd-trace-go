@@ -10,41 +10,34 @@ Requirements:
 * Go 1.7 or later
 * Docker
 * Rake
-* gometalinter – `go get -u github.com/alecthomas/gometalinter`
-* golint – `go get -u github.com/golang/lint/golint`
-* goconst – `go get -u github.com/jgautheron/goconst/cmd/goconst`
-* gas – `go get -u github.com/GoASTScanner/gas`
-* ineffassign – `go get -u github.com/gordonklaus/ineffassign`
-* gocyclo – `go get -u github.com/fzipp/gocyclo`
+* [gometalinter](https://github.com/alecthomas/gometalinter)
 
 ### Run the tests
 
-Start the containers defined in `docker-compose.yml`:
+Start the containers defined in `docker-compose.yml` so that integrations can be tested:
 
 ```
 $ docker-compose up -d
+$ ./wait-for-services.sh  # wait that all services are up and running
 ```
 
-Fetch this package's dependencies:
+Fetch package's third-party dependencies (integrations and testing utilities):
 
 ```
-$ rake get
+$ rake init
 ```
 
 This will only work if your working directory is in $GOPATH/src.
 
-Finally, run the tests:
+Now, you can run your tests via :
 
 ```
-$ rake ci
+$ rake test:lint  # linting via gometalinter
+$ rake test:all   # test the tracer and all integrations
+$ rake test:race  # use the -race flag
 ```
-
-### Create a Branch
-
-???
 
 ## Further Reading
 
 Automatically traced libraries and frameworks: https://godoc.org/github.com/DataDog/dd-trace-go/tracer#pkg-subdirectories
 Sample code: https://godoc.org/github.com/DataDog/dd-trace-go/tracer#pkg-examples
-
