@@ -12,12 +12,24 @@ import (
 )
 
 const (
-	debug = false
+	debug          = false
+	CASSANDRA_HOST = "127.0.0.1:59042"
 )
+
+func newCassandraCluster() *gocql.ClusterConfig {
+	cluster := gocql.NewCluster(CASSANDRA_HOST)
+	// the InitialHostLookup must be disabled in newer versions of
+	// gocql otherwise "no connections were made when creating the session"
+	// error is returned for Cassandra misconfiguration (that we don't need
+	// since we're testing another behavior and not the client).
+	// Check: https://github.com/gocql/gocql/issues/946
+	cluster.DisableInitialHostLookup = true
+	return cluster
+}
 
 // TestMain sets up the Keyspace and table if they do not exist
 func TestMain(m *testing.M) {
-	cluster := gocql.NewCluster("127.0.0.1:59042")
+	cluster := newCassandraCluster()
 	session, _ := cluster.CreateSession()
 
 	// Ensures test keyspace and table person exists.
@@ -33,7 +45,7 @@ func TestErrorWrapper(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	cluster := gocql.NewCluster("127.0.0.1:59042")
+	cluster := newCassandraCluster()
 	session, _ := cluster.CreateSession()
 	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
 	err := TraceQuery("ServiceName", testTracer, q).Exec()
@@ -70,7 +82,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	parentSpan := testTracer.NewChildSpanFromContext("parentSpan", ctx)
 	ctx = tracer.ContextWithSpan(ctx, parentSpan)
 
-	cluster := gocql.NewCluster("127.0.0.1:59042")
+	cluster := newCassandraCluster()
 	session, _ := cluster.CreateSession()
 	q := session.Query("SELECT * from trace.person")
 	tq := TraceQuery("TestServiceName", testTracer, q)
