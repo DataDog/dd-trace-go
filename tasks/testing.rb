@@ -4,7 +4,9 @@ require_relative 'common'
 namespace :test do
   desc 'Run linting on the repository'
   task :lint do
-    sh 'gometalinter --deadline 60s --errors --vendor ./tracer ./contrib/...'
+    # enable-gc is required because with a full linting process we may finish workers memory
+    # fast is used temporarily for a faster CI
+    sh 'gometalinter --deadline 60s --fast --enable-gc --errors --vendor ./tracer ./contrib/...'
   end
 
   desc 'Test all packages'
