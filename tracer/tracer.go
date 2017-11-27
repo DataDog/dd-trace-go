@@ -391,7 +391,7 @@ func (t *Tracer) worker() {
 //
 var DefaultTracer = NewTracer()
 
-// NewRootSpan creates a span with no parent. It's ids will be randomly
+// NewRootSpan creates a span with no parent. Its ids will be randomly
 // assigned.
 func NewRootSpan(name, service, resource string) *Span {
 	return DefaultTracer.NewRootSpan(name, service, resource)
