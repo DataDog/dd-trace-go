@@ -37,4 +37,4 @@ test:
 
   post:
     # add the coverage HTML report as CircleCI artifact
-    - cd "$IMPORT_PATH" && go tool cover -html=profile.cov -o $CIRCLE_ARTIFACTS/coverage.html
+    - cd "$IMPORT_PATH" && go tool cover -html=code.cov -o $CIRCLE_ARTIFACTS/coverage.html
