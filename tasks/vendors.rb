@@ -5,6 +5,7 @@ task :init do
   sh 'gometalinter --install'
 
   sh "go get -t -v ./contrib/..."
+  sh "go get -v github.com/opentracing/opentracing-go"
 end
 
 namespace :vendors do
