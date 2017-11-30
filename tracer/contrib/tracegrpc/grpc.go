@@ -101,15 +101,15 @@ func setCtxMeta(span *tracer.Span, ctx context.Context) context.Context {
 			parentIDKey: strconv.FormatUint(span.ParentID, 10),
 		})
 	}
-	if existing, ok := metadata.FromContext(ctx); ok {
+	if existing, ok := metadata.FromIncomingContext(ctx); ok {
 		md = metadata.Join(existing, md)
 	}
-	return metadata.NewContext(ctx, md)
+	return metadata.NewOutgoingContext(ctx, md)
 }
 
 // getCtxMeta will return ids embedded in a context.
 func getCtxMeta(ctx context.Context) (traceID, parentID uint64, samplingPriority int, hasSamplingPriority bool) {
-	if md, ok := metadata.FromContext(ctx); ok {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if id, ok := getID(md, traceIDKey); id > 0 && ok {
 			traceID = id
 		}
