@@ -40,11 +40,11 @@ type noopCloser struct{}
 
 func (c *noopCloser) Close() error { return nil }
 
-// NewDatadogTracer uses a Configuration object to initialize a
-// Datadog Tracer. The initialization returns a `io.Closer` that
-// can be used to graceful shutdown the tracer. If the configuration object
-// defines a disabled Tracer, a no-op implementation is returned.
-func NewDatadogTracer(config *Configuration) (ot.Tracer, io.Closer, error) {
+// NewTracer uses a Configuration object to initialize a Datadog Tracer.
+// The initialization returns a `io.Closer` that can be used to graceful
+// shutdown the tracer. If the configuration object defines a disabled
+// Tracer, a no-op implementation is returned.
+func NewTracer(config *Configuration) (ot.Tracer, io.Closer, error) {
 	if config.ServiceName == "" {
 		// abort initialization if a `ServiceName` is not defined
 		return nil, nil, errors.New("A Datadog Tracer requires a valid `ServiceName` set")

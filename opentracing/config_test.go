@@ -23,7 +23,7 @@ func TestTracerConstructor(t *testing.T) {
 
 	config := NewConfiguration()
 	config.ServiceName = ""
-	tracer, closer, err := NewDatadogTracer(config)
+	tracer, closer, err := NewTracer(config)
 	assert.Nil(tracer)
 	assert.Nil(closer)
 	assert.NotNil(err)
@@ -35,7 +35,7 @@ func TestDisabledTracer(t *testing.T) {
 
 	config := NewConfiguration()
 	config.Enabled = false
-	tracer, closer, err := NewDatadogTracer(config)
+	tracer, closer, err := NewTracer(config)
 	assert.IsType(&ot.NoopTracer{}, tracer)
 	assert.IsType(&noopCloser{}, closer)
 	assert.Nil(err)
@@ -48,7 +48,7 @@ func TestConfiguration(t *testing.T) {
 	config.SampleRate = 0
 	config.AgentHostname = "ddagent.consul.local"
 	config.AgentPort = "58126"
-	tracer, closer, err := NewDatadogTracer(config)
+	tracer, closer, err := NewTracer(config)
 	assert.NotNil(tracer)
 	assert.NotNil(closer)
 	assert.Nil(err)
