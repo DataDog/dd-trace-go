@@ -1,14 +1,14 @@
 package opentracing
 
 import (
-	"github.com/DataDog/dd-trace-go/tracer"
+	datadog "github.com/DataDog/dd-trace-go/tracer"
 	ot "github.com/opentracing/opentracing-go"
 )
 
 // Tracer is a simple, thin interface for Span creation and SpanContext
 // propagation.
 type Tracer struct {
-	tracer *tracer.Tracer
+	impl *datadog.Tracer
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`
@@ -29,4 +29,12 @@ func (t *Tracer) Inject(sp ot.SpanContext, format interface{}, carrier interface
 // Extract returns a SpanContext instance given `format` and `carrier`.
 func (t *Tracer) Extract(format interface{}, carrier interface{}) (ot.SpanContext, error) {
 	return nil, nil
+}
+
+// Close method implements `io.Closer` interface to graceful shutdown the Datadog
+// Tracer. Note that this is a blocking operation that waits for the flushing Go
+// routine.
+func (t *Tracer) Close() error {
+	t.impl.Stop()
+	return nil
 }
