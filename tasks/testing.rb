@@ -6,17 +6,17 @@ namespace :test do
   task :lint do
     # enable-gc is required because with a full linting process we may finish workers memory
     # fast is used temporarily for a faster CI
-    sh 'gometalinter --deadline 60s --fast --enable-gc --errors --vendor ./tracer ./contrib/...'
+    sh 'gometalinter --deadline 60s --fast --enable-gc --errors --vendor ./opentracing ./tracer ./contrib/...'
   end
 
   desc 'Test all packages'
   task :all do
-    sh 'go test ./tracer ./contrib/...'
+    sh 'go test ./opentracing ./tracer ./contrib/...'
   end
 
   desc 'Test all packages with -race flag'
   task :race do
-    sh 'go test -race ./tracer ./contrib/...'
+    sh 'go test -race ./opentracing ./tracer ./contrib/...'
   end
 
   desc 'Run test coverage'
