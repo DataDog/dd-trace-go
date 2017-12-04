@@ -7,6 +7,7 @@ type SpanContext struct {
 	spanID   uint64
 	parentID uint64
 	sampled  bool
+	span     *Span
 	baggage  map[string]string
 }
 
@@ -34,5 +35,12 @@ func (c SpanContext) WithBaggageItem(key, val string) SpanContext {
 		newBaggage[key] = val
 	}
 	// Use positional parameters so the compiler will help catch new fields.
-	return SpanContext{c.traceID, c.spanID, c.parentID, c.sampled, newBaggage}
+	return SpanContext{
+		traceID:  c.traceID,
+		spanID:   c.spanID,
+		parentID: c.parentID,
+		sampled:  c.sampled,
+		span:     c.span,
+		baggage:  newBaggage,
+	}
 }

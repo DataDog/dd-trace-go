@@ -100,9 +100,21 @@ func (s *Span) Log(data ot.LogData) {
 
 // NewSpan is the OpenTracing Span constructor
 func NewSpan(operationName string) *Span {
-	return &Span{
-		Span: &datadog.Span{
-			Name: operationName,
+	span := &datadog.Span{
+		Name: operationName,
+	}
+
+	otSpan := &Span{
+		Span: span,
+		context: SpanContext{
+			traceID:  span.TraceID,
+			spanID:   span.SpanID,
+			parentID: span.ParentID,
+			sampled:  span.Sampled,
 		},
 	}
+
+	// SpanContext is propagated and used to create children
+	otSpan.context.span = otSpan
+	return otSpan
 }
