@@ -76,3 +76,16 @@ func TestTracerBaggageImmutability(t *testing.T) {
 	assert.Equal("value", parentContext.baggage["key"])
 	assert.Equal("changed!", childContext.baggage["key"])
 }
+
+func TestTracerSpanTags(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	tracer, _, _ := NewTracer(config)
+
+	tag := opentracing.Tag{Key: "key", Value: "value"}
+	span, ok := tracer.StartSpan("web.request", tag).(*Span)
+	assert.True(ok)
+
+	assert.Equal("value", span.Span.Meta["key"])
+}

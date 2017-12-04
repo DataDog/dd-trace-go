@@ -79,6 +79,13 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 		}
 	}
 
+	// set tags if available
+	if len(options.Tags) > 0 {
+		for k, v := range options.Tags {
+			otSpan.SetTag(k, v)
+		}
+	}
+
 	return otSpan
 }
 
