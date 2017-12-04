@@ -1,6 +1,8 @@
 package opentracing
 
 import (
+	"time"
+
 	datadog "github.com/DataDog/dd-trace-go/tracer"
 	ot "github.com/opentracing/opentracing-go"
 )
@@ -16,9 +18,57 @@ type Tracer struct {
 // StartSpan creates, starts, and returns a new Span with the given `operationName`
 // A Span with no SpanReference options (e.g., opentracing.ChildOf() or
 // opentracing.FollowsFrom()) becomes the root of its own trace.
-func (t *Tracer) StartSpan(operationName string, opts ...ot.StartSpanOption) ot.Span {
-	// TODO: implementation missing; returning an empty Span to validate OpenTracing API
-	return &Span{}
+func (t *Tracer) StartSpan(operationName string, options ...ot.StartSpanOption) ot.Span {
+	sso := ot.StartSpanOptions{}
+	for _, o := range options {
+		o.Apply(&sso)
+	}
+
+	return t.startSpanWithOptions(operationName, sso)
+}
+
+func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpanOptions) ot.Span {
+	if options.StartTime.IsZero() {
+		// TODO: we should set this value
+		options.StartTime = time.Now().UTC()
+	}
+
+	var parent *datadog.Span
+	var span *datadog.Span
+
+	for _, ref := range options.References {
+		ctx, ok := ref.ReferencedContext.(SpanContext)
+		if !ok {
+			// ignore the SpanContext since it's not valid
+			continue
+		}
+
+		// if we have parenting define it
+		if ref.Type == ot.ChildOfRef {
+			parent = ctx.span.Span
+		}
+	}
+
+	if parent == nil {
+		// create a root Span with the default service name and resource
+		span = t.impl.NewRootSpan(operationName, t.serviceName, operationName)
+	} else {
+		// create a child Span that inherits from a parent
+		span = t.impl.NewChildSpan(operationName, parent)
+	}
+
+	otSpan := &Span{
+		Span: span,
+		context: SpanContext{
+			traceID:  span.TraceID,
+			spanID:   span.SpanID,
+			parentID: span.ParentID,
+			sampled:  span.Sampled,
+		},
+	}
+
+	otSpan.context.span = otSpan
+	return otSpan
 }
 
 // Inject takes the `sm` SpanContext instance and injects it for
