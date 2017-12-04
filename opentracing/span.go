@@ -9,7 +9,7 @@ import (
 // Span represents an active, un-finished span in the OpenTracing system.
 // Spans are created by the Tracer interface.
 type Span struct {
-	datadog.Span
+	*datadog.Span
 	context SpanContext
 	tracer  *Tracer
 }
@@ -96,4 +96,13 @@ func (s *Span) LogEventWithPayload(event string, payload interface{}) {
 // Log is deprecated: use LogFields or LogKV
 func (s *Span) Log(data ot.LogData) {
 	// TODO: implementation missing
+}
+
+// NewSpan is the OpenTracing Span constructor
+func NewSpan(operationName string) *Span {
+	return &Span{
+		Span: &datadog.Span{
+			Name: operationName,
+		},
+	}
 }
