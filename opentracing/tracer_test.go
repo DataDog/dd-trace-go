@@ -42,3 +42,37 @@ func TestTracerStartChildSpan(t *testing.T) {
 	assert.Equal(tRoot.Span.SpanID, tChild.Span.ParentID)
 	assert.Equal(tRoot.Span.TraceID, tChild.Span.ParentID)
 }
+
+func TestTracerBaggagePropagation(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	tracer, _, _ := NewTracer(config)
+
+	root := tracer.StartSpan("web.request")
+	root.SetBaggageItem("key", "value")
+	child := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context()))
+	context, ok := child.Context().(SpanContext)
+	assert.True(ok)
+
+	assert.Equal("value", context.baggage["key"])
+}
+
+func TestTracerBaggageImmutability(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	tracer, _, _ := NewTracer(config)
+
+	root := tracer.StartSpan("web.request")
+	root.SetBaggageItem("key", "value")
+	child := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context()))
+	child.SetBaggageItem("key", "changed!")
+	parentContext, ok := root.Context().(SpanContext)
+	assert.True(ok)
+	childContext, ok := child.Context().(SpanContext)
+	assert.True(ok)
+
+	assert.Equal("value", parentContext.baggage["key"])
+	assert.Equal("changed!", childContext.baggage["key"])
+}

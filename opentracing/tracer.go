@@ -33,7 +33,7 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 		options.StartTime = time.Now().UTC()
 	}
 
-	var parent *datadog.Span
+	var parent *Span
 	var span *datadog.Span
 
 	for _, ref := range options.References {
@@ -45,7 +45,7 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 
 		// if we have parenting define it
 		if ref.Type == ot.ChildOfRef {
-			parent = ctx.span.Span
+			parent = ctx.span
 		}
 	}
 
@@ -54,7 +54,7 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 		span = t.impl.NewRootSpan(operationName, t.serviceName, operationName)
 	} else {
 		// create a child Span that inherits from a parent
-		span = t.impl.NewChildSpan(operationName, parent)
+		span = t.impl.NewChildSpan(operationName, parent.Span)
 	}
 
 	otSpan := &Span{
@@ -68,6 +68,17 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 	}
 
 	otSpan.context.span = otSpan
+
+	if parent != nil {
+		// propagate baggage items
+		if l := len(parent.context.baggage); l > 0 {
+			otSpan.context.baggage = make(map[string]string, len(parent.context.baggage))
+			for k, v := range parent.context.baggage {
+				otSpan.context.baggage[k] = v
+			}
+		}
+	}
+
 	return otSpan
 }
 
