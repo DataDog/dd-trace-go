@@ -6,9 +6,11 @@ import (
 )
 
 // Tracer is a simple, thin interface for Span creation and SpanContext
-// propagation.
+// propagation. In the current state, this Tracer is a compatibility layer
+// that wraps the Datadog Tracer implementation.
 type Tracer struct {
-	impl *datadog.Tracer
+	impl        *datadog.Tracer // a Datadog Tracer implementation
+	serviceName string          // default Service Name defined in the configuration
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`

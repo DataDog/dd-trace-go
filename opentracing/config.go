@@ -57,7 +57,10 @@ func NewTracer(config *Configuration) (ot.Tracer, io.Closer, error) {
 
 	// configure a Datadog Tracer
 	transport := datadog.NewTransport(config.AgentHostname, config.AgentPort)
-	tracer := &Tracer{impl: datadog.NewTracerTransport(transport)}
+	tracer := &Tracer{
+		impl:        datadog.NewTracerTransport(transport),
+		serviceName: config.ServiceName,
+	}
 	tracer.impl.SetDebugLogging(config.Debug)
 	tracer.impl.SetSampleRate(config.SampleRate)
 

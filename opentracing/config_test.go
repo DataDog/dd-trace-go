@@ -18,7 +18,32 @@ func TestConfigurationDefaults(t *testing.T) {
 	assert.Equal("8126", config.AgentPort)
 }
 
+func TestConfiguration(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	config.SampleRate = 0
+	config.AgentHostname = "ddagent.consul.local"
+	config.AgentPort = "58126"
+	tracer, closer, err := NewTracer(config)
+	assert.NotNil(tracer)
+	assert.NotNil(closer)
+	assert.Nil(err)
+}
+
 func TestTracerConstructor(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	config.ServiceName = "api-intake"
+	tracer, closer, err := NewTracer(config)
+	assert.Nil(err)
+	assert.NotNil(closer)
+	assert.NotNil(tracer)
+	assert.Equal("api-intake", tracer.(*Tracer).serviceName)
+}
+
+func TestTracerServiceName(t *testing.T) {
 	assert := assert.New(t)
 
 	config := NewConfiguration()
@@ -38,18 +63,5 @@ func TestDisabledTracer(t *testing.T) {
 	tracer, closer, err := NewTracer(config)
 	assert.IsType(&ot.NoopTracer{}, tracer)
 	assert.IsType(&noopCloser{}, closer)
-	assert.Nil(err)
-}
-
-func TestConfiguration(t *testing.T) {
-	assert := assert.New(t)
-
-	config := NewConfiguration()
-	config.SampleRate = 0
-	config.AgentHostname = "ddagent.consul.local"
-	config.AgentPort = "58126"
-	tracer, closer, err := NewTracer(config)
-	assert.NotNil(tracer)
-	assert.NotNil(closer)
 	assert.Nil(err)
 }
