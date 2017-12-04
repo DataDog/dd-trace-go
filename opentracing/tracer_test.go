@@ -2,6 +2,7 @@ package opentracing
 
 import (
 	"testing"
+	"time"
 
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
@@ -88,4 +89,17 @@ func TestTracerSpanTags(t *testing.T) {
 	assert.True(ok)
 
 	assert.Equal("value", span.Span.Meta["key"])
+}
+
+func TestTracerSpanStartTime(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	tracer, _, _ := NewTracer(config)
+
+	startTime := time.Now().Add(-10 * time.Second)
+	span, ok := tracer.StartSpan("web.request", opentracing.StartTime(startTime)).(*Span)
+	assert.True(ok)
+
+	assert.Equal(startTime.UnixNano(), span.Span.Start)
 }

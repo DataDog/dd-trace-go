@@ -29,7 +29,6 @@ func (t *Tracer) StartSpan(operationName string, options ...ot.StartSpanOption) 
 
 func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpanOptions) ot.Span {
 	if options.StartTime.IsZero() {
-		// TODO: we should set this value
 		options.StartTime = time.Now().UTC()
 	}
 
@@ -57,6 +56,8 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 		span = t.impl.NewChildSpan(operationName, parent.Span)
 	}
 
+	// create an OpenTracing compatible Span; the SpanContext has a
+	// back-reference that is used for parent-child hierarchy
 	otSpan := &Span{
 		Span: span,
 		context: SpanContext{
@@ -66,8 +67,10 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 			sampled:  span.Sampled,
 		},
 	}
-
 	otSpan.context.span = otSpan
+
+	// set start time
+	otSpan.Span.Start = options.StartTime.UnixNano()
 
 	if parent != nil {
 		// propagate baggage items
