@@ -1,6 +1,8 @@
 package opentracing
 
 import (
+	"time"
+
 	datadog "github.com/DataDog/dd-trace-go/tracer"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
@@ -56,8 +58,12 @@ func (s *Span) SetTag(key string, value interface{}) ot.Span {
 
 // FinishWithOptions is like Finish() but with explicit control over
 // timestamps and log data.
-func (s *Span) FinishWithOptions(opts ot.FinishOptions) {
-	// TODO: implementation missing
+func (s *Span) FinishWithOptions(options ot.FinishOptions) {
+	if options.FinishTime.IsZero() {
+		options.FinishTime = time.Now().UTC()
+	}
+
+	s.Span.FinishWithTime(options.FinishTime.UnixNano())
 }
 
 // SetOperationName sets or changes the operation name.
