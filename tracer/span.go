@@ -207,6 +207,16 @@ func (s *Span) SetError(err error) {
 // current Span. Once a Span has been finished, methods that modify the Span
 // will become no-ops.
 func (s *Span) Finish() {
+	s.finish(now())
+}
+
+// FinishWithTime closes this Span at the given `finishTime`. The
+// behavior is the same as `Finish()`.
+func (s *Span) FinishWithTime(finishTime int64) {
+	s.finish(finishTime)
+}
+
+func (s *Span) finish(finishTime int64) {
 	if s == nil {
 		return
 	}
@@ -215,7 +225,7 @@ func (s *Span) Finish() {
 	finished := s.finished
 	if !finished {
 		if s.Duration == 0 {
-			s.Duration = now() - s.Start
+			s.Duration = finishTime - s.Start
 		}
 		s.finished = true
 	}

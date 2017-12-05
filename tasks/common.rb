@@ -6,7 +6,7 @@ module Tasks
 
     # returns a list of Go packages
     def self.get_go_packages
-      `go list ./tracer ./contrib/...`.split("\n")
+      `go list ./opentracing ./tracer ./contrib/...`.split("\n")
     end
   end
 end

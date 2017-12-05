@@ -6,6 +6,7 @@
 
 # ignore integrations dependencies
 ignored = [
+  "github.com/opentracing/*",
   "github.com/cihub/seelog",
   "github.com/gin-gonic/gin",
   "github.com/go-redis/redis",
