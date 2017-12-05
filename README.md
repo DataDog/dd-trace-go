@@ -1,7 +1,44 @@
 [![CircleCI](https://circleci.com/gh/DataDog/dd-trace-go/tree/master.svg?style=svg)](https://circleci.com/gh/DataDog/dd-trace-go/tree/master)
-[![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/github.com/DataDog/dd-trace-go/tracer)
+[![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/github.com/DataDog/dd-trace-go/opentracing)
 
-A Go tracing package for Datadog APM.
+Datadog APM client that implements an [OpenTracing](http://opentracing.io) Tracer.
+
+## Initialization
+
+To start using the Datadog Tracer with the OpenTracing API, you should first initialize the tracer with a proper `Configuration` object:
+
+```go
+import (
+	// datadog namespace is suggested
+	datadog "github.com/DataDog/dd-trace-go/opentracing"
+	opentracing "github.com/opentracing/opentracing-go"
+)
+
+func main() {
+	// create a Tracer configuration
+	config := datadog.NewConfiguration()
+	config.ServiceName = "api-intake"
+	config.AgentHostname = "ddagent.consul.local"
+
+	// initialize a Tracer and ensure a graceful shutdown
+	// using the `closer.Close()`
+	tracer, closer, err := datadog.NewTracer(config)
+	if err != nil {
+		// handle the configuration error
+	}
+	defer closer.Close()
+
+	// set the Datadog tracer as a GlobalTracer
+	opentracing.SetGlobalTracer(tracer)
+	startWebServer()
+}
+```
+
+Function `NewTracer(config)` returns an `io.Closer` instance that can be used to gracefully shutdown the `tracer`. It's recommend ed to always call the `closer.Close()`, otherwise internal buffers are not flushed and you may lose some traces.
+
+## Usage
+
+See [Opentracing documentation](https://github.com/opentracing/opentracing-go) for some usage patters. Legacy documentation is available in [GoDoc format](https://godoc.org/github.com/DataDog/dd-trace-go/tracer).
 
 ## Contributing Quick Start
 
