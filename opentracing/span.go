@@ -50,9 +50,24 @@ func (s *Span) BaggageItem(key string) string {
 // SetTag adds a tag to the span, overwriting pre-existing values for
 // the given `key`.
 func (s *Span) SetTag(key string, value interface{}) ot.Span {
-	// NOTE: locking is not required because the `SetMeta` is
-	// already thread-safe
-	s.Span.SetMeta(key, value.(string))
+	switch key {
+	case ServiceName:
+		s.Span.Lock()
+		defer s.Span.Unlock()
+		s.Span.Service = value.(string)
+	case ResourceName:
+		s.Span.Lock()
+		defer s.Span.Unlock()
+		s.Span.Resource = value.(string)
+	case SpanType:
+		s.Span.Lock()
+		defer s.Span.Unlock()
+		s.Span.Type = value.(string)
+	default:
+		// NOTE: locking is not required because the `SetMeta` is
+		// already thread-safe
+		s.Span.SetMeta(key, value.(string))
+	}
 	return s
 }
 
