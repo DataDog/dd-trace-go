@@ -23,15 +23,6 @@ func TestSpanContext(t *testing.T) {
 	assert.NotNil(span.Context())
 }
 
-func TestSpanSetTag(t *testing.T) {
-	assert := assert.New(t)
-
-	span := NewSpan("web.request")
-	span.Span.Meta = make(map[string]string)
-	span.SetTag("component", "tracer")
-	assert.Equal("tracer", span.Meta["component"])
-}
-
 func TestSpanOperationName(t *testing.T) {
 	assert := assert.New(t)
 
@@ -58,4 +49,25 @@ func TestSpanFinishWithTime(t *testing.T) {
 
 	duration := finishTime.UnixNano() - span.Span.Start
 	assert.Equal(duration, span.Span.Duration)
+}
+
+func TestSpanSetTag(t *testing.T) {
+	assert := assert.New(t)
+
+	span := NewSpan("web.request")
+	span.SetTag("component", "tracer")
+	assert.Equal("tracer", span.Meta["component"])
+}
+
+func TestSpanSetDatadogTags(t *testing.T) {
+	assert := assert.New(t)
+
+	span := NewSpan("web.request")
+	span.SetTag("span.type", "http")
+	span.SetTag("service.name", "db-cluster")
+	span.SetTag("resource.name", "SELECT * FROM users;")
+
+	assert.Equal("http", span.Span.Type)
+	assert.Equal("db-cluster", span.Span.Service)
+	assert.Equal("SELECT * FROM users;", span.Span.Resource)
 }
