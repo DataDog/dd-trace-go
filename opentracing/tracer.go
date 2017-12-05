@@ -138,5 +138,11 @@ func NewTracer(config *Configuration) (ot.Tracer, io.Closer, error) {
 	tracer.impl.SetDebugLogging(config.Debug)
 	tracer.impl.SetSampleRate(config.SampleRate)
 
+	// set the new Datadog Tracer as a `DefaultTracer` so it can be
+	// used in integrations. NOTE: this is a temporary implementation
+	// that can be removed once all integrations have been migrated
+	// to the OpenTracing API.
+	datadog.DefaultTracer = tracer.impl
+
 	return tracer, tracer, nil
 }
