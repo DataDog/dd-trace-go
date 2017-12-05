@@ -24,23 +24,13 @@ func TestConfiguration(t *testing.T) {
 
 	config := NewConfiguration()
 	config.SampleRate = 0
+	config.ServiceName = "api-intake"
 	config.AgentHostname = "ddagent.consul.local"
 	config.AgentPort = "58126"
 	tracer, closer, err := NewTracer(config)
 	assert.NotNil(tracer)
 	assert.NotNil(closer)
 	assert.Nil(err)
-}
-
-func TestTracerConstructor(t *testing.T) {
-	assert := assert.New(t)
-
-	config := NewConfiguration()
-	config.ServiceName = "api-intake"
-	tracer, closer, err := NewTracer(config)
-	assert.Nil(err)
-	assert.NotNil(closer)
-	assert.NotNil(tracer)
 	assert.Equal("api-intake", tracer.(*Tracer).serviceName)
 }
 
