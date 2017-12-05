@@ -13,6 +13,7 @@ func TestConfigurationDefaults(t *testing.T) {
 	config := NewConfiguration()
 	assert.Equal(true, config.Enabled)
 	assert.Equal(false, config.Debug)
+	assert.Equal(float64(1), config.SampleRate)
 	assert.Equal("opentracing.test", config.ServiceName)
 	assert.Equal("localhost", config.AgentHostname)
 	assert.Equal("8126", config.AgentPort)
