@@ -7,6 +7,11 @@ import (
 	"github.com/ugorji/go/codec"
 )
 
+const (
+	jsonContentType    = "application/json"
+	msgpackContentType = "application/msgpack"
+)
+
 // Encoder is a generic interface that expects encoding methods for traces and
 // services, and a Read() method that will be used by the http handler
 type Encoder interface {
@@ -32,7 +37,7 @@ func newMsgpackEncoder() *msgpackEncoder {
 	return &msgpackEncoder{
 		buffer:      buffer,
 		encoder:     encoder,
-		contentType: contentType(msgpackType),
+		contentType: msgpackContentType,
 	}
 }
 
@@ -72,7 +77,7 @@ func newJSONEncoder() *jsonEncoder {
 	return &jsonEncoder{
 		buffer:      buffer,
 		encoder:     encoder,
-		contentType: contentType(jsonType),
+		contentType: jsonContentType,
 	}
 }
 
@@ -97,41 +102,13 @@ func (e *jsonEncoder) ContentType() string {
 	return e.contentType
 }
 
-const (
-	jsonType = iota
-	msgpackType
-)
-
-func contentType(encoderType int) string {
-	switch encoderType {
-	case jsonType:
-		return "application/json"
-	case msgpackType:
-		return "application/msgpack"
-	default:
-		return ""
-	}
-}
-
 // encoderFactory will provide a new encoder each time we want to flush traces or services.
-type encoderFactory struct {
-	EncoderType int
+type encoderFactory func() Encoder
+
+func jsonEncoderFactory() Encoder {
+	return newJSONEncoder()
 }
 
-func newEncoderFactory(encoderType int) (*encoderFactory, string) {
-	return &encoderFactory{
-		EncoderType: encoderType,
-	}, contentType(encoderType)
-}
-
-// Get allocates and returns a new encoder
-func (f *encoderFactory) Get() Encoder {
-	switch f.EncoderType {
-	case jsonType:
-		return newJSONEncoder()
-	case msgpackType:
-		return newMsgpackEncoder()
-	default:
-		return nil
-	}
+func msgpackEncoderFactory() Encoder {
+	return newMsgpackEncoder()
 }

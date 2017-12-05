@@ -604,17 +604,16 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 
 // getTestTracer returns a Tracer with a DummyTransport
 func getTestTracer() (*Tracer, *dummyTransport) {
-	factory, _ := newEncoderFactory(msgpackType)
-	transport := &dummyTransport{encoderFactory: factory}
+	transport := &dummyTransport{getEncoder: msgpackEncoderFactory}
 	tracer := NewTracerTransport(transport)
 	return tracer, transport
 }
 
 // Mock Transport with a real Encoder
 type dummyTransport struct {
-	encoderFactory *encoderFactory
-	traces         [][]*Span
-	services       map[string]Service
+	getEncoder encoderFactory
+	traces     [][]*Span
+	services   map[string]Service
 
 	sync.RWMutex // required because of some poll-testing (eg: worker)
 }
@@ -624,7 +623,7 @@ func (t *dummyTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	t.traces = append(t.traces, traces...)
 	t.Unlock()
 
-	encoder := t.encoderFactory.Get()
+	encoder := t.getEncoder()
 	return nil, encoder.EncodeTraces(traces)
 }
 
@@ -633,7 +632,7 @@ func (t *dummyTransport) SendServices(services map[string]Service) (*http.Respon
 	t.services = services
 	t.Unlock()
 
-	encoder := t.encoderFactory.Get()
+	encoder := t.getEncoder()
 	return nil, encoder.EncodeServices(services)
 }
 

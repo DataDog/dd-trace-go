@@ -14,8 +14,6 @@ import (
 const (
 	defaultHostname    = "localhost"
 	defaultPort        = "8126"
-	defaultEncoder     = msgpackType             // defines the default encoder used when the Transport is initialized
-	legacyEncoder      = jsonType                // defines the legacy encoder used with earlier agent versions
 	defaultHTTPTimeout = time.Second             // defines the current timeout before giving up with the send process
 	traceCountHeader   = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
 )
@@ -64,15 +62,13 @@ type httpTransport struct {
 	// Since the underlying bytes.Buffer is not thread safe, this can make the app panicking.
 	// since this method will later on spawn a goroutine referencing this buffer.
 	// That's why we prefer the less performant yet SAFE implementation of allocating a new encoder every time we flush.
-	encoderFactory *encoderFactory
+	getEncoder encoderFactory
 }
 
 // newHTTPTransport returns an httpTransport for the given endpoint
 func newHTTPTransport(hostname, port string) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
-	encoderFactory, contentType := newEncoderFactory(defaultEncoder)
 	defaultHeaders := map[string]string{
-		"Content-Type":                  contentType,
 		"Datadog-Meta-Lang":             ext.Lang,
 		"Datadog-Meta-Lang-Version":     ext.LangVersion,
 		"Datadog-Meta-Lang-Interpreter": ext.Interpreter,
@@ -84,7 +80,7 @@ func newHTTPTransport(hostname, port string) *httpTransport {
 		legacyTraceURL:   fmt.Sprintf("http://%s:%s/v0.2/traces", hostname, port),
 		serviceURL:       fmt.Sprintf("http://%s:%s/v0.3/services", hostname, port),
 		legacyServiceURL: fmt.Sprintf("http://%s:%s/v0.2/services", hostname, port),
-		encoderFactory:   encoderFactory,
+		getEncoder:       msgpackEncoderFactory,
 		client: &http.Client{
 			Timeout: defaultHTTPTimeout,
 		},
@@ -98,7 +94,7 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 		return nil, errors.New("provided an empty URL, giving up")
 	}
 
-	encoder := t.encoderFactory.Get()
+	encoder := t.getEncoder()
 
 	// encode the spans and return the error if any
 	err := encoder.EncodeTraces(traces)
@@ -112,6 +108,7 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 		req.Header.Set(header, value)
 	}
 	req.Header.Set(traceCountHeader, strconv.Itoa(len(traces)))
+	req.Header.Set("Content-Type", encoder.ContentType())
 	response, err := t.client.Do(req)
 
 	// if we have an error, return an empty Response to protect against nil pointer dereference
@@ -139,7 +136,7 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 		return nil, errors.New("provided an empty URL, giving up")
 	}
 
-	encoder := t.encoderFactory.Get()
+	encoder := t.getEncoder()
 
 	if err := encoder.EncodeServices(services); err != nil {
 		return nil, err
@@ -153,6 +150,7 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
+	req.Header.Set("Content-Type", encoder.ContentType())
 
 	response, err := t.client.Do(req)
 	if err != nil {
@@ -179,11 +177,10 @@ func (t *httpTransport) SetHeader(key, value string) {
 	t.headers[key] = value
 }
 
-// changeEncoder switches the internal encoders pool so that a different API with different
+// changeEncoder switches the encoder so that a different API with different
 // format can be targeted, preventing failures because of outdated agents
-func (t *httpTransport) changeEncoder(encoderType int) {
-	t.encoderFactory.EncoderType = encoderType
-	t.headers["Content-Type"] = contentType(encoderType)
+func (t *httpTransport) changeEncoder(encoderFactory encoderFactory) {
+	t.getEncoder = encoderFactory
 }
 
 // apiDowngrade downgrades the used encoder and API level. This method must fallback to a safe
@@ -194,5 +191,5 @@ func (t *httpTransport) apiDowngrade() {
 	t.compatibilityMode = true
 	t.traceURL = t.legacyTraceURL
 	t.serviceURL = t.legacyServiceURL
-	t.changeEncoder(legacyEncoder)
+	t.changeEncoder(jsonEncoderFactory)
 }

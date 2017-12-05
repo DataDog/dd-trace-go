@@ -112,11 +112,3 @@ func TestMsgpackEncoding(t *testing.T) {
 		}
 	}
 }
-
-func TestEncoderFactoryGet(t *testing.T) {
-	assert := assert.New(t)
-
-	factory, _ := newEncoderFactory(msgpackType)
-	encoder := factory.Get()
-	assert.NotNil(encoder)
-}
