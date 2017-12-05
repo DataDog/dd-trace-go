@@ -34,11 +34,11 @@ func main() {
 }
 ```
 
-Function `NewTracer(config)` returns an `io.Closer` instance that can be used to gracefully shutdown the `tracer`. It's recommend ed to always call the `closer.Close()`, otherwise internal buffers are not flushed and you may lose some traces.
+Function `NewTracer(config)` returns an `io.Closer` instance that can be used to gracefully shutdown the `tracer`. It's recommended to always call the `closer.Close()`, otherwise internal buffers are not flushed and you may lose some traces.
 
 ## Usage
 
-See [Opentracing documentation](https://github.com/opentracing/opentracing-go) for some usage patters. Legacy documentation is available in [GoDoc format](https://godoc.org/github.com/DataDog/dd-trace-go/tracer).
+See [Opentracing documentation](https://github.com/opentracing/opentracing-go) for some usage patterns. Legacy documentation is available in [GoDoc format](https://godoc.org/github.com/DataDog/dd-trace-go/tracer).
 
 ## Contributing Quick Start
 
