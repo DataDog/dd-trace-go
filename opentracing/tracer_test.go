@@ -4,9 +4,21 @@ import (
 	"testing"
 	"time"
 
+	datadog "github.com/DataDog/dd-trace-go/tracer"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestDefaultTracer(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	tracer, _, _ := NewTracer(config)
+	tTracer, ok := tracer.(*Tracer)
+	assert.True(ok)
+
+	assert.Equal(tTracer.impl, datadog.DefaultTracer)
+}
 
 func TestTracerStartSpan(t *testing.T) {
 	assert := assert.New(t)
