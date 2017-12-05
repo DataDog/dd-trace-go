@@ -1,6 +1,8 @@
 package opentracing
 
 import (
+	"errors"
+	"io"
 	"time"
 
 	datadog "github.com/DataDog/dd-trace-go/tracer"
@@ -110,4 +112,31 @@ func (t *Tracer) Extract(format interface{}, carrier interface{}) (ot.SpanContex
 func (t *Tracer) Close() error {
 	t.impl.Stop()
 	return nil
+}
+
+// NewTracer uses a Configuration object to initialize a Datadog Tracer.
+// The initialization returns a `io.Closer` that can be used to graceful
+// shutdown the tracer. If the configuration object defines a disabled
+// Tracer, a no-op implementation is returned.
+func NewTracer(config *Configuration) (ot.Tracer, io.Closer, error) {
+	if config.ServiceName == "" {
+		// abort initialization if a `ServiceName` is not defined
+		return nil, nil, errors.New("A Datadog Tracer requires a valid `ServiceName` set")
+	}
+
+	if config.Enabled == false {
+		// return a no-op implementation so Datadog provides the minimum overhead
+		return &ot.NoopTracer{}, &noopCloser{}, nil
+	}
+
+	// configure a Datadog Tracer
+	transport := datadog.NewTransport(config.AgentHostname, config.AgentPort)
+	tracer := &Tracer{
+		impl:        datadog.NewTracerTransport(transport),
+		serviceName: config.ServiceName,
+	}
+	tracer.impl.SetDebugLogging(config.Debug)
+	tracer.impl.SetSampleRate(config.SampleRate)
+
+	return tracer, tracer, nil
 }
