@@ -13,8 +13,9 @@ import (
 // propagation. In the current state, this Tracer is a compatibility layer
 // that wraps the Datadog Tracer implementation.
 type Tracer struct {
-	impl        *datadog.Tracer // a Datadog Tracer implementation
-	serviceName string          // default Service Name defined in the configuration
+	impl           *datadog.Tracer    // a Datadog Tracer implementation
+	serviceName    string             // default Service Name defined in the configuration
+	textPropagator *textMapPropagator // injector for Context propagation
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`
@@ -34,6 +35,8 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 		options.StartTime = time.Now().UTC()
 	}
 
+	var context SpanContext
+	var hasParent bool
 	var parent *Span
 	var span *datadog.Span
 
@@ -46,6 +49,8 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 
 		// if we have parenting define it
 		if ref.Type == ot.ChildOfRef {
+			hasParent = true
+			context = ctx
 			parent = ctx.span
 		}
 	}
@@ -53,6 +58,14 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 	if parent == nil {
 		// create a root Span with the default service name and resource
 		span = t.impl.NewRootSpan(operationName, t.serviceName, operationName)
+
+		if hasParent {
+			// the Context doesn't have a Span reference because it
+			// has been propagated from another process, so we set these
+			// values manually
+			span.TraceID = context.traceID
+			span.ParentID = context.spanID
+		}
 	} else {
 		// create a child Span that inherits from a parent
 		span = t.impl.NewChildSpan(operationName, parent.Span)
@@ -96,14 +109,26 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 
 // Inject takes the `sm` SpanContext instance and injects it for
 // propagation within `carrier`. The actual type of `carrier` depends on
-// the value of `format`.
-func (t *Tracer) Inject(sp ot.SpanContext, format interface{}, carrier interface{}) error {
-	return nil
+// the value of `format`. Currently supported Injectors are:
+// * `TextMap`
+// * `HTTPHeaders`
+func (t *Tracer) Inject(ctx ot.SpanContext, format interface{}, carrier interface{}) error {
+	switch format {
+	case ot.TextMap, ot.HTTPHeaders:
+		return t.textPropagator.Inject(ctx, carrier)
+	}
+
+	return ot.ErrUnsupportedFormat
 }
 
 // Extract returns a SpanContext instance given `format` and `carrier`.
 func (t *Tracer) Extract(format interface{}, carrier interface{}) (ot.SpanContext, error) {
-	return nil, nil
+	switch format {
+	case ot.TextMap, ot.HTTPHeaders:
+		return t.textPropagator.Extract(carrier)
+	}
+
+	return nil, ot.ErrUnsupportedFormat
 }
 
 // Close method implements `io.Closer` interface to graceful shutdown the Datadog
