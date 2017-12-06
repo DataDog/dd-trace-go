@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	datadog "github.com/DataDog/dd-trace-go/tracer"
+	ddtrace "github.com/DataDog/dd-trace-go/tracer"
 	ot "github.com/opentracing/opentracing-go"
 )
 
@@ -13,7 +13,7 @@ import (
 // propagation. In the current state, this Tracer is a compatibility layer
 // that wraps the Datadog Tracer implementation.
 type Tracer struct {
-	impl           *datadog.Tracer    // a Datadog Tracer implementation
+	impl           *ddtrace.Tracer    // a Datadog Tracer implementation
 	serviceName    string             // default Service Name defined in the configuration
 	textPropagator *textMapPropagator // injector for Context propagation
 }
@@ -38,7 +38,7 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 	var context SpanContext
 	var hasParent bool
 	var parent *Span
-	var span *datadog.Span
+	var span *ddtrace.Span
 
 	for _, ref := range options.References {
 		ctx, ok := ref.ReferencedContext.(SpanContext)
@@ -155,9 +155,9 @@ func NewTracer(config *Configuration) (ot.Tracer, io.Closer, error) {
 	}
 
 	// configure a Datadog Tracer
-	transport := datadog.NewTransport(config.AgentHostname, config.AgentPort)
+	transport := ddtrace.NewTransport(config.AgentHostname, config.AgentPort)
 	tracer := &Tracer{
-		impl:        datadog.NewTracerTransport(transport),
+		impl:        ddtrace.NewTracerTransport(transport),
 		serviceName: config.ServiceName,
 	}
 	tracer.impl.SetDebugLogging(config.Debug)
@@ -167,7 +167,7 @@ func NewTracer(config *Configuration) (ot.Tracer, io.Closer, error) {
 	// used in integrations. NOTE: this is a temporary implementation
 	// that can be removed once all integrations have been migrated
 	// to the OpenTracing API.
-	datadog.DefaultTracer = tracer.impl
+	ddtrace.DefaultTracer = tracer.impl
 
 	return tracer, tracer, nil
 }

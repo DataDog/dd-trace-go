@@ -9,20 +9,20 @@ To start using the Datadog Tracer with the OpenTracing API, you should first ini
 
 ```go
 import (
-	// datadog namespace is suggested
-	datadog "github.com/DataDog/dd-trace-go/opentracing"
+	// ddtrace namespace is suggested
+	ddtrace "github.com/DataDog/dd-trace-go/opentracing"
 	opentracing "github.com/opentracing/opentracing-go"
 )
 
 func main() {
 	// create a Tracer configuration
-	config := datadog.NewConfiguration()
+	config := ddtrace.NewConfiguration()
 	config.ServiceName = "api-intake"
 	config.AgentHostname = "ddagent.consul.local"
 
 	// initialize a Tracer and ensure a graceful shutdown
 	// using the `closer.Close()`
-	tracer, closer, err := datadog.NewTracer(config)
+	tracer, closer, err := ddtrace.NewTracer(config)
 	if err != nil {
 		// handle the configuration error
 	}

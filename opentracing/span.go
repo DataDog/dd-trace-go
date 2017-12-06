@@ -3,7 +3,7 @@ package opentracing
 import (
 	"time"
 
-	datadog "github.com/DataDog/dd-trace-go/tracer"
+	ddtrace "github.com/DataDog/dd-trace-go/tracer"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
 )
@@ -11,7 +11,7 @@ import (
 // Span represents an active, un-finished span in the OpenTracing system.
 // Spans are created by the Tracer interface.
 type Span struct {
-	*datadog.Span
+	*ddtrace.Span
 	context SpanContext
 	tracer  *Tracer
 }
@@ -121,7 +121,7 @@ func (s *Span) Log(data ot.LogData) {
 
 // NewSpan is the OpenTracing Span constructor
 func NewSpan(operationName string) *Span {
-	span := &datadog.Span{
+	span := &ddtrace.Span{
 		Name: operationName,
 	}
 
