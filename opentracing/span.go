@@ -1,6 +1,7 @@
 package opentracing
 
 import (
+	"fmt"
 	"time"
 
 	ddtrace "github.com/DataDog/dd-trace-go/tracer"
@@ -54,19 +55,19 @@ func (s *Span) SetTag(key string, value interface{}) ot.Span {
 	case ServiceName:
 		s.Span.Lock()
 		defer s.Span.Unlock()
-		s.Span.Service = value.(string)
+		s.Span.Service = fmt.Sprint(value)
 	case ResourceName:
 		s.Span.Lock()
 		defer s.Span.Unlock()
-		s.Span.Resource = value.(string)
+		s.Span.Resource = fmt.Sprint(value)
 	case SpanType:
 		s.Span.Lock()
 		defer s.Span.Unlock()
-		s.Span.Type = value.(string)
+		s.Span.Type = fmt.Sprint(value)
 	default:
 		// NOTE: locking is not required because the `SetMeta` is
 		// already thread-safe
-		s.Span.SetMeta(key, value.(string))
+		s.Span.SetMeta(key, fmt.Sprint(value))
 	}
 	return s
 }

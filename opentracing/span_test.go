@@ -57,6 +57,9 @@ func TestSpanSetTag(t *testing.T) {
 	span := NewSpan("web.request")
 	span.SetTag("component", "tracer")
 	assert.Equal("tracer", span.Meta["component"])
+
+	span.SetTag("tagInt", 1234)
+	assert.Equal("1234", span.Meta["tagInt"])
 }
 
 func TestSpanSetDatadogTags(t *testing.T) {
