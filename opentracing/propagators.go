@@ -74,6 +74,10 @@ func (p *textMapPropagator) Extract(carrier interface{}) (ot.SpanContext, error)
 		return nil
 	})
 
+	if traceID == 0 && parentID == 0 && len(decodedBaggage) == 0 {
+		return nil, ot.ErrSpanContextNotFound
+	}
+
 	if err != nil {
 		return nil, err
 	}
