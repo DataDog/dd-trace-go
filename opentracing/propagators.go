@@ -55,12 +55,12 @@ func (p *textMapPropagator) Extract(carrier interface{}) (ot.SpanContext, error)
 	err = reader.ForeachKey(func(k, v string) error {
 		switch strings.ToLower(k) {
 		case fieldNameTraceID:
-			traceID, err = strconv.ParseUint(v, 16, 64)
+			traceID, err = strconv.ParseUint(v, 10, 64)
 			if err != nil {
 				return ot.ErrSpanContextCorrupted
 			}
 		case fieldNameParentID:
-			parentID, err = strconv.ParseUint(v, 16, 64)
+			parentID, err = strconv.ParseUint(v, 10, 64)
 			if err != nil {
 				return ot.ErrSpanContextCorrupted
 			}
