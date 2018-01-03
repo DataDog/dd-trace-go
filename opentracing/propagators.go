@@ -31,8 +31,8 @@ func (p *textMapPropagator) Inject(context ot.SpanContext, carrier interface{}) 
 	}
 
 	// propagate the TraceID and the current active SpanID
-	writer.Set(fieldNameTraceID, strconv.FormatUint(ctx.traceID, 16))
-	writer.Set(fieldNameParentID, strconv.FormatUint(ctx.spanID, 16))
+	writer.Set(fieldNameTraceID, strconv.FormatUint(ctx.traceID, 10))
+	writer.Set(fieldNameParentID, strconv.FormatUint(ctx.spanID, 10))
 
 	// propagate OpenTracing baggage
 	for k, v := range ctx.baggage {
