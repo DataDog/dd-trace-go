@@ -78,6 +78,10 @@ func (p *textMapPropagator) Extract(carrier interface{}) (ot.SpanContext, error)
 		return nil, err
 	}
 
+	if traceID == 0 || parentID == 0 {
+		return nil, ot.ErrSpanContextNotFound
+	}
+
 	return SpanContext{
 		traceID: traceID,
 		spanID:  parentID,
