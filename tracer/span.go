@@ -315,11 +315,7 @@ func (s *Span) Tracer() *Tracer {
 	return s.tracer
 }
 
-// SetSamplingPriority sets the sampling priority. Possible values are:
-// -1: The user asked not to keep the trace;
-// 0: The sampler automatically decided not to keep the trace;
-// 1: The sampler automatically decided to keep the trace;
-// 2: The user asked to keep the trace.
+// SetSamplingPriority sets the sampling priority.
 func (s *Span) SetSamplingPriority(priority int) {
 	s.SetMetric(samplingPriorityKey, float64(priority))
 }

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
 func TestSpanStart(t *testing.T) {
@@ -265,7 +267,13 @@ func TestSpanSamplingPriority(t *testing.T) {
 	assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
 	assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
 
-	for _, priority := range []int{-1, 0, 1, 2, 999} {
+	for _, priority := range []int{
+		ext.PriorityUserReject,
+		ext.PriorityAutoReject,
+		ext.PriorityAutoKeep,
+		ext.PriorityUserKeep,
+		999, // not used yet, but we should allow it
+	} {
 		span.SetSamplingPriority(priority)
 		assert.True(span.HasSamplingPriority())
 		assert.Equal(priority, span.GetSamplingPriority())
