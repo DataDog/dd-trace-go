@@ -3,11 +3,12 @@ package redigo
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"testing"
+
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/garyburd/redigo/redis"
 	"github.com/stretchr/testify/assert"
-	"net/http"
-	"testing"
 )
 
 const (
@@ -80,7 +81,7 @@ func TestInheritance(t *testing.T) {
 
 	// Parent span
 	ctx := context.Background()
-	parent_span := testTracer.NewChildSpanFromContext("parent_span", ctx)
+	parent_span := testTracer.NewChildSpanFromContext(ctx, "parent_span")
 	ctx = tracer.ContextWithSpan(ctx, parent_span)
 	client, _ := TracedDial("my_service", testTracer, "tcp", "127.0.0.1:56379")
 	client.Do("SET", "water", "bottle", ctx)

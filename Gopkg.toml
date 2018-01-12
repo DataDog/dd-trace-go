@@ -6,7 +6,6 @@
 
 # ignore integrations dependencies
 ignored = [
-  "github.com/opentracing/*",
   "github.com/cihub/seelog",
   "github.com/gin-gonic/gin",
   "github.com/go-redis/redis",
@@ -15,16 +14,18 @@ ignored = [
   "github.com/gorilla/mux",
   "github.com/jmoiron/sqlx",
   "github.com/lib/pq",
-  "google.golang.org/grpc",
   "gopkg.in/olivere/elastic.v3",
   "gopkg.in/olivere/elastic.v5",
   "github.com/stretchr/*",
   "github.com/garyburd/*",
   "github.com/golang/*",
-  "google.golang.org/*",
   "golang.org/x/*",
 ]
 
 [[constraint]]
   name = "github.com/ugorji/go"
   revision = "9c7f9b7a2bc3a520f7c7b30b34b7f85f47fe27b6"
+
+[[constraint]]
+  name = "google.golang.org/grpc"
+  version = "1.5.2"

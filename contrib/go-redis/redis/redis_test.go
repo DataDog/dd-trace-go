@@ -2,12 +2,13 @@ package redis
 
 import (
 	"context"
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/go-redis/redis"
-	"github.com/stretchr/testify/assert"
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/go-redis/redis"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -103,7 +104,7 @@ func TestChildSpan(t *testing.T) {
 
 	// Parent span
 	ctx := context.Background()
-	parent_span := testTracer.NewChildSpanFromContext("parent_span", ctx)
+	parent_span := testTracer.NewChildSpanFromContext(ctx, "parent_span")
 	ctx = tracer.ContextWithSpan(ctx, parent_span)
 
 	client := NewTracedClient(opts, testTracer, "my-redis")
