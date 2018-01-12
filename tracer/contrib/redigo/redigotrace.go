@@ -5,13 +5,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
-	redis "github.com/garyburd/redigo/redis"
 	"net"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
+	redis "github.com/garyburd/redigo/redis"
 )
 
 // TracedConn is an implementation of the redis.Conn interface that supports tracing
@@ -70,7 +71,7 @@ func TracedDialURL(service string, tracer *tracer.Tracer, rawurl string, options
 
 // NewChildSpan creates a span inheriting from the given context. It adds to the span useful metadata about the traced Redis connection
 func (tc TracedConn) NewChildSpan(ctx context.Context) *tracer.Span {
-	span := tc.p.tracer.NewChildSpanFromContext("redis.command", ctx)
+	span := tc.p.tracer.NewChildSpanFromContext(ctx, "redis.command")
 	span.Service = tc.p.service
 	span.SetMeta("out.network", tc.p.network)
 	span.SetMeta("out.port", tc.p.port)

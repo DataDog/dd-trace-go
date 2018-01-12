@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-var spanKey = "datadog_trace_span"
+var SpanKey = "datadog_trace_span"
 
 // ContextWithSpan will return a new context that includes the given span.
 // DEPRECATED: use span.Context(ctx) instead.
@@ -21,7 +21,7 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 	if ctx == nil {
 		return nil, false
 	}
-	span, ok := ctx.Value(spanKey).(*Span)
+	span, ok := ctx.Value(SpanKey).(*Span)
 	return span, ok
 }
 

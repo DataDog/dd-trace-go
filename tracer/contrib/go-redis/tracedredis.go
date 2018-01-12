@@ -4,11 +4,12 @@ package goredistrace
 import (
 	"bytes"
 	"context"
+	"strconv"
+	"strings"
+
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"github.com/go-redis/redis"
-	"strconv"
-	"strings"
 )
 
 // TracedClient is used to trace requests to a redis server.
@@ -70,7 +71,7 @@ func (c *TracedClient) Pipeline() *TracedPipeliner {
 // ExecWithContext calls Pipeline.Exec(). It ensures that the resulting Redis calls
 // are traced, and that emitted spans are children of the given Context
 func (c *TracedPipeliner) ExecWithContext(ctx context.Context) ([]redis.Cmder, error) {
-	span := c.traceParams.tracer.NewChildSpanFromContext("redis.command", ctx)
+	span := c.traceParams.tracer.NewChildSpanFromContext(ctx, "redis.command")
 	span.Service = c.traceParams.service
 
 	span.SetMeta("out.host", c.traceParams.host)
@@ -129,7 +130,7 @@ func createWrapperFromClient(tc *TracedClient) func(oldProcess func(cmd redis.Cm
 			var resource string
 			resource = strings.Split(cmd.String(), " ")[0]
 			args_length := len(strings.Split(cmd.String(), " ")) - 1
-			span := tc.traceParams.tracer.NewChildSpanFromContext("redis.command", ctx)
+			span := tc.traceParams.tracer.NewChildSpanFromContext(ctx, "redis.command")
 
 			span.Service = tc.traceParams.service
 			span.Resource = resource

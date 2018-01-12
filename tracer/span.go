@@ -304,7 +304,7 @@ func (s *Span) Context(ctx context.Context) context.Context {
 	if s == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, spanKey, s)
+	return context.WithValue(ctx, SpanKey, s)
 }
 
 // Tracer returns the tracer that created this span.
