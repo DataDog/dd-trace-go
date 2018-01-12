@@ -20,12 +20,14 @@ func init() {
 	randGen = rand.New(newRandSource())
 }
 
+// Service defines the service to be associated to a specific span.
 type Service struct {
 	Name    string `json:"-"`        // the internal of the service (e.g. acme_search, datadog_web)
 	App     string `json:"app"`      // the name of the application (e.g. rails, postgres, custom-app)
 	AppType string `json:"app_type"` // the type of the application (e.g. db, web)
 }
 
+// Equal checks if the service is the same as the s2 based on its Name, App and AppType properties.
 func (s Service) Equal(s2 Service) bool {
 	return s.Name == s2.Name && s.App == s2.App && s.AppType == s2.AppType
 }
@@ -228,7 +230,7 @@ func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
 // NewChildSpanFromContext will create a child span of the span contained in
 // the given context. If the context contains no span, an empty span will be
 // returned.
-func (t *Tracer) NewChildSpanFromContext(name string, ctx context.Context) *Span {
+func (t *Tracer) NewChildSpanFromContext(ctx context.Context, name string) *Span {
 	span, _ := SpanFromContext(ctx) // tolerate nil spans
 	return t.NewChildSpan(name, span)
 }
@@ -237,8 +239,8 @@ func (t *Tracer) NewChildSpanFromContext(name string, ctx context.Context) *Span
 // context, as well as a copy of the parent context containing the created
 // child span. If the context contains no span, an empty root span will be returned.
 // If nil is passed in for the context, a context will be created.
-func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Span, context.Context) {
-	span := t.NewChildSpanFromContext(name, ctx)
+func (t *Tracer) NewChildSpanWithContext(ctx context.Context, name string) (*Span, context.Context) {
+	span := t.NewChildSpanFromContext(ctx, name)
 	return span, span.Context(ctx)
 }
 
@@ -406,16 +408,16 @@ func NewChildSpan(name string, parent *Span) *Span {
 // NewChildSpanFromContext will create a child span of the span contained in
 // the given context. If the context contains no span, a span with
 // no service or resource will be returned.
-func NewChildSpanFromContext(name string, ctx context.Context) *Span {
-	return DefaultTracer.NewChildSpanFromContext(name, ctx)
+func NewChildSpanFromContext(ctx context.Context, name string) *Span {
+	return DefaultTracer.NewChildSpanFromContext(ctx, name)
 }
 
 // NewChildSpanWithContext will create and return a child span of the span contained in the given
 // context, as well as a copy of the parent context containing the created
 // child span. If the context contains no span, an empty root span will be returned.
 // If nil is passed in for the context, a context will be created.
-func NewChildSpanWithContext(name string, ctx context.Context) (*Span, context.Context) {
-	return DefaultTracer.NewChildSpanWithContext(name, ctx)
+func NewChildSpanWithContext(ctx context.Context, name string) (*Span, context.Context) {
+	return DefaultTracer.NewChildSpanWithContext(ctx, name)
 }
 
 // Enable will enable the default tracer.

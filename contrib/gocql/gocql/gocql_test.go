@@ -79,7 +79,7 @@ func TestChildWrapperSpan(t *testing.T) {
 
 	// Parent span
 	ctx := context.Background()
-	parentSpan := testTracer.NewChildSpanFromContext("parentSpan", ctx)
+	parentSpan := testTracer.NewChildSpanFromContext(ctx, "parentSpan")
 	ctx = tracer.ContextWithSpan(ctx, parentSpan)
 
 	cluster := newCassandraCluster()

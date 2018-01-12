@@ -22,19 +22,12 @@ dependencies:
     # put the package in the right $GOPATH
     - mkdir -p "$IMPORT_PATH"
     - rsync -azr --delete ./ "$IMPORT_PATH"
-    - cd "$IMPORT_PATH" && rake init
 
 test:
   override:
-    # run the agent and backing services
     - docker-compose up -d | cat
-    # wait for external services and execute tests
+    - cd "$IMPORT_PATH" && go get -u github.com/alecthomas/gometalinter
+    - cd "$IMPORT_PATH" && gometalinter --install
     - cd "$IMPORT_PATH" && ./wait-for-services.sh
-    - cd "$IMPORT_PATH" && rake test:lint
-    - cd "$IMPORT_PATH" && rake test:all
-    - cd "$IMPORT_PATH" && rake test:race
-    - cd "$IMPORT_PATH" && rake test:coverage
-
-  post:
-    # add the coverage HTML report as CircleCI artifact
-    - cd "$IMPORT_PATH" && go tool cover -html=code.cov -o $CIRCLE_ARTIFACTS/coverage.html
+    - cd "$IMPORT_PATH" && go test -race ./opentracing ./tracer ./contrib/...
+    - cd "$IMPORT_PATH" && gometalinter --deadline 60s --fast --enable-gc --errors --vendor ./opentracing ./tracer ./contrib/...

@@ -29,7 +29,7 @@ type TracedTransport struct {
 // RoundTrip satisfies the RoundTripper interface, wraps the sub Transport and
 // captures a span of the Elasticsearch request.
 func (t *TracedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	span := t.tracer.NewChildSpanFromContext("elasticsearch.query", req.Context())
+	span := t.tracer.NewChildSpanFromContext(req.Context(), "elasticsearch.query")
 	span.Service = t.service
 	span.Type = ext.AppTypeDB
 	defer span.Finish()
