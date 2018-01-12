@@ -10,9 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// key is the string that we'll use to store spans in the tracer.
-var key = "datadog_trace_span"
-
 // Middleware returns middleware that will trace requests with the default
 // tracer.
 func Middleware(service string) gin.HandlerFunc {
@@ -59,7 +56,7 @@ func (m *middleware) Handle(c *gin.Context) {
 
 	// Create our span and patch it to the context for downstream.
 	span := m.trc.NewRootSpan("gin.request", m.service, resource)
-	c.Set(key, span)
+	c.Set(tracer.SpanKey, span)
 
 	// Pass along the request.
 	c.Next()
@@ -85,7 +82,7 @@ func Span(c *gin.Context) (*tracer.Span, bool) {
 		return nil, false
 	}
 
-	s, ok := c.Get(key)
+	s, ok := c.Get(tracer.SpanKey)
 	if !ok {
 		return nil, false
 	}

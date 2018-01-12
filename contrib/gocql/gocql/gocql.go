@@ -66,7 +66,7 @@ func (tq *TracedQuery) PageState(state []byte) *TracedQuery {
 
 // NewChildSpan creates a new span from the traceParams and the context.
 func (tq *TracedQuery) NewChildSpan(ctx context.Context) *tracer.Span {
-	span := tq.p.tracer.NewChildSpanFromContext(ext.CassandraQuery, ctx)
+	span := tq.p.tracer.NewChildSpanFromContext(ctx, ext.CassandraQuery)
 	span.Type = ext.CassandraType
 	span.Service = tq.p.service
 	span.Resource = tq.p.query

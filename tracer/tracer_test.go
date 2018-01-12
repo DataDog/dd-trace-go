@@ -3,13 +3,14 @@ package tracer
 import (
 	"context"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"net/http"
 	"os"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -63,11 +64,11 @@ func TestNewSpanFromContextNil(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()
 
-	child := tracer.NewChildSpanFromContext("abc", nil)
+	child := tracer.NewChildSpanFromContext(nil, "abc")
 	assert.Equal("abc", child.Name)
 	assert.Equal("", child.Service)
 
-	child = tracer.NewChildSpanFromContext("def", context.Background())
+	child = tracer.NewChildSpanFromContext(context.Background(), "def")
 	assert.Equal("def", child.Name)
 	assert.Equal("", child.Service)
 
@@ -78,7 +79,7 @@ func TestNewChildSpanWithContext(t *testing.T) {
 	tracer := NewTracer()
 
 	// nil context
-	span, ctx := tracer.NewChildSpanWithContext("abc", nil)
+	span, ctx := tracer.NewChildSpanWithContext(nil, "abc")
 	assert.Equal("abc", span.Name)
 	assert.Equal("", span.Service)
 	assert.Equal(span.ParentID, span.SpanID) // it should be a root span
@@ -90,7 +91,7 @@ func TestNewChildSpanWithContext(t *testing.T) {
 	assert.Equal(span, ctxSpan)
 
 	// context without span
-	span, ctx = tracer.NewChildSpanWithContext("abc", context.Background())
+	span, ctx = tracer.NewChildSpanWithContext(context.Background(), "abc")
 	assert.Equal("abc", span.Name)
 	assert.Equal("", span.Service)
 	assert.Equal(span.ParentID, span.SpanID) // it should be a root span
@@ -103,7 +104,7 @@ func TestNewChildSpanWithContext(t *testing.T) {
 	// context with span
 	parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	parentCTX := ContextWithSpan(context.Background(), parent)
-	span, ctx = tracer.NewChildSpanWithContext("def", parentCTX)
+	span, ctx = tracer.NewChildSpanWithContext(parentCTX, "def")
 	assert.Equal("def", span.Name)
 	assert.Equal("pylons", span.Service)
 	assert.Equal(parent.Service, span.Service)
@@ -124,7 +125,7 @@ func TestNewSpanFromContext(t *testing.T) {
 	parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
 	ctx := ContextWithSpan(context.Background(), parent)
 
-	child := tracer.NewChildSpanFromContext("redis.command", ctx)
+	child := tracer.NewChildSpanFromContext(ctx, "redis.command")
 	// ids and services are inherited
 	assert.Equal(parent.SpanID, child.ParentID)
 	assert.Equal(parent.TraceID, child.TraceID)

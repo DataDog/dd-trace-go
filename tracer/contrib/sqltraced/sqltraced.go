@@ -113,7 +113,7 @@ type traceInfo struct {
 
 func (ti traceInfo) getSpan(ctx context.Context, resource string, query ...string) *tracer.Span {
 	name := fmt.Sprintf("%s.%s", ti.driverName, "query")
-	span := ti.tracer.NewChildSpanFromContext(name, ctx)
+	span := ti.tracer.NewChildSpanFromContext(ctx, name)
 	span.Type = ext.SQLType
 	span.Service = ti.service
 	span.Resource = resource
