@@ -81,6 +81,7 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 			parentID: span.ParentID,
 			sampled:  span.Sampled,
 		},
+		tracer: t,
 	}
 	otSpan.context.span = otSpan
 
