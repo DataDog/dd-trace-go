@@ -316,12 +316,8 @@ func (s *Span) Tracer() *Tracer {
 }
 
 // SetSamplingPriority sets the sampling priority.
-// Default is 0, any higher value is interpreted as a hint on
-// how interesting this span is, and should be kept by the backend.
 func (s *Span) SetSamplingPriority(priority int) {
-	if priority >= 0 {
-		s.SetMetric(samplingPriorityKey, float64(priority))
-	}
+	s.SetMetric(samplingPriorityKey, float64(priority))
 }
 
 // HasSamplingPriority returns true if sampling priority is set.
