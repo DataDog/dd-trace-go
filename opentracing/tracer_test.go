@@ -104,6 +104,20 @@ func TestTracerSpanTags(t *testing.T) {
 	assert.Equal("value", span.Span.Meta["key"])
 }
 
+func TestTracerSpanGlobalTags(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	config.GlobalTags["key"] = "value"
+	tracer, _, _ := NewTracer(config)
+
+	span := tracer.StartSpan("web.request").(*Span)
+	assert.Equal("value", span.Span.Meta["key"])
+
+	child := tracer.StartSpan("db.query", opentracing.ChildOf(span.Context())).(*Span)
+	assert.Equal("value", child.Span.Meta["key"])
+}
+
 func TestTracerSpanStartTime(t *testing.T) {
 	assert := assert.New(t)
 
