@@ -32,7 +32,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resource := r.Method + " " + route
 
 	// we need to wrap the ServeHTTP method to be able to trace it
-	Trace(mux.ServeMux.ServeHTTP, w, r, mux.service, resource, mux.Tracer)
+	Trace(mux.ServeMux, w, r, mux.service, resource, mux.Tracer)
 }
 
 // getTracer returns either the tracer passed as the last argument or a default tracer.

@@ -46,7 +46,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	resource := req.Method + " " + route
 
 	// we need to wrap the ServeHTTP method to be able to trace it
-	httptrace.Trace(r.Router.ServeHTTP, w, req, r.service, resource, r.Tracer)
+	httptrace.Trace(r.Router, w, req, r.service, resource, r.Tracer)
 }
 
 // getTracer returns either the tracer passed as the last argument or a default tracer.

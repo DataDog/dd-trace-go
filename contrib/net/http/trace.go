@@ -8,33 +8,27 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
-type ServeHTTP func(http.ResponseWriter, *http.Request)
-
-// Trace will trace the request before calling the ServeHTTP function passed in argument.
-func Trace(serveHTTP ServeHTTP, w http.ResponseWriter, r *http.Request, service, resource string, t *tracer.Tracer) {
+// Trace will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
+func Trace(h http.Handler, w http.ResponseWriter, r *http.Request, service, resource string, t *tracer.Tracer) {
 	// bail out if tracing isn't enabled
 	if !t.Enabled() {
-		serveHTTP(w, r)
+		h.ServeHTTP(w, r)
 		return
 	}
 
-	// TODO: get the span from the request context
-	span := t.NewRootSpan("http.request", service, resource)
+	span, ctx := t.NewChildSpanWithContext("http.request", r.Context())
 	defer span.Finish()
 
 	span.Type = ext.HTTPType
+	span.Service = service
+	span.Resource = resource
 	span.SetMeta(ext.HTTPMethod, r.Method)
 	span.SetMeta(ext.HTTPURL, r.URL.Path)
 
-	// pass the span through the request context
-	ctx := span.Context(r.Context())
 	traceRequest := r.WithContext(ctx)
-
-	// trace the response to get the status code
 	traceWriter := NewResponseWriter(w, span)
 
-	// serve the request to the underlying multiplexer
-	serveHTTP(traceWriter, traceRequest)
+	h.ServeHTTP(traceWriter, traceRequest)
 }
 
 // ResponseWriter is a small wrapper around an http response writer that will
