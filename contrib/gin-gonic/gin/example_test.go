@@ -10,7 +10,7 @@ import (
 func Example() {
 	// Create your router and use the middleware.
 	r := gin.New()
-	r.Use(gintrace.Middleware("my-web-app"))
+	r.Use(gintrace.Trace("my-web-app"))
 
 	r.GET("/hello", func(c *gin.Context) {
 		c.String(200, "hello world!")
@@ -22,7 +22,7 @@ func Example() {
 
 func ExampleHTML() {
 	r := gin.Default()
-	r.Use(gintrace.Middleware("my-web-app"))
+	r.Use(gintrace.Trace("my-web-app"))
 	r.LoadHTMLGlob("templates/*")
 
 	r.GET("/index", func(c *gin.Context) {
@@ -35,12 +35,12 @@ func ExampleHTML() {
 
 func ExampleSpanDefault() {
 	r := gin.Default()
-	r.Use(gintrace.Middleware("image-encoder"))
+	r.Use(gintrace.Trace("image-encoder"))
 
 	r.GET("/image/encode", func(c *gin.Context) {
 		// The middleware patches a span to the request. Let's add some metadata,
 		// and create a child span.
-		span := gintrace.SpanDefault(c)
+		span, _ := gintrace.SpanFromContext(c)
 		span.SetMeta("user.handle", "admin")
 		span.SetMeta("user.id", "1234")
 
@@ -54,5 +54,4 @@ func ExampleSpanDefault() {
 
 		c.String(200, "ok!")
 	})
-
 }
