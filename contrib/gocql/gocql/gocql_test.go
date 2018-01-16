@@ -30,7 +30,10 @@ func newCassandraCluster() *gocql.ClusterConfig {
 // TestMain sets up the Keyspace and table if they do not exist
 func TestMain(m *testing.M) {
 	cluster := newCassandraCluster()
-	session, _ := cluster.CreateSession()
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("skipping test: %v\n", err)
+	}
 
 	// Ensures test keyspace and table person exists.
 	session.Query("CREATE KEYSPACE if not exists trace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor': 1}").Exec()
