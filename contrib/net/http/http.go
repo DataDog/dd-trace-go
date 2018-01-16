@@ -16,8 +16,11 @@ type ServeMux struct {
 
 // NewServeMux allocates and returns a new ServeMux.
 // The last parameter is optional and allows to pass a custom tracer.
-func NewServeMux(service string, trc ...*tracer.Tracer) *ServeMux {
-	t := getTracer(trc)
+func NewServeMux(service string, trc *tracer.Tracer) *ServeMux {
+	t := tracer.DefaultTracer
+	if trc != nil {
+		t = trc
+	}
 	t.SetServiceInfo(service, "net/http", ext.AppTypeWeb)
 	return &ServeMux{http.NewServeMux(), t, service}
 }
@@ -33,15 +36,4 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// we need to wrap the ServeHTTP method to be able to trace it
 	Trace(mux.ServeMux, w, r, mux.service, resource, mux.Tracer)
-}
-
-// getTracer returns either the tracer passed as the last argument or a default tracer.
-func getTracer(tracers []*tracer.Tracer) *tracer.Tracer {
-	var t *tracer.Tracer
-	if len(tracers) == 0 || (len(tracers) > 0 && tracers[0] == nil) {
-		t = tracer.DefaultTracer
-	} else {
-		t = tracers[0]
-	}
-	return t
 }

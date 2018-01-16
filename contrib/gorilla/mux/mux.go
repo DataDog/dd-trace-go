@@ -19,8 +19,11 @@ type Router struct {
 
 // NewRouter returns a new router instance.
 // The last parameter is optional and allows to pass a custom tracer.
-func NewRouter(service string, trc ...*tracer.Tracer) *Router {
-	t := getTracer(trc)
+func NewRouter(service string, trc *tracer.Tracer) *Router {
+	t := tracer.DefaultTracer
+	if trc != nil {
+		t = trc
+	}
 	t.SetServiceInfo(service, "gorilla/mux", ext.AppTypeWeb)
 	return &Router{mux.NewRouter(), t, service}
 }
@@ -38,24 +41,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if r.Match(req, &match) {
 		route, err = match.Route.GetPathTemplate()
 		if err != nil {
-			route = "unkown"
+			route = "unknown"
 		}
 	} else {
-		route = "unkown"
+		route = "unknown"
 	}
 	resource := req.Method + " " + route
 
 	// we need to wrap the ServeHTTP method to be able to trace it
 	httptrace.Trace(r.Router, w, req, r.service, resource, r.Tracer)
-}
-
-// getTracer returns either the tracer passed as the last argument or a default tracer.
-func getTracer(tracers []*tracer.Tracer) *tracer.Tracer {
-	var t *tracer.Tracer
-	if len(tracers) == 0 || (len(tracers) > 0 && tracers[0] == nil) {
-		t = tracer.DefaultTracer
-	} else {
-		t = tracers[0]
-	}
-	return t
 }
