@@ -4,7 +4,7 @@ package mux
 import (
 	"net/http"
 
-	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http"
+	"github.com/DataDog/dd-trace-go/contrib/internal"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"github.com/gorilla/mux"
@@ -49,5 +49,5 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	resource := req.Method + " " + route
 
 	// we need to wrap the ServeHTTP method to be able to trace it
-	httptrace.Trace(r.Router, w, req, r.service, resource, r.Tracer)
+	internal.Trace(r.Router, w, req, r.service, resource, r.Tracer)
 }
