@@ -24,7 +24,7 @@ func TestClient(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	client := NewTracedClient(opts, testTracer, "my-redis")
+	client := NewClient(opts, "my-redis", testTracer)
 	client.Set("test_key", "test_value", 0)
 
 	testTracer.ForceFlush()
@@ -52,12 +52,12 @@ func TestPipeline(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	client := NewTracedClient(opts, testTracer, "my-redis")
+	client := NewClient(opts, "my-redis", testTracer)
 	pipeline := client.Pipeline()
 	pipeline.Expire("pipeline_counter", time.Hour)
 
 	// Exec with context test
-	pipeline.ExecWithContext(context.Background())
+	pipeline.ExecContext(context.Background())
 
 	testTracer.ForceFlush()
 	traces := testTransport.Traces()
@@ -106,7 +106,7 @@ func TestChildSpan(t *testing.T) {
 	parent_span := testTracer.NewChildSpanFromContext("parent_span", ctx)
 	ctx = tracer.ContextWithSpan(ctx, parent_span)
 
-	client := NewTracedClient(opts, testTracer, "my-redis")
+	client := NewClient(opts, "my-redis", testTracer)
 	client.SetContext(ctx)
 
 	client.Set("test_key", "test_value", 0)
@@ -146,7 +146,7 @@ func TestMultipleCommands(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	client := NewTracedClient(opts, testTracer, "my-redis")
+	client := NewClient(opts, "my-redis", testTracer)
 	client.Set("test_key", "test_value", 0)
 	client.Get("test_key")
 	client.Incr("int_key")
@@ -179,7 +179,7 @@ func TestError(t *testing.T) {
 	testTracer, testTransport := getTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	client := NewTracedClient(opts, testTracer, "my-redis")
+	client := NewClient(opts, "my-redis", testTracer)
 	err := client.Get("non_existent_key")
 
 	testTracer.ForceFlush()
