@@ -31,8 +31,8 @@ func (p *textMapPropagator) Inject(context ot.SpanContext, carrier interface{}) 
 	}
 
 	// propagate the TraceID and the current active SpanID
-	writer.Set(fieldNameTraceID, strconv.FormatUint(ctx.traceID, 16))
-	writer.Set(fieldNameParentID, strconv.FormatUint(ctx.spanID, 16))
+	writer.Set(fieldNameTraceID, strconv.FormatUint(ctx.traceID, 10))
+	writer.Set(fieldNameParentID, strconv.FormatUint(ctx.spanID, 10))
 
 	// propagate OpenTracing baggage
 	for k, v := range ctx.baggage {
@@ -55,12 +55,12 @@ func (p *textMapPropagator) Extract(carrier interface{}) (ot.SpanContext, error)
 	err = reader.ForeachKey(func(k, v string) error {
 		switch strings.ToLower(k) {
 		case fieldNameTraceID:
-			traceID, err = strconv.ParseUint(v, 16, 64)
+			traceID, err = strconv.ParseUint(v, 10, 64)
 			if err != nil {
 				return ot.ErrSpanContextCorrupted
 			}
 		case fieldNameParentID:
-			parentID, err = strconv.ParseUint(v, 16, 64)
+			parentID, err = strconv.ParseUint(v, 10, 64)
 			if err != nil {
 				return ot.ErrSpanContextCorrupted
 			}
@@ -76,6 +76,10 @@ func (p *textMapPropagator) Extract(carrier interface{}) (ot.SpanContext, error)
 
 	if err != nil {
 		return nil, err
+	}
+
+	if traceID == 0 || parentID == 0 {
+		return nil, ot.ErrSpanContextNotFound
 	}
 
 	return SpanContext{
