@@ -8,8 +8,45 @@ import (
 	"github.com/DataDog/dd-trace-go/contrib/database/sql/parsedsn/pq"
 )
 
-// Postgres parses a postgres-type dsn into a map
-func Postgres(dsn string) (map[string]string, error) {
+// Parse returns a map of string containing all normalized information passed through the DSN.
+func Parse(driverName, dsn string) (meta map[string]string, err error) {
+	switch driverName {
+	case "mysql":
+		meta, err = ParseMySQL(dsn)
+	case "postgres":
+		meta, err = ParsePostgres(dsn)
+	}
+	meta = normalize(meta)
+	return meta, err
+}
+
+func normalize(meta map[string]string) map[string]string {
+	m := make(map[string]string)
+	for k, v := range meta {
+		if nk, ok := normalizeKey(k); ok {
+			m[nk] = v
+		}
+	}
+	return m
+}
+
+func normalizeKey(k string) (string, bool) {
+	switch k {
+	case "user":
+		return "db.user", true
+	case "application_name":
+		return "db.application", true
+	case "dbname":
+		return "db.name", true
+	case "host", "port":
+		return "out." + k, true
+	default:
+		return "", false
+	}
+}
+
+// ParsePostgres parses a postgres-type dsn into a map
+func ParsePostgres(dsn string) (map[string]string, error) {
 	var err error
 	meta := make(map[string]string)
 
@@ -30,8 +67,8 @@ func Postgres(dsn string) (map[string]string, error) {
 	return meta, nil
 }
 
-// MySQL parses a mysql-type dsn into a map
-func MySQL(dsn string) (m map[string]string, err error) {
+// ParseMySQL parses a mysql-type dsn into a map
+func ParseMySQL(dsn string) (m map[string]string, err error) {
 	var cfg *mysql.Config
 	if cfg, err = mysql.ParseDSN(dsn); err == nil {
 		addr := strings.Split(cfg.Addr, ":")

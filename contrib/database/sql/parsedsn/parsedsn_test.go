@@ -7,7 +7,43 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMySQL(t *testing.T) {
+func TestParseDSN(t *testing.T) {
+	assert := assert.New(t)
+
+	expected := map[string]string{
+		"db.user":  "bob",
+		"out.host": "1.2.3.4",
+		"out.port": "5432",
+		"db.name":  "mydb",
+	}
+	m, err := Parse("postgres", "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full")
+	assert.Equal(nil, err)
+	assert.True(reflect.DeepEqual(expected, m))
+
+	expected = map[string]string{
+		"db.user":  "bob",
+		"out.host": "1.2.3.4",
+		"out.port": "5432",
+		"db.name":  "mydb",
+	}
+	m, err = Parse("mysql", "bob:secret@tcp(1.2.3.4:5432)/mydb")
+	assert.Equal(nil, err)
+	assert.True(reflect.DeepEqual(expected, m))
+
+	expected = map[string]string{
+		"out.port":       "5433",
+		"out.host":       "master-db-master-active.postgres.service.consul",
+		"db.name":        "dogdatastaging",
+		"db.application": "trace-api",
+		"db.user":        "dog",
+	}
+	dsn := "connect_timeout=0 binary_parameters=no password=zMWmQz26GORmgVVKEbEl dbname=dogdatastaging application_name=trace-api port=5433 sslmode=disable host=master-db-master-active.postgres.service.consul user=dog"
+	m, err = Parse("postgres", dsn)
+	assert.Equal(nil, err)
+	assert.True(reflect.DeepEqual(expected, m))
+}
+
+func TestParseMySQL(t *testing.T) {
 	assert := assert.New(t)
 
 	expected := map[string]string{
@@ -16,12 +52,12 @@ func TestMySQL(t *testing.T) {
 		"port":   "5432",
 		"dbname": "mydb",
 	}
-	m, err := MySQL("bob:secret@tcp(1.2.3.4:5432)/mydb")
+	m, err := ParseMySQL("bob:secret@tcp(1.2.3.4:5432)/mydb")
 	assert.Equal(nil, err)
 	assert.True(reflect.DeepEqual(expected, m))
 }
 
-func TestPostgres(t *testing.T) {
+func TestParsePostgres(t *testing.T) {
 	assert := assert.New(t)
 
 	expected := map[string]string{
@@ -31,7 +67,7 @@ func TestPostgres(t *testing.T) {
 		"dbname":  "mydb",
 		"sslmode": "verify-full",
 	}
-	m, err := Postgres("postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full")
+	m, err := ParsePostgres("postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full")
 	assert.Equal(nil, err)
 	assert.True(reflect.DeepEqual(expected, m))
 
@@ -43,7 +79,7 @@ func TestPostgres(t *testing.T) {
 		"application_name": "trace-api",
 	}
 	dsn := "password=zMWmQz26GORmgVVKEbEl dbname=dogdatastaging application_name=trace-api port=5433 host=master-db-master-active.postgres.service.consul user=dog"
-	m, err = Postgres(dsn)
+	m, err = ParsePostgres(dsn)
 	assert.Equal(nil, err)
 	assert.True(reflect.DeepEqual(expected, m))
 }

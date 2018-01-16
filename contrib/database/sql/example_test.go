@@ -10,13 +10,13 @@ import (
 	"github.com/lib/pq"
 )
 
-// To trace the sql calls, you just need to open your sql.DB with OpenTraced.
+// To trace the sql calls, you just need to open your sql.DB with Open.
 // All calls through this sql.DB object will then be traced.
 func Example() {
-	// OpenTraced will first register a traced version of the driver and then will return the sql.DB object
+	// Open will first register a traced version of the driver and then will return the sql.DB object
 	// that holds the connection with the database.
 	// The third argument is used to specify the name of the service under which traces will appear in the Datadog app.
-	db, err := sqltrace.OpenTraced(&pq.Driver{}, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
+	db, err := sqltrace.Open(&pq.Driver{}, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -33,10 +33,10 @@ func Example() {
 // the context version of the database/sql API.
 // Just make sure you are passing the parent span within the context.
 func Example_context() {
-	// OpenTraced will first register a traced version of the driver and then will return the sql.DB object
+	// Open will first register a traced version of the driver and then will return the sql.DB object
 	// that holds the connection with the database.
 	// The third argument is used to specify the name of the service under which traces will appear in the Datadog app.
-	db, err := sqltrace.OpenTraced(&pq.Driver{}, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
+	db, err := sqltrace.Open(&pq.Driver{}, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -76,10 +76,10 @@ func Example_context() {
 // You can trace all drivers implementing the database/sql/driver interface.
 // For example, you can trace the go-sql-driver/mysql with the following code.
 func Example_mySQL() {
-	// OpenTraced will first register a traced version of the driver and then will return the sql.DB object
+	// Open will first register a traced version of the driver and then will return the sql.DB object
 	// that holds the connection with the database.
 	// The third argument is used to specify the name of the service under which traces will appear in the Datadog app.
-	db, err := sqltrace.OpenTraced(&mysql.MySQLDriver{}, "user:password@/dbname", "web-backend")
+	db, err := sqltrace.Open(&mysql.MySQLDriver{}, "user:password@/dbname", "web-backend")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -92,14 +92,14 @@ func Example_mySQL() {
 	defer rows.Close()
 }
 
-// OpenTraced will first register a traced version of the driver and then will return the sql.DB object
+// Open will first register a traced version of the driver and then will return the sql.DB object
 // that holds the connection with the database.
-func ExampleOpenTraced() {
+func ExampleOpen() {
 	// The first argument is a reference to the driver to trace.
 	// The second argument is the dataSourceName.
 	// The third argument is used to specify the name of the service under which traces will appear in the Datadog app.
 	// The last argument allows you to specify a custom tracer to use for tracing.
-	db, err := sqltrace.OpenTraced(&pq.Driver{}, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
+	db, err := sqltrace.Open(&pq.Driver{}, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -112,15 +112,15 @@ func ExampleOpenTraced() {
 	defer rows.Close()
 }
 
-// You can use a custom tracer by passing it through the optional last argument of OpenTraced.
-func ExampleOpenTraced_tracer() {
+// You can use a custom tracer by passing it through the optional last argument of Open.
+func ExampleOpen_tracer() {
 	// Create and customize a new tracer that will forward 50% of generated traces to the agent.
 	// (useful to manage resource usage in high-throughput environments)
 	trc := tracer.NewTracer()
 	trc.SetSampleRate(0.5)
 
-	// Pass your custom tracer through the last argument of OpenTraced to trace your db calls with it.
-	db, err := sqltrace.OpenTraced(&pq.Driver{}, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend", trc)
+	// Pass your custom tracer through the last argument of Open to trace your db calls with it.
+	db, err := sqltrace.Open(&pq.Driver{}, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend", trc)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func ExampleRegister() {
 
 	// Returns a sql.DB object that holds the traced connection to the database.
 	// Note: the sql.DB object returned by sql.Open will not be traced so make sure to use sql.Open.
-	db, _ := sqltrace.Open("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
+	db, _ := sqltrace.OpenWithService("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
 	defer db.Close()
 
 	// Use the database/sql API as usual and see traces appear in the Datadog app.
@@ -164,6 +164,6 @@ func ExampleRegister_tracer() {
 
 	// Returns a sql.DB object that holds the traced connection to the database.
 	// Note: the sql.DB object returned by sql.Open will not be traced so make sure to use sql.Open.
-	db, _ := sqltrace.Open("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
+	db, _ := sqltrace.OpenWithService("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", "web-backend")
 	defer db.Close()
 }
