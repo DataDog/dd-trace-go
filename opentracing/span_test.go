@@ -1,6 +1,7 @@
 package opentracing
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -73,4 +74,56 @@ func TestSpanSetDatadogTags(t *testing.T) {
 	assert.Equal("http", span.Span.Type)
 	assert.Equal("db-cluster", span.Span.Service)
 	assert.Equal("SELECT * FROM users;", span.Span.Resource)
+}
+
+func TestSpanSetErrorTag(t *testing.T) {
+	assert := assert.New(t)
+
+	for _, tt := range []struct {
+		name string      // span name
+		val  interface{} // tag value
+		msg  string      // error message
+		typ  string      // error type
+	}{
+		{
+			name: "error.error",
+			val:  errors.New("some error"),
+			msg:  "some error",
+			typ:  "*errors.errorString",
+		},
+		{
+			name: "error.string",
+			val:  "some string error",
+			msg:  "some string error",
+			typ:  "*errors.errorString",
+		},
+		{
+			name: "error.struct",
+			val:  struct{ N int }{5},
+			msg:  "{5}",
+			typ:  "*errors.errorString",
+		},
+		{
+			name: "error.other",
+			val:  1,
+			msg:  "1",
+			typ:  "*errors.errorString",
+		},
+		{
+			name: "error.nil",
+			val:  nil,
+			msg:  "",
+			typ:  "",
+		},
+	} {
+		span := NewSpan(tt.name)
+		span.SetTag(Error, tt.val)
+
+		assert.Equal(span.Meta["error.msg"], tt.msg)
+		assert.Equal(span.Meta["error.type"], tt.typ)
+
+		if tt.val != nil {
+			assert.NotEqual(span.Meta["error.stack"], "")
+		}
+	}
 }
