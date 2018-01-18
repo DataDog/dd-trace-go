@@ -5,14 +5,31 @@ import (
 	"path/filepath"
 )
 
-// Configuration struct to configure a Datadog Tracer
+// Configuration struct configures the Datadog tracer. Please use the NewConfiguration
+// constructor to begin.
 type Configuration struct {
-	Enabled       bool    // when disabled, a no-op implementation is returned
-	Debug         bool    // when enabled, more details are written in logs
-	ServiceName   string  // define the service name for this application
-	SampleRate    float64 // set the Tracer sample rate [0, 1]
-	AgentHostname string  // change the hostname where traces are sent
-	AgentPort     string  // change the port where traces are sent
+	// Enabled, when false, returns a no-op implementation of the Tracer.
+	Enabled bool
+
+	// Debug, when true, writes details to logs.
+	Debug bool
+
+	// ServiceName specifies the name of this application.
+	ServiceName string
+
+	// SampleRate sets the Tracer sample rate (ext/priority.go).
+	SampleRate float64
+
+	// AgentHostname specifies the hostname of the agent where the traces
+	// are sent to.
+	AgentHostname string
+
+	// AgentPort specifies the port that the agent is listening on.
+	AgentPort string
+
+	// GlobalTags holds a set of tags that will be automatically applied to
+	// all spans.
+	GlobalTags map[string]interface{}
 }
 
 // NewConfiguration creates a `Configuration` object with default values.
@@ -28,6 +45,7 @@ func NewConfiguration() *Configuration {
 		SampleRate:    1,
 		AgentHostname: "localhost",
 		AgentPort:     "8126",
+		GlobalTags:    make(map[string]interface{}),
 	}
 }
 

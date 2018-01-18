@@ -31,7 +31,7 @@ func TestConfiguration(t *testing.T) {
 	assert.NotNil(tracer)
 	assert.NotNil(closer)
 	assert.Nil(err)
-	assert.Equal("api-intake", tracer.(*Tracer).serviceName)
+	assert.Equal("api-intake", tracer.(*Tracer).config.ServiceName)
 }
 
 func TestTracerServiceName(t *testing.T) {
