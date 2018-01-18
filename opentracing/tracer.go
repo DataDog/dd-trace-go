@@ -70,6 +70,7 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 			// values manually
 			span.TraceID = context.traceID
 			span.ParentID = context.spanID
+			t.impl.Sample(span)
 		}
 	} else {
 		// create a child Span that inherits from a parent
