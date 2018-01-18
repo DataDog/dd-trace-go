@@ -7,10 +7,6 @@ const (
 	ServiceName = "service.name"
 	// ResourceName defines the Resource name for the Span
 	ResourceName = "resource.name"
-	// ErrorMsg defines the error message
-	ErrorMsg = "error.msg"
-	// ErrorType defines the error class
-	ErrorType = "error.type"
-	// ErrorStack defines the stack for the given error or panic
-	ErrorStack = "error.stack"
+	// Error defines an error.
+	Error = "error.error"
 )

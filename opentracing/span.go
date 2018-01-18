@@ -64,6 +64,15 @@ func (s *Span) SetTag(key string, value interface{}) ot.Span {
 		s.Span.Lock()
 		defer s.Span.Unlock()
 		s.Span.Type = fmt.Sprint(value)
+	case Error:
+		switch v := value.(type) {
+		case nil:
+			// no error
+		case error:
+			s.Span.SetError(v)
+		default:
+			s.Span.SetError(fmt.Errorf("%v", v))
+		}
 	default:
 		// NOTE: locking is not required because the `SetMeta` is
 		// already thread-safe
