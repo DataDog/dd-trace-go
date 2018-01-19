@@ -10,8 +10,8 @@ import (
 
 	log "github.com/cihub/seelog"
 
+	"github.com/DataDog/dd-trace-go/contrib/database/sql/sqlutils"
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqlutils"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 

@@ -4,8 +4,8 @@ import (
 	"log"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/contrib/database/sql/sqltest"
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqltest"
 	"github.com/DataDog/dd-trace-go/tracer/tracertest"
 	"github.com/lib/pq"
 )
