@@ -1,0 +1,17 @@
+version: 2
+jobs:
+     build:
+          docker:
+               - image: circleci/golang:1.8
+               - image: datadog/docker-dd-agent
+                 environment:
+                 - DD_APM_ENABLED=true
+                 - DD_BIND_HOST=0.0.0.0
+                 - DD_API_KEY=invalid_key_but_this_is_fine
+
+          working_directory: /go/src/github.com/DataDog/dd-trace-go
+
+          steps:
+               - checkout
+               - run: |
+                    go test -race ./opentracing ./tracer
