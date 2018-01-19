@@ -30,6 +30,9 @@ type Configuration struct {
 	// GlobalTags holds a set of tags that will be automatically applied to
 	// all spans.
 	GlobalTags map[string]interface{}
+
+	// TextMapPropagator is an injector used for Context propagation.
+	TextMapPropagator Propagator
 }
 
 // NewConfiguration creates a `Configuration` object with default values.
@@ -39,13 +42,14 @@ func NewConfiguration() *Configuration {
 
 	// Configuration struct with default values
 	return &Configuration{
-		Enabled:       true,
-		Debug:         false,
-		ServiceName:   binaryName,
-		SampleRate:    1,
-		AgentHostname: "localhost",
-		AgentPort:     "8126",
-		GlobalTags:    make(map[string]interface{}),
+		Enabled:           true,
+		Debug:             false,
+		ServiceName:       binaryName,
+		SampleRate:        1,
+		AgentHostname:     "localhost",
+		AgentPort:         "8126",
+		GlobalTags:        make(map[string]interface{}),
+		TextMapPropagator: NewTextMapPropagator("", "", ""),
 	}
 }
 

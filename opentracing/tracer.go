@@ -18,9 +18,6 @@ type Tracer struct {
 
 	// config holds the Configuration used to create the Tracer.
 	config *Configuration
-
-	// textPropagator is an injector used for Context propagation.
-	textPropagator *textMapPropagator
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`
@@ -125,9 +122,8 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 func (t *Tracer) Inject(ctx ot.SpanContext, format interface{}, carrier interface{}) error {
 	switch format {
 	case ot.TextMap, ot.HTTPHeaders:
-		return t.textPropagator.Inject(ctx, carrier)
+		return t.config.TextMapPropagator.Inject(ctx, carrier)
 	}
-
 	return ot.ErrUnsupportedFormat
 }
 
@@ -135,9 +131,8 @@ func (t *Tracer) Inject(ctx ot.SpanContext, format interface{}, carrier interfac
 func (t *Tracer) Extract(format interface{}, carrier interface{}) (ot.SpanContext, error) {
 	switch format {
 	case ot.TextMap, ot.HTTPHeaders:
-		return t.textPropagator.Extract(carrier)
+		return t.config.TextMapPropagator.Extract(carrier)
 	}
-
 	return nil, ot.ErrUnsupportedFormat
 }
 
