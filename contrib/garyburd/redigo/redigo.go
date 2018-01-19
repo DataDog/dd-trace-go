@@ -5,13 +5,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
-	redis "github.com/garyburd/redigo/redis"
 	"net"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
+	redis "github.com/garyburd/redigo/redis"
 )
 
 // TracedConn is an implementation of the redis.Conn interface that supports tracing

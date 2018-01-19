@@ -2,6 +2,7 @@ package elastictrace
 
 import (
 	"context"
+
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/tracertest"
 	"github.com/stretchr/testify/assert"
@@ -22,7 +23,7 @@ func TestClientV5(t *testing.T) {
 
 	tc := NewTracedHTTPClient("my-es-service", testTracer)
 	client, err := elasticv5.NewClient(
-		elasticv5.SetURL("http://127.0.0.1:59200"),
+		elasticv5.SetURL("http://127.0.0.1:9201"),
 		elasticv5.SetHttpClient(tc),
 		elasticv5.SetSniff(false),
 		elasticv5.SetHealthcheck(false),
@@ -55,7 +56,7 @@ func TestClientV3(t *testing.T) {
 
 	tc := NewTracedHTTPClient("my-es-service", testTracer)
 	client, err := elasticv3.NewClient(
-		elasticv3.SetURL("http://127.0.0.1:59201"),
+		elasticv3.SetURL("http://127.0.0.1:9200"),
 		elasticv3.SetHttpClient(tc),
 		elasticv3.SetSniff(false),
 		elasticv3.SetHealthcheck(false),
@@ -88,8 +89,8 @@ func TestClientV3Failure(t *testing.T) {
 
 	tc := NewTracedHTTPClient("my-es-service", testTracer)
 	client, err := elasticv3.NewClient(
-		// not existing service, it must fail
-		elasticv3.SetURL("http://127.0.0.1:29201"),
+		// inexistent service, it must fail
+		elasticv3.SetURL("http://127.0.0.1:29200"),
 		elasticv3.SetHttpClient(tc),
 		elasticv3.SetSniff(false),
 		elasticv3.SetHealthcheck(false),
@@ -123,8 +124,8 @@ func TestClientV5Failure(t *testing.T) {
 
 	tc := NewTracedHTTPClient("my-es-service", testTracer)
 	client, err := elasticv5.NewClient(
-		// not existing service, it must fail
-		elasticv5.SetURL("http://127.0.0.1:29200"),
+		// inexistent service, it must fail
+		elasticv5.SetURL("http://127.0.0.1:29201"),
 		elasticv5.SetHttpClient(tc),
 		elasticv5.SetSniff(false),
 		elasticv5.SetHealthcheck(false),

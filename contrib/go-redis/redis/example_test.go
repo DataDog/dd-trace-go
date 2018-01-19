@@ -3,12 +3,13 @@ package redis_test
 import (
 	"context"
 	"fmt"
+	"time"
+
+	gintrace "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin"
 	redistrace "github.com/DataDog/dd-trace-go/contrib/go-redis/redis"
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/gin-gonic/gintrace"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis"
-	"time"
 )
 
 // To start tracing Redis commands, use the NewTracedClient function to create a traced Redis clienty,

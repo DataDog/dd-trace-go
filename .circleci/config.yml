@@ -1,0 +1,90 @@
+version: 2
+jobs:
+     build:
+          working_directory: /go/src/github.com/DataDog/dd-trace-go
+          resource_class: xlarge
+
+          docker:
+               - image: circleci/golang:latest
+               - image: cassandra:3.7
+               - image: circleci/mysql:5.7
+                 environment:
+                 - MYSQL_ROOT_PASSWORD=admin
+                 - MYSQL_PASSWORD=test
+                 - MYSQL_USER=test
+                 - MYSQL_DATABASE=test
+               - image: circleci/postgres:9.5
+                 environment:
+                 - POSTGRES_PASSWORD=postgres
+                 - POSTGRES_USER=postgres
+                 - POSTGRES_DB=postgres
+               - image: redis:3.2
+               - image: elasticsearch:2
+                 environment:
+                 - ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+               - image: elasticsearch:5
+                 environment:
+                 - ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+               - image: datadog/docker-dd-agent
+                 environment:
+                 - DD_APM_ENABLED=true
+                 - DD_BIND_HOST=0.0.0.0
+                 - DD_API_KEY=invalid_key_but_this_is_fine
+
+          steps:
+               - checkout
+
+               - run:
+                    name: Wait for MySQL
+                    command: dockerize -wait tcp://localhost:3306 -timeout 1m
+
+               - run:
+                    name: Wait for Postgres
+                    command: dockerize -wait tcp://localhost:5432 -timeout 1m
+
+               - run:
+                    name: Wait for Redis
+                    command: dockerize -wait tcp://localhost:6379 -timeout 1m
+
+               - run:
+                    name: Wait for ElasticSearch (1)
+                    command: dockerize -wait http://localhost:9200 -timeout 1m
+
+               - run:
+                    name: Wait for ElasticSearch (2)
+                    command: dockerize -wait http://localhost:9201 -timeout 1m
+
+               - run:
+                    name: Wait for Datadog Agent
+                    command: dockerize -wait tcp://127.0.0.1:8126 -timeout 1m
+
+               - run:
+                    name: Wait for Cassandra
+                    command: dockerize -wait tcp://localhost:9042 -timeout 2m
+
+               - run:
+                    name: Vendor gRPC v1.5.2
+                    # This step vendors gRPC v1.5.2 inside our gRPCv.12 contrib
+                    # to allow running the tests against that specific version
+                    # of the gRPC library. In a real-world use case we don't want
+                    # this vendoring to exist because users might be running this
+                    # integration against older versions that they might have in
+                    # their $GOPATH.
+                    environment:
+                         GRPC_PATH: /go/src/google.golang.org/grpc
+                         GRPC_DEST: contrib/google.golang.org/grpc.v12/vendor/google.golang.org/
+                    command: |
+                         go get google.golang.org/grpc
+                         mkdir -p $GRPC_DEST
+                         cp -r $GRPC_PATH $GRPC_DEST
+                         cd $GRPC_DEST/grpc && git checkout v1.5.2
+
+               - run:
+                    name: Fetching dependencies
+                    command: |
+                         go get github.com/opentracing/opentracing-go
+                         go get -t ./contrib/...
+
+               - run:
+                    name: Testing
+                    command: go test -race ./opentracing ./tracer ./contrib/...
