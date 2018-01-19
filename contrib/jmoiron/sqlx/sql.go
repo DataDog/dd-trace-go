@@ -5,9 +5,9 @@ package sqlx
 import (
 	"database/sql/driver"
 
+	sqltraced "github.com/DataDog/dd-trace-go/contrib/database/sql"
+	"github.com/DataDog/dd-trace-go/contrib/database/sql/sqlutils"
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqlutils"
 	"github.com/jmoiron/sqlx"
 )
 
