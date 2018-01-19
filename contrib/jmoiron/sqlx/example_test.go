@@ -8,7 +8,7 @@ import (
 )
 
 // The API to trace sqlx calls is the same as sqltraced.
-// See https://godoc.org/github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced for more information on how to use it.
+// See https://godoc.org/github.com/DataDog/dd-trace-go/contrib/database/sql for more information on how to use it.
 func Example() {
 	// OpenTraced will first register a traced version of the driver and then will return the sqlx.DB object
 	// that holds the connection with the database.

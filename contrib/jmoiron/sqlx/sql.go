@@ -1,13 +1,13 @@
 // Package sqlxtraced provides a traced version of the "jmoiron/sqlx" package
-// For more information about the API, see https://godoc.org/github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced.
+// For more information about the API, see https://godoc.org/github.com/DataDog/dd-trace-go/contrib/database/sql.
 package sqlx
 
 import (
 	"database/sql/driver"
 
+	sqltraced "github.com/DataDog/dd-trace-go/contrib/database/sql"
+	"github.com/DataDog/dd-trace-go/contrib/database/sql/sqlutils"
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqlutils"
 	"github.com/jmoiron/sqlx"
 )
 

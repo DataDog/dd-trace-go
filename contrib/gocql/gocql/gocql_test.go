@@ -2,6 +2,7 @@ package gocql
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 
 const (
 	debug          = false
-	CASSANDRA_HOST = "127.0.0.1:59042"
+	CASSANDRA_HOST = "127.0.0.1:9042"
 )
 
 func newCassandraCluster() *gocql.ClusterConfig {
@@ -32,7 +33,7 @@ func TestMain(m *testing.M) {
 	cluster := newCassandraCluster()
 	session, err := cluster.CreateSession()
 	if err != nil {
-		t.Fatalf("skipping test: %v\n", err)
+		log.Fatalf("skipping test: %v\n", err)
 	}
 
 	// Ensures test keyspace and table person exists.
@@ -111,7 +112,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Equal(childSpan.Name, ext.CassandraQuery)
 	assert.Equal(childSpan.Resource, "SELECT * from trace.person")
 	assert.Equal(childSpan.GetMeta(ext.CassandraKeyspace), "trace")
-	assert.Equal(childSpan.GetMeta(ext.TargetPort), "59042")
+	assert.Equal(childSpan.GetMeta(ext.TargetPort), "9042")
 	assert.Equal(childSpan.GetMeta(ext.TargetHost), "127.0.0.1")
 	assert.Equal(childSpan.GetMeta(ext.CassandraCluster), "datacenter1")
 }

@@ -4,15 +4,15 @@ import (
 	"log"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/contrib/database/sql/sqltest"
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqltest"
 	"github.com/DataDog/dd-trace-go/tracer/tracertest"
 	"github.com/lib/pq"
 )
 
 func TestPostgres(t *testing.T) {
 	trc, transport := tracertest.GetTestTracer()
-	dbx, err := OpenTraced(&pq.Driver{}, "postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable", "postgres-test", trc)
+	dbx, err := OpenTraced(&pq.Driver{}, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable", "postgres-test", trc)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestPostgres(t *testing.T) {
 	expectedSpan.Meta = map[string]string{
 		"db.user":  "postgres",
 		"out.host": "127.0.0.1",
-		"out.port": "55432",
+		"out.port": "5432",
 		"db.name":  "postgres",
 	}
 

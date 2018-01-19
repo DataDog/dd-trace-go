@@ -4,15 +4,15 @@ import (
 	"log"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/contrib/database/sql/sqltest"
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqltest"
 	"github.com/DataDog/dd-trace-go/tracer/tracertest"
 	"github.com/go-sql-driver/mysql"
 )
 
 func TestMySQL(t *testing.T) {
 	trc, transport := tracertest.GetTestTracer()
-	dbx, err := OpenTraced(&mysql.MySQLDriver{}, "test:test@tcp(127.0.0.1:53306)/test", "mysql-test", trc)
+	dbx, err := OpenTraced(&mysql.MySQLDriver{}, "test:test@tcp(127.0.0.1:3306)/test", "mysql-test", trc)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestMySQL(t *testing.T) {
 	expectedSpan.Meta = map[string]string{
 		"db.user":  "test",
 		"out.host": "127.0.0.1",
-		"out.port": "53306",
+		"out.port": "3306",
 		"db.name":  "test",
 	}
 

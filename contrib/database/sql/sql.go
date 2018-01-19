@@ -1,5 +1,5 @@
 // Package sqltraced provides a traced version of any driver implementing the database/sql/driver interface.
-// To trace jmoiron/sqlx, see https://godoc.org/github.com/DataDog/dd-trace-go/tracer/contrib/sqlxtraced.
+// To trace jmoiron/sqlx, see https://godoc.org/github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx.
 package sql
 
 import (
@@ -10,8 +10,8 @@ import (
 
 	log "github.com/cihub/seelog"
 
+	"github.com/DataDog/dd-trace-go/contrib/database/sql/sqlutils"
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/contrib/sqltraced/sqlutils"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
