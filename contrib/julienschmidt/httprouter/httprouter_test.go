@@ -1,13 +1,15 @@
-package mux
+package httprouter
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/julienschmidt/httprouter"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/tracertest"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestHttpTracerDisabled(t *testing.T) {
@@ -16,8 +18,8 @@ func TestHttpTracerDisabled(t *testing.T) {
 	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetEnabled(false)
 
-	mux := NewRouter("my-service", testTracer)
-	mux.HandleFunc("/disabled", func(w http.ResponseWriter, r *http.Request) {
+	router := New("my-service", testTracer)
+	router.GET("/disabled", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		_, err := w.Write([]byte("disabled!"))
 		assert.Nil(err)
 
@@ -30,7 +32,7 @@ func TestHttpTracerDisabled(t *testing.T) {
 	// Make the request
 	r := httptest.NewRequest("GET", "/disabled", nil)
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, r)
+	router.ServeHTTP(w, r)
 	assert.Equal(200, w.Code)
 	assert.Equal("disabled!", w.Body.String())
 
@@ -103,16 +105,16 @@ func setup(t *testing.T) (*tracer.Tracer, *tracertest.DummyTransport, http.Handl
 	h500 := handler500(t)
 	tracer, transport := tracertest.GetTestTracer()
 
-	mux := NewRouter("my-service", tracer)
-	mux.HandleFunc("/200", h200)
-	mux.HandleFunc("/500", h500)
+	router := New("my-service", tracer)
+	router.GET("/200", h200)
+	router.GET("/500", h500)
 
-	return tracer, transport, mux
+	return tracer, transport, router
 }
 
-func handler200(t *testing.T) http.HandlerFunc {
+func handler200(t *testing.T) httprouter.Handle {
 	assert := assert.New(t)
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		_, err := w.Write([]byte("200!\n"))
 		assert.Nil(err)
 
@@ -122,9 +124,9 @@ func handler200(t *testing.T) http.HandlerFunc {
 	}
 }
 
-func handler500(t *testing.T) http.HandlerFunc {
+func handler500(t *testing.T) httprouter.Handle {
 	assert := assert.New(t)
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		http.Error(w, "500!", http.StatusInternalServerError)
 		span := tracer.SpanFromContextDefault(r.Context())
 

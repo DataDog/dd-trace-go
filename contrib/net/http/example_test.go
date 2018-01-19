@@ -6,12 +6,10 @@ import (
 	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http"
 )
 
-func handler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Hello World!\n"))
-}
-
 func Example() {
 	mux := httptrace.NewServeMux("web-service", nil)
-	mux.HandleFunc("/", handler)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})
 	http.ListenAndServe(":8080", mux)
 }
