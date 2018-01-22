@@ -46,8 +46,6 @@ Requirements:
 
 * Go 1.7 or later
 * Docker
-* Rake
-* [gometalinter](https://github.com/alecthomas/gometalinter)
 
 ### Run the tests
 
