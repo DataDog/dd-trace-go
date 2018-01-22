@@ -51,28 +51,8 @@ Requirements:
 
 ### Run the tests
 
-Start the containers defined in `docker-compose.yml` so that integrations can be tested:
-
-```
-$ docker-compose up -d
-$ ./wait-for-services.sh  # wait that all services are up and running
-```
-
-Fetch package's third-party dependencies (integrations and testing utilities):
-
-```
-$ rake init
-```
-
-This will only work if your working directory is in $GOPATH/src.
-
-Now, you can run your tests via :
-
-```
-$ rake test:lint  # linting via gometalinter
-$ rake test:all   # test the tracer and all integrations
-$ rake test:race  # use the -race flag
-```
+The best way to run the tests is using the [CircleCI CLI](https://circleci.com/docs/2.0/local-jobs/). Simply run `circleci build`
+in the repository root. Note that you might have to increase the resources dedicated to Docker to around 4GB.
 
 ## Further Reading
 
