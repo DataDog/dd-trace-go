@@ -98,6 +98,36 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal(int32(1), s.Error)
 }
 
+func TestWrapHandler200(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport := tracertest.GetTestTracer()
+	handler := WrapHandler(handler200(t), "my-service", "my-resource", tracer)
+
+	// Send and verify a 200 request
+	url := "/"
+	r := httptest.NewRequest("GET", url, nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+	assert.Equal(200, w.Code)
+	assert.Equal("200!\n", w.Body.String())
+
+	// Ensure the request is properly traced
+	tracer.ForceFlush()
+	traces := transport.Traces()
+	assert.Equal(1, len(traces))
+	spans := traces[0]
+	assert.Equal(1, len(spans))
+
+	s := spans[0]
+	assert.Equal("http.request", s.Name)
+	assert.Equal("my-service", s.Service)
+	assert.Equal("my-resource", s.Resource)
+	assert.Equal("200", s.GetMeta("http.status_code"))
+	assert.Equal("GET", s.GetMeta("http.method"))
+	assert.Equal(url, s.GetMeta("http.url"))
+	assert.Equal(int32(0), s.Error)
+}
+
 func setup(t *testing.T) (*tracer.Tracer, *tracertest.DummyTransport, http.Handler) {
 	h200 := handler200(t)
 	h500 := handler500(t)

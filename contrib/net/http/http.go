@@ -38,3 +38,11 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// we need to wrap the ServeHTTP method to be able to trace it
 	internal.Trace(mux.ServeMux, w, r, mux.service, resource, mux.Tracer)
 }
+
+// WrapHandler wraps an http.Handler with the given tracer using the
+// specified service and resource.
+func WrapHandler(h http.Handler, service, resource string, trc *tracer.Tracer) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		internal.Trace(h, w, req, service, resource, trc)
+	})
+}
