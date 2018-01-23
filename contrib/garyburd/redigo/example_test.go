@@ -2,6 +2,8 @@ package redigo_test
 
 import (
 	"context"
+	"log"
+
 	redigotrace "github.com/DataDog/dd-trace-go/contrib/garyburd/redigo"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/garyburd/redigo/redis"
@@ -10,7 +12,10 @@ import (
 // To start tracing Redis commands, use the TracedDial function to create a connection,
 // passing in a service name of choice.
 func Example() {
-	c, _ := redigotrace.TracedDial("my-redis-backend", tracer.DefaultTracer, "tcp", "127.0.0.1:6379")
+	c, err := redigotrace.Dial("tcp", "127.0.0.1:6379")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Emit spans per command by using your Redis connection as usual
 	c.Do("SET", "vehicle", "truck")
@@ -25,7 +30,10 @@ func Example() {
 }
 
 func ExampleTracedConn() {
-	c, _ := redigotrace.TracedDial("my-redis-backend", tracer.DefaultTracer, "tcp", "127.0.0.1:6379")
+	c, err := redigotrace.DialWithServiceName("my-redis-backend", tracer.DefaultTracer, "tcp", "127.0.0.1:6379")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Emit spans per command by using your Redis connection as usual
 	c.Do("SET", "vehicle", "truck")
@@ -41,7 +49,10 @@ func ExampleTracedConn() {
 
 // Alternatively, provide a redis URL to the TracedDialURL function
 func Example_dialURL() {
-	c, _ := redigotrace.TracedDialURL("my-redis-backend", tracer.DefaultTracer, "redis://127.0.0.1:6379")
+	c, err := redigotrace.DialURL("redis://127.0.0.1:6379")
+	if err != nil {
+		log.Fatal(err)
+	}
 	c.Do("SET", "vehicle", "truck")
 }
 
@@ -49,11 +60,10 @@ func Example_dialURL() {
 func Example_pool() {
 	pool := &redis.Pool{
 		Dial: func() (redis.Conn, error) {
-			return redigotrace.TracedDial("my-redis-backend", tracer.DefaultTracer, "tcp", "127.0.0.1:6379")
+			return redigotrace.DialWithServiceName("my-redis-backend", tracer.DefaultTracer, "tcp", "127.0.0.1:6379")
 		},
 	}
 
 	c := pool.Get()
-
 	c.Do("SET", " whiskey", " glass")
 }
