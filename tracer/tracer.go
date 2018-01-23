@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/tracer/ext"
@@ -38,8 +39,9 @@ type Tracer struct {
 	transport Transport // is the transport mechanism used to delivery spans to the agent
 	sampler   sampler   // is the trace sampler to only keep some samples
 
-	debugMu             sync.RWMutex // protects the debugLoggingEnabled attribute while allowing concurrent reads
-	debugLoggingEnabled bool
+	// debugMode should only be set atomically. It is enabled when it has
+	// a value of 1 and disabled when 0.
+	debugMode uint32
 
 	enableMu sync.RWMutex
 	enabled  bool // defines if the Tracer is enabled or not
@@ -66,10 +68,9 @@ func NewTracer() *Tracer {
 // NewTracerTransport create a new Tracer with the given transport.
 func NewTracerTransport(transport Transport) *Tracer {
 	t := &Tracer{
-		enabled:             true,
-		transport:           transport,
-		sampler:             newAllSampler(),
-		debugLoggingEnabled: false,
+		enabled:   true,
+		transport: transport,
+		sampler:   newAllSampler(),
 
 		channels: newTracerChans(),
 
@@ -244,16 +245,16 @@ func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Spa
 
 // SetDebugLogging will set the debug level
 func (t *Tracer) SetDebugLogging(debug bool) {
-	t.debugMu.Lock()
-	defer t.debugMu.Unlock()
-	t.debugLoggingEnabled = debug
+	if debug {
+		atomic.CompareAndSwapUint32(&t.debugMode, 0, 1)
+	} else {
+		atomic.CompareAndSwapUint32(&t.debugMode, 1, 0)
+	}
 }
 
 // DebugLoggingEnabled returns true if the debug level is enabled and false otherwise.
 func (t *Tracer) DebugLoggingEnabled() bool {
-	t.debugMu.RLock()
-	defer t.debugMu.RUnlock()
-	return t.debugLoggingEnabled
+	return atomic.LoadUint32(&t.debugMode) == 1
 }
 
 func (t *Tracer) getTraces() [][]*Span {
