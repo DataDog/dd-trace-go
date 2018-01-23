@@ -1,11 +1,10 @@
-# Gopkg.toml:
-# this `dep` file is used only to lock Tracer dependencies. It's not meant to be 
-# used by end users so no integrations dependencies must be added here. If you update 
-# or add a new dependency, remember to commit the `vendor` folder. To prepare
-# your development environment, remember to use `rake init` instead.
+# This file is used only to track tracer dependencies. It's not meant to be used 
+# by end users so no integrations dependencies must be added here. If you update 
+# or add a new dependency, remember to commit the `vendor` folder.
 
 # ignore integrations dependencies
 ignored = [
+  "github.com/julienschmidt/*",
   "github.com/opentracing/*",
   "github.com/cihub/seelog",
   "github.com/gin-gonic/gin",
