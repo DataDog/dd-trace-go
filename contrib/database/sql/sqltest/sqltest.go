@@ -16,8 +16,14 @@ import (
 // teardown function that must be executed via `defer`
 func setupTestCase(t *testing.T, db *DB) func(t *testing.T, db *DB) {
 	// creates the database
-	db.Exec("DROP TABLE IF EXISTS city")
-	db.Exec("CREATE TABLE city (id integer NOT NULL DEFAULT '0', name text)")
+	_, err := db.Exec("DROP TABLE IF EXISTS city")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec("CREATE TABLE city (id integer NOT NULL DEFAULT '0', name text)")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Empty the tracer
 	db.Tracer.ForceFlush()
@@ -46,7 +52,7 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 
 	// Test db.Ping
 	err := db.Ping()
-	assert.Equal(nil, err)
+	assert.Nil(err)
 
 	db.Tracer.ForceFlush()
 	traces := db.Transport.Traces()
@@ -62,7 +68,7 @@ func testDB(t *testing.T, db *DB, expectedSpan *tracer.Span) {
 	// Test db.Query
 	rows, err := db.Query(query)
 	defer rows.Close()
-	assert.Equal(nil, err)
+	assert.Nil(err)
 
 	db.Tracer.ForceFlush()
 	traces = db.Transport.Traces()
