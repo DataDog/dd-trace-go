@@ -35,6 +35,24 @@ jobs:
                - checkout
 
                - run:
+                    name: Vendor gRPC v1.5.2
+                    # This step vendors gRPC v1.5.2 inside our gRPC.v12 contrib
+                    # to allow running the tests against the correct version of
+                    # the gRPC library. In a real-world use case we don't want
+                    # this vendoring to exist because users might be running the
+                    # integration against older versions which we should also
+                    # support.
+                    environment:
+                         GRPC_DEST: contrib/google.golang.org/grpc.v12/vendor/google.golang.org/grpc
+                    command: |
+                         mkdir -p $GRPC_DEST
+                         git clone --branch v1.5.2 https://github.com/grpc/grpc-go $GRPC_DEST
+
+               - run:
+                    name: Fetching dependencies
+                    command: go get -t ./...
+
+               - run:
                     name: Wait for MySQL
                     command: dockerize -wait tcp://localhost:3306 -timeout 1m
 
@@ -61,29 +79,6 @@ jobs:
                - run:
                     name: Wait for Cassandra
                     command: dockerize -wait tcp://localhost:9042 -timeout 2m
-
-               - run:
-                    name: Vendor gRPC v1.5.2
-                    # This step vendors gRPC v1.5.2 inside our gRPCv.12 contrib
-                    # to allow running the tests against that specific version
-                    # of the gRPC library. In a real-world use case we don't want
-                    # this vendoring to exist because users might be running this
-                    # integration against older versions that they might have in
-                    # their $GOPATH.
-                    environment:
-                         GRPC_PATH: /go/src/google.golang.org/grpc
-                         GRPC_DEST: contrib/google.golang.org/grpc.v12/vendor/google.golang.org/
-                    command: |
-                         go get google.golang.org/grpc
-                         mkdir -p $GRPC_DEST
-                         cp -r $GRPC_PATH $GRPC_DEST
-                         cd $GRPC_DEST/grpc && git checkout v1.5.2
-
-               - run:
-                    name: Fetching dependencies
-                    command: |
-                         go get github.com/opentracing/opentracing-go
-                         go get -t ./contrib/...
 
                - run:
                     name: Testing
