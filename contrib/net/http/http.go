@@ -1,3 +1,4 @@
+// Package http provides functions to trace the net/http package (https://golang.org/pkg/net/http).
 package http
 
 import (
@@ -11,19 +12,27 @@ import (
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
 type ServeMux struct {
 	*http.ServeMux
-	*tracer.Tracer
+	tracer  *tracer.Tracer
 	service string
 }
 
-// NewServeMux allocates and returns a new ServeMux.
-// The last parameter is optional and allows to pass a custom tracer.
-func NewServeMux(service string, trc *tracer.Tracer) *ServeMux {
-	t := tracer.DefaultTracer
-	if trc != nil {
-		t = trc
-	}
+// NewServeMux allocates and returns an http.ServeMux augmented with the
+// global tracer.
+func NewServeMux() *ServeMux {
+	return NewServeMuxWithServiceName("http.router", tracer.DefaultTracer)
+}
+
+// NewServeMuxWithTracer creates a new http.ServeMux that is traced using
+// the given service name.
+//
+// TODO(gbbr): Remove this once we switch to OpenTracing.
+func NewServeMuxWithServiceName(service string, t *tracer.Tracer) *ServeMux {
 	t.SetServiceInfo(service, "net/http", ext.AppTypeWeb)
-	return &ServeMux{http.NewServeMux(), t, service}
+	return &ServeMux{
+		ServeMux: http.NewServeMux(),
+		tracer:   t,
+		service:  service,
+	}
 }
 
 // ServeHTTP dispatches the request to the handler
@@ -34,15 +43,21 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// get the resource associated to this request
 	_, route := mux.Handler(r)
 	resource := r.Method + " " + route
-
-	// we need to wrap the ServeHTTP method to be able to trace it
-	internal.Trace(mux.ServeMux, w, r, mux.service, resource, mux.Tracer)
+	internal.TraceAndServe(mux.ServeMux, w, r, mux.service, resource, mux.tracer)
 }
 
-// WrapHandler wraps an http.Handler with the given tracer using the
+// WrapHandlerWithTracer wraps an http.Handler with the default tracer using the
 // specified service and resource.
-func WrapHandler(h http.Handler, service, resource string, trc *tracer.Tracer) http.Handler {
+func WrapHandler(h http.Handler, service, resource string) http.Handler {
+	return WrapHandlerWithTracer(h, service, resource, tracer.DefaultTracer)
+}
+
+// WrapHandlerWithTracer wraps an http.Handler with the given tracer using the
+// specified service and resource.
+//
+// TODO(gbbr): Remove this once we switch to OpenTracing fully.
+func WrapHandlerWithTracer(h http.Handler, service, resource string, t *tracer.Tracer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		internal.Trace(h, w, req, service, resource, trc)
+		internal.TraceAndServe(h, w, req, service, resource, t)
 	})
 }

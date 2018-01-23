@@ -8,8 +8,8 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
-// Trace will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
-func Trace(h http.Handler, w http.ResponseWriter, r *http.Request, service, resource string, t *tracer.Tracer) {
+// TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
+func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, service, resource string, t *tracer.Tracer) {
 	// bail out if tracing isn't enabled
 	if !t.Enabled() {
 		h.ServeHTTP(w, r)
