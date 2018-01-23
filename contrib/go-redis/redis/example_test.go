@@ -2,81 +2,51 @@ package redis_test
 
 import (
 	"context"
-	"fmt"
 	"time"
 
-	gintrace "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin"
 	redistrace "github.com/DataDog/dd-trace-go/contrib/go-redis/redis"
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis"
 )
 
-// To start tracing Redis commands, use the NewTracedClient function to create a traced Redis clienty,
-// passing in a service name of choice.
+// To start tracing Redis, simply create a new client using the library and continue
+// using as you normally would.
 func Example() {
-	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
-		Password: "", // no password set
-		DB:       0,  // use default db
-	}
-	c := redistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
-	// Emit spans per command by using your Redis connection as usual
+	// create a new Client
+	opts := &redis.Options{Addr: "127.0.0.1", Password: "", DB: 0}
+	c := redistrace.NewClient(opts)
+
+	// any action emits a span
 	c.Set("test_key", "test_value", 0)
 
-	// Use a context to pass information down the call chain
+	// optionally, create a new root span
 	root := tracer.NewRootSpan("parent.request", "web", "/home")
+
+	// and attach it to a context
 	ctx := root.Context(context.Background())
 
-	// When set with a context, the traced client will emit a span inheriting from 'parent.request'
-	c.SetContext(ctx)
+	// set the context on the client
+	c = c.WithContext(ctx)
+
+	// commit further commands, which will inherit from the parent in the context.
 	c.Set("food", "cheese", 0)
 	root.Finish()
-
-	// Contexts can be easily passed between Datadog integrations
-	r := gin.Default()
-	r.Use(gintrace.Middleware("web-admin"))
-	client := redistrace.NewTracedClient(opts, tracer.DefaultTracer, "redis-img-backend")
-
-	r.GET("/user/settings/:id", func(ctx *gin.Context) {
-		// create a span that is a child of your http request
-		client.SetContext(ctx)
-		client.Get(fmt.Sprintf("cached_user_details_%s", ctx.Param("id")))
-	})
 }
 
-// You can also trace Redis Pipelines
-func Example_pipeline() {
-	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
-		Password: "", // no password set
-		DB:       0,  // use default db
-	}
-	c := redistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
-	// pipe is a TracedPipeliner
+// You can also trace Redis Pipelines. Simply use as usual and the traces will be
+// automatically picked up by the underlying implementation.
+func Example_pipeliner() {
+	// create a client
+	opts := &redis.Options{Addr: "127.0.0.1", Password: "", DB: 0}
+	c := redistrace.NewClient(opts)
+
+	// open the pipeline
 	pipe := c.Pipeline()
+
+	// submit some commands
 	pipe.Incr("pipeline_counter")
 	pipe.Expire("pipeline_counter", time.Hour)
 
+	// execute with trace
 	pipe.Exec()
-}
-
-func ExampleNewTracedClient() {
-	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
-		Password: "", // no password set
-		DB:       0,  // use default db
-	}
-	c := redistrace.NewTracedClient(opts, tracer.DefaultTracer, "my-redis-backend")
-	// Emit spans per command by using your Redis connection as usual
-	c.Set("test_key", "test_value", 0)
-
-	// Use a context to pass information down the call chain
-	root := tracer.NewRootSpan("parent.request", "web", "/home")
-	ctx := root.Context(context.Background())
-
-	// When set with a context, the traced client will emit a span inheriting from 'parent.request'
-	c.SetContext(ctx)
-	c.Set("food", "cheese", 0)
-	root.Finish()
 }
