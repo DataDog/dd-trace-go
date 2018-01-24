@@ -1,4 +1,4 @@
-// Package gin provides tracing middleware for the Gin web framework.
+// Package gin provides functions to trace the gin-gonic/gin package (https://github.com/gin-gonic/gin).
 package gin
 
 import (
@@ -10,117 +10,61 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// key is the string that we'll use to store spans in the tracer.
-var key = "datadog_trace_span"
+const spanKey = "dd-trace-span"
 
-// Middleware returns middleware that will trace requests with the default
-// tracer.
+// Trace returns middleware that will trace incoming requests.
+// The last parameter is optional and can be used to pass a custom tracer.
 func Middleware(service string) gin.HandlerFunc {
-	return MiddlewareTracer(service, tracer.DefaultTracer)
-}
+	// TODO(gbbr): Handle this when we switch to OpenTracing.
+	t := tracer.DefaultTracer
+	t.SetServiceInfo(service, "gin-gonic/gin", ext.AppTypeWeb)
+	return func(c *gin.Context) {
+		// bail out if tracing isn't enabled
+		if !t.Enabled() {
+			c.Next()
+			return
+		}
 
-// MiddlewareTracer returns middleware that will trace requests with the given
-// tracer.
-func MiddlewareTracer(service string, t *tracer.Tracer) gin.HandlerFunc {
-	t.SetServiceInfo(service, "gin-gonic", ext.AppTypeWeb)
-	mw := newMiddleware(service, t)
-	return mw.Handle
-}
+		resource := c.HandlerName()
+		// TODO(x): get the span from the request context
+		span := t.NewRootSpan("http.request", service, resource)
+		defer span.Finish()
 
-// middleware implements gin middleware.
-type middleware struct {
-	service string
-	trc     *tracer.Tracer
-}
+		span.Type = ext.HTTPType
+		span.SetMeta(ext.HTTPMethod, c.Request.Method)
+		span.SetMeta(ext.HTTPURL, c.Request.URL.Path)
 
-func newMiddleware(service string, trc *tracer.Tracer) *middleware {
-	return &middleware{
-		service: service,
-		trc:     trc,
-	}
-}
+		// pass the span through the request context
+		c.Set(spanKey, span)
 
-// Handle is a gin HandlerFunc that will add tracing to the given request.
-func (m *middleware) Handle(c *gin.Context) {
-
-	// bail if not enabled
-	if !m.trc.Enabled() {
+		// serve the request to the next middleware
 		c.Next()
-		return
+
+		span.SetMeta(ext.HTTPCode, strconv.Itoa(c.Writer.Status()))
+
+		if len(c.Errors) > 0 {
+			span.SetMeta("gin.errors", c.Errors.String())
+			span.SetError(c.Errors[0])
+		}
 	}
-
-	// FIXME[matt] the handler name is a bit unwieldy and uses reflection
-	// under the hood. might be better to tackle this task and do it right
-	// so we can end up with "user/:user/whatever" instead of
-	// "github.com/foobar/blah"
-	//
-	// See here: https://github.com/gin-gonic/gin/issues/649
-	resource := c.HandlerName()
-
-	// Create our span and patch it to the context for downstream.
-	span := m.trc.NewRootSpan("gin.request", m.service, resource)
-	c.Set(key, span)
-
-	// Pass along the request.
-	c.Next()
-
-	// Set http tags.
-	span.SetMeta(ext.HTTPCode, strconv.Itoa(c.Writer.Status()))
-	span.SetMeta(ext.HTTPMethod, c.Request.Method)
-	span.SetMeta(ext.HTTPURL, c.Request.URL.Path)
-
-	// Set any error information.
-	var err error
-	if len(c.Errors) > 0 {
-		span.SetMeta("gin.errors", c.Errors.String()) // set all errors
-		err = c.Errors[0]                             // but use the first for standard fields
-	}
-	span.FinishWithErr(err)
 }
 
-// Span returns the Span stored in the given Context and true. If it doesn't exist,
-// it will returns (nil, false)
-func Span(c *gin.Context) (*tracer.Span, bool) {
-	if c == nil {
-		return nil, false
-	}
-
-	s, ok := c.Get(key)
+// Span returns the Span stored in the given Context, otherwise nil.
+func SpanFromContext(c *gin.Context) *tracer.Span {
+	s, ok := c.Get(spanKey)
 	if !ok {
-		return nil, false
+		return nil
 	}
-	switch span := s.(type) {
-	case *tracer.Span:
-		return span, true
-	}
-
-	return nil, false
-}
-
-// SpanDefault returns the span stored in the given Context. If none exists,
-// it will return an empty span.
-func SpanDefault(c *gin.Context) *tracer.Span {
-	span, ok := Span(c)
+	span, ok := s.(*tracer.Span)
 	if !ok {
-		return &tracer.Span{}
+		return nil
 	}
 	return span
 }
 
-// NewChildSpan will create a span that is the child of the span stored in
-// the context.
-func NewChildSpan(name string, c *gin.Context) *tracer.Span {
-	span, ok := Span(c)
-	if !ok {
-		return &tracer.Span{}
-	}
-	return span.Tracer().NewChildSpan(name, span)
-}
-
-// HTML will trace the rendering of the template as a child of the span in the
-// given context.
+// HTML will trace the rendering of the template as a child of the span in the given context.
 func HTML(c *gin.Context, code int, name string, obj interface{}) {
-	span, _ := Span(c)
+	span := SpanFromContext(c)
 	if span == nil {
 		c.HTML(code, name, obj)
 		return
@@ -138,6 +82,5 @@ func HTML(c *gin.Context, code int, name string, obj interface{}) {
 		}
 	}()
 
-	// render
 	c.HTML(code, name, obj)
 }

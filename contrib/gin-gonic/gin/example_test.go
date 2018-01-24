@@ -8,15 +8,18 @@ import (
 
 // To start tracing requests, add the trace middleware to your Gin router.
 func Example() {
-	// Create your router and use the middleware.
+	// Create a gin.Engine
 	r := gin.New()
+
+	// Use the tracer middleware with your desired service name.
 	r.Use(gintrace.Middleware("my-web-app"))
 
+	// Set up some endpoints.
 	r.GET("/hello", func(c *gin.Context) {
 		c.String(200, "hello world!")
 	})
 
-	// Profit!
+	// And start gathering request traces.
 	r.Run(":8080")
 }
 
@@ -26,31 +29,24 @@ func ExampleHTML() {
 	r.LoadHTMLGlob("templates/*")
 
 	r.GET("/index", func(c *gin.Context) {
-		// This will render the html and trace the execution time.
+		// render the html and trace the execution time.
 		gintrace.HTML(c, 200, "index.tmpl", gin.H{
 			"title": "Main website",
 		})
 	})
 }
 
-func ExampleSpanDefault() {
+func ExampleSpanFromContext() {
 	r := gin.Default()
 	r.Use(gintrace.Middleware("image-encoder"))
-
 	r.GET("/image/encode", func(c *gin.Context) {
-		// The middleware patches a span to the request. Let's add some metadata,
-		// and create a child span.
-		span := gintrace.SpanDefault(c)
-		span.SetMeta("user.handle", "admin")
-		span.SetMeta("user.id", "1234")
+		// get the parent span
+		span := gintrace.SpanFromContext(c)
 
+		// create a child span to track operation timing.
 		encodeSpan := tracer.NewChildSpan("image.encode", span)
 		// encode a image
 		encodeSpan.Finish()
-
-		uploadSpan := tracer.NewChildSpan("image.upload", span)
-		// upload the image
-		uploadSpan.Finish()
 
 		c.String(200, "ok!")
 	})
