@@ -1,4 +1,4 @@
-package elastictrace
+package elastic
 
 import (
 	"context"
@@ -12,16 +12,14 @@ import (
 	"testing"
 )
 
-const (
-	debug = false
-)
+const debug = false
 
 func TestClientV5(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	tc := NewTracedHTTPClient("my-es-service", testTracer)
+	tc := NewHTTPClient("my-es-service", testTracer)
 	client, err := elasticv5.NewClient(
 		elasticv5.SetURL("http://127.0.0.1:9201"),
 		elasticv5.SetHttpClient(tc),
@@ -51,10 +49,10 @@ func TestClientV5(t *testing.T) {
 
 func TestClientV3(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	tc := NewTracedHTTPClient("my-es-service", testTracer)
+	tc := NewHTTPClient("my-es-service", testTracer)
 	client, err := elasticv3.NewClient(
 		elasticv3.SetURL("http://127.0.0.1:9200"),
 		elasticv3.SetHttpClient(tc),
@@ -84,10 +82,10 @@ func TestClientV3(t *testing.T) {
 
 func TestClientV3Failure(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	tc := NewTracedHTTPClient("my-es-service", testTracer)
+	tc := NewHTTPClient("my-es-service", testTracer)
 	client, err := elasticv3.NewClient(
 		// inexistent service, it must fail
 		elasticv3.SetURL("http://127.0.0.1:29200"),
@@ -119,10 +117,10 @@ func TestClientV3Failure(t *testing.T) {
 
 func TestClientV5Failure(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	tc := NewTracedHTTPClient("my-es-service", testTracer)
+	tc := NewHTTPClient("my-es-service", testTracer)
 	client, err := elasticv5.NewClient(
 		// inexistent service, it must fail
 		elasticv5.SetURL("http://127.0.0.1:29201"),
@@ -186,9 +184,37 @@ func checkErrTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *
 	assert.Equal("*errors.errorString", spans[0].GetMeta("error.type"))
 }
 
-// getTestTracer returns a Tracer with a DummyTransport
-func getTestTracer() (*tracer.Tracer, *tracertest.DummyTransport) {
-	transport := &tracertest.DummyTransport{}
-	tracer := tracer.NewTracerTransport(transport)
-	return tracer, transport
+func TestQuantize(t *testing.T) {
+	tr := tracer.NewTracer()
+	for _, tc := range []struct {
+		url, method string
+		expected    string
+	}{
+		{
+			url:      "/twitter/tweets",
+			method:   "POST",
+			expected: "POST /twitter/tweets",
+		},
+		{
+			url:      "/logs_2016_05/event/_search",
+			method:   "GET",
+			expected: "GET /logs_?_?/event/_search",
+		},
+		{
+			url:      "/twitter/tweets/123",
+			method:   "GET",
+			expected: "GET /twitter/tweets/?",
+		},
+		{
+			url:      "/logs_2016_05/event/123",
+			method:   "PUT",
+			expected: "PUT /logs_?_?/event/?",
+		},
+	} {
+		span := tracer.NewSpan("name", "elasticsearch", "", 0, 0, 0, tr)
+		span.SetMeta("elasticsearch.url", tc.url)
+		span.SetMeta("elasticsearch.method", tc.method)
+		quantize(span)
+		assert.Equal(t, tc.expected, span.Resource)
+	}
 }
