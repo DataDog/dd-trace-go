@@ -1,3 +1,4 @@
+// Package grpc provides functions to trace the google.golang.org/grpc package v1.2.
 package grpc
 
 import (
@@ -25,7 +26,6 @@ func UnaryServerInterceptor(service string, t *tracer.Tracer) grpc.UnaryServerIn
 		if !t.Enabled() {
 			return handler(ctx, req)
 		}
-
 		span := serverSpan(t, ctx, info.FullMethod, service)
 		resp, err := handler(tracer.ContextWithSpan(ctx, span), req)
 		span.FinishWithErr(err)
@@ -37,10 +37,8 @@ func UnaryServerInterceptor(service string, t *tracer.Tracer) grpc.UnaryServerIn
 func UnaryClientInterceptor(service string, t *tracer.Tracer) grpc.UnaryClientInterceptor {
 	t.SetServiceInfo(service, "grpc-client", ext.AppTypeRPC)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-
 		var child *tracer.Span
 		span, ok := tracer.SpanFromContext(ctx)
-
 		// only trace the request if this is already part of a trace.
 		// does this make sense?
 		if ok && span.Tracer() != nil {
@@ -82,7 +80,6 @@ func setIDs(span *tracer.Span, ctx context.Context) context.Context {
 	if span == nil || span.TraceID == 0 {
 		return ctx
 	}
-
 	md := metadata.New(map[string]string{
 		traceIDKey:  fmt.Sprint(span.TraceID),
 		parentIDKey: fmt.Sprint(span.ParentID),
