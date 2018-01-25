@@ -82,4 +82,5 @@ jobs:
 
                - run:
                     name: Testing
-                    command: go test -race ./opentracing ./tracer ./contrib/...
+                    command: |
+                         go test -race ./...
