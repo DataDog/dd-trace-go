@@ -1,4 +1,3 @@
-// Package sqltest is used for testing sql packages
 package sqltest
 
 import (
@@ -9,6 +8,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/tracertest"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,11 +16,8 @@ import (
 // teardown function that must be executed via `defer`
 func setupTestCase(t *testing.T, db *DB) func(t *testing.T, db *DB) {
 	// creates the database
-	_, err := db.Exec("DROP TABLE IF EXISTS city")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = db.Exec("CREATE TABLE city (id integer NOT NULL DEFAULT '0', name text)")
+	db.Exec("DROP TABLE IF EXISTS city")
+	_, err := db.Exec("CREATE TABLE city (id integer NOT NULL DEFAULT '0', name text)")
 	if err != nil {
 		t.Fatal(err)
 	}

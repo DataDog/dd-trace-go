@@ -1,12 +1,15 @@
 // Go MySQL Driver - A MySQL-Driver for Go's database/sql package
 //
-// Copyright 2016 The Go-MySQL-Driver Authors. All rights reserved.
+// Copyright 2014 The Go-MySQL-Driver Authors. All rights reserved.
 //
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this file,
 // You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copied from package github.com/go-sql-driver:
+// https://github.com/go-sql-driver/mysql/blob/9181e3a86a19bacd63e68d43ae8b7b36320d8092/dsn.go
 
-package mysql
+package internal
 
 import (
 	"crypto/tls"
@@ -14,6 +17,22 @@ import (
 	"strings"
 	"time"
 )
+
+const defaultCollation = "utf8_general_ci"
+
+// A blacklist of collations which is unsafe to interpolate parameters.
+// These multibyte encodings may contains 0x5c (`\`) in their trailing bytes.
+var unsafeCollations = map[string]bool{
+	"big5_chinese_ci":   true,
+	"sjis_japanese_ci":  true,
+	"gbk_chinese_ci":    true,
+	"big5_bin":          true,
+	"gb2312_bin":        true,
+	"gbk_bin":           true,
+	"sjis_bin":          true,
+	"cp932_japanese_ci": true,
+	"cp932_bin":         true,
+}
 
 var (
 	errInvalidDSNUnescaped       = errors.New("invalid DSN: did you forget to escape a param value?")
@@ -23,7 +42,7 @@ var (
 )
 
 // Config is a configuration parsed from a DSN string
-type Config struct {
+type mySQLConfig struct {
 	User             string            // Username
 	Passwd           string            // Password (requires User)
 	Net              string            // Network type
@@ -51,10 +70,10 @@ type Config struct {
 	Strict                  bool // Return warnings as errors
 }
 
-// ParseDSN parses the DSN string to a Config
-func ParseDSN(dsn string) (cfg *Config, err error) {
+// mySQLConfigFromDSN parses the MySQL DSN string to a Config.
+func mySQLConfigFromDSN(dsn string) (cfg *mySQLConfig, err error) {
 	// New config with some default values
-	cfg = &Config{
+	cfg = &mySQLConfig{
 		Loc:       time.UTC,
 		Collation: defaultCollation,
 	}
