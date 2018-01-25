@@ -37,6 +37,7 @@ func RegisterWithServiceName(serviceName, driverName string, driver driver.Drive
 		// no problem, carry on
 		return
 	}
+	// TODO(gbbr): Change this when switching to OpenTracing.
 	t := tracer.DefaultTracer
 	sql.Register(name, &tracedDriver{
 		Driver:      driver,
