@@ -28,7 +28,7 @@ func (s *tracedStmt) Close() (err error) {
 
 // ExecContext is needed to implement the driver.StmtExecContext interface
 func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
-	span := s.newChildSpanFromContext(s.ctx, "Exec", s.query)
+	span := s.newChildSpanFromContext(ctx, "Exec", s.query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
@@ -50,7 +50,7 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 
 // QueryContext is needed to implement the driver.StmtQueryContext interface
 func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
-	span := s.newChildSpanFromContext(s.ctx, "Query", s.query)
+	span := s.newChildSpanFromContext(ctx, "Query", s.query)
 	defer func() {
 		span.SetError(err)
 		span.Finish()
