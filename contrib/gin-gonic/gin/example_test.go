@@ -40,11 +40,8 @@ func ExampleSpanFromContext() {
 	r := gin.Default()
 	r.Use(gintrace.Middleware("image-encoder"))
 	r.GET("/image/encode", func(c *gin.Context) {
-		// get the parent span
-		span := gintrace.SpanFromContext(c)
-
 		// create a child span to track operation timing.
-		encodeSpan := tracer.NewChildSpan("image.encode", span)
+		encodeSpan := tracer.NewChildSpanFromContext("image.encode", c.Request.Context())
 		// encode a image
 		encodeSpan.Finish()
 

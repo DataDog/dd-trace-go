@@ -26,16 +26,17 @@ func Middleware(service string) gin.HandlerFunc {
 		}
 
 		resource := c.HandlerName()
-		// TODO(x): get the span from the request context
-		span := t.NewRootSpan("http.request", service, resource)
+		span, ctx := t.NewChildSpanWithContext("http.request", c.Request.Context())
 		defer span.Finish()
 
+		span.Service = service
+		span.Resource = resource
 		span.Type = ext.HTTPType
 		span.SetMeta(ext.HTTPMethod, c.Request.Method)
 		span.SetMeta(ext.HTTPURL, c.Request.URL.Path)
 
 		// pass the span through the request context
-		c.Set(spanKey, span)
+		c.Request = c.Request.WithContext(ctx)
 
 		// serve the request to the next middleware
 		c.Next()
@@ -49,36 +50,23 @@ func Middleware(service string) gin.HandlerFunc {
 	}
 }
 
-// Span returns the Span stored in the given Context, otherwise nil.
-func SpanFromContext(c *gin.Context) *tracer.Span {
-	s, ok := c.Get(spanKey)
-	if !ok {
-		return nil
-	}
-	span, ok := s.(*tracer.Span)
-	if !ok {
-		return nil
-	}
-	return span
-}
-
 // HTML will trace the rendering of the template as a child of the span in the given context.
 func HTML(c *gin.Context, code int, name string, obj interface{}) {
-	span := SpanFromContext(c)
-	if span == nil {
+	t := tracer.DefaultTracer
+	if !t.Enabled() {
 		c.HTML(code, name, obj)
 		return
 	}
 
-	child := span.Tracer().NewChildSpan("gin.render.html", span)
-	child.SetMeta("go.template", name)
+	span := t.NewChildSpanFromContext("gin.render.html", c.Request.Context())
+	span.SetMeta("go.template", name)
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("error rendering tmpl:%s: %s", name, r)
-			child.FinishWithErr(err)
+			span.FinishWithErr(err)
 			panic(r)
 		} else {
-			child.Finish()
+			span.Finish()
 		}
 	}()
 
