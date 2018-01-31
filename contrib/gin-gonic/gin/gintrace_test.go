@@ -4,13 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/tracer/tracertest"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
@@ -21,16 +21,14 @@ func init() {
 
 func TestChildSpan(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, _ := getTestTracer()
-
-	middleware := newMiddleware("foobar", testTracer)
+	testTracer, _ := tracertest.GetTestTracer()
+	tracer.DefaultTracer = testTracer
 
 	router := gin.New()
-	router.Use(middleware.Handle)
+	router.Use(Middleware("foobar"))
 	router.GET("/user/:id", func(c *gin.Context) {
-		span, ok := tracer.SpanFromContext(c)
+		_, ok := tracer.SpanFromContext(c.Request.Context())
 		assert.True(ok)
-		assert.NotNil(span)
 	})
 
 	r := httptest.NewRequest("GET", "/user/123", nil)
@@ -41,15 +39,15 @@ func TestChildSpan(t *testing.T) {
 
 func TestTrace200(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
-
-	middleware := newMiddleware("foobar", testTracer)
+	testTracer, testTransport := tracertest.GetTestTracer()
+	tracer.DefaultTracer = testTracer
 
 	router := gin.New()
-	router.Use(middleware.Handle)
+	router.Use(Middleware("foobar"))
 	router.GET("/user/:id", func(c *gin.Context) {
 		// assert we patch the span on the request context.
-		span := SpanDefault(c)
+		span, ok := tracer.SpanFromContext(c.Request.Context())
+		assert.True(ok)
 		span.SetMeta("test.gin", "ginny")
 		assert.Equal(span.Service, "foobar")
 		id := c.Param("id")
@@ -75,7 +73,7 @@ func TestTrace200(t *testing.T) {
 	}
 	s := spans[0]
 	assert.Equal(s.Service, "foobar")
-	assert.Equal(s.Name, "gin.request")
+	assert.Equal(s.Name, "http.request")
 	// FIXME[matt] would be much nicer to have "/user/:id" here
 	assert.True(strings.Contains(s.Resource, "gin.TestTrace200"))
 	assert.Equal(s.GetMeta("test.gin"), "ginny")
@@ -86,16 +84,14 @@ func TestTrace200(t *testing.T) {
 
 func TestDisabled(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetEnabled(false)
-
-	middleware := newMiddleware("foobar", testTracer)
+	tracer.DefaultTracer = testTracer
 
 	router := gin.New()
-	router.Use(middleware.Handle)
+	router.Use(Middleware("foobar"))
 	router.GET("/ping", func(c *gin.Context) {
-		span, ok := Span(c)
-		assert.Nil(span)
+		_, ok := tracer.SpanFromContext(c.Request.Context())
 		assert.False(ok)
 		c.Writer.Write([]byte("ok"))
 	})
@@ -116,12 +112,12 @@ func TestDisabled(t *testing.T) {
 
 func TestError(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
+	tracer.DefaultTracer = testTracer
 
 	// setup
-	middleware := newMiddleware("foobar", testTracer)
 	router := gin.New()
-	router.Use(middleware.Handle)
+	router.Use(Middleware("foobar"))
 
 	// a handler with an error and make the requests
 	router.GET("/err", func(c *gin.Context) {
@@ -144,21 +140,20 @@ func TestError(t *testing.T) {
 	}
 	s := spans[0]
 	assert.Equal(s.Service, "foobar")
-	assert.Equal(s.Name, "gin.request")
-	assert.Equal(s.GetMeta("http.status_code"), "500")
+	assert.Equal(s.Name, "http.request")
+	assert.Equal(s.GetMeta(ext.HTTPCode), "500")
 	assert.Equal(s.GetMeta(ext.ErrorMsg), "oh no")
 	assert.Equal(s.Error, int32(1))
 }
 
 func TestHTML(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
+	tracer.DefaultTracer = testTracer
 
 	// setup
-	middleware := newMiddleware("tmplservice", testTracer)
-
 	router := gin.New()
-	router.Use(middleware.Handle)
+	router.Use(Middleware("foobar"))
 
 	// add a template
 	tmpl := template.Must(template.New("hello").Parse("hello {{.}}"))
@@ -182,7 +177,7 @@ func TestHTML(t *testing.T) {
 	spans := traces[0]
 	assert.Len(spans, 2)
 	for _, s := range spans {
-		assert.Equal(s.Service, "tmplservice")
+		assert.Equal(s.Service, "foobar")
 	}
 
 	var tspan *tracer.Span
@@ -203,12 +198,8 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	router := gin.New()
 	router.GET("/ping", func(c *gin.Context) {
 		// Assert we don't have a span on the context.
-		s, ok := Span(c)
+		_, ok := tracer.SpanFromContext(c.Request.Context())
 		assert.False(ok)
-		assert.Nil(s)
-		// and the default span is empty
-		s = SpanDefault(c)
-		assert.Equal(s.Service, "")
 		c.Writer.Write([]byte("ok"))
 	})
 	r := httptest.NewRequest("GET", "/ping", nil)
@@ -217,34 +208,3 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	response := w.Result()
 	assert.Equal(response.StatusCode, 200)
 }
-
-// getTestTracer returns a Tracer with a DummyTransport
-func getTestTracer() (*tracer.Tracer, *dummyTransport) {
-	transport := &dummyTransport{}
-	tracer := tracer.NewTracerTransport(transport)
-	return tracer, transport
-}
-
-// dummyTransport is a transport that just buffers spans and encoding
-type dummyTransport struct {
-	traces   [][]*tracer.Span
-	services map[string]tracer.Service
-}
-
-func (t *dummyTransport) SendTraces(traces [][]*tracer.Span) (*http.Response, error) {
-	t.traces = append(t.traces, traces...)
-	return nil, nil
-}
-
-func (t *dummyTransport) SendServices(services map[string]tracer.Service) (*http.Response, error) {
-	t.services = services
-	return nil, nil
-}
-
-func (t *dummyTransport) Traces() [][]*tracer.Span {
-	traces := t.traces
-	t.traces = nil
-	return traces
-}
-
-func (t *dummyTransport) SetHeader(key, value string) {}

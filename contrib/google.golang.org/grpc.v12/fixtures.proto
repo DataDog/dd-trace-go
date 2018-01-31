@@ -7,7 +7,6 @@ option java_outer_classname = "TestGRPCProto";
 package grpc;
 
 service Fixture {
-
   rpc Ping (FixtureRequest) returns (FixtureReply) {}
 }
 

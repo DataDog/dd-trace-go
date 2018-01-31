@@ -1,44 +1,74 @@
-// Package elastictrace provides tracing for the Elastic Elasticsearch client.
-// Supports v3 (gopkg.in/olivere/elastic.v3), v5 (gopkg.in/olivere/elastic.v5)
-// but with v3 you must use `DoC` on all requests to capture the request context.
-package elastictrace
+// Package elastic provides functions to trace the gopkg.in/olivere/elastic.v{3,5} packages.
+package elastic
 
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
+	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
-// MaxContentLength is the maximum content length for which we'll read and capture
+// NewHTTPClient returns a new http.Client which traces requests under the given service name.
+//
+// TODO(gbbr): Remove tracer argument when we switch to OpenTracing.
+func NewHTTPClient(service string, tracer *tracer.Tracer) *http.Client {
+	return &http.Client{Transport: &httpTransport{&http.Transport{
+		// http.DefaultTransport
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}).DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}, tracer, service}}
+}
+
+// NewHTTPClientWithTransport returns a new http.Client that traces requests using
+// the given http.Transport.
+//
+// TODO(gbbr): Remove tracer argument when we switch to OpenTracing.
+func NewHTTPClientWithTransport(transport *http.Transport, service string, tracer *tracer.Tracer) *http.Client {
+	return &http.Client{Transport: &httpTransport{transport, tracer, service}}
+}
+
+// httpTransport is a traced HTTP transport that captures Elasticsearch spans.
+type httpTransport struct {
+	*http.Transport
+	tracer  *tracer.Tracer
+	service string
+}
+
+// maxContentLength is the maximum content length for which we'll read and capture
 // the contents of the request body. Anything larger will still be traced but the
 // body will not be captured as trace metadata.
-const MaxContentLength = 500 * 1024
-
-// TracedTransport is a traced HTTP transport that captures Elasticsearch spans.
-type TracedTransport struct {
-	service string
-	tracer  *tracer.Tracer
-	*http.Transport
-}
+const maxContentLength = 500 * 1024
 
 // RoundTrip satisfies the RoundTripper interface, wraps the sub Transport and
 // captures a span of the Elasticsearch request.
-func (t *TracedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	span := t.tracer.NewChildSpanFromContext("elasticsearch.query", req.Context())
+	defer span.Finish()
+
 	span.Service = t.service
 	span.Type = ext.AppTypeDB
-	defer span.Finish()
 	span.SetMeta("elasticsearch.method", req.Method)
 	span.SetMeta("elasticsearch.url", req.URL.Path)
 	span.SetMeta("elasticsearch.params", req.URL.Query().Encode())
 
 	contentLength, _ := strconv.Atoi(req.Header.Get("Content-Length"))
-	if req.Body != nil && contentLength < MaxContentLength {
+	if req.Body != nil && contentLength < maxContentLength {
 		buf, err := ioutil.ReadAll(req.Body)
 		if err != nil {
 			return nil, err
@@ -46,41 +76,45 @@ func (t *TracedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		span.SetMeta("elasticsearch.body", string(buf))
 		req.Body = ioutil.NopCloser(bytes.NewBuffer(buf))
 	}
-
-	// Run the request using the standard transport.
+	// process using the standard transport
 	res, err := t.Transport.RoundTrip(req)
-	if res != nil {
-		span.SetMeta(ext.HTTPCode, strconv.Itoa(res.StatusCode))
-	}
-
 	if err != nil {
+		// roundtrip error
 		span.SetError(err)
 	} else if res.StatusCode < 200 || res.StatusCode > 299 {
+		// HTTP error
 		buf, err := ioutil.ReadAll(res.Body)
 		if err != nil {
-			// Status text is best we can do if if we can't read the body.
 			span.SetError(errors.New(http.StatusText(res.StatusCode)))
 		} else {
 			span.SetError(errors.New(string(buf)))
 		}
 		res.Body = ioutil.NopCloser(bytes.NewBuffer(buf))
 	}
-	Quantize(span)
+	if res != nil {
+		span.SetMeta(ext.HTTPCode, strconv.Itoa(res.StatusCode))
+	}
+
+	quantize(span)
 
 	return res, err
 }
 
-// NewTracedHTTPClient returns a new TracedTransport that traces HTTP requests.
-func NewTracedHTTPClient(service string, tracer *tracer.Tracer) *http.Client {
-	return &http.Client{
-		Transport: &TracedTransport{service, tracer, &http.Transport{}},
-	}
-}
+var (
+	idRegexp         = regexp.MustCompile("/([0-9]+)([/\\?]|$)")
+	idPlaceholder    = []byte("/?$2")
+	indexRegexp      = regexp.MustCompile("[0-9]{2,}")
+	indexPlaceholder = []byte("?")
+)
 
-// NewTracedHTTPClientWithTransport returns a new TracedTransport that traces HTTP requests
-// and takes in a Transport to use something other than the default.
-func NewTracedHTTPClientWithTransport(service string, tracer *tracer.Tracer, transport *http.Transport) *http.Client {
-	return &http.Client{
-		Transport: &TracedTransport{service, tracer, transport},
-	}
+// quantize quantizes an Elasticsearch to extract a meaningful resource from the request.
+// We quantize based on the method+url with some cleanup applied to the URL.
+// URLs with an ID will be generalized as will (potential) timestamped indices.
+func quantize(span *tracer.Span) {
+	url := span.GetMeta("elasticsearch.url")
+	method := span.GetMeta("elasticsearch.method")
+
+	quantizedURL := idRegexp.ReplaceAll([]byte(url), idPlaceholder)
+	quantizedURL = indexRegexp.ReplaceAll(quantizedURL, indexPlaceholder)
+	span.Resource = fmt.Sprintf("%s %s", method, quantizedURL)
 }

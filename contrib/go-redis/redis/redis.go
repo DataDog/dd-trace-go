@@ -1,29 +1,33 @@
-// Package redis provides tracing for the go-redis Redis client (https://github.com/go-redis/redis)
+// Package redis provides tracing functions for tracing the go-redis/redis package (https://github.com/go-redis/redis).
 package redis
 
 import (
 	"bytes"
 	"context"
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
-	"github.com/go-redis/redis"
+	"net"
 	"strconv"
 	"strings"
+
+	"github.com/go-redis/redis"
+
+	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
-// TracedClient is used to trace requests to a redis server.
-type TracedClient struct {
+// Client is used to trace requests to a redis server.
+type Client struct {
 	*redis.Client
-	traceParams traceParams
+	*params
 }
 
-// TracedPipeline is used to trace pipelines executed on a redis server.
-type TracedPipeliner struct {
+// Pipeline is used to trace pipelines executed on a Redis server.
+type Pipeliner struct {
 	redis.Pipeliner
-	traceParams traceParams
+	*params
 }
 
-type traceParams struct {
+// params holds the tracer and a set of parameters which are recorded with every trace.
+type params struct {
 	host    string
 	port    string
 	db      string
@@ -31,82 +35,92 @@ type traceParams struct {
 	tracer  *tracer.Tracer
 }
 
-// NewTracedClient takes a Client returned by redis.NewClient and configures it to emit spans under the given service name
-func NewTracedClient(opt *redis.Options, t *tracer.Tracer, service string) *TracedClient {
-	var host, port string
-	addr := strings.Split(opt.Addr, ":")
-	if len(addr) == 2 && addr[1] != "" {
-		port = addr[1]
-	} else {
+// NewClient returns a new Client that is traced with the default tracer under
+// the service name "redis".
+func NewClient(opt *redis.Options) *Client {
+	return NewClientWithServiceName(opt, "redis.client", tracer.DefaultTracer)
+}
+
+// NewClientWithServiceName returns a new Client that is traced using the given tracer and service name.
+// If nil is provided as a tracer, the global tracer will be used.
+//
+// TODO(gbbr): Remove tracer argument when we switch to OpenTracing.
+func NewClientWithServiceName(opt *redis.Options, service string, t *tracer.Tracer) *Client {
+	return WrapClient(redis.NewClient(opt), service, t)
+}
+
+// WrapClient wraps a given redis.Client with a tracer under the given service name.
+//
+// TODO(gbbr): Remove tracer argument when we switch to OpenTracing.
+func WrapClient(c *redis.Client, service string, t *tracer.Tracer) *Client {
+	opt := c.Options()
+	host, port, err := net.SplitHostPort(opt.Addr)
+	if err != nil {
+		host = opt.Addr
 		port = "6379"
 	}
-	host = addr[0]
-	db := strconv.Itoa(opt.DB)
-
-	client := redis.NewClient(opt)
-	t.SetServiceInfo(service, "redis", ext.AppTypeDB)
-	tc := &TracedClient{
-		client,
-		traceParams{
-			host,
-			port,
-			db,
-			service,
-			t},
+	params := &params{
+		host:    host,
+		port:    port,
+		db:      strconv.Itoa(opt.DB),
+		service: service,
+		tracer:  t,
 	}
-
+	t.SetServiceInfo(service, "redis", ext.AppTypeDB)
+	tc := &Client{c, params}
 	tc.Client.WrapProcess(createWrapperFromClient(tc))
 	return tc
 }
 
-// Pipeline creates a TracedPipeline from a TracedClient
-func (c *TracedClient) Pipeline() *TracedPipeliner {
-	return &TracedPipeliner{
-		c.Client.Pipeline(),
-		c.traceParams,
-	}
+// Pipeline creates a Pipeline from a Client
+func (c *Client) Pipeline() *Pipeliner {
+	return &Pipeliner{c.Client.Pipeline(), c.params}
 }
 
 // ExecWithContext calls Pipeline.Exec(). It ensures that the resulting Redis calls
-// are traced, and that emitted spans are children of the given Context
-func (c *TracedPipeliner) ExecWithContext(ctx context.Context) ([]redis.Cmder, error) {
-	span := c.traceParams.tracer.NewChildSpanFromContext("redis.command", ctx)
-	span.Service = c.traceParams.service
+// are traced, and that emitted spans are children of the given Context.
+func (c *Pipeliner) ExecWithContext(ctx context.Context) ([]redis.Cmder, error) {
+	span := c.params.tracer.NewChildSpanFromContext("redis.command", ctx)
 
-	span.SetMeta("out.host", c.traceParams.host)
-	span.SetMeta("out.port", c.traceParams.port)
-	span.SetMeta("out.db", c.traceParams.db)
-
-	cmds, err := c.Pipeliner.Exec()
-	if err != nil {
-		span.SetError(err)
-	}
-	span.Resource = String(cmds)
-	span.SetMeta("redis.pipeline_length", strconv.Itoa(len(cmds)))
-	span.Finish()
-	return cmds, err
-}
-
-// Exec calls Pipeline.Exec() ensuring that the resulting Redis calls are traced
-func (c *TracedPipeliner) Exec() ([]redis.Cmder, error) {
-	span := c.traceParams.tracer.NewRootSpan("redis.command", c.traceParams.service, "redis")
-
-	span.SetMeta("out.host", c.traceParams.host)
-	span.SetMeta("out.port", c.traceParams.port)
-	span.SetMeta("out.db", c.traceParams.db)
+	span.Service = c.params.service
+	span.SetMeta("out.host", c.params.host)
+	span.SetMeta("out.port", c.params.port)
+	span.SetMeta("out.db", c.params.db)
 
 	cmds, err := c.Pipeliner.Exec()
 	if err != nil {
 		span.SetError(err)
 	}
-	span.Resource = String(cmds)
+
+	span.Resource = commandsToString(cmds)
 	span.SetMeta("redis.pipeline_length", strconv.Itoa(len(cmds)))
 	span.Finish()
+
 	return cmds, err
 }
 
-// String returns a string representation of a slice of redis Commands, separated by newlines
-func String(cmds []redis.Cmder) string {
+// Exec calls Pipeline.Exec() ensuring that the resulting Redis calls are traced.
+func (c *Pipeliner) Exec() ([]redis.Cmder, error) {
+	span := c.params.tracer.NewRootSpan("redis.command", c.params.service, "redis")
+
+	span.SetMeta("out.host", c.params.host)
+	span.SetMeta("out.port", c.params.port)
+	span.SetMeta("out.db", c.params.db)
+
+	cmds, err := c.Pipeliner.Exec()
+	if err != nil {
+		span.SetError(err)
+	}
+
+	span.Resource = commandsToString(cmds)
+	span.SetMeta("redis.pipeline_length", strconv.Itoa(len(cmds)))
+	span.Finish()
+
+	return cmds, err
+}
+
+// commandsToString returns a string representation of a slice of redis Commands, separated by newlines.
+func commandsToString(cmds []redis.Cmder) string {
 	var b bytes.Buffer
 	for _, cmd := range cmds {
 		b.WriteString(cmd.String())
@@ -115,30 +129,32 @@ func String(cmds []redis.Cmder) string {
 	return b.String()
 }
 
-// SetContext sets a context on a TracedClient. Use it to ensure that emitted spans have the correct parent
-func (c *TracedClient) SetContext(ctx context.Context) {
+// SetContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.
+func (c *Client) WithContext(ctx context.Context) *Client {
 	c.Client = c.Client.WithContext(ctx)
+	return c
 }
 
-// createWrapperFromClient wraps tracing into redis.Process().
-func createWrapperFromClient(tc *TracedClient) func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+// createWrapperFromClient returns a new createWrapper function which wraps the processor with tracing
+// information obtained from the provided Client. To understand this functionality better see the
+// documentation for the github.com/go-redis/redis.(*baseClient).WrapProcess function.
+func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
 	return func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
 		return func(cmd redis.Cmder) error {
 			ctx := tc.Client.Context()
+			raw := cmd.String()
+			parts := strings.Split(raw, " ")
+			length := len(parts) - 1
+			p := tc.params
 
-			var resource string
-			resource = strings.Split(cmd.String(), " ")[0]
-			args_length := len(strings.Split(cmd.String(), " ")) - 1
-			span := tc.traceParams.tracer.NewChildSpanFromContext("redis.command", ctx)
-
-			span.Service = tc.traceParams.service
-			span.Resource = resource
-
-			span.SetMeta("redis.raw_command", cmd.String())
-			span.SetMeta("redis.args_length", strconv.Itoa(args_length))
-			span.SetMeta("out.host", tc.traceParams.host)
-			span.SetMeta("out.port", tc.traceParams.port)
-			span.SetMeta("out.db", tc.traceParams.db)
+			span := p.tracer.NewChildSpanFromContext("redis.command", ctx)
+			span.Service = p.service
+			span.Resource = parts[0]
+			span.SetMeta("redis.raw_command", raw)
+			span.SetMeta("redis.args_length", strconv.Itoa(length))
+			span.SetMeta("out.host", p.host)
+			span.SetMeta("out.port", p.port)
+			span.SetMeta("out.db", p.db)
 
 			err := oldProcess(cmd)
 			if err != nil {

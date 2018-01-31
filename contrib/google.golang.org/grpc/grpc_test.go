@@ -3,7 +3,6 @@ package grpc
 import (
 	"fmt"
 	"net"
-	"net/http"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -11,17 +10,16 @@ import (
 	context "golang.org/x/net/context"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/tracertest"
 	"github.com/stretchr/testify/assert"
 )
 
-const (
-	debug = false
-)
+const debug = false
 
 func TestClient(t *testing.T) {
 	assert := assert.New(t)
 
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
 	rig, err := newRig(testTracer, true)
@@ -85,7 +83,7 @@ func TestClient(t *testing.T) {
 
 func TestDisabled(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 	testTracer.SetEnabled(false)
 
@@ -106,7 +104,7 @@ func TestDisabled(t *testing.T) {
 
 func TestChild(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
 	rig, err := newRig(testTracer, false)
@@ -152,7 +150,7 @@ func TestChild(t *testing.T) {
 
 func TestPass(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
 	rig, err := newRig(testTracer, false)
@@ -182,10 +180,6 @@ func TestPass(t *testing.T) {
 
 // fixtureServer a dummy implemenation of our grpc fixtureServer.
 type fixtureServer struct{}
-
-func newFixtureServer() *fixtureServer {
-	return &fixtureServer{}
-}
 
 func (s *fixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureReply, error) {
 	switch {
@@ -226,69 +220,29 @@ func (r *rig) Close() {
 }
 
 func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
-
 	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerInterceptor("grpc", t)))
 
-	RegisterFixtureServer(server, newFixtureServer())
+	RegisterFixtureServer(server, new(fixtureServer))
 
 	li, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
 	}
-
 	// start our test fixtureServer.
 	go server.Serve(li)
 
-	opts := []grpc.DialOption{
-		grpc.WithInsecure(),
-	}
-
+	opts := []grpc.DialOption{grpc.WithInsecure()}
 	if traceClient {
 		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor("grpc", t)))
 	}
-
 	conn, err := grpc.Dial(li.Addr().String(), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error dialing: %s", err)
 	}
-
-	r := &rig{
+	return &rig{
 		listener: li,
 		server:   server,
 		conn:     conn,
 		client:   NewFixtureClient(conn),
-	}
-
-	return r, err
+	}, err
 }
-
-// getTestTracer returns a Tracer with a DummyTransport
-func getTestTracer() (*tracer.Tracer, *dummyTransport) {
-	transport := &dummyTransport{}
-	tracer := tracer.NewTracerTransport(transport)
-	return tracer, transport
-}
-
-// dummyTransport is a transport that just buffers spans and encoding
-type dummyTransport struct {
-	traces   [][]*tracer.Span
-	services map[string]tracer.Service
-}
-
-func (t *dummyTransport) SendTraces(traces [][]*tracer.Span) (*http.Response, error) {
-	t.traces = append(t.traces, traces...)
-	return nil, nil
-}
-
-func (t *dummyTransport) SendServices(services map[string]tracer.Service) (*http.Response, error) {
-	t.services = services
-	return nil, nil
-}
-
-func (t *dummyTransport) Traces() [][]*tracer.Span {
-	traces := t.traces
-	t.traces = nil
-	return traces
-}
-
-func (t *dummyTransport) SetHeader(key, value string) {}

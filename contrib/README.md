@@ -1,36 +1,19 @@
-# Libraries supported for tracing
+[![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/github.com/DataDog/dd-trace-go/contrib)
 
-All of these libraries are supported by our Application Performance Monitoring tool.
+The purpose of these packages is to provide tracing on top of commonly used packages from the standard library as well as the 
+community in a "plug-and-play" manner. This means that by simply importing the appropriate path, functions are exposed having
+ the same signature as the original package. These functions return structures which embed the original return value, allowing 
+them to be used as they normally would with tracing activated out of the box.
 
-## Usage
+All of these libraries are supported by our [APM product](https://www.datadoghq.com/apm/).
 
-1. Check if your library is supported (*i.e.* you find it in this directory).  
-*ex:* if you're using the `net/http` package for your server, you see it's present in this directory.
+### Usage
 
-2. In your app, replace your import by our traced version of the library.  
-*ex:*
-```go
-import "net/http"
-```
-becomes
-```go
-import "github.com/DataDog/dd-trace-go/contrib/net/http"
-```
+First, find the library which you'd like to integrate with. The naming convention for the integration packages is:
 
-3. Read through the `example_test.go` present in each folder of the libraries to understand how to trace your app.  
-*ex:* for `net/http`, see [net/http/example_test.go](https://github.com/DataDog/dd-trace-go/blob/master/contrib/net/http/example_test.go)
+* If the package is from the standard library (eg. `database/sql`), it will be located at the same path.
+* If the package is hosted on Github (eg. `github.com/user/repo`), it will be located at the shorthand path `user/repo`.
+* If the package is from anywhere else (eg. `google.golang.org/grpc`), it can be found under the full import path.
 
-## Contribution guidelines
-
-### 1. Follow the package naming convention
-
-If a library looks like this: `github.com/user/lib`, the contribution must looks like this `user/lib`.
-In the case of the standard library, just use the path after `src`.
-*E.g.* `src/database/sql` becomes `database/sql`.
-
-### 2. Respect the original API
-
-Keep the original names for exported functions, don't use the prefix or suffix `trace`.
-*E.g.* prefer `Open` instead of `OpenTrace`.
-
-Of course you can modify the number of arguments of a function if you need to pass the tracer for example.
+Each integration comes with thorough documentation and usage examples. A good overview can be seen on our 
+[godoc](https://godoc.org/github.com/DataDog/dd-trace-go/contrib) page.

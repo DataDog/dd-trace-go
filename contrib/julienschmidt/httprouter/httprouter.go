@@ -1,3 +1,4 @@
+// Package httprouter provides functions to trace the julienschmidt/httprouter package (https://github.com/julienschmidt/httprouter).
 package httprouter
 
 import (
@@ -15,22 +16,25 @@ import (
 // Router is a traced version of httprouter.Router.
 type Router struct {
 	*httprouter.Router
-	*tracer.Tracer
+	tracer  *tracer.Tracer
 	service string
 }
 
-// New returns a new initialized Router.
-// The last parameter is optional and allows to pass a custom tracer.
-func New(service string, trc *tracer.Tracer) *Router {
-	t := tracer.DefaultTracer
-	if trc != nil {
-		t = trc
-	}
+// New returns a new router augmented with tracing.
+func New() *Router {
+	return NewWithServiceName("httprouter.router", tracer.DefaultTracer)
+}
+
+// NewWithServiceName returns a new Router which is traced under the given
+// service name.
+//
+// TODO(gbbr): Remove tracer arg. when we switch to OT.
+func NewWithServiceName(service string, t *tracer.Tracer) *Router {
 	t.SetServiceInfo(service, "julienschmidt/httprouter", ext.AppTypeWeb)
 	return &Router{httprouter.New(), t, service}
 }
 
-// ServeHTTP makes the router implement the http.Handler interface.
+// ServeHTTP implements http.Handler.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// get the resource associated to this request
 	route := req.URL.Path
@@ -39,7 +43,5 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
-
-	// we need to wrap the ServeHTTP method to be able to trace it
-	internal.Trace(r.Router, w, req, r.service, resource, r.Tracer)
+	internal.TraceAndServe(r.Router, w, req, r.service, resource, r.tracer)
 }

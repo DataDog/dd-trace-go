@@ -1,35 +1,66 @@
-// Package sqlxtraced provides a traced version of the "jmoiron/sqlx" package
-// For more information about the API, see https://godoc.org/github.com/DataDog/dd-trace-go/contrib/database/sql.
+// Package sqlx provides functions to trace the jmoiron/sqlx package (https://github.com/jmoiron/sqlx).
+// To enable tracing, first use one of the "Register*" functions to register the sql driver that
+// you will be using, then continue using the package as you normally would.
+//
+// For more information on registering and why this needs to happen, please check the
+// github.com/DataDog/dd-trace-go/contrib/database/sql package.
+//
 package sqlx
 
 import (
 	"database/sql/driver"
 
 	sqltraced "github.com/DataDog/dd-trace-go/contrib/database/sql"
-	"github.com/DataDog/dd-trace-go/contrib/database/sql/sqlutils"
-	"github.com/DataDog/dd-trace-go/tracer"
+
 	"github.com/jmoiron/sqlx"
 )
 
-// OpenTraced will first register the traced version of the `driver` if not yet registered and will then open a connection with it.
-// This is usually the only function to use when there is no need for the granularity offered by Register and Open.
-// The last argument is optional and allows you to pass a custom tracer.
-func OpenTraced(driver driver.Driver, dataSourceName, service string, trcv ...*tracer.Tracer) (*sqlx.DB, error) {
-	driverName := sqlutils.GetDriverName(driver)
-	Register(driverName, driver, trcv...)
-	return Open(driverName, dataSourceName, service)
+// Register tells the sqlx integration package about the driver that we will be tracing. Internally it
+// registers a new version of the driver that is augmented with tracing. It must be called before
+// Open, if that connection is to be traced. It uses the driverName suffixed with ".db" as the
+// default service name. To set a custom service name, use RegisterWithServiceName.
+func Register(driverName string, driver driver.Driver) { sqltraced.Register(driverName, driver) }
+
+// RegisterWithServiceName performs the same operation as Register, but it allows setting a custom service name.
+func RegisterWithServiceName(serviceName, driverName string, driver driver.Driver) {
+	sqltraced.RegisterWithServiceName(serviceName, driverName, driver)
 }
 
-// Register registers a traced version of `driver`.
-func Register(driverName string, driver driver.Driver, trcv ...*tracer.Tracer) {
-	sqltraced.Register(driverName, driver, trcv...)
-}
-
-// Open returns a traced version of *sqlx.DB.
-func Open(driverName, dataSourceName, service string) (*sqlx.DB, error) {
-	db, err := sqltraced.Open(driverName, dataSourceName, service)
+func Open(driverName, dataSourceName string) (*sqlx.DB, error) {
+	db, err := sqltraced.Open(driverName, dataSourceName)
 	if err != nil {
 		return nil, err
 	}
-	return sqlx.NewDb(db, driverName), err
+	return sqlx.NewDb(db, driverName), nil
+}
+
+// MustOpen is the same as Open, but panics on error.
+func MustOpen(driverName, dataSourceName string) (*sqlx.DB, error) {
+	db, err := sqltraced.Open(driverName, dataSourceName)
+	if err != nil {
+		panic(err)
+	}
+	return sqlx.NewDb(db, driverName), nil
+}
+
+func Connect(driverName, dataSourceName string) (*sqlx.DB, error) {
+	db, err := Open(driverName, dataSourceName)
+	if err != nil {
+		return nil, err
+	}
+	err = db.Ping()
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+// MustConnect connects to a database and panics on error.
+func MustConnect(driverName, dataSourceName string) *sqlx.DB {
+	db, err := Connect(driverName, dataSourceName)
+	if err != nil {
+		panic(err)
+	}
+	return db
 }

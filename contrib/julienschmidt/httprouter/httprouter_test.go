@@ -18,7 +18,7 @@ func TestHttpTracerDisabled(t *testing.T) {
 	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetEnabled(false)
 
-	router := New("my-service", testTracer)
+	router := NewWithServiceName("my-service", testTracer)
 	router.GET("/disabled", func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		_, err := w.Write([]byte("disabled!"))
 		assert.Nil(err)
@@ -39,7 +39,7 @@ func TestHttpTracerDisabled(t *testing.T) {
 	// Assert nothing was traced
 	testTracer.ForceFlush()
 	traces := testTransport.Traces()
-	assert.Equal(0, len(traces))
+	assert.Len(traces, 0)
 }
 
 func TestHttpTracer200(t *testing.T) {
@@ -57,9 +57,9 @@ func TestHttpTracer200(t *testing.T) {
 	// Ensure the request is properly traced
 	tracer.ForceFlush()
 	traces := transport.Traces()
-	assert.Equal(1, len(traces))
+	assert.Len(traces, 1)
 	spans := traces[0]
-	assert.Equal(1, len(spans))
+	assert.Len(spans, 1)
 
 	s := spans[0]
 	assert.Equal("http.request", s.Name)
@@ -86,9 +86,9 @@ func TestHttpTracer500(t *testing.T) {
 	// Ensure the request is properly traced
 	tracer.ForceFlush()
 	traces := transport.Traces()
-	assert.Equal(1, len(traces))
+	assert.Len(traces, 1)
 	spans := traces[0]
-	assert.Equal(1, len(spans))
+	assert.Len(spans, 1)
 
 	s := spans[0]
 	assert.Equal("http.request", s.Name)
@@ -105,7 +105,7 @@ func setup(t *testing.T) (*tracer.Tracer, *tracertest.DummyTransport, http.Handl
 	h500 := handler500(t)
 	tracer, transport := tracertest.GetTestTracer()
 
-	router := New("my-service", tracer)
+	router := NewWithServiceName("my-service", tracer)
 	router.GET("/200", h200)
 	router.GET("/500", h500)
 

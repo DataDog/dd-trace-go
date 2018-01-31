@@ -19,7 +19,7 @@ func Hello(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 }
 
 func Example() {
-	router := httptrace.New("my-service", nil)
+	router := httptrace.New()
 	router.GET("/", Index)
 	router.GET("/hello/:name", Hello)
 

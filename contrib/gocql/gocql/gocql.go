@@ -1,8 +1,9 @@
-// Package gocql provides tracing for the Cassandra Gocql client (https://github.com/gocql/gocql)
+// Package gocql provides functions to trace the gocql/gocql package (https://github.com/gocql/gocql).
 package gocql
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -12,77 +13,82 @@ import (
 	"github.com/gocql/gocql"
 )
 
-// TracedQuery inherits from gocql.Query, it keeps the tracer and the context.
-type TracedQuery struct {
+// Query inherits from gocql.Query, it keeps the tracer and the context.
+type Query struct {
 	*gocql.Query
-	p            traceParams
+	*params
 	traceContext context.Context
 }
 
-// TracedIter inherits from gocql.Iter and contains a span.
-type TracedIter struct {
+// Iter inherits from gocql.Iter and contains a span.
+type Iter struct {
 	*gocql.Iter
 	span *tracer.Span
 }
 
-// traceParams containes fields and metadata useful for command tracing
-type traceParams struct {
-	tracer      *tracer.Tracer
-	service     string
-	keyspace    string
-	paginated   string
-	consistancy string
-	query       string
+// params containes fields and metadata useful for command tracing
+type params struct {
+	tracer    *tracer.Tracer
+	service   string
+	keyspace  string
+	paginated bool
+	query     string
 }
 
-// TraceQuery wraps a gocql.Query into a TracedQuery
-func TraceQuery(service string, tracer *tracer.Tracer, q *gocql.Query) *TracedQuery {
-	stringQuery := `"` + strings.SplitN(q.String(), "\"", 3)[1] + `"`
-	stringQuery, err := strconv.Unquote(stringQuery)
+// WrapQuery wraps a gocql.Query into a traced Query under the given service name.
+//
+// TODO(gbbr): Remove tracer arg. when switching to OT.
+func WrapQuery(q *gocql.Query, service string, tracer *tracer.Tracer) *Query {
+	query := `"` + strings.SplitN(q.String(), "\"", 3)[1] + `"`
+	query, err := strconv.Unquote(query)
 	if err != nil {
 		// An invalid string, so that the trace is not dropped
 		// due to having an empty resource
-		stringQuery = "_"
+		query = "_"
 	}
-
-	tq := &TracedQuery{q, traceParams{tracer, service, "", "false", strconv.Itoa(int(q.GetConsistency())), stringQuery}, context.Background()}
+	tq := &Query{q, &params{
+		tracer:  tracer,
+		service: service,
+		query:   query,
+	}, context.Background()}
 	tracer.SetServiceInfo(service, ext.CassandraType, ext.AppTypeDB)
 	return tq
 }
 
 // WithContext rewrites the original function so that ctx can be used for inheritance
-func (tq *TracedQuery) WithContext(ctx context.Context) *TracedQuery {
+func (tq *Query) WithContext(ctx context.Context) *Query {
 	tq.traceContext = ctx
 	tq.Query.WithContext(ctx)
 	return tq
 }
 
 // PageState rewrites the original function so that spans are aware of the change.
-func (tq *TracedQuery) PageState(state []byte) *TracedQuery {
-	tq.p.paginated = "true"
+func (tq *Query) PageState(state []byte) *Query {
+	tq.params.paginated = true
 	tq.Query = tq.Query.PageState(state)
 	return tq
 }
 
-// NewChildSpan creates a new span from the traceParams and the context.
-func (tq *TracedQuery) NewChildSpan(ctx context.Context) *tracer.Span {
-	span := tq.p.tracer.NewChildSpanFromContext(ext.CassandraQuery, ctx)
+// NewChildSpan creates a new span from the params and the context.
+func (tq *Query) newChildSpan(ctx context.Context) *tracer.Span {
+	p := tq.params
+	span := p.tracer.NewChildSpanFromContext(ext.CassandraQuery, ctx)
 	span.Type = ext.CassandraType
-	span.Service = tq.p.service
-	span.Resource = tq.p.query
-	span.SetMeta(ext.CassandraPaginated, tq.p.paginated)
-	span.SetMeta(ext.CassandraKeyspace, tq.p.keyspace)
+	span.Service = p.service
+	span.Resource = p.query
+	span.SetMeta(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated))
+	span.SetMeta(ext.CassandraKeyspace, p.keyspace)
 	return span
 }
 
 // Exec is rewritten so that it passes by our custom Iter
-func (tq *TracedQuery) Exec() error {
+func (tq *Query) Exec() error {
 	return tq.Iter().Close()
 }
 
 // MapScan wraps in a span query.MapScan call.
-func (tq *TracedQuery) MapScan(m map[string]interface{}) error {
-	span := tq.NewChildSpan(tq.traceContext)
+func (tq *Query) MapScan(m map[string]interface{}) error {
+	span := tq.newChildSpan(tq.traceContext)
 	defer span.Finish()
 	err := tq.Query.MapScan(m)
 	if err != nil {
@@ -92,8 +98,8 @@ func (tq *TracedQuery) MapScan(m map[string]interface{}) error {
 }
 
 // Scan wraps in a span query.Scan call.
-func (tq *TracedQuery) Scan(dest ...interface{}) error {
-	span := tq.NewChildSpan(tq.traceContext)
+func (tq *Query) Scan(dest ...interface{}) error {
+	span := tq.newChildSpan(tq.traceContext)
 	defer span.Finish()
 	err := tq.Query.Scan(dest...)
 	if err != nil {
@@ -103,8 +109,8 @@ func (tq *TracedQuery) Scan(dest ...interface{}) error {
 }
 
 // ScanCAS wraps in a span query.ScanCAS call.
-func (tq *TracedQuery) ScanCAS(dest ...interface{}) (applied bool, err error) {
-	span := tq.NewChildSpan(tq.traceContext)
+func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
+	span := tq.newChildSpan(tq.traceContext)
 	defer span.Finish()
 	applied, err = tq.Query.ScanCAS(dest...)
 	if err != nil {
@@ -114,29 +120,27 @@ func (tq *TracedQuery) ScanCAS(dest ...interface{}) (applied bool, err error) {
 }
 
 // Iter starts a new span at query.Iter call.
-func (tq *TracedQuery) Iter() *TracedIter {
-	span := tq.NewChildSpan(tq.traceContext)
+func (tq *Query) Iter() *Iter {
 	iter := tq.Query.Iter()
+	span := tq.newChildSpan(tq.traceContext)
 	span.SetMeta(ext.CassandraRowCount, strconv.Itoa(iter.NumRows()))
 	span.SetMeta(ext.CassandraConsistencyLevel, strconv.Itoa(int(tq.GetConsistency())))
 
 	columns := iter.Columns()
 	if len(columns) > 0 {
 		span.SetMeta(ext.CassandraKeyspace, columns[0].Keyspace)
-	} else {
 	}
-	tIter := &TracedIter{iter, span}
+	tIter := &Iter{iter, span}
 	if tIter.Host() != nil {
 		tIter.span.SetMeta(ext.TargetHost, tIter.Iter.Host().HostID())
 		tIter.span.SetMeta(ext.TargetPort, strconv.Itoa(tIter.Iter.Host().Port()))
 		tIter.span.SetMeta(ext.CassandraCluster, tIter.Iter.Host().DataCenter())
-
 	}
 	return tIter
 }
 
-// Close closes the TracedIter and finish the span created on Iter call.
-func (tIter *TracedIter) Close() error {
+// Close closes the Iter and finish the span created on Iter call.
+func (tIter *Iter) Close() error {
 	err := tIter.Iter.Close()
 	if err != nil {
 		tIter.span.SetError(err)

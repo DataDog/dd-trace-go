@@ -2,30 +2,24 @@ package redis
 
 import (
 	"context"
-	"net/http"
 	"testing"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/tracertest"
 	"github.com/go-redis/redis"
 	"github.com/stretchr/testify/assert"
 )
 
-const (
-	debug = false
-)
+const debug = false
 
 func TestClient(t *testing.T) {
-	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
-		Password: "", // no password set
-		DB:       0,  // use default db
-	}
+	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	client := NewTracedClient(opts, testTracer, "my-redis")
+	client := NewClientWithServiceName(opts, "my-redis", testTracer)
 	client.Set("test_key", "test_value", 0)
 
 	testTracer.ForceFlush()
@@ -44,16 +38,12 @@ func TestClient(t *testing.T) {
 }
 
 func TestPipeline(t *testing.T) {
-	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
-		Password: "", // no password set
-		DB:       0,  // use default db
-	}
+	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	client := NewTracedClient(opts, testTracer, "my-redis")
+	client := NewClientWithServiceName(opts, "my-redis", testTracer)
 	pipeline := client.Pipeline()
 	pipeline.Expire("pipeline_counter", time.Hour)
 
@@ -93,13 +83,9 @@ func TestPipeline(t *testing.T) {
 }
 
 func TestChildSpan(t *testing.T) {
-	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	}
+	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
 	// Parent span
@@ -107,8 +93,8 @@ func TestChildSpan(t *testing.T) {
 	parent_span := testTracer.NewChildSpanFromContext("parent_span", ctx)
 	ctx = tracer.ContextWithSpan(ctx, parent_span)
 
-	client := NewTracedClient(opts, testTracer, "my-redis")
-	client.SetContext(ctx)
+	client := NewClientWithServiceName(opts, "my-redis", testTracer)
+	client = client.WithContext(ctx)
 
 	client.Set("test_key", "test_value", 0)
 	parent_span.Finish()
@@ -138,16 +124,12 @@ func TestChildSpan(t *testing.T) {
 }
 
 func TestMultipleCommands(t *testing.T) {
-	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	}
+	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	client := NewTracedClient(opts, testTracer, "my-redis")
+	client := NewClientWithServiceName(opts, "my-redis", testTracer)
 	client.Set("test_key", "test_value", 0)
 	client.Get("test_key")
 	client.Incr("int_key")
@@ -171,16 +153,12 @@ func TestMultipleCommands(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	opts := &redis.Options{
-		Addr:     "127.0.0.1:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	}
+	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	client := NewTracedClient(opts, testTracer, "my-redis")
+	client := NewClientWithServiceName(opts, "my-redis", testTracer)
 	err := client.Get("non_existent_key")
 
 	testTracer.ForceFlush()
@@ -197,33 +175,3 @@ func TestError(t *testing.T) {
 	assert.Equal(span.GetMeta("out.port"), "6379")
 	assert.Equal(span.GetMeta("redis.raw_command"), "get non_existent_key: ")
 }
-
-// getTestTracer returns a Tracer with a DummyTransport
-func getTestTracer() (*tracer.Tracer, *dummyTransport) {
-	transport := &dummyTransport{}
-	tracer := tracer.NewTracerTransport(transport)
-	return tracer, transport
-}
-
-// dummyTransport is a transport that just buffers spans and encoding
-type dummyTransport struct {
-	traces   [][]*tracer.Span
-	services map[string]tracer.Service
-}
-
-func (t *dummyTransport) SendTraces(traces [][]*tracer.Span) (*http.Response, error) {
-	t.traces = append(t.traces, traces...)
-	return nil, nil
-}
-
-func (t *dummyTransport) SendServices(services map[string]tracer.Service) (*http.Response, error) {
-	t.services = services
-	return nil, nil
-}
-
-func (t *dummyTransport) Traces() [][]*tracer.Span {
-	traces := t.traces
-	t.traces = nil
-	return traces
-}
-func (t *dummyTransport) SetHeader(key, value string) {}

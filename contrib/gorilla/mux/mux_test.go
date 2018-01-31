@@ -16,7 +16,7 @@ func TestHttpTracerDisabled(t *testing.T) {
 	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetEnabled(false)
 
-	mux := NewRouter("my-service", testTracer)
+	mux := NewRouterWithServiceName("my-service", testTracer)
 	mux.HandleFunc("/disabled", func(w http.ResponseWriter, r *http.Request) {
 		_, err := w.Write([]byte("disabled!"))
 		assert.Nil(err)
@@ -103,7 +103,7 @@ func setup(t *testing.T) (*tracer.Tracer, *tracertest.DummyTransport, http.Handl
 	h500 := handler500(t)
 	tracer, transport := tracertest.GetTestTracer()
 
-	mux := NewRouter("my-service", tracer)
+	mux := NewRouterWithServiceName("my-service", tracer)
 	mux.HandleFunc("/200", h200)
 	mux.HandleFunc("/500", h500)
 

@@ -2,12 +2,13 @@ package gocql_test
 
 import (
 	"context"
+
 	gocqltrace "github.com/DataDog/dd-trace-go/contrib/gocql/gocql"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/gocql/gocql"
 )
 
-// To trace Cassandra commands, use our query wrapper TraceQuery.
+// To trace Cassandra commands, use our query wrapper WrapQuery.
 func Example() {
 	// Initialise a Cassandra session as usual, create a query.
 	cluster := gocql.NewCluster("127.0.0.1")
@@ -19,7 +20,7 @@ func Example() {
 	ctx := root.Context(context.Background())
 
 	// Wrap the query to trace it and pass the context for inheritance
-	tracedQuery := gocqltrace.TraceQuery("ServiceName", tracer.DefaultTracer, query)
+	tracedQuery := gocqltrace.WrapQuery(query, "ServiceName", tracer.DefaultTracer)
 	tracedQuery.WithContext(ctx)
 
 	// Execute your query as usual

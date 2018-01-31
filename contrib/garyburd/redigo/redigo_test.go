@@ -3,24 +3,24 @@ package redigo
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/garyburd/redigo/redis"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/tracer/tracertest"
 )
 
-const (
-	debug = false
-)
+const debug = false
 
 func TestClient(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
+	c, err := DialWithServiceName("my-service", testTracer, "tcp", "127.0.0.1:6379")
+	assert.Nil(err)
 	c.Do("SET", 1, "truck")
 
 	testTracer.ForceFlush()
@@ -41,11 +41,13 @@ func TestClient(t *testing.T) {
 
 func TestCommandError(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
-	_, err := c.Do("NOT_A_COMMAND", context.Background())
+	c, err := DialWithServiceName("my-service", testTracer, "tcp", "127.0.0.1:6379")
+	assert.Nil(err)
+	_, err = c.Do("NOT_A_COMMAND", context.Background())
+	assert.NotNil(err)
 
 	testTracer.ForceFlush()
 	traces := testTransport.Traces()
@@ -66,26 +68,28 @@ func TestCommandError(t *testing.T) {
 
 func TestConnectionError(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, _ := getTestTracer()
+	testTracer, _ := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	_, err := TracedDial("redis-service", testTracer, "tcp", "127.0.0.1:1000")
+	_, err := DialWithServiceName("redis-service", testTracer, "tcp", "127.0.0.1:1000")
 
+	assert.NotNil(err)
 	assert.Contains(err.Error(), "dial tcp 127.0.0.1:1000")
 }
 
 func TestInheritance(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
 	// Parent span
 	ctx := context.Background()
-	parent_span := testTracer.NewChildSpanFromContext("parent_span", ctx)
-	ctx = tracer.ContextWithSpan(ctx, parent_span)
-	client, _ := TracedDial("my_service", testTracer, "tcp", "127.0.0.1:6379")
+	parentSpan := testTracer.NewChildSpanFromContext("parentSpan", ctx)
+	ctx = tracer.ContextWithSpan(ctx, parentSpan)
+	client, err := DialWithServiceName("my_service", testTracer, "tcp", "127.0.0.1:6379")
+	assert.Nil(err)
 	client.Do("SET", "water", "bottle", ctx)
-	parent_span.Finish()
+	parentSpan.Finish()
 
 	testTracer.ForceFlush()
 	traces := testTransport.Traces()
@@ -99,7 +103,7 @@ func TestInheritance(t *testing.T) {
 		switch s.Name {
 		case "redis.command":
 			child_span = s
-		case "parent_span":
+		case "parentSpan":
 			pspan = s
 		}
 	}
@@ -111,14 +115,19 @@ func TestInheritance(t *testing.T) {
 	assert.Equal(child_span.GetMeta("out.port"), "6379")
 }
 
+type stringifyTest struct{ A, B int }
+
+func (ts stringifyTest) String() string { return fmt.Sprintf("[%d, %d]", ts.A, ts.B) }
+
 func TestCommandsToSring(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	stringify_test := TestStruct{Cpython: 57, Cgo: 8}
-	c, _ := TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
-	c.Do("SADD", "testSet", "a", int(0), int32(1), int64(2), stringify_test, context.Background())
+	str := stringifyTest{A: 57, B: 8}
+	c, err := DialWithServiceName("my-service", testTracer, "tcp", "127.0.0.1:6379")
+	assert.Nil(err)
+	c.Do("SADD", "testSet", "a", int(0), int32(1), int64(2), str, context.Background())
 
 	testTracer.ForceFlush()
 	traces := testTransport.Traces()
@@ -137,7 +146,7 @@ func TestCommandsToSring(t *testing.T) {
 
 func TestPool(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
 	pool := &redis.Pool{
@@ -146,7 +155,7 @@ func TestPool(t *testing.T) {
 		IdleTimeout: 23,
 		Wait:        true,
 		Dial: func() (redis.Conn, error) {
-			return TracedDial("my-service", testTracer, "tcp", "127.0.0.1:6379")
+			return DialWithServiceName("my-service", testTracer, "tcp", "127.0.0.1:6379")
 		},
 	}
 
@@ -163,53 +172,14 @@ func TestPool(t *testing.T) {
 
 func TestTracingDialUrl(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := getTestTracer()
+	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 	url := "redis://127.0.0.1:6379"
-	client, _ := TracedDialURL("redis-service", testTracer, url)
+	client, err := DialURLWithServiceName("redis-service", testTracer, url)
+	assert.Nil(err)
 	client.Do("SET", "ONE", " TWO", context.Background())
 
 	testTracer.ForceFlush()
 	traces := testTransport.Traces()
 	assert.Len(traces, 1)
 }
-
-// TestStruct implements String interface
-type TestStruct struct {
-	Cpython int
-	Cgo     int
-}
-
-func (ts TestStruct) String() string {
-	return fmt.Sprintf("[%d, %d]", ts.Cpython, ts.Cgo)
-}
-
-// getTestTracer returns a Tracer with a DummyTransport
-func getTestTracer() (*tracer.Tracer, *dummyTransport) {
-	transport := &dummyTransport{}
-	tracer := tracer.NewTracerTransport(transport)
-	return tracer, transport
-}
-
-// dummyTransport is a transport that just buffers spans and encoding
-type dummyTransport struct {
-	traces   [][]*tracer.Span
-	services map[string]tracer.Service
-}
-
-func (t *dummyTransport) SendTraces(traces [][]*tracer.Span) (*http.Response, error) {
-	t.traces = append(t.traces, traces...)
-	return nil, nil
-}
-
-func (t *dummyTransport) SendServices(services map[string]tracer.Service) (*http.Response, error) {
-	t.services = services
-	return nil, nil
-}
-
-func (t *dummyTransport) Traces() [][]*tracer.Span {
-	traces := t.traces
-	t.traces = nil
-	return traces
-}
-func (t *dummyTransport) SetHeader(key, value string) {}
