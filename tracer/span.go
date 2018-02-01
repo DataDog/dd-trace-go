@@ -9,9 +9,11 @@ import (
 	"sync"
 	"time"
 
-	ot "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
 )
+
+var _ opentracing.Span = (*OpenSpan)(nil)
 
 // OpenSpan represents an active, un-finished span in the OpenTracing system.
 // Spans are created by the Tracer interface.
@@ -22,20 +24,20 @@ type OpenSpan struct {
 }
 
 // Tracer provides access to the `Tracer`` that created this Span.
-func (s *OpenSpan) Tracer() ot.Tracer {
+func (s *OpenSpan) Tracer() opentracing.Tracer {
 	return s.tracer
 }
 
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Span.Finish(), as is
 // a call to Span.Context() after a call to Span.Finish().
-func (s *OpenSpan) Context() ot.SpanContext {
+func (s *OpenSpan) Context() opentracing.SpanContext {
 	return s.context
 }
 
 // SetBaggageItem sets a key:value pair on this Span and its SpanContext
 // that also propagates to descendants of this Span.
-func (s *OpenSpan) SetBaggageItem(key, val string) ot.Span {
+func (s *OpenSpan) SetBaggageItem(key, val string) opentracing.Span {
 	s.Span.Lock()
 	defer s.Span.Unlock()
 
@@ -54,7 +56,7 @@ func (s *OpenSpan) BaggageItem(key string) string {
 
 // SetTag adds a tag to the span, overwriting pre-existing values for
 // the given `key`.
-func (s *OpenSpan) SetTag(key string, value interface{}) ot.Span {
+func (s *OpenSpan) SetTag(key string, value interface{}) opentracing.Span {
 	switch key {
 	case ServiceName:
 		s.Span.Lock()
@@ -87,7 +89,7 @@ func (s *OpenSpan) SetTag(key string, value interface{}) ot.Span {
 
 // FinishWithOptions is like Finish() but with explicit control over
 // timestamps and log data.
-func (s *OpenSpan) FinishWithOptions(options ot.FinishOptions) {
+func (s *OpenSpan) FinishWithOptions(options opentracing.FinishOptions) {
 	if options.FinishTime.IsZero() {
 		options.FinishTime = time.Now().UTC()
 	}
@@ -96,7 +98,7 @@ func (s *OpenSpan) FinishWithOptions(options ot.FinishOptions) {
 }
 
 // SetOperationName sets or changes the operation name.
-func (s *OpenSpan) SetOperationName(operationName string) ot.Span {
+func (s *OpenSpan) SetOperationName(operationName string) opentracing.Span {
 	s.Span.Lock()
 	defer s.Span.Unlock()
 
@@ -129,7 +131,7 @@ func (s *OpenSpan) LogEventWithPayload(event string, payload interface{}) {
 }
 
 // Log is deprecated: use LogFields or LogKV
-func (s *OpenSpan) Log(data ot.LogData) {
+func (s *OpenSpan) Log(data opentracing.LogData) {
 	// TODO: implementation missing
 }
 

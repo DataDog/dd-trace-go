@@ -2,8 +2,6 @@ package tracer
 
 import (
 	"context"
-	"errors"
-	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -13,8 +11,10 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/tracer/ext"
-	ot "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 )
+
+var _ opentracing.Tracer = (*OpenTracer)(nil)
 
 // OpenTracer is a simple, thin interface for Span creation and SpanContext
 // propagation. In the current state, this Tracer is a compatibility layer
@@ -23,15 +23,14 @@ type OpenTracer struct {
 	// impl is the Datadog Tracer implementation.
 	impl *Tracer
 
-	// config holds the Configuration used to create the Tracer.
-	config *Configuration
+	*config
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`
 // A Span with no SpanReference options (e.g., opentracing.ChildOf() or
 // opentracing.FollowsFrom()) becomes the root of its own trace.
-func (t *OpenTracer) StartSpan(operationName string, options ...ot.StartSpanOption) ot.Span {
-	sso := ot.StartSpanOptions{}
+func (t *OpenTracer) StartSpan(operationName string, options ...opentracing.StartSpanOption) opentracing.Span {
+	sso := opentracing.StartSpanOptions{}
 	for _, o := range options {
 		o.Apply(&sso)
 	}
@@ -39,7 +38,7 @@ func (t *OpenTracer) StartSpan(operationName string, options ...ot.StartSpanOpti
 	return t.startSpanWithOptions(operationName, sso)
 }
 
-func (t *OpenTracer) startSpanWithOptions(operationName string, options ot.StartSpanOptions) ot.Span {
+func (t *OpenTracer) startSpanWithOptions(operationName string, options opentracing.StartSpanOptions) opentracing.Span {
 	if options.StartTime.IsZero() {
 		options.StartTime = time.Now().UTC()
 	}
@@ -57,7 +56,7 @@ func (t *OpenTracer) startSpanWithOptions(operationName string, options ot.Start
 		}
 
 		// if we have parenting define it
-		if ref.Type == ot.ChildOfRef {
+		if ref.Type == opentracing.ChildOfRef {
 			hasParent = true
 			context = ctx
 			parent = ctx.span
@@ -66,7 +65,7 @@ func (t *OpenTracer) startSpanWithOptions(operationName string, options ot.Start
 
 	if parent == nil {
 		// create a root Span with the default service name and resource
-		span = t.impl.NewRootSpan(operationName, t.config.ServiceName, operationName)
+		span = t.impl.NewRootSpan(operationName, t.config.serviceName, operationName)
 
 		if hasParent {
 			// the Context doesn't have a Span reference because it
@@ -114,7 +113,7 @@ func (t *OpenTracer) startSpanWithOptions(operationName string, options ot.Start
 	}
 
 	// add global tags
-	for k, v := range t.config.GlobalTags {
+	for k, v := range t.config.globalTags {
 		otSpan.SetTag(k, v)
 	}
 
@@ -126,21 +125,25 @@ func (t *OpenTracer) startSpanWithOptions(operationName string, options ot.Start
 // the value of `format`. Currently supported Injectors are:
 // * `TextMap`
 // * `HTTPHeaders`
-func (t *OpenTracer) Inject(ctx ot.SpanContext, format interface{}, carrier interface{}) error {
+func (t *OpenTracer) Inject(ctx opentracing.SpanContext, format interface{}, carrier interface{}) error {
 	switch format {
-	case ot.TextMap, ot.HTTPHeaders:
-		return t.config.TextMapPropagator.Inject(ctx, carrier)
+	case opentracing.TextMap, opentracing.HTTPHeaders:
+		return t.config.textMapPropagator.Inject(ctx, carrier)
+	case opentracing.Binary:
+		return t.config.binaryPropagator.Inject(ctx, carrier)
 	}
-	return ot.ErrUnsupportedFormat
+	return opentracing.ErrUnsupportedFormat
 }
 
 // Extract returns a SpanContext instance given `format` and `carrier`.
-func (t *OpenTracer) Extract(format interface{}, carrier interface{}) (ot.SpanContext, error) {
+func (t *OpenTracer) Extract(format interface{}, carrier interface{}) (opentracing.SpanContext, error) {
 	switch format {
-	case ot.TextMap, ot.HTTPHeaders:
-		return t.config.TextMapPropagator.Extract(carrier)
+	case opentracing.TextMap, opentracing.HTTPHeaders:
+		return t.config.textMapPropagator.Extract(carrier)
+	case opentracing.Binary:
+		return t.config.binaryPropagator.Extract(carrier)
 	}
-	return nil, ot.ErrUnsupportedFormat
+	return nil, opentracing.ErrUnsupportedFormat
 }
 
 // Close method implements `io.Closer` interface to graceful shutdown the Datadog
@@ -155,33 +158,21 @@ func (t *OpenTracer) Close() error {
 // The initialization returns a `io.Closer` that can be used to graceful
 // shutdown the tracer. If the configuration object defines a disabled
 // Tracer, a no-op implementation is returned.
-func NewOpenTracer(config *Configuration) (ot.Tracer, io.Closer, error) {
-	if config.ServiceName == "" {
-		// abort initialization if a `ServiceName` is not defined
-		return nil, nil, errors.New("A Datadog Tracer requires a valid `ServiceName` set")
+func New(opts ...Option) *OpenTracer {
+	c := new(config)
+	defaults(c)
+	for _, fn := range opts {
+		fn(c)
 	}
-
-	if config.Enabled == false {
-		// return a no-op implementation so Datadog provides the minimum overhead
-		return &ot.NoopTracer{}, &noopCloser{}, nil
-	}
-
-	// configure a Datadog Tracer
-	transport := NewTransport(config.AgentAddr)
+	transport := NewTransport(c.agentAddr)
 	tracer := &OpenTracer{
 		impl:   NewTracerTransport(transport),
-		config: config,
+		config: c,
 	}
-	tracer.impl.SetDebugLogging(config.Debug)
-	tracer.impl.SetSampleRate(config.SampleRate)
-
-	// set the new Datadog Tracer as a `DefaultTracer` so it can be
-	// used in integrations. NOTE: this is a temporary implementation
-	// that can be removed once all integrations have been migrated
-	// to the OpenTracing API.
+	tracer.impl.SetDebugLogging(c.debug)
+	tracer.impl.SetSampleRate(c.sampleRate)
 	DefaultTracer = tracer.impl
-
-	return tracer, tracer, nil
+	return tracer
 }
 
 // OLD ////////////////////////////////

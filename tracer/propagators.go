@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	ot "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 )
 
 // Propagator implementations should be able to inject and extract
@@ -12,11 +12,11 @@ import (
 type Propagator interface {
 	// Inject takes the SpanContext and injects it into the carrier using
 	// an implementation specific method.
-	Inject(context ot.SpanContext, carrier interface{}) error
+	Inject(context opentracing.SpanContext, carrier interface{}) error
 
 	// Extract returns the SpanContext from the given carrier using an
 	// implementation specific method.
-	Extract(carrier interface{}) (ot.SpanContext, error)
+	Extract(carrier interface{}) (opentracing.SpanContext, error)
 }
 
 const (
@@ -55,14 +55,14 @@ type TextMapPropagator struct {
 // Inject defines the TextMapPropagator to propagate SpanContext data
 // out of the current process. The implementation propagates the
 // TraceID and the current active SpanID, as well as the Span baggage.
-func (p *TextMapPropagator) Inject(context ot.SpanContext, carrier interface{}) error {
+func (p *TextMapPropagator) Inject(context opentracing.SpanContext, carrier interface{}) error {
 	ctx, ok := context.(SpanContext)
 	if !ok {
-		return ot.ErrInvalidSpanContext
+		return opentracing.ErrInvalidSpanContext
 	}
-	writer, ok := carrier.(ot.TextMapWriter)
+	writer, ok := carrier.(opentracing.TextMapWriter)
 	if !ok {
-		return ot.ErrInvalidCarrier
+		return opentracing.ErrInvalidCarrier
 	}
 
 	// propagate the TraceID and the current active SpanID
@@ -77,10 +77,10 @@ func (p *TextMapPropagator) Inject(context ot.SpanContext, carrier interface{}) 
 }
 
 // Extract implements Propagator.
-func (p *TextMapPropagator) Extract(carrier interface{}) (ot.SpanContext, error) {
-	reader, ok := carrier.(ot.TextMapReader)
+func (p *TextMapPropagator) Extract(carrier interface{}) (opentracing.SpanContext, error) {
+	reader, ok := carrier.(opentracing.TextMapReader)
 	if !ok {
-		return nil, ot.ErrInvalidCarrier
+		return nil, opentracing.ErrInvalidCarrier
 	}
 	var err error
 	var traceID, parentID uint64
@@ -92,12 +92,12 @@ func (p *TextMapPropagator) Extract(carrier interface{}) (ot.SpanContext, error)
 		case p.traceHeader:
 			traceID, err = strconv.ParseUint(v, 10, 64)
 			if err != nil {
-				return ot.ErrSpanContextCorrupted
+				return opentracing.ErrSpanContextCorrupted
 			}
 		case p.parentHeader:
 			parentID, err = strconv.ParseUint(v, 10, 64)
 			if err != nil {
-				return ot.ErrSpanContextCorrupted
+				return opentracing.ErrSpanContextCorrupted
 			}
 		default:
 			lowercaseK := strings.ToLower(k)
@@ -114,7 +114,7 @@ func (p *TextMapPropagator) Extract(carrier interface{}) (ot.SpanContext, error)
 	}
 
 	if traceID == 0 || parentID == 0 {
-		return nil, ot.ErrSpanContextNotFound
+		return nil, opentracing.ErrSpanContextNotFound
 	}
 
 	return SpanContext{
