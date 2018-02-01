@@ -11,31 +11,16 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/tracer/ext"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestDefaultOpenTracer(t *testing.T) {
-	assert := assert.New(t)
-
-	config := NewConfiguration()
-	tracer, _, _ := NewOpenTracer(config)
-	tTracer, ok := tracer.(*OpenTracer)
-	assert.True(ok)
-
-	assert.Equal(tTracer.impl, DefaultTracer)
-}
-
 func TestOpenTracerStartSpan(t *testing.T) {
-	assert := assert.New(t)
-
-	config := NewConfiguration()
-	tracer, _, _ := NewOpenTracer(config)
-
+	tracer := New()
 	span, ok := tracer.StartSpan("web.request").(*OpenSpan)
+	assert := assert.New(t)
 	assert.True(ok)
-
 	assert.NotEqual(uint64(0), span.Span.TraceID)
 	assert.NotEqual(uint64(0), span.Span.SpanID)
 	assert.Equal(uint64(0), span.Span.ParentID)
@@ -46,10 +31,7 @@ func TestOpenTracerStartSpan(t *testing.T) {
 
 func TestOpenTracerStartChildSpan(t *testing.T) {
 	assert := assert.New(t)
-
-	config := NewConfiguration()
-	tracer, _, _ := NewOpenTracer(config)
-
+	tracer := New()
 	root := tracer.StartSpan("web.request")
 	child := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context()))
 	tRoot, ok := root.(*OpenSpan)
@@ -65,10 +47,7 @@ func TestOpenTracerStartChildSpan(t *testing.T) {
 
 func TestOpenTracerBaggagePropagation(t *testing.T) {
 	assert := assert.New(t)
-
-	config := NewConfiguration()
-	tracer, _, _ := NewOpenTracer(config)
-
+	tracer := New()
 	root := tracer.StartSpan("web.request")
 	root.SetBaggageItem("key", "value")
 	child := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context()))
@@ -80,10 +59,7 @@ func TestOpenTracerBaggagePropagation(t *testing.T) {
 
 func TestOpenTracerBaggageImmutability(t *testing.T) {
 	assert := assert.New(t)
-
-	config := NewConfiguration()
-	tracer, _, _ := NewOpenTracer(config)
-
+	tracer := New()
 	root := tracer.StartSpan("web.request")
 	root.SetBaggageItem("key", "value")
 	child := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context()))
@@ -92,34 +68,24 @@ func TestOpenTracerBaggageImmutability(t *testing.T) {
 	assert.True(ok)
 	childContext, ok := child.Context().(SpanContext)
 	assert.True(ok)
-
 	assert.Equal("value", parentContext.baggage["key"])
 	assert.Equal("changed!", childContext.baggage["key"])
 }
 
 func TestOpenTracerSpanTags(t *testing.T) {
-	assert := assert.New(t)
-
-	config := NewConfiguration()
-	tracer, _, _ := NewOpenTracer(config)
-
+	tracer := New()
 	tag := opentracing.Tag{Key: "key", Value: "value"}
 	span, ok := tracer.StartSpan("web.request", tag).(*OpenSpan)
+	assert := assert.New(t)
 	assert.True(ok)
-
 	assert.Equal("value", span.Span.Meta["key"])
 }
 
 func TestOpenTracerSpanGlobalTags(t *testing.T) {
 	assert := assert.New(t)
-
-	config := NewConfiguration()
-	config.GlobalTags["key"] = "value"
-	tracer, _, _ := NewOpenTracer(config)
-
+	tracer := New(WithGlobalTags("key", "value"))
 	span := tracer.StartSpan("web.request").(*OpenSpan)
 	assert.Equal("value", span.Span.Meta["key"])
-
 	child := tracer.StartSpan("db.query", opentracing.ChildOf(span.Context())).(*OpenSpan)
 	assert.Equal("value", child.Span.Meta["key"])
 }
@@ -127,13 +93,10 @@ func TestOpenTracerSpanGlobalTags(t *testing.T) {
 func TestOpenTracerSpanStartTime(t *testing.T) {
 	assert := assert.New(t)
 
-	config := NewConfiguration()
-	tracer, _, _ := NewOpenTracer(config)
-
+	tracer := New()
 	startTime := time.Now().Add(-10 * time.Second)
 	span, ok := tracer.StartSpan("web.request", opentracing.StartTime(startTime)).(*OpenSpan)
 	assert.True(ok)
-
 	assert.Equal(startTime.UnixNano(), span.Span.Start)
 }
 

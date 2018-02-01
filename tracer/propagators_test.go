@@ -12,9 +12,7 @@ import (
 func TestOpenTracerPropagationDefaults(t *testing.T) {
 	assert := assert.New(t)
 
-	config := NewConfiguration()
-	tracer, _, _ := NewOpenTracer(config)
-
+	tracer := New()
 	root := tracer.StartSpan("web.request")
 	ctx := root.Context()
 	headers := http.Header{}
@@ -60,9 +58,8 @@ func TestOpenTracerPropagationDefaults(t *testing.T) {
 func TestOpenTracerTextMapPropagationHeader(t *testing.T) {
 	assert := assert.New(t)
 
-	config := NewConfiguration()
-	config.TextMapPropagator = NewTextMapPropagator("bg-", "tid", "pid")
-	tracer, _, _ := NewOpenTracer(config)
+	textMapPropagator := NewTextMapPropagator("bg-", "tid", "pid")
+	tracer := New(WithTextMapPropagator(textMapPropagator))
 
 	root := tracer.StartSpan("web.request").SetBaggageItem("item", "x").(*OpenSpan)
 	ctx := root.Context()
