@@ -15,8 +15,7 @@ func TestConfigurationDefaults(t *testing.T) {
 	assert.Equal(false, config.Debug)
 	assert.Equal(float64(1), config.SampleRate)
 	assert.Equal("tracer.test", config.ServiceName)
-	assert.Equal("localhost", config.AgentHostname)
-	assert.Equal("8126", config.AgentPort)
+	assert.Equal("localhost:8126", config.AgentAddr)
 }
 
 func TestConfiguration(t *testing.T) {
@@ -25,8 +24,7 @@ func TestConfiguration(t *testing.T) {
 	config := NewConfiguration()
 	config.SampleRate = 0
 	config.ServiceName = "api-intake"
-	config.AgentHostname = "ddagent.consul.local"
-	config.AgentPort = "58126"
+	config.AgentAddr = "ddagent.consul.local:58126"
 	tracer, closer, err := NewOpenTracer(config)
 	assert.NotNil(tracer)
 	assert.NotNil(closer)

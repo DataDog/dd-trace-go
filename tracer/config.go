@@ -20,12 +20,9 @@ type Configuration struct {
 	// SampleRate sets the Tracer sample rate (ext/priority.go).
 	SampleRate float64
 
-	// AgentHostname specifies the hostname of the agent where the traces
+	// AgentAddr specifies the hostname of the agent where the traces
 	// are sent to.
-	AgentHostname string
-
-	// AgentPort specifies the port that the agent is listening on.
-	AgentPort string
+	AgentAddr string
 
 	// GlobalTags holds a set of tags that will be automatically applied to
 	// all spans.
@@ -46,8 +43,7 @@ func NewConfiguration() *Configuration {
 		Debug:             false,
 		ServiceName:       binaryName,
 		SampleRate:        1,
-		AgentHostname:     "localhost",
-		AgentPort:         "8126",
+		AgentAddr:         "localhost:8126",
 		GlobalTags:        make(map[string]interface{}),
 		TextMapPropagator: NewTextMapPropagator("", "", ""),
 	}
