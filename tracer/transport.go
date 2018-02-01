@@ -15,6 +15,7 @@ import (
 const (
 	defaultHostname    = "localhost"
 	defaultPort        = "8126"
+	defaultAddress     = defaultHostname + ":" + defaultPort
 	defaultHTTPTimeout = time.Second             // defines the current timeout before giving up with the send process
 	traceCountHeader   = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
 )
@@ -33,19 +34,13 @@ type Transport interface {
 //
 // In general, using this method is only necessary if you have a trace agent
 // running on a non-default port or if it's located on another machine.
-func NewTransport(hostname, port string) Transport {
-	if hostname == "" {
-		hostname = defaultHostname
-	}
-	if port == "" {
-		port = defaultPort
-	}
-	return newHTTPTransport(hostname, port)
+func NewTransport(addr string) Transport {
+	return newHTTPTransport(addr)
 }
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() Transport {
-	return newHTTPTransport(defaultHostname, defaultPort)
+	return newHTTPTransport(defaultAddress)
 }
 
 type httpTransport struct {
@@ -67,7 +62,7 @@ type httpTransport struct {
 }
 
 // newHTTPTransport returns an httpTransport for the given endpoint
-func newHTTPTransport(hostname, port string) *httpTransport {
+func newHTTPTransport(addr string) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
 	defaultHeaders := map[string]string{
 		"Datadog-Meta-Lang":             ext.Lang,
@@ -75,12 +70,19 @@ func newHTTPTransport(hostname, port string) *httpTransport {
 		"Datadog-Meta-Lang-Interpreter": ext.Interpreter,
 		"Datadog-Meta-Tracer-Version":   ext.TracerVersion,
 	}
-
+	host, port, _ := net.SplitHostPort(addr)
+	if host == "" {
+		host = defaultHostname
+	}
+	if port == "" {
+		port = defaultPort
+	}
+	addr = fmt.Sprintf("%s:%s", host, port)
 	return &httpTransport{
-		traceURL:         fmt.Sprintf("http://%s:%s/v0.3/traces", hostname, port),
-		legacyTraceURL:   fmt.Sprintf("http://%s:%s/v0.2/traces", hostname, port),
-		serviceURL:       fmt.Sprintf("http://%s:%s/v0.3/services", hostname, port),
-		legacyServiceURL: fmt.Sprintf("http://%s:%s/v0.2/services", hostname, port),
+		traceURL:         fmt.Sprintf("http://%s/v0.3/traces", addr),
+		legacyTraceURL:   fmt.Sprintf("http://%s/v0.2/traces", addr),
+		serviceURL:       fmt.Sprintf("http://%s/v0.3/services", addr),
+		legacyServiceURL: fmt.Sprintf("http://%s/v0.2/services", addr),
 		getEncoder:       msgpackEncoderFactory,
 		client: &http.Client{
 			// We copy the transport to avoid using the default one, as it might be

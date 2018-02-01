@@ -1,11 +1,11 @@
 package tracer
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -83,7 +83,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultHostname, defaultPort)
+		transport := newHTTPTransport(defaultAddress)
 		response, err := transport.SendTraces(tc.payload)
 		assert.NoError(err)
 		assert.NotNil(response)
@@ -93,7 +93,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 
 func TestAPIDowngrade(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultAddress)
 	transport.traceURL = "http://localhost:8126/v0.0/traces"
 
 	// if we get a 404 we should downgrade the API
@@ -106,7 +106,7 @@ func TestAPIDowngrade(t *testing.T) {
 
 func TestEncoderDowngrade(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultAddress)
 	transport.traceURL = "http://localhost:8126/v0.2/traces"
 
 	// if we get a 415 because of a wrong encoder, we should downgrade the encoder
@@ -120,7 +120,7 @@ func TestEncoderDowngrade(t *testing.T) {
 func TestTransportServices(t *testing.T) {
 	assert := assert.New(t)
 
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultAddress)
 
 	response, err := transport.SendServices(getTestServices())
 	assert.NoError(err)
@@ -131,7 +131,7 @@ func TestTransportServices(t *testing.T) {
 func TestTransportServicesDowngrade_0_0(t *testing.T) {
 	assert := assert.New(t)
 
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultAddress)
 	transport.serviceURL = "http://localhost:8126/v0.0/services"
 
 	response, err := transport.SendServices(getTestServices())
@@ -143,7 +143,7 @@ func TestTransportServicesDowngrade_0_0(t *testing.T) {
 func TestTransportServicesDowngrade_0_2(t *testing.T) {
 	assert := assert.New(t)
 
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultAddress)
 	transport.serviceURL = "http://localhost:8126/v0.2/services"
 
 	response, err := transport.SendServices(getTestServices())
@@ -154,7 +154,7 @@ func TestTransportServicesDowngrade_0_2(t *testing.T) {
 
 func TestTransportEncoderPool(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultAddress)
 
 	// MsgpackEncoder is the default encoder of the pool
 	encoder := transport.getEncoder()
@@ -163,7 +163,7 @@ func TestTransportEncoderPool(t *testing.T) {
 
 func TestTransportSwitchEncoder(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultAddress)
 	transport.changeEncoder(jsonEncoderFactory)
 
 	// MsgpackEncoder is the default encoder of the pool
@@ -186,12 +186,11 @@ func TestTraceCountHeader(t *testing.T) {
 	parsedURL, err := url.Parse(receiver.URL)
 	assert.NoError(err)
 	host := parsedURL.Host
-	hostItems := strings.Split(host, ":")
-	assert.Equal(2, len(hostItems), "port should be given, as it's chosen randomly")
-	hostname := hostItems[0]
-	port := hostItems[1]
+	_, port, err := net.SplitHostPort(host)
+	assert.Nil(err)
+	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
 	for _, tc := range testCases {
-		transport := newHTTPTransport(hostname, port)
+		transport := newHTTPTransport(host)
 		response, err := transport.SendTraces(tc.payload)
 		assert.NoError(err)
 		assert.NotNil(response)

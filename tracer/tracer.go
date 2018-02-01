@@ -167,7 +167,7 @@ func NewOpenTracer(config *Configuration) (ot.Tracer, io.Closer, error) {
 	}
 
 	// configure a Datadog Tracer
-	transport := NewTransport(config.AgentHostname, config.AgentPort)
+	transport := NewTransport(config.AgentAddr)
 	tracer := &OpenTracer{
 		impl:   NewTracerTransport(transport),
 		config: config,
