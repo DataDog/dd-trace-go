@@ -1,4 +1,4 @@
-package opentracing
+package tracer
 
 import (
 	"net/http"
@@ -9,11 +9,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestTracerPropagationDefaults(t *testing.T) {
+func TestOpenTracerPropagationDefaults(t *testing.T) {
 	assert := assert.New(t)
 
 	config := NewConfiguration()
-	tracer, _, _ := NewTracer(config)
+	tracer, _, _ := NewOpenTracer(config)
 
 	root := tracer.StartSpan("web.request")
 	ctx := root.Context()
@@ -39,9 +39,9 @@ func TestTracerPropagationDefaults(t *testing.T) {
 
 	// ensure a child can be created
 	child := tracer.StartSpan("db.query", opentracing.ChildOf(propagated))
-	tRoot, ok := root.(*Span)
+	tRoot, ok := root.(*OpenSpan)
 	assert.True(ok)
-	tChild, ok := child.(*Span)
+	tChild, ok := child.(*OpenSpan)
 	assert.True(ok)
 
 	assert.NotEqual(uint64(0), tChild.Span.TraceID)
@@ -57,14 +57,14 @@ func TestTracerPropagationDefaults(t *testing.T) {
 	assert.Equal(headers.Get("x-datadog-parent-id"), pid)
 }
 
-func TestTracerTextMapPropagationHeader(t *testing.T) {
+func TestOpenTracerTextMapPropagationHeader(t *testing.T) {
 	assert := assert.New(t)
 
 	config := NewConfiguration()
 	config.TextMapPropagator = NewTextMapPropagator("bg-", "tid", "pid")
-	tracer, _, _ := NewTracer(config)
+	tracer, _, _ := NewOpenTracer(config)
 
-	root := tracer.StartSpan("web.request").SetBaggageItem("item", "x").(*Span)
+	root := tracer.StartSpan("web.request").SetBaggageItem("item", "x").(*OpenSpan)
 	ctx := root.Context()
 	headers := http.Header{}
 

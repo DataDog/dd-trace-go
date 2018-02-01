@@ -3,7 +3,6 @@ package tracer
 import (
 	"context"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"net/http"
 	"os"
 	"strconv"
@@ -11,8 +10,134 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/tracer/ext"
+	opentracing "github.com/opentracing/opentracing-go"
+
 	"github.com/stretchr/testify/assert"
 )
+
+func TestDefaultOpenTracer(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	tracer, _, _ := NewOpenTracer(config)
+	tTracer, ok := tracer.(*OpenTracer)
+	assert.True(ok)
+
+	assert.Equal(tTracer.impl, DefaultTracer)
+}
+
+func TestOpenTracerStartSpan(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	tracer, _, _ := NewOpenTracer(config)
+
+	span, ok := tracer.StartSpan("web.request").(*OpenSpan)
+	assert.True(ok)
+
+	assert.NotEqual(uint64(0), span.Span.TraceID)
+	assert.NotEqual(uint64(0), span.Span.SpanID)
+	assert.Equal(uint64(0), span.Span.ParentID)
+	assert.Equal("web.request", span.Span.Name)
+	assert.Equal("tracer.test", span.Span.Service)
+	assert.NotNil(span.Span.Tracer())
+}
+
+func TestOpenTracerStartChildSpan(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	tracer, _, _ := NewOpenTracer(config)
+
+	root := tracer.StartSpan("web.request")
+	child := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context()))
+	tRoot, ok := root.(*OpenSpan)
+	assert.True(ok)
+	tChild, ok := child.(*OpenSpan)
+	assert.True(ok)
+
+	assert.NotEqual(uint64(0), tChild.Span.TraceID)
+	assert.NotEqual(uint64(0), tChild.Span.SpanID)
+	assert.Equal(tRoot.Span.SpanID, tChild.Span.ParentID)
+	assert.Equal(tRoot.Span.TraceID, tChild.Span.ParentID)
+}
+
+func TestOpenTracerBaggagePropagation(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	tracer, _, _ := NewOpenTracer(config)
+
+	root := tracer.StartSpan("web.request")
+	root.SetBaggageItem("key", "value")
+	child := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context()))
+	context, ok := child.Context().(SpanContext)
+	assert.True(ok)
+
+	assert.Equal("value", context.baggage["key"])
+}
+
+func TestOpenTracerBaggageImmutability(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	tracer, _, _ := NewOpenTracer(config)
+
+	root := tracer.StartSpan("web.request")
+	root.SetBaggageItem("key", "value")
+	child := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context()))
+	child.SetBaggageItem("key", "changed!")
+	parentContext, ok := root.Context().(SpanContext)
+	assert.True(ok)
+	childContext, ok := child.Context().(SpanContext)
+	assert.True(ok)
+
+	assert.Equal("value", parentContext.baggage["key"])
+	assert.Equal("changed!", childContext.baggage["key"])
+}
+
+func TestOpenTracerSpanTags(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	tracer, _, _ := NewOpenTracer(config)
+
+	tag := opentracing.Tag{Key: "key", Value: "value"}
+	span, ok := tracer.StartSpan("web.request", tag).(*OpenSpan)
+	assert.True(ok)
+
+	assert.Equal("value", span.Span.Meta["key"])
+}
+
+func TestOpenTracerSpanGlobalTags(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	config.GlobalTags["key"] = "value"
+	tracer, _, _ := NewOpenTracer(config)
+
+	span := tracer.StartSpan("web.request").(*OpenSpan)
+	assert.Equal("value", span.Span.Meta["key"])
+
+	child := tracer.StartSpan("db.query", opentracing.ChildOf(span.Context())).(*OpenSpan)
+	assert.Equal("value", child.Span.Meta["key"])
+}
+
+func TestOpenTracerSpanStartTime(t *testing.T) {
+	assert := assert.New(t)
+
+	config := NewConfiguration()
+	tracer, _, _ := NewOpenTracer(config)
+
+	startTime := time.Now().Add(-10 * time.Second)
+	span, ok := tracer.StartSpan("web.request", opentracing.StartTime(startTime)).(*OpenSpan)
+	assert.True(ok)
+
+	assert.Equal(startTime.UnixNano(), span.Span.Start)
+}
+
+// OLD ////////////////////////////////
 
 func TestDefaultTracer(t *testing.T) {
 	assert := assert.New(t)

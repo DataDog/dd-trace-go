@@ -1,4 +1,4 @@
-package opentracing
+package tracer
 
 import (
 	"testing"
@@ -14,7 +14,7 @@ func TestConfigurationDefaults(t *testing.T) {
 	assert.Equal(true, config.Enabled)
 	assert.Equal(false, config.Debug)
 	assert.Equal(float64(1), config.SampleRate)
-	assert.Equal("opentracing.test", config.ServiceName)
+	assert.Equal("tracer.test", config.ServiceName)
 	assert.Equal("localhost", config.AgentHostname)
 	assert.Equal("8126", config.AgentPort)
 }
@@ -27,31 +27,31 @@ func TestConfiguration(t *testing.T) {
 	config.ServiceName = "api-intake"
 	config.AgentHostname = "ddagent.consul.local"
 	config.AgentPort = "58126"
-	tracer, closer, err := NewTracer(config)
+	tracer, closer, err := NewOpenTracer(config)
 	assert.NotNil(tracer)
 	assert.NotNil(closer)
 	assert.Nil(err)
-	assert.Equal("api-intake", tracer.(*Tracer).config.ServiceName)
+	assert.Equal("api-intake", tracer.(*OpenTracer).config.ServiceName)
 }
 
-func TestTracerServiceName(t *testing.T) {
+func TestOpenTracerServiceName(t *testing.T) {
 	assert := assert.New(t)
 
 	config := NewConfiguration()
 	config.ServiceName = ""
-	tracer, closer, err := NewTracer(config)
+	tracer, closer, err := NewOpenTracer(config)
 	assert.Nil(tracer)
 	assert.Nil(closer)
 	assert.NotNil(err)
 	assert.Equal("A Datadog Tracer requires a valid `ServiceName` set", err.Error())
 }
 
-func TestDisabledTracer(t *testing.T) {
+func TestDisabledOpenTracer(t *testing.T) {
 	assert := assert.New(t)
 
 	config := NewConfiguration()
 	config.Enabled = false
-	tracer, closer, err := NewTracer(config)
+	tracer, closer, err := NewOpenTracer(config)
 	assert.IsType(&ot.NoopTracer{}, tracer)
 	assert.IsType(&noopCloser{}, closer)
 	assert.Nil(err)

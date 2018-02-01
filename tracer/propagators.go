@@ -1,4 +1,4 @@
-package opentracing
+package tracer
 
 import (
 	"strconv"
