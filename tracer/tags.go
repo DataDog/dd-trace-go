@@ -1,4 +1,4 @@
-package opentracing
+package tracer
 
 const (
 	// SpanType defines the Span type (web, db, cache)
