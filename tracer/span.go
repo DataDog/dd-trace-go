@@ -411,8 +411,3 @@ func (s *Span) HasSamplingPriority() bool {
 func (s *Span) GetSamplingPriority() int {
 	return int(s.Metrics[samplingPriorityKey])
 }
-
-// NextSpanID returns a new random span id.
-func NextSpanID() uint64 {
-	return uint64(randGen.Int63())
-}

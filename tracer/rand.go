@@ -10,32 +10,30 @@ import (
 	"time"
 )
 
-// randGen is the global thread safe random number generator
-var randGen *rand.Rand
+// random holds a thread-safe source of random numbers.
+var random *rand.Rand
 
-type randSource struct {
-	source rand.Source
-	sync.Mutex
-}
-
-func newRandSource() *randSource {
+func init() {
 	var seed int64
-
-	max := big.NewInt(math.MaxInt64)
-	n, err := cryptorand.Int(cryptorand.Reader, max)
+	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(math.MaxInt64))
 	if err == nil {
 		seed = n.Int64()
 	} else {
 		log.Printf("%scannot generate random seed: %v; using current time\n", errorPrefix, err)
 		seed = time.Now().UnixNano()
 	}
-
-	source := rand.NewSource(seed)
-
-	return &randSource{source: source}
+	random = rand.New(&safeSource{
+		source: rand.NewSource(seed),
+	})
 }
 
-func (rs *randSource) Int63() int64 {
+// safeSource holds a thread-safe implementation of rand.Source64.
+type safeSource struct {
+	source rand.Source
+	sync.Mutex
+}
+
+func (rs *safeSource) Int63() int64 {
 	rs.Lock()
 	n := rs.source.Int63()
 	rs.Unlock()
@@ -43,7 +41,9 @@ func (rs *randSource) Int63() int64 {
 	return n
 }
 
-func (rs *randSource) Seed(seed int64) {
+func (rs *safeSource) Uint64() uint64 { return uint64(rs.Int63()) }
+
+func (rs *safeSource) Seed(seed int64) {
 	rs.Lock()
 	rs.Seed(seed)
 	rs.Unlock()

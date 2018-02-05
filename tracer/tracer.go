@@ -2,7 +2,6 @@ package tracer
 
 import (
 	"log"
-	"math/rand"
 	"os"
 	"strconv"
 	"sync"
@@ -12,13 +11,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 )
 
-const (
-	flushInterval = 2 * time.Second
-)
-
-func init() {
-	randGen = rand.New(newRandSource())
-}
+const flushInterval = 2 * time.Second
 
 type Service struct {
 	Name    string `json:"-"`        // the internal of the service (e.g. acme_search, datadog_web)
@@ -216,7 +209,7 @@ func (t *Tracer) SetServiceInfo(name, app, appType string) {
 // newRootSpan creates a span with no parent. Its ids will be randomly
 // assigned.
 func (t *Tracer) newRootSpan(name, service, resource string) *Span {
-	id := NextSpanID()
+	id := random.Uint64()
 
 	span := NewSpan(name, service, resource, id, id, 0, t)
 	span.buffer = newSpanBuffer(t.channels, 0, 0)
@@ -240,7 +233,7 @@ func (t *Tracer) newChildSpan(name string, parent *Span) *Span {
 	parent.RLock()
 	defer parent.RUnlock()
 
-	id := NextSpanID()
+	id := random.Uint64()
 	span := NewSpan(name, parent.Service, name, id, parent.TraceID, parent.SpanID, parent.tracer)
 	span.Sampled = parent.Sampled
 
