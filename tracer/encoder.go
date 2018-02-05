@@ -18,7 +18,7 @@ const (
 type encoder interface {
 	io.Reader
 
-	encodeTraces(traces [][]*Span) error
+	encodeTraces(traces [][]*span) error
 	encodeServices(services map[string]service) error
 	contentType() string
 }
@@ -47,7 +47,7 @@ func newMsgpackEncoder() *msgpackEncoder {
 
 // encodeTraces serializes the given trace list into the internal buffer,
 // returning the error if any.
-func (e *msgpackEncoder) encodeTraces(traces [][]*Span) error {
+func (e *msgpackEncoder) encodeTraces(traces [][]*span) error {
 	return e.encoder.Encode(traces)
 }
 
@@ -89,7 +89,7 @@ func newJSONEncoder() *jsonEncoder {
 
 // encodeTraces serializes the given trace list into the internal buffer,
 // returning the error if any.
-func (e *jsonEncoder) encodeTraces(traces [][]*Span) error {
+func (e *jsonEncoder) encodeTraces(traces [][]*span) error {
 	return e.encoder.Encode(traces)
 }
 

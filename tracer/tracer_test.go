@@ -17,13 +17,13 @@ import (
 
 var DefaultTracer = New(WithTransport(newDefaultTransport()))
 
-func newChildSpan(name string, parent *Span) *Span {
+func newChildSpan(name string, parent *span) *span {
 	return DefaultTracer.newChildSpan(name, parent)
 }
 
 func TestOpenTracerStartSpan(t *testing.T) {
 	tracer := New()
-	span, ok := tracer.StartSpan("web.request").(*Span)
+	span, ok := tracer.StartSpan("web.request").(*span)
 	assert := assert.New(t)
 	assert.True(ok)
 	assert.NotEqual(uint64(0), span.TraceID)
@@ -39,9 +39,9 @@ func TestOpenTracerStartChildSpan(t *testing.T) {
 	tracer := New()
 	root := tracer.StartSpan("web.request")
 	child := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context()))
-	tRoot, ok := root.(*Span)
+	tRoot, ok := root.(*span)
 	assert.True(ok)
-	tChild, ok := child.(*Span)
+	tChild, ok := child.(*span)
 	assert.True(ok)
 
 	assert.NotEqual(uint64(0), tChild.TraceID)
@@ -80,7 +80,7 @@ func TestOpenTracerBaggageImmutability(t *testing.T) {
 func TestOpenTracerSpanTags(t *testing.T) {
 	tracer := New()
 	tag := opentracing.Tag{Key: "key", Value: "value"}
-	span, ok := tracer.StartSpan("web.request", tag).(*Span)
+	span, ok := tracer.StartSpan("web.request", tag).(*span)
 	assert := assert.New(t)
 	assert.True(ok)
 	assert.Equal("value", span.Meta["key"])
@@ -89,9 +89,9 @@ func TestOpenTracerSpanTags(t *testing.T) {
 func TestOpenTracerSpanGlobalTags(t *testing.T) {
 	assert := assert.New(t)
 	tracer := New(WithGlobalTags("key", "value"))
-	span := tracer.StartSpan("web.request").(*Span)
-	assert.Equal("value", span.Meta["key"])
-	child := tracer.StartSpan("db.query", opentracing.ChildOf(span.Context())).(*Span)
+	s := tracer.StartSpan("web.request").(*span)
+	assert.Equal("value", s.Meta["key"])
+	child := tracer.StartSpan("db.query", opentracing.ChildOf(s.Context())).(*span)
 	assert.Equal("value", child.Meta["key"])
 }
 
@@ -100,7 +100,7 @@ func TestOpenTracerSpanStartTime(t *testing.T) {
 
 	tracer := New()
 	startTime := time.Now().Add(-10 * time.Second)
-	span, ok := tracer.StartSpan("web.request", opentracing.StartTime(startTime)).(*Span)
+	span, ok := tracer.StartSpan("web.request", opentracing.StartTime(startTime)).(*span)
 	assert.True(ok)
 	assert.Equal(startTime.UnixNano(), span.Start)
 }
@@ -415,7 +415,7 @@ func TestTracerRace(t *testing.T) {
 	assert.Len(traces, total, "we should have exactly as many traces as expected")
 	for _, trace := range traces {
 		assert.Len(trace, 3, "each trace should have exactly 3 spans")
-		var parent, child, redis *Span
+		var parent, child, redis *span
 		for _, span := range trace {
 			switch span.Name {
 			case "pylons.request":
@@ -521,13 +521,13 @@ func getTestTracer(opts ...Option) (*Tracer, *dummyTransport) {
 // Mock Transport with a real Encoder
 type dummyTransport struct {
 	getEncoder encoderFactory
-	traces     [][]*Span
+	traces     [][]*span
 	services   map[string]service
 
 	sync.RWMutex // required because of some poll-testing (eg: worker)
 }
 
-func (t *dummyTransport) sendTraces(traces [][]*Span) (*http.Response, error) {
+func (t *dummyTransport) sendTraces(traces [][]*span) (*http.Response, error) {
 	t.Lock()
 	t.traces = append(t.traces, traces...)
 	t.Unlock()
@@ -545,7 +545,7 @@ func (t *dummyTransport) sendServices(services map[string]service) (*http.Respon
 	return nil, encoder.encodeServices(services)
 }
 
-func (t *dummyTransport) Traces() [][]*Span {
+func (t *dummyTransport) Traces() [][]*span {
 	t.Lock()
 	defer t.Unlock()
 

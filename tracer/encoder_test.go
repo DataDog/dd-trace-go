@@ -44,7 +44,7 @@ func TestJSONEncoding(t *testing.T) {
 		assert.Nil(err)
 
 		// decode to check the right encoding
-		var traces [][]*Span
+		var traces [][]*span
 		dec := json.NewDecoder(encoder.buffer)
 		err = dec.Decode(&traces)
 		assert.Nil(err)
@@ -88,7 +88,7 @@ func TestMsgpackEncoding(t *testing.T) {
 		assert.Nil(err)
 
 		// decode to check the right encoding
-		var traces [][]*Span
+		var traces [][]*span
 		var mh codec.MsgpackHandle
 		dec := codec.NewDecoder(encoder.buffer, &mh)
 		err = dec.Decode(&traces)

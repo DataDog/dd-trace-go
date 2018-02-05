@@ -22,7 +22,7 @@ const (
 
 // Transport is an interface for span submission to the agent.
 type transport interface {
-	sendTraces(spans [][]*Span) (*http.Response, error)
+	sendTraces(spans [][]*span) (*http.Response, error)
 	sendServices(services map[string]service) (*http.Response, error)
 }
 
@@ -106,7 +106,7 @@ func newHTTPTransport(addr string) *httpTransport {
 	}
 }
 
-func (t *httpTransport) sendTraces(traces [][]*Span) (*http.Response, error) {
+func (t *httpTransport) sendTraces(traces [][]*span) (*http.Response, error) {
 	if t.traceURL == "" {
 		return nil, errors.New("provided an empty URL, giving up")
 	}

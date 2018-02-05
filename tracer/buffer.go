@@ -20,7 +20,7 @@ const (
 type spanBuffer struct {
 	channels tracerChans
 
-	spans         []*Span
+	spans         []*span
 	finishedSpans int
 
 	initSize int
@@ -43,7 +43,7 @@ func newSpanBuffer(channels tracerChans, initSize, maxSize int) *spanBuffer {
 	}
 }
 
-func (tb *spanBuffer) Push(span *Span) {
+func (tb *spanBuffer) Push(sp *span) {
 	if tb == nil {
 		return
 	}
@@ -58,17 +58,17 @@ func (tb *spanBuffer) Push(span *Span) {
 			return
 		}
 		// if there's a trace ID mismatch, ignore span
-		if tb.spans[0].TraceID != span.TraceID {
-			tb.channels.pushErr(&errorTraceIDMismatch{Expected: tb.spans[0].TraceID, Actual: span.TraceID})
+		if tb.spans[0].TraceID != sp.TraceID {
+			tb.channels.pushErr(&errorTraceIDMismatch{Expected: tb.spans[0].TraceID, Actual: sp.TraceID})
 			return
 		}
 	}
 
 	if tb.spans == nil {
-		tb.spans = make([]*Span, 0, tb.initSize)
+		tb.spans = make([]*span, 0, tb.initSize)
 	}
 
-	tb.spans = append(tb.spans, span)
+	tb.spans = append(tb.spans, sp)
 }
 
 func (tb *spanBuffer) flushable() bool {

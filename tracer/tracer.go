@@ -81,7 +81,7 @@ func (t *Tracer) startSpanWithOptions(operationName string, options opentracing.
 
 	context := new(spanContext)
 	var hasParent bool
-	var parent, span *Span
+	var parent, span *span
 
 	for _, ref := range options.References {
 		ctx, ok := ref.ReferencedContext.(*spanContext)
@@ -194,7 +194,7 @@ func (t *Tracer) SetServiceInfo(name, app, appType string) {
 
 // newRootSpan creates a span with no parent. Its ids will be randomly
 // assigned.
-func (t *Tracer) newRootSpan(name, service, resource string) *Span {
+func (t *Tracer) newRootSpan(name, service, resource string) *span {
 	id := random.Uint64()
 
 	span := newSpan(name, service, resource, id, id, 0, t)
@@ -210,7 +210,7 @@ func (t *Tracer) newRootSpan(name, service, resource string) *Span {
 
 // newChildSpan returns a new span that is child of the Span passed as
 // argument.
-func (t *Tracer) newChildSpan(name string, parent *Span) *Span {
+func (t *Tracer) newChildSpan(name string, parent *span) *span {
 	if parent == nil {
 		// don't crash
 		return t.newRootSpan(name, t.config.serviceName, name)
@@ -234,8 +234,8 @@ func (t *Tracer) newChildSpan(name string, parent *Span) *Span {
 	return span
 }
 
-func (t *Tracer) getTraces() [][]*Span {
-	traces := make([][]*Span, 0, len(t.channels.trace))
+func (t *Tracer) getTraces() [][]*span {
+	traces := make([][]*span, 0, len(t.channels.trace))
 
 	for {
 		select {
@@ -325,7 +325,7 @@ func (t *Tracer) ForceFlush() {
 }
 
 // Sample samples a span with the internal sampler.
-func (t *Tracer) Sample(span *Span) {
+func (t *Tracer) Sample(span *span) {
 	t.config.sampler.Sample(span)
 }
 

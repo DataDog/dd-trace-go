@@ -12,15 +12,15 @@ import (
 	"github.com/opentracing/opentracing-go/log"
 )
 
-var _ opentracing.Span = (*Span)(nil)
+var _ opentracing.Span = (*span)(nil)
 
 // Tracer provides access to the `Tracer`` that created this Span.
-func (s *Span) Tracer() opentracing.Tracer { return s.tracer }
+func (s *span) Tracer() opentracing.Tracer { return s.tracer }
 
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Span.Finish(), as is
 // a call to Span.Context() after a call to Span.Finish().
-func (s *Span) Context() opentracing.SpanContext {
+func (s *span) Context() opentracing.SpanContext {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -29,7 +29,7 @@ func (s *Span) Context() opentracing.SpanContext {
 
 // SetBaggageItem sets a key:value pair on this Span and its SpanContext
 // that also propagates to descendants of this Span.
-func (s *Span) SetBaggageItem(key, val string) opentracing.Span {
+func (s *span) SetBaggageItem(key, val string) opentracing.Span {
 	s.Lock()
 	defer s.Unlock()
 
@@ -39,7 +39,7 @@ func (s *Span) SetBaggageItem(key, val string) opentracing.Span {
 
 // BaggageItem gets the value for a baggage item given its key. Returns the empty string
 // if the value isn't found in this Span.
-func (s *Span) BaggageItem(key string) string {
+func (s *span) BaggageItem(key string) string {
 	s.Lock()
 	defer s.Unlock()
 
@@ -48,7 +48,7 @@ func (s *Span) BaggageItem(key string) string {
 
 // SetTag adds a tag to the span, overwriting pre-existing values for
 // the given `key`.
-func (s *Span) SetTag(key string, value interface{}) opentracing.Span {
+func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 	switch key {
 	case ServiceName:
 		s.Lock()
@@ -81,7 +81,7 @@ func (s *Span) SetTag(key string, value interface{}) opentracing.Span {
 
 // FinishWithOptions is like Finish() but with explicit control over
 // timestamps and log data.
-func (s *Span) FinishWithOptions(options opentracing.FinishOptions) {
+func (s *span) FinishWithOptions(options opentracing.FinishOptions) {
 	if options.FinishTime.IsZero() {
 		options.FinishTime = time.Now().UTC()
 	}
@@ -90,7 +90,7 @@ func (s *Span) FinishWithOptions(options opentracing.FinishOptions) {
 }
 
 // SetOperationName sets or changes the operation name.
-func (s *Span) SetOperationName(operationName string) opentracing.Span {
+func (s *span) SetOperationName(operationName string) opentracing.Span {
 	s.Lock()
 	defer s.Unlock()
 
@@ -101,29 +101,29 @@ func (s *Span) SetOperationName(operationName string) opentracing.Span {
 // LogFields is an efficient and type-checked way to record key:value
 // logging data about a Span, though the programming interface is a little
 // more verbose than LogKV().
-func (s *Span) LogFields(fields ...log.Field) {
+func (s *span) LogFields(fields ...log.Field) {
 	// TODO: implementation missing
 }
 
 // LogKV is a concise, readable way to record key:value logging data about
 // a span, though unfortunately this also makes it less efficient and less
 // type-safe than LogFields().
-func (s *Span) LogKV(keyVals ...interface{}) {
+func (s *span) LogKV(keyVals ...interface{}) {
 	// TODO: implementation missing
 }
 
 // LogEvent is deprecated: use LogFields or LogKV
-func (s *Span) LogEvent(event string) {
+func (s *span) LogEvent(event string) {
 	// TODO: implementation missing
 }
 
 // LogEventWithPayload deprecated: use LogFields or LogKV
-func (s *Span) LogEventWithPayload(event string, payload interface{}) {
+func (s *span) LogEventWithPayload(event string, payload interface{}) {
 	// TODO: implementation missing
 }
 
 // Log is deprecated: use LogFields or LogKV
-func (s *Span) Log(data opentracing.LogData) {
+func (s *span) Log(data opentracing.LogData) {
 	// TODO: implementation missing
 }
 
@@ -145,7 +145,7 @@ const (
 //
 // In general, spans should be created with the tracer.NewSpan* functions,
 // so they will be submitted on completion.
-type Span struct {
+type span struct {
 	// Name is the name of the operation being measured. Some examples
 	// might be "http.handler", "fileserver.upload" or "video.decompress".
 	// Name should be set on every span.
@@ -185,15 +185,15 @@ type Span struct {
 	// parent contains a link to the parent. In most cases, ParentID can be inferred from this.
 	// However, ParentID can technically be overridden (typical usage: distributed tracing)
 	// and also, parent == nil is used to identify root and top-level ("local root") spans.
-	parent  *Span
+	parent  *span
 	buffer  *spanBuffer
 	context *spanContext
 }
 
 // newSpan creates a new span. This is a low-level function, required for testing and advanced usage.
 // Most of the time one should prefer the Tracer NewRootSpan or NewChildSpan methods.
-func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *Span {
-	return &Span{
+func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *span {
+	return &span{
 		Name:     name,
 		Service:  service,
 		Resource: resource,
@@ -210,7 +210,7 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 
 // setMeta adds an arbitrary meta field to the current Span. The span
 // must be locked outside of this function
-func (s *Span) setMeta(key, value string) {
+func (s *span) setMeta(key, value string) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -226,7 +226,7 @@ func (s *Span) setMeta(key, value string) {
 
 // SetMeta adds an arbitrary meta field to the current Span.
 // If the Span has been finished, it will not be modified by the method.
-func (s *Span) SetMeta(key, value string) {
+func (s *span) SetMeta(key, value string) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -236,7 +236,7 @@ func (s *Span) SetMeta(key, value string) {
 
 // SetMetas adds arbitrary meta fields from a given map to the current Span.
 // If the Span has been finished, it will not be modified by the method.
-func (s *Span) SetMetas(metas map[string]string) {
+func (s *span) SetMetas(metas map[string]string) {
 	for k, v := range metas {
 		s.SetMeta(k, v)
 	}
@@ -244,7 +244,7 @@ func (s *Span) SetMetas(metas map[string]string) {
 
 // GetMeta will return the value for the given tag or the empty string if it
 // doesn't exist.
-func (s *Span) GetMeta(key string) string {
+func (s *span) GetMeta(key string) string {
 	s.RLock()
 	defer s.RUnlock()
 	if s.Meta == nil {
@@ -255,14 +255,14 @@ func (s *Span) GetMeta(key string) string {
 
 // SetMetrics adds a metric field to the current Span.
 // DEPRECATED: Use SetMetric
-func (s *Span) SetMetrics(key string, value float64) {
+func (s *span) SetMetrics(key string, value float64) {
 	s.SetMetric(key, value)
 }
 
 // SetMetric sets a float64 value for the given key. It acts
 // like `set_meta()` and it simply add a tag without further processing.
 // This method doesn't create a Datadog metric.
-func (s *Span) SetMetric(key string, val float64) {
+func (s *span) SetMetric(key string, val float64) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -281,8 +281,8 @@ func (s *Span) SetMetric(key string, val float64) {
 
 // SetError stores an error object within the span meta. The Error status is
 // updated and the error.Error() string is included with a default meta key.
-// If the Span has been finished, it will not be modified by this method.
-func (s *Span) SetError(err error) {
+// If the span has been finished, it will not be modified by this method.
+func (s *span) SetError(err error) {
 	if err == nil || s == nil {
 		return
 	}
@@ -308,17 +308,17 @@ func (s *Span) SetError(err error) {
 // calling this method multiple times is safe and doesn't update the
 // current Span. Once a Span has been finished, methods that modify the Span
 // will become no-ops.
-func (s *Span) Finish() {
+func (s *span) Finish() {
 	s.finish(now())
 }
 
 // FinishWithTime closes this Span at the given `finishTime`. The
 // behavior is the same as `Finish()`.
-func (s *Span) FinishWithTime(finishTime int64) {
+func (s *span) FinishWithTime(finishTime int64) {
 	s.finish(finishTime)
 }
 
-func (s *Span) finish(finishTime int64) {
+func (s *span) finish(finishTime int64) {
 	s.Lock()
 	if s.finished {
 		// already finished
@@ -352,14 +352,14 @@ func (s *Span) finish(finishTime int64) {
 
 // FinishWithErr marks a span finished and sets the given error if it's
 // non-nil.
-func (s *Span) FinishWithErr(err error) {
+func (s *span) FinishWithErr(err error) {
 	s.SetError(err)
 	s.Finish()
 }
 
 // String returns a human readable representation of the span. Not for
 // production, just debugging.
-func (s *Span) String() string {
+func (s *span) String() string {
 	lines := []string{
 		fmt.Sprintf("Name: %s", s.Name),
 		fmt.Sprintf("Service: %s", s.Service),
@@ -385,18 +385,18 @@ func (s *Span) String() string {
 }
 
 // SetSamplingPriority sets the sampling priority.
-func (s *Span) SetSamplingPriority(priority int) {
+func (s *span) SetSamplingPriority(priority int) {
 	s.SetMetric(samplingPriorityKey, float64(priority))
 }
 
 // HasSamplingPriority returns true if sampling priority is set.
 // It can be defined to either zero or non-zero.
-func (s *Span) HasSamplingPriority() bool {
+func (s *span) HasSamplingPriority() bool {
 	_, hasSamplingPriority := s.Metrics[samplingPriorityKey]
 	return hasSamplingPriority
 }
 
 // GetSamplingPriority gets the sampling priority.
-func (s *Span) GetSamplingPriority() int {
+func (s *span) GetSamplingPriority() int {
 	return int(s.Metrics[samplingPriorityKey])
 }

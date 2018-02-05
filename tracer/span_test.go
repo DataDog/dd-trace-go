@@ -12,7 +12,7 @@ import (
 )
 
 // newOpenSpan is the OpenTracing Span constructor
-func newOpenSpan(operationName string) *Span {
+func newOpenSpan(operationName string) *span {
 	span := newSpan(operationName, "", "", 0, 0, 0, DefaultTracer)
 	span.context = &spanContext{
 		traceID:  span.TraceID,

@@ -12,13 +12,13 @@ func TestPushTrace(t *testing.T) {
 
 	channels := newTracerChans()
 
-	trace := []*Span{
-		&Span{
+	trace := []*span{
+		&span{
 			Name:     "pylons.request",
 			Service:  "pylons",
 			Resource: "/",
 		},
-		&Span{
+		&span{
 			Name:     "pylons.request",
 			Service:  "pylons",
 			Resource: "/foo",
@@ -34,13 +34,13 @@ func TestPushTrace(t *testing.T) {
 
 	many := traceChanLen/2 + 1
 	for i := 0; i < many; i++ {
-		channels.pushTrace(make([]*Span, i))
+		channels.pushTrace(make([]*span, i))
 	}
 	assert.Len(channels.trace, many, "all traces should be in the channel, not yet blocking")
 	assert.Len(channels.traceFlush, 1, "a trace flush should have been requested")
 
 	for i := 0; i < cap(channels.trace); i++ {
-		channels.pushTrace(make([]*Span, i))
+		channels.pushTrace(make([]*span, i))
 	}
 	assert.Len(channels.trace, traceChanLen, "buffer should be full")
 	assert.NotEqual(0, len(channels.err), "there should be an error logged")
