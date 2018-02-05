@@ -26,9 +26,9 @@ func TestOpenTracerPropagationDefaults(t *testing.T) {
 	propagated, err := tracer.Extract(opentracing.HTTPHeaders, carrier)
 	assert.Nil(err)
 
-	tCtx, ok := ctx.(spanContext)
+	tCtx, ok := ctx.(*spanContext)
 	assert.True(ok)
-	tPropagated, ok := propagated.(spanContext)
+	tPropagated, ok := propagated.(*spanContext)
 	assert.True(ok)
 
 	// compare if there is a Context match
@@ -37,18 +37,18 @@ func TestOpenTracerPropagationDefaults(t *testing.T) {
 
 	// ensure a child can be created
 	child := tracer.StartSpan("db.query", opentracing.ChildOf(propagated))
-	tRoot, ok := root.(*OpenSpan)
+	tRoot, ok := root.(*Span)
 	assert.True(ok)
-	tChild, ok := child.(*OpenSpan)
+	tChild, ok := child.(*Span)
 	assert.True(ok)
 
-	assert.NotEqual(uint64(0), tChild.Span.TraceID)
-	assert.NotEqual(uint64(0), tChild.Span.SpanID)
-	assert.Equal(tRoot.Span.SpanID, tChild.Span.ParentID)
-	assert.Equal(tRoot.Span.TraceID, tChild.Span.ParentID)
+	assert.NotEqual(uint64(0), tChild.TraceID)
+	assert.NotEqual(uint64(0), tChild.SpanID)
+	assert.Equal(tRoot.SpanID, tChild.ParentID)
+	assert.Equal(tRoot.TraceID, tChild.ParentID)
 
-	tid := strconv.FormatUint(tRoot.Span.TraceID, 10)
-	pid := strconv.FormatUint(tRoot.Span.SpanID, 10)
+	tid := strconv.FormatUint(tRoot.TraceID, 10)
+	pid := strconv.FormatUint(tRoot.SpanID, 10)
 
 	// hardcode header names to fail test if defaults are changed
 	assert.Equal(headers.Get("x-datadog-trace-id"), tid)
@@ -61,7 +61,7 @@ func TestOpenTracerTextMapPropagationHeader(t *testing.T) {
 	textMapPropagator := NewTextMapPropagator("bg-", "tid", "pid")
 	tracer := New(WithTextMapPropagator(textMapPropagator))
 
-	root := tracer.StartSpan("web.request").SetBaggageItem("item", "x").(*OpenSpan)
+	root := tracer.StartSpan("web.request").SetBaggageItem("item", "x").(*Span)
 	ctx := root.Context()
 	headers := http.Header{}
 
@@ -69,8 +69,8 @@ func TestOpenTracerTextMapPropagationHeader(t *testing.T) {
 	err := tracer.Inject(ctx, opentracing.HTTPHeaders, carrier)
 	assert.Nil(err)
 
-	tid := strconv.FormatUint(root.Span.TraceID, 10)
-	pid := strconv.FormatUint(root.Span.SpanID, 10)
+	tid := strconv.FormatUint(root.TraceID, 10)
+	pid := strconv.FormatUint(root.SpanID, 10)
 
 	assert.Equal(headers.Get("tid"), tid)
 	assert.Equal(headers.Get("pid"), pid)

@@ -12,21 +12,16 @@ import (
 )
 
 // newOpenSpan is the OpenTracing Span constructor
-func newOpenSpan(operationName string) *OpenSpan {
-	span := NewSpan(operationName, "", "", 0, 0, 0, DefaultTracer)
-	otSpan := &OpenSpan{
-		Span: span,
-		context: spanContext{
-			traceID:  span.TraceID,
-			spanID:   span.SpanID,
-			parentID: span.ParentID,
-			sampled:  span.Sampled,
-		},
+func newOpenSpan(operationName string) *Span {
+	span := newSpan(operationName, "", "", 0, 0, 0, DefaultTracer)
+	span.context = &spanContext{
+		traceID:  span.TraceID,
+		spanID:   span.SpanID,
+		parentID: span.ParentID,
+		sampled:  span.Sampled,
+		span:     span,
 	}
-
-	// spanContext is propagated and used to create children
-	otSpan.context.span = otSpan
-	return otSpan
+	return span
 }
 
 func TestOpenSpanBaggage(t *testing.T) {
@@ -49,7 +44,7 @@ func TestOpenSpanOperationName(t *testing.T) {
 
 	span := newOpenSpan("web.request")
 	span.SetOperationName("http.request")
-	assert.Equal("http.request", span.Span.Name)
+	assert.Equal("http.request", span.Name)
 }
 
 func TestOpenSpanFinish(t *testing.T) {
@@ -58,7 +53,7 @@ func TestOpenSpanFinish(t *testing.T) {
 	span := newOpenSpan("web.request")
 	span.Finish()
 
-	assert.True(span.Span.Duration > 0)
+	assert.True(span.Duration > 0)
 }
 
 func TestOpenSpanFinishWithTime(t *testing.T) {
@@ -68,8 +63,8 @@ func TestOpenSpanFinishWithTime(t *testing.T) {
 	span := newOpenSpan("web.request")
 	span.FinishWithOptions(opentracing.FinishOptions{FinishTime: finishTime})
 
-	duration := finishTime.UnixNano() - span.Span.Start
-	assert.Equal(duration, span.Span.Duration)
+	duration := finishTime.UnixNano() - span.Start
+	assert.Equal(duration, span.Duration)
 }
 
 func TestOpenSpanSetTag(t *testing.T) {
@@ -91,9 +86,9 @@ func TestOpenSpanSetDatadogTags(t *testing.T) {
 	span.SetTag("service.name", "db-cluster")
 	span.SetTag("resource.name", "SELECT * FROM users;")
 
-	assert.Equal("http", span.Span.Type)
-	assert.Equal("db-cluster", span.Span.Service)
-	assert.Equal("SELECT * FROM users;", span.Span.Resource)
+	assert.Equal("http", span.Type)
+	assert.Equal("db-cluster", span.Service)
+	assert.Equal("SELECT * FROM users;", span.Resource)
 }
 
 func TestOpenSpanSetErrorTag(t *testing.T) {

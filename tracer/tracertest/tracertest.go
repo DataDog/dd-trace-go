@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
@@ -15,7 +16,18 @@ import (
 // This function is necessary because the usual assignment copies the mutex address
 // and then the use of the copied span can conflict with the original one when concurent calls.
 func CopySpan(span *tracer.Span, trc *tracer.Tracer) *tracer.Span {
-	newSpan := tracer.NewSpan(span.Name, span.Service, span.Resource, span.SpanID, span.TraceID, span.ParentID, trc)
+	newSpan := &tracer.Span{
+		Name:     span.Name,
+		Service:  span.Service,
+		Resource: span.Resource,
+		Meta:     map[string]string{},
+		Metrics:  map[string]float64{},
+		SpanID:   span.SpanID,
+		TraceID:  span.TraceID,
+		ParentID: span.ParentID,
+		Start:    time.Now().UTC().UnixNano(),
+		Sampled:  true,
+	}
 	newSpan.Type = ext.SQLType
 	newSpan.Meta = span.Meta
 	return newSpan

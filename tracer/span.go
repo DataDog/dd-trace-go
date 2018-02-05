@@ -12,33 +12,26 @@ import (
 	"github.com/opentracing/opentracing-go/log"
 )
 
-var _ opentracing.Span = (*OpenSpan)(nil)
-
-// OpenSpan represents an active, un-finished span in the OpenTracing system.
-// Spans are created by the Tracer interface.
-type OpenSpan struct {
-	*Span
-	context spanContext
-	tracer  *Tracer
-}
+var _ opentracing.Span = (*Span)(nil)
 
 // Tracer provides access to the `Tracer`` that created this Span.
-func (s *OpenSpan) Tracer() opentracing.Tracer {
-	return s.tracer
-}
+func (s *Span) Tracer() opentracing.Tracer { return s.tracer }
 
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Span.Finish(), as is
 // a call to Span.Context() after a call to Span.Finish().
-func (s *OpenSpan) Context() opentracing.SpanContext {
+func (s *Span) Context() opentracing.SpanContext {
+	s.RLock()
+	defer s.RUnlock()
+
 	return s.context
 }
 
 // SetBaggageItem sets a key:value pair on this Span and its SpanContext
 // that also propagates to descendants of this Span.
-func (s *OpenSpan) SetBaggageItem(key, val string) opentracing.Span {
-	s.Span.Lock()
-	defer s.Span.Unlock()
+func (s *Span) SetBaggageItem(key, val string) opentracing.Span {
+	s.Lock()
+	defer s.Unlock()
 
 	s.context = s.context.WithBaggageItem(key, val)
 	return s
@@ -46,91 +39,91 @@ func (s *OpenSpan) SetBaggageItem(key, val string) opentracing.Span {
 
 // BaggageItem gets the value for a baggage item given its key. Returns the empty string
 // if the value isn't found in this Span.
-func (s *OpenSpan) BaggageItem(key string) string {
-	s.Span.Lock()
-	defer s.Span.Unlock()
+func (s *Span) BaggageItem(key string) string {
+	s.Lock()
+	defer s.Unlock()
 
 	return s.context.baggage[key]
 }
 
 // SetTag adds a tag to the span, overwriting pre-existing values for
 // the given `key`.
-func (s *OpenSpan) SetTag(key string, value interface{}) opentracing.Span {
+func (s *Span) SetTag(key string, value interface{}) opentracing.Span {
 	switch key {
 	case ServiceName:
-		s.Span.Lock()
-		defer s.Span.Unlock()
-		s.Span.Service = fmt.Sprint(value)
+		s.Lock()
+		defer s.Unlock()
+		s.Service = fmt.Sprint(value)
 	case ResourceName:
-		s.Span.Lock()
-		defer s.Span.Unlock()
-		s.Span.Resource = fmt.Sprint(value)
+		s.Lock()
+		defer s.Unlock()
+		s.Resource = fmt.Sprint(value)
 	case SpanType:
-		s.Span.Lock()
-		defer s.Span.Unlock()
-		s.Span.Type = fmt.Sprint(value)
+		s.Lock()
+		defer s.Unlock()
+		s.Type = fmt.Sprint(value)
 	case Error:
 		switch v := value.(type) {
 		case nil:
 			// no error
 		case error:
-			s.Span.SetError(v)
+			s.SetError(v)
 		default:
-			s.Span.SetError(fmt.Errorf("%v", v))
+			s.SetError(fmt.Errorf("%v", v))
 		}
 	default:
 		// NOTE: locking is not required because the `SetMeta` is
 		// already thread-safe
-		s.Span.SetMeta(key, fmt.Sprint(value))
+		s.SetMeta(key, fmt.Sprint(value))
 	}
 	return s
 }
 
 // FinishWithOptions is like Finish() but with explicit control over
 // timestamps and log data.
-func (s *OpenSpan) FinishWithOptions(options opentracing.FinishOptions) {
+func (s *Span) FinishWithOptions(options opentracing.FinishOptions) {
 	if options.FinishTime.IsZero() {
 		options.FinishTime = time.Now().UTC()
 	}
 
-	s.Span.FinishWithTime(options.FinishTime.UnixNano())
+	s.FinishWithTime(options.FinishTime.UnixNano())
 }
 
 // SetOperationName sets or changes the operation name.
-func (s *OpenSpan) SetOperationName(operationName string) opentracing.Span {
-	s.Span.Lock()
-	defer s.Span.Unlock()
+func (s *Span) SetOperationName(operationName string) opentracing.Span {
+	s.Lock()
+	defer s.Unlock()
 
-	s.Span.Name = operationName
+	s.Name = operationName
 	return s
 }
 
 // LogFields is an efficient and type-checked way to record key:value
 // logging data about a Span, though the programming interface is a little
 // more verbose than LogKV().
-func (s *OpenSpan) LogFields(fields ...log.Field) {
+func (s *Span) LogFields(fields ...log.Field) {
 	// TODO: implementation missing
 }
 
 // LogKV is a concise, readable way to record key:value logging data about
-// a Span, though unfortunately this also makes it less efficient and less
+// a span, though unfortunately this also makes it less efficient and less
 // type-safe than LogFields().
-func (s *OpenSpan) LogKV(keyVals ...interface{}) {
+func (s *Span) LogKV(keyVals ...interface{}) {
 	// TODO: implementation missing
 }
 
 // LogEvent is deprecated: use LogFields or LogKV
-func (s *OpenSpan) LogEvent(event string) {
+func (s *Span) LogEvent(event string) {
 	// TODO: implementation missing
 }
 
 // LogEventWithPayload deprecated: use LogFields or LogKV
-func (s *OpenSpan) LogEventWithPayload(event string, payload interface{}) {
+func (s *Span) LogEventWithPayload(event string, payload interface{}) {
 	// TODO: implementation missing
 }
 
 // Log is deprecated: use LogFields or LogKV
-func (s *OpenSpan) Log(data opentracing.LogData) {
+func (s *Span) Log(data opentracing.LogData) {
 	// TODO: implementation missing
 }
 
@@ -192,13 +185,14 @@ type Span struct {
 	// parent contains a link to the parent. In most cases, ParentID can be inferred from this.
 	// However, ParentID can technically be overridden (typical usage: distributed tracing)
 	// and also, parent == nil is used to identify root and top-level ("local root") spans.
-	parent *Span
-	buffer *spanBuffer
+	parent  *Span
+	buffer  *spanBuffer
+	context *spanContext
 }
 
-// NewSpan creates a new span. This is a low-level function, required for testing and advanced usage.
+// newSpan creates a new span. This is a low-level function, required for testing and advanced usage.
 // Most of the time one should prefer the Tracer NewRootSpan or NewChildSpan methods.
-func NewSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *Span {
+func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *Span {
 	return &Span{
 		Name:     name,
 		Service:  service,
@@ -388,11 +382,6 @@ func (s *Span) String() string {
 	s.RUnlock()
 
 	return strings.Join(lines, "\n")
-}
-
-// Tracer returns the tracer that created this span.
-func (s *Span) Tracer() *Tracer {
-	return s.tracer
 }
 
 // SetSamplingPriority sets the sampling priority.
