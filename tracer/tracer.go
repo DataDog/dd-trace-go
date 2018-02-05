@@ -32,9 +32,6 @@ var _ opentracing.Tracer = (*Tracer)(nil)
 type Tracer struct {
 	*config
 
-	meta   map[string]string
-	metaMu sync.RWMutex
-
 	channels tracerChans
 	services map[string]service // name -> service
 
