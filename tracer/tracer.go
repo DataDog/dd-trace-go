@@ -7,29 +7,86 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 	"github.com/opentracing/opentracing-go"
 )
 
-var _ opentracing.Tracer = (*OpenTracer)(nil)
+const (
+	flushInterval = 2 * time.Second
+)
 
-// OpenTracer is a simple, thin interface for Span creation and SpanContext
-// propagation. In the current state, this Tracer is a compatibility layer
-// that wraps the Datadog Tracer implementation.
-type OpenTracer struct {
-	// impl is the Datadog Tracer implementation.
-	impl *Tracer
+func init() {
+	randGen = rand.New(newRandSource())
+}
 
+type Service struct {
+	Name    string `json:"-"`        // the internal of the service (e.g. acme_search, datadog_web)
+	App     string `json:"app"`      // the name of the application (e.g. rails, postgres, custom-app)
+	AppType string `json:"app_type"` // the type of the application (e.g. db, web)
+}
+
+func (s Service) Equal(s2 Service) bool {
+	return s.Name == s2.Name && s.App == s2.App && s.AppType == s2.AppType
+}
+
+var _ opentracing.Tracer = (*Tracer)(nil)
+
+// Tracer creates, buffers and submits Spans which are used to time blocks of
+// compuration.
+//
+// When a tracer is disabled, it will not submit spans for processing.
+type Tracer struct {
 	*config
+
+	sampler sampler // is the trace sampler to only keep some samples
+
+	meta   map[string]string
+	metaMu sync.RWMutex
+
+	channels tracerChans
+	services map[string]Service // name -> service
+
+	exit   chan struct{}
+	exitWG *sync.WaitGroup
+
+	forceFlushIn  chan struct{}
+	forceFlushOut chan struct{}
+}
+
+func New(opts ...Option) *Tracer {
+	c := new(config)
+	defaults(c)
+	for _, fn := range opts {
+		fn(c)
+	}
+	if c.transport == nil {
+		c.transport = newTransport(c.agentAddr)
+	}
+	t := &Tracer{
+		config:        c,
+		sampler:       newAllSampler(),
+		channels:      newTracerChans(),
+		services:      make(map[string]Service),
+		exit:          make(chan struct{}),
+		exitWG:        &sync.WaitGroup{},
+		forceFlushIn:  make(chan struct{}),
+		forceFlushOut: make(chan struct{}),
+	}
+	t.SetSampleRate(c.sampleRate)
+
+	// start a background worker
+	t.exitWG.Add(1)
+	go t.worker()
+
+	return t
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`
 // A Span with no SpanReference options (e.g., opentracing.ChildOf() or
 // opentracing.FollowsFrom()) becomes the root of its own trace.
-func (t *OpenTracer) StartSpan(operationName string, options ...opentracing.StartSpanOption) opentracing.Span {
+func (t *Tracer) StartSpan(operationName string, options ...opentracing.StartSpanOption) opentracing.Span {
 	sso := opentracing.StartSpanOptions{}
 	for _, o := range options {
 		o.Apply(&sso)
@@ -38,7 +95,7 @@ func (t *OpenTracer) StartSpan(operationName string, options ...opentracing.Star
 	return t.startSpanWithOptions(operationName, sso)
 }
 
-func (t *OpenTracer) startSpanWithOptions(operationName string, options opentracing.StartSpanOptions) opentracing.Span {
+func (t *Tracer) startSpanWithOptions(operationName string, options opentracing.StartSpanOptions) opentracing.Span {
 	if options.StartTime.IsZero() {
 		options.StartTime = time.Now().UTC()
 	}
@@ -65,7 +122,7 @@ func (t *OpenTracer) startSpanWithOptions(operationName string, options opentrac
 
 	if parent == nil {
 		// create a root Span with the default service name and resource
-		span = t.impl.NewRootSpan(operationName, t.config.serviceName, operationName)
+		span = t.NewRootSpan(operationName, t.config.serviceName, operationName)
 
 		if hasParent {
 			// the Context doesn't have a Span reference because it
@@ -73,11 +130,11 @@ func (t *OpenTracer) startSpanWithOptions(operationName string, options opentrac
 			// values manually
 			span.TraceID = context.traceID
 			span.ParentID = context.spanID
-			t.impl.Sample(span)
+			t.Sample(span)
 		}
 	} else {
 		// create a child Span that inherits from a parent
-		span = t.impl.NewChildSpan(operationName, parent.Span)
+		span = t.NewChildSpan(operationName, parent.Span)
 	}
 
 	// create an OpenTracing compatible Span; the SpanContext has a
@@ -125,7 +182,7 @@ func (t *OpenTracer) startSpanWithOptions(operationName string, options opentrac
 // the value of `format`. Currently supported Injectors are:
 // * `TextMap`
 // * `HTTPHeaders`
-func (t *OpenTracer) Inject(ctx opentracing.SpanContext, format interface{}, carrier interface{}) error {
+func (t *Tracer) Inject(ctx opentracing.SpanContext, format interface{}, carrier interface{}) error {
 	switch format {
 	case opentracing.TextMap, opentracing.HTTPHeaders:
 		return t.config.textMapPropagator.Inject(ctx, carrier)
@@ -136,7 +193,7 @@ func (t *OpenTracer) Inject(ctx opentracing.SpanContext, format interface{}, car
 }
 
 // Extract returns a SpanContext instance given `format` and `carrier`.
-func (t *OpenTracer) Extract(format interface{}, carrier interface{}) (opentracing.SpanContext, error) {
+func (t *Tracer) Extract(format interface{}, carrier interface{}) (opentracing.SpanContext, error) {
 	switch format {
 	case opentracing.TextMap, opentracing.HTTPHeaders:
 		return t.config.textMapPropagator.Extract(carrier)
@@ -146,132 +203,18 @@ func (t *OpenTracer) Extract(format interface{}, carrier interface{}) (opentraci
 	return nil, opentracing.ErrUnsupportedFormat
 }
 
-// Close method implements `io.Closer` interface to graceful shutdown the Datadog
-// OpenTracer. Note that this is a blocking operation that waits for the flushing Go
-// routine.
-func (t *OpenTracer) Close() error {
-	t.impl.Stop()
-	return nil
-}
-
-// NewOpenTracer uses a Configuration object to initialize a Datadog Tracer.
-// The initialization returns a `io.Closer` that can be used to graceful
-// shutdown the tracer. If the configuration object defines a disabled
-// Tracer, a no-op implementation is returned.
-func New(opts ...Option) *OpenTracer {
-	c := new(config)
-	defaults(c)
-	for _, fn := range opts {
-		fn(c)
-	}
-	transport := NewTransport(c.agentAddr)
-	tracer := &OpenTracer{
-		impl:   NewTracerTransport(transport),
-		config: c,
-	}
-	tracer.impl.SetDebugLogging(c.debug)
-	tracer.impl.SetSampleRate(c.sampleRate)
-	DefaultTracer = tracer.impl
-	return tracer
-}
-
 // OLD ////////////////////////////////
-
-const (
-	flushInterval = 2 * time.Second
-)
-
-func init() {
-	randGen = rand.New(newRandSource())
-}
-
-type Service struct {
-	Name    string `json:"-"`        // the internal of the service (e.g. acme_search, datadog_web)
-	App     string `json:"app"`      // the name of the application (e.g. rails, postgres, custom-app)
-	AppType string `json:"app_type"` // the type of the application (e.g. db, web)
-}
-
-func (s Service) Equal(s2 Service) bool {
-	return s.Name == s2.Name && s.App == s2.App && s.AppType == s2.AppType
-}
-
-// Tracer creates, buffers and submits Spans which are used to time blocks of
-// compuration.
-//
-// When a tracer is disabled, it will not submit spans for processing.
-type Tracer struct {
-	transport Transport // is the transport mechanism used to delivery spans to the agent
-	sampler   sampler   // is the trace sampler to only keep some samples
-
-	// debugMode should only be set atomically. It is enabled when it has
-	// a value of 1 and disabled when 0.
-	debugMode uint32
-
-	enableMu sync.RWMutex
-	enabled  bool // defines if the Tracer is enabled or not
-
-	meta   map[string]string
-	metaMu sync.RWMutex
-
-	channels tracerChans
-	services map[string]Service // name -> service
-
-	exit   chan struct{}
-	exitWG *sync.WaitGroup
-
-	forceFlushIn  chan struct{}
-	forceFlushOut chan struct{}
-}
 
 // NewTracer creates a new Tracer. Most users should use the package's
 // DefaultTracer instance.
 func NewTracer() *Tracer {
-	return NewTracerTransport(newDefaultTransport())
-}
-
-// NewTracerTransport create a new Tracer with the given transport.
-func NewTracerTransport(transport Transport) *Tracer {
-	t := &Tracer{
-		enabled:   true,
-		transport: transport,
-		sampler:   newAllSampler(),
-
-		channels: newTracerChans(),
-
-		services: make(map[string]Service),
-
-		exit:   make(chan struct{}),
-		exitWG: &sync.WaitGroup{},
-
-		forceFlushIn:  make(chan struct{}, 0), // must be size 0 (blocking)
-		forceFlushOut: make(chan struct{}, 0), // must be size 0 (blocking)
-	}
-
-	// start a background worker
-	t.exitWG.Add(1)
-	go t.worker()
-
-	return t
+	return New(WithTransport(newDefaultTransport()))
 }
 
 // Stop stops the tracer.
 func (t *Tracer) Stop() {
 	close(t.exit)
 	t.exitWG.Wait()
-}
-
-// SetEnabled will enable or disable the tracer.
-func (t *Tracer) SetEnabled(enabled bool) {
-	t.enableMu.Lock()
-	defer t.enableMu.Unlock()
-	t.enabled = enabled
-}
-
-// Enabled returns whether or not a tracer is enabled.
-func (t *Tracer) Enabled() bool {
-	t.enableMu.RLock()
-	defer t.enableMu.RUnlock()
-	return t.enabled
 }
 
 // SetSampleRate sets a sample rate for all the future traces.
@@ -301,10 +244,6 @@ func (t *Tracer) SetServiceInfo(name, app, appType string) {
 // SetMeta adds an arbitrary meta field at the tracer level.
 // This will append those tags to each span created by the tracer.
 func (t *Tracer) SetMeta(key, value string) {
-	if t == nil { // Defensive, span could be initialized with nil tracer
-		return
-	}
-
 	t.metaMu.Lock()
 	if t.meta == nil {
 		t.meta = make(map[string]string)
@@ -316,10 +255,6 @@ func (t *Tracer) SetMeta(key, value string) {
 // getAllMeta returns all the meta set by this tracer.
 // In most cases, it is nil.
 func (t *Tracer) getAllMeta() map[string]string {
-	if t == nil { // Defensive, span could be initialized with nil tracer
-		return nil
-	}
-
 	var meta map[string]string
 
 	t.metaMu.RLock()
@@ -407,20 +342,6 @@ func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Spa
 	return span, span.Context(ctx)
 }
 
-// SetDebugLogging will set the debug level
-func (t *Tracer) SetDebugLogging(debug bool) {
-	if debug {
-		atomic.CompareAndSwapUint32(&t.debugMode, 0, 1)
-	} else {
-		atomic.CompareAndSwapUint32(&t.debugMode, 1, 0)
-	}
-}
-
-// DebugLoggingEnabled returns true if the debug level is enabled and false otherwise.
-func (t *Tracer) DebugLoggingEnabled() bool {
-	return atomic.LoadUint32(&t.debugMode) == 1
-}
-
 func (t *Tracer) getTraces() [][]*Span {
 	traces := make([][]*Span, 0, len(t.channels.trace))
 
@@ -438,7 +359,7 @@ func (t *Tracer) getTraces() [][]*Span {
 func (t *Tracer) flushTraces() {
 	traces := t.getTraces()
 
-	if t.DebugLoggingEnabled() {
+	if t.config.debug {
 		log.Printf("Sending %d traces", len(traces))
 		for _, trace := range traces {
 			if len(trace) > 0 {
@@ -451,11 +372,11 @@ func (t *Tracer) flushTraces() {
 	}
 
 	// bal if there's nothing to do
-	if !t.Enabled() || t.transport == nil || len(traces) == 0 {
+	if t.config.transport == nil || len(traces) == 0 {
 		return
 	}
 
-	_, err := t.transport.SendTraces(traces)
+	_, err := t.config.transport.SendTraces(traces)
 	if err != nil {
 		t.channels.pushErr(err)
 		t.channels.pushErr(&errorFlushLostTraces{Nb: len(traces)}) // explicit log messages with nb of lost traces
@@ -481,11 +402,11 @@ func (t *Tracer) updateServices() bool {
 func (t *Tracer) flushServices() {
 	servicesModified := t.updateServices()
 
-	if !t.Enabled() || !servicesModified {
+	if !servicesModified {
 		return
 	}
 
-	_, err := t.transport.SendServices(t.services)
+	_, err := t.config.transport.SendServices(t.services)
 	if err != nil {
 		t.channels.pushErr(err)
 		t.channels.pushErr(&errorFlushLostServices{Nb: len(t.services)}) // explicit log messages with nb of lost services
@@ -581,14 +502,4 @@ func NewChildSpanFromContext(name string, ctx context.Context) *Span {
 // If nil is passed in for the context, a context will be created.
 func NewChildSpanWithContext(name string, ctx context.Context) (*Span, context.Context) {
 	return DefaultTracer.NewChildSpanWithContext(name, ctx)
-}
-
-// Enable will enable the default tracer.
-func Enable() {
-	DefaultTracer.SetEnabled(true)
-}
-
-// Disable will disable the default tracer.
-func Disable() {
-	DefaultTracer.SetEnabled(false)
 }

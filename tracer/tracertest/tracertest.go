@@ -37,7 +37,7 @@ func CompareSpan(t *testing.T, expectedSpan, actualSpan *tracer.Span, debug ...b
 // Return a Tracer with a DummyTransport
 func GetTestTracer() (*tracer.Tracer, *DummyTransport) {
 	transport := &DummyTransport{}
-	tracer := tracer.NewTracerTransport(transport)
+	tracer := tracer.New(tracer.WithTransport(transport))
 	return tracer, transport
 }
 

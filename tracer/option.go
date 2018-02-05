@@ -28,6 +28,9 @@ type config struct {
 
 	// binaryPropagator is the Binary propagator used for Context propagation.
 	binaryPropagator Propagator
+
+	// transport specifies the Transport interface which will be used to send data to the agent.
+	transport Transport
 }
 
 type Option func(*config)
@@ -35,7 +38,7 @@ type Option func(*config)
 func defaults(c *config) {
 	c.serviceName = filepath.Base(os.Args[0])
 	c.sampleRate = 1
-	c.agentAddr = "localhost:8126"
+	c.agentAddr = defaultAddress
 	c.textMapPropagator = NewTextMapPropagator("", "", "")
 }
 
@@ -97,5 +100,11 @@ func WithTextMapPropagator(p Propagator) Option {
 func WithBinaryPropagator(p Propagator) Option {
 	return func(c *config) {
 		c.binaryPropagator = p
+	}
+}
+
+func WithTransport(t Transport) Option {
+	return func(c *config) {
+		c.transport = t
 	}
 }

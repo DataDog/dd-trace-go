@@ -20,7 +20,7 @@ var _ opentracing.Span = (*OpenSpan)(nil)
 type OpenSpan struct {
 	*Span
 	context SpanContext
-	tracer  *OpenTracer
+	tracer  *Tracer
 }
 
 // Tracer provides access to the `Tracer`` that created this Span.
@@ -238,17 +238,12 @@ func NewSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 // setMeta adds an arbitrary meta field to the current Span. The span
 // must be locked outside of this function
 func (s *Span) setMeta(key, value string) {
-	if s == nil {
-		return
-	}
-
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
 	}
-
 	if s.Meta == nil {
 		s.Meta = make(map[string]string)
 	}
@@ -259,10 +254,6 @@ func (s *Span) setMeta(key, value string) {
 // SetMeta adds an arbitrary meta field to the current Span.
 // If the Span has been finished, it will not be modified by the method.
 func (s *Span) SetMeta(key, value string) {
-	if s == nil {
-		return
-	}
-
 	s.Lock()
 	defer s.Unlock()
 
@@ -281,9 +272,6 @@ func (s *Span) SetMetas(metas map[string]string) {
 // GetMeta will return the value for the given tag or the empty string if it
 // doesn't exist.
 func (s *Span) GetMeta(key string) string {
-	if s == nil {
-		return ""
-	}
 	s.RLock()
 	defer s.RUnlock()
 	if s.Meta == nil {
@@ -295,9 +283,6 @@ func (s *Span) GetMeta(key string) string {
 // SetMetrics adds a metric field to the current Span.
 // DEPRECATED: Use SetMetric
 func (s *Span) SetMetrics(key string, value float64) {
-	if s == nil {
-		return
-	}
 	s.SetMetric(key, value)
 }
 
@@ -305,10 +290,6 @@ func (s *Span) SetMetrics(key string, value float64) {
 // like `set_meta()` and it simply add a tag without further processing.
 // This method doesn't create a Datadog metric.
 func (s *Span) SetMetric(key string, val float64) {
-	if s == nil {
-		return
-	}
-
 	s.Lock()
 	defer s.Unlock()
 
@@ -365,34 +346,21 @@ func (s *Span) FinishWithTime(finishTime int64) {
 }
 
 func (s *Span) finish(finishTime int64) {
-	if s == nil {
-		return
-	}
-
 	s.Lock()
-	finished := s.finished
-	if !finished {
-		if s.Duration == 0 {
-			s.Duration = finishTime - s.Start
-		}
-		s.finished = true
-	}
-	s.Unlock()
-
-	if finished {
-		// no-op, called twice, no state change...
+	if s.finished {
+		// already finished
 		return
 	}
+	if s.Duration == 0 {
+		s.Duration = finishTime - s.Start
+	}
+	s.finished = true
+	s.Unlock()
 
 	if s.buffer == nil {
 		if s.tracer != nil {
 			s.tracer.channels.pushErr(&errorNoSpanBuf{SpanName: s.Name})
 		}
-		return
-	}
-
-	// If tracer is explicitely disabled, stop now
-	if s.tracer != nil && !s.tracer.Enabled() {
 		return
 	}
 
@@ -412,9 +380,6 @@ func (s *Span) finish(finishTime int64) {
 // FinishWithErr marks a span finished and sets the given error if it's
 // non-nil.
 func (s *Span) FinishWithErr(err error) {
-	if s == nil {
-		return
-	}
 	s.SetError(err)
 	s.Finish()
 }
@@ -449,17 +414,11 @@ func (s *Span) String() string {
 // Context returns a copy of the given context that includes this span.
 // This span can be accessed downstream with SpanFromContext and friends.
 func (s *Span) Context(ctx context.Context) context.Context {
-	if s == nil {
-		return ctx
-	}
 	return context.WithValue(ctx, spanKey, s)
 }
 
 // Tracer returns the tracer that created this span.
 func (s *Span) Tracer() *Tracer {
-	if s == nil {
-		return nil
-	}
 	return s.tracer
 }
 
