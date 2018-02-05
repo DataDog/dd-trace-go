@@ -522,7 +522,7 @@ func getTestTracer(opts ...Option) (*Tracer, *dummyTransport) {
 type dummyTransport struct {
 	getEncoder encoderFactory
 	traces     [][]*Span
-	services   map[string]Service
+	services   map[string]service
 
 	sync.RWMutex // required because of some poll-testing (eg: worker)
 }
@@ -533,16 +533,16 @@ func (t *dummyTransport) sendTraces(traces [][]*Span) (*http.Response, error) {
 	t.Unlock()
 
 	encoder := t.getEncoder()
-	return nil, encoder.EncodeTraces(traces)
+	return nil, encoder.encodeTraces(traces)
 }
 
-func (t *dummyTransport) sendServices(services map[string]Service) (*http.Response, error) {
+func (t *dummyTransport) sendServices(services map[string]service) (*http.Response, error) {
 	t.Lock()
 	t.services = services
 	t.Unlock()
 
 	encoder := t.getEncoder()
-	return nil, encoder.EncodeServices(services)
+	return nil, encoder.encodeServices(services)
 }
 
 func (t *dummyTransport) Traces() [][]*Span {

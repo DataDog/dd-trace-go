@@ -23,7 +23,7 @@ const (
 // Transport is an interface for span submission to the agent.
 type transport interface {
 	sendTraces(spans [][]*Span) (*http.Response, error)
-	sendServices(services map[string]Service) (*http.Response, error)
+	sendServices(services map[string]service) (*http.Response, error)
 }
 
 // newTransport returns a new Transport implementation that sends traces to a
@@ -114,7 +114,7 @@ func (t *httpTransport) sendTraces(traces [][]*Span) (*http.Response, error) {
 	encoder := t.getEncoder()
 
 	// encode the spans and return the error if any
-	err := encoder.EncodeTraces(traces)
+	err := encoder.encodeTraces(traces)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (t *httpTransport) sendTraces(traces [][]*Span) (*http.Response, error) {
 		req.Header.Set(header, value)
 	}
 	req.Header.Set(traceCountHeader, strconv.Itoa(len(traces)))
-	req.Header.Set("Content-Type", encoder.ContentType())
+	req.Header.Set("Content-Type", encoder.contentType())
 	response, err := t.client.Do(req)
 
 	// if we have an error, return an empty Response to protect against nil pointer dereference
@@ -148,14 +148,14 @@ func (t *httpTransport) sendTraces(traces [][]*Span) (*http.Response, error) {
 	return response, err
 }
 
-func (t *httpTransport) sendServices(services map[string]Service) (*http.Response, error) {
+func (t *httpTransport) sendServices(services map[string]service) (*http.Response, error) {
 	if t.serviceURL == "" {
 		return nil, errors.New("provided an empty URL, giving up")
 	}
 
 	encoder := t.getEncoder()
 
-	if err := encoder.EncodeServices(services); err != nil {
+	if err := encoder.encodeServices(services); err != nil {
 		return nil, err
 	}
 
@@ -167,7 +167,7 @@ func (t *httpTransport) sendServices(services map[string]Service) (*http.Respons
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
-	req.Header.Set("Content-Type", encoder.ContentType())
+	req.Header.Set("Content-Type", encoder.contentType())
 
 	response, err := t.client.Do(req)
 	if err != nil {

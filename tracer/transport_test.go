@@ -43,10 +43,10 @@ func getTestTrace(traceN, size int) [][]*Span {
 	return traces
 }
 
-func getTestServices() map[string]Service {
-	return map[string]Service{
-		"svc1": Service{Name: "scv1", App: "a", AppType: "b"},
-		"svc2": Service{Name: "scv2", App: "c", AppType: "d"},
+func getTestServices() map[string]service {
+	return map[string]service{
+		"svc1": service{Name: "scv1", App: "a", AppType: "b"},
+		"svc2": service{Name: "scv2", App: "c", AppType: "d"},
 	}
 }
 
@@ -158,7 +158,7 @@ func TestTransportEncoderPool(t *testing.T) {
 
 	// MsgpackEncoder is the default encoder of the pool
 	encoder := transport.getEncoder()
-	assert.Equal("application/msgpack", encoder.ContentType())
+	assert.Equal("application/msgpack", encoder.contentType())
 }
 
 func TestTransportSwitchEncoder(t *testing.T) {
@@ -168,7 +168,7 @@ func TestTransportSwitchEncoder(t *testing.T) {
 
 	// MsgpackEncoder is the default encoder of the pool
 	encoder := transport.getEncoder()
-	assert.Equal("application/json", encoder.ContentType())
+	assert.Equal("application/json", encoder.contentType())
 }
 
 func TestTraceCountHeader(t *testing.T) {
