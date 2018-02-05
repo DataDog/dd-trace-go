@@ -21,10 +21,9 @@ const (
 )
 
 // Transport is an interface for span submission to the agent.
-type Transport interface {
-	SendTraces(spans [][]*Span) (*http.Response, error)
-	SendServices(services map[string]Service) (*http.Response, error)
-	SetHeader(key, value string)
+type transport interface {
+	sendTraces(spans [][]*Span) (*http.Response, error)
+	sendServices(services map[string]Service) (*http.Response, error)
 }
 
 // newTransport returns a new Transport implementation that sends traces to a
@@ -34,12 +33,12 @@ type Transport interface {
 //
 // In general, using this method is only necessary if you have a trace agent
 // running on a non-default port or if it's located on another machine.
-func newTransport(addr string) Transport {
+func newTransport(addr string) transport {
 	return newHTTPTransport(addr)
 }
 
 // newDefaultTransport return a default transport for this tracing client
-func newDefaultTransport() Transport {
+func newDefaultTransport() transport {
 	return newHTTPTransport(defaultAddress)
 }
 
@@ -107,7 +106,7 @@ func newHTTPTransport(addr string) *httpTransport {
 	}
 }
 
-func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
+func (t *httpTransport) sendTraces(traces [][]*Span) (*http.Response, error) {
 	if t.traceURL == "" {
 		return nil, errors.New("provided an empty URL, giving up")
 	}
@@ -139,17 +138,17 @@ func (t *httpTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
 		log.Printf("calling the endpoint '%s' but received %d; downgrading the API\n", t.traceURL, response.StatusCode)
 		t.apiDowngrade()
-		return t.SendTraces(traces)
+		return t.sendTraces(traces)
 	}
 
 	if sc := response.StatusCode; sc != 200 {
-		return response, fmt.Errorf("SendTraces expected response code 200, received %v", sc)
+		return response, fmt.Errorf("sendTraces expected response code 200, received %v", sc)
 	}
 
 	return response, err
 }
 
-func (t *httpTransport) SendServices(services map[string]Service) (*http.Response, error) {
+func (t *httpTransport) sendServices(services map[string]Service) (*http.Response, error) {
 	if t.serviceURL == "" {
 		return nil, errors.New("provided an empty URL, giving up")
 	}
@@ -180,19 +179,14 @@ func (t *httpTransport) SendServices(services map[string]Service) (*http.Respons
 	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
 		log.Printf("calling the endpoint '%s' but received %d; downgrading the API\n", t.traceURL, response.StatusCode)
 		t.apiDowngrade()
-		return t.SendServices(services)
+		return t.sendServices(services)
 	}
 
 	if sc := response.StatusCode; sc != 200 {
-		return response, fmt.Errorf("SendServices expected response code 200, received %v", sc)
+		return response, fmt.Errorf("sendServices expected response code 200, received %v", sc)
 	}
 
 	return response, err
-}
-
-// SetHeader sets the internal header for the httpTransport
-func (t *httpTransport) SetHeader(key, value string) {
-	t.headers[key] = value
 }
 
 // changeEncoder switches the encoder so that a different API with different
