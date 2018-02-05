@@ -33,7 +33,7 @@ func (s *span) SetBaggageItem(key, val string) opentracing.Span {
 	s.Lock()
 	defer s.Unlock()
 
-	s.context = s.context.WithBaggageItem(key, val)
+	s.context.setBaggageItem(key, val)
 	return s
 }
 
