@@ -320,9 +320,9 @@ func TestTracerServices(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport := getTestTracer()
 
-	tracer.SetServiceInfo("svc1", "a", "b")
-	tracer.SetServiceInfo("svc2", "c", "d")
-	tracer.SetServiceInfo("svc1", "e", "f")
+	tracer.setServiceInfo("svc1", "a", "b")
+	tracer.setServiceInfo("svc2", "c", "d")
+	tracer.setServiceInfo("svc1", "e", "f")
 
 	tracer.Stop()
 
