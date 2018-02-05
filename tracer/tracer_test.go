@@ -1,7 +1,6 @@
 package tracer
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -106,99 +105,21 @@ func TestNewSpan(t *testing.T) {
 	assert := assert.New(t)
 
 	// the tracer must create root spans
-	tracer := NewTracer()
-	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	tracer := New(WithTransport(newDefaultTransport()))
+	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	assert.Equal(uint64(0), span.ParentID)
 	assert.Equal("pylons", span.Service)
 	assert.Equal("pylons.request", span.Name)
 	assert.Equal("/", span.Resource)
 }
 
-func TestNewSpanFromContextNil(t *testing.T) {
-	assert := assert.New(t)
-	tracer := NewTracer()
-
-	child := tracer.NewChildSpanFromContext("abc", nil)
-	assert.Equal("abc", child.Name)
-	assert.Equal("", child.Service)
-
-	child = tracer.NewChildSpanFromContext("def", context.Background())
-	assert.Equal("def", child.Name)
-	assert.Equal("", child.Service)
-
-}
-
-func TestNewChildSpanWithContext(t *testing.T) {
-	assert := assert.New(t)
-	tracer := NewTracer()
-
-	// nil context
-	span, ctx := tracer.NewChildSpanWithContext("abc", nil)
-	assert.Equal("abc", span.Name)
-	assert.Equal("", span.Service)
-	assert.Equal(span.ParentID, span.SpanID) // it should be a root span
-	assert.Equal(span.Tracer(), tracer)
-	// the returned ctx should contain the created span
-	assert.NotNil(ctx)
-	ctxSpan, ok := SpanFromContext(ctx)
-	assert.True(ok)
-	assert.Equal(span, ctxSpan)
-
-	// context without span
-	span, ctx = tracer.NewChildSpanWithContext("abc", context.Background())
-	assert.Equal("abc", span.Name)
-	assert.Equal("", span.Service)
-	assert.Equal(span.ParentID, span.SpanID) // it should be a root span
-	// the returned ctx should contain the created span
-	assert.NotNil(ctx)
-	ctxSpan, ok = SpanFromContext(ctx)
-	assert.True(ok)
-	assert.Equal(span, ctxSpan)
-
-	// context with span
-	parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	parentCTX := ContextWithSpan(context.Background(), parent)
-	span, ctx = tracer.NewChildSpanWithContext("def", parentCTX)
-	assert.Equal("def", span.Name)
-	assert.Equal("pylons", span.Service)
-	assert.Equal(parent.Service, span.Service)
-	// the created span should be a child of the parent span
-	assert.Equal(span.ParentID, parent.SpanID)
-	// the returned ctx should contain the created span
-	assert.NotNil(ctx)
-	ctxSpan, ok = SpanFromContext(ctx)
-	assert.True(ok)
-	assert.Equal(ctxSpan, span)
-}
-
-func TestNewSpanFromContext(t *testing.T) {
-	assert := assert.New(t)
-
-	// the tracer must create child spans
-	tracer := NewTracer()
-	parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	ctx := ContextWithSpan(context.Background(), parent)
-
-	child := tracer.NewChildSpanFromContext("redis.command", ctx)
-	// ids and services are inherited
-	assert.Equal(parent.SpanID, child.ParentID)
-	assert.Equal(parent.TraceID, child.TraceID)
-	assert.Equal(parent.Service, child.Service)
-	// the resource is not inherited and defaults to the name
-	assert.Equal("redis.command", child.Resource)
-	// the tracer instance is the same
-	assert.Equal(tracer, parent.tracer)
-	assert.Equal(tracer, child.tracer)
-
-}
-
 func TestNewSpanChild(t *testing.T) {
 	assert := assert.New(t)
 
 	// the tracer must create child spans
-	tracer := NewTracer()
-	parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	child := tracer.NewChildSpan("redis.command", parent)
+	tracer := New(WithTransport(newDefaultTransport()))
+	parent := tracer.newRootSpan("pylons.request", "pylons", "/")
+	child := tracer.newChildSpan("redis.command", parent)
 	// ids and services are inherited
 	assert.Equal(parent.SpanID, child.ParentID)
 	assert.Equal(parent.TraceID, child.TraceID)
@@ -210,11 +131,11 @@ func TestNewSpanChild(t *testing.T) {
 	assert.Equal(tracer, child.tracer)
 }
 
-func TestNewRootSpanHasPid(t *testing.T) {
+func TestnewRootSpanHasPid(t *testing.T) {
 	assert := assert.New(t)
 
-	tracer := NewTracer()
-	root := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	tracer := New(WithTransport(newDefaultTransport()))
+	root := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	assert.Equal(strconv.Itoa(os.Getpid()), root.GetMeta(ext.Pid))
 }
@@ -222,9 +143,9 @@ func TestNewRootSpanHasPid(t *testing.T) {
 func TestNewChildHasNoPid(t *testing.T) {
 	assert := assert.New(t)
 
-	tracer := NewTracer()
-	root := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	child := tracer.NewChildSpan("redis.command", root)
+	tracer := New(WithTransport(newDefaultTransport()))
+	root := tracer.newRootSpan("pylons.request", "pylons", "/")
+	child := tracer.newChildSpan("redis.command", root)
 
 	assert.Equal("", child.GetMeta(ext.Pid))
 }
@@ -233,10 +154,10 @@ func TestTracerSampler(t *testing.T) {
 	assert := assert.New(t)
 
 	sampleRate := 0.5
-	tracer := NewTracer()
+	tracer := New(WithTransport(newDefaultTransport()))
 	tracer.SetSampleRate(sampleRate)
 
-	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// The span might be sampled or not, we don't know, but at least it should have the sample rate metric
 	assert.Equal(sampleRate, span.Metrics[sampleRateMetricKey])
@@ -246,18 +167,18 @@ func TestTracerEdgeSampler(t *testing.T) {
 	assert := assert.New(t)
 
 	// a sample rate of 0 should sample nothing
-	tracer0 := NewTracer()
+	tracer0 := New(WithTransport(newDefaultTransport()))
 	tracer0.SetSampleRate(0)
 	// a sample rate of 1 should sample everything
-	tracer1 := NewTracer()
+	tracer1 := New(WithTransport(newDefaultTransport()))
 	tracer1.SetSampleRate(1)
 
 	count := traceChanLen / 3
 
 	for i := 0; i < count; i++ {
-		span0 := tracer0.NewRootSpan("pylons.request", "pylons", "/")
+		span0 := tracer0.newRootSpan("pylons.request", "pylons", "/")
 		span0.Finish()
-		span1 := tracer1.NewRootSpan("pylons.request", "pylons", "/")
+		span1 := tracer1.newRootSpan("pylons.request", "pylons", "/")
 		span1.Finish()
 	}
 
@@ -279,15 +200,15 @@ func TestTracerConcurrent(t *testing.T) {
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
-		tracer.NewRootSpan("pylons.request", "pylons", "/").Finish()
+		tracer.newRootSpan("pylons.request", "pylons", "/").Finish()
 	}()
 	go func() {
 		defer wg.Done()
-		tracer.NewRootSpan("pylons.request", "pylons", "/home").Finish()
+		tracer.newRootSpan("pylons.request", "pylons", "/home").Finish()
 	}()
 	go func() {
 		defer wg.Done()
-		tracer.NewRootSpan("pylons.request", "pylons", "/trace").Finish()
+		tracer.newRootSpan("pylons.request", "pylons", "/trace").Finish()
 	}()
 
 	wg.Wait()
@@ -306,7 +227,7 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 
 	// Testing an edge case: a child refers to a parent that is already closed.
 
-	parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 	parent.Finish()
 
 	tracer.ForceFlush()
@@ -315,7 +236,7 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 	assert.Len(traces[0], 1)
 	assert.Equal(parent, traces[0][0])
 
-	child := tracer.NewChildSpan("redis.command", parent)
+	child := tracer.newChildSpan("redis.command", parent)
 	child.Finish()
 
 	tracer.ForceFlush()
@@ -338,15 +259,15 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
-		child := tracer.NewChildSpan("redis.command", parent)
+		parent := tracer.newRootSpan("pylons.request", "pylons", "/")
+		child := tracer.newChildSpan("redis.command", parent)
 		child.Finish()
 		parent.Finish()
 	}()
 	go func() {
 		defer wg.Done()
-		parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
-		child := tracer.NewChildSpan("redis.command", parent)
+		parent := tracer.newRootSpan("pylons.request", "pylons", "/")
+		child := tracer.newChildSpan("redis.command", parent)
 		child.Finish()
 		parent.Finish()
 	}()
@@ -365,10 +286,10 @@ func TestTracerAtomicFlush(t *testing.T) {
 	defer tracer.Stop()
 
 	// Make sure we don't flush partial bits of traces
-	root := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	span := tracer.NewChildSpan("redis.command", root)
-	span1 := tracer.NewChildSpan("redis.command.1", span)
-	span2 := tracer.NewChildSpan("redis.command.2", span)
+	root := tracer.newRootSpan("pylons.request", "pylons", "/")
+	span := tracer.newChildSpan("redis.command", root)
+	span1 := tracer.newChildSpan("redis.command.1", span)
+	span2 := tracer.newChildSpan("redis.command.2", span)
 	span.Finish()
 	span1.Finish()
 	span2.Finish()
@@ -419,21 +340,21 @@ func TestTracerMeta(t *testing.T) {
 	assert.Nil(tracer.getAllMeta(), "by default, no meta")
 	tracer.SetMeta("env", "staging")
 
-	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
+	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	assert.Equal("staging", span.GetMeta("env"))
 	assert.Equal("", span.GetMeta("component"))
 	span.Finish()
 	assert.Equal(map[string]string{"env": "staging"}, tracer.getAllMeta(), "there should be one meta")
 
 	tracer.SetMeta("component", "core")
-	span = tracer.NewRootSpan("pylons.request", "pylons", "/")
+	span = tracer.newRootSpan("pylons.request", "pylons", "/")
 	assert.Equal("staging", span.GetMeta("env"))
 	assert.Equal("core", span.GetMeta("component"))
 	span.Finish()
 	assert.Equal(map[string]string{"env": "staging", "component": "core"}, tracer.getAllMeta(), "there should be two entries")
 
 	tracer.SetMeta("env", "prod")
-	span = tracer.NewRootSpan("pylons.request", "pylons", "/")
+	span = tracer.newRootSpan("pylons.request", "pylons", "/")
 	assert.Equal("prod", span.GetMeta("env"))
 	assert.Equal("core", span.GetMeta("component"))
 	span.SetMeta("env", "sandbox")
@@ -466,10 +387,10 @@ func TestTracerRace(t *testing.T) {
 
 			tracer.SetMeta("foo", "bar")
 
-			parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+			parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 
-			NewChildSpan("redis.command", parent).Finish()
-			child := NewChildSpan("async.service", parent)
+			newChildSpan("redis.command", parent).Finish()
+			child := newChildSpan("async.service", parent)
 
 			if i%13 == 0 {
 				time.Sleep(time.Microsecond)
@@ -561,8 +482,8 @@ func TestWorker(t *testing.T) {
 
 	n := traceChanLen * 10 // put more traces than the chan size, on purpose
 	for i := 0; i < n; i++ {
-		root := tracer.NewRootSpan("pylons.request", "pylons", "/")
-		child := tracer.NewChildSpan("redis.command", root)
+		root := tracer.newRootSpan("pylons.request", "pylons", "/")
+		child := tracer.newChildSpan("redis.command", root)
 		child.Finish()
 		root.Finish()
 	}
@@ -594,11 +515,11 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		go func() {
-			parent := tracer.NewRootSpan("pylons.request", "pylons", "/")
+			parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 			defer parent.Finish()
 
 			for i := 0; i < 10; i++ {
-				tracer.NewChildSpan("redis.command", parent).Finish()
+				tracer.newChildSpan("redis.command", parent).Finish()
 			}
 		}()
 	}
@@ -611,7 +532,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	defer tracer.Stop()
 
 	for n := 0; n < b.N; n++ {
-		span := tracer.NewRootSpan("pylons.request", "pylons", "/")
+		span := tracer.newRootSpan("pylons.request", "pylons", "/")
 		span.Finish()
 	}
 }
