@@ -409,23 +409,3 @@ func (t *Tracer) worker() {
 		}
 	}
 }
-
-// DefaultTracer is a global tracer that is enabled by default. All of the
-// packages top level NewSpan functions use the default tracer.
-//
-//	span := tracer.newRootSpan("sql.query", "user-db", "select * from foo where id = ?")
-//	defer span.Finish()
-//
-var DefaultTracer = New(WithTransport(newDefaultTransport()))
-
-// newRootSpan creates a span with no parent. Its ids will be randomly
-// assigned.
-func newRootSpan(name, service, resource string) *Span {
-	return DefaultTracer.newRootSpan(name, service, resource)
-}
-
-// newChildSpan creates a span that is a child of parent. It will inherit the
-// parent's service and resource.
-func newChildSpan(name string, parent *Span) *Span {
-	return DefaultTracer.newChildSpan(name, parent)
-}
