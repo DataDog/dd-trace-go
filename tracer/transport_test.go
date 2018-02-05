@@ -84,7 +84,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 
 	for _, tc := range testCases {
 		transport := newHTTPTransport(defaultAddress)
-		response, err := transport.SendTraces(tc.payload)
+		response, err := transport.sendTraces(tc.payload)
 		assert.NoError(err)
 		assert.NotNil(response)
 		assert.Equal(200, response.StatusCode)
@@ -98,7 +98,7 @@ func TestAPIDowngrade(t *testing.T) {
 
 	// if we get a 404 we should downgrade the API
 	traces := getTestTrace(2, 2)
-	response, err := transport.SendTraces(traces)
+	response, err := transport.sendTraces(traces)
 	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
@@ -111,7 +111,7 @@ func TestEncoderDowngrade(t *testing.T) {
 
 	// if we get a 415 because of a wrong encoder, we should downgrade the encoder
 	traces := getTestTrace(2, 2)
-	response, err := transport.SendTraces(traces)
+	response, err := transport.sendTraces(traces)
 	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
@@ -122,7 +122,7 @@ func TestTransportServices(t *testing.T) {
 
 	transport := newHTTPTransport(defaultAddress)
 
-	response, err := transport.SendServices(getTestServices())
+	response, err := transport.sendServices(getTestServices())
 	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
@@ -134,7 +134,7 @@ func TestTransportServicesDowngrade_0_0(t *testing.T) {
 	transport := newHTTPTransport(defaultAddress)
 	transport.serviceURL = "http://localhost:8126/v0.0/services"
 
-	response, err := transport.SendServices(getTestServices())
+	response, err := transport.sendServices(getTestServices())
 	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
@@ -146,7 +146,7 @@ func TestTransportServicesDowngrade_0_2(t *testing.T) {
 	transport := newHTTPTransport(defaultAddress)
 	transport.serviceURL = "http://localhost:8126/v0.2/services"
 
-	response, err := transport.SendServices(getTestServices())
+	response, err := transport.sendServices(getTestServices())
 	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)
@@ -191,7 +191,7 @@ func TestTraceCountHeader(t *testing.T) {
 	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
 	for _, tc := range testCases {
 		transport := newHTTPTransport(host)
-		response, err := transport.SendTraces(tc.payload)
+		response, err := transport.sendTraces(tc.payload)
 		assert.NoError(err)
 		assert.NotNil(response)
 		assert.Equal(200, response.StatusCode)

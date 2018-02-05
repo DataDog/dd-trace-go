@@ -527,7 +527,7 @@ type dummyTransport struct {
 	sync.RWMutex // required because of some poll-testing (eg: worker)
 }
 
-func (t *dummyTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
+func (t *dummyTransport) sendTraces(traces [][]*Span) (*http.Response, error) {
 	t.Lock()
 	t.traces = append(t.traces, traces...)
 	t.Unlock()
@@ -536,7 +536,7 @@ func (t *dummyTransport) SendTraces(traces [][]*Span) (*http.Response, error) {
 	return nil, encoder.EncodeTraces(traces)
 }
 
-func (t *dummyTransport) SendServices(services map[string]Service) (*http.Response, error) {
+func (t *dummyTransport) sendServices(services map[string]Service) (*http.Response, error) {
 	t.Lock()
 	t.services = services
 	t.Unlock()
@@ -553,5 +553,3 @@ func (t *dummyTransport) Traces() [][]*Span {
 	t.traces = nil
 	return traces
 }
-
-func (t *dummyTransport) SetHeader(key, value string) {}

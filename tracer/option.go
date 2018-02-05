@@ -30,7 +30,7 @@ type config struct {
 	binaryPropagator Propagator
 
 	// transport specifies the Transport interface which will be used to send data to the agent.
-	transport Transport
+	transport transport
 }
 
 type Option func(*config)
@@ -97,7 +97,7 @@ func WithBinaryPropagator(p Propagator) Option {
 	}
 }
 
-func WithTransport(t Transport) Option {
+func WithTransport(t transport) Option {
 	return func(c *config) {
 		c.transport = t
 	}

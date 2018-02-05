@@ -274,7 +274,7 @@ func (t *Tracer) flushTraces() {
 		return
 	}
 
-	_, err := t.config.transport.SendTraces(traces)
+	_, err := t.config.transport.sendTraces(traces)
 	if err != nil {
 		t.channels.pushErr(err)
 		t.channels.pushErr(&errorFlushLostTraces{Nb: len(traces)}) // explicit log messages with nb of lost traces
@@ -304,7 +304,7 @@ func (t *Tracer) flushServices() {
 		return
 	}
 
-	_, err := t.config.transport.SendServices(t.services)
+	_, err := t.config.transport.sendServices(t.services)
 	if err != nil {
 		t.channels.pushErr(err)
 		t.channels.pushErr(&errorFlushLostServices{Nb: len(t.services)}) // explicit log messages with nb of lost services
