@@ -15,6 +15,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var DefaultTracer = New(WithTransport(newDefaultTransport()))
+
+func newChildSpan(name string, parent *Span) *Span {
+	return DefaultTracer.newChildSpan(name, parent)
+}
+
 func TestOpenTracerStartSpan(t *testing.T) {
 	tracer := New()
 	span, ok := tracer.StartSpan("web.request").(*OpenSpan)
