@@ -21,26 +21,9 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
-// WithBaggageItem returns an entirely new spanContext with the
-// given key:value baggage pair set.
-func (c *spanContext) WithBaggageItem(key, val string) *spanContext {
-	var newBaggage map[string]string
+func (c *spanContext) setBaggageItem(key, val string) {
 	if c.baggage == nil {
-		newBaggage = map[string]string{key: val}
-	} else {
-		newBaggage = make(map[string]string, len(c.baggage)+1)
-		for k, v := range c.baggage {
-			newBaggage[k] = v
-		}
-		newBaggage[key] = val
+		c.baggage = map[string]string{}
 	}
-	// Use positional parameters so the compiler will help catch new fields.
-	return &spanContext{
-		traceID:  c.traceID,
-		spanID:   c.spanID,
-		parentID: c.parentID,
-		sampled:  c.sampled,
-		span:     c.span,
-		baggage:  newBaggage,
-	}
+	c.baggage[key] = val
 }
