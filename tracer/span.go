@@ -1,7 +1,6 @@
 package tracer
 
 import (
-	"context"
 	"fmt"
 	"reflect"
 	"runtime/debug"
@@ -135,27 +134,6 @@ func (s *OpenSpan) Log(data opentracing.LogData) {
 	// TODO: implementation missing
 }
 
-// NewOpenSpan is the OpenTracing Span constructor
-func NewOpenSpan(operationName string) *OpenSpan {
-	span := &Span{
-		Name: operationName,
-	}
-
-	otSpan := &OpenSpan{
-		Span: span,
-		context: SpanContext{
-			traceID:  span.TraceID,
-			spanID:   span.SpanID,
-			parentID: span.ParentID,
-			sampled:  span.Sampled,
-		},
-	}
-
-	// SpanContext is propagated and used to create children
-	otSpan.context.span = otSpan
-	return otSpan
-}
-
 // OLD ////////////////////////////////
 
 const (
@@ -225,7 +203,8 @@ func NewSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 		Name:     name,
 		Service:  service,
 		Resource: resource,
-		Meta:     tracer.getAllMeta(),
+		Meta:     map[string]string{},
+		Metrics:  map[string]float64{},
 		SpanID:   spanID,
 		TraceID:  traceID,
 		ParentID: parentID,
@@ -409,12 +388,6 @@ func (s *Span) String() string {
 	s.RUnlock()
 
 	return strings.Join(lines, "\n")
-}
-
-// Context returns a copy of the given context that includes this span.
-// This span can be accessed downstream with SpanFromContext and friends.
-func (s *Span) Context(ctx context.Context) context.Context {
-	return context.WithValue(ctx, spanKey, s)
 }
 
 // Tracer returns the tracer that created this span.
