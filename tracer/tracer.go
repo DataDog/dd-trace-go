@@ -184,7 +184,7 @@ func (t *Tracer) Stop() {
 
 // SetServiceInfo update the application and application type for the given
 // service.
-func (t *Tracer) SetServiceInfo(name, app, appType string) {
+func (t *Tracer) setServiceInfo(name, app, appType string) {
 	t.channels.pushService(service{
 		Name:    name,
 		App:     app,
@@ -358,4 +358,12 @@ func (t *Tracer) worker() {
 			return
 		}
 	}
+}
+
+func SetServiceInfo(name, app, appType string) {
+	t, ok := opentracing.GlobalTracer().(*Tracer)
+	if !ok {
+		return
+	}
+	t.setServiceInfo(name, app, appType)
 }
