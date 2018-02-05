@@ -1,7 +1,6 @@
 package tracer
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
@@ -12,10 +11,28 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
+// newOpenSpan is the OpenTracing Span constructor
+func newOpenSpan(operationName string) *OpenSpan {
+	span := NewSpan(operationName, "", "", 0, 0, 0, DefaultTracer)
+	otSpan := &OpenSpan{
+		Span: span,
+		context: SpanContext{
+			traceID:  span.TraceID,
+			spanID:   span.SpanID,
+			parentID: span.ParentID,
+			sampled:  span.Sampled,
+		},
+	}
+
+	// SpanContext is propagated and used to create children
+	otSpan.context.span = otSpan
+	return otSpan
+}
+
 func TestOpenSpanBaggage(t *testing.T) {
 	assert := assert.New(t)
 
-	span := NewOpenSpan("web.request")
+	span := newOpenSpan("web.request")
 	span.SetBaggageItem("key", "value")
 	assert.Equal("value", span.BaggageItem("key"))
 }
@@ -23,14 +40,14 @@ func TestOpenSpanBaggage(t *testing.T) {
 func TestOpenSpanContext(t *testing.T) {
 	assert := assert.New(t)
 
-	span := NewOpenSpan("web.request")
+	span := newOpenSpan("web.request")
 	assert.NotNil(span.Context())
 }
 
 func TestOpenSpanOperationName(t *testing.T) {
 	assert := assert.New(t)
 
-	span := NewOpenSpan("web.request")
+	span := newOpenSpan("web.request")
 	span.SetOperationName("http.request")
 	assert.Equal("http.request", span.Span.Name)
 }
@@ -38,7 +55,7 @@ func TestOpenSpanOperationName(t *testing.T) {
 func TestOpenSpanFinish(t *testing.T) {
 	assert := assert.New(t)
 
-	span := NewOpenSpan("web.request")
+	span := newOpenSpan("web.request")
 	span.Finish()
 
 	assert.True(span.Span.Duration > 0)
@@ -48,7 +65,7 @@ func TestOpenSpanFinishWithTime(t *testing.T) {
 	assert := assert.New(t)
 
 	finishTime := time.Now().Add(10 * time.Second)
-	span := NewOpenSpan("web.request")
+	span := newOpenSpan("web.request")
 	span.FinishWithOptions(opentracing.FinishOptions{FinishTime: finishTime})
 
 	duration := finishTime.UnixNano() - span.Span.Start
@@ -58,7 +75,7 @@ func TestOpenSpanFinishWithTime(t *testing.T) {
 func TestOpenSpanSetTag(t *testing.T) {
 	assert := assert.New(t)
 
-	span := NewOpenSpan("web.request")
+	span := newOpenSpan("web.request")
 	span.SetTag("component", "tracer")
 	assert.Equal("tracer", span.Meta["component"])
 
@@ -69,7 +86,7 @@ func TestOpenSpanSetTag(t *testing.T) {
 func TestOpenSpanSetDatadogTags(t *testing.T) {
 	assert := assert.New(t)
 
-	span := NewOpenSpan("web.request")
+	span := newOpenSpan("web.request")
 	span.SetTag("span.type", "http")
 	span.SetTag("service.name", "db-cluster")
 	span.SetTag("resource.name", "SELECT * FROM users;")
@@ -119,7 +136,7 @@ func TestOpenSpanSetErrorTag(t *testing.T) {
 			typ:  "",
 		},
 	} {
-		span := NewOpenSpan(tt.name)
+		span := newOpenSpan(tt.name)
 		span.SetTag(Error, tt.val)
 
 		assert.Equal(span.Meta["error.msg"], tt.msg)
@@ -314,21 +331,6 @@ func TestSpanFinishTwice(t *testing.T) {
 	span.Finish()
 	assert.Equal(previousDuration, span.Duration)
 	assert.Len(tracer.channels.trace, 1)
-}
-
-func TestSpanContext(t *testing.T) {
-	ctx := context.Background()
-	_, ok := SpanFromContext(ctx)
-	assert.False(t, ok)
-
-	tracer := New(WithTransport(newDefaultTransport()))
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-
-	ctx = span.Context(ctx)
-	s2, ok := SpanFromContext(ctx)
-	assert.True(t, ok)
-	assert.Equal(t, span.SpanID, s2.SpanID)
-
 }
 
 // Prior to a bug fix, this failed when running `go test -race`

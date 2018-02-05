@@ -213,34 +213,6 @@ func (t *Tracer) SetServiceInfo(name, app, appType string) {
 	})
 }
 
-// SetMeta adds an arbitrary meta field at the tracer level.
-// This will append those tags to each span created by the tracer.
-func (t *Tracer) SetMeta(key, value string) {
-	t.metaMu.Lock()
-	if t.meta == nil {
-		t.meta = make(map[string]string)
-	}
-	t.meta[key] = value
-	t.metaMu.Unlock()
-}
-
-// getAllMeta returns all the meta set by this tracer.
-// In most cases, it is nil.
-func (t *Tracer) getAllMeta() map[string]string {
-	var meta map[string]string
-
-	t.metaMu.RLock()
-	if t.meta != nil {
-		meta = make(map[string]string, len(t.meta))
-		for key, value := range t.meta {
-			meta[key] = value
-		}
-	}
-	t.metaMu.RUnlock()
-
-	return meta
-}
-
 // newRootSpan creates a span with no parent. Its ids will be randomly
 // assigned.
 func (t *Tracer) newRootSpan(name, service, resource string) *Span {

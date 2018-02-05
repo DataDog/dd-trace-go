@@ -363,7 +363,6 @@ func TestTracerRace(t *testing.T) {
 				time.Sleep(time.Microsecond)
 			}
 
-			tracer.SetMeta("foo", "bar")
 			parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 			newChildSpan("redis.command", parent).Finish()
@@ -420,7 +419,6 @@ func TestTracerRace(t *testing.T) {
 		assert.Len(trace, 3, "each trace should have exactly 3 spans")
 		var parent, child, redis *Span
 		for _, span := range trace {
-			assert.Equal("bar", span.GetMeta("foo"), "tracer meta should have been applied to all spans")
 			switch span.Name {
 			case "pylons.request":
 				parent = span
