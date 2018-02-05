@@ -13,13 +13,13 @@ import (
 
 const flushInterval = 2 * time.Second
 
-type Service struct {
+type service struct {
 	Name    string `json:"-"`        // the internal of the service (e.g. acme_search, datadog_web)
 	App     string `json:"app"`      // the name of the application (e.g. rails, postgres, custom-app)
 	AppType string `json:"app_type"` // the type of the application (e.g. db, web)
 }
 
-func (s Service) Equal(s2 Service) bool {
+func (s service) equals(s2 service) bool {
 	return s.Name == s2.Name && s.App == s2.App && s.AppType == s2.AppType
 }
 
@@ -36,7 +36,7 @@ type Tracer struct {
 	metaMu sync.RWMutex
 
 	channels tracerChans
-	services map[string]Service // name -> service
+	services map[string]service // name -> service
 
 	exit   chan struct{}
 	exitWG *sync.WaitGroup
@@ -57,7 +57,7 @@ func New(opts ...Option) *Tracer {
 	t := &Tracer{
 		config:        c,
 		channels:      newTracerChans(),
-		services:      make(map[string]Service),
+		services:      make(map[string]service),
 		exit:          make(chan struct{}),
 		exitWG:        &sync.WaitGroup{},
 		forceFlushIn:  make(chan struct{}),
@@ -191,7 +191,7 @@ func (t *Tracer) Stop() {
 // SetServiceInfo update the application and application type for the given
 // service.
 func (t *Tracer) SetServiceInfo(name, app, appType string) {
-	t.channels.pushService(Service{
+	t.channels.pushService(service{
 		Name:    name,
 		App:     app,
 		AppType: appType,
@@ -286,7 +286,7 @@ func (t *Tracer) updateServices() bool {
 	for {
 		select {
 		case service := <-t.channels.service:
-			if s, found := t.services[service.Name]; !found || !s.Equal(service) {
+			if s, found := t.services[service.Name]; !found || !s.equals(service) {
 				t.services[service.Name] = service
 				servicesModified = true
 			}

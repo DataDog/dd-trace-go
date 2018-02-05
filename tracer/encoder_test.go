@@ -8,11 +8,11 @@ import (
 	"github.com/ugorji/go/codec"
 )
 
-func TestEncoderContentType(t *testing.T) {
+func TestEncodercontentType(t *testing.T) {
 	assert := assert.New(t)
 
 	testCases := []struct {
-		encoder     Encoder
+		encoder     encoder
 		contentType string
 	}{
 		{newJSONEncoder(), "application/json"},
@@ -20,7 +20,7 @@ func TestEncoderContentType(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		assert.Equal(tc.contentType, tc.encoder.ContentType())
+		assert.Equal(tc.contentType, tc.encoder.contentType())
 	}
 }
 
@@ -40,7 +40,7 @@ func TestJSONEncoding(t *testing.T) {
 	for _, tc := range testCases {
 		payload := getTestTrace(tc.traces, tc.size)
 		encoder := newJSONEncoder()
-		err := encoder.EncodeTraces(payload)
+		err := encoder.encodeTraces(payload)
 		assert.Nil(err)
 
 		// decode to check the right encoding
@@ -84,7 +84,7 @@ func TestMsgpackEncoding(t *testing.T) {
 	for _, tc := range testCases {
 		payload := getTestTrace(tc.traces, tc.size)
 		encoder := newMsgpackEncoder()
-		err := encoder.EncodeTraces(payload)
+		err := encoder.encodeTraces(payload)
 		assert.Nil(err)
 
 		// decode to check the right encoding

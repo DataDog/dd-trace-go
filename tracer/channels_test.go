@@ -53,22 +53,22 @@ func TestPushService(t *testing.T) {
 
 	channels := newTracerChans()
 
-	service := Service{
+	svc := service{
 		Name:    "redis-master",
 		App:     "redis",
 		AppType: "db",
 	}
-	channels.pushService(service)
+	channels.pushService(svc)
 
 	assert.Len(channels.service, 1, "there should be data in channel")
 	assert.Len(channels.serviceFlush, 0, "no flush requested yet")
 
 	pushed := <-channels.service
-	assert.Equal(service, pushed)
+	assert.Equal(svc, pushed)
 
 	many := serviceChanLen/2 + 1
 	for i := 0; i < many; i++ {
-		channels.pushService(Service{
+		channels.pushService(service{
 			Name:    fmt.Sprintf("service%d", i),
 			App:     "custom",
 			AppType: "web",
@@ -78,7 +78,7 @@ func TestPushService(t *testing.T) {
 	assert.Len(channels.serviceFlush, 1, "a service flush should have been requested")
 
 	for i := 0; i < cap(channels.service); i++ {
-		channels.pushService(Service{
+		channels.pushService(service{
 			Name:    fmt.Sprintf("service%d", i),
 			App:     "custom",
 			AppType: "web",

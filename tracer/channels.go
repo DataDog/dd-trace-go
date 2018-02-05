@@ -24,7 +24,7 @@ const (
 // to have it isolated from tracer, for the sake of unit testing.
 type tracerChans struct {
 	trace        chan []*Span
-	service      chan Service
+	service      chan service
 	err          chan error
 	traceFlush   chan struct{}
 	serviceFlush chan struct{}
@@ -34,7 +34,7 @@ type tracerChans struct {
 func newTracerChans() tracerChans {
 	return tracerChans{
 		trace:        make(chan []*Span, traceChanLen),
-		service:      make(chan Service, serviceChanLen),
+		service:      make(chan service, serviceChanLen),
 		err:          make(chan error, errChanLen),
 		traceFlush:   make(chan struct{}, 1),
 		serviceFlush: make(chan struct{}, 1),
@@ -56,7 +56,7 @@ func (tc *tracerChans) pushTrace(trace []*Span) {
 	}
 }
 
-func (tc *tracerChans) pushService(service Service) {
+func (tc *tracerChans) pushService(service service) {
 	if len(tc.service) >= cap(tc.service)/2 { // starts being full, anticipate, try and flush soon
 		select {
 		case tc.serviceFlush <- struct{}{}:

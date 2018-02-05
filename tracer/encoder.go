@@ -3,31 +3,35 @@ package tracer
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 
 	"github.com/ugorji/go/codec"
 )
 
 const (
-	jsonContentType    = "application/json"
-	msgpackContentType = "application/msgpack"
+	jsoncontentType    = "application/json"
+	msgpackcontentType = "application/msgpack"
 )
 
-// Encoder is a generic interface that expects encoding methods for traces and
+// encoder is a generic interface that expects encoding methods for traces and
 // services, and a Read() method that will be used by the http handler
-type Encoder interface {
-	EncodeTraces(traces [][]*Span) error
-	EncodeServices(services map[string]Service) error
-	Read(p []byte) (int, error)
-	ContentType() string
+type encoder interface {
+	io.Reader
+
+	encodeTraces(traces [][]*Span) error
+	encodeServices(services map[string]service) error
+	contentType() string
 }
 
 var mh codec.MsgpackHandle
 
+var _ encoder = (*msgpackEncoder)(nil)
+
 // msgpackEncoder encodes a list of traces in Msgpack format
 type msgpackEncoder struct {
-	buffer      *bytes.Buffer
-	encoder     *codec.Encoder
-	contentType string
+	buffer         *bytes.Buffer
+	encoder        *codec.Encoder
+	msgcontentType string
 }
 
 func newMsgpackEncoder() *msgpackEncoder {
@@ -35,20 +39,20 @@ func newMsgpackEncoder() *msgpackEncoder {
 	encoder := codec.NewEncoder(buffer, &mh)
 
 	return &msgpackEncoder{
-		buffer:      buffer,
-		encoder:     encoder,
-		contentType: msgpackContentType,
+		buffer:         buffer,
+		encoder:        encoder,
+		msgcontentType: msgpackcontentType,
 	}
 }
 
-// EncodeTraces serializes the given trace list into the internal buffer,
+// encodeTraces serializes the given trace list into the internal buffer,
 // returning the error if any.
-func (e *msgpackEncoder) EncodeTraces(traces [][]*Span) error {
+func (e *msgpackEncoder) encodeTraces(traces [][]*Span) error {
 	return e.encoder.Encode(traces)
 }
 
-// EncodeServices serializes a service map into the internal buffer.
-func (e *msgpackEncoder) EncodeServices(services map[string]Service) error {
+// encodeServices serializes a service map into the internal buffer.
+func (e *msgpackEncoder) encodeServices(services map[string]service) error {
 	return e.encoder.Encode(services)
 }
 
@@ -57,16 +61,18 @@ func (e *msgpackEncoder) Read(p []byte) (int, error) {
 	return e.buffer.Read(p)
 }
 
-// ContentType return the msgpackEncoder content-type
-func (e *msgpackEncoder) ContentType() string {
-	return e.contentType
+// contentType return the msgpackEncoder content-type
+func (e *msgpackEncoder) contentType() string {
+	return e.msgcontentType
 }
+
+var _ encoder = (*jsonEncoder)(nil)
 
 // jsonEncoder encodes a list of traces in JSON format
 type jsonEncoder struct {
-	buffer      *bytes.Buffer
-	encoder     *json.Encoder
-	contentType string
+	buffer         *bytes.Buffer
+	encoder        *json.Encoder
+	msgContentType string
 }
 
 // newJSONEncoder returns a new encoder for the JSON format.
@@ -75,20 +81,20 @@ func newJSONEncoder() *jsonEncoder {
 	encoder := json.NewEncoder(buffer)
 
 	return &jsonEncoder{
-		buffer:      buffer,
-		encoder:     encoder,
-		contentType: jsonContentType,
+		buffer:         buffer,
+		encoder:        encoder,
+		msgContentType: jsoncontentType,
 	}
 }
 
-// EncodeTraces serializes the given trace list into the internal buffer,
+// encodeTraces serializes the given trace list into the internal buffer,
 // returning the error if any.
-func (e *jsonEncoder) EncodeTraces(traces [][]*Span) error {
+func (e *jsonEncoder) encodeTraces(traces [][]*Span) error {
 	return e.encoder.Encode(traces)
 }
 
-// EncodeServices serializes a service map into the internal buffer.
-func (e *jsonEncoder) EncodeServices(services map[string]Service) error {
+// encodeServices serializes a service map into the internal buffer.
+func (e *jsonEncoder) encodeServices(services map[string]service) error {
 	return e.encoder.Encode(services)
 }
 
@@ -97,18 +103,18 @@ func (e *jsonEncoder) Read(p []byte) (int, error) {
 	return e.buffer.Read(p)
 }
 
-// ContentType return the jsonEncoder content-type
-func (e *jsonEncoder) ContentType() string {
-	return e.contentType
+// contentType return the jsonEncoder content-type
+func (e *jsonEncoder) contentType() string {
+	return e.msgContentType
 }
 
 // encoderFactory will provide a new encoder each time we want to flush traces or services.
-type encoderFactory func() Encoder
+type encoderFactory func() encoder
 
-func jsonEncoderFactory() Encoder {
+func jsonEncoderFactory() encoder {
 	return newJSONEncoder()
 }
 
-func msgpackEncoderFactory() Encoder {
+func msgpackEncoderFactory() encoder {
 	return newMsgpackEncoder()
 }
