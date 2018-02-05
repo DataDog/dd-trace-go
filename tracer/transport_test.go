@@ -12,8 +12,8 @@ import (
 )
 
 // getTestSpan returns a Span with different fields set
-func getTestSpan() *Span {
-	return &Span{
+func getTestSpan() *span {
+	return &span{
 		TraceID:  42,
 		SpanID:   52,
 		ParentID: 42,
@@ -30,11 +30,11 @@ func getTestSpan() *Span {
 
 // getTestTrace returns a list of traces that is composed by ``traceN`` number
 // of traces, each one composed by ``size`` number of spans.
-func getTestTrace(traceN, size int) [][]*Span {
-	var traces [][]*Span
+func getTestTrace(traceN, size int) [][]*span {
+	var traces [][]*span
 
 	for i := 0; i < traceN; i++ {
-		trace := []*Span{}
+		trace := []*span{}
 		for j := 0; j < size; j++ {
 			trace = append(trace, getTestSpan())
 		}
@@ -74,7 +74,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	assert := assert.New(t)
 
 	testCases := []struct {
-		payload [][]*Span
+		payload [][]*span
 	}{
 		{getTestTrace(1, 1)},
 		{getTestTrace(10, 1)},
@@ -175,7 +175,7 @@ func TestTraceCountHeader(t *testing.T) {
 	assert := assert.New(t)
 
 	testCases := []struct {
-		payload [][]*Span
+		payload [][]*span
 	}{
 		{getTestTrace(1, 1)},
 		{getTestTrace(10, 1)},

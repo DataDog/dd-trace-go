@@ -23,7 +23,7 @@ const (
 // to access it concurrently as it contains channels only. And it's convenient
 // to have it isolated from tracer, for the sake of unit testing.
 type tracerChans struct {
-	trace        chan []*Span
+	trace        chan []*span
 	service      chan service
 	err          chan error
 	traceFlush   chan struct{}
@@ -33,7 +33,7 @@ type tracerChans struct {
 
 func newTracerChans() tracerChans {
 	return tracerChans{
-		trace:        make(chan []*Span, traceChanLen),
+		trace:        make(chan []*span, traceChanLen),
 		service:      make(chan service, serviceChanLen),
 		err:          make(chan error, errChanLen),
 		traceFlush:   make(chan struct{}, 1),
@@ -42,7 +42,7 @@ func newTracerChans() tracerChans {
 	}
 }
 
-func (tc *tracerChans) pushTrace(trace []*Span) {
+func (tc *tracerChans) pushTrace(trace []*span) {
 	if len(tc.trace) >= cap(tc.trace)/2 { // starts being full, anticipate, try and flush soon
 		select {
 		case tc.traceFlush <- struct{}{}:

@@ -37,9 +37,9 @@ func TestOpenTracerPropagationDefaults(t *testing.T) {
 
 	// ensure a child can be created
 	child := tracer.StartSpan("db.query", opentracing.ChildOf(propagated))
-	tRoot, ok := root.(*Span)
+	tRoot, ok := root.(*span)
 	assert.True(ok)
-	tChild, ok := child.(*Span)
+	tChild, ok := child.(*span)
 	assert.True(ok)
 
 	assert.NotEqual(uint64(0), tChild.TraceID)
@@ -61,7 +61,7 @@ func TestOpenTracerTextMapPropagationHeader(t *testing.T) {
 	textMapPropagator := NewTextMapPropagator("bg-", "tid", "pid")
 	tracer := New(WithTextMapPropagator(textMapPropagator))
 
-	root := tracer.StartSpan("web.request").SetBaggageItem("item", "x").(*Span)
+	root := tracer.StartSpan("web.request").SetBaggageItem("item", "x").(*span)
 	ctx := root.Context()
 	headers := http.Header{}
 

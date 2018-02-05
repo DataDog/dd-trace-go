@@ -3,6 +3,8 @@ package tracer
 import (
 	"math"
 	"sync"
+
+	opentracing "github.com/opentracing/opentracing-go"
 )
 
 const (
@@ -15,7 +17,7 @@ const (
 
 // Sampler is the generic interface of any sampler. Must be safe for concurrent use.
 type Sampler interface {
-	Sample(span *Span) // Tells if a trace is sampled and sets `span.Sampled`
+	Sample(span opentracing.Span) // Tells if a trace is sampled and sets `span.Sampled`
 }
 
 // RateSampler samples from a sample rate.
@@ -44,12 +46,16 @@ func (s *RateSampler) SetRate(rate float64) {
 }
 
 // Sample samples a span
-func (s *RateSampler) Sample(span *Span) {
-	s.RLock()
-	defer s.RUnlock()
+func (r *RateSampler) Sample(s opentracing.Span) {
+	span, ok := s.(*span)
+	if !ok {
+		return
+	}
+	r.RLock()
+	defer r.RUnlock()
 
-	if s.rate < 1 {
-		span.Sampled = span.TraceID*knuthFactor < uint64(s.rate*math.MaxUint64)
-		span.SetMetric(sampleRateMetricKey, s.rate)
+	if r.rate < 1 {
+		span.Sampled = span.TraceID*knuthFactor < uint64(r.rate*math.MaxUint64)
+		span.SetMetric(sampleRateMetricKey, r.rate)
 	}
 }

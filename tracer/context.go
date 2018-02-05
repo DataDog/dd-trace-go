@@ -7,7 +7,7 @@ type spanContext struct {
 	spanID   uint64
 	parentID uint64
 	sampled  bool
-	span     *Span
+	span     *span
 	baggage  map[string]string
 }
 

@@ -80,7 +80,7 @@ func TestSpanBufferPushSeveral(t *testing.T) {
 	span3 := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID, DefaultTracer)
 	span3a := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, span3.SpanID, DefaultTracer)
 
-	spans := []*Span{root, span2, span3, span3a}
+	spans := []*span{root, span2, span3, span3a}
 
 	for i, span := range spans {
 		span.buffer = buffer
