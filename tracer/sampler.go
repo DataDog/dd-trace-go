@@ -1,57 +1,55 @@
 package tracer
 
+import (
+	"math"
+	"sync"
+)
+
 const (
 	// sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.
 	sampleRateMetricKey = "_sample_rate"
 
-	// constants used for the Knuth hashing, same constants as the Agent.
-	maxTraceID      = ^uint64(0)
-	maxTraceIDFloat = float64(maxTraceID)
-	samplerHasher   = uint64(1111111111111111111)
+	// constants used for the Knuth hashing, same as agent.
+	knuthFactor = uint64(1111111111111111111)
 )
 
-// sampler is the generic interface of any sampler
-type sampler interface {
+// Sampler is the generic interface of any sampler. Must be safe for concurrent use.
+type Sampler interface {
 	Sample(span *Span) // Tells if a trace is sampled and sets `span.Sampled`
 }
 
-// allSampler samples all the traces
-type allSampler struct{}
+// RateSampler samples from a sample rate.
+type RateSampler struct {
+	sync.RWMutex
+	rate float64
+}
 
-func newAllSampler() *allSampler {
-	return &allSampler{}
+func NewAllSampler() *RateSampler { return NewRateSampler(1) }
+
+// NewRateSampler returns an initialized RateSampler with its sample rate.
+func NewRateSampler(rate float64) *RateSampler {
+	return &RateSampler{rate: rate}
+}
+
+func (s *RateSampler) Rate() float64 {
+	s.RLock()
+	defer s.RUnlock()
+	return s.rate
+}
+
+func (s *RateSampler) SetRate(rate float64) {
+	s.Lock()
+	s.rate = rate
+	s.Unlock()
 }
 
 // Sample samples a span
-func (s *allSampler) Sample(span *Span) {
-	// Nothing to do here, since by default a trace is sampled
-}
+func (s *RateSampler) Sample(span *Span) {
+	s.RLock()
+	defer s.RUnlock()
 
-// rateSampler samples from a sample rate
-type rateSampler struct {
-	SampleRate float64
-}
-
-// newRateSampler returns an initialized rateSampler with its sample rate
-func newRateSampler(sampleRate float64) *rateSampler {
-	return &rateSampler{
-		SampleRate: sampleRate,
+	if s.rate < 1 {
+		span.Sampled = span.TraceID*knuthFactor < uint64(s.rate*math.MaxUint64)
+		span.SetMetric(sampleRateMetricKey, s.rate)
 	}
-}
-
-// Sample samples a span
-func (s *rateSampler) Sample(span *Span) {
-	if s.SampleRate < 1 {
-		span.Sampled = sampleByRate(span.TraceID, s.SampleRate)
-		span.SetMetric(sampleRateMetricKey, s.SampleRate)
-	}
-}
-
-// sampleByRate tells if a trace (from its ID) with a given rate should be sampled.
-// Its implementation has to be the same as the Trace Agent.
-func sampleByRate(traceID uint64, sampleRate float64) bool {
-	if sampleRate < 1 {
-		return traceID*samplerHasher < uint64(sampleRate*maxTraceIDFloat)
-	}
-	return true
 }

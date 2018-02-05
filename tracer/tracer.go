@@ -39,8 +39,6 @@ var _ opentracing.Tracer = (*Tracer)(nil)
 type Tracer struct {
 	*config
 
-	sampler sampler // is the trace sampler to only keep some samples
-
 	meta   map[string]string
 	metaMu sync.RWMutex
 
@@ -65,7 +63,6 @@ func New(opts ...Option) *Tracer {
 	}
 	t := &Tracer{
 		config:        c,
-		sampler:       newAllSampler(),
 		channels:      newTracerChans(),
 		services:      make(map[string]Service),
 		exit:          make(chan struct{}),
@@ -73,9 +70,7 @@ func New(opts ...Option) *Tracer {
 		forceFlushIn:  make(chan struct{}),
 		forceFlushOut: make(chan struct{}),
 	}
-	t.SetSampleRate(c.sampleRate)
 
-	// start a background worker
 	t.exitWG.Add(1)
 	go t.worker()
 
@@ -206,20 +201,6 @@ func (t *Tracer) Extract(format interface{}, carrier interface{}) (opentracing.S
 func (t *Tracer) Stop() {
 	close(t.exit)
 	t.exitWG.Wait()
-}
-
-// SetSampleRate sets a sample rate for all the future traces.
-// sampleRate has to be between 0.0 and 1.0 and represents the ratio of traces
-// that will be sampled. 0.0 means that the tracer won't send any trace. 1.0
-// means that the tracer will send all traces.
-func (t *Tracer) SetSampleRate(sampleRate float64) {
-	if sampleRate == 1 {
-		t.sampler = newAllSampler()
-	} else if sampleRate >= 0 && sampleRate < 1 {
-		t.sampler = newRateSampler(sampleRate)
-	} else {
-		log.Printf("tracer.SetSampleRate rate must be between 0 and 1, now: %f", sampleRate)
-	}
 }
 
 // SetServiceInfo update the application and application type for the given
@@ -394,7 +375,7 @@ func (t *Tracer) ForceFlush() {
 
 // Sample samples a span with the internal sampler.
 func (t *Tracer) Sample(span *Span) {
-	t.sampler.Sample(span)
+	t.config.sampler.Sample(span)
 }
 
 // worker periodically flushes traces and services to the transport.

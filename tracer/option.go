@@ -12,8 +12,8 @@ type config struct {
 	// serviceName specifies the name of this application.
 	serviceName string
 
-	// sampleRate sets the Tracer sample rate (ext/priority.go).
-	sampleRate float64
+	// sampler specifies the sampler that will be used for sampling traces.
+	sampler Sampler
 
 	// agentAddr specifies the hostname and  of the agent where the traces
 	// are sent to.
@@ -37,7 +37,7 @@ type Option func(*config)
 
 func defaults(c *config) {
 	c.serviceName = filepath.Base(os.Args[0])
-	c.sampleRate = 1
+	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
 	c.textMapPropagator = NewTextMapPropagator("", "", "")
 }
@@ -51,12 +51,6 @@ func WithDebugMode(enabled bool) Option {
 func WithServiceName(name string) Option {
 	return func(c *config) {
 		c.serviceName = name
-	}
-}
-
-func WithSampleRate(rate float64) Option {
-	return func(c *config) {
-		c.sampleRate = rate
 	}
 }
 
@@ -106,5 +100,11 @@ func WithBinaryPropagator(p Propagator) Option {
 func WithTransport(t Transport) Option {
 	return func(c *config) {
 		c.transport = t
+	}
+}
+
+func WithSampler(s Sampler) Option {
+	return func(c *config) {
+		c.sampler = s
 	}
 }

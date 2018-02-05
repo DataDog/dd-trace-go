@@ -153,25 +153,31 @@ func TestNewChildHasNoPid(t *testing.T) {
 func TestTracerSampler(t *testing.T) {
 	assert := assert.New(t)
 
-	sampleRate := 0.5
-	tracer := New(WithTransport(newDefaultTransport()))
-	tracer.SetSampleRate(sampleRate)
+	sampler := NewRateSampler(0.5)
+	tracer := New(
+		WithTransport(newDefaultTransport()),
+		WithSampler(sampler),
+	)
 
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// The span might be sampled or not, we don't know, but at least it should have the sample rate metric
-	assert.Equal(sampleRate, span.Metrics[sampleRateMetricKey])
+	assert.Equal(float64(0.5), span.Metrics[sampleRateMetricKey])
 }
 
 func TestTracerEdgeSampler(t *testing.T) {
 	assert := assert.New(t)
 
 	// a sample rate of 0 should sample nothing
-	tracer0 := New(WithTransport(newDefaultTransport()))
-	tracer0.SetSampleRate(0)
+	tracer0 := New(
+		WithTransport(newDefaultTransport()),
+		WithSampler(NewRateSampler(0)),
+	)
 	// a sample rate of 1 should sample everything
-	tracer1 := New(WithTransport(newDefaultTransport()))
-	tracer1.SetSampleRate(1)
+	tracer1 := New(
+		WithTransport(newDefaultTransport()),
+		WithSampler(NewRateSampler(1)),
+	)
 
 	count := traceChanLen / 3
 
@@ -331,40 +337,6 @@ func TestTracerServices(t *testing.T) {
 	assert.Equal("d", svc2.AppType)
 }
 
-func TestTracerMeta(t *testing.T) {
-	assert := assert.New(t)
-
-	tracer, _ := getTestTracer()
-	defer tracer.Stop()
-
-	assert.Nil(tracer.getAllMeta(), "by default, no meta")
-	tracer.SetMeta("env", "staging")
-
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-	assert.Equal("staging", span.GetMeta("env"))
-	assert.Equal("", span.GetMeta("component"))
-	span.Finish()
-	assert.Equal(map[string]string{"env": "staging"}, tracer.getAllMeta(), "there should be one meta")
-
-	tracer.SetMeta("component", "core")
-	span = tracer.newRootSpan("pylons.request", "pylons", "/")
-	assert.Equal("staging", span.GetMeta("env"))
-	assert.Equal("core", span.GetMeta("component"))
-	span.Finish()
-	assert.Equal(map[string]string{"env": "staging", "component": "core"}, tracer.getAllMeta(), "there should be two entries")
-
-	tracer.SetMeta("env", "prod")
-	span = tracer.newRootSpan("pylons.request", "pylons", "/")
-	assert.Equal("prod", span.GetMeta("env"))
-	assert.Equal("core", span.GetMeta("component"))
-	span.SetMeta("env", "sandbox")
-	assert.Equal("sandbox", span.GetMeta("env"))
-	assert.Equal("core", span.GetMeta("component"))
-	span.Finish()
-
-	assert.Equal(map[string]string{"env": "prod", "component": "core"}, tracer.getAllMeta(), "key1 should have been updated")
-}
-
 func TestTracerRace(t *testing.T) {
 	assert := assert.New(t)
 
@@ -386,7 +358,6 @@ func TestTracerRace(t *testing.T) {
 			}
 
 			tracer.SetMeta("foo", "bar")
-
 			parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 			newChildSpan("redis.command", parent).Finish()
@@ -538,9 +509,10 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 }
 
 // getTestTracer returns a Tracer with a DummyTransport
-func getTestTracer() (*Tracer, *dummyTransport) {
+func getTestTracer(opts ...Option) (*Tracer, *dummyTransport) {
 	transport := &dummyTransport{getEncoder: msgpackEncoderFactory}
-	tracer := New(WithTransport(transport))
+	o := append([]Option{WithTransport(transport)}, opts...)
+	tracer := New(o...)
 	return tracer, transport
 }
 
