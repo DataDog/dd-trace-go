@@ -9,7 +9,7 @@ import (
 func TestSpanContextBaggage(t *testing.T) {
 	assert := assert.New(t)
 
-	ctx := SpanContext{}
+	ctx := spanContext{}
 	ctx = ctx.WithBaggageItem("key", "value")
 	assert.Equal("value", ctx.baggage["key"])
 }
@@ -18,7 +18,7 @@ func TestSpanContextIterator(t *testing.T) {
 	assert := assert.New(t)
 
 	baggageIterator := make(map[string]string)
-	ctx := SpanContext{baggage: map[string]string{"key": "value"}}
+	ctx := spanContext{baggage: map[string]string{"key": "value"}}
 	ctx.ForeachBaggageItem(func(k, v string) bool {
 		baggageIterator[k] = v
 		return true
