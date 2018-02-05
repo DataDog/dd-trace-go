@@ -23,15 +23,15 @@ func newChildSpan(name string, parent *Span) *Span {
 
 func TestOpenTracerStartSpan(t *testing.T) {
 	tracer := New()
-	span, ok := tracer.StartSpan("web.request").(*OpenSpan)
+	span, ok := tracer.StartSpan("web.request").(*Span)
 	assert := assert.New(t)
 	assert.True(ok)
-	assert.NotEqual(uint64(0), span.Span.TraceID)
-	assert.NotEqual(uint64(0), span.Span.SpanID)
-	assert.Equal(uint64(0), span.Span.ParentID)
-	assert.Equal("web.request", span.Span.Name)
-	assert.Equal("tracer.test", span.Span.Service)
-	assert.NotNil(span.Span.Tracer())
+	assert.NotEqual(uint64(0), span.TraceID)
+	assert.NotEqual(uint64(0), span.SpanID)
+	assert.Equal(uint64(0), span.ParentID)
+	assert.Equal("web.request", span.Name)
+	assert.Equal("tracer.test", span.Service)
+	assert.NotNil(span.Tracer())
 }
 
 func TestOpenTracerStartChildSpan(t *testing.T) {
@@ -39,15 +39,15 @@ func TestOpenTracerStartChildSpan(t *testing.T) {
 	tracer := New()
 	root := tracer.StartSpan("web.request")
 	child := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context()))
-	tRoot, ok := root.(*OpenSpan)
+	tRoot, ok := root.(*Span)
 	assert.True(ok)
-	tChild, ok := child.(*OpenSpan)
+	tChild, ok := child.(*Span)
 	assert.True(ok)
 
-	assert.NotEqual(uint64(0), tChild.Span.TraceID)
-	assert.NotEqual(uint64(0), tChild.Span.SpanID)
-	assert.Equal(tRoot.Span.SpanID, tChild.Span.ParentID)
-	assert.Equal(tRoot.Span.TraceID, tChild.Span.ParentID)
+	assert.NotEqual(uint64(0), tChild.TraceID)
+	assert.NotEqual(uint64(0), tChild.SpanID)
+	assert.Equal(tRoot.SpanID, tChild.ParentID)
+	assert.Equal(tRoot.TraceID, tChild.ParentID)
 }
 
 func TestOpenTracerBaggagePropagation(t *testing.T) {
@@ -56,7 +56,7 @@ func TestOpenTracerBaggagePropagation(t *testing.T) {
 	root := tracer.StartSpan("web.request")
 	root.SetBaggageItem("key", "value")
 	child := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context()))
-	context, ok := child.Context().(spanContext)
+	context, ok := child.Context().(*spanContext)
 	assert.True(ok)
 
 	assert.Equal("value", context.baggage["key"])
@@ -69,9 +69,9 @@ func TestOpenTracerBaggageImmutability(t *testing.T) {
 	root.SetBaggageItem("key", "value")
 	child := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context()))
 	child.SetBaggageItem("key", "changed!")
-	parentContext, ok := root.Context().(spanContext)
+	parentContext, ok := root.Context().(*spanContext)
 	assert.True(ok)
-	childContext, ok := child.Context().(spanContext)
+	childContext, ok := child.Context().(*spanContext)
 	assert.True(ok)
 	assert.Equal("value", parentContext.baggage["key"])
 	assert.Equal("changed!", childContext.baggage["key"])
@@ -80,19 +80,19 @@ func TestOpenTracerBaggageImmutability(t *testing.T) {
 func TestOpenTracerSpanTags(t *testing.T) {
 	tracer := New()
 	tag := opentracing.Tag{Key: "key", Value: "value"}
-	span, ok := tracer.StartSpan("web.request", tag).(*OpenSpan)
+	span, ok := tracer.StartSpan("web.request", tag).(*Span)
 	assert := assert.New(t)
 	assert.True(ok)
-	assert.Equal("value", span.Span.Meta["key"])
+	assert.Equal("value", span.Meta["key"])
 }
 
 func TestOpenTracerSpanGlobalTags(t *testing.T) {
 	assert := assert.New(t)
 	tracer := New(WithGlobalTags("key", "value"))
-	span := tracer.StartSpan("web.request").(*OpenSpan)
-	assert.Equal("value", span.Span.Meta["key"])
-	child := tracer.StartSpan("db.query", opentracing.ChildOf(span.Context())).(*OpenSpan)
-	assert.Equal("value", child.Span.Meta["key"])
+	span := tracer.StartSpan("web.request").(*Span)
+	assert.Equal("value", span.Meta["key"])
+	child := tracer.StartSpan("db.query", opentracing.ChildOf(span.Context())).(*Span)
+	assert.Equal("value", child.Meta["key"])
 }
 
 func TestOpenTracerSpanStartTime(t *testing.T) {
@@ -100,12 +100,10 @@ func TestOpenTracerSpanStartTime(t *testing.T) {
 
 	tracer := New()
 	startTime := time.Now().Add(-10 * time.Second)
-	span, ok := tracer.StartSpan("web.request", opentracing.StartTime(startTime)).(*OpenSpan)
+	span, ok := tracer.StartSpan("web.request", opentracing.StartTime(startTime)).(*Span)
 	assert.True(ok)
-	assert.Equal(startTime.UnixNano(), span.Span.Start)
+	assert.Equal(startTime.UnixNano(), span.Start)
 }
-
-// OLD ////////////////////////////////
 
 func TestNewSpan(t *testing.T) {
 	assert := assert.New(t)

@@ -9,7 +9,7 @@ import (
 func TestSpanContextBaggage(t *testing.T) {
 	assert := assert.New(t)
 
-	ctx := spanContext{}
+	ctx := &spanContext{}
 	ctx = ctx.WithBaggageItem("key", "value")
 	assert.Equal("value", ctx.baggage["key"])
 }

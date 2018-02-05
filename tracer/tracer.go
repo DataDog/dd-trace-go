@@ -78,7 +78,6 @@ func (t *Tracer) StartSpan(operationName string, options ...opentracing.StartSpa
 	for _, o := range options {
 		o.Apply(&sso)
 	}
-
 	return t.startSpanWithOptions(operationName, sso)
 }
 
@@ -87,13 +86,12 @@ func (t *Tracer) startSpanWithOptions(operationName string, options opentracing.
 		options.StartTime = time.Now().UTC()
 	}
 
-	var context spanContext
+	context := new(spanContext)
 	var hasParent bool
-	var parent *OpenSpan
-	var span *Span
+	var parent, span *Span
 
 	for _, ref := range options.References {
-		ctx, ok := ref.ReferencedContext.(spanContext)
+		ctx, ok := ref.ReferencedContext.(*spanContext)
 		if !ok {
 			// ignore the spanContext since it's not valid
 			continue
@@ -121,47 +119,41 @@ func (t *Tracer) startSpanWithOptions(operationName string, options opentracing.
 		}
 	} else {
 		// create a child Span that inherits from a parent
-		span = t.newChildSpan(operationName, parent.Span)
+		span = t.newChildSpan(operationName, parent)
 	}
 
 	// create an OpenTracing compatible Span; the SpanContext has a
 	// back-reference that is used for parent-child hierarchy
-	otSpan := &OpenSpan{
-		Span: span,
-		context: spanContext{
-			traceID:  span.TraceID,
-			spanID:   span.SpanID,
-			parentID: span.ParentID,
-			sampled:  span.Sampled,
-		},
-		tracer: t,
+	span.context = &spanContext{
+		traceID:  span.TraceID,
+		spanID:   span.SpanID,
+		parentID: span.ParentID,
+		sampled:  span.Sampled,
+		span:     span,
 	}
-	otSpan.context.span = otSpan
-
-	// set start time
-	otSpan.Span.Start = options.StartTime.UnixNano()
+	span.Start = options.StartTime.UnixNano()
+	span.tracer = t
 
 	if parent != nil {
 		// propagate baggage items
 		if l := len(parent.context.baggage); l > 0 {
-			otSpan.context.baggage = make(map[string]string, len(parent.context.baggage))
+			span.context.baggage = make(map[string]string, len(parent.context.baggage))
 			for k, v := range parent.context.baggage {
-				otSpan.context.baggage[k] = v
+				span.context.baggage[k] = v
 			}
 		}
 	}
 
 	// add tags from options
 	for k, v := range options.Tags {
-		otSpan.SetTag(k, v)
+		span.SetTag(k, v)
 	}
-
 	// add global tags
 	for k, v := range t.config.globalTags {
-		otSpan.SetTag(k, v)
+		span.SetTag(k, v)
 	}
 
-	return otSpan
+	return span
 }
 
 // Inject takes the `sm` SpanContext instance and injects it for
@@ -211,7 +203,7 @@ func (t *Tracer) SetServiceInfo(name, app, appType string) {
 func (t *Tracer) newRootSpan(name, service, resource string) *Span {
 	id := random.Uint64()
 
-	span := NewSpan(name, service, resource, id, id, 0, t)
+	span := newSpan(name, service, resource, id, id, 0, t)
 	span.buffer = newSpanBuffer(t.channels, 0, 0)
 	span.buffer.Push(span)
 	span.SetMeta(ext.Pid, strconv.Itoa(os.Getpid()))
@@ -234,7 +226,7 @@ func (t *Tracer) newChildSpan(name string, parent *Span) *Span {
 	defer parent.RUnlock()
 
 	id := random.Uint64()
-	span := NewSpan(name, parent.Service, name, id, parent.TraceID, parent.SpanID, parent.tracer)
+	span := newSpan(name, parent.Service, name, id, parent.TraceID, parent.SpanID, parent.tracer)
 	span.Sampled = parent.Sampled
 
 	if parent.HasSamplingPriority() {

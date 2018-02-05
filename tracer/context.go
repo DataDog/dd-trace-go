@@ -7,13 +7,13 @@ type spanContext struct {
 	spanID   uint64
 	parentID uint64
 	sampled  bool
-	span     *OpenSpan
+	span     *Span
 	baggage  map[string]string
 }
 
 // ForeachBaggageItem grants access to all baggage items stored in the
 // spanContext
-func (c spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
+func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	for k, v := range c.baggage {
 		if !handler(k, v) {
 			break
@@ -23,7 +23,7 @@ func (c spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 
 // WithBaggageItem returns an entirely new spanContext with the
 // given key:value baggage pair set.
-func (c spanContext) WithBaggageItem(key, val string) spanContext {
+func (c *spanContext) WithBaggageItem(key, val string) *spanContext {
 	var newBaggage map[string]string
 	if c.baggage == nil {
 		newBaggage = map[string]string{key: val}
@@ -35,7 +35,7 @@ func (c spanContext) WithBaggageItem(key, val string) spanContext {
 		newBaggage[key] = val
 	}
 	// Use positional parameters so the compiler will help catch new fields.
-	return spanContext{
+	return &spanContext{
 		traceID:  c.traceID,
 		spanID:   c.spanID,
 		parentID: c.parentID,

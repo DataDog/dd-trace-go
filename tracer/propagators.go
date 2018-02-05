@@ -56,7 +56,7 @@ type TextMapPropagator struct {
 // out of the current process. The implementation propagates the
 // TraceID and the current active SpanID, as well as the Span baggage.
 func (p *TextMapPropagator) Inject(context opentracing.SpanContext, carrier interface{}) error {
-	ctx, ok := context.(spanContext)
+	ctx, ok := context.(*spanContext)
 	if !ok {
 		return opentracing.ErrInvalidSpanContext
 	}
@@ -117,7 +117,7 @@ func (p *TextMapPropagator) Extract(carrier interface{}) (opentracing.SpanContex
 		return nil, opentracing.ErrSpanContextNotFound
 	}
 
-	return spanContext{
+	return &spanContext{
 		traceID: traceID,
 		spanID:  parentID,
 		baggage: decodedBaggage,
