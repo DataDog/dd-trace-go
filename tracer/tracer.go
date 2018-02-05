@@ -4,7 +4,6 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/tracer/ext"
@@ -35,8 +34,7 @@ type Tracer struct {
 	channels tracerChans
 	services map[string]service // name -> service
 
-	exit   chan struct{}
-	exitWG *sync.WaitGroup
+	exit chan chan<- bool
 
 	forceFlushIn  chan struct{}
 	forceFlushOut chan struct{}
@@ -55,13 +53,11 @@ func New(opts ...Option) *Tracer {
 		config:        c,
 		channels:      newTracerChans(),
 		services:      make(map[string]service),
-		exit:          make(chan struct{}),
-		exitWG:        &sync.WaitGroup{},
+		exit:          make(chan chan<- bool),
 		forceFlushIn:  make(chan struct{}),
 		forceFlushOut: make(chan struct{}),
 	}
 
-	t.exitWG.Add(1)
 	go t.worker()
 
 	return t
@@ -181,8 +177,9 @@ func (t *Tracer) Extract(format interface{}, carrier interface{}) (opentracing.S
 
 // Stop stops the tracer.
 func (t *Tracer) Stop() {
-	close(t.exit)
-	t.exitWG.Wait()
+	done := make(chan bool)
+	t.exit <- done
+	<-done
 }
 
 // SetServiceInfo update the application and application type for the given
@@ -334,14 +331,12 @@ func (t *Tracer) Sample(span *Span) {
 
 // worker periodically flushes traces and services to the transport.
 func (t *Tracer) worker() {
-	defer t.exitWG.Done()
-
-	flushTicker := time.NewTicker(flushInterval)
-	defer flushTicker.Stop()
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
 
 	for {
 		select {
-		case <-flushTicker.C:
+		case <-ticker.C:
 			t.flush()
 
 		case <-t.forceFlushIn:
@@ -357,8 +352,9 @@ func (t *Tracer) worker() {
 		case <-t.channels.errFlush:
 			t.flushErrs()
 
-		case <-t.exit:
+		case done := <-t.exit:
 			t.flush()
+			done <- true
 			return
 		}
 	}
