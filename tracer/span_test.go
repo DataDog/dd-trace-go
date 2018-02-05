@@ -271,19 +271,6 @@ func TestSpanError_Typed(t *testing.T) {
 	assert.NotEqual("", span.Meta["error.stack"])
 }
 
-func TestEmptySpan(t *testing.T) {
-	// ensure the empty span won't crash the app
-	var span Span
-	span.SetMeta("a", "b")
-	span.SetError(nil)
-	span.Finish()
-
-	var s *Span
-	s.SetMeta("a", "b")
-	s.SetError(nil)
-	s.Finish()
-}
-
 func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
 	tracer := NewTracer()

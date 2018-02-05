@@ -102,39 +102,6 @@ func TestOpenTracerSpanStartTime(t *testing.T) {
 
 // OLD ////////////////////////////////
 
-func TestDefaultTracer(t *testing.T) {
-	assert := assert.New(t)
-
-	var wg sync.WaitGroup
-
-	// the default client must be available
-	assert.NotNil(DefaultTracer)
-
-	// package free functions must proxy the calls to the
-	// default client
-	root := NewRootSpan("pylons.request", "pylons", "/")
-	NewChildSpan("pylons.request", root)
-
-	wg.Add(2)
-
-	go func() {
-		for i := 0; i < 1000; i++ {
-			Disable()
-			Enable()
-		}
-		wg.Done()
-	}()
-
-	go func() {
-		for i := 0; i < 1000; i++ {
-			_ = DefaultTracer.Enabled()
-		}
-		wg.Done()
-	}()
-
-	wg.Wait()
-}
-
 func TestNewSpan(t *testing.T) {
 	assert := assert.New(t)
 
@@ -260,32 +227,6 @@ func TestNewChildHasNoPid(t *testing.T) {
 	child := tracer.NewChildSpan("redis.command", root)
 
 	assert.Equal("", child.GetMeta(ext.Pid))
-}
-
-func TestTracerDisabled(t *testing.T) {
-	assert := assert.New(t)
-
-	// disable the tracer and be sure that the span is not added
-	tracer := NewTracer()
-	tracer.SetEnabled(false)
-	span := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	span.Finish()
-	assert.Len(tracer.channels.trace, 0)
-}
-
-func TestTracerEnabledAgain(t *testing.T) {
-	assert := assert.New(t)
-
-	// disable the tracer and enable it again
-	tracer := NewTracer()
-	tracer.SetEnabled(false)
-	preSpan := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	preSpan.Finish()
-	assert.Len(tracer.channels.trace, 0)
-	tracer.SetEnabled(true)
-	postSpan := tracer.NewRootSpan("pylons.request", "pylons", "/")
-	postSpan.Finish()
-	assert.Len(tracer.channels.trace, 1)
 }
 
 func TestTracerSampler(t *testing.T) {
@@ -469,23 +410,8 @@ func TestTracerServices(t *testing.T) {
 	assert.Equal("d", svc2.AppType)
 }
 
-func TestTracerServicesDisabled(t *testing.T) {
-	assert := assert.New(t)
-	tracer, transport := getTestTracer()
-
-	tracer.SetEnabled(false)
-	tracer.SetServiceInfo("svc1", "a", "b")
-	tracer.Stop()
-
-	assert.Len(transport.services, 0)
-}
-
 func TestTracerMeta(t *testing.T) {
 	assert := assert.New(t)
-
-	var nilTracer *Tracer
-	nilTracer.SetMeta("key", "value")
-	assert.Nil(nilTracer.getAllMeta(), "nil tracer should return nil meta")
 
 	tracer, _ := getTestTracer()
 	defer tracer.Stop()
@@ -693,7 +619,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 // getTestTracer returns a Tracer with a DummyTransport
 func getTestTracer() (*Tracer, *dummyTransport) {
 	transport := &dummyTransport{getEncoder: msgpackEncoderFactory}
-	tracer := NewTracerTransport(transport)
+	tracer := New(WithTransport(transport))
 	return tracer, transport
 }
 
