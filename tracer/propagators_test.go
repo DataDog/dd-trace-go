@@ -17,18 +17,18 @@ func TestOpenTracerPropagationDefaults(t *testing.T) {
 	ctx := root.Context()
 	headers := http.Header{}
 
-	// inject the SpanContext
+	// inject the spanContext
 	carrier := opentracing.HTTPHeadersCarrier(headers)
 	err := tracer.Inject(ctx, opentracing.HTTPHeaders, carrier)
 	assert.Nil(err)
 
-	// retrieve the SpanContext
+	// retrieve the spanContext
 	propagated, err := tracer.Extract(opentracing.HTTPHeaders, carrier)
 	assert.Nil(err)
 
-	tCtx, ok := ctx.(SpanContext)
+	tCtx, ok := ctx.(spanContext)
 	assert.True(ok)
-	tPropagated, ok := propagated.(SpanContext)
+	tPropagated, ok := propagated.(spanContext)
 	assert.True(ok)
 
 	// compare if there is a Context match

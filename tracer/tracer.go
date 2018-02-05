@@ -87,15 +87,15 @@ func (t *Tracer) startSpanWithOptions(operationName string, options opentracing.
 		options.StartTime = time.Now().UTC()
 	}
 
-	var context SpanContext
+	var context spanContext
 	var hasParent bool
 	var parent *OpenSpan
 	var span *Span
 
 	for _, ref := range options.References {
-		ctx, ok := ref.ReferencedContext.(SpanContext)
+		ctx, ok := ref.ReferencedContext.(spanContext)
 		if !ok {
-			// ignore the SpanContext since it's not valid
+			// ignore the spanContext since it's not valid
 			continue
 		}
 
@@ -128,7 +128,7 @@ func (t *Tracer) startSpanWithOptions(operationName string, options opentracing.
 	// back-reference that is used for parent-child hierarchy
 	otSpan := &OpenSpan{
 		Span: span,
-		context: SpanContext{
+		context: spanContext{
 			traceID:  span.TraceID,
 			spanID:   span.SpanID,
 			parentID: span.ParentID,

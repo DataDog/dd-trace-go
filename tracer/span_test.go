@@ -16,7 +16,7 @@ func newOpenSpan(operationName string) *OpenSpan {
 	span := NewSpan(operationName, "", "", 0, 0, 0, DefaultTracer)
 	otSpan := &OpenSpan{
 		Span: span,
-		context: SpanContext{
+		context: spanContext{
 			traceID:  span.TraceID,
 			spanID:   span.SpanID,
 			parentID: span.ParentID,
@@ -24,7 +24,7 @@ func newOpenSpan(operationName string) *OpenSpan {
 		},
 	}
 
-	// SpanContext is propagated and used to create children
+	// spanContext is propagated and used to create children
 	otSpan.context.span = otSpan
 	return otSpan
 }

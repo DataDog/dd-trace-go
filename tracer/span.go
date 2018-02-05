@@ -18,7 +18,7 @@ var _ opentracing.Span = (*OpenSpan)(nil)
 // Spans are created by the Tracer interface.
 type OpenSpan struct {
 	*Span
-	context SpanContext
+	context spanContext
 	tracer  *Tracer
 }
 
