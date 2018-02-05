@@ -1,7 +1,6 @@
 package tracer
 
 import (
-	"context"
 	"log"
 	"math/rand"
 	"os"
@@ -122,7 +121,7 @@ func (t *Tracer) startSpanWithOptions(operationName string, options opentracing.
 
 	if parent == nil {
 		// create a root Span with the default service name and resource
-		span = t.NewRootSpan(operationName, t.config.serviceName, operationName)
+		span = t.newRootSpan(operationName, t.config.serviceName, operationName)
 
 		if hasParent {
 			// the Context doesn't have a Span reference because it
@@ -134,7 +133,7 @@ func (t *Tracer) startSpanWithOptions(operationName string, options opentracing.
 		}
 	} else {
 		// create a child Span that inherits from a parent
-		span = t.NewChildSpan(operationName, parent.Span)
+		span = t.newChildSpan(operationName, parent.Span)
 	}
 
 	// create an OpenTracing compatible Span; the SpanContext has a
@@ -203,14 +202,6 @@ func (t *Tracer) Extract(format interface{}, carrier interface{}) (opentracing.S
 	return nil, opentracing.ErrUnsupportedFormat
 }
 
-// OLD ////////////////////////////////
-
-// NewTracer creates a new Tracer. Most users should use the package's
-// DefaultTracer instance.
-func NewTracer() *Tracer {
-	return New(WithTransport(newDefaultTransport()))
-}
-
 // Stop stops the tracer.
 func (t *Tracer) Stop() {
 	close(t.exit)
@@ -269,77 +260,46 @@ func (t *Tracer) getAllMeta() map[string]string {
 	return meta
 }
 
-// NewRootSpan creates a span with no parent. Its ids will be randomly
+// newRootSpan creates a span with no parent. Its ids will be randomly
 // assigned.
-func (t *Tracer) NewRootSpan(name, service, resource string) *Span {
-	spanID := NextSpanID()
-	span := NewSpan(name, service, resource, spanID, spanID, 0, t)
+func (t *Tracer) newRootSpan(name, service, resource string) *Span {
+	id := NextSpanID()
 
+	span := NewSpan(name, service, resource, id, id, 0, t)
 	span.buffer = newSpanBuffer(t.channels, 0, 0)
-	t.Sample(span)
-	// [TODO:christian] introduce distributed sampling here
 	span.buffer.Push(span)
-
-	// Add the process id to all root spans
 	span.SetMeta(ext.Pid, strconv.Itoa(os.Getpid()))
+
+	// TODO(ufoot): introduce distributed sampling here
+	t.Sample(span)
 
 	return span
 }
 
-// NewChildSpan returns a new span that is child of the Span passed as
+// newChildSpan returns a new span that is child of the Span passed as
 // argument.
-func (t *Tracer) NewChildSpan(name string, parent *Span) *Span {
-	spanID := NextSpanID()
-
-	// when we're using parenting in inner functions, it's possible that
-	// a nil pointer is sent to this function as argument. To prevent a crash,
-	// it's better to be defensive and to produce a wrongly configured span
-	// that is not sent to the trace agent.
+func (t *Tracer) newChildSpan(name string, parent *Span) *Span {
 	if parent == nil {
-		span := NewSpan(name, "", name, spanID, spanID, spanID, t)
-
-		span.buffer = newSpanBuffer(t.channels, 0, 0)
-		t.Sample(span)
-		// [TODO:christian] introduce distributed sampling here
-		span.buffer.Push(span)
-
-		return span
+		// don't crash
+		return t.newRootSpan(name, t.config.serviceName, name)
 	}
 
 	parent.RLock()
-	// child that is correctly configured
-	span := NewSpan(name, parent.Service, name, spanID, parent.TraceID, parent.SpanID, parent.tracer)
+	defer parent.RUnlock()
 
-	// child sampling same as the parent
+	id := NextSpanID()
+	span := NewSpan(name, parent.Service, name, id, parent.TraceID, parent.SpanID, parent.tracer)
 	span.Sampled = parent.Sampled
+
 	if parent.HasSamplingPriority() {
 		span.SetSamplingPriority(parent.GetSamplingPriority())
 	}
 
 	span.parent = parent
 	span.buffer = parent.buffer
-	parent.RUnlock()
-
 	span.buffer.Push(span)
 
 	return span
-}
-
-// NewChildSpanFromContext will create a child span of the span contained in
-// the given context. If the context contains no span, an empty span will be
-// returned.
-func (t *Tracer) NewChildSpanFromContext(name string, ctx context.Context) *Span {
-	span, _ := SpanFromContext(ctx) // tolerate nil spans
-	return t.NewChildSpan(name, span)
-}
-
-// NewChildSpanWithContext will create and return a child span of the span contained in the given
-// context, as well as a copy of the parent context containing the created
-// child span. If the context contains no span, an empty root span will be returned.
-// If nil is passed in for the context, a context will be created.
-func (t *Tracer) NewChildSpanWithContext(name string, ctx context.Context) (*Span, context.Context) {
-	span := t.NewChildSpanFromContext(name, ctx)
-	return span, span.Context(ctx)
 }
 
 func (t *Tracer) getTraces() [][]*Span {
@@ -472,34 +432,19 @@ func (t *Tracer) worker() {
 // DefaultTracer is a global tracer that is enabled by default. All of the
 // packages top level NewSpan functions use the default tracer.
 //
-//	span := tracer.NewRootSpan("sql.query", "user-db", "select * from foo where id = ?")
+//	span := tracer.newRootSpan("sql.query", "user-db", "select * from foo where id = ?")
 //	defer span.Finish()
 //
-var DefaultTracer = NewTracer()
+var DefaultTracer = New(WithTransport(newDefaultTransport()))
 
-// NewRootSpan creates a span with no parent. Its ids will be randomly
+// newRootSpan creates a span with no parent. Its ids will be randomly
 // assigned.
-func NewRootSpan(name, service, resource string) *Span {
-	return DefaultTracer.NewRootSpan(name, service, resource)
+func newRootSpan(name, service, resource string) *Span {
+	return DefaultTracer.newRootSpan(name, service, resource)
 }
 
-// NewChildSpan creates a span that is a child of parent. It will inherit the
+// newChildSpan creates a span that is a child of parent. It will inherit the
 // parent's service and resource.
-func NewChildSpan(name string, parent *Span) *Span {
-	return DefaultTracer.NewChildSpan(name, parent)
-}
-
-// NewChildSpanFromContext will create a child span of the span contained in
-// the given context. If the context contains no span, a span with
-// no service or resource will be returned.
-func NewChildSpanFromContext(name string, ctx context.Context) *Span {
-	return DefaultTracer.NewChildSpanFromContext(name, ctx)
-}
-
-// NewChildSpanWithContext will create and return a child span of the span contained in the given
-// context, as well as a copy of the parent context containing the created
-// child span. If the context contains no span, an empty root span will be returned.
-// If nil is passed in for the context, a context will be created.
-func NewChildSpanWithContext(name string, ctx context.Context) (*Span, context.Context) {
-	return DefaultTracer.NewChildSpanWithContext(name, ctx)
+func newChildSpan(name string, parent *Span) *Span {
+	return DefaultTracer.newChildSpan(name, parent)
 }
