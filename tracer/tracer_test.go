@@ -141,7 +141,7 @@ func TestnewRootSpanHasPid(t *testing.T) {
 	tracer := New(WithTransport(newDefaultTransport()))
 	root := tracer.newRootSpan("pylons.request", "pylons", "/")
 
-	assert.Equal(strconv.Itoa(os.Getpid()), root.GetMeta(ext.Pid))
+	assert.Equal(strconv.Itoa(os.Getpid()), root.getMeta(ext.Pid))
 }
 
 func TestNewChildHasNoPid(t *testing.T) {
@@ -151,7 +151,7 @@ func TestNewChildHasNoPid(t *testing.T) {
 	root := tracer.newRootSpan("pylons.request", "pylons", "/")
 	child := tracer.newChildSpan("redis.command", root)
 
-	assert.Equal("", child.GetMeta(ext.Pid))
+	assert.Equal("", child.getMeta(ext.Pid))
 }
 
 func TestTracerSampler(t *testing.T) {
