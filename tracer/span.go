@@ -122,6 +122,11 @@ func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 	if s.finished {
 		return s
 	}
+	if v, ok := toFloat64(value); ok {
+		// sent as numeric value, so we can store it as a metric
+		s.Metrics[key] = v
+		return s
+	}
 	if key == string(ext.SamplingPriority) {
 		// setting sampling.priority per opentracing spec.
 		if v, ok := value.(int); ok {
@@ -159,7 +164,7 @@ func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 		}
 	default:
 		// regular string tag
-		s.setMeta(key, fmt.Sprint(value))
+		s.Meta[key] = fmt.Sprint(value)
 	}
 	return s
 }

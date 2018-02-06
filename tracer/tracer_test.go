@@ -372,11 +372,11 @@ func TestTracerRace(t *testing.T) {
 
 			if odd {
 				parent.SetTag("odd", "true")
-				parent.setMetric("oddity", 1)
+				parent.SetTag("oddity", 1)
 				parent.Finish()
 			} else {
 				child.SetTag("odd", "false")
-				child.setMetric("oddity", 0)
+				child.SetTag("oddity", 0)
 				child.Finish()
 			}
 
@@ -387,11 +387,11 @@ func TestTracerRace(t *testing.T) {
 			if odd {
 				child.Resource = "HGETALL"
 				child.SetTag("odd", "false")
-				child.setMetric("oddity", 0)
+				child.SetTag("oddity", 0)
 			} else {
 				parent.Resource = "/" + strconv.Itoa(i) + ".html"
 				parent.SetTag("odd", "true")
-				parent.setMetric("oddity", 1)
+				parent.SetTag("oddity", 1)
 			}
 
 			if i%19 == 0 {
