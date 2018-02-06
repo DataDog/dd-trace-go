@@ -91,58 +91,6 @@ func TestOpenSpanSetDatadogTags(t *testing.T) {
 	assert.Equal("SELECT * FROM users;", span.Resource)
 }
 
-func TestOpenSpanSetErrorTag(t *testing.T) {
-	assert := assert.New(t)
-
-	for _, tt := range []struct {
-		name string      // span name
-		val  interface{} // tag value
-		msg  string      // error message
-		typ  string      // error type
-	}{
-		{
-			name: "error.error",
-			val:  errors.New("some error"),
-			msg:  "some error",
-			typ:  "*errors.errorString",
-		},
-		{
-			name: "error.string",
-			val:  "some string error",
-			msg:  "some string error",
-			typ:  "*errors.errorString",
-		},
-		{
-			name: "error.struct",
-			val:  struct{ N int }{5},
-			msg:  "{5}",
-			typ:  "*errors.errorString",
-		},
-		{
-			name: "error.other",
-			val:  1,
-			msg:  "1",
-			typ:  "*errors.errorString",
-		},
-		{
-			name: "error.nil",
-			val:  nil,
-			msg:  "",
-			typ:  "",
-		},
-	} {
-		span := newOpenSpan(tt.name)
-		span.SetTag(Error, tt.val)
-
-		assert.Equal(span.Meta["error.msg"], tt.msg)
-		assert.Equal(span.Meta["error.type"], tt.typ)
-
-		if tt.val != nil {
-			assert.NotEqual(span.Meta["error.stack"], "")
-		}
-	}
-}
-
 func TestSpanStart(t *testing.T) {
 	assert := assert.New(t)
 	tracer := New(WithTransport(newDefaultTransport()))
@@ -162,19 +110,19 @@ func TestSpanString(t *testing.T) {
 	assert.NotEqual("", span.String())
 }
 
-func TestSpanSetMeta(t *testing.T) {
+func TestSpanSetTag(t *testing.T) {
 	assert := assert.New(t)
 	tracer := New(WithTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the map is properly initialized
-	span.SetMeta("status.code", "200")
+	span.SetTag("status.code", "200")
 	assert.Equal("200", span.Meta["status.code"])
 
 	// operating on a finished span is a no-op
 	nMeta := len(span.Meta)
 	span.Finish()
-	span.SetMeta("finished.test", "true")
+	span.SetTag("finished.test", "true")
 	assert.Equal(len(span.Meta), nMeta)
 	assert.Equal(span.Meta["finished.test"], "")
 }
@@ -185,13 +133,13 @@ func TestSpanSetMetric(t *testing.T) {
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the map is properly initialized
-	span.SetMetric("bytes", 1024.42)
+	span.setMetric("bytes", 1024.42)
 	assert.Equal(1, len(span.Metrics))
 	assert.Equal(1024.42, span.Metrics["bytes"])
 
 	// operating on a finished span is a no-op
 	span.Finish()
-	span.SetMetric("finished.test", 1337)
+	span.setMetric("finished.test", 1337)
 	assert.Equal(1, len(span.Metrics))
 	assert.Equal(0.0, span.Metrics["finished.test"])
 }
@@ -293,9 +241,9 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		span.Finish()
 		// It doesn't make much sense to update the span after it's been finished,
 		// but an error in a user's code could lead to this.
-		span.SetMeta("race_test", "true")
-		span.SetMetric("race_test2", 133.7)
-		span.SetMetric("race_test3", 133.7)
+		span.SetTag("race_test", "true")
+		span.setMetric("race_test2", 133.7)
+		span.setMetric("race_test3", 133.7)
 		span.SetError(errors.New("t"))
 		done <- struct{}{}
 	}()
@@ -317,13 +265,13 @@ func TestSpanSamplingPriority(t *testing.T) {
 
 	span := tracer.newRootSpan("my.name", "my.service", "my.resource")
 	assert.Equal(0.0, span.Metrics["_sampling_priority_v1"], "default sampling priority if undefined is 0")
-	assert.False(span.HasSamplingPriority(), "by default, sampling priority is undefined")
-	assert.Equal(0, span.GetSamplingPriority(), "default sampling priority for root spans is 0")
+	assert.False(span.hasSamplingPriority(), "by default, sampling priority is undefined")
+	assert.Equal(0, span.getSamplingPriority(), "default sampling priority for root spans is 0")
 
 	childSpan := tracer.newChildSpan("my.child", span)
 	assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
-	assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
-	assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
+	assert.Equal(span.hasSamplingPriority(), childSpan.hasSamplingPriority())
+	assert.Equal(span.getSamplingPriority(), childSpan.getSamplingPriority())
 
 	for _, priority := range []int{
 		ext.PriorityUserReject,
@@ -332,13 +280,13 @@ func TestSpanSamplingPriority(t *testing.T) {
 		ext.PriorityUserKeep,
 		999, // not used yet, but we should allow it
 	} {
-		span.SetSamplingPriority(priority)
-		assert.True(span.HasSamplingPriority())
-		assert.Equal(priority, span.GetSamplingPriority())
+		span.setSamplingPriority(priority)
+		assert.True(span.hasSamplingPriority())
+		assert.Equal(priority, span.getSamplingPriority())
 		childSpan = tracer.newChildSpan("my.child", span)
 		assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
-		assert.Equal(span.HasSamplingPriority(), childSpan.HasSamplingPriority())
-		assert.Equal(span.GetSamplingPriority(), childSpan.GetSamplingPriority())
+		assert.Equal(span.hasSamplingPriority(), childSpan.hasSamplingPriority())
+		assert.Equal(span.getSamplingPriority(), childSpan.getSamplingPriority())
 	}
 }
 

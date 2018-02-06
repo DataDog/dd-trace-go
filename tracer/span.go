@@ -14,127 +14,6 @@ import (
 
 var _ opentracing.Span = (*span)(nil)
 
-// Tracer provides access to the `Tracer`` that created this Span.
-func (s *span) Tracer() opentracing.Tracer { return s.tracer }
-
-// Context yields the SpanContext for this Span. Note that the return
-// value of Context() is still valid after a call to Span.Finish(), as is
-// a call to Span.Context() after a call to Span.Finish().
-func (s *span) Context() opentracing.SpanContext {
-	s.RLock()
-	defer s.RUnlock()
-
-	return s.context
-}
-
-// SetBaggageItem sets a key:value pair on this Span and its SpanContext
-// that also propagates to descendants of this Span.
-func (s *span) SetBaggageItem(key, val string) opentracing.Span {
-	s.Lock()
-	defer s.Unlock()
-
-	s.context.setBaggageItem(key, val)
-	return s
-}
-
-// BaggageItem gets the value for a baggage item given its key. Returns the empty string
-// if the value isn't found in this Span.
-func (s *span) BaggageItem(key string) string {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.context.baggage[key]
-}
-
-// SetTag adds a tag to the span, overwriting pre-existing values for
-// the given `key`.
-func (s *span) SetTag(key string, value interface{}) opentracing.Span {
-	switch key {
-	case ServiceName:
-		s.Lock()
-		defer s.Unlock()
-		s.Service = fmt.Sprint(value)
-	case ResourceName:
-		s.Lock()
-		defer s.Unlock()
-		s.Resource = fmt.Sprint(value)
-	case SpanType:
-		s.Lock()
-		defer s.Unlock()
-		s.Type = fmt.Sprint(value)
-	case Error:
-		switch v := value.(type) {
-		case nil:
-			// no error
-		case error:
-			s.SetError(v)
-		default:
-			s.SetError(fmt.Errorf("%v", v))
-		}
-	default:
-		// NOTE: locking is not required because the `SetMeta` is
-		// already thread-safe
-		s.SetMeta(key, fmt.Sprint(value))
-	}
-	return s
-}
-
-// FinishWithOptions is like Finish() but with explicit control over
-// timestamps and log data.
-func (s *span) FinishWithOptions(options opentracing.FinishOptions) {
-	if options.FinishTime.IsZero() {
-		options.FinishTime = time.Now().UTC()
-	}
-
-	s.FinishWithTime(options.FinishTime.UnixNano())
-}
-
-// SetOperationName sets or changes the operation name.
-func (s *span) SetOperationName(operationName string) opentracing.Span {
-	s.Lock()
-	defer s.Unlock()
-
-	s.Name = operationName
-	return s
-}
-
-// LogFields is an efficient and type-checked way to record key:value
-// logging data about a Span, though the programming interface is a little
-// more verbose than LogKV().
-func (s *span) LogFields(fields ...log.Field) {
-	// TODO: implementation missing
-}
-
-// LogKV is a concise, readable way to record key:value logging data about
-// a span, though unfortunately this also makes it less efficient and less
-// type-safe than LogFields().
-func (s *span) LogKV(keyVals ...interface{}) {
-	// TODO: implementation missing
-}
-
-// LogEvent is deprecated: use LogFields or LogKV
-func (s *span) LogEvent(event string) {
-	// TODO: implementation missing
-}
-
-// LogEventWithPayload deprecated: use LogFields or LogKV
-func (s *span) LogEventWithPayload(event string, payload interface{}) {
-	// TODO: implementation missing
-}
-
-// Log is deprecated: use LogFields or LogKV
-func (s *span) Log(data opentracing.LogData) {
-	// TODO: implementation missing
-}
-
-const (
-	errorMsgKey   = "error.msg"
-	errorTypeKey  = "error.type"
-	errorStackKey = "error.stack"
-
-	samplingPriorityKey = "_sampling_priority_v1"
-)
-
 // Span represents a computation. Callers must call Finish when a span is
 // complete to ensure it's submitted.
 //
@@ -188,6 +67,104 @@ type span struct {
 	context *spanContext
 }
 
+// Tracer provides access to the `Tracer`` that created this Span.
+func (s *span) Tracer() opentracing.Tracer { return s.tracer }
+
+// Context yields the SpanContext for this Span. Note that the return
+// value of Context() is still valid after a call to Span.Finish(), as is
+// a call to Span.Context() after a call to Span.Finish().
+func (s *span) Context() opentracing.SpanContext {
+	s.RLock()
+	defer s.RUnlock()
+
+	return s.context
+}
+
+// SetBaggageItem sets a key:value pair on this Span and its SpanContext
+// that also propagates to descendants of this Span.
+func (s *span) SetBaggageItem(key, val string) opentracing.Span {
+	s.Lock()
+	defer s.Unlock()
+
+	s.context.setBaggageItem(key, val)
+	return s
+}
+
+// BaggageItem gets the value for a baggage item given its key. Returns the empty string
+// if the value isn't found in this Span.
+func (s *span) BaggageItem(key string) string {
+	s.Lock()
+	defer s.Unlock()
+
+	return s.context.baggage[key]
+}
+
+// SetTag adds a tag to the span, overwriting pre-existing values for
+// the given `key`.
+func (s *span) SetTag(key string, value interface{}) opentracing.Span {
+	s.Lock()
+	defer s.Unlock()
+	switch key {
+	case ServiceName:
+		s.Service = fmt.Sprint(value)
+	case ResourceName:
+		s.Resource = fmt.Sprint(value)
+	case SpanType:
+		s.Type = fmt.Sprint(value)
+	default:
+		s.setMeta(key, fmt.Sprint(value))
+	}
+	return s
+}
+
+// FinishWithOptions is like Finish() but with explicit control over
+// timestamps and log data.
+func (s *span) FinishWithOptions(options opentracing.FinishOptions) {
+	if options.FinishTime.IsZero() {
+		options.FinishTime = time.Now().UTC()
+	}
+
+	s.FinishWithTime(options.FinishTime.UnixNano())
+}
+
+// SetOperationName sets or changes the operation name.
+func (s *span) SetOperationName(operationName string) opentracing.Span {
+	s.Lock()
+	defer s.Unlock()
+
+	s.Name = operationName
+	return s
+}
+
+// LogFields is an efficient and type-checked way to record key:value
+// logging data about a Span, though the programming interface is a little
+// more verbose than LogKV().
+func (s *span) LogFields(fields ...log.Field) {
+	// TODO: implementation missing
+}
+
+// LogKV is a concise, readable way to record key:value logging data about
+// a span, though unfortunately this also makes it less efficient and less
+// type-safe than LogFields().
+func (s *span) LogKV(keyVals ...interface{}) {
+	// TODO: implementation missing
+}
+
+// LogEvent is deprecated: use LogFields or LogKV
+func (s *span) LogEvent(event string) {
+	// TODO: implementation missing
+}
+
+// LogEventWithPayload deprecated: use LogFields or LogKV
+func (s *span) LogEventWithPayload(event string, payload interface{}) {
+	// TODO: implementation missing
+}
+
+// Log is deprecated: use LogFields or LogKV
+func (s *span) Log(data opentracing.LogData) {
+	// TODO: implementation missing
+}
+
 // newSpan creates a new span. This is a low-level function, required for testing and advanced usage.
 // Most of the time one should prefer the Tracer NewRootSpan or NewChildSpan methods.
 func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *span {
@@ -218,14 +195,6 @@ func (s *span) setMeta(key, value string) {
 	s.Meta[key] = value
 }
 
-// SetMeta adds an arbitrary meta field to the current Span.
-// If the Span has been finished, it will not be modified by the method.
-func (s *span) SetMeta(key, value string) {
-	s.Lock()
-	defer s.Unlock()
-	s.setMeta(key, value)
-}
-
 // getMeta will return the value for the given tag or the empty string if it
 // doesn't exist.
 func (s *span) getMeta(key string) string {
@@ -234,10 +203,10 @@ func (s *span) getMeta(key string) string {
 	return s.Meta[key]
 }
 
-// SetMetric sets a float64 value for the given key. It acts
+// setMetric sets a float64 value for the given key. It acts
 // like `set_meta()` and it simply add a tag without further processing.
 // This method doesn't create a Datadog metric.
-func (s *span) SetMetric(key string, val float64) {
+func (s *span) setMetric(key string, val float64) {
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -248,6 +217,12 @@ func (s *span) SetMetric(key string, val float64) {
 	}
 	s.Metrics[key] = val
 }
+
+const (
+	errorMsgKey   = "error.msg"
+	errorTypeKey  = "error.type"
+	errorStackKey = "error.stack"
+)
 
 // SetError stores an error object within the span meta. The Error status is
 // updated and the error.Error() string is included with a default meta key.
@@ -352,19 +327,25 @@ func (s *span) String() string {
 	return strings.Join(lines, "\n")
 }
 
-// SetSamplingPriority sets the sampling priority.
-func (s *span) SetSamplingPriority(priority int) {
-	s.SetMetric(samplingPriorityKey, float64(priority))
+const samplingPriorityKey = "_sampling_priority_v1"
+
+// setSamplingPriority sets the sampling priority.
+func (s *span) setSamplingPriority(priority int) {
+	s.setMetric(samplingPriorityKey, float64(priority))
 }
 
-// HasSamplingPriority returns true if sampling priority is set.
+// hasSamplingPriority returns true if sampling priority is set.
 // It can be defined to either zero or non-zero.
-func (s *span) HasSamplingPriority() bool {
-	_, hasSamplingPriority := s.Metrics[samplingPriorityKey]
-	return hasSamplingPriority
+func (s *span) hasSamplingPriority() bool {
+	s.RLock()
+	defer s.RUnlock()
+	_, ok := s.Metrics[samplingPriorityKey]
+	return ok
 }
 
-// GetSamplingPriority gets the sampling priority.
-func (s *span) GetSamplingPriority() int {
+// getSamplingPriority gets the sampling priority.
+func (s *span) getSamplingPriority() int {
+	s.RLock()
+	defer s.RUnlock()
 	return int(s.Metrics[samplingPriorityKey])
 }

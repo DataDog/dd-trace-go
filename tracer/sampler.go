@@ -53,9 +53,8 @@ func (r *RateSampler) Sample(s opentracing.Span) {
 	}
 	r.RLock()
 	defer r.RUnlock()
-
 	if r.rate < 1 {
 		span.Sampled = span.TraceID*knuthFactor < uint64(r.rate*math.MaxUint64)
-		span.SetMetric(sampleRateMetricKey, r.rate)
+		span.setMetric(sampleRateMetricKey, r.rate)
 	}
 }

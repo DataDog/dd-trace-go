@@ -371,12 +371,12 @@ func TestTracerRace(t *testing.T) {
 			}
 
 			if odd {
-				parent.SetMeta("odd", "true")
-				parent.SetMetric("oddity", 1)
+				parent.SetTag("odd", "true")
+				parent.setMetric("oddity", 1)
 				parent.Finish()
 			} else {
-				child.SetMeta("odd", "false")
-				child.SetMetric("oddity", 0)
+				child.SetTag("odd", "false")
+				child.setMetric("oddity", 0)
 				child.Finish()
 			}
 
@@ -386,12 +386,12 @@ func TestTracerRace(t *testing.T) {
 
 			if odd {
 				child.Resource = "HGETALL"
-				child.SetMeta("odd", "false")
-				child.SetMetric("oddity", 0)
+				child.SetTag("odd", "false")
+				child.setMetric("oddity", 0)
 			} else {
 				parent.Resource = "/" + strconv.Itoa(i) + ".html"
-				parent.SetMeta("odd", "true")
-				parent.SetMetric("oddity", 1)
+				parent.SetTag("odd", "true")
+				parent.setMetric("oddity", 1)
 			}
 
 			if i%19 == 0 {
