@@ -127,8 +127,6 @@ func (s *span) Log(data opentracing.LogData) {
 	// TODO: implementation missing
 }
 
-// OLD ////////////////////////////////
-
 const (
 	errorMsgKey   = "error.msg"
 	errorTypeKey  = "error.type"
@@ -217,11 +215,7 @@ func (s *span) setMeta(key, value string) {
 	if s.finished {
 		return
 	}
-	if s.Meta == nil {
-		s.Meta = make(map[string]string)
-	}
 	s.Meta[key] = value
-
 }
 
 // SetMeta adds an arbitrary meta field to the current Span.
@@ -229,34 +223,15 @@ func (s *span) setMeta(key, value string) {
 func (s *span) SetMeta(key, value string) {
 	s.Lock()
 	defer s.Unlock()
-
 	s.setMeta(key, value)
-
 }
 
-// SetMetas adds arbitrary meta fields from a given map to the current Span.
-// If the Span has been finished, it will not be modified by the method.
-func (s *span) SetMetas(metas map[string]string) {
-	for k, v := range metas {
-		s.SetMeta(k, v)
-	}
-}
-
-// GetMeta will return the value for the given tag or the empty string if it
+// getMeta will return the value for the given tag or the empty string if it
 // doesn't exist.
-func (s *span) GetMeta(key string) string {
+func (s *span) getMeta(key string) string {
 	s.RLock()
 	defer s.RUnlock()
-	if s.Meta == nil {
-		return ""
-	}
 	return s.Meta[key]
-}
-
-// SetMetrics adds a metric field to the current Span.
-// DEPRECATED: Use SetMetric
-func (s *span) SetMetrics(key string, value float64) {
-	s.SetMetric(key, value)
 }
 
 // SetMetric sets a float64 value for the given key. It acts
@@ -265,16 +240,11 @@ func (s *span) SetMetrics(key string, value float64) {
 func (s *span) SetMetric(key string, val float64) {
 	s.Lock()
 	defer s.Unlock()
-
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
-	}
-
-	if s.Metrics == nil {
-		s.Metrics = make(map[string]float64)
 	}
 	s.Metrics[key] = val
 }
@@ -283,10 +253,9 @@ func (s *span) SetMetric(key string, val float64) {
 // updated and the error.Error() string is included with a default meta key.
 // If the span has been finished, it will not be modified by this method.
 func (s *span) SetError(err error) {
-	if err == nil || s == nil {
+	if err == nil {
 		return
 	}
-
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -296,7 +265,6 @@ func (s *span) SetError(err error) {
 		return
 	}
 	s.Error = 1
-
 	s.setMeta(errorMsgKey, err.Error())
 	s.setMeta(errorTypeKey, reflect.TypeOf(err).String())
 	stack := debug.Stack()

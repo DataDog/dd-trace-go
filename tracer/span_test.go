@@ -179,52 +179,6 @@ func TestSpanSetMeta(t *testing.T) {
 	assert.Equal(span.Meta["finished.test"], "")
 }
 
-func TestSpanSetMetas(t *testing.T) {
-	assert := assert.New(t)
-	tracer := New(WithTransport(newDefaultTransport()))
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-	span.SetSamplingPriority(0) // avoid interferences with "_sampling_priority_v1" meta
-	metas := map[string]string{
-		"error.msg":   "Something wrong",
-		"error.type":  "*errors.errorString",
-		"status.code": "200",
-		"system.pid":  "29176",
-	}
-	extraMetas := map[string]string{
-		"custom.1": "something custom",
-		"custom.2": "something even more special",
-	}
-	nopMetas := map[string]string{
-		"nopKey1": "nopValue1",
-		"nopKey2": "nopValue2",
-	}
-
-	// check the map is properly initialized
-	span.SetMetas(metas)
-	assert.Equal(len(metas), len(span.Meta))
-	for k := range metas {
-		assert.Equal(metas[k], span.Meta[k])
-	}
-
-	// check a second call adds the new metas, but does not remove old ones
-	span.SetMetas(extraMetas)
-	assert.Equal(len(metas)+len(extraMetas), len(span.Meta))
-	for k := range extraMetas {
-		assert.Equal(extraMetas[k], span.Meta[k])
-	}
-
-	assert.Equal(span.Meta["status.code"], "200")
-
-	// operating on a finished span is a no-op
-	span.Finish()
-	span.SetMetas(nopMetas)
-	assert.Equal(len(metas)+len(extraMetas), len(span.Meta))
-	for k := range nopMetas {
-		assert.Equal("", span.Meta[k])
-	}
-
-}
-
 func TestSpanSetMetric(t *testing.T) {
 	assert := assert.New(t)
 	tracer := New(WithTransport(newDefaultTransport()))
@@ -341,7 +295,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		// but an error in a user's code could lead to this.
 		span.SetMeta("race_test", "true")
 		span.SetMetric("race_test2", 133.7)
-		span.SetMetrics("race_test3", 133.7)
+		span.SetMetric("race_test3", 133.7)
 		span.SetError(errors.New("t"))
 		done <- struct{}{}
 	}()
