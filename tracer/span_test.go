@@ -76,7 +76,7 @@ func TestOpenSpanSetTag(t *testing.T) {
 	assert.Equal("tracer", span.Meta["component"])
 
 	span.SetTag("tagInt", 1234)
-	assert.Equal("1234", span.Meta["tagInt"])
+	assert.Equal(float64(1234), span.Metrics["tagInt"])
 
 	span.SetTag("error", true)
 	assert.Equal(int32(1), span.Error)
@@ -183,13 +183,13 @@ func TestSpanSetMetric(t *testing.T) {
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the map is properly initialized
-	span.setMetric("bytes", 1024.42)
+	span.SetTag("bytes", 1024.42)
 	assert.Equal(1, len(span.Metrics))
 	assert.Equal(1024.42, span.Metrics["bytes"])
 
 	// operating on a finished span is a no-op
 	span.Finish()
-	span.setMetric("finished.test", 1337)
+	span.SetTag("finished.test", 1337)
 	assert.Equal(1, len(span.Metrics))
 	assert.Equal(0.0, span.Metrics["finished.test"])
 }
@@ -292,8 +292,8 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		// It doesn't make much sense to update the span after it's been finished,
 		// but an error in a user's code could lead to this.
 		span.SetTag("race_test", "true")
-		span.setMetric("race_test2", 133.7)
-		span.setMetric("race_test3", 133.7)
+		span.SetTag("race_test2", 133.7)
+		span.SetTag("race_test3", 133.7)
 		span.LogFields(log.Error(errors.New("t")))
 		done <- struct{}{}
 	}()
