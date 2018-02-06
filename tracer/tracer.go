@@ -200,7 +200,7 @@ func (t *Tracer) newRootSpan(name, service, resource string) *span {
 	span := newSpan(name, service, resource, id, id, 0, t)
 	span.buffer = newSpanBuffer(t.channels, 0, 0)
 	span.buffer.Push(span)
-	span.SetMeta(ext.Pid, strconv.Itoa(os.Getpid()))
+	span.SetTag(ext.Pid, strconv.Itoa(os.Getpid()))
 
 	// TODO(ufoot): introduce distributed sampling here
 	t.sample(span)
@@ -223,8 +223,8 @@ func (t *Tracer) newChildSpan(name string, parent *span) *span {
 	span := newSpan(name, parent.Service, name, id, parent.TraceID, parent.SpanID, parent.tracer)
 	span.Sampled = parent.Sampled
 
-	if parent.HasSamplingPriority() {
-		span.SetSamplingPriority(parent.GetSamplingPriority())
+	if parent.hasSamplingPriority() {
+		span.setSamplingPriority(parent.getSamplingPriority())
 	}
 
 	span.parent = parent
