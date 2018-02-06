@@ -183,7 +183,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 		WithSampler(NewRateSampler(1)),
 	)
 
-	count := traceChanLen / 3
+	count := traceBufferSize / 3
 
 	for i := 0; i < count; i++ {
 		span0 := tracer0.newRootSpan("pylons.request", "pylons", "/")
@@ -192,8 +192,8 @@ func TestTracerEdgeSampler(t *testing.T) {
 		span1.Finish()
 	}
 
-	assert.Len(tracer0.channels.trace, 0)
-	assert.Len(tracer1.channels.trace, count)
+	assert.Len(tracer0.traceBuffer, 0)
+	assert.Len(tracer1.traceBuffer, count)
 
 	tracer0.Stop()
 	tracer1.Stop()
@@ -347,7 +347,7 @@ func TestTracerRace(t *testing.T) {
 	tracer, transport := getTestTracer()
 	defer tracer.Stop()
 
-	total := (traceChanLen / 3) / 10
+	total := (traceBufferSize / 3) / 10
 	var wg sync.WaitGroup
 	wg.Add(total)
 
@@ -453,7 +453,7 @@ func TestWorker(t *testing.T) {
 	tracer, transport := getTestTracer()
 	defer tracer.Stop()
 
-	n := traceChanLen * 10 // put more traces than the chan size, on purpose
+	n := traceBufferSize * 10 // put more traces than the chan size, on purpose
 	for i := 0; i < n; i++ {
 		root := tracer.newRootSpan("pylons.request", "pylons", "/")
 		child := tracer.newChildSpan("redis.command", root)
@@ -463,7 +463,7 @@ func TestWorker(t *testing.T) {
 
 	now := time.Now()
 	count := 0
-	for time.Now().Before(now.Add(time.Minute)) && count < traceChanLen {
+	for time.Now().Before(now.Add(time.Minute)) && count < traceBufferSize {
 		nbTraces := len(transport.Traces())
 		if nbTraces > 0 {
 			t.Logf("popped %d traces", nbTraces)
@@ -474,9 +474,128 @@ func TestWorker(t *testing.T) {
 	// here we just check that we have "enough traces". In practice, lots of them
 	// are dropped, it's another interesting side-effect of this test: it does
 	// trigger error messages (which are repeated, so it aggregates them etc.)
-	if count < traceChanLen {
+	if count < traceBufferSize {
 		assert.Fail(fmt.Sprintf("timeout, not enough traces in buffer (%d/%d)", count, n))
 	}
+}
+
+func newTracerChannels() *Tracer {
+	return &Tracer{
+		traceBuffer:      make(chan []*span, traceBufferSize),
+		serviceBuffer:    make(chan service, serviceBufferSize),
+		errorBuffer:      make(chan error, errorBufferSize),
+		flushTracesReq:   make(chan struct{}, 1),
+		flushServicesReq: make(chan struct{}, 1),
+		flushErrorsReq:   make(chan struct{}, 1),
+	}
+}
+
+func TestPushTrace(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer := newTracerChannels()
+	trace := []*span{
+		&span{
+			Name:     "pylons.request",
+			Service:  "pylons",
+			Resource: "/",
+		},
+		&span{
+			Name:     "pylons.request",
+			Service:  "pylons",
+			Resource: "/foo",
+		},
+	}
+	tracer.pushTrace(trace)
+
+	assert.Len(tracer.traceBuffer, 1, "there should be data in channel")
+	assert.Len(tracer.flushTracesReq, 0, "no flush requested yet")
+
+	pushed := <-tracer.traceBuffer
+	assert.Equal(trace, pushed)
+
+	many := traceBufferSize/2 + 1
+	for i := 0; i < many; i++ {
+		tracer.pushTrace(make([]*span, i))
+	}
+	assert.Len(tracer.traceBuffer, many, "all traces should be in the channel, not yet blocking")
+	assert.Len(tracer.flushTracesReq, 1, "a trace flush should have been requested")
+
+	for i := 0; i < cap(tracer.traceBuffer); i++ {
+		tracer.pushTrace(make([]*span, i))
+	}
+	assert.Len(tracer.traceBuffer, traceBufferSize, "buffer should be full")
+	assert.NotEqual(0, len(tracer.errorBuffer), "there should be an error logged")
+	err := <-tracer.errorBuffer
+	assert.Equal(&errorTraceChanFull{Len: traceBufferSize}, err)
+}
+
+func TestPushService(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer := newTracerChannels()
+
+	svc := service{
+		Name:    "redis-master",
+		App:     "redis",
+		AppType: "db",
+	}
+	tracer.pushService(svc)
+
+	assert.Len(tracer.serviceBuffer, 1, "there should be data in channel")
+	assert.Len(tracer.flushServicesReq, 0, "no flush requested yet")
+
+	pushed := <-tracer.serviceBuffer
+	assert.Equal(svc, pushed)
+
+	many := serviceBufferSize/2 + 1
+	for i := 0; i < many; i++ {
+		tracer.pushService(service{
+			Name:    fmt.Sprintf("service%d", i),
+			App:     "custom",
+			AppType: "web",
+		})
+	}
+	assert.Len(tracer.serviceBuffer, many, "all services should be in the channel, not yet blocking")
+	assert.Len(tracer.flushServicesReq, 1, "a service flush should have been requested")
+
+	for i := 0; i < cap(tracer.serviceBuffer); i++ {
+		tracer.pushService(service{
+			Name:    fmt.Sprintf("service%d", i),
+			App:     "custom",
+			AppType: "web",
+		})
+	}
+	assert.Len(tracer.serviceBuffer, serviceBufferSize, "buffer should be full")
+	assert.NotEqual(0, len(tracer.errorBuffer), "there should be an error logged")
+	err := <-tracer.errorBuffer
+	assert.Equal(&errorServiceChanFull{Len: serviceBufferSize}, err)
+}
+
+func TestPushErr(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer := newTracerChannels()
+
+	err := fmt.Errorf("ooops")
+	tracer.pushErr(err)
+
+	assert.Len(tracer.errorBuffer, 1, "there should be data in channel")
+	assert.Len(tracer.flushErrorsReq, 0, "no flush requested yet")
+
+	pushed := <-tracer.errorBuffer
+	assert.Equal(err, pushed)
+
+	many := errorBufferSize/2 + 1
+	for i := 0; i < many; i++ {
+		tracer.pushErr(fmt.Errorf("err %d", i))
+	}
+	assert.Len(tracer.errorBuffer, many, "all errs should be in the channel, not yet blocking")
+	assert.Len(tracer.flushErrorsReq, 1, "a err flush should have been requested")
+	for i := 0; i < cap(tracer.errorBuffer); i++ {
+		tracer.pushErr(fmt.Errorf("err %d", i))
+	}
+	// if we reach this, means pushErr is not blocking, which is what we want to double-check
 }
 
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of

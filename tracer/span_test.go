@@ -265,19 +265,19 @@ func TestSpanFinishTwice(t *testing.T) {
 	tracer, _ := getTestTracer()
 	defer tracer.Stop()
 
-	assert.Len(tracer.channels.trace, 0)
+	assert.Len(tracer.traceBuffer, 0)
 
 	// the finish must be idempotent
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	time.Sleep(wait)
 	span.Finish()
-	assert.Len(tracer.channels.trace, 1)
+	assert.Len(tracer.traceBuffer, 1)
 
 	previousDuration := span.Duration
 	time.Sleep(wait)
 	span.Finish()
 	assert.Equal(previousDuration, span.Duration)
-	assert.Len(tracer.channels.trace, 1)
+	assert.Len(tracer.traceBuffer, 1)
 }
 
 // Prior to a bug fix, this failed when running `go test -race`

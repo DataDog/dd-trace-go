@@ -359,7 +359,7 @@ func (s *span) finish(finishTime int64) {
 
 	if s.buffer == nil {
 		if s.tracer != nil {
-			s.tracer.channels.pushErr(&errorNoSpanBuf{SpanName: s.Name})
+			s.tracer.pushErr(&errorNoSpanBuf{SpanName: s.Name})
 		}
 		return
 	}

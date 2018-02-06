@@ -18,7 +18,7 @@ const (
 )
 
 type spanBuffer struct {
-	channels tracerChans
+	tracer *Tracer
 
 	spans         []*span
 	finishedSpans int
@@ -29,7 +29,7 @@ type spanBuffer struct {
 	sync.RWMutex
 }
 
-func newSpanBuffer(channels tracerChans, initSize, maxSize int) *spanBuffer {
+func newSpanBuffer(t *Tracer, initSize, maxSize int) *spanBuffer {
 	if initSize <= 0 {
 		initSize = spanBufferDefaultInitSize
 	}
@@ -37,7 +37,7 @@ func newSpanBuffer(channels tracerChans, initSize, maxSize int) *spanBuffer {
 		maxSize = spanBufferDefaultMaxSize
 	}
 	return &spanBuffer{
-		channels: channels,
+		tracer:   t,
 		initSize: initSize,
 		maxSize:  maxSize,
 	}
@@ -54,12 +54,12 @@ func (tb *spanBuffer) Push(sp *span) {
 	if len(tb.spans) > 0 {
 		// if spanBuffer is full, forget span
 		if len(tb.spans) >= tb.maxSize {
-			tb.channels.pushErr(&errorSpanBufFull{Len: len(tb.spans)})
+			tb.tracer.pushErr(&errorSpanBufFull{Len: len(tb.spans)})
 			return
 		}
 		// if there's a trace ID mismatch, ignore span
 		if tb.spans[0].TraceID != sp.TraceID {
-			tb.channels.pushErr(&errorTraceIDMismatch{Expected: tb.spans[0].TraceID, Actual: sp.TraceID})
+			tb.tracer.pushErr(&errorTraceIDMismatch{Expected: tb.spans[0].TraceID, Actual: sp.TraceID})
 			return
 		}
 	}
@@ -97,7 +97,7 @@ func (tb *spanBuffer) doFlush() {
 	tb.Lock()
 	defer tb.Unlock()
 
-	tb.channels.pushTrace(tb.spans)
+	tb.tracer.pushTrace(tb.spans)
 	tb.spans = nil
 	tb.finishedSpans = 0 // important, because a buffer can be used for several flushes
 }
