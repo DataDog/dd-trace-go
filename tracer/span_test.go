@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/log"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/DataDog/dd-trace-go/tracer/ext"
@@ -76,6 +77,55 @@ func TestOpenSpanSetTag(t *testing.T) {
 
 	span.SetTag("tagInt", 1234)
 	assert.Equal("1234", span.Meta["tagInt"])
+
+	span.SetTag("error", true)
+	assert.Equal(int32(1), span.Error)
+
+	span.SetTag("error", nil)
+	assert.Equal(int32(0), span.Error)
+
+	span.SetTag("error", errors.New("abc"))
+	assert.Equal(int32(1), span.Error)
+	assert.Equal("abc", span.Meta[errorMsgKey])
+	assert.Equal("*errors.errorString", span.Meta[errorTypeKey])
+	assert.NotEmpty(span.Meta[errorStackKey])
+
+	span.SetTag("error", "something else")
+	assert.Equal(int32(1), span.Error)
+}
+
+func TestOpenSpanLogFields(t *testing.T) {
+	assert := assert.New(t)
+
+	span := newOpenSpan("web.request")
+
+	span.LogFields(log.String("event", "error"))
+	assert.Equal(int32(1), span.Error)
+
+	span.LogFields(log.Error(errors.New("abc")))
+
+	assert.Equal(int32(1), span.Error)
+	assert.Equal("abc", span.getMeta(errorMsgKey))
+	assert.Equal("*errors.errorString", span.getMeta(errorTypeKey))
+	assert.NotEmpty(span.getMeta(errorStackKey))
+
+	span.LogFields(log.String("message", "qwe"), log.String("stack", "zxc"))
+	assert.Equal("qwe", span.getMeta(errorMsgKey))
+	assert.Equal("zxc", span.getMeta(errorStackKey))
+}
+
+func TestOpenSpanLogKV(t *testing.T) {
+	assert := assert.New(t)
+
+	span := newOpenSpan("web.request")
+	span.LogKV(
+		"event", "error",
+		"message", "asd",
+		"stack", "qwe",
+	)
+	assert.Equal(int32(1), span.Error)
+	assert.Equal("asd", span.getMeta(errorMsgKey))
+	assert.Equal("qwe", span.getMeta(errorStackKey))
 }
 
 func TestOpenSpanSetDatadogTags(t *testing.T) {
@@ -151,7 +201,7 @@ func TestSpanError(t *testing.T) {
 
 	// check the error is set in the default meta
 	err := errors.New("Something wrong")
-	span.SetError(err)
+	span.LogFields(log.Error(err))
 	assert.Equal(int32(1), span.Error)
 	assert.Equal("Something wrong", span.Meta["error.msg"])
 	assert.Equal("*errors.errorString", span.Meta["error.type"])
@@ -161,7 +211,7 @@ func TestSpanError(t *testing.T) {
 	span = tracer.newRootSpan("flask.request", "flask", "/")
 	nMeta := len(span.Meta)
 	span.Finish()
-	span.SetError(err)
+	span.LogFields(log.Error(err))
 	assert.Equal(int32(0), span.Error)
 	assert.Equal(nMeta, len(span.Meta))
 	assert.Equal("", span.Meta["error.msg"])
@@ -176,7 +226,7 @@ func TestSpanError_Typed(t *testing.T) {
 
 	// check the error is set in the default meta
 	err := &boomError{}
-	span.SetError(err)
+	span.LogFields(log.Error(err))
 	assert.Equal(int32(1), span.Error)
 	assert.Equal("boom", span.Meta["error.msg"])
 	assert.Equal("*tracer.boomError", span.Meta["error.type"])
@@ -190,7 +240,7 @@ func TestSpanErrorNil(t *testing.T) {
 
 	// don't set the error if it's nil
 	nMeta := len(span.Meta)
-	span.SetError(nil)
+	span.LogFields(log.Error(nil))
 	assert.Equal(int32(0), span.Error)
 	assert.Equal(nMeta, len(span.Meta))
 }
@@ -244,7 +294,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		span.SetTag("race_test", "true")
 		span.setMetric("race_test2", 133.7)
 		span.setMetric("race_test3", 133.7)
-		span.SetError(errors.New("t"))
+		span.LogFields(log.Error(errors.New("t")))
 		done <- struct{}{}
 	}()
 

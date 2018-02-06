@@ -2,13 +2,16 @@ package tracer
 
 import (
 	"fmt"
+	stdlog "log"
 	"reflect"
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	"github.com/opentracing/opentracing-go/log"
 )
 
@@ -99,11 +102,33 @@ func (s *span) BaggageItem(key string) string {
 	return s.context.baggage[key]
 }
 
+const (
+	// SpanType defines the Span type (web, db, cache)
+	SpanType = "span.type"
+	// ServiceName defines the Service name for this Span
+	ServiceName = "service.name"
+	// ResourceName defines the Resource name for the Span
+	ResourceName = "resource.name"
+)
+
 // SetTag adds a tag to the span, overwriting pre-existing values for
 // the given `key`.
 func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 	s.Lock()
 	defer s.Unlock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		return s
+	}
+	if key == string(ext.SamplingPriority) {
+		// setting sampling.priority per opentracing spec.
+		if v, ok := value.(int); ok {
+			s.setSamplingPriority(v)
+		}
+		return s
+	}
 	switch key {
 	case ServiceName:
 		s.Service = fmt.Sprint(value)
@@ -111,7 +136,29 @@ func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 		s.Resource = fmt.Sprint(value)
 	case SpanType:
 		s.Type = fmt.Sprint(value)
+	case string(ext.Error):
+		switch v := value.(type) {
+		case bool:
+			// bool value as per Opentracing spec.
+			if !v {
+				atomic.CompareAndSwapInt32(&s.Error, 1, 0)
+			} else {
+				atomic.CompareAndSwapInt32(&s.Error, 0, 1)
+			}
+		case error:
+			// if anyone sets an error value as the tag, be nice here
+			// and provide all the benefits.
+			s.setError(v)
+		case nil:
+			// no error
+			atomic.CompareAndSwapInt32(&s.Error, 1, 0)
+		default:
+			// in all other cases, let's assume that setting this tag
+			// is the result of an error.
+			atomic.CompareAndSwapInt32(&s.Error, 0, 1)
+		}
 	default:
+		// regular string tag
 		s.setMeta(key, fmt.Sprint(value))
 	}
 	return s
@@ -136,33 +183,92 @@ func (s *span) SetOperationName(operationName string) opentracing.Span {
 	return s
 }
 
+const (
+	errorMsgKey   = "error.msg"
+	errorTypeKey  = "error.type"
+	errorStackKey = "error.stack"
+)
+
 // LogFields is an efficient and type-checked way to record key:value
 // logging data about a Span, though the programming interface is a little
 // more verbose than LogKV().
 func (s *span) LogFields(fields ...log.Field) {
-	// TODO: implementation missing
+	var invalidFields bool
+	s.Lock()
+	defer s.Unlock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		return
+	}
+	// catch standard opentracing keys and adjust to internal ones as per spec:
+	// https://github.com/opentracing/specification/blob/master/semantic_conventions.md#log-fields-table
+	for _, f := range fields {
+		switch f.Key() {
+		case "event":
+			if v, ok := f.Value().(string); ok && v == "error" {
+				atomic.CompareAndSwapInt32(&s.Error, 0, 1)
+			}
+		case "error", "error.object":
+			if err, ok := f.Value().(error); ok {
+				s.setError(err)
+			}
+		case "message":
+			s.setMeta(errorMsgKey, fmt.Sprint(f.Value()))
+		case "stack":
+			s.setMeta(errorStackKey, fmt.Sprint(f.Value()))
+		default:
+			invalidFields = true
+		}
+	}
+	if s.tracer.config.debug && invalidFields {
+		stdlog.Println(`LOGFIELDS: Valid log keys are: "error", "error.object", "message" and "stack".`)
+	}
 }
 
 // LogKV is a concise, readable way to record key:value logging data about
 // a span, though unfortunately this also makes it less efficient and less
 // type-safe than LogFields().
 func (s *span) LogKV(keyVals ...interface{}) {
-	// TODO: implementation missing
+	fields, err := log.InterleavedKVToFields(keyVals...)
+	if err != nil {
+		s.RLock()
+		debug := s.tracer.config.debug
+		s.RUnlock()
+		if debug {
+			stdlog.Printf("LogKV: %v\n", err)
+			return
+		}
+	}
+	s.LogFields(fields...)
 }
 
 // LogEvent is deprecated: use LogFields or LogKV
 func (s *span) LogEvent(event string) {
-	// TODO: implementation missing
+	s.RLock()
+	defer s.RUnlock()
+	if s.tracer.config.debug {
+		stdlog.Println("span.LogEvent is deprecated, use LogFields or LogKV.\n")
+	}
 }
 
 // LogEventWithPayload deprecated: use LogFields or LogKV
 func (s *span) LogEventWithPayload(event string, payload interface{}) {
-	// TODO: implementation missing
+	s.RLock()
+	defer s.RUnlock()
+	if s.tracer.config.debug {
+		stdlog.Println("span.LogEventWithPayload is deprecated, use LogFields or LogKV.\n")
+	}
 }
 
 // Log is deprecated: use LogFields or LogKV
 func (s *span) Log(data opentracing.LogData) {
-	// TODO: implementation missing
+	s.RLock()
+	defer s.RUnlock()
+	if s.tracer.config.debug {
+		stdlog.Println("span.Log is deprecated, use LogFields or LogKV.\n")
+	}
 }
 
 // newSpan creates a new span. This is a low-level function, required for testing and advanced usage.
@@ -218,32 +324,13 @@ func (s *span) setMetric(key string, val float64) {
 	s.Metrics[key] = val
 }
 
-const (
-	errorMsgKey   = "error.msg"
-	errorTypeKey  = "error.type"
-	errorStackKey = "error.stack"
-)
-
-// SetError stores an error object within the span meta. The Error status is
-// updated and the error.Error() string is included with a default meta key.
-// If the span has been finished, it will not be modified by this method.
-func (s *span) SetError(err error) {
-	if err == nil {
-		return
-	}
-	s.Lock()
-	defer s.Unlock()
-	// We don't lock spans when flushing, so we could have a data race when
-	// modifying a span as it's being flushed. This protects us against that
-	// race, since spans are marked `finished` before we flush them.
-	if s.finished {
-		return
-	}
-	s.Error = 1
+// setError sets the appropriate span properties and tags based on the passed error.
+// Callers must guard.
+func (s *span) setError(err error) {
+	atomic.CompareAndSwapInt32(&s.Error, 0, 1)
 	s.setMeta(errorMsgKey, err.Error())
 	s.setMeta(errorTypeKey, reflect.TypeOf(err).String())
-	stack := debug.Stack()
-	s.setMeta(errorStackKey, string(stack))
+	s.setMeta(errorStackKey, string(debug.Stack()))
 }
 
 // Finish closes this Span (but not its children) providing the duration
@@ -263,6 +350,9 @@ func (s *span) FinishWithTime(finishTime int64) {
 
 func (s *span) finish(finishTime int64) {
 	s.Lock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		// already finished
 		return
@@ -336,16 +426,14 @@ func (s *span) setSamplingPriority(priority int) {
 
 // hasSamplingPriority returns true if sampling priority is set.
 // It can be defined to either zero or non-zero.
+// Not safe for concurrent use.
 func (s *span) hasSamplingPriority() bool {
-	s.RLock()
-	defer s.RUnlock()
 	_, ok := s.Metrics[samplingPriorityKey]
 	return ok
 }
 
 // getSamplingPriority gets the sampling priority.
+// Not safe for concurrent use.
 func (s *span) getSamplingPriority() int {
-	s.RLock()
-	defer s.RUnlock()
 	return int(s.Metrics[samplingPriorityKey])
 }
