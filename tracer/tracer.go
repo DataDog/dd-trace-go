@@ -44,17 +44,19 @@ var _ opentracing.Tracer = (*Tracer)(nil)
 
 // Tracer creates, buffers and submits Spans which are used to time blocks of
 // compuration.
-//
-// When a tracer is disabled, it will not submit spans for processing.
 type Tracer struct {
 	*config
 
-	services map[string]service // name -> service
+	// services maps service names to services.
+	services map[string]service
 
+	// this group of channels provides a thread-safe way to buffer traces,
+	// services and errors before flushing them to the transport.
 	traceBuffer   chan []*span
 	serviceBuffer chan service
 	errorBuffer   chan error
 
+	// these channels represent various requests that the tracer worker can pick up.
 	flushAllReq      chan chan<- struct{}
 	flushTracesReq   chan struct{}
 	flushServicesReq chan struct{}
@@ -270,8 +272,11 @@ func (t *Tracer) newRootSpan(name, service, resource string) *span {
 	id := random.Uint64()
 
 	span := newSpan(name, service, resource, id, id, 0, t)
-	span.buffer = newSpanBuffer(t, 0, 0)
-	span.buffer.Push(span)
+	span.buffer = newSpanBuffer(t)
+	err := span.buffer.Push(span)
+	if err != nil {
+		t.pushErr(err)
+	}
 	span.SetTag(ext.Pid, strconv.Itoa(os.Getpid()))
 
 	// TODO(ufoot): introduce distributed sampling here
@@ -301,7 +306,10 @@ func (t *Tracer) newChildSpan(name string, parent *span) *span {
 
 	span.parent = parent
 	span.buffer = parent.buffer
-	span.buffer.Push(span)
+	err := span.buffer.Push(span)
+	if err != nil {
+		t.pushErr(err)
+	}
 
 	return span
 }

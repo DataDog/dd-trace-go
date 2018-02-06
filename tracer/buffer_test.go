@@ -7,25 +7,33 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const (
-	testInitSize = 2
-	testMaxSize  = 5
-)
+func setupteardown() func() {
+	oldStartSize := traceStartSize
+	oldMaxSize := traceMaxSize
+	traceStartSize = 2
+	traceMaxSize = 5
+	return func() {
+		traceStartSize = oldStartSize
+		traceMaxSize = oldMaxSize
+	}
+}
 
 func TestSpanBufferPushOne(t *testing.T) {
+	defer setupteardown()()
+
 	assert := assert.New(t)
 
-	buffer := newSpanBuffer(DefaultTracer, testInitSize, testMaxSize)
+	buffer := newSpanBuffer(DefaultTracer)
 	assert.NotNil(buffer)
-	assert.Len(buffer.spans, 0)
+	assert.Len(buffer.trace, 0)
 
 	traceID := random.Uint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0, DefaultTracer)
 	root.buffer = buffer
 
 	buffer.Push(root)
-	assert.Len(buffer.spans, 1, "there is one span in the buffer")
-	assert.Equal(root, buffer.spans[0], "the span is the one pushed before")
+	assert.Len(buffer.trace, 1, "there is one span in the buffer")
+	assert.Equal(root, buffer.trace[0], "the span is the one pushed before")
 
 	root.Finish()
 
@@ -33,7 +41,7 @@ func TestSpanBufferPushOne(t *testing.T) {
 	case trace := <-buffer.tracer.traceBuffer:
 		assert.Len(trace, 1, "there was a trace in the channel")
 		assert.Equal(root, trace[0], "the trace in the channel is the one pushed before")
-		assert.Equal(0, buffer.Len(), "no more spans in the buffer")
+		assert.Equal(0, len(buffer.trace), "no more spans in the buffer")
 	case err := <-buffer.tracer.errorBuffer:
 		assert.Fail("unexpected error:", err.Error())
 		t.Logf("buffer: %v", buffer)
@@ -41,19 +49,21 @@ func TestSpanBufferPushOne(t *testing.T) {
 }
 
 func TestSpanBufferPushNoFinish(t *testing.T) {
+	defer setupteardown()()
+
 	assert := assert.New(t)
 
-	buffer := newSpanBuffer(DefaultTracer, testInitSize, testMaxSize)
+	buffer := newSpanBuffer(DefaultTracer)
 	assert.NotNil(buffer)
-	assert.Len(buffer.spans, 0)
+	assert.Len(buffer.trace, 0)
 
 	traceID := random.Uint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0, DefaultTracer)
 	root.buffer = buffer
 
 	buffer.Push(root)
-	assert.Len(buffer.spans, 1, "there is one span in the buffer")
-	assert.Equal(root, buffer.spans[0], "the span is the one pushed before")
+	assert.Len(buffer.trace, 1, "there is one span in the buffer")
+	assert.Equal(root, buffer.trace[0], "the span is the one pushed before")
 
 	select {
 	case <-buffer.tracer.traceBuffer:
@@ -68,11 +78,13 @@ func TestSpanBufferPushNoFinish(t *testing.T) {
 }
 
 func TestSpanBufferPushSeveral(t *testing.T) {
+	defer setupteardown()()
+
 	assert := assert.New(t)
 
-	buffer := newSpanBuffer(DefaultTracer, testInitSize, testMaxSize)
+	buffer := newSpanBuffer(DefaultTracer)
 	assert.NotNil(buffer)
-	assert.Len(buffer.spans, 0)
+	assert.Len(buffer.trace, 0)
 
 	traceID := random.Uint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0, DefaultTracer)
@@ -80,23 +92,23 @@ func TestSpanBufferPushSeveral(t *testing.T) {
 	span3 := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID, DefaultTracer)
 	span3a := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, span3.SpanID, DefaultTracer)
 
-	spans := []*span{root, span2, span3, span3a}
+	trace := []*span{root, span2, span3, span3a}
 
-	for i, span := range spans {
+	for i, span := range trace {
 		span.buffer = buffer
 		buffer.Push(span)
-		assert.Len(buffer.spans, i+1, "there is one more span in the buffer")
-		assert.Equal(span, buffer.spans[i], "the span is the one pushed before")
+		assert.Len(buffer.trace, i+1, "there is one more span in the buffer")
+		assert.Equal(span, buffer.trace[i], "the span is the one pushed before")
 	}
 
-	for _, span := range spans {
+	for _, span := range trace {
 		span.Finish()
 	}
 
 	select {
 	case trace := <-buffer.tracer.traceBuffer:
 		assert.Len(trace, 4, "there was one trace with the right number of spans in the channel")
-		for _, span := range spans {
+		for _, span := range trace {
 			assert.Contains(trace, span, "the trace contains the spans")
 		}
 	case err := <-buffer.tracer.errorBuffer:

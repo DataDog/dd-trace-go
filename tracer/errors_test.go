@@ -31,14 +31,6 @@ func TestErrorServiceChanFull(t *testing.T) {
 	assert.Equal("ErrorServiceChanFull", errorKey(err))
 }
 
-func TestErrorTraceIDMismatch(t *testing.T) {
-	assert := assert.New(t)
-
-	err := &errorTraceIDMismatch{Expected: 42, Actual: 65535}
-	assert.Equal("trace ID mismatch (expected: 2a actual: ffff)", err.Error())
-	assert.Equal("ErrorTraceIDMismatch", errorKey(err))
-}
-
 func TestErrorNoSpanBuf(t *testing.T) {
 	assert := assert.New(t)
 
@@ -76,8 +68,6 @@ func TestAggregateErrors(t *testing.T) {
 	errChan <- &errorSpanBufFull{Len: 1000}
 	errChan <- &errorSpanBufFull{Len: 1000}
 	errChan <- &errorFlushLostTraces{Nb: 42}
-	errChan <- &errorTraceIDMismatch{Expected: 42, Actual: 1}
-	errChan <- &errorTraceIDMismatch{Expected: 42, Actual: 4095}
 
 	errs := aggregateErrors(errChan)
 
@@ -85,10 +75,6 @@ func TestAggregateErrors(t *testing.T) {
 		"ErrorSpanBufFull": errorSummary{
 			Count:   4,
 			Example: "span buffer is full (length: 1000)",
-		},
-		"ErrorTraceIDMismatch": errorSummary{
-			Count:   2,
-			Example: "trace ID mismatch (expected: 2a actual: fff)",
 		},
 		"ErrorFlushLostTraces": errorSummary{
 			Count:   1,
