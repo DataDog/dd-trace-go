@@ -22,6 +22,24 @@ func (s service) equals(s2 service) bool {
 	return s.Name == s2.Name && s.App == s2.App && s.AppType == s2.AppType
 }
 
+const (
+	// traceBufferSize is the capacity of the trace channel. This channels is emptied
+	// on a regular basis (worker thread) or when it reaches 50% of its capacity.
+	// If it's full, then data is simply dropped and ignored, with a log message.
+	// This only happens under heavy load,
+	traceBufferSize = 1000
+	// serviceBufferSize is the length of the service channel. As for the trace channel,
+	// it's emptied by worker thread or when it reaches 50%. Note that there should
+	// be much less data here, as service data does not be to be updated that often.
+	serviceBufferSize = 50
+	// errorBufferSize is the number of errors we keep in the error channel. When this
+	// one is full, errors are just ignored, dropped, nothing left. At some point,
+	// there's already a whole lot of errors in the backlog, there's no real point
+	// in keeping millions of errors, a representative sample is enough. And we
+	// don't want to block user code and/or bloat memory or log files with redundant data.
+	errorBufferSize = 200
+)
+
 var _ opentracing.Tracer = (*Tracer)(nil)
 
 // Tracer creates, buffers and submits Spans which are used to time blocks of
@@ -31,13 +49,18 @@ var _ opentracing.Tracer = (*Tracer)(nil)
 type Tracer struct {
 	*config
 
-	channels tracerChans
 	services map[string]service // name -> service
 
-	exit chan chan<- bool
+	traceBuffer   chan []*span
+	serviceBuffer chan service
+	errorBuffer   chan error
 
-	forceFlushIn  chan struct{}
-	forceFlushOut chan struct{}
+	flushAllReq      chan chan<- struct{}
+	flushTracesReq   chan struct{}
+	flushServicesReq chan struct{}
+	flushErrorsReq   chan struct{}
+
+	exitReq chan chan<- struct{}
 }
 
 func New(opts ...Option) *Tracer {
@@ -50,17 +73,66 @@ func New(opts ...Option) *Tracer {
 		c.transport = newTransport(c.agentAddr)
 	}
 	t := &Tracer{
-		config:        c,
-		channels:      newTracerChans(),
-		services:      make(map[string]service),
-		exit:          make(chan chan<- bool),
-		forceFlushIn:  make(chan struct{}),
-		forceFlushOut: make(chan struct{}),
+		config:           c,
+		services:         make(map[string]service),
+		traceBuffer:      make(chan []*span, traceBufferSize),
+		serviceBuffer:    make(chan service, serviceBufferSize),
+		errorBuffer:      make(chan error, errorBufferSize),
+		exitReq:          make(chan chan<- struct{}),
+		flushAllReq:      make(chan chan<- struct{}),
+		flushTracesReq:   make(chan struct{}, 1),
+		flushServicesReq: make(chan struct{}, 1),
+		flushErrorsReq:   make(chan struct{}, 1),
 	}
 
 	go t.worker()
 
 	return t
+}
+
+func (t *Tracer) pushTrace(trace []*span) {
+	if len(t.traceBuffer) >= cap(t.traceBuffer)/2 { // starts being full, anticipate, try and flush soon
+		select {
+		case t.flushTracesReq <- struct{}{}:
+		default: // a flush was already requested, skip
+		}
+	}
+	select {
+	case t.traceBuffer <- trace:
+	default: // never block user code
+		t.pushErr(&errorTraceChanFull{Len: len(t.traceBuffer)})
+	}
+}
+
+func (t *Tracer) pushService(service service) {
+	if len(t.serviceBuffer) >= cap(t.serviceBuffer)/2 { // starts being full, anticipate, try and flush soon
+		select {
+		case t.flushServicesReq <- struct{}{}:
+		default: // a flush was already requested, skip
+		}
+	}
+	select {
+	case t.serviceBuffer <- service:
+	default: // never block user code
+		t.pushErr(&errorServiceChanFull{Len: len(t.serviceBuffer)})
+	}
+}
+
+func (t *Tracer) pushErr(err error) {
+	if len(t.errorBuffer) >= cap(t.errorBuffer)/2 { // starts being full, anticipate, try and flush soon
+		select {
+		case t.flushErrorsReq <- struct{}{}:
+		default: // a flush was already requested, skip
+		}
+	}
+	select {
+	case t.errorBuffer <- err:
+	default:
+		// OK, if we get this, our error error buffer is full,
+		// we can assume it is filled with meaningful messages which
+		// are going to be logged and hopefully read, nothing better
+		// we can do, blocking would make things worse.
+	}
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`
@@ -177,15 +249,15 @@ func (t *Tracer) Extract(format interface{}, carrier interface{}) (opentracing.S
 
 // Stop stops the tracer.
 func (t *Tracer) Stop() {
-	done := make(chan bool)
-	t.exit <- done
+	done := make(chan struct{})
+	t.exitReq <- done
 	<-done
 }
 
 // SetServiceInfo update the application and application type for the given
 // service.
 func (t *Tracer) setServiceInfo(name, app, appType string) {
-	t.channels.pushService(service{
+	t.pushService(service{
 		Name:    name,
 		App:     app,
 		AppType: appType,
@@ -198,7 +270,7 @@ func (t *Tracer) newRootSpan(name, service, resource string) *span {
 	id := random.Uint64()
 
 	span := newSpan(name, service, resource, id, id, 0, t)
-	span.buffer = newSpanBuffer(t.channels, 0, 0)
+	span.buffer = newSpanBuffer(t, 0, 0)
 	span.buffer.Push(span)
 	span.SetTag(ext.Pid, strconv.Itoa(os.Getpid()))
 
@@ -235,11 +307,11 @@ func (t *Tracer) newChildSpan(name string, parent *span) *span {
 }
 
 func (t *Tracer) getTraces() [][]*span {
-	traces := make([][]*span, 0, len(t.channels.trace))
+	traces := make([][]*span, 0, len(t.traceBuffer))
 
 	for {
 		select {
-		case trace := <-t.channels.trace:
+		case trace := <-t.traceBuffer:
 			traces = append(traces, trace)
 		default: // return when there's no more data
 			return traces
@@ -270,8 +342,8 @@ func (t *Tracer) flushTraces() {
 
 	_, err := t.config.transport.sendTraces(traces)
 	if err != nil {
-		t.channels.pushErr(err)
-		t.channels.pushErr(&errorFlushLostTraces{Nb: len(traces)}) // explicit log messages with nb of lost traces
+		t.pushErr(err)
+		t.pushErr(&errorFlushLostTraces{Nb: len(traces)}) // explicit log messages with nb of lost traces
 	}
 }
 
@@ -279,7 +351,7 @@ func (t *Tracer) updateServices() bool {
 	servicesModified := false
 	for {
 		select {
-		case service := <-t.channels.service:
+		case service := <-t.serviceBuffer:
 			if s, found := t.services[service.Name]; !found || !s.equals(service) {
 				t.services[service.Name] = service
 				servicesModified = true
@@ -300,14 +372,14 @@ func (t *Tracer) flushServices() {
 
 	_, err := t.config.transport.sendServices(t.services)
 	if err != nil {
-		t.channels.pushErr(err)
-		t.channels.pushErr(&errorFlushLostServices{Nb: len(t.services)}) // explicit log messages with nb of lost services
+		t.pushErr(err)
+		t.pushErr(&errorFlushLostServices{Nb: len(t.services)}) // explicit log messages with nb of lost services
 	}
 }
 
 // flushErrs will process log messages that were queued
 func (t *Tracer) flushErrs() {
-	logErrors(t.channels.err)
+	logErrors(t.errorBuffer)
 }
 
 func (t *Tracer) flush() {
@@ -320,8 +392,9 @@ func (t *Tracer) flush() {
 // Flushes are done by a background task on a regular basis, so you never
 // need to call this manually, mostly useful for testing and debugging.
 func (t *Tracer) ForceFlush() {
-	t.forceFlushIn <- struct{}{}
-	<-t.forceFlushOut
+	done := make(chan struct{})
+	t.flushAllReq <- done
+	<-done
 }
 
 // Sample samples a span with the internal sampler.
@@ -339,22 +412,22 @@ func (t *Tracer) worker() {
 		case <-ticker.C:
 			t.flush()
 
-		case <-t.forceFlushIn:
+		case done := <-t.flushAllReq:
 			t.flush()
-			t.forceFlushOut <- struct{}{} // caller blocked until this is done
+			done <- struct{}{}
 
-		case <-t.channels.traceFlush:
+		case <-t.flushTracesReq:
 			t.flushTraces()
 
-		case <-t.channels.serviceFlush:
+		case <-t.flushServicesReq:
 			t.flushServices()
 
-		case <-t.channels.errFlush:
+		case <-t.flushErrorsReq:
 			t.flushErrs()
 
-		case done := <-t.exit:
+		case done := <-t.exitReq:
 			t.flush()
-			done <- true
+			done <- struct{}{}
 			return
 		}
 	}

@@ -15,7 +15,7 @@ const (
 func TestSpanBufferPushOne(t *testing.T) {
 	assert := assert.New(t)
 
-	buffer := newSpanBuffer(newTracerChans(), testInitSize, testMaxSize)
+	buffer := newSpanBuffer(DefaultTracer, testInitSize, testMaxSize)
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
@@ -30,11 +30,11 @@ func TestSpanBufferPushOne(t *testing.T) {
 	root.Finish()
 
 	select {
-	case trace := <-buffer.channels.trace:
+	case trace := <-buffer.tracer.traceBuffer:
 		assert.Len(trace, 1, "there was a trace in the channel")
 		assert.Equal(root, trace[0], "the trace in the channel is the one pushed before")
 		assert.Equal(0, buffer.Len(), "no more spans in the buffer")
-	case err := <-buffer.channels.err:
+	case err := <-buffer.tracer.errorBuffer:
 		assert.Fail("unexpected error:", err.Error())
 		t.Logf("buffer: %v", buffer)
 	}
@@ -43,7 +43,7 @@ func TestSpanBufferPushOne(t *testing.T) {
 func TestSpanBufferPushNoFinish(t *testing.T) {
 	assert := assert.New(t)
 
-	buffer := newSpanBuffer(newTracerChans(), testInitSize, testMaxSize)
+	buffer := newSpanBuffer(DefaultTracer, testInitSize, testMaxSize)
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
@@ -56,10 +56,10 @@ func TestSpanBufferPushNoFinish(t *testing.T) {
 	assert.Equal(root, buffer.spans[0], "the span is the one pushed before")
 
 	select {
-	case <-buffer.channels.trace:
+	case <-buffer.tracer.traceBuffer:
 		assert.Fail("span was not finished, should not be flushed")
 		t.Logf("buffer: %v", buffer)
-	case err := <-buffer.channels.err:
+	case err := <-buffer.tracer.errorBuffer:
 		assert.Fail("unexpected error:", err.Error())
 		t.Logf("buffer: %v", buffer)
 	case <-time.After(time.Second / 10):
@@ -70,7 +70,7 @@ func TestSpanBufferPushNoFinish(t *testing.T) {
 func TestSpanBufferPushSeveral(t *testing.T) {
 	assert := assert.New(t)
 
-	buffer := newSpanBuffer(newTracerChans(), testInitSize, testMaxSize)
+	buffer := newSpanBuffer(DefaultTracer, testInitSize, testMaxSize)
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
@@ -94,12 +94,12 @@ func TestSpanBufferPushSeveral(t *testing.T) {
 	}
 
 	select {
-	case trace := <-buffer.channels.trace:
+	case trace := <-buffer.tracer.traceBuffer:
 		assert.Len(trace, 4, "there was one trace with the right number of spans in the channel")
 		for _, span := range spans {
 			assert.Contains(trace, span, "the trace contains the spans")
 		}
-	case err := <-buffer.channels.err:
+	case err := <-buffer.tracer.errorBuffer:
 		assert.Fail("unexpected error:", err.Error())
 	}
 }
