@@ -42,23 +42,6 @@ func (e *errorServiceChanFull) Error() string {
 	return "service channel is full (length: " + strconv.Itoa(e.Len) + ")"
 }
 
-// errorTraceIDMismatch is raised when a trying to put a span in the wrong place.
-type errorTraceIDMismatch struct {
-	// Expected is the trace ID we should have.
-	Expected uint64
-	// Actual is the trace ID we have and is wrong.
-	Actual uint64
-}
-
-// Error provides a readable error message.
-func (e *errorTraceIDMismatch) Error() string {
-	return "trace ID mismatch (expected: " +
-		strconv.FormatUint(e.Expected, 16) +
-		" actual: " +
-		strconv.FormatUint(e.Actual, 16) +
-		")"
-}
-
 // errorNoSpanBuf is raised when trying to finish/push a span that has no buffer associated to it.
 type errorNoSpanBuf struct {
 	// SpanName is the name of the span which could not be pushed (hint for the log reader).
@@ -109,8 +92,6 @@ func errorKey(err error) string {
 		return "ErrorTraceChanFull"
 	case *errorServiceChanFull:
 		return "ErrorServiceChanFull"
-	case *errorTraceIDMismatch:
-		return "ErrorTraceIDMismatch"
 	case *errorNoSpanBuf:
 		return "ErrorNoSpanBuf"
 	case *errorFlushLostTraces:
