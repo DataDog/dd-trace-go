@@ -108,7 +108,7 @@ func (t *Tracer) startSpanWithOptions(operationName string, options opentracing.
 			// values manually
 			span.TraceID = context.traceID
 			span.ParentID = context.spanID
-			t.Sample(span)
+			t.sample(span)
 		}
 	} else {
 		// create a child Span that inherits from a parent
@@ -203,7 +203,7 @@ func (t *Tracer) newRootSpan(name, service, resource string) *span {
 	span.SetMeta(ext.Pid, strconv.Itoa(os.Getpid()))
 
 	// TODO(ufoot): introduce distributed sampling here
-	t.Sample(span)
+	t.sample(span)
 
 	return span
 }
@@ -325,7 +325,7 @@ func (t *Tracer) ForceFlush() {
 }
 
 // Sample samples a span with the internal sampler.
-func (t *Tracer) Sample(span *span) {
+func (t *Tracer) sample(span *span) {
 	t.config.sampler.Sample(span)
 }
 
