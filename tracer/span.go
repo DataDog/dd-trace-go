@@ -164,6 +164,15 @@ func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 	return s
 }
 
+// Finish closes this Span (but not its children) providing the duration
+// of this part of the tracing session. This method is idempotent so
+// calling this method multiple times is safe and doesn't update the
+// current Span. Once a Span has been finished, methods that modify the Span
+// will become no-ops.
+func (s *span) Finish() {
+	s.finish(now())
+}
+
 // FinishWithOptions is like Finish() but with explicit control over
 // timestamps and log data.
 func (s *span) FinishWithOptions(options opentracing.FinishOptions) {
@@ -171,7 +180,7 @@ func (s *span) FinishWithOptions(options opentracing.FinishOptions) {
 		options.FinishTime = time.Now().UTC()
 	}
 
-	s.FinishWithTime(options.FinishTime.UnixNano())
+	s.finish(options.FinishTime.UnixNano())
 }
 
 // SetOperationName sets or changes the operation name.
@@ -333,21 +342,6 @@ func (s *span) setError(err error) {
 	s.setMeta(errorStackKey, string(debug.Stack()))
 }
 
-// Finish closes this Span (but not its children) providing the duration
-// of this part of the tracing session. This method is idempotent so
-// calling this method multiple times is safe and doesn't update the
-// current Span. Once a Span has been finished, methods that modify the Span
-// will become no-ops.
-func (s *span) Finish() {
-	s.finish(now())
-}
-
-// FinishWithTime closes this Span at the given `finishTime`. The
-// behavior is the same as `Finish()`.
-func (s *span) FinishWithTime(finishTime int64) {
-	s.finish(finishTime)
-}
-
 func (s *span) finish(finishTime int64) {
 	s.Lock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -381,13 +375,6 @@ func (s *span) finish(finishTime int64) {
 	// the channel for real, when the trace is finished.
 	// Otherwise, tests could become flaky (because you never know in what state
 	// the channel is).
-}
-
-// FinishWithErr marks a span finished and sets the given error if it's
-// non-nil.
-func (s *span) FinishWithErr(err error) {
-	s.SetError(err)
-	s.Finish()
 }
 
 // String returns a human readable representation of the span. Not for
