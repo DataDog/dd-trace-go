@@ -15,7 +15,7 @@ import (
 // newSpan creates a new span. This is a low-level function, required for testing and advanced usage.
 // Most of the time one should prefer the Tracer NewRootSpan or NewChildSpan methods.
 func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *tracer) *span {
-	return &span{
+	span := &span{
 		Name:     name,
 		Service:  service,
 		Resource: resource,
@@ -25,28 +25,21 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 		TraceID:  traceID,
 		ParentID: parentID,
 		Start:    now(),
-		Sampled:  true,
 		tracer:   tracer,
 	}
+	span.context = newSpanContext(span, nil)
+	return span
 }
 
-// newOpenSpan is the OpenTracing Span constructor
-func newOpenSpan(operationName string) *span {
-	span := newSpan(operationName, "", "", 0, 0, 0, defaultTestTracer)
-	span.context = &spanContext{
-		traceID:  span.TraceID,
-		spanID:   span.SpanID,
-		parentID: span.ParentID,
-		sampled:  span.Sampled,
-		span:     span,
-	}
-	return span
+// newBasicSpan is the OpenTracing Span constructor
+func newBasicSpan(operationName string) *span {
+	return newSpan(operationName, "", "", 0, 0, 0, defaultTestTracer)
 }
 
 func TestOpenSpanBaggage(t *testing.T) {
 	assert := assert.New(t)
 
-	span := newOpenSpan("web.request")
+	span := newBasicSpan("web.request")
 	span.SetBaggageItem("key", "value")
 	assert.Equal("value", span.BaggageItem("key"))
 }
@@ -54,14 +47,14 @@ func TestOpenSpanBaggage(t *testing.T) {
 func TestOpenSpanContext(t *testing.T) {
 	assert := assert.New(t)
 
-	span := newOpenSpan("web.request")
+	span := newBasicSpan("web.request")
 	assert.NotNil(span.Context())
 }
 
 func TestOpenSpanOperationName(t *testing.T) {
 	assert := assert.New(t)
 
-	span := newOpenSpan("web.request")
+	span := newBasicSpan("web.request")
 	span.SetOperationName("http.request")
 	assert.Equal("http.request", span.Name)
 }
@@ -69,7 +62,7 @@ func TestOpenSpanOperationName(t *testing.T) {
 func TestOpenSpanFinish(t *testing.T) {
 	assert := assert.New(t)
 
-	span := newOpenSpan("web.request")
+	span := newBasicSpan("web.request")
 	span.Finish()
 
 	assert.True(span.Duration > 0)
@@ -79,7 +72,7 @@ func TestOpenSpanFinishWithTime(t *testing.T) {
 	assert := assert.New(t)
 
 	finishTime := time.Now().Add(10 * time.Second)
-	span := newOpenSpan("web.request")
+	span := newBasicSpan("web.request")
 	span.FinishWithOptions(opentracing.FinishOptions{FinishTime: finishTime})
 
 	duration := finishTime.UnixNano() - span.Start
@@ -89,7 +82,7 @@ func TestOpenSpanFinishWithTime(t *testing.T) {
 func TestOpenSpanSetTag(t *testing.T) {
 	assert := assert.New(t)
 
-	span := newOpenSpan("web.request")
+	span := newBasicSpan("web.request")
 	span.SetTag("component", "tracer")
 	assert.Equal("tracer", span.Meta["component"])
 
@@ -115,7 +108,7 @@ func TestOpenSpanSetTag(t *testing.T) {
 func TestOpenSpanLogFields(t *testing.T) {
 	assert := assert.New(t)
 
-	span := newOpenSpan("web.request")
+	span := newBasicSpan("web.request")
 
 	span.LogFields(log.String("event", "error"))
 	assert.Equal(int32(1), span.Error)
@@ -135,7 +128,7 @@ func TestOpenSpanLogFields(t *testing.T) {
 func TestOpenSpanLogKV(t *testing.T) {
 	assert := assert.New(t)
 
-	span := newOpenSpan("web.request")
+	span := newBasicSpan("web.request")
 	span.LogKV(
 		"event", "error",
 		"message", "asd",
@@ -149,7 +142,7 @@ func TestOpenSpanLogKV(t *testing.T) {
 func TestOpenSpanSetDatadogTags(t *testing.T) {
 	assert := assert.New(t)
 
-	span := newOpenSpan("web.request")
+	span := newBasicSpan("web.request")
 	span.SetTag("span.type", "http")
 	span.SetTag("service.name", "db-cluster")
 	span.SetTag("resource.name", "SELECT * FROM users;")

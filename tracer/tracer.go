@@ -176,7 +176,6 @@ func (t *tracer) StartSpan(operationName string, options ...opentracing.StartSpa
 		TraceID:  id,
 		ParentID: 0,
 		Start:    opts.StartTime.UnixNano(),
-		Sampled:  true,
 		tracer:   t,
 	}
 	if context != nil {
@@ -194,28 +193,17 @@ func (t *tracer) StartSpan(operationName string, options ...opentracing.StartSpa
 			span.Service = parent.Service
 			span.TraceID = parent.TraceID
 			span.ParentID = parent.SpanID
-			span.Sampled = parent.Sampled
 			span.parent = parent
-			span.buffer = parent.buffer
-			span.context = newSpanContext(span, parent.context.baggage)
+			span.context = newSpanContext(span, parent.context)
 
-			err := span.buffer.Push(span)
-			if err != nil {
-				t.pushErr(err)
-			}
 			if parent.hasSamplingPriority() {
 				span.setSamplingPriority(parent.getSamplingPriority())
 			}
 		}
 	}
 	if context == nil || context.span == nil {
-		// this is a root span within this process
-		span.buffer = newSpanBuffer(t)
+		// this is either a global root span or a process-level root span
 		span.context = newSpanContext(span, nil)
-		err := span.buffer.Push(span)
-		if err != nil {
-			t.pushErr(err)
-		}
 		span.SetTag(ext.Pid, strconv.Itoa(os.Getpid()))
 		// TODO(ufoot): introduce distributed sampling here
 		t.sample(span)
@@ -378,7 +366,6 @@ func (t *tracer) sample(span *span) {
 			span.setMetric(sampleRateMetricKey, rs.Rate())
 		}
 	}
-	span.Sampled = sampled
 	span.context.sampled = sampled
 }
 
