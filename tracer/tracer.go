@@ -151,7 +151,7 @@ func (t *tracer) pushErr(err error) {
 // A Span with no SpanReference options (e.g., opentracing.ChildOf() or
 // opentracing.FollowsFrom()) becomes the root of its own trace.
 func (t *tracer) StartSpan(operationName string, options ...opentracing.StartSpanOption) opentracing.Span {
-	opts := opentracing.StartSpanOptions{}
+	var opts opentracing.StartSpanOptions
 	for _, o := range options {
 		o.Apply(&opts)
 	}
@@ -272,56 +272,6 @@ func (t *tracer) setServiceInfo(name, app, appType string) {
 		App:     app,
 		AppType: appType,
 	})
-}
-
-// newRootSpan creates a span with no parent. Its ids will be randomly
-// assigned.
-func (t *tracer) newRootSpan(name, service, resource string) *span {
-	id := random.Uint64()
-
-	span := newSpan(name, service, resource, id, id, 0, t)
-	span.buffer = newSpanBuffer(t)
-	err := span.buffer.Push(span)
-	if err != nil {
-		t.pushErr(err)
-	}
-	span.SetTag(ext.Pid, strconv.Itoa(os.Getpid()))
-	span.context = newSpanContext(span, nil)
-
-	// TODO(ufoot): introduce distributed sampling here
-	t.sample(span)
-
-	return span
-}
-
-// newChildSpan returns a new span that is child of the Span passed as
-// argument.
-func (t *tracer) newChildSpan(name string, parent *span) *span {
-	if parent == nil {
-		// don't crash
-		return t.newRootSpan(name, t.config.serviceName, name)
-	}
-
-	parent.RLock()
-	defer parent.RUnlock()
-
-	id := random.Uint64()
-	span := newSpan(name, parent.Service, name, id, parent.TraceID, parent.SpanID, parent.tracer)
-	span.Sampled = parent.Sampled
-
-	if parent.hasSamplingPriority() {
-		span.setSamplingPriority(parent.getSamplingPriority())
-	}
-
-	span.parent = parent
-	span.buffer = parent.buffer
-	err := span.buffer.Push(span)
-	if err != nil {
-		t.pushErr(err)
-	}
-	span.context = newSpanContext(span, parent.context.baggage)
-
-	return span
 }
 
 func (t *tracer) getTraces() [][]*span {

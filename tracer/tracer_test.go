@@ -15,10 +15,17 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var defaultTestTracer = newTracer(withTransport(newDefaultTransport()))
+var defaultTestTracer = newTracer()
 
-func newChildSpan(name string, parent *span) *span {
-	return defaultTestTracer.newChildSpan(name, parent)
+func (t *tracer) newRootSpan(name, service, resource string) *span {
+	return t.StartSpan(name, ServiceName(service), ResourceName(resource)).(*span)
+}
+
+func (t *tracer) newChildSpan(name string, parent *span) *span {
+	if parent == nil {
+		return t.StartSpan(name).(*span)
+	}
+	return t.StartSpan(name, opentracing.ChildOf(parent.Context())).(*span)
 }
 
 func TestOpenTracerStartSpan(t *testing.T) {
@@ -366,8 +373,8 @@ func TestTracerRace(t *testing.T) {
 
 			parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 
-			newChildSpan("redis.command", parent).Finish()
-			child := newChildSpan("async.service", parent)
+			defaultTestTracer.newChildSpan("redis.command", parent).Finish()
+			child := defaultTestTracer.newChildSpan("async.service", parent)
 
 			if i%13 == 0 {
 				time.Sleep(time.Microsecond)
