@@ -103,6 +103,9 @@ func TestOpenSpanSetTag(t *testing.T) {
 
 	span.SetTag("error", "something else")
 	assert.Equal(int32(1), span.Error)
+
+	span.SetTag("sampling.priority", 2)
+	assert.Equal(float64(2), span.Metrics[samplingPriorityKey])
 }
 
 func TestOpenSpanLogFields(t *testing.T) {
@@ -116,13 +119,13 @@ func TestOpenSpanLogFields(t *testing.T) {
 	span.LogFields(log.Error(errors.New("abc")))
 
 	assert.Equal(int32(1), span.Error)
-	assert.Equal("abc", span.getMeta(errorMsgKey))
-	assert.Equal("*errors.errorString", span.getMeta(errorTypeKey))
-	assert.NotEmpty(span.getMeta(errorStackKey))
+	assert.Equal("abc", span.Meta[errorMsgKey])
+	assert.Equal("*errors.errorString", span.Meta[errorTypeKey])
+	assert.NotEmpty(span.Meta[errorStackKey])
 
 	span.LogFields(log.String("message", "qwe"), log.String("stack", "zxc"))
-	assert.Equal("qwe", span.getMeta(errorMsgKey))
-	assert.Equal("zxc", span.getMeta(errorStackKey))
+	assert.Equal("qwe", span.Meta[errorMsgKey])
+	assert.Equal("zxc", span.Meta[errorStackKey])
 }
 
 func TestOpenSpanLogKV(t *testing.T) {
@@ -135,8 +138,8 @@ func TestOpenSpanLogKV(t *testing.T) {
 		"stack", "qwe",
 	)
 	assert.Equal(int32(1), span.Error)
-	assert.Equal("asd", span.getMeta(errorMsgKey))
-	assert.Equal("qwe", span.getMeta(errorStackKey))
+	assert.Equal("asd", span.Meta[errorMsgKey])
+	assert.Equal("qwe", span.Meta[errorStackKey])
 }
 
 func TestOpenSpanSetDatadogTags(t *testing.T) {
@@ -325,14 +328,8 @@ func TestSpanSamplingPriority(t *testing.T) {
 	tracer := newTracer(withTransport(newDefaultTransport()))
 
 	span := tracer.newRootSpan("my.name", "my.service", "my.resource")
-	assert.Equal(0.0, span.Metrics["_sampling_priority_v1"], "default sampling priority if undefined is 0")
-	assert.False(span.hasSamplingPriority(), "by default, sampling priority is undefined")
-	assert.Equal(0, span.getSamplingPriority(), "default sampling priority for root spans is 0")
-
-	childSpan := tracer.newChildSpan("my.child", span)
-	assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
-	assert.Equal(span.hasSamplingPriority(), childSpan.hasSamplingPriority())
-	assert.Equal(span.getSamplingPriority(), childSpan.getSamplingPriority())
+	_, ok := span.Metrics[samplingPriorityKey]
+	assert.False(ok)
 
 	for _, priority := range []int{
 		ext.PriorityUserReject,
@@ -341,13 +338,16 @@ func TestSpanSamplingPriority(t *testing.T) {
 		ext.PriorityUserKeep,
 		999, // not used yet, but we should allow it
 	} {
-		span.setSamplingPriority(priority)
-		assert.True(span.hasSamplingPriority())
-		assert.Equal(priority, span.getSamplingPriority())
-		childSpan = tracer.newChildSpan("my.child", span)
-		assert.Equal(span.Metrics["_sampling_priority_v1"], childSpan.Metrics["_sampling_priority_v1"])
-		assert.Equal(span.hasSamplingPriority(), childSpan.hasSamplingPriority())
-		assert.Equal(span.getSamplingPriority(), childSpan.getSamplingPriority())
+		span.SetTag("sampling.priority", priority)
+		v, ok := span.Metrics[samplingPriorityKey]
+		assert.True(ok)
+		assert.Equal(float64(priority), v)
+		childSpan := tracer.newChildSpan("my.child", span)
+		assert.Equal(span.Metrics[samplingPriorityKey], childSpan.Metrics[samplingPriorityKey])
+		v0, ok0 := span.Metrics[samplingPriorityKey]
+		v1, ok1 := childSpan.Metrics[samplingPriorityKey]
+		assert.Equal(ok0, ok1)
+		assert.Equal(v0, v1)
 	}
 }
 
