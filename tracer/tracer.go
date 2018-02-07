@@ -40,11 +40,11 @@ const (
 	errorBufferSize = 200
 )
 
-var _ opentracing.Tracer = (*Tracer)(nil)
+var _ opentracing.Tracer = (*tracer)(nil)
 
 // Tracer creates, buffers and submits Spans which are used to time blocks of
 // compuration.
-type Tracer struct {
+type tracer struct {
 	*config
 
 	// services maps service names to services.
@@ -65,7 +65,17 @@ type Tracer struct {
 	exitReq chan chan<- struct{}
 }
 
-func New(opts ...Option) *Tracer {
+// Start creates a new tracer with the given set of options and registers it as
+// the global tracer. The returned stopFunc should be used to cleanly exit the
+// program, flushing any leftover traces to the transport. To use the tracer,
+// simply use the opentracing API as normal.
+func Start(opts ...Option) (stopFunc func()) {
+	t := newTracer(opts...)
+	opentracing.SetGlobalTracer(t)
+	return t.stop
+}
+
+func newTracer(opts ...Option) *tracer {
 	c := new(config)
 	defaults(c)
 	for _, fn := range opts {
@@ -74,7 +84,7 @@ func New(opts ...Option) *Tracer {
 	if c.transport == nil {
 		c.transport = newTransport(c.agentAddr)
 	}
-	t := &Tracer{
+	t := &tracer{
 		config:           c,
 		services:         make(map[string]service),
 		traceBuffer:      make(chan []*span, traceBufferSize),
@@ -92,7 +102,7 @@ func New(opts ...Option) *Tracer {
 	return t
 }
 
-func (t *Tracer) pushTrace(trace []*span) {
+func (t *tracer) pushTrace(trace []*span) {
 	if len(t.traceBuffer) >= cap(t.traceBuffer)/2 { // starts being full, anticipate, try and flush soon
 		select {
 		case t.flushTracesReq <- struct{}{}:
@@ -106,7 +116,7 @@ func (t *Tracer) pushTrace(trace []*span) {
 	}
 }
 
-func (t *Tracer) pushService(service service) {
+func (t *tracer) pushService(service service) {
 	if len(t.serviceBuffer) >= cap(t.serviceBuffer)/2 { // starts being full, anticipate, try and flush soon
 		select {
 		case t.flushServicesReq <- struct{}{}:
@@ -120,7 +130,7 @@ func (t *Tracer) pushService(service service) {
 	}
 }
 
-func (t *Tracer) pushErr(err error) {
+func (t *tracer) pushErr(err error) {
 	if len(t.errorBuffer) >= cap(t.errorBuffer)/2 { // starts being full, anticipate, try and flush soon
 		select {
 		case t.flushErrorsReq <- struct{}{}:
@@ -140,7 +150,7 @@ func (t *Tracer) pushErr(err error) {
 // StartSpan creates, starts, and returns a new Span with the given `operationName`
 // A Span with no SpanReference options (e.g., opentracing.ChildOf() or
 // opentracing.FollowsFrom()) becomes the root of its own trace.
-func (t *Tracer) StartSpan(operationName string, options ...opentracing.StartSpanOption) opentracing.Span {
+func (t *tracer) StartSpan(operationName string, options ...opentracing.StartSpanOption) opentracing.Span {
 	sso := opentracing.StartSpanOptions{}
 	for _, o := range options {
 		o.Apply(&sso)
@@ -148,7 +158,7 @@ func (t *Tracer) StartSpan(operationName string, options ...opentracing.StartSpa
 	return t.startSpanWithOptions(operationName, sso)
 }
 
-func (t *Tracer) startSpanWithOptions(operationName string, options opentracing.StartSpanOptions) opentracing.Span {
+func (t *tracer) startSpanWithOptions(operationName string, options opentracing.StartSpanOptions) opentracing.Span {
 	if options.StartTime.IsZero() {
 		options.StartTime = time.Now().UTC()
 	}
@@ -228,7 +238,7 @@ func (t *Tracer) startSpanWithOptions(operationName string, options opentracing.
 // the value of `format`. Currently supported Injectors are:
 // * `TextMap`
 // * `HTTPHeaders`
-func (t *Tracer) Inject(ctx opentracing.SpanContext, format interface{}, carrier interface{}) error {
+func (t *tracer) Inject(ctx opentracing.SpanContext, format interface{}, carrier interface{}) error {
 	switch format {
 	case opentracing.TextMap, opentracing.HTTPHeaders:
 		return t.config.textMapPropagator.Inject(ctx, carrier)
@@ -239,7 +249,7 @@ func (t *Tracer) Inject(ctx opentracing.SpanContext, format interface{}, carrier
 }
 
 // Extract returns a SpanContext instance given `format` and `carrier`.
-func (t *Tracer) Extract(format interface{}, carrier interface{}) (opentracing.SpanContext, error) {
+func (t *tracer) Extract(format interface{}, carrier interface{}) (opentracing.SpanContext, error) {
 	switch format {
 	case opentracing.TextMap, opentracing.HTTPHeaders:
 		return t.config.textMapPropagator.Extract(carrier)
@@ -250,7 +260,7 @@ func (t *Tracer) Extract(format interface{}, carrier interface{}) (opentracing.S
 }
 
 // Stop stops the tracer.
-func (t *Tracer) Stop() {
+func (t *tracer) stop() {
 	done := make(chan struct{})
 	t.exitReq <- done
 	<-done
@@ -258,7 +268,7 @@ func (t *Tracer) Stop() {
 
 // SetServiceInfo update the application and application type for the given
 // service.
-func (t *Tracer) setServiceInfo(name, app, appType string) {
+func (t *tracer) setServiceInfo(name, app, appType string) {
 	t.pushService(service{
 		Name:    name,
 		App:     app,
@@ -268,7 +278,7 @@ func (t *Tracer) setServiceInfo(name, app, appType string) {
 
 // newRootSpan creates a span with no parent. Its ids will be randomly
 // assigned.
-func (t *Tracer) newRootSpan(name, service, resource string) *span {
+func (t *tracer) newRootSpan(name, service, resource string) *span {
 	id := random.Uint64()
 
 	span := newSpan(name, service, resource, id, id, 0, t)
@@ -287,7 +297,7 @@ func (t *Tracer) newRootSpan(name, service, resource string) *span {
 
 // newChildSpan returns a new span that is child of the Span passed as
 // argument.
-func (t *Tracer) newChildSpan(name string, parent *span) *span {
+func (t *tracer) newChildSpan(name string, parent *span) *span {
 	if parent == nil {
 		// don't crash
 		return t.newRootSpan(name, t.config.serviceName, name)
@@ -314,7 +324,7 @@ func (t *Tracer) newChildSpan(name string, parent *span) *span {
 	return span
 }
 
-func (t *Tracer) getTraces() [][]*span {
+func (t *tracer) getTraces() [][]*span {
 	traces := make([][]*span, 0, len(t.traceBuffer))
 
 	for {
@@ -328,7 +338,7 @@ func (t *Tracer) getTraces() [][]*span {
 }
 
 // flushTraces will push any currently buffered traces to the server.
-func (t *Tracer) flushTraces() {
+func (t *tracer) flushTraces() {
 	traces := t.getTraces()
 
 	if t.config.debug {
@@ -355,7 +365,7 @@ func (t *Tracer) flushTraces() {
 	}
 }
 
-func (t *Tracer) updateServices() bool {
+func (t *tracer) updateServices() bool {
 	servicesModified := false
 	for {
 		select {
@@ -371,7 +381,7 @@ func (t *Tracer) updateServices() bool {
 }
 
 // flushTraces will push any currently buffered services to the server.
-func (t *Tracer) flushServices() {
+func (t *tracer) flushServices() {
 	servicesModified := t.updateServices()
 
 	if !servicesModified {
@@ -386,11 +396,11 @@ func (t *Tracer) flushServices() {
 }
 
 // flushErrs will process log messages that were queued
-func (t *Tracer) flushErrs() {
+func (t *tracer) flushErrs() {
 	logErrors(t.errorBuffer)
 }
 
-func (t *Tracer) flush() {
+func (t *tracer) flush() {
 	t.flushTraces()
 	t.flushServices()
 	t.flushErrs()
@@ -399,19 +409,19 @@ func (t *Tracer) flush() {
 // ForceFlush forces a flush of data (traces and services) to the agent.
 // Flushes are done by a background task on a regular basis, so you never
 // need to call this manually, mostly useful for testing and debugging.
-func (t *Tracer) ForceFlush() {
+func (t *tracer) ForceFlush() {
 	done := make(chan struct{})
 	t.flushAllReq <- done
 	<-done
 }
 
 // Sample samples a span with the internal sampler.
-func (t *Tracer) sample(span *span) {
+func (t *tracer) sample(span *span) {
 	t.config.sampler.Sample(span)
 }
 
 // worker periodically flushes traces and services to the transport.
-func (t *Tracer) worker() {
+func (t *tracer) worker() {
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
 
@@ -441,8 +451,11 @@ func (t *Tracer) worker() {
 	}
 }
 
+// SetServiceInfo sets information about the given service. A tracer is expected to
+// be active, which has been started by Start or assigned by opentracing.SetGlobalTracer,
+// otherwise it is a no-op.
 func SetServiceInfo(name, app, appType string) {
-	t, ok := opentracing.GlobalTracer().(*Tracer)
+	t, ok := opentracing.GlobalTracer().(*tracer)
 	if !ok {
 		return
 	}
