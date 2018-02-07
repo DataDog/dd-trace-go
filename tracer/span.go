@@ -146,9 +146,9 @@ func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 		case bool:
 			// bool value as per Opentracing spec.
 			if !v {
-				atomic.CompareAndSwapInt32(&s.Error, 1, 0)
+				s.Error = 0
 			} else {
-				atomic.CompareAndSwapInt32(&s.Error, 0, 1)
+				s.Error = 1
 			}
 		case error:
 			// if anyone sets an error value as the tag, be nice here
@@ -156,11 +156,11 @@ func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 			s.setError(v)
 		case nil:
 			// no error
-			atomic.CompareAndSwapInt32(&s.Error, 1, 0)
+			s.Error = 0
 		default:
 			// in all other cases, let's assume that setting this tag
 			// is the result of an error.
-			atomic.CompareAndSwapInt32(&s.Error, 0, 1)
+			s.Error = 1
 		}
 	default:
 		// regular string tag
@@ -282,24 +282,6 @@ func (s *span) Log(data opentracing.LogData) {
 	defer s.RUnlock()
 	if s.tracer.config.debug {
 		stdlog.Println("span.Log is deprecated, use LogFields or LogKV.\n")
-	}
-}
-
-// newSpan creates a new span. This is a low-level function, required for testing and advanced usage.
-// Most of the time one should prefer the Tracer NewRootSpan or NewChildSpan methods.
-func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *tracer) *span {
-	return &span{
-		Name:     name,
-		Service:  service,
-		Resource: resource,
-		Meta:     map[string]string{},
-		Metrics:  map[string]float64{},
-		SpanID:   spanID,
-		TraceID:  traceID,
-		ParentID: parentID,
-		Start:    now(),
-		Sampled:  true,
-		tracer:   tracer,
 	}
 }
 

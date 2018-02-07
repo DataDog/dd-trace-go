@@ -157,7 +157,7 @@ func TestNewChildHasNoPid(t *testing.T) {
 func TestTracerSampler(t *testing.T) {
 	assert := assert.New(t)
 
-	sampler := NewRateSampler(0.5)
+	sampler := NewRateSampler(0.9999) // high probability of sampling
 	tracer := newTracer(
 		withTransport(newDefaultTransport()),
 		WithSampler(sampler),
@@ -165,8 +165,11 @@ func TestTracerSampler(t *testing.T) {
 
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
-	// The span might be sampled or not, we don't know, but at least it should have the sample rate metric
-	assert.Equal(float64(0.5), span.Metrics[sampleRateMetricKey])
+	if sampler.Sample(span) {
+		// only run test if span was sampled to avoid flaky tests
+		_, ok := span.Metrics[sampleRateMetricKey]
+		assert.True(ok)
+	}
 }
 
 func TestTracerEdgeSampler(t *testing.T) {

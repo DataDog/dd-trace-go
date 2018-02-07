@@ -12,6 +12,24 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
+// newSpan creates a new span. This is a low-level function, required for testing and advanced usage.
+// Most of the time one should prefer the Tracer NewRootSpan or NewChildSpan methods.
+func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *tracer) *span {
+	return &span{
+		Name:     name,
+		Service:  service,
+		Resource: resource,
+		Meta:     map[string]string{},
+		Metrics:  map[string]float64{},
+		SpanID:   spanID,
+		TraceID:  traceID,
+		ParentID: parentID,
+		Start:    now(),
+		Sampled:  true,
+		tracer:   tracer,
+	}
+}
+
 // newOpenSpan is the OpenTracing Span constructor
 func newOpenSpan(operationName string) *span {
 	span := newSpan(operationName, "", "", 0, 0, 0, defaultTestTracer)

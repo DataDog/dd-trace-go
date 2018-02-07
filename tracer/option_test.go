@@ -16,7 +16,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	assert := assert.New(t)
 	var c config
 	defaults(&c)
-	assert.Equal(float64(1), c.sampler.(*RateSampler).Rate())
+	assert.Equal(float64(1), c.sampler.(RateSampler).Rate())
 	assert.Equal("tracer.test", c.serviceName)
 	assert.Equal("localhost:8126", c.agentAddr)
 }
@@ -30,7 +30,7 @@ func TestTracerOptions(t *testing.T) {
 		WithGlobalTag("k", "v"),
 	)
 	c := tracer.config
-	assert.Equal(float64(0.5), c.sampler.(*RateSampler).Rate())
+	assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
 	assert.Equal("api-intake", c.serviceName)
 	assert.Equal("ddagent.consul.local:58126", c.agentAddr)
 	assert.NotNil(c.globalTags)
