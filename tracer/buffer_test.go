@@ -23,12 +23,12 @@ func TestSpanBufferPushOne(t *testing.T) {
 
 	assert := assert.New(t)
 
-	buffer := newSpanBuffer(DefaultTracer)
+	buffer := newSpanBuffer(defaultTestTracer)
 	assert.NotNil(buffer)
 	assert.Len(buffer.trace, 0)
 
 	traceID := random.Uint64()
-	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0, DefaultTracer)
+	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0, defaultTestTracer)
 	root.buffer = buffer
 
 	buffer.Push(root)
@@ -53,12 +53,12 @@ func TestSpanBufferPushNoFinish(t *testing.T) {
 
 	assert := assert.New(t)
 
-	buffer := newSpanBuffer(DefaultTracer)
+	buffer := newSpanBuffer(defaultTestTracer)
 	assert.NotNil(buffer)
 	assert.Len(buffer.trace, 0)
 
 	traceID := random.Uint64()
-	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0, DefaultTracer)
+	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0, defaultTestTracer)
 	root.buffer = buffer
 
 	buffer.Push(root)
@@ -82,15 +82,15 @@ func TestSpanBufferPushSeveral(t *testing.T) {
 
 	assert := assert.New(t)
 
-	buffer := newSpanBuffer(DefaultTracer)
+	buffer := newSpanBuffer(defaultTestTracer)
 	assert.NotNil(buffer)
 	assert.Len(buffer.trace, 0)
 
 	traceID := random.Uint64()
-	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0, DefaultTracer)
-	span2 := newSpan("name2", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID, DefaultTracer)
-	span3 := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID, DefaultTracer)
-	span3a := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, span3.SpanID, DefaultTracer)
+	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0, defaultTestTracer)
+	span2 := newSpan("name2", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID, defaultTestTracer)
+	span3 := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID, defaultTestTracer)
+	span3a := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, span3.SpanID, defaultTestTracer)
 
 	trace := []*span{root, span2, span3, span3a}
 

@@ -59,7 +59,7 @@ type span struct {
 	Sampled  bool               `json:"-"`                 // if this span is sampled (and should be kept/recorded) or not
 
 	sync.RWMutex
-	tracer   *Tracer // the tracer that generated this span
+	tracer   *tracer // the tracer that generated this span
 	finished bool    // true if the span has been submitted to a tracer.
 
 	// parent contains a link to the parent. In most cases, ParentID can be inferred from this.
@@ -287,7 +287,7 @@ func (s *span) Log(data opentracing.LogData) {
 
 // newSpan creates a new span. This is a low-level function, required for testing and advanced usage.
 // Most of the time one should prefer the Tracer NewRootSpan or NewChildSpan methods.
-func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *Tracer) *span {
+func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *tracer) *span {
 	return &span{
 		Name:     name,
 		Service:  service,

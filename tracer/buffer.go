@@ -19,12 +19,12 @@ var (
 
 type spanBuffer struct {
 	mu       sync.RWMutex
-	tracer   *Tracer
+	tracer   *tracer
 	trace    []*span
 	finished int
 }
 
-func newSpanBuffer(t *Tracer) *spanBuffer {
+func newSpanBuffer(t *tracer) *spanBuffer {
 	return &spanBuffer{
 		tracer: t,
 		trace:  make([]*span, 0, traceStartSize),

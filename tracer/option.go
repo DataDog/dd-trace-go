@@ -97,12 +97,6 @@ func WithBinaryPropagator(p Propagator) Option {
 	}
 }
 
-func WithTransport(t transport) Option {
-	return func(c *config) {
-		c.transport = t
-	}
-}
-
 func WithSampler(s Sampler) Option {
 	return func(c *config) {
 		c.sampler = s

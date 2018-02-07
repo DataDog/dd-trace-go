@@ -14,7 +14,7 @@ import (
 
 // newOpenSpan is the OpenTracing Span constructor
 func newOpenSpan(operationName string) *span {
-	span := newSpan(operationName, "", "", 0, 0, 0, DefaultTracer)
+	span := newSpan(operationName, "", "", 0, 0, 0, defaultTestTracer)
 	span.context = &spanContext{
 		traceID:  span.TraceID,
 		spanID:   span.SpanID,
@@ -143,7 +143,7 @@ func TestOpenSpanSetDatadogTags(t *testing.T) {
 
 func TestSpanStart(t *testing.T) {
 	assert := assert.New(t)
-	tracer := New(WithTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// a new span sets the Start after the initialization
@@ -152,7 +152,7 @@ func TestSpanStart(t *testing.T) {
 
 func TestSpanString(t *testing.T) {
 	assert := assert.New(t)
-	tracer := New(WithTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	// don't bother checking the contents, just make sure it works.
 	assert.NotEqual("", span.String())
@@ -162,7 +162,7 @@ func TestSpanString(t *testing.T) {
 
 func TestSpanSetTag(t *testing.T) {
 	assert := assert.New(t)
-	tracer := New(WithTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the map is properly initialized
@@ -179,7 +179,7 @@ func TestSpanSetTag(t *testing.T) {
 
 func TestSpanSetMetric(t *testing.T) {
 	assert := assert.New(t)
-	tracer := New(WithTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the map is properly initialized
@@ -196,7 +196,7 @@ func TestSpanSetMetric(t *testing.T) {
 
 func TestSpanError(t *testing.T) {
 	assert := assert.New(t)
-	tracer := New(WithTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the error is set in the default meta
@@ -221,7 +221,7 @@ func TestSpanError(t *testing.T) {
 
 func TestSpanError_Typed(t *testing.T) {
 	assert := assert.New(t)
-	tracer := New(WithTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the error is set in the default meta
@@ -235,7 +235,7 @@ func TestSpanError_Typed(t *testing.T) {
 
 func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
-	tracer := New(WithTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// don't set the error if it's nil
@@ -248,7 +248,7 @@ func TestSpanErrorNil(t *testing.T) {
 func TestSpanFinish(t *testing.T) {
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
-	tracer := New(WithTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// the finish should set finished and the duration
@@ -263,7 +263,7 @@ func TestSpanFinishTwice(t *testing.T) {
 	wait := time.Millisecond * 2
 
 	tracer, _ := getTestTracer()
-	defer tracer.Stop()
+	defer tracer.stop()
 
 	assert.Len(tracer.traceBuffer, 0)
 
@@ -283,7 +283,7 @@ func TestSpanFinishTwice(t *testing.T) {
 // Prior to a bug fix, this failed when running `go test -race`
 func TestSpanModifyWhileFlushing(t *testing.T) {
 	tracer, _ := getTestTracer()
-	defer tracer.Stop()
+	defer tracer.stop()
 
 	done := make(chan struct{})
 	go func() {
@@ -311,7 +311,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 
 func TestSpanSamplingPriority(t *testing.T) {
 	assert := assert.New(t)
-	tracer := New(WithTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 
 	span := tracer.newRootSpan("my.name", "my.service", "my.resource")
 	assert.Equal(0.0, span.Metrics["_sampling_priority_v1"], "default sampling priority if undefined is 0")
