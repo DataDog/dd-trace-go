@@ -122,13 +122,12 @@ func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 	}
 	if v, ok := toFloat64(value); ok {
 		// sent as numeric value, so we can store it as a metric
-		s.Metrics[key] = v
-		return s
-	}
-	if key == string(ext.SamplingPriority) {
-		// setting sampling.priority per opentracing spec.
-		if v, ok := value.(int); ok {
-			s.setSamplingPriority(v)
+		switch key {
+		case string(ext.SamplingPriority):
+			// setting sampling priority per spec
+			s.Metrics[samplingPriorityKey] = v
+		default:
+			s.Metrics[key] = v
 		}
 		return s
 	}
@@ -295,29 +294,6 @@ func (s *span) setMeta(key, value string) {
 	s.Meta[key] = value
 }
 
-// getMeta will return the value for the given tag or the empty string if it
-// doesn't exist.
-func (s *span) getMeta(key string) string {
-	s.RLock()
-	defer s.RUnlock()
-	return s.Meta[key]
-}
-
-// setMetric sets a float64 value for the given key. It acts
-// like `set_meta()` and it simply add a tag without further processing.
-// This method doesn't create a Datadog metric.
-func (s *span) setMetric(key string, val float64) {
-	s.Lock()
-	defer s.Unlock()
-	// We don't lock spans when flushing, so we could have a data race when
-	// modifying a span as it's being flushed. This protects us against that
-	// race, since spans are marked `finished` before we flush them.
-	if s.finished {
-		return
-	}
-	s.Metrics[key] = val
-}
-
 // setError sets the appropriate span properties and tags based on the passed error.
 // Callers must guard.
 func (s *span) setError(err error) {
@@ -365,34 +341,12 @@ func (s *span) String() string {
 		fmt.Sprintf("Type: %s", s.Type),
 		"Tags:",
 	}
-
 	s.RLock()
 	for key, val := range s.Meta {
 		lines = append(lines, fmt.Sprintf("\t%s:%s", key, val))
-
 	}
 	s.RUnlock()
-
 	return strings.Join(lines, "\n")
 }
 
 const samplingPriorityKey = "_sampling_priority_v1"
-
-// setSamplingPriority sets the sampling priority.
-func (s *span) setSamplingPriority(priority int) {
-	s.setMetric(samplingPriorityKey, float64(priority))
-}
-
-// hasSamplingPriority returns true if sampling priority is set.
-// It can be defined to either zero or non-zero.
-// Not safe for concurrent use.
-func (s *span) hasSamplingPriority() bool {
-	_, ok := s.Metrics[samplingPriorityKey]
-	return ok
-}
-
-// getSamplingPriority gets the sampling priority.
-// Not safe for concurrent use.
-func (s *span) getSamplingPriority() int {
-	return int(s.Metrics[samplingPriorityKey])
-}

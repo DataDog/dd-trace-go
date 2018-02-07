@@ -112,7 +112,7 @@ func (t *tracer) pushTrace(trace []*span) {
 	select {
 	case t.traceBuffer <- trace:
 	default: // never block user code
-		t.pushErr(&errorTraceChanFull{Len: len(t.traceBuffer)})
+		t.pushErr(&errBufferFull{name: "trace channel", size: len(t.traceBuffer)})
 	}
 }
 
@@ -126,7 +126,7 @@ func (t *tracer) pushService(service service) {
 	select {
 	case t.serviceBuffer <- service:
 	default: // never block user code
-		t.pushErr(&errorServiceChanFull{Len: len(t.serviceBuffer)})
+		t.pushErr(&errBufferFull{name: "service channel", size: len(t.serviceBuffer)})
 	}
 }
 
@@ -196,8 +196,8 @@ func (t *tracer) StartSpan(operationName string, options ...opentracing.StartSpa
 			span.parent = parent
 			span.context = newSpanContext(span, parent.context)
 
-			if parent.hasSamplingPriority() {
-				span.setSamplingPriority(parent.getSamplingPriority())
+			if v, ok := parent.Metrics[samplingPriorityKey]; ok {
+				span.Metrics[samplingPriorityKey] = v
 			}
 		}
 	}
@@ -298,8 +298,7 @@ func (t *tracer) flushTraces() {
 
 	_, err := t.config.transport.sendTraces(traces)
 	if err != nil {
-		t.pushErr(err)
-		t.pushErr(&errorFlushLostTraces{Nb: len(traces)}) // explicit log messages with nb of lost traces
+		t.pushErr(&errLostData{name: "traces", context: err, count: len(traces)})
 	}
 }
 
@@ -328,8 +327,7 @@ func (t *tracer) flushServices() {
 
 	_, err := t.config.transport.sendServices(t.services)
 	if err != nil {
-		t.pushErr(err)
-		t.pushErr(&errorFlushLostServices{Nb: len(t.services)}) // explicit log messages with nb of lost services
+		t.pushErr(&errLostData{name: "services", context: err, count: len(t.services)})
 	}
 }
 
@@ -362,8 +360,13 @@ func (t *tracer) sample(span *span) {
 	sampled := sampler.Sample(span)
 	if sampled {
 		if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
-			// for limited rate samplers, make note of the rate
-			span.setMetric(sampleRateMetricKey, rs.Rate())
+			span.Lock()
+			defer span.Unlock()
+			if span.finished {
+				// we don't touch finished span as they might be flushing
+				return
+			}
+			span.Metrics[sampleRateMetricKey] = rs.Rate()
 		}
 	}
 	span.context.sampled = sampled

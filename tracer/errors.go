@@ -1,78 +1,30 @@
 package tracer
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 )
 
-const (
-	errorPrefix = "Datadog Tracer Error: "
-)
+const errorPrefix = "Datadog Tracer Error: "
 
-// errorSpanBufFull is raised when there's no more room in the buffer
-type errorSpanBufFull struct {
-	// Len is the length of the buffer (which is full)
-	Len int
+type errBufferFull struct {
+	name string // buffer name
+	size int    // buffer size
 }
 
-// Error provides a readable error message.
-func (e *errorSpanBufFull) Error() string {
-	return "span buffer is full (length: " + strconv.Itoa(e.Len) + ")"
+func (e *errBufferFull) Error() string {
+	return fmt.Sprintf("%s is full (size: %d)", e.name, e.size)
 }
 
-// errorTraceChanFull is raised when there's no more room in the channel
-type errorTraceChanFull struct {
-	// Len is the length of the channel (which is full)
-	Len int
+type errLostData struct {
+	name    string // data that was lost
+	count   int    // number of items lost
+	context error  // any context error, if available
 }
 
-// Error provides a readable error message.
-func (e *errorTraceChanFull) Error() string {
-	return "trace channel is full (length: " + strconv.Itoa(e.Len) + ")"
-}
-
-// errorServiceChanFull is raised when there's no more room in the channel
-type errorServiceChanFull struct {
-	// Len is the length of the channel (which is full)
-	Len int
-}
-
-// Error provides a readable error message.
-func (e *errorServiceChanFull) Error() string {
-	return "service channel is full (length: " + strconv.Itoa(e.Len) + ")"
-}
-
-// errorNoSpanBuf is raised when trying to finish/push a span that has no buffer associated to it.
-type errorNoSpanBuf struct {
-	// SpanName is the name of the span which could not be pushed (hint for the log reader).
-	SpanName string
-}
-
-// Error provides a readable error message.
-func (e *errorNoSpanBuf) Error() string {
-	return "no span buffer (span name: '" + e.SpanName + "')"
-}
-
-// errorFlushLostTraces is raised when trying to finish/push a span that has no buffer associated to it.
-type errorFlushLostTraces struct {
-	// Nb is the number of traces lost in that flush
-	Nb int
-}
-
-// Error provides a readable error message.
-func (e *errorFlushLostTraces) Error() string {
-	return "unable to flush traces, lost " + strconv.Itoa(e.Nb) + " traces"
-}
-
-// errorFlushLostServices is raised when trying to finish/push a span that has no buffer associated to it.
-type errorFlushLostServices struct {
-	// Nb is the number of services lost in that flush
-	Nb int
-}
-
-// Error provides a readable error message.
-func (e *errorFlushLostServices) Error() string {
-	return "unable to flush services, lost " + strconv.Itoa(e.Nb) + " services"
+func (e *errLostData) Error() string {
+	return fmt.Sprintf("couldn't flush %s (count: %d), error: %v", e.name, e.count, e.context)
 }
 
 type errorSummary struct {
@@ -86,18 +38,10 @@ func errorKey(err error) string {
 		return ""
 	}
 	switch err.(type) {
-	case *errorSpanBufFull:
-		return "ErrorSpanBufFull"
-	case *errorTraceChanFull:
-		return "ErrorTraceChanFull"
-	case *errorServiceChanFull:
-		return "ErrorServiceChanFull"
-	case *errorNoSpanBuf:
-		return "ErrorNoSpanBuf"
-	case *errorFlushLostTraces:
-		return "ErrorFlushLostTraces"
-	case *errorFlushLostServices:
-		return "ErrorFlushLostServices"
+	case *errBufferFull:
+		return "ErrBufferFull"
+	case *errLostData:
+		return "ErrLostData"
 	}
 	return err.Error() // possibly high cardinality, but this is unexpected
 }

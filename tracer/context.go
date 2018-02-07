@@ -105,7 +105,7 @@ func (t *trace) push(sp *span) error {
 	defer t.mu.Unlock()
 
 	if len(t.trace) >= traceMaxSize {
-		return &errorSpanBufFull{Len: len(t.trace)}
+		return &errBufferFull{name: "span buffer", size: len(t.trace)}
 	}
 	t.trace = append(t.trace, sp)
 	return nil

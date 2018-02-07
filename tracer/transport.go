@@ -120,7 +120,10 @@ func (t *httpTransport) sendTraces(traces [][]*span) (*http.Response, error) {
 	}
 
 	// prepare the client and send the payload
-	req, _ := http.NewRequest("POST", t.traceURL, encoder)
+	req, err := http.NewRequest("POST", t.traceURL, encoder)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create http request: %v", err)
+	}
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}

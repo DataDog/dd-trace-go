@@ -69,6 +69,15 @@ func TestOpenTracerBaggagePropagation(t *testing.T) {
 	assert.Equal("value", context.baggage["key"])
 }
 
+func TestOpenTracerSamplingPriorityPropagation(t *testing.T) {
+	assert := assert.New(t)
+	tracer := newTracer()
+	root := tracer.StartSpan("web.request", opentracing.Tag{"sampling.priority", 2})
+	child, ok := tracer.StartSpan("db.query", opentracing.ChildOf(root.Context())).(*span)
+	assert.True(ok)
+	assert.Equal(float64(2), child.Metrics[samplingPriorityKey])
+}
+
 func TestOpenTracerBaggageImmutability(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer()
@@ -148,7 +157,7 @@ func TestnewRootSpanHasPid(t *testing.T) {
 	tracer := newTracer(withTransport(newDefaultTransport()))
 	root := tracer.newRootSpan("pylons.request", "pylons", "/")
 
-	assert.Equal(strconv.Itoa(os.Getpid()), root.getMeta(ext.Pid))
+	assert.Equal(strconv.Itoa(os.Getpid()), root.Meta[ext.Pid])
 }
 
 func TestNewChildHasNoPid(t *testing.T) {
@@ -158,7 +167,7 @@ func TestNewChildHasNoPid(t *testing.T) {
 	root := tracer.newRootSpan("pylons.request", "pylons", "/")
 	child := tracer.newChildSpan("redis.command", root)
 
-	assert.Equal("", child.getMeta(ext.Pid))
+	assert.Equal("", child.Meta[ext.Pid])
 }
 
 func TestTracerSampler(t *testing.T) {
@@ -537,7 +546,7 @@ func TestPushTrace(t *testing.T) {
 	assert.Len(tracer.traceBuffer, traceBufferSize, "buffer should be full")
 	assert.NotEqual(0, len(tracer.errorBuffer), "there should be an error logged")
 	err := <-tracer.errorBuffer
-	assert.Equal(&errorTraceChanFull{Len: traceBufferSize}, err)
+	assert.Equal(&errBufferFull{name: "trace channel", size: traceBufferSize}, err)
 }
 
 func TestPushService(t *testing.T) {
@@ -579,7 +588,7 @@ func TestPushService(t *testing.T) {
 	assert.Len(tracer.serviceBuffer, serviceBufferSize, "buffer should be full")
 	assert.NotEqual(0, len(tracer.errorBuffer), "there should be an error logged")
 	err := <-tracer.errorBuffer
-	assert.Equal(&errorServiceChanFull{Len: serviceBufferSize}, err)
+	assert.Equal(&errBufferFull{name: "service channel", size: serviceBufferSize}, err)
 }
 
 func TestPushErr(t *testing.T) {
