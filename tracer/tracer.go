@@ -151,85 +151,83 @@ func (t *tracer) pushErr(err error) {
 // A Span with no SpanReference options (e.g., opentracing.ChildOf() or
 // opentracing.FollowsFrom()) becomes the root of its own trace.
 func (t *tracer) StartSpan(operationName string, options ...opentracing.StartSpanOption) opentracing.Span {
-	sso := opentracing.StartSpanOptions{}
+	opts := opentracing.StartSpanOptions{}
 	for _, o := range options {
-		o.Apply(&sso)
+		o.Apply(&opts)
 	}
-	return t.startSpanWithOptions(operationName, sso)
-}
-
-func (t *tracer) startSpanWithOptions(operationName string, options opentracing.StartSpanOptions) opentracing.Span {
-	if options.StartTime.IsZero() {
-		options.StartTime = time.Now().UTC()
+	if opts.StartTime.IsZero() {
+		opts.StartTime = time.Now().UTC()
 	}
-
-	context := new(spanContext)
-	var hasParent bool
-	var parent, span *span
-
-	for _, ref := range options.References {
-		ctx, ok := ref.ReferencedContext.(*spanContext)
-		if !ok {
-			// ignore the spanContext since it's not valid
-			continue
-		}
-
-		// if we have parenting define it
-		if ref.Type == opentracing.ChildOfRef {
-			hasParent = true
+	var context *spanContext
+	for _, ref := range opts.References {
+		if ctx, ok := ref.ReferencedContext.(*spanContext); ok && ref.Type == opentracing.ChildOfRef {
+			// found a parent context
 			context = ctx
-			parent = ctx.span
 		}
 	}
-
-	if parent == nil {
-		// create a root Span with the default service name and resource
-		span = t.newRootSpan(operationName, t.config.serviceName, operationName)
-
-		if hasParent {
-			// the Context doesn't have a Span reference because it
-			// has been propagated from another process, so we set these
-			// values manually
+	id := random.Uint64()
+	span := &span{
+		Name:     operationName,
+		Service:  t.config.serviceName,
+		Resource: operationName,
+		Meta:     map[string]string{},
+		Metrics:  map[string]float64{},
+		SpanID:   id,
+		TraceID:  id,
+		ParentID: 0,
+		Start:    opts.StartTime.UnixNano(),
+		Sampled:  true,
+		tracer:   t,
+	}
+	if context != nil {
+		// this is a child span
+		if context.span == nil {
+			// the parent is in another process (e.g. transmitted via HTTP headers)
 			span.TraceID = context.traceID
 			span.ParentID = context.spanID
-			t.sample(span)
-		}
-	} else {
-		// create a child Span that inherits from a parent
-		span = t.newChildSpan(operationName, parent)
-	}
+		} else {
+			// the parent is in the same process
+			parent := context.span
+			parent.RLock()
+			defer parent.RUnlock()
 
-	// create an OpenTracing compatible Span; the SpanContext has a
-	// back-reference that is used for parent-child hierarchy
-	span.context = &spanContext{
-		traceID:  span.TraceID,
-		spanID:   span.SpanID,
-		parentID: span.ParentID,
-		sampled:  span.Sampled,
-		span:     span,
-	}
-	span.Start = options.StartTime.UnixNano()
-	span.tracer = t
+			span.Service = parent.Service
+			span.TraceID = parent.TraceID
+			span.ParentID = parent.SpanID
+			span.Sampled = parent.Sampled
+			span.parent = parent
+			span.buffer = parent.buffer
+			span.context = newSpanContext(span, parent.context.baggage)
 
-	if parent != nil {
-		// propagate baggage items
-		if l := len(parent.context.baggage); l > 0 {
-			span.context.baggage = make(map[string]string, len(parent.context.baggage))
-			for k, v := range parent.context.baggage {
-				span.context.baggage[k] = v
+			err := span.buffer.Push(span)
+			if err != nil {
+				t.pushErr(err)
+			}
+			if parent.hasSamplingPriority() {
+				span.setSamplingPriority(parent.getSamplingPriority())
 			}
 		}
 	}
-
+	if context == nil || context.span == nil {
+		// this is a root span within this process
+		span.buffer = newSpanBuffer(t)
+		span.context = newSpanContext(span, nil)
+		err := span.buffer.Push(span)
+		if err != nil {
+			t.pushErr(err)
+		}
+		span.SetTag(ext.Pid, strconv.Itoa(os.Getpid()))
+		// TODO(ufoot): introduce distributed sampling here
+		t.sample(span)
+	}
 	// add tags from options
-	for k, v := range options.Tags {
+	for k, v := range opts.Tags {
 		span.SetTag(k, v)
 	}
 	// add global tags
 	for k, v := range t.config.globalTags {
 		span.SetTag(k, v)
 	}
-
 	return span
 }
 
@@ -288,6 +286,7 @@ func (t *tracer) newRootSpan(name, service, resource string) *span {
 		t.pushErr(err)
 	}
 	span.SetTag(ext.Pid, strconv.Itoa(os.Getpid()))
+	span.context = newSpanContext(span, nil)
 
 	// TODO(ufoot): introduce distributed sampling here
 	t.sample(span)
@@ -320,6 +319,7 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 	if err != nil {
 		t.pushErr(err)
 	}
+	span.context = newSpanContext(span, parent.context.baggage)
 
 	return span
 }
@@ -415,9 +415,21 @@ func (t *tracer) ForceFlush() {
 	<-done
 }
 
+// sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.
+const sampleRateMetricKey = "_sample_rate"
+
 // Sample samples a span with the internal sampler.
 func (t *tracer) sample(span *span) {
-	t.config.sampler.Sample(span)
+	sampler := t.config.sampler
+	sampled := sampler.Sample(span)
+	if sampled {
+		if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
+			// for limited rate samplers, make note of the rate
+			span.setMetric(sampleRateMetricKey, rs.Rate())
+		}
+	}
+	span.Sampled = sampled
+	span.context.sampled = sampled
 }
 
 // worker periodically flushes traces and services to the transport.

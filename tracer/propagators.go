@@ -84,7 +84,7 @@ func (p *TextMapPropagator) Extract(carrier interface{}) (opentracing.SpanContex
 	}
 	var err error
 	var traceID, parentID uint64
-	decodedBaggage := make(map[string]string)
+	baggage := make(map[string]string)
 
 	// extract SpanContext fields
 	err = reader.ForeachKey(func(k, v string) error {
@@ -102,24 +102,21 @@ func (p *TextMapPropagator) Extract(carrier interface{}) (opentracing.SpanContex
 		default:
 			lowercaseK := strings.ToLower(k)
 			if strings.HasPrefix(lowercaseK, p.baggagePrefix) {
-				decodedBaggage[strings.TrimPrefix(lowercaseK, p.baggagePrefix)] = v
+				baggage[strings.TrimPrefix(lowercaseK, p.baggagePrefix)] = v
 			}
 		}
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
-
 	if traceID == 0 || parentID == 0 {
 		return nil, opentracing.ErrSpanContextNotFound
 	}
-
 	return &spanContext{
 		traceID: traceID,
 		spanID:  parentID,
-		baggage: decodedBaggage,
+		baggage: baggage,
 	}, nil
 }
