@@ -56,7 +56,6 @@ type span struct {
 	TraceID  uint64             `json:"trace_id"`          // identifier of the root span
 	ParentID uint64             `json:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `json:"error"`             // error status of the span; 0 means no errors
-	Sampled  bool               `json:"-"`                 // if this span is sampled (and should be kept/recorded) or not
 
 	sync.RWMutex
 	tracer   *tracer // the tracer that generated this span
@@ -66,7 +65,6 @@ type span struct {
 	// However, ParentID can technically be overridden (typical usage: distributed tracing)
 	// and also, parent == nil is used to identify root and top-level ("local root") spans.
 	parent  *span
-	buffer  *spanBuffer
 	context *spanContext
 }
 
@@ -331,6 +329,7 @@ func (s *span) setError(err error) {
 
 func (s *span) finish(finishTime int64) {
 	s.Lock()
+	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -342,26 +341,12 @@ func (s *span) finish(finishTime int64) {
 		s.Duration = finishTime - s.Start
 	}
 	s.finished = true
-	s.Unlock()
 
-	if s.buffer == nil {
-		if s.tracer != nil {
-			s.tracer.pushErr(&errorNoSpanBuf{SpanName: s.Name})
-		}
+	if !s.context.sampled {
+		// not sampled
 		return
 	}
-
-	// If not sampled, drop it
-	if !s.Sampled {
-		return
-	}
-
-	s.buffer.AckFinish() // put data in channel only if trace is completely finished
-
-	// It's important that when Finish() exits, the data is put in
-	// the channel for real, when the trace is finished.
-	// Otherwise, tests could become flaky (because you never know in what state
-	// the channel is).
+	s.context.finish()
 }
 
 // String returns a human readable representation of the span. Not for
