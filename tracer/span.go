@@ -103,12 +103,12 @@ func (s *span) BaggageItem(key string) string {
 }
 
 const (
-	// SpanType defines the Span type (web, db, cache)
-	SpanType = "span.type"
-	// ServiceName defines the Service name for this Span
-	ServiceName = "service.name"
-	// ResourceName defines the Resource name for the Span
-	ResourceName = "resource.name"
+	// spanType defines the Span type (web, db, cache)
+	spanType = "span.type"
+	// serviceName defines the Service name for this Span
+	serviceName = "service.name"
+	// resourceName defines the Resource name for the Span
+	resourceName = "resource.name"
 )
 
 // SetTag adds a tag to the span, overwriting pre-existing values for
@@ -135,11 +135,11 @@ func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 		return s
 	}
 	switch key {
-	case ServiceName:
+	case serviceName:
 		s.Service = fmt.Sprint(value)
-	case ResourceName:
+	case resourceName:
 		s.Resource = fmt.Sprint(value)
-	case SpanType:
+	case spanType:
 		s.Type = fmt.Sprint(value)
 	case string(ext.Error):
 		switch v := value.(type) {

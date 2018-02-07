@@ -3,6 +3,8 @@ package tracer
 import (
 	"os"
 	"path/filepath"
+
+	opentracing "github.com/opentracing/opentracing-go"
 )
 
 type config struct {
@@ -102,3 +104,8 @@ func WithSampler(s Sampler) Option {
 		c.sampler = s
 	}
 }
+
+func ResourceName(name string) opentracing.StartSpanOption { return Tag(resourceName, name) }
+func ServiceName(name string) opentracing.StartSpanOption  { return Tag(serviceName, name) }
+func SpanType(name string) opentracing.StartSpanOption     { return Tag(spanType, name) }
+func Tag(k, v string) opentracing.StartSpanOption          { return opentracing.Tag{k, v} }
