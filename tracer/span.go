@@ -2,22 +2,19 @@ package tracer
 
 import (
 	"fmt"
-	stdlog "log"
 	"reflect"
 	"runtime/debug"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
-	"github.com/opentracing/opentracing-go/log"
+	"github.com/DataDog/dd-trace-go/dd"
+	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
-var _ opentracing.Span = (*span)(nil)
+var _ dd.Span = (*span)(nil)
 
-// Span represents a computation. Callers must call Finish when a span is
+// span represents a computation. Callers must call Finish when a span is
 // complete to ensure it's submitted.
 //
 //	span := tracer.NewRootSpan("web.request", "datadog.com", "/user/{id}")
@@ -68,22 +65,18 @@ type span struct {
 	context *spanContext
 }
 
-// Tracer provides access to the `Tracer`` that created this Span.
-func (s *span) Tracer() opentracing.Tracer { return s.tracer }
-
 // Context yields the SpanContext for this Span. Note that the return
-// value of Context() is still valid after a call to Span.Finish(), as is
-// a call to Span.Context() after a call to Span.Finish().
-func (s *span) Context() opentracing.SpanContext {
+// value of Context() is still valid after a call to Finish().
+func (s *span) Context() dd.SpanContext {
 	s.RLock()
 	defer s.RUnlock()
 
-	return s.context
+	ctx := *s.context // return a copy
+	return &ctx
 }
 
-// SetBaggageItem sets a key:value pair on this Span and its SpanContext
-// that also propagates to descendants of this Span.
-func (s *span) SetBaggageItem(key, val string) opentracing.Span {
+// SetBaggageItem sets a key/value pair as baggage on the span.
+func (s *span) SetBaggageItem(key, val string) dd.Span {
 	s.Lock()
 	defer s.Unlock()
 
@@ -91,8 +84,8 @@ func (s *span) SetBaggageItem(key, val string) opentracing.Span {
 	return s
 }
 
-// BaggageItem gets the value for a baggage item given its key. Returns the empty string
-// if the value isn't found in this Span.
+// BaggageItem gets the value for a baggage item given its key. Returns the
+// empty string if the value isn't found in this Span.
 func (s *span) BaggageItem(key string) string {
 	s.Lock()
 	defer s.Unlock()
@@ -110,8 +103,8 @@ const (
 )
 
 // SetTag adds a tag to the span, overwriting pre-existing values for
-// the given `key`.
-func (s *span) SetTag(key string, value interface{}) opentracing.Span {
+// the given key.
+func (s *span) SetTag(key string, value interface{}) dd.Span {
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -123,7 +116,7 @@ func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 	if v, ok := toFloat64(value); ok {
 		// sent as numeric value, so we can store it as a metric
 		switch key {
-		case string(ext.SamplingPriority):
+		case "sampling.priority":
 			// setting sampling priority per spec
 			s.Metrics[samplingPriorityKey] = v
 		default:
@@ -138,7 +131,7 @@ func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 		s.Resource = fmt.Sprint(value)
 	case spanType:
 		s.Type = fmt.Sprint(value)
-	case string(ext.Error):
+	case "error":
 		switch v := value.(type) {
 		case bool:
 			// bool value as per Opentracing spec.
@@ -150,7 +143,10 @@ func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 		case error:
 			// if anyone sets an error value as the tag, be nice here
 			// and provide all the benefits.
-			s.setError(v)
+			s.Error = 1
+			s.Meta[ext.ErrorMsg] = v.Error()
+			s.Meta[ext.ErrorType] = reflect.TypeOf(v).String()
+			s.Meta[ext.ErrorStack] = string(debug.Stack())
 		case nil:
 			// no error
 			s.Error = 0
@@ -171,136 +167,30 @@ func (s *span) SetTag(key string, value interface{}) opentracing.Span {
 // calling this method multiple times is safe and doesn't update the
 // current Span. Once a Span has been finished, methods that modify the Span
 // will become no-ops.
-func (s *span) Finish() {
-	s.finish(now())
-}
-
-// FinishWithOptions is like Finish() but with explicit control over
-// timestamps and log data.
-func (s *span) FinishWithOptions(options opentracing.FinishOptions) {
-	if options.FinishTime.IsZero() {
-		options.FinishTime = time.Now().UTC()
+func (s *span) Finish(opts ...dd.FinishOption) {
+	var cfg dd.FinishConfig
+	for _, fn := range opts {
+		fn(&cfg)
 	}
-
-	s.finish(options.FinishTime.UnixNano())
+	var t int64
+	if cfg.FinishTime.IsZero() {
+		t = now()
+	} else {
+		t = cfg.FinishTime.UnixNano()
+	}
+	if cfg.Error != nil {
+		s.SetTag("error", cfg.Error)
+	}
+	s.finish(t)
 }
 
 // SetOperationName sets or changes the operation name.
-func (s *span) SetOperationName(operationName string) opentracing.Span {
+func (s *span) SetOperationName(operationName string) dd.Span {
 	s.Lock()
 	defer s.Unlock()
 
 	s.Name = operationName
 	return s
-}
-
-const (
-	errorMsgKey   = "error.msg"
-	errorTypeKey  = "error.type"
-	errorStackKey = "error.stack"
-)
-
-// LogFields is an efficient and type-checked way to record key:value
-// logging data about a Span, though the programming interface is a little
-// more verbose than LogKV().
-func (s *span) LogFields(fields ...log.Field) {
-	var invalidFields bool
-	s.Lock()
-	defer s.Unlock()
-	// We don't lock spans when flushing, so we could have a data race when
-	// modifying a span as it's being flushed. This protects us against that
-	// race, since spans are marked `finished` before we flush them.
-	if s.finished {
-		return
-	}
-	// catch standard opentracing keys and adjust to internal ones as per spec:
-	// https://github.com/opentracing/specification/blob/master/semantic_conventions.md#log-fields-table
-	for _, f := range fields {
-		switch f.Key() {
-		case "event":
-			if v, ok := f.Value().(string); ok && v == "error" {
-				atomic.CompareAndSwapInt32(&s.Error, 0, 1)
-			}
-		case "error", "error.object":
-			if err, ok := f.Value().(error); ok {
-				s.setError(err)
-			}
-		case "message":
-			s.setMeta(errorMsgKey, fmt.Sprint(f.Value()))
-		case "stack":
-			s.setMeta(errorStackKey, fmt.Sprint(f.Value()))
-		default:
-			invalidFields = true
-		}
-	}
-	if s.tracer.config.debug && invalidFields {
-		stdlog.Println(`LOGFIELDS: Valid log keys are: "error", "error.object", "message" and "stack".`)
-	}
-}
-
-// LogKV is a concise, readable way to record key:value logging data about
-// a span, though unfortunately this also makes it less efficient and less
-// type-safe than LogFields().
-func (s *span) LogKV(keyVals ...interface{}) {
-	fields, err := log.InterleavedKVToFields(keyVals...)
-	if err != nil {
-		s.RLock()
-		debug := s.tracer.config.debug
-		s.RUnlock()
-		if debug {
-			stdlog.Printf("LogKV: %v\n", err)
-			return
-		}
-	}
-	s.LogFields(fields...)
-}
-
-// LogEvent is deprecated: use LogFields or LogKV
-func (s *span) LogEvent(event string) {
-	s.RLock()
-	defer s.RUnlock()
-	if s.tracer.config.debug {
-		stdlog.Println("span.LogEvent is deprecated, use LogFields or LogKV.\n")
-	}
-}
-
-// LogEventWithPayload deprecated: use LogFields or LogKV
-func (s *span) LogEventWithPayload(event string, payload interface{}) {
-	s.RLock()
-	defer s.RUnlock()
-	if s.tracer.config.debug {
-		stdlog.Println("span.LogEventWithPayload is deprecated, use LogFields or LogKV.\n")
-	}
-}
-
-// Log is deprecated: use LogFields or LogKV
-func (s *span) Log(data opentracing.LogData) {
-	s.RLock()
-	defer s.RUnlock()
-	if s.tracer.config.debug {
-		stdlog.Println("span.Log is deprecated, use LogFields or LogKV.\n")
-	}
-}
-
-// setMeta adds an arbitrary meta field to the current Span. The span
-// must be locked outside of this function
-func (s *span) setMeta(key, value string) {
-	// We don't lock spans when flushing, so we could have a data race when
-	// modifying a span as it's being flushed. This protects us against that
-	// race, since spans are marked `finished` before we flush them.
-	if s.finished {
-		return
-	}
-	s.Meta[key] = value
-}
-
-// setError sets the appropriate span properties and tags based on the passed error.
-// Callers must guard.
-func (s *span) setError(err error) {
-	atomic.CompareAndSwapInt32(&s.Error, 0, 1)
-	s.setMeta(errorMsgKey, err.Error())
-	s.setMeta(errorTypeKey, reflect.TypeOf(err).String())
-	s.setMeta(errorStackKey, string(debug.Stack()))
 }
 
 func (s *span) finish(finishTime int64) {

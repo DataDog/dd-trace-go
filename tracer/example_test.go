@@ -1,4 +1,4 @@
-package tracer_test
+package tracer
 
 func Example() {
 	// TODO(gbbr): Rectify

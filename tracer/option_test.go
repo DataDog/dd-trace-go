@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func withTransport(t transport) Option {
+func withTransport(t transport) StartOption {
 	return func(c *config) {
 		c.transport = t
 	}
@@ -28,6 +28,7 @@ func TestTracerOptions(t *testing.T) {
 		WithServiceName("api-intake"),
 		WithAgentAddr("ddagent.consul.local:58126"),
 		WithGlobalTag("k", "v"),
+		WithDebugMode(true),
 	)
 	c := tracer.config
 	assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
@@ -35,6 +36,7 @@ func TestTracerOptions(t *testing.T) {
 	assert.Equal("ddagent.consul.local:58126", c.agentAddr)
 	assert.NotNil(c.globalTags)
 	assert.Equal("v", c.globalTags["k"])
+	assert.True(c.debug)
 }
 
 func TestTracerOptionsWithGlobalTags(t *testing.T) {

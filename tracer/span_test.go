@@ -5,11 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/log"
-	"github.com/stretchr/testify/assert"
-
 	"github.com/DataDog/dd-trace-go/tracer/ext"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // newSpan creates a new span. This is a low-level function, required for testing and advanced usage.
@@ -33,10 +31,11 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 
 // newBasicSpan is the OpenTracing Span constructor
 func newBasicSpan(operationName string) *span {
-	return newSpan(operationName, "", "", 0, 0, 0, defaultTestTracer)
+	tracer, _ := getTestTracer()
+	return newSpan(operationName, "", "", 0, 0, 0, tracer)
 }
 
-func TestOpenSpanBaggage(t *testing.T) {
+func TestSpanBaggage(t *testing.T) {
 	assert := assert.New(t)
 
 	span := newBasicSpan("web.request")
@@ -44,14 +43,14 @@ func TestOpenSpanBaggage(t *testing.T) {
 	assert.Equal("value", span.BaggageItem("key"))
 }
 
-func TestOpenSpanContext(t *testing.T) {
+func TestSpanContext(t *testing.T) {
 	assert := assert.New(t)
 
 	span := newBasicSpan("web.request")
 	assert.NotNil(span.Context())
 }
 
-func TestOpenSpanOperationName(t *testing.T) {
+func TestSpanOperationName(t *testing.T) {
 	assert := assert.New(t)
 
 	span := newBasicSpan("web.request")
@@ -59,27 +58,66 @@ func TestOpenSpanOperationName(t *testing.T) {
 	assert.Equal("http.request", span.Name)
 }
 
-func TestOpenSpanFinish(t *testing.T) {
+func TestSpanFinish(t *testing.T) {
 	assert := assert.New(t)
+	wait := time.Millisecond * 2
+	tracer := newTracer(withTransport(newDefaultTransport()))
+	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
-	span := newBasicSpan("web.request")
+	// the finish should set finished and the duration
+	time.Sleep(wait)
 	span.Finish()
-
-	assert.True(span.Duration > 0)
+	assert.True(span.Duration > int64(wait))
+	assert.True(span.finished)
 }
 
-func TestOpenSpanFinishWithTime(t *testing.T) {
+func TestSpanFinishTwice(t *testing.T) {
+	assert := assert.New(t)
+	wait := time.Millisecond * 2
+
+	tracer, _ := getTestTracer()
+	defer tracer.Stop()
+
+	assert.Len(tracer.traceBuffer, 0)
+
+	// the finish must be idempotent
+	span := tracer.newRootSpan("pylons.request", "pylons", "/")
+	time.Sleep(wait)
+	span.Finish()
+	assert.Len(tracer.traceBuffer, 1)
+
+	previousDuration := span.Duration
+	time.Sleep(wait)
+	span.Finish()
+	assert.Equal(previousDuration, span.Duration)
+	assert.Len(tracer.traceBuffer, 1)
+}
+
+func TestSpanFinishWithTime(t *testing.T) {
 	assert := assert.New(t)
 
 	finishTime := time.Now().Add(10 * time.Second)
 	span := newBasicSpan("web.request")
-	span.FinishWithOptions(opentracing.FinishOptions{FinishTime: finishTime})
+	span.Finish(FinishTime(finishTime))
 
 	duration := finishTime.UnixNano() - span.Start
 	assert.Equal(duration, span.Duration)
 }
 
-func TestOpenSpanSetTag(t *testing.T) {
+func TestSpanFinishWithError(t *testing.T) {
+	assert := assert.New(t)
+
+	err := errors.New("test error")
+	span := newBasicSpan("web.request")
+	span.Finish(WithError(err))
+
+	assert.Equal(int32(1), span.Error)
+	assert.Equal("test error", span.Meta[ext.ErrorMsg])
+	assert.Equal("*errors.errorString", span.Meta[ext.ErrorType])
+	assert.NotEmpty(span.Meta[ext.ErrorStack])
+}
+
+func TestSpanSetTag(t *testing.T) {
 	assert := assert.New(t)
 
 	span := newBasicSpan("web.request")
@@ -97,52 +135,21 @@ func TestOpenSpanSetTag(t *testing.T) {
 
 	span.SetTag("error", errors.New("abc"))
 	assert.Equal(int32(1), span.Error)
-	assert.Equal("abc", span.Meta[errorMsgKey])
-	assert.Equal("*errors.errorString", span.Meta[errorTypeKey])
-	assert.NotEmpty(span.Meta[errorStackKey])
+	assert.Equal("abc", span.Meta[ext.ErrorMsg])
+	assert.Equal("*errors.errorString", span.Meta[ext.ErrorType])
+	assert.NotEmpty(span.Meta[ext.ErrorStack])
 
 	span.SetTag("error", "something else")
 	assert.Equal(int32(1), span.Error)
+
+	span.SetTag("error", false)
+	assert.Equal(int32(0), span.Error)
 
 	span.SetTag("sampling.priority", 2)
 	assert.Equal(float64(2), span.Metrics[samplingPriorityKey])
 }
 
-func TestOpenSpanLogFields(t *testing.T) {
-	assert := assert.New(t)
-
-	span := newBasicSpan("web.request")
-
-	span.LogFields(log.String("event", "error"))
-	assert.Equal(int32(1), span.Error)
-
-	span.LogFields(log.Error(errors.New("abc")))
-
-	assert.Equal(int32(1), span.Error)
-	assert.Equal("abc", span.Meta[errorMsgKey])
-	assert.Equal("*errors.errorString", span.Meta[errorTypeKey])
-	assert.NotEmpty(span.Meta[errorStackKey])
-
-	span.LogFields(log.String("message", "qwe"), log.String("stack", "zxc"))
-	assert.Equal("qwe", span.Meta[errorMsgKey])
-	assert.Equal("zxc", span.Meta[errorStackKey])
-}
-
-func TestOpenSpanLogKV(t *testing.T) {
-	assert := assert.New(t)
-
-	span := newBasicSpan("web.request")
-	span.LogKV(
-		"event", "error",
-		"message", "asd",
-		"stack", "qwe",
-	)
-	assert.Equal(int32(1), span.Error)
-	assert.Equal("asd", span.Meta[errorMsgKey])
-	assert.Equal("qwe", span.Meta[errorStackKey])
-}
-
-func TestOpenSpanSetDatadogTags(t *testing.T) {
+func TestSpanSetDatadogTags(t *testing.T) {
 	assert := assert.New(t)
 
 	span := newBasicSpan("web.request")
@@ -174,23 +181,6 @@ func TestSpanString(t *testing.T) {
 	assert.NotEqual("", span.String())
 }
 
-func TestSpanSetTag(t *testing.T) {
-	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-
-	// check the map is properly initialized
-	span.SetTag("status.code", "200")
-	assert.Equal("200", span.Meta["status.code"])
-
-	// operating on a finished span is a no-op
-	nMeta := len(span.Meta)
-	span.Finish()
-	span.SetTag("finished.test", "true")
-	assert.Equal(len(span.Meta), nMeta)
-	assert.Equal(span.Meta["finished.test"], "")
-}
-
 func TestSpanSetMetric(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer(withTransport(newDefaultTransport()))
@@ -215,7 +205,7 @@ func TestSpanError(t *testing.T) {
 
 	// check the error is set in the default meta
 	err := errors.New("Something wrong")
-	span.LogFields(log.Error(err))
+	span.SetTag("error", err)
 	assert.Equal(int32(1), span.Error)
 	assert.Equal("Something wrong", span.Meta["error.msg"])
 	assert.Equal("*errors.errorString", span.Meta["error.type"])
@@ -225,7 +215,7 @@ func TestSpanError(t *testing.T) {
 	span = tracer.newRootSpan("flask.request", "flask", "/")
 	nMeta := len(span.Meta)
 	span.Finish()
-	span.LogFields(log.Error(err))
+	span.SetTag("error", err)
 	assert.Equal(int32(0), span.Error)
 	assert.Equal(nMeta, len(span.Meta))
 	assert.Equal("", span.Meta["error.msg"])
@@ -240,7 +230,7 @@ func TestSpanError_Typed(t *testing.T) {
 
 	// check the error is set in the default meta
 	err := &boomError{}
-	span.LogFields(log.Error(err))
+	span.SetTag("error", err)
 	assert.Equal(int32(1), span.Error)
 	assert.Equal("boom", span.Meta["error.msg"])
 	assert.Equal("*tracer.boomError", span.Meta["error.type"])
@@ -254,50 +244,15 @@ func TestSpanErrorNil(t *testing.T) {
 
 	// don't set the error if it's nil
 	nMeta := len(span.Meta)
-	span.LogFields(log.Error(nil))
+	span.SetTag("error", nil)
 	assert.Equal(int32(0), span.Error)
 	assert.Equal(nMeta, len(span.Meta))
-}
-
-func TestSpanFinish(t *testing.T) {
-	assert := assert.New(t)
-	wait := time.Millisecond * 2
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-
-	// the finish should set finished and the duration
-	time.Sleep(wait)
-	span.Finish()
-	assert.True(span.Duration > int64(wait))
-	assert.True(span.finished)
-}
-
-func TestSpanFinishTwice(t *testing.T) {
-	assert := assert.New(t)
-	wait := time.Millisecond * 2
-
-	tracer, _ := getTestTracer()
-	defer tracer.stop()
-
-	assert.Len(tracer.traceBuffer, 0)
-
-	// the finish must be idempotent
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-	time.Sleep(wait)
-	span.Finish()
-	assert.Len(tracer.traceBuffer, 1)
-
-	previousDuration := span.Duration
-	time.Sleep(wait)
-	span.Finish()
-	assert.Equal(previousDuration, span.Duration)
-	assert.Len(tracer.traceBuffer, 1)
 }
 
 // Prior to a bug fix, this failed when running `go test -race`
 func TestSpanModifyWhileFlushing(t *testing.T) {
 	tracer, _ := getTestTracer()
-	defer tracer.stop()
+	defer tracer.Stop()
 
 	done := make(chan struct{})
 	go func() {
@@ -308,7 +263,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		span.SetTag("race_test", "true")
 		span.SetTag("race_test2", 133.7)
 		span.SetTag("race_test3", 133.7)
-		span.LogFields(log.Error(errors.New("t")))
+		span.SetTag("error", errors.New("t"))
 		done <- struct{}{}
 	}()
 

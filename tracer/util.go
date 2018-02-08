@@ -1,5 +1,7 @@
 package tracer
 
+// toFloat64 attempts to convert value into a float64. If it succeeds it returns
+// the value and true, otherwise 0 and false.
 func toFloat64(value interface{}) (f float64, ok bool) {
 	switch i := value.(type) {
 	case byte:
