@@ -1,9 +1,10 @@
 package tracer
 
 import (
-	"golang.org/x/sys/windows"
 	"log"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 // This method is more precise than the go1.8 time.Now on Windows

@@ -6,44 +6,15 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/dd"
+	"github.com/DataDog/dd-trace-go/internal"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
-	"github.com/opentracing/opentracing-go"
 )
 
-const flushInterval = 2 * time.Second
+var _ dd.Tracer = (*tracer)(nil)
 
-type service struct {
-	Name    string `json:"-"`        // the internal of the service (e.g. acme_search, datadog_web)
-	App     string `json:"app"`      // the name of the application (e.g. rails, postgres, custom-app)
-	AppType string `json:"app_type"` // the type of the application (e.g. db, web)
-}
-
-func (s service) equals(s2 service) bool {
-	return s.Name == s2.Name && s.App == s2.App && s.AppType == s2.AppType
-}
-
-const (
-	// traceBufferSize is the capacity of the trace channel. This channels is emptied
-	// on a regular basis (worker thread) or when it reaches 50% of its capacity.
-	// If it's full, then data is simply dropped and ignored, with a log message.
-	// This only happens under heavy load,
-	traceBufferSize = 1000
-	// serviceBufferSize is the length of the service channel. As for the trace channel,
-	// it's emptied by worker thread or when it reaches 50%. Note that there should
-	// be much less data here, as service data does not be to be updated that often.
-	serviceBufferSize = 50
-	// errorBufferSize is the number of errors we keep in the error channel. When this
-	// one is full, errors are just ignored, dropped, nothing left. At some point,
-	// there's already a whole lot of errors in the backlog, there's no real point
-	// in keeping millions of errors, a representative sample is enough. And we
-	// don't want to block user code and/or bloat memory or log files with redundant data.
-	errorBufferSize = 200
-)
-
-var _ opentracing.Tracer = (*tracer)(nil)
-
-// Tracer creates, buffers and submits Spans which are used to time blocks of
-// compuration.
+// tracer creates, buffers and submits Spans which are used to time blocks of
+// computation.
 type tracer struct {
 	*config
 
@@ -65,17 +36,64 @@ type tracer struct {
 	exitReq chan chan<- struct{}
 }
 
-// Start creates a new tracer with the given set of options and registers it as
-// the global tracer. The returned stopFunc should be used to cleanly exit the
-// program, flushing any leftover traces to the transport. To use the tracer,
-// simply use the opentracing API as normal.
-func Start(opts ...Option) (stopFunc func()) {
-	t := newTracer(opts...)
-	opentracing.SetGlobalTracer(t)
-	return t.stop
+// Start starts the tracer with the given set of options.
+func Start(opts ...StartOption) {
+	internal.GlobalTracer = newTracer(opts...)
 }
 
-func newTracer(opts ...Option) *tracer {
+// Stop stops the started tracer. Subsequent calls are valid but become no-op.
+func Stop() {
+	internal.GlobalTracer.Stop()
+	internal.GlobalTracer = &internal.NoopTracer{}
+}
+
+type Span = dd.Span
+
+// StartSpan starts a new span with the given operation name and set of options.
+// If the tracer is not started calling this function is a no-op.
+func StartSpan(operationName string, opts ...StartSpanOption) Span {
+	return internal.GlobalTracer.StartSpan(operationName, opts...)
+}
+
+// SetServiceInfo sets information about a service.
+// If the tracer is not started calling this function is a no-op.
+func SetServiceInfo(name, app, appType string) {
+	internal.GlobalTracer.SetServiceInfo(name, app, appType)
+}
+
+// Extract extracts a SpanContext from the passed carrier. The carrier is expected
+// to implement TextMapReader, otherwise an error is returned.
+// If the tracer is not started calling this function is a no-op.
+func Extract(carrier interface{}) (dd.SpanContext, error) {
+	return internal.GlobalTracer.Extract(carrier)
+}
+
+// Inject injects the given SpanContext into the carrier. The carrier is expected to
+// implement TextMapWriter, otherwise an error is returned.
+// If the tracer is not started calling this function is a no-op.
+func Inject(ctx dd.SpanContext, carrier interface{}) error {
+	return internal.GlobalTracer.Inject(ctx, carrier)
+}
+
+const (
+	// traceBufferSize is the capacity of the trace channel. This channels is emptied
+	// on a regular basis (worker thread) or when it reaches 50% of its capacity.
+	// If it's full, then data is simply dropped and ignored, with a log message.
+	// This only happens under heavy load,
+	traceBufferSize = 1000
+	// serviceBufferSize is the length of the service channel. As for the trace channel,
+	// it's emptied by worker thread or when it reaches 50%. Note that there should
+	// be much less data here, as service data does not be to be updated that often.
+	serviceBufferSize = 50
+	// errorBufferSize is the number of errors we keep in the error channel. When this
+	// one is full, errors are just ignored, dropped, nothing left. At some point,
+	// there's already a whole lot of errors in the backlog, there's no real point
+	// in keeping millions of errors, a representative sample is enough. And we
+	// don't want to block user code and/or bloat memory or log files with redundant data.
+	errorBufferSize = 200
+)
+
+func newTracer(opts ...StartOption) *tracer {
 	c := new(config)
 	defaults(c)
 	for _, fn := range opts {
@@ -83,6 +101,9 @@ func newTracer(opts ...Option) *tracer {
 	}
 	if c.transport == nil {
 		c.transport = newTransport(c.agentAddr)
+	}
+	if c.textMapPropagator == nil {
+		c.textMapPropagator = NewTextMapPropagator("", "", "")
 	}
 	t := &tracer{
 		config:           c,
@@ -102,6 +123,43 @@ func newTracer(opts ...Option) *tracer {
 	return t
 }
 
+// flushInterval is the interval at which the buffer contents will be flushed
+// to the transport.
+const flushInterval = 2 * time.Second
+
+// worker periodically flushes traces and services to the transport.
+func (t *tracer) worker() {
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			t.flush()
+
+		case done := <-t.flushAllReq:
+			t.flush()
+			done <- struct{}{}
+
+		case <-t.flushTracesReq:
+			t.flushTraces()
+
+		case <-t.flushServicesReq:
+			t.flushServices()
+
+		case <-t.flushErrorsReq:
+			t.flushErrs()
+
+		case done := <-t.exitReq:
+			t.flush()
+			done <- struct{}{}
+			return
+		}
+	}
+}
+
+// pushTrace pushes a new trace onto the trace buffer. If the trace buffer is getting
+// full, it also triggers a flush request.
 func (t *tracer) pushTrace(trace []*span) {
 	if len(t.traceBuffer) >= cap(t.traceBuffer)/2 { // starts being full, anticipate, try and flush soon
 		select {
@@ -147,25 +205,26 @@ func (t *tracer) pushErr(err error) {
 	}
 }
 
-// StartSpan creates, starts, and returns a new Span with the given `operationName`
-// A Span with no SpanReference options (e.g., opentracing.ChildOf() or
-// opentracing.FollowsFrom()) becomes the root of its own trace.
-func (t *tracer) StartSpan(operationName string, options ...opentracing.StartSpanOption) opentracing.Span {
-	var opts opentracing.StartSpanOptions
-	for _, o := range options {
-		o.Apply(&opts)
+// StartSpan creates, starts, and returns a new Span with the given `operationName`.
+func (t *tracer) StartSpan(operationName string, options ...dd.StartSpanOption) dd.Span {
+	var opts dd.StartSpanConfig
+	for _, fn := range options {
+		fn(&opts)
 	}
+	var startTime int64
 	if opts.StartTime.IsZero() {
-		opts.StartTime = time.Now().UTC()
+		startTime = now()
+	} else {
+		startTime = opts.StartTime.UnixNano()
 	}
 	var context *spanContext
-	for _, ref := range opts.References {
-		if ctx, ok := ref.ReferencedContext.(*spanContext); ok && ref.Type == opentracing.ChildOfRef {
-			// found a parent context
+	if opts.Parent != nil {
+		if ctx, ok := opts.Parent.(*spanContext); ok {
 			context = ctx
 		}
 	}
 	id := random.Uint64()
+	// span defaults
 	span := &span{
 		Name:     operationName,
 		Service:  t.config.serviceName,
@@ -175,7 +234,7 @@ func (t *tracer) StartSpan(operationName string, options ...opentracing.StartSpa
 		SpanID:   id,
 		TraceID:  id,
 		ParentID: 0,
-		Start:    opts.StartTime.UnixNano(),
+		Start:    startTime,
 		tracer:   t,
 	}
 	if context != nil {
@@ -205,7 +264,6 @@ func (t *tracer) StartSpan(operationName string, options ...opentracing.StartSpa
 		// this is either a global root span or a process-level root span
 		span.context = newSpanContext(span, nil)
 		span.SetTag(ext.Pid, strconv.Itoa(os.Getpid()))
-		// TODO(ufoot): introduce distributed sampling here
 		t.sample(span)
 	}
 	// add tags from options
@@ -219,34 +277,8 @@ func (t *tracer) StartSpan(operationName string, options ...opentracing.StartSpa
 	return span
 }
 
-// Inject takes the `sm` SpanContext instance and injects it for
-// propagation within `carrier`. The actual type of `carrier` depends on
-// the value of `format`. Currently supported Injectors are:
-// * `TextMap`
-// * `HTTPHeaders`
-func (t *tracer) Inject(ctx opentracing.SpanContext, format interface{}, carrier interface{}) error {
-	switch format {
-	case opentracing.TextMap, opentracing.HTTPHeaders:
-		return t.config.textMapPropagator.Inject(ctx, carrier)
-	case opentracing.Binary:
-		return t.config.binaryPropagator.Inject(ctx, carrier)
-	}
-	return opentracing.ErrUnsupportedFormat
-}
-
-// Extract returns a SpanContext instance given `format` and `carrier`.
-func (t *tracer) Extract(format interface{}, carrier interface{}) (opentracing.SpanContext, error) {
-	switch format {
-	case opentracing.TextMap, opentracing.HTTPHeaders:
-		return t.config.textMapPropagator.Extract(carrier)
-	case opentracing.Binary:
-		return t.config.binaryPropagator.Extract(carrier)
-	}
-	return nil, opentracing.ErrUnsupportedFormat
-}
-
 // Stop stops the tracer.
-func (t *tracer) stop() {
+func (t *tracer) Stop() {
 	done := make(chan struct{})
 	t.exitReq <- done
 	<-done
@@ -254,7 +286,7 @@ func (t *tracer) stop() {
 
 // SetServiceInfo update the application and application type for the given
 // service.
-func (t *tracer) setServiceInfo(name, app, appType string) {
+func (t *tracer) SetServiceInfo(name, app, appType string) {
 	t.pushService(service{
 		Name:    name,
 		App:     app,
@@ -262,9 +294,18 @@ func (t *tracer) setServiceInfo(name, app, appType string) {
 	})
 }
 
+// Inject uses the configured or default TextMap Propagator.
+func (t *tracer) Inject(ctx dd.SpanContext, carrier interface{}) error {
+	return t.config.textMapPropagator.Inject(ctx, carrier)
+}
+
+// Extract uses the configured or default TextMap Propagator.
+func (t *tracer) Extract(carrier interface{}) (dd.SpanContext, error) {
+	return t.config.textMapPropagator.Extract(carrier)
+}
+
 func (t *tracer) getTraces() [][]*span {
 	traces := make([][]*span, 0, len(t.traceBuffer))
-
 	for {
 		select {
 		case trace := <-t.traceBuffer:
@@ -278,7 +319,10 @@ func (t *tracer) getTraces() [][]*span {
 // flushTraces will push any currently buffered traces to the server.
 func (t *tracer) flushTraces() {
 	traces := t.getTraces()
-
+	if t.config.transport == nil || len(traces) == 0 {
+		// nothing to do
+		return
+	}
 	if t.config.debug {
 		log.Printf("Sending %d traces", len(traces))
 		for _, trace := range traces {
@@ -290,12 +334,6 @@ func (t *tracer) flushTraces() {
 			}
 		}
 	}
-
-	// bal if there's nothing to do
-	if t.config.transport == nil || len(traces) == 0 {
-		return
-	}
-
 	_, err := t.config.transport.sendTraces(traces)
 	if err != nil {
 		t.pushErr(&errLostData{name: "traces", context: err, count: len(traces)})
@@ -303,28 +341,26 @@ func (t *tracer) flushTraces() {
 }
 
 func (t *tracer) updateServices() bool {
-	servicesModified := false
+	changed := false
 	for {
 		select {
 		case service := <-t.serviceBuffer:
 			if s, found := t.services[service.Name]; !found || !s.equals(service) {
 				t.services[service.Name] = service
-				servicesModified = true
+				changed = true
 			}
 		default: // return when there's no more data
-			return servicesModified
+			return changed
 		}
 	}
 }
 
 // flushTraces will push any currently buffered services to the server.
 func (t *tracer) flushServices() {
-	servicesModified := t.updateServices()
-
-	if !servicesModified {
+	if !t.updateServices() {
+		// services haven't changed
 		return
 	}
-
 	_, err := t.config.transport.sendServices(t.services)
 	if err != nil {
 		t.pushErr(&errLostData{name: "services", context: err, count: len(t.services)})
@@ -342,10 +378,10 @@ func (t *tracer) flush() {
 	t.flushErrs()
 }
 
-// ForceFlush forces a flush of data (traces and services) to the agent.
+// forceFlush forces a flush of data (traces and services) to the agent.
 // Flushes are done by a background task on a regular basis, so you never
 // need to call this manually, mostly useful for testing and debugging.
-func (t *tracer) ForceFlush() {
+func (t *tracer) forceFlush() {
 	done := make(chan struct{})
 	t.flushAllReq <- done
 	<-done
@@ -358,58 +394,31 @@ const sampleRateMetricKey = "_sample_rate"
 func (t *tracer) sample(span *span) {
 	sampler := t.config.sampler
 	sampled := sampler.Sample(span)
-	if sampled {
-		if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
-			span.Lock()
-			defer span.Unlock()
-			if span.finished {
-				// we don't touch finished span as they might be flushing
-				return
-			}
-			span.Metrics[sampleRateMetricKey] = rs.Rate()
-		}
-	}
 	span.context.sampled = sampled
-}
-
-// worker periodically flushes traces and services to the transport.
-func (t *tracer) worker() {
-	ticker := time.NewTicker(flushInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			t.flush()
-
-		case done := <-t.flushAllReq:
-			t.flush()
-			done <- struct{}{}
-
-		case <-t.flushTracesReq:
-			t.flushTraces()
-
-		case <-t.flushServicesReq:
-			t.flushServices()
-
-		case <-t.flushErrorsReq:
-			t.flushErrs()
-
-		case done := <-t.exitReq:
-			t.flush()
-			done <- struct{}{}
-			return
-		}
-	}
-}
-
-// SetServiceInfo sets information about the given service. A tracer is expected to
-// be active, which has been started by Start or assigned by opentracing.SetGlobalTracer,
-// otherwise it is a no-op.
-func SetServiceInfo(name, app, appType string) {
-	t, ok := opentracing.GlobalTracer().(*tracer)
-	if !ok {
+	if !sampled {
 		return
 	}
-	t.setServiceInfo(name, app, appType)
+	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
+		// the span was sampled using a rate sampler which wasn't all permissive,
+		// so we make note of the sampling rate.
+		span.Lock()
+		defer span.Unlock()
+		if span.finished {
+			// we don't touch finished span as they might be flushing
+			return
+		}
+		span.Metrics[sampleRateMetricKey] = rs.Rate()
+	}
+}
+
+// service holds context information about a given service.
+type service struct {
+	Name    string `json:"-"`        // the internal of the service (e.g. acme_search, datadog_web)
+	App     string `json:"app"`      // the name of the application (e.g. rails, postgres, custom-app)
+	AppType string `json:"app_type"` // the type of the application (e.g. db, web)
+}
+
+// equals will return true if two services are identical.
+func (s service) equals(s2 service) bool {
+	return s.Name == s2.Name && s.App == s2.App && s.AppType == s2.AppType
 }

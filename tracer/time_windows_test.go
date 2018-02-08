@@ -1,9 +1,9 @@
 package tracer
 
 import (
-	"fmt"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func BenchmarkNormalTimeNow(b *testing.B) {
