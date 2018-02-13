@@ -4,7 +4,7 @@ import (
 	"math"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/dd"
+	"github.com/DataDog/dd-trace-go/ddtrace"
 )
 
 // Sampler is the generic interface of any sampler. Must be safe for concurrent use.
@@ -57,7 +57,7 @@ func (s *rateSampler) SetRate(rate float64) {
 const knuthFactor = uint64(1111111111111111111)
 
 // Sample returns true if the given span should be sampled.
-func (r *rateSampler) Sample(spn dd.Span) bool {
+func (r *rateSampler) Sample(spn ddtrace.Span) bool {
 	s, ok := spn.(*span)
 	if !ok {
 		return false

@@ -28,7 +28,7 @@ func TestToFloat64(t *testing.T) {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			f, ok := toFloat64(tt.value)
 			if ok != tt.ok {
-				t.Fatalf("expected ok: %B", tt.ok)
+				t.Fatalf("expected ok: %t", tt.ok)
 			}
 			if f != tt.f {
 				t.Fatalf("expected: %#v, got: %#v", tt.f, f)

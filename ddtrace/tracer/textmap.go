@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/dd"
+	"github.com/DataDog/dd-trace-go/ddtrace"
 )
 
 // HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader.
@@ -91,7 +91,7 @@ type textMapPropagator struct {
 // Inject defines the TextMapPropagator to propagate SpanContext data
 // out of the current process. The implementation propagates the
 // TraceID and the current active SpanID, as well as the Span baggage.
-func (p *textMapPropagator) Inject(spanCtx dd.SpanContext, carrier interface{}) error {
+func (p *textMapPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	writer, ok := carrier.(TextMapWriter)
 	if !ok {
 		return ErrInvalidCarrier
@@ -111,7 +111,7 @@ func (p *textMapPropagator) Inject(spanCtx dd.SpanContext, carrier interface{}) 
 }
 
 // Extract implements Propagator.
-func (p *textMapPropagator) Extract(carrier interface{}) (dd.SpanContext, error) {
+func (p *textMapPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	reader, ok := carrier.(TextMapReader)
 	if !ok {
 		return nil, ErrInvalidCarrier

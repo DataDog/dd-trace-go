@@ -5,7 +5,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/dd"
+	"github.com/DataDog/dd-trace-go/ddtrace"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
 )
 
 // config holds the tracer configuration.
@@ -84,24 +85,6 @@ func WithGlobalTag(k string, v interface{}) StartOption {
 	}
 }
 
-// WithGlobalTags sets the given consecutive key/value pairs as tags on all
-// spans created by the tracer. If the arguments to this function are zero,
-// odd or contain any keys which are not of type string, it will panic.
-func WithGlobalTags(kv ...interface{}) StartOption {
-	if n := len(kv); n < 2 || n%2 != 0 {
-		panic("uneven number of arguments supplied")
-	}
-	return func(c *config) {
-		for i := 0; i <= len(kv)-2; i = i + 2 {
-			k, ok := kv[i].(string)
-			if !ok {
-				panic("all keys must be strings")
-			}
-			WithGlobalTag(k, kv[i+1])(c)
-		}
-	}
-}
-
 // WithSampler sets the given sampler to be used with the tracer. By default
 // an all-permissive sampler is used.
 func WithSampler(s Sampler) StartOption {
@@ -111,11 +94,11 @@ func WithSampler(s Sampler) StartOption {
 }
 
 // StartSpanOption is a configuration option for StartSpan.
-type StartSpanOption = dd.StartSpanOption
+type StartSpanOption = ddtrace.StartSpanOption
 
 // Tag sets the given key/value pair as a tag on the started Span.
 func Tag(k string, v interface{}) StartSpanOption {
-	return func(cfg *dd.StartSpanConfig) {
+	return func(cfg *ddtrace.StartSpanConfig) {
 		if cfg.Tags == nil {
 			cfg.Tags = map[string]interface{}{}
 		}
@@ -125,23 +108,23 @@ func Tag(k string, v interface{}) StartSpanOption {
 
 // ServiceName sets the given service name on the started span.
 func ServiceName(name string) StartSpanOption {
-	return Tag(serviceName, name)
+	return Tag(ext.ServiceName, name)
 }
 
 // ResourceName sets the given resource name on the started span.
 func ResourceName(name string) StartSpanOption {
-	return Tag(resourceName, name)
+	return Tag(ext.ResourceName, name)
 }
 
 // SpanType sets the given span type on the started span.
 func SpanType(name string) StartSpanOption {
-	return Tag(spanType, name)
+	return Tag(ext.SpanType, name)
 }
 
 // ChildOf tells StartSpan to use the given context as a parent for the
 // created span.
-func ChildOf(ctx dd.SpanContext) StartSpanOption {
-	return func(cfg *dd.StartSpanConfig) {
+func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.Parent = ctx
 	}
 }
@@ -149,24 +132,24 @@ func ChildOf(ctx dd.SpanContext) StartSpanOption {
 // StartTime sets a custom time as the start time for the created span. By
 // default a span is started using the current time.
 func StartTime(t time.Time) StartSpanOption {
-	return func(cfg *dd.StartSpanConfig) {
+	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.StartTime = t
 	}
 }
 
 // FinishOption is a configuration option for FinishSpan.
-type FinishOption = dd.FinishOption
+type FinishOption = ddtrace.FinishOption
 
 // FinishTime sets the given time as the finishing time for the span.
 func FinishTime(t time.Time) FinishOption {
-	return func(cfg *dd.FinishConfig) {
+	return func(cfg *ddtrace.FinishConfig) {
 		cfg.FinishTime = t
 	}
 }
 
 // WithError adds the given error to the span before marking it as finished.
 func WithError(err error) FinishOption {
-	return func(cfg *dd.FinishConfig) {
+	return func(cfg *ddtrace.FinishConfig) {
 		cfg.Error = err
 	}
 }

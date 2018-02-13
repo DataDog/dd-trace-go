@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -123,7 +123,7 @@ func TestPropagationDefaults(t *testing.T) {
 func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer()
-	root := tracer.StartSpan("web.request", Tag("sampling.priority", 2)).(*span)
+	root := tracer.StartSpan("web.request", Tag(ext.SamplingPriority, 2)).(*span)
 	child := tracer.StartSpan("db.query", ChildOf(root.Context())).(*span)
 	assert.Equal(float64(2), child.Metrics[samplingPriorityKey])
 }
@@ -151,7 +151,7 @@ func TestTracerSpanTags(t *testing.T) {
 
 func TestTracerSpanGlobalTags(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(WithGlobalTags("key", "value"))
+	tracer := newTracer(WithGlobalTag("key", "value"))
 	s := tracer.StartSpan("web.request").(*span)
 	assert.Equal("value", s.Meta["key"])
 	child := tracer.StartSpan("db.query", ChildOf(s.Context())).(*span)

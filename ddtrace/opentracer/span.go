@@ -3,9 +3,9 @@ package opentracer
 import (
 	"fmt"
 
-	"github.com/DataDog/dd-trace-go/dd"
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
@@ -13,9 +13,9 @@ import (
 
 var _ opentracing.Span = (*span)(nil)
 
-// span implements opentracing.Span on top of dd.Span.
+// span implements opentracing.Span on top of ddtrace.Span.
 type span struct {
-	dd.Span
+	ddtrace.Span
 	*opentracer
 }
 

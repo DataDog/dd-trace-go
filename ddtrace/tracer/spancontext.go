@@ -3,10 +3,10 @@ package tracer
 import (
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/dd"
+	"github.com/DataDog/dd-trace-go/ddtrace"
 )
 
-var _ dd.SpanContext = (*spanContext)(nil)
+var _ ddtrace.SpanContext = (*spanContext)(nil)
 
 // SpanContext represents span state that must propagate to descendant spans
 // and across process boundaries.

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -145,7 +145,7 @@ func TestSpanSetTag(t *testing.T) {
 	span.SetTag("error", false)
 	assert.Equal(int32(0), span.Error)
 
-	span.SetTag("sampling.priority", 2)
+	span.SetTag(ext.SamplingPriority, 2)
 	assert.Equal(float64(2), span.Metrics[samplingPriorityKey])
 }
 
@@ -293,7 +293,7 @@ func TestSpanSamplingPriority(t *testing.T) {
 		ext.PriorityUserKeep,
 		999, // not used yet, but we should allow it
 	} {
-		span.SetTag("sampling.priority", priority)
+		span.SetTag(ext.SamplingPriority, priority)
 		v, ok := span.Metrics[samplingPriorityKey]
 		assert.True(ok)
 		assert.Equal(float64(priority), v)

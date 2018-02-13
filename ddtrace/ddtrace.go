@@ -1,6 +1,6 @@
-// dd holds the interfaces and structures shared by Datadog's tracer packages.
+// ddtrace holds the interfaces and structures shared by Datadog's tracer packages.
 // It is a good overview of the available API and functionalities.
-package dd
+package ddtrace
 
 import "time"
 
