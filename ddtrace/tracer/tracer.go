@@ -6,12 +6,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/dd"
-	"github.com/DataDog/dd-trace-go/internal"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/internal"
 )
 
-var _ dd.Tracer = (*tracer)(nil)
+var _ ddtrace.Tracer = (*tracer)(nil)
 
 // tracer creates, buffers and submits Spans which are used to time blocks of
 // computation.
@@ -47,7 +47,7 @@ func Stop() {
 	internal.GlobalTracer = &internal.NoopTracer{}
 }
 
-type Span = dd.Span
+type Span = ddtrace.Span
 
 // StartSpan starts a new span with the given operation name and set of options.
 // If the tracer is not started calling this function is a no-op.
@@ -64,14 +64,14 @@ func SetServiceInfo(name, app, appType string) {
 // Extract extracts a SpanContext from the passed carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started calling this function is a no-op.
-func Extract(carrier interface{}) (dd.SpanContext, error) {
+func Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	return internal.GlobalTracer.Extract(carrier)
 }
 
 // Inject injects the given SpanContext into the carrier. The carrier is expected to
 // implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started calling this function is a no-op.
-func Inject(ctx dd.SpanContext, carrier interface{}) error {
+func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return internal.GlobalTracer.Inject(ctx, carrier)
 }
 
@@ -206,8 +206,8 @@ func (t *tracer) pushErr(err error) {
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
-func (t *tracer) StartSpan(operationName string, options ...dd.StartSpanOption) dd.Span {
-	var opts dd.StartSpanConfig
+func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
 	}
@@ -295,12 +295,12 @@ func (t *tracer) SetServiceInfo(name, app, appType string) {
 }
 
 // Inject uses the configured or default TextMap Propagator.
-func (t *tracer) Inject(ctx dd.SpanContext, carrier interface{}) error {
+func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return t.config.textMapPropagator.Inject(ctx, carrier)
 }
 
 // Extract uses the configured or default TextMap Propagator.
-func (t *tracer) Extract(carrier interface{}) (dd.SpanContext, error) {
+func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	return t.config.textMapPropagator.Extract(carrier)
 }
 

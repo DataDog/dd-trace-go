@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
 )
 
 const (

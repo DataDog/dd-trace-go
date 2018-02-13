@@ -3,7 +3,7 @@ package tracer
 import (
 	"context"
 
-	"github.com/DataDog/dd-trace-go/dd"
+	"github.com/DataDog/dd-trace-go/ddtrace"
 )
 
 type contextKey struct{}
@@ -19,7 +19,7 @@ func ContextWithSpan(ctx context.Context, s Span) context.Context {
 // found, it returns nil.
 func SpanFromContext(ctx context.Context) Span {
 	v := ctx.Value(activeSpanKey)
-	if s, ok := v.(dd.Span); ok {
+	if s, ok := v.(ddtrace.Span); ok {
 		return s
 	}
 	return nil
