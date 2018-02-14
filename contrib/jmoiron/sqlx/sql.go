@@ -23,7 +23,7 @@ func Register(driverName string, driver driver.Driver) { sqltraced.Register(driv
 
 // RegisterWithServiceName performs the same operation as Register, but it allows setting a custom service name.
 func RegisterWithServiceName(serviceName, driverName string, driver driver.Driver) {
-	sqltraced.RegisterWithServiceName(serviceName, driverName, driver)
+	sqltraced.Register(driverName, driver, sqltraced.WithServiceName(serviceName))
 }
 
 func Open(driverName, dataSourceName string) (*sqlx.DB, error) {

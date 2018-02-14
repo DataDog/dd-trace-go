@@ -16,9 +16,8 @@ var _ driver.Driver = (*tracedDriver)(nil)
 // tracedDriver wraps an inner sql driver with tracing. It implements the (database/sql).driver.Driver interface.
 type tracedDriver struct {
 	driver.Driver
-	tracer      *tracer.Tracer
-	driverName  string
-	serviceName string
+	driverName string
+	config     *registerConfig
 }
 
 // Open returns a tracedConn so that we can pass all the info we get from the DSN
@@ -36,11 +35,10 @@ func (d *tracedDriver) Open(dsn string) (c driver.Conn, err error) {
 	if err != nil {
 		return nil, err
 	}
-	d.tracer.SetServiceInfo(d.serviceName, d.driverName, ext.AppTypeDB)
+	d.config.tracer.SetServiceInfo(d.config.serviceName, d.driverName, ext.AppTypeDB)
 	tp := &traceParams{
-		tracer:     d.tracer,
 		driverName: d.driverName,
-		service:    d.serviceName,
+		config:     d.config,
 		meta:       meta,
 	}
 	return &tracedConn{conn, tp}, err
@@ -48,18 +46,17 @@ func (d *tracedDriver) Open(dsn string) (c driver.Conn, err error) {
 
 // traceParams stores all information relative to the tracing
 type traceParams struct {
-	tracer     *tracer.Tracer
+	config     *registerConfig
 	driverName string
-	service    string
 	resource   string
 	meta       map[string]string
 }
 
 func (tp *traceParams) newChildSpanFromContext(ctx context.Context, resource string, query string) *tracer.Span {
 	name := fmt.Sprintf("%s.query", tp.driverName)
-	span := tp.tracer.NewChildSpanFromContext(name, ctx)
+	span := tp.config.tracer.NewChildSpanFromContext(name, ctx)
 	span.Type = ext.SQLType
-	span.Service = tp.service
+	span.Service = tp.config.serviceName
 	span.Resource = resource
 	if query != "" {
 		span.Resource = query
