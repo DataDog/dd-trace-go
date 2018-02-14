@@ -7,32 +7,26 @@ import (
 	"github.com/gorilla/mux"
 
 	"github.com/DataDog/dd-trace-go/contrib/internal"
-	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
 // Router registers routes to be matched and dispatches a handler.
 type Router struct {
 	*mux.Router
-	tracer  *tracer.Tracer
-	service string
+	config *routerConfig
 }
 
 // NewRouterWithTracer returns a new router instance traced with the global tracer.
-func NewRouter() *Router {
-	return NewRouterWithServiceName("mux.router", tracer.DefaultTracer)
-}
-
-// NewRouterWithServiceName returns a new router instance which traces under the given service
-// name.
-//
-// TODO(gbbr): Remove tracer parameter once we switch to OpenTracing.
-func NewRouterWithServiceName(service string, t *tracer.Tracer) *Router {
-	t.SetServiceInfo(service, "gorilla/mux", ext.AppTypeWeb)
+func NewRouter(opts ...RouterOption) *Router {
+	cfg := new(routerConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	cfg.tracer.SetServiceInfo(cfg.serviceName, "gorilla/mux", ext.AppTypeWeb)
 	return &Router{
-		Router:  mux.NewRouter(),
-		tracer:  t,
-		service: service,
+		Router: mux.NewRouter(),
+		config: cfg,
 	}
 }
 
@@ -56,5 +50,5 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = "unknown"
 	}
 	resource := req.Method + " " + route
-	internal.TraceAndServe(r.Router, w, req, r.service, resource, r.tracer)
+	internal.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, r.config.tracer)
 }
