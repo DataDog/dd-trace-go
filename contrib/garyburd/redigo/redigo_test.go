@@ -19,7 +19,10 @@ func TestClient(t *testing.T) {
 	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	c, err := DialWithServiceName("my-service", testTracer, "tcp", "127.0.0.1:6379")
+	c, err := Dial("tcp", "127.0.0.1:6379",
+		WithServiceName("my-service"),
+		WithTracer(testTracer),
+	)
 	assert.Nil(err)
 	c.Do("SET", 1, "truck")
 
@@ -44,7 +47,10 @@ func TestCommandError(t *testing.T) {
 	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	c, err := DialWithServiceName("my-service", testTracer, "tcp", "127.0.0.1:6379")
+	c, err := Dial("tcp", "127.0.0.1:6379",
+		WithServiceName("my-service"),
+		WithTracer(testTracer),
+	)
 	assert.Nil(err)
 	_, err = c.Do("NOT_A_COMMAND", context.Background())
 	assert.NotNil(err)
@@ -71,7 +77,10 @@ func TestConnectionError(t *testing.T) {
 	testTracer, _ := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	_, err := DialWithServiceName("redis-service", testTracer, "tcp", "127.0.0.1:1000")
+	_, err := Dial("tcp", "127.0.0.1:1000",
+		WithServiceName("redis-service"),
+		WithTracer(testTracer),
+	)
 
 	assert.NotNil(err)
 	assert.Contains(err.Error(), "dial tcp 127.0.0.1:1000")
@@ -86,7 +95,10 @@ func TestInheritance(t *testing.T) {
 	ctx := context.Background()
 	parentSpan := testTracer.NewChildSpanFromContext("parentSpan", ctx)
 	ctx = tracer.ContextWithSpan(ctx, parentSpan)
-	client, err := DialWithServiceName("my_service", testTracer, "tcp", "127.0.0.1:6379")
+	client, err := Dial("tcp", "127.0.0.1:6379",
+		WithServiceName("redis-service"),
+		WithTracer(testTracer),
+	)
 	assert.Nil(err)
 	client.Do("SET", "water", "bottle", ctx)
 	parentSpan.Finish()
@@ -125,7 +137,10 @@ func TestCommandsToSring(t *testing.T) {
 	testTracer.SetDebugLogging(debug)
 
 	str := stringifyTest{A: 57, B: 8}
-	c, err := DialWithServiceName("my-service", testTracer, "tcp", "127.0.0.1:6379")
+	c, err := Dial("tcp", "127.0.0.1:6379",
+		WithServiceName("my-service"),
+		WithTracer(testTracer),
+	)
 	assert.Nil(err)
 	c.Do("SADD", "testSet", "a", int(0), int32(1), int64(2), str, context.Background())
 
@@ -155,7 +170,10 @@ func TestPool(t *testing.T) {
 		IdleTimeout: 23,
 		Wait:        true,
 		Dial: func() (redis.Conn, error) {
-			return DialWithServiceName("my-service", testTracer, "tcp", "127.0.0.1:6379")
+			return Dial("tcp", "127.0.0.1:6379",
+				WithServiceName("my-service"),
+				WithTracer(testTracer),
+			)
 		},
 	}
 
@@ -175,7 +193,7 @@ func TestTracingDialUrl(t *testing.T) {
 	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 	url := "redis://127.0.0.1:6379"
-	client, err := DialURLWithServiceName("redis-service", testTracer, url)
+	client, err := DialURL(url, WithServiceName("redis-service"), WithTracer(testTracer))
 	assert.Nil(err)
 	client.Do("SET", "ONE", " TWO", context.Background())
 
