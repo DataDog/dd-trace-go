@@ -28,17 +28,19 @@ type Iter struct {
 
 // params containes fields and metadata useful for command tracing
 type params struct {
-	tracer    *tracer.Tracer
-	service   string
+	config    *queryConfig
 	keyspace  string
 	paginated bool
 	query     string
 }
 
 // WrapQuery wraps a gocql.Query into a traced Query under the given service name.
-//
-// TODO(gbbr): Remove tracer arg. when switching to OT.
-func WrapQuery(q *gocql.Query, service string, tracer *tracer.Tracer) *Query {
+func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
+	cfg := new(queryConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
 	query := `"` + strings.SplitN(q.String(), "\"", 3)[1] + `"`
 	query, err := strconv.Unquote(query)
 	if err != nil {
@@ -47,11 +49,10 @@ func WrapQuery(q *gocql.Query, service string, tracer *tracer.Tracer) *Query {
 		query = "_"
 	}
 	tq := &Query{q, &params{
-		tracer:  tracer,
-		service: service,
-		query:   query,
+		config: cfg,
+		query:  query,
 	}, context.Background()}
-	tracer.SetServiceInfo(service, ext.CassandraType, ext.AppTypeDB)
+	cfg.tracer.SetServiceInfo(cfg.serviceName, ext.CassandraType, ext.AppTypeDB)
 	return tq
 }
 
@@ -72,9 +73,9 @@ func (tq *Query) PageState(state []byte) *Query {
 // NewChildSpan creates a new span from the params and the context.
 func (tq *Query) newChildSpan(ctx context.Context) *tracer.Span {
 	p := tq.params
-	span := p.tracer.NewChildSpanFromContext(ext.CassandraQuery, ctx)
+	span := p.config.tracer.NewChildSpanFromContext(ext.CassandraQuery, ctx)
 	span.Type = ext.CassandraType
-	span.Service = p.service
+	span.Service = p.config.serviceName
 	span.Resource = p.query
 	span.SetMeta(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated))
 	span.SetMeta(ext.CassandraKeyspace, p.keyspace)
