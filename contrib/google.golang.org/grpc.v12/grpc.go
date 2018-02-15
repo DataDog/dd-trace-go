@@ -20,13 +20,22 @@ const (
 )
 
 // UnaryServerInterceptor will trace requests to the given grpc server.
-func UnaryServerInterceptor(service string, t *tracer.Tracer) grpc.UnaryServerInterceptor {
-	t.SetServiceInfo(service, "grpc-server", ext.AppTypeRPC)
+func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerInterceptor {
+	cfg := new(interceptorConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	if cfg.serviceName == "" {
+		cfg.serviceName = "grpc.server"
+	}
+	t := cfg.tracer
+	t.SetServiceInfo(cfg.serviceName, "grpc-server", ext.AppTypeRPC)
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if !t.Enabled() {
 			return handler(ctx, req)
 		}
-		span := serverSpan(t, ctx, info.FullMethod, service)
+		span := serverSpan(t, ctx, info.FullMethod, cfg.serviceName)
 		resp, err := handler(tracer.ContextWithSpan(ctx, span), req)
 		span.FinishWithErr(err)
 		return resp, err
@@ -34,8 +43,16 @@ func UnaryServerInterceptor(service string, t *tracer.Tracer) grpc.UnaryServerIn
 }
 
 // UnaryClientInterceptor will add tracing to a gprc client.
-func UnaryClientInterceptor(service string, t *tracer.Tracer) grpc.UnaryClientInterceptor {
-	t.SetServiceInfo(service, "grpc-client", ext.AppTypeRPC)
+func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientInterceptor {
+	cfg := new(interceptorConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	if cfg.serviceName == "" {
+		cfg.serviceName = "grpc.client"
+	}
+	cfg.tracer.SetServiceInfo(cfg.serviceName, "grpc-client", ext.AppTypeRPC)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		var child *tracer.Span
 		span, ok := tracer.SpanFromContext(ctx)
