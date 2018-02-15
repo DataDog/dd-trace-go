@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-redis/redis"
 
-	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
@@ -28,31 +27,25 @@ type Pipeliner struct {
 
 // params holds the tracer and a set of parameters which are recorded with every trace.
 type params struct {
-	host    string
-	port    string
-	db      string
-	service string
-	tracer  *tracer.Tracer
+	host   string
+	port   string
+	db     string
+	config *clientConfig
 }
 
 // NewClient returns a new Client that is traced with the default tracer under
 // the service name "redis".
-func NewClient(opt *redis.Options) *Client {
-	return NewClientWithServiceName(opt, "redis.client", tracer.DefaultTracer)
-}
-
-// NewClientWithServiceName returns a new Client that is traced using the given tracer and service name.
-// If nil is provided as a tracer, the global tracer will be used.
-//
-// TODO(gbbr): Remove tracer argument when we switch to OpenTracing.
-func NewClientWithServiceName(opt *redis.Options, service string, t *tracer.Tracer) *Client {
-	return WrapClient(redis.NewClient(opt), service, t)
+func NewClient(opt *redis.Options, opts ...ClientOption) *Client {
+	return WrapClient(redis.NewClient(opt), opts...)
 }
 
 // WrapClient wraps a given redis.Client with a tracer under the given service name.
-//
-// TODO(gbbr): Remove tracer argument when we switch to OpenTracing.
-func WrapClient(c *redis.Client, service string, t *tracer.Tracer) *Client {
+func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
+	cfg := new(clientConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
 	opt := c.Options()
 	host, port, err := net.SplitHostPort(opt.Addr)
 	if err != nil {
@@ -60,13 +53,12 @@ func WrapClient(c *redis.Client, service string, t *tracer.Tracer) *Client {
 		port = "6379"
 	}
 	params := &params{
-		host:    host,
-		port:    port,
-		db:      strconv.Itoa(opt.DB),
-		service: service,
-		tracer:  t,
+		host:   host,
+		port:   port,
+		db:     strconv.Itoa(opt.DB),
+		config: cfg,
 	}
-	t.SetServiceInfo(service, "redis", ext.AppTypeDB)
+	cfg.tracer.SetServiceInfo(cfg.serviceName, "redis", ext.AppTypeDB)
 	tc := &Client{c, params}
 	tc.Client.WrapProcess(createWrapperFromClient(tc))
 	return tc
@@ -80,9 +72,9 @@ func (c *Client) Pipeline() *Pipeliner {
 // ExecWithContext calls Pipeline.Exec(). It ensures that the resulting Redis calls
 // are traced, and that emitted spans are children of the given Context.
 func (c *Pipeliner) ExecWithContext(ctx context.Context) ([]redis.Cmder, error) {
-	span := c.params.tracer.NewChildSpanFromContext("redis.command", ctx)
+	span := c.params.config.tracer.NewChildSpanFromContext("redis.command", ctx)
 
-	span.Service = c.params.service
+	span.Service = c.params.config.serviceName
 	span.SetMeta("out.host", c.params.host)
 	span.SetMeta("out.port", c.params.port)
 	span.SetMeta("out.db", c.params.db)
@@ -101,7 +93,7 @@ func (c *Pipeliner) ExecWithContext(ctx context.Context) ([]redis.Cmder, error) 
 
 // Exec calls Pipeline.Exec() ensuring that the resulting Redis calls are traced.
 func (c *Pipeliner) Exec() ([]redis.Cmder, error) {
-	span := c.params.tracer.NewRootSpan("redis.command", c.params.service, "redis")
+	span := c.params.config.tracer.NewRootSpan("redis.command", c.params.config.serviceName, "redis")
 
 	span.SetMeta("out.host", c.params.host)
 	span.SetMeta("out.port", c.params.port)
@@ -147,8 +139,8 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			length := len(parts) - 1
 			p := tc.params
 
-			span := p.tracer.NewChildSpanFromContext("redis.command", ctx)
-			span.Service = p.service
+			span := p.config.tracer.NewChildSpanFromContext("redis.command", ctx)
+			span.Service = p.config.serviceName
 			span.Resource = parts[0]
 			span.SetMeta("redis.raw_command", raw)
 			span.SetMeta("redis.args_length", strconv.Itoa(length))
