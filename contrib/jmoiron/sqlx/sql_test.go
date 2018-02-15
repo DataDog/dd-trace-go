@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql"
 	"github.com/DataDog/dd-trace-go/contrib/internal/sqltest"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/tracertest"
@@ -28,7 +29,7 @@ func TestMySQL(t *testing.T) {
 	defer func() {
 		tracer.DefaultTracer = originalTracer
 	}()
-	RegisterWithServiceName("mysql-test", "mysql", &mysql.MySQLDriver{})
+	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("mysql-test"))
 	dbx, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")
 	if err != nil {
 		log.Fatal(err)
@@ -64,7 +65,7 @@ func TestPostgres(t *testing.T) {
 	defer func() {
 		tracer.DefaultTracer = originalTracer
 	}()
-	Register("postgres", &pq.Driver{})
+	sqltrace.Register("postgres", &pq.Driver{})
 	dbx, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)

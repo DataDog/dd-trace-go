@@ -8,24 +8,13 @@
 package sqlx
 
 import (
-	"database/sql/driver"
-
 	sqltraced "github.com/DataDog/dd-trace-go/contrib/database/sql"
 
 	"github.com/jmoiron/sqlx"
 )
 
-// Register tells the sqlx integration package about the driver that we will be tracing. Internally it
-// registers a new version of the driver that is augmented with tracing. It must be called before
-// Open, if that connection is to be traced. It uses the driverName suffixed with ".db" as the
-// default service name. To set a custom service name, use RegisterWithServiceName.
-func Register(driverName string, driver driver.Driver) { sqltraced.Register(driverName, driver) }
-
-// RegisterWithServiceName performs the same operation as Register, but it allows setting a custom service name.
-func RegisterWithServiceName(serviceName, driverName string, driver driver.Driver) {
-	sqltraced.Register(driverName, driver, sqltraced.WithServiceName(serviceName))
-}
-
+// Open opens a new (traced) connection to the database using the given driver and source.
+// Note that the driver must formerly be registered using database/sql integration's Register.
 func Open(driverName, dataSourceName string) (*sqlx.DB, error) {
 	db, err := sqltraced.Open(driverName, dataSourceName)
 	if err != nil {
@@ -35,6 +24,8 @@ func Open(driverName, dataSourceName string) (*sqlx.DB, error) {
 }
 
 // MustOpen is the same as Open, but panics on error.
+// To get tracing, the driver must be formerly registered using the database/sql integration's
+// Register.
 func MustOpen(driverName, dataSourceName string) (*sqlx.DB, error) {
 	db, err := sqltraced.Open(driverName, dataSourceName)
 	if err != nil {
@@ -43,6 +34,9 @@ func MustOpen(driverName, dataSourceName string) (*sqlx.DB, error) {
 	return sqlx.NewDb(db, driverName), nil
 }
 
+// Connect connects to the data source using the given driver.
+// To get tracing, the driver must be formerly registered using the database/sql integration's
+// Register.
 func Connect(driverName, dataSourceName string) (*sqlx.DB, error) {
 	db, err := Open(driverName, dataSourceName)
 	if err != nil {
@@ -57,6 +51,8 @@ func Connect(driverName, dataSourceName string) (*sqlx.DB, error) {
 }
 
 // MustConnect connects to a database and panics on error.
+// To get tracing, the driver must be formerly registered using the database/sql integration's
+// Register.
 func MustConnect(driverName, dataSourceName string) *sqlx.DB {
 	db, err := Connect(driverName, dataSourceName)
 	if err != nil {
