@@ -19,7 +19,7 @@ func TestClientV5(t *testing.T) {
 	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	tc := NewHTTPClient("my-es-service", testTracer)
+	tc := NewHTTPClient(WithServiceName("my-es-service"), WithTracer(testTracer))
 	client, err := elasticv5.NewClient(
 		elasticv5.SetURL("http://127.0.0.1:9201"),
 		elasticv5.SetHttpClient(tc),
@@ -52,7 +52,7 @@ func TestClientV3(t *testing.T) {
 	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	tc := NewHTTPClient("my-es-service", testTracer)
+	tc := NewHTTPClient(WithServiceName("my-es-service"), WithTracer(testTracer))
 	client, err := elasticv3.NewClient(
 		elasticv3.SetURL("http://127.0.0.1:9200"),
 		elasticv3.SetHttpClient(tc),
@@ -85,7 +85,7 @@ func TestClientV3Failure(t *testing.T) {
 	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	tc := NewHTTPClient("my-es-service", testTracer)
+	tc := NewHTTPClient(WithServiceName("my-es-service"), WithTracer(testTracer))
 	client, err := elasticv3.NewClient(
 		// inexistent service, it must fail
 		elasticv3.SetURL("http://127.0.0.1:29200"),
@@ -120,7 +120,7 @@ func TestClientV5Failure(t *testing.T) {
 	testTracer, testTransport := tracertest.GetTestTracer()
 	testTracer.SetDebugLogging(debug)
 
-	tc := NewHTTPClient("my-es-service", testTracer)
+	tc := NewHTTPClient(WithServiceName("my-es-service"), WithTracer(testTracer))
 	client, err := elasticv5.NewClient(
 		// inexistent service, it must fail
 		elasticv5.SetURL("http://127.0.0.1:29201"),
