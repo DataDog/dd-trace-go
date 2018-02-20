@@ -36,7 +36,7 @@ func ExampleHTML() {
 	})
 }
 
-func ExampleSpanFromContext() {
+func Example_spanFromContext() {
 	r := gin.Default()
 	r.Use(gintrace.Middleware("image-encoder"))
 	r.GET("/image/encode", func(c *gin.Context) {
