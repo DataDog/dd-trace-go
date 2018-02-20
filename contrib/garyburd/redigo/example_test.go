@@ -29,7 +29,7 @@ func Example() {
 	root.Finish()
 }
 
-func ExampleTracedConn() {
+func Example_tracedConn() {
 	c, err := redigotrace.DialWithServiceName("my-redis-backend", tracer.DefaultTracer, "tcp", "127.0.0.1:6379")
 	if err != nil {
 		log.Fatal(err)
