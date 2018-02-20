@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -82,6 +83,21 @@ func newHTTPTransport(hostname, port string) *httpTransport {
 		legacyServiceURL: fmt.Sprintf("http://%s:%s/v0.2/services", hostname, port),
 		getEncoder:       msgpackEncoderFactory,
 		client: &http.Client{
+			// We copy the transport to avoid using the default one, as it might be
+			// augmented with tracing and we don't want these calls to be recorded.
+			// See https://golang.org/pkg/net/http/#DefaultTransport .
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				DialContext: (&net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+					DualStack: true,
+				}).DialContext,
+				MaxIdleConns:          100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
 			Timeout: defaultHTTPTimeout,
 		},
 		headers:           defaultHeaders,
