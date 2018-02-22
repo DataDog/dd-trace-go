@@ -64,7 +64,7 @@ func TestPostgres(t *testing.T) {
 	defer func() {
 		tracer.DefaultTracer = originalTracer
 	}()
-	RegisterWithServiceName("postgres-test", "postgres", &pq.Driver{})
+	Register("postgres", &pq.Driver{}, WithServiceName("postgres-test"))
 	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)

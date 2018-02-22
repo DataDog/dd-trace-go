@@ -15,20 +15,12 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
-
-	"github.com/DataDog/dd-trace-go/tracer"
 )
 
 // Register tells the sql integration package about the driver that we will be tracing. It must
 // be called before Open, if that connection is to be traced. It uses the driverName suffixed
-// with ".db" as the default service name. To set a custom service name, use RegisterWithServiceName.
-func Register(driverName string, driver driver.Driver) {
-	serviceName := driverName + ".db"
-	RegisterWithServiceName(serviceName, driverName, driver)
-}
-
-// RegisterWithServiceName performs the same operation as Register, but allows setting a custom service name.
-func RegisterWithServiceName(serviceName, driverName string, driver driver.Driver) {
+// with ".db" as the default service name.
+func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	if driver == nil {
 		panic("sqltrace: Register driver is nil")
 	}
@@ -37,13 +29,18 @@ func RegisterWithServiceName(serviceName, driverName string, driver driver.Drive
 		// no problem, carry on
 		return
 	}
-	// TODO(gbbr): Change this when switching to OpenTracing.
-	t := tracer.DefaultTracer
+	cfg := new(registerConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	if cfg.serviceName == "" {
+		cfg.serviceName = driverName + ".db"
+	}
 	sql.Register(name, &tracedDriver{
-		Driver:      driver,
-		tracer:      t,
-		driverName:  driverName,
-		serviceName: serviceName,
+		Driver:     driver,
+		driverName: driverName,
+		config:     cfg,
 	})
 }
 

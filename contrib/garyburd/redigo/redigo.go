@@ -23,24 +23,35 @@ type Conn struct {
 
 // params contains fields and metadata useful for command tracing
 type params struct {
-	tracer  *tracer.Tracer
-	service string
+	config  *dialConfig
 	network string
 	host    string
 	port    string
 }
 
-// Dial dials into the network address and returns a traced redis.Conn.
-func Dial(network, address string, options ...redis.DialOption) (redis.Conn, error) {
-	return DialWithServiceName("redis.conn", tracer.DefaultTracer, network, address, options...)
+// parseOptions parses a set of arbitrary options (which can be of type redis.DialOption
+// or the local DialOption) and returns the corresponding redis.DialOption set as well as
+// a configured dialConfig.
+func parseOptions(options ...interface{}) ([]redis.DialOption, *dialConfig) {
+	dialOpts := []redis.DialOption{}
+	cfg := new(dialConfig)
+	defaults(cfg)
+	for _, opt := range options {
+		switch o := opt.(type) {
+		case redis.DialOption:
+			dialOpts = append(dialOpts, o)
+		case DialOption:
+			o(cfg)
+		}
+	}
+	return dialOpts, cfg
 }
 
-// DialWithServiceName dials into the network address using the given options. It augments the returned connection
-// with tracing, under the given service name.
-//
-// TODO(gbbr): Remove tracer argument when we switch to OT.
-func DialWithServiceName(service string, tracer *tracer.Tracer, network, address string, options ...redis.DialOption) (redis.Conn, error) {
-	c, err := redis.Dial(network, address, options...)
+// Dial dials into the network address and returns a traced redis.Conn.
+// The set of supported options must be either of type redis.DialOption or this package's DialOption.
+func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
+	dialOpts, cfg := parseOptions(options...)
+	c, err := redis.Dial(network, address, dialOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -48,8 +59,8 @@ func DialWithServiceName(service string, tracer *tracer.Tracer, network, address
 	if err != nil {
 		return nil, err
 	}
-	tracer.SetServiceInfo(service, "redis", ext.AppTypeDB)
-	tc := Conn{c, &params{tracer, service, network, host, port}}
+	cfg.tracer.SetServiceInfo(cfg.serviceName, "redis", ext.AppTypeDB)
+	tc := Conn{c, &params{cfg, network, host, port}}
 	return tc, nil
 }
 
@@ -57,15 +68,8 @@ func DialWithServiceName(service string, tracer *tracer.Tracer, network, address
 // URI scheme. URLs should follow the draft IANA specification for the
 // scheme (https://www.iana.org/assignments/uri-schemes/prov/redis).
 // The returned redis.Conn is traced.
-func DialURL(rawurl string, options ...redis.DialOption) (redis.Conn, error) {
-	return DialURLWithServiceName("redis.url-conn", tracer.DefaultTracer, rawurl, options...)
-}
-
-// DialURLWith name behaves in the same way as DialURL, except it allows specifying the
-// service name to be used when tracing the connection.
-//
-// TODO(gbbr): Remove tracer argument when we switch to OT.
-func DialURLWithServiceName(service string, tracer *tracer.Tracer, rawurl string, options ...redis.DialOption) (redis.Conn, error) {
+func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
+	dialOpts, cfg := parseOptions(options...)
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		return Conn{}, err
@@ -79,16 +83,16 @@ func DialURLWithServiceName(service string, tracer *tracer.Tracer, rawurl string
 		host = "localhost"
 	}
 	network := "tcp"
-	c, err := redis.DialURL(rawurl, options...)
-	tc := Conn{c, &params{tracer, service, network, host, port}}
+	c, err := redis.DialURL(rawurl, dialOpts...)
+	tc := Conn{c, &params{cfg, network, host, port}}
 	return tc, err
 }
 
 // newChildSpan creates a span inheriting from the given context. It adds to the span useful metadata about the traced Redis connection
 func (tc Conn) newChildSpan(ctx context.Context) *tracer.Span {
 	p := tc.params
-	span := p.tracer.NewChildSpanFromContext("redis.command", ctx)
-	span.Service = p.service
+	span := p.config.tracer.NewChildSpanFromContext("redis.command", ctx)
+	span.Service = p.config.serviceName
 	span.SetMeta("out.network", p.network)
 	span.SetMeta("out.port", p.port)
 	span.SetMeta("out.host", p.host)

@@ -220,7 +220,10 @@ func (r *rig) Close() {
 }
 
 func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
-	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerInterceptor("grpc", t)))
+	server := grpc.NewServer(
+		grpc.UnaryInterceptor(
+			UnaryServerInterceptor(WithServiceName("grpc"), WithTracer(t)),
+		))
 
 	RegisterFixtureServer(server, new(fixtureServer))
 
@@ -233,7 +236,9 @@ func newRig(t *tracer.Tracer, traceClient bool) (*rig, error) {
 
 	opts := []grpc.DialOption{grpc.WithInsecure()}
 	if traceClient {
-		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor("grpc", t)))
+		opts = append(opts, grpc.WithUnaryInterceptor(
+			UnaryClientInterceptor(WithServiceName("grpc"), WithTracer(t)),
+		))
 	}
 	conn, err := grpc.Dial(li.Addr().String(), opts...)
 	if err != nil {

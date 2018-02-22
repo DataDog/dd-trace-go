@@ -3,9 +3,11 @@ package redigo_test
 import (
 	"context"
 	"log"
+	"time"
 
 	redigotrace "github.com/DataDog/dd-trace-go/contrib/garyburd/redigo"
 	"github.com/DataDog/dd-trace-go/tracer"
+
 	"github.com/garyburd/redigo/redis"
 )
 
@@ -30,7 +32,11 @@ func Example() {
 }
 
 func Example_tracedConn() {
-	c, err := redigotrace.DialWithServiceName("my-redis-backend", tracer.DefaultTracer, "tcp", "127.0.0.1:6379")
+	c, err := redigotrace.Dial("tcp", "127.0.0.1:6379",
+		redigotrace.WithServiceName("my-redis-backend"),
+		redigotrace.WithTracer(tracer.DefaultTracer),
+		redis.DialKeepAlive(time.Minute),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -60,7 +66,10 @@ func Example_dialURL() {
 func Example_pool() {
 	pool := &redis.Pool{
 		Dial: func() (redis.Conn, error) {
-			return redigotrace.DialWithServiceName("my-redis-backend", tracer.DefaultTracer, "tcp", "127.0.0.1:6379")
+			return redigotrace.Dial("tcp", "127.0.0.1:6379",
+				redigotrace.WithServiceName("my-redis-backend"),
+				redigotrace.WithTracer(tracer.DefaultTracer),
+			)
 		},
 	}
 

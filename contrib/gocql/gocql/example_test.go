@@ -20,7 +20,7 @@ func Example() {
 	ctx := root.Context(context.Background())
 
 	// Wrap the query to trace it and pass the context for inheritance
-	tracedQuery := gocqltrace.WrapQuery(query, "ServiceName", tracer.DefaultTracer)
+	tracedQuery := gocqltrace.WrapQuery(query, gocqltrace.WithServiceName("ServiceName"))
 	tracedQuery.WithContext(ctx)
 
 	// Execute your query as usual

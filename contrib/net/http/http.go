@@ -12,26 +12,21 @@ import (
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
 type ServeMux struct {
 	*http.ServeMux
-	tracer  *tracer.Tracer
-	service string
+	config *muxConfig
 }
 
 // NewServeMux allocates and returns an http.ServeMux augmented with the
 // global tracer.
-func NewServeMux() *ServeMux {
-	return NewServeMuxWithServiceName("http.router", tracer.DefaultTracer)
-}
-
-// NewServeMuxWithTracer creates a new http.ServeMux that is traced using
-// the given service name.
-//
-// TODO(gbbr): Remove this once we switch to OpenTracing.
-func NewServeMuxWithServiceName(service string, t *tracer.Tracer) *ServeMux {
-	t.SetServiceInfo(service, "net/http", ext.AppTypeWeb)
+func NewServeMux(opts ...MuxOption) *ServeMux {
+	cfg := new(muxConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	cfg.tracer.SetServiceInfo(cfg.serviceName, "net/http", ext.AppTypeWeb)
 	return &ServeMux{
 		ServeMux: http.NewServeMux(),
-		tracer:   t,
-		service:  service,
+		config:   cfg,
 	}
 }
 
@@ -43,7 +38,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// get the resource associated to this request
 	_, route := mux.Handler(r)
 	resource := r.Method + " " + route
-	internal.TraceAndServe(mux.ServeMux, w, r, mux.service, resource, mux.tracer)
+	internal.TraceAndServe(mux.ServeMux, w, r, mux.config.serviceName, resource, mux.config.tracer)
 }
 
 // WrapHandlerWithTracer wraps an http.Handler with the default tracer using the

@@ -15,3 +15,9 @@ func Example() {
 	mux.HandleFunc("/", handler)
 	http.ListenAndServe(":8080", mux)
 }
+
+func Example_withServiceName() {
+	mux := muxtrace.NewRouter(muxtrace.WithServiceName("mux.route"))
+	mux.HandleFunc("/", handler)
+	http.ListenAndServe(":8080", mux)
+}

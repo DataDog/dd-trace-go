@@ -25,3 +25,11 @@ func Example() {
 
 	log.Fatal(http.ListenAndServe(":8080", router))
 }
+
+func Example_withServiceName() {
+	router := httptrace.New(httptrace.WithServiceName("http.router"))
+	router.GET("/", Index)
+	router.GET("/hello/:name", Hello)
+
+	log.Fatal(http.ListenAndServe(":8080", router))
+}

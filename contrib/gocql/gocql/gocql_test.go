@@ -52,7 +52,7 @@ func TestErrorWrapper(t *testing.T) {
 	session, err := cluster.CreateSession()
 	assert.Nil(err)
 	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	err = WrapQuery(q, "ServiceName", testTracer).Exec()
+	err = WrapQuery(q, WithServiceName("ServiceName"), WithTracer(testTracer)).Exec()
 
 	testTracer.ForceFlush()
 	traces := testTransport.Traces()
@@ -90,7 +90,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	session, err := cluster.CreateSession()
 	assert.Nil(err)
 	q := session.Query("SELECT * from trace.person")
-	tq := WrapQuery(q, "TestServiceName", testTracer)
+	tq := WrapQuery(q, WithServiceName("TestServiceName"), WithTracer(testTracer))
 	tq.WithContext(ctx).Exec()
 	parentSpan.Finish()
 

@@ -7,7 +7,6 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 
-	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 
 	"github.com/DataDog/dd-trace-go/contrib/internal"
@@ -16,22 +15,18 @@ import (
 // Router is a traced version of httprouter.Router.
 type Router struct {
 	*httprouter.Router
-	tracer  *tracer.Tracer
-	service string
+	config *routerConfig
 }
 
 // New returns a new router augmented with tracing.
-func New() *Router {
-	return NewWithServiceName("httprouter.router", tracer.DefaultTracer)
-}
-
-// NewWithServiceName returns a new Router which is traced under the given
-// service name.
-//
-// TODO(gbbr): Remove tracer arg. when we switch to OT.
-func NewWithServiceName(service string, t *tracer.Tracer) *Router {
-	t.SetServiceInfo(service, "julienschmidt/httprouter", ext.AppTypeWeb)
-	return &Router{httprouter.New(), t, service}
+func New(opts ...RouterOption) *Router {
+	cfg := new(routerConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	cfg.tracer.SetServiceInfo(cfg.serviceName, "julienschmidt/httprouter", ext.AppTypeWeb)
+	return &Router{httprouter.New(), cfg}
 }
 
 // ServeHTTP implements http.Handler.
@@ -43,5 +38,5 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
-	internal.TraceAndServe(r.Router, w, req, r.service, resource, r.tracer)
+	internal.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, r.config.tracer)
 }

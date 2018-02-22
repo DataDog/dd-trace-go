@@ -30,7 +30,7 @@ func Example() {
 
 func Example_context() {
 	// Register the driver that we will be using (in this case mysql) under a custom service name.
-	sqltrace.RegisterWithServiceName("my-db", "mysql", &mysql.MySQLDriver{})
+	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("my-db"))
 
 	// Open a connection to the DB using the driver we've just registered with tracing.
 	db, err := sqltrace.Open("mysql", "user:password@/dbname")

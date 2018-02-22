@@ -6,14 +6,15 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 
+	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql"
 	sqlxtrace "github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx"
 )
 
-func Example() {
+func ExampleOpen() {
 	// Register informs the sqlxtrace package of the driver that we will be using in our program.
 	// It uses a default service name, in the below case "postgres.db". To use a custom service
 	// name use RegisterWithServiceName.
-	sqlxtrace.Register("postgres", &pq.Driver{})
+	sqltrace.Register("postgres", &pq.Driver{}, sqltrace.WithServiceName("my-service"))
 	db, err := sqlxtrace.Open("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)

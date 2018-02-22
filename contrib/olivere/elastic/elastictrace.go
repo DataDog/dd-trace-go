@@ -6,49 +6,26 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"regexp"
 	"strconv"
-	"time"
 
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
 // NewHTTPClient returns a new http.Client which traces requests under the given service name.
-//
-// TODO(gbbr): Remove tracer argument when we switch to OpenTracing.
-func NewHTTPClient(service string, tracer *tracer.Tracer) *http.Client {
-	return &http.Client{Transport: &httpTransport{&http.Transport{
-		// http.DefaultTransport
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-			DualStack: true,
-		}).DialContext,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	}, tracer, service}}
-}
-
-// NewHTTPClientWithTransport returns a new http.Client that traces requests using
-// the given http.Transport.
-//
-// TODO(gbbr): Remove tracer argument when we switch to OpenTracing.
-func NewHTTPClientWithTransport(transport *http.Transport, service string, tracer *tracer.Tracer) *http.Client {
-	return &http.Client{Transport: &httpTransport{transport, tracer, service}}
+func NewHTTPClient(opts ...ClientOption) *http.Client {
+	cfg := new(clientConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	return &http.Client{Transport: &httpTransport{config: cfg}}
 }
 
 // httpTransport is a traced HTTP transport that captures Elasticsearch spans.
-type httpTransport struct {
-	*http.Transport
-	tracer  *tracer.Tracer
-	service string
-}
+type httpTransport struct{ config *clientConfig }
 
 // maxContentLength is the maximum content length for which we'll read and capture
 // the contents of the request body. Anything larger will still be traced but the
@@ -58,10 +35,10 @@ const maxContentLength = 500 * 1024
 // RoundTrip satisfies the RoundTripper interface, wraps the sub Transport and
 // captures a span of the Elasticsearch request.
 func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	span := t.tracer.NewChildSpanFromContext("elasticsearch.query", req.Context())
+	span := t.config.tracer.NewChildSpanFromContext("elasticsearch.query", req.Context())
 	defer span.Finish()
 
-	span.Service = t.service
+	span.Service = t.config.serviceName
 	span.Type = ext.AppTypeDB
 	span.SetMeta("elasticsearch.method", req.Method)
 	span.SetMeta("elasticsearch.url", req.URL.Path)
@@ -77,7 +54,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		req.Body = ioutil.NopCloser(bytes.NewBuffer(buf))
 	}
 	// process using the standard transport
-	res, err := t.Transport.RoundTrip(req)
+	res, err := t.config.transport.RoundTrip(req)
 	if err != nil {
 		// roundtrip error
 		span.SetError(err)
