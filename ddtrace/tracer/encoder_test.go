@@ -2,27 +2,12 @@ package tracer
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/ugorji/go/codec"
 )
-
-func TestEncodercontentType(t *testing.T) {
-	assert := assert.New(t)
-
-	testCases := []struct {
-		encoder     encoder
-		contentType string
-	}{
-		{newJSONEncoder(), "application/json"},
-		{newMsgpackEncoder(), "application/msgpack"},
-	}
-
-	for _, tc := range testCases {
-		assert.Equal(tc.contentType, tc.encoder.contentType())
-	}
-}
 
 func TestJSONEncoding(t *testing.T) {
 	assert := assert.New(t)
@@ -39,14 +24,13 @@ func TestJSONEncoding(t *testing.T) {
 
 	for _, tc := range testCases {
 		payload := getTestTrace(tc.traces, tc.size)
-		encoder := newJSONEncoder()
-		err := encoder.encodeTraces(payload)
-		assert.Nil(err)
-
+		r, err := encode(encodingJSON, payload)
+		if err != nil {
+			t.Fatal(err)
+		}
 		// decode to check the right encoding
 		var traces [][]*span
-		dec := json.NewDecoder(encoder.buffer)
-		err = dec.Decode(&traces)
+		err = json.NewDecoder(r).Decode(&traces)
 		assert.Nil(err)
 		assert.Len(traces, tc.traces)
 
@@ -83,15 +67,14 @@ func TestMsgpackEncoding(t *testing.T) {
 
 	for _, tc := range testCases {
 		payload := getTestTrace(tc.traces, tc.size)
-		encoder := newMsgpackEncoder()
-		err := encoder.encodeTraces(payload)
-		assert.Nil(err)
-
+		r, err := encode(encodingMsgpack, payload)
+		if err != nil {
+			t.Fatal(err)
+		}
 		// decode to check the right encoding
 		var traces [][]*span
 		var mh codec.MsgpackHandle
-		dec := codec.NewDecoder(encoder.buffer, &mh)
-		err = dec.Decode(&traces)
+		err = codec.NewDecoder(r, &mh).Decode(&traces)
 		assert.Nil(err)
 		assert.Len(traces, tc.traces)
 
@@ -109,6 +92,29 @@ func TestMsgpackEncoding(t *testing.T) {
 			assert.Equal(int64(1000000000), span.Duration)
 			assert.Equal("192.168.0.1", span.Meta["http.host"])
 			assert.Equal(float64(41.99), span.Metrics["http.monitor"])
+		}
+	}
+}
+
+func BenchmarkMsgpackEncoder(b *testing.B) {
+	b.Run("small", benchMsgpack(20, 5))
+	b.Run("medium", benchMsgpack(50, 50))
+	b.Run("large", benchMsgpack(1000, 100))
+}
+
+func benchMsgpack(traceCount, spansPerTrace int) func(b *testing.B) {
+	v := getTestTrace(traceCount, spansPerTrace)
+	return func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			r, err := encode(encodingMsgpack, v)
+			if err != nil {
+				b.Fatal(err)
+			}
+			all, err := ioutil.ReadAll(r)
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.SetBytes(int64(len(all)))
 		}
 	}
 }
