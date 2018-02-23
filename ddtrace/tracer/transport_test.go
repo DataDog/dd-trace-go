@@ -152,23 +152,17 @@ func TestTransportServicesDowngrade_0_2(t *testing.T) {
 	assert.Equal(200, response.StatusCode)
 }
 
-func TestTransportEncoderPool(t *testing.T) {
+func TestTransportContentType(t *testing.T) {
 	assert := assert.New(t)
 	transport := newHTTPTransport(defaultAddress)
-
-	// MsgpackEncoder is the default encoder of the pool
-	encoder := transport.getEncoder()
-	assert.Equal("application/msgpack", encoder.contentType())
+	assert.Equal("application/msgpack", transport.encoding.contentType())
 }
 
-func TestTransportSwitchEncoder(t *testing.T) {
+func TestTransportDowngrade(t *testing.T) {
 	assert := assert.New(t)
 	transport := newHTTPTransport(defaultAddress)
-	transport.changeEncoder(jsonEncoderFactory)
-
-	// MsgpackEncoder is the default encoder of the pool
-	encoder := transport.getEncoder()
-	assert.Equal("application/json", encoder.contentType())
+	transport.apiDowngrade()
+	assert.Equal("application/json", transport.encoding.contentType())
 }
 
 func TestTraceCountHeader(t *testing.T) {
