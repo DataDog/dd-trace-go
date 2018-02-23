@@ -50,14 +50,7 @@ type httpTransport struct {
 	client            *http.Client      // the HTTP client used in the POST
 	headers           map[string]string // the Transport headers
 	compatibilityMode bool              // the Agent targets a legacy API for compatibility reasons
-
-	// [WARNING] We tried to reuse encoders thanks to a pool, but that led us to having race conditions.
-	// Indeed, when we send the encoder as the request body, the persistConn.writeLoop() goroutine
-	// can theoretically read the underlying buffer whereas the encoder has been returned to the pool.
-	// Since the underlying bytes.Buffer is not thread safe, this can make the app panicking.
-	// since this method will later on spawn a goroutine referencing this buffer.
-	// That's why we prefer the less performant yet SAFE implementation of allocating a new encoder every time we flush.
-	getEncoder encoderFactory
+	encoding          encoding          // the type of encoding used
 }
 
 // newHTTPTransport returns an httpTransport for the given endpoint
@@ -82,7 +75,7 @@ func newHTTPTransport(addr string) *httpTransport {
 		legacyTraceURL:   fmt.Sprintf("http://%s/v0.2/traces", addr),
 		serviceURL:       fmt.Sprintf("http://%s/v0.3/services", addr),
 		legacyServiceURL: fmt.Sprintf("http://%s/v0.2/services", addr),
-		getEncoder:       msgpackEncoderFactory,
+		encoding:         encodingMsgpack,
 		client: &http.Client{
 			// We copy the transport to avoid using the default one, as it might be
 			// augmented with tracing and we don't want these calls to be recorded.
@@ -110,17 +103,12 @@ func (t *httpTransport) sendTraces(traces [][]*span) (*http.Response, error) {
 	if t.traceURL == "" {
 		return nil, errors.New("provided an empty URL, giving up")
 	}
-
-	encoder := t.getEncoder()
-
-	// encode the spans and return the error if any
-	err := encoder.encodeTraces(traces)
+	r, err := encode(t.encoding, traces)
 	if err != nil {
 		return nil, err
 	}
-
 	// prepare the client and send the payload
-	req, err := http.NewRequest("POST", t.traceURL, encoder)
+	req, err := http.NewRequest("POST", t.traceURL, r)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %v", err)
 	}
@@ -128,7 +116,7 @@ func (t *httpTransport) sendTraces(traces [][]*span) (*http.Response, error) {
 		req.Header.Set(header, value)
 	}
 	req.Header.Set(traceCountHeader, strconv.Itoa(len(traces)))
-	req.Header.Set("Content-Type", encoder.contentType())
+	req.Header.Set("Content-Type", t.encoding.contentType())
 	response, err := t.client.Do(req)
 
 	// if we have an error, return an empty Response to protect against nil pointer dereference
@@ -155,22 +143,19 @@ func (t *httpTransport) sendServices(services map[string]service) (*http.Respons
 	if t.serviceURL == "" {
 		return nil, errors.New("provided an empty URL, giving up")
 	}
-
-	encoder := t.getEncoder()
-
-	if err := encoder.encodeServices(services); err != nil {
+	r, err := encode(t.encoding, services)
+	if err != nil {
 		return nil, err
 	}
-
 	// Send it
-	req, err := http.NewRequest("POST", t.serviceURL, encoder)
+	req, err := http.NewRequest("POST", t.serviceURL, r)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %v", err)
 	}
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
-	req.Header.Set("Content-Type", encoder.contentType())
+	req.Header.Set("Content-Type", t.encoding.contentType())
 
 	response, err := t.client.Do(req)
 	if err != nil {
@@ -192,12 +177,6 @@ func (t *httpTransport) sendServices(services map[string]service) (*http.Respons
 	return response, err
 }
 
-// changeEncoder switches the encoder so that a different API with different
-// format can be targeted, preventing failures because of outdated agents
-func (t *httpTransport) changeEncoder(encoderFactory encoderFactory) {
-	t.getEncoder = encoderFactory
-}
-
 // apiDowngrade downgrades the used encoder and API level. This method must fallback to a safe
 // encoder and API, so that it will success despite users' configurations. This action
 // ensures that the compatibility mode is activated so that the downgrade will be
@@ -206,5 +185,5 @@ func (t *httpTransport) apiDowngrade() {
 	t.compatibilityMode = true
 	t.traceURL = t.legacyTraceURL
 	t.serviceURL = t.legacyServiceURL
-	t.changeEncoder(jsonEncoderFactory)
+	t.encoding = encodingJSON
 }

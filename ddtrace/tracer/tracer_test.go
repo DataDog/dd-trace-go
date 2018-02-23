@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
@@ -688,7 +689,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 
 // getTestTracer returns a Tracer with a DummyTransport
 func getTestTracer(opts ...StartOption) (*tracer, *dummyTransport) {
-	transport := &dummyTransport{getEncoder: msgpackEncoderFactory}
+	transport := &dummyTransport{encoding: encodingMsgpack}
 	o := append([]StartOption{withTransport(transport)}, opts...)
 	tracer := newTracer(o...)
 	return tracer, transport
@@ -696,9 +697,9 @@ func getTestTracer(opts ...StartOption) (*tracer, *dummyTransport) {
 
 // Mock Transport with a real Encoder
 type dummyTransport struct {
-	getEncoder encoderFactory
-	traces     [][]*span
-	services   map[string]service
+	encoding
+	traces   [][]*span
+	services map[string]service
 
 	sync.RWMutex // required because of some poll-testing (eg: worker)
 }
@@ -707,9 +708,12 @@ func (t *dummyTransport) sendTraces(traces [][]*span) (*http.Response, error) {
 	t.Lock()
 	t.traces = append(t.traces, traces...)
 	t.Unlock()
-
-	encoder := t.getEncoder()
-	return nil, encoder.encodeTraces(traces)
+	r, err := encode(t.encoding, traces)
+	if err != nil {
+		return nil, err
+	}
+	_, err = ioutil.ReadAll(r)
+	return nil, err
 }
 
 func (t *dummyTransport) sendServices(services map[string]service) (*http.Response, error) {
@@ -717,8 +721,12 @@ func (t *dummyTransport) sendServices(services map[string]service) (*http.Respon
 	t.services = services
 	t.Unlock()
 
-	encoder := t.getEncoder()
-	return nil, encoder.encodeServices(services)
+	r, err := encode(t.encoding, services)
+	if err != nil {
+		return nil, err
+	}
+	_, err = ioutil.ReadAll(r)
+	return nil, err
 }
 
 func (t *dummyTransport) Traces() [][]*span {
