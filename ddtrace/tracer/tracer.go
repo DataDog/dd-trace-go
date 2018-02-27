@@ -38,6 +38,9 @@ type tracer struct {
 
 // Start starts the tracer with the given set of options.
 func Start(opts ...StartOption) {
+	if internal.Testing {
+		return // mock tracer active
+	}
 	internal.GlobalTracer = newTracer(opts...)
 }
 
@@ -47,6 +50,8 @@ func Stop() {
 	internal.GlobalTracer = &internal.NoopTracer{}
 }
 
+// Span is an alias for ddtrace.Span. It is here to allow godoc to group methods returning
+// ddtrace.Span. It is recommended to refer to this type as ddtrace.Span instead.
 type Span = ddtrace.Span
 
 // StartSpan starts a new span with the given operation name and set of options.

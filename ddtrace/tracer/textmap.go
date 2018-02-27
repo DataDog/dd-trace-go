@@ -97,7 +97,7 @@ func (p *textMapPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 		return ErrInvalidCarrier
 	}
 	ctx, ok := spanCtx.(*spanContext)
-	if !ok {
+	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
 	// propagate the TraceID and the current active SpanID
@@ -116,12 +116,9 @@ func (p *textMapPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 	if !ok {
 		return nil, ErrInvalidCarrier
 	}
-	var (
-		err error
-		ctx spanContext
-	)
-	// extract SpanContext fields
-	err = reader.ForeachKey(func(k, v string) error {
+	var ctx spanContext
+	err := reader.ForeachKey(func(k, v string) error {
+		var err error
 		key := strings.ToLower(k)
 		switch key {
 		case p.traceHeader:
