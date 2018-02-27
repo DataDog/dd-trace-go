@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/internal"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -24,6 +25,29 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 		return t.StartSpan(name).(*span)
 	}
 	return t.StartSpan(name, ChildOf(parent.Context())).(*span)
+}
+
+func TestTracerStart(t *testing.T) {
+	t.Run("normal", func(t *testing.T) {
+		Start()
+		defer Stop()
+		if _, ok := internal.GlobalTracer.(*tracer); !ok {
+			t.Fail()
+		}
+	})
+
+	t.Run("testing", func(t *testing.T) {
+		internal.Testing = true
+		Start()
+		defer Stop()
+		if _, ok := internal.GlobalTracer.(*tracer); ok {
+			t.Fail()
+		}
+		if _, ok := internal.GlobalTracer.(*internal.NoopTracer); !ok {
+			t.Fail()
+		}
+		internal.Testing = false
+	})
 }
 
 func TestTracerStartSpan(t *testing.T) {

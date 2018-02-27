@@ -40,17 +40,17 @@ func NewRateSampler(rate float64) RateSampler {
 }
 
 // Rate returns the current rate of the sampler.
-func (s *rateSampler) Rate() float64 {
-	s.RLock()
-	defer s.RUnlock()
-	return s.rate
+func (r *rateSampler) Rate() float64 {
+	r.RLock()
+	defer r.RUnlock()
+	return r.rate
 }
 
 // SetRate sets a new sampling rate.
-func (s *rateSampler) SetRate(rate float64) {
-	s.Lock()
-	s.rate = rate
-	s.Unlock()
+func (r *rateSampler) SetRate(rate float64) {
+	r.Lock()
+	r.rate = rate
+	r.Unlock()
 }
 
 // constants used for the Knuth hashing, same as agent.
