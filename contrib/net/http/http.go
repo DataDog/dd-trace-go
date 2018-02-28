@@ -4,7 +4,7 @@ package http
 import (
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/contrib/internal"
+	"github.com/DataDog/dd-trace-go/contrib/internal/httputil"
 	"github.com/DataDog/dd-trace-go/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 )
@@ -38,12 +38,12 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// get the resource associated to this request
 	_, route := mux.Handler(r)
 	resource := r.Method + " " + route
-	internal.TraceAndServe(mux.ServeMux, w, r, mux.config.serviceName, resource)
+	httputil.TraceAndServe(mux.ServeMux, w, r, mux.config.serviceName, resource)
 }
 
 // WrapHandler wraps an http.Handler with tracing using the given service and resource.
 func WrapHandler(h http.Handler, service, resource string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		internal.TraceAndServe(h, w, req, service, resource)
+		httputil.TraceAndServe(h, w, req, service, resource)
 	})
 }
