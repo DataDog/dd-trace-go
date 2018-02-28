@@ -27,23 +27,40 @@ func TestTracerStop(t *testing.T) {
 }
 
 func TestTracerStartSpan(t *testing.T) {
-	var mt mocktracer
-	parent := newSpan(&mt, "http.request", &ddtrace.StartSpanConfig{})
+	parentTags := map[string]interface{}{ext.ServiceName: "root-service"}
 	startTime := time.Now()
-	s, ok := mt.StartSpan(
-		"db.query",
-		tracer.ServiceName("my-service"),
-		tracer.StartTime(startTime),
-		tracer.ChildOf(parent.Context()),
-	).(*mockspan)
 
-	assert := assert.New(t)
-	assert.True(ok)
-	assert.Equal("db.query", s.OperationName())
-	assert.Equal(startTime, s.StartTime())
-	assert.Equal("my-service", s.Tag(ext.ServiceName))
-	assert.Equal(parent.SpanID(), s.ParentID())
-	assert.Equal(parent.TraceID(), s.TraceID())
+	t.Run("with-service", func(t *testing.T) {
+		var mt mocktracer
+		parent := newSpan(&mt, "http.request", &ddtrace.StartSpanConfig{Tags: parentTags})
+		s, ok := mt.StartSpan(
+			"db.query",
+			tracer.ServiceName("my-service"),
+			tracer.StartTime(startTime),
+			tracer.ChildOf(parent.Context()),
+		).(*mockspan)
+
+		assert := assert.New(t)
+		assert.True(ok)
+		assert.Equal("db.query", s.OperationName())
+		assert.Equal(startTime, s.StartTime())
+		assert.Equal("my-service", s.Tag(ext.ServiceName))
+		assert.Equal(parent.SpanID(), s.ParentID())
+		assert.Equal(parent.TraceID(), s.TraceID())
+	})
+
+	t.Run("inherit-service", func(t *testing.T) {
+		var mt mocktracer
+		parent := newSpan(&mt, "http.request", &ddtrace.StartSpanConfig{Tags: parentTags})
+		s, ok := mt.StartSpan("db.query", tracer.ChildOf(parent.Context())).(*mockspan)
+
+		assert := assert.New(t)
+		assert.True(ok)
+		assert.Equal("db.query", s.OperationName())
+		assert.Equal("root-service", s.Tag(ext.ServiceName))
+		assert.Equal(parent.SpanID(), s.ParentID())
+		assert.Equal(parent.TraceID(), s.TraceID())
+	})
 }
 
 func TestTracerFinishedSpans(t *testing.T) {

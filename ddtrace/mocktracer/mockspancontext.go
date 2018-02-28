@@ -15,6 +15,7 @@ type spanContext struct {
 
 	spanID  uint64
 	traceID uint64
+	span    *mockspan // context owner
 }
 
 func (sc *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
