@@ -63,8 +63,12 @@ func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) 
 		s.startTime = cfg.StartTime
 	}
 	id := nextID()
-	s.context = &spanContext{spanID: id, traceID: id}
+	s.context = &spanContext{spanID: id, traceID: id, span: s}
 	if ctx, ok := cfg.Parent.(*spanContext); ok {
+		if ctx.span != nil && s.tags[ext.ServiceName] == nil {
+			// if we have a local parent and no service, inherit the parent's
+			s.SetTag(ext.ServiceName, ctx.span.Tag(ext.ServiceName))
+		}
 		s.parentID = ctx.spanID
 		s.context.traceID = ctx.traceID
 		s.context.baggage = ctx.baggage

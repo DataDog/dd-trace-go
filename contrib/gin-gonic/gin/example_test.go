@@ -2,7 +2,8 @@ package gin_test
 
 import (
 	gintrace "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin"
-	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,8 +41,9 @@ func Example_spanFromContext() {
 	r := gin.Default()
 	r.Use(gintrace.Middleware("image-encoder"))
 	r.GET("/image/encode", func(c *gin.Context) {
+		ctx := c.Request.Context()
 		// create a child span to track operation timing.
-		encodeSpan := tracer.NewChildSpanFromContext("image.encode", c.Request.Context())
+		encodeSpan, _ := tracer.StartSpanFromContext(ctx, "image.encode")
 		// encode a image
 		encodeSpan.Finish()
 

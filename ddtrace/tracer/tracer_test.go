@@ -80,17 +80,27 @@ func TestTracerStartSpanOptions(t *testing.T) {
 }
 
 func TestTracerStartChildSpan(t *testing.T) {
-	assert := assert.New(t)
-	tracer := newTracer()
-	root := tracer.StartSpan("web.request").(*span)
-	child := tracer.StartSpan("db.query", ChildOf(root.Context())).(*span)
-	tRoot := root
-	tChild := child
+	t.Run("own-service", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer := newTracer()
+		root := tracer.StartSpan("web.request", ServiceName("root-service")).(*span)
+		child := tracer.StartSpan("db.query", ChildOf(root.Context()), ServiceName("child-service")).(*span)
 
-	assert.NotEqual(uint64(0), tChild.TraceID)
-	assert.NotEqual(uint64(0), tChild.SpanID)
-	assert.Equal(tRoot.SpanID, tChild.ParentID)
-	assert.Equal(tRoot.TraceID, tChild.ParentID)
+		assert.NotEqual(uint64(0), child.TraceID)
+		assert.NotEqual(uint64(0), child.SpanID)
+		assert.Equal(root.SpanID, child.ParentID)
+		assert.Equal(root.TraceID, child.ParentID)
+		assert.Equal("child-service", child.Service)
+	})
+
+	t.Run("inherit-service", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer := newTracer()
+		root := tracer.StartSpan("web.request", ServiceName("root-service")).(*span)
+		child := tracer.StartSpan("db.query", ChildOf(root.Context())).(*span)
+
+		assert.Equal("root-service", child.Service)
+	})
 }
 
 func TestTracerBaggagePropagation(t *testing.T) {
