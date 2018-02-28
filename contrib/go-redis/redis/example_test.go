@@ -5,7 +5,7 @@ import (
 	"time"
 
 	redistrace "github.com/DataDog/dd-trace-go/contrib/go-redis/redis"
-	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 	"github.com/go-redis/redis"
 )
 
@@ -20,10 +20,10 @@ func Example() {
 	c.Set("test_key", "test_value", 0)
 
 	// optionally, create a new root span
-	root := tracer.NewRootSpan("parent.request", "web", "/home")
-
-	// and attach it to a context
-	ctx := root.Context(context.Background())
+	root, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
+		tracer.ServiceName("web"),
+		tracer.ResourceName("/home"),
+	)
 
 	// set the context on the client
 	c = c.WithContext(ctx)

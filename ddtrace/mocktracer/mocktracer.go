@@ -19,7 +19,7 @@ type Tracer interface {
 	// FinishedSpans returns the set of finished spans.
 	FinishedSpans() []Span
 
-	// Reset resets the spans and services set in the tracer to zero.
+	// Reset resets the spans and services recorded in the tracer to zero.
 	Reset()
 
 	// Stop sets the active tracer to a no-op. The mock tracer becomes
