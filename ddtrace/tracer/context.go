@@ -18,6 +18,9 @@ func ContextWithSpan(ctx context.Context, s Span) context.Context {
 // SpanFromContext returns the span contained in the given context. If no span is
 // found, it returns nil.
 func SpanFromContext(ctx context.Context) Span {
+	if ctx == nil {
+		return nil
+	}
 	v := ctx.Value(activeSpanKey)
 	if s, ok := v.(ddtrace.Span); ok {
 		return s
