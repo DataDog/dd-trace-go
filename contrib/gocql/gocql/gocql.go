@@ -7,8 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 
 	"github.com/gocql/gocql"
 )
@@ -23,7 +24,7 @@ type Query struct {
 // Iter inherits from gocql.Iter and contains a span.
 type Iter struct {
 	*gocql.Iter
-	span *tracer.Span
+	span ddtrace.Span
 }
 
 // params containes fields and metadata useful for command tracing
@@ -52,7 +53,7 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 		config: cfg,
 		query:  query,
 	}, context.Background()}
-	cfg.tracer.SetServiceInfo(cfg.serviceName, ext.CassandraType, ext.AppTypeDB)
+	tracer.SetServiceInfo(cfg.serviceName, ext.CassandraType, ext.AppTypeDB)
 	return tq
 }
 
@@ -71,14 +72,15 @@ func (tq *Query) PageState(state []byte) *Query {
 }
 
 // NewChildSpan creates a new span from the params and the context.
-func (tq *Query) newChildSpan(ctx context.Context) *tracer.Span {
+func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	p := tq.params
-	span := p.config.tracer.NewChildSpanFromContext(ext.CassandraQuery, ctx)
-	span.Type = ext.CassandraType
-	span.Service = p.config.serviceName
-	span.Resource = p.query
-	span.SetMeta(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated))
-	span.SetMeta(ext.CassandraKeyspace, p.keyspace)
+	span, _ := tracer.StartSpanFromContext(ctx, ext.CassandraQuery,
+		tracer.SpanType(ext.CassandraType),
+		tracer.ServiceName(p.config.serviceName),
+		tracer.ResourceName(p.query),
+		tracer.Tag(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated)),
+		tracer.Tag(ext.CassandraKeyspace, p.keyspace),
+	)
 	return span
 }
 
@@ -90,33 +92,24 @@ func (tq *Query) Exec() error {
 // MapScan wraps in a span query.MapScan call.
 func (tq *Query) MapScan(m map[string]interface{}) error {
 	span := tq.newChildSpan(tq.traceContext)
-	defer span.Finish()
 	err := tq.Query.MapScan(m)
-	if err != nil {
-		span.SetError(err)
-	}
+	span.Finish(tracer.WithError(err))
 	return err
 }
 
 // Scan wraps in a span query.Scan call.
 func (tq *Query) Scan(dest ...interface{}) error {
 	span := tq.newChildSpan(tq.traceContext)
-	defer span.Finish()
 	err := tq.Query.Scan(dest...)
-	if err != nil {
-		span.SetError(err)
-	}
+	span.Finish(tracer.WithError(err))
 	return err
 }
 
 // ScanCAS wraps in a span query.ScanCAS call.
 func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	span := tq.newChildSpan(tq.traceContext)
-	defer span.Finish()
 	applied, err = tq.Query.ScanCAS(dest...)
-	if err != nil {
-		span.SetError(err)
-	}
+	span.Finish(tracer.WithError(err))
 	return applied, err
 }
 
@@ -124,18 +117,18 @@ func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 func (tq *Query) Iter() *Iter {
 	iter := tq.Query.Iter()
 	span := tq.newChildSpan(tq.traceContext)
-	span.SetMeta(ext.CassandraRowCount, strconv.Itoa(iter.NumRows()))
-	span.SetMeta(ext.CassandraConsistencyLevel, strconv.Itoa(int(tq.GetConsistency())))
+	span.SetTag(ext.CassandraRowCount, strconv.Itoa(iter.NumRows()))
+	span.SetTag(ext.CassandraConsistencyLevel, strconv.Itoa(int(tq.GetConsistency())))
 
 	columns := iter.Columns()
 	if len(columns) > 0 {
-		span.SetMeta(ext.CassandraKeyspace, columns[0].Keyspace)
+		span.SetTag(ext.CassandraKeyspace, columns[0].Keyspace)
 	}
 	tIter := &Iter{iter, span}
 	if tIter.Host() != nil {
-		tIter.span.SetMeta(ext.TargetHost, tIter.Iter.Host().HostID())
-		tIter.span.SetMeta(ext.TargetPort, strconv.Itoa(tIter.Iter.Host().Port()))
-		tIter.span.SetMeta(ext.CassandraCluster, tIter.Iter.Host().DataCenter())
+		tIter.span.SetTag(ext.TargetHost, tIter.Iter.Host().HostID())
+		tIter.span.SetTag(ext.TargetPort, strconv.Itoa(tIter.Iter.Host().Port()))
+		tIter.span.SetTag(ext.CassandraCluster, tIter.Iter.Host().DataCenter())
 	}
 	return tIter
 }
@@ -144,7 +137,7 @@ func (tq *Query) Iter() *Iter {
 func (tIter *Iter) Close() error {
 	err := tIter.Iter.Close()
 	if err != nil {
-		tIter.span.SetError(err)
+		tIter.span.SetTag(ext.Error, err)
 	}
 	tIter.span.Finish()
 	return err
