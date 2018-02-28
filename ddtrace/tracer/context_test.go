@@ -25,7 +25,8 @@ func TestSpanFromContext(t *testing.T) {
 		assert.New(t).Equal(SpanFromContext(ctx), want)
 	})
 	t.Run("nil", func(t *testing.T) {
-		assert.New(t).Nil(SpanFromContext(context.Background()))
+		assert.Nil(t, SpanFromContext(context.Background()))
+		assert.Nil(t, SpanFromContext(nil))
 	})
 }
 
