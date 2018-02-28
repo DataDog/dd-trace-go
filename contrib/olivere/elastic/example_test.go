@@ -4,7 +4,7 @@ import (
 	"context"
 
 	elastictrace "github.com/DataDog/dd-trace-go/contrib/olivere/elastic"
-	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 	elasticv3 "gopkg.in/olivere/elastic.v3"
 	elasticv5 "gopkg.in/olivere/elastic.v5"
 )
@@ -25,8 +25,10 @@ func Example_v5() {
 		Do(context.Background())
 
 	// Use a context to pass information down the call chain
-	root := tracer.NewRootSpan("parent.request", "web", "/tweet/1")
-	ctx := root.Context(context.Background())
+	root, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
+		tracer.ServiceName("web"),
+		tracer.ResourceName("/tweet/1"),
+	)
 	client.Get().
 		Index("twitter").Type("tweet").Index("1").
 		Do(ctx)
@@ -49,8 +51,10 @@ func Example_v3() {
 		DoC(context.Background())
 
 	// Use a context to pass information down the call chain
-	root := tracer.NewRootSpan("parent.request", "web", "/tweet/1")
-	ctx := root.Context(context.Background())
+	root, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
+		tracer.ServiceName("web"),
+		tracer.ResourceName("/tweet/1"),
+	)
 	client.Get().
 		Index("twitter").Type("tweet").Index("1").
 		DoC(ctx)
