@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql/driver"
 	"errors"
+
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 )
 
 var _ driver.Stmt = (*tracedStmt)(nil)
@@ -20,8 +22,7 @@ type tracedStmt struct {
 func (s *tracedStmt) Close() (err error) {
 	span := s.newChildSpanFromContext(s.ctx, "Close", "")
 	defer func() {
-		span.SetError(err)
-		span.Finish()
+		span.Finish(tracer.WithError(err))
 	}()
 	return s.Stmt.Close()
 }
@@ -30,8 +31,7 @@ func (s *tracedStmt) Close() (err error) {
 func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
 	span := s.newChildSpanFromContext(ctx, "Exec", s.query)
 	defer func() {
-		span.SetError(err)
-		span.Finish()
+		span.Finish(tracer.WithError(err))
 	}()
 	if stmtExecContext, ok := s.Stmt.(driver.StmtExecContext); ok {
 		return stmtExecContext.ExecContext(ctx, args)
@@ -52,8 +52,7 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
 	span := s.newChildSpanFromContext(ctx, "Query", s.query)
 	defer func() {
-		span.SetError(err)
-		span.Finish()
+		span.Finish(tracer.WithError(err))
 	}()
 	if stmtQueryContext, ok := s.Stmt.(driver.StmtQueryContext); ok {
 		return stmtQueryContext.QueryContext(ctx, args)
