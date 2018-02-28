@@ -5,7 +5,8 @@ import (
 	"log"
 
 	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql"
-	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
+
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 )
@@ -39,12 +40,12 @@ func Example_context() {
 	}
 
 	// Create a root span, giving name, server and resource.
-	span := tracer.NewRootSpan("my-query", "my-db", "initial-access")
+	_, ctx := tracer.StartSpanFromContext(context.Background(), "my-query",
+		tracer.ServiceName("my-db"),
+		tracer.ResourceName("initial-access"),
+	)
 
-	// Create a context containing the span.
-	ctx := tracer.ContextWithSpan(context.Background(), span)
-
-	// Ssubsequent spans inherit their parent from context.
+	// Subsequent spans inherit their parent from context.
 	rows, err := db.QueryContext(ctx, "SELECT * FROM city LIMIT 5")
 	if err != nil {
 		log.Fatal(err)

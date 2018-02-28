@@ -7,8 +7,9 @@ import (
 	"fmt"
 
 	"github.com/DataDog/dd-trace-go/contrib/database/sql/internal"
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 )
 
 var _ driver.Driver = (*tracedDriver)(nil)
@@ -35,7 +36,7 @@ func (d *tracedDriver) Open(dsn string) (c driver.Conn, err error) {
 	if err != nil {
 		return nil, err
 	}
-	d.config.tracer.SetServiceInfo(d.config.serviceName, d.driverName, ext.AppTypeDB)
+	tracer.SetServiceInfo(d.config.serviceName, d.driverName, ext.AppTypeDB)
 	tp := &traceParams{
 		driverName: d.driverName,
 		config:     d.config,
@@ -52,18 +53,18 @@ type traceParams struct {
 	meta       map[string]string
 }
 
-func (tp *traceParams) newChildSpanFromContext(ctx context.Context, resource string, query string) *tracer.Span {
+func (tp *traceParams) newChildSpanFromContext(ctx context.Context, resource string, query string) ddtrace.Span {
 	name := fmt.Sprintf("%s.query", tp.driverName)
-	span := tp.config.tracer.NewChildSpanFromContext(name, ctx)
-	span.Type = ext.SQLType
-	span.Service = tp.config.serviceName
-	span.Resource = resource
+	span, _ := tracer.StartSpanFromContext(ctx, name,
+		tracer.SpanType(ext.SQLType),
+		tracer.ServiceName(tp.config.serviceName),
+	)
 	if query != "" {
-		span.Resource = query
-		span.SetMeta(ext.SQLQuery, query)
+		resource = query
 	}
+	span.SetTag(ext.ResourceName, resource)
 	for k, v := range tp.meta {
-		span.SetMeta(k, v)
+		span.SetTag(k, v)
 	}
 	return span
 }
