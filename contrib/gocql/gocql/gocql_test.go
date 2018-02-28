@@ -5,9 +5,10 @@ import (
 	"log"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
-	"github.com/DataDog/dd-trace-go/tracer/tracertest"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
+
 	"github.com/gocql/gocql"
 	"github.com/stretchr/testify/assert"
 )
@@ -45,75 +46,65 @@ func TestMain(m *testing.M) {
 
 func TestErrorWrapper(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := tracertest.GetTestTracer()
-	testTracer.SetDebugLogging(debug)
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
 	cluster := newCassandraCluster()
 	session, err := cluster.CreateSession()
 	assert.Nil(err)
 	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	err = WrapQuery(q, WithServiceName("ServiceName"), WithTracer(testTracer)).Exec()
+	err = WrapQuery(q, WithServiceName("ServiceName")).Exec()
 
-	testTracer.ForceFlush()
-	traces := testTransport.Traces()
-	assert.Len(traces, 1)
-	spans := traces[0]
+	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
 	span := spans[0]
 
-	assert.Equal(int32(span.Error), int32(1))
-	assert.Equal(span.GetMeta("error.msg"), err.Error())
-	assert.Equal(span.Name, ext.CassandraQuery)
-	assert.Equal(span.Resource, "CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	assert.Equal(span.Service, "ServiceName")
-	assert.Equal(span.GetMeta(ext.CassandraConsistencyLevel), "4")
-	assert.Equal(span.GetMeta(ext.CassandraPaginated), "false")
+	assert.Equal(span.Tag(ext.Error).(error), err)
+	assert.Equal(span.OperationName(), ext.CassandraQuery)
+	assert.Equal(span.Tag(ext.ResourceName), "CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	assert.Equal(span.Tag(ext.ServiceName), "ServiceName")
+	assert.Equal(span.Tag(ext.CassandraConsistencyLevel), "4")
+	assert.Equal(span.Tag(ext.CassandraPaginated), "false")
 
 	// Not added in case of an error
-	assert.Equal(span.GetMeta(ext.TargetHost), "")
-	assert.Equal(span.GetMeta(ext.TargetPort), "")
-	assert.Equal(span.GetMeta(ext.CassandraCluster), "")
-	assert.Equal(span.GetMeta(ext.CassandraKeyspace), "")
+	assert.Equal(span.Tag(ext.TargetHost), "")
+	assert.Equal(span.Tag(ext.TargetPort), "")
+	assert.Equal(span.Tag(ext.CassandraCluster), "")
+	assert.Equal(span.Tag(ext.CassandraKeyspace), "")
 }
 
 func TestChildWrapperSpan(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := tracertest.GetTestTracer()
-	testTracer.SetDebugLogging(debug)
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
 	// Parent span
-	ctx := context.Background()
-	parentSpan := testTracer.NewChildSpanFromContext("parentSpan", ctx)
-	ctx = tracer.ContextWithSpan(ctx, parentSpan)
-
+	parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "parentSpan")
 	cluster := newCassandraCluster()
 	session, err := cluster.CreateSession()
 	assert.Nil(err)
 	q := session.Query("SELECT * from trace.person")
-	tq := WrapQuery(q, WithServiceName("TestServiceName"), WithTracer(testTracer))
+	tq := WrapQuery(q, WithServiceName("TestServiceName"))
 	tq.WithContext(ctx).Exec()
 	parentSpan.Finish()
 
-	testTracer.ForceFlush()
-	traces := testTransport.Traces()
-	assert.Len(traces, 1)
-	spans := traces[0]
+	spans := mt.FinishedSpans()
 	assert.Len(spans, 2)
 
-	var childSpan, pSpan *tracer.Span
-	if spans[0].ParentID == spans[1].SpanID {
+	var childSpan, pSpan mocktracer.Span
+	if spans[0].ParentID() == spans[1].SpanID() {
 		childSpan = spans[0]
 		pSpan = spans[1]
 	} else {
 		childSpan = spans[1]
 		pSpan = spans[0]
 	}
-	assert.Equal(pSpan.Name, "parentSpan")
-	assert.Equal(childSpan.ParentID, pSpan.SpanID)
-	assert.Equal(childSpan.Name, ext.CassandraQuery)
-	assert.Equal(childSpan.Resource, "SELECT * from trace.person")
-	assert.Equal(childSpan.GetMeta(ext.CassandraKeyspace), "trace")
-	assert.Equal(childSpan.GetMeta(ext.TargetPort), "9042")
-	assert.Equal(childSpan.GetMeta(ext.TargetHost), "127.0.0.1")
-	assert.Equal(childSpan.GetMeta(ext.CassandraCluster), "datacenter1")
+	assert.Equal(pSpan.OperationName(), "parentSpan")
+	assert.Equal(childSpan.ParentID(), pSpan.SpanID)
+	assert.Equal(childSpan.OperationName(), ext.CassandraQuery)
+	assert.Equal(childSpan.Tag(ext.ResourceName), "SELECT * from trace.person")
+	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
+	assert.Equal(childSpan.Tag(ext.TargetPort), "9042")
+	assert.Equal(childSpan.Tag(ext.TargetHost), "127.0.0.1")
+	assert.Equal(childSpan.Tag(ext.CassandraCluster), "datacenter1")
 }

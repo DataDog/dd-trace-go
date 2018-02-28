@@ -4,7 +4,7 @@ import (
 	"context"
 
 	gocqltrace "github.com/DataDog/dd-trace-go/contrib/gocql/gocql"
-	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 	"github.com/gocql/gocql"
 )
 
@@ -16,8 +16,10 @@ func Example() {
 	query := session.Query("CREATE KEYSPACE if not exists trace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor': 1}")
 
 	// Use context to pass information down the call chain
-	root := tracer.NewRootSpan("parent.request", "web", "/home")
-	ctx := root.Context(context.Background())
+	_, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
+		tracer.ServiceName("web"),
+		tracer.ResourceName("/home"),
+	)
 
 	// Wrap the query to trace it and pass the context for inheritance
 	tracedQuery := gocqltrace.WrapQuery(query, gocqltrace.WithServiceName("ServiceName"))

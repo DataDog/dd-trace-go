@@ -170,7 +170,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		t = cfg.FinishTime.UnixNano()
 	}
 	if cfg.Error != nil {
-		s.SetTag("error", cfg.Error)
+		s.SetTag(ext.Error, cfg.Error)
 	}
 	s.finish(t)
 }
