@@ -10,3 +10,5 @@ bin/
 *.cov
 *.lock
 *.swp
+
+/contrib/google.golang.org/grpc.v12/vendor/

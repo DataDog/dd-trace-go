@@ -5,27 +5,16 @@ import (
 	"net"
 
 	grpctrace "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc"
-	"github.com/DataDog/dd-trace-go/tracer"
 
 	"google.golang.org/grpc"
 )
 
 func Example_client() {
 	// Create the client interceptor using the grpc trace package.
-	i := grpctrace.UnaryClientInterceptor(
-		grpctrace.WithServiceName("my-grpc-client"),
-		grpctrace.WithTracer(tracer.DefaultTracer),
-	)
+	i := grpctrace.UnaryClientInterceptor(grpctrace.WithServiceName("my-grpc-client"))
 
-	// Create initialization options for dialing into a server. Make sure
-	// to include the created interceptor.
-	opts := []grpc.DialOption{
-		grpc.WithInsecure(),
-		grpc.WithUnaryInterceptor(i),
-	}
-
-	// Dial in...
-	conn, err := grpc.Dial("localhost:50051", opts...)
+	// Dial in using the created interceptor...
+	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure(), grpc.WithUnaryInterceptor(i))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -42,10 +31,7 @@ func Example_server() {
 	}
 
 	// Create the unary server interceptor using the grpc trace package.
-	i := grpctrace.UnaryServerInterceptor(
-		grpctrace.WithServiceName("my-grpc-client"),
-		grpctrace.WithTracer(tracer.DefaultTracer),
-	)
+	i := grpctrace.UnaryServerInterceptor(grpctrace.WithServiceName("my-grpc-client"))
 
 	// Initialize the grpc server as normal, using the tracing interceptor.
 	s := grpc.NewServer(grpc.UnaryInterceptor(i))
