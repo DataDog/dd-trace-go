@@ -1,22 +1,20 @@
+//go:generate protoc -I . fixtures_test.proto --go_out=plugins=grpc:.
+
 // Package grpc provides functions to trace the google.golang.org/grpc package v1.2.
 package grpc
 
 import (
-	"fmt"
-	"strconv"
+	"net"
 
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/internal/grpcutil"
+	"github.com/DataDog/dd-trace-go/ddtrace"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-)
-
-// pass trace ids with these headers
-const (
-	traceIDKey  = "x-datadog-trace-id"
-	parentIDKey = "x-datadog-parent-id"
+	"google.golang.org/grpc/peer"
 )
 
 // UnaryServerInterceptor will trace requests to the given grpc server.
@@ -29,17 +27,27 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 	if cfg.serviceName == "" {
 		cfg.serviceName = "grpc.server"
 	}
-	t := cfg.tracer
-	t.SetServiceInfo(cfg.serviceName, "grpc-server", ext.AppTypeRPC)
+	tracer.SetServiceInfo(cfg.serviceName, "grpc-server", ext.AppTypeRPC)
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if !t.Enabled() {
-			return handler(ctx, req)
-		}
-		span := serverSpan(t, ctx, info.FullMethod, cfg.serviceName)
-		resp, err := handler(tracer.ContextWithSpan(ctx, span), req)
-		span.FinishWithErr(err)
+		span, ctx := startSpanFromContext(ctx, info.FullMethod, cfg.serviceName)
+		resp, err := handler(ctx, req)
+		span.Finish(tracer.WithError(err))
 		return resp, err
 	}
+}
+
+func startSpanFromContext(ctx context.Context, method, service string) (ddtrace.Span, context.Context) {
+	opts := []ddtrace.StartSpanOption{
+		tracer.ServiceName(service),
+		tracer.ResourceName(method),
+		tracer.Tag("grpc.method", method),
+		tracer.SpanType("go"),
+	}
+	md, _ := metadata.FromContext(ctx) // nil is ok
+	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
+		opts = append(opts, tracer.ChildOf(sctx))
+	}
+	return tracer.StartSpanFromContext(ctx, "grpc.server", opts...)
 }
 
 // UnaryClientInterceptor will add tracing to a gprc client.
@@ -52,81 +60,33 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 	if cfg.serviceName == "" {
 		cfg.serviceName = "grpc.client"
 	}
-	cfg.tracer.SetServiceInfo(cfg.serviceName, "grpc-client", ext.AppTypeRPC)
+	tracer.SetServiceInfo(cfg.serviceName, "grpc-client", ext.AppTypeRPC)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		var child *tracer.Span
-		span, ok := tracer.SpanFromContext(ctx)
-		// only trace the request if this is already part of a trace.
-		// does this make sense?
-		if ok && span.Tracer() != nil {
-			t := span.Tracer()
-			child = t.NewChildSpan("grpc.client", span)
-			child.SetMeta("grpc.method", method)
-			ctx = setIDs(child, ctx)
-			ctx = tracer.ContextWithSpan(ctx, child)
-			// FIXME[matt] add the host / port information here
-			// https://github.com/grpc/grpc-go/issues/951
+		var (
+			span ddtrace.Span
+			p    peer.Peer
+		)
+		span, ctx = tracer.StartSpanFromContext(ctx, "grpc.client", tracer.Tag("grpc.method", method))
+		md, ok := metadata.FromContext(ctx)
+		if !ok {
+			md = metadata.MD{}
 		}
-
+		_ = tracer.Inject(span.Context(), grpcutil.MDCarrier(md))
+		ctx = metadata.NewContext(ctx, md)
+		opts = append(opts, grpc.Peer(&p))
 		err := invoker(ctx, method, req, reply, cc, opts...)
-		if child != nil {
-			child.SetMeta("grpc.code", grpc.Code(err).String())
-			child.FinishWithErr(err)
-
+		if p.Addr != nil {
+			addr := p.Addr.String()
+			host, port, err := net.SplitHostPort(addr)
+			if err == nil {
+				if host != "" {
+					span.SetTag(ext.TargetHost, host)
+				}
+				span.SetTag(ext.TargetPort, port)
+			}
 		}
+		span.SetTag("grpc.code", grpc.Code(err).String())
+		span.Finish(tracer.WithError(err))
 		return err
 	}
-}
-
-func serverSpan(t *tracer.Tracer, ctx context.Context, method, service string) *tracer.Span {
-	span := t.NewRootSpan("grpc.server", service, method)
-	span.SetMeta("gprc.method", method)
-	span.Type = "go"
-
-	traceID, parentID := getIDs(ctx)
-	if traceID != 0 && parentID != 0 {
-		span.TraceID = traceID
-		span.ParentID = parentID
-	}
-
-	return span
-}
-
-// setIDs will set the trace ids on the context{
-func setIDs(span *tracer.Span, ctx context.Context) context.Context {
-	if span == nil || span.TraceID == 0 {
-		return ctx
-	}
-	md := metadata.New(map[string]string{
-		traceIDKey:  fmt.Sprint(span.TraceID),
-		parentIDKey: fmt.Sprint(span.ParentID),
-	})
-	if existing, ok := metadata.FromContext(ctx); ok {
-		md = metadata.Join(existing, md)
-	}
-	return metadata.NewContext(ctx, md)
-}
-
-// getIDs will return ids embededd an ahe context.
-func getIDs(ctx context.Context) (traceID, parentID uint64) {
-	if md, ok := metadata.FromContext(ctx); ok {
-		if id := getID(md, traceIDKey); id > 0 {
-			traceID = id
-		}
-		if id := getID(md, parentIDKey); id > 0 {
-			parentID = id
-		}
-	}
-	return traceID, parentID
-}
-
-// getID parses an id from the metadata.
-func getID(md metadata.MD, name string) uint64 {
-	for _, str := range md[name] {
-		id, err := strconv.Atoi(str)
-		if err == nil {
-			return uint64(id)
-		}
-	}
-	return 0
 }
