@@ -48,7 +48,9 @@ jobs:
 
                - run:
                     name: Fetching dependencies
-                    command: go get -t ./...
+                    command: |
+                         go get -t ./...
+                         go get github.com/golang/lint/...
 
                - run:
                     name: Wait for MySQL
@@ -80,4 +82,4 @@ jobs:
 
                - run:
                     name: Testing
-                    command: go test -race ./...
+                    command: golint $(go list ./... | grep -v /vendor/) && go test -race ./...
