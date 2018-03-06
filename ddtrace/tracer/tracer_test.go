@@ -223,7 +223,7 @@ func TestNewSpanChild(t *testing.T) {
 	assert.Equal(tracer, child.tracer)
 }
 
-func TestnewRootSpanHasPid(t *testing.T) {
+func TestNewRootSpanHasPid(t *testing.T) {
 	assert := assert.New(t)
 
 	tracer := newTracer(withTransport(newDefaultTransport()))
