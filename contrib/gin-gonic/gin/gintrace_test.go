@@ -82,6 +82,44 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(s.GetMeta("http.url"), "/user/123")
 }
 
+func TestTraceQueryString(t *testing.T) {
+	assert := assert.New(t)
+	testTracer, testTransport := tracertest.GetTestTracer()
+	tracer.DefaultTracer = testTracer
+
+	router := gin.New()
+	router.Use(Middleware("foobar"))
+	router.GET("/users/search", func(c *gin.Context) {
+		name := c.Query("name")
+		c.Writer.Write([]byte(name))
+	})
+
+	r := httptest.NewRequest("GET", "/users/search?name=Jill&id=2", nil)
+	w := httptest.NewRecorder()
+
+	// do and verify the request
+	router.ServeHTTP(w, r)
+	response := w.Result()
+	assert.Equal(response.StatusCode, 200)
+
+	// verify traces look good
+	testTracer.ForceFlush()
+	traces := testTransport.Traces()
+	assert.Len(traces, 1)
+	spans := traces[0]
+	assert.Len(spans, 1)
+	if len(spans) < 1 {
+		t.Fatalf("no spans")
+	}
+	s := spans[0]
+	assert.Equal(s.Name, "http.request")
+	assert.True(strings.Contains(s.Resource, "gin.TestTraceQueryString"))
+	assert.Equal(s.GetMeta("http.status_code"), "200")
+	assert.Equal(s.GetMeta("http.method"), "GET")
+	assert.Equal(s.GetMeta("http.url"), "/users/search")
+	assert.Equal(s.GetMeta("http.query_strings"), "name=Jill&id=2")
+}
+
 func TestDisabled(t *testing.T) {
 	assert := assert.New(t)
 	testTracer, testTransport := tracertest.GetTestTracer()
