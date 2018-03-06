@@ -1,8 +1,12 @@
 package elastic
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 
 	"github.com/DataDog/dd-trace-go/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/ddtrace/mocktracer"
@@ -48,6 +52,63 @@ func TestClientV5(t *testing.T) {
 		Id("1").Do(context.TODO())
 	assert.Error(err)
 	checkErrTrace(assert, mt)
+}
+
+func TestClientErrorCutoffV3(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	oldCutoff := bodyCutoff
+	defer func() {
+		bodyCutoff = oldCutoff
+	}()
+	bodyCutoff = 10
+
+	tc := NewHTTPClient(WithServiceName("my-es-service"))
+	client, err := elasticv5.NewClient(
+		elasticv5.SetURL("http://127.0.0.1:9200"),
+		elasticv5.SetHttpClient(tc),
+		elasticv5.SetSniff(false),
+		elasticv5.SetHealthcheck(false),
+	)
+	assert.NoError(err)
+
+	_, err = client.Index().
+		Index("twitter").Id("1").
+		Type("tweet").
+		BodyString(`{"user": "test", "message": "hello"}`).
+		Do(context.TODO())
+	assert.NoError(err)
+
+	span := mt.FinishedSpans()[0]
+	assert.Equal(`{"user": "`, span.Tag("elasticsearch.body"))
+}
+
+func TestClientErrorCutoffV5(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	oldCutoff := bodyCutoff
+	defer func() {
+		bodyCutoff = oldCutoff
+	}()
+	bodyCutoff = 10
+
+	tc := NewHTTPClient(WithServiceName("my-es-service"))
+	client, err := elasticv5.NewClient(
+		elasticv5.SetURL("http://127.0.0.1:9201"),
+		elasticv5.SetHttpClient(tc),
+		elasticv5.SetSniff(false),
+		elasticv5.SetHealthcheck(false),
+	)
+	assert.NoError(err)
+
+	_, err = client.Get().Index("not-real-index").
+		Id("1").Do(context.TODO())
+	assert.Error(err)
+
+	span := mt.FinishedSpans()[0]
+	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
 }
 
 func TestClientV3(t *testing.T) {
@@ -149,6 +210,7 @@ func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("PUT /twitter/tweet/?", span.Tag(ext.ResourceName))
 	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
 	assert.Equal("PUT", span.Tag("elasticsearch.method"))
+	assert.Equal(`{"user": "test", "message": "hello"}`, span.Tag("elasticsearch.body"))
 }
 
 func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
@@ -195,5 +257,78 @@ func TestQuantize(t *testing.T) {
 		},
 	} {
 		assert.Equal(t, tc.expected, quantize(tc.url, tc.method))
+	}
+}
+
+func TestPeek(t *testing.T) {
+	assert := assert.New(t)
+
+	for _, tt := range [...]struct {
+		max  int    // content length
+		txt  string // stream
+		n    int    // bytes to peek at
+		snip string // expected snippet
+		err  error  // expected error
+	}{
+		0: {
+			// extract 3 bytes from a content of length 7
+			txt:  "ABCDEFG",
+			max:  7,
+			n:    3,
+			snip: "ABC",
+		},
+		1: {
+			// extract 7 bytes from a content of length 7
+			txt:  "ABCDEFG",
+			max:  7,
+			n:    7,
+			snip: "ABCDEFG",
+		},
+		2: {
+			// extract 100 bytes from a content of length 9 (impossible scenario)
+			txt:  "ABCDEFG",
+			max:  9,
+			n:    100,
+			snip: "ABCDEFG",
+		},
+		3: {
+			// extract 5 bytes from a content of length 2 (impossible scenario)
+			txt:  "ABCDEFG",
+			max:  2,
+			n:    5,
+			snip: "AB",
+		},
+		4: {
+			txt: "ABCDEFG",
+			max: 0,
+			err: errors.New("empty stream"),
+		},
+		5: {
+			n:   4,
+			max: 4,
+			err: errors.New("empty stream"),
+		},
+		6: {
+			txt:  "ABCDEFG",
+			n:    4,
+			max:  -1,
+			snip: "ABCD",
+		},
+	} {
+		var readcloser io.ReadCloser
+		if tt.txt != "" {
+			readcloser = ioutil.NopCloser(bytes.NewBufferString(tt.txt))
+		}
+		snip, rc, err := peek(readcloser, tt.max, tt.n)
+		assert.Equal(tt.err, err)
+		assert.Equal(tt.snip, snip)
+
+		if readcloser != nil {
+			// if a non-nil io.ReadCloser was sent, the returned io.ReadCloser
+			// must always return the entire original content.
+			all, err := ioutil.ReadAll(rc)
+			assert.Nil(err)
+			assert.Equal(tt.txt, string(all))
+		}
 	}
 }

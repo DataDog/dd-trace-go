@@ -2,10 +2,10 @@
 package elastic
 
 import (
-	"bytes"
+	"bufio"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -27,10 +27,9 @@ func NewHTTPClient(opts ...ClientOption) *http.Client {
 // httpTransport is a traced HTTP transport that captures Elasticsearch spans.
 type httpTransport struct{ config *clientConfig }
 
-// maxContentLength is the maximum content length for which we'll read and capture
-// the contents of the request body. Anything larger will still be traced but the
-// body will not be captured as trace metadata.
-const maxContentLength = 500 * 1024
+// bodyCutoff specifies the maximum number of bytes that will be stored as a tag
+// value obtained from an HTTP request or response body.
+var bodyCutoff = 5 * 1024
 
 // RoundTrip satisfies the RoundTripper interface, wraps the sub Transport and
 // captures a span of the Elasticsearch request.
@@ -48,16 +47,11 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	)
 	defer span.Finish()
 
-	contentLength, err := strconv.Atoi(req.Header.Get("Content-Length"))
-	if req.Body != nil && err != nil && contentLength < maxContentLength {
-		buf, err := ioutil.ReadAll(req.Body)
-		req.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-		span.SetTag("elasticsearch.body", string(buf))
-		req.Body = ioutil.NopCloser(bytes.NewBuffer(buf))
+	snip, rc, err := peek(req.Body, int(req.ContentLength), bodyCutoff)
+	if err == nil {
+		span.SetTag("elasticsearch.body", snip)
 	}
+	req.Body = rc
 	// process using the standard transport
 	res, err := t.config.transport.RoundTrip(req)
 	if err != nil {
@@ -65,14 +59,12 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		span.SetTag(ext.Error, err)
 	} else if res.StatusCode < 200 || res.StatusCode > 299 {
 		// HTTP error
-		buf, err := ioutil.ReadAll(res.Body)
-		res.Body.Close()
+		snip, rc, err := peek(res.Body, int(res.ContentLength), bodyCutoff)
 		if err != nil {
-			span.SetTag(ext.Error, errors.New(http.StatusText(res.StatusCode)))
-		} else {
-			span.SetTag(ext.Error, errors.New(string(buf)))
+			snip = http.StatusText(res.StatusCode)
 		}
-		res.Body = ioutil.NopCloser(bytes.NewBuffer(buf))
+		span.SetTag(ext.Error, errors.New(snip))
+		res.Body = rc
 	}
 	if res != nil {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
@@ -94,4 +86,31 @@ func quantize(url, method string) string {
 	quantizedURL := idRegexp.ReplaceAll([]byte(url), idPlaceholder)
 	quantizedURL = indexRegexp.ReplaceAll(quantizedURL, indexPlaceholder)
 	return fmt.Sprintf("%s %s", method, quantizedURL)
+}
+
+// peek attempts to return the first n bytes, as a string, from the provided io.ReadCloser.
+// It returns a new io.ReadCloser which points to the same underlying stream and can be read
+// from to access the entire data including the snippet. max is used to specify the length
+// of the stream contained in the reader. If unknown, it should be -1. If 0 < max < n it
+// will override n.
+func peek(rc io.ReadCloser, max int, n int) (string, io.ReadCloser, error) {
+	if rc == nil || max == 0 {
+		return "", rc, errors.New("empty stream")
+	}
+	if max > 0 && max < n {
+		n = max
+	}
+	r := bufio.NewReaderSize(rc, n)
+	rc2 := struct {
+		io.Reader
+		io.Closer
+	}{
+		Reader: r,
+		Closer: rc,
+	}
+	snip, err := r.Peek(n)
+	if err == io.EOF {
+		err = nil
+	}
+	return string(snip), rc2, err
 }
