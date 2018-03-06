@@ -22,7 +22,9 @@ type spanContext struct {
 	traceID  uint64
 	spanID   uint64
 	parentID uint64
-	baggage  map[string]string
+
+	mu      sync.RWMutex // guards baggage
+	baggage map[string]string
 }
 
 // newSpanContext creates a new SpanContext to serve as context for the given
@@ -56,6 +58,8 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 
 // ForeachBaggageItem implements SpanContext
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	for k, v := range c.baggage {
 		if !handler(k, v) {
 			break
@@ -64,10 +68,18 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 }
 
 func (c *spanContext) setBaggageItem(key, val string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.baggage == nil {
 		c.baggage = make(map[string]string, 1)
 	}
 	c.baggage[key] = val
+}
+
+func (c *spanContext) baggageItem(key string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.baggage[key]
 }
 
 // finish marks this span as finished in the trace.
