@@ -6,7 +6,7 @@ import (
 	"time"
 
 	redigotrace "github.com/DataDog/dd-trace-go/contrib/garyburd/redigo"
-	"github.com/DataDog/dd-trace-go/tracer"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 
 	"github.com/garyburd/redigo/redis"
 )
@@ -23,8 +23,10 @@ func Example() {
 	c.Do("SET", "vehicle", "truck")
 
 	// Use a context to pass information down the call chain
-	root := tracer.NewRootSpan("parent.request", "web", "/home")
-	ctx := root.Context(context.Background())
+	root, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
+		tracer.ServiceName("web"),
+		tracer.ResourceName("/home"),
+	)
 
 	// When passed a context as the final argument, c.Do will emit a span inheriting from 'parent.request'
 	c.Do("SET", "food", "cheese", ctx)
@@ -34,7 +36,6 @@ func Example() {
 func Example_tracedConn() {
 	c, err := redigotrace.Dial("tcp", "127.0.0.1:6379",
 		redigotrace.WithServiceName("my-redis-backend"),
-		redigotrace.WithTracer(tracer.DefaultTracer),
 		redis.DialKeepAlive(time.Minute),
 	)
 	if err != nil {
@@ -45,8 +46,10 @@ func Example_tracedConn() {
 	c.Do("SET", "vehicle", "truck")
 
 	// Use a context to pass information down the call chain
-	root := tracer.NewRootSpan("parent.request", "web", "/home")
-	ctx := root.Context(context.Background())
+	root, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
+		tracer.ServiceName("web"),
+		tracer.ResourceName("/home"),
+	)
 
 	// When passed a context as the final argument, c.Do will emit a span inheriting from 'parent.request'
 	c.Do("SET", "food", "cheese", ctx)
@@ -68,7 +71,6 @@ func Example_pool() {
 		Dial: func() (redis.Conn, error) {
 			return redigotrace.Dial("tcp", "127.0.0.1:6379",
 				redigotrace.WithServiceName("my-redis-backend"),
-				redigotrace.WithTracer(tracer.DefaultTracer),
 			)
 		},
 	}

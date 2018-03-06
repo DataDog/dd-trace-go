@@ -83,6 +83,10 @@ func TestTextMapPropagatorErrors(t *testing.T) {
 	assert.Equal(ErrInvalidCarrier, err)
 	err = textMapPropagator.Inject(internal.NoopSpanContext{}, TextMapCarrier(map[string]string{}))
 	assert.Equal(ErrInvalidSpanContext, err)
+	err = textMapPropagator.Inject(&spanContext{}, TextMapCarrier(map[string]string{}))
+	assert.Equal(ErrInvalidSpanContext, err) // no traceID and spanID
+	err = textMapPropagator.Inject(&spanContext{traceID: 1}, TextMapCarrier(map[string]string{}))
+	assert.Equal(ErrInvalidSpanContext, err) // no spanID
 
 	_, err = textMapPropagator.Extract(2)
 	assert.Equal(ErrInvalidCarrier, err)
@@ -106,7 +110,7 @@ func TestTextMapPropagatorErrors(t *testing.T) {
 	assert.Equal(ErrSpanContextNotFound, err)
 }
 
-func TestTextMapPropagationHeader(t *testing.T) {
+func TestTextMapPropagatorInjectHeader(t *testing.T) {
 	assert := assert.New(t)
 
 	textMapPropagator := NewTextMapPropagator("bg-", "tid", "pid")
@@ -126,4 +130,25 @@ func TestTextMapPropagationHeader(t *testing.T) {
 	assert.Equal(headers.Get("tid"), tid)
 	assert.Equal(headers.Get("pid"), pid)
 	assert.Equal(headers.Get("bg-item"), "x")
+}
+
+func TestTextMapPropagatorInjectExtract(t *testing.T) {
+	textMapPropagator := NewTextMapPropagator("bg-", "tid", "pid")
+	tracer := newTracer(WithTextMapPropagator(textMapPropagator))
+	root := tracer.StartSpan("web.request").SetBaggageItem("item", "x").(*span)
+	ctx := root.Context().(*spanContext)
+	headers := TextMapCarrier(map[string]string{})
+	err := tracer.Inject(ctx, headers)
+
+	assert := assert.New(t)
+	assert.Nil(err)
+
+	sctx, err := tracer.Extract(headers)
+	assert.Nil(err)
+
+	xctx, ok := sctx.(*spanContext)
+	assert.True(ok)
+	assert.Equal(xctx.traceID, ctx.traceID)
+	assert.Equal(xctx.spanID, ctx.spanID)
+	assert.Equal(xctx.baggage, ctx.baggage)
 }

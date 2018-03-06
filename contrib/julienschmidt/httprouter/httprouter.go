@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/contrib/internal/httputil"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
+
 	"github.com/julienschmidt/httprouter"
-
-	"github.com/DataDog/dd-trace-go/tracer/ext"
-
-	"github.com/DataDog/dd-trace-go/contrib/internal"
 )
 
 // Router is a traced version of httprouter.Router.
@@ -25,7 +25,7 @@ func New(opts ...RouterOption) *Router {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	cfg.tracer.SetServiceInfo(cfg.serviceName, "julienschmidt/httprouter", ext.AppTypeWeb)
+	tracer.SetServiceInfo(cfg.serviceName, "julienschmidt/httprouter", ext.AppTypeWeb)
 	return &Router{httprouter.New(), cfg}
 }
 
@@ -38,5 +38,5 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
-	internal.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, r.config.tracer)
+	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource)
 }

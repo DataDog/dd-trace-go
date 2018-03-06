@@ -7,13 +7,16 @@ const (
 	// PriorityUserReject informs the backend that a trace should be rejected and not stored.
 	// This should be used by user code overriding default priority.
 	PriorityUserReject = -1
+
 	// PriorityAutoReject informs the backend that a trace should be rejected and not stored.
 	// This is used by the builtin sampler.
 	PriorityAutoReject = 0
-	// PriorityAutoReject informs the backend that a trace should be kept and not stored.
+
+	// PriorityAutoKeep informs the backend that a trace should be kept and not stored.
 	// This is used by the builtin sampler.
 	PriorityAutoKeep = 1
-	// PriorityUserReject informs the backend that a trace should be kept and not stored.
+
+	// PriorityUserKeep informs the backend that a trace should be kept and not stored.
 	// This should be used by user code overriding default priority.
 	PriorityUserKeep = 2
 )

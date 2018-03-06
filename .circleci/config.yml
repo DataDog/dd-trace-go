@@ -35,22 +35,22 @@ jobs:
                - checkout
 
                - run:
-                    name: Vendor gRPC v1.5.2
-                    # This step vendors gRPC v1.5.2 inside our gRPC.v12 contrib
+                    name: Vendor gRPC v1.2.0
+                    # This step vendors gRPC v1.2.0 inside our gRPC.v12 contrib
                     # to allow running the tests against the correct version of
-                    # the gRPC library. In a real-world use case we don't want
-                    # this vendoring to exist because users might be running the
-                    # integration against older versions which we should also
-                    # support.
+                    # the gRPC library. The library is not committed into the
+                    # repository to avoid conflicts with the user's imports.
                     environment:
                          GRPC_DEST: contrib/google.golang.org/grpc.v12/vendor/google.golang.org/grpc
                     command: |
                          mkdir -p $GRPC_DEST
-                         git clone --branch v1.5.2 https://github.com/grpc/grpc-go $GRPC_DEST
+                         git clone --branch v1.2.0 https://github.com/grpc/grpc-go $GRPC_DEST
 
                - run:
                     name: Fetching dependencies
-                    command: go get -t ./...
+                    command: |
+                         go get -t ./...
+                         go get github.com/golang/lint/...
 
                - run:
                     name: Wait for MySQL
@@ -82,4 +82,4 @@ jobs:
 
                - run:
                     name: Testing
-                    command: go test -race ./...
+                    command: golint $(go list ./... | grep -v /vendor/) && go test -race ./...

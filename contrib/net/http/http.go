@@ -4,9 +4,9 @@ package http
 import (
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/contrib/internal"
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/contrib/internal/httputil"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 )
 
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
@@ -23,7 +23,7 @@ func NewServeMux(opts ...MuxOption) *ServeMux {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	cfg.tracer.SetServiceInfo(cfg.serviceName, "net/http", ext.AppTypeWeb)
+	tracer.SetServiceInfo(cfg.serviceName, "net/http", ext.AppTypeWeb)
 	return &ServeMux{
 		ServeMux: http.NewServeMux(),
 		config:   cfg,
@@ -38,21 +38,12 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// get the resource associated to this request
 	_, route := mux.Handler(r)
 	resource := r.Method + " " + route
-	internal.TraceAndServe(mux.ServeMux, w, r, mux.config.serviceName, resource, mux.config.tracer)
+	httputil.TraceAndServe(mux.ServeMux, w, r, mux.config.serviceName, resource)
 }
 
-// WrapHandlerWithTracer wraps an http.Handler with the default tracer using the
-// specified service and resource.
+// WrapHandler wraps an http.Handler with tracing using the given service and resource.
 func WrapHandler(h http.Handler, service, resource string) http.Handler {
-	return WrapHandlerWithTracer(h, service, resource, tracer.DefaultTracer)
-}
-
-// WrapHandlerWithTracer wraps an http.Handler with the given tracer using the
-// specified service and resource.
-//
-// TODO(gbbr): Remove this once we switch to OpenTracing fully.
-func WrapHandlerWithTracer(h http.Handler, service, resource string, t *tracer.Tracer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		internal.TraceAndServe(h, w, req, service, resource, t)
+		httputil.TraceAndServe(h, w, req, service, resource)
 	})
 }

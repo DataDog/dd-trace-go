@@ -3,6 +3,8 @@ package sql
 import (
 	"context"
 	"database/sql/driver"
+
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 )
 
 var _ driver.Tx = (*tracedTx)(nil)
@@ -18,8 +20,7 @@ type tracedTx struct {
 func (t *tracedTx) Commit() (err error) {
 	span := t.newChildSpanFromContext(t.ctx, "Commit", "")
 	defer func() {
-		span.SetError(err)
-		span.Finish()
+		span.Finish(tracer.WithError(err))
 	}()
 	return t.Tx.Commit()
 }
@@ -28,8 +29,7 @@ func (t *tracedTx) Commit() (err error) {
 func (t *tracedTx) Rollback() (err error) {
 	span := t.newChildSpanFromContext(t.ctx, "Rollback", "")
 	defer func() {
-		span.SetError(err)
-		span.Finish()
+		span.Finish(tracer.WithError(err))
 	}()
 	return t.Tx.Rollback()
 }

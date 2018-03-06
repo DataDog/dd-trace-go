@@ -4,10 +4,11 @@ package mux
 import (
 	"net/http"
 
-	"github.com/gorilla/mux"
+	"github.com/DataDog/dd-trace-go/contrib/internal/httputil"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 
-	"github.com/DataDog/dd-trace-go/contrib/internal"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/gorilla/mux"
 )
 
 // Router registers routes to be matched and dispatches a handler.
@@ -16,14 +17,14 @@ type Router struct {
 	config *routerConfig
 }
 
-// NewRouterWithTracer returns a new router instance traced with the global tracer.
+// NewRouter returns a new router instance traced with the global tracer.
 func NewRouter(opts ...RouterOption) *Router {
 	cfg := new(routerConfig)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	cfg.tracer.SetServiceInfo(cfg.serviceName, "gorilla/mux", ext.AppTypeWeb)
+	tracer.SetServiceInfo(cfg.serviceName, "gorilla/mux", ext.AppTypeWeb)
 	return &Router{
 		Router: mux.NewRouter(),
 		config: cfg,
@@ -50,5 +51,5 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = "unknown"
 	}
 	resource := req.Method + " " + route
-	internal.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, r.config.tracer)
+	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource)
 }

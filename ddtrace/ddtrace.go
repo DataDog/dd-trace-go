@@ -1,4 +1,4 @@
-// ddtrace holds the interfaces and structures shared by Datadog's tracer packages.
+// Package ddtrace holds the interfaces and structures shared by Datadog's tracer packages.
 // It is a good overview of the available API and functionalities.
 package ddtrace
 
@@ -12,7 +12,9 @@ type Tracer interface {
 	// SetServiceInfo sets information about the service with the given name.
 	SetServiceInfo(name, app, appType string)
 
-	// Extract extracts a span context from a given carrier.
+	// Extract extracts a span context from a given carrier. Note that baggage item
+	// keys will always be lower-cased to maintain consistency. It is impossible to
+	// maintain the original casing due to MIME header canonicalization standards.
 	Extract(carrier interface{}) (SpanContext, error)
 
 	// Inject injects a span context into the given carrier.
@@ -48,7 +50,7 @@ type Span interface {
 // both in the same process as well as cross-process.
 type SpanContext interface {
 	// ForeachBaggageItem provides an iterator over the key/value pairs set
-	// as baggage within this context.
+	// as baggage within this context. If it returns false, the iterator stops.
 	ForeachBaggageItem(handler func(k, v string) bool)
 }
 

@@ -1,34 +1,26 @@
-package internal
+package httputil
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 )
 
 // TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
-func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, service, resource string, t *tracer.Tracer) {
-	// bail out if tracing isn't enabled
-	if !t.Enabled() {
-		h.ServeHTTP(w, r)
-		return
-	}
-
-	span, ctx := t.NewChildSpanWithContext("http.request", r.Context())
+func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, service, resource string) {
+	span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request",
+		tracer.SpanType(ext.HTTPType),
+		tracer.ServiceName(service),
+		tracer.ResourceName(resource),
+		tracer.Tag(ext.HTTPMethod, r.Method),
+		tracer.Tag(ext.HTTPURL, r.URL.Path),
+	)
 	defer span.Finish()
-
-	span.Type = ext.HTTPType
-	span.Service = service
-	span.Resource = resource
-	span.SetMeta(ext.HTTPMethod, r.Method)
-	span.SetMeta(ext.HTTPURL, r.URL.Path)
-
-	traceRequest := r.WithContext(ctx)
-	traceWriter := NewResponseWriter(w, span)
-
-	h.ServeHTTP(traceWriter, traceRequest)
+	h.ServeHTTP(NewResponseWriter(w, span), r.WithContext(ctx))
 }
 
 // ResponseWriter is a small wrapper around an http response writer that will
@@ -36,12 +28,12 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, servi
 // It implements the ResponseWriter interface.
 type ResponseWriter struct {
 	http.ResponseWriter
-	span   *tracer.Span
+	span   ddtrace.Span
 	status int
 }
 
-// New ResponseWriter allocateds and returns a new ResponseWriter.
-func NewResponseWriter(w http.ResponseWriter, span *tracer.Span) *ResponseWriter {
+// NewResponseWriter allocateds and returns a new ResponseWriter.
+func NewResponseWriter(w http.ResponseWriter, span ddtrace.Span) *ResponseWriter {
 	return &ResponseWriter{w, span, 0}
 }
 
@@ -60,8 +52,8 @@ func (w *ResponseWriter) Write(b []byte) (int, error) {
 func (w *ResponseWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 	w.status = status
-	w.span.SetMeta(ext.HTTPCode, strconv.Itoa(status))
+	w.span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 	if status >= 500 && status < 600 {
-		w.span.Error = 1
+		w.span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 	}
 }

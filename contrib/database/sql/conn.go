@@ -3,6 +3,8 @@ package sql
 import (
 	"context"
 	"database/sql/driver"
+
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 )
 
 var _ driver.Conn = (*tracedConn)(nil)
@@ -15,8 +17,7 @@ type tracedConn struct {
 func (tc *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
 	span := tc.newChildSpanFromContext(ctx, "Begin", "")
 	defer func() {
-		span.SetError(err)
-		span.Finish()
+		span.Finish(tracer.WithError(err))
 	}()
 	if connBeginTx, ok := tc.Conn.(driver.ConnBeginTx); ok {
 		tx, err = connBeginTx.BeginTx(ctx, opts)
@@ -35,8 +36,7 @@ func (tc *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
 	span := tc.newChildSpanFromContext(ctx, "Prepare", query)
 	defer func() {
-		span.SetError(err)
-		span.Finish()
+		span.Finish(tracer.WithError(err))
 	}()
 	if connPrepareCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
 		stmt, err := connPrepareCtx.PrepareContext(ctx, query)
@@ -62,8 +62,7 @@ func (tc *tracedConn) Exec(query string, args []driver.Value) (driver.Result, er
 func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
 	span := tc.newChildSpanFromContext(ctx, "Exec", query)
 	defer func() {
-		span.SetError(err)
-		span.Finish()
+		span.Finish(tracer.WithError(err))
 	}()
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
 		return execContext.ExecContext(ctx, query, args)
@@ -84,8 +83,7 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 func (tc *tracedConn) Ping(ctx context.Context) (err error) {
 	span := tc.newChildSpanFromContext(ctx, "Ping", "")
 	defer func() {
-		span.SetError(err)
-		span.Finish()
+		span.Finish(tracer.WithError(err))
 	}()
 	if pinger, ok := tc.Conn.(driver.Pinger); ok {
 		return pinger.Ping(ctx)
@@ -103,8 +101,7 @@ func (tc *tracedConn) Query(query string, args []driver.Value) (driver.Rows, err
 func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
 	span := tc.newChildSpanFromContext(ctx, "Query", query)
 	defer func() {
-		span.SetError(err)
-		span.Finish()
+		span.Finish(tracer.WithError(err))
 	}()
 	if queryerContext, ok := tc.Conn.(driver.QueryerContext); ok {
 		return queryerContext.QueryContext(ctx, query, args)

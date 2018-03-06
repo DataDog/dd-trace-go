@@ -2,9 +2,10 @@ package elastic
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/tracertest"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/mocktracer"
 	"github.com/stretchr/testify/assert"
 	elasticv3 "gopkg.in/olivere/elastic.v3"
 	elasticv5 "gopkg.in/olivere/elastic.v5"
@@ -16,10 +17,10 @@ const debug = false
 
 func TestClientV5(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := tracertest.GetTestTracer()
-	testTracer.SetDebugLogging(debug)
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
-	tc := NewHTTPClient(WithServiceName("my-es-service"), WithTracer(testTracer))
+	tc := NewHTTPClient(WithServiceName("my-es-service"))
 	client, err := elasticv5.NewClient(
 		elasticv5.SetURL("http://127.0.0.1:9201"),
 		elasticv5.SetHttpClient(tc),
@@ -34,25 +35,27 @@ func TestClientV5(t *testing.T) {
 		BodyString(`{"user": "test", "message": "hello"}`).
 		Do(context.TODO())
 	assert.NoError(err)
-	checkPUTTrace(assert, testTracer, testTransport)
+	checkPUTTrace(assert, mt)
 
+	mt.Reset()
 	_, err = client.Get().Index("twitter").Type("tweet").
 		Id("1").Do(context.TODO())
 	assert.NoError(err)
-	checkGETTrace(assert, testTracer, testTransport)
+	checkGETTrace(assert, mt)
 
+	mt.Reset()
 	_, err = client.Get().Index("not-real-index").
 		Id("1").Do(context.TODO())
 	assert.Error(err)
-	checkErrTrace(assert, testTracer, testTransport)
+	checkErrTrace(assert, mt)
 }
 
 func TestClientV3(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := tracertest.GetTestTracer()
-	testTracer.SetDebugLogging(debug)
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
-	tc := NewHTTPClient(WithServiceName("my-es-service"), WithTracer(testTracer))
+	tc := NewHTTPClient(WithServiceName("my-es-service"))
 	client, err := elasticv3.NewClient(
 		elasticv3.SetURL("http://127.0.0.1:9200"),
 		elasticv3.SetHttpClient(tc),
@@ -67,25 +70,27 @@ func TestClientV3(t *testing.T) {
 		BodyString(`{"user": "test", "message": "hello"}`).
 		DoC(context.TODO())
 	assert.NoError(err)
-	checkPUTTrace(assert, testTracer, testTransport)
+	checkPUTTrace(assert, mt)
 
+	mt.Reset()
 	_, err = client.Get().Index("twitter").Type("tweet").
 		Id("1").DoC(context.TODO())
 	assert.NoError(err)
-	checkGETTrace(assert, testTracer, testTransport)
+	checkGETTrace(assert, mt)
 
+	mt.Reset()
 	_, err = client.Get().Index("not-real-index").
 		Id("1").DoC(context.TODO())
 	assert.Error(err)
-	checkErrTrace(assert, testTracer, testTransport)
+	checkErrTrace(assert, mt)
 }
 
 func TestClientV3Failure(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := tracertest.GetTestTracer()
-	testTracer.SetDebugLogging(debug)
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
-	tc := NewHTTPClient(WithServiceName("my-es-service"), WithTracer(testTracer))
+	tc := NewHTTPClient(WithServiceName("my-es-service"))
 	client, err := elasticv3.NewClient(
 		// inexistent service, it must fail
 		elasticv3.SetURL("http://127.0.0.1:29200"),
@@ -102,25 +107,19 @@ func TestClientV3Failure(t *testing.T) {
 		DoC(context.TODO())
 	assert.Error(err)
 
-	testTracer.ForceFlush()
-	traces := testTransport.Traces()
-	assert.Len(traces, 1)
-	spans := traces[0]
-	assert.Equal("my-es-service", spans[0].Service)
-	assert.Equal("PUT /twitter/tweet/?", spans[0].Resource)
-	assert.Equal("/twitter/tweet/1", spans[0].GetMeta("elasticsearch.url"))
-	assert.Equal("PUT", spans[0].GetMeta("elasticsearch.method"))
+	spans := mt.FinishedSpans()
+	checkPUTTrace(assert, mt)
 
-	assert.NotEmpty(spans[0].GetMeta("error.msg"))
-	assert.Equal("*net.OpError", spans[0].GetMeta("error.type"))
+	assert.NotEmpty(spans[0].Tag(ext.Error))
+	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
 }
 
 func TestClientV5Failure(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := tracertest.GetTestTracer()
-	testTracer.SetDebugLogging(debug)
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
-	tc := NewHTTPClient(WithServiceName("my-es-service"), WithTracer(testTracer))
+	tc := NewHTTPClient(WithServiceName("my-es-service"))
 	client, err := elasticv5.NewClient(
 		// inexistent service, it must fail
 		elasticv5.SetURL("http://127.0.0.1:29201"),
@@ -137,55 +136,39 @@ func TestClientV5Failure(t *testing.T) {
 		Do(context.TODO())
 	assert.Error(err)
 
-	testTracer.ForceFlush()
-	traces := testTransport.Traces()
-	assert.Len(traces, 1)
-	spans := traces[0]
-	assert.Equal("my-es-service", spans[0].Service)
-	assert.Equal("PUT /twitter/tweet/?", spans[0].Resource)
-	assert.Equal("/twitter/tweet/1", spans[0].GetMeta("elasticsearch.url"))
-	assert.Equal("PUT", spans[0].GetMeta("elasticsearch.method"))
+	spans := mt.FinishedSpans()
+	checkPUTTrace(assert, mt)
 
-	assert.NotEmpty(spans[0].GetMeta("error.msg"))
-	assert.Equal("*net.OpError", spans[0].GetMeta("error.type"))
+	assert.NotEmpty(spans[0].Tag(ext.Error))
+	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
 }
 
-func checkPUTTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracertest.DummyTransport) {
-	tracer.ForceFlush()
-	traces := transport.Traces()
-	assert.Len(traces, 1)
-	spans := traces[0]
-	assert.Equal("my-es-service", spans[0].Service)
-	assert.Equal("PUT /twitter/tweet/?", spans[0].Resource)
-	assert.Equal("/twitter/tweet/1", spans[0].GetMeta("elasticsearch.url"))
-	assert.Equal("PUT", spans[0].GetMeta("elasticsearch.method"))
+func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
+	span := mt.FinishedSpans()[0]
+	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
+	assert.Equal("PUT /twitter/tweet/?", span.Tag(ext.ResourceName))
+	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
+	assert.Equal("PUT", span.Tag("elasticsearch.method"))
 }
 
-func checkGETTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracertest.DummyTransport) {
-	tracer.ForceFlush()
-	traces := transport.Traces()
-	assert.Len(traces, 1)
-	spans := traces[0]
-	assert.Equal("my-es-service", spans[0].Service)
-	assert.Equal("GET /twitter/tweet/?", spans[0].Resource)
-	assert.Equal("/twitter/tweet/1", spans[0].GetMeta("elasticsearch.url"))
-	assert.Equal("GET", spans[0].GetMeta("elasticsearch.method"))
+func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
+	span := mt.FinishedSpans()[0]
+	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
+	assert.Equal("GET /twitter/tweet/?", span.Tag(ext.ResourceName))
+	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
+	assert.Equal("GET", span.Tag("elasticsearch.method"))
 }
 
-func checkErrTrace(assert *assert.Assertions, tracer *tracer.Tracer, transport *tracertest.DummyTransport) {
-	tracer.ForceFlush()
-	traces := transport.Traces()
-	assert.Len(traces, 1)
-	spans := traces[0]
-	assert.Equal("my-es-service", spans[0].Service)
-	assert.Equal("GET /not-real-index/_all/?", spans[0].Resource)
-	assert.Equal("/not-real-index/_all/1", spans[0].GetMeta("elasticsearch.url"))
-	assert.NotEmpty(spans[0].GetMeta("error.msg"))
-	assert.Equal("*errors.errorString", spans[0].GetMeta("error.type"))
+func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
+	span := mt.FinishedSpans()[0]
+	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
+	assert.Equal("GET /not-real-index/_all/?", span.Tag(ext.ResourceName))
+	assert.Equal("/not-real-index/_all/1", span.Tag("elasticsearch.url"))
+	assert.NotEmpty(span.Tag(ext.Error))
+	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
 }
 
 func TestQuantize(t *testing.T) {
-	tr := tracer.NewTracer()
 	for _, tc := range []struct {
 		url, method string
 		expected    string
@@ -211,10 +194,6 @@ func TestQuantize(t *testing.T) {
 			expected: "PUT /logs_?_?/event/?",
 		},
 	} {
-		span := tracer.NewSpan("name", "elasticsearch", "", 0, 0, 0, tr)
-		span.SetMeta("elasticsearch.url", tc.url)
-		span.SetMeta("elasticsearch.method", tc.method)
-		quantize(span)
-		assert.Equal(t, tc.expected, span.Resource)
+		assert.Equal(t, tc.expected, quantize(tc.url, tc.method))
 	}
 }

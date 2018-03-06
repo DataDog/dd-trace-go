@@ -8,9 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-redis/redis"
+	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 
-	"github.com/DataDog/dd-trace-go/tracer/ext"
+	"github.com/go-redis/redis"
 )
 
 // Client is used to trace requests to a redis server.
@@ -19,7 +20,7 @@ type Client struct {
 	*params
 }
 
-// Pipeline is used to trace pipelines executed on a Redis server.
+// Pipeliner is used to trace pipelines executed on a Redis server.
 type Pipeliner struct {
 	redis.Pipeliner
 	*params
@@ -58,7 +59,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 		db:     strconv.Itoa(opt.DB),
 		config: cfg,
 	}
-	cfg.tracer.SetServiceInfo(cfg.serviceName, "redis", ext.AppTypeDB)
+	tracer.SetServiceInfo(cfg.serviceName, "redis", ext.AppTypeDB)
 	tc := &Client{c, params}
 	tc.Client.WrapProcess(createWrapperFromClient(tc))
 	return tc
@@ -72,41 +73,28 @@ func (c *Client) Pipeline() *Pipeliner {
 // ExecWithContext calls Pipeline.Exec(). It ensures that the resulting Redis calls
 // are traced, and that emitted spans are children of the given Context.
 func (c *Pipeliner) ExecWithContext(ctx context.Context) ([]redis.Cmder, error) {
-	span := c.params.config.tracer.NewChildSpanFromContext("redis.command", ctx)
-
-	span.Service = c.params.config.serviceName
-	span.SetMeta("out.host", c.params.host)
-	span.SetMeta("out.port", c.params.port)
-	span.SetMeta("out.db", c.params.db)
-
-	cmds, err := c.Pipeliner.Exec()
-	if err != nil {
-		span.SetError(err)
-	}
-
-	span.Resource = commandsToString(cmds)
-	span.SetMeta("redis.pipeline_length", strconv.Itoa(len(cmds)))
-	span.Finish()
-
-	return cmds, err
+	return c.execWithContext(ctx)
 }
 
 // Exec calls Pipeline.Exec() ensuring that the resulting Redis calls are traced.
 func (c *Pipeliner) Exec() ([]redis.Cmder, error) {
-	span := c.params.config.tracer.NewRootSpan("redis.command", c.params.config.serviceName, "redis")
+	return c.execWithContext(context.Background())
+}
 
-	span.SetMeta("out.host", c.params.host)
-	span.SetMeta("out.port", c.params.port)
-	span.SetMeta("out.db", c.params.db)
-
+func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) {
+	p := c.params
+	span, _ := tracer.StartSpanFromContext(ctx, "redis.command",
+		tracer.ServiceName(p.config.serviceName),
+		tracer.ResourceName("redis"),
+		tracer.Tag(ext.TargetHost, p.host),
+		tracer.Tag(ext.TargetPort, p.port),
+		tracer.Tag("out.db", p.db),
+	)
 	cmds, err := c.Pipeliner.Exec()
-	if err != nil {
-		span.SetError(err)
-	}
-
-	span.Resource = commandsToString(cmds)
-	span.SetMeta("redis.pipeline_length", strconv.Itoa(len(cmds)))
-	span.Finish()
+	span.
+		SetTag(ext.ResourceName, commandsToString(cmds)).
+		SetTag("redis.pipeline_length", strconv.Itoa(len(cmds))).
+		Finish(tracer.WithError(err))
 
 	return cmds, err
 }
@@ -121,7 +109,7 @@ func commandsToString(cmds []redis.Cmder) string {
 	return b.String()
 }
 
-// SetContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.
+// WithContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.
 func (c *Client) WithContext(ctx context.Context) *Client {
 	c.Client = c.Client.WithContext(ctx)
 	return c
@@ -138,21 +126,17 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			parts := strings.Split(raw, " ")
 			length := len(parts) - 1
 			p := tc.params
-
-			span := p.config.tracer.NewChildSpanFromContext("redis.command", ctx)
-			span.Service = p.config.serviceName
-			span.Resource = parts[0]
-			span.SetMeta("redis.raw_command", raw)
-			span.SetMeta("redis.args_length", strconv.Itoa(length))
-			span.SetMeta("out.host", p.host)
-			span.SetMeta("out.port", p.port)
-			span.SetMeta("out.db", p.db)
-
+			span, _ := tracer.StartSpanFromContext(ctx, "redis.command",
+				tracer.ServiceName(p.config.serviceName),
+				tracer.ResourceName(parts[0]),
+				tracer.Tag(ext.TargetHost, p.host),
+				tracer.Tag(ext.TargetPort, p.port),
+				tracer.Tag("out.db", p.db),
+				tracer.Tag("redis.raw_command", raw),
+				tracer.Tag("redis.args_length", strconv.Itoa(length)),
+			)
 			err := oldProcess(cmd)
-			if err != nil {
-				span.SetError(err)
-			}
-			span.Finish()
+			span.Finish(tracer.WithError(err))
 			return err
 		}
 	}
