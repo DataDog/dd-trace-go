@@ -67,19 +67,10 @@ type span struct {
 
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish().
-func (s *span) Context() ddtrace.SpanContext {
-	s.RLock()
-	defer s.RUnlock()
-
-	ctx := *s.context // return a copy
-	return &ctx
-}
+func (s *span) Context() ddtrace.SpanContext { return s.context }
 
 // SetBaggageItem sets a key/value pair as baggage on the span.
 func (s *span) SetBaggageItem(key, val string) ddtrace.Span {
-	s.Lock()
-	defer s.Unlock()
-
 	s.context.setBaggageItem(key, val)
 	return s
 }
@@ -87,10 +78,7 @@ func (s *span) SetBaggageItem(key, val string) ddtrace.Span {
 // BaggageItem gets the value for a baggage item given its key. Returns the
 // empty string if the value isn't found in this Span.
 func (s *span) BaggageItem(key string) string {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.context.baggage[key]
+	return s.context.baggageItem(key)
 }
 
 // SetTag adds a tag to the span, overwriting pre-existing values for
