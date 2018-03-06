@@ -34,6 +34,7 @@ func Middleware(service string) gin.HandlerFunc {
 		span.Type = ext.HTTPType
 		span.SetMeta(ext.HTTPMethod, c.Request.Method)
 		span.SetMeta(ext.HTTPURL, c.Request.URL.Path)
+		span.SetMeta(ext.HTTPQueryStrings, c.Request.URL.RawQuery)
 
 		// pass the span through the request context
 		c.Request = c.Request.WithContext(ctx)
