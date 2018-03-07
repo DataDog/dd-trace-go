@@ -6,11 +6,13 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"runtime"
 	"strconv"
+	"strings"
 	"time"
-
-	"github.com/DataDog/dd-trace-go/ddtrace/ext"
 )
+
+var tracerVersion = "v0.7.0"
 
 const (
 	defaultHostname    = "localhost"
@@ -57,10 +59,10 @@ type httpTransport struct {
 func newHTTPTransport(addr string) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
 	defaultHeaders := map[string]string{
-		"Datadog-Meta-Lang":             ext.Lang,
-		"Datadog-Meta-Lang-Version":     ext.LangVersion,
-		"Datadog-Meta-Lang-Interpreter": ext.Interpreter,
-		"Datadog-Meta-Tracer-Version":   ext.TracerVersion,
+		"Datadog-Meta-Lang":             "go",
+		"Datadog-Meta-Lang-Version":     strings.TrimPrefix(runtime.Version(), "go"),
+		"Datadog-Meta-Lang-Interpreter": runtime.Compiler + "-" + runtime.GOARCH + "-" + runtime.GOOS,
+		"Datadog-Meta-Tracer-Version":   tracerVersion,
 	}
 	host, port, _ := net.SplitHostPort(addr)
 	if host == "" {
