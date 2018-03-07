@@ -127,22 +127,25 @@ func TestSpanSetTag(t *testing.T) {
 	span.SetTag("tagInt", 1234)
 	assert.Equal(float64(1234), span.Metrics["tagInt"])
 
-	span.SetTag("error", true)
+	span.SetTag("tagStruct", struct{ A, B int }{1, 2})
+	assert.Equal("{1 2}", span.Meta["tagStruct"])
+
+	span.SetTag(ext.Error, true)
 	assert.Equal(int32(1), span.Error)
 
-	span.SetTag("error", nil)
+	span.SetTag(ext.Error, nil)
 	assert.Equal(int32(0), span.Error)
 
-	span.SetTag("error", errors.New("abc"))
+	span.SetTag(ext.Error, errors.New("abc"))
 	assert.Equal(int32(1), span.Error)
 	assert.Equal("abc", span.Meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.Meta[ext.ErrorType])
 	assert.NotEmpty(span.Meta[ext.ErrorStack])
 
-	span.SetTag("error", "something else")
+	span.SetTag(ext.Error, "something else")
 	assert.Equal(int32(1), span.Error)
 
-	span.SetTag("error", false)
+	span.SetTag(ext.Error, false)
 	assert.Equal(int32(0), span.Error)
 
 	span.SetTag(ext.SamplingPriority, 2)
@@ -153,9 +156,9 @@ func TestSpanSetDatadogTags(t *testing.T) {
 	assert := assert.New(t)
 
 	span := newBasicSpan("web.request")
-	span.SetTag("span.type", "http")
-	span.SetTag("service.name", "db-cluster")
-	span.SetTag("resource.name", "SELECT * FROM users;")
+	span.SetTag(ext.SpanType, "http")
+	span.SetTag(ext.ServiceName, "db-cluster")
+	span.SetTag(ext.ResourceName, "SELECT * FROM users;")
 
 	assert.Equal("http", span.Type)
 	assert.Equal("db-cluster", span.Service)
@@ -205,7 +208,7 @@ func TestSpanError(t *testing.T) {
 
 	// check the error is set in the default meta
 	err := errors.New("Something wrong")
-	span.SetTag("error", err)
+	span.SetTag(ext.Error, err)
 	assert.Equal(int32(1), span.Error)
 	assert.Equal("Something wrong", span.Meta["error.msg"])
 	assert.Equal("*errors.errorString", span.Meta["error.type"])
@@ -215,7 +218,7 @@ func TestSpanError(t *testing.T) {
 	span = tracer.newRootSpan("flask.request", "flask", "/")
 	nMeta := len(span.Meta)
 	span.Finish()
-	span.SetTag("error", err)
+	span.SetTag(ext.Error, err)
 	assert.Equal(int32(0), span.Error)
 	assert.Equal(nMeta, len(span.Meta))
 	assert.Equal("", span.Meta["error.msg"])
@@ -230,7 +233,7 @@ func TestSpanError_Typed(t *testing.T) {
 
 	// check the error is set in the default meta
 	err := &boomError{}
-	span.SetTag("error", err)
+	span.SetTag(ext.Error, err)
 	assert.Equal(int32(1), span.Error)
 	assert.Equal("boom", span.Meta["error.msg"])
 	assert.Equal("*tracer.boomError", span.Meta["error.type"])
@@ -244,7 +247,7 @@ func TestSpanErrorNil(t *testing.T) {
 
 	// don't set the error if it's nil
 	nMeta := len(span.Meta)
-	span.SetTag("error", nil)
+	span.SetTag(ext.Error, nil)
 	assert.Equal(int32(0), span.Error)
 	assert.Equal(nMeta, len(span.Meta))
 }
@@ -263,7 +266,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		span.SetTag("race_test", "true")
 		span.SetTag("race_test2", 133.7)
 		span.SetTag("race_test3", 133.7)
-		span.SetTag("error", errors.New("t"))
+		span.SetTag(ext.Error, errors.New("t"))
 		done <- struct{}{}
 	}()
 
@@ -303,6 +306,39 @@ func TestSpanSamplingPriority(t *testing.T) {
 		v1, ok1 := childSpan.Metrics[samplingPriorityKey]
 		assert.Equal(ok0, ok1)
 		assert.Equal(v0, v1)
+	}
+}
+
+func BenchmarkSetTagMetric(b *testing.B) {
+	span := newBasicSpan("bench.span")
+	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		k := string(keys[i%len(keys)])
+		span.SetTag(k, float64(12.34))
+	}
+}
+
+func BenchmarkSetTagString(b *testing.B) {
+	span := newBasicSpan("bench.span")
+	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		k := string(keys[i%len(keys)])
+		span.SetTag(k, "some text")
+	}
+}
+
+func BenchmarkSetTagField(b *testing.B) {
+	span := newBasicSpan("bench.span")
+	keys := []string{ext.ServiceName, ext.ResourceName, ext.SpanType}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		k := keys[i%len(keys)]
+		span.SetTag(k, "some text")
 	}
 }
 

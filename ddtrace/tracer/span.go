@@ -92,51 +92,74 @@ func (s *span) SetTag(key string, value interface{}) ddtrace.Span {
 	if s.finished {
 		return s
 	}
-	if v, ok := toFloat64(value); ok {
-		// sent as numeric value, so we can store it as a metric
-		switch key {
-		case ext.SamplingPriority:
-			// setting sampling priority per spec
-			s.Metrics[samplingPriorityKey] = v
-		default:
-			s.Metrics[key] = v
-		}
-		return s
+	if key == ext.Error {
+		return s.setTagError(value)
 	}
+	if v, ok := value.(string); ok {
+		return s.setTagString(key, v)
+	}
+	if v, ok := toFloat64(value); ok {
+		return s.setTagNumeric(key, v)
+	}
+	// not numeric, not a string and not an error, the likelihood of this
+	// happening is close to zero, but we should nevertheless account for it.
+	s.Meta[key] = fmt.Sprint(value)
+	return s
+}
+
+// setTagError sets the error tag. It accounts for various valid scenarios.
+// This method is not safe for concurrent use.
+func (s *span) setTagError(value interface{}) ddtrace.Span {
+	switch v := value.(type) {
+	case bool:
+		// bool value as per Opentracing spec.
+		if !v {
+			s.Error = 0
+		} else {
+			s.Error = 1
+		}
+	case error:
+		// if anyone sets an error value as the tag, be nice here
+		// and provide all the benefits.
+		s.Error = 1
+		s.Meta[ext.ErrorMsg] = v.Error()
+		s.Meta[ext.ErrorType] = reflect.TypeOf(v).String()
+		s.Meta[ext.ErrorStack] = string(debug.Stack())
+	case nil:
+		// no error
+		s.Error = 0
+	default:
+		// in all other cases, let's assume that setting this tag
+		// is the result of an error.
+		s.Error = 1
+	}
+	return s
+}
+
+// setTagString sets a string tag. This method is not safe for concurrent use.
+func (s *span) setTagString(key, v string) ddtrace.Span {
 	switch key {
 	case ext.ServiceName:
-		s.Service = fmt.Sprint(value)
+		s.Service = v
 	case ext.ResourceName:
-		s.Resource = fmt.Sprint(value)
+		s.Resource = v
 	case ext.SpanType:
-		s.Type = fmt.Sprint(value)
-	case ext.Error:
-		switch v := value.(type) {
-		case bool:
-			// bool value as per Opentracing spec.
-			if !v {
-				s.Error = 0
-			} else {
-				s.Error = 1
-			}
-		case error:
-			// if anyone sets an error value as the tag, be nice here
-			// and provide all the benefits.
-			s.Error = 1
-			s.Meta[ext.ErrorMsg] = v.Error()
-			s.Meta[ext.ErrorType] = reflect.TypeOf(v).String()
-			s.Meta[ext.ErrorStack] = string(debug.Stack())
-		case nil:
-			// no error
-			s.Error = 0
-		default:
-			// in all other cases, let's assume that setting this tag
-			// is the result of an error.
-			s.Error = 1
-		}
+		s.Type = v
 	default:
-		// regular string tag
-		s.Meta[key] = fmt.Sprint(value)
+		s.Meta[key] = v
+	}
+	return s
+}
+
+// setTagNumeric sets a numeric tag, in our case called a metric. This method
+// is not safe for concurrent use.
+func (s *span) setTagNumeric(key string, v float64) ddtrace.Span {
+	switch key {
+	case ext.SamplingPriority:
+		// setting sampling priority per spec
+		s.Metrics[samplingPriorityKey] = v
+	default:
+		s.Metrics[key] = v
 	}
 	return s
 }

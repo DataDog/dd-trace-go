@@ -9,7 +9,7 @@ func toFloat64(value interface{}) (f float64, ok bool) {
 	case float32:
 		return float64(i), true
 	case float64:
-		return float64(i), true
+		return i, true
 	case int:
 		return float64(i), true
 	case int16:
