@@ -5,9 +5,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/ddtrace"
-	"github.com/DataDog/dd-trace-go/ddtrace/internal"
-	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"
 )
 
 var _ ddtrace.Tracer = (*mocktracer)(nil)

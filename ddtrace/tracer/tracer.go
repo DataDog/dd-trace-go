@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/ddtrace"
-	"github.com/DataDog/dd-trace-go/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/internal"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)

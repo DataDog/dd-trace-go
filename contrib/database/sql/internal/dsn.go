@@ -1,4 +1,4 @@
-package internal
+package internal // import "gopkg.in/DataDog/dd-trace-go.v0/contrib/database/sql/internal"
 
 import (
 	"net"

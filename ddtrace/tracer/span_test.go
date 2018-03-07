@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/ext"
 
 	"github.com/stretchr/testify/assert"
 )

@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/ddtrace"
-	"github.com/DataDog/dd-trace-go/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/ddtrace/internal"
-	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
 )

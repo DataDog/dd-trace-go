@@ -16,4 +16,4 @@
 // the appropriate package: https://godoc.org/github.com/DataDog/dd-trace-go/tracer#pkg-subdirectories
 //
 // Sample code is available in the two examples below:
-package tracer
+package tracer // import "gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"

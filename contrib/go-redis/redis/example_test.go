@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	redistrace "github.com/DataDog/dd-trace-go/contrib/go-redis/redis"
-	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 	"github.com/go-redis/redis"
+	redistrace "gopkg.in/DataDog/dd-trace-go.v0/contrib/go-redis/redis"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"
 )
 
 // To start tracing Redis, simply create a new client using the library and continue

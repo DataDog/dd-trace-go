@@ -3,8 +3,8 @@ package elastic_test
 import (
 	"context"
 
-	elastictrace "github.com/DataDog/dd-trace-go/contrib/olivere/elastic"
-	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
+	elastictrace "gopkg.in/DataDog/dd-trace-go.v0/contrib/olivere/elastic"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"
 	elasticv3 "gopkg.in/olivere/elastic.v3"
 	elasticv5 "gopkg.in/olivere/elastic.v5"
 )

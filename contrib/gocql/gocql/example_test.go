@@ -3,9 +3,9 @@ package gocql_test
 import (
 	"context"
 
-	gocqltrace "github.com/DataDog/dd-trace-go/contrib/gocql/gocql"
-	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
 	"github.com/gocql/gocql"
+	gocqltrace "gopkg.in/DataDog/dd-trace-go.v0/contrib/gocql/gocql"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"
 )
 
 // To trace Cassandra commands, use our query wrapper WrapQuery.

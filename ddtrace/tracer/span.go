@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/ddtrace"
-	"github.com/DataDog/dd-trace-go/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/ext"
 )
 
 var _ ddtrace.Span = (*span)(nil)

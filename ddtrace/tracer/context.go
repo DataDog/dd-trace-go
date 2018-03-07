@@ -3,7 +3,7 @@ package tracer
 import (
 	"context"
 
-	"github.com/DataDog/dd-trace-go/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace"
 )
 
 type contextKey struct{}

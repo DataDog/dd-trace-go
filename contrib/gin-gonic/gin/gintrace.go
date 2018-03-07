@@ -1,12 +1,12 @@
 // Package gin provides functions to trace the gin-gonic/gin package (https://github.com/gin-gonic/gin).
-package gin
+package gin // import "gopkg.in/DataDog/dd-trace-go.v0/contrib/gin-gonic/gin"
 
 import (
 	"fmt"
 	"strconv"
 
-	"github.com/DataDog/dd-trace-go/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"
 
 	"github.com/gin-gonic/gin"
 )

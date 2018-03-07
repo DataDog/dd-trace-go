@@ -3,7 +3,7 @@ package tracer
 import (
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)

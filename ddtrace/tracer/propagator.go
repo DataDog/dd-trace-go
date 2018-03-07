@@ -3,7 +3,7 @@ package tracer
 import (
 	"errors"
 
-	"github.com/DataDog/dd-trace-go/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace"
 )
 
 // Propagator implementations should be able to inject and extract
