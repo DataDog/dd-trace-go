@@ -24,19 +24,26 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	if cfg.serviceName == "" {
-		cfg.serviceName = "grpc.server"
-	}
-	tracer.SetServiceInfo(cfg.serviceName, "grpc-server", ext.AppTypeRPC)
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		span, ctx := startSpanFromContext(ctx, info.FullMethod, cfg.serviceName)
+		span, ctx := startSpanFromContext(ctx, cfg.serviceName, info.FullMethod)
 		resp, err := handler(ctx, req)
 		span.Finish(tracer.WithError(err))
 		return resp, err
 	}
 }
 
-func startSpanFromContext(ctx context.Context, method, service string) (ddtrace.Span, context.Context) {
+// defaultServiceName is the default service name that will be used on
+// server spans when the user does not provide a service or a service
+// can not be extracted from the full method name in the unary server
+// info.
+const defaultServiceName = "grpc.server"
+
+func startSpanFromContext(ctx context.Context, service, method string) (ddtrace.Span, context.Context) {
+	service, method = grpcutil.QuantizeResource(service, method)
+	if service == "" {
+		service = defaultServiceName
+	}
+	tracer.SetServiceInfo(service, "grpc-server", ext.AppTypeRPC)
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
@@ -76,8 +83,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 		opts = append(opts, grpc.Peer(&p))
 		err := invoker(ctx, method, req, reply, cc, opts...)
 		if p.Addr != nil {
-			addr := p.Addr.String()
-			host, port, err := net.SplitHostPort(addr)
+			host, port, err := net.SplitHostPort(p.Addr.String())
 			if err == nil {
 				if host != "" {
 					span.SetTag(ext.TargetHost, host)

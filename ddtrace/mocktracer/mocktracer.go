@@ -19,6 +19,9 @@ type Tracer interface {
 	// FinishedSpans returns the set of finished spans.
 	FinishedSpans() []Span
 
+	// Services returns the services registered with the tracer.
+	Services() map[string]*Service
+
 	// Reset resets the spans and services recorded in the tracer to zero.
 	Reset()
 
@@ -38,12 +41,14 @@ func Start() Tracer {
 	return &t
 }
 
-type service struct{ name, app, appType string }
+// Service represents the description of a service that has been registered
+// with the mock tracer.
+type Service struct{ Name, App, AppType string }
 
 type mocktracer struct {
 	sync.RWMutex  // guards below spans
 	finishedSpans []Span
-	services      map[string]*service
+	services      map[string]*Service
 }
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
@@ -66,6 +71,12 @@ func (t *mocktracer) FinishedSpans() []Span {
 	return t.finishedSpans
 }
 
+func (t *mocktracer) Services() map[string]*Service {
+	t.RLock()
+	defer t.RUnlock()
+	return t.services
+}
+
 func (t *mocktracer) Reset() {
 	t.Lock()
 	defer t.Unlock()
@@ -86,9 +97,9 @@ func (t *mocktracer) SetServiceInfo(name, app, appType string) {
 	t.Lock()
 	defer t.Unlock()
 	if t.services == nil {
-		t.services = make(map[string]*service, 1)
+		t.services = make(map[string]*Service, 1)
 	}
-	t.services[name] = &service{name, app, appType}
+	t.services[name] = &Service{name, app, appType}
 }
 
 const (

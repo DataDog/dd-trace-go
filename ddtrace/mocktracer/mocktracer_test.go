@@ -63,6 +63,17 @@ func TestTracerStartSpan(t *testing.T) {
 	})
 }
 
+func TestTracerServices(t *testing.T) {
+	var mt mocktracer
+	mt.SetServiceInfo("a", "b", "c")
+	mt.SetServiceInfo("c", "d", "e")
+
+	assert.Equal(t, map[string]*Service{
+		"a": &Service{"a", "b", "c"},
+		"c": &Service{"c", "d", "e"},
+	}, mt.Services())
+}
+
 func TestTracerFinishedSpans(t *testing.T) {
 	var mt mocktracer
 	parent := newSpan(&mt, "http.request", &ddtrace.StartSpanConfig{})
@@ -86,7 +97,7 @@ func TestTracerFinishedSpans(t *testing.T) {
 func TestTracerSetServiceInfo(t *testing.T) {
 	var mt mocktracer
 	mt.SetServiceInfo("a", "b", "c")
-	assert.Equal(t, map[string]*service{"a": &service{"a", "b", "c"}}, mt.services)
+	assert.Equal(t, map[string]*Service{"a": &Service{"a", "b", "c"}}, mt.services)
 }
 
 func TestTracerReset(t *testing.T) {
@@ -95,7 +106,7 @@ func TestTracerReset(t *testing.T) {
 	mt.SetServiceInfo("a", "b", "c")
 
 	assert := assert.New(t)
-	assert.Equal(map[string]*service{"a": &service{"a", "b", "c"}}, mt.services)
+	assert.Equal(map[string]*Service{"a": &Service{"a", "b", "c"}}, mt.services)
 	assert.Len(mt.finishedSpans, 1)
 
 	mt.Reset()

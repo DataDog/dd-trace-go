@@ -31,7 +31,7 @@ func TestNewSpan(t *testing.T) {
 	})
 
 	t.Run("options", func(t *testing.T) {
-		tr := &mocktracer{services: map[string]*service{"A": &service{"A", "B", "C"}}}
+		tr := &mocktracer{services: map[string]*Service{"A": &Service{"A", "B", "C"}}}
 		startTime := time.Now()
 		tags := map[string]interface{}{"k": "v", "k1": "v1"}
 		opts := &ddtrace.StartSpanConfig{

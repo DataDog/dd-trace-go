@@ -59,8 +59,40 @@ func TestClient(t *testing.T) {
 	assert.Equal(clientSpan.Tag("grpc.code"), codes.OK.String())
 	assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
 	assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
-	assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
+	assert.Equal(serverSpan.Tag(ext.ResourceName), "Ping")
 	assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
+}
+
+func TestStartSpanFromContext(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	for _, tt := range []struct {
+		cfgService, fullMethod string
+		service, resource      string
+	}{
+		{
+			fullMethod: "/a/b",
+			service:    "a",
+			resource:   "b",
+		},
+		{
+			fullMethod: "ab",
+			service:    "grpc.server",
+			resource:   "ab",
+		},
+	} {
+		mt.Reset()
+		s, _ := startSpanFromContext(context.Background(), tt.cfgService, tt.fullMethod)
+		s.Finish()
+		got := mt.Services()[tt.service]
+		assert.Equal(&mocktracer.Service{
+			Name:    tt.service,
+			App:     "grpc-server",
+			AppType: ext.AppTypeRPC,
+		}, got)
+	}
 }
 
 func TestChild(t *testing.T) {
@@ -103,7 +135,7 @@ func TestChild(t *testing.T) {
 	assert.NotNil(serverSpan)
 	assert.Nil(serverSpan.Tag(ext.Error))
 	assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
-	assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
+	assert.Equal(serverSpan.Tag(ext.ResourceName), "Ping")
 	assert.True(serverSpan.FinishTime().Sub(serverSpan.StartTime()) > 0)
 }
 
@@ -130,7 +162,7 @@ func TestPass(t *testing.T) {
 	assert.Nil(s.Tag(ext.Error))
 	assert.Equal(s.OperationName(), "grpc.server")
 	assert.Equal(s.Tag(ext.ServiceName), "grpc")
-	assert.Equal(s.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
+	assert.Equal(s.Tag(ext.ResourceName), "Ping")
 	assert.Equal(s.Tag(ext.SpanType), "go")
 	assert.True(s.FinishTime().Sub(s.StartTime()) > 0)
 }
