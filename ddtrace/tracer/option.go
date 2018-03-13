@@ -31,8 +31,8 @@ type config struct {
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
 
-	// textMapPropagator propagates text maps
-	textMapPropagator Propagator
+	// propagator propagates span context cross-process
+	propagator Propagator
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -52,10 +52,10 @@ func WithDebugMode(enabled bool) StartOption {
 	}
 }
 
-// WithTextMapPropagator sets a custom TextMap propagator on the tracer.
-func WithTextMapPropagator(p Propagator) StartOption {
+// WithPropagator sets a custom TextMap propagator on the tracer.
+func WithPropagator(p Propagator) StartOption {
 	return func(c *config) {
-		c.textMapPropagator = p
+		c.propagator = p
 	}
 }
 
