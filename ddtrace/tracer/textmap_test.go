@@ -76,34 +76,34 @@ func TestTextMapCarrierForeachKeyError(t *testing.T) {
 }
 
 func TestTextMapPropagatorErrors(t *testing.T) {
-	textMapPropagator := NewTextMapPropagator("", "", "")
+	propagator := NewPropagator("", "", "")
 	assert := assert.New(t)
 
-	err := textMapPropagator.Inject(&spanContext{}, 2)
+	err := propagator.Inject(&spanContext{}, 2)
 	assert.Equal(ErrInvalidCarrier, err)
-	err = textMapPropagator.Inject(internal.NoopSpanContext{}, TextMapCarrier(map[string]string{}))
+	err = propagator.Inject(internal.NoopSpanContext{}, TextMapCarrier(map[string]string{}))
 	assert.Equal(ErrInvalidSpanContext, err)
-	err = textMapPropagator.Inject(&spanContext{}, TextMapCarrier(map[string]string{}))
+	err = propagator.Inject(&spanContext{}, TextMapCarrier(map[string]string{}))
 	assert.Equal(ErrInvalidSpanContext, err) // no traceID and spanID
-	err = textMapPropagator.Inject(&spanContext{traceID: 1}, TextMapCarrier(map[string]string{}))
+	err = propagator.Inject(&spanContext{traceID: 1}, TextMapCarrier(map[string]string{}))
 	assert.Equal(ErrInvalidSpanContext, err) // no spanID
 
-	_, err = textMapPropagator.Extract(2)
+	_, err = propagator.Extract(2)
 	assert.Equal(ErrInvalidCarrier, err)
 
-	_, err = textMapPropagator.Extract(TextMapCarrier(map[string]string{
+	_, err = propagator.Extract(TextMapCarrier(map[string]string{
 		defaultTraceIDHeader:  "1",
 		defaultParentIDHeader: "A",
 	}))
 	assert.Equal(ErrSpanContextCorrupted, err)
 
-	_, err = textMapPropagator.Extract(TextMapCarrier(map[string]string{
+	_, err = propagator.Extract(TextMapCarrier(map[string]string{
 		defaultTraceIDHeader:  "A",
 		defaultParentIDHeader: "2",
 	}))
 	assert.Equal(ErrSpanContextCorrupted, err)
 
-	_, err = textMapPropagator.Extract(TextMapCarrier(map[string]string{
+	_, err = propagator.Extract(TextMapCarrier(map[string]string{
 		defaultTraceIDHeader:  "0",
 		defaultParentIDHeader: "0",
 	}))
@@ -113,8 +113,8 @@ func TestTextMapPropagatorErrors(t *testing.T) {
 func TestTextMapPropagatorInjectHeader(t *testing.T) {
 	assert := assert.New(t)
 
-	textMapPropagator := NewTextMapPropagator("bg-", "tid", "pid")
-	tracer := newTracer(WithTextMapPropagator(textMapPropagator))
+	propagator := NewPropagator("bg-", "tid", "pid")
+	tracer := newTracer(WithPropagator(propagator))
 
 	root := tracer.StartSpan("web.request").SetBaggageItem("item", "x").(*span)
 	ctx := root.Context()
@@ -133,8 +133,8 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 }
 
 func TestTextMapPropagatorInjectExtract(t *testing.T) {
-	textMapPropagator := NewTextMapPropagator("bg-", "tid", "pid")
-	tracer := newTracer(WithTextMapPropagator(textMapPropagator))
+	propagator := NewPropagator("bg-", "tid", "pid")
+	tracer := newTracer(WithPropagator(propagator))
 	root := tracer.StartSpan("web.request").SetBaggageItem("item", "x").(*span)
 	ctx := root.Context().(*spanContext)
 	headers := TextMapCarrier(map[string]string{})

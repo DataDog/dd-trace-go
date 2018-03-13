@@ -60,13 +60,13 @@ const (
 	defaultParentIDHeader      = "x-datadog-parent-id"
 )
 
-// NewTextMapPropagator returns a new propagator which uses TextMap to inject
+// NewPropagator returns a new propagator which uses TextMap to inject
 // and extract values. It propagates trace and span IDs and baggage.
 // The parameters specify the prefix that will be used to prefix baggage header
 // keys along with the trace and parent header. Empty strings may be provided
 // to use the defaults, which are: "ot-baggage-" as prefix for baggage headers,
 // "x-datadog-trace-id" and "x-datadog-parent-id" for trace and parent ID headers.
-func NewTextMapPropagator(baggagePrefix, traceHeader, parentHeader string) Propagator {
+func NewPropagator(baggagePrefix, traceHeader, parentHeader string) Propagator {
 	if baggagePrefix == "" {
 		baggagePrefix = defaultBaggageHeaderPrefix
 	}
@@ -76,26 +76,31 @@ func NewTextMapPropagator(baggagePrefix, traceHeader, parentHeader string) Propa
 	if parentHeader == "" {
 		parentHeader = defaultParentIDHeader
 	}
-	return &textMapPropagator{baggagePrefix, traceHeader, parentHeader}
+	return &propagator{baggagePrefix, traceHeader, parentHeader}
 }
 
-// textMapPropagator implements a propagator which uses TextMap internally.
+// propagator implements a propagator which uses TextMap internally.
 // It propagates the trace and span IDs, as well as the baggage from the
 // context.
-type textMapPropagator struct {
+type propagator struct {
 	baggagePrefix string
 	traceHeader   string
 	parentHeader  string
 }
 
-// Inject defines the TextMapPropagator to propagate SpanContext data
+// Inject defines the Propagator to propagate SpanContext data
 // out of the current process. The implementation propagates the
 // TraceID and the current active SpanID, as well as the Span baggage.
-func (p *textMapPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
-	writer, ok := carrier.(TextMapWriter)
-	if !ok {
+func (p *propagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
+	switch v := carrier.(type) {
+	case TextMapWriter:
+		return p.injectTextMap(spanCtx, v)
+	default:
 		return ErrInvalidCarrier
 	}
+}
+
+func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
 	ctx, ok := spanCtx.(*spanContext)
 	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
@@ -111,11 +116,16 @@ func (p *textMapPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 }
 
 // Extract implements Propagator.
-func (p *textMapPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	reader, ok := carrier.(TextMapReader)
-	if !ok {
+func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	switch v := carrier.(type) {
+	case TextMapReader:
+		return p.extractTextMap(v)
+	default:
 		return nil, ErrInvalidCarrier
 	}
+}
+
+func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error

@@ -107,8 +107,8 @@ func newTracer(opts ...StartOption) *tracer {
 	if c.transport == nil {
 		c.transport = newTransport(c.agentAddr)
 	}
-	if c.textMapPropagator == nil {
-		c.textMapPropagator = NewTextMapPropagator("", "", "")
+	if c.propagator == nil {
+		c.propagator = NewPropagator("", "", "")
 	}
 	t := &tracer{
 		config:           c,
@@ -301,12 +301,12 @@ func (t *tracer) SetServiceInfo(name, app, appType string) {
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
-	return t.config.textMapPropagator.Inject(ctx, carrier)
+	return t.config.propagator.Inject(ctx, carrier)
 }
 
 // Extract uses the configured or default TextMap Propagator.
 func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	return t.config.textMapPropagator.Extract(carrier)
+	return t.config.propagator.Extract(carrier)
 }
 
 func (t *tracer) getTraces() [][]*span {
