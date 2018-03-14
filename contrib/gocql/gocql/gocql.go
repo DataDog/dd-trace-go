@@ -115,8 +115,8 @@ func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 
 // Iter starts a new span at query.Iter call.
 func (tq *Query) Iter() *Iter {
-	iter := tq.Query.Iter()
 	span := tq.newChildSpan(tq.traceContext)
+	iter := tq.Query.Iter()
 	span.SetTag(ext.CassandraRowCount, strconv.Itoa(iter.NumRows()))
 	span.SetTag(ext.CassandraConsistencyLevel, strconv.Itoa(int(tq.GetConsistency())))
 
