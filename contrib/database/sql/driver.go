@@ -36,7 +36,6 @@ func (d *tracedDriver) Open(dsn string) (c driver.Conn, err error) {
 	if err != nil {
 		return nil, err
 	}
-	tracer.SetServiceInfo(d.config.serviceName, d.driverName, ext.AppTypeDB)
 	tp := &traceParams{
 		driverName: d.driverName,
 		config:     d.config,
@@ -56,7 +55,7 @@ type traceParams struct {
 func (tp *traceParams) newChildSpanFromContext(ctx context.Context, resource string, query string) ddtrace.Span {
 	name := fmt.Sprintf("%s.query", tp.driverName)
 	span, _ := tracer.StartSpanFromContext(ctx, name,
-		tracer.SpanType(ext.SQLType),
+		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(tp.config.serviceName),
 	)
 	if query != "" {

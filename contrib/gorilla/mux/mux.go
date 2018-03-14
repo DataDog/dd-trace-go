@@ -5,8 +5,6 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v0/contrib/internal/httputil"
-	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"
 
 	"github.com/gorilla/mux"
 )
@@ -24,7 +22,6 @@ func NewRouter(opts ...RouterOption) *Router {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	tracer.SetServiceInfo(cfg.serviceName, "gorilla/mux", ext.AppTypeWeb)
 	return &Router{
 		Router: mux.NewRouter(),
 		config: cfg,

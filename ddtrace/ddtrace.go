@@ -8,9 +8,6 @@ type Tracer interface {
 	// StartSpan starts a span with the given operation name and options.
 	StartSpan(operationName string, opts ...StartSpanOption) Span
 
-	// SetServiceInfo sets information about the service with the given name.
-	SetServiceInfo(name, app, appType string)
-
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to
 	// maintain the original casing due to MIME header canonicalization standards.

@@ -43,13 +43,6 @@ func getTestTrace(traceN, size int) [][]*span {
 	return traces
 }
 
-func getTestServices() map[string]service {
-	return map[string]service{
-		"svc1": service{Name: "scv1", App: "a", AppType: "b"},
-		"svc2": service{Name: "scv2", App: "c", AppType: "d"},
-	}
-}
-
 type mockDatadogAPIHandler struct {
 	t *testing.T
 }
@@ -112,41 +105,6 @@ func TestEncoderDowngrade(t *testing.T) {
 	// if we get a 415 because of a wrong encoder, we should downgrade the encoder
 	traces := getTestTrace(2, 2)
 	response, err := transport.sendTraces(traces)
-	assert.NoError(err)
-	assert.NotNil(response)
-	assert.Equal(200, response.StatusCode)
-}
-
-func TestTransportServices(t *testing.T) {
-	assert := assert.New(t)
-
-	transport := newHTTPTransport(defaultAddress)
-
-	response, err := transport.sendServices(getTestServices())
-	assert.NoError(err)
-	assert.NotNil(response)
-	assert.Equal(200, response.StatusCode)
-}
-
-func TestTransportServicesDowngrade_0_0(t *testing.T) {
-	assert := assert.New(t)
-
-	transport := newHTTPTransport(defaultAddress)
-	transport.serviceURL = "http://localhost:8126/v0.0/services"
-
-	response, err := transport.sendServices(getTestServices())
-	assert.NoError(err)
-	assert.NotNil(response)
-	assert.Equal(200, response.StatusCode)
-}
-
-func TestTransportServicesDowngrade_0_2(t *testing.T) {
-	assert := assert.New(t)
-
-	transport := newHTTPTransport(defaultAddress)
-	transport.serviceURL = "http://localhost:8126/v0.2/services"
-
-	response, err := transport.sendServices(getTestServices())
 	assert.NoError(err)
 	assert.NotNil(response)
 	assert.Equal(200, response.StatusCode)

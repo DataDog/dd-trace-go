@@ -83,24 +83,15 @@ func TestTracerFinishedSpans(t *testing.T) {
 	assert.Equal(t, 2, found)
 }
 
-func TestTracerSetServiceInfo(t *testing.T) {
-	var mt mocktracer
-	mt.SetServiceInfo("a", "b", "c")
-	assert.Equal(t, map[string]*service{"a": &service{"a", "b", "c"}}, mt.services)
-}
-
 func TestTracerReset(t *testing.T) {
 	var mt mocktracer
 	mt.StartSpan("db.query").Finish()
-	mt.SetServiceInfo("a", "b", "c")
 
 	assert := assert.New(t)
-	assert.Equal(map[string]*service{"a": &service{"a", "b", "c"}}, mt.services)
 	assert.Len(mt.finishedSpans, 1)
 
 	mt.Reset()
 
-	assert.Nil(mt.services)
 	assert.Nil(mt.finishedSpans)
 }
 

@@ -25,7 +25,6 @@ const (
 // Transport is an interface for span submission to the agent.
 type transport interface {
 	sendTraces(spans [][]*span) (*http.Response, error)
-	sendServices(services map[string]service) (*http.Response, error)
 }
 
 // newTransport returns a new Transport implementation that sends traces to a
@@ -47,8 +46,6 @@ func newDefaultTransport() transport {
 type httpTransport struct {
 	traceURL          string            // the delivery URL for traces
 	legacyTraceURL    string            // the legacy delivery URL for traces
-	serviceURL        string            // the delivery URL for services
-	legacyServiceURL  string            // the legacy delivery URL for services
 	client            *http.Client      // the HTTP client used in the POST
 	headers           map[string]string // the Transport headers
 	compatibilityMode bool              // the Agent targets a legacy API for compatibility reasons
@@ -73,11 +70,9 @@ func newHTTPTransport(addr string) *httpTransport {
 	}
 	addr = fmt.Sprintf("%s:%s", host, port)
 	return &httpTransport{
-		traceURL:         fmt.Sprintf("http://%s/v0.3/traces", addr),
-		legacyTraceURL:   fmt.Sprintf("http://%s/v0.2/traces", addr),
-		serviceURL:       fmt.Sprintf("http://%s/v0.3/services", addr),
-		legacyServiceURL: fmt.Sprintf("http://%s/v0.2/services", addr),
-		encoding:         encodingMsgpack,
+		traceURL:       fmt.Sprintf("http://%s/v0.3/traces", addr),
+		legacyTraceURL: fmt.Sprintf("http://%s/v0.2/traces", addr),
+		encoding:       encodingMsgpack,
 		client: &http.Client{
 			// We copy the transport to avoid using the default one, as it might be
 			// augmented with tracing and we don't want these calls to be recorded.
@@ -141,44 +136,6 @@ func (t *httpTransport) sendTraces(traces [][]*span) (*http.Response, error) {
 	return response, err
 }
 
-func (t *httpTransport) sendServices(services map[string]service) (*http.Response, error) {
-	if t.serviceURL == "" {
-		return nil, errors.New("provided an empty URL, giving up")
-	}
-	r, err := encode(t.encoding, services)
-	if err != nil {
-		return nil, err
-	}
-	// Send it
-	req, err := http.NewRequest("POST", t.serviceURL, r)
-	if err != nil {
-		return nil, fmt.Errorf("cannot create http request: %v", err)
-	}
-	for header, value := range t.headers {
-		req.Header.Set(header, value)
-	}
-	req.Header.Set("Content-Type", t.encoding.contentType())
-
-	response, err := t.client.Do(req)
-	if err != nil {
-		return &http.Response{StatusCode: 0}, err
-	}
-	defer response.Body.Close()
-
-	// Downgrade if necessary
-	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
-		log.Printf("calling the endpoint '%s' but received %d; downgrading the API\n", t.traceURL, response.StatusCode)
-		t.apiDowngrade()
-		return t.sendServices(services)
-	}
-
-	if sc := response.StatusCode; sc != 200 {
-		return response, fmt.Errorf("sendServices expected response code 200, received %v", sc)
-	}
-
-	return response, err
-}
-
 // apiDowngrade downgrades the used encoder and API level. This method must fallback to a safe
 // encoder and API, so that it will success despite users' configurations. This action
 // ensures that the compatibility mode is activated so that the downgrade will be
@@ -186,6 +143,5 @@ func (t *httpTransport) sendServices(services map[string]service) (*http.Respons
 func (t *httpTransport) apiDowngrade() {
 	t.compatibilityMode = true
 	t.traceURL = t.legacyTraceURL
-	t.serviceURL = t.legacyServiceURL
 	t.encoding = encodingJSON
 }

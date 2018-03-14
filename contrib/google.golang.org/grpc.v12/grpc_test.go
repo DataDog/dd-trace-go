@@ -131,7 +131,7 @@ func TestPass(t *testing.T) {
 	assert.Equal(s.OperationName(), "grpc.server")
 	assert.Equal(s.Tag(ext.ServiceName), "grpc")
 	assert.Equal(s.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
-	assert.Equal(s.Tag(ext.SpanType), "go")
+	assert.Equal(s.Tag(ext.SpanType), ext.AppTypeRPC)
 	assert.True(s.FinishTime().Sub(s.StartTime()) > 0)
 }
 

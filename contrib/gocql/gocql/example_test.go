@@ -5,6 +5,7 @@ import (
 
 	"github.com/gocql/gocql"
 	gocqltrace "gopkg.in/DataDog/dd-trace-go.v0/contrib/gocql/gocql"
+	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"
 )
 
@@ -17,6 +18,7 @@ func Example() {
 
 	// Use context to pass information down the call chain
 	_, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
+		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName("web"),
 		tracer.ResourceName("/home"),
 	)

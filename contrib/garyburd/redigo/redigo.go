@@ -60,7 +60,6 @@ func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	tracer.SetServiceInfo(cfg.serviceName, "redis", ext.AppTypeDB)
 	tc := Conn{c, &params{cfg, network, host, port}}
 	return tc, nil
 }
@@ -92,7 +91,10 @@ func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 // newChildSpan creates a span inheriting from the given context. It adds to the span useful metadata about the traced Redis connection
 func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 	p := tc.params
-	span, _ := tracer.StartSpanFromContext(ctx, "redis.command", tracer.ServiceName(p.config.serviceName))
+	span, _ := tracer.StartSpanFromContext(ctx, "redis.command",
+		tracer.SpanType(ext.AppTypeDB),
+		tracer.ServiceName(p.config.serviceName),
+	)
 	return span.
 		SetTag("out.network", p.network).
 		SetTag(ext.TargetPort, p.port).
