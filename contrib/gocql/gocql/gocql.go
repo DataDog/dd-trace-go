@@ -53,7 +53,6 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 		config: cfg,
 		query:  query,
 	}, context.Background()}
-	tracer.SetServiceInfo(cfg.serviceName, ext.CassandraType, ext.AppTypeDB)
 	return tq
 }
 
@@ -75,7 +74,7 @@ func (tq *Query) PageState(state []byte) *Query {
 func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	p := tq.params
 	span, _ := tracer.StartSpanFromContext(ctx, ext.CassandraQuery,
-		tracer.SpanType(ext.CassandraType),
+		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(p.query),
 		tracer.Tag(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated)),

@@ -408,31 +408,6 @@ func TestTracerAtomicFlush(t *testing.T) {
 	assert.Len(traces[0], 4, "all spans should show up at once")
 }
 
-func TestTracerServices(t *testing.T) {
-	assert := assert.New(t)
-	tracer, transport := getTestTracer()
-
-	tracer.SetServiceInfo("svc1", "a", "b")
-	tracer.SetServiceInfo("svc2", "c", "d")
-	tracer.SetServiceInfo("svc1", "e", "f")
-
-	tracer.Stop()
-
-	assert.Len(transport.services, 2)
-
-	svc1 := transport.services["svc1"]
-	assert.NotNil(svc1)
-	assert.Equal("svc1", svc1.Name)
-	assert.Equal("e", svc1.App)
-	assert.Equal("f", svc1.AppType)
-
-	svc2 := transport.services["svc2"]
-	assert.NotNil(svc2)
-	assert.Equal("svc2", svc2.Name)
-	assert.Equal("c", svc2.App)
-	assert.Equal("d", svc2.AppType)
-}
-
 func TestTracerRace(t *testing.T) {
 	assert := assert.New(t)
 
@@ -573,12 +548,10 @@ func TestWorker(t *testing.T) {
 
 func newTracerChannels() *tracer {
 	return &tracer{
-		traceBuffer:      make(chan []*span, traceBufferSize),
-		serviceBuffer:    make(chan service, serviceBufferSize),
-		errorBuffer:      make(chan error, errorBufferSize),
-		flushTracesReq:   make(chan struct{}, 1),
-		flushServicesReq: make(chan struct{}, 1),
-		flushErrorsReq:   make(chan struct{}, 1),
+		traceBuffer:    make(chan []*span, traceBufferSize),
+		errorBuffer:    make(chan error, errorBufferSize),
+		flushTracesReq: make(chan struct{}, 1),
+		flushErrorsReq: make(chan struct{}, 1),
 	}
 }
 
@@ -620,48 +593,6 @@ func TestPushTrace(t *testing.T) {
 	assert.NotEqual(0, len(tracer.errorBuffer), "there should be an error logged")
 	err := <-tracer.errorBuffer
 	assert.Equal(&errBufferFull{name: "trace channel", size: traceBufferSize}, err)
-}
-
-func TestPushService(t *testing.T) {
-	assert := assert.New(t)
-
-	tracer := newTracerChannels()
-
-	svc := service{
-		Name:    "redis-master",
-		App:     "redis",
-		AppType: "db",
-	}
-	tracer.pushService(svc)
-
-	assert.Len(tracer.serviceBuffer, 1, "there should be data in channel")
-	assert.Len(tracer.flushServicesReq, 0, "no flush requested yet")
-
-	pushed := <-tracer.serviceBuffer
-	assert.Equal(svc, pushed)
-
-	many := serviceBufferSize/2 + 1
-	for i := 0; i < many; i++ {
-		tracer.pushService(service{
-			Name:    fmt.Sprintf("service%d", i),
-			App:     "custom",
-			AppType: "web",
-		})
-	}
-	assert.Len(tracer.serviceBuffer, many, "all services should be in the channel, not yet blocking")
-	assert.Len(tracer.flushServicesReq, 1, "a service flush should have been requested")
-
-	for i := 0; i < cap(tracer.serviceBuffer); i++ {
-		tracer.pushService(service{
-			Name:    fmt.Sprintf("service%d", i),
-			App:     "custom",
-			AppType: "web",
-		})
-	}
-	assert.Len(tracer.serviceBuffer, serviceBufferSize, "buffer should be full")
-	assert.NotEqual(0, len(tracer.errorBuffer), "there should be an error logged")
-	err := <-tracer.errorBuffer
-	assert.Equal(&errBufferFull{name: "service channel", size: serviceBufferSize}, err)
 }
 
 func TestPushErr(t *testing.T) {
@@ -732,8 +663,7 @@ func getTestTracer(opts ...StartOption) (*tracer, *dummyTransport) {
 // Mock Transport with a real Encoder
 type dummyTransport struct {
 	encoding
-	traces   [][]*span
-	services map[string]service
+	traces [][]*span
 
 	sync.RWMutex // required because of some poll-testing (eg: worker)
 }
@@ -743,19 +673,6 @@ func (t *dummyTransport) sendTraces(traces [][]*span) (*http.Response, error) {
 	t.traces = append(t.traces, traces...)
 	t.Unlock()
 	r, err := encode(t.encoding, traces)
-	if err != nil {
-		return nil, err
-	}
-	_, err = ioutil.ReadAll(r)
-	return nil, err
-}
-
-func (t *dummyTransport) sendServices(services map[string]service) (*http.Response, error) {
-	t.Lock()
-	t.services = services
-	t.Unlock()
-
-	r, err := encode(t.encoding, services)
 	if err != nil {
 		return nil, err
 	}

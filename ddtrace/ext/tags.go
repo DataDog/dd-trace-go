@@ -16,9 +16,6 @@ const (
 	// SQLQuery sets the sql query tag on a span.
 	SQLQuery = "sql.query"
 
-	// HTTPType sets the http type tag.
-	HTTPType = "http"
-
 	// HTTPMethod specifies the HTTP method used in a span.
 	HTTPMethod = "http.method"
 

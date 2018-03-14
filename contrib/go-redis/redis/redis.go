@@ -59,7 +59,6 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 		db:     strconv.Itoa(opt.DB),
 		config: cfg,
 	}
-	tracer.SetServiceInfo(cfg.serviceName, "redis", ext.AppTypeDB)
 	tc := &Client{c, params}
 	tc.Client.WrapProcess(createWrapperFromClient(tc))
 	return tc
@@ -84,6 +83,7 @@ func (c *Pipeliner) Exec() ([]redis.Cmder, error) {
 func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) {
 	p := c.params
 	span, _ := tracer.StartSpanFromContext(ctx, "redis.command",
+		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName("redis"),
 		tracer.Tag(ext.TargetHost, p.host),
@@ -127,6 +127,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			length := len(parts) - 1
 			p := tc.params
 			span, _ := tracer.StartSpanFromContext(ctx, "redis.command",
+				tracer.SpanType(ext.AppTypeDB),
 				tracer.ServiceName(p.config.serviceName),
 				tracer.ResourceName(parts[0]),
 				tracer.Tag(ext.TargetHost, p.host),

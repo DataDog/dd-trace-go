@@ -1,9 +1,6 @@
 package ext
 
 const (
-	// CassandraType is the type used to identify Cassandra spans.
-	CassandraType = "cassandra"
-
 	// CassandraQuery is the tag name used for cassandra queries.
 	CassandraQuery = "cassandra.query"
 

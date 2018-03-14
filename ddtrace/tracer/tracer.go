@@ -18,20 +18,15 @@ var _ ddtrace.Tracer = (*tracer)(nil)
 type tracer struct {
 	*config
 
-	// services maps service names to services.
-	services map[string]service
-
 	// this group of channels provides a thread-safe way to buffer traces,
 	// services and errors before flushing them to the transport.
-	traceBuffer   chan []*span
-	serviceBuffer chan service
-	errorBuffer   chan error
+	traceBuffer chan []*span
+	errorBuffer chan error
 
 	// these channels represent various requests that the tracer worker can pick up.
-	flushAllReq      chan chan<- struct{}
-	flushTracesReq   chan struct{}
-	flushServicesReq chan struct{}
-	flushErrorsReq   chan struct{}
+	flushAllReq    chan chan<- struct{}
+	flushTracesReq chan struct{}
+	flushErrorsReq chan struct{}
 
 	exitReq chan chan<- struct{}
 }
@@ -58,12 +53,6 @@ type Span = ddtrace.Span
 // If the tracer is not started calling this function is a no-op.
 func StartSpan(operationName string, opts ...StartSpanOption) Span {
 	return internal.GlobalTracer.StartSpan(operationName, opts...)
-}
-
-// SetServiceInfo sets information about a service.
-// If the tracer is not started calling this function is a no-op.
-func SetServiceInfo(name, app, appType string) {
-	internal.GlobalTracer.SetServiceInfo(name, app, appType)
 }
 
 // Extract extracts a SpanContext from the passed carrier. The carrier is expected
@@ -111,16 +100,13 @@ func newTracer(opts ...StartOption) *tracer {
 		c.propagator = NewPropagator("", "", "")
 	}
 	t := &tracer{
-		config:           c,
-		services:         make(map[string]service),
-		traceBuffer:      make(chan []*span, traceBufferSize),
-		serviceBuffer:    make(chan service, serviceBufferSize),
-		errorBuffer:      make(chan error, errorBufferSize),
-		exitReq:          make(chan chan<- struct{}),
-		flushAllReq:      make(chan chan<- struct{}),
-		flushTracesReq:   make(chan struct{}, 1),
-		flushServicesReq: make(chan struct{}, 1),
-		flushErrorsReq:   make(chan struct{}, 1),
+		config:         c,
+		traceBuffer:    make(chan []*span, traceBufferSize),
+		errorBuffer:    make(chan error, errorBufferSize),
+		exitReq:        make(chan chan<- struct{}),
+		flushAllReq:    make(chan chan<- struct{}),
+		flushTracesReq: make(chan struct{}, 1),
+		flushErrorsReq: make(chan struct{}, 1),
 	}
 
 	go t.worker()
@@ -149,9 +135,6 @@ func (t *tracer) worker() {
 		case <-t.flushTracesReq:
 			t.flushTraces()
 
-		case <-t.flushServicesReq:
-			t.flushServices()
-
 		case <-t.flushErrorsReq:
 			t.flushErrs()
 
@@ -176,20 +159,6 @@ func (t *tracer) pushTrace(trace []*span) {
 	case t.traceBuffer <- trace:
 	default: // never block user code
 		t.pushErr(&errBufferFull{name: "trace channel", size: len(t.traceBuffer)})
-	}
-}
-
-func (t *tracer) pushService(service service) {
-	if len(t.serviceBuffer) >= cap(t.serviceBuffer)/2 { // starts being full, anticipate, try and flush soon
-		select {
-		case t.flushServicesReq <- struct{}{}:
-		default: // a flush was already requested, skip
-		}
-	}
-	select {
-	case t.serviceBuffer <- service:
-	default: // never block user code
-		t.pushErr(&errBufferFull{name: "service channel", size: len(t.serviceBuffer)})
 	}
 }
 
@@ -289,16 +258,6 @@ func (t *tracer) Stop() {
 	<-done
 }
 
-// SetServiceInfo update the application and application type for the given
-// service.
-func (t *tracer) SetServiceInfo(name, app, appType string) {
-	t.pushService(service{
-		Name:    name,
-		App:     app,
-		AppType: appType,
-	})
-}
-
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return t.config.propagator.Inject(ctx, carrier)
@@ -345,33 +304,6 @@ func (t *tracer) flushTraces() {
 	}
 }
 
-func (t *tracer) updateServices() bool {
-	changed := false
-	for {
-		select {
-		case service := <-t.serviceBuffer:
-			if s, found := t.services[service.Name]; !found || !s.equals(service) {
-				t.services[service.Name] = service
-				changed = true
-			}
-		default: // return when there's no more data
-			return changed
-		}
-	}
-}
-
-// flushTraces will push any currently buffered services to the server.
-func (t *tracer) flushServices() {
-	if !t.updateServices() {
-		// services haven't changed
-		return
-	}
-	_, err := t.config.transport.sendServices(t.services)
-	if err != nil {
-		t.pushErr(&errLostData{name: "services", context: err, count: len(t.services)})
-	}
-}
-
 // flushErrs will process log messages that were queued
 func (t *tracer) flushErrs() {
 	logErrors(t.errorBuffer)
@@ -379,7 +311,6 @@ func (t *tracer) flushErrs() {
 
 func (t *tracer) flush() {
 	t.flushTraces()
-	t.flushServices()
 	t.flushErrs()
 }
 
@@ -414,16 +345,4 @@ func (t *tracer) sample(span *span) {
 		}
 		span.Metrics[sampleRateMetricKey] = rs.Rate()
 	}
-}
-
-// service holds context information about a given service.
-type service struct {
-	Name    string `json:"-"`        // the internal of the service (e.g. acme_search, datadog_web)
-	App     string `json:"app"`      // the name of the application (e.g. rails, postgres, custom-app)
-	AppType string `json:"app_type"` // the type of the application (e.g. db, web)
-}
-
-// equals will return true if two services are identical.
-func (s service) equals(s2 service) bool {
-	return s.Name == s2.Name && s.App == s2.App && s.AppType == s2.AppType
 }

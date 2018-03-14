@@ -5,8 +5,6 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v0/contrib/internal/httputil"
-	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"
 )
 
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
@@ -23,7 +21,6 @@ func NewServeMux(opts ...MuxOption) *ServeMux {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	tracer.SetServiceInfo(cfg.serviceName, "net/http", ext.AppTypeWeb)
 	return &ServeMux{
 		ServeMux: http.NewServeMux(),
 		config:   cfg,

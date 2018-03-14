@@ -27,7 +27,6 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 	if cfg.serviceName == "" {
 		cfg.serviceName = "grpc.server"
 	}
-	tracer.SetServiceInfo(cfg.serviceName, "grpc-server", ext.AppTypeRPC)
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		span, ctx := startSpanFromContext(ctx, info.FullMethod, cfg.serviceName)
 		resp, err := handler(ctx, req)
@@ -41,7 +40,7 @@ func startSpanFromContext(ctx context.Context, method, service string) (ddtrace.
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
 		tracer.Tag("grpc.method", method),
-		tracer.SpanType("go"),
+		tracer.SpanType(ext.AppTypeRPC),
 	}
 	md, _ := metadata.FromContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
@@ -60,13 +59,15 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 	if cfg.serviceName == "" {
 		cfg.serviceName = "grpc.client"
 	}
-	tracer.SetServiceInfo(cfg.serviceName, "grpc-client", ext.AppTypeRPC)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		var (
 			span ddtrace.Span
 			p    peer.Peer
 		)
-		span, ctx = tracer.StartSpanFromContext(ctx, "grpc.client", tracer.Tag("grpc.method", method))
+		span, ctx = tracer.StartSpanFromContext(ctx, "grpc.client",
+			tracer.Tag("grpc.method", method),
+			tracer.SpanType(ext.AppTypeRPC),
+		)
 		md, ok := metadata.FromContext(ctx)
 		if !ok {
 			md = metadata.MD{}

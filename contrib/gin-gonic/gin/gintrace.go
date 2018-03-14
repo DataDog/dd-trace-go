@@ -14,13 +14,12 @@ import (
 // Middleware returns middleware that will trace incoming requests.
 // The last parameter is optional and can be used to pass a custom tracer.
 func Middleware(service string) gin.HandlerFunc {
-	tracer.SetServiceInfo(service, "gin-gonic/gin", ext.AppTypeWeb)
 	return func(c *gin.Context) {
 		resource := c.HandlerName()
 		span, ctx := tracer.StartSpanFromContext(c.Request.Context(), "http.request",
 			tracer.ServiceName(service),
 			tracer.ResourceName(resource),
-			tracer.SpanType(ext.HTTPType),
+			tracer.SpanType(ext.AppTypeWeb),
 			tracer.Tag(ext.HTTPMethod, c.Request.Method),
 			tracer.Tag(ext.HTTPURL, c.Request.URL.Path),
 		)

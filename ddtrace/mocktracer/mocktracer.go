@@ -38,12 +38,9 @@ func Start() Tracer {
 	return &t
 }
 
-type service struct{ name, app, appType string }
-
 type mocktracer struct {
 	sync.RWMutex  // guards below spans
 	finishedSpans []Span
-	services      map[string]*service
 }
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
@@ -70,7 +67,6 @@ func (t *mocktracer) Reset() {
 	t.Lock()
 	defer t.Unlock()
 	t.finishedSpans = nil
-	t.services = nil
 }
 
 func (t *mocktracer) addFinishedSpan(s Span) {
@@ -80,15 +76,6 @@ func (t *mocktracer) addFinishedSpan(s Span) {
 		t.finishedSpans = make([]Span, 0, 1)
 	}
 	t.finishedSpans = append(t.finishedSpans, s)
-}
-
-func (t *mocktracer) SetServiceInfo(name, app, appType string) {
-	t.Lock()
-	defer t.Unlock()
-	if t.services == nil {
-		t.services = make(map[string]*service, 1)
-	}
-	t.services[name] = &service{name, app, appType}
 }
 
 const (
