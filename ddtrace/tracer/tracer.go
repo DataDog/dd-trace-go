@@ -36,6 +36,7 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
+	internal.GlobalTracer.Stop()
 	internal.GlobalTracer = newTracer(opts...)
 }
 
