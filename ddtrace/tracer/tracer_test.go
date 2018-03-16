@@ -48,6 +48,20 @@ func TestTracerStart(t *testing.T) {
 		}
 		internal.Testing = false
 	})
+
+	t.Run("deadlock", func(t *testing.T) {
+		Stop()
+		Stop()
+
+		Start()
+		Start()
+		Start()
+
+		Stop()
+		Stop()
+		Stop()
+		Stop()
+	})
 }
 
 func TestTracerStartSpan(t *testing.T) {

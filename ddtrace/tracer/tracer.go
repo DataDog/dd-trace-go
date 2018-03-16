@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace"
@@ -17,6 +18,9 @@ var _ ddtrace.Tracer = (*tracer)(nil)
 // computation.
 type tracer struct {
 	*config
+
+	// started indicates that the tracer is running when it holds positive values.
+	started int32
 
 	// this group of channels provides a thread-safe way to buffer traces,
 	// services and errors before flushing them to the transport.
@@ -36,6 +40,7 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
+	internal.GlobalTracer.Stop()
 	internal.GlobalTracer = newTracer(opts...)
 }
 
@@ -75,10 +80,6 @@ const (
 	// If it's full, then data is simply dropped and ignored, with a log message.
 	// This only happens under heavy load,
 	traceBufferSize = 1000
-	// serviceBufferSize is the length of the service channel. As for the trace channel,
-	// it's emptied by worker thread or when it reaches 50%. Note that there should
-	// be much less data here, as service data does not be to be updated that often.
-	serviceBufferSize = 50
 	// errorBufferSize is the number of errors we keep in the error channel. When this
 	// one is full, errors are just ignored, dropped, nothing left. At some point,
 	// there's already a whole lot of errors in the backlog, there's no real point
@@ -121,7 +122,11 @@ const flushInterval = 2 * time.Second
 // worker periodically flushes traces and services to the transport.
 func (t *tracer) worker() {
 	ticker := time.NewTicker(flushInterval)
-	defer ticker.Stop()
+	atomic.AddInt32(&t.started, 1)
+	defer func() {
+		atomic.AddInt32(&t.started, -1)
+		ticker.Stop()
+	}()
 
 	for {
 		select {
@@ -253,6 +258,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 
 // Stop stops the tracer.
 func (t *tracer) Stop() {
+	if atomic.LoadInt32(&t.started) < 1 {
+		return
+	}
 	done := make(chan struct{})
 	t.exitReq <- done
 	<-done
