@@ -18,6 +18,9 @@ var _ ddtrace.Tracer = (*tracer)(nil)
 type tracer struct {
 	*config
 
+	// stopped is a channel that will be closed after the worker exits.
+	stopped chan struct{}
+
 	// this group of channels provides a thread-safe way to buffer traces,
 	// services and errors before flushing them to the transport.
 	traceBuffer chan []*span
@@ -28,7 +31,7 @@ type tracer struct {
 	flushTracesReq chan struct{}
 	flushErrorsReq chan struct{}
 
-	exitReq chan chan<- struct{}
+	exitReq chan struct{}
 }
 
 // Start starts the tracer with the given set of options.
@@ -36,6 +39,7 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
+	internal.GlobalTracer.Stop()
 	internal.GlobalTracer = newTracer(opts...)
 }
 
@@ -75,10 +79,6 @@ const (
 	// If it's full, then data is simply dropped and ignored, with a log message.
 	// This only happens under heavy load,
 	traceBufferSize = 1000
-	// serviceBufferSize is the length of the service channel. As for the trace channel,
-	// it's emptied by worker thread or when it reaches 50%. Note that there should
-	// be much less data here, as service data does not be to be updated that often.
-	serviceBufferSize = 50
 	// errorBufferSize is the number of errors we keep in the error channel. When this
 	// one is full, errors are just ignored, dropped, nothing left. At some point,
 	// there's already a whole lot of errors in the backlog, there's no real point
@@ -103,7 +103,8 @@ func newTracer(opts ...StartOption) *tracer {
 		config:         c,
 		traceBuffer:    make(chan []*span, traceBufferSize),
 		errorBuffer:    make(chan error, errorBufferSize),
-		exitReq:        make(chan chan<- struct{}),
+		stopped:        make(chan struct{}),
+		exitReq:        make(chan struct{}),
 		flushAllReq:    make(chan chan<- struct{}),
 		flushTracesReq: make(chan struct{}, 1),
 		flushErrorsReq: make(chan struct{}, 1),
@@ -120,6 +121,7 @@ const flushInterval = 2 * time.Second
 
 // worker periodically flushes traces and services to the transport.
 func (t *tracer) worker() {
+	defer close(t.stopped)
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
 
@@ -138,9 +140,8 @@ func (t *tracer) worker() {
 		case <-t.flushErrorsReq:
 			t.flushErrs()
 
-		case done := <-t.exitReq:
+		case <-t.exitReq:
 			t.flush()
-			done <- struct{}{}
 			return
 		}
 	}
@@ -253,9 +254,13 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 
 // Stop stops the tracer.
 func (t *tracer) Stop() {
-	done := make(chan struct{})
-	t.exitReq <- done
-	<-done
+	select {
+	case <-t.stopped:
+		return // already stopped
+	default:
+		t.exitReq <- struct{}{}
+		<-t.stopped
+	}
 }
 
 // Inject uses the configured or default TextMap Propagator.
