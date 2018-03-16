@@ -48,6 +48,44 @@ func TestTracerStart(t *testing.T) {
 		}
 		internal.Testing = false
 	})
+
+	t.Run("deadlock/api", func(t *testing.T) {
+		Stop()
+		Stop()
+
+		Start()
+		Start()
+		Start()
+
+		// ensure at least one worker started and handles requests
+		internal.GlobalTracer.(*tracer).forceFlush()
+
+		Stop()
+		Stop()
+		Stop()
+		Stop()
+	})
+
+	t.Run("deadlock/direct", func(t *testing.T) {
+		tr, _ := getTestTracer()
+		go tr.worker()
+		tr.forceFlush() // blocks until worker is started
+		select {
+		case <-tr.stopped:
+			t.Fatal("stopped channel should be open")
+		default:
+			// OK
+		}
+		tr.Stop()
+		select {
+		case <-tr.stopped:
+			// OK
+		default:
+			t.Fatal("stopped channel should be closed")
+		}
+		tr.Stop()
+		tr.Stop()
+	})
 }
 
 func TestTracerStartSpan(t *testing.T) {
