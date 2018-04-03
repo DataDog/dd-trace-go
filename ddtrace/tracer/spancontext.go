@@ -51,7 +51,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	}
 	// put span in context's trace
 	if err := context.trace.push(span); err != nil {
-		span.tracer.pushErr(err)
+		span.tracer.pushError(err)
 	}
 	return context
 }
@@ -127,7 +127,7 @@ func (t *trace) push(sp *span) error {
 	defer t.mu.Unlock()
 
 	if len(t.spans) >= traceMaxSize {
-		return &errBufferFull{name: "span buffer", size: len(t.spans)}
+		return &spanBufferFullError{count: len(t.spans)}
 	}
 	t.spans = append(t.spans, sp)
 	return nil

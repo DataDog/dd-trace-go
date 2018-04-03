@@ -1,9 +1,7 @@
 package tracer
 
 import (
-	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"runtime"
@@ -12,7 +10,7 @@ import (
 	"time"
 )
 
-var tracerVersion = "v0.7.0"
+var tracerVersion = "v1.0"
 
 const (
 	defaultHostname    = "localhost"
@@ -24,7 +22,7 @@ const (
 
 // Transport is an interface for span submission to the agent.
 type transport interface {
-	sendTraces(spans [][]*span) (*http.Response, error)
+	send(p *payload) error
 }
 
 // newTransport returns a new Transport implementation that sends traces to a
@@ -44,12 +42,9 @@ func newDefaultTransport() transport {
 }
 
 type httpTransport struct {
-	traceURL          string            // the delivery URL for traces
-	legacyTraceURL    string            // the legacy delivery URL for traces
-	client            *http.Client      // the HTTP client used in the POST
-	headers           map[string]string // the Transport headers
-	compatibilityMode bool              // the Agent targets a legacy API for compatibility reasons
-	encoding          encoding          // the type of encoding used
+	traceURL string            // the delivery URL for traces
+	client   *http.Client      // the HTTP client used in the POST
+	headers  map[string]string // the Transport headers
 }
 
 // newHTTPTransport returns an httpTransport for the given endpoint
@@ -60,6 +55,7 @@ func newHTTPTransport(addr string) *httpTransport {
 		"Datadog-Meta-Lang-Version":     strings.TrimPrefix(runtime.Version(), "go"),
 		"Datadog-Meta-Lang-Interpreter": runtime.Compiler + "-" + runtime.GOARCH + "-" + runtime.GOOS,
 		"Datadog-Meta-Tracer-Version":   tracerVersion,
+		"Content-Type":                  "application/msgpack",
 	}
 	host, port, _ := net.SplitHostPort(addr)
 	if host == "" {
@@ -70,9 +66,7 @@ func newHTTPTransport(addr string) *httpTransport {
 	}
 	addr = fmt.Sprintf("%s:%s", host, port)
 	return &httpTransport{
-		traceURL:       fmt.Sprintf("http://%s/v0.3/traces", addr),
-		legacyTraceURL: fmt.Sprintf("http://%s/v0.2/traces", addr),
-		encoding:       encodingMsgpack,
+		traceURL: fmt.Sprintf("http://%s/v0.3/traces", addr),
 		client: &http.Client{
 			// We copy the transport to avoid using the default one, as it might be
 			// augmented with tracing and we don't want these calls to be recorded.
@@ -91,57 +85,36 @@ func newHTTPTransport(addr string) *httpTransport {
 			},
 			Timeout: defaultHTTPTimeout,
 		},
-		headers:           defaultHeaders,
-		compatibilityMode: false,
+		headers: defaultHeaders,
 	}
 }
 
-func (t *httpTransport) sendTraces(traces [][]*span) (*http.Response, error) {
-	if t.traceURL == "" {
-		return nil, errors.New("provided an empty URL, giving up")
-	}
-	r, err := encode(t.encoding, traces)
-	if err != nil {
-		return nil, err
-	}
+func (t *httpTransport) send(p *payload) error {
 	// prepare the client and send the payload
-	req, err := http.NewRequest("POST", t.traceURL, r)
+	req, err := http.NewRequest("POST", t.traceURL, p)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create http request: %v", err)
+		return fmt.Errorf("cannot create http request: %v", err)
 	}
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
-	req.Header.Set(traceCountHeader, strconv.Itoa(len(traces)))
-	req.Header.Set("Content-Type", t.encoding.contentType())
+	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
+	req.Header.Set("Content-Length", strconv.Itoa(p.size()))
 	response, err := t.client.Do(req)
-
-	// if we have an error, return an empty Response to protect against nil pointer dereference
 	if err != nil {
-		return &http.Response{StatusCode: 0}, err
+		return err
 	}
 	defer response.Body.Close()
-
-	// if we got a 404 we should downgrade the API to a stable version (at most once)
-	if (response.StatusCode == 404 || response.StatusCode == 415) && !t.compatibilityMode {
-		log.Printf("calling the endpoint '%s' but received %d; downgrading the API\n", t.traceURL, response.StatusCode)
-		t.apiDowngrade()
-		return t.sendTraces(traces)
+	if code := response.StatusCode; code >= 400 {
+		// error, check the body for context information and
+		// return a nice error.
+		msg := make([]byte, 1000)
+		n, _ := response.Body.Read(msg)
+		txt := http.StatusText(code)
+		if n > 0 {
+			return fmt.Errorf("%s (Status: %s)", msg[:n], txt)
+		}
+		return fmt.Errorf("%s", txt)
 	}
-
-	if sc := response.StatusCode; sc != 200 {
-		return response, fmt.Errorf("sendTraces expected response code 200, received %v", sc)
-	}
-
-	return response, err
-}
-
-// apiDowngrade downgrades the used encoder and API level. This method must fallback to a safe
-// encoder and API, so that it will success despite users' configurations. This action
-// ensures that the compatibility mode is activated so that the downgrade will be
-// executed only once.
-func (t *httpTransport) apiDowngrade() {
-	t.compatibilityMode = true
-	t.traceURL = t.legacyTraceURL
-	t.encoding = encodingJSON
+	return nil
 }

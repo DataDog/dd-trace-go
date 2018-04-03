@@ -2,10 +2,10 @@ package tracer
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/ugorji/go/codec"
 )
 
 func (t *tracer) newRootSpan(name, service, resource string) *span {
@@ -303,17 +304,19 @@ func TestTracerEdgeSampler(t *testing.T) {
 	assert := assert.New(t)
 
 	// a sample rate of 0 should sample nothing
-	tracer0 := newTracer(
+	tracer0, _ := getTestTracer(
 		withTransport(newDefaultTransport()),
 		WithSampler(NewRateSampler(0)),
 	)
+	defer tracer0.Stop()
 	// a sample rate of 1 should sample everything
-	tracer1 := newTracer(
+	tracer1, _ := getTestTracer(
 		withTransport(newDefaultTransport()),
 		WithSampler(NewRateSampler(1)),
 	)
+	defer tracer1.Stop()
 
-	count := traceBufferSize / 3
+	count := payloadQueueSize / 3
 
 	for i := 0; i < count; i++ {
 		span0 := tracer0.newRootSpan("pylons.request", "pylons", "/")
@@ -322,11 +325,8 @@ func TestTracerEdgeSampler(t *testing.T) {
 		span1.Finish()
 	}
 
-	assert.Len(tracer0.traceBuffer, 0)
-	assert.Len(tracer1.traceBuffer, count)
-
-	tracer0.Stop()
-	tracer1.Stop()
+	assert.Equal(tracer0.payload.itemCount(), 0)
+	assert.Equal(tracer1.payload.itemCount(), count)
 }
 
 func TestTracerConcurrent(t *testing.T) {
@@ -374,7 +374,7 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 	traces := transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 1)
-	assert.Equal(parent, traces[0][0])
+	comparePayloadSpans(t, parent, traces[0][0])
 
 	child := tracer.newChildSpan("redis.command", parent)
 	child.Finish()
@@ -384,7 +384,7 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 	traces = transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 1)
-	assert.Equal(child, traces[0][0])
+	comparePayloadSpans(t, child, traces[0][0])
 	assert.Equal(parent.SpanID, traces[0][0].ParentID, "child should refer to parent, even if they have been flushed separately")
 }
 
@@ -452,7 +452,7 @@ func TestTracerRace(t *testing.T) {
 	tracer, transport := getTestTracer()
 	defer tracer.Stop()
 
-	total := (traceBufferSize / 3) / 10
+	total := payloadQueueSize / 3
 	var wg sync.WaitGroup
 	wg.Add(total)
 
@@ -558,7 +558,7 @@ func TestWorker(t *testing.T) {
 	tracer, transport := getTestTracer()
 	defer tracer.Stop()
 
-	n := traceBufferSize * 10 // put more traces than the chan size, on purpose
+	n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
 	for i := 0; i < n; i++ {
 		root := tracer.newRootSpan("pylons.request", "pylons", "/")
 		child := tracer.newChildSpan("redis.command", root)
@@ -568,7 +568,7 @@ func TestWorker(t *testing.T) {
 
 	now := time.Now()
 	count := 0
-	for time.Now().Before(now.Add(time.Minute)) && count < traceBufferSize {
+	for time.Now().Before(now.Add(time.Minute)) && count < payloadQueueSize {
 		nbTraces := len(transport.Traces())
 		if nbTraces > 0 {
 			t.Logf("popped %d traces", nbTraces)
@@ -579,18 +579,35 @@ func TestWorker(t *testing.T) {
 	// here we just check that we have "enough traces". In practice, lots of them
 	// are dropped, it's another interesting side-effect of this test: it does
 	// trigger error messages (which are repeated, so it aggregates them etc.)
-	if count < traceBufferSize {
+	if count < payloadQueueSize {
 		assert.Fail(fmt.Sprintf("timeout, not enough traces in buffer (%d/%d)", count, n))
 	}
 }
 
 func newTracerChannels() *tracer {
 	return &tracer{
-		traceBuffer:    make(chan []*span, traceBufferSize),
+		payload:        newPayload(),
+		payloadQueue:   make(chan []*span, payloadQueueSize),
 		errorBuffer:    make(chan error, errorBufferSize),
 		flushTracesReq: make(chan struct{}, 1),
 		flushErrorsReq: make(chan struct{}, 1),
 	}
+}
+
+func TestPushPayload(t *testing.T) {
+	tracer := newTracerChannels()
+	s := newBasicSpan("3MB")
+	s.Meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
+
+	// half payload size reached, we have 1 item, no flush request
+	tracer.pushPayload([]*span{s})
+	assert.Equal(t, tracer.payload.itemCount(), 1)
+	assert.Len(t, tracer.flushTracesReq, 0)
+
+	// payload size exceeded, we have 2 items and a flush request
+	tracer.pushPayload([]*span{s})
+	assert.Equal(t, tracer.payload.itemCount(), 2)
+	assert.Len(t, tracer.flushTracesReq, 1)
 }
 
 func TestPushTrace(t *testing.T) {
@@ -611,26 +628,18 @@ func TestPushTrace(t *testing.T) {
 	}
 	tracer.pushTrace(trace)
 
-	assert.Len(tracer.traceBuffer, 1, "there should be data in channel")
+	assert.Len(tracer.payloadQueue, 1)
 	assert.Len(tracer.flushTracesReq, 0, "no flush requested yet")
 
-	pushed := <-tracer.traceBuffer
-	assert.Equal(trace, pushed)
+	t0 := <-tracer.payloadQueue
+	assert.Equal(trace, t0)
 
-	many := traceBufferSize/2 + 1
+	many := payloadQueueSize + 2
 	for i := 0; i < many; i++ {
 		tracer.pushTrace(make([]*span, i))
 	}
-	assert.Len(tracer.traceBuffer, many, "all traces should be in the channel, not yet blocking")
-	assert.Len(tracer.flushTracesReq, 1, "a trace flush should have been requested")
-
-	for i := 0; i < cap(tracer.traceBuffer); i++ {
-		tracer.pushTrace(make([]*span, i))
-	}
-	assert.Len(tracer.traceBuffer, traceBufferSize, "buffer should be full")
-	assert.NotEqual(0, len(tracer.errorBuffer), "there should be an error logged")
-	err := <-tracer.errorBuffer
-	assert.Equal(&errBufferFull{name: "trace channel", size: traceBufferSize}, err)
+	assert.Len(tracer.payloadQueue, payloadQueueSize)
+	assert.Len(tracer.errorBuffer, 2)
 }
 
 func TestPushErr(t *testing.T) {
@@ -639,7 +648,7 @@ func TestPushErr(t *testing.T) {
 	tracer := newTracerChannels()
 
 	err := fmt.Errorf("ooops")
-	tracer.pushErr(err)
+	tracer.pushError(err)
 
 	assert.Len(tracer.errorBuffer, 1, "there should be data in channel")
 	assert.Len(tracer.flushErrorsReq, 0, "no flush requested yet")
@@ -649,14 +658,14 @@ func TestPushErr(t *testing.T) {
 
 	many := errorBufferSize/2 + 1
 	for i := 0; i < many; i++ {
-		tracer.pushErr(fmt.Errorf("err %d", i))
+		tracer.pushError(fmt.Errorf("err %d", i))
 	}
 	assert.Len(tracer.errorBuffer, many, "all errs should be in the channel, not yet blocking")
 	assert.Len(tracer.flushErrorsReq, 1, "a err flush should have been requested")
 	for i := 0; i < cap(tracer.errorBuffer); i++ {
-		tracer.pushErr(fmt.Errorf("err %d", i))
+		tracer.pushError(fmt.Errorf("err %d", i))
 	}
-	// if we reach this, means pushErr is not blocking, which is what we want to double-check
+	// if we reach this, means pushError is not blocking, which is what we want to double-check
 }
 
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
@@ -692,30 +701,46 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 
 // getTestTracer returns a Tracer with a DummyTransport
 func getTestTracer(opts ...StartOption) (*tracer, *dummyTransport) {
-	transport := &dummyTransport{encoding: encodingMsgpack}
+	transport := &dummyTransport{}
 	o := append([]StartOption{withTransport(transport)}, opts...)
 	tracer := newTracer(o...)
+	tracer.syncPush = make(chan struct{})
 	return tracer, transport
 }
 
 // Mock Transport with a real Encoder
 type dummyTransport struct {
-	encoding
+	sync.RWMutex
 	traces [][]*span
-
-	sync.RWMutex // required because of some poll-testing (eg: worker)
 }
 
-func (t *dummyTransport) sendTraces(traces [][]*span) (*http.Response, error) {
+var mh codec.MsgpackHandle
+
+func (t *dummyTransport) send(p *payload) error {
+	traces, err := decode(p)
+	if err != nil {
+		return err
+	}
 	t.Lock()
 	t.traces = append(t.traces, traces...)
 	t.Unlock()
-	r, err := encode(t.encoding, traces)
-	if err != nil {
-		return nil, err
+	return nil
+}
+
+func decode(p *payload) ([][]*span, error) {
+	var traces [][]*span
+	err := codec.NewDecoder(p, &mh).Decode(&traces)
+	return traces, err
+}
+
+func encode(traces [][]*span) (*payload, error) {
+	p := newPayload()
+	for _, t := range traces {
+		if err := p.push(t); err != nil {
+			return p, err
+		}
 	}
-	_, err = ioutil.ReadAll(r)
-	return nil, err
+	return p, nil
 }
 
 func (t *dummyTransport) Traces() [][]*span {
@@ -725,4 +750,35 @@ func (t *dummyTransport) Traces() [][]*span {
 	traces := t.traces
 	t.traces = nil
 	return traces
+}
+
+// comparePayloadSpans allows comparing two spans which might have been
+// read from the msgpack payload. In that case the private fields will
+// not be available and the maps (meta & metrics will be nil for lengths
+// of 0). This function covers for those cases and correctly compares.
+func comparePayloadSpans(t *testing.T, a, b *span) {
+	assert.Equal(t, cpspan(a), cpspan(b))
+}
+
+func cpspan(s *span) *span {
+	if len(s.Metrics) == 0 {
+		s.Metrics = nil
+	}
+	if len(s.Meta) == 0 {
+		s.Meta = nil
+	}
+	return &span{
+		Name:     s.Name,
+		Service:  s.Service,
+		Resource: s.Resource,
+		Type:     s.Type,
+		Start:    s.Start,
+		Duration: s.Duration,
+		Meta:     s.Meta,
+		Metrics:  s.Metrics,
+		SpanID:   s.SpanID,
+		TraceID:  s.TraceID,
+		ParentID: s.ParentID,
+		Error:    s.Error,
+	}
 }
