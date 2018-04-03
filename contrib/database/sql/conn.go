@@ -1,10 +1,10 @@
-package sql // import "gopkg.in/DataDog/dd-trace-go.v0/contrib/database/sql"
+package sql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 
 import (
 	"context"
 	"database/sql/driver"
 
-	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var _ driver.Conn = (*tracedConn)(nil)

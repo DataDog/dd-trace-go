@@ -1,7 +1,7 @@
 version: 2
 jobs:
      build:
-          working_directory: /go/src/gopkg.in/DataDog/dd-trace-go.v0
+          working_directory: /go/src/gopkg.in/DataDog/dd-trace-go.v1
           resource_class: xlarge
 
           docker:

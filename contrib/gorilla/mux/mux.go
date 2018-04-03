@@ -1,10 +1,10 @@
 // Package mux provides tracing functions for tracing the gorilla/mux package (https://github.com/gorilla/mux).
-package mux // import "gopkg.in/DataDog/dd-trace-go.v0/contrib/gorilla/mux"
+package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 
 import (
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v0/contrib/internal/httputil"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
 
 	"github.com/gorilla/mux"
 )

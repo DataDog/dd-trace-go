@@ -5,9 +5,9 @@ import (
 	"log"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/gocql/gocql"
 	"github.com/stretchr/testify/assert"

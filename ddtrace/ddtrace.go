@@ -1,5 +1,5 @@
 // Package ddtrace holds the interfaces and structures shared by Datadog's tracer packages.
-package ddtrace // import "gopkg.in/DataDog/dd-trace-go.v0/ddtrace"
+package ddtrace // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
 import "time"
 

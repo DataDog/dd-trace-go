@@ -1,4 +1,4 @@
-package ext // import "gopkg.in/DataDog/dd-trace-go.v0/ddtrace/ext"
+package ext // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 
 // Application types for services.
 const (

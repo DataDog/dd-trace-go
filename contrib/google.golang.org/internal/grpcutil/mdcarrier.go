@@ -1,9 +1,9 @@
-package grpcutil // import "gopkg.in/DataDog/dd-trace-go.v0/contrib/google.golang.org/internal/grpcutil"
+package grpcutil // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 
 import (
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v0/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"google.golang.org/grpc/metadata"
 )

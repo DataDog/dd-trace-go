@@ -1,6 +1,6 @@
-package internal // import "gopkg.in/DataDog/dd-trace-go.v0/ddtrace/internal"
+package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
-import "gopkg.in/DataDog/dd-trace-go.v0/ddtrace"
+import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
 // GlobalTracer holds the currently active tracer. It's "zero value" should
 // always be the NoopTracer.

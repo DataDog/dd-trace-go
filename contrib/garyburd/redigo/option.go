@@ -1,4 +1,4 @@
-package redigo // import "gopkg.in/DataDog/dd-trace-go.v0/contrib/garyburd/redigo"
+package redigo // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/garyburd/redigo"
 
 type dialConfig struct{ serviceName string }
 
