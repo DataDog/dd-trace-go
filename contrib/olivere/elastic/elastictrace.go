@@ -94,7 +94,7 @@ func quantize(url, method string) string {
 // of the stream contained in the reader. If unknown, it should be -1. If 0 < max < n it
 // will override n.
 func peek(rc io.ReadCloser, max int, n int) (string, io.ReadCloser, error) {
-	if rc == nil || max == 0 {
+	if rc == nil {
 		return "", rc, errors.New("empty stream")
 	}
 	if max > 0 && max < n {

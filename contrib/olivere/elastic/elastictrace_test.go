@@ -299,9 +299,10 @@ func TestPeek(t *testing.T) {
 			snip: "AB",
 		},
 		4: {
-			txt: "ABCDEFG",
-			max: 0,
-			err: errors.New("empty stream"),
+			txt:  "ABCDEFG",
+			max:  0,
+			n:    1,
+			snip: "A",
 		},
 		5: {
 			n:   4,
