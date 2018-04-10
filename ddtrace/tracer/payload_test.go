@@ -80,6 +80,23 @@ func TestPayloadDecode(t *testing.T) {
 	}
 }
 
+// TestPayloadSize ensures that payload reports the same size as the
+// regular msgpack encoder.
+func TestPayloadSize(t *testing.T) {
+	p := newPayload()
+	n := 1000
+	nums := make([]int, n)
+	for i := 0; i < n; i++ {
+		nums[i] = i
+		p.push(i)
+	}
+	var buf bytes.Buffer
+	err := codec.NewEncoder(&buf, &codec.MsgpackHandle{}).Encode(nums)
+	assert.Nil(t, err)
+	assert.NotZero(t, p.size())
+	assert.Equal(t, buf.Len(), p.size())
+}
+
 func BenchmarkPayloadThroughput(b *testing.B) {
 	b.Run("10K", benchmarkPayloadThroughput(1))
 	b.Run("100K", benchmarkPayloadThroughput(10))

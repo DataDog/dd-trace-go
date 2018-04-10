@@ -48,9 +48,13 @@ const (
 	// to the transport.
 	flushInterval = 2 * time.Second
 
+	// payloadMaxLimit is the maximum payload size allowed and should indicate the
+	// maximum size of the package that the agent can receive.
+	payloadMaxLimit = 9.5 * 1024 * 1024 // 9.5 MB
+
 	// payloadSizeLimit specifies the maximum allowed size of the payload before
 	// it will trigger a flush to the transport.
-	payloadSizeLimit = 5 * 1024 * 1024 // 5 MB
+	payloadSizeLimit = payloadMaxLimit / 2
 )
 
 // Start starts the tracer with the given set of options.
@@ -291,13 +295,19 @@ func (t *tracer) flushTraces() {
 	if t.payload.itemCount() == 0 {
 		return
 	}
+	size, count := t.payload.size(), t.payload.itemCount()
 	if t.config.debug {
-		log.Printf("Sending payload: size: %d traces: %d\n", t.payload.size(), t.payload.itemCount())
+		log.Printf("Sending payload: size: %d traces: %d\n", size, count)
 	}
 	err := t.config.transport.send(t.payload)
-	if err != nil {
+	if err != nil && size > payloadMaxLimit {
+		// we couldn't send the payload and it is getting too big to be
+		// accepted by the agent, we have to drop it.
+		t.payload.reset()
 		t.pushError(&dataLossError{context: err, count: t.payload.itemCount()})
-	} else {
+	}
+	if err == nil {
+		// send succeeded
 		t.payload.reset()
 	}
 }
