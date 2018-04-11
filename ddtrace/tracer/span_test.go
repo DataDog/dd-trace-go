@@ -78,19 +78,19 @@ func TestSpanFinishTwice(t *testing.T) {
 	tracer, _ := getTestTracer()
 	defer tracer.Stop()
 
-	assert.Len(tracer.traceBuffer, 0)
+	assert.Equal(tracer.payload.itemCount(), 0)
 
 	// the finish must be idempotent
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	time.Sleep(wait)
 	span.Finish()
-	assert.Len(tracer.traceBuffer, 1)
+	assert.Equal(tracer.payload.itemCount(), 1)
 
 	previousDuration := span.Duration
 	time.Sleep(wait)
 	span.Finish()
 	assert.Equal(previousDuration, span.Duration)
-	assert.Len(tracer.traceBuffer, 1)
+	assert.Equal(tracer.payload.itemCount(), 1)
 }
 
 func TestSpanFinishWithTime(t *testing.T) {
@@ -270,13 +270,12 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		done <- struct{}{}
 	}()
 
-	run := true
-	for run {
+	for {
 		select {
 		case <-done:
-			run = false
+			return
 		default:
-			tracer.flushTraces()
+			tracer.forceFlush()
 		}
 	}
 }

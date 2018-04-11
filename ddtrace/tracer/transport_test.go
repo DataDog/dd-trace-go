@@ -1,11 +1,14 @@
 package tracer
 
 import (
+	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -77,50 +80,28 @@ func TestTracesAgentIntegration(t *testing.T) {
 
 	for _, tc := range testCases {
 		transport := newHTTPTransport(defaultAddress)
-		response, err := transport.sendTraces(tc.payload)
+		p, err := encode(tc.payload)
 		assert.NoError(err)
-		assert.NotNil(response)
-		assert.Equal(200, response.StatusCode)
+		err = transport.send(p)
+		assert.NoError(err)
 	}
 }
 
-func TestAPIDowngrade(t *testing.T) {
+func TestTransportResponseError(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport(defaultAddress)
-	transport.traceURL = "http://localhost:8126/v0.0/traces"
-
-	// if we get a 404 we should downgrade the API
-	traces := getTestTrace(2, 2)
-	response, err := transport.sendTraces(traces)
-	assert.NoError(err)
-	assert.NotNil(response)
-	assert.Equal(200, response.StatusCode)
-}
-
-func TestEncoderDowngrade(t *testing.T) {
-	assert := assert.New(t)
-	transport := newHTTPTransport(defaultAddress)
-	transport.traceURL = "http://localhost:8126/v0.2/traces"
-
-	// if we get a 415 because of a wrong encoder, we should downgrade the encoder
-	traces := getTestTrace(2, 2)
-	response, err := transport.sendTraces(traces)
-	assert.NoError(err)
-	assert.NotNil(response)
-	assert.Equal(200, response.StatusCode)
-}
-
-func TestTransportContentType(t *testing.T) {
-	assert := assert.New(t)
-	transport := newHTTPTransport(defaultAddress)
-	assert.Equal("application/msgpack", transport.encoding.contentType())
-}
-
-func TestTransportDowngrade(t *testing.T) {
-	assert := assert.New(t)
-	transport := newHTTPTransport(defaultAddress)
-	transport.apiDowngrade()
-	assert.Equal("application/json", transport.encoding.contentType())
+	ln, err := net.Listen("tcp4", ":0")
+	assert.Nil(err)
+	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(strings.Repeat("X", 1002)))
+	}))
+	defer ln.Close()
+	addr := ln.Addr().String()
+	log.Println(addr)
+	transport := newHTTPTransport(addr)
+	err = transport.send(newPayload())
+	want := fmt.Sprintf("%s (Status: Bad Request)", strings.Repeat("X", 1000))
+	assert.Equal(want, err.Error())
 }
 
 func TestTraceCountHeader(t *testing.T) {
@@ -143,10 +124,10 @@ func TestTraceCountHeader(t *testing.T) {
 	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
 	for _, tc := range testCases {
 		transport := newHTTPTransport(host)
-		response, err := transport.sendTraces(tc.payload)
+		p, err := encode(tc.payload)
 		assert.NoError(err)
-		assert.NotNil(response)
-		assert.Equal(200, response.StatusCode)
+		err = transport.send(p)
+		assert.NoError(err)
 	}
 
 	receiver.Close()

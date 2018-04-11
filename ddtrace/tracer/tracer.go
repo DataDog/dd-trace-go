@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"errors"
 	"log"
 	"os"
 	"strconv"
@@ -14,25 +15,47 @@ import (
 var _ ddtrace.Tracer = (*tracer)(nil)
 
 // tracer creates, buffers and submits Spans which are used to time blocks of
-// computation.
+// computation. They are accumulated and streamed into an internal payload,
+// which is flushed to the agent whenever its size exceeds a specific threshold
+// or when a certain interval of time has passed, whichever happens first.
+//
+// tracer operates based on a worker loop which responds to various request
+// channels. It additionally holds two buffers which accumulates error and trace
+// queues to be processed by the payload encoder.
 type tracer struct {
 	*config
+	*payload
 
-	// stopped is a channel that will be closed after the worker exits.
-	stopped chan struct{}
-
-	// this group of channels provides a thread-safe way to buffer traces,
-	// services and errors before flushing them to the transport.
-	traceBuffer chan []*span
-	errorBuffer chan error
-
-	// these channels represent various requests that the tracer worker can pick up.
 	flushAllReq    chan chan<- struct{}
 	flushTracesReq chan struct{}
 	flushErrorsReq chan struct{}
+	exitReq        chan struct{}
 
-	exitReq chan struct{}
+	payloadQueue chan []*span
+	errorBuffer  chan error
+
+	// stopped is a channel that will be closed when the worker has exited.
+	stopped chan struct{}
+
+	// syncPush is used for testing. When non-nil, it causes pushTrace to become
+	// a synchronous (blocking) operation, meaning that it will only return after
+	// the trace has been fully processed and added onto the payload.
+	syncPush chan struct{}
 }
+
+const (
+	// flushInterval is the interval at which the payload contents will be flushed
+	// to the transport.
+	flushInterval = 2 * time.Second
+
+	// payloadMaxLimit is the maximum payload size allowed and should indicate the
+	// maximum size of the package that the agent can receive.
+	payloadMaxLimit = 9.5 * 1024 * 1024 // 9.5 MB
+
+	// payloadSizeLimit specifies the maximum allowed size of the payload before
+	// it will trigger a flush to the transport.
+	payloadSizeLimit = payloadMaxLimit / 2
+)
 
 // Start starts the tracer with the given set of options.
 func Start(opts ...StartOption) {
@@ -74,16 +97,10 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 }
 
 const (
-	// traceBufferSize is the capacity of the trace channel. This channels is emptied
-	// on a regular basis (worker thread) or when it reaches 50% of its capacity.
-	// If it's full, then data is simply dropped and ignored, with a log message.
-	// This only happens under heavy load,
-	traceBufferSize = 1000
-	// errorBufferSize is the number of errors we keep in the error channel. When this
-	// one is full, errors are just ignored, dropped, nothing left. At some point,
-	// there's already a whole lot of errors in the backlog, there's no real point
-	// in keeping millions of errors, a representative sample is enough. And we
-	// don't want to block user code and/or bloat memory or log files with redundant data.
+	// payloadQueueSize is the buffer size of the trace channel.
+	payloadQueueSize = 1000
+
+	// errorBufferSize is the buffer size of the error channel.
 	errorBufferSize = 200
 )
 
@@ -101,13 +118,14 @@ func newTracer(opts ...StartOption) *tracer {
 	}
 	t := &tracer{
 		config:         c,
-		traceBuffer:    make(chan []*span, traceBufferSize),
-		errorBuffer:    make(chan error, errorBufferSize),
-		stopped:        make(chan struct{}),
-		exitReq:        make(chan struct{}),
+		payload:        newPayload(),
 		flushAllReq:    make(chan chan<- struct{}),
 		flushTracesReq: make(chan struct{}, 1),
 		flushErrorsReq: make(chan struct{}, 1),
+		exitReq:        make(chan struct{}),
+		payloadQueue:   make(chan []*span, payloadQueueSize),
+		errorBuffer:    make(chan error, errorBufferSize),
+		stopped:        make(chan struct{}),
 	}
 
 	go t.worker()
@@ -115,11 +133,8 @@ func newTracer(opts ...StartOption) *tracer {
 	return t
 }
 
-// flushInterval is the interval at which the buffer contents will be flushed
-// to the transport.
-const flushInterval = 2 * time.Second
-
-// worker periodically flushes traces and services to the transport.
+// worker receives finished traces to be added into the payload, as well
+// as periodically flushes traces to the transport.
 func (t *tracer) worker() {
 	defer close(t.stopped)
 	ticker := time.NewTicker(flushInterval)
@@ -127,6 +142,9 @@ func (t *tracer) worker() {
 
 	for {
 		select {
+		case trace := <-t.payloadQueue:
+			t.pushPayload(trace)
+
 		case <-ticker.C:
 			t.flush()
 
@@ -138,7 +156,7 @@ func (t *tracer) worker() {
 			t.flushTraces()
 
 		case <-t.flushErrorsReq:
-			t.flushErrs()
+			t.flushErrors()
 
 		case <-t.exitReq:
 			t.flush()
@@ -147,23 +165,22 @@ func (t *tracer) worker() {
 	}
 }
 
-// pushTrace pushes a new trace onto the trace buffer. If the trace buffer is getting
-// full, it also triggers a flush request.
 func (t *tracer) pushTrace(trace []*span) {
-	if len(t.traceBuffer) >= cap(t.traceBuffer)/2 { // starts being full, anticipate, try and flush soon
-		select {
-		case t.flushTracesReq <- struct{}{}:
-		default: // a flush was already requested, skip
-		}
-	}
 	select {
-	case t.traceBuffer <- trace:
-	default: // never block user code
-		t.pushErr(&errBufferFull{name: "trace channel", size: len(t.traceBuffer)})
+	case t.payloadQueue <- trace:
+	default:
+		t.pushError(&dataLossError{
+			context: errors.New("payload queue full, dropping trace"),
+			count:   len(trace),
+		})
+	}
+	if t.syncPush != nil {
+		// only in tests
+		<-t.syncPush
 	}
 }
 
-func (t *tracer) pushErr(err error) {
+func (t *tracer) pushError(err error) {
 	if len(t.errorBuffer) >= cap(t.errorBuffer)/2 { // starts being full, anticipate, try and flush soon
 		select {
 		case t.flushErrorsReq <- struct{}{}:
@@ -273,50 +290,36 @@ func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	return t.config.propagator.Extract(carrier)
 }
 
-func (t *tracer) getTraces() [][]*span {
-	traces := make([][]*span, 0, len(t.traceBuffer))
-	for {
-		select {
-		case trace := <-t.traceBuffer:
-			traces = append(traces, trace)
-		default: // return when there's no more data
-			return traces
-		}
-	}
-}
-
 // flushTraces will push any currently buffered traces to the server.
 func (t *tracer) flushTraces() {
-	traces := t.getTraces()
-	if t.config.transport == nil || len(traces) == 0 {
-		// nothing to do
+	if t.payload.itemCount() == 0 {
 		return
 	}
+	size, count := t.payload.size(), t.payload.itemCount()
 	if t.config.debug {
-		log.Printf("Sending %d traces", len(traces))
-		for _, trace := range traces {
-			if len(trace) > 0 {
-				log.Printf("TRACE: %d\n", trace[0].TraceID)
-				for _, span := range trace {
-					log.Printf("SPAN:\n%s", span.String())
-				}
-			}
-		}
+		log.Printf("Sending payload: size: %d traces: %d\n", size, count)
 	}
-	_, err := t.config.transport.sendTraces(traces)
-	if err != nil {
-		t.pushErr(&errLostData{name: "traces", context: err, count: len(traces)})
+	err := t.config.transport.send(t.payload)
+	if err != nil && size > payloadMaxLimit {
+		// we couldn't send the payload and it is getting too big to be
+		// accepted by the agent, we have to drop it.
+		t.payload.reset()
+		t.pushError(&dataLossError{context: err, count: t.payload.itemCount()})
+	}
+	if err == nil {
+		// send succeeded
+		t.payload.reset()
 	}
 }
 
-// flushErrs will process log messages that were queued
-func (t *tracer) flushErrs() {
+// flushErrors will process log messages that were queued
+func (t *tracer) flushErrors() {
 	logErrors(t.errorBuffer)
 }
 
 func (t *tracer) flush() {
 	t.flushTraces()
-	t.flushErrs()
+	t.flushErrors()
 }
 
 // forceFlush forces a flush of data (traces and services) to the agent.
@@ -326,6 +329,26 @@ func (t *tracer) forceFlush() {
 	done := make(chan struct{})
 	t.flushAllReq <- done
 	<-done
+}
+
+// pushPayload pushes the trace onto the payload. If the payload becomes
+// larger than the threshold as a result, it sends a flush request.
+func (t *tracer) pushPayload(trace []*span) {
+	if err := t.payload.push(trace); err != nil {
+		t.pushError(&traceEncodingError{context: err})
+	}
+	if t.payload.size() > payloadSizeLimit {
+		// getting large
+		select {
+		case t.flushTracesReq <- struct{}{}:
+		default:
+			// flush already queued
+		}
+	}
+	if t.syncPush != nil {
+		// only in tests
+		t.syncPush <- struct{}{}
+	}
 }
 
 // sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.
