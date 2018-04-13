@@ -91,10 +91,9 @@ func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) 
 		tracer.Tag("out.db", p.db),
 	)
 	cmds, err := c.Pipeliner.Exec()
-	span.
-		SetTag(ext.ResourceName, commandsToString(cmds)).
-		SetTag("redis.pipeline_length", strconv.Itoa(len(cmds))).
-		Finish(tracer.WithError(err))
+	span.SetTag(ext.ResourceName, commandsToString(cmds))
+	span.SetTag("redis.pipeline_length", strconv.Itoa(len(cmds)))
+	span.Finish(tracer.WithError(err))
 
 	return cmds, err
 }

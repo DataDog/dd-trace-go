@@ -116,7 +116,8 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 	propagator := NewPropagator("bg-", "tid", "pid")
 	tracer := newTracer(WithPropagator(propagator))
 
-	root := tracer.StartSpan("web.request").SetBaggageItem("item", "x").(*span)
+	root := tracer.StartSpan("web.request").(*span)
+	root.SetBaggageItem("item", "x")
 	ctx := root.Context()
 	headers := http.Header{}
 
@@ -135,7 +136,8 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 func TestTextMapPropagatorInjectExtract(t *testing.T) {
 	propagator := NewPropagator("bg-", "tid", "pid")
 	tracer := newTracer(WithPropagator(propagator))
-	root := tracer.StartSpan("web.request").SetBaggageItem("item", "x").(*span)
+	root := tracer.StartSpan("web.request").(*span)
+	root.SetBaggageItem("item", "x")
 	ctx := root.Context().(*spanContext)
 	headers := TextMapCarrier(map[string]string{})
 	err := tracer.Inject(ctx, headers)

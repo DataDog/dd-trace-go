@@ -70,9 +70,9 @@ type span struct {
 func (s *span) Context() ddtrace.SpanContext { return s.context }
 
 // SetBaggageItem sets a key/value pair as baggage on the span.
-func (s *span) SetBaggageItem(key, val string) ddtrace.Span {
+func (s *span) SetBaggageItem(key, val string) {
 	s.context.setBaggageItem(key, val)
-	return s
+	return
 }
 
 // BaggageItem gets the value for a baggage item given its key. Returns the
@@ -83,33 +83,36 @@ func (s *span) BaggageItem(key string) string {
 
 // SetTag adds a tag to the span, overwriting pre-existing values for
 // the given key.
-func (s *span) SetTag(key string, value interface{}) ddtrace.Span {
+func (s *span) SetTag(key string, value interface{}) {
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
-		return s
+		return
 	}
 	if key == ext.Error {
-		return s.setTagError(value)
+		s.setTagError(value)
+		return
 	}
 	if v, ok := value.(string); ok {
-		return s.setTagString(key, v)
+		s.setTagString(key, v)
+		return
 	}
 	if v, ok := toFloat64(value); ok {
-		return s.setTagNumeric(key, v)
+		s.setTagNumeric(key, v)
+		return
 	}
 	// not numeric, not a string and not an error, the likelihood of this
 	// happening is close to zero, but we should nevertheless account for it.
 	s.Meta[key] = fmt.Sprint(value)
-	return s
+	return
 }
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
 // This method is not safe for concurrent use.
-func (s *span) setTagError(value interface{}) ddtrace.Span {
+func (s *span) setTagError(value interface{}) {
 	switch v := value.(type) {
 	case bool:
 		// bool value as per Opentracing spec.
@@ -133,11 +136,11 @@ func (s *span) setTagError(value interface{}) ddtrace.Span {
 		// is the result of an error.
 		s.Error = 1
 	}
-	return s
+	return
 }
 
 // setTagString sets a string tag. This method is not safe for concurrent use.
-func (s *span) setTagString(key, v string) ddtrace.Span {
+func (s *span) setTagString(key, v string) {
 	switch key {
 	case ext.ServiceName:
 		s.Service = v
@@ -148,12 +151,12 @@ func (s *span) setTagString(key, v string) ddtrace.Span {
 	default:
 		s.Meta[key] = v
 	}
-	return s
+	return
 }
 
 // setTagNumeric sets a numeric tag, in our case called a metric. This method
 // is not safe for concurrent use.
-func (s *span) setTagNumeric(key string, v float64) ddtrace.Span {
+func (s *span) setTagNumeric(key string, v float64) {
 	switch key {
 	case ext.SamplingPriority:
 		// setting sampling priority per spec
@@ -161,7 +164,7 @@ func (s *span) setTagNumeric(key string, v float64) ddtrace.Span {
 	default:
 		s.Metrics[key] = v
 	}
-	return s
+	return
 }
 
 // Finish closes this Span (but not its children) providing the duration
@@ -187,12 +190,12 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 }
 
 // SetOperationName sets or changes the operation name.
-func (s *span) SetOperationName(operationName string) ddtrace.Span {
+func (s *span) SetOperationName(operationName string) {
 	s.Lock()
 	defer s.Unlock()
 
 	s.Name = operationName
-	return s
+	return
 }
 
 func (s *span) finish(finishTime int64) {
