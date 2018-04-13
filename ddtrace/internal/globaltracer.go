@@ -40,16 +40,16 @@ var _ ddtrace.Span = (*NoopSpan)(nil)
 type NoopSpan struct{}
 
 // SetTag implements ddtrace.Span.
-func (NoopSpan) SetTag(key string, value interface{}) ddtrace.Span { return NoopSpan{} }
+func (NoopSpan) SetTag(key string, value interface{}) {}
 
 // SetOperationName implements ddtrace.Span.
-func (NoopSpan) SetOperationName(operationName string) ddtrace.Span { return NoopSpan{} }
+func (NoopSpan) SetOperationName(operationName string) {}
 
 // BaggageItem implements ddtrace.Span.
 func (NoopSpan) BaggageItem(key string) string { return "" }
 
 // SetBaggageItem implements ddtrace.Span.
-func (NoopSpan) SetBaggageItem(key, val string) ddtrace.Span { return NoopSpan{} }
+func (NoopSpan) SetBaggageItem(key, val string) {}
 
 // Finish implements ddtrace.Span.
 func (NoopSpan) Finish(opts ...ddtrace.FinishOption) {}

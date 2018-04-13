@@ -95,10 +95,10 @@ func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(p.config.serviceName),
 	)
-	return span.
-		SetTag("out.network", p.network).
-		SetTag(ext.TargetPort, p.port).
-		SetTag(ext.TargetHost, p.host)
+	span.SetTag("out.network", p.network)
+	span.SetTag(ext.TargetPort, p.port)
+	span.SetTag(ext.TargetHost, p.host)
+	return span
 }
 
 // Do wraps redis.Conn.Do. It sends a command to the Redis server and returns the received reply.

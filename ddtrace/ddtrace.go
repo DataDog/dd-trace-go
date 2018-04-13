@@ -23,17 +23,17 @@ type Tracer interface {
 // Span represents a computation.
 type Span interface {
 	// SetTag sets a given tag on the span.
-	SetTag(key string, value interface{}) Span
+	SetTag(key string, value interface{})
 
 	// SetOperationName resets the original operation name to the given one.
-	SetOperationName(operationName string) Span
+	SetOperationName(operationName string)
 
 	// BaggageItem returns the baggage item with the given key.
 	BaggageItem(key string) string
 
 	// SetBaggageItem sets a new baggage item at the given key. The baggage
 	// item should propagate to all descendant spans, both in- and cross-process.
-	SetBaggageItem(key, val string) Span
+	SetBaggageItem(key, val string)
 
 	// Finish finishes the current span with the given options.
 	Finish(opts ...FinishOption)

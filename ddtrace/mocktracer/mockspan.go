@@ -89,14 +89,14 @@ type mockspan struct {
 }
 
 // SetTag sets a given tag on the span.
-func (s *mockspan) SetTag(key string, value interface{}) ddtrace.Span {
+func (s *mockspan) SetTag(key string, value interface{}) {
 	s.Lock()
 	defer s.Unlock()
 	if s.tags == nil {
 		s.tags = make(map[string]interface{}, 1)
 	}
 	s.tags[key] = value
-	return s
+	return
 }
 
 func (s *mockspan) FinishTime() time.Time {
@@ -137,11 +137,11 @@ func (s *mockspan) OperationName() string {
 }
 
 // SetOperationName resets the original operation name to the given one.
-func (s *mockspan) SetOperationName(operationName string) ddtrace.Span {
+func (s *mockspan) SetOperationName(operationName string) {
 	s.Lock()
 	defer s.Unlock()
 	s.name = operationName
-	return s
+	return
 }
 
 // BaggageItem returns the baggage item with the given key.
@@ -151,9 +151,9 @@ func (s *mockspan) BaggageItem(key string) string {
 
 // SetBaggageItem sets a new baggage item at the given key. The baggage
 // item should propagate to all descendant spans, both in- and cross-process.
-func (s *mockspan) SetBaggageItem(key, val string) ddtrace.Span {
+func (s *mockspan) SetBaggageItem(key, val string) {
 	s.context.setBaggageItem(key, val)
-	return s
+	return
 }
 
 // Finish finishes the current span with the given options.

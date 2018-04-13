@@ -63,9 +63,8 @@ func TestNewSpan(t *testing.T) {
 
 func TestSpanSetTag(t *testing.T) {
 	s := basicSpan("http.request")
-	s.
-		SetTag("a", "b").
-		SetTag("c", "d")
+	s.SetTag("a", "b")
+	s.SetTag("c", "d")
 
 	assert := assert.New(t)
 	assert.Len(s.Tags(), 3)
