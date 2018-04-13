@@ -32,6 +32,11 @@ func (t *Tracer) StartSpan(operationName string, options ...ot.StartSpanOption) 
 	return t.startSpanWithOptions(operationName, sso)
 }
 
+// RootNameOptionsTag defines the StartSpanOptions tag key that will override
+// the default root span name, so that you the root span may have a different
+// span name and resource name
+const RootNameOptionsTag = "rootname"
+
 func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpanOptions) ot.Span {
 	if options.StartTime.IsZero() {
 		options.StartTime = time.Now().UTC()
@@ -58,8 +63,16 @@ func (t *Tracer) startSpanWithOptions(operationName string, options ot.StartSpan
 	}
 
 	if parent == nil {
-		// create a root Span with the default service name and resource
-		span = t.impl.NewRootSpan(operationName, t.config.ServiceName, operationName)
+
+		// create a root Span with the default service name and resource,
+		// customizable by setting an options.Tag with the RootNameOptionsTag
+		rootSpanName := operationName
+		if val, ok := options.Tags[RootNameOptionsTag]; ok {
+			if valS, ok := val.(string); ok && valS != "" {
+				rootSpanName = valS
+			}
+		}
+		span = t.impl.NewRootSpan(rootSpanName, t.config.ServiceName, operationName)
 
 		if hasParent {
 			// the Context doesn't have a Span reference because it
