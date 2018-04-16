@@ -72,7 +72,6 @@ func (s *span) Context() ddtrace.SpanContext { return s.context }
 // SetBaggageItem sets a key/value pair as baggage on the span.
 func (s *span) SetBaggageItem(key, val string) {
 	s.context.setBaggageItem(key, val)
-	return
 }
 
 // BaggageItem gets the value for a baggage item given its key. Returns the
@@ -107,7 +106,6 @@ func (s *span) SetTag(key string, value interface{}) {
 	// not numeric, not a string and not an error, the likelihood of this
 	// happening is close to zero, but we should nevertheless account for it.
 	s.Meta[key] = fmt.Sprint(value)
-	return
 }
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
@@ -136,7 +134,6 @@ func (s *span) setTagError(value interface{}) {
 		// is the result of an error.
 		s.Error = 1
 	}
-	return
 }
 
 // setTagString sets a string tag. This method is not safe for concurrent use.
@@ -151,7 +148,6 @@ func (s *span) setTagString(key, v string) {
 	default:
 		s.Meta[key] = v
 	}
-	return
 }
 
 // setTagNumeric sets a numeric tag, in our case called a metric. This method
@@ -164,7 +160,6 @@ func (s *span) setTagNumeric(key string, v float64) {
 	default:
 		s.Metrics[key] = v
 	}
-	return
 }
 
 // Finish closes this Span (but not its children) providing the duration
@@ -195,7 +190,6 @@ func (s *span) SetOperationName(operationName string) {
 	defer s.Unlock()
 
 	s.Name = operationName
-	return
 }
 
 func (s *span) finish(finishTime int64) {
