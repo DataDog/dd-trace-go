@@ -8,15 +8,11 @@ import (
 	opentracing "github.com/opentracing/opentracing-go"
 )
 
-// Start starts the tracer using the given options and registers it as the global
-// opentracing tracer using opentracing.SetGlobalTracer. After calling Start, you
-// may use the opentracing API as usual. Using this API in parallel with the tracer
-// API is fully supported as both implementations are using the same tracer under
-// the hood.
-func Start(opts ...tracer.StartOption) {
+// New creates, instantiates and returns an Opentracing compatible version of the
+// Datadog tracer using the provided set of options.
+func New(opts ...tracer.StartOption) opentracing.Tracer {
 	tracer.Start(opts...)
-	t := &opentracer{internal.GlobalTracer}
-	opentracing.SetGlobalTracer(t)
+	return &opentracer{internal.GlobalTracer}
 }
 
 var _ opentracing.Tracer = (*opentracer)(nil)

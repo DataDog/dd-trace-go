@@ -6,16 +6,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestStart(t *testing.T) {
 	assert := assert.New(t)
-	Start()
+	ot := New()
 	dd, ok := internal.GlobalTracer.(ddtrace.Tracer)
 	assert.True(ok)
-	ot, ok := opentracing.GlobalTracer().(*opentracer)
+	ott, ok := ot.(*opentracer)
 	assert.True(ok)
-	assert.Equal(ot.Tracer, dd)
+	assert.Equal(ott.Tracer, dd)
 }
