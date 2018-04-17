@@ -16,35 +16,11 @@ var _ ddtrace.Span = (*span)(nil)
 
 // span represents a computation. Callers must call Finish when a span is
 // complete to ensure it's submitted.
-//
-//	span := tracer.NewRootSpan("web.request", "datadog.com", "/user/{id}")
-//	defer span.Finish()  // or FinishWithErr(err)
-//
-// In general, spans should be created with the tracer.NewSpan* functions,
-// so they will be submitted on completion.
 type span struct {
-	// Name is the name of the operation being measured. Some examples
-	// might be "http.handler", "fileserver.upload" or "video.decompress".
-	// Name should be set on every span.
-	Name string `json:"name"`
-
-	// Service is the name of the process doing a particular job. Some
-	// examples might be "user-database" or "datadog-web-app". Services
-	// will be inherited from parents, so only set this in your app's
-	// top level span.
-	Service string `json:"service"`
-
-	// Resource is a query to a service. A web application might use
-	// resources like "/user/{user_id}". A sql database might use resources
-	// like "select * from user where id = ?".
-	//
-	// You can track thousands of resources (not millions or billions) so
-	// prefer normalized resources like "/user/{id}" to "/user/123".
-	//
-	// Resources should only be set on an app's top level spans.
-	Resource string `json:"resource"`
-
-	Type     string             `json:"type"`              // protocol associated with the span
+	Name     string             `json:"name"`              // operation name
+	Service  string             `json:"service"`           // service name (i.e. "grpc.server", "http.request")
+	Resource string             `json:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
+	Type     string             `json:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
 	Start    int64              `json:"start"`             // span start time expressed in nanoseconds since epoch
 	Duration int64              `json:"duration"`          // duration of the span expressed in nanoseconds
 	Meta     map[string]string  `json:"meta,omitempty"`    // arbitrary map of metadata
@@ -65,10 +41,13 @@ type span struct {
 }
 
 // Context yields the SpanContext for this Span. Note that the return
-// value of Context() is still valid after a call to Finish().
+// value of Context() is still valid after a call to Finish(). This is
+// called the span context and it is different from Go's context.
 func (s *span) Context() ddtrace.SpanContext { return s.context }
 
-// SetBaggageItem sets a key/value pair as baggage on the span.
+// SetBaggageItem sets a key/value pair as baggage on the span. Baggage items
+// are propagated down to descendant spans and injected cross-process. Use with
+// care as it adds extra load onto your tracing layer.
 func (s *span) SetBaggageItem(key, val string) {
 	s.context.setBaggageItem(key, val)
 }
@@ -79,8 +58,7 @@ func (s *span) BaggageItem(key string) string {
 	return s.context.baggageItem(key)
 }
 
-// SetTag adds a tag to the span, overwriting pre-existing values for
-// the given key.
+// SetTag adds a set of key/value metadata to the span.
 func (s *span) SetTag(key string, value interface{}) {
 	s.Lock()
 	defer s.Unlock()
@@ -162,10 +140,7 @@ func (s *span) setTagNumeric(key string, v float64) {
 }
 
 // Finish closes this Span (but not its children) providing the duration
-// of this part of the tracing session. This method is idempotent so
-// calling this method multiple times is safe and doesn't update the
-// current Span. Once a Span has been finished, methods that modify the Span
-// will become no-ops.
+// of its part of the tracing session.
 func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	var cfg ddtrace.FinishConfig
 	for _, fn := range opts {

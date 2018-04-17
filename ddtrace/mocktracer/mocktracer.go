@@ -1,3 +1,10 @@
+// Package mocktracer provides a mock implementation of the tracer used in testing. It
+// allows querying spans generated at runtime, without having them actually be sent to
+// an agent. It provides a simple way to test that instrumentation is running correctly
+// in your application.
+//
+// Simply call "Start" at the beginning of your tests to start and obtain an instance
+// of the mock tracer.
 package mocktracer
 
 import (
@@ -13,24 +20,25 @@ import (
 var _ ddtrace.Tracer = (*mocktracer)(nil)
 var _ Tracer = (*mocktracer)(nil)
 
-// Tracer exposes an interface for querying the currently running
-// mock tracer.
+// Tracer exposes an interface for querying the currently running mock tracer.
 type Tracer interface {
 	// FinishedSpans returns the set of finished spans.
 	FinishedSpans() []Span
 
-	// Reset resets the spans and services recorded in the tracer to zero.
+	// Reset resets the spans and services recorded in the tracer. This is
+	// especially useful when running tests in a loop, where a clean start
+	// is desired for FinishedSpans calls.
 	Reset()
 
-	// Stop sets the active tracer to a no-op. The mock tracer becomes
-	// inactive.
+	// Stop deactivates the mock tracer and allows a normal tracer to take over.
+	// It should always be called when testing has finished.
 	Stop()
 }
 
 // Start sets the internal tracer to a mock and returns an interface
 // which allows querying it. Call Start at the beginning of your tests
 // to activate the mock tracer. When your test runs, use the returned
-// interface to query your application's behaviour.
+// interface to query the tracer's state.
 func Start() Tracer {
 	var t mocktracer
 	internal.SetGlobalTracer(&t)

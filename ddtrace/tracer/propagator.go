@@ -9,28 +9,28 @@ import (
 // Propagator implementations should be able to inject and extract
 // SpanContexts into an implementation specific carrier.
 type Propagator interface {
-	// Inject takes the SpanContext and injects it into the carrier using
-	// an implementation specific method.
+	// Inject takes the SpanContext and injects it into the carrier.
 	Inject(context ddtrace.SpanContext, carrier interface{}) error
 
-	// Extract returns the spanContext from the given carrier using an
-	// implementation specific method.
+	// Extract returns the SpanContext from the given carrier.
 	Extract(carrier interface{}) (ddtrace.SpanContext, error)
 }
 
 // TextMapWriter allows setting key/value pairs of strings on the underlying
-// data structure.
+// data structure. Carriers implementing TextMapWriter are compatible to be
+// used with Datadog's TextMapPropagator.
 type TextMapWriter interface {
 	// Set sets the given key/value pair.
 	Set(key, val string)
 }
 
-// TextMapReader allows iterating over sets of key/value pairs.
+// TextMapReader allows iterating over sets of key/value pairs. Carriers implementing
+// TextMapReader are compatible to be used with Datadog's TextMapPropagator.
 type TextMapReader interface {
 	// ForeachKey iterates over all keys that exist in the underlying
-	// implementation. It takes a callback function which should be called
-	// using all key/value pairs as arguments. On the first error returned,
-	// ForeachKey should return that error.
+	// carrier. It takes a callback function which will be called
+	// using all key/value pairs as arguments. ForeachKey will return
+	// the first error returned by the handler.
 	ForeachKey(handler func(key, val string) error) error
 }
 

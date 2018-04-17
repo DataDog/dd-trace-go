@@ -9,8 +9,10 @@ import (
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
 
-// SpanContext represents span state that must propagate to descendant spans
-// and across process boundaries.
+// SpanContext represents a span state that can propagate to descendant spans
+// and across process boundaries. It contains all the information needed to
+// spawn a direct descendant of the span that it belongs to. It can be used
+// to create distributed tracing by propagating it using the provided interfaces.
 type spanContext struct {
 	// the below group should propagate only locally
 
@@ -55,7 +57,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	return context
 }
 
-// ForeachBaggageItem implements SpanContext
+// ForeachBaggageItem implements SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -142,5 +144,5 @@ func (t *trace) ackFinish() {
 		tr.pushTrace(t.spans)
 	}
 	t.spans = nil
-	t.finished = 0 // important, because a buffer can be used for several flushes
+	t.finished = 0
 }

@@ -8,7 +8,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
-// HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader.
+// HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader, allowing
+// it to be used using the provided Propagator implementation.
 type HTTPHeadersCarrier http.Header
 
 var _ TextMapWriter = (*HTTPHeadersCarrier)(nil)
@@ -32,8 +33,8 @@ func (c HTTPHeadersCarrier) ForeachKey(handler func(key, val string) error) erro
 	return nil
 }
 
-// TextMapCarrier allows the use of a regular map[string]string
-// as both TextMapWriter and TextMapReader.
+// TextMapCarrier allows the use of a regular map[string]string as both TextMapWriter
+// and TextMapReader, making it compatible with the provided Propagator.
 type TextMapCarrier map[string]string
 
 var _ TextMapWriter = (*TextMapCarrier)(nil)
@@ -66,6 +67,8 @@ const (
 // keys along with the trace and parent header. Empty strings may be provided
 // to use the defaults, which are: "ot-baggage-" as prefix for baggage headers,
 // "x-datadog-trace-id" and "x-datadog-parent-id" for trace and parent ID headers.
+//
+// Note: the signature of this method will be changed soon. // TODO(gbbr)
 func NewPropagator(baggagePrefix, traceHeader, parentHeader string) Propagator {
 	if baggagePrefix == "" {
 		baggagePrefix = defaultBaggageHeaderPrefix
