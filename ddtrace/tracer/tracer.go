@@ -304,7 +304,7 @@ func (t *tracer) flushTraces() {
 		// we couldn't send the payload and it is getting too big to be
 		// accepted by the agent, we have to drop it.
 		t.payload.reset()
-		t.pushError(&dataLossError{context: err, count: t.payload.itemCount()})
+		t.pushError(&dataLossError{context: err, count: count})
 	}
 	if err == nil {
 		// send succeeded

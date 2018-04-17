@@ -1,9 +1,12 @@
-// Package ddtrace holds the interfaces and structures shared by Datadog's tracer packages.
+// Package ddtrace contains a set of implementations of the Datadog tracer. It contains
+// our native implementation, an implementation that can be used with Opentracing and a
+// mock tracer that to be used for testing.
 package ddtrace // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
 import "time"
 
-// Tracer describes the form of the Datadog tracer.
+// Tracer specifies an implementation of the Datadog tracer which allows starting
+// and propagating spans.
 type Tracer interface {
 	// StartSpan starts a span with the given operation name and options.
 	StartSpan(operationName string, opts ...StartSpanOption) Span
