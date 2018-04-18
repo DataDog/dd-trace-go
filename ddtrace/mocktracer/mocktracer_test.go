@@ -14,14 +14,14 @@ import (
 
 func TestStart(t *testing.T) {
 	trc := Start()
-	if tt, ok := internal.GlobalTracer.(Tracer); !ok || tt != trc {
+	if tt, ok := internal.GetGlobalTracer().(Tracer); !ok || tt != trc {
 		t.Fail()
 	}
 }
 
 func TestTracerStop(t *testing.T) {
 	Start().Stop()
-	if _, ok := internal.GlobalTracer.(*internal.NoopTracer); !ok {
+	if _, ok := internal.GetGlobalTracer().(*internal.NoopTracer); !ok {
 		t.Fail()
 	}
 }

@@ -1,10 +1,29 @@
 package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
-import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+import (
+	"sync"
 
-// GlobalTracer holds the currently active tracer. It's "zero value" should
-// always be the NoopTracer.
-var GlobalTracer ddtrace.Tracer = &NoopTracer{}
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+)
+
+var (
+	mu           sync.RWMutex   // guards globalTracer
+	globalTracer ddtrace.Tracer = &NoopTracer{}
+)
+
+// SetGlobalTracer sets the global tracer to t.
+func SetGlobalTracer(t ddtrace.Tracer) {
+	mu.Lock()
+	defer mu.Unlock()
+	globalTracer = t
+}
+
+// GetGlobalTracer returns the currently active tracer.
+func GetGlobalTracer() ddtrace.Tracer {
+	mu.RLock()
+	defer mu.RUnlock()
+	return globalTracer
+}
 
 // Testing is set to true when the mock tracer is active. It usually signifies that we are in a test
 // environment. This value is used by tracer.Start to prevent overriding the GlobalTracer in tests.

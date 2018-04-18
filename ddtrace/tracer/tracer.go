@@ -62,14 +62,13 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
-	internal.GlobalTracer.Stop()
-	internal.GlobalTracer = newTracer(opts...)
+	internal.GetGlobalTracer().Stop()
+	internal.SetGlobalTracer(newTracer(opts...))
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
-	internal.GlobalTracer.Stop()
-	internal.GlobalTracer = &internal.NoopTracer{}
+	internal.SetGlobalTracer(&internal.NoopTracer{})
 }
 
 // Span is an alias for ddtrace.Span. It is here to allow godoc to group methods returning
@@ -79,21 +78,21 @@ type Span = ddtrace.Span
 // StartSpan starts a new span with the given operation name and set of options.
 // If the tracer is not started calling this function is a no-op.
 func StartSpan(operationName string, opts ...StartSpanOption) Span {
-	return internal.GlobalTracer.StartSpan(operationName, opts...)
+	return internal.GetGlobalTracer().StartSpan(operationName, opts...)
 }
 
 // Extract extracts a SpanContext from the passed carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started calling this function is a no-op.
 func Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	return internal.GlobalTracer.Extract(carrier)
+	return internal.GetGlobalTracer().Extract(carrier)
 }
 
 // Inject injects the given SpanContext into the carrier. The carrier is expected to
 // implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started calling this function is a no-op.
 func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
-	return internal.GlobalTracer.Inject(ctx, carrier)
+	return internal.GetGlobalTracer().Inject(ctx, carrier)
 }
 
 const (
@@ -165,7 +164,24 @@ func (t *tracer) worker() {
 	}
 }
 
+// isStopped will return true if the worker is not running.
+func (t *tracer) isStopped() bool {
+	select {
+	case <-t.stopped:
+		return true
+	default:
+		return false
+	}
+
+}
+
 func (t *tracer) pushTrace(trace []*span) {
+	if t.isStopped() {
+		// the call may be from a span context's trace holding a reference to a
+		// stopped tracer, abort. We can not handle the call because the worker
+		// is not running.
+		return
+	}
 	select {
 	case t.payloadQueue <- trace:
 	default:
@@ -181,6 +197,12 @@ func (t *tracer) pushTrace(trace []*span) {
 }
 
 func (t *tracer) pushError(err error) {
+	if t.isStopped() {
+		// the call may be from a span context holding a reference to a
+		// stopped tracer, abort. We can not handle the call because
+		// the worker is not running.
+		return
+	}
 	if len(t.errorBuffer) >= cap(t.errorBuffer)/2 { // starts being full, anticipate, try and flush soon
 		select {
 		case t.flushErrorsReq <- struct{}{}:
@@ -271,13 +293,12 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 
 // Stop stops the tracer.
 func (t *tracer) Stop() {
-	select {
-	case <-t.stopped:
-		return // already stopped
-	default:
-		t.exitReq <- struct{}{}
-		<-t.stopped
+	if t.isStopped() {
+		// already stopped
+		return
 	}
+	t.exitReq <- struct{}{}
+	<-t.stopped
 }
 
 // Inject uses the configured or default TextMap Propagator.
@@ -326,6 +347,10 @@ func (t *tracer) flush() {
 // Flushes are done by a background task on a regular basis, so you never
 // need to call this manually, mostly useful for testing and debugging.
 func (t *tracer) forceFlush() {
+	if t.isStopped() {
+		// make sure there is someone to pick up the phone
+		return
+	}
 	done := make(chan struct{})
 	t.flushAllReq <- done
 	<-done

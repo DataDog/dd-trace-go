@@ -92,6 +92,7 @@ func (p *payload) reset() {
 	p.off = 8
 	p.count = 0
 	p.buf.Reset()
+	p.encoder.Reset(&p.buf)
 }
 
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
