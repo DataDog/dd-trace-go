@@ -33,7 +33,7 @@ func TestSpanFromContext(t *testing.T) {
 func TestStartSpanFromContext(t *testing.T) {
 	tracer, _ := getTestTracer()
 	defer tracer.Stop()
-	internal.GlobalTracer = tracer
+	internal.SetGlobalTracer(tracer)
 
 	parent := &span{context: &spanContext{spanID: 123, traceID: 456}}
 	pctx := ContextWithSpan(context.Background(), parent)

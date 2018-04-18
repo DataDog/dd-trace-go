@@ -28,11 +28,42 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 	return t.StartSpan(name, ChildOf(parent.Context())).(*span)
 }
 
+// TestTracerFrenetic does frenetic testing in a scenario where the tracer is started
+// and stopped in parallel with spans being created.
+func TestTracerFrenetic(t *testing.T) {
+	var wg sync.WaitGroup
+
+	n := 1 << 17
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < n; i++ {
+			Stop()
+		}
+	}()
+
+	wg.Add(n + 1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < n; i++ {
+			span := StartSpan("test.span")
+			go func(span Span) {
+				defer wg.Done()
+				time.Sleep(time.Millisecond)
+				span.Finish()
+			}(span)
+		}
+	}()
+
+	wg.Wait()
+}
+
 func TestTracerStart(t *testing.T) {
 	t.Run("normal", func(t *testing.T) {
 		Start()
 		defer Stop()
-		if _, ok := internal.GlobalTracer.(*tracer); !ok {
+		if _, ok := internal.GetGlobalTracer().(*tracer); !ok {
 			t.Fail()
 		}
 	})
@@ -41,10 +72,10 @@ func TestTracerStart(t *testing.T) {
 		internal.Testing = true
 		Start()
 		defer Stop()
-		if _, ok := internal.GlobalTracer.(*tracer); ok {
+		if _, ok := internal.GetGlobalTracer().(*tracer); ok {
 			t.Fail()
 		}
-		if _, ok := internal.GlobalTracer.(*internal.NoopTracer); !ok {
+		if _, ok := internal.GetGlobalTracer().(*internal.NoopTracer); !ok {
 			t.Fail()
 		}
 		internal.Testing = false
@@ -59,7 +90,7 @@ func TestTracerStart(t *testing.T) {
 		Start()
 
 		// ensure at least one worker started and handles requests
-		internal.GlobalTracer.(*tracer).forceFlush()
+		internal.GetGlobalTracer().(*tracer).forceFlush()
 
 		Stop()
 		Stop()

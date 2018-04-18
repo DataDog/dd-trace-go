@@ -12,7 +12,7 @@ import (
 // Datadog tracer using the provided set of options.
 func New(opts ...tracer.StartOption) opentracing.Tracer {
 	tracer.Start(opts...)
-	return &opentracer{internal.GlobalTracer}
+	return &opentracer{internal.GetGlobalTracer()}
 }
 
 var _ opentracing.Tracer = (*opentracer)(nil)

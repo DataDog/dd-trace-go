@@ -62,14 +62,13 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
-	internal.GlobalTracer.Stop()
-	internal.GlobalTracer = newTracer(opts...)
+	internal.GetGlobalTracer().Stop()
+	internal.SetGlobalTracer(newTracer(opts...))
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
-	internal.GlobalTracer.Stop()
-	internal.GlobalTracer = &internal.NoopTracer{}
+	internal.SetGlobalTracer(&internal.NoopTracer{})
 }
 
 // Span is an alias for ddtrace.Span. It is here to allow godoc to group methods returning
@@ -79,21 +78,21 @@ type Span = ddtrace.Span
 // StartSpan starts a new span with the given operation name and set of options.
 // If the tracer is not started calling this function is a no-op.
 func StartSpan(operationName string, opts ...StartSpanOption) Span {
-	return internal.GlobalTracer.StartSpan(operationName, opts...)
+	return internal.GetGlobalTracer().StartSpan(operationName, opts...)
 }
 
 // Extract extracts a SpanContext from the passed carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started calling this function is a no-op.
 func Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	return internal.GlobalTracer.Extract(carrier)
+	return internal.GetGlobalTracer().Extract(carrier)
 }
 
 // Inject injects the given SpanContext into the carrier. The carrier is expected to
 // implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started calling this function is a no-op.
 func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
-	return internal.GlobalTracer.Inject(ctx, carrier)
+	return internal.GetGlobalTracer().Inject(ctx, carrier)
 }
 
 const (

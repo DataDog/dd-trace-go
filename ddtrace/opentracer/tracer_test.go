@@ -12,7 +12,7 @@ import (
 func TestStart(t *testing.T) {
 	assert := assert.New(t)
 	ot := New()
-	dd, ok := internal.GlobalTracer.(ddtrace.Tracer)
+	dd, ok := internal.GetGlobalTracer().(ddtrace.Tracer)
 	assert.True(ok)
 	ott, ok := ot.(*opentracer)
 	assert.True(ok)

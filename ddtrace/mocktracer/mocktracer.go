@@ -33,7 +33,7 @@ type Tracer interface {
 // interface to query your application's behaviour.
 func Start() Tracer {
 	var t mocktracer
-	internal.GlobalTracer = &t
+	internal.SetGlobalTracer(&t)
 	internal.Testing = true
 	return &t
 }
@@ -45,7 +45,7 @@ type mocktracer struct {
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
 func (*mocktracer) Stop() {
-	internal.GlobalTracer = &internal.NoopTracer{}
+	internal.SetGlobalTracer(&internal.NoopTracer{})
 	internal.Testing = false
 }
 
