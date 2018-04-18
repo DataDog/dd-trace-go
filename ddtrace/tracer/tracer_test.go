@@ -32,27 +32,45 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 // and stopped in parallel with spans being created.
 func TestTracerFrenetic(t *testing.T) {
 	var wg sync.WaitGroup
+	var transport dummyTransport
 
-	n := 1 << 17
+	n := 5000
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < n; i++ {
+			span := StartSpan("test.span")
+			time.Sleep(time.Millisecond)
+			span.Finish()
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < n; i++ {
+			Start(withTransport(&transport))
+			Start(withTransport(&transport))
+			Start(withTransport(&transport))
+			time.Sleep(time.Millisecond)
+			Start(withTransport(&transport))
+			Start(withTransport(&transport))
+			Start(withTransport(&transport))
+		}
+	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
 			Stop()
-		}
-	}()
-
-	wg.Add(n + 1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < n; i++ {
-			span := StartSpan("test.span")
-			go func(span Span) {
-				defer wg.Done()
-				time.Sleep(time.Millisecond)
-				span.Finish()
-			}(span)
+			Stop()
+			Stop()
+			time.Sleep(time.Millisecond)
+			Stop()
+			Stop()
+			Stop()
 		}
 	}()
 

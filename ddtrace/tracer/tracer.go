@@ -164,7 +164,24 @@ func (t *tracer) worker() {
 	}
 }
 
+// isStopped will return true if the worker is not running.
+func (t *tracer) isStopped() bool {
+	select {
+	case <-t.stopped:
+		return true
+	default:
+		return false
+	}
+
+}
+
 func (t *tracer) pushTrace(trace []*span) {
+	if t.isStopped() {
+		// the call may be from a span context's trace holding a reference to a
+		// stopped tracer, abort. We can not handle the call because the worker
+		// is not running.
+		return
+	}
 	select {
 	case t.payloadQueue <- trace:
 	default:
@@ -180,6 +197,12 @@ func (t *tracer) pushTrace(trace []*span) {
 }
 
 func (t *tracer) pushError(err error) {
+	if t.isStopped() {
+		// the call may be from a span context holding a reference to a
+		// stopped tracer, abort. We can not handle the call because
+		// the worker is not running.
+		return
+	}
 	if len(t.errorBuffer) >= cap(t.errorBuffer)/2 { // starts being full, anticipate, try and flush soon
 		select {
 		case t.flushErrorsReq <- struct{}{}:
@@ -270,13 +293,12 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 
 // Stop stops the tracer.
 func (t *tracer) Stop() {
-	select {
-	case <-t.stopped:
-		return // already stopped
-	default:
-		t.exitReq <- struct{}{}
-		<-t.stopped
+	if t.isStopped() {
+		// already stopped
+		return
 	}
+	t.exitReq <- struct{}{}
+	<-t.stopped
 }
 
 // Inject uses the configured or default TextMap Propagator.
@@ -325,6 +347,10 @@ func (t *tracer) flush() {
 // Flushes are done by a background task on a regular basis, so you never
 // need to call this manually, mostly useful for testing and debugging.
 func (t *tracer) forceFlush() {
+	if t.isStopped() {
+		// make sure there is someone to pick up the phone
+		return
+	}
 	done := make(chan struct{})
 	t.flushAllReq <- done
 	<-done

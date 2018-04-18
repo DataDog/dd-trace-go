@@ -11,12 +11,14 @@ var (
 	globalTracer ddtrace.Tracer = &NoopTracer{}
 )
 
+// SetGlobalTracer sets the global tracer to t.
 func SetGlobalTracer(t ddtrace.Tracer) {
 	mu.Lock()
 	defer mu.Unlock()
 	globalTracer = t
 }
 
+// GetGlobalTracer returns the currently active tracer.
 func GetGlobalTracer() ddtrace.Tracer {
 	mu.RLock()
 	defer mu.RUnlock()
