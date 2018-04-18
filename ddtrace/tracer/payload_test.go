@@ -17,16 +17,14 @@ func TestPayloadIntegrity(t *testing.T) {
 	assert := assert.New(t)
 	p := newPayload()
 	want := new(bytes.Buffer)
-	for _, items := range [][]interface{}{
-		{1, 2, 3},
-		{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-		{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17},
-	} {
+	for _, n := range []int{10, 1 << 10, 1 << 17} {
 		p.reset()
-		for _, v := range items {
-			p.push(v)
+		items := make([]int, n)
+		for i := 0; i < n; i++ {
+			items[i] = i
+			p.push(i)
 		}
-		assert.Equal(p.itemCount(), len(items))
+		assert.Equal(p.itemCount(), n)
 		got, err := ioutil.ReadAll(p)
 		assert.NoError(err)
 		want.Reset()
@@ -41,42 +39,38 @@ func TestPayloadIntegrity(t *testing.T) {
 func TestPayloadDecodeInts(t *testing.T) {
 	assert := assert.New(t)
 	p := newPayload()
-	for _, items := range [][]int64{
-		{1, 2, 3},
-		{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-		{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17},
-	} {
+	for _, n := range []int{10, 1 << 10, 1 << 17} {
 		p.reset()
-		for _, v := range items {
-			p.push(v)
+		want := make([]int, n)
+		for i := 0; i < n; i++ {
+			want[i] = i
+			p.push(i)
 		}
-		var got []int64
+		var got []int
 		err := codec.NewDecoder(p, &codec.MsgpackHandle{}).Decode(&got)
 		assert.NoError(err)
-		assert.Equal(items, got)
+		assert.Equal(want, got)
 	}
 }
 
-// TestPayloadDecodetests that whatever we push into the payload can
+// TestPayloadDecode ensures that whatever we push into the payload can
 // be decoded by the codec.
 func TestPayloadDecode(t *testing.T) {
 	assert := assert.New(t)
 	p := newPayload()
 	type AB struct{ A, B int }
 	x := AB{1, 2}
-	for _, items := range [][]AB{
-		{x, x, x},
-		{x, x, x, x, x, x, x, x, x, x, x, x, x, x},
-		{x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x, x},
-	} {
+	for _, n := range []int{10, 1 << 10, 1 << 17} {
 		p.reset()
-		for _, v := range items {
-			p.push(v)
+		want := make([]AB, n)
+		for i := 0; i < n; i++ {
+			want[i] = x
+			p.push(x)
 		}
 		var got []AB
 		err := codec.NewDecoder(p, &codec.MsgpackHandle{}).Decode(&got)
 		assert.NoError(err)
-		assert.Equal(items, got)
+		assert.Equal(want, got)
 	}
 }
 
@@ -84,17 +78,19 @@ func TestPayloadDecode(t *testing.T) {
 // regular msgpack encoder.
 func TestPayloadSize(t *testing.T) {
 	p := newPayload()
-	n := 1000
-	nums := make([]int, n)
-	for i := 0; i < n; i++ {
-		nums[i] = i
-		p.push(i)
+	for _, n := range []int{10, 1 << 10, 1 << 17} {
+		p.reset()
+		nums := make([]int, n)
+		for i := 0; i < n; i++ {
+			nums[i] = i
+			p.push(i)
+		}
+		var buf bytes.Buffer
+		err := codec.NewEncoder(&buf, &codec.MsgpackHandle{}).Encode(nums)
+		assert.Nil(t, err)
+		assert.NotZero(t, p.size())
+		assert.Equal(t, buf.Len(), p.size())
 	}
-	var buf bytes.Buffer
-	err := codec.NewEncoder(&buf, &codec.MsgpackHandle{}).Encode(nums)
-	assert.Nil(t, err)
-	assert.NotZero(t, p.size())
-	assert.Equal(t, buf.Len(), p.size())
 }
 
 func BenchmarkPayloadThroughput(b *testing.B) {

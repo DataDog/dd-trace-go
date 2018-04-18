@@ -15,7 +15,7 @@ import (
 // from the msgpack array spec:
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
 //
-// payload implements io.Reader an can be used with the decoder directly. To create
+// payload implements io.Reader and can be used with the decoder directly. To create
 // a new payload use the newPayload method.
 //
 // payload is not safe for concurrent use.
@@ -31,14 +31,17 @@ import (
 //   var numbers []int
 //   codec.NewDecoder(p, &codec.MsgpackHandler{}).Decode(&numbers)
 //   // numbers == []int{1, 2, 3}
+//
+// This structure basically allows us to push traces into the payload one at a time
+// in order to always have knowledge of the payload size, but also making it possible
+// for the agent to decode it as an array.
 type payload struct {
 	// header specifies the first few bytes in the msgpack stream
 	// indicating the type of array (fixarray, array16 or array32)
 	// and the number of items contained in the stream.
 	header []byte
 
-	// off specifies how many bytes of the header have been read by
-	// the reader.
+	// off specifies the current read position on the header.
 	off int
 
 	// count specifies the number of items in the stream.
@@ -55,9 +58,12 @@ var _ io.Reader = (*payload)(nil)
 
 // newPayload returns a ready to use payload.
 func newPayload() *payload {
-	var p payload
+	p := &payload{
+		header: make([]byte, 8),
+		off:    8,
+	}
 	p.encoder = codec.NewEncoder(&p.buf, &codec.MsgpackHandle{})
-	return &p
+	return p
 }
 
 // push pushes a new item into the stream.
@@ -75,40 +81,42 @@ func (p *payload) itemCount() int {
 	return int(p.count)
 }
 
-// size returns the payload size in bytes.
+// size returns the payload size in bytes. After the first read the value becomes
+// inaccurate by up to 8 bytes.
 func (p *payload) size() int {
-	return p.buf.Len() + len(p.header)
+	return p.buf.Len() + len(p.header) - p.off
 }
 
-// reset resets the internal buffer, counter, read offset and header,
-// but keeps the encoder.
+// reset resets the internal buffer, counter and read offset.
 func (p *payload) reset() {
-	p.header = []byte{}
-	p.off = 0
+	p.off = 8
 	p.count = 0
 	p.buf.Reset()
 }
 
+// https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
+const (
+	msgpackArrayFix byte = 144  // up to 15 items
+	msgpackArray16       = 0xdc // up to 2^16-1 items, followed by size in 2 bytes
+	msgpackArray32       = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
+)
+
 // updateHeader updates the payload header based on the number of items currently
 // present in the stream.
 func (p *payload) updateHeader() {
-	// https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
-	const (
-		msgpackArrayFix byte = 144  // up to 15 items
-		msgpackArray16       = 0xdc // up to 2^16-1 items, followed by size in 2 bytes
-		msgpackArray32       = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
-	)
 	n := p.count
-	if n <= 15 {
-		p.header = []byte{msgpackArrayFix + byte(n)}
-		return
-	}
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, n)
-	if n <= 1<<16-1 {
-		p.header = append([]byte{msgpackArray16}, b[len(b)-2:]...)
-	} else {
-		p.header = append([]byte{msgpackArray32}, b[len(b)-4:]...)
+	switch {
+	case n <= 15:
+		p.header[7] = msgpackArrayFix + byte(n)
+		p.off = 7
+	case n <= 1<<16-1:
+		binary.BigEndian.PutUint64(p.header, n) // writes 2 bytes
+		p.header[5] = msgpackArray16
+		p.off = 5
+	default: // n <= 1<<32-1
+		binary.BigEndian.PutUint64(p.header, n) // writes 4 bytes
+		p.header[3] = msgpackArray32
+		p.off = 3
 	}
 }
 
