@@ -172,7 +172,6 @@ func (t *tracer) isStopped() bool {
 	default:
 		return false
 	}
-
 }
 
 func (t *tracer) pushTrace(trace []*span) {
