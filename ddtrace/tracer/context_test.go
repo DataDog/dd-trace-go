@@ -4,8 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,9 +29,8 @@ func TestSpanFromContext(t *testing.T) {
 }
 
 func TestStartSpanFromContext(t *testing.T) {
-	tracer, _ := getTestTracer()
-	defer tracer.Stop()
-	internal.SetGlobalTracer(tracer)
+	_, _, stop := startTestTracer()
+	defer stop()
 
 	parent := &span{context: &spanContext{spanID: 123, traceID: 456}}
 	pctx := ContextWithSpan(context.Background(), parent)
