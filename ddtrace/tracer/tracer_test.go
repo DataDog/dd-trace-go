@@ -30,31 +30,33 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 
 // TestTracerFrenetic does frenetic testing in a scenario where the tracer is started
 // and stopped in parallel with spans being created.
-func TestTracerFrenetic(t *testing.T) {
+func TestTracerCleanStop(t *testing.T) {
 	var wg sync.WaitGroup
 	var transport dummyTransport
 
 	n := 5000
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < n; i++ {
-			span := StartSpan("test.span")
-			time.Sleep(time.Millisecond)
-			span.Finish()
-		}
-	}()
+	wg.Add(3)
+	for j := 0; j < 3; j++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < n; i++ {
+				span := StartSpan("test.span")
+				child := StartSpan("child.span", ChildOf(span.Context()))
+				time.Sleep(time.Millisecond)
+				child.Finish()
+				time.Sleep(time.Millisecond)
+				span.Finish()
+			}
+		}()
+	}
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
 			Start(withTransport(&transport))
-			Start(withTransport(&transport))
-			Start(withTransport(&transport))
 			time.Sleep(time.Millisecond)
-			Start(withTransport(&transport))
 			Start(withTransport(&transport))
 			Start(withTransport(&transport))
 		}
@@ -117,7 +119,8 @@ func TestTracerStart(t *testing.T) {
 	})
 
 	t.Run("deadlock/direct", func(t *testing.T) {
-		tr, _ := getTestTracer()
+		tr, _, stop := startTestTracer()
+		defer stop()
 		go tr.worker()
 		tr.forceFlush() // blocks until worker is started
 		select {
@@ -147,7 +150,6 @@ func TestTracerStartSpan(t *testing.T) {
 	assert.Equal(uint64(0), span.ParentID)
 	assert.Equal("web.request", span.Name)
 	assert.Equal("tracer.test", span.Service)
-	assert.NotNil(span.tracer)
 }
 
 func TestTracerStartSpanOptions(t *testing.T) {
@@ -306,9 +308,6 @@ func TestNewSpanChild(t *testing.T) {
 	assert.Equal(parent.Service, child.Service)
 	// the resource is not inherited and defaults to the name
 	assert.Equal("redis.command", child.Resource)
-	// the tracer instance is the same
-	assert.Equal(tracer, parent.tracer)
-	assert.Equal(tracer, child.tracer)
 }
 
 func TestNewRootSpanHasPid(t *testing.T) {
@@ -353,17 +352,17 @@ func TestTracerEdgeSampler(t *testing.T) {
 	assert := assert.New(t)
 
 	// a sample rate of 0 should sample nothing
-	tracer0, _ := getTestTracer(
+	tracer0, _, stop := startTestTracer(
 		withTransport(newDefaultTransport()),
 		WithSampler(NewRateSampler(0)),
 	)
-	defer tracer0.Stop()
+	defer stop()
 	// a sample rate of 1 should sample everything
-	tracer1, _ := getTestTracer(
+	tracer1, _, stop := startTestTracer(
 		withTransport(newDefaultTransport()),
 		WithSampler(NewRateSampler(1)),
 	)
-	defer tracer1.Stop()
+	defer stop()
 
 	count := payloadQueueSize / 3
 
@@ -380,8 +379,8 @@ func TestTracerEdgeSampler(t *testing.T) {
 
 func TestTracerConcurrent(t *testing.T) {
 	assert := assert.New(t)
-	tracer, transport := getTestTracer()
-	defer tracer.Stop()
+	tracer, transport, stop := startTestTracer()
+	defer stop()
 
 	// Wait for three different goroutines that should create
 	// three different traces with one child each
@@ -411,8 +410,8 @@ func TestTracerConcurrent(t *testing.T) {
 
 func TestTracerParentFinishBeforeChild(t *testing.T) {
 	assert := assert.New(t)
-	tracer, transport := getTestTracer()
-	defer tracer.Stop()
+	tracer, transport, stop := startTestTracer()
+	defer stop()
 
 	// Testing an edge case: a child refers to a parent that is already closed.
 
@@ -439,8 +438,8 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 
 func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	assert := assert.New(t)
-	tracer, transport := getTestTracer()
-	defer tracer.Stop()
+	tracer, transport, stop := startTestTracer()
+	defer stop()
 
 	// Wait for two different goroutines that should create
 	// two traces with two children each
@@ -471,8 +470,8 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 
 func TestTracerAtomicFlush(t *testing.T) {
 	assert := assert.New(t)
-	tracer, transport := getTestTracer()
-	defer tracer.Stop()
+	tracer, transport, stop := startTestTracer()
+	defer stop()
 
 	// Make sure we don't flush partial bits of traces
 	root := tracer.newRootSpan("pylons.request", "pylons", "/")
@@ -498,8 +497,8 @@ func TestTracerAtomicFlush(t *testing.T) {
 func TestTracerRace(t *testing.T) {
 	assert := assert.New(t)
 
-	tracer, transport := getTestTracer()
-	defer tracer.Stop()
+	tracer, transport, stop := startTestTracer()
+	defer stop()
 
 	total := payloadQueueSize / 3
 	var wg sync.WaitGroup
@@ -604,8 +603,8 @@ func TestTracerRace(t *testing.T) {
 func TestWorker(t *testing.T) {
 	assert := assert.New(t)
 
-	tracer, transport := getTestTracer()
-	defer tracer.Stop()
+	tracer, transport, stop := startTestTracer()
+	defer stop()
 
 	n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
 	for i := 0; i < n; i++ {
@@ -720,8 +719,8 @@ func TestPushErr(t *testing.T) {
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
-	tracer, _ := getTestTracer(WithSampler(NewRateSampler(0)))
-	defer tracer.Stop()
+	tracer, _, stop := startTestTracer(WithSampler(NewRateSampler(0)))
+	defer stop()
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
@@ -739,8 +738,8 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 // BenchmarkTracerAddSpans tests the performance of creating and finishing a root
 // span. It should include the encoding overhead.
 func BenchmarkTracerAddSpans(b *testing.B) {
-	tracer, _ := getTestTracer(WithSampler(NewRateSampler(0)))
-	defer tracer.Stop()
+	tracer, _, stop := startTestTracer(WithSampler(NewRateSampler(0)))
+	defer stop()
 
 	for n := 0; n < b.N; n++ {
 		span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
@@ -748,13 +747,17 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	}
 }
 
-// getTestTracer returns a Tracer with a DummyTransport
-func getTestTracer(opts ...StartOption) (*tracer, *dummyTransport) {
+// startTestTracer returns a Tracer with a DummyTransport
+func startTestTracer(opts ...StartOption) (*tracer, *dummyTransport, func()) {
 	transport := &dummyTransport{}
 	o := append([]StartOption{withTransport(transport)}, opts...)
 	tracer := newTracer(o...)
 	tracer.syncPush = make(chan struct{})
-	return tracer, transport
+	internal.SetGlobalTracer(tracer)
+	return tracer, transport, func() {
+		internal.SetGlobalTracer(&internal.NoopTracer{})
+		tracer.Stop()
+	}
 }
 
 // Mock Transport with a real Encoder

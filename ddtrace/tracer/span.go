@@ -55,8 +55,7 @@ type span struct {
 	Error    int32              `json:"error"`             // error status of the span; 0 means no errors
 
 	sync.RWMutex
-	tracer   *tracer // the tracer that generated this span
-	finished bool    // true if the span has been submitted to a tracer.
+	finished bool // true if the span has been submitted to a tracer.
 
 	// parent contains a link to the parent. In most cases, ParentID can be inferred from this.
 	// However, ParentID can technically be overridden (typical usage: distributed tracing)

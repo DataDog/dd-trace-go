@@ -62,8 +62,9 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
-	internal.GetGlobalTracer().Stop()
+	t := internal.GetGlobalTracer()
 	internal.SetGlobalTracer(newTracer(opts...))
+	t.Stop()
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -164,22 +165,11 @@ func (t *tracer) worker() {
 	}
 }
 
-// isStopped will return true if the worker is not running.
-func (t *tracer) isStopped() bool {
+func (t *tracer) pushTrace(trace []*span) {
 	select {
 	case <-t.stopped:
-		return true
-	default:
-		return false
-	}
-}
-
-func (t *tracer) pushTrace(trace []*span) {
-	if t.isStopped() {
-		// the call may be from a span context's trace holding a reference to a
-		// stopped tracer, abort. We can not handle the call because the worker
-		// is not running.
 		return
+	default:
 	}
 	select {
 	case t.payloadQueue <- trace:
@@ -196,11 +186,10 @@ func (t *tracer) pushTrace(trace []*span) {
 }
 
 func (t *tracer) pushError(err error) {
-	if t.isStopped() {
-		// the call may be from a span context holding a reference to a
-		// stopped tracer, abort. We can not handle the call because
-		// the worker is not running.
+	select {
+	case <-t.stopped:
 		return
+	default:
 	}
 	if len(t.errorBuffer) >= cap(t.errorBuffer)/2 { // starts being full, anticipate, try and flush soon
 		select {
@@ -248,7 +237,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		TraceID:  id,
 		ParentID: 0,
 		Start:    startTime,
-		tracer:   t,
 	}
 	if context != nil {
 		// this is a child span
@@ -292,12 +280,13 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 
 // Stop stops the tracer.
 func (t *tracer) Stop() {
-	if t.isStopped() {
-		// already stopped
+	select {
+	case <-t.stopped:
 		return
+	default:
+		t.exitReq <- struct{}{}
+		<-t.stopped
 	}
-	t.exitReq <- struct{}{}
-	<-t.stopped
 }
 
 // Inject uses the configured or default TextMap Propagator.
@@ -346,10 +335,6 @@ func (t *tracer) flush() {
 // Flushes are done by a background task on a regular basis, so you never
 // need to call this manually, mostly useful for testing and debugging.
 func (t *tracer) forceFlush() {
-	if t.isStopped() {
-		// make sure there is someone to pick up the phone
-		return
-	}
 	done := make(chan struct{})
 	t.flushAllReq <- done
 	<-done

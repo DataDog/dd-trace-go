@@ -21,10 +21,11 @@ func setupteardown(start, max int) func() {
 func TestNewSpanContextPushError(t *testing.T) {
 	defer setupteardown(2, 2)()
 
-	tracer, _ := getTestTracer()
+	tracer, _, stop := startTestTracer()
+	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
 	parent.context.trace.push(newBasicSpan("test2")) // 2nd span in trace
-	child := newSpan("child", "", "", 0, 0, 0, tracer)
+	child := newSpan("child", "", "", 0, 0, 0)
 
 	// new context having a parent with a trace of two spans.
 	// One more should overflow.
@@ -43,20 +44,19 @@ func TestSpanTracePushOne(t *testing.T) {
 
 	assert := assert.New(t)
 
-	tracer, transport := getTestTracer()
-	defer tracer.Stop()
-	buffer := newTrace(tracer.pushTrace)
-	assert.NotNil(buffer)
-	assert.Len(buffer.spans, 0)
+	tracer, transport, stop := startTestTracer()
+	defer stop()
+	trace := newTrace()
+	assert.Len(trace.spans, 0)
 
 	traceID := random.Uint64()
-	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0, tracer)
-	root.context.trace = buffer
+	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
+	root.context.trace = trace
+	trace.push(root)
 
-	err := buffer.push(root)
-	assert.Nil(err)
-	assert.Len(buffer.spans, 1, "there is one span in the buffer")
-	assert.Equal(root, buffer.spans[0], "the span is the one pushed before")
+	assert.Len(tracer.errorBuffer, 0)
+	assert.Len(trace.spans, 1, "there is one span in the trace")
+	assert.Equal(root, trace.spans[0], "the span is the one pushed before")
 
 	root.Finish()
 	tracer.forceFlush()
@@ -64,15 +64,15 @@ func TestSpanTracePushOne(t *testing.T) {
 	select {
 	case err := <-tracer.errorBuffer:
 		assert.Fail("unexpected error:", err.Error())
-		t.Logf("buffer: %v", buffer)
+		t.Logf("trace: %v", trace)
 	default:
 		traces := transport.Traces()
-		assert.NoError(err)
+		assert.Len(tracer.errorBuffer, 0)
 		assert.Len(traces, 1)
-		trace := traces[0]
-		assert.Len(trace, 1, "there was a trace in the channel")
-		comparePayloadSpans(t, root, trace[0])
-		assert.Equal(0, len(buffer.spans), "no more spans in the buffer")
+		trc := traces[0]
+		assert.Len(trc, 1, "there was a trace in the channel")
+		comparePayloadSpans(t, root, trc[0])
+		assert.Equal(0, len(trace.spans), "no more spans in the trace")
 	}
 }
 
@@ -81,17 +81,19 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	assert := assert.New(t)
 
-	tracer := newTracer()
-	defer tracer.Stop()
-	buffer := newTrace(tracer.pushTrace)
+	tracer, _, stop := startTestTracer()
+	defer stop()
+
+	buffer := newTrace()
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
 	traceID := random.Uint64()
-	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0, tracer)
+	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
 	root.context.trace = buffer
 
 	buffer.push(root)
+	assert.Len(tracer.errorBuffer, 0)
 	assert.Len(buffer.spans, 1, "there is one span in the buffer")
 	assert.Equal(root, buffer.spans[0], "the span is the one pushed before")
 
@@ -109,22 +111,24 @@ func TestSpanTracePushSeveral(t *testing.T) {
 
 	assert := assert.New(t)
 
-	tracer, transport := getTestTracer()
-	buffer := newTrace(tracer.pushTrace)
+	tracer, transport, stop := startTestTracer()
+	defer stop()
+	buffer := newTrace()
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
 	traceID := random.Uint64()
-	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0, tracer)
-	span2 := newSpan("name2", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID, tracer)
-	span3 := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID, tracer)
-	span3a := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, span3.SpanID, tracer)
+	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
+	span2 := newSpan("name2", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID)
+	span3 := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID)
+	span3a := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, span3.SpanID)
 
 	trace := []*span{root, span2, span3, span3a}
 
 	for i, span := range trace {
 		span.context.trace = buffer
 		buffer.push(span)
+		assert.Len(tracer.errorBuffer, 0)
 		assert.Len(buffer.spans, i+1, "there is one more span in the buffer")
 		assert.Equal(span, buffer.spans[i], "the span is the one pushed before")
 	}
@@ -172,7 +176,7 @@ func TestSpanContextPropagation(t *testing.T) {
 	parentCtx := &spanContext{
 		sampled: false,
 		baggage: map[string]string{"A": "A", "B": "B"},
-		trace:   newTrace(nil),
+		trace:   newTrace(),
 	}
 	ctx := newSpanContext(span, parentCtx)
 
@@ -191,16 +195,22 @@ func TestSpanContextPushFull(t *testing.T) {
 		traceMaxSize = oldMaxSize
 	}()
 	traceMaxSize = 2
+	tracer, _, stop := startTestTracer()
+	defer stop()
 
 	span1 := newBasicSpan("span1")
 	span2 := newBasicSpan("span2")
 	span3 := newBasicSpan("span3")
 
-	buffer := newTrace(nil)
+	buffer := newTrace()
 	assert := assert.New(t)
-	assert.NoError(buffer.push(span1))
-	assert.NoError(buffer.push(span2))
-	err := buffer.push(span3)
+	buffer.push(span1)
+	assert.Len(tracer.errorBuffer, 0)
+	buffer.push(span2)
+	assert.Len(tracer.errorBuffer, 0)
+	buffer.push(span3)
+	assert.Len(tracer.errorBuffer, 1)
+	err := <-tracer.errorBuffer
 	assert.Equal(&spanBufferFullError{count: 2}, err)
 }
 

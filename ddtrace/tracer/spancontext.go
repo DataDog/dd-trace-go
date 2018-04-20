@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
@@ -41,7 +42,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		span:     span,
 	}
 	if parent == nil {
-		context.trace = newTrace(span.tracer.pushTrace)
+		context.trace = newTrace()
 	} else {
 		context.trace = parent.trace
 		context.sampled = parent.sampled
@@ -50,9 +51,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		}
 	}
 	// put span in context's trace
-	if err := context.trace.push(span); err != nil {
-		span.tracer.pushError(err)
-	}
+	context.trace.push(span)
 	return context
 }
 
@@ -91,11 +90,6 @@ type trace struct {
 	mu       sync.RWMutex // guards below fields
 	spans    []*span      // all the spans that are part of this trace
 	finished int          // the number of finished spans
-
-	// onFinish is a callback function that will be called with the current
-	// trace as an argument at the moment when the number of finished spans
-	// equals the number of spans in the trace.
-	onFinish func([]*span)
 }
 
 var (
@@ -113,24 +107,24 @@ var (
 
 // newTrace creates a new trace using the given callback which will be called
 // upon completion of the trace.
-func newTrace(onFinish func([]*span)) *trace {
-	return &trace{
-		onFinish: onFinish,
-		spans:    make([]*span, 0, traceStartSize),
-	}
+func newTrace() *trace {
+	return &trace{spans: make([]*span, 0, traceStartSize)}
 }
 
 // push pushes a new span into the trace. If the buffer is full, it returns
 // a errBufferFull error.
-func (t *trace) push(sp *span) error {
+func (t *trace) push(sp *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if len(t.spans) >= traceMaxSize {
-		return &spanBufferFullError{count: len(t.spans)}
+		if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
+			// we have a tracer we can submit errors too.
+			tr.pushError(&spanBufferFullError{count: len(t.spans)})
+		}
+		return
 	}
 	t.spans = append(t.spans, sp)
-	return nil
 }
 
 // ackFinish aknowledges that another span in the trace has finished, and checks
@@ -143,7 +137,10 @@ func (t *trace) ackFinish() {
 	if len(t.spans) != t.finished {
 		return
 	}
-	t.onFinish(t.spans)
+	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
+		// we have a tracer that can receive completed traces.
+		tr.pushTrace(t.spans)
+	}
 	t.spans = nil
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }

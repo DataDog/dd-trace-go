@@ -12,7 +12,7 @@ import (
 
 // newSpan creates a new span. This is a low-level function, required for testing and advanced usage.
 // Most of the time one should prefer the Tracer NewRootSpan or NewChildSpan methods.
-func newSpan(name, service, resource string, spanID, traceID, parentID uint64, tracer *tracer) *span {
+func newSpan(name, service, resource string, spanID, traceID, parentID uint64) *span {
 	span := &span{
 		Name:     name,
 		Service:  service,
@@ -23,7 +23,6 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 		TraceID:  traceID,
 		ParentID: parentID,
 		Start:    now(),
-		tracer:   tracer,
 	}
 	span.context = newSpanContext(span, nil)
 	return span
@@ -31,8 +30,7 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64, t
 
 // newBasicSpan is the OpenTracing Span constructor
 func newBasicSpan(operationName string) *span {
-	tracer, _ := getTestTracer()
-	return newSpan(operationName, "", "", 0, 0, 0, tracer)
+	return newSpan(operationName, "", "", 0, 0, 0)
 }
 
 func TestSpanBaggage(t *testing.T) {
@@ -75,8 +73,8 @@ func TestSpanFinishTwice(t *testing.T) {
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
 
-	tracer, _ := getTestTracer()
-	defer tracer.Stop()
+	tracer, _, stop := startTestTracer()
+	defer stop()
 
 	assert.Equal(tracer.payload.itemCount(), 0)
 
@@ -254,8 +252,8 @@ func TestSpanErrorNil(t *testing.T) {
 
 // Prior to a bug fix, this failed when running `go test -race`
 func TestSpanModifyWhileFlushing(t *testing.T) {
-	tracer, _ := getTestTracer()
-	defer tracer.Stop()
+	tracer, _, stop := startTestTracer()
+	defer stop()
 
 	done := make(chan struct{})
 	go func() {
