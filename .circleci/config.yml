@@ -50,7 +50,7 @@ jobs:
                     name: Fetching dependencies
                     command: |
                          go get -t ./...
-                         go get github.com/golang/lint/...
+                         go get golang.org/x/lint/golint
 
                - run:
                     name: Wait for MySQL
