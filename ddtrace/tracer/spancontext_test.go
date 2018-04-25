@@ -33,7 +33,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 
 	select {
 	case err := <-tracer.errorBuffer:
-		assert.Equal(t, &spanBufferFullError{count: 2}, err)
+		assert.Equal(t, &spanBufferFullError{}, err)
 	default:
 		t.Fatal("no error pushed")
 	}
@@ -211,7 +211,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	buffer.push(span3)
 	assert.Len(tracer.errorBuffer, 1)
 	err := <-tracer.errorBuffer
-	assert.Equal(&spanBufferFullError{count: 2}, err)
+	assert.Equal(&spanBufferFullError{}, err)
 }
 
 func TestSpanContextBaggage(t *testing.T) {
