@@ -8,7 +8,7 @@ import (
 const (
 	Lang          = "go"
 	Interpreter   = runtime.Compiler + "-" + runtime.GOARCH + "-" + runtime.GOOS
-	TracerVersion = "v0.5.0"
+	TracerVersion = "v0.6.1"
 )
 
 var LangVersion = strings.TrimPrefix(runtime.Version(), Lang)
