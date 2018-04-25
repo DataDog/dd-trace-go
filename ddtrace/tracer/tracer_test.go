@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
@@ -492,6 +493,53 @@ func TestTracerAtomicFlush(t *testing.T) {
 	traces = transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 4, "all spans should show up at once")
+}
+
+// TestTracerTraceMaxSize tests a bug that was encountered in environments
+// creating a large volume of spans that reached the trace cap value (traceMaxSize).
+// The bug was that once the cap is reached, no more spans are pushed onto
+// the buffer, yet they are part of the same trace. The trace is considered
+// completed and flushed when the number of finished spans == number of spans
+// in buffer. When reaching the cap, this condition might become true too
+// early, and some spans in the buffer might still not be finished when flushing.
+// Changing these spans at the moment of flush would (and did) cause a race
+// condition.
+func TestTracerTraceMaxSize(t *testing.T) {
+	_, _, stop := startTestTracer()
+	defer stop()
+
+	otss, otms := traceStartSize, traceMaxSize
+	traceStartSize, traceMaxSize = 3, 3
+	defer func() {
+		traceStartSize, traceMaxSize = otss, otms
+	}()
+
+	spans := make([]ddtrace.Span, 5)
+	spans[0] = StartSpan("span0")
+	spans[1] = StartSpan("span1", ChildOf(spans[0].Context()))
+	spans[2] = StartSpan("span2", ChildOf(spans[0].Context()))
+	spans[3] = StartSpan("span3", ChildOf(spans[0].Context()))
+	spans[4] = StartSpan("span4", ChildOf(spans[0].Context()))
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 5000; i++ {
+			spans[1].SetTag(strconv.Itoa(i), 1)
+			spans[2].SetTag(strconv.Itoa(i), 1)
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		spans[0].Finish()
+		spans[3].Finish()
+		spans[4].Finish()
+	}()
+
+	wg.Wait()
 }
 
 func TestTracerRace(t *testing.T) {
