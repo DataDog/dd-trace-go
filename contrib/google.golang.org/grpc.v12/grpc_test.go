@@ -145,7 +145,7 @@ func (s *fixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureR
 		span.Finish()
 		return &FixtureReply{Message: "child"}, nil
 	case in.Name == "disabled":
-		if tracer.SpanFromContext(ctx) != nil {
+		if _, ok := tracer.SpanFromContext(ctx); ok {
 			panic("should be disabled")
 		}
 		return &FixtureReply{Message: "disabled"}, nil
