@@ -26,8 +26,8 @@ func TestChildSpan(t *testing.T) {
 	router := gin.New()
 	router.Use(Middleware("foobar"))
 	router.GET("/user/:id", func(c *gin.Context) {
-		span := tracer.SpanFromContext(c.Request.Context())
-		assert.NotNil(span)
+		_, ok := tracer.SpanFromContext(c.Request.Context())
+		assert.True(ok)
 	})
 
 	r := httptest.NewRequest("GET", "/user/123", nil)
@@ -44,8 +44,8 @@ func TestTrace200(t *testing.T) {
 	router := gin.New()
 	router.Use(Middleware("foobar"))
 	router.GET("/user/:id", func(c *gin.Context) {
-		span := tracer.SpanFromContext(c.Request.Context())
-		assert.NotNil(span)
+		span, ok := tracer.SpanFromContext(c.Request.Context())
+		assert.True(ok)
 		assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
 		id := c.Param("id")
 		c.Writer.Write([]byte(id))
@@ -157,7 +157,8 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	router := gin.New()
 	router.GET("/ping", func(c *gin.Context) {
 		// Assert we don't have a span on the context.
-		assert.Nil(tracer.SpanFromContext(c.Request.Context()))
+		_, ok := tracer.SpanFromContext(c.Request.Context())
+		assert.False(ok)
 		c.Writer.Write([]byte("ok"))
 	})
 	r := httptest.NewRequest("GET", "/ping", nil)

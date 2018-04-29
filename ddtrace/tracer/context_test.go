@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
 func TestContextWithSpan(t *testing.T) {
@@ -18,13 +19,23 @@ func TestContextWithSpan(t *testing.T) {
 
 func TestSpanFromContext(t *testing.T) {
 	t.Run("regular", func(t *testing.T) {
+		assert := assert.New(t)
 		want := &span{SpanID: 123}
 		ctx := ContextWithSpan(context.Background(), want)
-		assert.New(t).Equal(SpanFromContext(ctx), want)
+		got, ok := SpanFromContext(ctx)
+		assert.True(ok)
+		assert.Equal(got, want)
 	})
-	t.Run("nil", func(t *testing.T) {
-		assert.Nil(t, SpanFromContext(context.Background()))
-		assert.Nil(t, SpanFromContext(nil))
+	t.Run("no-op", func(t *testing.T) {
+		assert := assert.New(t)
+		span, ok := SpanFromContext(context.Background())
+		assert.False(ok)
+		_, ok = span.(*internal.NoopSpan)
+		assert.True(ok)
+		span, ok = SpanFromContext(nil)
+		assert.False(ok)
+		_, ok = span.(*internal.NoopSpan)
+		assert.True(ok)
 	})
 }
 
@@ -39,9 +50,11 @@ func TestStartSpanFromContext(t *testing.T) {
 
 	got, ok := child.(*span)
 	assert.True(ok)
-	gotctx := SpanFromContext(ctx)
+	gotctx, ok := SpanFromContext(ctx)
+	assert.True(ok)
 	assert.Equal(gotctx, got)
-	assert.NotNil(gotctx)
+	_, ok = gotctx.(*internal.NoopSpan)
+	assert.False(ok)
 
 	assert.Equal(uint64(456), got.TraceID)
 	assert.Equal(uint64(123), got.ParentID)

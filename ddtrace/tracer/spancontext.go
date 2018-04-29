@@ -92,6 +92,7 @@ type trace struct {
 	mu       sync.RWMutex // guards below fields
 	spans    []*span      // all the spans that are part of this trace
 	finished int          // the number of finished spans
+	full     bool         // signifies that the span buffer is full
 }
 
 var (
@@ -118,11 +119,16 @@ func newTrace() *trace {
 func (t *trace) push(sp *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
+	if t.full {
+		return
+	}
 	if len(t.spans) >= traceMaxSize {
+		// capacity is reached, we will not be able to complete this trace.
+		t.full = true
+		t.spans = nil // GC
 		if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
 			// we have a tracer we can submit errors too.
-			tr.pushError(&spanBufferFullError{count: len(t.spans)})
+			tr.pushError(&spanBufferFullError{})
 		}
 		return
 	}
@@ -134,7 +140,13 @@ func (t *trace) push(sp *span) {
 func (t *trace) ackFinish() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
+	if t.full {
+		// capacity has been reached, the buffer is no longer tracking
+		// all the spans in the trace, so the below conditions will not
+		// be accurate and would trigger a pre-mature flush, exposing us
+		// to a race condition where spans can be modified while flushing.
+		return
+	}
 	t.finished++
 	if len(t.spans) != t.finished {
 		return

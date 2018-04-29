@@ -14,10 +14,10 @@ func (e *traceEncodingError) Error() string {
 	return fmt.Sprintf("error encoding trace: %s", e.context)
 }
 
-type spanBufferFullError struct{ count int }
+type spanBufferFullError struct{}
 
 func (e *spanBufferFullError) Error() string {
-	return fmt.Sprintf("span buffer full, lost %d spans", e.count)
+	return fmt.Sprintf("trace span cap (%d) reached, dropping trace", traceMaxSize)
 }
 
 type dataLossError struct {
