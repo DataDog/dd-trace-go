@@ -45,14 +45,14 @@ func defaults(c *config) {
 	c.agentAddr = defaultAddress
 }
 
-// WithDebugMode enables debug mode on the tracer, making logging more verbose.
+// WithDebugMode enables debug mode on the tracer, resulting in more verbose logging.
 func WithDebugMode(enabled bool) StartOption {
 	return func(c *config) {
 		c.debug = enabled
 	}
 }
 
-// WithPropagator sets a custom TextMap propagator on the tracer.
+// WithPropagator sets an alternative propagator to be used by the tracer.
 func WithPropagator(p Propagator) StartOption {
 	return func(c *config) {
 		c.propagator = p
@@ -67,7 +67,7 @@ func WithServiceName(name string) StartOption {
 }
 
 // WithAgentAddr sets the address where the agent is located. The default is
-// localhost:8126.
+// localhost:8126. It should contain both host and port.
 func WithAgentAddr(addr string) StartOption {
 	return func(c *config) {
 		c.agentAddr = addr
@@ -75,7 +75,7 @@ func WithAgentAddr(addr string) StartOption {
 }
 
 // WithGlobalTag sets a key/value pair which will be set as a tag on all spans
-// created by tracer.
+// created by tracer. This option may be used multiple times.
 func WithGlobalTag(k string, v interface{}) StartOption {
 	return func(c *config) {
 		if c.globalTags == nil {
@@ -93,7 +93,9 @@ func WithSampler(s Sampler) StartOption {
 	}
 }
 
-// StartSpanOption is a configuration option for StartSpan.
+// StartSpanOption is a configuration option for StartSpan. It is aliased in order
+// to help godoc group all the functions returning it together. It is considered
+// more correct to refer to it as the type as the origin, ddtrace.StartSpanOption.
 type StartSpanOption = ddtrace.StartSpanOption
 
 // Tag sets the given key/value pair as a tag on the started Span.
@@ -106,22 +108,24 @@ func Tag(k string, v interface{}) StartSpanOption {
 	}
 }
 
-// ServiceName sets the given service name on the started span.
+// ServiceName sets the given service name on the started span. For example "http.server".
 func ServiceName(name string) StartSpanOption {
 	return Tag(ext.ServiceName, name)
 }
 
-// ResourceName sets the given resource name on the started span.
+// ResourceName sets the given resource name on the started span. A resource could
+// be an SQL query, a URL, an RPC method or something else.
 func ResourceName(name string) StartSpanOption {
 	return Tag(ext.ResourceName, name)
 }
 
-// SpanType sets the given span type on the started span.
+// SpanType sets the given span type on the started span. Some examples in the case of
+// the Datadog APM product could be "web", "db" or "cache".
 func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
-// ChildOf tells StartSpan to use the given context as a parent for the
+// ChildOf tells StartSpan to use the given span context as a parent for the
 // created span.
 func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
@@ -130,24 +134,28 @@ func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
 }
 
 // StartTime sets a custom time as the start time for the created span. By
-// default a span is started using the current time.
+// default a span is started using the creation time.
 func StartTime(t time.Time) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.StartTime = t
 	}
 }
 
-// FinishOption is a configuration option for FinishSpan.
+// FinishOption is a configuration option for FinishSpan. It is aliased in order
+// to help godoc group all the functions returning it together. It is considered
+// more correct to refer to it as the type as the origin, ddtrace.FinishOption.
 type FinishOption = ddtrace.FinishOption
 
-// FinishTime sets the given time as the finishing time for the span.
+// FinishTime sets the given time as the finishing time for the span. By default,
+// the current time is used.
 func FinishTime(t time.Time) FinishOption {
 	return func(cfg *ddtrace.FinishConfig) {
 		cfg.FinishTime = t
 	}
 }
 
-// WithError adds the given error to the span before marking it as finished.
+// WithError adds the given error to the span before marking it as finished. If it is
+// nil it will be disregarded.
 func WithError(err error) FinishOption {
 	return func(cfg *ddtrace.FinishConfig) {
 		cfg.Error = err

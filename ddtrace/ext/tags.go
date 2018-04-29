@@ -1,3 +1,5 @@
+// Package ext contains a set of Datadog-specific constants. Most of them are used
+// for setting span metadata.
 package ext
 
 const (

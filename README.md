@@ -38,4 +38,4 @@ the official [Go language](https://github.com/golang/go/pulls).
 
 ### Documentation
 
-The API is documented on [godoc](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1) as well as Datadog's [official documentation](https://docs.datadoghq.com/tracing/setup/go/).
+The API is documented on [godoc](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace) as well as Datadog's [official documentation](https://docs.datadoghq.com/tracing/setup/go/).

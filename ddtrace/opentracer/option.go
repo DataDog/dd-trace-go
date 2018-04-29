@@ -6,17 +6,19 @@ import (
 	opentracing "github.com/opentracing/opentracing-go"
 )
 
-// ServiceName will set the given service name on the started span.
+// ServiceName can be used with opentracing.StartSpan to set the
+// service name of a span.
 func ServiceName(name string) opentracing.StartSpanOption {
 	return opentracing.Tag{Key: ext.ServiceName, Value: name}
 }
 
-// ResourceName will start the span using the given resource name.
+// ResourceName can be used with opentracing.StartSpan to set the
+// resource name of a span.
 func ResourceName(name string) opentracing.StartSpanOption {
 	return opentracing.Tag{Key: ext.ResourceName, Value: name}
 }
 
-// SpanType will set the given span type on the span that is being started.
+// SpanType can be used with opentracing.StartSpan to set the type of a span.
 func SpanType(name string) opentracing.StartSpanOption {
 	return opentracing.Tag{Key: ext.SpanType, Value: name}
 }

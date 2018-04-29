@@ -11,7 +11,7 @@ type contextKey struct{}
 
 var activeSpanKey = contextKey{}
 
-// ContextWithSpan returns a copy of the given context which includes the span.
+// ContextWithSpan returns a copy of the given context which includes the span s.
 func ContextWithSpan(ctx context.Context, s Span) context.Context {
 	return context.WithValue(ctx, activeSpanKey, s)
 }
@@ -31,7 +31,8 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 }
 
 // StartSpanFromContext returns a new span with the given operation name and options. If a span
-// is found in the context, it will be used as the parent of the resulting span.
+// is found in the context, it will be used as the parent of the resulting span. If the ChildOf
+// option is passed, the span from context will take precedence over it as the parent span.
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context) {
 	if s, ok := SpanFromContext(ctx); ok {
 		opts = append(opts, ChildOf(s.Context()))
