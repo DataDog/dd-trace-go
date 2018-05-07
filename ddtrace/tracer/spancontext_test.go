@@ -46,16 +46,13 @@ func TestSpanTracePushOne(t *testing.T) {
 
 	tracer, transport, stop := startTestTracer()
 	defer stop()
-	trace := newTrace()
-	assert.Len(trace.spans, 0)
 
 	traceID := random.Uint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
-	root.context.trace = trace
-	trace.push(root)
+	trace := root.context.trace
 
 	assert.Len(tracer.errorBuffer, 0)
-	assert.Len(trace.spans, 1, "there is one span in the trace")
+	assert.Len(trace.spans, 1)
 	assert.Equal(root, trace.spans[0], "the span is the one pushed before")
 
 	root.Finish()
@@ -165,6 +162,7 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.Equal(ctx.priority, 0)
 		assert.False(ctx.hasPriority)
+		assert.NotNil(ctx.trace)
 		assert.Contains(ctx.trace.spans, span)
 	})
 
@@ -181,12 +179,13 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.Equal(ctx.priority, 1)
 		assert.True(ctx.hasPriority)
+		assert.NotNil(ctx.trace)
 		assert.Contains(ctx.trace.spans, span)
 	})
 }
 
-func TestSpanContextPropagation(t *testing.T) {
-	span := &span{
+func TestSpanContextParent(t *testing.T) {
+	s := &span{
 		TraceID:  1,
 		SpanID:   2,
 		ParentID: 3,
@@ -197,20 +196,27 @@ func TestSpanContextPropagation(t *testing.T) {
 			baggage: map[string]string{"A": "A", "B": "B"},
 			trace:   newTrace(),
 		},
+		"nil-trace": &spanContext{
+			sampled: false,
+		},
 		"priority": &spanContext{
 			sampled:     true,
 			baggage:     map[string]string{"A": "A", "B": "B"},
-			trace:       newTrace(),
+			trace:       &trace{spans: []*span{newBasicSpan("abc")}},
 			hasPriority: true,
 			priority:    2,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			ctx := newSpanContext(span, parentCtx)
+			ctx := newSpanContext(s, parentCtx)
 			assert := assert.New(t)
-			assert.Equal(ctx.traceID, span.TraceID)
-			assert.Equal(ctx.spanID, span.SpanID)
-			assert.Contains(ctx.trace.spans, span)
+			assert.Equal(ctx.traceID, s.TraceID)
+			assert.Equal(ctx.spanID, s.SpanID)
+			if parentCtx.trace != nil {
+				assert.Equal(len(ctx.trace.spans), len(parentCtx.trace.spans))
+			}
+			assert.NotNil(ctx.trace)
+			assert.Contains(ctx.trace.spans, s)
 			assert.Equal(ctx.hasPriority, parentCtx.hasPriority)
 			assert.Equal(ctx.priority, parentCtx.priority)
 			assert.Equal(ctx.sampled, parentCtx.sampled)

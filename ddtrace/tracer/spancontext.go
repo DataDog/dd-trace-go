@@ -47,16 +47,18 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		context.hasPriority = true
 		context.priority = int(v)
 	}
-	if parent == nil {
-		context.trace = newTrace()
-	} else {
+	if parent != nil {
 		context.trace = parent.trace
 		context.sampled = parent.sampled
 		context.hasPriority = parent.hasSamplingPriority()
 		context.priority = parent.samplingPriority()
-		for k, v := range parent.baggage {
+		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
-		}
+			return true
+		})
+	}
+	if context.trace == nil {
+		context.trace = newTrace()
 	}
 	// put span in context's trace
 	context.trace.push(span)
