@@ -35,17 +35,13 @@ func NewRouter(opts ...RouterOption) *Router {
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var (
 		match mux.RouteMatch
-		route string
-		err   error
+		route = "unknown"
 	)
 	// get the resource associated to this request
-	if r.Match(req, &match) {
-		route, err = match.Route.GetPathTemplate()
-		if err != nil {
-			route = "unknown"
+	if r.Match(req, &match) && match.Route != nil {
+		if r, err := match.Route.GetPathTemplate(); err == nil {
+			route = r
 		}
-	} else {
-		route = "unknown"
 	}
 	resource := req.Method + " " + route
 	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource)
