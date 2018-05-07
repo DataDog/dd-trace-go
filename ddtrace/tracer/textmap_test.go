@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 	"github.com/stretchr/testify/assert"
@@ -122,6 +123,7 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 
 	root := tracer.StartSpan("web.request").(*span)
 	root.SetBaggageItem("item", "x")
+	root.SetTag(ext.SamplingPriority, 0)
 	ctx := root.Context()
 	headers := http.Header{}
 
@@ -135,6 +137,7 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 	assert.Equal(headers.Get("tid"), tid)
 	assert.Equal(headers.Get("pid"), pid)
 	assert.Equal(headers.Get("bg-item"), "x")
+	assert.Equal(headers.Get(DefaultPriorityHeader), "0")
 }
 
 func TestTextMapPropagatorInjectExtract(t *testing.T) {
@@ -145,6 +148,7 @@ func TestTextMapPropagatorInjectExtract(t *testing.T) {
 	})
 	tracer := newTracer(WithPropagator(propagator))
 	root := tracer.StartSpan("web.request").(*span)
+	root.SetTag(ext.SamplingPriority, -1)
 	root.SetBaggageItem("item", "x")
 	ctx := root.Context().(*spanContext)
 	headers := TextMapCarrier(map[string]string{})
@@ -161,4 +165,6 @@ func TestTextMapPropagatorInjectExtract(t *testing.T) {
 	assert.Equal(xctx.traceID, ctx.traceID)
 	assert.Equal(xctx.spanID, ctx.spanID)
 	assert.Equal(xctx.baggage, ctx.baggage)
+	assert.Equal(xctx.priority, ctx.priority)
+	assert.Equal(xctx.hasPriority, ctx.hasPriority)
 }

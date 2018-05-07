@@ -67,6 +67,10 @@ const (
 	// DefaultParentIDHeader specifies the key that will be used in HTTP headers
 	// or text maps to store the parent ID.
 	DefaultParentIDHeader = "x-datadog-parent-id"
+
+	// DefaultPriorityHeader specifies the key that will be used in HTTP headers
+	// or text maps to store the sampling priority value.
+	DefaultPriorityHeader = "x-datadog-sampling-priority"
 )
 
 // PropagatorConfig defines the configuration for initializing a propagator.
@@ -82,6 +86,10 @@ type PropagatorConfig struct {
 	// ParentHeader specifies the map key that will be used to store the parent ID.
 	// It defaults to DefaultParentIDHeader.
 	ParentHeader string
+
+	// PriorityHeader specifies the map key that will be used to store the sampling priority.
+	// It deafults to DefaultPriorityHeader.
+	PriorityHeader string
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
@@ -99,6 +107,9 @@ func NewPropagator(cfg *PropagatorConfig) Propagator {
 	}
 	if cfg.ParentHeader == "" {
 		cfg.ParentHeader = DefaultParentIDHeader
+	}
+	if cfg.PriorityHeader == "" {
+		cfg.PriorityHeader = DefaultPriorityHeader
 	}
 	return &propagator{cfg}
 }
@@ -128,6 +139,9 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	// propagate the TraceID and the current active SpanID
 	writer.Set(p.cfg.TraceHeader, strconv.FormatUint(ctx.traceID, 10))
 	writer.Set(p.cfg.ParentHeader, strconv.FormatUint(ctx.spanID, 10))
+	if ctx.hasSamplingPriority() {
+		writer.Set(p.cfg.PriorityHeader, strconv.Itoa(ctx.samplingPriority()))
+	}
 	// propagate OpenTracing baggage
 	for k, v := range ctx.baggage {
 		writer.Set(p.cfg.BaggagePrefix+k, v)
@@ -161,6 +175,12 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
+		case p.cfg.PriorityHeader:
+			ctx.priority, err = strconv.Atoi(v)
+			if err != nil {
+				return ErrSpanContextCorrupted
+			}
+			ctx.hasPriority = true
 		default:
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)

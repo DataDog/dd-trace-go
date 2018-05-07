@@ -247,6 +247,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			// the parent is in another process (e.g. transmitted via HTTP headers)
 			span.TraceID = context.traceID
 			span.ParentID = context.spanID
+			if context.hasSamplingPriority() {
+				span.Metrics[samplingPriorityKey] = float64(context.samplingPriority())
+			}
 		} else {
 			// the parent is in the same process
 			parent := context.span

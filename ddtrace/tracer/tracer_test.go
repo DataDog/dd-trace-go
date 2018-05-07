@@ -211,6 +211,7 @@ func TestPropagationDefaults(t *testing.T) {
 	tracer := newTracer()
 	root := tracer.StartSpan("web.request").(*span)
 	root.SetBaggageItem("x", "y")
+	root.SetTag(ext.SamplingPriority, -1)
 	ctx := root.Context().(*spanContext)
 	headers := http.Header{}
 
@@ -226,6 +227,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Equal(headers.Get(DefaultTraceIDHeader), tid)
 	assert.Equal(headers.Get(DefaultParentIDHeader), pid)
 	assert.Equal(headers.Get(DefaultBaggageHeaderPrefix+"x"), "y")
+	assert.Equal(headers.Get(DefaultPriorityHeader), "-1")
 
 	// retrieve the spanContext
 	propagated, err := tracer.Extract(carrier)
@@ -236,6 +238,8 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Equal(ctx.traceID, pctx.traceID)
 	assert.Equal(ctx.spanID, pctx.spanID)
 	assert.Equal(ctx.baggage, pctx.baggage)
+	assert.Equal(ctx.priority, -1)
+	assert.True(ctx.hasPriority)
 
 	// ensure a child can be created
 	child := tracer.StartSpan("db.query", ChildOf(propagated)).(*span)
@@ -244,6 +248,8 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.NotEqual(uint64(0), child.SpanID)
 	assert.Equal(root.SpanID, child.ParentID)
 	assert.Equal(root.TraceID, child.ParentID)
+	assert.Equal(child.context.priority, -1)
+	assert.True(child.context.hasPriority)
 }
 
 func TestTracerSamplingPriorityPropagation(t *testing.T) {

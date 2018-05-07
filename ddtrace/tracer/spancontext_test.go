@@ -153,18 +153,36 @@ func TestSpanTracePushSeveral(t *testing.T) {
 }
 
 func TestNewSpanContext(t *testing.T) {
-	span := &span{
-		TraceID:  1,
-		SpanID:   2,
-		ParentID: 3,
-	}
-	ctx := newSpanContext(span, nil)
+	t.Run("basic", func(t *testing.T) {
+		span := &span{
+			TraceID:  1,
+			SpanID:   2,
+			ParentID: 3,
+		}
+		ctx := newSpanContext(span, nil)
+		assert := assert.New(t)
+		assert.Equal(ctx.traceID, span.TraceID)
+		assert.Equal(ctx.spanID, span.SpanID)
+		assert.Equal(ctx.priority, 0)
+		assert.False(ctx.hasPriority)
+		assert.Contains(ctx.trace.spans, span)
+	})
 
-	assert := assert.New(t)
-	assert.Equal(ctx.traceID, span.TraceID)
-	assert.Equal(ctx.spanID, span.SpanID)
-	assert.Equal(ctx.parentID, span.ParentID)
-	assert.Contains(ctx.trace.spans, span)
+	t.Run("priority", func(t *testing.T) {
+		span := &span{
+			TraceID:  1,
+			SpanID:   2,
+			ParentID: 3,
+			Metrics:  map[string]float64{samplingPriorityKey: 1},
+		}
+		ctx := newSpanContext(span, nil)
+		assert := assert.New(t)
+		assert.Equal(ctx.traceID, span.TraceID)
+		assert.Equal(ctx.spanID, span.SpanID)
+		assert.Equal(ctx.priority, 1)
+		assert.True(ctx.hasPriority)
+		assert.Contains(ctx.trace.spans, span)
+	})
 }
 
 func TestSpanContextPropagation(t *testing.T) {
@@ -173,20 +191,32 @@ func TestSpanContextPropagation(t *testing.T) {
 		SpanID:   2,
 		ParentID: 3,
 	}
-	parentCtx := &spanContext{
-		sampled: false,
-		baggage: map[string]string{"A": "A", "B": "B"},
-		trace:   newTrace(),
+	for name, parentCtx := range map[string]*spanContext{
+		"basic": &spanContext{
+			sampled: false,
+			baggage: map[string]string{"A": "A", "B": "B"},
+			trace:   newTrace(),
+		},
+		"priority": &spanContext{
+			sampled:     true,
+			baggage:     map[string]string{"A": "A", "B": "B"},
+			trace:       newTrace(),
+			hasPriority: true,
+			priority:    2,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := newSpanContext(span, parentCtx)
+			assert := assert.New(t)
+			assert.Equal(ctx.traceID, span.TraceID)
+			assert.Equal(ctx.spanID, span.SpanID)
+			assert.Contains(ctx.trace.spans, span)
+			assert.Equal(ctx.hasPriority, parentCtx.hasPriority)
+			assert.Equal(ctx.priority, parentCtx.priority)
+			assert.Equal(ctx.sampled, parentCtx.sampled)
+			assert.Equal(ctx.baggage, parentCtx.baggage)
+		})
 	}
-	ctx := newSpanContext(span, parentCtx)
-
-	assert := assert.New(t)
-	assert.Equal(ctx.traceID, span.TraceID)
-	assert.Equal(ctx.spanID, span.SpanID)
-	assert.Equal(ctx.parentID, span.ParentID)
-	assert.Contains(ctx.trace.spans, span)
-	assert.Equal(ctx.sampled, parentCtx.sampled)
-	assert.Equal(ctx.baggage, parentCtx.baggage)
 }
 
 func TestSpanContextPushFull(t *testing.T) {

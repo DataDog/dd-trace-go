@@ -134,6 +134,7 @@ func (s *span) setTagNumeric(key string, v float64) {
 	case ext.SamplingPriority:
 		// setting sampling priority per spec
 		s.Metrics[samplingPriorityKey] = v
+		s.context.setSamplingPriority(int(v))
 	default:
 		s.Metrics[key] = v
 	}
