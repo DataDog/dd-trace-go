@@ -117,7 +117,7 @@ func newTracer(opts ...StartOption) *tracer {
 		c.transport = newTransport(c.agentAddr)
 	}
 	if c.propagator == nil {
-		c.propagator = NewPropagator("", "", "")
+		c.propagator = NewPropagator(nil)
 	}
 	t := &tracer{
 		config:         c,

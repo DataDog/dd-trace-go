@@ -56,40 +56,57 @@ func (c TextMapCarrier) ForeachKey(handler func(key, val string) error) error {
 }
 
 const (
-	defaultBaggageHeaderPrefix = "ot-baggage-"
-	defaultTraceIDHeader       = "x-datadog-trace-id"
-	defaultParentIDHeader      = "x-datadog-parent-id"
+	// DefaultBaggageHeaderPrefix specifies the prefix that will be used in
+	// HTTP headers or text maps to prefix baggage keys.
+	DefaultBaggageHeaderPrefix = "ot-baggage-"
+
+	// DefaultTraceIDHeader specifies the key that will be used in HTTP headers
+	// or text maps to store the trace ID.
+	DefaultTraceIDHeader = "x-datadog-trace-id"
+
+	// DefaultParentIDHeader specifies the key that will be used in HTTP headers
+	// or text maps to store the parent ID.
+	DefaultParentIDHeader = "x-datadog-parent-id"
 )
+
+// PropagatorConfig defines the configuration for initializing a propagator.
+type PropagatorConfig struct {
+	// BaggagePrefix specifies the prefix that will be used to store baggage
+	// items in a map. It defaults to DefaultBaggageHeaderPrefix.
+	BaggagePrefix string
+
+	// TraceHeader specifies the map key that will be used to store the trace ID.
+	// It defaults to DefaultTraceIDHeader.
+	TraceHeader string
+
+	// ParentHeader specifies the map key that will be used to store the parent ID.
+	// It defaults to DefaultParentIDHeader.
+	ParentHeader string
+}
 
 // NewPropagator returns a new propagator which uses TextMap to inject
 // and extract values. It propagates trace and span IDs and baggage.
-// The parameters specify the prefix that will be used to prefix baggage header
-// keys along with the trace and parent header. Empty strings may be provided
-// to use the defaults, which are: "ot-baggage-" as prefix for baggage headers,
-// "x-datadog-trace-id" and "x-datadog-parent-id" for trace and parent ID headers.
-//
-// Note: the signature of this method will be changed soon. // TODO(gbbr)
-func NewPropagator(baggagePrefix, traceHeader, parentHeader string) Propagator {
-	if baggagePrefix == "" {
-		baggagePrefix = defaultBaggageHeaderPrefix
+// To use the defaults, nil may be provided in place of the config.
+func NewPropagator(cfg *PropagatorConfig) Propagator {
+	if cfg == nil {
+		cfg = new(PropagatorConfig)
 	}
-	if traceHeader == "" {
-		traceHeader = defaultTraceIDHeader
+	if cfg.BaggagePrefix == "" {
+		cfg.BaggagePrefix = DefaultBaggageHeaderPrefix
 	}
-	if parentHeader == "" {
-		parentHeader = defaultParentIDHeader
+	if cfg.TraceHeader == "" {
+		cfg.TraceHeader = DefaultTraceIDHeader
 	}
-	return &propagator{baggagePrefix, traceHeader, parentHeader}
+	if cfg.ParentHeader == "" {
+		cfg.ParentHeader = DefaultParentIDHeader
+	}
+	return &propagator{cfg}
 }
 
 // propagator implements a propagator which uses TextMap internally.
 // It propagates the trace and span IDs, as well as the baggage from the
 // context.
-type propagator struct {
-	baggagePrefix string
-	traceHeader   string
-	parentHeader  string
-}
+type propagator struct{ cfg *PropagatorConfig }
 
 // Inject defines the Propagator to propagate SpanContext data
 // out of the current process. The implementation propagates the
@@ -109,11 +126,11 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 		return ErrInvalidSpanContext
 	}
 	// propagate the TraceID and the current active SpanID
-	writer.Set(p.traceHeader, strconv.FormatUint(ctx.traceID, 10))
-	writer.Set(p.parentHeader, strconv.FormatUint(ctx.spanID, 10))
+	writer.Set(p.cfg.TraceHeader, strconv.FormatUint(ctx.traceID, 10))
+	writer.Set(p.cfg.ParentHeader, strconv.FormatUint(ctx.spanID, 10))
 	// propagate OpenTracing baggage
 	for k, v := range ctx.baggage {
-		writer.Set(p.baggagePrefix+k, v)
+		writer.Set(p.cfg.BaggagePrefix+k, v)
 	}
 	return nil
 }
@@ -134,19 +151,19 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		var err error
 		key := strings.ToLower(k)
 		switch key {
-		case p.traceHeader:
+		case p.cfg.TraceHeader:
 			ctx.traceID, err = strconv.ParseUint(v, 10, 64)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-		case p.parentHeader:
+		case p.cfg.ParentHeader:
 			ctx.spanID, err = strconv.ParseUint(v, 10, 64)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
 		default:
-			if strings.HasPrefix(key, p.baggagePrefix) {
-				ctx.setBaggageItem(strings.TrimPrefix(key, p.baggagePrefix), v)
+			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
+				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
 			}
 		}
 		return nil

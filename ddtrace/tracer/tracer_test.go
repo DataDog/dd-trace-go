@@ -223,9 +223,9 @@ func TestPropagationDefaults(t *testing.T) {
 	pid := strconv.FormatUint(root.SpanID, 10)
 
 	// hardcode header names to fail test if defaults are changed
-	assert.Equal(headers.Get(defaultTraceIDHeader), tid)
-	assert.Equal(headers.Get(defaultParentIDHeader), pid)
-	assert.Equal(headers.Get(defaultBaggageHeaderPrefix+"x"), "y")
+	assert.Equal(headers.Get(DefaultTraceIDHeader), tid)
+	assert.Equal(headers.Get(DefaultParentIDHeader), pid)
+	assert.Equal(headers.Get(DefaultBaggageHeaderPrefix+"x"), "y")
 
 	// retrieve the spanContext
 	propagated, err := tracer.Extract(carrier)
