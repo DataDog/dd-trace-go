@@ -40,8 +40,12 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	)
 	// get the resource associated to this request
 	if r.Match(req, &match) {
-		route, err = match.Route.GetPathTemplate()
-		if err != nil {
+		if match.Route != nil {
+			route, err = match.Route.GetPathTemplate()
+			if err != nil {
+				route = "unknown"
+			}
+		} else {
 			route = "unknown"
 		}
 	} else {
