@@ -32,7 +32,7 @@ func TestHttpTracer(t *testing.T) {
 			defer mt.Stop()
 			responseCodeStr := strconv.Itoa(ht.responseCode)
 
-			// Send and verify a 500 request
+			// Send and verify a request
 			r := httptest.NewRequest(ht.httpMethod, ht.url, nil)
 			w := httptest.NewRecorder()
 			router().ServeHTTP(w, r)
