@@ -1,8 +1,10 @@
 package mux
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -11,135 +13,76 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHttpTracer200(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	// Send and verify a 200 request
-	url := "/200"
-	r := httptest.NewRequest("GET", url, nil)
-	w := httptest.NewRecorder()
-	router().ServeHTTP(w, r)
-	assert.Equal(200, w.Code)
-	assert.Equal("OK\n", w.Body.String())
-
-	// Ensure the request is properly traced
-	spans := mt.FinishedSpans()
-	assert.Equal(1, len(spans))
-
-	s := spans[0]
-	assert.Equal("http.request", s.OperationName())
-	assert.Equal("my-service", s.Tag(ext.ServiceName))
-	assert.Equal("GET "+url, s.Tag(ext.ResourceName))
-	assert.Equal("200", s.Tag(ext.HTTPCode))
-	assert.Equal("GET", s.Tag(ext.HTTPMethod))
-	assert.Equal(url, s.Tag(ext.HTTPURL))
-	assert.Equal(nil, s.Tag(ext.Error))
+var httpTests = []struct {
+	responseCode int
+	httpMethod   string
+	url          string
+}{
+	{http.StatusOK, "GET", "/200"},
+	{http.StatusNotFound, "GET", "/not_a_real_route"},
+	{http.StatusMethodNotAllowed, "POST", "/405"},
+	{http.StatusInternalServerError, "GET", "/500"},
 }
 
-func TestHttpTracer404(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+func TestHttpTracer(t *testing.T) {
+	for _, ht := range httpTests {
+		t.Run(ht.httpMethod+ht.url, func(t *testing.T) {
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			responseCodeStr := strconv.Itoa(ht.responseCode)
 
-	// Send and verify a 500 request
-	url := "/not_a_real_route"
-	r := httptest.NewRequest("GET", url, nil)
-	w := httptest.NewRecorder()
-	router().ServeHTTP(w, r)
-	assert.Equal(404, w.Code)
-	assert.Equal("404!\n", w.Body.String())
+			// Send and verify a 500 request
+			r := httptest.NewRequest(ht.httpMethod, ht.url, nil)
+			w := httptest.NewRecorder()
+			router().ServeHTTP(w, r)
+			assert.Equal(ht.responseCode, w.Code)
+			assert.Equal(responseCodeStr+"!\n", w.Body.String())
 
-	spans := mt.FinishedSpans()
-	assert.Equal(1, len(spans))
+			spans := mt.FinishedSpans()
+			assert.Equal(1, len(spans))
 
-	s := spans[0]
-	assert.Equal("http.request", s.OperationName())
-	assert.Equal("my-service", s.Tag(ext.ServiceName))
-	assert.Equal("GET unknown", s.Tag(ext.ResourceName))
-	assert.Equal("404", s.Tag(ext.HTTPCode))
-	assert.Equal("GET", s.Tag(ext.HTTPMethod))
-	assert.Equal(url, s.Tag(ext.HTTPURL))
-}
+			s := spans[0]
+			assert.Equal("http.request", s.OperationName())
+			assert.Equal("my-service", s.Tag(ext.ServiceName))
+			assert.Equal(responseCodeStr, s.Tag(ext.HTTPCode))
+			assert.Equal(ht.httpMethod, s.Tag(ext.HTTPMethod))
+			assert.Equal(ht.url, s.Tag(ext.HTTPURL))
 
-func TestHttpTracer405(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+			// Response code dependant tests
+			switch ht.responseCode {
+			case http.StatusInternalServerError:
+				assert.Equal(ht.httpMethod+" "+ht.url, s.Tag(ext.ResourceName))
+				assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
 
-	// Send and verify a 500 request
-	url := "/method"
-	r := httptest.NewRequest("POST", url, nil)
-	w := httptest.NewRecorder()
-	router().ServeHTTP(w, r)
-	assert.Equal(405, w.Code)
-	assert.Equal("405!\n", w.Body.String())
+			case http.StatusNotFound, http.StatusMethodNotAllowed:
+				assert.Equal(ht.httpMethod+" unknown", s.Tag(ext.ResourceName))
 
-	spans := mt.FinishedSpans()
-	assert.Equal(1, len(spans))
-
-	s := spans[0]
-	assert.Equal("http.request", s.OperationName())
-	assert.Equal("my-service", s.Tag(ext.ServiceName))
-	assert.Equal("POST unknown", s.Tag(ext.ResourceName))
-	assert.Equal("405", s.Tag(ext.HTTPCode))
-	assert.Equal("POST", s.Tag(ext.HTTPMethod))
-	assert.Equal(url, s.Tag(ext.HTTPURL))
-}
-
-func TestHttpTracer500(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	// Send and verify a 500 request
-	url := "/500"
-	r := httptest.NewRequest("GET", url, nil)
-	w := httptest.NewRecorder()
-	router().ServeHTTP(w, r)
-	assert.Equal(500, w.Code)
-	assert.Equal("500!\n", w.Body.String())
-
-	spans := mt.FinishedSpans()
-	assert.Equal(1, len(spans))
-
-	s := spans[0]
-	assert.Equal("http.request", s.OperationName())
-	assert.Equal("my-service", s.Tag(ext.ServiceName))
-	assert.Equal("GET "+url, s.Tag(ext.ResourceName))
-	assert.Equal("500", s.Tag(ext.HTTPCode))
-	assert.Equal("GET", s.Tag(ext.HTTPMethod))
-	assert.Equal(url, s.Tag(ext.HTTPURL))
-	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
+			default:
+				assert.Equal(ht.httpMethod+" "+ht.url, s.Tag(ext.ResourceName))
+			}
+		})
+	}
 }
 
 func router() http.Handler {
 	mux := NewRouter(WithServiceName("my-service"))
-	mux.HandleFunc("/200", handler200)
-	mux.HandleFunc("/500", handler500)
-	mux.HandleFunc("/method", handler200).Methods("GET")
-	mux.NotFoundHandler = get404Handler()
-	mux.MethodNotAllowedHandler = get405Handler()
+	mux.Handle("/200", okHandler())
+	mux.Handle("/500", errorHandler(http.StatusInternalServerError))
+	mux.Handle("/405", okHandler()).Methods("GET")
+	mux.NotFoundHandler = errorHandler(http.StatusNotFound)
+	mux.MethodNotAllowedHandler = errorHandler(http.StatusMethodNotAllowed)
 	return mux
 }
 
-func handler200(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("OK\n"))
-}
-
-func get404Handler() http.Handler {
+func errorHandler(code int) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "404!", http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("%d!", code), code)
 	})
 }
 
-func get405Handler() http.Handler {
+func okHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "405!", http.StatusMethodNotAllowed)
+		w.Write([]byte("200!\n"))
 	})
-}
-
-func handler500(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "500!", http.StatusInternalServerError)
 }

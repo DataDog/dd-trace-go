@@ -39,8 +39,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	)
 	// get the resource associated to this request
 	if r.Match(req, &match) && match.Route != nil {
-		if routeTmp, err := match.Route.GetPathTemplate(); err == nil {
-			route = routeTmp
+		if r, err := match.Route.GetPathTemplate(); err == nil {
+			route = r
 		}
 	}
 	resource := req.Method + " " + route
