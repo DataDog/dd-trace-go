@@ -25,23 +25,27 @@ func TestHttpTracer(t *testing.T) {
 			code:         http.StatusOK,
 			method:       "GET",
 			url:          "/200",
-			resourceName: "GET /200"},
+			resourceName: "GET /200",
+		},
 		{
 			code:         http.StatusNotFound,
 			method:       "GET",
 			url:          "/not_a_real_route",
-			resourceName: "GET unknown"},
+			resourceName: "GET unknown",
+		},
 		{
 			code:         http.StatusMethodNotAllowed,
 			method:       "POST",
 			url:          "/405",
-			resourceName: "POST unknown"},
+			resourceName: "POST unknown",
+		},
 		{
 			code:         http.StatusInternalServerError,
 			method:       "GET",
 			url:          "/500",
 			resourceName: "GET /500",
-			errorStr:     "500: Internal Server Error"},
+			errorStr:     "500: Internal Server Error",
+		},
 	} {
 		t.Run(http.StatusText(ht.code), func(t *testing.T) {
 			assert := assert.New(t)
