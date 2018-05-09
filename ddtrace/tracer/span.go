@@ -205,6 +205,9 @@ func (s *span) String() string {
 	for key, val := range s.Meta {
 		lines = append(lines, fmt.Sprintf("\t%s:%s", key, val))
 	}
+	for key, val := range s.Metrics {
+		lines = append(lines, fmt.Sprintf("\t%s:%f", key, val))
+	}
 	s.RUnlock()
 	return strings.Join(lines, "\n")
 }
