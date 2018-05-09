@@ -73,6 +73,15 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal("d", s.Tag("c"))
 }
 
+func TestSpanSetTagPriority(t *testing.T) {
+	assert := assert.New(t)
+	s := basicSpan("http.request")
+	assert.False(s.context.hasSamplingPriority())
+	s.SetTag(ext.SamplingPriority, -1)
+	assert.True(s.context.hasSamplingPriority())
+	assert.Equal(-1, s.context.samplingPriority())
+}
+
 func TestSpanTagImmutability(t *testing.T) {
 	s := basicSpan("http.request")
 	s.SetTag("a", "b")

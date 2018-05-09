@@ -27,7 +27,7 @@ func TestTracerStop(t *testing.T) {
 }
 
 func TestTracerStartSpan(t *testing.T) {
-	parentTags := map[string]interface{}{ext.ServiceName: "root-service"}
+	parentTags := map[string]interface{}{ext.ServiceName: "root-service", ext.SamplingPriority: -1}
 	startTime := time.Now()
 
 	t.Run("with-service", func(t *testing.T) {
@@ -47,9 +47,11 @@ func TestTracerStartSpan(t *testing.T) {
 		assert.Equal("my-service", s.Tag(ext.ServiceName))
 		assert.Equal(parent.SpanID(), s.ParentID())
 		assert.Equal(parent.TraceID(), s.TraceID())
+		assert.True(parent.context.hasSamplingPriority())
+		assert.Equal(-1, parent.context.samplingPriority())
 	})
 
-	t.Run("inherit-service", func(t *testing.T) {
+	t.Run("inherit", func(t *testing.T) {
 		var mt mocktracer
 		parent := newSpan(&mt, "http.request", &ddtrace.StartSpanConfig{Tags: parentTags})
 		s, ok := mt.StartSpan("db.query", tracer.ChildOf(parent.Context())).(*mockspan)
@@ -60,6 +62,8 @@ func TestTracerStartSpan(t *testing.T) {
 		assert.Equal("root-service", s.Tag(ext.ServiceName))
 		assert.Equal(parent.SpanID(), s.ParentID())
 		assert.Equal(parent.TraceID(), s.TraceID())
+		assert.True(s.context.hasSamplingPriority())
+		assert.Equal(-1, s.context.samplingPriority())
 	})
 }
 
@@ -115,9 +119,11 @@ func TestTracerInject(t *testing.T) {
 
 	t.Run("ok", func(t *testing.T) {
 		sctx := &spanContext{
-			traceID: 1,
-			spanID:  2,
-			baggage: map[string]string{"A": "B", "C": "D"},
+			traceID:     1,
+			spanID:      2,
+			priority:    -1,
+			hasPriority: true,
+			baggage:     map[string]string{"A": "B", "C": "D"},
 		}
 		carrier := make(map[string]string)
 		err := (&mocktracer{}).Inject(sctx, tracer.TextMapCarrier(carrier))
@@ -126,6 +132,7 @@ func TestTracerInject(t *testing.T) {
 		assert.Nil(err)
 		assert.Equal("1", carrier[traceHeader])
 		assert.Equal("2", carrier[spanHeader])
+		assert.Equal("-1", carrier[priorityHeader])
 		assert.Equal("B", carrier[baggagePrefix+"A"])
 		assert.Equal("D", carrier[baggagePrefix+"C"])
 	})
@@ -203,6 +210,13 @@ func TestTracerExtract(t *testing.T) {
 		assert.True(ok)
 		assert.Equal("B", sc.baggageItem("a"))
 		assert.Equal("D", sc.baggageItem("c"))
+
+		ctx, err = mt.Extract(carry(traceHeader, "1", spanHeader, "2", priorityHeader, "-1"))
+		assert.Nil(err)
+		sc, ok = ctx.(*spanContext)
+		assert.True(ok)
+		assert.True(sc.hasSamplingPriority())
+		assert.Equal(-1, sc.samplingPriority())
 	})
 
 	t.Run("consistency", func(t *testing.T) {
