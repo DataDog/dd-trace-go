@@ -21,12 +21,29 @@ func TestHttpTracer(t *testing.T) {
 		resourceName string
 		errorStr     string
 	}{
-		{http.StatusOK, "GET", "/200", "GET /200", ""},
-		{http.StatusNotFound, "GET", "/not_a_real_route", "GET unknown", ""},
-		{http.StatusMethodNotAllowed, "POST", "/405", "POST unknown", ""},
-		{http.StatusInternalServerError, "GET", "/500", "GET /500", "500: Internal Server Error"},
+		{
+			code:         http.StatusOK,
+			method:       "GET",
+			url:          "/200",
+			resourceName: "GET /200"},
+		{
+			code:         http.StatusNotFound,
+			method:       "GET",
+			url:          "/not_a_real_route",
+			resourceName: "GET unknown"},
+		{
+			code:         http.StatusMethodNotAllowed,
+			method:       "POST",
+			url:          "/405",
+			resourceName: "POST unknown"},
+		{
+			code:         http.StatusInternalServerError,
+			method:       "GET",
+			url:          "/500",
+			resourceName: "GET /500",
+			errorStr:     "500: Internal Server Error"},
 	} {
-		t.Run(ht.method+ht.url, func(t *testing.T) {
+		t.Run(http.StatusText(ht.code), func(t *testing.T) {
 			assert := assert.New(t)
 			mt := mocktracer.Start()
 			defer mt.Stop()
