@@ -13,31 +13,31 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var httpTests = []struct {
-	responseCode int
-	httpMethod   string
-	url          string
-}{
-	{http.StatusOK, "GET", "/200"},
-	{http.StatusNotFound, "GET", "/not_a_real_route"},
-	{http.StatusMethodNotAllowed, "POST", "/405"},
-	{http.StatusInternalServerError, "GET", "/500"},
-}
-
 func TestHttpTracer(t *testing.T) {
-	for _, ht := range httpTests {
-		t.Run(ht.httpMethod+ht.url, func(t *testing.T) {
+	for _, ht := range []struct {
+		code         int
+		method       string
+		url          string
+		resourceName string
+		errorStr     string
+	}{
+		{http.StatusOK, "GET", "/200", "GET /200", ""},
+		{http.StatusNotFound, "GET", "/not_a_real_route", "GET unknown", ""},
+		{http.StatusMethodNotAllowed, "POST", "/405", "POST unknown", ""},
+		{http.StatusInternalServerError, "GET", "/500", "GET /500", "500: Internal Server Error"},
+	} {
+		t.Run(ht.method+ht.url, func(t *testing.T) {
 			assert := assert.New(t)
 			mt := mocktracer.Start()
 			defer mt.Stop()
-			responseCodeStr := strconv.Itoa(ht.responseCode)
+			codeStr := strconv.Itoa(ht.code)
 
 			// Send and verify a request
-			r := httptest.NewRequest(ht.httpMethod, ht.url, nil)
+			r := httptest.NewRequest(ht.method, ht.url, nil)
 			w := httptest.NewRecorder()
 			router().ServeHTTP(w, r)
-			assert.Equal(ht.responseCode, w.Code)
-			assert.Equal(responseCodeStr+"!\n", w.Body.String())
+			assert.Equal(ht.code, w.Code)
+			assert.Equal(codeStr+"!\n", w.Body.String())
 
 			spans := mt.FinishedSpans()
 			assert.Equal(1, len(spans))
@@ -45,21 +45,12 @@ func TestHttpTracer(t *testing.T) {
 			s := spans[0]
 			assert.Equal("http.request", s.OperationName())
 			assert.Equal("my-service", s.Tag(ext.ServiceName))
-			assert.Equal(responseCodeStr, s.Tag(ext.HTTPCode))
-			assert.Equal(ht.httpMethod, s.Tag(ext.HTTPMethod))
+			assert.Equal(codeStr, s.Tag(ext.HTTPCode))
+			assert.Equal(ht.method, s.Tag(ext.HTTPMethod))
 			assert.Equal(ht.url, s.Tag(ext.HTTPURL))
-
-			// Response code dependant tests
-			switch ht.responseCode {
-			case http.StatusInternalServerError:
-				assert.Equal(ht.httpMethod+" "+ht.url, s.Tag(ext.ResourceName))
-				assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
-
-			case http.StatusNotFound, http.StatusMethodNotAllowed:
-				assert.Equal(ht.httpMethod+" unknown", s.Tag(ext.ResourceName))
-
-			default:
-				assert.Equal(ht.httpMethod+" "+ht.url, s.Tag(ext.ResourceName))
+			assert.Equal(ht.resourceName, s.Tag(ext.ResourceName))
+			if ht.errorStr != "" {
+				assert.Equal(ht.errorStr, s.Tag(ext.Error).(error).Error())
 			}
 		})
 	}
