@@ -32,7 +32,6 @@ type params struct {
 	config    *queryConfig
 	keyspace  string
 	paginated bool
-	query     string
 }
 
 // WrapQuery wraps a gocql.Query into a traced Query under the given service name.
@@ -42,17 +41,17 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	query := `"` + strings.SplitN(q.String(), "\"", 3)[1] + `"`
-	query, err := strconv.Unquote(query)
-	if err != nil {
-		// An invalid string, so that the trace is not dropped
-		// due to having an empty resource
-		query = "_"
+	if cfg.resourceName == "" {
+		q := `"` + strings.SplitN(q.String(), "\"", 3)[1] + `"`
+		q, err := strconv.Unquote(q)
+		if err != nil {
+			// avoid having an empty resource as it will cause the trace
+			// to be dropped.
+			q = "_"
+		}
+		cfg.resourceName = q
 	}
-	tq := &Query{q, &params{
-		config: cfg,
-		query:  query,
-	}, context.Background()}
+	tq := &Query{q, &params{config: cfg}, context.Background()}
 	return tq
 }
 
@@ -76,7 +75,7 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	span, _ := tracer.StartSpanFromContext(ctx, ext.CassandraQuery,
 		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(p.config.serviceName),
-		tracer.ResourceName(p.query),
+		tracer.ResourceName(p.config.resourceName),
 		tracer.Tag(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated)),
 		tracer.Tag(ext.CassandraKeyspace, p.keyspace),
 	)

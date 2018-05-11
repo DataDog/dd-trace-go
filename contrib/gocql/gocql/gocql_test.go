@@ -53,7 +53,7 @@ func TestErrorWrapper(t *testing.T) {
 	session, err := cluster.CreateSession()
 	assert.Nil(err)
 	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	err = WrapQuery(q, WithServiceName("ServiceName")).Exec()
+	err = WrapQuery(q, WithServiceName("ServiceName"), WithResourceName("CREATE KEYSPACE")).Exec()
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
@@ -61,7 +61,7 @@ func TestErrorWrapper(t *testing.T) {
 
 	assert.Equal(span.Tag(ext.Error).(error), err)
 	assert.Equal(span.OperationName(), ext.CassandraQuery)
-	assert.Equal(span.Tag(ext.ResourceName), "CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	assert.Equal(span.Tag(ext.ResourceName), "CREATE KEYSPACE")
 	assert.Equal(span.Tag(ext.ServiceName), "ServiceName")
 	assert.Equal(span.Tag(ext.CassandraConsistencyLevel), "4")
 	assert.Equal(span.Tag(ext.CassandraPaginated), "false")
