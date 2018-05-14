@@ -240,6 +240,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		TraceID:  id,
 		ParentID: 0,
 		Start:    startTime,
+		cfg:      t.config,
 	}
 	if context != nil {
 		// this is a child span

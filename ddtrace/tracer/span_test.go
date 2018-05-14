@@ -23,6 +23,7 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64) *
 		TraceID:  traceID,
 		ParentID: parentID,
 		Start:    now(),
+		cfg:      &config{},
 	}
 	span.context = newSpanContext(span, nil)
 	return span
@@ -142,12 +143,29 @@ func TestSpanSetTag(t *testing.T) {
 
 	span.SetTag(ext.Error, "something else")
 	assert.Equal(int32(1), span.Error)
+	assert.Equal("something else", span.Meta[ext.ErrorMsg])
 
 	span.SetTag(ext.Error, false)
 	assert.Equal(int32(0), span.Error)
 
 	span.SetTag(ext.SamplingPriority, 2)
 	assert.Equal(float64(2), span.Metrics[samplingPriorityKey])
+}
+
+func TestSpanSetTagNoStack(t *testing.T) {
+	assert := assert.New(t)
+
+	tr, _, stop := startTestTracer()
+	s := tr.StartSpan("web.request").(*span)
+	s.SetTag(ext.Error, errors.New("abc"))
+	assert.NotEmpty(s.Meta[ext.ErrorStack])
+	stop()
+
+	tr, _, stop = startTestTracer(NoErrorStack())
+	s = tr.StartSpan("web.request").(*span)
+	s.SetTag(ext.Error, errors.New("abc"))
+	assert.Empty(s.Meta[ext.ErrorStack])
+	stop()
 }
 
 func TestSpanSetDatadogTags(t *testing.T) {

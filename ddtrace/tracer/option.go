@@ -9,7 +9,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
-// config holds the tracer configuration.
+// config holds the tracer configuration. It not safe for concurrent use.
 type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
@@ -33,6 +33,9 @@ type config struct {
 
 	// propagator propagates span context cross-process
 	propagator Propagator
+
+	// noErrorStack, when true, will disable automatic error stack generation.
+	noErrorStack bool
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -49,6 +52,15 @@ func defaults(c *config) {
 func WithDebugMode(enabled bool) StartOption {
 	return func(c *config) {
 		c.debug = enabled
+	}
+}
+
+// NoErrorStack will disable the automatic generation of error stacks when setting the
+// error tag with a value of type error. However, it will still be possible to attach the
+// error stack manually, if desired, using the "error.stack" tag.
+func NoErrorStack() StartOption {
+	return func(c *config) {
+		c.noErrorStack = true
 	}
 }
 

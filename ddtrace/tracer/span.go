@@ -38,6 +38,7 @@ type span struct {
 	// and also, parent == nil is used to identify root and top-level ("local root") spans.
 	parent  *span
 	context *spanContext
+	cfg     *config
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -102,7 +103,12 @@ func (s *span) setTagError(value interface{}) {
 		s.Error = 1
 		s.Meta[ext.ErrorMsg] = v.Error()
 		s.Meta[ext.ErrorType] = reflect.TypeOf(v).String()
-		s.Meta[ext.ErrorStack] = string(debug.Stack())
+		if !s.cfg.noErrorStack {
+			s.Meta[ext.ErrorStack] = string(debug.Stack())
+		}
+	case string:
+		s.Error = 1
+		s.Meta[ext.ErrorMsg] = v
 	case nil:
 		// no error
 		s.Error = 0
