@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/ugorji/go/codec"
+	"github.com/vmihailenco/msgpack"
 )
 
 // TestPayloadIntegrity tests that whatever we push into the payload
@@ -28,7 +28,7 @@ func TestPayloadIntegrity(t *testing.T) {
 		got, err := ioutil.ReadAll(p)
 		assert.NoError(err)
 		want.Reset()
-		err = codec.NewEncoder(want, &codec.MsgpackHandle{}).Encode(items)
+		err = msgpack.NewEncoder(want).Encode(items)
 		assert.NoError(err)
 		assert.Equal(want.Bytes(), got)
 	}
@@ -47,7 +47,7 @@ func TestPayloadDecodeInts(t *testing.T) {
 			p.push(i)
 		}
 		var got []int
-		err := codec.NewDecoder(p, &codec.MsgpackHandle{}).Decode(&got)
+		err := msgpack.NewDecoder(p).Decode(&got)
 		assert.NoError(err)
 		assert.Equal(want, got)
 	}
@@ -68,7 +68,7 @@ func TestPayloadDecode(t *testing.T) {
 			p.push(x)
 		}
 		var got []AB
-		err := codec.NewDecoder(p, &codec.MsgpackHandle{}).Decode(&got)
+		err := msgpack.NewDecoder(p).Decode(&got)
 		assert.NoError(err)
 		assert.Equal(want, got)
 	}
@@ -86,7 +86,7 @@ func TestPayloadSize(t *testing.T) {
 			p.push(i)
 		}
 		var buf bytes.Buffer
-		err := codec.NewEncoder(&buf, &codec.MsgpackHandle{}).Encode(nums)
+		err := msgpack.NewEncoder(&buf).Encode(nums)
 		assert.Nil(t, err)
 		assert.NotZero(t, p.size())
 		assert.Equal(t, buf.Len(), p.size())
@@ -112,7 +112,7 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 		}
 		// get the size of the trace in bytes
 		pkg := new(bytes.Buffer)
-		if err := codec.NewEncoder(pkg, &codec.MsgpackHandle{}).Encode(trace); err != nil {
+		if err := msgpack.NewEncoder(pkg).Encode(trace); err != nil {
 			b.Fatal(err)
 		}
 		b.SetBytes(int64(pkg.Len()))

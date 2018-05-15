@@ -2,8 +2,9 @@ ignored = [
   # From these libraries we should always ensure compatibility with the latest:
   "github.com/opentracing/*",
   "golang.org/x/*",
+  "google.golang.org/appengine/*",
 ]
 
 [[constraint]]
-  name = "github.com/ugorji/go"
-  revision = "b4c50a2b199d93b13dc15e78929cfb23bfdf21ab" # Apr 7, 2018
+  name = "github.com/vmihailenco/msgpack"
+  version = "v3.3.1"

@@ -15,7 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/ugorji/go/codec"
+	"github.com/vmihailenco/msgpack"
 )
 
 func (t *tracer) newRootSpan(name, service, resource string) *span {
@@ -830,8 +830,6 @@ type dummyTransport struct {
 	traces [][]*span
 }
 
-var mh codec.MsgpackHandle
-
 func (t *dummyTransport) send(p *payload) error {
 	traces, err := decode(p)
 	if err != nil {
@@ -845,7 +843,7 @@ func (t *dummyTransport) send(p *payload) error {
 
 func decode(p *payload) ([][]*span, error) {
 	var traces [][]*span
-	err := codec.NewDecoder(p, &mh).Decode(&traces)
+	err := msgpack.NewDecoder(p).Decode(&traces)
 	return traces, err
 }
 
