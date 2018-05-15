@@ -17,6 +17,8 @@ var _ ddtrace.Span = (*span)(nil)
 // span represents a computation. Callers must call Finish when a span is
 // complete to ensure it's submitted.
 type span struct {
+	sync.RWMutex
+
 	Name     string             `json:"name"`              // operation name
 	Service  string             `json:"service"`           // service name (i.e. "grpc.server", "http.request")
 	Resource string             `json:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
@@ -30,14 +32,8 @@ type span struct {
 	ParentID uint64             `json:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `json:"error"`             // error status of the span; 0 means no errors
 
-	sync.RWMutex
-	finished bool // true if the span has been submitted to a tracer.
-
-	// parent contains a link to the parent. In most cases, ParentID can be inferred from this.
-	// However, ParentID can technically be overridden (typical usage: distributed tracing)
-	// and also, parent == nil is used to identify root and top-level ("local root") spans.
-	parent  *span
-	context *spanContext
+	finished bool         // true if the span has been submitted to a tracer.
+	context  *spanContext // span propagation context
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -134,6 +130,7 @@ func (s *span) setTagNumeric(key string, v float64) {
 	case ext.SamplingPriority:
 		// setting sampling priority per spec
 		s.Metrics[samplingPriorityKey] = v
+		s.context.setSamplingPriority(int(v))
 	default:
 		s.Metrics[key] = v
 	}
@@ -207,6 +204,9 @@ func (s *span) String() string {
 	s.RLock()
 	for key, val := range s.Meta {
 		lines = append(lines, fmt.Sprintf("\t%s:%s", key, val))
+	}
+	for key, val := range s.Metrics {
+		lines = append(lines, fmt.Sprintf("\t%s:%f", key, val))
 	}
 	s.RUnlock()
 	return strings.Join(lines, "\n")

@@ -10,8 +10,10 @@ import (
 var _ ddtrace.SpanContext = (*spanContext)(nil)
 
 type spanContext struct {
-	sync.RWMutex // guards baggage
+	sync.RWMutex // guards below fields
 	baggage      map[string]string
+	priority     int
+	hasPriority  bool
 
 	spanID  uint64
 	traceID uint64
@@ -41,6 +43,25 @@ func (sc *spanContext) baggageItem(k string) string {
 	sc.RLock()
 	defer sc.RUnlock()
 	return sc.baggage[k]
+}
+
+func (sc *spanContext) setSamplingPriority(p int) {
+	sc.Lock()
+	defer sc.Unlock()
+	sc.priority = p
+	sc.hasPriority = true
+}
+
+func (sc *spanContext) hasSamplingPriority() bool {
+	sc.RLock()
+	defer sc.RUnlock()
+	return sc.hasPriority
+}
+
+func (sc *spanContext) samplingPriority() int {
+	sc.RLock()
+	defer sc.RUnlock()
+	return sc.priority
 }
 
 var mockIDSource uint64 = 123

@@ -291,18 +291,22 @@ func TestSpanSamplingPriority(t *testing.T) {
 		ext.PriorityAutoReject,
 		ext.PriorityAutoKeep,
 		ext.PriorityUserKeep,
-		999, // not used yet, but we should allow it
+		999, // not used, but we should allow it
 	} {
 		span.SetTag(ext.SamplingPriority, priority)
 		v, ok := span.Metrics[samplingPriorityKey]
 		assert.True(ok)
-		assert.Equal(float64(priority), v)
+		assert.EqualValues(priority, v)
+		assert.EqualValues(span.context.priority, v)
+		assert.True(span.context.hasPriority)
+
 		childSpan := tracer.newChildSpan("my.child", span)
-		assert.Equal(span.Metrics[samplingPriorityKey], childSpan.Metrics[samplingPriorityKey])
 		v0, ok0 := span.Metrics[samplingPriorityKey]
 		v1, ok1 := childSpan.Metrics[samplingPriorityKey]
 		assert.Equal(ok0, ok1)
 		assert.Equal(v0, v1)
+		assert.EqualValues(childSpan.context.priority, v0)
+		assert.EqualValues(childSpan.context.hasPriority, ok0)
 	}
 }
 

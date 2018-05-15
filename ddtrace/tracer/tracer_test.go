@@ -32,6 +32,9 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 // TestTracerFrenetic does frenetic testing in a scenario where the tracer is started
 // and stopped in parallel with spans being created.
 func TestTracerCleanStop(t *testing.T) {
+	if testing.Short() {
+		return
+	}
 	var wg sync.WaitGroup
 	var transport dummyTransport
 
@@ -211,6 +214,7 @@ func TestPropagationDefaults(t *testing.T) {
 	tracer := newTracer()
 	root := tracer.StartSpan("web.request").(*span)
 	root.SetBaggageItem("x", "y")
+	root.SetTag(ext.SamplingPriority, -1)
 	ctx := root.Context().(*spanContext)
 	headers := http.Header{}
 
@@ -222,10 +226,10 @@ func TestPropagationDefaults(t *testing.T) {
 	tid := strconv.FormatUint(root.TraceID, 10)
 	pid := strconv.FormatUint(root.SpanID, 10)
 
-	// hardcode header names to fail test if defaults are changed
-	assert.Equal(headers.Get(defaultTraceIDHeader), tid)
-	assert.Equal(headers.Get(defaultParentIDHeader), pid)
-	assert.Equal(headers.Get(defaultBaggageHeaderPrefix+"x"), "y")
+	assert.Equal(headers.Get(DefaultTraceIDHeader), tid)
+	assert.Equal(headers.Get(DefaultParentIDHeader), pid)
+	assert.Equal(headers.Get(DefaultBaggageHeaderPrefix+"x"), "y")
+	assert.Equal(headers.Get(DefaultPriorityHeader), "-1")
 
 	// retrieve the spanContext
 	propagated, err := tracer.Extract(carrier)
@@ -236,6 +240,8 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Equal(ctx.traceID, pctx.traceID)
 	assert.Equal(ctx.spanID, pctx.spanID)
 	assert.Equal(ctx.baggage, pctx.baggage)
+	assert.Equal(ctx.priority, -1)
+	assert.True(ctx.hasPriority)
 
 	// ensure a child can be created
 	child := tracer.StartSpan("db.query", ChildOf(propagated)).(*span)
@@ -244,6 +250,8 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.NotEqual(uint64(0), child.SpanID)
 	assert.Equal(root.SpanID, child.ParentID)
 	assert.Equal(root.TraceID, child.ParentID)
+	assert.Equal(child.context.priority, -1)
+	assert.True(child.context.hasPriority)
 }
 
 func TestTracerSamplingPriorityPropagation(t *testing.T) {
@@ -251,7 +259,12 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	tracer := newTracer()
 	root := tracer.StartSpan("web.request", Tag(ext.SamplingPriority, 2)).(*span)
 	child := tracer.StartSpan("db.query", ChildOf(root.Context())).(*span)
-	assert.Equal(float64(2), child.Metrics[samplingPriorityKey])
+	assert.EqualValues(2, root.Metrics[samplingPriorityKey])
+	assert.EqualValues(2, child.Metrics[samplingPriorityKey])
+	assert.EqualValues(2, root.context.priority)
+	assert.EqualValues(2, child.context.priority)
+	assert.True(root.context.hasPriority)
+	assert.True(child.context.hasPriority)
 }
 
 func TestTracerBaggageImmutability(t *testing.T) {
@@ -649,6 +662,9 @@ func TestTracerRace(t *testing.T) {
 // be using forceFlush() to make sure things are really sent to transport.
 // Here, we just wait until things show up, as we would do with a real program.
 func TestWorker(t *testing.T) {
+	if testing.Short() {
+		return
+	}
 	assert := assert.New(t)
 
 	tracer, transport, stop := startTestTracer()

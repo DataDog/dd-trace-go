@@ -117,7 +117,7 @@ func newTracer(opts ...StartOption) *tracer {
 		c.transport = newTransport(c.agentAddr)
 	}
 	if c.propagator == nil {
-		c.propagator = NewPropagator("", "", "")
+		c.propagator = NewPropagator(nil)
 	}
 	t := &tracer{
 		config:         c,
@@ -243,30 +243,20 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	if context != nil {
 		// this is a child span
-		if context.span == nil {
-			// the parent is in another process (e.g. transmitted via HTTP headers)
-			span.TraceID = context.traceID
-			span.ParentID = context.spanID
-		} else {
-			// the parent is in the same process
-			parent := context.span
-			parent.RLock()
-			defer parent.RUnlock()
-
-			span.Service = parent.Service
-			span.TraceID = parent.TraceID
-			span.ParentID = parent.SpanID
-			span.parent = parent
-			span.context = newSpanContext(span, parent.context)
-
-			if v, ok := parent.Metrics[samplingPriorityKey]; ok {
-				span.Metrics[samplingPriorityKey] = v
-			}
+		span.TraceID = context.traceID
+		span.ParentID = context.spanID
+		if context.hasSamplingPriority() {
+			span.Metrics[samplingPriorityKey] = float64(context.samplingPriority())
+		}
+		if context.span != nil {
+			context.span.RLock()
+			span.Service = context.span.Service
+			context.span.RUnlock()
 		}
 	}
+	span.context = newSpanContext(span, context)
 	if context == nil || context.span == nil {
 		// this is either a global root span or a process-level root span
-		span.context = newSpanContext(span, nil)
 		span.SetTag(ext.Pid, strconv.Itoa(os.Getpid()))
 		t.sample(span)
 	}

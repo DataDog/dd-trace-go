@@ -22,12 +22,13 @@ type spanContext struct {
 
 	// the below group should propagate cross-process
 
-	traceID  uint64
-	spanID   uint64
-	parentID uint64
+	traceID uint64
+	spanID  uint64
 
-	mu      sync.RWMutex // guards baggage
-	baggage map[string]string
+	mu          sync.RWMutex // guards below fields
+	baggage     map[string]string
+	priority    int
+	hasPriority bool
 }
 
 // newSpanContext creates a new SpanContext to serve as context for the given
@@ -37,20 +38,27 @@ type spanContext struct {
 // for the same span.
 func newSpanContext(span *span, parent *spanContext) *spanContext {
 	context := &spanContext{
-		traceID:  span.TraceID,
-		spanID:   span.SpanID,
-		parentID: span.ParentID,
-		sampled:  true,
-		span:     span,
+		traceID: span.TraceID,
+		spanID:  span.SpanID,
+		sampled: true,
+		span:    span,
 	}
-	if parent == nil {
-		context.trace = newTrace()
-	} else {
+	if v, ok := span.Metrics[samplingPriorityKey]; ok {
+		context.hasPriority = true
+		context.priority = int(v)
+	}
+	if parent != nil {
 		context.trace = parent.trace
 		context.sampled = parent.sampled
-		for k, v := range parent.baggage {
+		context.hasPriority = parent.hasSamplingPriority()
+		context.priority = parent.samplingPriority()
+		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
-		}
+			return true
+		})
+	}
+	if context.trace == nil {
+		context.trace = newTrace()
 	}
 	// put span in context's trace
 	context.trace.push(span)
@@ -66,6 +74,25 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 			break
 		}
 	}
+}
+
+func (c *spanContext) setSamplingPriority(p int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.priority = p
+	c.hasPriority = true
+}
+
+func (c *spanContext) samplingPriority() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.priority
+}
+
+func (c *spanContext) hasSamplingPriority() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.hasPriority
 }
 
 func (c *spanContext) setBaggageItem(key, val string) {
@@ -156,5 +183,5 @@ func (t *trace) ackFinish() {
 		tr.pushTrace(t.spans)
 	}
 	t.spans = nil
-	t.finished = 0
+	t.finished = 0 // important, because a buffer can be used for several flushes
 }

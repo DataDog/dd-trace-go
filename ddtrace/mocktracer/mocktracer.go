@@ -87,9 +87,10 @@ func (t *mocktracer) addFinishedSpan(s Span) {
 }
 
 const (
-	traceHeader   = "x-mock-trace-id"
-	spanHeader    = "x-mock-span-id"
-	baggagePrefix = "x-baggage-"
+	traceHeader    = "x-mock-trace-id"
+	spanHeader     = "x-mock-span-id"
+	priorityHeader = "x-mock-sampling-priority"
+	baggagePrefix  = "x-baggage-"
 )
 
 func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
@@ -113,6 +114,14 @@ func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 				return tracer.ErrSpanContextCorrupted
 			}
 			sc.spanID = id
+		}
+		if k == priorityHeader {
+			p, err := strconv.Atoi(v)
+			if err != nil {
+				return tracer.ErrSpanContextCorrupted
+			}
+			sc.priority = p
+			sc.hasPriority = true
 		}
 		if strings.HasPrefix(k, baggagePrefix) {
 			sc.setBaggageItem(strings.TrimPrefix(k, baggagePrefix), v)
@@ -139,6 +148,9 @@ func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) er
 	}
 	writer.Set(traceHeader, strconv.FormatUint(ctx.traceID, 10))
 	writer.Set(spanHeader, strconv.FormatUint(ctx.spanID, 10))
+	if ctx.hasSamplingPriority() {
+		writer.Set(priorityHeader, strconv.Itoa(ctx.priority))
+	}
 	ctx.ForeachBaggageItem(func(k, v string) bool {
 		writer.Set(baggagePrefix+k, v)
 		return true

@@ -49,13 +49,12 @@ func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) 
 	if cfg.Tags == nil {
 		cfg.Tags = make(map[string]interface{})
 	}
+	if cfg.Tags[ext.ResourceName] == nil {
+		cfg.Tags[ext.ResourceName] = operationName
+	}
 	s := &mockspan{
 		name:   operationName,
 		tracer: t,
-		tags:   cfg.Tags,
-	}
-	if cfg.Tags[ext.ResourceName] == nil {
-		cfg.Tags[ext.ResourceName] = operationName
 	}
 	if cfg.StartTime.IsZero() {
 		s.startTime = time.Now()
@@ -69,9 +68,21 @@ func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) 
 			// if we have a local parent and no service, inherit the parent's
 			s.SetTag(ext.ServiceName, ctx.span.Tag(ext.ServiceName))
 		}
+		if ctx.hasSamplingPriority() {
+			s.SetTag(ext.SamplingPriority, ctx.samplingPriority())
+		}
 		s.parentID = ctx.spanID
+		s.context.priority = ctx.samplingPriority()
+		s.context.hasPriority = ctx.hasSamplingPriority()
 		s.context.traceID = ctx.traceID
-		s.context.baggage = ctx.baggage
+		s.context.baggage = make(map[string]string, len(ctx.baggage))
+		ctx.ForeachBaggageItem(func(k, v string) bool {
+			s.context.baggage[k] = v
+			return true
+		})
+	}
+	for k, v := range cfg.Tags {
+		s.SetTag(k, v)
 	}
 	return s
 }
@@ -95,8 +106,15 @@ func (s *mockspan) SetTag(key string, value interface{}) {
 	if s.tags == nil {
 		s.tags = make(map[string]interface{}, 1)
 	}
+	if key == ext.SamplingPriority {
+		switch p := value.(type) {
+		case int:
+			s.context.setSamplingPriority(p)
+		case float64:
+			s.context.setSamplingPriority(int(p))
+		}
+	}
 	s.tags[key] = value
-	return
 }
 
 func (s *mockspan) FinishTime() time.Time {
