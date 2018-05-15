@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/ugorji/go/codec"
+	"github.com/vmihailenco/msgpack"
 )
 
 // payload is a wrapper on top of the msgpack encoder which allows constructing an
@@ -29,7 +29,7 @@ import (
 //   p.push(3)
 //   // decode into a slice
 //   var numbers []int
-//   codec.NewDecoder(p, &codec.MsgpackHandler{}).Decode(&numbers)
+//   msgpack.NewDecoder(p).Decode(&numbers)
 //   // numbers == []int{1, 2, 3}
 //
 // This structure basically allows us to push traces into the payload one at a time
@@ -51,7 +51,7 @@ type payload struct {
 	buf bytes.Buffer
 
 	// encoder holds a reference to the encoder used to write into buf.
-	encoder *codec.Encoder
+	encoder *msgpack.Encoder
 }
 
 var _ io.Reader = (*payload)(nil)
@@ -62,7 +62,7 @@ func newPayload() *payload {
 		header: make([]byte, 8),
 		off:    8,
 	}
-	p.encoder = codec.NewEncoder(&p.buf, &codec.MsgpackHandle{})
+	p.encoder = msgpack.NewEncoder(&p.buf)
 	return p
 }
 
@@ -92,7 +92,6 @@ func (p *payload) reset() {
 	p.off = 8
 	p.count = 0
 	p.buf.Reset()
-	p.encoder.Reset(&p.buf)
 }
 
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
