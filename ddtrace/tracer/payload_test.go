@@ -3,12 +3,26 @@ package tracer
 import (
 	"bytes"
 	"io/ioutil"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/ugorji/go/codec"
+	"github.com/tinylib/msgp/msgp"
 )
+
+var fixedTime = now()
+
+func newSpanList(count int) spanList {
+	n := count%5 + 1 // max trace size 5
+	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
+	list := make([]*span, n)
+	for i := 0; i < n; i++ {
+		list[i] = newBasicSpan("span.list." + itoa[i])
+		list[i].Start = fixedTime
+	}
+	return list
+}
 
 // TestPayloadIntegrity tests that whatever we push into the payload
 // allows us to read the same content as would have been encoded by
@@ -18,38 +32,24 @@ func TestPayloadIntegrity(t *testing.T) {
 	p := newPayload()
 	want := new(bytes.Buffer)
 	for _, n := range []int{10, 1 << 10, 1 << 17} {
-		p.reset()
-		items := make([]int, n)
-		for i := 0; i < n; i++ {
-			items[i] = i
-			p.push(i)
-		}
-		assert.Equal(p.itemCount(), n)
-		got, err := ioutil.ReadAll(p)
-		assert.NoError(err)
-		want.Reset()
-		err = codec.NewEncoder(want, &codec.MsgpackHandle{}).Encode(items)
-		assert.NoError(err)
-		assert.Equal(want.Bytes(), got)
-	}
-}
+		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			p.reset()
+			lists := make(spanLists, n)
+			for i := 0; i < n; i++ {
+				list := newSpanList(i)
+				lists[i] = list
+				p.push(list)
+			}
+			want.Reset()
+			err := msgp.Encode(want, lists)
+			assert.NoError(err)
+			assert.Equal(want.Len(), p.size())
+			assert.Equal(p.itemCount(), n)
 
-// TestPayloadDecodeInts tests that whatever we push into the payload can
-// be decoded by the codec.
-func TestPayloadDecodeInts(t *testing.T) {
-	assert := assert.New(t)
-	p := newPayload()
-	for _, n := range []int{10, 1 << 10, 1 << 17} {
-		p.reset()
-		want := make([]int, n)
-		for i := 0; i < n; i++ {
-			want[i] = i
-			p.push(i)
-		}
-		var got []int
-		err := codec.NewDecoder(p, &codec.MsgpackHandle{}).Decode(&got)
-		assert.NoError(err)
-		assert.Equal(want, got)
+			got, err := ioutil.ReadAll(p)
+			assert.NoError(err)
+			assert.Equal(want.Bytes(), got)
+		})
 	}
 }
 
@@ -58,38 +58,16 @@ func TestPayloadDecodeInts(t *testing.T) {
 func TestPayloadDecode(t *testing.T) {
 	assert := assert.New(t)
 	p := newPayload()
-	type AB struct{ A, B int }
-	x := AB{1, 2}
-	for _, n := range []int{10, 1 << 10, 1 << 17} {
-		p.reset()
-		want := make([]AB, n)
-		for i := 0; i < n; i++ {
-			want[i] = x
-			p.push(x)
-		}
-		var got []AB
-		err := codec.NewDecoder(p, &codec.MsgpackHandle{}).Decode(&got)
-		assert.NoError(err)
-		assert.Equal(want, got)
-	}
-}
-
-// TestPayloadSize ensures that payload reports the same size as the
-// regular msgpack encoder.
-func TestPayloadSize(t *testing.T) {
-	p := newPayload()
-	for _, n := range []int{10, 1 << 10, 1 << 17} {
-		p.reset()
-		nums := make([]int, n)
-		for i := 0; i < n; i++ {
-			nums[i] = i
-			p.push(i)
-		}
-		var buf bytes.Buffer
-		err := codec.NewEncoder(&buf, &codec.MsgpackHandle{}).Encode(nums)
-		assert.Nil(t, err)
-		assert.NotZero(t, p.size())
-		assert.Equal(t, buf.Len(), p.size())
+	for _, n := range []int{10, 1 << 10} {
+		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			p.reset()
+			for i := 0; i < n; i++ {
+				p.push(newSpanList(i))
+			}
+			var got spanLists
+			err := msgp.Decode(p, &got)
+			assert.NoError(err)
+		})
 	}
 }
 
@@ -106,7 +84,7 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 		p := newPayload()
 		s := newBasicSpan("X")
 		s.Meta["key"] = strings.Repeat("X", 10*1024)
-		trace := make([]*span, count)
+		trace := make(spanList, count)
 		for i := 0; i < count; i++ {
 			trace[i] = s
 		}

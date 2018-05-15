@@ -15,7 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/ugorji/go/codec"
+	"github.com/tinylib/msgp/msgp"
 )
 
 func (t *tracer) newRootSpan(name, service, resource string) *span {
@@ -36,7 +36,7 @@ func TestTracerCleanStop(t *testing.T) {
 		return
 	}
 	var wg sync.WaitGroup
-	var transport dummyTransport
+	transport := newDummyTransport()
 
 	n := 5000
 
@@ -59,10 +59,10 @@ func TestTracerCleanStop(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
-			Start(withTransport(&transport))
+			Start(withTransport(transport))
 			time.Sleep(time.Millisecond)
-			Start(withTransport(&transport))
-			Start(withTransport(&transport))
+			Start(withTransport(transport))
+			Start(withTransport(transport))
 		}
 	}()
 
@@ -813,7 +813,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 
 // startTestTracer returns a Tracer with a DummyTransport
 func startTestTracer(opts ...StartOption) (*tracer, *dummyTransport, func()) {
-	transport := &dummyTransport{}
+	transport := newDummyTransport()
 	o := append([]StartOption{withTransport(transport)}, opts...)
 	tracer := newTracer(o...)
 	tracer.syncPush = make(chan struct{})
@@ -827,10 +827,12 @@ func startTestTracer(opts ...StartOption) (*tracer, *dummyTransport, func()) {
 // Mock Transport with a real Encoder
 type dummyTransport struct {
 	sync.RWMutex
-	traces [][]*span
+	traces spanLists
 }
 
-var mh codec.MsgpackHandle
+func newDummyTransport() *dummyTransport {
+	return &dummyTransport{traces: spanLists{}}
+}
 
 func (t *dummyTransport) send(p *payload) error {
 	traces, err := decode(p)
@@ -843,9 +845,9 @@ func (t *dummyTransport) send(p *payload) error {
 	return nil
 }
 
-func decode(p *payload) ([][]*span, error) {
-	var traces [][]*span
-	err := codec.NewDecoder(p, &mh).Decode(&traces)
+func decode(p *payload) (spanLists, error) {
+	var traces spanLists
+	err := msgp.Decode(p, &traces)
 	return traces, err
 }
 
@@ -859,12 +861,12 @@ func encode(traces [][]*span) (*payload, error) {
 	return p, nil
 }
 
-func (t *dummyTransport) Traces() [][]*span {
+func (t *dummyTransport) Traces() spanLists {
 	t.Lock()
 	defer t.Unlock()
 
 	traces := t.traces
-	t.traces = nil
+	t.traces = spanLists{}
 	return traces
 }
 

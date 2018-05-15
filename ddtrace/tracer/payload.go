@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/ugorji/go/codec"
+	"github.com/tinylib/msgp/msgp"
 )
 
 // payload is a wrapper on top of the msgpack encoder which allows constructing an
@@ -19,18 +19,6 @@ import (
 // a new payload use the newPayload method.
 //
 // payload is not safe for concurrent use.
-//
-// Example:
-//
-//   p := newPayload()
-//   // add some items
-//   p.push(1)
-//   p.push(2)
-//   p.push(3)
-//   // decode into a slice
-//   var numbers []int
-//   codec.NewDecoder(p, &codec.MsgpackHandler{}).Decode(&numbers)
-//   // numbers == []int{1, 2, 3}
 //
 // This structure basically allows us to push traces into the payload one at a time
 // in order to always have knowledge of the payload size, but also making it possible
@@ -49,9 +37,6 @@ type payload struct {
 
 	// buf holds the sequence of msgpack-encoded items.
 	buf bytes.Buffer
-
-	// encoder holds a reference to the encoder used to write into buf.
-	encoder *codec.Encoder
 }
 
 var _ io.Reader = (*payload)(nil)
@@ -62,13 +47,12 @@ func newPayload() *payload {
 		header: make([]byte, 8),
 		off:    8,
 	}
-	p.encoder = codec.NewEncoder(&p.buf, &codec.MsgpackHandle{})
 	return p
 }
 
 // push pushes a new item into the stream.
-func (p *payload) push(v interface{}) error {
-	if err := p.encoder.Encode(v); err != nil {
+func (p *payload) push(t spanList) error {
+	if err := msgp.Encode(&p.buf, t); err != nil {
 		return err
 	}
 	p.count++
@@ -92,7 +76,6 @@ func (p *payload) reset() {
 	p.off = 8
 	p.count = 0
 	p.buf.Reset()
-	p.encoder.Reset(&p.buf)
 }
 
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
