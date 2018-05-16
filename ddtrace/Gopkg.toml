@@ -5,5 +5,5 @@ ignored = [
 ]
 
 [[constraint]]
-  name = "github.com/ugorji/go"
-  revision = "b4c50a2b199d93b13dc15e78929cfb23bfdf21ab" # Apr 7, 2018
+  name = "github.com/tinylib/msgp"
+  revision = "3b5c87ab5fb00c660bf85b888445d9a01db64db4" # Feb 15, 2018

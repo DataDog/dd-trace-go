@@ -1,3 +1,5 @@
+//go:generate msgp -unexported -marshal=false -o=span_msgp.go -tests=false
+
 package tracer
 
 import (
@@ -8,32 +10,46 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tinylib/msgp/msgp"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
-var _ ddtrace.Span = (*span)(nil)
+type (
+	// spanList implements msgp.Encodable on top of a slice of spans.
+	spanList []*span
+
+	// spanLists implements msgp.Decodable on top of a slice of spanList.
+	// This type is only used in tests.
+	spanLists []spanList
+)
+
+var (
+	_ ddtrace.Span   = (*span)(nil)
+	_ msgp.Encodable = (*spanList)(nil)
+	_ msgp.Decodable = (*spanLists)(nil)
+)
 
 // span represents a computation. Callers must call Finish when a span is
 // complete to ensure it's submitted.
 type span struct {
-	sync.RWMutex
+	sync.RWMutex `msg:"-"`
 
-	Name     string             `json:"name"`              // operation name
-	Service  string             `json:"service"`           // service name (i.e. "grpc.server", "http.request")
-	Resource string             `json:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
-	Type     string             `json:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
-	Start    int64              `json:"start"`             // span start time expressed in nanoseconds since epoch
-	Duration int64              `json:"duration"`          // duration of the span expressed in nanoseconds
-	Meta     map[string]string  `json:"meta,omitempty"`    // arbitrary map of metadata
-	Metrics  map[string]float64 `json:"metrics,omitempty"` // arbitrary map of numeric metrics
-	SpanID   uint64             `json:"span_id"`           // identifier of this span
-	TraceID  uint64             `json:"trace_id"`          // identifier of the root span
-	ParentID uint64             `json:"parent_id"`         // identifier of the span's direct parent
-	Error    int32              `json:"error"`             // error status of the span; 0 means no errors
+	Name     string             `msg:"name"`              // operation name
+	Service  string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
+	Resource string             `msg:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
+	Type     string             `msg:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
+	Start    int64              `msg:"start"`             // span start time expressed in nanoseconds since epoch
+	Duration int64              `msg:"duration"`          // duration of the span expressed in nanoseconds
+	Meta     map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
+	Metrics  map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
+	SpanID   uint64             `msg:"span_id"`           // identifier of this span
+	TraceID  uint64             `msg:"trace_id"`          // identifier of the root span
+	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
+	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
 
-	finished bool         // true if the span has been submitted to a tracer.
-	context  *spanContext // span propagation context
+	finished bool         `msg:"-"` // true if the span has been submitted to a tracer.
+	context  *spanContext `msg:"-"` // span propagation context
 }
 
 // Context yields the SpanContext for this Span. Note that the return
