@@ -110,16 +110,13 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 		for i := 0; i < count; i++ {
 			trace[i] = s
 		}
-		// get the size of the trace in bytes
-		pkg := new(bytes.Buffer)
-		if err := codec.NewEncoder(pkg, &codec.MsgpackHandle{}).Encode(trace); err != nil {
-			b.Fatal(err)
-		}
-		b.SetBytes(int64(pkg.Len()))
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			p.push(trace)
+			p.reset()
+			for p.size() < payloadMaxLimit {
+				p.push(trace)
+			}
 		}
 	}
 }
