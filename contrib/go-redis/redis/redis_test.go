@@ -141,21 +141,45 @@ func TestMultipleCommands(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	opts := &redis.Options{Addr: "127.0.0.1:6379"}
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	t.Run("wrong-port", func(t *testing.T) {
+		opts := &redis.Options{Addr: "127.0.0.1:6378"} // wrong port
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	client := NewClient(opts, WithServiceName("my-redis"))
-	err := client.Get("non_existent_key")
+		client := NewClient(opts, WithServiceName("my-redis"))
+		_, err := client.Get("key").Result()
 
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
 
-	assert.Equal("redis.command", span.OperationName())
-	assert.Equal(err.Err().(error), span.Tag(ext.Error))
-	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
-	assert.Equal("6379", span.Tag(ext.TargetPort))
-	assert.Equal("get non_existent_key: ", span.Tag("redis.raw_command"))
+		assert.Equal("redis.command", span.OperationName())
+		assert.NotNil(err)
+		assert.Equal(err, span.Tag(ext.Error))
+		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
+		assert.Equal("6378", span.Tag(ext.TargetPort))
+		assert.Equal("get key: ", span.Tag("redis.raw_command"))
+	})
+
+	t.Run("nil", func(t *testing.T) {
+		opts := &redis.Options{Addr: "127.0.0.1:6379"}
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client := NewClient(opts, WithServiceName("my-redis"))
+		_, err := client.Get("non_existent_key").Result()
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+
+		assert.Equal(redis.Nil, err)
+		assert.Equal("redis.command", span.OperationName())
+		assert.Empty(span.Tag(ext.Error))
+		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
+		assert.Equal("6379", span.Tag(ext.TargetPort))
+		assert.Equal("get non_existent_key: ", span.Tag("redis.raw_command"))
+	})
 }

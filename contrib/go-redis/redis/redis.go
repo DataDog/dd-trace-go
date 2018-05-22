@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
@@ -93,7 +94,11 @@ func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) 
 	cmds, err := c.Pipeliner.Exec()
 	span.SetTag(ext.ResourceName, commandsToString(cmds))
 	span.SetTag("redis.pipeline_length", strconv.Itoa(len(cmds)))
-	span.Finish(tracer.WithError(err))
+	var opts []ddtrace.FinishOption
+	if err != redis.Nil {
+		opts = append(opts, tracer.WithError(err))
+	}
+	span.Finish(opts...)
 
 	return cmds, err
 }
@@ -136,7 +141,11 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 				tracer.Tag("redis.args_length", strconv.Itoa(length)),
 			)
 			err := oldProcess(cmd)
-			span.Finish(tracer.WithError(err))
+			var opts []ddtrace.FinishOption
+			if err != redis.Nil {
+				opts = append(opts, tracer.WithError(err))
+			}
+			span.Finish(opts...)
 			return err
 		}
 	}
