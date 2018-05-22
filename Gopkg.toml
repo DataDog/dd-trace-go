@@ -13,6 +13,7 @@ ignored = [
   "github.com/gocql/gocql",
   "github.com/gorilla/mux",
   "github.com/jmoiron/sqlx",
+  "github.com/labstack/echo",
   "github.com/lib/pq",
   "google.golang.org/grpc",
   "gopkg.in/olivere/elastic.v3",
