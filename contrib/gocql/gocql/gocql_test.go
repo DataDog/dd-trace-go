@@ -2,7 +2,9 @@ package gocql
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -31,10 +33,15 @@ func newCassandraCluster() *gocql.ClusterConfig {
 
 // TestMain sets up the Keyspace and table if they do not exist
 func TestMain(m *testing.M) {
+	_, ok := os.LookupEnv("INTEGRATION")
+	if !ok {
+		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
+		os.Exit(0)
+	}
 	cluster := newCassandraCluster()
 	session, err := cluster.CreateSession()
 	if err != nil {
-		log.Fatalf("skipping test: %v\n", err)
+		log.Fatalf("%v\n", err)
 	}
 	// Ensures test keyspace and table person exists.
 	session.Query("CREATE KEYSPACE if not exists trace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor': 1}").Exec()
