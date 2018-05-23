@@ -1,7 +1,10 @@
 package httputil // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 
@@ -20,27 +23,50 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, servi
 		tracer.Tag(ext.HTTPURL, r.URL.Path),
 	)
 	defer span.Finish()
-	h.ServeHTTP(NewResponseWriter(w, span), r.WithContext(ctx))
+	if _, ok := w.(http.Hijacker); ok {
+		w = newHijackableResponseWriter(w, span)
+	} else {
+		w = newResponseWriter(w, span)
+	}
+	h.ServeHTTP(w, r.WithContext(ctx))
 }
 
-// ResponseWriter is a small wrapper around an http response writer that will
+// responseWriter is a small wrapper around an http response writer that will
 // intercept and store the status of a request.
-// It implements the ResponseWriter interface.
-type ResponseWriter struct {
+type responseWriter struct {
 	http.ResponseWriter
 	span   ddtrace.Span
 	status int
 }
 
-// NewResponseWriter allocateds and returns a new ResponseWriter.
-func NewResponseWriter(w http.ResponseWriter, span ddtrace.Span) *ResponseWriter {
-	return &ResponseWriter{w, span, 0}
+var (
+	_ http.Hijacker       = (*hijackableResponseWriter)(nil)
+	_ http.ResponseWriter = (*hijackableResponseWriter)(nil)
+	_ http.ResponseWriter = (*responseWriter)(nil)
+)
+
+type hijackableResponseWriter struct{ *responseWriter }
+
+func newHijackableResponseWriter(w http.ResponseWriter, span ddtrace.Span) *hijackableResponseWriter {
+	return &hijackableResponseWriter{newResponseWriter(w, span)}
+}
+
+func (hrw *hijackableResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := hrw.responseWriter.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("underlying ResponseWriter does not implement http.Hijacker")
+	}
+	return h.Hijack()
+}
+
+func newResponseWriter(w http.ResponseWriter, span ddtrace.Span) *responseWriter {
+	return &responseWriter{w, span, 0}
 }
 
 // Write writes the data to the connection as part of an HTTP reply.
 // We explicitely call WriteHeader with the 200 status code
 // in order to get it reported into the span.
-func (w *ResponseWriter) Write(b []byte) (int, error) {
+func (w *responseWriter) Write(b []byte) (int, error) {
 	if w.status == 0 {
 		w.WriteHeader(http.StatusOK)
 	}
@@ -49,7 +75,7 @@ func (w *ResponseWriter) Write(b []byte) (int, error) {
 
 // WriteHeader sends an HTTP response header with status code.
 // It also sets the status code to the span.
-func (w *ResponseWriter) WriteHeader(status int) {
+func (w *responseWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 	w.status = status
 	w.span.SetTag(ext.HTTPCode, strconv.Itoa(status))
