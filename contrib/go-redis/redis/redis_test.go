@@ -2,6 +2,8 @@ package redis
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -14,6 +16,15 @@ import (
 )
 
 const debug = false
+
+func TestMain(m *testing.M) {
+	_, ok := os.LookupEnv("INTEGRATION")
+	if !ok {
+		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
 
 func TestClient(t *testing.T) {
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}

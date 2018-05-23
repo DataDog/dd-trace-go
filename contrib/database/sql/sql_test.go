@@ -1,6 +1,7 @@
 package sql
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"testing"
@@ -16,6 +17,11 @@ import (
 const tableName = "testsql"
 
 func TestMain(m *testing.M) {
+	_, ok := os.LookupEnv("INTEGRATION")
+	if !ok {
+		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
+		os.Exit(0)
+	}
 	defer sqltest.Prepare(tableName)()
 	os.Exit(m.Run())
 }

@@ -7,12 +7,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+// integration indicates if the test suite should run integration tests.
+var integration bool
+
+func TestMain(m *testing.M) {
+	_, integration = os.LookupEnv("INTEGRATION")
+	os.Exit(m.Run())
+}
 
 // getTestSpan returns a Span with different fields set
 func getTestSpan() *span {
@@ -67,6 +76,9 @@ func mockDatadogAPINewServer(t *testing.T) *httptest.Server {
 }
 
 func TestTracesAgentIntegration(t *testing.T) {
+	if !integration {
+		t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	}
 	assert := assert.New(t)
 
 	testCases := []struct {
