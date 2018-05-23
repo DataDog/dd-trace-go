@@ -313,7 +313,7 @@ func (t *Tracer) updateServices() bool {
 	}
 }
 
-// flushTraces will push any currently buffered services to the server.
+// flushServices will push any currently buffered services to the server.
 func (t *Tracer) flushServices() {
 	servicesModified := t.updateServices()
 
