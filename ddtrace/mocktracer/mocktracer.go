@@ -87,10 +87,10 @@ func (t *mocktracer) addFinishedSpan(s Span) {
 }
 
 const (
-	traceHeader    = "x-mock-trace-id"
-	spanHeader     = "x-mock-span-id"
-	priorityHeader = "x-mock-sampling-priority"
-	baggagePrefix  = "x-baggage-"
+	traceHeader    = tracer.DefaultTraceIDHeader
+	spanHeader     = tracer.DefaultParentIDHeader
+	priorityHeader = tracer.DefaultPriorityHeader
+	baggagePrefix  = tracer.DefaultBaggageHeaderPrefix
 )
 
 func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
