@@ -60,7 +60,8 @@ func TestErrorWrapper(t *testing.T) {
 	session, err := cluster.CreateSession()
 	assert.Nil(err)
 	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	err = WrapQuery(q, WithServiceName("ServiceName"), WithResourceName("CREATE KEYSPACE")).Exec()
+	iter := WrapQuery(q, WithServiceName("ServiceName"), WithResourceName("CREATE KEYSPACE")).Iter()
+	err = iter.Close()
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
@@ -73,11 +74,11 @@ func TestErrorWrapper(t *testing.T) {
 	assert.Equal(span.Tag(ext.CassandraConsistencyLevel), "4")
 	assert.Equal(span.Tag(ext.CassandraPaginated), "false")
 
-	// Not added in case of an error
-	assert.Equal(span.Tag(ext.TargetHost), "")
-	assert.Equal(span.Tag(ext.TargetPort), "")
-	assert.Equal(span.Tag(ext.CassandraCluster), "")
-	assert.Equal(span.Tag(ext.CassandraKeyspace), "")
+	if iter.Host() != nil {
+		assert.Equal(span.Tag(ext.TargetPort), "9042")
+		assert.Equal(span.Tag(ext.TargetHost), "127.0.0.1")
+		assert.Equal(span.Tag(ext.CassandraCluster), "datacenter1")
+	}
 }
 
 func TestChildWrapperSpan(t *testing.T) {
@@ -92,7 +93,8 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Nil(err)
 	q := session.Query("SELECT * from trace.person")
 	tq := WrapQuery(q, WithServiceName("TestServiceName"))
-	tq.WithContext(ctx).Exec()
+	iter := tq.WithContext(ctx).Iter()
+	iter.Close()
 	parentSpan.Finish()
 
 	spans := mt.FinishedSpans()
@@ -107,11 +109,13 @@ func TestChildWrapperSpan(t *testing.T) {
 		pSpan = spans[0]
 	}
 	assert.Equal(pSpan.OperationName(), "parentSpan")
-	assert.Equal(childSpan.ParentID(), pSpan.SpanID)
+	assert.Equal(childSpan.ParentID(), pSpan.SpanID())
 	assert.Equal(childSpan.OperationName(), ext.CassandraQuery)
 	assert.Equal(childSpan.Tag(ext.ResourceName), "SELECT * from trace.person")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
-	assert.Equal(childSpan.Tag(ext.TargetPort), "9042")
-	assert.Equal(childSpan.Tag(ext.TargetHost), "127.0.0.1")
-	assert.Equal(childSpan.Tag(ext.CassandraCluster), "datacenter1")
+	if iter.Host() != nil {
+		assert.Equal(childSpan.Tag(ext.TargetPort), "9042")
+		assert.Equal(childSpan.Tag(ext.TargetHost), "127.0.0.1")
+		assert.Equal(childSpan.Tag(ext.CassandraCluster), "datacenter1")
+	}
 }
