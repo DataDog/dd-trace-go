@@ -77,6 +77,16 @@ func TestHttpTracer(t *testing.T) {
 	}
 }
 
+// TestImplementingMethods is a regression tests asserting that all the mux.Router methods
+// returning the router will return the modified traced version of it and not the original
+// router.
+func TestImplementingMethods(t *testing.T) {
+	r := NewRouter()
+	_ = (*Router)(r.StrictSlash(false))
+	_ = (*Router)(r.SkipClean(false))
+	_ = (*Router)(r.UseEncodedPath())
+}
+
 func router() http.Handler {
 	mux := NewRouter(WithServiceName("my-service"))
 	mux.Handle("/200", okHandler())
