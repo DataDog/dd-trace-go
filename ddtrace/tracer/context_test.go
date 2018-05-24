@@ -44,8 +44,15 @@ func TestStartSpanFromContext(t *testing.T) {
 	defer stop()
 
 	parent := &span{context: &spanContext{spanID: 123, traceID: 456}}
+	parent2 := &span{context: &spanContext{spanID: 789, traceID: 456}}
 	pctx := ContextWithSpan(context.Background(), parent)
-	child, ctx := StartSpanFromContext(pctx, "http.request", ServiceName("gin"), ResourceName("/"))
+	child, ctx := StartSpanFromContext(
+		pctx,
+		"http.request",
+		ServiceName("gin"),
+		ResourceName("/"),
+		ChildOf(parent2.Context()), // we do this to assert that the span in pctx takes priority.
+	)
 	assert := assert.New(t)
 
 	got, ok := child.(*span)
