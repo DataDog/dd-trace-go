@@ -177,6 +177,8 @@ func TestNewSpanContext(t *testing.T) {
 		assert := assert.New(t)
 		assert.Equal(ctx.traceID, span.TraceID)
 		assert.Equal(ctx.spanID, span.SpanID)
+		assert.Equal(ctx.TraceID(), span.TraceID)
+		assert.Equal(ctx.SpanID(), span.SpanID)
 		assert.Equal(ctx.priority, 1)
 		assert.True(ctx.hasPriority)
 		assert.NotNil(ctx.trace)
