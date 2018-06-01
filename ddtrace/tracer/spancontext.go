@@ -65,7 +65,13 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	return context
 }
 
-// ForeachBaggageItem implements SpanContext.
+// SpanID implements ddtrace.SpanContext.
+func (c *spanContext) SpanID() uint64 { return c.spanID }
+
+// TraceID implements ddtrace.SpanContext.
+func (c *spanContext) TraceID() uint64 { return c.traceID }
+
+// ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

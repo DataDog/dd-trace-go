@@ -60,6 +60,12 @@ type Span interface {
 // spawn a direct descendant of the span that it belongs to. It can be used
 // to create distributed tracing by propagating it using the provided interfaces.
 type SpanContext interface {
+	// SpanID returns the span ID that this context is carrying.
+	SpanID() uint64
+
+	// TraceID returns the trace ID that this context is carrying.
+	TraceID() uint64
+
 	// ForeachBaggageItem provides an iterator over the key/value pairs set as
 	// baggage within this context. Iteration stops when the handler returns
 	// false.

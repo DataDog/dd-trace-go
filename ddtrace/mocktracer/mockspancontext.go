@@ -20,6 +20,10 @@ type spanContext struct {
 	span    *mockspan // context owner
 }
 
+func (sc *spanContext) TraceID() uint64 { return sc.traceID }
+
+func (sc *spanContext) SpanID() uint64 { return sc.spanID }
+
 func (sc *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	sc.RLock()
 	defer sc.RUnlock()
