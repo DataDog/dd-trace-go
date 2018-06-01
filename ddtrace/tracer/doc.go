@@ -31,7 +31,7 @@
 // interfaces. An example alternate implementation is the MDCarrier in our gRPC integration.
 //
 // As an example, injecting a span's context into an HTTP request would look like this:
-//  req, err := http.NewRequst("GET", "http://example.com", nil)
+//  req, err := http.NewRequest("GET", "http://example.com", nil)
 //  // ...
 //  err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
 //  // ...
