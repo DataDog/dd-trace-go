@@ -10,9 +10,9 @@
 // The tracing client can perform trace sampling. While the trace agent
 // already samples traces to reduce bandwidth usage, client sampling reduces
 // performance overhead. To make use of it, the package comes with a ready-to-use
-// rate sampler that can be passed to the tracer. To use it and cut down 50% of the
+// rate sampler that can be passed to the tracer. To use it and keep only 30% of the
 // requests, one would do:
-//   s := tracer.NewRateSampler(0.5)
+//   s := tracer.NewRateSampler(0.3)
 //   tracer.Start(tracer.WithSampler(s))
 //
 // All spans created by the tracer contain a context hereby referred to as the span
