@@ -1,3 +1,7 @@
+### :warning: WARNING! This branch is no longer maintained. Development is now on the [`v1` branch](https://github.com/DataDog/dd-trace-go/tree/v1). Please consider upgrading using our [migration guide](https://github.com/DataDog/dd-trace-go/blob/v1/MIGRATING.md).
+
+---
+
 [![CircleCI](https://circleci.com/gh/DataDog/dd-trace-go/tree/master.svg?style=svg)](https://circleci.com/gh/DataDog/dd-trace-go/tree/master)
 [![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/github.com/DataDog/dd-trace-go/opentracing)
 
