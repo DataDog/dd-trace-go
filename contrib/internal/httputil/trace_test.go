@@ -22,7 +22,7 @@ func TestTraceAndServe(t *testing.T) {
 
 		called := false
 		w := httptest.NewRecorder()
-		r, err := http.NewRequest("GET", "/", nil)
+		r, err := http.NewRequest("GET", "http://localhost/", nil)
 		assert.NoError(err)
 		handler := func(w http.ResponseWriter, r *http.Request) {
 			_, ok := w.(http.Hijacker)
@@ -43,6 +43,8 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("resource", span.Tag(ext.ResourceName))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/", span.Tag(ext.HTTPURL))
+		assert.Equal("localhost", span.Tag(ext.TargetHost))
+		assert.Nil(span.Tag(ext.TargetPort))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
 		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
 	})

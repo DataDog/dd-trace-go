@@ -15,12 +15,23 @@ import (
 
 // TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, service, resource string) {
+	host, port, err := net.SplitHostPort(r.URL.Host)
+	if err != nil {
+		// could be because of missing port
+		host = r.URL.Host
+	}
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.AppTypeWeb),
 		tracer.ServiceName(service),
 		tracer.ResourceName(resource),
 		tracer.Tag(ext.HTTPMethod, r.Method),
 		tracer.Tag(ext.HTTPURL, r.URL.Path),
+	}
+	if host != "" {
+		opts = append(opts, tracer.Tag(ext.TargetHost, host))
+	}
+	if port != "" {
+		opts = append(opts, tracer.Tag(ext.TargetPort, port))
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
