@@ -111,6 +111,71 @@ func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	return applied, err
 }
 
+func (tq *Query) Consistency(c gocql.Consistency) *Query {
+	tq.Query.Consistency(c)
+	return tq
+}
+
+func (tq *Query) Trace(trace gocql.Tracer) *Query {
+	tq.Query.Trace(trace)
+	return tq
+}
+
+func (tq *Query) Observer(observer gocql.QueryObserver) *Query {
+	tq.Query.Observer(observer)
+	return tq
+}
+
+func (tq *Query) PageSize(n int) *Query {
+	tq.Query.PageSize(n)
+	return tq
+}
+
+func (tq *Query) DefaultTimestamp(enable bool) *Query {
+	tq.Query.DefaultTimestamp(enable)
+	return tq
+}
+
+func (tq *Query) WithTimestamp(timestamp int64) *Query {
+	tq.Query.WithTimestamp(timestamp)
+	return tq
+}
+
+func (tq *Query) RoutingKey(routingKey []byte) *Query {
+	tq.Query.RoutingKey(routingKey)
+	return tq
+}
+
+func (tq *Query) Prefetch(p float64) *Query {
+	tq.Query.Prefetch(p)
+	return tq
+}
+
+func (tq *Query) RetryPolicy(r gocql.RetryPolicy) *Query {
+	tq.Query.RetryPolicy(r)
+	return tq
+}
+
+func (tq *Query) Idempontent(value bool) *Query {
+	tq.Query.Idempontent(value)
+	return tq
+}
+
+func (tq *Query) Bind(v ...interface{}) *Query {
+	tq.Query.Bind(v)
+	return tq
+}
+
+func (tq *Query) SerialConsistency(cons gocql.SerialConsistency) *Query {
+	tq.Query.SerialConsistency(cons)
+	return tq
+}
+
+func (tq *Query) NoSkipMetadata() *Query {
+	tq.Query.NoSkipMetadata()
+	return tq
+}
+
 // Iter starts a new span at query.Iter call.
 func (tq *Query) Iter() *Iter {
 	span := tq.newChildSpan(tq.traceContext)
