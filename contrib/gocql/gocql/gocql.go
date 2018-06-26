@@ -35,6 +35,14 @@ type params struct {
 }
 
 // WrapQuery wraps a gocql.Query into a traced Query under the given service name.
+// Note that the returned Query structure embeds the original gocql.Query structure.
+// This means that any method returning the query for chaining that is not part
+// of this package's Query structure should be called before WrapQuery, otherwise
+// the tracing context could be lost.
+//
+// To be more specific: it is ok (and recommended) to use and chain the return value
+// of `WithContext` and `PageState` but not that of `Consistency`, `Trace`,
+// `Observer`, etc.
 func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 	cfg := new(queryConfig)
 	defaults(cfg)
@@ -55,7 +63,7 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 	return tq
 }
 
-// WithContext rewrites the original function so that ctx can be used for inheritance
+// WithContext adds the specified context to the traced Query structure.
 func (tq *Query) WithContext(ctx context.Context) *Query {
 	tq.traceContext = ctx
 	tq.Query.WithContext(ctx)
