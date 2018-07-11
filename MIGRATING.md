@@ -49,7 +49,7 @@ span := tracer.NewRootSpan("web.request", "my_service", "resource_name")
 Becomes:
 
 ```go
-span := tracer.StartSpan("web.request", tracer.WithServiceName("my_service"), tracer.WithResourceName("resource_name"))
+span := tracer.StartSpan("web.request", tracer.ServiceName("my_service"), tracer.ResourceName("resource_name"))
 ```
 
 We've done this because in many cases the extra parameters could become tedious, given that service names can be inherited and resource names can default to the operation name. This also allows us to have one single, more dynamic API for starting both root and child spans. Check out all possible [StartSpanOption](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer#StartSpanOption) values to get an idea.
