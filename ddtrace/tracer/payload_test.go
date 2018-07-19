@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"bytes"
+	"io"
 	"io/ioutil"
 	"strconv"
 	"strings"
@@ -72,14 +73,14 @@ func TestPayloadDecode(t *testing.T) {
 }
 
 func BenchmarkPayloadThroughput(b *testing.B) {
-	b.Run("10K", benchmarkPayloadThroughput(1))
-	b.Run("100K", benchmarkPayloadThroughput(10))
-	b.Run("1MB", benchmarkPayloadThroughput(100))
+	b.Run("100KB", benchmarkPayloadPushTrace(1))
+	b.Run("1MB", benchmarkPayloadPushTrace(10))
+	b.Run("10MB", benchmarkPayloadPushTrace(100))
 }
 
-// benchmarkPayloadThroughput benchmarks the throughput of the payload by subsequently
-// pushing a trace containing count spans of approximately 10KB in size each.
-func benchmarkPayloadThroughput(count int) func(*testing.B) {
+// benchmarkPayloadPushTrace benchmarks adding a trace to the payload by pushing a trace 10 times
+// containing count spans of approximately 10KB in size each, then reading the payload.
+func benchmarkPayloadPushTrace(count int) func(*testing.B) {
 	return func(b *testing.B) {
 		p := newPayload()
 		s := newBasicSpan("X")
@@ -88,12 +89,17 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 		for i := 0; i < count; i++ {
 			trace[i] = s
 		}
+		rs := make([]byte, 2048) // preallocate slice to read into
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			p.reset()
-			for p.size() < payloadMaxLimit {
+			for i := 0; i < 10; i++ {
 				p.push(trace)
+			}
+			var err error
+			for err != io.EOF {
+				_, err = p.Read(rs)
 			}
 		}
 	}
