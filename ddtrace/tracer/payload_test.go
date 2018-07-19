@@ -44,7 +44,6 @@ func TestPayloadIntegrity(t *testing.T) {
 			want.Reset()
 			err := msgp.Encode(want, lists)
 			assert.NoError(err)
-			assert.Equal(want.Len(), p.size())
 			assert.Equal(p.itemCount(), n)
 
 			got, err := ioutil.ReadAll(p)
