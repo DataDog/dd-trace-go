@@ -35,7 +35,9 @@ type payload struct {
 	// traces holds the sequence of traces to returns.
 	traces []spanList
 
-	buf *bytes.Buffer
+	s int //encoded payload size in bytes
+
+	buf bytes.Buffer
 }
 
 var _ io.Reader = (*payload)(nil)
@@ -44,7 +46,6 @@ var _ io.Reader = (*payload)(nil)
 func newPayload() *payload {
 	p := &payload{
 		header: make([]byte, 8),
-		buf:    new(bytes.Buffer),
 		off:    8,
 	}
 	return p
@@ -54,6 +55,7 @@ func newPayload() *payload {
 func (p *payload) push(t spanList) error {
 	p.traces = append(p.traces, t)
 	p.updateHeader()
+	p.s += t.Msgsize()
 	return nil
 }
 
@@ -65,17 +67,14 @@ func (p *payload) itemCount() int {
 // size returns the payload size in bytes. After the first read the value becomes
 // inaccurate by up to 8 bytes.
 func (p *payload) size() int {
-	size := len(p.header)
-	for _, t := range p.traces {
-		size += t.Msgsize()
-	}
-	return size
+	return len(p.header) + p.s
 }
 
 // reset resets the internal buffer, counter and read offset.
 func (p *payload) reset() {
 	p.off = 8
-	p.traces = nil
+	p.traces = p.traces[:0]
+	p.s = 0
 	p.buf.Reset()
 }
 
@@ -119,10 +118,11 @@ func (p *payload) Read(b []byte) (n int, err error) {
 	// fill buffer with msgpack-encoded traces, popping them  successively
 	//  from the traces slice in a queue-like fashion.
 	for len(p.traces) != 0 && p.buf.Len() <= len(b) {
-		msgp.Encode(p.buf, p.traces[0])
+		msgp.Encode(&p.buf, p.traces[0])
 		if err != nil {
 			return 0, err
 		}
+		p.s -= p.traces[0].Msgsize()
 		p.traces = p.traces[1:]
 	}
 
