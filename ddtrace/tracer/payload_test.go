@@ -72,14 +72,14 @@ func TestPayloadDecode(t *testing.T) {
 }
 
 func BenchmarkPayloadThroughput(b *testing.B) {
-	b.Run("100KB", benchmarkPayloadPushTrace(1))
-	b.Run("1MB", benchmarkPayloadPushTrace(10))
-	b.Run("10MB", benchmarkPayloadPushTrace(100))
+	b.Run("10K", benchmarkPayloadThroughput(1))
+	b.Run("100K", benchmarkPayloadThroughput(10))
+	b.Run("1MB", benchmarkPayloadThroughput(100))
 }
 
-// benchmarkPayloadPushTrace benchmarks adding a trace to the payload by pushing a trace 10 times
-// containing count spans of approximately 10KB in size each, then reading the payload.
-func benchmarkPayloadPushTrace(count int) func(*testing.B) {
+// benchmarkPayloadThroughput benchmarks the throughput of the payload by subsequently
+// pushing a trace containing count spans of approximately 10KB in size each.
+func benchmarkPayloadThroughput(count int) func(*testing.B) {
 	return func(b *testing.B) {
 		p := newPayload()
 		s := newBasicSpan("X")
@@ -88,14 +88,51 @@ func benchmarkPayloadPushTrace(count int) func(*testing.B) {
 		for i := 0; i < count; i++ {
 			trace[i] = s
 		}
-		rs := make([]byte, 2048) // preallocate slice to read into
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			p.reset()
-			for i := 0; i < 10; i++ {
+			for p.size() < payloadMaxLimit {
 				p.push(trace)
 			}
+		}
+	}
+}
+
+func BenchmarkPayloadRead(b *testing.B) {
+	b.Run("10K", benchmarkPayloadRead(1))
+	b.Run("100K", benchmarkPayloadRead(10))
+	b.Run("1MB", benchmarkPayloadRead(100))
+}
+
+// benchmarkPayloadThroughput benchmarks the throughput of the payload by subsequently
+// pushing a trace containing count spans of approximately 10KB in size each.
+func benchmarkPayloadRead(count int) func(*testing.B) {
+	return func(b *testing.B) {
+		readyPayloads := make(chan *payload)
+		go func() {
+			for {
+				p := newPayload()
+				s := newBasicSpan("X")
+				s.Meta["key"] = strings.Repeat("X", 10*1024)
+				trace := make(spanList, count)
+				for i := 0; i < count; i++ {
+					trace[i] = s
+				}
+				p.reset()
+				for p.size() < payloadMaxLimit {
+					p.push(trace)
+				}
+				readyPayloads <- p
+			}
+		}()
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		rs := make([]byte, 2048)
+
+		for i := 0; i < b.N; i++ {
+			p := <-readyPayloads
 			var err error
 			for err != io.EOF {
 				_, err = p.Read(rs)
