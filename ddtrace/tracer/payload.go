@@ -44,7 +44,7 @@ var _ io.Reader = (*payload)(nil)
 func newPayload() *payload {
 	p := &payload{
 		header: make([]byte, 8),
-		buf:    bytes.NewBuffer(make([]byte, 0, 512)),
+		buf:    new(bytes.Buffer),
 		off:    8,
 	}
 	return p
@@ -116,6 +116,8 @@ func (p *payload) Read(b []byte) (n int, err error) {
 		p.off += n
 	}
 
+	// fill buffer with msgpack-encoded traces, popping them  successively
+	//  from the traces slice in a queue-like fashion.
 	for len(p.traces) != 0 && p.buf.Len() <= len(b) {
 		msgp.Encode(p.buf, p.traces[0])
 		if err != nil {
@@ -124,6 +126,5 @@ func (p *payload) Read(b []byte) (n int, err error) {
 		p.traces = p.traces[1:]
 	}
 
-	n, err = p.buf.Read(b)
-	return n, err
+	return p.buf.Read(b)
 }
