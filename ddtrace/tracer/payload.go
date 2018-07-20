@@ -73,6 +73,10 @@ func (p *payload) size() int {
 // reset resets the internal buffer, counter and read offset.
 func (p *payload) reset() {
 	p.off = 8
+	for i := range p.traces {
+		// dereference all traces in the underlying array to let the GC work its magic
+		p.traces[i] = nil
+	}
 	p.traces = p.traces[:0]
 	p.s = 0
 	p.buf.Reset()
