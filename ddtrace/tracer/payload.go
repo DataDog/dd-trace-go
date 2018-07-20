@@ -114,10 +114,8 @@ func (p *payload) Read(b []byte) (n int, err error) {
 		}
 		p.off += n
 	}
-
-	// fill buffer with msgpack-encoded traces, popping them  successively
-	//  from the traces slice in a queue-like fashion.
 	for len(p.traces) != 0 && p.buf.Len() <= len(b) {
+		// fill buffer
 		msgp.Encode(&p.buf, p.traces[0])
 		if err != nil {
 			return 0, err
