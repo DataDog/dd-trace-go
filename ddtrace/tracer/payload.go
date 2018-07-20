@@ -70,7 +70,7 @@ func (p *payload) size() int {
 	return len(p.header) + p.s
 }
 
-// reset resets the internal buffer, counter and read offset.
+// reset resets the internal traces slice, buffer, counter, size tracker and read offset.
 func (p *payload) reset() {
 	p.off = 8
 	for i := range p.traces {
