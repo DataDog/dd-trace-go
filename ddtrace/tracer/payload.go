@@ -36,7 +36,7 @@ type payload struct {
 	traces []spanList
 
 	// encoded payload size in bytes
-	s int
+	msgSize int
 
 	// buf is an intermediary buffer used to encode the payload while it's being read
 	buf bytes.Buffer
@@ -57,7 +57,7 @@ func newPayload() *payload {
 func (p *payload) push(t spanList) error {
 	p.traces = append(p.traces, t)
 	p.updateHeader()
-	p.s += t.Msgsize()
+	p.msgSize += t.Msgsize()
 	return nil
 }
 
@@ -69,7 +69,7 @@ func (p *payload) itemCount() int {
 // size returns the payload size in bytes. After the first read the value becomes
 // inaccurate by up to 8 bytes.
 func (p *payload) size() int {
-	return len(p.header) + p.s
+	return len(p.header) + p.msgSize
 }
 
 // reset resets the internal traces slice, buffer, counter, size tracker and read offset.
@@ -79,7 +79,7 @@ func (p *payload) reset() {
 		p.traces[i] = nil
 	}
 	p.traces = p.traces[:0]
-	p.s = 0
+	p.msgSize = 0
 	p.buf.Reset()
 }
 
@@ -125,7 +125,7 @@ func (p *payload) Read(b []byte) (n int, err error) {
 		if err != nil {
 			return 0, err
 		}
-		p.s -= p.traces[0].Msgsize()
+		p.msgSize -= p.traces[0].Msgsize()
 		p.traces = p.traces[1:]
 	}
 	return p.buf.Read(b)
