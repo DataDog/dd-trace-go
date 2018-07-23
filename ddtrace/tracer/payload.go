@@ -35,8 +35,10 @@ type payload struct {
 	// traces holds the sequence of traces to returns.
 	traces []spanList
 
-	s int //encoded payload size in bytes
+	// encoded payload size in bytes
+	s int
 
+	// buf is an intermediary buffer used to encode the payload while it's being read
 	buf bytes.Buffer
 }
 
@@ -74,7 +76,6 @@ func (p *payload) size() int {
 func (p *payload) reset() {
 	p.off = 8
 	for i := range p.traces {
-		// dereference all traces in the underlying array to let the GC work its magic
 		p.traces[i] = nil
 	}
 	p.traces = p.traces[:0]
