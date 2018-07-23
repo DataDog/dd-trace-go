@@ -128,6 +128,5 @@ func (p *payload) Read(b []byte) (n int, err error) {
 		p.s -= p.traces[0].Msgsize()
 		p.traces = p.traces[1:]
 	}
-
 	return p.buf.Read(b)
 }
