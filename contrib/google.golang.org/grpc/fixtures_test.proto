@@ -8,6 +8,7 @@ package grpc;
 
 service Fixture {
   rpc Ping (FixtureRequest) returns (FixtureReply) {}
+  rpc StreamPing(stream FixtureRequest) returns (stream FixtureReply) {}
 }
 
 // The request message containing the user's name.
