@@ -27,8 +27,6 @@ func TestTraceAndServe(t *testing.T) {
 		handler := func(w http.ResponseWriter, r *http.Request) {
 			_, ok := w.(http.Hijacker)
 			assert.False(ok)
-			_, ok = w.(*responseWriter)
-			assert.True(ok)
 			http.Error(w, "some error", http.StatusServiceUnavailable)
 			called = true
 		}
@@ -52,8 +50,6 @@ func TestTraceAndServe(t *testing.T) {
 		called := false
 		handler := func(w http.ResponseWriter, r *http.Request) {
 			_, ok := w.(http.Hijacker)
-			assert.True(ok)
-			_, ok = w.(*hijackableResponseWriter)
 			assert.True(ok)
 			fmt.Fprintln(w, "Hello, world!")
 			called = true
