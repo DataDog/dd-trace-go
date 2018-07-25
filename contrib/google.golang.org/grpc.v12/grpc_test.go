@@ -56,7 +56,7 @@ func TestClient(t *testing.T) {
 
 	assert.Equal(clientSpan.Tag(ext.TargetHost), "127.0.0.1")
 	assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
-	assert.Equal(clientSpan.Tag("grpc.code"), codes.OK.String())
+	assert.Equal(clientSpan.Tag(tagCode), codes.OK.String())
 	assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
 	assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 	assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")

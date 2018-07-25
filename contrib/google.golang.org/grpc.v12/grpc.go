@@ -39,7 +39,7 @@ func startSpanFromContext(ctx context.Context, method, service string) (ddtrace.
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
-		tracer.Tag("grpc.method", method),
+		tracer.Tag(tagMethod, method),
 		tracer.SpanType(ext.AppTypeRPC),
 	}
 	md, _ := metadata.FromContext(ctx) // nil is ok
@@ -65,7 +65,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 			p    peer.Peer
 		)
 		span, ctx = tracer.StartSpanFromContext(ctx, "grpc.client",
-			tracer.Tag("grpc.method", method),
+			tracer.Tag(tagMethod, method),
 			tracer.SpanType(ext.AppTypeRPC),
 		)
 		md, ok := metadata.FromContext(ctx)
@@ -86,7 +86,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 				span.SetTag(ext.TargetPort, port)
 			}
 		}
-		span.SetTag("grpc.code", grpc.Code(err).String())
+		span.SetTag(tagCode, grpc.Code(err).String())
 		span.Finish(tracer.WithError(err))
 		return err
 	}
