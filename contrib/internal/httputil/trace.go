@@ -1,6 +1,6 @@
 package httputil // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
 
-//go:generate sh -c "go run ./gen/gen.go | gofmt > trace_gen.go"
+//go:generate sh -c "cd gen && go run gen.go | gofmt > ../trace_gen.go"
 
 import (
 	"fmt"

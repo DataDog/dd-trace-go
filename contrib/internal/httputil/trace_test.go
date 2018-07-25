@@ -45,12 +45,16 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
 	})
 
-	t.Run("hijackable", func(t *testing.T) {
+	t.Run("Hijacker,Flusher,CloseNotifier", func(t *testing.T) {
 		assert := assert.New(t)
 		called := false
 		handler := func(w http.ResponseWriter, r *http.Request) {
 			_, ok := w.(http.Hijacker)
-			assert.True(ok)
+			assert.True(ok, "ResponseWriter should implement http.Hijacker")
+			_, ok = w.(http.Flusher)
+			assert.True(ok, "ResponseWriter should implement http.Flusher")
+			_, ok = w.(http.CloseNotifier)
+			assert.True(ok, "ResponseWriter should implement http.CloseNotifier")
 			fmt.Fprintln(w, "Hello, world!")
 			called = true
 		}
@@ -66,6 +70,26 @@ func TestTraceAndServe(t *testing.T) {
 		assert.True(called)
 		assert.NoError(err)
 		assert.Equal("Hello, world!\n", string(slurp))
+	})
+
+	// there doesn't appear to be an easy way to test http.Pusher support via an http request
+	// so we'll just confirm wrapResponseWriter preserves it
+	t.Run("Pusher", func(t *testing.T) {
+		var i struct {
+			http.ResponseWriter
+			http.Pusher
+		}
+		var w http.ResponseWriter = i
+		_, ok := w.(http.ResponseWriter)
+		assert.True(t, ok)
+		_, ok = w.(http.Pusher)
+		assert.True(t, ok)
+
+		w = wrapResponseWriter(w, nil)
+		_, ok = w.(http.ResponseWriter)
+		assert.True(t, ok)
+		_, ok = w.(http.Pusher)
+		assert.True(t, ok)
 	})
 
 	t.Run("distributed", func(t *testing.T) {
