@@ -35,6 +35,10 @@ type params struct {
 	config *clientConfig
 }
 
+// spanType is the value that span.type is set to when recording
+// a trace through a Redis call.
+const spanType = "redis"
+
 // NewClient returns a new Client that is traced with the default tracer under
 // the service name "redis".
 func NewClient(opt *redis.Options, opts ...ClientOption) *Client {
@@ -84,7 +88,7 @@ func (c *Pipeliner) Exec() ([]redis.Cmder, error) {
 func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) {
 	p := c.params
 	span, _ := tracer.StartSpanFromContext(ctx, "redis.command",
-		tracer.SpanType(ext.AppTypeDB),
+		tracer.SpanType(spanType),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName("redis"),
 		tracer.Tag(ext.TargetHost, p.host),
@@ -131,7 +135,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			length := len(parts) - 1
 			p := tc.params
 			span, _ := tracer.StartSpanFromContext(ctx, "redis.command",
-				tracer.SpanType(ext.AppTypeDB),
+				tracer.SpanType(spanType),
 				tracer.ServiceName(p.config.serviceName),
 				tracer.ResourceName(parts[0]),
 				tracer.Tag(ext.TargetHost, p.host),
