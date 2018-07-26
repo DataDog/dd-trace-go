@@ -64,9 +64,7 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
-	t := internal.GetGlobalTracer()
 	internal.SetGlobalTracer(newTracer(opts...))
-	t.Stop()
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.

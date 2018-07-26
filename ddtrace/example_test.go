@@ -45,6 +45,7 @@ func Example_opentracing() {
 	// Start a Datadog tracer, optionally providing a set of options,
 	// returning an opentracing.Tracer which wraps it.
 	t := opentracer.New(tracer.WithAgentAddr("host:port"))
+	defer tracer.Stop() // important for data integrity (flushes any leftovers)
 
 	// Use it with the Opentracing API. The (already started) Datadog tracer
 	// may be used in parallel with the Opentracing API if desired.
@@ -54,19 +55,19 @@ func Example_opentracing() {
 // The code below illustrates a scenario of how one could use a mock tracer in tests
 // to assert that spans are created correctly.
 func Example_mocking() {
-	// Start the mock tracer.
+	// Setup the test environment: start the mock tracer.
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	// Create a test span (this usually happens in your code).
-	span := tracer.StartSpan("test.span")
-	span.Finish()
+	// Run test code: in this example we will simply create a span to illustrate.
+	tracer.StartSpan("test.span").Finish()
 
-	// Query the mock tracer for finished spans.
+	// Assert the results: query the mock tracer for finished spans.
 	spans := mt.FinishedSpans()
 	if len(spans) != 1 {
-		// should only have 1 span
+		// fail
 	}
-
-	// Run assertions...
+	if spans[0].OperationName() != "test.span" {
+		// fail
+	}
 }

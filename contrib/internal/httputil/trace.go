@@ -14,14 +14,14 @@ import (
 )
 
 // TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
-func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, service, resource string) {
-	opts := []ddtrace.StartSpanOption{
+func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, service, resource string, spanopts ...ddtrace.StartSpanOption) {
+	opts := append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.AppTypeWeb),
 		tracer.ServiceName(service),
 		tracer.ResourceName(resource),
 		tracer.Tag(ext.HTTPMethod, r.Method),
 		tracer.Tag(ext.HTTPURL, r.URL.Path),
-	}
+	}, spanopts...)
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}

@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/gorilla/mux"
 )
@@ -82,15 +84,19 @@ func NewRouter(opts ...RouterOption) *Router {
 // all the incoming requests to the underlying multiplexer
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var (
-		match mux.RouteMatch
-		route = "unknown"
+		match    mux.RouteMatch
+		spanopts []ddtrace.StartSpanOption
+		route    = "unknown"
 	)
 	// get the resource associated to this request
 	if r.Match(req, &match) && match.Route != nil {
 		if r, err := match.Route.GetPathTemplate(); err == nil {
 			route = r
 		}
+		if h, err := match.Route.GetHostTemplate(); err == nil {
+			spanopts = append(spanopts, tracer.Tag("mux.host", h))
+		}
 	}
 	resource := req.Method + " " + route
-	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource)
+	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, spanopts...)
 }
