@@ -37,7 +37,7 @@ func TestClient(t *testing.T) {
 
 	span := spans[0]
 	assert.Equal("redis.command", span.OperationName())
-	assert.Equal(spanType, span.Tag(ext.SpanType))
+	assert.Equal("redis", span.Tag(ext.SpanType))
 	assert.Equal("my-service", span.Tag(ext.ServiceName))
 	assert.Equal("SET", span.Tag(ext.ResourceName))
 	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
