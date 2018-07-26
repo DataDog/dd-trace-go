@@ -99,6 +99,23 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 }
 
+func TestResolveAddr(t *testing.T) {
+	for _, tt := range []struct {
+		in, out string
+	}{
+		{"host", fmt.Sprintf("host:%s", defaultPort)},
+		{"www.my-address.com", fmt.Sprintf("www.my-address.com:%s", defaultPort)},
+		{"localhost", fmt.Sprintf("localhost:%s", defaultPort)},
+		{":1111", fmt.Sprintf("%s:1111", defaultHostname)},
+		{"", defaultAddress},
+		{"custom:1234", "custom:1234"},
+	} {
+		t.Run(tt.in, func(t *testing.T) {
+			assert.Equal(t, resolveAddr(tt.in), tt.out)
+		})
+	}
+}
+
 func TestTransportResponseError(t *testing.T) {
 	assert := assert.New(t)
 	ln, err := net.Listen("tcp4", ":0")

@@ -167,3 +167,25 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	response := w.Result()
 	assert.Equal(response.StatusCode, 200)
 }
+
+func TestPropagation(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := httptest.NewRequest("GET", "/user/123", nil)
+	w := httptest.NewRecorder()
+
+	pspan := tracer.StartSpan("test")
+	tracer.Inject(pspan.Context(), tracer.HTTPHeadersCarrier(r.Header))
+
+	router := gin.New()
+	router.Use(Middleware("foobar"))
+	router.GET("/user/:id", func(c *gin.Context) {
+		span, ok := tracer.SpanFromContext(c.Request.Context())
+		assert.True(ok)
+		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
+	})
+
+	router.ServeHTTP(w, r)
+}

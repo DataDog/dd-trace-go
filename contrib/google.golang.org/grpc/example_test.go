@@ -11,10 +11,12 @@ import (
 
 func Example_client() {
 	// Create the client interceptor using the grpc trace package.
-	i := grpctrace.UnaryClientInterceptor(grpctrace.WithServiceName("my-grpc-client"))
+	si := grpctrace.StreamClientInterceptor(grpctrace.WithServiceName("my-grpc-client"))
+	ui := grpctrace.UnaryClientInterceptor(grpctrace.WithServiceName("my-grpc-client"))
 
 	// Dial in using the created interceptor...
-	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure(), grpc.WithUnaryInterceptor(i))
+	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure(),
+		grpc.WithStreamInterceptor(si), grpc.WithUnaryInterceptor(ui))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -30,11 +32,12 @@ func Example_server() {
 		log.Fatal(err)
 	}
 
-	// Create the unary server interceptor using the grpc trace package.
-	i := grpctrace.UnaryServerInterceptor(grpctrace.WithServiceName("my-grpc-client"))
+	// Create the server interceptor using the grpc trace package.
+	si := grpctrace.StreamServerInterceptor(grpctrace.WithServiceName("my-grpc-client"))
+	ui := grpctrace.UnaryServerInterceptor(grpctrace.WithServiceName("my-grpc-client"))
 
 	// Initialize the grpc server as normal, using the tracing interceptor.
-	s := grpc.NewServer(grpc.UnaryInterceptor(i))
+	s := grpc.NewServer(grpc.StreamInterceptor(si), grpc.UnaryInterceptor(ui))
 
 	// ... register your services
 

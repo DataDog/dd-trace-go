@@ -84,5 +84,5 @@ jobs:
                     name: Testing
                     command: |
                         go vet ./...
-                        golint $(go list ./... | grep -v /vendor/)
+                        golint -set_exit_status=1 $(go list ./... | grep -v /vendor/)
                         INTEGRATION=1 go test -v -race ./...

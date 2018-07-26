@@ -47,4 +47,7 @@ const (
 
 	// ErrorStack specifies the stack dump.
 	ErrorStack = "error.stack"
+
+	// Environment specifies the environment to use with a trace.
+	Environment = "env"
 )
