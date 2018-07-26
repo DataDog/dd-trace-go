@@ -14,7 +14,7 @@ import (
 
 var _ driver.Driver = (*tracedDriver)(nil)
 
-// SpanType is the span type sent to DataDog for SQL operations.
+// SQLSpanType is the span type sent to DataDog for SQL operations.
 // This is set to "sql"
 var SQLSpanType = "sql"
 
