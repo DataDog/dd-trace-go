@@ -16,7 +16,7 @@ var _ driver.Driver = (*tracedDriver)(nil)
 
 // SQLSpanType is the span type sent to DataDog for SQL operations.
 // This is set to "sql"
-var SQLSpanType = "sql"
+const SQLSpanType = "sql"
 
 // tracedDriver wraps an inner sql driver with tracing. It implements the (database/sql).driver.Driver interface.
 type tracedDriver struct {
