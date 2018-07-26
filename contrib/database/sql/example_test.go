@@ -5,7 +5,6 @@ import (
 	"log"
 
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/go-sql-driver/mysql"
@@ -42,7 +41,7 @@ func Example_context() {
 
 	// Create a root span, giving name, server and resource.
 	_, ctx := tracer.StartSpanFromContext(context.Background(), "my-query",
-		tracer.SpanType(ext.AppTypeDB),
+		tracer.SpanType(sqltrace.SQLSpanType),
 		tracer.ServiceName("my-db"),
 		tracer.ResourceName("initial-access"),
 	)

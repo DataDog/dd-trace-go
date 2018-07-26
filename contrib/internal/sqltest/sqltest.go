@@ -67,7 +67,7 @@ func testPing(cfg *Config) func(*testing.T) {
 		span := spans[0]
 		assert.Equal(cfg.ExpectName, span.OperationName())
 		for k, v := range cfg.ExpectTags {
-			assert.Equal(v, span.Tag(k), "tag mismatch")
+			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
 	}
 }
@@ -87,7 +87,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 		span := spans[0]
 		assert.Equal(cfg.ExpectName, span.OperationName())
 		for k, v := range cfg.ExpectTags {
-			assert.Equal(v, span.Tag(k), "tag mismatch")
+			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
 	}
 }
@@ -112,7 +112,7 @@ func testStatement(cfg *Config) func(*testing.T) {
 		span := spans[0]
 		assert.Equal(cfg.ExpectName, span.OperationName())
 		for k, v := range cfg.ExpectTags {
-			assert.Equal(v, span.Tag(k), "tag mismatch")
+			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
 
 		cfg.mockTracer.Reset()
@@ -124,7 +124,7 @@ func testStatement(cfg *Config) func(*testing.T) {
 		span = spans[0]
 		assert.Equal(cfg.ExpectName, span.OperationName())
 		for k, v := range cfg.ExpectTags {
-			assert.Equal(v, span.Tag(k), "tag mismatch")
+			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
 	}
 }
@@ -143,7 +143,7 @@ func testBeginRollback(cfg *Config) func(*testing.T) {
 		span := spans[0]
 		assert.Equal(cfg.ExpectName, span.OperationName())
 		for k, v := range cfg.ExpectTags {
-			assert.Equal(v, span.Tag(k), "tag mismatch")
+			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
 
 		cfg.mockTracer.Reset()
@@ -155,7 +155,7 @@ func testBeginRollback(cfg *Config) func(*testing.T) {
 		span = spans[0]
 		assert.Equal(cfg.ExpectName, span.OperationName())
 		for k, v := range cfg.ExpectTags {
-			assert.Equal(v, span.Tag(k), "tag mismatch")
+			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
 	}
 }
@@ -191,7 +191,7 @@ func testExec(cfg *Config) func(*testing.T) {
 		}
 		assert.NotNil(span, "span not found")
 		for k, v := range cfg.ExpectTags {
-			assert.Equal(v, span.Tag(k), "tag mismatch")
+			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
 		for _, s := range spans {
 			if s.OperationName() == cfg.ExpectName && s.Tag(ext.ResourceName) == "Commit" {
@@ -200,7 +200,7 @@ func testExec(cfg *Config) func(*testing.T) {
 		}
 		assert.NotNil(span, "span not found")
 		for k, v := range cfg.ExpectTags {
-			assert.Equal(v, span.Tag(k), "tag mismatch")
+			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
 	}
 }
