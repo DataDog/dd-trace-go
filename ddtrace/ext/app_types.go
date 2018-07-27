@@ -5,6 +5,10 @@ const (
 	// for a span's SpanType tag.
 	AppTypeWeb = "web"
 
+	// AppTypeHTTP specifies the HTTP span type and can be used as a tag value
+	// for a span's SpanType tag.
+	AppTypeHTTP = "http"
+
 	// AppTypeDB specifies the DB span type and can be used as a tag value
 	// for a span's SpanType tag.
 	AppTypeDB = "db"

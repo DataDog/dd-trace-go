@@ -34,6 +34,10 @@ type params struct {
 	paginated bool
 }
 
+// spanType the value that span.type is set to when tracing a
+// Cassandra call.
+const spanType = "cassandra"
+
 // WrapQuery wraps a gocql.Query into a traced Query under the given service name.
 // Note that the returned Query structure embeds the original gocql.Query structure.
 // This means that any method returning the query for chaining that is not part
@@ -81,7 +85,7 @@ func (tq *Query) PageState(state []byte) *Query {
 func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	p := tq.params
 	span, _ := tracer.StartSpanFromContext(ctx, ext.CassandraQuery,
-		tracer.SpanType(ext.AppTypeDB),
+		tracer.SpanType(spanType),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(p.config.resourceName),
 		tracer.Tag(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated)),

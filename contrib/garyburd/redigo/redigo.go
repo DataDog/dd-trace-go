@@ -30,6 +30,10 @@ type params struct {
 	port    string
 }
 
+// spanType is the value that span.type is set to for traces
+// in Redis calls
+const spanType = "redis"
+
 // parseOptions parses a set of arbitrary options (which can be of type redis.DialOption
 // or the local DialOption) and returns the corresponding redis.DialOption set as well as
 // a configured dialConfig.
@@ -92,7 +96,7 @@ func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 	p := tc.params
 	span, _ := tracer.StartSpanFromContext(ctx, "redis.command",
-		tracer.SpanType(ext.AppTypeDB),
+		tracer.SpanType(spanType),
 		tracer.ServiceName(p.config.serviceName),
 	)
 	span.SetTag("out.network", p.network)
