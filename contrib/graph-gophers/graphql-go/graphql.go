@@ -50,7 +50,12 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 		tracer.Tag(graphqlTypeTag, typeName),
 	)
 	return ctx, func(err *errors.QueryError) {
-		span.Finish(tracer.WithError(err))
+		// this is necessary otherwise the span gets marked as an error
+		if err != nil {
+			span.Finish(tracer.WithError(err))
+		} else {
+			span.Finish()
+		}
 	}
 }
 
