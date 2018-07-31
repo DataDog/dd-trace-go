@@ -23,7 +23,7 @@ func Example() {
 		}
 	`
 	schema := graphql.MustParseSchema(s, new(resolver),
-		graphql.Tracer(graphqltrace.New()))
+		graphql.Tracer(graphqltrace.NewTracer()))
 	http.Handle("/query", &relay.Handler{Schema: schema})
 	log.Fatal(http.ListenAndServe(":8080", nil))
 

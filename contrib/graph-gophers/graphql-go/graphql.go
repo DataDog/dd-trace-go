@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	graphqlFieldTag = "graphql.field"
-	graphqlQueryTag = "graphql.query"
-	graphqlTypeTag  = "graphql.type"
+	tagGraphqlField = "graphql.field"
+	tagGraphqlQuery = "graphql.query"
+	tagGraphqlType  = "graphql.type"
 )
 
 // A Tracer implements the graphql-go/trace.Tracer interface by sending traces
@@ -26,17 +26,18 @@ type Tracer struct {
 func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationName string, variables map[string]interface{}, varTypes map[string]*introspection.Type) (context.Context, trace.TraceQueryFinishFunc) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.request",
 		tracer.ServiceName(t.cfg.serviceName),
-		tracer.Tag(graphqlQueryTag, queryString),
+		tracer.Tag(tagGraphqlQuery, queryString),
 	)
 
 	return ctx, func(errs []*errors.QueryError) {
 		var err error
-		if len(errs) == 1 {
+		switch n := len(errs); n {
+		case 0:
+			// err = nil
+		case 1:
 			err = errs[0]
-		} else if len(errs) > 1 {
-			msg := errs[0].Error() +
-				fmt.Sprintf(" (and %d more errors)", len(errs)-1)
-			err = errors.Errorf("%s", msg)
+		default:
+			err = fmt.Errorf("%s (and %d more errors)", errs[0], n-1)
 		}
 		span.Finish(tracer.WithError(err))
 	}
@@ -46,11 +47,11 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, fieldName string, trivial bool, args map[string]interface{}) (context.Context, trace.TraceFieldFinishFunc) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.field",
 		tracer.ServiceName(t.cfg.serviceName),
-		tracer.Tag(graphqlFieldTag, fieldName),
-		tracer.Tag(graphqlTypeTag, typeName),
+		tracer.Tag(tagGraphqlField, fieldName),
+		tracer.Tag(tagGraphqlType, typeName),
 	)
 	return ctx, func(err *errors.QueryError) {
-		// this is necessary otherwise the span gets marked as an error
+		// must explicitly check for nil, see issue golang/go#22729
 		if err != nil {
 			span.Finish(tracer.WithError(err))
 		} else {
@@ -59,8 +60,8 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 	}
 }
 
-// New creates a new Tracer.
-func New(opts ...Option) trace.Tracer {
+// NewTracer creates a new Tracer.
+func NewTracer(opts ...Option) trace.Tracer {
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {

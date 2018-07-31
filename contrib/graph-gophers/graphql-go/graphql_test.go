@@ -27,7 +27,7 @@ func Test(t *testing.T) {
 		}
 	`
 	schema := graphql.MustParseSchema(s, new(testResolver),
-		graphql.Tracer(New(WithServiceName("test-graphql-service"))))
+		graphql.Tracer(NewTracer(WithServiceName("test-graphql-service"))))
 	srv := httptest.NewServer(&relay.Handler{Schema: schema})
 	defer srv.Close()
 
@@ -44,17 +44,17 @@ func Test(t *testing.T) {
 
 	{
 		s := spans[0]
-		assert.Equal(t, "hello", s.Tag(graphqlFieldTag))
+		assert.Equal(t, "hello", s.Tag(tagGraphqlField))
 		assert.Nil(t, s.Tag(ext.Error))
 		assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
-		assert.Equal(t, "Query", s.Tag(graphqlTypeTag))
+		assert.Equal(t, "Query", s.Tag(tagGraphqlType))
 		assert.Equal(t, "graphql.field", s.OperationName())
 		assert.Equal(t, "graphql.field", s.Tag(ext.ResourceName))
 	}
 
 	{
 		s := spans[1]
-		assert.Equal(t, "{ hello }", s.Tag(graphqlQueryTag))
+		assert.Equal(t, "{ hello }", s.Tag(tagGraphqlQuery))
 		assert.Nil(t, s.Tag(ext.Error))
 		assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
 		assert.Equal(t, "graphql.request", s.OperationName())
