@@ -20,7 +20,7 @@ func Middleware(service string) gin.HandlerFunc {
 		opts := []ddtrace.StartSpanOption{
 			tracer.ServiceName(service),
 			tracer.ResourceName(resource),
-			tracer.SpanType(ext.AppTypeWeb),
+			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.Tag(ext.HTTPMethod, c.Request.Method),
 			tracer.Tag(ext.HTTPURL, c.Request.URL.Path),
 		}

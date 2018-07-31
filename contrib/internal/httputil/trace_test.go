@@ -38,7 +38,7 @@ func TestTraceAndServe(t *testing.T) {
 
 		assert.True(called)
 		assert.Len(spans, 1)
-		assert.Equal(ext.AppTypeWeb, span.Tag(ext.SpanType))
+		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 		assert.Equal("service", span.Tag(ext.ServiceName))
 		assert.Equal("resource", span.Tag(ext.ResourceName))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))

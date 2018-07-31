@@ -24,10 +24,6 @@ func NewHTTPClient(opts ...ClientOption) *http.Client {
 	return &http.Client{Transport: &httpTransport{config: cfg}}
 }
 
-// spanType the value that `span.type` is set to when sending
-// ElasticSearch trace data to DataDog.
-const spanType = "elasticsearch"
-
 // httpTransport is a traced HTTP transport that captures Elasticsearch spans.
 type httpTransport struct{ config *clientConfig }
 
@@ -43,7 +39,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resource := quantize(url, method)
 	span, _ := tracer.StartSpanFromContext(req.Context(), "elasticsearch.query",
 		tracer.ServiceName(t.config.serviceName),
-		tracer.SpanType(spanType),
+		tracer.SpanType(ext.SpanTypeElasticSearch),
 		tracer.ResourceName(resource),
 		tracer.Tag("elasticsearch.method", method),
 		tracer.Tag("elasticsearch.url", url),

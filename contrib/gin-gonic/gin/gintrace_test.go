@@ -67,7 +67,7 @@ func TestTrace200(t *testing.T) {
 	}
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
-	assert.Equal(ext.AppTypeWeb, span.Tag(ext.SpanType))
+	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Contains(span.Tag(ext.ResourceName), "gin.TestTrace200")
 	assert.Equal("200", span.Tag(ext.HTTPCode))
