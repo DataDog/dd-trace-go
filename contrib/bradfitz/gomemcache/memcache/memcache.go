@@ -1,4 +1,10 @@
-package memcache
+// Package memcache provides functions to trace the bradfitz/gomemcache package (https://github.com/bradfitz/gomemcache).
+//
+// `WrapClient` will wrap a memcache `Client` and return a new struct with all
+// the same methods, so should be seamless for existing applications. It also
+// has an additional `WithContext` method which can be used to connect a span
+// to an existing trace.
+package memcache // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/bradfitz/gomemcache/memcache"
 
 import (
 	"context"
