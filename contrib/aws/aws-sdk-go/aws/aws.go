@@ -1,4 +1,5 @@
-package aws
+// Package aws provides functions to trace aws/aws-sdk-go (https://github.com/aws/aws-sdk-go).
+package aws // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
 
 import (
 	"strconv"
@@ -9,14 +10,19 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
+const (
+	tagAWSAgent     = "aws.agent"
+	tagAWSOperation = "aws.operation"
+	tagAWSRegion    = "aws.region"
+)
+
 type handlers struct {
 	cfg *config
 }
 
-// WrapSession wraps an aws Session so that requests/responses are traced.
+// WrapSession wraps a session.Session, causing requests and responses to be traced.
 func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	cfg := new(config)
-	defaults(cfg)
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -35,12 +41,12 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 
 func (h *handlers) Send(req *request.Request) {
 	_, ctx := tracer.StartSpanFromContext(req.Context(), h.operationName(req),
-		tracer.SpanType(ext.AppTypeHTTP),
+		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ServiceName(h.serviceName(req)),
 		tracer.ResourceName(h.resourceName(req)),
-		tracer.Tag(awsAgentTag, h.awsAgent(req)),
-		tracer.Tag(awsOperationTag, h.awsOperation(req)),
-		tracer.Tag(awsRegionTag, h.awsRegion(req)),
+		tracer.Tag(tagAWSAgent, h.awsAgent(req)),
+		tracer.Tag(tagAWSOperation, h.awsOperation(req)),
+		tracer.Tag(tagAWSRegion, h.awsRegion(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
 		tracer.Tag(ext.HTTPURL, req.HTTPRequest.URL.String()),
 	)

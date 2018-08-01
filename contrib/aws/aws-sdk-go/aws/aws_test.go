@@ -16,7 +16,6 @@ import (
 )
 
 func TestAWS(t *testing.T) {
-
 	cfg := aws.NewConfig().
 		WithRegion("us-west-2").
 		WithDisableSSL(true).
@@ -41,9 +40,9 @@ func TestAWS(t *testing.T) {
 
 		s := spans[0]
 		assert.Equal(t, "s3.command", s.OperationName())
-		assert.Contains(t, s.Tag(awsAgentTag), "aws-sdk-go")
-		assert.Equal(t, "CreateBucket", s.Tag(awsOperationTag))
-		assert.Equal(t, "us-west-2", s.Tag(awsRegionTag))
+		assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go")
+		assert.Equal(t, "CreateBucket", s.Tag(tagAWSOperation))
+		assert.Equal(t, "us-west-2", s.Tag(tagAWSRegion))
 		assert.Equal(t, "s3.CreateBucket", s.Tag(ext.ResourceName))
 		assert.Equal(t, "aws.s3", s.Tag(ext.ServiceName))
 		assert.Equal(t, "403", s.Tag(ext.HTTPCode))
@@ -66,9 +65,9 @@ func TestAWS(t *testing.T) {
 
 		s := spans[0]
 		assert.Equal(t, "ec2.command", s.OperationName())
-		assert.Contains(t, s.Tag(awsAgentTag), "aws-sdk-go")
-		assert.Equal(t, "DescribeInstances", s.Tag(awsOperationTag))
-		assert.Equal(t, "us-west-2", s.Tag(awsRegionTag))
+		assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go")
+		assert.Equal(t, "DescribeInstances", s.Tag(tagAWSOperation))
+		assert.Equal(t, "us-west-2", s.Tag(tagAWSRegion))
 		assert.Equal(t, "ec2.DescribeInstances", s.Tag(ext.ResourceName))
 		assert.Equal(t, "aws.ec2", s.Tag(ext.ServiceName))
 		assert.Equal(t, "400", s.Tag(ext.HTTPCode))
