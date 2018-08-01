@@ -28,6 +28,8 @@ type Tracer struct {
 	cfg *config
 }
 
+var _ trace.Tracer = (*Tracer)(nil)
+
 // TraceQuery traces a GraphQL query.
 func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationName string, variables map[string]interface{}, varTypes map[string]*introspection.Type) (context.Context, trace.TraceQueryFinishFunc) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.request",
