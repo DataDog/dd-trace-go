@@ -1,4 +1,4 @@
-package graphql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/graph-gophers/graphql-go"
+package graphql
 
 type config struct{ serviceName string }
 
