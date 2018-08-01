@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	sqlite "github.com/mattn/go-sqlite3" // Setup application to use Sqlite
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -44,6 +45,31 @@ func Example_context() {
 	_, ctx := tracer.StartSpanFromContext(context.Background(), "my-query",
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ServiceName("my-db"),
+		tracer.ResourceName("initial-access"),
+	)
+
+	// Subsequent spans inherit their parent from context.
+	rows, err := db.QueryContext(ctx, "SELECT * FROM city LIMIT 5")
+	if err != nil {
+		log.Fatal(err)
+	}
+	rows.Close()
+}
+
+func Example_sqlite() {
+	// Register the driver that we will be using (in this case Sqlite) under a custom service name.
+	sqltrace.Register("sqlite", &sqlite.SQLiteDriver{}, sqltrace.WithServiceName("sqlite-example"))
+
+	// Open a connection to the DB using the driver we've just registered with tracing.
+	db, err := sqltrace.Open("sqlite", "./test.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create a root span, giving name, server and resource.
+	_, ctx := tracer.StartSpanFromContext(context.Background(), "my-query",
+		tracer.SpanType("example"),
+		tracer.ServiceName("sqlite-example"),
 		tracer.ResourceName("initial-access"),
 	)
 
