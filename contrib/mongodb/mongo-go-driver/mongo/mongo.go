@@ -1,3 +1,7 @@
+// Package mongo provides functions to trace the mongodb/mongo-go-driver package (https://github.com/mongodb/mongo-go-driver).
+//
+// `NewMonitor` will return an event.CommandMonitor which is used to trace
+// requests.
 package mongo
 
 import (
@@ -17,9 +21,14 @@ var unscrubbedFields = []string{
 	"ordered", "insert", "count", "find", "create",
 }
 
+type spanKey struct {
+	ConnectionID string
+	RequestID    int64
+}
+
 type monitor struct {
 	sync.Mutex
-	spans map[int64]ddtrace.Span
+	spans map[spanKey]ddtrace.Span
 }
 
 func (m *monitor) Started(evt *event.CommandStartedEvent) {
@@ -35,41 +44,44 @@ func (m *monitor) Started(evt *event.CommandStartedEvent) {
 		tracer.Tag(ext.PeerHostname, hostname),
 		tracer.Tag(ext.PeerPort, port),
 	)
+	key := spanKey{
+		ConnectionID: evt.ConnectionID,
+		RequestID:    evt.RequestID,
+	}
 	m.Lock()
-	m.spans[evt.RequestID] = span
+	m.spans[key] = span
 	m.Unlock()
 }
 
 func (m *monitor) Succeeded(evt *event.CommandSucceededEvent) {
-	m.Lock()
-	span, ok := m.spans[evt.RequestID]
-	if ok {
-		delete(m.spans, evt.RequestID)
-	}
-	m.Unlock()
-	if !ok {
-		return
-	}
-	span.Finish()
+	m.Finished(&evt.CommandFinishedEvent, nil)
 }
 
 func (m *monitor) Failed(evt *event.CommandFailedEvent) {
+	m.Finished(&evt.CommandFinishedEvent, fmt.Errorf("%s", evt.Failure))
+}
+
+func (m *monitor) Finished(evt *event.CommandFinishedEvent, err error) {
+	key := spanKey{
+		ConnectionID: evt.ConnectionID,
+		RequestID:    evt.RequestID,
+	}
 	m.Lock()
-	span, ok := m.spans[evt.RequestID]
+	span, ok := m.spans[key]
 	if ok {
-		delete(m.spans, evt.RequestID)
+		delete(m.spans, key)
 	}
 	m.Unlock()
 	if !ok {
 		return
 	}
-	span.Finish(tracer.WithError(fmt.Errorf(evt.Failure)))
+	span.Finish(tracer.WithError(err))
 }
 
 // NewMonitor creates a new mongodb event CommandMonitor.
 func NewMonitor() *event.CommandMonitor {
 	m := &monitor{
-		spans: make(map[int64]ddtrace.Span),
+		spans: make(map[spanKey]ddtrace.Span),
 	}
 	return &event.CommandMonitor{
 		Started:   m.Started,
