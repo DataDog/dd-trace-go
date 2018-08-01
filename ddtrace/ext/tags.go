@@ -27,6 +27,10 @@ const (
 	// HTTPURL sets the HTTP URL for a span.
 	HTTPURL = "http.url"
 
+	// TODO: In the next major version, suffix these constants (SpanType, etc)
+	// with "*Key" (SpanTypeKey, etc) to more easily differentiate between
+	// constants representing tag values and constants representing keys.
+
 	// SpanType defines the Span type (web, db, cache).
 	SpanType = "span.type"
 

@@ -14,10 +14,6 @@ import (
 
 var _ driver.Driver = (*tracedDriver)(nil)
 
-// SQLSpanType is the span type sent to DataDog for SQL operations.
-// This is set to "sql"
-const SQLSpanType = "sql"
-
 // tracedDriver wraps an inner sql driver with tracing. It implements the (database/sql).driver.Driver interface.
 type tracedDriver struct {
 	driver.Driver
@@ -59,7 +55,7 @@ type traceParams struct {
 func (tp *traceParams) newChildSpanFromContext(ctx context.Context, resource string, query string) ddtrace.Span {
 	name := fmt.Sprintf("%s.query", tp.driverName)
 	span, _ := tracer.StartSpanFromContext(ctx, name,
-		tracer.SpanType(SQLSpanType),
+		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ServiceName(tp.config.serviceName),
 	)
 	if query != "" {

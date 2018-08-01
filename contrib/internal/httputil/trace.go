@@ -16,7 +16,7 @@ import (
 // TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, service, resource string, spanopts ...ddtrace.StartSpanOption) {
 	opts := append([]ddtrace.StartSpanOption{
-		tracer.SpanType(ext.AppTypeWeb),
+		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.ServiceName(service),
 		tracer.ResourceName(resource),
 		tracer.Tag(ext.HTTPMethod, r.Method),

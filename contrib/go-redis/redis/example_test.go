@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-redis/redis"
 	redistrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-redis/redis"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -21,7 +22,7 @@ func Example() {
 
 	// optionally, create a new root span
 	root, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
-		tracer.SpanType("redis"),
+		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName("web"),
 		tracer.ResourceName("/home"),
 	)

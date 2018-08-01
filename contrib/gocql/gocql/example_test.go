@@ -18,7 +18,7 @@ func Example() {
 
 	// Use context to pass information down the call chain
 	_, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
-		tracer.SpanType(ext.AppTypeDB),
+		tracer.SpanType(ext.SpanTypeCassandra),
 		tracer.ServiceName("web"),
 		tracer.ResourceName("/home"),
 	)
