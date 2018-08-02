@@ -243,7 +243,7 @@ func newMockBroker(t *testing.T) *sarama.MockBroker {
 }
 
 // waitForSpans polls the mock tracer until the expected number of spans
-// appears
+// appear
 func waitForSpans(mt mocktracer.Tracer, sz int, maxWait time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
