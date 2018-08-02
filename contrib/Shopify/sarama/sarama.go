@@ -1,4 +1,5 @@
-package sarama
+// Package sarama provides functions to trace the Shopify/sarama package (https://github.com/Shopify/sarama).
+package sarama // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/Shopify/sarama"
 
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
