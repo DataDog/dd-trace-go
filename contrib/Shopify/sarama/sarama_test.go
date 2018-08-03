@@ -64,8 +64,8 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
 			"span context should be injected into the consumer message headers")
 
-		assert.Equal(t, 0, s.Tag("partition"))
-		assert.Equal(t, 0, s.Tag("offset"))
+		assert.Equal(t, int32(0), s.Tag("partition"))
+		assert.Equal(t, int64(0), s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
@@ -78,8 +78,8 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
 			"span context should be injected into the consumer message headers")
 
-		assert.Equal(t, 0, s.Tag("partition"))
-		assert.Equal(t, 1, s.Tag("offset"))
+		assert.Equal(t, int32(0), s.Tag("partition"))
+		assert.Equal(t, int64(1), s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
@@ -114,8 +114,8 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "kafka.produce", s.OperationName())
-		assert.Equal(t, 0, s.Tag("partition"))
-		assert.Equal(t, 0, s.Tag("offset"))
+		assert.Equal(t, int32(0), s.Tag("partition"))
+		assert.Equal(t, int64(0), s.Tag("offset"))
 	}
 
 	mt.Reset()
@@ -133,7 +133,7 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "kafka.produce", s.OperationName())
-		assert.Equal(t, 0, s.Tag("partition"))
+		assert.Equal(t, int32(0), s.Tag("partition"))
 	}
 
 	mt.Reset()
@@ -185,8 +185,8 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, "queue", s.Tag(ext.SpanType))
 			assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 			assert.Equal(t, "kafka.produce", s.OperationName())
-			assert.Equal(t, 0, s.Tag("partition"))
-			assert.Equal(t, 0, s.Tag("offset"))
+			assert.Equal(t, int32(0), s.Tag("partition"))
+			assert.Equal(t, int64(0), s.Tag("offset"))
 		}
 	})
 
@@ -220,8 +220,8 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, "queue", s.Tag(ext.SpanType))
 			assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 			assert.Equal(t, "kafka.produce", s.OperationName())
-			assert.Equal(t, 0, s.Tag("partition"))
-			assert.Equal(t, 0, s.Tag("offset"))
+			assert.Equal(t, int32(0), s.Tag("partition"))
+			assert.Equal(t, int64(0), s.Tag("offset"))
 		}
 	})
 }

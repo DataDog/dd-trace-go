@@ -21,7 +21,13 @@ func (pc *partitionConsumer) Messages() <-chan *sarama.ConsumerMessage {
 
 // WrapPartitionConsumer wraps a sarama.PartitionConsumer causing each received
 // message to be traced.
-func WrapPartitionConsumer(pc sarama.PartitionConsumer) sarama.PartitionConsumer {
+func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.PartitionConsumer {
+	cfg := new(config)
+	defaults(cfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
 	wrapped := &partitionConsumer{
 		PartitionConsumer: pc,
 		messages:          make(chan *sarama.ConsumerMessage),
@@ -32,7 +38,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer) sarama.PartitionConsumer
 		for msg := range msgs {
 			// create the next span from the message
 			opts := []tracer.StartSpanOption{
-				tracer.ServiceName("kafka"),
+				tracer.ServiceName(cfg.serviceName),
 				tracer.ResourceName("Consume Topic " + msg.Topic),
 				tracer.SpanType(ext.SpanTypeMessageConsumer),
 				tracer.Tag("partition", msg.Partition),
@@ -66,6 +72,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer) sarama.PartitionConsumer
 
 type consumer struct {
 	sarama.Consumer
+	opts []Option
 }
 
 // ConsumePartition invokes Consumer.ConsumePartition and wraps the resulting
@@ -75,22 +82,26 @@ func (c *consumer) ConsumePartition(topic string, partition int32, offset int64)
 	if err != nil {
 		return pc, err
 	}
-	return WrapPartitionConsumer(pc), nil
+	return WrapPartitionConsumer(pc, c.opts...), nil
 }
 
 // WrapConsumer wraps a sarama.Consumer wrapping any PartitionConsumer created
 // via Consumer.ConsumePartition.
-func WrapConsumer(c sarama.Consumer) sarama.Consumer {
-	return &consumer{c}
+func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
+	return &consumer{
+		Consumer: c,
+		opts:     opts,
+	}
 }
 
 type syncProducer struct {
 	sarama.SyncProducer
+	cfg *config
 }
 
 // SendMessage calls sarama.SyncProducer.SendMessage and traces the request.
 func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
-	span := startProducerSpan(msg)
+	span := startProducerSpan(p.cfg, msg)
 	partition, offset, err = p.SyncProducer.SendMessage(msg)
 	finishProducerSpan(span, partition, offset, err)
 	return partition, offset, err
@@ -102,7 +113,7 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	// treated individually, so we create a span for each one
 	spans := make([]ddtrace.Span, len(msgs))
 	for i, msg := range msgs {
-		spans[i] = startProducerSpan(msg)
+		spans[i] = startProducerSpan(p.cfg, msg)
 	}
 	err := p.SyncProducer.SendMessages(msgs)
 	for i, span := range spans {
@@ -113,9 +124,15 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 
 // WrapSyncProducer wraps a sarama.SyncProducer so that all produced messages
 // are traced.
-func WrapSyncProducer(p sarama.SyncProducer) sarama.SyncProducer {
+func WrapSyncProducer(p sarama.SyncProducer, opts ...Option) sarama.SyncProducer {
+	cfg := new(config)
+	defaults(cfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
 	return &syncProducer{
 		SyncProducer: p,
+		cfg:          cfg,
 	}
 }
 
@@ -144,9 +161,14 @@ func (p *asyncProducer) Errors() <-chan *sarama.ProducerError {
 // WrapAsyncProducer wraps a sarama.AsyncProducer so that all produced messages
 // are traced. It requires the underlying sarama Config so we can know whether
 // or not sucesses will be returned.
-func WrapAsyncProducer(cfg *sarama.Config, p sarama.AsyncProducer) sarama.AsyncProducer {
-	if cfg == nil {
-		cfg = sarama.NewConfig()
+func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts ...Option) sarama.AsyncProducer {
+	cfg := new(config)
+	defaults(cfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	if saramaConfig == nil {
+		saramaConfig = sarama.NewConfig()
 	}
 	wrapped := &asyncProducer{
 		AsyncProducer: p,
@@ -167,15 +189,15 @@ func WrapAsyncProducer(cfg *sarama.Config, p sarama.AsyncProducer) sarama.AsyncP
 			select {
 			case msg := <-wrapped.input:
 				key := spanKey{msg.Topic, msg.Partition, msg.Offset}
-				span := startProducerSpan(msg)
+				span := startProducerSpan(cfg, msg)
 				p.Input() <- msg
-				if cfg.Producer.Return.Successes {
+				if saramaConfig.Producer.Return.Successes {
 					spans[key] = span
 				} else {
 					// if returning successes isn't enabled, we just finish the
 					// span right away because there's no way to know when it will
 					// be done
-					finishProducerSpan(span, msg.Partition, msg.Offset, nil)
+					finishProducerSpan(span, key.partition, key.offset, nil)
 				}
 			case msg, ok := <-p.Successes():
 				if !ok {
@@ -209,10 +231,10 @@ func WrapAsyncProducer(cfg *sarama.Config, p sarama.AsyncProducer) sarama.AsyncP
 	return wrapped
 }
 
-func startProducerSpan(msg *sarama.ProducerMessage) ddtrace.Span {
+func startProducerSpan(cfg *config, msg *sarama.ProducerMessage) ddtrace.Span {
 	carrier := NewProducerMessageCarrier(msg)
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName("kafka"),
+		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName("Produce Topic " + msg.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 	}
