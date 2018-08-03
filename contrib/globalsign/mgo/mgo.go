@@ -9,27 +9,58 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-type Session struct {
-	*mgo.Session
-
-	ctx         context.Context
+type mongoConfig struct {
 	serviceName string
 }
 
-func newChildSpanFromContext(ctx context.Context, serviceName string, resource string, op string) ddtrace.Span {
+type MongoOption func(*mongoConfig)
+
+func defaults(cfg *mongoConfig) {
+	cfg.serviceName = "mongodb"
+}
+
+func WithServiceName(name string) MongoOption {
+	return func(cfg *mongoConfig) {
+		cfg.serviceName = name
+	}
+}
+
+func Dial(ctx context.Context, url string, opts ...MongoOption) (*Session, error) {
+	session, err := mgo.Dial(url)
+	s := &Session{
+		Session: session,
+		ctx:     ctx,
+	}
+
+	defaults(&s.cfg)
+	for _, fn := range opts {
+		fn(&s.cfg)
+	}
+
+	return s, err
+}
+
+type Session struct {
+	*mgo.Session
+
+	ctx context.Context
+	cfg mongoConfig
+}
+
+func newChildSpanFromContext(ctx context.Context, config mongoConfig, resource string, op string) ddtrace.Span {
 	name := fmt.Sprintf("%s", op)
 	span, _ := tracer.StartSpanFromContext(
 		ctx,
 		name,
 		tracer.SpanType("mongodb"),
-		tracer.ServiceName(serviceName))
+		tracer.ServiceName(config.serviceName))
 	span.SetTag("resource.name", resource)
 
 	return span
 }
 
 func (s *Session) Run(cmd interface{}, result interface{}) (err error) {
-	span := newChildSpanFromContext(s.ctx, s.serviceName, "mongodb.query", "mongodb.query")
+	span := newChildSpanFromContext(s.ctx, s.cfg, "mongodb.query", "mongodb.query")
 	err = s.Session.Run(cmd, result)
 	span.Finish(tracer.WithError(err))
 	return
@@ -39,49 +70,91 @@ func (s *Session) WithContext(ctx context.Context) *Session {
 	return &Session{
 		Session: s.Session,
 		ctx:     ctx,
+		cfg:     s.cfg,
 	}
 }
 
 type Database struct {
 	*mgo.Database
 	ctx context.Context
+	cfg mongoConfig
 }
 
 func (s *Session) DB(name string) *Database {
 	return &Database{
 		Database: s.Session.DB(name),
-		ctx:      s.ctx}
+		ctx:      s.ctx,
+		cfg:      s.cfg}
 }
 
 func (db *Database) WithContext(ctx context.Context) *Database {
 	return &Database{
 		Database: db.Database,
 		ctx:      ctx,
-	}
+		cfg:      db.cfg}
 }
 
 type Collection struct {
 	*mgo.Collection
 	ctx context.Context
+	cfg mongoConfig
 }
 
 func (db *Database) C(name string) *Collection {
 	return &Collection{
 		Collection: db.Database.C(name),
 		ctx:        db.ctx,
-	}
+		cfg:        db.cfg}
 }
 
 func (c *Collection) WithContext(ctx context.Context) *Collection {
 	return &Collection{
 		Collection: c.Collection,
 		ctx:        ctx,
-	}
+		cfg:        c.cfg}
 }
 
 func (c *Collection) Insert(docs ...interface{}) error {
-	span := newChildSpanFromContext(c.ctx, "ERICH", "mongodb.query", "mongodb.query")
+	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.insert")
 	err := c.Collection.Insert(docs...)
 	span.Finish(tracer.WithError(err))
 	return err
+}
+
+func (c *Collection) Find(query interface{}) *Query {
+	return &Query{
+		Query: c.Collection.Find(query),
+		ctx:   c.ctx,
+		cfg:   c.cfg}
+}
+
+type Query struct {
+	*mgo.Query
+	ctx context.Context
+	cfg mongoConfig
+}
+
+func (q *Query) Iter() *Iter {
+	span := newChildSpanFromContext(q.ctx, q.cfg, "mongodb.query", "mongodb.query.iter")
+	iter := q.Query.Iter()
+	span.Finish()
+	return &Iter{
+		Iter: iter,
+		ctx:  q.ctx,
+		cfg:  q.cfg,
+	}
+}
+
+type Iter struct {
+	*mgo.Iter
+
+	ctx context.Context
+	cfg mongoConfig
+}
+
+func (i *Iter) Next(result interface{}) bool {
+	span := newChildSpanFromContext(i.ctx, i.cfg, "mongodb.query", "mongodb.iter.next")
+	r := i.Iter.Next(result)
+	span.Finish()
+	return r
 }
