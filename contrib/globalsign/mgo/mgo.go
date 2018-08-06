@@ -258,7 +258,7 @@ func (c *Collection) Upsert(selector interface{}, update interface{}) (info *mgo
 // UpsertId invokes and traces Collection.UpsertId
 func (c *Collection) UpsertId(id interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.upsertid")
-	info, err = c.Collection.Upsert(id, update)
+	info, err = c.Collection.UpsertId(id, update)
 	span.Finish(tracer.WithError(err))
 	return info, err
 }
