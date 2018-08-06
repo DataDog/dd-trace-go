@@ -11,58 +11,52 @@ import (
 )
 
 const (
-	apiPrefix        = "/api/v1/"
-	watchPrefix      = "watch/"
-	namespacesPrefix = "namespaces/"
+	prefixAPI   = "/api/v1/"
+	prefixWatch = "watch/"
 )
 
 // WrapRoundTripper wraps a RoundTripper intended for interfacing with
 // Kubernetes and traces all requests.
 func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 	return httptrace.WrapRoundTripper(rt,
-		httptrace.WithRoundTripperBefore(func(req *http.Request, span ddtrace.Span) {
+		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
 			span.SetTag(ext.ServiceName, "kubernetes")
 			span.SetTag(ext.ResourceName, requestToResource(req.Method, req.URL.Path))
 		}))
 }
 
 func requestToResource(method, path string) string {
-	resourceName := method + " "
-
-	if !strings.HasPrefix(path, apiPrefix) {
-		return resourceName
+	if !strings.HasPrefix(path, prefixAPI) {
+		return method
 	}
-	path = path[len(apiPrefix):]
+
+	var out strings.Builder
+	out.WriteString(method)
+	out.WriteByte(' ')
+
+	path = strings.TrimPrefix(path, prefixAPI)
 
 	// strip out /watch
-	if strings.HasPrefix(path, watchPrefix) {
-		path = path[len(watchPrefix):]
-		resourceName += watchPrefix
+	if strings.HasPrefix(path, prefixWatch) {
+		path = strings.TrimPrefix(path, prefixWatch)
+		out.WriteString(prefixWatch)
 	}
 
 	// {type}/{name}
 	lastType := ""
-	for i := 0; ; i++ {
-		idx := strings.IndexByte(path, '/')
+	for i, str := range strings.Split(path, "/") {
+		if i > 0 {
+			out.WriteByte('/')
+		}
 		if i%2 == 0 {
-			// parse {type}
-			if idx < 0 {
-				lastType = path
-			} else {
-				lastType = path[:idx]
-			}
-			resourceName += lastType
+			lastType = str
+			out.WriteString(lastType)
 		} else {
 			// parse {name}
-			resourceName += typeToPlaceholder(lastType)
+			out.WriteString(typeToPlaceholder(lastType))
 		}
-		if idx < 0 {
-			break
-		}
-		path = path[idx+1:]
-		resourceName += "/"
 	}
-	return resourceName
+	return out.String()
 }
 
 func typeToPlaceholder(typ string) string {
