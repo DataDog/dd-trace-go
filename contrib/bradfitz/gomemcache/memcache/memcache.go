@@ -11,6 +11,7 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -56,6 +57,7 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 // startSpan starts a span from the context set with WithContext.
 func (c *Client) startSpan(resourceName string) ddtrace.Span {
 	span, _ := tracer.StartSpanFromContext(c.context, operationName,
+		tracer.SpanType(ext.SpanTypeMemcached),
 		tracer.ServiceName(c.cfg.serviceName),
 		tracer.ResourceName(resourceName))
 	return span
