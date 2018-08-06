@@ -9,8 +9,10 @@ import (
 )
 
 func Example() {
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "example",
-		tracer.ServiceName("example"))
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
+		tracer.ServiceName("web"),
+		tracer.ResourceName("/home"),
+	)
 
 	mc := memcachetrace.WrapClient(memcache.New("127.0.0.1:11211"))
 	// you can use WithContext to set the parent span
