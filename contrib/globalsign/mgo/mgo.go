@@ -44,6 +44,8 @@ func Dial(ctx context.Context, url string, opts ...MongoOption) (*WrapSession, e
 	return s, err
 }
 
+// WrapSession wraps a Session with the Context and Config information
+// needed to support tracing.
 type WrapSession struct {
 	*mgo.Session
 
@@ -63,6 +65,7 @@ func newChildSpanFromContext(ctx context.Context, config mongoConfig, resource s
 	return span
 }
 
+// Run invokes and traces Session.Run
 func (s *WrapSession) Run(cmd interface{}, result interface{}) (err error) {
 	span := newChildSpanFromContext(s.ctx, s.cfg, "mongodb.query", "mongodb.query")
 	err = s.Session.Run(cmd, result)
@@ -70,6 +73,8 @@ func (s *WrapSession) Run(cmd interface{}, result interface{}) (err error) {
 	return
 }
 
+// WithContext makes a copy of the `WrapSession` and sets the context
+// to the context given in the `ctx` parameter.
 func (s *WrapSession) WithContext(ctx context.Context) *WrapSession {
 	return &WrapSession{
 		Session: s.Session,
@@ -78,12 +83,16 @@ func (s *WrapSession) WithContext(ctx context.Context) *WrapSession {
 	}
 }
 
+// WrapDatabase wraps a Database with the Context and Config information
+// needed to support tracing.
 type WrapDatabase struct {
 	*mgo.Database
 	ctx context.Context
 	cfg mongoConfig
 }
 
+// DB invokes Session.DB and wraps it with the context and config
+// data from `WrapSession` that is needed to support tracing
 func (s *WrapSession) DB(name string) *WrapDatabase {
 	return &WrapDatabase{
 		Database: s.Session.DB(name),
@@ -91,6 +100,8 @@ func (s *WrapSession) DB(name string) *WrapDatabase {
 		cfg:      s.cfg}
 }
 
+// WithContext makes a copy of the `WrapDatabase` and sets the context
+// to the context given in the `ctx` parameter.
 func (db *WrapDatabase) WithContext(ctx context.Context) *WrapDatabase {
 	return &WrapDatabase{
 		Database: db.Database,
@@ -98,12 +109,16 @@ func (db *WrapDatabase) WithContext(ctx context.Context) *WrapDatabase {
 		cfg:      db.cfg}
 }
 
+// WrapCollection wraps an mgo.Collection type with the context
+// and config needed to support tracing.
 type WrapCollection struct {
 	*mgo.Collection
 	ctx context.Context
 	cfg mongoConfig
 }
 
+// C gets a Collection from the Mongo DB and wraps it with
+// the context and configuration from the WrapDatabase.
 func (db *WrapDatabase) C(name string) *WrapCollection {
 	return &WrapCollection{
 		Collection: db.Database.C(name),
@@ -111,6 +126,8 @@ func (db *WrapDatabase) C(name string) *WrapCollection {
 		cfg:        db.cfg}
 }
 
+// WithContext creates a copy of the WrapCollection but with the context set
+// to context given in the `ctx` parameter.
 func (c *WrapCollection) WithContext(ctx context.Context) *WrapCollection {
 	return &WrapCollection{
 		Collection: c.Collection,
@@ -215,8 +232,8 @@ func (c *WrapCollection) Count() (n int, err error) {
 }
 
 // Bulk creates a trace ready wrapper around Collection.Bulk
-func (c *WrapCollection) Bulk() *Bulk {
-	return &Bulk{
+func (c *WrapCollection) Bulk() *WrapBulk {
+	return &WrapBulk{
 		Bulk: c.Collection.Bulk(),
 		ctx:  c.ctx,
 		cfg:  c.cfg,
@@ -299,12 +316,15 @@ func (c *WrapCollection) Repair() *WrapIter {
 	}
 }
 
+// WrapQuery wraps the Query type with the context and config
+// needed to support tracing.
 type WrapQuery struct {
 	*mgo.Query
 	ctx context.Context
 	cfg mongoConfig
 }
 
+// Iter invokes and traces Query.Iter
 func (q *WrapQuery) Iter() *WrapIter {
 	span := newChildSpanFromContext(q.ctx, q.cfg, "mongodb.query", "mongodb.query.iter")
 	iter := q.Query.Iter()
@@ -316,6 +336,8 @@ func (q *WrapQuery) Iter() *WrapIter {
 	}
 }
 
+// WrapIter wraps a Session with the Context and Config information
+// needed to support tracing.
 type WrapIter struct {
 	*mgo.Iter
 
@@ -355,7 +377,9 @@ func (iter *WrapIter) Close() (err error) {
 	return err
 }
 
-type Bulk struct {
+// WrapBulk wraps a Session with the Context and Config information
+// needed to support tracing.
+type WrapBulk struct {
 	*mgo.Bulk
 
 	ctx context.Context
@@ -363,7 +387,7 @@ type Bulk struct {
 }
 
 // Run invokes and traces Bulk.Run
-func (b *Bulk) Run() (result *mgo.BulkResult, err error) {
+func (b *WrapBulk) Run() (result *mgo.BulkResult, err error) {
 	span := newChildSpanFromContext(b.ctx, b.cfg, "mongodb.query", "mongodb.bulk.run")
 	result, err = b.Bulk.Run()
 	span.Finish(tracer.WithError(err))
