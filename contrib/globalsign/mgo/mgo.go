@@ -13,18 +13,22 @@ type mongoConfig struct {
 	serviceName string
 }
 
+// MongoOption represents an option that can be passed to Dial
 type MongoOption func(*mongoConfig)
 
 func defaults(cfg *mongoConfig) {
 	cfg.serviceName = "mongodb"
 }
 
+// WithServiceName sets the service name for a given MongoDB context.
 func WithServiceName(name string) MongoOption {
 	return func(cfg *mongoConfig) {
 		cfg.serviceName = name
 	}
 }
 
+// Dial opens a connection to a MongoDB server and ties it to the
+// given context for tracing MongoDB calls.
 func Dial(ctx context.Context, url string, opts ...MongoOption) (*Session, error) {
 	session, err := mgo.Dial(url)
 	s := &Session{
