@@ -49,6 +49,14 @@ func (db *DB) View(fn func(tx *Tx) error) error {
 	})
 }
 
+// WithContext sets the context for the DB.
+func (db *DB) WithContext(ctx context.Context) *DB {
+	newdb := new(DB)
+	*newdb = *db
+	newdb.opts = append(newdb.opts[:len(newdb.opts):len(newdb.opts)], WithContext(ctx))
+	return newdb
+}
+
 // A Tx wraps a buntdb.Tx, automatically tracing any queries.
 type Tx struct {
 	*buntdb.Tx
@@ -132,14 +140,6 @@ func (tx *Tx) AscendLessThan(index, pivot string, iterator func(key, value strin
 func (tx *Tx) AscendRange(index, greaterOrEqual, lessThan string, iterator func(key, value string) bool) error {
 	span := tx.startSpan("AscendRange")
 	err := tx.Tx.AscendRange(index, greaterOrEqual, lessThan, iterator)
-	span.Finish(tracer.WithError(err))
-	return err
-}
-
-// Commit calls the underlying Tx.Commit and traces the query.
-func (tx *Tx) Commit() error {
-	span := tx.startSpan("Commit")
-	err := tx.Tx.Commit()
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -284,14 +284,6 @@ func (tx *Tx) Len() (int, error) {
 func (tx *Tx) Nearby(index, bounds string, iterator func(key, value string, dist float64) bool) error {
 	span := tx.startSpan("Nearby")
 	err := tx.Tx.Nearby(index, bounds, iterator)
-	span.Finish(tracer.WithError(err))
-	return err
-}
-
-// Rollback calls the underlying Tx.Rollback and traces the query.
-func (tx *Tx) Rollback() error {
-	span := tx.startSpan("Rollback")
-	err := tx.Tx.Rollback()
 	span.Finish(tracer.WithError(err))
 	return err
 }

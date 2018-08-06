@@ -1,12 +1,15 @@
 package buntdb
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/tidwall/buntdb"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func TestAscend(t *testing.T) {
@@ -61,7 +64,7 @@ func TestAscendGreaterOrEqual(t *testing.T) {
 func TestAscendKeys(t *testing.T) {
 	testView(t, "AscendKeys", func(tx *Tx) error {
 		var arr []string
-		err := tx.AscendKeys("*", func(key, value string) bool {
+		err := tx.AscendKeys("regular:*", func(key, value string) bool {
 			arr = append(arr, key, value)
 			return true
 		})
@@ -105,6 +108,55 @@ func TestAscendRange(t *testing.T) {
 			"regular:b", "2",
 			"regular:c", "3",
 		}, arr)
+		return nil
+	})
+}
+
+func TestCreateIndex(t *testing.T) {
+	testUpdate(t, "CreateIndex", func(tx *Tx) error {
+		err := tx.CreateIndex("test-create-index", "*")
+		assert.NoError(t, err)
+		return nil
+	})
+}
+
+func TestCreateIndexOptions(t *testing.T) {
+	testUpdate(t, "CreateIndexOptions", func(tx *Tx) error {
+		err := tx.CreateIndexOptions("test-create-index", "*", nil)
+		assert.NoError(t, err)
+		return nil
+	})
+}
+
+func TestCreateSpatialIndex(t *testing.T) {
+	testUpdate(t, "CreateSpatialIndex", func(tx *Tx) error {
+		err := tx.CreateSpatialIndex("test-create-index", "*", buntdb.IndexRect)
+		assert.NoError(t, err)
+		return nil
+	})
+}
+
+func TestCreateSpatialIndexOptions(t *testing.T) {
+	testUpdate(t, "CreateSpatialIndexOptions", func(tx *Tx) error {
+		err := tx.CreateSpatialIndexOptions("test-create-index", "*", nil, buntdb.IndexRect)
+		assert.NoError(t, err)
+		return nil
+	})
+}
+
+func TestDelete(t *testing.T) {
+	testUpdate(t, "Delete", func(tx *Tx) error {
+		val, err := tx.Delete("regular:a")
+		assert.NoError(t, err)
+		assert.Equal(t, "1", val)
+		return nil
+	})
+}
+
+func TestDeleteAll(t *testing.T) {
+	testUpdate(t, "DeleteAll", func(tx *Tx) error {
+		err := tx.DeleteAll()
+		assert.NoError(t, err)
 		return nil
 	})
 }
@@ -160,7 +212,7 @@ func TestDescendGreaterThan(t *testing.T) {
 func TestDescendKeys(t *testing.T) {
 	testView(t, "DescendKeys", func(tx *Tx) error {
 		var arr []string
-		err := tx.DescendKeys("*", func(key, value string) bool {
+		err := tx.DescendKeys("regular:*", func(key, value string) bool {
 			arr = append(arr, key, value)
 			return true
 		})
@@ -209,6 +261,14 @@ func TestDescendRange(t *testing.T) {
 	})
 }
 
+func TestDropIndex(t *testing.T) {
+	testUpdate(t, "DropIndex", func(tx *Tx) error {
+		err := tx.DropIndex("test-index")
+		assert.NoError(t, err)
+		return nil
+	})
+}
+
 func TestGet(t *testing.T) {
 	testView(t, "Get", func(tx *Tx) error {
 		val, err := tx.Get("regular:a")
@@ -241,6 +301,71 @@ func TestIntersects(t *testing.T) {
 		}, arr)
 		return nil
 	})
+}
+
+func TestLen(t *testing.T) {
+	testView(t, "Len", func(tx *Tx) error {
+		n, err := tx.Len()
+		assert.NoError(t, err)
+		assert.Equal(t, 10, n)
+		return nil
+	})
+}
+
+func TestNearby(t *testing.T) {
+	testView(t, "Nearby", func(tx *Tx) error {
+		var arr []string
+		err := tx.Nearby("test-spatial-index", "[3 3]", func(key, value string, distance float64) bool {
+			arr = append(arr, key, value)
+			return false
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, []string{
+			"spatial:c", "[3 3]",
+		}, arr)
+		return nil
+	})
+}
+
+func TestSet(t *testing.T) {
+	testUpdate(t, "Set", func(tx *Tx) error {
+		previousValue, replaced, err := tx.Set("regular:a", "11", nil)
+		assert.NoError(t, err)
+		assert.True(t, replaced)
+		assert.Equal(t, "1", previousValue)
+		return nil
+	})
+}
+
+func TestTTL(t *testing.T) {
+	testUpdate(t, "TTL", func(tx *Tx) error {
+		duration, err := tx.TTL("regular:a")
+		assert.NoError(t, err)
+		assert.Equal(t, time.Duration(-1), duration)
+		return nil
+	})
+}
+
+func testUpdate(t *testing.T, name string, f func(tx *Tx) error) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	db := getDatabase(t)
+	defer db.Close()
+
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+	err := db.WithContext(ctx).Update(f)
+	assert.NoError(t, err)
+	span.Finish()
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 2)
+	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
+
+	assert.Equal(t, ext.AppTypeDB, spans[0].Tag(ext.SpanType))
+	assert.Equal(t, name, spans[0].Tag(ext.ResourceName))
+	assert.Equal(t, "buntdb", spans[0].Tag(ext.ServiceName))
+	assert.Equal(t, "buntdb.query", spans[0].OperationName())
 }
 
 func testView(t *testing.T, name string, f func(tx *Tx) error) {
