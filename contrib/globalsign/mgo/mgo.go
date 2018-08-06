@@ -132,6 +132,14 @@ func (c *Collection) Find(query interface{}) *Query {
 		cfg:   c.cfg}
 }
 
+func (c *Collection) Bulk() *Bulk {
+	return &Bulk{
+		Bulk: c.Collection.Bulk(),
+		ctx:  c.ctx,
+		cfg:  c.cfg,
+	}
+}
+
 type Query struct {
 	*mgo.Query
 	ctx context.Context
@@ -156,9 +164,92 @@ type Iter struct {
 	cfg mongoConfig
 }
 
-func (i *Iter) Next(result interface{}) bool {
-	span := newChildSpanFromContext(i.ctx, i.cfg, "mongodb.query", "mongodb.iter.next")
-	r := i.Iter.Next(result)
+// Next invokes and traces Iter.Next
+func (iter *Iter) Next(result interface{}) bool {
+	span := newChildSpanFromContext(iter.ctx, iter.cfg, "mongodb.query", "mongodb.iter.next")
+	r := iter.Iter.Next(result)
 	span.Finish()
 	return r
+}
+
+// For invokes and traces Iter.For
+func (iter *Iter) For(result interface{}, f func() error) (err error) {
+	span := newChildSpanFromContext(iter.ctx, iter.cfg, "mongodb.query", "mongodb.iter.for")
+	err = iter.Iter.For(result, f)
+	span.Finish(tracer.WithError(err))
+	return err
+}
+
+// All invokes and traces Iter.All
+func (iter *Iter) All(result interface{}) (err error) {
+	span := newChildSpanFromContext(iter.ctx, iter.cfg, "mongodb.query", "mongodb.iter.all")
+	err = iter.Iter.All(result)
+	span.Finish(tracer.WithError(err))
+	return err
+}
+
+// Close invokes and traces Iter.Close
+func (iter *Iter) Close() (err error) {
+	span := newChildSpanFromContext(iter.ctx, iter.cfg, "mongodb.query", "mongodb.iter.close")
+	err = iter.Iter.Close()
+	span.Finish(tracer.WithError(err))
+	return err
+}
+
+type Bulk struct {
+	*mgo.Bulk
+
+	ctx context.Context
+	cfg mongoConfig
+}
+
+// Insert invokes and traces Bulk.Insert
+func (b *Bulk) Insert(docs ...interface{}) {
+	span := newChildSpanFromContext(b.ctx, b.cfg, "mongodb.query", "mongodb.bulk.insert")
+	b.Bulk.Insert(docs...)
+	span.Finish()
+}
+
+// Run invokes and traces Bulk.Run
+func (b *Bulk) Run() (result *mgo.BulkResult, err error) {
+	span := newChildSpanFromContext(b.ctx, b.cfg, "mongodb.query", "mongodb.bulk.run")
+	result, err = b.Bulk.Run()
+	span.Finish(tracer.WithError(err))
+
+	return result, err
+}
+
+// Remove invokes and traces Bulk.Remove
+func (b *Bulk) Remove(selectors ...interface{}) {
+	span := newChildSpanFromContext(b.ctx, b.cfg, "mongodb.query", "mongodb.bulk.remove")
+	b.Bulk.Remove(selectors...)
+	span.Finish()
+}
+
+// RemoveAll invokes and traces Bulk.RemoveAll
+func (b *Bulk) RemoveAll(selectors ...interface{}) {
+	span := newChildSpanFromContext(b.ctx, b.cfg, "mongodb.query", "mongodb.bulk.removeall")
+	b.Bulk.RemoveAll(selectors...)
+	span.Finish()
+}
+
+// Update invokes and traces Bulk.Update
+func (b *Bulk) Update(pairs ...interface{}) {
+	span := newChildSpanFromContext(b.ctx, b.cfg, "mongodb.query", "mongodb.bulk.update")
+	b.Bulk.Update(pairs...)
+	span.Finish()
+}
+
+// UpdateAll invokes and traces Bulk.UpdateAll
+func (b *Bulk) UpdateAll(pairs ...interface{}) {
+	span := newChildSpanFromContext(b.ctx, b.cfg, "mongodb.query", "mongodb.bulk.updateall")
+	b.Bulk.UpdateAll(pairs...)
+	span.Finish()
+}
+
+// Upsert invokes and traces Bulk.Upsert
+func (b *Bulk) Upsert(pairs ...interface{}) {
+	span := newChildSpanFromContext(b.ctx, b.cfg, "mongodb.query", "mongodb.bulk.upsert")
+	b.Bulk.Upsert(pairs...)
+	span.Finish()
 }
