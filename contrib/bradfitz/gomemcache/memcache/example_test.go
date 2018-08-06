@@ -13,10 +13,10 @@ func Example() {
 		tracer.ServiceName("web"),
 		tracer.ResourceName("/home"),
 	)
+	defer span.Finish()
 
 	mc := memcachetrace.WrapClient(memcache.New("127.0.0.1:11211"))
 	// you can use WithContext to set the parent span
 	mc.WithContext(ctx).Set(&memcache.Item{Key: "my key", Value: []byte("my value")})
 
-	span.Finish()
 }
