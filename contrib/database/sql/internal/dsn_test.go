@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 func TestParseDSN(t *testing.T) {
@@ -17,7 +18,7 @@ func TestParseDSN(t *testing.T) {
 			driverName: "postgres",
 			dsn:        "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full",
 			expected: map[string]string{
-				"db.user":  "bob",
+				ext.DBUser: "bob",
 				"out.host": "1.2.3.4",
 				"out.port": "5432",
 				"db.name":  "mydb",
@@ -28,7 +29,7 @@ func TestParseDSN(t *testing.T) {
 			dsn:        "bob:secret@tcp(1.2.3.4:5432)/mydb",
 			expected: map[string]string{
 				"db.name":  "mydb",
-				"db.user":  "bob",
+				ext.DBUser: "bob",
 				"out.host": "1.2.3.4",
 				"out.port": "5432",
 			},
@@ -41,7 +42,7 @@ func TestParseDSN(t *testing.T) {
 				"out.host":       "master-db-master-active.postgres.service.consul",
 				"db.name":        "dogdatastaging",
 				"db.application": "trace-api",
-				"db.user":        "dog",
+				ext.DBUser:       "dog",
 			},
 		},
 	} {

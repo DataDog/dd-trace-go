@@ -44,7 +44,7 @@ func TestMySQL(t *testing.T) {
 			ext.SpanType:    ext.SpanTypeSQL,
 			ext.TargetHost:  "127.0.0.1",
 			ext.TargetPort:  "3306",
-			"db.user":       "test",
+			ext.DBUser:      "test",
 			"db.name":       "test",
 		},
 	}
@@ -69,7 +69,7 @@ func TestPostgres(t *testing.T) {
 			ext.SpanType:    ext.SpanTypeSQL,
 			ext.TargetHost:  "127.0.0.1",
 			ext.TargetPort:  "5432",
-			"db.user":       "postgres",
+			ext.DBUser:      "postgres",
 			"db.name":       "postgres",
 		},
 	}
