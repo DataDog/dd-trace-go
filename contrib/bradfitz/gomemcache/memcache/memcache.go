@@ -41,10 +41,10 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 	// the existing memcache client doesn't support context, but may in the
 	// future, so we do a runtime check to detect this
 	mc := c.Client
-	if hasWithContext, ok := (interface{})(c.Client).(interface {
+	if wc, ok := (interface{})(c.Client).(interface {
 		WithContext(context.Context) *memcache.Client
 	}); ok {
-		mc = hasWithContext.WithContext(ctx)
+		mc = wc.WithContext(ctx)
 	}
 	return &Client{
 		Client:  mc,
