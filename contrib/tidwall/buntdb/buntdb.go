@@ -18,12 +18,12 @@ type DB struct {
 }
 
 // Open calls buntdb.Open and wraps the result.
-func Open(path string) (*DB, error) {
+func Open(path string, opts ...Option) (*DB, error) {
 	db, err := buntdb.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	return WrapDB(db), nil
+	return WrapDB(db, opts...), nil
 }
 
 // WrapDB wraps a buntdb.DB so it can be traced.
