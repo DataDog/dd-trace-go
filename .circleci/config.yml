@@ -48,7 +48,8 @@ jobs:
     - run:
         name: Fetching dependencies
         command: |
-          go get -t ./...
+          go get -v -t ./...
+          go get -v -u golang.org/x/lint/golint
           go get -v -u github.com/alecthomas/gometalinter
 
     - run:
