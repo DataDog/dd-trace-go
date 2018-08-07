@@ -30,7 +30,7 @@ jobs:
         DD_APM_ENABLED: "true"
         DD_BIND_HOST: "0.0.0.0"
         DD_API_KEY: invalid_key_but_this_is_fine
-    - image: circleci/memcached:1.5.9
+    - image: memcached:1.5.9
 
     steps:
     - checkout
