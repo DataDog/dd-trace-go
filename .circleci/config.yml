@@ -84,7 +84,7 @@ jobs:
         command: |
           gometalinter --disable-all --vendor \
             --enable=golint \
-            --enable=govet \
+            --enable=vet \
             ./...
 
     - run:
