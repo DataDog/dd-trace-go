@@ -2,7 +2,6 @@ package mgo
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/globalsign/mgo"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -54,7 +53,7 @@ type WrapSession struct {
 }
 
 func newChildSpanFromContext(ctx context.Context, config mongoConfig, resource string, op string) ddtrace.Span {
-	name := fmt.Sprintf("%s", op)
+	name := op
 	span, _ := tracer.StartSpanFromContext(
 		ctx,
 		name,
