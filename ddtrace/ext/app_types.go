@@ -52,4 +52,7 @@ const (
 	// SpanTypeElasticSearch marks a span as an ElasticSearch operation.
 	// These spans may also have an "elasticsearch.body" tag.
 	SpanTypeElasticSearch = "elasticsearch"
+
+	// SpanTypeLevelDB marks a span as a leveldb operation
+	SpanTypeLevelDB = "leveldb"
 )
