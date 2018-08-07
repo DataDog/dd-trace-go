@@ -216,7 +216,7 @@ func (c *WrapCollection) Find(query interface{}) *WrapQuery {
 }
 
 // FindId invokes and traces Collection.FindId
-func (c *WrapCollection) FindId(id interface{}) *WrapQuery {
+func (c *WrapCollection) FindId(id interface{}) *WrapQuery { // nolint
 	return &WrapQuery{
 		Query: c.Collection.FindId(id),
 		ctx:   c.ctx,
@@ -249,7 +249,7 @@ func (c *WrapCollection) Update(selector interface{}, update interface{}) error 
 }
 
 // UpdateId invokes and traces Collection.UpdateId
-func (c *WrapCollection) UpdateId(id interface{}, update interface{}) error {
+func (c *WrapCollection) UpdateId(id interface{}, update interface{}) error { // nolint
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.updateid")
 	err := c.Collection.UpdateId(id, update)
 	span.Finish(tracer.WithError(err))
@@ -273,7 +273,7 @@ func (c *WrapCollection) Upsert(selector interface{}, update interface{}) (info 
 }
 
 // UpsertId invokes and traces Collection.UpsertId
-func (c *WrapCollection) UpsertId(id interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {
+func (c *WrapCollection) UpsertId(id interface{}, update interface{}) (info *mgo.ChangeInfo, err error) { // nolint
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.upsertid")
 	info, err = c.Collection.UpsertId(id, update)
 	span.Finish(tracer.WithError(err))
@@ -289,7 +289,7 @@ func (c *WrapCollection) Remove(selector interface{}) error {
 }
 
 // RemoveId invokes and traces Collection.RemoveId
-func (c *WrapCollection) RemoveId(id interface{}) error {
+func (c *WrapCollection) RemoveId(id interface{}) error { // nolint
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.removeid")
 	err := c.Collection.RemoveId(id)
 	span.Finish(tracer.WithError(err))
