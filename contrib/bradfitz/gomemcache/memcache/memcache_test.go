@@ -59,6 +59,7 @@ func testMemcache(t *testing.T, addr string) {
 		assert.Len(t, spans, 1)
 		validateMemcacheSpan(t, spans[0], "Add")
 	})
+
 	t.Run("traces with context", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
