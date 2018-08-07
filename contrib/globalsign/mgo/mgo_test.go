@@ -2,6 +2,8 @@ package mgo
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/globalsign/mgo"
@@ -10,6 +12,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
+
+func TestMain(m *testing.M) {
+	_, ok := os.LookupEnv("INTEGRATION")
+	if !ok {
+		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
 
 func testMongoCollectionCommand(assert *assert.Assertions, command func(*WrapCollection)) []mocktracer.Span {
 	mt := mocktracer.Start()
@@ -22,7 +33,7 @@ func testMongoCollectionCommand(assert *assert.Assertions, command func(*WrapCol
 		tracer.ResourceName("insert-test"),
 	)
 
-	session, err := Dial(ctx, "192.168.33.10:27017", WithServiceName("unit-tests"))
+	session, err := Dial(ctx, "localhost:27017", WithServiceName("unit-tests"))
 	defer session.Close()
 
 	assert.NotNil(session)
