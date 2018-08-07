@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"testing"
 
@@ -19,7 +20,20 @@ func TestMemcache(t *testing.T) {
 	li := makeFakeServer(t)
 	defer li.Close()
 
-	client := WrapClient(memcache.New(li.Addr().String()), WithServiceName("test-memcache"))
+	testMemcache(t, li.Addr().String())
+}
+
+func TestMemcacheIntegration(t *testing.T) {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	}
+
+	testMemcache(t, "localhost:11211")
+}
+
+func testMemcache(t *testing.T, addr string) {
+	client := WrapClient(memcache.New(addr), WithServiceName("test-memcache"))
+	defer client.DeleteAll()
 
 	validateMemcacheSpan := func(t *testing.T, span mocktracer.Span, resourceName string) {
 		assert.Equal(t, "test-memcache", span.Tag(ext.ServiceName),
@@ -36,8 +50,8 @@ func TestMemcache(t *testing.T) {
 
 		err := client.
 			Add(&memcache.Item{
-				Key:   "Hello",
-				Value: []byte("World"),
+				Key:   "key1",
+				Value: []byte("value1"),
 			})
 		assert.Nil(t, err)
 
@@ -55,8 +69,8 @@ func TestMemcache(t *testing.T) {
 		err := client.
 			WithContext(ctx).
 			Add(&memcache.Item{
-				Key:   "Hello",
-				Value: []byte("World"),
+				Key:   "key2",
+				Value: []byte("value2"),
 			})
 		assert.Nil(t, err)
 
@@ -69,6 +83,22 @@ func TestMemcache(t *testing.T) {
 		assert.Equal(t, spans[1].TraceID(), spans[0].TraceID(),
 			"memcache span should be part of the parent trace")
 	})
+}
+
+func TestFakeServer(t *testing.T) {
+	li := makeFakeServer(t)
+	defer li.Close()
+
+	conn, err := net.Dial("tcp", li.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	fmt.Fprintf(conn, "add %s\r\n%s\r\n", "key", "value")
+	s := bufio.NewScanner(conn)
+	assert.True(t, s.Scan())
+	assert.Equal(t, "STORED", s.Text())
 }
 
 func makeFakeServer(t *testing.T) net.Listener {
