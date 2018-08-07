@@ -162,7 +162,10 @@ func injectSpanIntoContext(ctx context.Context) context.Context {
 		return ctx
 	}
 	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
+	if ok {
+		// we have to copy the metadata because its not safe to modify
+		md = md.Copy()
+	} else {
 		md = metadata.MD{}
 	}
 	if err := tracer.Inject(span.Context(), grpcutil.MDCarrier(md)); err != nil {
