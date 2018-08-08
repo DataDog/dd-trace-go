@@ -4,6 +4,7 @@ package mgo // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/globalsign/mgo"
 import (
 	"github.com/globalsign/mgo"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -36,7 +37,7 @@ func newChildSpanFromContext(config mongoConfig) ddtrace.Span {
 	span, _ := tracer.StartSpanFromContext(
 		config.ctx,
 		name,
-		tracer.SpanType("mongodb"),
+		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(config.serviceName),
 		tracer.ResourceName("mongodb.query"))
 
