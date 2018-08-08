@@ -59,8 +59,8 @@ func newChildSpanFromContext(ctx context.Context, config mongoConfig, resource s
 		ctx,
 		name,
 		tracer.SpanType("mongodb"),
-		tracer.ServiceName(config.serviceName))
-	span.SetTag("resource.name", resource)
+		tracer.ServiceName(config.serviceName),
+		tracer.ResourceName(resource))
 
 	return span
 }
