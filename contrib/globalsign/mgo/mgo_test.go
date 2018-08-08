@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func testMongoCollectionCommand(assert *assert.Assertions, command func(*WrapCollection)) []mocktracer.Span {
+func testMongoCollectionCommand(assert *assert.Assertions, command func(*Collection)) []mocktracer.Span {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
@@ -60,7 +60,7 @@ func TestWrapCollection_Insert(t *testing.T) {
 				Name:  "index",
 				Value: 0}}}
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		collection.Insert(entity)
 	}
 
@@ -79,7 +79,7 @@ func TestWrapCollection_Update(t *testing.T) {
 				Name:  "index",
 				Value: 0}}}
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		collection.Insert(entity)
 		collection.Update(entity, entity)
 	}
@@ -99,7 +99,7 @@ func TestWrapCollection_UpdateId(t *testing.T) {
 				Name:  "index",
 				Value: 0}}}
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		collection.Insert(entity)
 		var r bson.D
 		collection.Find(entity).Iter().Next(&r)
@@ -121,7 +121,7 @@ func TestWrapCollection_Upsert(t *testing.T) {
 				Name:  "index",
 				Value: 0}}}
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		collection.Insert(entity)
 		collection.Upsert(entity, entity)
 		var r bson.D
@@ -145,7 +145,7 @@ func TestWrapCollection_UpdateAll(t *testing.T) {
 				Name:  "index",
 				Value: 0}}}
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		collection.Insert(entity)
 		collection.UpdateAll(entity, entity)
 	}
@@ -165,7 +165,7 @@ func TestWrapCollection_FindId(t *testing.T) {
 				Name:  "index",
 				Value: 0}}}
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		collection.Insert(entity)
 		var r bson.D
 		collection.Find(entity).Iter().Next(&r)
@@ -187,7 +187,7 @@ func TestWrapCollection_Remove(t *testing.T) {
 				Name:  "index",
 				Value: 0}}}
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		collection.Insert(entity)
 		collection.Remove(entity)
 	}
@@ -207,7 +207,7 @@ func TestWrapCollection_RemoveId(t *testing.T) {
 				Name:  "index",
 				Value: 0}}}
 
-	removeByID := func(collection *WrapCollection) {
+	removeByID := func(collection *Collection) {
 		collection.Insert(entity)
 		query := collection.Find(entity)
 		iter := query.Iter()
@@ -233,7 +233,7 @@ func TestWrapCollection_RemoveAll(t *testing.T) {
 				Name:  "index",
 				Value: 0}}}
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		collection.Insert(entity)
 		collection.RemoveAll(entity)
 	}
@@ -246,7 +246,7 @@ func TestWrapCollection_RemoveAll(t *testing.T) {
 func TestWrapCollection_DropCollection(t *testing.T) {
 	assert := assert.New(t)
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		collection.DropCollection()
 	}
 
@@ -258,7 +258,7 @@ func TestWrapCollection_DropCollection(t *testing.T) {
 func TestWrapCollection_Create(t *testing.T) {
 	assert := assert.New(t)
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		collection.Create(&mgo.CollectionInfo{})
 	}
 
@@ -270,7 +270,7 @@ func TestWrapCollection_Create(t *testing.T) {
 func TestWrapCollection_Count(t *testing.T) {
 	assert := assert.New(t)
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		collection.Count()
 	}
 
@@ -282,7 +282,7 @@ func TestWrapCollection_Count(t *testing.T) {
 func TestWrapCollection_IndexCommands(t *testing.T) {
 	assert := assert.New(t)
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		indexes, _ := collection.Indexes()
 		collection.DropIndex("_id_")
 		collection.DropIndexName("_id_")
@@ -311,7 +311,7 @@ func TestWrapCollection_FindAndIter(t *testing.T) {
 				Name:  "index",
 				Value: 0}}}
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		collection.Insert(entity)
 		collection.Insert(entity)
 		collection.Insert(entity)
@@ -343,7 +343,7 @@ func TestWrapCollection_Bulk(t *testing.T) {
 				Name:  "index",
 				Value: 0}}}
 
-	insert := func(collection *WrapCollection) {
+	insert := func(collection *Collection) {
 		bulk := collection.Bulk()
 		bulk.Insert(entity)
 		bulk.Run()

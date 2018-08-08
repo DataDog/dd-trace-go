@@ -28,9 +28,9 @@ func WithServiceName(name string) MongoOption {
 
 // Dial opens a connection to a MongoDB server and ties it to the
 // given context for tracing MongoDB calls.
-func Dial(ctx context.Context, url string, opts ...MongoOption) (*WrapSession, error) {
+func Dial(ctx context.Context, url string, opts ...MongoOption) (*Session, error) {
 	session, err := mgo.Dial(url)
-	s := &WrapSession{
+	s := &Session{
 		Session: session,
 		ctx:     ctx,
 	}
@@ -43,9 +43,9 @@ func Dial(ctx context.Context, url string, opts ...MongoOption) (*WrapSession, e
 	return s, err
 }
 
-// WrapSession wraps a Session with the Context and Config information
+// Session wraps a Session with the Context and Config information
 // needed to support tracing.
-type WrapSession struct {
+type Session struct {
 	*mgo.Session
 
 	ctx context.Context
@@ -65,7 +65,7 @@ func newChildSpanFromContext(ctx context.Context, config mongoConfig, resource s
 }
 
 // Run invokes and traces Session.Run
-func (s *WrapSession) Run(cmd interface{}, result interface{}) (err error) {
+func (s *Session) Run(cmd interface{}, result interface{}) (err error) {
 	span := newChildSpanFromContext(s.ctx, s.cfg, "mongodb.query", "mongodb.query")
 	err = s.Session.Run(cmd, result)
 	span.Finish(tracer.WithError(err))
@@ -74,17 +74,17 @@ func (s *WrapSession) Run(cmd interface{}, result interface{}) (err error) {
 
 // WithContext makes a copy of the `WrapSession` and sets the context
 // to the context given in the `ctx` parameter.
-func (s *WrapSession) WithContext(ctx context.Context) *WrapSession {
-	return &WrapSession{
+func (s *Session) WithContext(ctx context.Context) *Session {
+	return &Session{
 		Session: s.Session,
 		ctx:     ctx,
 		cfg:     s.cfg,
 	}
 }
 
-// WrapDatabase wraps a Database with the Context and Config information
+// Database wraps a Database with the Context and Config information
 // needed to support tracing.
-type WrapDatabase struct {
+type Database struct {
 	*mgo.Database
 	ctx context.Context
 	cfg mongoConfig
@@ -92,8 +92,8 @@ type WrapDatabase struct {
 
 // DB invokes Session.DB and wraps it with the context and config
 // data from `WrapSession` that is needed to support tracing
-func (s *WrapSession) DB(name string) *WrapDatabase {
-	return &WrapDatabase{
+func (s *Session) DB(name string) *Database {
+	return &Database{
 		Database: s.Session.DB(name),
 		ctx:      s.ctx,
 		cfg:      s.cfg}
@@ -101,16 +101,16 @@ func (s *WrapSession) DB(name string) *WrapDatabase {
 
 // WithContext makes a copy of the `WrapDatabase` and sets the context
 // to the context given in the `ctx` parameter.
-func (db *WrapDatabase) WithContext(ctx context.Context) *WrapDatabase {
-	return &WrapDatabase{
+func (db *Database) WithContext(ctx context.Context) *Database {
+	return &Database{
 		Database: db.Database,
 		ctx:      ctx,
 		cfg:      db.cfg}
 }
 
-// WrapCollection wraps an mgo.Collection type with the context
+// Collection wraps an mgo.Collection type with the context
 // and config needed to support tracing.
-type WrapCollection struct {
+type Collection struct {
 	*mgo.Collection
 	ctx context.Context
 	cfg mongoConfig
@@ -118,8 +118,8 @@ type WrapCollection struct {
 
 // C gets a Collection from the Mongo DB and wraps it with
 // the context and configuration from the WrapDatabase.
-func (db *WrapDatabase) C(name string) *WrapCollection {
-	return &WrapCollection{
+func (db *Database) C(name string) *Collection {
+	return &Collection{
 		Collection: db.Database.C(name),
 		ctx:        db.ctx,
 		cfg:        db.cfg}
@@ -127,15 +127,15 @@ func (db *WrapDatabase) C(name string) *WrapCollection {
 
 // WithContext creates a copy of the WrapCollection but with the context set
 // to context given in the `ctx` parameter.
-func (c *WrapCollection) WithContext(ctx context.Context) *WrapCollection {
-	return &WrapCollection{
+func (c *Collection) WithContext(ctx context.Context) *Collection {
+	return &Collection{
 		Collection: c.Collection,
 		ctx:        ctx,
 		cfg:        c.cfg}
 }
 
 // Create invokes and traces Collection.Create
-func (c *WrapCollection) Create(info *mgo.CollectionInfo) error {
+func (c *Collection) Create(info *mgo.CollectionInfo) error {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.create")
 	err := c.Collection.Create(info)
 	span.Finish(tracer.WithError(err))
@@ -143,7 +143,7 @@ func (c *WrapCollection) Create(info *mgo.CollectionInfo) error {
 }
 
 // DropCollection invokes and traces Collection.DropCollection
-func (c *WrapCollection) DropCollection() error {
+func (c *Collection) DropCollection() error {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.dropcollection")
 	err := c.Collection.DropCollection()
 	span.Finish(tracer.WithError(err))
@@ -151,7 +151,7 @@ func (c *WrapCollection) DropCollection() error {
 }
 
 // EnsureIndexKey invokes and traces Collection.EnsureIndexKey
-func (c *WrapCollection) EnsureIndexKey(key ...string) error {
+func (c *Collection) EnsureIndexKey(key ...string) error {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.ensureindexkey")
 	err := c.Collection.EnsureIndexKey(key...)
 	span.Finish(tracer.WithError(err))
@@ -159,7 +159,7 @@ func (c *WrapCollection) EnsureIndexKey(key ...string) error {
 }
 
 // EnsureIndex invokes and traces Collection.EnsureIndex
-func (c *WrapCollection) EnsureIndex(index mgo.Index) error {
+func (c *Collection) EnsureIndex(index mgo.Index) error {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.ensureindex")
 	err := c.Collection.EnsureIndex(index)
 	span.Finish(tracer.WithError(err))
@@ -167,7 +167,7 @@ func (c *WrapCollection) EnsureIndex(index mgo.Index) error {
 }
 
 // DropIndex invokes and traces Collection.DropIndex
-func (c *WrapCollection) DropIndex(key ...string) error {
+func (c *Collection) DropIndex(key ...string) error {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.dropindex")
 	err := c.Collection.DropIndex(key...)
 	span.Finish(tracer.WithError(err))
@@ -175,7 +175,7 @@ func (c *WrapCollection) DropIndex(key ...string) error {
 }
 
 // DropIndexName invokes and traces Collection.DropIndexName
-func (c *WrapCollection) DropIndexName(name string) error {
+func (c *Collection) DropIndexName(name string) error {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.dropindexname")
 	err := c.Collection.DropIndexName(name)
 	span.Finish(tracer.WithError(err))
@@ -183,7 +183,7 @@ func (c *WrapCollection) DropIndexName(name string) error {
 }
 
 // DropAllIndexes invokes and traces Collection.DropAllIndexes
-func (c *WrapCollection) DropAllIndexes() error {
+func (c *Collection) DropAllIndexes() error {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.dropallindexes")
 	err := c.Collection.DropAllIndexes()
 	span.Finish(tracer.WithError(err))
@@ -191,7 +191,7 @@ func (c *WrapCollection) DropAllIndexes() error {
 }
 
 // Indexes invokes and traces Collection.Indexes
-func (c *WrapCollection) Indexes() (indexes []mgo.Index, err error) {
+func (c *Collection) Indexes() (indexes []mgo.Index, err error) {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.indexes")
 	indexes, err = c.Collection.Indexes()
 	span.Finish(tracer.WithError(err))
@@ -199,7 +199,7 @@ func (c *WrapCollection) Indexes() (indexes []mgo.Index, err error) {
 }
 
 // Insert invokes and traces Collectin.Insert
-func (c *WrapCollection) Insert(docs ...interface{}) error {
+func (c *Collection) Insert(docs ...interface{}) error {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.insert")
 	err := c.Collection.Insert(docs...)
 	span.Finish(tracer.WithError(err))
@@ -207,23 +207,23 @@ func (c *WrapCollection) Insert(docs ...interface{}) error {
 }
 
 // Find invokes and traces Collection.Find
-func (c *WrapCollection) Find(query interface{}) *WrapQuery {
-	return &WrapQuery{
+func (c *Collection) Find(query interface{}) *Query {
+	return &Query{
 		Query: c.Collection.Find(query),
 		ctx:   c.ctx,
 		cfg:   c.cfg}
 }
 
 // FindId invokes and traces Collection.FindId
-func (c *WrapCollection) FindId(id interface{}) *WrapQuery { // nolint
-	return &WrapQuery{
+func (c *Collection) FindId(id interface{}) *Query { // nolint
+	return &Query{
 		Query: c.Collection.FindId(id),
 		ctx:   c.ctx,
 		cfg:   c.cfg}
 }
 
 // Count invokes and traces Collection.Count
-func (c *WrapCollection) Count() (n int, err error) {
+func (c *Collection) Count() (n int, err error) {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.count")
 	n, err = c.Collection.Count()
 	span.Finish(tracer.WithError(err))
@@ -231,8 +231,8 @@ func (c *WrapCollection) Count() (n int, err error) {
 }
 
 // Bulk creates a trace ready wrapper around Collection.Bulk
-func (c *WrapCollection) Bulk() *WrapBulk {
-	return &WrapBulk{
+func (c *Collection) Bulk() *Bulk {
+	return &Bulk{
 		Bulk: c.Collection.Bulk(),
 		ctx:  c.ctx,
 		cfg:  c.cfg,
@@ -240,7 +240,7 @@ func (c *WrapCollection) Bulk() *WrapBulk {
 }
 
 // Update invokes and traces Collection.Update
-func (c *WrapCollection) Update(selector interface{}, update interface{}) error {
+func (c *Collection) Update(selector interface{}, update interface{}) error {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.update")
 	err := c.Collection.Update(selector, update)
 	span.Finish(tracer.WithError(err))
@@ -248,7 +248,7 @@ func (c *WrapCollection) Update(selector interface{}, update interface{}) error 
 }
 
 // UpdateId invokes and traces Collection.UpdateId
-func (c *WrapCollection) UpdateId(id interface{}, update interface{}) error { // nolint
+func (c *Collection) UpdateId(id interface{}, update interface{}) error { // nolint
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.updateid")
 	err := c.Collection.UpdateId(id, update)
 	span.Finish(tracer.WithError(err))
@@ -256,7 +256,7 @@ func (c *WrapCollection) UpdateId(id interface{}, update interface{}) error { //
 }
 
 // UpdateAll invokes and traces Collection.UpdateAll
-func (c *WrapCollection) UpdateAll(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {
+func (c *Collection) UpdateAll(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.updateall")
 	info, err = c.Collection.UpdateAll(selector, update)
 	span.Finish(tracer.WithError(err))
@@ -264,7 +264,7 @@ func (c *WrapCollection) UpdateAll(selector interface{}, update interface{}) (in
 }
 
 // Upsert invokes and traces Collection.Upsert
-func (c *WrapCollection) Upsert(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {
+func (c *Collection) Upsert(selector interface{}, update interface{}) (info *mgo.ChangeInfo, err error) {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.upsert")
 	info, err = c.Collection.Upsert(selector, update)
 	span.Finish(tracer.WithError(err))
@@ -272,7 +272,7 @@ func (c *WrapCollection) Upsert(selector interface{}, update interface{}) (info 
 }
 
 // UpsertId invokes and traces Collection.UpsertId
-func (c *WrapCollection) UpsertId(id interface{}, update interface{}) (info *mgo.ChangeInfo, err error) { // nolint
+func (c *Collection) UpsertId(id interface{}, update interface{}) (info *mgo.ChangeInfo, err error) { // nolint
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.upsertid")
 	info, err = c.Collection.UpsertId(id, update)
 	span.Finish(tracer.WithError(err))
@@ -280,7 +280,7 @@ func (c *WrapCollection) UpsertId(id interface{}, update interface{}) (info *mgo
 }
 
 // Remove invokes and traces Collection.Remove
-func (c *WrapCollection) Remove(selector interface{}) error {
+func (c *Collection) Remove(selector interface{}) error {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.remove")
 	err := c.Collection.Remove(selector)
 	span.Finish(tracer.WithError(err))
@@ -288,7 +288,7 @@ func (c *WrapCollection) Remove(selector interface{}) error {
 }
 
 // RemoveId invokes and traces Collection.RemoveId
-func (c *WrapCollection) RemoveId(id interface{}) error { // nolint
+func (c *Collection) RemoveId(id interface{}) error { // nolint
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.removeid")
 	err := c.Collection.RemoveId(id)
 	span.Finish(tracer.WithError(err))
@@ -296,7 +296,7 @@ func (c *WrapCollection) RemoveId(id interface{}) error { // nolint
 }
 
 // RemoveAll invokes and traces Collection.RemoveAll
-func (c *WrapCollection) RemoveAll(selector interface{}) (info *mgo.ChangeInfo, err error) {
+func (c *Collection) RemoveAll(selector interface{}) (info *mgo.ChangeInfo, err error) {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.removeall")
 	info, err = c.Collection.RemoveAll(selector)
 	span.Finish(tracer.WithError(err))
@@ -304,40 +304,40 @@ func (c *WrapCollection) RemoveAll(selector interface{}) (info *mgo.ChangeInfo, 
 }
 
 // Repair invokes and traces Collection.Repair
-func (c *WrapCollection) Repair() *WrapIter {
+func (c *Collection) Repair() *Iter {
 	span := newChildSpanFromContext(c.ctx, c.cfg, "mongodb.query", "mongodb.repair")
 	iter := c.Collection.Repair()
 	span.Finish()
-	return &WrapIter{
+	return &Iter{
 		Iter: iter,
 		ctx:  c.ctx,
 		cfg:  c.cfg,
 	}
 }
 
-// WrapQuery wraps the Query type with the context and config
+// Query wraps the Query type with the context and config
 // needed to support tracing.
-type WrapQuery struct {
+type Query struct {
 	*mgo.Query
 	ctx context.Context
 	cfg mongoConfig
 }
 
 // Iter invokes and traces Query.Iter
-func (q *WrapQuery) Iter() *WrapIter {
+func (q *Query) Iter() *Iter {
 	span := newChildSpanFromContext(q.ctx, q.cfg, "mongodb.query", "mongodb.query.iter")
 	iter := q.Query.Iter()
 	span.Finish()
-	return &WrapIter{
+	return &Iter{
 		Iter: iter,
 		ctx:  q.ctx,
 		cfg:  q.cfg,
 	}
 }
 
-// WrapIter wraps a Session with the Context and Config information
+// Iter wraps a Session with the Context and Config information
 // needed to support tracing.
-type WrapIter struct {
+type Iter struct {
 	*mgo.Iter
 
 	ctx context.Context
@@ -345,7 +345,7 @@ type WrapIter struct {
 }
 
 // Next invokes and traces Iter.Next
-func (iter *WrapIter) Next(result interface{}) bool {
+func (iter *Iter) Next(result interface{}) bool {
 	span := newChildSpanFromContext(iter.ctx, iter.cfg, "mongodb.query", "mongodb.iter.next")
 	r := iter.Iter.Next(result)
 	span.Finish()
@@ -353,7 +353,7 @@ func (iter *WrapIter) Next(result interface{}) bool {
 }
 
 // For invokes and traces Iter.For
-func (iter *WrapIter) For(result interface{}, f func() error) (err error) {
+func (iter *Iter) For(result interface{}, f func() error) (err error) {
 	span := newChildSpanFromContext(iter.ctx, iter.cfg, "mongodb.query", "mongodb.iter.for")
 	err = iter.Iter.For(result, f)
 	span.Finish(tracer.WithError(err))
@@ -361,7 +361,7 @@ func (iter *WrapIter) For(result interface{}, f func() error) (err error) {
 }
 
 // All invokes and traces Iter.All
-func (iter *WrapIter) All(result interface{}) (err error) {
+func (iter *Iter) All(result interface{}) (err error) {
 	span := newChildSpanFromContext(iter.ctx, iter.cfg, "mongodb.query", "mongodb.iter.all")
 	err = iter.Iter.All(result)
 	span.Finish(tracer.WithError(err))
@@ -369,16 +369,16 @@ func (iter *WrapIter) All(result interface{}) (err error) {
 }
 
 // Close invokes and traces Iter.Close
-func (iter *WrapIter) Close() (err error) {
+func (iter *Iter) Close() (err error) {
 	span := newChildSpanFromContext(iter.ctx, iter.cfg, "mongodb.query", "mongodb.iter.close")
 	err = iter.Iter.Close()
 	span.Finish(tracer.WithError(err))
 	return err
 }
 
-// WrapBulk wraps a Session with the Context and Config information
+// Bulk wraps a Session with the Context and Config information
 // needed to support tracing.
-type WrapBulk struct {
+type Bulk struct {
 	*mgo.Bulk
 
 	ctx context.Context
@@ -386,7 +386,7 @@ type WrapBulk struct {
 }
 
 // Run invokes and traces Bulk.Run
-func (b *WrapBulk) Run() (result *mgo.BulkResult, err error) {
+func (b *Bulk) Run() (result *mgo.BulkResult, err error) {
 	span := newChildSpanFromContext(b.ctx, b.cfg, "mongodb.query", "mongodb.bulk.run")
 	result, err = b.Bulk.Run()
 	span.Finish(tracer.WithError(err))
