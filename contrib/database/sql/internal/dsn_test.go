@@ -38,11 +38,11 @@ func TestParseDSN(t *testing.T) {
 			driverName: "postgres",
 			dsn:        "connect_timeout=0 binary_parameters=no password=zMWmQz26GORmgVVKEbEl dbname=dogdatastaging application_name=trace-api port=5433 sslmode=disable host=master-db-master-active.postgres.service.consul user=dog",
 			expected: map[string]string{
-				"out.port":       "5433",
-				"out.host":       "master-db-master-active.postgres.service.consul",
-				"db.name":        "dogdatastaging",
-				"db.application": "trace-api",
-				ext.DBUser:       "dog",
+				"out.port":        "5433",
+				"out.host":        "master-db-master-active.postgres.service.consul",
+				"db.name":         "dogdatastaging",
+				ext.DBApplication: "trace-api",
+				ext.DBUser:        "dog",
 			},
 		},
 	} {

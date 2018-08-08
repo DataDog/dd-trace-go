@@ -33,7 +33,7 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 func reduceKeys(meta map[string]string) map[string]string {
 	var keysOfInterest = map[string]string{
 		"user":             ext.DBUser,
-		"application_name": "db.application",
+		"application_name": ext.DBApplication,
 		"dbname":           "db.name",
 		"host":             "out.host",
 		"port":             "out.port",
