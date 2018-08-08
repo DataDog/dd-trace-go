@@ -7,12 +7,13 @@ type mongoConfig struct {
 	serviceName string
 }
 
-// MongoOption represents an option that can be passed to Dial
-type MongoOption func(*mongoConfig)
-
 func defaults(cfg *mongoConfig) {
 	cfg.serviceName = "mongodb"
+	cfg.ctx = context.Background()
 }
+
+// MongoOption represents an option that can be passed to Dial
+type MongoOption func(*mongoConfig)
 
 // WithServiceName sets the service name for a given MongoDB context.
 func WithServiceName(name string) MongoOption {
