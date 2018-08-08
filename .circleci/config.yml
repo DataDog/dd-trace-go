@@ -1,88 +1,95 @@
 version: 2
 jobs:
-     build:
-          working_directory: /go/src/gopkg.in/DataDog/dd-trace-go.v1
-          resource_class: xlarge
+  build:
+    working_directory: /go/src/gopkg.in/DataDog/dd-trace-go.v1
+    resource_class: xlarge
 
-          docker:
-               - image: circleci/golang:latest
-               - image: cassandra:3.7
-               - image: circleci/mysql:5.7
-                 environment:
-                 - MYSQL_ROOT_PASSWORD=admin
-                 - MYSQL_PASSWORD=test
-                 - MYSQL_USER=test
-                 - MYSQL_DATABASE=test
-               - image: circleci/postgres:9.5
-                 environment:
-                 - POSTGRES_PASSWORD=postgres
-                 - POSTGRES_USER=postgres
-                 - POSTGRES_DB=postgres
-               - image: redis:3.2
-               - image: elasticsearch:2
-                 environment:
-                 - ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-               - image: elasticsearch:5
-                 environment:
-                 - ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-               - image: datadog/docker-dd-agent
-                 environment:
-                 - DD_APM_ENABLED=true
-                 - DD_BIND_HOST=0.0.0.0
-                 - DD_API_KEY=invalid_key_but_this_is_fine
+    docker:
+    - image: circleci/golang:latest
+    - image: cassandra:3.7
+    - image: circleci/mysql:5.7
+      environment:
+        MYSQL_ROOT_PASSWORD: admin
+        MYSQL_PASSWORD: test
+        MYSQL_USER: test
+        MYSQL_DATABASE: test
+    - image: circleci/postgres:9.5
+      environment:
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_USER: postgres
+        POSTGRES_DB: postgres
+    - image: redis:3.2
+    - image: elasticsearch:2
+      environment:
+        ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    - image: elasticsearch:5
+      environment:
+        ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    - image: datadog/docker-dd-agent
+      environment:
+        DD_APM_ENABLED: "true"
+        DD_BIND_HOST: "0.0.0.0"
+        DD_API_KEY: invalid_key_but_this_is_fine
+    - image: memcached:1.5.9
 
-          steps:
-               - checkout
+    steps:
+    - checkout
+    - run:
+        name: Vendor gRPC v1.2.0
+        # This step vendors gRPC v1.2.0 inside our gRPC.v12 contrib
+        # to allow running the tests against the correct version of
+        # the gRPC library. The library is not committed into the
+        # repository to avoid conflicts with the user's imports.
+        environment:
+          GRPC_DEST: contrib/google.golang.org/grpc.v12/vendor/google.golang.org/grpc
+        command: |
+          mkdir -p $GRPC_DEST
+          git clone --branch v1.2.0 https://github.com/grpc/grpc-go $GRPC_DEST
 
-               - run:
-                    name: Vendor gRPC v1.2.0
-                    # This step vendors gRPC v1.2.0 inside our gRPC.v12 contrib
-                    # to allow running the tests against the correct version of
-                    # the gRPC library. The library is not committed into the
-                    # repository to avoid conflicts with the user's imports.
-                    environment:
-                         GRPC_DEST: contrib/google.golang.org/grpc.v12/vendor/google.golang.org/grpc
-                    command: |
-                         mkdir -p $GRPC_DEST
-                         git clone --branch v1.2.0 https://github.com/grpc/grpc-go $GRPC_DEST
+    - run:
+        name: Fetching dependencies
+        command: |
+          go get -v -t ./...
+          go get -v -u golang.org/x/lint/golint
+          go get -v -u github.com/alecthomas/gometalinter
 
-               - run:
-                    name: Fetching dependencies
-                    command: |
-                         go get -t ./...
-                         go get golang.org/x/lint/golint
+    - run:
+        name: Wait for MySQL
+        command: dockerize -wait tcp://localhost:3306 -timeout 1m
 
-               - run:
-                    name: Wait for MySQL
-                    command: dockerize -wait tcp://localhost:3306 -timeout 1m
+    - run:
+        name: Wait for Postgres
+        command: dockerize -wait tcp://localhost:5432 -timeout 1m
 
-               - run:
-                    name: Wait for Postgres
-                    command: dockerize -wait tcp://localhost:5432 -timeout 1m
+    - run:
+        name: Wait for Redis
+        command: dockerize -wait tcp://localhost:6379 -timeout 1m
 
-               - run:
-                    name: Wait for Redis
-                    command: dockerize -wait tcp://localhost:6379 -timeout 1m
+    - run:
+        name: Wait for ElasticSearch (1)
+        command: dockerize -wait http://localhost:9200 -timeout 1m
 
-               - run:
-                    name: Wait for ElasticSearch (1)
-                    command: dockerize -wait http://localhost:9200 -timeout 1m
+    - run:
+        name: Wait for ElasticSearch (2)
+        command: dockerize -wait http://localhost:9201 -timeout 1m
 
-               - run:
-                    name: Wait for ElasticSearch (2)
-                    command: dockerize -wait http://localhost:9201 -timeout 1m
+    - run:
+        name: Wait for Datadog Agent
+        command: dockerize -wait tcp://127.0.0.1:8126 -timeout 1m
 
-               - run:
-                    name: Wait for Datadog Agent
-                    command: dockerize -wait tcp://127.0.0.1:8126 -timeout 1m
+    - run:
+        name: Wait for Cassandra
+        command: dockerize -wait tcp://localhost:9042 -timeout 2m
 
-               - run:
-                    name: Wait for Cassandra
-                    command: dockerize -wait tcp://localhost:9042 -timeout 2m
+    - run:
+        name: Linting
+        command: |
+          gometalinter --disable-all --vendor --deadline=60s \
+            --enable=golint \
+            --enable=vet \
+            ./...
 
-               - run:
-                    name: Testing
-                    command: |
-                        go vet ./...
-                        golint -set_exit_status=1 $(go list ./... | grep -v /vendor/)
-                        INTEGRATION=1 go test -v -race ./...
+    - run:
+        name: Testing
+        command: |
+          INTEGRATION=1 go test -v -race ./...
