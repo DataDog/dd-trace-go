@@ -45,7 +45,7 @@ func TestMySQL(t *testing.T) {
 			ext.TargetHost:  "127.0.0.1",
 			ext.TargetPort:  "3306",
 			ext.DBUser:      "test",
-			"db.name":       "test",
+			ext.DBName:      "test",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
@@ -70,7 +70,7 @@ func TestPostgres(t *testing.T) {
 			ext.TargetHost:  "127.0.0.1",
 			ext.TargetPort:  "5432",
 			ext.DBUser:      "postgres",
-			"db.name":       "postgres",
+			ext.DBName:      "postgres",
 		},
 	}
 	sqltest.RunAll(t, testConfig)

@@ -57,6 +57,8 @@ const (
 
 	// DBApplication indicates the application using the database.
 	DBApplication = "db.application"
+	// DBName indicates the database name.
+	DBName = "db.name"
 	// DBUser indicates the user name of Database, e.g. "readonly_user" or "reporting_user".
 	DBUser = "db.user"
 )

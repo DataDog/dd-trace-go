@@ -34,9 +34,9 @@ func reduceKeys(meta map[string]string) map[string]string {
 	var keysOfInterest = map[string]string{
 		"user":             ext.DBUser,
 		"application_name": ext.DBApplication,
-		"dbname":           "db.name",
-		"host":             "out.host",
-		"port":             "out.port",
+		"dbname":           ext.DBName,
+		"host":             ext.TargetHost,
+		"port":             ext.TargetPort,
 	}
 	m := make(map[string]string)
 	for k, v := range meta {
