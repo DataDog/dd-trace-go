@@ -36,14 +36,14 @@ func requestToResource(method, path string) string {
 
 	path = strings.TrimPrefix(path, prefixAPI)
 
-	// strip out /watch
 	if strings.HasPrefix(path, prefixWatch) {
+		// strip out /watch
 		path = strings.TrimPrefix(path, prefixWatch)
 		out.WriteString(prefixWatch)
 	}
 
 	// {type}/{name}
-	lastType := ""
+	var lastType string
 	for i, str := range strings.Split(path, "/") {
 		if i > 0 {
 			out.WriteByte('/')
