@@ -50,7 +50,7 @@ func testMongoCollectionCommand(assert *assert.Assertions, command func(*Collect
 	return spans
 }
 
-func TestWrapCollection_Insert(t *testing.T) {
+func TestCollection_Insert(t *testing.T) {
 	assert := assert.New(t)
 
 	entity := bson.D{
@@ -69,7 +69,7 @@ func TestWrapCollection_Insert(t *testing.T) {
 	assert.Equal("mongodb.query", spans[0].OperationName())
 }
 
-func TestWrapCollection_Update(t *testing.T) {
+func TestCollection_Update(t *testing.T) {
 	assert := assert.New(t)
 
 	entity := bson.D{
@@ -89,7 +89,7 @@ func TestWrapCollection_Update(t *testing.T) {
 	assert.Equal("mongodb.query", spans[1].OperationName())
 }
 
-func TestWrapCollection_UpdateId(t *testing.T) {
+func TestCollection_UpdateId(t *testing.T) {
 	assert := assert.New(t)
 
 	entity := bson.D{
@@ -111,7 +111,7 @@ func TestWrapCollection_UpdateId(t *testing.T) {
 	assert.Equal("mongodb.query", spans[3].OperationName())
 }
 
-func TestWrapCollection_Upsert(t *testing.T) {
+func TestCollection_Upsert(t *testing.T) {
 	assert := assert.New(t)
 
 	entity := bson.D{
@@ -135,7 +135,7 @@ func TestWrapCollection_Upsert(t *testing.T) {
 	assert.Equal("mongodb.query", spans[4].OperationName())
 }
 
-func TestWrapCollection_UpdateAll(t *testing.T) {
+func TestCollection_UpdateAll(t *testing.T) {
 	assert := assert.New(t)
 
 	entity := bson.D{
@@ -155,7 +155,7 @@ func TestWrapCollection_UpdateAll(t *testing.T) {
 	assert.Equal("mongodb.query", spans[1].OperationName())
 }
 
-func TestWrapCollection_FindId(t *testing.T) {
+func TestCollection_FindId(t *testing.T) {
 	assert := assert.New(t)
 
 	entity := bson.D{
@@ -177,7 +177,7 @@ func TestWrapCollection_FindId(t *testing.T) {
 	assert.Equal(6, len(spans))
 }
 
-func TestWrapCollection_Remove(t *testing.T) {
+func TestCollection_Remove(t *testing.T) {
 	assert := assert.New(t)
 
 	entity := bson.D{
@@ -197,7 +197,7 @@ func TestWrapCollection_Remove(t *testing.T) {
 	assert.Equal("mongodb.query", spans[1].OperationName())
 }
 
-func TestWrapCollection_RemoveId(t *testing.T) {
+func TestCollection_RemoveId(t *testing.T) {
 	assert := assert.New(t)
 
 	entity := bson.D{
@@ -223,7 +223,7 @@ func TestWrapCollection_RemoveId(t *testing.T) {
 	assert.Equal("mongodb.query", spans[3].OperationName())
 }
 
-func TestWrapCollection_RemoveAll(t *testing.T) {
+func TestCollection_RemoveAll(t *testing.T) {
 	assert := assert.New(t)
 
 	entity := bson.D{
@@ -243,7 +243,7 @@ func TestWrapCollection_RemoveAll(t *testing.T) {
 	assert.Equal("mongodb.query", spans[1].OperationName())
 }
 
-func TestWrapCollection_DropCollection(t *testing.T) {
+func TestCollection_DropCollection(t *testing.T) {
 	assert := assert.New(t)
 
 	insert := func(collection *Collection) {
@@ -255,7 +255,7 @@ func TestWrapCollection_DropCollection(t *testing.T) {
 	assert.Equal("mongodb.query", spans[0].OperationName())
 }
 
-func TestWrapCollection_Create(t *testing.T) {
+func TestCollection_Create(t *testing.T) {
 	assert := assert.New(t)
 
 	insert := func(collection *Collection) {
@@ -267,7 +267,7 @@ func TestWrapCollection_Create(t *testing.T) {
 	assert.Equal("mongodb.query", spans[0].OperationName())
 }
 
-func TestWrapCollection_Count(t *testing.T) {
+func TestCollection_Count(t *testing.T) {
 	assert := assert.New(t)
 
 	insert := func(collection *Collection) {
@@ -279,7 +279,7 @@ func TestWrapCollection_Count(t *testing.T) {
 	assert.Equal("mongodb.query", spans[0].OperationName())
 }
 
-func TestWrapCollection_IndexCommands(t *testing.T) {
+func TestCollection_IndexCommands(t *testing.T) {
 	assert := assert.New(t)
 
 	insert := func(collection *Collection) {
@@ -301,7 +301,7 @@ func TestWrapCollection_IndexCommands(t *testing.T) {
 	assert.Equal("mongodb.query", spans[5].OperationName())
 }
 
-func TestWrapCollection_FindAndIter(t *testing.T) {
+func TestCollection_FindAndIter(t *testing.T) {
 	assert := assert.New(t)
 
 	entity := bson.D{
@@ -333,7 +333,7 @@ func TestWrapCollection_FindAndIter(t *testing.T) {
 	assert.Equal("mongodb.query", spans[6].OperationName())
 }
 
-func TestWrapCollection_Bulk(t *testing.T) {
+func TestCollection_Bulk(t *testing.T) {
 	assert := assert.New(t)
 
 	entity := bson.D{
