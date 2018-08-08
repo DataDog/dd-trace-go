@@ -1,4 +1,5 @@
 version: 2
+
 jobs:
   build:
     working_directory: /go/src/gopkg.in/DataDog/dd-trace-go.v1
@@ -31,9 +32,39 @@ jobs:
         DD_BIND_HOST: "0.0.0.0"
         DD_API_KEY: invalid_key_but_this_is_fine
     - image: memcached:1.5.9
+    - image: confluentinc/cp-zookeeper:5.0.0
+      environment:
+        ZOOKEEPER_CLIENT_PORT: "2181"
+    - image: confluentinc/cp-kafka:5.0.0
+      environment:
+        KAFKA_ZOOKEEPER_CONNECT: localhost:2181
+        KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+        KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+        KAFKA_CREATE_TOPICS: gotest:1:1
+        KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
 
     steps:
     - checkout
+
+    - restore_cache:
+        keys:
+        - v1-librdkafka-v0.11.5
+    - run:
+        name: Install rdkafka
+        command: |
+          if [ ! -d /tmp/librdkafka-v0.11.5 ] ; then
+            echo "building librdkafka"
+            git clone --branch v0.11.5 https://github.com/edenhill/librdkafka.git /tmp/librdkafka-v0.11.5
+            (cd /tmp/librdkafka-v0.11.5 && ./configure && make)
+          fi
+          echo "installing librdkafka"
+          (cd /tmp/librdkafka-v0.11.5 && sudo make install)
+          sudo ldconfig
+    - save_cache:
+        key: v1-librdkafka-v0.11.5
+        paths:
+        - /tmp/librdkafka-v0.11.5
+
     - run:
         name: Vendor gRPC v1.2.0
         # This step vendors gRPC v1.2.0 inside our gRPC.v12 contrib
