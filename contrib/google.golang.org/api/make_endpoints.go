@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"text/template"
 
 	"github.com/yosida95/uritemplate"
@@ -87,6 +88,10 @@ func main() {
 	}
 	defer f.Close()
 
+	sort.Slice(es, func(i, j int) bool {
+		return es[i].String() < es[j].String()
+	})
+
 	template.Must(template.New("").Parse(tpl)).Execute(f, map[string]interface{}{
 		"Endpoints": es,
 	})
@@ -133,7 +138,7 @@ func handleMethod(def *APIDefinition, resource *APIResource, method *APIMethod) 
 		HTTPMethod:   method.HTTPMethod,
 		PathTemplate: path,
 		PathMatcher:  uritpl.Regexp(),
-		ServiceName:  "google." + def.ID,
+		ServiceName:  "google." + def.Name,
 		ResourceName: method.ID,
 	}}, nil
 }
