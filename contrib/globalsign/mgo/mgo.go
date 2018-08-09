@@ -11,7 +11,7 @@ import (
 
 // Dial opens a connection to a MongoDB server and ties it to the
 // given context for tracing MongoDB calls.
-func Dial(url string, opts ...MongoOption) (*Session, error) {
+func Dial(url string, opts ...DialOption) (*Session, error) {
 	session, err := mgo.Dial(url)
 	s := &Session{Session: session}
 
