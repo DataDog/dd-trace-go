@@ -12,18 +12,18 @@ func defaults(cfg *mongoConfig) {
 	cfg.ctx = context.Background()
 }
 
-// MongoOption represents an option that can be passed to Dial
-type MongoOption func(*mongoConfig)
+// DialOption represents an option that can be passed to Dial
+type DialOption func(*mongoConfig)
 
 // WithServiceName sets the service name for a given MongoDB context.
-func WithServiceName(name string) MongoOption {
+func WithServiceName(name string) DialOption {
 	return func(cfg *mongoConfig) {
 		cfg.serviceName = name
 	}
 }
 
 // WithContext sets the context.
-func WithContext(ctx context.Context) MongoOption {
+func WithContext(ctx context.Context) DialOption {
 	return func(cfg *mongoConfig) {
 		cfg.ctx = ctx
 	}
