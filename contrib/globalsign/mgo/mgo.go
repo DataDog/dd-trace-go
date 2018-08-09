@@ -2,19 +2,18 @@
 package mgo // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/globalsign/mgo"
 
 import (
-	"github.com/globalsign/mgo"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/globalsign/mgo"
 )
 
 // Dial opens a connection to a MongoDB server and ties it to the
 // given context for tracing MongoDB calls.
 func Dial(url string, opts ...MongoOption) (*Session, error) {
 	session, err := mgo.Dial(url)
-	s := &Session{
-		Session: session,
-	}
+	s := &Session{Session: session}
 
 	defaults(&s.cfg)
 	for _, fn := range opts {
@@ -28,15 +27,13 @@ func Dial(url string, opts ...MongoOption) (*Session, error) {
 // needed to support tracing.
 type Session struct {
 	*mgo.Session
-
 	cfg mongoConfig
 }
 
 func newChildSpanFromContext(config mongoConfig) ddtrace.Span {
-	name := "mongodb.query"
 	span, _ := tracer.StartSpanFromContext(
 		config.ctx,
-		name,
+		"mongodb.query",
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(config.serviceName),
 		tracer.ResourceName("mongodb.query"))
@@ -64,7 +61,8 @@ type Database struct {
 func (s *Session) DB(name string) *Database {
 	return &Database{
 		Database: s.Session.DB(name),
-		cfg:      s.cfg}
+		cfg:      s.cfg,
+	}
 }
 
 // Collection wraps an mgo.Collection type with the context
@@ -79,7 +77,8 @@ type Collection struct {
 func (db *Database) C(name string) *Collection {
 	return &Collection{
 		Collection: db.Database.C(name),
-		cfg:        db.cfg}
+		cfg:        db.cfg,
+	}
 }
 
 // Create invokes and traces Collection.Create
@@ -158,14 +157,16 @@ func (c *Collection) Insert(docs ...interface{}) error {
 func (c *Collection) Find(query interface{}) *Query {
 	return &Query{
 		Query: c.Collection.Find(query),
-		cfg:   c.cfg}
+		cfg:   c.cfg,
+	}
 }
 
 // FindId invokes and traces Collection.FindId
 func (c *Collection) FindId(id interface{}) *Query { // nolint
 	return &Query{
 		Query: c.Collection.FindId(id),
-		cfg:   c.cfg}
+		cfg:   c.cfg,
+	}
 }
 
 // Count invokes and traces Collection.Count
