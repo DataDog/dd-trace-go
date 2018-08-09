@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"text/template"
 
 	"github.com/yosida95/uritemplate"
@@ -34,6 +35,7 @@ type (
 	}
 	APIMethod struct {
 		ID         string `json"id"`
+		FlatPath   string `json:"flatPath"`
 		Path       string `json:"path"`
 		HTTPMethod string `json:"httpMethod"`
 	}
@@ -127,7 +129,15 @@ func handleMethod(def *APIDefinition, resource *APIResource, method *APIMethod) 
 	}
 	hostname := u.Hostname()
 
-	path := def.BasePath + method.Path
+	path := method.FlatPath
+	if path == "" {
+		path = method.Path
+	}
+	path = def.BasePath + path
+
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
 
 	uritpl, err := uritemplate.New(path)
 	if err != nil {

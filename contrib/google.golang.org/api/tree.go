@@ -77,8 +77,8 @@ func (t *Tree) Add(es ...Endpoint) {
 func (t *Tree) Get(hostname string, httpMethod string, httpPath string) (Endpoint, bool) {
 	segments := append([]string{hostname, httpMethod},
 		strings.SplitAfter(httpPath, "/")...)
-	Endpoints := t.root.GetLongestPrefixMatch(segments)
-	for _, e := range Endpoints {
+	endpoints := t.root.GetLongestPrefixMatch(segments)
+	for _, e := range endpoints {
 		if e.PathMatcher.MatchString(httpPath) {
 			return e, true
 		}
