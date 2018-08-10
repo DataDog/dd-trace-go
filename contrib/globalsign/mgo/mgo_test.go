@@ -286,7 +286,6 @@ func TestCollection_IndexCommands(t *testing.T) {
 		indexes, _ := collection.Indexes()
 		collection.DropIndex("_id_")
 		collection.DropIndexName("_id_")
-		collection.DropAllIndexes()
 		collection.EnsureIndex(indexes[0])
 		collection.EnsureIndexKey("_id_")
 	}
