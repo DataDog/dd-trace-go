@@ -4,6 +4,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/globalsign/mgo"
+	"github.com/globalsign/mgo/bson"
 )
 
 // Collection provides a mgo.Collection along with
@@ -113,6 +114,22 @@ func (c *Collection) Count() (n int, err error) {
 func (c *Collection) Bulk() *Bulk {
 	return &Bulk{
 		Bulk: c.Collection.Bulk(),
+		cfg:  c.cfg,
+	}
+}
+
+// NewIter invokes and traces Collection.Iter
+func (c *Collection) NewIter(session *mgo.Session, firstBatch []bson.Raw, cursorId int64, err error) *Iter { // nolint
+	return &Iter{
+		Iter: c.Collection.NewIter(session, firstBatch, cursorId, err),
+		cfg:  c.cfg,
+	}
+}
+
+// Pipe invokes and traces Collection.Pipe
+func (c *Collection) Pipe(pipeline interface{}) *Pipe {
+	return &Pipe{
+		Pipe: c.Collection.Pipe(pipeline),
 		cfg:  c.cfg,
 	}
 }
