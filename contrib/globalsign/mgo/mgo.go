@@ -70,23 +70,6 @@ func (db *Database) C(name string) *Collection {
 	}
 }
 
-// Query is an mgo.Query instance along with the data necessary for tracing.
-type Query struct {
-	*mgo.Query
-	cfg mongoConfig
-}
-
-// Iter invokes and traces Query.Iter
-func (q *Query) Iter() *Iter {
-	span := newChildSpanFromContext(q.cfg)
-	iter := q.Query.Iter()
-	span.Finish()
-	return &Iter{
-		Iter: iter,
-		cfg:  q.cfg,
-	}
-}
-
 // Iter is an mgo.Iter instance that will be traced.
 type Iter struct {
 	*mgo.Iter
