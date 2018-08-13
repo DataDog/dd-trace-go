@@ -1,116 +1,103 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadog.com/).
+// Copyright 2018 Datadog, Inc.
+
 package tracer
 
 import (
 	"bytes"
 	"encoding/binary"
-	"io"
+	"fmt"
 
 	"github.com/tinylib/msgp/msgp"
 )
 
-// payload is a wrapper on top of the msgpack encoder which allows constructing an
-// encoded array by pushing its entries sequentially, one at a time. It basically
-// allows us to encode as we would with a stream, except that the contents of the stream
-// can be read as a slice by the msgpack decoder at any time. It follows the guidelines
-// from the msgpack array spec:
-// https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
-//
-// payload implements io.Reader and can be used with the decoder directly. To create
-// a new payload use the newPayload method.
-//
-// payload is not safe for concurrent use.
-//
-// This structure basically allows us to push traces into the payload one at a time
-// in order to always have knowledge of the payload size, but also making it possible
-// for the agent to decode it as an array.
-type payload struct {
-	// header specifies the first few bytes in the msgpack stream
-	// indicating the type of array (fixarray, array16 or array32)
-	// and the number of items contained in the stream.
-	header []byte
+// maxLength indicates the maximum number of items supported in a msgpack-encoded array.
+// See: https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
+const maxLength = 1<<32 - 1
 
-	// off specifies the current read position on the header.
-	off int
+// errOverflow is returned when maxLength is exceeded.
+var errOverflow = fmt.Errorf("maximum msgpack array length (%d) exceeded", maxLength)
 
-	// count specifies the number of items in the stream.
-	count uint64
-
-	// buf holds the sequence of msgpack-encoded items.
-	buf bytes.Buffer
+// packedSpans represents a slice of spans encoded in msgpack format. It allows adding spans
+// sequentially while keeping track of their count.
+type packedSpans struct {
+	count uint64       // number of items in slice
+	buf   bytes.Buffer // msgpack encoded items (without header)
 }
 
-var _ io.Reader = (*payload)(nil)
-
-// newPayload returns a ready to use payload.
-func newPayload() *payload {
-	p := &payload{
-		header: make([]byte, 8),
-		off:    8,
+// add adds the given span to the trace.
+func (s *packedSpans) add(span *span) error {
+	if s.count >= maxLength {
+		return errOverflow
 	}
-	return p
-}
-
-// push pushes a new item into the stream.
-func (p *payload) push(t spanList) error {
-	if err := msgp.Encode(&p.buf, t); err != nil {
+	if err := msgp.Encode(&s.buf, span); err != nil {
 		return err
 	}
-	p.count++
-	p.updateHeader()
+	s.count++
 	return nil
 }
 
-// itemCount returns the number of items available in the srteam.
-func (p *payload) itemCount() int {
-	return int(p.count)
+// size returns the number of bytes that would be returned by a call to bytes().
+func (s *packedSpans) size() int {
+	return s.buf.Len() + arrayHeaderSize(s.count)
 }
 
-// size returns the payload size in bytes. After the first read the value becomes
-// inaccurate by up to 8 bytes.
-func (p *payload) size() int {
-	return p.buf.Len() + len(p.header) - p.off
+// reset resets the packedSpans.
+func (s *packedSpans) reset() {
+	s.count = 0
+	s.buf.Reset()
 }
 
-// reset resets the internal buffer, counter and read offset.
-func (p *payload) reset() {
-	p.off = 8
-	p.count = 0
-	p.buf.Reset()
+// bytes returns the msgpack encoded set of bytes that represents the entire slice.
+func (s *packedSpans) buffer() *bytes.Buffer {
+	var header [8]byte
+	off := arrayHeader(&header, s.count)
+	var buf bytes.Buffer
+	buf.Write(header[off:])
+	buf.Write(s.buf.Bytes())
+	return &buf
 }
 
+// arrayHeader writes the msgpack array header for a slice of length n into out.
+// It returns the offset at which to begin reading from out. For more information,
+// see the msgpack spec:
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
-const (
-	msgpackArrayFix byte = 144  // up to 15 items
-	msgpackArray16       = 0xdc // up to 2^16-1 items, followed by size in 2 bytes
-	msgpackArray32       = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
-)
-
-// updateHeader updates the payload header based on the number of items currently
-// present in the stream.
-func (p *payload) updateHeader() {
-	n := p.count
+func arrayHeader(out *[8]byte, n uint64) (off int) {
+	const (
+		msgpackArrayFix byte = 144  // up to 15 items
+		msgpackArray16       = 0xdc // up to 2^16-1 items, followed by size in 2 bytes
+		msgpackArray32       = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
+	)
+	off = 8 - arrayHeaderSize(n)
 	switch {
 	case n <= 15:
-		p.header[7] = msgpackArrayFix + byte(n)
-		p.off = 7
+		out[off] = msgpackArrayFix + byte(n)
 	case n <= 1<<16-1:
-		binary.BigEndian.PutUint64(p.header, n) // writes 2 bytes
-		p.header[5] = msgpackArray16
-		p.off = 5
-	default: // n <= 1<<32-1
-		binary.BigEndian.PutUint64(p.header, n) // writes 4 bytes
-		p.header[3] = msgpackArray32
-		p.off = 3
+		binary.BigEndian.PutUint64(out[:], n) // writes 2 bytes
+		out[off] = msgpackArray16
+	case n <= 1<<32-1:
+		fallthrough
+	default:
+		binary.BigEndian.PutUint64(out[:], n) // writes 4 bytes
+		out[off] = msgpackArray32
 	}
+	return off
 }
 
-// Read implements io.Reader. It reads from the msgpack-encoded stream.
-func (p *payload) Read(b []byte) (n int, err error) {
-	if p.off < len(p.header) {
-		// reading header
-		n = copy(b, p.header[p.off:])
-		p.off += n
-		return n, nil
+// arrayHeaderSize returns the size in bytes of a header for a msgpack array of length n.
+func arrayHeaderSize(n uint64) int {
+	switch {
+	case n == 0:
+		return 0
+	case n <= 15:
+		return 1
+	case n <= 1<<16-1:
+		return 3
+	case n <= 1<<32-1:
+		fallthrough
+	default:
+		return 5
 	}
-	return p.buf.Read(b)
 }

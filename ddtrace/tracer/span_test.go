@@ -59,36 +59,31 @@ func TestSpanOperationName(t *testing.T) {
 func TestSpanFinish(t *testing.T) {
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// the finish should set finished and the duration
 	time.Sleep(wait)
 	span.Finish()
 	assert.True(span.Duration > int64(wait))
-	assert.True(span.finished)
 }
 
 func TestSpanFinishTwice(t *testing.T) {
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
 
-	tracer, _, stop := startTestTracer()
+	tracer, stop := startTestTracer()
 	defer stop()
-
-	assert.Equal(tracer.payload.itemCount(), 0)
 
 	// the finish must be idempotent
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	time.Sleep(wait)
 	span.Finish()
-	assert.Equal(tracer.payload.itemCount(), 1)
 
 	previousDuration := span.Duration
 	time.Sleep(wait)
 	span.Finish()
 	assert.Equal(previousDuration, span.Duration)
-	assert.Equal(tracer.payload.itemCount(), 1)
 }
 
 func TestSpanFinishWithTime(t *testing.T) {
@@ -165,7 +160,7 @@ func TestSpanSetDatadogTags(t *testing.T) {
 
 func TestSpanStart(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// a new span sets the Start after the initialization
@@ -174,7 +169,7 @@ func TestSpanStart(t *testing.T) {
 
 func TestSpanString(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	// don't bother checking the contents, just make sure it works.
 	assert.NotEqual("", span.String())
@@ -184,24 +179,18 @@ func TestSpanString(t *testing.T) {
 
 func TestSpanSetMetric(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the map is properly initialized
 	span.SetTag("bytes", 1024.42)
 	assert.Equal(1, len(span.Metrics))
 	assert.Equal(1024.42, span.Metrics["bytes"])
-
-	// operating on a finished span is a no-op
-	span.Finish()
-	span.SetTag("finished.test", 1337)
-	assert.Equal(1, len(span.Metrics))
-	assert.Equal(0.0, span.Metrics["finished.test"])
 }
 
 func TestSpanError(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the error is set in the default meta
@@ -210,23 +199,12 @@ func TestSpanError(t *testing.T) {
 	assert.Equal(int32(1), span.Error)
 	assert.Equal("Something wrong", span.Meta["error.msg"])
 	assert.Equal("*errors.errorString", span.Meta["error.type"])
-	assert.NotEqual("", span.Meta["error.stack"])
-
-	// operating on a finished span is a no-op
-	span = tracer.newRootSpan("flask.request", "flask", "/")
-	nMeta := len(span.Meta)
-	span.Finish()
-	span.SetTag(ext.Error, err)
-	assert.Equal(int32(0), span.Error)
-	assert.Equal(nMeta, len(span.Meta))
-	assert.Equal("", span.Meta["error.msg"])
-	assert.Equal("", span.Meta["error.type"])
-	assert.Equal("", span.Meta["error.stack"])
+	assert.Contains(span.Meta["error.stack"], "debug.Stack")
 }
 
 func TestSpanError_Typed(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the error is set in the default meta
@@ -240,7 +218,7 @@ func TestSpanError_Typed(t *testing.T) {
 
 func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// don't set the error if it's nil
@@ -250,37 +228,9 @@ func TestSpanErrorNil(t *testing.T) {
 	assert.Equal(nMeta, len(span.Meta))
 }
 
-// Prior to a bug fix, this failed when running `go test -race`
-func TestSpanModifyWhileFlushing(t *testing.T) {
-	tracer, _, stop := startTestTracer()
-	defer stop()
-
-	done := make(chan struct{})
-	go func() {
-		span := tracer.newRootSpan("pylons.request", "pylons", "/")
-		span.Finish()
-		// It doesn't make much sense to update the span after it's been finished,
-		// but an error in a user's code could lead to this.
-		span.SetTag("race_test", "true")
-		span.SetTag("race_test2", 133.7)
-		span.SetTag("race_test3", 133.7)
-		span.SetTag(ext.Error, errors.New("t"))
-		done <- struct{}{}
-	}()
-
-	for {
-		select {
-		case <-done:
-			return
-		default:
-			tracer.forceFlush()
-		}
-	}
-}
-
 func TestSpanSamplingPriority(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 
 	span := tracer.newRootSpan("my.name", "my.service", "my.resource")
 	_, ok := span.Metrics[samplingPriorityKey]

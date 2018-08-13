@@ -40,7 +40,7 @@ func TestSpanFromContext(t *testing.T) {
 }
 
 func TestStartSpanFromContext(t *testing.T) {
-	_, _, stop := startTestTracer()
+	_, stop := startTestTracer()
 	defer stop()
 
 	parent := &span{context: &spanContext{spanID: 123, traceID: 456}}

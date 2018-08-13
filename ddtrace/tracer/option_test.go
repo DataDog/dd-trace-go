@@ -6,12 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func withTransport(t transport) StartOption {
-	return func(c *config) {
-		c.transport = t
-	}
-}
-
 func TestTracerOptionsDefaults(t *testing.T) {
 	assert := assert.New(t)
 	var c config
