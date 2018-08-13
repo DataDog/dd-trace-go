@@ -2,6 +2,8 @@
 package mgo // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/globalsign/mgo"
 
 import (
+	"strings"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -20,6 +22,11 @@ func Dial(url string, opts ...DialOption) (*Session, error) {
 		fn(&s.cfg)
 	}
 
+	// Record metadata so that it can be added to recorded traces
+	s.cfg.tags["hosts"] = strings.Join(session.LiveServers(), ", ")
+	info, _ := session.BuildInfo()
+	s.cfg.tags["mgo_version"] = info.Version
+
 	return s, err
 }
 
@@ -36,6 +43,10 @@ func newChildSpanFromContext(config mongoConfig) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(config.serviceName),
 		tracer.ResourceName("mongodb.query"))
+
+	for key, value := range config.tags {
+		span.SetTag(key, value)
+	}
 
 	return span
 }
@@ -56,9 +67,16 @@ type Database struct {
 
 // DB returns a new database for this Session.
 func (s *Session) DB(name string) *Database {
+	dbCfg := mongoConfig{
+		ctx:         s.cfg.ctx,
+		serviceName: s.cfg.serviceName,
+		tags:        s.cfg.tags,
+	}
+
+	dbCfg.tags["database"] = name
 	return &Database{
 		Database: s.Session.DB(name),
-		cfg:      s.cfg,
+		cfg:      dbCfg,
 	}
 }
 

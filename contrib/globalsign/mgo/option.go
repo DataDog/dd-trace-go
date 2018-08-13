@@ -5,11 +5,13 @@ import "context"
 type mongoConfig struct {
 	ctx         context.Context
 	serviceName string
+	tags        map[string]string
 }
 
 func defaults(cfg *mongoConfig) {
 	cfg.serviceName = "mongodb"
 	cfg.ctx = context.Background()
+	cfg.tags = make(map[string]string)
 }
 
 // DialOption represents an option that can be passed to Dial
