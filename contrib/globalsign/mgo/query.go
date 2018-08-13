@@ -11,8 +11,7 @@ import (
 // Query is an mgo.Query instance along with the data necessary for tracing.
 type Query struct {
 	*mgo.Query
-	query string
-	cfg   mongoConfig
+	cfg mongoConfig
 }
 
 // Iter invokes and traces Query.Iter
