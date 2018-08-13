@@ -62,14 +62,6 @@ func (c *Collection) DropIndexName(name string) error {
 	return err
 }
 
-// DropAllIndexes invokes and traces Collection.DropAllIndexes
-/*func (c *Collection) DropAllIndexes() error {
-	span := newChildSpanFromContext(c.cfg)
-	err := c.Collection.DropAllIndexes()
-	span.Finish(tracer.WithError(err))
-	return err
-}*/
-
 // Indexes invokes and traces Collection.Indexes
 func (c *Collection) Indexes() (indexes []mgo.Index, err error) {
 	span := newChildSpanFromContext(c.cfg)
