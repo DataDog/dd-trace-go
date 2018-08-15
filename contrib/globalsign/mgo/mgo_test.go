@@ -282,7 +282,7 @@ func TestCollection_Count(t *testing.T) {
 func TestCollection_IndexCommands(t *testing.T) {
 	assert := assert.New(t)
 
-	insert := func(collection *Collection) {
+	indexTest := func(collection *Collection) {
 		indexes, _ := collection.Indexes()
 		collection.DropIndex("_id_")
 		collection.DropIndexName("_id_")
@@ -290,9 +290,9 @@ func TestCollection_IndexCommands(t *testing.T) {
 		collection.EnsureIndexKey("_id_")
 	}
 
-	spans := testMongoCollectionCommand(assert, insert)
+	spans := testMongoCollectionCommand(assert, indexTest)
 	assert.Equal(6, len(spans))
-	assert.Equal("mongodb.query", spans[0].OperationName())
+	assert.Equal("mgo-unittest", spans[0].OperationName())
 	assert.Equal("mongodb.query", spans[1].OperationName())
 	assert.Equal("mongodb.query", spans[2].OperationName())
 	assert.Equal("mongodb.query", spans[3].OperationName())
