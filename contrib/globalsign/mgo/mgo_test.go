@@ -292,12 +292,12 @@ func TestCollection_IndexCommands(t *testing.T) {
 
 	spans := testMongoCollectionCommand(assert, indexTest)
 	assert.Equal(6, len(spans))
-	assert.Equal("mgo-unittest", spans[0].OperationName())
+	assert.Equal("mongodb.query", spans[0].OperationName())
 	assert.Equal("mongodb.query", spans[1].OperationName())
 	assert.Equal("mongodb.query", spans[2].OperationName())
 	assert.Equal("mongodb.query", spans[3].OperationName())
 	assert.Equal("mongodb.query", spans[4].OperationName())
-	assert.Equal("mongodb.query", spans[5].OperationName())
+	assert.Equal("mgo-unittest", spans[5].OperationName())
 }
 
 func TestCollection_FindAndIter(t *testing.T) {
