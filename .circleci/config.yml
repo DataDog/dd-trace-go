@@ -31,6 +31,7 @@ jobs:
         DD_BIND_HOST: "0.0.0.0"
         DD_API_KEY: invalid_key_but_this_is_fine
     - image: circleci/mongo:latest-ram
+    - image: memcached:1.5.9
 
     steps:
     - checkout
@@ -92,4 +93,12 @@ jobs:
     - run:
         name: Testing
         command: |
-          INTEGRATION=1 go test -v -race ./...
+          INTEGRATION=1 go test -v -race `go list ./... | grep -v contrib/go-redis/redis`
+
+    - run:
+        name: Testing contrib/go-redis/redis
+        command: |
+          (cd $GOPATH/src/github.com/go-redis/redis && git checkout v6.13.2)
+          INTEGRATION=1 go test -v -race ./contrib/go-redis/redis/...
+          (cd $GOPATH/src/github.com/go-redis/redis && git checkout master)
+          INTEGRATION=1 go test -v -race ./contrib/go-redis/redis/...
