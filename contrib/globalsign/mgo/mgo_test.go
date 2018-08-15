@@ -291,7 +291,7 @@ func TestCollection_IndexCommands(t *testing.T) {
 	}
 
 	spans := testMongoCollectionCommand(assert, insert)
-	assert.Equal(7, len(spans))
+	assert.Equal(6, len(spans))
 	assert.Equal("mongodb.query", spans[0].OperationName())
 	assert.Equal("mongodb.query", spans[1].OperationName())
 	assert.Equal("mongodb.query", spans[2].OperationName())
