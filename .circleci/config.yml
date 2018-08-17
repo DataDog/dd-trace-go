@@ -31,6 +31,7 @@ jobs:
         DD_APM_ENABLED: "true"
         DD_BIND_HOST: "0.0.0.0"
         DD_API_KEY: invalid_key_but_this_is_fine
+    - image: circleci/mongo:latest-ram
     - image: memcached:1.5.9
     - image: confluentinc/cp-zookeeper:5.0.0
       environment:
