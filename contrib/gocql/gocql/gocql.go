@@ -81,7 +81,7 @@ func (tq *Query) PageState(state []byte) *Query {
 func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	p := tq.params
 	span, _ := tracer.StartSpanFromContext(ctx, ext.CassandraQuery,
-		tracer.SpanType(ext.AppTypeDB),
+		tracer.SpanType(ext.SpanTypeCassandra),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(p.config.resourceName),
 		tracer.Tag(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated)),

@@ -41,11 +41,11 @@ func TestMySQL(t *testing.T) {
 		ExpectName: "mysql.query",
 		ExpectTags: map[string]interface{}{
 			ext.ServiceName: "mysql.db",
-			ext.SpanType:    ext.AppTypeDB,
+			ext.SpanType:    ext.SpanTypeSQL,
 			ext.TargetHost:  "127.0.0.1",
 			ext.TargetPort:  "3306",
-			"db.user":       "test",
-			"db.name":       "test",
+			ext.DBUser:      "test",
+			ext.DBName:      "test",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
@@ -66,11 +66,11 @@ func TestPostgres(t *testing.T) {
 		ExpectName: "postgres.query",
 		ExpectTags: map[string]interface{}{
 			ext.ServiceName: "postgres-test",
-			ext.SpanType:    ext.AppTypeDB,
+			ext.SpanType:    ext.SpanTypeSQL,
 			ext.TargetHost:  "127.0.0.1",
 			ext.TargetPort:  "5432",
-			"db.user":       "postgres",
-			"db.name":       "postgres",
+			ext.DBUser:      "postgres",
+			ext.DBName:      "postgres",
 		},
 	}
 	sqltest.RunAll(t, testConfig)

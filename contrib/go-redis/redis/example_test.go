@@ -22,7 +22,7 @@ func Example() {
 
 	// optionally, create a new root span
 	root, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
-		tracer.SpanType(ext.AppTypeDB),
+		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName("web"),
 		tracer.ResourceName("/home"),
 	)

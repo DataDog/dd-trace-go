@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
@@ -16,13 +17,17 @@ import (
 func Middleware(service string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		resource := c.HandlerName()
-		span, ctx := tracer.StartSpanFromContext(c.Request.Context(), "http.request",
+		opts := []ddtrace.StartSpanOption{
 			tracer.ServiceName(service),
 			tracer.ResourceName(resource),
-			tracer.SpanType(ext.AppTypeWeb),
+			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.Tag(ext.HTTPMethod, c.Request.Method),
 			tracer.Tag(ext.HTTPURL, c.Request.URL.Path),
-		)
+		}
+		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(c.Request.Header)); err == nil {
+			opts = append(opts, tracer.ChildOf(spanctx))
+		}
+		span, ctx := tracer.StartSpanFromContext(c.Request.Context(), "http.request", opts...)
 		defer span.Finish()
 
 		// pass the span through the request context

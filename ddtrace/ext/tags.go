@@ -27,6 +27,10 @@ const (
 	// HTTPURL sets the HTTP URL for a span.
 	HTTPURL = "http.url"
 
+	// TODO: In the next major version, suffix these constants (SpanType, etc)
+	// with "*Key" (SpanTypeKey, etc) to more easily differentiate between
+	// constants representing tag values and constants representing keys.
+
 	// SpanType defines the Span type (web, db, cache).
 	SpanType = "span.type"
 
@@ -50,4 +54,11 @@ const (
 
 	// Environment specifies the environment to use with a trace.
 	Environment = "env"
+
+	// DBApplication indicates the application using the database.
+	DBApplication = "db.application"
+	// DBName indicates the database name.
+	DBName = "db.name"
+	// DBUser indicates the user name of Database, e.g. "readonly_user" or "reporting_user".
+	DBUser = "db.user"
 )

@@ -55,7 +55,7 @@ type traceParams struct {
 func (tp *traceParams) newChildSpanFromContext(ctx context.Context, resource string, query string) ddtrace.Span {
 	name := fmt.Sprintf("%s.query", tp.driverName)
 	span, _ := tracer.StartSpanFromContext(ctx, name,
-		tracer.SpanType(ext.AppTypeDB),
+		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ServiceName(tp.config.serviceName),
 	)
 	if query != "" {

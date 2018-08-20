@@ -92,7 +92,7 @@ func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 	p := tc.params
 	span, _ := tracer.StartSpanFromContext(ctx, "redis.command",
-		tracer.SpanType(ext.AppTypeDB),
+		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 	)
 	span.SetTag("out.network", p.network)

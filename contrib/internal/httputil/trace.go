@@ -1,10 +1,9 @@
 package httputil // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
 
+//go:generate sh -c "go run make_responsewriter.go | gofmt > trace_gen.go"
+
 import (
-	"bufio"
-	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 
@@ -16,7 +15,7 @@ import (
 // TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, service, resource string, spanopts ...ddtrace.StartSpanOption) {
 	opts := append([]ddtrace.StartSpanOption{
-		tracer.SpanType(ext.AppTypeWeb),
+		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.ServiceName(service),
 		tracer.ResourceName(resource),
 		tracer.Tag(ext.HTTPMethod, r.Method),
@@ -27,11 +26,9 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, servi
 	}
 	span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
 	defer span.Finish()
-	if _, ok := w.(http.Hijacker); ok {
-		w = newHijackableResponseWriter(w, span)
-	} else {
-		w = newResponseWriter(w, span)
-	}
+
+	w = wrapResponseWriter(w, span)
+
 	h.ServeHTTP(w, r.WithContext(ctx))
 }
 
@@ -41,26 +38,6 @@ type responseWriter struct {
 	http.ResponseWriter
 	span   ddtrace.Span
 	status int
-}
-
-var (
-	_ http.Hijacker       = (*hijackableResponseWriter)(nil)
-	_ http.ResponseWriter = (*hijackableResponseWriter)(nil)
-	_ http.ResponseWriter = (*responseWriter)(nil)
-)
-
-type hijackableResponseWriter struct{ *responseWriter }
-
-func newHijackableResponseWriter(w http.ResponseWriter, span ddtrace.Span) *hijackableResponseWriter {
-	return &hijackableResponseWriter{newResponseWriter(w, span)}
-}
-
-func (hrw *hijackableResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	h, ok := hrw.responseWriter.ResponseWriter.(http.Hijacker)
-	if !ok {
-		return nil, nil, errors.New("underlying ResponseWriter does not implement http.Hijacker")
-	}
-	return h.Hijack()
 }
 
 func newResponseWriter(w http.ResponseWriter, span ddtrace.Span) *responseWriter {

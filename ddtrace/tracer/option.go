@@ -154,8 +154,8 @@ func FinishTime(t time.Time) FinishOption {
 	}
 }
 
-// WithError adds the given error to the span before marking it as finished. If it is
-// nil it will be disregarded.
+// WithError marks the span as having had an error. It uses the information from
+// err to set tags such as the error message, error type and stack trace.
 func WithError(err error) FinishOption {
 	return func(cfg *ddtrace.FinishConfig) {
 		cfg.Error = err
