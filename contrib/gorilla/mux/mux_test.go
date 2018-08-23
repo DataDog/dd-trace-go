@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -90,6 +91,21 @@ func TestDomain(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Equal(1, len(spans))
 	assert.Equal("localhost", spans[0].Tag("mux.host"))
+}
+
+func TestSpanOptions(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	mux := NewRouter(WithSpanOptions(tracer.Tag(ext.SamplingPriority, 2)))
+	mux.Handle("/200", okHandler()).Host("localhost")
+	r := httptest.NewRequest("GET", "http://localhost/200", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+
+	spans := mt.FinishedSpans()
+	assert.Equal(1, len(spans))
+	assert.Equal(2, spans[0].Tag(ext.SamplingPriority))
 }
 
 // TestImplementingMethods is a regression tests asserting that all the mux.Router methods
