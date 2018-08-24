@@ -129,7 +129,7 @@ func TestTransportResponseError(t *testing.T) {
 	log.Println(addr)
 	transport := newHTTPTransport(addr)
 	err = transport.send(newPayload())
-	want := fmt.Sprintf("%s (URL: http://%s/v0.3/traces) (Status: Bad Request)", strings.Repeat("X", 1000), addr)
+	want := fmt.Sprintf("%s (url: http://%s/v0.3/traces) (status: Bad Request)", strings.Repeat("X", 1000), addr)
 	assert.Equal(want, err.Error())
 }
 

@@ -85,7 +85,7 @@ func (t *httpTransport) send(p *payload) error {
 	// prepare the client and send the payload
 	req, err := http.NewRequest("POST", t.traceURL, p)
 	if err != nil {
-		return fmt.Errorf("cannot create http request (URL: %s): %v", t.traceURL, err)
+		return fmt.Errorf("cannot create http request (url: %s): %v", t.traceURL, err)
 	}
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
@@ -104,9 +104,9 @@ func (t *httpTransport) send(p *payload) error {
 		n, _ := response.Body.Read(msg)
 		txt := http.StatusText(code)
 		if n > 0 {
-			return fmt.Errorf("%s (URL: %s) (Status: %s)", msg[:n], t.traceURL, txt)
+			return fmt.Errorf("%s (url: %s) (status: %s)", msg[:n], t.traceURL, txt)
 		}
-		return fmt.Errorf("%s (URL: %s)", txt, t.traceURL)
+		return fmt.Errorf("%s (url: %s)", txt, t.traceURL)
 	}
 	return nil
 }
