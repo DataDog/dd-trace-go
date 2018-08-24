@@ -85,7 +85,7 @@ func (t *httpTransport) send(p *payload) error {
 	// prepare the client and send the payload
 	req, err := http.NewRequest("POST", t.traceURL, p)
 	if err != nil {
-		return fmt.Errorf("cannot create http request: %v", err)
+		return fmt.Errorf("cannot create http request (URL: %s): %v", t.traceURL, err)
 	}
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
@@ -94,7 +94,7 @@ func (t *httpTransport) send(p *payload) error {
 	req.Header.Set("Content-Length", strconv.Itoa(p.size()))
 	response, err := t.client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("send to %s failed: %v", t.traceURL, err)
 	}
 	defer response.Body.Close()
 	if code := response.StatusCode; code >= 400 {
@@ -104,9 +104,9 @@ func (t *httpTransport) send(p *payload) error {
 		n, _ := response.Body.Read(msg)
 		txt := http.StatusText(code)
 		if n > 0 {
-			return fmt.Errorf("%s (Status: %s)", msg[:n], txt)
+			return fmt.Errorf("%s (URL: %s) (Status: %s)", msg[:n], t.traceURL, txt)
 		}
-		return fmt.Errorf("%s", txt)
+		return fmt.Errorf("%s (URL: %s)", txt, t.traceURL)
 	}
 	return nil
 }
