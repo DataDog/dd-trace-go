@@ -32,10 +32,13 @@ type payload struct {
 	// off specifies the current read position on the header.
 	off int
 
-	// count specifies the number of items in the stream.
-	count uint64
+	// traces holds the sequence of traces to returns.
+	traces []spanList
 
-	// buf holds the sequence of msgpack-encoded items.
+	// encoded payload size in bytes
+	msgSize int
+
+	// buf is an intermediary buffer used to encode the payload while it's being read
 	buf bytes.Buffer
 }
 
@@ -52,29 +55,31 @@ func newPayload() *payload {
 
 // push pushes a new item into the stream.
 func (p *payload) push(t spanList) error {
-	if err := msgp.Encode(&p.buf, t); err != nil {
-		return err
-	}
-	p.count++
+	p.traces = append(p.traces, t)
 	p.updateHeader()
+	p.msgSize += t.Msgsize()
 	return nil
 }
 
-// itemCount returns the number of items available in the srteam.
+// itemCount returns the number of items available in the stream.
 func (p *payload) itemCount() int {
-	return int(p.count)
+	return len(p.traces)
 }
 
 // size returns the payload size in bytes. After the first read the value becomes
 // inaccurate by up to 8 bytes.
 func (p *payload) size() int {
-	return p.buf.Len() + len(p.header) - p.off
+	return len(p.header) + p.msgSize
 }
 
-// reset resets the internal buffer, counter and read offset.
+// reset resets the internal traces slice, buffer, counter, size tracker and read offset.
 func (p *payload) reset() {
 	p.off = 8
-	p.count = 0
+	for i := range p.traces {
+		p.traces[i] = nil
+	}
+	p.traces = p.traces[:0]
+	p.msgSize = 0
 	p.buf.Reset()
 }
 
@@ -88,7 +93,7 @@ const (
 // updateHeader updates the payload header based on the number of items currently
 // present in the stream.
 func (p *payload) updateHeader() {
-	n := p.count
+	n := uint64(len(p.traces))
 	switch {
 	case n <= 15:
 		p.header[7] = msgpackArrayFix + byte(n)
@@ -108,9 +113,20 @@ func (p *payload) updateHeader() {
 func (p *payload) Read(b []byte) (n int, err error) {
 	if p.off < len(p.header) {
 		// reading header
-		n = copy(b, p.header[p.off:])
+		n, err := p.buf.Write(p.header[p.off:])
+		if err != nil {
+			return n, err
+		}
 		p.off += n
-		return n, nil
+	}
+	for len(p.traces) != 0 && p.buf.Len() <= len(b) {
+		// fill buffer
+		msgp.Encode(&p.buf, p.traces[0])
+		if err != nil {
+			return 0, err
+		}
+		p.msgSize -= p.traces[0].Msgsize()
+		p.traces = p.traces[1:]
 	}
 	return p.buf.Read(b)
 }

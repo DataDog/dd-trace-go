@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"bytes"
+	"io"
 	"io/ioutil"
 	"strconv"
 	"strings"
@@ -43,7 +44,6 @@ func TestPayloadIntegrity(t *testing.T) {
 			want.Reset()
 			err := msgp.Encode(want, lists)
 			assert.NoError(err)
-			assert.Equal(want.Len(), p.size())
 			assert.Equal(p.itemCount(), n)
 
 			got, err := ioutil.ReadAll(p)
@@ -94,6 +94,48 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 			p.reset()
 			for p.size() < payloadMaxLimit {
 				p.push(trace)
+			}
+		}
+	}
+}
+
+func BenchmarkPayloadRead(b *testing.B) {
+	b.Run("10K", benchmarkPayloadRead(1))
+	b.Run("100K", benchmarkPayloadRead(10))
+	b.Run("1MB", benchmarkPayloadRead(100))
+}
+
+// benchmarkPayloadThroughput benchmarks the throughput of the payload by subsequently
+// pushing a trace containing count spans of approximately 10KB in size each.
+func benchmarkPayloadRead(count int) func(*testing.B) {
+	return func(b *testing.B) {
+		readyPayloads := make(chan *payload)
+		go func() {
+			for {
+				p := newPayload()
+				s := newBasicSpan("X")
+				s.Meta["key"] = strings.Repeat("X", 10*1024)
+				trace := make(spanList, count)
+				for i := 0; i < count; i++ {
+					trace[i] = s
+				}
+				p.reset()
+				for p.size() < payloadMaxLimit {
+					p.push(trace)
+				}
+				readyPayloads <- p
+			}
+		}()
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		rs := make([]byte, 2048)
+
+		for i := 0; i < b.N; i++ {
+			p := <-readyPayloads
+			var err error
+			for err != io.EOF {
+				_, err = p.Read(rs)
 			}
 		}
 	}
