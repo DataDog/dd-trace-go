@@ -58,4 +58,10 @@ const (
 
 	// SpanTypeDNS marks a span as a DNS operation.
 	SpanTypeDNS = "dns"
+
+	// SpanTypeMessageConsumer marks a span as a queue operation
+	SpanTypeMessageConsumer = "queue"
+
+	// SpanTypeMessageProducer marks a span as a queue operation.
+	SpanTypeMessageProducer = "queue"
 )
