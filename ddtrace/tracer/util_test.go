@@ -2,7 +2,10 @@ package tracer
 
 import (
 	"fmt"
+	"math"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestToFloat64(t *testing.T) {
@@ -35,4 +38,23 @@ func TestToFloat64(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseUint64(t *testing.T) {
+	t.Run("negative", func(t *testing.T) {
+		id, err := parseUint64("-8809075535603237910")
+		assert.NoError(t, err)
+		assert.Equal(t, uint64(9637668538106313706), id)
+	})
+
+	t.Run("positive", func(t *testing.T) {
+		id, err := parseUint64(fmt.Sprintf("%d", uint64(math.MaxUint64)))
+		assert.NoError(t, err)
+		assert.Equal(t, uint64(math.MaxUint64), id)
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		_, err := parseUint64("abcd")
+		assert.Error(t, err)
+	})
 }

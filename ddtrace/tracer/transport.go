@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-var tracerVersion = "v1.0"
+var tracerVersion = "v1.2"
 
 const (
 	defaultHostname    = "localhost"
