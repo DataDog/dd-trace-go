@@ -3,6 +3,7 @@ package grpc
 import (
 	"fmt"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestClient(t *testing.T) {
@@ -281,8 +283,31 @@ func TestPass(t *testing.T) {
 	assert.True(s.FinishTime().Sub(s.StartTime()) > 0)
 }
 
+func TestPreservesMetadata(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(true)
+	if err != nil {
+		t.Fatalf("error setting up rig: %s", err)
+	}
+	defer rig.Close()
+
+	ctx := context.Background()
+	ctx = metadata.AppendToOutgoingContext(ctx, "test-key", "test-value")
+	span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
+	rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
+	span.Finish()
+
+	md := rig.fixtureServer.lastRequestMetadata.Load().(metadata.MD)
+	assert.Equal(t, []string{"test-value"}, md.Get("test-key"),
+		"existing metadata should be preserved")
+}
+
 // fixtureServer a dummy implemenation of our grpc fixtureServer.
-type fixtureServer struct{}
+type fixtureServer struct {
+	lastRequestMetadata atomic.Value
+}
 
 func (s *fixtureServer) StreamPing(srv Fixture_StreamPingServer) error {
 	for {
@@ -304,6 +329,9 @@ func (s *fixtureServer) StreamPing(srv Fixture_StreamPingServer) error {
 }
 
 func (s *fixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureReply, error) {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		s.lastRequestMetadata.Store(md)
+	}
 	switch {
 	case in.Name == "child":
 		span, _ := tracer.StartSpanFromContext(ctx, "child")
@@ -324,11 +352,12 @@ var _ FixtureServer = &fixtureServer{}
 // rig contains all of the servers and connections we'd need for a
 // grpc integration test
 type rig struct {
-	server   *grpc.Server
-	port     string
-	listener net.Listener
-	conn     *grpc.ClientConn
-	client   FixtureClient
+	fixtureServer *fixtureServer
+	server        *grpc.Server
+	port          string
+	listener      net.Listener
+	conn          *grpc.ClientConn
+	client        FixtureClient
 }
 
 func (r *rig) Close() {
@@ -345,7 +374,8 @@ func newRig(traceClient bool, interceptorOpts ...InterceptorOption) (*rig, error
 		grpc.StreamInterceptor(StreamServerInterceptor(interceptorOpts...)),
 	)
 
-	RegisterFixtureServer(server, new(fixtureServer))
+	fixtureServer := new(fixtureServer)
+	RegisterFixtureServer(server, fixtureServer)
 
 	li, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -367,11 +397,12 @@ func newRig(traceClient bool, interceptorOpts ...InterceptorOption) (*rig, error
 		return nil, fmt.Errorf("error dialing: %s", err)
 	}
 	return &rig{
-		listener: li,
-		port:     port,
-		server:   server,
-		conn:     conn,
-		client:   NewFixtureClient(conn),
+		fixtureServer: fixtureServer,
+		listener:      li,
+		port:          port,
+		server:        server,
+		conn:          conn,
+		client:        NewFixtureClient(conn),
 	}, err
 }
 
