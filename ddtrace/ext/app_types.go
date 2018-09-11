@@ -58,4 +58,10 @@ const (
 
 	// SpanTypeLevelDB marks a span as a leveldb operation
 	SpanTypeLevelDB = "leveldb"
+
+	// SpanTypeMessageConsumer marks a span as a queue operation
+	SpanTypeMessageConsumer = "queue"
+
+	// SpanTypeMessageProducer marks a span as a queue operation.
+	SpanTypeMessageProducer = "queue"
 )
