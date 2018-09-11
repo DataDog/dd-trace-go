@@ -1,4 +1,4 @@
-package api
+package internal
 
 import (
 	"fmt"
@@ -9,9 +9,9 @@ import (
 type (
 	// A Tree is a prefix tree for matching endpoints based on http requests.
 	Tree struct {
-		root *TreeNode
+		root *treeNode
 	}
-	// A TreeNode is a node in the tree. Each node may have children based on
+	// A treeNode is a node in the tree. Each node may have children based on
 	// path segments:
 	//
 	// "" ->
@@ -19,8 +19,8 @@ type (
 	//     "users/" ...
 	//     "blogs/" ...
 	// ...
-	TreeNode struct {
-		Children  map[string]*TreeNode
+	treeNode struct {
+		Children  map[string]*treeNode
 		Endpoints []Endpoint
 	}
 	// An Endpoint is an API endpoint associated with a (host, method, path)
@@ -44,14 +44,14 @@ func (e Endpoint) String() string {
 // NewTree creates a new Tree. You can optionally pass endpoints to add to the
 // tree.
 func NewTree(es ...Endpoint) *Tree {
-	t := &Tree{root: NewTreeNode()}
+	t := &Tree{root: newTreeNode()}
 	t.Add(es...)
 	return t
 }
 
-// NewTreeNode creates a new TreeNode.
-func NewTreeNode() *TreeNode {
-	return &TreeNode{Children: map[string]*TreeNode{}}
+// newTreeNode creates a new treeNode.
+func newTreeNode() *treeNode {
+	return &treeNode{Children: map[string]*treeNode{}}
 }
 
 // Add adds zero or more endpoints to the tree.
@@ -68,7 +68,7 @@ func (t *Tree) Add(es ...Endpoint) {
 
 		segments := append([]string{e.Hostname, e.HTTPMethod},
 			path...)
-		t.root.Add(segments, e)
+		t.root.add(segments, e)
 	}
 }
 
@@ -77,7 +77,7 @@ func (t *Tree) Add(es ...Endpoint) {
 func (t *Tree) Get(hostname string, httpMethod string, httpPath string) (Endpoint, bool) {
 	segments := append([]string{hostname, httpMethod},
 		strings.SplitAfter(httpPath, "/")...)
-	endpoints := t.root.GetLongestPrefixMatch(segments)
+	endpoints := t.root.getLongestPrefixMatch(segments)
 	for _, e := range endpoints {
 		if e.PathMatcher.MatchString(httpPath) {
 			return e, true
@@ -86,32 +86,32 @@ func (t *Tree) Get(hostname string, httpMethod string, httpPath string) (Endpoin
 	return Endpoint{}, false
 }
 
-// Add adds an endpoint to the tree.
-func (n *TreeNode) Add(segments []string, e Endpoint) {
+// add adds an endpoint to the tree.
+func (n *treeNode) add(segments []string, e Endpoint) {
 	if len(segments) > 0 {
 		child, ok := n.Children[segments[0]]
 		if !ok {
-			child = &TreeNode{
-				Children: map[string]*TreeNode{},
+			child = &treeNode{
+				Children: map[string]*treeNode{},
 			}
 			n.Children[segments[0]] = child
 		}
-		child.Add(segments[1:], e)
+		child.add(segments[1:], e)
 		return
 	}
 	n.Endpoints = append(n.Endpoints, e)
 }
 
-// GetLongestPrefixMatch gets the endpoints for the longest prefix which match
+// getLongestPrefixMatch gets the endpoints for the longest prefix which match
 // the segments.
 //
 // For example: `/api/v1/users/1234` might return `/api/v1/users/`
 //
-func (n *TreeNode) GetLongestPrefixMatch(segments []string) []Endpoint {
+func (n *treeNode) getLongestPrefixMatch(segments []string) []Endpoint {
 	if len(segments) > 0 {
 		child, ok := n.Children[segments[0]]
 		if ok {
-			Endpoints := child.GetLongestPrefixMatch(segments[1:])
+			Endpoints := child.getLongestPrefixMatch(segments[1:])
 			if len(Endpoints) > 0 {
 				return Endpoints
 			}

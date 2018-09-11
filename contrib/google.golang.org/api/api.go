@@ -7,10 +7,15 @@ import (
 	"net/http"
 
 	"golang.org/x/oauth2/google"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api/internal"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
+
+// apiEndpoints are all of the defined endpoints for the Google API; it is populated
+// by "go generate".
+var apiEndpoints *internal.Tree
 
 // NewClient creates a new oauth http client suitable for use with the google
 // APIs with all requests traced automatically.
@@ -30,7 +35,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 	cfg := newConfig(options...)
 	return httptrace.WrapRoundTripper(transport,
 		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
-			e, ok := APIEndpoints.Get(req.URL.Hostname(), req.Method, req.URL.Path)
+			e, ok := apiEndpoints.Get(req.URL.Hostname(), req.Method, req.URL.Path)
 			if ok {
 				span.SetTag(ext.ServiceName, e.ServiceName)
 				span.SetTag(ext.ResourceName, e.ResourceName)
