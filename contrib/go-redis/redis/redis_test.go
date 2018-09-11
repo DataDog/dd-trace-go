@@ -59,7 +59,7 @@ func TestPipeline(t *testing.T) {
 	pipeline.Expire("pipeline_counter", time.Hour)
 
 	// Exec with context test
-	pipeline.ExecWithContext(context.Background())
+	pipeline.(*Pipeliner).ExecWithContext(context.Background())
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)

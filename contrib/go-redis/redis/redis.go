@@ -21,11 +21,15 @@ type Client struct {
 	*params
 }
 
+var _ redis.Cmdable = (*Client)(nil)
+
 // Pipeliner is used to trace pipelines executed on a Redis server.
 type Pipeliner struct {
 	redis.Pipeliner
 	*params
 }
+
+var _ redis.Pipeliner = (*Pipeliner)(nil)
 
 // params holds the tracer and a set of parameters which are recorded with every trace.
 type params struct {
@@ -66,7 +70,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 }
 
 // Pipeline creates a Pipeline from a Client
-func (c *Client) Pipeline() *Pipeliner {
+func (c *Client) Pipeline() redis.Pipeliner {
 	return &Pipeliner{c.Client.Pipeline(), c.params}
 }
 
