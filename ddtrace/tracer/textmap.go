@@ -165,12 +165,12 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		key := strings.ToLower(k)
 		switch key {
 		case p.cfg.TraceHeader:
-			ctx.traceID, err = strconv.ParseUint(v, 10, 64)
+			ctx.traceID, err = parseUint64(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
 		case p.cfg.ParentHeader:
-			ctx.spanID, err = strconv.ParseUint(v, 10, 64)
+			ctx.spanID, err = parseUint64(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
