@@ -55,4 +55,9 @@ const (
 	// SpanTypeElasticSearch marks a span as an ElasticSearch operation.
 	// These spans may also have an "elasticsearch.body" tag.
 	SpanTypeElasticSearch = "elasticsearch"
+
+	// SpanTypeMessageConsumer marks a span as a queue operation
+	SpanTypeMessageConsumer = "queue"
+	// SpanTypeMessageProducer marks a span as a queue operation.
+	SpanTypeMessageProducer = "queue"
 )
