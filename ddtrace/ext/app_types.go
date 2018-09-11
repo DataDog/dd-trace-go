@@ -49,6 +49,9 @@ const (
 	// SpanTypeMemcached marks a span as a memcached operation.
 	SpanTypeMemcached = "memcached"
 
+	// SpanTypeMongoDB marks a span as a MongoDB operation.
+	SpanTypeMongoDB = "mongodb"
+
 	// SpanTypeElasticSearch marks a span as an ElasticSearch operation.
 	// These spans may also have an "elasticsearch.body" tag.
 	SpanTypeElasticSearch = "elasticsearch"
