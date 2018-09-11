@@ -37,7 +37,7 @@ type (
 
 // String returns a constructor without field names.
 func (e Endpoint) String() string {
-	return fmt.Sprintf(`{"%s","%s","%s",regexp.MustCompile(`+"`"+`%s`+"`"+`),"%s","%s"}`,
+	return fmt.Sprintf(`{Hostname: "%s", HTTPMethod: "%s", PathTemplate: "%s", PathMatcher: regexp.MustCompile(`+"`"+`%s`+"`"+`), ServiceName: "%s", ResourceName: "%s"}`,
 		e.Hostname, e.HTTPMethod, e.PathTemplate, e.PathMatcher.String(), e.ServiceName, e.ResourceName)
 }
 
