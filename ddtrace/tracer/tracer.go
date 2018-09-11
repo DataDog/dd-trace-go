@@ -300,16 +300,10 @@ func (t *tracer) flushTraces() {
 		log.Printf("Sending payload: size: %d traces: %d\n", size, count)
 	}
 	err := t.config.transport.send(t.payload)
-	if err != nil && size > payloadMaxLimit {
-		// we couldn't send the payload and it is getting too big to be
-		// accepted by the agent, we have to drop it.
-		t.payload.reset()
+	if err != nil {
 		t.pushError(&dataLossError{context: err, count: count})
 	}
-	if err == nil {
-		// send succeeded
-		t.payload.reset()
-	}
+	t.payload.reset()
 }
 
 // flushErrors will process log messages that were queued

@@ -161,7 +161,7 @@ func injectSpanIntoContext(ctx context.Context) context.Context {
 	if !ok {
 		return ctx
 	}
-	md, ok := metadata.FromIncomingContext(ctx)
+	md, ok := metadata.FromOutgoingContext(ctx)
 	if ok {
 		// we have to copy the metadata because its not safe to modify
 		md = md.Copy()

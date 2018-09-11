@@ -17,8 +17,7 @@ var _ TextMapReader = (*HTTPHeadersCarrier)(nil)
 
 // Set implements TextMapWriter.
 func (c HTTPHeadersCarrier) Set(key, val string) {
-	h := http.Header(c)
-	h.Add(key, val)
+	http.Header(c).Set(key, val)
 }
 
 // ForeachKey implements TextMapReader.
