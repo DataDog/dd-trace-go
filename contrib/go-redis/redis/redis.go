@@ -21,11 +21,15 @@ type Client struct {
 	*params
 }
 
+var _ redis.Cmdable = (*Client)(nil)
+
 // Pipeliner is used to trace pipelines executed on a Redis server.
 type Pipeliner struct {
 	redis.Pipeliner
 	*params
 }
+
+var _ redis.Pipeliner = (*Pipeliner)(nil)
 
 // params holds the tracer and a set of parameters which are recorded with every trace.
 type params struct {
@@ -66,7 +70,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 }
 
 // Pipeline creates a Pipeline from a Client
-func (c *Client) Pipeline() *Pipeliner {
+func (c *Client) Pipeline() redis.Pipeliner {
 	return &Pipeliner{c.Client.Pipeline(), c.params}
 }
 
@@ -107,7 +111,7 @@ func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) 
 func commandsToString(cmds []redis.Cmder) string {
 	var b bytes.Buffer
 	for _, cmd := range cmds {
-		b.WriteString(cmd.String())
+		b.WriteString(cmderToString(cmd))
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -126,7 +130,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 	return func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
 		return func(cmd redis.Cmder) error {
 			ctx := tc.Client.Context()
-			raw := cmd.String()
+			raw := cmderToString(cmd)
 			parts := strings.Split(raw, " ")
 			length := len(parts) - 1
 			p := tc.params
@@ -149,4 +153,24 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			return err
 		}
 	}
+}
+
+func cmderToString(cmd redis.Cmder) string {
+	// We want to support multiple versions of the go-redis library. In
+	// older versions Cmder implements the Stringer interface, while in
+	// newer versions that was removed, and this String method which
+	// sometimes returns an error is used instead. By doing a type assertion
+	// we can support both versions.
+	if s, ok := cmd.(interface{ String() string }); ok {
+		return s.String()
+	}
+
+	if s, ok := cmd.(interface{ String() (string, error) }); ok {
+		str, err := s.String()
+		if err == nil {
+			return str
+		}
+	}
+
+	return ""
 }

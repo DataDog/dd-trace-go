@@ -49,7 +49,22 @@ const (
 	// SpanTypeMemcached marks a span as a memcached operation.
 	SpanTypeMemcached = "memcached"
 
+	// SpanTypeMongoDB marks a span as a MongoDB operation.
+	SpanTypeMongoDB = "mongodb"
+
 	// SpanTypeElasticSearch marks a span as an ElasticSearch operation.
 	// These spans may also have an "elasticsearch.body" tag.
 	SpanTypeElasticSearch = "elasticsearch"
+
+	// SpanTypeLevelDB marks a span as a leveldb operation
+	SpanTypeLevelDB = "leveldb"
+
+	// SpanTypeDNS marks a span as a DNS operation.
+	SpanTypeDNS = "dns"
+
+	// SpanTypeMessageConsumer marks a span as a queue operation
+	SpanTypeMessageConsumer = "queue"
+
+	// SpanTypeMessageProducer marks a span as a queue operation.
+	SpanTypeMessageProducer = "queue"
 )
