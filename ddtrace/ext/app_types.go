@@ -59,6 +59,9 @@ const (
 	// SpanTypeLevelDB marks a span as a leveldb operation
 	SpanTypeLevelDB = "leveldb"
 
+	// SpanTypeDNS marks a span as a DNS operation.
+	SpanTypeDNS = "dns"
+
 	// SpanTypeMessageConsumer marks a span as a queue operation
 	SpanTypeMessageConsumer = "queue"
 
