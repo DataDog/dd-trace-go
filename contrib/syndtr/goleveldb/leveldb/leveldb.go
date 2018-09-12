@@ -4,18 +4,16 @@ package leveldb // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/syndtr/goleve
 import (
 	"context"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/iterator"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	"github.com/syndtr/goleveldb/leveldb/util"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
-
-// Batch aliases leveldb.Batch so its easier to import.
-type Batch = leveldb.Batch
 
 // A DB wraps a leveldb.DB and traces all queries.
 type DB struct {
@@ -51,12 +49,11 @@ func WrapDB(db *leveldb.DB, opts ...Option) *DB {
 
 // WithContext returns a new DB with the context set to ctx.
 func (db *DB) WithContext(ctx context.Context) *DB {
-	newcfg := new(config)
-	*newcfg = *db.cfg
+	newcfg := *db.cfg
 	newcfg.ctx = ctx
 	return &DB{
 		DB:  db.DB,
-		cfg: newcfg,
+		cfg: &newcfg,
 	}
 }
 
@@ -130,7 +127,7 @@ func (db *DB) Put(key, value []byte, wo *opt.WriteOptions) error {
 }
 
 // Write calls DB.Write and traces the result.
-func (db *DB) Write(batch *Batch, wo *opt.WriteOptions) error {
+func (db *DB) Write(batch *leveldb.Batch, wo *opt.WriteOptions) error {
 	span := startSpan(db.cfg, "Write")
 	err := db.DB.Write(batch, wo)
 	span.Finish(tracer.WithError(err))
@@ -153,12 +150,11 @@ func WrapSnapshot(snap *leveldb.Snapshot, opts ...Option) *Snapshot {
 
 // WithContext returns a new Snapshot with the context set to ctx.
 func (snap *Snapshot) WithContext(ctx context.Context) *Snapshot {
-	newcfg := new(config)
-	*newcfg = *snap.cfg
+	newcfg := *snap.cfg
 	newcfg.ctx = ctx
 	return &Snapshot{
 		Snapshot: snap.Snapshot,
-		cfg:      newcfg,
+		cfg:      &newcfg,
 	}
 }
 
@@ -201,12 +197,11 @@ func WrapTransaction(tr *leveldb.Transaction, opts ...Option) *Transaction {
 
 // WithContext returns a new Transaction with the context set to ctx.
 func (tr *Transaction) WithContext(ctx context.Context) *Transaction {
-	newcfg := new(config)
-	*newcfg = *tr.cfg
+	newcfg := *tr.cfg
 	newcfg.ctx = ctx
 	return &Transaction{
 		Transaction: tr.Transaction,
-		cfg:         newcfg,
+		cfg:         &newcfg,
 	}
 }
 

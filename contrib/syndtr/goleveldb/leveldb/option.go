@@ -8,9 +8,10 @@ type config struct {
 }
 
 func newConfig(opts ...Option) *config {
-	cfg := new(config)
-	cfg.serviceName = "leveldb"
-	cfg.ctx = context.Background()
+	cfg := &config{
+		serviceName: "leveldb",
+		ctx:         context.Background(),
+	}
 	for _, opt := range opts {
 		opt(cfg)
 	}

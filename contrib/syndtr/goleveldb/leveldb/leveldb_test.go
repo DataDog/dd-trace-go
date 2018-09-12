@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	"github.com/syndtr/goleveldb/leveldb/util"
@@ -46,7 +47,7 @@ func TestDB(t *testing.T) {
 	})
 
 	testAction(t, "Write", func(mt mocktracer.Tracer, db *DB) {
-		var batch Batch
+		var batch leveldb.Batch
 		batch.Put([]byte("hello"), []byte("world"))
 		db.Write(&batch, nil)
 	})
