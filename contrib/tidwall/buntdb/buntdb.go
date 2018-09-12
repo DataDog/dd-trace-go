@@ -4,10 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/tidwall/buntdb"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/tidwall/buntdb"
 )
 
 // A DB wraps a buntdb.DB, automatically tracing any transactions.
@@ -60,10 +61,9 @@ func (db *DB) View(fn func(tx *Tx) error) error {
 
 // WithContext sets the context for the DB.
 func (db *DB) WithContext(ctx context.Context) *DB {
-	newdb := new(DB)
-	*newdb = *db
+	newdb := *db
 	newdb.opts = append(newdb.opts[:len(newdb.opts):len(newdb.opts)], WithContext(ctx))
-	return newdb
+	return &newdb
 }
 
 // A Tx wraps a buntdb.Tx, automatically tracing any queries.
@@ -96,12 +96,11 @@ func (tx *Tx) startSpan(name string) ddtrace.Span {
 
 // WithContext sets the context for the Tx.
 func (tx *Tx) WithContext(ctx context.Context) *Tx {
-	newcfg := new(config)
-	*newcfg = *tx.cfg
+	newcfg := *tx.cfg
 	newcfg.ctx = ctx
 	return &Tx{
 		Tx:  tx.Tx,
-		cfg: newcfg,
+		cfg: &newcfg,
 	}
 }
 
