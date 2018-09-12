@@ -56,8 +56,12 @@ const (
 	// These spans may also have an "elasticsearch.body" tag.
 	SpanTypeElasticSearch = "elasticsearch"
 
+	// SpanTypeDNS marks a span as a DNS operation.
+	SpanTypeDNS = "dns"
+
 	// SpanTypeMessageConsumer marks a span as a queue operation
 	SpanTypeMessageConsumer = "queue"
+
 	// SpanTypeMessageProducer marks a span as a queue operation.
 	SpanTypeMessageProducer = "queue"
 )
