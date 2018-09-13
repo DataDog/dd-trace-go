@@ -104,9 +104,7 @@ func TestSyncProducer(t *testing.T) {
 
 	prodSuccess := new(sarama.ProduceResponse)
 	prodSuccess.AddTopicPartition("my_topic", 0, sarama.ErrNoError)
-	for i := 0; i < 3; i++ {
-		leader.Returns(prodSuccess)
-	}
+	leader.Returns(prodSuccess)
 
 	cfg := sarama.NewConfig()
 	cfg.Producer.Return.Successes = true
@@ -135,16 +133,48 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, int32(0), s.Tag("partition"))
 		assert.Equal(t, int64(0), s.Tag("offset"))
 	}
+}
 
-	mt.Reset()
+func TestSyncProducerSendMessages(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
+	seedBroker := sarama.NewMockBroker(t, 1)
+	defer seedBroker.Close()
+	leader := sarama.NewMockBroker(t, 2)
+	defer leader.Close()
+
+	metadataResponse := new(sarama.MetadataResponse)
+	metadataResponse.AddBroker(leader.Addr(), leader.BrokerID())
+	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, sarama.ErrNoError)
+	seedBroker.Returns(metadataResponse)
+
+	prodSuccess := new(sarama.ProduceResponse)
+	prodSuccess.AddTopicPartition("my_topic", 0, sarama.ErrNoError)
+	leader.Returns(prodSuccess)
+
+	cfg := sarama.NewConfig()
+	cfg.Producer.Return.Successes = true
+	cfg.Producer.Flush.Messages = 2
+
+	producer, err := sarama.NewSyncProducer([]string{seedBroker.Addr()}, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	producer = WrapSyncProducer(cfg, producer)
+
+	msg1 := &sarama.ProducerMessage{
+		Topic:    "my_topic",
+		Value:    sarama.StringEncoder("test 1"),
+		Metadata: "test",
+	}
 	msg2 := &sarama.ProducerMessage{
 		Topic:    "my_topic",
 		Value:    sarama.StringEncoder("test 2"),
 		Metadata: "test",
 	}
 	producer.SendMessages([]*sarama.ProducerMessage{msg1, msg2})
-	spans = mt.FinishedSpans()
+	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 2)
 	for _, s := range spans {
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
