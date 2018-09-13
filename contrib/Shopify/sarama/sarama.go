@@ -5,6 +5,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	sarama "gopkg.in/Shopify/sarama.v1"
 )
 
@@ -27,7 +28,6 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 	for _, opt := range opts {
 		opt(cfg)
 	}
-
 	wrapped := &partitionConsumer{
 		PartitionConsumer: pc,
 		messages:          make(chan *sarama.ConsumerMessage),
@@ -204,26 +204,22 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 					// producer was closed, so exit
 					return
 				}
-
 				key := spanKey{msg.Topic, msg.Partition, msg.Offset}
 				if span, ok := spans[key]; ok {
 					delete(spans, key)
 					finishProducerSpan(span, msg.Partition, msg.Offset, nil)
 				}
-
 				wrapped.successes <- msg
 			case err, ok := <-p.Errors():
 				if !ok {
-					// producer was closed, so exit
+					// producer was closed
 					return
 				}
-
 				key := spanKey{err.Msg.Topic, err.Msg.Partition, err.Msg.Offset}
 				if span, ok := spans[key]; ok {
 					delete(spans, key)
 					finishProducerSpan(span, err.Msg.Partition, err.Msg.Offset, err.Err)
 				}
-
 				wrapped.errors <- err
 			}
 		}
