@@ -1,6 +1,10 @@
 package ext
 
 const (
+	// DBApplication indicates the application using the database.
+	DBApplication = "db.application"
+	// DBName indicates the database name.
+	DBName = "db.name"
 	// DBType indicates the type of Database.
 	DBType = "db.type"
 	// DBInstance indicates the instance name of Database.

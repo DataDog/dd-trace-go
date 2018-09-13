@@ -1,18 +1,20 @@
-// Package mongo provides functions to trace the mongodb/mongo-go-driver package (https://github.com/mongodb/mongo-go-driver).
+// Package mongo provides functions to trace the mongodb/mongo-go-driver package (https://github.com/mongodb/mongo-go-driver). The
+// minimum required version is v0.0.13.
 //
-// `NewMonitor` will return an event.CommandMonitor which is used to trace
-// requests.
+// `NewMonitor` will return an event.CommandMonitor which is used to trace requests.
 package mongo
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
 
-	"github.com/mongodb/mongo-go-driver/core/event"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/mongodb/mongo-go-driver/core/event"
 )
 
 // The values of these mongo fields will not be scrubbed out. This allows the
@@ -31,11 +33,11 @@ type monitor struct {
 	spans map[spanKey]ddtrace.Span
 }
 
-func (m *monitor) Started(evt *event.CommandStartedEvent) {
+func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	hostname, port := peerInfo(evt)
 	statement := scrub(evt.Command).ToExtJSON(false)
 
-	span, _ := tracer.StartSpanFromContext(evt.Context, "mongodb.query",
+	span, _ := tracer.StartSpanFromContext(ctx, "mongodb.query",
 		tracer.ServiceName("mongo"),
 		tracer.ResourceName("mongo."+evt.CommandName),
 		tracer.Tag(ext.DBInstance, evt.DatabaseName),
@@ -53,11 +55,11 @@ func (m *monitor) Started(evt *event.CommandStartedEvent) {
 	m.Unlock()
 }
 
-func (m *monitor) Succeeded(evt *event.CommandSucceededEvent) {
+func (m *monitor) Succeeded(ctx context.Context, evt *event.CommandSucceededEvent) {
 	m.Finished(&evt.CommandFinishedEvent, nil)
 }
 
-func (m *monitor) Failed(evt *event.CommandFailedEvent) {
+func (m *monitor) Failed(ctx context.Context, evt *event.CommandFailedEvent) {
 	m.Finished(&evt.CommandFinishedEvent, fmt.Errorf("%s", evt.Failure))
 }
 

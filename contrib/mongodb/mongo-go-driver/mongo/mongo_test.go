@@ -8,16 +8,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mongodb/mongo-go-driver/core/result"
-	"github.com/stretchr/testify/assert"
-
-	"github.com/mongodb/mongo-go-driver/bson"
-	"github.com/mongodb/mongo-go-driver/core/wiremessage"
-	"github.com/mongodb/mongo-go-driver/mongo"
-	"github.com/mongodb/mongo-go-driver/mongo/clientopt"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/mongodb/mongo-go-driver/bson"
+	"github.com/mongodb/mongo-go-driver/core/result"
+	"github.com/mongodb/mongo-go-driver/core/wiremessage"
+	"github.com/mongodb/mongo-go-driver/mongo"
+	"github.com/mongodb/mongo-go-driver/mongo/clientopt"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func Test(t *testing.T) {
@@ -56,7 +57,7 @@ func Test(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 2)
-	assert.Equal(t, spans[0].TraceID, spans[1].TraceID)
+	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
 
 	s := spans[0]
 	assert.Equal(t, "mongo", s.Tag(ext.ServiceName))
