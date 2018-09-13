@@ -91,13 +91,31 @@ func TestSyncProducer(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	broker := newMockBroker(t)
+	seedBroker := sarama.NewMockBroker(t, 1)
+	defer seedBroker.Close()
 
-	producer, err := sarama.NewSyncProducer([]string{broker.Addr()}, nil)
+	leader := sarama.NewMockBroker(t, 2)
+	defer leader.Close()
+
+	metadataResponse := new(sarama.MetadataResponse)
+	metadataResponse.AddBroker(leader.Addr(), leader.BrokerID())
+	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, sarama.ErrNoError)
+	seedBroker.Returns(metadataResponse)
+
+	prodSuccess := new(sarama.ProduceResponse)
+	prodSuccess.AddTopicPartition("my_topic", 0, sarama.ErrNoError)
+	for i := 0; i < 3; i++ {
+		leader.Returns(prodSuccess)
+	}
+
+	cfg := sarama.NewConfig()
+	cfg.Producer.Return.Successes = true
+
+	producer, err := sarama.NewSyncProducer([]string{seedBroker.Addr()}, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	producer = WrapSyncProducer(producer)
+	producer = WrapSyncProducer(cfg, producer)
 
 	msg1 := &sarama.ProducerMessage{
 		Topic:    "my_topic",
@@ -135,23 +153,6 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, "kafka.produce", s.OperationName())
 		assert.Equal(t, int32(0), s.Tag("partition"))
 	}
-
-	mt.Reset()
-
-	t.Run("Parent Span", func(t *testing.T) {
-		span := tracer.StartSpan("test")
-		msg3 := &sarama.ProducerMessage{
-			Topic: "my_topic",
-			Value: sarama.StringEncoder("test 1"),
-		}
-		tracer.Inject(span.Context(), NewProducerMessageCarrier(msg3))
-		producer.SendMessage(msg3)
-		span.Finish()
-
-		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 2)
-		assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
-	})
 }
 
 func TestAsyncProducer(t *testing.T) {

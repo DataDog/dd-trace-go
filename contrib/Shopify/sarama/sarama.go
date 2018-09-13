@@ -96,12 +96,13 @@ func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
 
 type syncProducer struct {
 	sarama.SyncProducer
-	cfg *config
+	version sarama.KafkaVersion
+	cfg     *config
 }
 
 // SendMessage calls sarama.SyncProducer.SendMessage and traces the request.
 func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
-	span := startProducerSpan(p.cfg, msg)
+	span := startProducerSpan(p.cfg, p.version, msg)
 	partition, offset, err = p.SyncProducer.SendMessage(msg)
 	finishProducerSpan(span, partition, offset, err)
 	return partition, offset, err
@@ -113,7 +114,7 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	// treated individually, so we create a span for each one
 	spans := make([]ddtrace.Span, len(msgs))
 	for i, msg := range msgs {
-		spans[i] = startProducerSpan(p.cfg, msg)
+		spans[i] = startProducerSpan(p.cfg, p.version, msg)
 	}
 	err := p.SyncProducer.SendMessages(msgs)
 	for i, span := range spans {
@@ -124,14 +125,18 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 
 // WrapSyncProducer wraps a sarama.SyncProducer so that all produced messages
 // are traced.
-func WrapSyncProducer(p sarama.SyncProducer, opts ...Option) sarama.SyncProducer {
+func WrapSyncProducer(saramaConfig *sarama.Config, producer sarama.SyncProducer, opts ...Option) sarama.SyncProducer {
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	if saramaConfig == nil {
+		saramaConfig = sarama.NewConfig()
+	}
 	return &syncProducer{
-		SyncProducer: p,
+		SyncProducer: producer,
+		version:      saramaConfig.Version,
 		cfg:          cfg,
 	}
 }
@@ -189,7 +194,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 			select {
 			case msg := <-wrapped.input:
 				key := spanKey{msg.Topic, msg.Partition, msg.Offset}
-				span := startProducerSpan(cfg, msg)
+				span := startProducerSpan(cfg, saramaConfig.Version, msg)
 				p.Input() <- msg
 				if saramaConfig.Producer.Return.Successes {
 					spans[key] = span
@@ -227,7 +232,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	return wrapped
 }
 
-func startProducerSpan(cfg *config, msg *sarama.ProducerMessage) ddtrace.Span {
+func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.ProducerMessage) ddtrace.Span {
 	carrier := NewProducerMessageCarrier(msg)
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
@@ -239,8 +244,10 @@ func startProducerSpan(cfg *config, msg *sarama.ProducerMessage) ddtrace.Span {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	span := tracer.StartSpan("kafka.produce", opts...)
-	// re-inject the span context so consumers can pick it up
-	tracer.Inject(span.Context(), carrier)
+	if version.IsAtLeast(sarama.V0_11_0_0) {
+		// re-inject the span context so consumers can pick it up
+		tracer.Inject(span.Context(), carrier)
+	}
 	return span
 }
 

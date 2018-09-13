@@ -27,13 +27,16 @@ func Example_asyncProducer() {
 }
 
 func Example_syncProducer() {
-	producer, err := sarama.NewSyncProducer([]string{"localhost:9092"}, nil)
+	cfg := sarama.NewConfig()
+	cfg.Producer.Return.Successes = true
+
+	producer, err := sarama.NewSyncProducer([]string{"localhost:9092"}, cfg)
 	if err != nil {
 		panic(err)
 	}
 	defer producer.Close()
 
-	producer = saramatrace.WrapSyncProducer(producer)
+	producer = saramatrace.WrapSyncProducer(cfg, producer)
 
 	msg := &sarama.ProducerMessage{
 		Topic: "some-topic",
