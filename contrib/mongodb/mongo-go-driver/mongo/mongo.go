@@ -17,12 +17,6 @@ import (
 	"github.com/mongodb/mongo-go-driver/core/event"
 )
 
-// The values of these mongo fields will not be scrubbed out. This allows the
-// non-sensitive collection names to be captured.
-var unscrubbedFields = []string{
-	"ordered", "insert", "count", "find", "create",
-}
-
 type spanKey struct {
 	ConnectionID string
 	RequestID    int64
@@ -35,7 +29,7 @@ type monitor struct {
 
 func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	hostname, port := peerInfo(evt)
-	statement := scrub(evt.Command).ToExtJSON(false)
+	statement := evt.Command.ToExtJSON(false)
 
 	span, _ := tracer.StartSpanFromContext(ctx, "mongodb.query",
 		tracer.ServiceName("mongo"),

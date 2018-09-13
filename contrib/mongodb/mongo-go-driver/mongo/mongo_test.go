@@ -64,7 +64,7 @@ func Test(t *testing.T) {
 	assert.Equal(t, "mongo.insert", s.Tag(ext.ResourceName))
 	assert.Equal(t, hostname, s.Tag(ext.PeerHostname))
 	assert.Equal(t, port, s.Tag(ext.PeerPort))
-	assert.Equal(t, `{"insert":"test-collection","$db":"?","documents":[{"test-item":"?","_id":"?"}]}`, s.Tag(ext.DBStatement))
+	assert.Contains(t, s.Tag(ext.DBStatement), `{"insert":"test-collection","$db":"test-database","documents":[{"test-item":"test-value","_id":{"`)
 	assert.Equal(t, "test-database", s.Tag(ext.DBInstance))
 	assert.Equal(t, "mongo", s.Tag(ext.DBType))
 }
