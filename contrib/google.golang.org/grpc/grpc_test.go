@@ -16,12 +16,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
-func TestClient(t *testing.T) {
+func TestUnary(t *testing.T) {
 	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
 
 	rig, err := newRig(true)
 	if err != nil {
@@ -30,42 +29,71 @@ func TestClient(t *testing.T) {
 	defer rig.Close()
 	client := rig.client
 
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "a", tracer.ServiceName("b"), tracer.ResourceName("c"))
+	for name, tt := range map[string]struct {
+		message     string
+		error       bool
+		wantMessage string
+		wantCode    codes.Code
+	}{
+		"OK": {
+			message:     "pass",
+			error:       false,
+			wantMessage: "passed",
+			wantCode:    codes.OK,
+		},
+		"Invalid": {
+			message:     "invalid",
+			error:       true,
+			wantMessage: "",
+			wantCode:    codes.InvalidArgument,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-	resp, err := client.Ping(ctx, &FixtureRequest{Name: "pass"})
-	assert.Nil(err)
-	span.Finish()
-	assert.Equal(resp.Message, "passed")
+			span, ctx := tracer.StartSpanFromContext(context.Background(), "a", tracer.ServiceName("b"), tracer.ResourceName("c"))
 
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 3)
+			resp, err := client.Ping(ctx, &FixtureRequest{Name: tt.message})
+			span.Finish()
+			if tt.error {
+				assert.Error(err)
+			} else {
+				assert.NoError(err)
+				assert.Equal(resp.Message, tt.wantMessage)
+			}
 
-	var serverSpan, clientSpan, rootSpan mocktracer.Span
+			spans := mt.FinishedSpans()
+			assert.Len(spans, 3)
 
-	for _, s := range spans {
-		// order of traces in buffer is not garanteed
-		switch s.OperationName() {
-		case "grpc.server":
-			serverSpan = s
-		case "grpc.client":
-			clientSpan = s
-		case "a":
-			rootSpan = s
-		}
+			var serverSpan, clientSpan, rootSpan mocktracer.Span
+
+			for _, s := range spans {
+				// order of traces in buffer is not garanteed
+				switch s.OperationName() {
+				case "grpc.server":
+					serverSpan = s
+				case "grpc.client":
+					clientSpan = s
+				case "a":
+					rootSpan = s
+				}
+			}
+
+			assert.NotNil(serverSpan)
+			assert.NotNil(clientSpan)
+			assert.NotNil(rootSpan)
+
+			assert.Equal(clientSpan.Tag(ext.TargetHost), "127.0.0.1")
+			assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
+			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
+			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
+			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
+			assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
+			assert.Equal(serverSpan.Tag(tagCode), tt.wantCode.String())
+			assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
+		})
 	}
-
-	assert.NotNil(serverSpan)
-	assert.NotNil(clientSpan)
-	assert.NotNil(rootSpan)
-
-	assert.Equal(clientSpan.Tag(ext.TargetHost), "127.0.0.1")
-	assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
-	assert.Equal(clientSpan.Tag(tagCode), codes.OK.String())
-	assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
-	assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
-	assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
-	assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
-
 }
 
 func TestStreaming(t *testing.T) {
@@ -87,7 +115,7 @@ func TestStreaming(t *testing.T) {
 		stream.Recv()
 	}
 
-	checkSpans := func(t *testing.T, rig *rig, spans []mocktracer.Span) {
+	checkSpans := func(t *testing.T, rig *rig, spans []mocktracer.Span, unknownSpan mocktracer.Span) {
 		var rootSpan mocktracer.Span
 		for _, span := range spans {
 			if span.OperationName() == "a" {
@@ -111,15 +139,18 @@ func TestStreaming(t *testing.T) {
 
 			switch span.OperationName() {
 			case "grpc.client":
-				// code is only set for the call, not the send/recv messages
-				assert.Equal(t, codes.OK.String(), span.Tag(tagCode),
-					"expected grpc code to be set in span: %v", span)
 				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost),
 					"expected target host tag to be set in span: %v", span)
 				assert.Equal(t, rig.port, span.Tag(ext.TargetPort),
 					"expected target host port to be set in span: %v", span)
 				fallthrough
 			case "grpc.server", "grpc.message":
+				wantCode := codes.OK
+				if span == unknownSpan {
+					wantCode = codes.Unknown
+				}
+				assert.Equal(t, wantCode.String(), span.Tag(tagCode),
+					"expected grpc code to be set in span: %v", span)
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.ResourceName),
 					"expected resource name to be set in span: %v", span)
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethod),
@@ -152,7 +183,7 @@ func TestStreaming(t *testing.T) {
 		assert.Len(t, spans, 13,
 			"expected 4 client messages + 4 server messages + 1 server call + 1 client call + 1 error from empty recv + 1 parent ctx, but got %v",
 			len(spans))
-		checkSpans(t, rig, spans)
+		checkSpans(t, rig, spans, spans[len(spans)-1])
 	})
 
 	t.Run("CallsOnly", func(t *testing.T) {
@@ -179,7 +210,7 @@ func TestStreaming(t *testing.T) {
 		assert.Len(t, spans, 3,
 			"expected 1 server call + 1 client call + 1 parent ctx, but got %v",
 			len(spans))
-		checkSpans(t, rig, spans)
+		checkSpans(t, rig, spans, spans[len(spans)-1])
 	})
 
 	t.Run("MessagesOnly", func(t *testing.T) {
@@ -206,7 +237,7 @@ func TestStreaming(t *testing.T) {
 		assert.Len(t, spans, 11,
 			"expected 4 client messages + 4 server messages + 1 error from empty recv + 1 parent ctx, but got %v",
 			len(spans))
-		checkSpans(t, rig, spans)
+		checkSpans(t, rig, spans, nil)
 	})
 }
 
@@ -342,6 +373,8 @@ func (s *fixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureR
 			panic("should be disabled")
 		}
 		return &FixtureReply{Message: "disabled"}, nil
+	case in.Name == "invalid":
+		return nil, status.Error(codes.InvalidArgument, "invalid")
 	}
 	return &FixtureReply{Message: "passed"}, nil
 }

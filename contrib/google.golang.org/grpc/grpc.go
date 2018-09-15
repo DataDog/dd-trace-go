@@ -31,11 +31,12 @@ func startSpanFromContext(ctx context.Context, method, operation, service string
 	return tracer.StartSpanFromContext(ctx, operation, opts...)
 }
 
-// withStreamError returns a tracer.WithError finish option, disregarding OK, EOF and Canceled errors.
-func withStreamError(err error) tracer.FinishOption {
+// finishWithError applies finish option and a tag with gRPC status code, disregarding OK, EOF and Canceled errors.
+func finishWithError(span ddtrace.Span, err error) {
 	errcode := status.Code(err)
 	if err == io.EOF || errcode == codes.Canceled || errcode == codes.OK || err == context.Canceled {
 		err = nil
 	}
-	return tracer.WithError(err)
+	span.SetTag(tagCode, errcode.String())
+	span.Finish(tracer.WithError(err))
 }
