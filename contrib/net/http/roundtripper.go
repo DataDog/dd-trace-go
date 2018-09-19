@@ -61,6 +61,9 @@ func WrapRoundTripper(rt http.RoundTripper, opts ...RoundTripperOption) http.Rou
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	if wrapped, ok := rt.(*roundTripper); ok {
+		rt = wrapped.base
+	}
 	return &roundTripper{
 		base: rt,
 		cfg:  cfg,
