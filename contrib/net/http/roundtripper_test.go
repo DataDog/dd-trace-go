@@ -59,3 +59,10 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, true, s1.Tag("CalledBefore"))
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
 }
+
+func TestWrapClient(t *testing.T) {
+	c := WrapClient(http.DefaultClient)
+	assert.Equal(t, c, http.DefaultClient)
+	_, ok := c.Transport.(*roundTripper)
+	assert.True(t, ok)
+}
