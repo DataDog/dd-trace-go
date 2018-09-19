@@ -61,8 +61,20 @@ func WrapRoundTripper(rt http.RoundTripper, opts ...RoundTripperOption) http.Rou
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	if wrapped, ok := rt.(*roundTripper); ok {
+		rt = wrapped.base
+	}
 	return &roundTripper{
 		base: rt,
 		cfg:  cfg,
 	}
+}
+
+// WrapClient modifies the given client's transport to augment it with tracing and returns it.
+func WrapClient(c *http.Client, opts ...RoundTripperOption) *http.Client {
+	if c.Transport == nil {
+		c.Transport = http.DefaultTransport
+	}
+	c.Transport = WrapRoundTripper(c.Transport, opts...)
+	return c
 }
