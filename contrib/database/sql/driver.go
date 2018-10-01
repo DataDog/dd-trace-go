@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -52,11 +52,20 @@ type traceParams struct {
 	meta       map[string]string
 }
 
-func (tp *traceParams) newChildSpanFromContext(ctx context.Context, resource string, query string) ddtrace.Span {
+// tryTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
+func (tp *traceParams) tryTrace(ctx context.Context, resource string, query string, startTime time.Time, err error) {
+	if err == driver.ErrSkip {
+		// Not a user error: driver is telling sql package that an
+		// optional interface method is not implemented. There is
+		// nothing to trace here.
+		// See: https://github.com/DataDog/dd-trace-go/issues/270
+		return
+	}
 	name := fmt.Sprintf("%s.query", tp.driverName)
 	span, _ := tracer.StartSpanFromContext(ctx, name,
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ServiceName(tp.config.serviceName),
+		tracer.StartTime(startTime),
 	)
 	if query != "" {
 		resource = query
@@ -65,7 +74,7 @@ func (tp *traceParams) newChildSpanFromContext(ctx context.Context, resource str
 	for k, v := range tp.meta {
 		span.SetTag(k, v)
 	}
-	return span
+	span.Finish(tracer.WithError(err))
 }
 
 // tracedDriverName returns the name of the traced version for the given driver name.

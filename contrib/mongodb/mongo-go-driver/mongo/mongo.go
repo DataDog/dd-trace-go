@@ -1,5 +1,6 @@
 // Package mongo provides functions to trace the mongodb/mongo-go-driver package (https://github.com/mongodb/mongo-go-driver). The
-// minimum required version is v0.0.13.
+// minimum required version is v0.0.15 (Alpha 15). Since this driver is still in Alpha and subject to change from one release to
+// another, stability of this package can not be guaranteed.
 //
 // `NewMonitor` will return an event.CommandMonitor which is used to trace requests.
 package mongo

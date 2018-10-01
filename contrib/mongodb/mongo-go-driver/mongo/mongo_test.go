@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/mongodb/mongo-go-driver/bson"
+	"github.com/mongodb/mongo-go-driver/bson/bsoncodec"
 	"github.com/mongodb/mongo-go-driver/core/result"
 	"github.com/mongodb/mongo-go-driver/core/wiremessage"
 	"github.com/mongodb/mongo-go-driver/mongo"
@@ -119,7 +120,7 @@ func mockMongo() (net.Listener, error) {
 							panic(err)
 						}
 
-						bs, _ := bson.Marshal(result.IsMaster{
+						bs, _ := bsoncodec.Marshal(result.IsMaster{
 							IsMaster:                     true,
 							OK:                           1,
 							MaxBSONObjectSize:            16777216,
