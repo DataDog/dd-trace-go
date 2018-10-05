@@ -3,8 +3,7 @@ package sql
 import (
 	"context"
 	"database/sql/driver"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"time"
 )
 
 var _ driver.Tx = (*tracedTx)(nil)
@@ -18,18 +17,16 @@ type tracedTx struct {
 
 // Commit sends a span at the end of the transaction
 func (t *tracedTx) Commit() (err error) {
-	span := t.newChildSpanFromContext(t.ctx, "Commit", "")
-	defer func() {
-		span.Finish(tracer.WithError(err))
-	}()
-	return t.Tx.Commit()
+	start := time.Now()
+	err = t.Tx.Commit()
+	t.tryTrace(t.ctx, "Commit", "", start, err)
+	return err
 }
 
 // Rollback sends a span if the connection is aborted
 func (t *tracedTx) Rollback() (err error) {
-	span := t.newChildSpanFromContext(t.ctx, "Rollback", "")
-	defer func() {
-		span.Finish(tracer.WithError(err))
-	}()
-	return t.Tx.Rollback()
+	start := time.Now()
+	err = t.Tx.Rollback()
+	t.tryTrace(t.ctx, "Rollback", "", start, err)
+	return err
 }

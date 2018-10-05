@@ -4,8 +4,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"errors"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"time"
 )
 
 var _ driver.Stmt = (*tracedStmt)(nil)
@@ -20,21 +19,19 @@ type tracedStmt struct {
 
 // Close sends a span before closing a statement
 func (s *tracedStmt) Close() (err error) {
-	span := s.newChildSpanFromContext(s.ctx, "Close", "")
-	defer func() {
-		span.Finish(tracer.WithError(err))
-	}()
-	return s.Stmt.Close()
+	start := time.Now()
+	err = s.Stmt.Close()
+	s.tryTrace(s.ctx, "Close", "", start, err)
+	return err
 }
 
 // ExecContext is needed to implement the driver.StmtExecContext interface
 func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
-	span := s.newChildSpanFromContext(ctx, "Exec", s.query)
-	defer func() {
-		span.Finish(tracer.WithError(err))
-	}()
+	start := time.Now()
 	if stmtExecContext, ok := s.Stmt.(driver.StmtExecContext); ok {
-		return stmtExecContext.ExecContext(ctx, args)
+		res, err := stmtExecContext.ExecContext(ctx, args)
+		s.tryTrace(ctx, "Exec", s.query, start, err)
+		return res, err
 	}
 	dargs, err := namedValueToValue(args)
 	if err != nil {
@@ -45,17 +42,18 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 		return nil, ctx.Err()
 	default:
 	}
-	return s.Exec(dargs)
+	res, err = s.Exec(dargs)
+	s.tryTrace(ctx, "Exec", s.query, start, err)
+	return res, err
 }
 
 // QueryContext is needed to implement the driver.StmtQueryContext interface
 func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
-	span := s.newChildSpanFromContext(ctx, "Query", s.query)
-	defer func() {
-		span.Finish(tracer.WithError(err))
-	}()
+	start := time.Now()
 	if stmtQueryContext, ok := s.Stmt.(driver.StmtQueryContext); ok {
-		return stmtQueryContext.QueryContext(ctx, args)
+		rows, err := stmtQueryContext.QueryContext(ctx, args)
+		s.tryTrace(ctx, "Query", s.query, start, err)
+		return rows, err
 	}
 	dargs, err := namedValueToValue(args)
 	if err != nil {
@@ -66,7 +64,9 @@ func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue)
 		return nil, ctx.Err()
 	default:
 	}
-	return s.Query(dargs)
+	rows, err = s.Query(dargs)
+	s.tryTrace(ctx, "Query", s.query, start, err)
+	return rows, err
 }
 
 // copied from stdlib database/sql package: src/database/sql/ctxutil.go
