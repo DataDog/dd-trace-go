@@ -26,6 +26,8 @@ type tracer struct {
 	*config
 	*payload
 
+	errorReporter func(<-chan error)
+
 	flushAllReq    chan chan<- struct{}
 	flushTracesReq chan struct{}
 	flushErrorsReq chan struct{}
@@ -119,6 +121,7 @@ func newTracer(opts ...StartOption) *tracer {
 	}
 	t := &tracer{
 		config:         c,
+		errorReporter:  c.errorReporter,
 		payload:        newPayload(),
 		flushAllReq:    make(chan chan<- struct{}),
 		flushTracesReq: make(chan struct{}, 1),
@@ -308,7 +311,9 @@ func (t *tracer) flushTraces() {
 
 // flushErrors will process log messages that were queued
 func (t *tracer) flushErrors() {
-	logErrors(t.errorBuffer)
+	if t.errorReporter != nil {
+		t.errorReporter(t.errorBuffer)
+	}
 }
 
 func (t *tracer) flush() {

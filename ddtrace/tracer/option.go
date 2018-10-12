@@ -33,6 +33,9 @@ type config struct {
 
 	// propagator propagates span context cross-process
 	propagator Propagator
+
+	// errorReporter is a function that consumes the errors from traces
+	errorReporter func(<-chan error)
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -43,12 +46,20 @@ func defaults(c *config) {
 	c.serviceName = filepath.Base(os.Args[0])
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
+	c.errorReporter = logErrors
 }
 
 // WithDebugMode enables debug mode on the tracer, resulting in more verbose logging.
 func WithDebugMode(enabled bool) StartOption {
 	return func(c *config) {
 		c.debug = enabled
+	}
+}
+
+// WithErrorReporter sets the error reporter for a trace collector.
+func WithErrorReporter(reporter func(<-chan error)) StartOption {
+	return func(c *config) {
+		c.errorReporter = reporter
 	}
 }
 
