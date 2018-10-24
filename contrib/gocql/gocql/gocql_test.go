@@ -71,7 +71,7 @@ func TestErrorWrapper(t *testing.T) {
 	assert.Equal(span.OperationName(), ext.CassandraQuery)
 	assert.Equal(span.Tag(ext.ResourceName), "CREATE KEYSPACE")
 	assert.Equal(span.Tag(ext.ServiceName), "ServiceName")
-	assert.Equal(span.Tag(ext.CassandraConsistencyLevel), "4")
+	assert.Equal(span.Tag(ext.CassandraConsistencyLevel), "QUORUM")
 	assert.Equal(span.Tag(ext.CassandraPaginated), "false")
 
 	if iter.Host() != nil {

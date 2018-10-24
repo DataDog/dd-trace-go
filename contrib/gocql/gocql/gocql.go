@@ -124,7 +124,7 @@ func (tq *Query) Iter() *Iter {
 	span := tq.newChildSpan(tq.traceContext)
 	iter := tq.Query.Iter()
 	span.SetTag(ext.CassandraRowCount, strconv.Itoa(iter.NumRows()))
-	span.SetTag(ext.CassandraConsistencyLevel, strconv.Itoa(int(tq.GetConsistency())))
+	span.SetTag(ext.CassandraConsistencyLevel, tq.GetConsistency().String())
 
 	columns := iter.Columns()
 	if len(columns) > 0 {
