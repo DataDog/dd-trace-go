@@ -21,7 +21,7 @@ func WithServiceName(name string) RouterOption {
 	}
 }
 
-// WithSpanOptions applies the given set of options to the spans started by the router.
+// WithSpanOptions applies the given set of options to the span started by the router.
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
 	return func(cfg *routerConfig) {
 		cfg.spanOpts = opts
