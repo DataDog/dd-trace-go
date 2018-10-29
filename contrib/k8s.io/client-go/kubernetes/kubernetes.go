@@ -29,10 +29,11 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 			}
 			kubeAuditID := strconv.FormatUint(traceID, 10)
 			req.Header.Set("Audit-Id", kubeAuditID)
-			span.SetTag("kubernetes.auditID", kubeAuditID)
+			span.SetTag("kubernetes.audit_id", kubeAuditID)
 		}))
 }
 
+// RequestToResource parse a kubernetes request to extract a resource name from it
 func RequestToResource(method, path string) string {
 	if !strings.HasPrefix(path, prefixAPI) {
 		return method
