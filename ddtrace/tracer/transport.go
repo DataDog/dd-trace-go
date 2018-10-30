@@ -10,7 +10,9 @@ import (
 	"time"
 )
 
-var tracerVersion = "v1.2"
+// TODO(gbbr): find a more effective way to keep this up to date,
+// e.g. via `go generate`
+var tracerVersion = "v1.5.0"
 
 const (
 	defaultHostname    = "localhost"
