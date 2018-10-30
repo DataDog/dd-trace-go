@@ -25,6 +25,7 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 			span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
 			traceID := span.Context().TraceID()
 			if traceID == 0 {
+			    // tracer is not running
 				return
 			}
 			kubeAuditID := strconv.FormatUint(traceID, 10)
