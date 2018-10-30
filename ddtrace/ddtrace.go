@@ -88,6 +88,9 @@ type FinishConfig struct {
 	// Error holds an optional error that should be set on the span before
 	// finishing.
 	Error error
+
+	// Disable backtrace generation in case of error.
+	NoBacktrace bool
 }
 
 // StartSpanConfig holds the configuration for starting a new span. It is usually passed

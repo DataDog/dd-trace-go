@@ -115,6 +115,19 @@ func TestSpanFinishWithError(t *testing.T) {
 	assert.NotEmpty(span.Meta[ext.ErrorStack])
 }
 
+func TestSpanFinishWithErrorNoBacktrace(t *testing.T) {
+	assert := assert.New(t)
+
+	err := errors.New("test error")
+	span := newBasicSpan("web.request")
+	span.Finish(WithError(err), NoBacktrace())
+
+	assert.Equal(int32(1), span.Error)
+	assert.Equal("test error", span.Meta[ext.ErrorMsg])
+	assert.Equal("*errors.errorString", span.Meta[ext.ErrorType])
+	assert.Empty(span.Meta[ext.ErrorStack])
+}
+
 func TestSpanSetTag(t *testing.T) {
 	assert := assert.New(t)
 

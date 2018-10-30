@@ -161,3 +161,10 @@ func WithError(err error) FinishOption {
 		cfg.Error = err
 	}
 }
+
+// Disable backtrace generation in case of error.
+func NoBacktrace() FinishOption {
+	return func(cfg *ddtrace.FinishConfig) {
+		cfg.NoBacktrace = true
+	}
+}
