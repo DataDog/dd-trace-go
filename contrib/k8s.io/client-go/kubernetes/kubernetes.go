@@ -34,7 +34,7 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 		}))
 }
 
-// RequestToResource parse a kubernetes request to extract a resource name from it
+// RequestToResource parses a Kubernetes request and extracts a resource name from it.
 func RequestToResource(method, path string) string {
 	if !strings.HasPrefix(path, prefixAPI) {
 		return method
