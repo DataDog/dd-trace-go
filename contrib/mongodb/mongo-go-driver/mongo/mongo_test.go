@@ -136,7 +136,7 @@ func mockMongo() (net.Listener, error) {
 							},
 							ResponseFlags:  wiremessage.AwaitCapable,
 							NumberReturned: 1,
-							Documents:      []bson.Reader{bs},
+							Documents:      []bson.Raw{bs},
 						}
 						bs, err = reply.MarshalWireMessage()
 						if err != nil {
