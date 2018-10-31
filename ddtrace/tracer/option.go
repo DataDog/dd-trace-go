@@ -156,6 +156,11 @@ func FinishTime(t time.Time) FinishOption {
 
 // WithError marks the span as having had an error. It uses the information from
 // err to set tags such as the error message, error type and stack trace.
+//
+// To avoid generating a stack trace in situations of critical performance where errors
+// are of a high frequency, simply set the "error" tag to true and add any additional
+// metadata tags as needed, avoiding the use of this option and avoiding the setting of
+// the "error" tag to a value of type error.
 func WithError(err error) FinishOption {
 	return func(cfg *ddtrace.FinishConfig) {
 		cfg.Error = err

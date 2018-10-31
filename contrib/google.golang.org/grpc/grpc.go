@@ -5,6 +5,7 @@ package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.or
 
 import (
 	"io"
+	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -32,11 +33,18 @@ func startSpanFromContext(ctx context.Context, method, operation, service string
 }
 
 // finishWithError applies finish option and a tag with gRPC status code, disregarding OK, EOF and Canceled errors.
-func finishWithError(span ddtrace.Span, err error) {
+func finishWithError(span ddtrace.Span, err error, disableStack bool) {
 	errcode := status.Code(err)
 	if err == io.EOF || errcode == codes.Canceled || errcode == codes.OK || err == context.Canceled {
 		err = nil
 	}
 	span.SetTag(tagCode, errcode.String())
-	span.Finish(tracer.WithError(err))
+	if !disableStack {
+		span.Finish(tracer.WithError(err))
+	} else {
+		span.SetTag(ext.Error, true)
+		span.SetTag(ext.ErrorMsg, err.Error())
+		span.SetTag(ext.ErrorType, reflect.TypeOf(err).String())
+		span.Finish()
+	}
 }

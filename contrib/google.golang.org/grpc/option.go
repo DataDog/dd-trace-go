@@ -3,6 +3,7 @@ package grpc
 type interceptorConfig struct {
 	serviceName                           string
 	traceStreamCalls, traceStreamMessages bool
+	noDebugStack                          bool
 }
 
 func (cfg *interceptorConfig) serverServiceName() string {
@@ -47,5 +48,14 @@ func WithStreamCalls(enabled bool) InterceptorOption {
 func WithStreamMessages(enabled bool) InterceptorOption {
 	return func(cfg *interceptorConfig) {
 		cfg.traceStreamMessages = enabled
+	}
+}
+
+// NoDebugStack will disable generating a stack trace for all call errors. This can
+// be used in systems where errors are frequent to improve performance by reducing
+// calls to debug.Stack().
+func NoDebugStack() InterceptorOption {
+	return func(cfg *interceptorConfig) {
+		cfg.noDebugStack = true
 	}
 }
