@@ -19,7 +19,7 @@ type roundTripper struct {
 }
 
 func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
-	span, _ := tracer.StartSpanFromContext(req.Context(), "http.request",
+	span, _ := tracer.StartSpanFromContext(req.Context(), defaultResourceName,
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(defaultResourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
