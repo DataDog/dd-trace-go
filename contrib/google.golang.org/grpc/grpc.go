@@ -38,5 +38,5 @@ func finishWithError(span ddtrace.Span, err error) {
 		err = nil
 	}
 	span.SetTag(tagCode, errcode.String())
-	span.Finish(tracer.WithError(err), tracer.NoBacktrace())
+	span.Finish(tracer.WithError(err), tracer.NoDebugStack())
 }

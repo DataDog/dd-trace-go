@@ -162,9 +162,9 @@ func WithError(err error) FinishOption {
 	}
 }
 
-// Disable backtrace generation in case of error.
-func NoBacktrace() FinishOption {
+// NoDebugStack disable backtrace generation in case of error.
+func NoDebugStack() FinishOption {
 	return func(cfg *ddtrace.FinishConfig) {
-		cfg.NoBacktrace = true
+		cfg.NoDebugStack = true
 	}
 }

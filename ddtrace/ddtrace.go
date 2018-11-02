@@ -90,7 +90,7 @@ type FinishConfig struct {
 	Error error
 
 	// Disable backtrace generation in case of error.
-	NoBacktrace bool
+	NoDebugStack bool
 }
 
 // StartSpanConfig holds the configuration for starting a new span. It is usually passed

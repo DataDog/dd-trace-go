@@ -172,7 +172,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	}
 	if cfg.Error != nil {
 		s.Lock()
-		s.setTagError(cfg.Error, !cfg.NoBacktrace)
+		s.setTagError(cfg.Error, !cfg.NoDebugStack)
 		s.Unlock()
 	}
 	s.finish(t)
