@@ -3,6 +3,7 @@ package grpc
 type interceptorConfig struct {
 	serviceName                           string
 	traceStreamCalls, traceStreamMessages bool
+	noDebugStack                          bool
 }
 
 func (cfg *interceptorConfig) serverServiceName() string {
@@ -47,5 +48,14 @@ func WithStreamCalls(enabled bool) InterceptorOption {
 func WithStreamMessages(enabled bool) InterceptorOption {
 	return func(cfg *interceptorConfig) {
 		cfg.traceStreamMessages = enabled
+	}
+}
+
+// NoDebugStack disables backtrace generation for any type of errors.
+// This might be handy in a case when backtraces are not relevant but error
+// error rate is high leading to performance regression.
+func NoDebugStack() InterceptorOption {
+	return func(cfg *interceptorConfig) {
+		cfg.noDebugStack = true
 	}
 }
