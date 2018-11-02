@@ -99,7 +99,7 @@ func (s *span) SetTag(key string, value interface{}) {
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
 // This method is not safe for concurrent use.
-func (s *span) setTagError(value interface{}, backtrace bool) {
+func (s *span) setTagError(value interface{}, debugStack bool) {
 	if s.finished {
 		return
 	}
@@ -117,7 +117,7 @@ func (s *span) setTagError(value interface{}, backtrace bool) {
 		s.Error = 1
 		s.Meta[ext.ErrorMsg] = v.Error()
 		s.Meta[ext.ErrorType] = reflect.TypeOf(v).String()
-		if backtrace {
+		if debugStack {
 			s.Meta[ext.ErrorStack] = string(debug.Stack())
 		}
 	case nil:
