@@ -163,6 +163,8 @@ func WithError(err error) FinishOption {
 }
 
 // NoDebugStack disable backtrace generation in case of error.
+// This might be handy in a case when backtraces are not relevant but error
+// error rate is high leading to performance regression.
 func NoDebugStack() FinishOption {
 	return func(cfg *ddtrace.FinishConfig) {
 		cfg.NoDebugStack = true
