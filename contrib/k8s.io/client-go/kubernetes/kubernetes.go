@@ -3,6 +3,7 @@ package kubernetes // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/cli
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
@@ -21,11 +22,20 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 	return httptrace.WrapRoundTripper(rt,
 		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
 			span.SetTag(ext.ServiceName, "kubernetes")
-			span.SetTag(ext.ResourceName, requestToResource(req.Method, req.URL.Path))
+			span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
+			traceID := span.Context().TraceID()
+			if traceID == 0 {
+				// tracer is not running
+				return
+			}
+			kubeAuditID := strconv.FormatUint(traceID, 10)
+			req.Header.Set("Audit-Id", kubeAuditID)
+			span.SetTag("kubernetes.audit_id", kubeAuditID)
 		}))
 }
 
-func requestToResource(method, path string) string {
+// RequestToResource parses a Kubernetes request and extracts a resource name from it.
+func RequestToResource(method, path string) string {
 	if !strings.HasPrefix(path, prefixAPI) {
 		return method
 	}

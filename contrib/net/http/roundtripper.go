@@ -19,7 +19,7 @@ type roundTripper struct {
 }
 
 func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
-	span, _ := tracer.StartSpanFromContext(req.Context(), "http.request",
+	span, ctx := tracer.StartSpanFromContext(req.Context(), defaultResourceName,
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(defaultResourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
@@ -40,7 +40,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		// this should never happen
 		fmt.Fprintf(os.Stderr, "failed to inject http headers for round tripper: %v\n", err)
 	}
-	res, err = rt.base.RoundTrip(req)
+	res, err = rt.base.RoundTrip(req.WithContext(ctx))
 	if err != nil {
 		span.SetTag("http.errors", err.Error())
 	} else {
