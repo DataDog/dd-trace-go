@@ -51,9 +51,8 @@ func WithStreamMessages(enabled bool) InterceptorOption {
 	}
 }
 
-// NoDebugStack disables backtrace generation for any type of errors.
-// This might be handy in a case when backtraces are not relevant but error
-// error rate is high leading to performance regression.
+// NoDebugStack disables debug stacks for traces with errors. This is useful in situations
+// where errors are frequent and the overhead of calling debug.Stack may affect performance.
 func NoDebugStack() InterceptorOption {
 	return func(cfg *interceptorConfig) {
 		cfg.noDebugStack = true

@@ -89,7 +89,7 @@ type FinishConfig struct {
 	// finishing.
 	Error error
 
-	// Disable backtrace generation in case of error.
+	// NoDebugStack will prevent any set errors from generating an attached stack trace tag.
 	NoDebugStack bool
 }
 

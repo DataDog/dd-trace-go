@@ -162,9 +162,9 @@ func WithError(err error) FinishOption {
 	}
 }
 
-// NoDebugStack disable backtrace generation in case of error.
-// This might be handy in a case when backtraces are not relevant but error
-// error rate is high leading to performance regression.
+// NoDebugStack prevents any error presented using the WithError finishing option
+// from generating a stack trace. This is useful in situations where errors are frequent
+// and performance is critical.
 func NoDebugStack() FinishOption {
 	return func(cfg *ddtrace.FinishConfig) {
 		cfg.NoDebugStack = true
