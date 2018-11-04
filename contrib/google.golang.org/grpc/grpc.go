@@ -32,11 +32,17 @@ func startSpanFromContext(ctx context.Context, method, operation, service string
 }
 
 // finishWithError applies finish option and a tag with gRPC status code, disregarding OK, EOF and Canceled errors.
-func finishWithError(span ddtrace.Span, err error) {
+func finishWithError(span ddtrace.Span, err error, noDebugStack bool) {
 	errcode := status.Code(err)
 	if err == io.EOF || errcode == codes.Canceled || errcode == codes.OK || err == context.Canceled {
 		err = nil
 	}
 	span.SetTag(tagCode, errcode.String())
-	span.Finish(tracer.WithError(err))
+	finishOptions := []tracer.FinishOption{
+		tracer.WithError(err),
+	}
+	if noDebugStack {
+		finishOptions = append(finishOptions, tracer.NoDebugStack())
+	}
+	span.Finish(finishOptions...)
 }
