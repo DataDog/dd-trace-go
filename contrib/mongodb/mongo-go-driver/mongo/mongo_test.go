@@ -8,18 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	"github.com/mongodb/mongo-go-driver/bson"
-	"github.com/mongodb/mongo-go-driver/bson/bsoncodec"
 	"github.com/mongodb/mongo-go-driver/core/result"
 	"github.com/mongodb/mongo-go-driver/core/wiremessage"
 	"github.com/mongodb/mongo-go-driver/mongo"
-	"github.com/mongodb/mongo-go-driver/mongo/clientopt"
-
+	"github.com/mongodb/mongo-go-driver/options"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func Test(t *testing.T) {
@@ -40,9 +37,7 @@ func Test(t *testing.T) {
 
 	addr := fmt.Sprintf("mongodb://%s", li.Addr().String())
 
-	client, err := mongo.Connect(ctx, addr,
-		clientopt.Single(true),
-		clientopt.Monitor(NewMonitor()))
+	client, err := mongo.Connect(ctx, addr, options.Client().SetSingle(true).SetMonitor(NewMonitor()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +60,7 @@ func Test(t *testing.T) {
 	assert.Equal(t, "mongo.insert", s.Tag(ext.ResourceName))
 	assert.Equal(t, hostname, s.Tag(ext.PeerHostname))
 	assert.Equal(t, port, s.Tag(ext.PeerPort))
-	assert.Contains(t, s.Tag(ext.DBStatement), `{"insert":"test-collection","$db":"test-database","documents":[{"test-item":"test-value","_id":{"`)
+	assert.Contains(t, s.Tag(ext.DBStatement), `{"insert":"test-collection","ordered":true,"$db":"test-database","documents":[{"test-item":"test-value","_id":{"`)
 	assert.Equal(t, "test-database", s.Tag(ext.DBInstance))
 	assert.Equal(t, "mongo", s.Tag(ext.DBType))
 }
@@ -120,7 +115,7 @@ func mockMongo() (net.Listener, error) {
 							panic(err)
 						}
 
-						bs, _ := bsoncodec.Marshal(result.IsMaster{
+						bs, _ := bson.Marshal(result.IsMaster{
 							IsMaster:                     true,
 							OK:                           1,
 							MaxBSONObjectSize:            16777216,
@@ -139,7 +134,7 @@ func mockMongo() (net.Listener, error) {
 							},
 							ResponseFlags:  wiremessage.AwaitCapable,
 							NumberReturned: 1,
-							Documents:      []bson.Reader{bs},
+							Documents:      []bson.Raw{bs},
 						}
 						bs, err = reply.MarshalWireMessage()
 						if err != nil {

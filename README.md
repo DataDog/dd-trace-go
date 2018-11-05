@@ -17,6 +17,10 @@ Requires:
 The API is documented on [godoc](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace) as well as Datadog's [official documentation](https://docs.datadoghq.com/tracing/setup/go/). If you are migrating
 from an older version of the tracer (e.g. 0.6.x) you may also find the [migration document](https://github.com/DataDog/dd-trace-go/blob/v1/MIGRATING.md) we've put together helpful.
 
+### Contributing
+
+Before considering contributions to the project, please take a moment to read our brief [contribution guidelines](https://github.com/DataDog/dd-trace-go/blob/v1/CONTRIBUTING.md).
+
 ### Testing
 
 Tests can be run locally using the Go toolset. The grpc.v12 integration will fail (and this is normal), because it covers for deprecated methods. In the CI environment

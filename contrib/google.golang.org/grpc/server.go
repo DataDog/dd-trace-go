@@ -28,7 +28,7 @@ func (ss *serverStream) Context() context.Context {
 func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 	if ss.cfg.traceStreamMessages {
 		span, _ := startSpanFromContext(ss.ctx, ss.method, "grpc.message", ss.cfg.serverServiceName())
-		defer finishWithError(span, err)
+		defer finishWithError(span, err, ss.cfg.noDebugStack)
 	}
 	err = ss.ServerStream.RecvMsg(m)
 	return err
@@ -37,7 +37,7 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 func (ss *serverStream) SendMsg(m interface{}) (err error) {
 	if ss.cfg.traceStreamMessages {
 		span, _ := startSpanFromContext(ss.ctx, ss.method, "grpc.message", ss.cfg.serverServiceName())
-		defer finishWithError(span, err)
+		defer finishWithError(span, err, ss.cfg.noDebugStack)
 	}
 	err = ss.ServerStream.SendMsg(m)
 	return err
@@ -60,7 +60,7 @@ func StreamServerInterceptor(opts ...InterceptorOption) grpc.StreamServerInterce
 		if cfg.traceStreamCalls {
 			var span ddtrace.Span
 			span, ctx = startSpanFromContext(ctx, info.FullMethod, "grpc.server", cfg.serviceName)
-			defer finishWithError(span, err)
+			defer finishWithError(span, err, cfg.noDebugStack)
 		}
 
 		// call the original handler with a new stream, which traces each send
@@ -86,7 +86,7 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		span, ctx := startSpanFromContext(ctx, info.FullMethod, "grpc.server", cfg.serverServiceName())
 		resp, err := handler(ctx, req)
-		finishWithError(span, err)
+		finishWithError(span, err, cfg.noDebugStack)
 		return resp, err
 	}
 }

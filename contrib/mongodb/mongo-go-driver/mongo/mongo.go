@@ -1,5 +1,5 @@
 // Package mongo provides functions to trace the mongodb/mongo-go-driver package (https://github.com/mongodb/mongo-go-driver). The
-// minimum required version is v0.0.15 (Alpha 15). Since this driver is still in Alpha and subject to change from one release to
+// minimum required version is v0.0.17 (Alpha 17). Since this driver is still in Alpha and subject to change from one release to
 // another, stability of this package can not be guaranteed.
 //
 // `NewMonitor` will return an event.CommandMonitor which is used to trace requests.
@@ -11,11 +11,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mongodb/mongo-go-driver/core/event"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
-	"github.com/mongodb/mongo-go-driver/core/event"
 )
 
 type spanKey struct {
