@@ -5,7 +5,7 @@ import (
 
 	"github.com/mongodb/mongo-go-driver/bson"
 	"github.com/mongodb/mongo-go-driver/mongo"
-	"github.com/mongodb/mongo-go-driver/options"
+	"github.com/mongodb/mongo-go-driver/mongo/clientopt"
 
 	mongotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/mongodb/mongo-go-driver/mongo"
 )
@@ -13,7 +13,7 @@ import (
 func Example() {
 	// connect to MongoDB
 	client, err := mongo.Connect(context.Background(), "mongodb://localhost:27017",
-		options.Client().SetMonitor(mongotrace.NewMonitor()))
+		clientopt.Monitor(mongotrace.NewMonitor()))
 	if err != nil {
 		panic(err)
 	}
