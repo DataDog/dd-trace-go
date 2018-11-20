@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -114,7 +115,8 @@ func (t *httpTransport) send(p *payload) error {
 }
 
 // resolveAddr resolves the given agent address and fills in any missing host
-// and port using the defaults.
+// and port using the defaults. Some environment variable settings will
+// take precedence over configuration.
 func resolveAddr(addr string) string {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -126,6 +128,12 @@ func resolveAddr(addr string) string {
 	}
 	if port == "" {
 		port = defaultPort
+	}
+	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
+		host = v
+	}
+	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
+		port = v
 	}
 	return fmt.Sprintf("%s:%s", host, port)
 }
