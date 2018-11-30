@@ -11,9 +11,27 @@ import (
 	"time"
 )
 
-// TODO(gbbr): find a more effective way to keep this up to date,
-// e.g. via `go generate`
-var tracerVersion = "v1.5.0"
+var (
+	// TODO(gbbr): find a more effective way to keep this up to date,
+	// e.g. via `go generate`
+	tracerVersion = "v1.5.0"
+
+	// We copy the transport to avoid using the default one, as it might be
+	// augmented with tracing and we don't want these calls to be recorded.
+	// See https://golang.org/pkg/net/http/#DefaultTransport .
+	defaultRoundTripper = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}).DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+)
 
 const (
 	defaultHostname    = "localhost"
@@ -29,19 +47,25 @@ type transport interface {
 }
 
 // newTransport returns a new Transport implementation that sends traces to a
-// trace agent running on the given hostname and port. If the zero values for
-// hostname and port are provided, the default values will be used ("localhost"
-// for hostname, and "8126" for port).
+// trace agent running on the given hostname and port, using a given
+// http.RoundTripper. If the zero values for hostname and port are provided,
+// the default values will be used ("localhost" for hostname, and "8126" for
+// port). If roundTripper is nil, a default is used.
 //
 // In general, using this method is only necessary if you have a trace agent
-// running on a non-default port or if it's located on another machine.
-func newTransport(addr string) transport {
-	return newHTTPTransport(addr)
+// running on a non-default port, if it's located on another machine, or when
+// otherwise needing to customize the transport layer, for instance when using
+// a unix domain socket.
+func newTransport(addr string, roundTripper http.RoundTripper) transport {
+	if roundTripper == nil {
+		roundTripper = defaultRoundTripper
+	}
+	return newHTTPTransport(addr, roundTripper)
 }
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultAddress)
+	return newHTTPTransport(defaultAddress, defaultRoundTripper)
 }
 
 type httpTransport struct {
@@ -51,7 +75,7 @@ type httpTransport struct {
 }
 
 // newHTTPTransport returns an httpTransport for the given endpoint
-func newHTTPTransport(addr string) *httpTransport {
+func newHTTPTransport(addr string, roundTripper http.RoundTripper) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
 	defaultHeaders := map[string]string{
 		"Datadog-Meta-Lang":             "go",
@@ -63,22 +87,8 @@ func newHTTPTransport(addr string) *httpTransport {
 	return &httpTransport{
 		traceURL: fmt.Sprintf("http://%s/v0.3/traces", resolveAddr(addr)),
 		client: &http.Client{
-			// We copy the transport to avoid using the default one, as it might be
-			// augmented with tracing and we don't want these calls to be recorded.
-			// See https://golang.org/pkg/net/http/#DefaultTransport .
-			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
-				DialContext: (&net.Dialer{
-					Timeout:   30 * time.Second,
-					KeepAlive: 30 * time.Second,
-					DualStack: true,
-				}).DialContext,
-				MaxIdleConns:          100,
-				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-			},
-			Timeout: defaultHTTPTimeout,
+			Transport: roundTripper,
+			Timeout:   defaultHTTPTimeout,
 		},
 		headers: defaultHeaders,
 	}

@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -33,6 +34,9 @@ type config struct {
 
 	// propagator propagates span context cross-process
 	propagator Propagator
+
+	// httpRoundTripper defines the http.RoundTripper used by the agent transport.
+	httpRoundTripper http.RoundTripper
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -90,6 +94,15 @@ func WithGlobalTag(k string, v interface{}) StartOption {
 func WithSampler(s Sampler) StartOption {
 	return func(c *config) {
 		c.sampler = s
+	}
+}
+
+// WithHTTPRoundTripper allows customizing the underlying HTTP transport for
+// emitting spans. This is useful for advanced customization such as emitting
+// spans to a unix domain socket. The default should be used in most cases.
+func WithHTTPRoundTripper(r http.RoundTripper) StartOption {
+	return func(c *config) {
+		c.httpRoundTripper = r
 	}
 }
 
