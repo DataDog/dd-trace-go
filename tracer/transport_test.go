@@ -83,7 +83,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultHostname, defaultPort)
+		transport := newHTTPTransport(defaultHostname, defaultPort, defaultRoundTripper)
 		response, err := transport.SendTraces(tc.payload)
 		assert.NoError(err)
 		assert.NotNil(response)
@@ -93,7 +93,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 
 func TestAPIDowngrade(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultHostname, defaultPort, defaultRoundTripper)
 	transport.traceURL = "http://localhost:8126/v0.0/traces"
 
 	// if we get a 404 we should downgrade the API
@@ -106,7 +106,7 @@ func TestAPIDowngrade(t *testing.T) {
 
 func TestEncoderDowngrade(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultHostname, defaultPort, defaultRoundTripper)
 	transport.traceURL = "http://localhost:8126/v0.2/traces"
 
 	// if we get a 415 because of a wrong encoder, we should downgrade the encoder
@@ -120,7 +120,7 @@ func TestEncoderDowngrade(t *testing.T) {
 func TestTransportServices(t *testing.T) {
 	assert := assert.New(t)
 
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultHostname, defaultPort, defaultRoundTripper)
 
 	response, err := transport.SendServices(getTestServices())
 	assert.NoError(err)
@@ -131,7 +131,7 @@ func TestTransportServices(t *testing.T) {
 func TestTransportServicesDowngrade_0_0(t *testing.T) {
 	assert := assert.New(t)
 
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultHostname, defaultPort, defaultRoundTripper)
 	transport.serviceURL = "http://localhost:8126/v0.0/services"
 
 	response, err := transport.SendServices(getTestServices())
@@ -143,7 +143,7 @@ func TestTransportServicesDowngrade_0_0(t *testing.T) {
 func TestTransportServicesDowngrade_0_2(t *testing.T) {
 	assert := assert.New(t)
 
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultHostname, defaultPort, defaultRoundTripper)
 	transport.serviceURL = "http://localhost:8126/v0.2/services"
 
 	response, err := transport.SendServices(getTestServices())
@@ -154,7 +154,7 @@ func TestTransportServicesDowngrade_0_2(t *testing.T) {
 
 func TestTransportEncoderPool(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultHostname, defaultPort, defaultRoundTripper)
 
 	// MsgpackEncoder is the default encoder of the pool
 	encoder := transport.getEncoder()
@@ -163,7 +163,7 @@ func TestTransportEncoderPool(t *testing.T) {
 
 func TestTransportSwitchEncoder(t *testing.T) {
 	assert := assert.New(t)
-	transport := newHTTPTransport(defaultHostname, defaultPort)
+	transport := newHTTPTransport(defaultHostname, defaultPort, defaultRoundTripper)
 	transport.changeEncoder(jsonEncoderFactory)
 
 	// MsgpackEncoder is the default encoder of the pool
@@ -191,12 +191,43 @@ func TestTraceCountHeader(t *testing.T) {
 	hostname := hostItems[0]
 	port := hostItems[1]
 	for _, tc := range testCases {
-		transport := newHTTPTransport(hostname, port)
+		transport := newHTTPTransport(hostname, port, defaultRoundTripper)
 		response, err := transport.SendTraces(tc.payload)
 		assert.NoError(err)
 		assert.NotNil(response)
 		assert.Equal(200, response.StatusCode)
 	}
+}
 
-	receiver.Close()
+type recordingRoundTripper struct {
+	requests []*http.Request
+}
+
+func (r *recordingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.requests = append(r.requests, req)
+	return http.DefaultTransport.RoundTrip(req)
+}
+
+func TestCustomHTTPTransport(t *testing.T) {
+	assert := assert.New(t)
+
+	receiver := mockDatadogAPINewServer(t)
+
+	parsedURL, err := url.Parse(receiver.URL)
+	assert.NoError(err)
+	host := parsedURL.Host
+	hostItems := strings.Split(host, ":")
+	assert.Equal(2, len(hostItems), "port should be given, as it's chosen randomly")
+	hostname := hostItems[0]
+	port := hostItems[1]
+
+	customRoundTripper := &recordingRoundTripper{}
+	transport := newHTTPTransport(hostname, port, customRoundTripper)
+	response, err := transport.SendTraces(getTestTrace(1, 1))
+	assert.NoError(err)
+	assert.NotNil(response)
+	assert.Equal(200, response.StatusCode)
+
+	// confirm that our round tripper was used
+	assert.Len(customRoundTripper.requests, 1)
 }

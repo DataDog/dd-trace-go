@@ -1,6 +1,7 @@
 package opentracing
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 )
@@ -33,6 +34,8 @@ type Configuration struct {
 
 	// TextMapPropagator is an injector used for Context propagation.
 	TextMapPropagator Propagator
+
+	HTTPTransport http.RoundTripper
 }
 
 // NewConfiguration creates a `Configuration` object with default values.

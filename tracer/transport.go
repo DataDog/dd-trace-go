@@ -19,6 +19,24 @@ const (
 	traceCountHeader   = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
 )
 
+var (
+	// We create a new transport to avoid using the default one, as it might be
+	// augmented with tracing and we don't want these calls to be recorded.
+	// See https://golang.org/pkg/net/http/#DefaultTransport .
+	defaultRoundTripper = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}).DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+)
+
 // Transport is an interface for span submission to the agent.
 type Transport interface {
 	SendTraces(spans [][]*Span) (*http.Response, error)
@@ -32,20 +50,22 @@ type Transport interface {
 // for hostname, and "8126" for port).
 //
 // In general, using this method is only necessary if you have a trace agent
-// running on a non-default port or if it's located on another machine.
-func NewTransport(hostname, port string) Transport {
+// running on a non-default port, if it's located on another machine, or if
+// you otherwise need to customize the transport layer. If httpTransport is nil,
+// a default will be used.
+func NewTransport(hostname, port string, httpTransport http.RoundTripper) Transport {
 	if hostname == "" {
 		hostname = defaultHostname
 	}
 	if port == "" {
 		port = defaultPort
 	}
-	return newHTTPTransport(hostname, port)
+	return newHTTPTransport(hostname, port, httpTransport)
 }
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() Transport {
-	return newHTTPTransport(defaultHostname, defaultPort)
+	return newHTTPTransport(defaultHostname, defaultPort, defaultRoundTripper)
 }
 
 type httpTransport struct {
@@ -67,7 +87,7 @@ type httpTransport struct {
 }
 
 // newHTTPTransport returns an httpTransport for the given endpoint
-func newHTTPTransport(hostname, port string) *httpTransport {
+func newHTTPTransport(hostname, port string, roundTripper http.RoundTripper) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
 	defaultHeaders := map[string]string{
 		"Datadog-Meta-Lang":             ext.Lang,
@@ -83,22 +103,8 @@ func newHTTPTransport(hostname, port string) *httpTransport {
 		legacyServiceURL: fmt.Sprintf("http://%s:%s/v0.2/services", hostname, port),
 		getEncoder:       msgpackEncoderFactory,
 		client: &http.Client{
-			// We copy the transport to avoid using the default one, as it might be
-			// augmented with tracing and we don't want these calls to be recorded.
-			// See https://golang.org/pkg/net/http/#DefaultTransport .
-			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
-				DialContext: (&net.Dialer{
-					Timeout:   30 * time.Second,
-					KeepAlive: 30 * time.Second,
-					DualStack: true,
-				}).DialContext,
-				MaxIdleConns:          100,
-				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-			},
-			Timeout: defaultHTTPTimeout,
+			Transport: roundTripper,
+			Timeout:   defaultHTTPTimeout,
 		},
 		headers:           defaultHeaders,
 		compatibilityMode: false,

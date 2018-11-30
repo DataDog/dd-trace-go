@@ -160,7 +160,7 @@ func NewTracer(config *Configuration) (ot.Tracer, io.Closer, error) {
 	}
 
 	// configure a Datadog Tracer
-	transport := ddtrace.NewTransport(config.AgentHostname, config.AgentPort)
+	transport := ddtrace.NewTransport(config.AgentHostname, config.AgentPort, config.HTTPTransport)
 	tracer := &Tracer{
 		impl:   ddtrace.NewTracerTransport(transport),
 		config: config,

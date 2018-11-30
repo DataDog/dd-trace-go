@@ -1,6 +1,7 @@
 package opentracing
 
 import (
+	"net/http"
 	"testing"
 
 	ot "github.com/opentracing/opentracing-go"
@@ -17,6 +18,7 @@ func TestConfigurationDefaults(t *testing.T) {
 	assert.Equal("opentracing.test", config.ServiceName)
 	assert.Equal("localhost", config.AgentHostname)
 	assert.Equal("8126", config.AgentPort)
+	assert.Equal(nil, config.HTTPTransport)
 }
 
 func TestConfiguration(t *testing.T) {
@@ -27,6 +29,7 @@ func TestConfiguration(t *testing.T) {
 	config.ServiceName = "api-intake"
 	config.AgentHostname = "ddagent.consul.local"
 	config.AgentPort = "58126"
+	config.HttpTransport = &http.Transport{}
 	tracer, closer, err := NewTracer(config)
 	assert.NotNil(tracer)
 	assert.NotNil(closer)
