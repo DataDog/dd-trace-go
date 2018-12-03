@@ -56,16 +56,16 @@ type transport interface {
 // running on a non-default port, if it's located on another machine, or when
 // otherwise needing to customize the transport layer, for instance when using
 // a unix domain socket.
-func newTransport(addr string, roundTripper http.RoundTripper) transport {
+func newTransport(addr string, roundTripper http.RoundTripper, tls bool) transport {
 	if roundTripper == nil {
 		roundTripper = defaultRoundTripper
 	}
-	return newHTTPTransport(addr, roundTripper)
+	return newHTTPTransport(addr, roundTripper, tls)
 }
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultAddress, defaultRoundTripper)
+	return newHTTPTransport(defaultAddress, defaultRoundTripper, false)
 }
 
 type httpTransport struct {
@@ -75,7 +75,7 @@ type httpTransport struct {
 }
 
 // newHTTPTransport returns an httpTransport for the given endpoint
-func newHTTPTransport(addr string, roundTripper http.RoundTripper) *httpTransport {
+func newHTTPTransport(addr string, roundTripper http.RoundTripper, tls bool) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
 	defaultHeaders := map[string]string{
 		"Datadog-Meta-Lang":             "go",
@@ -84,8 +84,13 @@ func newHTTPTransport(addr string, roundTripper http.RoundTripper) *httpTranspor
 		"Datadog-Meta-Tracer-Version":   tracerVersion,
 		"Content-Type":                  "application/msgpack",
 	}
+
+	scheme := "http"
+	if tls {
+		scheme = "https"
+	}
 	return &httpTransport{
-		traceURL: fmt.Sprintf("http://%s/v0.3/traces", resolveAddr(addr)),
+		traceURL: fmt.Sprintf("%s://%s/v0.3/traces", scheme, resolveAddr(addr)),
 		client: &http.Client{
 			Transport: roundTripper,
 			Timeout:   defaultHTTPTimeout,

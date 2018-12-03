@@ -91,7 +91,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultAddress, defaultRoundTripper)
+		transport := newHTTPTransport(defaultAddress, defaultRoundTripper, false)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		err = transport.send(p)
@@ -145,7 +145,7 @@ func TestTransportResponseError(t *testing.T) {
 	defer ln.Close()
 	addr := ln.Addr().String()
 	log.Println(addr)
-	transport := newHTTPTransport(addr, defaultRoundTripper)
+	transport := newHTTPTransport(addr, defaultRoundTripper, false)
 	err = transport.send(newPayload())
 	want := fmt.Sprintf("%s (Status: Bad Request)", strings.Repeat("X", 1000))
 	assert.Equal(want, err.Error())
@@ -170,7 +170,7 @@ func TestTraceCountHeader(t *testing.T) {
 	assert.Nil(err)
 	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
 	for _, tc := range testCases {
-		transport := newHTTPTransport(host, defaultRoundTripper)
+		transport := newHTTPTransport(host, defaultRoundTripper, false)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		err = transport.send(p)
@@ -203,7 +203,7 @@ func TestCustomTransport(t *testing.T) {
 	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
 
 	customRoundTripper := new(recordingRoundTripper)
-	transport := newHTTPTransport(host, customRoundTripper)
+	transport := newHTTPTransport(host, customRoundTripper, false)
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
 	err = transport.send(p)
@@ -211,4 +211,36 @@ func TestCustomTransport(t *testing.T) {
 
 	// make sure our custom round tripper was used
 	assert.Len(customRoundTripper.reqs, 1)
+}
+
+func TestTLS(t *testing.T) {
+	assert := assert.New(t)
+
+	receiver := mockDatadogAPINewServer(t)
+	defer receiver.Close()
+
+	parsedURL, err := url.Parse(receiver.URL)
+	assert.NoError(err)
+	host := parsedURL.Host
+	_, port, err := net.SplitHostPort(host)
+	assert.Nil(err)
+	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
+
+	customRoundTripper := new(recordingRoundTripper)
+
+	// configure TLS
+	transport := newHTTPTransport(host, customRoundTripper, true)
+	p, err := encode(getTestTrace(1, 1))
+	assert.NoError(err)
+
+	// don't check error, because we don't expect the span to actually be sent
+	// correctly because we configured TLS. We're just going to check that the scheme
+	// was https
+	_ = transport.send(p)
+
+	// make sure our custom round tripper was used
+	assert.Len(customRoundTripper.reqs, 1)
+
+	// make sure the scheme of the request was HTTPS
+	assert.Equal(customRoundTripper.reqs[0].URL.Scheme, "https")
 }

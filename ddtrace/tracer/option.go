@@ -21,7 +21,7 @@ type config struct {
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler Sampler
 
-	// agentAddr specifies the hostname and  of the agent where the traces
+	// agentAddr specifies the hostname and port of the agent where the traces
 	// are sent to.
 	agentAddr string
 
@@ -37,6 +37,11 @@ type config struct {
 
 	// httpRoundTripper defines the http.RoundTripper used by the agent transport.
 	httpRoundTripper http.RoundTripper
+
+	// tls indicates whether TLS should be used to emit data to the agent.
+	// This means using https:// for the scheme of the agent URL (since
+	// agentAddr is only hostname and port
+	tls bool
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -75,6 +80,14 @@ func WithServiceName(name string) StartOption {
 func WithAgentAddr(addr string) StartOption {
 	return func(c *config) {
 		c.agentAddr = addr
+	}
+}
+
+// WithTLS sets the scheme of the agent address to be https. By default,
+// http is used.
+func WithTLS() StartOption {
+	return func(c *config) {
+		c.tls = true
 	}
 }
 
