@@ -14,7 +14,7 @@ import (
 var (
 	// TODO(gbbr): find a more effective way to keep this up to date,
 	// e.g. via `go generate`
-	tracerVersion = "v1.5.0"
+	tracerVersion = "v1.7.0"
 
 	// We copy the transport to avoid using the default one, as it might be
 	// augmented with tracing and we don't want these calls to be recorded.
