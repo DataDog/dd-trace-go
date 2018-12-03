@@ -91,7 +91,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultAddress)
+		transport := newHTTPTransport(defaultAddress, defaultRoundTripper)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		err = transport.send(p)
@@ -145,7 +145,7 @@ func TestTransportResponseError(t *testing.T) {
 	defer ln.Close()
 	addr := ln.Addr().String()
 	log.Println(addr)
-	transport := newHTTPTransport(addr)
+	transport := newHTTPTransport(addr, defaultRoundTripper)
 	err = transport.send(newPayload())
 	want := fmt.Sprintf("%s (Status: Bad Request)", strings.Repeat("X", 1000))
 	assert.Equal(want, err.Error())
@@ -170,7 +170,7 @@ func TestTraceCountHeader(t *testing.T) {
 	assert.Nil(err)
 	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
 	for _, tc := range testCases {
-		transport := newHTTPTransport(host)
+		transport := newHTTPTransport(host, defaultRoundTripper)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		err = transport.send(p)
@@ -178,4 +178,37 @@ func TestTraceCountHeader(t *testing.T) {
 	}
 
 	receiver.Close()
+}
+
+type recordingRoundTripper struct {
+	reqs []*http.Request
+}
+
+func (r *recordingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.reqs = append(r.reqs, req)
+	return defaultRoundTripper.RoundTrip(req)
+}
+
+func TestCustomTransport(t *testing.T) {
+	assert := assert.New(t)
+
+	receiver := mockDatadogAPINewServer(t)
+	defer receiver.Close()
+
+	parsedURL, err := url.Parse(receiver.URL)
+	assert.NoError(err)
+	host := parsedURL.Host
+	_, port, err := net.SplitHostPort(host)
+	assert.Nil(err)
+	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
+
+	customRoundTripper := new(recordingRoundTripper)
+	transport := newHTTPTransport(host, customRoundTripper)
+	p, err := encode(getTestTrace(1, 1))
+	assert.NoError(err)
+	err = transport.send(p)
+	assert.NoError(err)
+
+	// make sure our custom round tripper was used
+	assert.Len(customRoundTripper.reqs, 1)
 }

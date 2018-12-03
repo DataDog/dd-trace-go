@@ -19,6 +19,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	assert.Equal(float64(1), c.sampler.(RateSampler).Rate())
 	assert.Equal("tracer.test", c.serviceName)
 	assert.Equal("localhost:8126", c.agentAddr)
+	assert.Equal(nil, c.httpRoundTripper)
 }
 
 func TestTracerOptions(t *testing.T) {

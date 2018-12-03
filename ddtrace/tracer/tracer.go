@@ -112,7 +112,7 @@ func newTracer(opts ...StartOption) *tracer {
 		fn(c)
 	}
 	if c.transport == nil {
-		c.transport = newTransport(c.agentAddr)
+		c.transport = newTransport(c.agentAddr, c.httpRoundTripper)
 	}
 	if c.propagator == nil {
 		c.propagator = NewPropagator(nil)
