@@ -258,6 +258,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		span.SetTag(ext.Pid, strconv.Itoa(os.Getpid()))
 		t.sample(span)
 	}
+	if span.context.sampled {
+		span.SetTag(ext.SamplingPriority, ext.PriorityAutoKeep)
+	}
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
