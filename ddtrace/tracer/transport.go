@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -41,9 +42,11 @@ const (
 	traceCountHeader   = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
 )
 
-// Transport is an interface for span submission to the agent.
+// transport is an interface for span submission to the agent.
 type transport interface {
-	send(p *payload) error
+	// send sends the payload p to the agent using the transport set up.
+	// It returns a non-nil response body when no error occurred.
+	send(p *payload) (body io.ReadCloser, err error)
 }
 
 // newTransport returns a new Transport implementation that sends traces to a
@@ -85,7 +88,7 @@ func newHTTPTransport(addr string, roundTripper http.RoundTripper) *httpTranspor
 		"Content-Type":                  "application/msgpack",
 	}
 	return &httpTransport{
-		traceURL: fmt.Sprintf("http://%s/v0.3/traces", resolveAddr(addr)),
+		traceURL: fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(addr)),
 		client: &http.Client{
 			Transport: roundTripper,
 			Timeout:   defaultHTTPTimeout,
@@ -94,11 +97,11 @@ func newHTTPTransport(addr string, roundTripper http.RoundTripper) *httpTranspor
 	}
 }
 
-func (t *httpTransport) send(p *payload) error {
+func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	// prepare the client and send the payload
 	req, err := http.NewRequest("POST", t.traceURL, p)
 	if err != nil {
-		return fmt.Errorf("cannot create http request: %v", err)
+		return nil, fmt.Errorf("cannot create http request: %v", err)
 	}
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
@@ -107,21 +110,21 @@ func (t *httpTransport) send(p *payload) error {
 	req.Header.Set("Content-Length", strconv.Itoa(p.size()))
 	response, err := t.client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer response.Body.Close()
 	if code := response.StatusCode; code >= 400 {
 		// error, check the body for context information and
 		// return a nice error.
 		msg := make([]byte, 1000)
 		n, _ := response.Body.Read(msg)
+		response.Body.Close()
 		txt := http.StatusText(code)
 		if n > 0 {
-			return fmt.Errorf("%s (Status: %s)", msg[:n], txt)
+			return nil, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
 		}
-		return fmt.Errorf("%s", txt)
+		return nil, fmt.Errorf("%s", txt)
 	}
-	return nil
+	return response.Body, nil
 }
 
 // resolveAddr resolves the given agent address and fills in any missing host

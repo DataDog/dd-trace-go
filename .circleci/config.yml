@@ -49,22 +49,22 @@ jobs:
 
     - restore_cache:
         keys:
-        - v1-librdkafka-v0.11.5
+        - v1-librdkafka-v1.0.0-RC4
     - run:
         name: Install rdkafka
         command: |
-          if [ ! -d /tmp/librdkafka-v0.11.5 ] ; then
+          if [ ! -d /tmp/librdkafka-v1.0.0-RC4 ] ; then
             echo "building librdkafka"
-            git clone --branch v0.11.5 https://github.com/edenhill/librdkafka.git /tmp/librdkafka-v0.11.5
-            (cd /tmp/librdkafka-v0.11.5 && ./configure && make)
+            git clone --branch v1.0.0-RC4 https://github.com/edenhill/librdkafka.git /tmp/librdkafka-v1.0.0-RC4
+            (cd /tmp/librdkafka-v1.0.0-RC4 && ./configure && make)
           fi
           echo "installing librdkafka"
-          (cd /tmp/librdkafka-v0.11.5 && sudo make install)
+          (cd /tmp/librdkafka-v1.0.0-RC4 && sudo make install)
           sudo ldconfig
     - save_cache:
-        key: v1-librdkafka-v0.11.5
+        key: v1-librdkafka-v1.0.0-RC4
         paths:
-        - /tmp/librdkafka-v0.11.5
+        - /tmp/librdkafka-v1.0.0-RC4
 
     - run:
         name: Vendor gRPC v1.2.0

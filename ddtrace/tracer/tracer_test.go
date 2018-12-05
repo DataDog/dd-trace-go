@@ -2,6 +2,9 @@ package tracer
 
 import (
 	"fmt"
+	"io"
+	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -17,6 +20,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
 )
+
+func (t *tracer) newEnvSpan(service, env string) *span {
+	return t.StartSpan("test.op", SpanType("test"), ServiceName(service), ResourceName("/"), Tag(ext.Environment, env)).(*span)
+}
 
 func (t *tracer) newRootSpan(name, service, resource string) *span {
 	return t.StartSpan(name, SpanType("test"), ServiceName(service), ResourceName(resource)).(*span)
@@ -360,6 +367,54 @@ func TestTracerSampler(t *testing.T) {
 	// only run test if span was sampled to avoid flaky tests
 	_, ok := span.Metrics[sampleRateMetricKey]
 	assert.True(ok)
+}
+
+func TestTracerPrioritySampler(t *testing.T) {
+	assert := assert.New(t)
+	ln, err := net.Listen("tcp4", ":0")
+	assert.Nil(err)
+	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{
+			"rate_by_service":{
+				"service:,env:":0.1,
+				"service:my-service,env:":0.2,
+				"service:my-service,env:default":0.2,
+				"service:my-service,env:other":0.3
+			}
+		}`))
+	}))
+	defer ln.Close()
+	addr := ln.Addr().String()
+
+	tr, _, stop := startTestTracer(
+		withTransport(newHTTPTransport(addr, defaultRoundTripper)),
+		WithPrioritySampling(),
+	)
+	defer stop()
+
+	s := tr.newEnvSpan("pylons", "")
+	assert.Equal(1., s.Metrics[samplingPriorityRateKey])
+	assert.Equal(1., s.Metrics[samplingPriorityKey])
+	s.Finish()
+
+	tr.forceFlush()
+
+	s = tr.newEnvSpan("pylons", "")
+	assert.Equal(0.1, s.Metrics[samplingPriorityRateKey])
+	assert.Contains([]float64{0, 1}, s.Metrics[samplingPriorityKey])
+
+	s = tr.newEnvSpan("my-service", "")
+	assert.Equal(0.2, s.Metrics[samplingPriorityRateKey])
+	assert.Contains([]float64{0, 1}, s.Metrics[samplingPriorityKey])
+
+	s = tr.newEnvSpan("my-service", "default")
+	assert.Equal(0.2, s.Metrics[samplingPriorityRateKey])
+	assert.Contains([]float64{0, 1}, s.Metrics[samplingPriorityKey])
+
+	s = tr.newEnvSpan("my-service", "other")
+	assert.Equal(0.3, s.Metrics[samplingPriorityRateKey])
+	assert.Contains([]float64{0, 1}, s.Metrics[samplingPriorityKey])
 }
 
 func TestTracerEdgeSampler(t *testing.T) {
@@ -834,15 +889,16 @@ func newDummyTransport() *dummyTransport {
 	return &dummyTransport{traces: spanLists{}}
 }
 
-func (t *dummyTransport) send(p *payload) error {
+func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
 	traces, err := decode(p)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	t.Lock()
 	t.traces = append(t.traces, traces...)
 	t.Unlock()
-	return nil
+	ok := ioutil.NopCloser(strings.NewReader("OK"))
+	return ok, nil
 }
 
 func decode(p *payload) (spanLists, error) {
