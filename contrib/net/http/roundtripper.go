@@ -1,7 +1,6 @@
 package http
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -38,7 +37,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
 	if err != nil {
 		// this should never happen
-		fmt.Fprintf(os.Stderr, "failed to inject http headers for round tripper: %v\n", err)
+		fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", err)
 	}
 	res, err = rt.base.RoundTrip(req.WithContext(ctx))
 	if err != nil {
@@ -48,7 +47,6 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		// treat 5XX as errors
 		if res.StatusCode/100 == 5 {
 			span.SetTag("http.errors", res.Status)
-			err = errors.New(res.Status)
 		}
 	}
 	return res, err
