@@ -2,7 +2,7 @@ package tracer
 
 import (
 	"fmt"
-	"log"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -94,7 +94,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 		transport := newHTTPTransport(defaultAddress, defaultRoundTripper)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
-		err = transport.send(p)
+		_, err = transport.send(p)
 		assert.NoError(err)
 	}
 }
@@ -134,21 +134,45 @@ func TestResolveAddr(t *testing.T) {
 	}
 }
 
-func TestTransportResponseError(t *testing.T) {
-	assert := assert.New(t)
-	ln, err := net.Listen("tcp4", ":0")
-	assert.Nil(err)
-	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(strings.Repeat("X", 1002)))
-	}))
-	defer ln.Close()
-	addr := ln.Addr().String()
-	log.Println(addr)
-	transport := newHTTPTransport(addr, defaultRoundTripper)
-	err = transport.send(newPayload())
-	want := fmt.Sprintf("%s (Status: Bad Request)", strings.Repeat("X", 1000))
-	assert.Equal(want, err.Error())
+func TestTransportResponse(t *testing.T) {
+	for name, tt := range map[string]struct {
+		status int
+		body   string
+		err    string
+	}{
+		"ok": {
+			status: http.StatusOK,
+			body:   "Hello world!",
+		},
+		"bad": {
+			status: http.StatusBadRequest,
+			body:   strings.Repeat("X", 1002),
+			err:    fmt.Sprintf("%s (Status: Bad Request)", strings.Repeat("X", 1000)),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			ln, err := net.Listen("tcp4", ":0")
+			assert.Nil(err)
+			go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				w.Write([]byte(tt.body))
+			}))
+			defer ln.Close()
+			addr := ln.Addr().String()
+			transport := newHTTPTransport(addr, defaultRoundTripper)
+			rc, err := transport.send(newPayload())
+			if tt.err != "" {
+				assert.Equal(tt.err, err.Error())
+				return
+			}
+			assert.NoError(err)
+			slurp, err := ioutil.ReadAll(rc)
+			rc.Close()
+			assert.NoError(err)
+			assert.Equal(tt.body, string(slurp))
+		})
+	}
 }
 
 func TestTraceCountHeader(t *testing.T) {
@@ -173,7 +197,7 @@ func TestTraceCountHeader(t *testing.T) {
 		transport := newHTTPTransport(host, defaultRoundTripper)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
-		err = transport.send(p)
+		_, err = transport.send(p)
 		assert.NoError(err)
 	}
 
@@ -206,7 +230,7 @@ func TestCustomTransport(t *testing.T) {
 	transport := newHTTPTransport(host, customRoundTripper)
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
-	err = transport.send(p)
+	_, err = transport.send(p)
 	assert.NoError(err)
 
 	// make sure our custom round tripper was used

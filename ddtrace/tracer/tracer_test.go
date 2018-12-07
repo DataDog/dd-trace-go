@@ -2,7 +2,10 @@ package tracer
 
 import (
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
@@ -17,6 +20,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
 )
+
+func (t *tracer) newEnvSpan(service, env string) *span {
+	return t.StartSpan("test.op", SpanType("test"), ServiceName(service), ResourceName("/"), Tag(ext.Environment, env)).(*span)
+}
 
 func (t *tracer) newRootSpan(name, service, resource string) *span {
 	return t.StartSpan(name, SpanType("test"), ServiceName(service), ResourceName(resource)).(*span)
@@ -360,6 +367,75 @@ func TestTracerSampler(t *testing.T) {
 	// only run test if span was sampled to avoid flaky tests
 	_, ok := span.Metrics[sampleRateMetricKey]
 	assert.True(ok)
+}
+
+func TestTracerPrioritySampler(t *testing.T) {
+	assert := assert.New(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{
+			"rate_by_service":{
+				"service:,env:":0.1,
+				"service:my-service,env:":0.2,
+				"service:my-service,env:default":0.2,
+				"service:my-service,env:other":0.3
+			}
+		}`))
+	}))
+	addr := srv.Listener.Addr().String()
+
+	tr, _, stop := startTestTracer(
+		withTransport(newHTTPTransport(addr, defaultRoundTripper)),
+		WithPrioritySampling(),
+	)
+	defer stop()
+
+	// default rates (1.0)
+	s := tr.newEnvSpan("pylons", "")
+	assert.Equal(1., s.Metrics[samplingPriorityRateKey])
+	assert.Equal(1., s.Metrics[samplingPriorityKey])
+	assert.True(s.context.hasSamplingPriority())
+	assert.EqualValues(s.context.samplingPriority(), s.Metrics[samplingPriorityKey])
+	s.Finish()
+
+	tr.forceFlush() // obtain new rates
+
+	for i, tt := range []struct {
+		service, env string
+		rate         float64
+	}{
+		{
+			service: "pylons",
+			rate:    0.1,
+		},
+		{
+			service: "my-service",
+			rate:    0.2,
+		},
+		{
+			service: "my-service",
+			env:     "default",
+			rate:    0.2,
+		},
+		{
+			service: "my-service",
+			env:     "other",
+			rate:    0.3,
+		},
+	} {
+		s := tr.newEnvSpan(tt.service, tt.env)
+		assert.Equal(tt.rate, s.Metrics[samplingPriorityRateKey], strconv.Itoa(i))
+		prio, ok := s.Metrics[samplingPriorityKey]
+		assert.True(ok)
+		assert.Contains([]float64{0, 1}, prio)
+		assert.True(s.context.hasSamplingPriority())
+		assert.EqualValues(s.context.samplingPriority(), prio)
+
+		// injectable
+		h := make(http.Header)
+		tr.Inject(s.Context(), HTTPHeadersCarrier(h))
+		assert.Equal(strconv.Itoa(int(prio)), h.Get(DefaultPriorityHeader))
+	}
 }
 
 func TestTracerEdgeSampler(t *testing.T) {
@@ -834,15 +910,16 @@ func newDummyTransport() *dummyTransport {
 	return &dummyTransport{traces: spanLists{}}
 }
 
-func (t *dummyTransport) send(p *payload) error {
+func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
 	traces, err := decode(p)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	t.Lock()
 	t.traces = append(t.traces, traces...)
 	t.Unlock()
-	return nil
+	ok := ioutil.NopCloser(strings.NewReader("OK"))
+	return ok, nil
 }
 
 func decode(p *payload) (spanLists, error) {
