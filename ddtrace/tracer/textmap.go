@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 // HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader, allowing
@@ -180,6 +181,9 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 				return ErrSpanContextCorrupted
 			}
 			ctx.hasPriority = true
+			if ctx.priority == ext.PriorityAutoKeep || ctx.priority == ext.PriorityUserKeep {
+				ctx.sampled = true
+			}
 		default:
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
