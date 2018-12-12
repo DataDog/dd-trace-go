@@ -357,12 +357,24 @@ const sampleRateMetricKey = "_sample_rate"
 
 // Sample samples a span with the internal sampler.
 func (t *tracer) sample(span *span) {
+	// Apply priority sampling
+	if t.config.prioritySampling != nil {
+		// Only apply if a priority hasn't been set yet.
+		// It may have been set by tags during initialization.
+		if !span.context.hasPriority {
+			t.config.prioritySampling.apply(span)
+		}
+		return
+	}
+
+	// TODO: Decide if this code and related tests should be removed.
 	sampler := t.config.sampler
 	sampled := sampler.Sample(span)
 	span.context.sampled = sampled
 	if !sampled {
 		return
 	}
+
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
 		// the span was sampled using a rate sampler which wasn't all permissive,
 		// so we make note of the sampling rate.
@@ -373,8 +385,5 @@ func (t *tracer) sample(span *span) {
 			return
 		}
 		span.Metrics[sampleRateMetricKey] = rs.Rate()
-	}
-	if t.config.prioritySampling != nil {
-		t.config.prioritySampling.apply(span)
 	}
 }

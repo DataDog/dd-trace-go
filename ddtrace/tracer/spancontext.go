@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
@@ -87,6 +88,11 @@ func (c *spanContext) setSamplingPriority(p int) {
 	defer c.mu.Unlock()
 	c.priority = p
 	c.hasPriority = true
+	if p == ext.PriorityAutoKeep || p == ext.PriorityUserKeep {
+		c.sampled = true
+	} else {
+		c.sampled = false
+	}
 }
 
 func (c *spanContext) samplingPriority() int {

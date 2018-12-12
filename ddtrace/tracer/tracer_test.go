@@ -54,9 +54,9 @@ func TestTracerCleanStop(t *testing.T) {
 			for i := 0; i < n; i++ {
 				span := StartSpan("test.span")
 				child := StartSpan("child.span", ChildOf(span.Context()))
-				time.Sleep(time.Millisecond)
+				time.Sleep(time.Microsecond)
 				child.Finish()
-				time.Sleep(time.Millisecond)
+				time.Sleep(time.Microsecond)
 				span.Finish()
 			}
 		}()
@@ -67,7 +67,7 @@ func TestTracerCleanStop(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
 			Start(withTransport(transport))
-			time.Sleep(time.Millisecond)
+			time.Sleep(time.Microsecond)
 			Start(withTransport(transport))
 			Start(withTransport(transport))
 		}
@@ -80,7 +80,7 @@ func TestTracerCleanStop(t *testing.T) {
 			Stop()
 			Stop()
 			Stop()
-			time.Sleep(time.Millisecond)
+			time.Sleep(time.Microsecond)
 			Stop()
 			Stop()
 			Stop()
@@ -358,6 +358,8 @@ func TestTracerSampler(t *testing.T) {
 		withTransport(newDefaultTransport()),
 		WithSampler(sampler),
 	)
+	// override the default (priority sampling) within this test
+	tracer.config.prioritySampling = nil
 
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -446,12 +448,15 @@ func TestTracerEdgeSampler(t *testing.T) {
 		withTransport(newDefaultTransport()),
 		WithSampler(NewRateSampler(0)),
 	)
+	// avoid using priority sampling for this test
+	tracer0.config.prioritySampling = nil
 	defer stop()
 	// a sample rate of 1 should sample everything
 	tracer1, _, stop := startTestTracer(
 		withTransport(newDefaultTransport()),
 		WithSampler(NewRateSampler(1)),
 	)
+	tracer1.config.prioritySampling = nil
 	defer stop()
 
 	count := payloadQueueSize / 3

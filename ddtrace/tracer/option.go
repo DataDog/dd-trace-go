@@ -50,15 +50,17 @@ func defaults(c *config) {
 	c.serviceName = filepath.Base(os.Args[0])
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
+	c.prioritySampling = newPrioritySampler()
 }
 
-// WithPrioritySampling enables priority sampling on the active tracer instance. When using
-// distributed tracing, this option must be enabled in order to get all the parts of a distributed
-// trace sampled. To learn more about priority sampling, please visit:
+// WithPrioritySampling is deprecated, and priority sampling is enabled by default.
+// When using distributed tracing, the priority sampling value is propagated in order to
+// get all the parts of a distributed trace sampled.
+// To learn more about priority sampling, please visit:
 // https://docs.datadoghq.com/tracing/getting_further/trace_sampling_and_storage/#priority-sampling-for-distributed-tracing
 func WithPrioritySampling() StartOption {
 	return func(c *config) {
-		c.prioritySampling = newPrioritySampler()
+		// This is now enabled by default.
 	}
 }
 
