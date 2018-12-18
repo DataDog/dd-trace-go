@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/mongodb/mongo-go-driver/bson"
-	"github.com/mongodb/mongo-go-driver/core/result"
-	"github.com/mongodb/mongo-go-driver/core/wiremessage"
 	"github.com/mongodb/mongo-go-driver/mongo"
-	"github.com/mongodb/mongo-go-driver/mongo/clientopt"
+	"github.com/mongodb/mongo-go-driver/mongo/options"
+	"github.com/mongodb/mongo-go-driver/x/network/result"
+	"github.com/mongodb/mongo-go-driver/x/network/wiremessage"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -36,8 +36,10 @@ func Test(t *testing.T) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "mongodb-test")
 
 	addr := fmt.Sprintf("mongodb://%s", li.Addr().String())
-
-	client, err := mongo.Connect(ctx, addr, clientopt.Single(true), clientopt.Monitor(NewMonitor()))
+	clientOptions := options.Client()
+	clientOptions.SetMonitor(NewMonitor())
+	clientOptions.SetSingle(true)
+	client, err := mongo.Connect(ctx, addr, clientOptions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,9 +47,7 @@ func Test(t *testing.T) {
 	client.
 		Database("test-database").
 		Collection("test-collection").
-		InsertOne(ctx, bson.NewDocument(
-			bson.EC.String("test-item", "test-value"),
-		))
+		InsertOne(ctx, bson.D{{Key: "test-item", Value: "test-value"}})
 
 	span.Finish()
 
@@ -60,7 +60,7 @@ func Test(t *testing.T) {
 	assert.Equal(t, "mongo.insert", s.Tag(ext.ResourceName))
 	assert.Equal(t, hostname, s.Tag(ext.PeerHostname))
 	assert.Equal(t, port, s.Tag(ext.PeerPort))
-	assert.Contains(t, s.Tag(ext.DBStatement), `{"insert":"test-collection","$db":"test-database","documents":[{"test-item":"test-value","_id":{"`)
+	assert.Contains(t, s.Tag(ext.DBStatement), `{"insert":"test-collection","ordered":true,"$db":"test-database","documents":[{"test-item":"test-value","_id":{"`)
 	assert.Equal(t, "test-database", s.Tag(ext.DBInstance))
 	assert.Equal(t, "mongo", s.Tag(ext.DBType))
 }
@@ -134,7 +134,7 @@ func mockMongo() (net.Listener, error) {
 							},
 							ResponseFlags:  wiremessage.AwaitCapable,
 							NumberReturned: 1,
-							Documents:      []bson.Reader{bs},
+							Documents:      []bson.Raw{bs},
 						}
 						bs, err = reply.MarshalWireMessage()
 						if err != nil {
@@ -152,11 +152,8 @@ func mockMongo() (net.Listener, error) {
 						if err != nil {
 							panic(err)
 						}
-
-						bs, _ := bson.NewDocument(
-							bson.EC.Int32("n", 1),
-							bson.EC.Int32("ok", 1),
-						).MarshalBSON()
+						d := bson.D{{Key: "n", Value: 1}, {Key: "ok", Value: 1}}
+						bs, _ := bson.Marshal(d)
 
 						bs, _ = wiremessage.Msg{
 							MsgHeader: wiremessage.Header{
