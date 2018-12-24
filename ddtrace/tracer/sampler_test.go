@@ -164,7 +164,7 @@ func TestRateSampler(t *testing.T) {
 	assert.True(NewRateSampler(1).Sample(newBasicSpan("test")))
 	assert.False(NewRateSampler(0).Sample(newBasicSpan("test")))
 	assert.False(NewRateSampler(0).Sample(newBasicSpan("test")))
-	assert.False(NewRateSampler(1).Sample(internal.NoopSpan{}))
+	assert.False(NewRateSampler(0.99).Sample(internal.NoopSpan{}))
 }
 
 func TestRateSamplerSetting(t *testing.T) {
