@@ -153,14 +153,26 @@ func TestTracerStart(t *testing.T) {
 }
 
 func TestTracerStartSpan(t *testing.T) {
-	tracer := newTracer()
-	span := tracer.StartSpan("web.request").(*span)
-	assert := assert.New(t)
-	assert.NotEqual(uint64(0), span.TraceID)
-	assert.NotEqual(uint64(0), span.SpanID)
-	assert.Equal(uint64(0), span.ParentID)
-	assert.Equal("web.request", span.Name)
-	assert.Equal("tracer.test", span.Service)
+	t.Run("generic", func(t *testing.T) {
+		tracer := newTracer()
+		span := tracer.StartSpan("web.request").(*span)
+		assert := assert.New(t)
+		assert.NotEqual(uint64(0), span.TraceID)
+		assert.NotEqual(uint64(0), span.SpanID)
+		assert.Equal(uint64(0), span.ParentID)
+		assert.Equal("web.request", span.Name)
+		assert.Equal("tracer.test", span.Service)
+		assert.Contains([]float64{
+			ext.PriorityAutoReject,
+			ext.PriorityAutoKeep,
+		}, span.Metrics[samplingPriorityKey])
+	})
+
+	t.Run("priority", func(t *testing.T) {
+		tracer := newTracer()
+		span := tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep)).(*span)
+		assert.Equal(t, float64(ext.PriorityUserKeep), span.Metrics[samplingPriorityKey])
+	})
 }
 
 func TestTracerStartSpanOptions(t *testing.T) {
