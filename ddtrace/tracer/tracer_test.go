@@ -54,9 +54,9 @@ func TestTracerCleanStop(t *testing.T) {
 			for i := 0; i < n; i++ {
 				span := StartSpan("test.span")
 				child := StartSpan("child.span", ChildOf(span.Context()))
-				time.Sleep(time.Microsecond)
+				time.Sleep(time.Millisecond)
 				child.Finish()
-				time.Sleep(time.Microsecond)
+				time.Sleep(time.Millisecond)
 				span.Finish()
 			}
 		}()
@@ -67,7 +67,7 @@ func TestTracerCleanStop(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
 			Start(withTransport(transport))
-			time.Sleep(time.Microsecond)
+			time.Sleep(time.Millisecond)
 			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
 			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
 		}
@@ -80,7 +80,7 @@ func TestTracerCleanStop(t *testing.T) {
 			Stop()
 			Stop()
 			Stop()
-			time.Sleep(time.Microsecond)
+			time.Sleep(time.Millisecond)
 			Stop()
 			Stop()
 			Stop()

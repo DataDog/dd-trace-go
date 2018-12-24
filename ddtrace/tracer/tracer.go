@@ -363,7 +363,7 @@ const sampleRateMetricKey = "_sample_rate"
 func (t *tracer) sample(span *span) {
 	sampler := t.config.sampler
 	sampled := sampler.Sample(span)
-	span.context.sampled = sampled
+	span.context.drop = !sampled
 	if !sampled {
 		return
 	}

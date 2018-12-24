@@ -194,15 +194,14 @@ func TestSpanContextParent(t *testing.T) {
 	}
 	for name, parentCtx := range map[string]*spanContext{
 		"basic": &spanContext{
-			sampled: false,
 			baggage: map[string]string{"A": "A", "B": "B"},
 			trace:   newTrace(),
+			drop:    true,
 		},
 		"nil-trace": &spanContext{
-			sampled: false,
+			drop: true,
 		},
 		"priority": &spanContext{
-			sampled:     true,
 			baggage:     map[string]string{"A": "A", "B": "B"},
 			trace:       &trace{spans: []*span{newBasicSpan("abc")}},
 			hasPriority: true,
@@ -221,7 +220,7 @@ func TestSpanContextParent(t *testing.T) {
 			assert.Contains(ctx.trace.spans, s)
 			assert.Equal(ctx.hasPriority, parentCtx.hasPriority)
 			assert.Equal(ctx.priority, parentCtx.priority)
-			assert.Equal(ctx.sampled, parentCtx.sampled)
+			assert.Equal(ctx.drop, parentCtx.drop)
 			assert.Equal(ctx.baggage, parentCtx.baggage)
 		})
 	}

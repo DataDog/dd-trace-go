@@ -201,8 +201,8 @@ func (s *span) finish(finishTime int64) {
 	}
 	s.finished = true
 
-	if !s.context.sampled {
-		// not sampled
+	if s.context.drop {
+		// not sampled by local sampler
 		return
 	}
 	s.context.finish()

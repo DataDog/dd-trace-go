@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
@@ -17,9 +16,9 @@ var _ ddtrace.SpanContext = (*spanContext)(nil)
 type spanContext struct {
 	// the below group should propagate only locally
 
-	trace   *trace // reference to the trace that this span belongs too
-	span    *span  // reference to the span that hosts this context
-	sampled bool   // whether this span will be sampled or not
+	trace *trace // reference to the trace that this span belongs too
+	span  *span  // reference to the span that hosts this context
+	drop  bool   // when true, the span will not be sent to the agent
 
 	// the below group should propagate cross-process
 
@@ -41,7 +40,6 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	context := &spanContext{
 		traceID: span.TraceID,
 		spanID:  span.SpanID,
-		sampled: true,
 		span:    span,
 	}
 	if v, ok := span.Metrics[samplingPriorityKey]; ok {
@@ -50,7 +48,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	}
 	if parent != nil {
 		context.trace = parent.trace
-		context.sampled = parent.sampled
+		context.drop = parent.drop
 		context.hasPriority = parent.hasSamplingPriority()
 		context.priority = parent.samplingPriority()
 		parent.ForeachBaggageItem(func(k, v string) bool {
@@ -88,7 +86,6 @@ func (c *spanContext) setSamplingPriority(p int) {
 	defer c.mu.Unlock()
 	c.priority = p
 	c.hasPriority = true
-	c.sampled = p == ext.PriorityAutoKeep || p == ext.PriorityUserKeep
 }
 
 func (c *spanContext) samplingPriority() int {
