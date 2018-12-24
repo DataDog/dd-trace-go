@@ -21,9 +21,6 @@ type config struct {
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler Sampler
 
-	// prioritySampling will be non-nil when priority sampling is enabled.
-	prioritySampling *prioritySampler
-
 	// agentAddr specifies the hostname and  of the agent where the traces
 	// are sent to.
 	agentAddr string
@@ -52,13 +49,14 @@ func defaults(c *config) {
 	c.agentAddr = defaultAddress
 }
 
-// WithPrioritySampling enables priority sampling on the active tracer instance. When using
-// distributed tracing, this option must be enabled in order to get all the parts of a distributed
-// trace sampled. To learn more about priority sampling, please visit:
+// WithPrioritySampling is deprecated, and priority sampling is enabled by default.
+// When using distributed tracing, the priority sampling value is propagated in order to
+// get all the parts of a distributed trace sampled.
+// To learn more about priority sampling, please visit:
 // https://docs.datadoghq.com/tracing/getting_further/trace_sampling_and_storage/#priority-sampling-for-distributed-tracing
 func WithPrioritySampling() StartOption {
 	return func(c *config) {
-		c.prioritySampling = newPrioritySampler()
+		// This is now enabled by default.
 	}
 }
 

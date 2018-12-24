@@ -164,20 +164,7 @@ func TestRateSampler(t *testing.T) {
 	assert.True(NewRateSampler(1).Sample(newBasicSpan("test")))
 	assert.False(NewRateSampler(0).Sample(newBasicSpan("test")))
 	assert.False(NewRateSampler(0).Sample(newBasicSpan("test")))
-	assert.False(NewRateSampler(1).Sample(internal.NoopSpan{}))
-}
-
-func TestRateSamplerFinishedSpan(t *testing.T) {
-	rs := NewRateSampler(0.9999)
-	tracer := newTracer(WithSampler(rs)) // high probability of sampling
-	span := newBasicSpan("test")
-	span.finished = true
-	tracer.sample(span)
-	if !rs.Sample(span) {
-		t.Skip("wasn't sampled") // no flaky tests
-	}
-	_, ok := span.Metrics[sampleRateMetricKey]
-	assert.False(t, ok)
+	assert.False(NewRateSampler(0.99).Sample(internal.NoopSpan{}))
 }
 
 func TestRateSamplerSetting(t *testing.T) {

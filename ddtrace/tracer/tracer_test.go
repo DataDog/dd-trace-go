@@ -68,8 +68,8 @@ func TestTracerCleanStop(t *testing.T) {
 		for i := 0; i < n; i++ {
 			Start(withTransport(transport))
 			time.Sleep(time.Millisecond)
-			Start(withTransport(transport))
-			Start(withTransport(transport))
+			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
 		}
 	}()
 
@@ -153,14 +153,26 @@ func TestTracerStart(t *testing.T) {
 }
 
 func TestTracerStartSpan(t *testing.T) {
-	tracer := newTracer()
-	span := tracer.StartSpan("web.request").(*span)
-	assert := assert.New(t)
-	assert.NotEqual(uint64(0), span.TraceID)
-	assert.NotEqual(uint64(0), span.SpanID)
-	assert.Equal(uint64(0), span.ParentID)
-	assert.Equal("web.request", span.Name)
-	assert.Equal("tracer.test", span.Service)
+	t.Run("generic", func(t *testing.T) {
+		tracer := newTracer()
+		span := tracer.StartSpan("web.request").(*span)
+		assert := assert.New(t)
+		assert.NotEqual(uint64(0), span.TraceID)
+		assert.NotEqual(uint64(0), span.SpanID)
+		assert.Equal(uint64(0), span.ParentID)
+		assert.Equal("web.request", span.Name)
+		assert.Equal("tracer.test", span.Service)
+		assert.Contains([]float64{
+			ext.PriorityAutoReject,
+			ext.PriorityAutoKeep,
+		}, span.Metrics[samplingPriorityKey])
+	})
+
+	t.Run("priority", func(t *testing.T) {
+		tracer := newTracer()
+		span := tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep)).(*span)
+		assert.Equal(t, float64(ext.PriorityUserKeep), span.Metrics[samplingPriorityKey])
+	})
 }
 
 func TestTracerStartSpanOptions(t *testing.T) {
@@ -386,7 +398,6 @@ func TestTracerPrioritySampler(t *testing.T) {
 
 	tr, _, stop := startTestTracer(
 		withTransport(newHTTPTransport(addr, defaultRoundTripper)),
-		WithPrioritySampling(),
 	)
 	defer stop()
 
@@ -856,6 +867,46 @@ func TestPushErr(t *testing.T) {
 	// if we reach this, means pushError is not blocking, which is what we want to double-check
 }
 
+func TestTracerFlush(t *testing.T) {
+	// https://github.com/DataDog/dd-trace-go/issues/377
+	tracer, transport, stop := startTestTracer()
+	defer stop()
+
+	t.Run("direct", func(t *testing.T) {
+		defer transport.Reset()
+		assert := assert.New(t)
+		root := tracer.StartSpan("root")
+		tracer.StartSpan("child.direct", ChildOf(root.Context())).Finish()
+		root.Finish()
+		tracer.forceFlush()
+
+		list := transport.Traces()
+		assert.Len(list, 1)
+		assert.Len(list[0], 2)
+		assert.Equal("child.direct", list[0][1].Name)
+	})
+
+	t.Run("extracted", func(t *testing.T) {
+		defer transport.Reset()
+		assert := assert.New(t)
+		root := tracer.StartSpan("root")
+		h := HTTPHeadersCarrier(http.Header{})
+		if err := tracer.Inject(root.Context(), h); err != nil {
+			t.Fatal(err)
+		}
+		sctx, err := tracer.Extract(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tracer.StartSpan("child.extracted", ChildOf(sctx)).Finish()
+		tracer.forceFlush()
+		list := transport.Traces()
+		assert.Len(list, 1)
+		assert.Len(list[0], 1)
+		assert.Equal("child.extracted", list[0][0].Name)
+	})
+}
+
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
@@ -936,6 +987,12 @@ func encode(traces [][]*span) (*payload, error) {
 		}
 	}
 	return p, nil
+}
+
+func (t *dummyTransport) Reset() {
+	t.Lock()
+	t.traces = t.traces[:0]
+	t.Unlock()
 }
 
 func (t *dummyTransport) Traces() spanLists {

@@ -62,6 +62,10 @@ const knuthFactor = uint64(1111111111111111111)
 
 // Sample returns true if the given span should be sampled.
 func (r *rateSampler) Sample(spn ddtrace.Span) bool {
+	if r.rate == 1 {
+		// fast path
+		return true
+	}
 	s, ok := spn.(*span)
 	if !ok {
 		return false
