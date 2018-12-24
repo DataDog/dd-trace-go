@@ -68,8 +68,8 @@ func TestTracerCleanStop(t *testing.T) {
 		for i := 0; i < n; i++ {
 			Start(withTransport(transport))
 			time.Sleep(time.Microsecond)
-			Start(withTransport(transport))
-			Start(withTransport(transport))
+			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
 		}
 	}()
 
@@ -358,8 +358,6 @@ func TestTracerSampler(t *testing.T) {
 		withTransport(newDefaultTransport()),
 		WithSampler(sampler),
 	)
-	// override the default (priority sampling) within this test
-	tracer.config.prioritySampling = nil
 
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -448,15 +446,12 @@ func TestTracerEdgeSampler(t *testing.T) {
 		withTransport(newDefaultTransport()),
 		WithSampler(NewRateSampler(0)),
 	)
-	// avoid using priority sampling for this test
-	tracer0.config.prioritySampling = nil
 	defer stop()
 	// a sample rate of 1 should sample everything
 	tracer1, _, stop := startTestTracer(
 		withTransport(newDefaultTransport()),
 		WithSampler(NewRateSampler(1)),
 	)
-	tracer1.config.prioritySampling = nil
 	defer stop()
 
 	count := payloadQueueSize / 3

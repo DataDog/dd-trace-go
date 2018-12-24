@@ -88,11 +88,7 @@ func (c *spanContext) setSamplingPriority(p int) {
 	defer c.mu.Unlock()
 	c.priority = p
 	c.hasPriority = true
-	if p == ext.PriorityAutoKeep || p == ext.PriorityUserKeep {
-		c.sampled = true
-	} else {
-		c.sampled = false
-	}
+	c.sampled = p == ext.PriorityAutoKeep || p == ext.PriorityUserKeep
 }
 
 func (c *spanContext) samplingPriority() int {

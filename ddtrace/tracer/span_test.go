@@ -204,8 +204,7 @@ func TestSpanSetMetric(t *testing.T) {
 	span.SetTag("bytes", 1024.42)
 	assert.Equal(3, len(span.Metrics))
 	assert.Equal(1024.42, span.Metrics["bytes"])
-	var ok bool
-	_, ok = span.Metrics[samplingPriorityKey]
+	_, ok := span.Metrics[samplingPriorityKey]
 	assert.True(ok)
 	_, ok = span.Metrics[samplingPriorityRateKey]
 	assert.True(ok)
@@ -302,8 +301,7 @@ func TestSpanSamplingPriority(t *testing.T) {
 	tracer := newTracer(withTransport(newDefaultTransport()))
 
 	span := tracer.newRootSpan("my.name", "my.service", "my.resource")
-	var ok bool
-	_, ok = span.Metrics[samplingPriorityKey]
+	_, ok := span.Metrics[samplingPriorityKey]
 	assert.True(ok)
 	_, ok = span.Metrics[samplingPriorityRateKey]
 	assert.True(ok)

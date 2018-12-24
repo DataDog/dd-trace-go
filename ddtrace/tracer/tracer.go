@@ -41,6 +41,9 @@ type tracer struct {
 	// a synchronous (blocking) operation, meaning that it will only return after
 	// the trace has been fully processed and added onto the payload.
 	syncPush chan struct{}
+
+	// prioritySampling holds an instance of the priority sampler.
+	prioritySampling *prioritySampler
 }
 
 const (
@@ -118,15 +121,16 @@ func newTracer(opts ...StartOption) *tracer {
 		c.propagator = NewPropagator(nil)
 	}
 	t := &tracer{
-		config:         c,
-		payload:        newPayload(),
-		flushAllReq:    make(chan chan<- struct{}),
-		flushTracesReq: make(chan struct{}, 1),
-		flushErrorsReq: make(chan struct{}, 1),
-		exitReq:        make(chan struct{}),
-		payloadQueue:   make(chan []*span, payloadQueueSize),
-		errorBuffer:    make(chan error, errorBufferSize),
-		stopped:        make(chan struct{}),
+		config:           c,
+		payload:          newPayload(),
+		flushAllReq:      make(chan chan<- struct{}),
+		flushTracesReq:   make(chan struct{}, 1),
+		flushErrorsReq:   make(chan struct{}, 1),
+		exitReq:          make(chan struct{}),
+		payloadQueue:     make(chan []*span, payloadQueueSize),
+		errorBuffer:      make(chan error, errorBufferSize),
+		stopped:          make(chan struct{}),
+		prioritySampling: newPrioritySampler(),
 	}
 
 	go t.worker()
@@ -307,8 +311,8 @@ func (t *tracer) flushTraces() {
 	if err != nil {
 		t.pushError(&dataLossError{context: err, count: count})
 	}
-	if err == nil && t.config.prioritySampling != nil {
-		t.config.prioritySampling.readRatesJSON(rc) // TODO: handle error?
+	if err == nil {
+		t.prioritySampling.readRatesJSON(rc) // TODO: handle error?
 	}
 	t.payload.reset()
 }
@@ -357,33 +361,18 @@ const sampleRateMetricKey = "_sample_rate"
 
 // Sample samples a span with the internal sampler.
 func (t *tracer) sample(span *span) {
-	// Apply priority sampling
-	if t.config.prioritySampling != nil {
-		// Only apply if a priority hasn't been set yet.
-		// It may have been set by tags during initialization.
-		if !span.context.hasPriority {
-			t.config.prioritySampling.apply(span)
-		}
-		return
-	}
-
-	// TODO: Decide if this code and related tests should be removed.
 	sampler := t.config.sampler
 	sampled := sampler.Sample(span)
 	span.context.sampled = sampled
 	if !sampled {
 		return
 	}
-
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
-		// the span was sampled using a rate sampler which wasn't all permissive,
-		// so we make note of the sampling rate.
-		span.Lock()
-		defer span.Unlock()
-		if span.finished {
-			// we don't touch finished span as they might be flushing
-			return
-		}
 		span.Metrics[sampleRateMetricKey] = rs.Rate()
+	}
+	if !span.context.hasPriority {
+		// no priority was set by the user, so we make our own decision
+		// using our priority sampler.
+		t.prioritySampling.apply(span)
 	}
 }

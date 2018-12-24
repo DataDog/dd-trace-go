@@ -21,9 +21,6 @@ type config struct {
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler Sampler
 
-	// prioritySampling will be non-nil when priority sampling is enabled.
-	prioritySampling *prioritySampler
-
 	// agentAddr specifies the hostname and  of the agent where the traces
 	// are sent to.
 	agentAddr string
@@ -50,7 +47,6 @@ func defaults(c *config) {
 	c.serviceName = filepath.Base(os.Args[0])
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
-	c.prioritySampling = newPrioritySampler()
 }
 
 // WithPrioritySampling is deprecated, and priority sampling is enabled by default.

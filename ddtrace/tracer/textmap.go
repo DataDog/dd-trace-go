@@ -175,8 +175,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 				return ErrSpanContextCorrupted
 			}
 		case p.cfg.PriorityHeader:
-			var priority int
-			priority, err = strconv.Atoi(v)
+			priority, err := strconv.Atoi(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
