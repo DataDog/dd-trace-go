@@ -12,9 +12,9 @@ import (
 
 func Example() {
 	// connect to MongoDB
-	clientOptions := options.Client()
-	clientOptions.SetMonitor(mongotrace.NewMonitor())
-	client, err := mongo.Connect(context.Background(), "mongodb://localhost:27017", clientOptions)
+	opts := options.Client()
+	opts.SetMonitor(mongotrace.NewMonitor())
+	client, err := mongo.Connect(context.Background(), "mongodb://localhost:27017", opts)
 	if err != nil {
 		panic(err)
 	}

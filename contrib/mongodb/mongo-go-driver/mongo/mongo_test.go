@@ -36,10 +36,10 @@ func Test(t *testing.T) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "mongodb-test")
 
 	addr := fmt.Sprintf("mongodb://%s", li.Addr().String())
-	clientOptions := options.Client()
-	clientOptions.SetMonitor(NewMonitor())
-	clientOptions.SetSingle(true)
-	client, err := mongo.Connect(ctx, addr, clientOptions)
+	opts := options.Client()
+	opts.SetMonitor(NewMonitor())
+	opts.SetSingle(true)
+	client, err := mongo.Connect(ctx, addr, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
