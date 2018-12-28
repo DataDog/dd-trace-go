@@ -1,6 +1,4 @@
-// Package mongo provides functions to trace the mongodb/mongo-go-driver package (https://github.com/mongodb/mongo-go-driver). The
-// minimum required version is v0.0.17 (Alpha 17). Since this driver is still in Alpha and subject to change from one release to
-// another, stability of this package can not be guaranteed.
+// Package mongo provides functions to trace the mongodb/mongo-go-driver package (https://github.com/mongodb/mongo-go-driver).
 //
 // `NewMonitor` will return an event.CommandMonitor which is used to trace requests.
 package mongo
@@ -11,7 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mongodb/mongo-go-driver/core/event"
+	"github.com/mongodb/mongo-go-driver/bson"
+	"github.com/mongodb/mongo-go-driver/event"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -29,13 +28,12 @@ type monitor struct {
 
 func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	hostname, port := peerInfo(evt)
-	statement := evt.Command.ToExtJSON(false)
-
+	b, _ := bson.MarshalExtJSON(evt.Command, false, false)
 	span, _ := tracer.StartSpanFromContext(ctx, "mongodb.query",
 		tracer.ServiceName("mongo"),
 		tracer.ResourceName("mongo."+evt.CommandName),
 		tracer.Tag(ext.DBInstance, evt.DatabaseName),
-		tracer.Tag(ext.DBStatement, statement),
+		tracer.Tag(ext.DBStatement, string(b)),
 		tracer.Tag(ext.DBType, "mongo"),
 		tracer.Tag(ext.PeerHostname, hostname),
 		tracer.Tag(ext.PeerPort, port),
