@@ -28,7 +28,7 @@ type monitor struct {
 
 func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	hostname, port := peerInfo(evt)
-	b, _ := bson.MarshalExtJSON(evt.Command, true, false)
+	b, _ := bson.MarshalExtJSON(evt.Command, false, false)
 	span, _ := tracer.StartSpanFromContext(ctx, "mongodb.query",
 		tracer.ServiceName("mongo"),
 		tracer.ResourceName("mongo."+evt.CommandName),
