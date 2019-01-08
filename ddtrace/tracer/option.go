@@ -149,6 +149,15 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
+// WithSpanID sets the SpanID on the started span, instead of using a random number.
+// If there is no parent Span (eg from ChildOf), then the TraceID will also be set to the
+// value given here.
+func WithSpanID(id uint64) StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		cfg.SpanID = id
+	}
+}
+
 // ChildOf tells StartSpan to use the given span context as a parent for the
 // created span.
 func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
