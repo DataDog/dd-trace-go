@@ -13,7 +13,6 @@ import (
 )
 
 // Middleware returns middleware that will trace incoming requests.
-// The last parameter is optional and can be used to pass a custom tracer.
 func Middleware(service string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		resource := c.HandlerName()
