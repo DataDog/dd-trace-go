@@ -149,6 +149,13 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
+func WithSpanID(id uint64) StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		cfg.SpanID = new(uint64)
+		*cfg.SpanID = id
+	}
+}
+
 // ChildOf tells StartSpan to use the given span context as a parent for the
 // created span.
 func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
