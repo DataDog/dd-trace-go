@@ -5,21 +5,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/DataDog/dd-trace-go/tracer/ext"
-	"github.com/DataDog/dd-trace-go/tracer/tracertest"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	"github.com/labstack/echo"
 	"github.com/stretchr/testify/assert"
 )
 
-func init() {
-
-}
-
 func TestChildSpan(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, _ := tracertest.GetTestTracer()
-	tracer.DefaultTracer = testTracer
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
 	router := echo.New()
 	router.Use(Middleware("foobar"))
@@ -37,8 +34,8 @@ func TestChildSpan(t *testing.T) {
 
 func TestTrace200(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := tracertest.GetTestTracer()
-	tracer.DefaultTracer = testTracer
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
 	router := echo.New()
 	router.Use(Middleware("foobar"))
@@ -46,8 +43,8 @@ func TestTrace200(t *testing.T) {
 		// assert we patch the span on the request context.
 		span, ok := tracer.SpanFromContext(c.Request().Context())
 		assert.True(ok)
-		span.SetMeta("test.echo", "echony")
-		assert.Equal(span.Service, "foobar")
+		span.SetTag("test.echo", "echony")
+		assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
 		id := c.Param("id")
 		return c.String(200, id)
 	})
@@ -61,65 +58,35 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(response.StatusCode, 200)
 
 	// verify traces look good
-	testTracer.ForceFlush()
-	traces := testTransport.Traces()
-	assert.Len(traces, 1)
-	spans := traces[0]
+	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
 	if len(spans) < 1 {
 		t.Fatalf("no spans")
 	}
-	s := spans[0]
-	assert.Equal(s.Service, "foobar")
-	assert.Equal(s.Name, "http.request")
-	// FIXME[matt] would be much nicer to have "/user/:id" here
-	assert.Equal(s.Resource, "/user/:id")
-	assert.Equal(s.GetMeta("test.echo"), "echony")
-	assert.Equal(s.GetMeta("http.status_code"), "200")
-	assert.Equal(s.GetMeta("http.method"), "GET")
-	assert.Equal(s.GetMeta("http.url"), "/user/123")
-}
-
-func TestDisabled(t *testing.T) {
-	assert := assert.New(t)
-	testTracer, testTransport := tracertest.GetTestTracer()
-	testTracer.SetEnabled(false)
-	tracer.DefaultTracer = testTracer
-
-	router := echo.New()
-	router.Use(Middleware("foobar"))
-	router.GET("/ping", func(c echo.Context) error {
-		_, ok := tracer.SpanFromContext(c.Request().Context())
-		assert.False(ok)
-		return c.String(200, "ok")
-	})
-
-	r := httptest.NewRequest("GET", "/ping", nil)
-	w := httptest.NewRecorder()
-
-	// do and verify the request
-	router.ServeHTTP(w, r)
-	response := w.Result()
-	assert.Equal(response.StatusCode, 200)
-
-	// verify traces look good
-	testTracer.ForceFlush()
-	spans := testTransport.Traces()
-	assert.Len(spans, 0)
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+	assert.Equal("foobar", span.Tag(ext.ServiceName))
+	assert.Contains(span.Tag(ext.ResourceName), "/user/:id")
+	assert.Equal("200", span.Tag(ext.HTTPCode))
+	assert.Equal("GET", span.Tag(ext.HTTPMethod))
+	// TODO(x) would be much nicer to have "/user/:id" here
+	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
 }
 
 func TestError(t *testing.T) {
 	assert := assert.New(t)
-	testTracer, testTransport := tracertest.GetTestTracer()
-	tracer.DefaultTracer = testTracer
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
 	// setup
 	router := echo.New()
 	router.Use(Middleware("foobar"))
+	wantErr := errors.New("oh no")
 
 	// a handler with an error and make the requests
 	router.GET("/err", func(c echo.Context) error {
-		err := errors.New("oh no")
+		err := wantErr
 		c.Error(err)
 		return err
 	})
@@ -130,20 +97,16 @@ func TestError(t *testing.T) {
 	assert.Equal(response.StatusCode, 500)
 
 	// verify the errors and status are correct
-	testTracer.ForceFlush()
-	traces := testTransport.Traces()
-	assert.Len(traces, 1)
-	spans := traces[0]
+	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
 	if len(spans) < 1 {
 		t.Fatalf("no spans")
 	}
-	s := spans[0]
-	assert.Equal(s.Service, "foobar")
-	assert.Equal(s.Name, "http.request")
-	assert.Equal(s.GetMeta(ext.HTTPCode), "500")
-	assert.Equal(s.GetMeta(ext.ErrorMsg), "oh no")
-	assert.Equal(s.Error, int32(1))
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal("foobar", span.Tag(ext.ServiceName))
+	assert.Equal("500", span.Tag(ext.HTTPCode))
+	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
 }
 
 func TestGetSpanNotInstrumented(t *testing.T) {
