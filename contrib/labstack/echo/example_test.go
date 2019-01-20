@@ -1,8 +1,8 @@
-package echo_test
+package echo
 
 import (
-	echotrace "github.com/DataDog/dd-trace-go/contrib/labstack/echo"
-	"github.com/DataDog/dd-trace-go/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	"github.com/labstack/echo"
 )
 
@@ -12,7 +12,7 @@ func Example() {
 	r := echo.New()
 
 	// Use the tracer middleware with your desired service name.
-	r.Use(echotrace.Middleware("my-web-app"))
+	r.Use(Middleware("my-web-app"))
 
 	// Set up some endpoints.
 	r.GET("/hello", func(c echo.Context) error {
@@ -23,14 +23,23 @@ func Example() {
 	r.Start(":8080")
 }
 
+// Trace a some operation as child of parent span
 func Example_spanFromContext() {
+	// Create a echo.Enechoe
 	r := echo.New()
-	r.Use(echotrace.Middleware("image-encoder"))
+
+	// Use the tracer middleware with your desired service name.
+	r.Use(Middleware("image-encoder"))
+
+	// Set up some endpoints.
 	r.GET("/image/encode", func(c echo.Context) error {
 		// create a child span to track operation timing.
-		encodeSpan := tracer.NewChildSpanFromContext("image.encode", c.Request().Context())
-		// encode a image
-		encodeSpan.Finish()
+		span, _ := tracer.StartSpanFromContext(c.Request().Context(), "image.encode")
+
+		// encode a image ...
+
+		// finish a child span
+		span.Finish()
 
 		return c.String(200, "ok!")
 	})
