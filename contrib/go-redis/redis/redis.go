@@ -4,6 +4,7 @@ package redis
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -161,16 +162,21 @@ func cmderToString(cmd redis.Cmder) string {
 	// newer versions that was removed, and this String method which
 	// sometimes returns an error is used instead. By doing a type assertion
 	// we can support both versions.
-	if s, ok := cmd.(interface{ String() string }); ok {
-		return s.String()
-	}
-
-	if s, ok := cmd.(interface{ String() (string, error) }); ok {
-		str, err := s.String()
+	switch v := cmd.(type) {
+	case fmt.Stringer:
+		return v.String()
+	case interface{ String() (string, error) }:
+		str, err := v.String()
 		if err == nil {
 			return str
 		}
 	}
-
+	args := cmd.Args()
+	if len(args) == 0 {
+		return ""
+	}
+	if str, ok := args[0].(string); ok {
+		return str
+	}
 	return ""
 }

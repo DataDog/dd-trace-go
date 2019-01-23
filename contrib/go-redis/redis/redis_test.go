@@ -25,6 +25,30 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(m.Run())
 }
+func TestClientEvalSha(t *testing.T) {
+	opts := &redis.Options{Addr: "127.0.0.1:6379"}
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := NewClient(opts, WithServiceName("my-redis"))
+
+	sha1 := client.ScriptLoad("return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}").Val()
+	mt.Reset()
+
+	client.EvalSha(sha1, []string{"key1", "key2", "first", "second"})
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 1)
+
+	span := spans[0]
+	assert.Equal("redis.command", span.OperationName())
+	assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
+	assert.Equal("my-redis", span.Tag(ext.ServiceName))
+	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
+	assert.Equal("6379", span.Tag(ext.TargetPort))
+	assert.Equal("evalsha", span.Tag(ext.ResourceName))
+}
 
 func TestClient(t *testing.T) {
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
