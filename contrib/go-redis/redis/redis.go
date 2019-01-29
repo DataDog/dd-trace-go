@@ -8,7 +8,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -21,9 +20,6 @@ import (
 type Client struct {
 	*redis.Client
 	*params
-
-	mu  sync.RWMutex // guards ctx
-	ctx context.Context
 }
 
 var _ redis.Cmdable = (*Client)(nil)
@@ -32,8 +28,6 @@ var _ redis.Cmdable = (*Client)(nil)
 type Pipeliner struct {
 	redis.Pipeliner
 	*params
-
-	ctx context.Context
 }
 
 var _ redis.Pipeliner = (*Pipeliner)(nil)
@@ -71,17 +65,14 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 		db:     strconv.Itoa(opt.DB),
 		config: cfg,
 	}
-	tc := &Client{Client: c, params: params}
+	tc := &Client{c, params}
 	tc.Client.WrapProcess(createWrapperFromClient(tc))
 	return tc
 }
 
 // Pipeline creates a Pipeline from a Client
 func (c *Client) Pipeline() redis.Pipeliner {
-	c.mu.RLock()
-	ctx := c.ctx
-	c.mu.RUnlock()
-	return &Pipeliner{c.Client.Pipeline(), c.params, ctx}
+	return &Pipeliner{c.Client.Pipeline(), c.params}
 }
 
 // ExecWithContext calls Pipeline.Exec(). It ensures that the resulting Redis calls
@@ -92,7 +83,7 @@ func (c *Pipeliner) ExecWithContext(ctx context.Context) ([]redis.Cmder, error) 
 
 // Exec calls Pipeline.Exec() ensuring that the resulting Redis calls are traced.
 func (c *Pipeliner) Exec() ([]redis.Cmder, error) {
-	return c.execWithContext(c.ctx)
+	return c.execWithContext(context.Background())
 }
 
 func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) {
@@ -129,18 +120,8 @@ func commandsToString(cmds []redis.Cmder) string {
 
 // WithContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.
 func (c *Client) WithContext(ctx context.Context) *Client {
-	c.mu.Lock()
-	c.ctx = ctx
-	c.mu.Unlock()
+	c.Client = c.Client.WithContext(ctx)
 	return c
-}
-
-// Context returns the active context in the client.
-func (c *Client) Context() context.Context {
-	c.mu.RLock()
-	ctx := c.ctx
-	c.mu.RUnlock()
-	return ctx
 }
 
 // createWrapperFromClient returns a new createWrapper function which wraps the processor with tracing
@@ -149,9 +130,7 @@ func (c *Client) Context() context.Context {
 func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
 	return func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
 		return func(cmd redis.Cmder) error {
-			tc.mu.RLock()
-			ctx := tc.ctx
-			tc.mu.RUnlock()
+			ctx := tc.Client.Context()
 			raw := cmderToString(cmd)
 			parts := strings.Split(raw, " ")
 			length := len(parts) - 1

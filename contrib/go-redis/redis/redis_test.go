@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -26,7 +25,6 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(m.Run())
 }
-
 func TestClientEvalSha(t *testing.T) {
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
@@ -50,27 +48,6 @@ func TestClientEvalSha(t *testing.T) {
 	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("evalsha", span.Tag(ext.ResourceName))
-}
-
-// https://github.com/DataDog/dd-trace-go/issues/387
-func TestIssue387(t *testing.T) {
-	opts := &redis.Options{Addr: "127.0.0.1:6379"}
-	client := NewClient(opts, WithServiceName("my-redis"))
-	n := 1000
-
-	client.Set("test_key", "test_value", 0)
-
-	var wg sync.WaitGroup
-	wg.Add(n)
-	for i := 0; i < n; i++ {
-		go func() {
-			defer wg.Done()
-			client.WithContext(context.Background()).Get("test_key").Result()
-		}()
-	}
-	wg.Wait()
-
-	// should not result in a race
 }
 
 func TestClient(t *testing.T) {
