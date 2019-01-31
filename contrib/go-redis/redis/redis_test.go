@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +25,52 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+func TestClientEvalSha(t *testing.T) {
+	opts := &redis.Options{Addr: "127.0.0.1:6379"}
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := NewClient(opts, WithServiceName("my-redis"))
+
+	sha1 := client.ScriptLoad("return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}").Val()
+	mt.Reset()
+
+	client.EvalSha(sha1, []string{"key1", "key2", "first", "second"})
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 1)
+
+	span := spans[0]
+	assert.Equal("redis.command", span.OperationName())
+	assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
+	assert.Equal("my-redis", span.Tag(ext.ServiceName))
+	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
+	assert.Equal("6379", span.Tag(ext.TargetPort))
+	assert.Equal("evalsha", span.Tag(ext.ResourceName))
+}
+
+// https://github.com/DataDog/dd-trace-go/issues/387
+func TestIssue387(t *testing.T) {
+	opts := &redis.Options{Addr: "127.0.0.1:6379"}
+	client := NewClient(opts, WithServiceName("my-redis"))
+	n := 1000
+
+	client.Set("test_key", "test_value", 0)
+
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			client.WithContext(context.Background()).Get("test_key").Result()
+		}()
+	}
+	wg.Wait()
+
+	// should not result in a race
 }
 
 func TestClient(t *testing.T) {
