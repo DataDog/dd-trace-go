@@ -230,10 +230,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			context = ctx
 		}
 	}
-	var id uint64
-	if opts.SpanID != nil {
-		id = *opts.SpanID
-	} else {
+	id := opts.SpanID
+	if !id {
 		id = random.Uint64()
 	}
 	// span defaults
