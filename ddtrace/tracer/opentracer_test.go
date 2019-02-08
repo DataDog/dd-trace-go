@@ -1,4 +1,4 @@
-package opentracer
+package tracer
 
 import (
 	"testing"
@@ -11,7 +11,7 @@ import (
 
 func TestStart(t *testing.T) {
 	assert := assert.New(t)
-	ot := New()
+	ot := NewOpenTracer()
 	dd, ok := internal.GetGlobalTracer().(ddtrace.Tracer)
 	assert.True(ok)
 	ott, ok := ot.(*opentracer)

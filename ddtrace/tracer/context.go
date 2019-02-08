@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"context"
+	"github.com/opentracing/opentracing-go"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -13,7 +14,15 @@ var activeSpanKey = contextKey{}
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
 func ContextWithSpan(ctx context.Context, s Span) context.Context {
-	return context.WithValue(ctx, activeSpanKey, s)
+	t := opentracing.GlobalTracer()
+	ot, ok := t.(*opentracer)
+	if !ok {
+		return context.WithValue(ctx, activeSpanKey, s)
+	}
+	return opentracing.ContextWithSpan(ctx, &openSpan{
+		Span:s,
+		opentracer: ot,
+	})
 }
 
 // SpanFromContext returns the span contained in the given context. A second return
@@ -23,9 +32,18 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 	if ctx == nil {
 		return &internal.NoopSpan{}, false
 	}
-	v := ctx.Value(activeSpanKey)
-	if s, ok := v.(ddtrace.Span); ok {
-		return s, true
+
+	if _, ok := opentracing.GlobalTracer().(*opentracer); !ok {
+		v := ctx.Value(activeSpanKey)
+		if s, ok := v.(ddtrace.Span); ok {
+			return s, true
+		}
+		return &internal.NoopSpan{}, false
+	}
+
+	v := opentracing.SpanFromContext(ctx)
+	if s, ok := v.(*openSpan); ok {
+		return s.Span, true
 	}
 	return &internal.NoopSpan{}, false
 }

@@ -1,41 +1,40 @@
-package opentracer
+package tracer
 
 import (
 	"fmt"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
 )
 
-var _ opentracing.Span = (*span)(nil)
+var _ opentracing.Span = (*openSpan)(nil)
 
 // span implements opentracing.Span on top of ddtrace.Span.
-type span struct {
+type openSpan struct {
 	ddtrace.Span
 	*opentracer
 }
 
-func (s *span) Context() opentracing.SpanContext                      { return s.Span.Context() }
-func (s *span) Finish()                                               { s.Span.Finish() }
-func (s *span) Tracer() opentracing.Tracer                            { return s.opentracer }
-func (s *span) LogEvent(event string)                                 { /* deprecated */ }
-func (s *span) LogEventWithPayload(event string, payload interface{}) { /* deprecated */ }
-func (s *span) Log(data opentracing.LogData)                          { /* deprecated */ }
+func (s *openSpan) Context() opentracing.SpanContext                      { return s.Span.Context() }
+func (s *openSpan) Finish()                                               { s.Span.Finish() }
+func (s *openSpan) Tracer() opentracing.Tracer                            { return s.opentracer }
+func (s *openSpan) LogEvent(event string)                                 { /* deprecated */ }
+func (s *openSpan) LogEventWithPayload(event string, payload interface{}) { /* deprecated */ }
+func (s *openSpan) Log(data opentracing.LogData)                          { /* deprecated */ }
 
-func (s *span) FinishWithOptions(opts opentracing.FinishOptions) {
+func (s *openSpan) FinishWithOptions(opts opentracing.FinishOptions) {
 	for _, lr := range opts.LogRecords {
 		if len(lr.Fields) > 0 {
 			s.LogFields(lr.Fields...)
 		}
 	}
-	s.Span.Finish(tracer.FinishTime(opts.FinishTime))
+	s.Span.Finish(FinishTime(opts.FinishTime))
 }
 
-func (s *span) LogFields(fields ...log.Field) {
+func (s *openSpan) LogFields(fields ...log.Field) {
 	// catch standard opentracing keys and adjust to internal ones as per spec:
 	// https://github.com/opentracing/specification/blob/master/semantic_conventions.md#log-fields-table
 	for _, f := range fields {
@@ -58,7 +57,7 @@ func (s *span) LogFields(fields ...log.Field) {
 	}
 }
 
-func (s *span) LogKV(keyVals ...interface{}) {
+func (s *openSpan) LogKV(keyVals ...interface{}) {
 	fields, err := log.InterleavedKVToFields(keyVals...)
 	if err != nil {
 		// TODO(gbbr): create a log package
@@ -67,17 +66,17 @@ func (s *span) LogKV(keyVals ...interface{}) {
 	s.LogFields(fields...)
 }
 
-func (s *span) SetBaggageItem(key, val string) opentracing.Span {
+func (s *openSpan) SetBaggageItem(key, val string) opentracing.Span {
 	s.Span.SetBaggageItem(key, val)
 	return s
 }
 
-func (s *span) SetOperationName(operationName string) opentracing.Span {
+func (s *openSpan) SetOperationName(operationName string) opentracing.Span {
 	s.Span.SetOperationName(operationName)
 	return s
 }
 
-func (s *span) SetTag(key string, value interface{}) opentracing.Span {
+func (s *openSpan) SetTag(key string, value interface{}) opentracing.Span {
 	s.Span.SetTag(key, value)
 	return s
 }
