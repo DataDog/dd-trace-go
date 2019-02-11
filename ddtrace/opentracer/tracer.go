@@ -20,6 +20,8 @@ import (
 	opentracing "github.com/opentracing/opentracing-go"
 )
 
+// New creates, instantiates and returns an Opentracing compatible version of the
+// Datadog tracer using the provided set of options.
 func New(opts ...tracer.StartOption) opentracing.Tracer {
 	return tracer.NewOpenTracer(opts...)
 }
