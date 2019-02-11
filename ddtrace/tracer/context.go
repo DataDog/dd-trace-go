@@ -20,7 +20,7 @@ func ContextWithSpan(ctx context.Context, s Span) context.Context {
 		return context.WithValue(ctx, activeSpanKey, s)
 	}
 	return opentracing.ContextWithSpan(ctx, &openSpan{
-		Span:s,
+		Span:       s,
 		opentracer: ot,
 	})
 }
