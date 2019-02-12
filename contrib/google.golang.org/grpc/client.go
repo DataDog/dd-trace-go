@@ -26,7 +26,7 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
-		defer finishWithError(span, err, cs.cfg.noDebugStack)
+		defer func() { finishWithError(span, err, cs.cfg.noDebugStack) }()
 	}
 	err = cs.ClientStream.RecvMsg(m)
 	return err
@@ -38,7 +38,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
-		defer finishWithError(span, err, cs.cfg.noDebugStack)
+		defer func() { finishWithError(span, err, cs.cfg.noDebugStack) }()
 	}
 	err = cs.ClientStream.SendMsg(m)
 	return err

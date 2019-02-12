@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -115,7 +116,7 @@ func TestStreaming(t *testing.T) {
 		stream.Recv()
 	}
 
-	checkSpans := func(t *testing.T, rig *rig, spans []mocktracer.Span, unknownSpan mocktracer.Span) {
+	checkSpans := func(t *testing.T, rig *rig, spans []mocktracer.Span) {
 		var rootSpan mocktracer.Span
 		for _, span := range spans {
 			if span.OperationName() == "a" {
@@ -123,7 +124,6 @@ func TestStreaming(t *testing.T) {
 			}
 		}
 		assert.NotNil(t, rootSpan)
-
 		for _, span := range spans {
 			if span != rootSpan {
 				assert.Equal(t, rootSpan.TraceID(), span.TraceID(),
@@ -146,8 +146,10 @@ func TestStreaming(t *testing.T) {
 				fallthrough
 			case "grpc.server", "grpc.message":
 				wantCode := codes.OK
-				if span == unknownSpan {
-					wantCode = codes.Unknown
+				if errTag := span.Tag("error"); errTag != nil {
+					if err, ok := errTag.(error); ok {
+						wantCode = status.Convert(err).Code()
+					}
 				}
 				assert.Equal(t, wantCode.String(), span.Tag(tagCode),
 					"expected grpc code to be set in span: %v", span)
@@ -183,7 +185,7 @@ func TestStreaming(t *testing.T) {
 		assert.Len(t, spans, 13,
 			"expected 4 client messages + 4 server messages + 1 server call + 1 client call + 1 error from empty recv + 1 parent ctx, but got %v",
 			len(spans))
-		checkSpans(t, rig, spans, spans[len(spans)-1])
+		checkSpans(t, rig, spans)
 	})
 
 	t.Run("CallsOnly", func(t *testing.T) {
@@ -210,7 +212,7 @@ func TestStreaming(t *testing.T) {
 		assert.Len(t, spans, 3,
 			"expected 1 server call + 1 client call + 1 parent ctx, but got %v",
 			len(spans))
-		checkSpans(t, rig, spans, spans[len(spans)-1])
+		checkSpans(t, rig, spans)
 	})
 
 	t.Run("MessagesOnly", func(t *testing.T) {
@@ -237,7 +239,7 @@ func TestStreaming(t *testing.T) {
 		assert.Len(t, spans, 11,
 			"expected 4 client messages + 4 server messages + 1 error from empty recv + 1 parent ctx, but got %v",
 			len(spans))
-		checkSpans(t, rig, spans, nil)
+		checkSpans(t, rig, spans)
 	})
 }
 
@@ -333,6 +335,50 @@ func TestPreservesMetadata(t *testing.T) {
 	md := rig.fixtureServer.lastRequestMetadata.Load().(metadata.MD)
 	assert.Equal(t, []string{"test-value"}, md.Get("test-key"),
 		"existing metadata should be preserved")
+}
+
+func TestStreamSendsErrorCode(t *testing.T) {
+	wantCode := codes.InvalidArgument.String()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(true)
+	require.NoError(t, err, "error setting up rig")
+	defer rig.Close()
+
+	ctx := context.Background()
+
+	stream, err := rig.client.StreamPing(ctx)
+	require.NoError(t, err, "no error should be returned after creating stream client")
+
+	err = stream.Send(&FixtureRequest{Name: "invalid"})
+	require.NoError(t, err, "no error should be returned after sending message")
+
+	resp, err := stream.Recv()
+	assert.Error(t, err, "should return error")
+	assert.Nil(t, resp, "received message should be nil because of error")
+
+	err = stream.CloseSend()
+	require.NoError(t, err, "should not return error after closing stream")
+
+	// to flush the spans
+	_, _ = stream.Recv()
+
+	containsErrorCode := false
+	spans := mt.FinishedSpans()
+
+	// check if at least one span has error code
+	for _, s := range spans {
+		if s.Tag(tagCode) == wantCode {
+			containsErrorCode = true
+		}
+	}
+	assert.True(t, containsErrorCode, "at least one span should contain error code")
+
+	// ensure that last span contains error code also
+	gotLastSpanCode := spans[len(spans)-1].Tag(tagCode)
+	assert.Equal(t, gotLastSpanCode, wantCode, "last span should contain error code")
 }
 
 // fixtureServer a dummy implemenation of our grpc fixtureServer.

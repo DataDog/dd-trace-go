@@ -33,8 +33,11 @@ func startSpanFromContext(ctx context.Context, method, operation, service string
 
 // finishWithError applies finish option and a tag with gRPC status code, disregarding OK, EOF and Canceled errors.
 func finishWithError(span ddtrace.Span, err error, noDebugStack bool) {
+	if err == io.EOF || err == context.Canceled {
+		err = nil
+	}
 	errcode := status.Code(err)
-	if err == io.EOF || errcode == codes.Canceled || errcode == codes.OK || err == context.Canceled {
+	if errcode == codes.Canceled || errcode == codes.OK {
 		err = nil
 	}
 	span.SetTag(tagCode, errcode.String())
