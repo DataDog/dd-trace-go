@@ -183,6 +183,7 @@ func TestTracerStartSpanOptions(t *testing.T) {
 		ServiceName("test.service"),
 		ResourceName("test.resource"),
 		StartTime(now),
+		WithSpanID(420),
 	}
 	span := tracer.StartSpan("web.request", opts...).(*span)
 	assert := assert.New(t)
@@ -190,6 +191,8 @@ func TestTracerStartSpanOptions(t *testing.T) {
 	assert.Equal("test.service", span.Service)
 	assert.Equal("test.resource", span.Resource)
 	assert.Equal(now.UnixNano(), span.Start)
+	assert.Equal(uint64(420), span.SpanID)
+	assert.Equal(uint64(420), span.TraceID)
 }
 
 func TestTracerStartChildSpan(t *testing.T) {
@@ -197,12 +200,17 @@ func TestTracerStartChildSpan(t *testing.T) {
 		assert := assert.New(t)
 		tracer := newTracer()
 		root := tracer.StartSpan("web.request", ServiceName("root-service")).(*span)
-		child := tracer.StartSpan("db.query", ChildOf(root.Context()), ServiceName("child-service")).(*span)
+		child := tracer.StartSpan("db.query",
+			ChildOf(root.Context()),
+			ServiceName("child-service"),
+			WithSpanID(69)).(*span)
 
 		assert.NotEqual(uint64(0), child.TraceID)
 		assert.NotEqual(uint64(0), child.SpanID)
 		assert.Equal(root.SpanID, child.ParentID)
 		assert.Equal(root.TraceID, child.ParentID)
+		assert.Equal(root.TraceID, child.TraceID)
+		assert.Equal(uint64(69), child.SpanID)
 		assert.Equal("child-service", child.Service)
 	})
 
