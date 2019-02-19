@@ -58,3 +58,45 @@ func NoDebugStack() InterceptorOption {
 		cfg.noDebugStack = true
 	}
 }
+
+type statsHandlerConfig struct {
+	serviceName  string
+	noDebugStack bool
+}
+
+func newStatsHandlerConfig() *statsHandlerConfig {
+	return &statsHandlerConfig{}
+}
+
+func (cfg *statsHandlerConfig) serverServiceName() string {
+	if cfg.serviceName == "" {
+		return "grpc.server"
+	}
+	return cfg.serviceName
+}
+
+func (cfg *statsHandlerConfig) clientServiceName() string {
+	if cfg.serviceName == "" {
+		return "grpc.client"
+	}
+	return cfg.serviceName
+}
+
+// StatsHandlerOption represents an option that can be passed
+// to the grpc client and server stats handlers.
+type StatsHandlerOption func(*statsHandlerConfig)
+
+// StatsHandlerOptionWithServiceName sets the given service name.
+func StatsHandlerOptionWithServiceName(name string) StatsHandlerOption {
+	return func(cfg *statsHandlerConfig) {
+		cfg.serviceName = name
+	}
+}
+
+// StatsHandlerOptionNoDebugStack disables debug stacks for traces with errors. This is useful in situations
+// where errors are frequent and the overhead of calling debug.Stack may affect performance.
+func StatsHandlerOptionNoDebugStack() StatsHandlerOption {
+	return func(cfg *statsHandlerConfig) {
+		cfg.noDebugStack = true
+	}
+}
