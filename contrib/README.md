@@ -7,6 +7,8 @@ them to be used as they normally would with tracing activated out of the box.
 
 All of these libraries are supported by our [APM product](https://www.datadoghq.com/apm/).
 
+:warning: These libraries are not built to be used with Opentracing. Opentracing integrations can be found in [their own organisation](https://github.com/opentracing-contrib/).
+
 ### Usage
 
 First, find the library which you'd like to integrate with. The naming convention for the integration packages is:
