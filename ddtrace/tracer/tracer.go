@@ -251,13 +251,19 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		span.TraceID = context.traceID
 		span.ParentID = context.spanID
 		if context.hasSamplingPriority() {
-			span.Metrics[samplingPriorityKey] = float64(context.samplingPriority())
+			span.Metrics[keySamplingPriority] = float64(context.samplingPriority())
 		}
 		if context.span != nil {
-			// it has a local parent, inherit the service
+			// local parent, inherit service
 			context.span.RLock()
 			span.Service = context.span.Service
 			context.span.RUnlock()
+		} else {
+			// remote parent
+			if context.origin != "" {
+				// mark origin
+				span.Meta[keyOrigin] = context.origin
+			}
 		}
 	}
 	span.context = newSpanContext(span, context)

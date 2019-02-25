@@ -171,7 +171,7 @@ func TestNewSpanContext(t *testing.T) {
 			TraceID:  1,
 			SpanID:   2,
 			ParentID: 3,
-			Metrics:  map[string]float64{samplingPriorityKey: 1},
+			Metrics:  map[string]float64{keySamplingPriority: 1},
 		}
 		ctx := newSpanContext(span, nil)
 		assert := assert.New(t)
@@ -207,6 +207,10 @@ func TestSpanContextParent(t *testing.T) {
 			hasPriority: true,
 			priority:    2,
 		},
+		"origin": &spanContext{
+			trace:  &trace{spans: []*span{newBasicSpan("abc")}},
+			origin: "synthetics",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := newSpanContext(s, parentCtx)
@@ -222,6 +226,7 @@ func TestSpanContextParent(t *testing.T) {
 			assert.Equal(ctx.priority, parentCtx.priority)
 			assert.Equal(ctx.drop, parentCtx.drop)
 			assert.Equal(ctx.baggage, parentCtx.baggage)
+			assert.Equal(ctx.origin, parentCtx.origin)
 		})
 	}
 }

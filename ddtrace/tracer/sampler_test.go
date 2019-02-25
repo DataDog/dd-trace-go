@@ -144,18 +144,18 @@ func TestPrioritySampler(t *testing.T) {
 		testSpan1.TraceID = math.MaxUint64 - (math.MaxUint64 / 4)
 
 		ps.apply(testSpan1)
-		assert.EqualValues(ext.PriorityAutoKeep, testSpan1.Metrics[samplingPriorityKey])
-		assert.EqualValues(0.5, testSpan1.Metrics[samplingPriorityRateKey])
+		assert.EqualValues(ext.PriorityAutoKeep, testSpan1.Metrics[keySamplingPriority])
+		assert.EqualValues(0.5, testSpan1.Metrics[keySamplingPriorityRate])
 
 		testSpan1.TraceID = math.MaxUint64 - (math.MaxUint64 / 3)
 		ps.apply(testSpan1)
-		assert.EqualValues(ext.PriorityAutoReject, testSpan1.Metrics[samplingPriorityKey])
-		assert.EqualValues(0.5, testSpan1.Metrics[samplingPriorityRateKey])
+		assert.EqualValues(ext.PriorityAutoReject, testSpan1.Metrics[keySamplingPriority])
+		assert.EqualValues(0.5, testSpan1.Metrics[keySamplingPriorityRate])
 
 		testSpan1.Service = "other-service"
 		testSpan1.TraceID = 1
-		assert.EqualValues(ext.PriorityAutoReject, testSpan1.Metrics[samplingPriorityKey])
-		assert.EqualValues(0.5, testSpan1.Metrics[samplingPriorityRateKey])
+		assert.EqualValues(ext.PriorityAutoReject, testSpan1.Metrics[keySamplingPriority])
+		assert.EqualValues(0.5, testSpan1.Metrics[keySamplingPriorityRate])
 	})
 }
 

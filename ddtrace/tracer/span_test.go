@@ -160,7 +160,7 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal(int32(0), span.Error)
 
 	span.SetTag(ext.SamplingPriority, 2)
-	assert.Equal(float64(2), span.Metrics[samplingPriorityKey])
+	assert.Equal(float64(2), span.Metrics[keySamplingPriority])
 }
 
 func TestSpanSetDatadogTags(t *testing.T) {
@@ -204,9 +204,9 @@ func TestSpanSetMetric(t *testing.T) {
 	span.SetTag("bytes", 1024.42)
 	assert.Equal(3, len(span.Metrics))
 	assert.Equal(1024.42, span.Metrics["bytes"])
-	_, ok := span.Metrics[samplingPriorityKey]
+	_, ok := span.Metrics[keySamplingPriority]
 	assert.True(ok)
-	_, ok = span.Metrics[samplingPriorityRateKey]
+	_, ok = span.Metrics[keySamplingPriorityRate]
 	assert.True(ok)
 
 	// operating on a finished span is a no-op
@@ -301,9 +301,9 @@ func TestSpanSamplingPriority(t *testing.T) {
 	tracer := newTracer(withTransport(newDefaultTransport()))
 
 	span := tracer.newRootSpan("my.name", "my.service", "my.resource")
-	_, ok := span.Metrics[samplingPriorityKey]
+	_, ok := span.Metrics[keySamplingPriority]
 	assert.True(ok)
-	_, ok = span.Metrics[samplingPriorityRateKey]
+	_, ok = span.Metrics[keySamplingPriorityRate]
 	assert.True(ok)
 
 	for _, priority := range []int{
@@ -314,15 +314,15 @@ func TestSpanSamplingPriority(t *testing.T) {
 		999, // not used, but we should allow it
 	} {
 		span.SetTag(ext.SamplingPriority, priority)
-		v, ok := span.Metrics[samplingPriorityKey]
+		v, ok := span.Metrics[keySamplingPriority]
 		assert.True(ok)
 		assert.EqualValues(priority, v)
 		assert.EqualValues(span.context.priority, v)
 		assert.True(span.context.hasPriority)
 
 		childSpan := tracer.newChildSpan("my.child", span)
-		v0, ok0 := span.Metrics[samplingPriorityKey]
-		v1, ok1 := childSpan.Metrics[samplingPriorityKey]
+		v0, ok0 := span.Metrics[keySamplingPriority]
+		v1, ok1 := childSpan.Metrics[keySamplingPriority]
 		assert.Equal(ok0, ok1)
 		assert.Equal(v0, v1)
 		assert.EqualValues(childSpan.context.priority, v0)
