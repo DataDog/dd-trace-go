@@ -52,6 +52,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		context.drop = parent.drop
 		context.hasPriority = parent.hasSamplingPriority()
 		context.priority = parent.samplingPriority()
+		context.origin = parent.origin
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
 			return true

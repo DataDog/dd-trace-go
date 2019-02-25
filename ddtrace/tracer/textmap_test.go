@@ -140,6 +140,33 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 	assert.Equal(headers.Get(DefaultPriorityHeader), "0")
 }
 
+func TestTextMapPropagatorOrigin(t *testing.T) {
+	src := TextMapCarrier(map[string]string{
+		originHeader:          "synthetics",
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "1",
+	})
+	tracer := newTracer()
+	ctx, err := tracer.Extract(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sctx, ok := ctx.(*spanContext)
+	if !ok {
+		t.Fatal("not a *spanContext")
+	}
+	if sctx.origin != "synthetics" {
+		t.Fatalf("didn't propagate origin, got: %q", sctx.origin)
+	}
+	dst := map[string]string{}
+	if err := tracer.Inject(ctx, TextMapCarrier(dst)); err != nil {
+		t.Fatal(err)
+	}
+	if dst[originHeader] != "synthetics" {
+		t.Fatal("didn't inject header")
+	}
+}
+
 func TestTextMapPropagatorInjectExtract(t *testing.T) {
 	propagator := NewPropagator(&PropagatorConfig{
 		BaggagePrefix: "bg-",

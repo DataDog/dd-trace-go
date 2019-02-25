@@ -72,6 +72,10 @@ const (
 	DefaultPriorityHeader = "x-datadog-sampling-priority"
 )
 
+// originHeader specifies the name of the header indicating the origin of the trace.
+// It is used with the Synthetics product and usually has the value "synthetics".
+const originHeader = "x-datadog-origin"
+
 // PropagatorConfig defines the configuration for initializing a propagator.
 type PropagatorConfig struct {
 	// BaggagePrefix specifies the prefix that will be used to store baggage
@@ -141,6 +145,9 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if ctx.hasSamplingPriority() {
 		writer.Set(p.cfg.PriorityHeader, strconv.Itoa(ctx.samplingPriority()))
 	}
+	if ctx.origin != "" {
+		writer.Set(originHeader, ctx.origin)
+	}
 	// propagate OpenTracing baggage
 	for k, v := range ctx.baggage {
 		writer.Set(p.cfg.BaggagePrefix+k, v)
@@ -180,6 +187,8 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 				return ErrSpanContextCorrupted
 			}
 			ctx.setSamplingPriority(priority)
+		case originHeader:
+			ctx.origin = v
 		default:
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)

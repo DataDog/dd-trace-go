@@ -235,6 +235,34 @@ func TestTracerBaggagePropagation(t *testing.T) {
 	assert.Equal("value", context.baggage["key"])
 }
 
+func TestStartSpanOrigin(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer := newTracer()
+
+	carrier := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "1",
+		originHeader:          "synthetics",
+	})
+	ctx, err := tracer.Extract(carrier)
+	assert.Nil(err)
+
+	// first child contains tag
+	child := tracer.StartSpan("child", ChildOf(ctx))
+	assert.Equal("synthetics", child.(*span).Meta[keyOrigin])
+
+	// secondary child doesn't
+	child2 := tracer.StartSpan("child2", ChildOf(child.Context()))
+	assert.Empty(child2.(*span).Meta[keyOrigin])
+
+	// but injecting its context marks origin
+	carrier2 := TextMapCarrier(map[string]string{})
+	err = tracer.Inject(child2.Context(), carrier2)
+	assert.Nil(err)
+	assert.Equal("synthetics", carrier2[originHeader])
+}
+
 func TestPropagationDefaults(t *testing.T) {
 	assert := assert.New(t)
 
