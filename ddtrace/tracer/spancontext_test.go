@@ -171,7 +171,7 @@ func TestNewSpanContext(t *testing.T) {
 			TraceID:  1,
 			SpanID:   2,
 			ParentID: 3,
-			Metrics:  map[string]float64{samplingPriorityKey: 1},
+			Metrics:  map[string]float64{keySamplingPriority: 1},
 		}
 		ctx := newSpanContext(span, nil)
 		assert := assert.New(t)

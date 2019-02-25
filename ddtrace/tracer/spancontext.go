@@ -28,6 +28,7 @@ type spanContext struct {
 	mu          sync.RWMutex // guards below fields
 	baggage     map[string]string
 	priority    int
+	origin      string // e.g. "synthetics"
 	hasPriority bool
 }
 
@@ -42,7 +43,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		spanID:  span.SpanID,
 		span:    span,
 	}
-	if v, ok := span.Metrics[samplingPriorityKey]; ok {
+	if v, ok := span.Metrics[keySamplingPriority]; ok {
 		context.hasPriority = true
 		context.priority = int(v)
 	}
