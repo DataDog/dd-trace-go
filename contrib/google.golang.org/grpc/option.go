@@ -86,16 +86,16 @@ func (cfg *statsHandlerConfig) clientServiceName() string {
 // to the grpc client and server stats handlers.
 type StatsHandlerOption func(*statsHandlerConfig)
 
-// StatsHandlerOptionWithServiceName sets the given service name.
-func StatsHandlerOptionWithServiceName(name string) StatsHandlerOption {
+// StatsOptServiceName sets the given service name.
+func StatsOptServiceName(name string) StatsHandlerOption {
 	return func(cfg *statsHandlerConfig) {
 		cfg.serviceName = name
 	}
 }
 
-// StatsHandlerOptionNoDebugStack disables debug stacks for traces with errors. This is useful in situations
+// StatsOptNoDebugStack disables debug stacks for traces with errors. This is useful in situations
 // where errors are frequent and the overhead of calling debug.Stack may affect performance.
-func StatsHandlerOptionNoDebugStack() StatsHandlerOption {
+func StatsOptNoDebugStack() StatsHandlerOption {
 	return func(cfg *statsHandlerConfig) {
 		cfg.noDebugStack = true
 	}

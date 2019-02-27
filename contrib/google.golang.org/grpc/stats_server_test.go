@@ -20,7 +20,7 @@ func TestServerStatsHandler(t *testing.T) {
 
 	serviceName := "grpc-service"
 	statsHandler := NewServerStatsHandler(
-		StatsHandlerOptionWithServiceName(serviceName),
+		StatsOptServiceName(serviceName),
 	)
 	server, err := newServerStatsHandlerTestServer(statsHandler)
 	if err != nil {
