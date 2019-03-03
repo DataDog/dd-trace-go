@@ -1,0 +1,45 @@
+// Package chi provides tracing functions for tracing the go-chi/chi package (https://github.com/go-chi/chi).
+package chi
+
+import (
+	"net/http"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+
+	"github.com/go-chi/chi"
+)
+
+// Router registers routes to be matched and dispatches a handler.
+type Router struct {
+	chi.Router
+	config *routerConfig
+}
+
+// NewRouter returns a new router instance traced with the global tracer.
+func NewRouter(opts ...RouterOption) *Router {
+	cfg := new(routerConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	return &Router{
+		Router: chi.NewRouter(),
+		config: cfg,
+	}
+}
+
+// ServeHTTP dispatches the request to the handler
+// whose pattern most closely matches the request URL.
+// We only need to rewrite this function to be able to trace
+// all the incoming requests to the underlying multiplexer
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	var (
+		spanopts        []ddtrace.StartSpanOption
+		route          = req.URL.Path
+	)
+
+	spanopts = append(spanopts, r.config.spanOpts...)
+	resource := req.Method + " " + route
+	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, spanopts...)
+}
