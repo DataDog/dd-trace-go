@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+
+package binarycarrier;
+
+message BasicTracerCarrier {
+    uint64 trace_id = 1;
+    uint64 span_id = 2;
+    bool has_priority = 3;
+	int32 sampling_priority = 4;
+    map<string, string> baggage_items = 5;
+}
+
