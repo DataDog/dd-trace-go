@@ -173,6 +173,13 @@ func TestTracerStartSpan(t *testing.T) {
 		span := tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep)).(*span)
 		assert.Equal(t, float64(ext.PriorityUserKeep), span.Metrics[keySamplingPriority])
 	})
+
+	t.Run("name", func(t *testing.T) {
+		tracer := newTracer()
+		span := tracer.StartSpan("/home/user", Tag(ext.SpanName, "db.query")).(*span)
+		assert.Equal(t, "db.query", span.Name)
+		assert.Equal(t, "/home/user", span.Resource)
+	})
 }
 
 func TestTracerStartSpanOptions(t *testing.T) {

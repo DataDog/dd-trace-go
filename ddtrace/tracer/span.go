@@ -133,6 +133,8 @@ func (s *span) setTagError(value interface{}, debugStack bool) {
 // setTagString sets a string tag. This method is not safe for concurrent use.
 func (s *span) setTagString(key, v string) {
 	switch key {
+	case ext.SpanName:
+		s.Name = v
 	case ext.ServiceName:
 		s.Service = v
 	case ext.ResourceName:
