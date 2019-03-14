@@ -1,4 +1,4 @@
-// package globalconfig stores configuration which applies globally to both the tracer
+// Package globalconfig stores configuration which applies globally to both the tracer
 // and integrations.
 package globalconfig
 

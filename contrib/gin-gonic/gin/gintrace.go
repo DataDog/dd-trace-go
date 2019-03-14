@@ -13,7 +13,11 @@ import (
 )
 
 // Middleware returns middleware that will trace incoming requests.
-func Middleware(service string) gin.HandlerFunc {
+func Middleware(service string, opts ...Option) gin.HandlerFunc {
+	cfg := newConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
 	return func(c *gin.Context) {
 		resource := c.HandlerName()
 		opts := []ddtrace.StartSpanOption{
@@ -22,6 +26,9 @@ func Middleware(service string) gin.HandlerFunc {
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.Tag(ext.HTTPMethod, c.Request.Method),
 			tracer.Tag(ext.HTTPURL, c.Request.URL.Path),
+		}
+		if cfg.analyticsRate > 0 {
+			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(c.Request.Header)); err == nil {
 			opts = append(opts, tracer.ChildOf(spanctx))
