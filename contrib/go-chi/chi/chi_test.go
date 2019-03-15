@@ -65,7 +65,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
-	assert.Contains(span.Tag(ext.ResourceName), "{id}")
+	assert.Equal("/user/{id}", span.Tag(ext.ResourceName))
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
@@ -142,4 +142,3 @@ func TestPropagation(t *testing.T) {
 
 	router.ServeHTTP(w, r)
 }
-

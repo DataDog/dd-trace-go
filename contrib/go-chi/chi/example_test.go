@@ -48,4 +48,3 @@ func Example_withServiceName() {
 	// And start gathering request traces
 	http.ListenAndServe(":8080", router)
 }
-

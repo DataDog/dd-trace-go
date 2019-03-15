@@ -16,15 +16,13 @@ import (
 
 // Middleware returns middleware that will trace incoming requests.
 func Middleware(opts ...Option) func(next http.Handler) http.Handler {
-	// Setting up the config and it's options
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
-
 	return func(next http.Handler) http.Handler {
-		fn := func(w http.ResponseWriter, r *http.Request) {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			opts := []ddtrace.StartSpanOption{
 				tracer.SpanType(ext.SpanTypeWeb),
 				tracer.ServiceName(cfg.serviceName),
@@ -55,8 +53,6 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				// mark 5xx server error
 				span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 			}
-		}
-		return http.HandlerFunc(fn)
+		})
 	}
 }
-
