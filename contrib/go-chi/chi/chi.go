@@ -43,6 +43,10 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			// set the resource name as we get it only once the handler is executed
 			resourceName := chi.RouteContext(r.Context()).RoutePattern()
+			if resourceName == "" {
+				resourceName = "unknown"
+			}
+			resourceName = r.Method + " " + resourceName
 			span.SetTag(ext.ResourceName, resourceName)
 
 			// set the status code
