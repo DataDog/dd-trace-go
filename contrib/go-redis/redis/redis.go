@@ -97,22 +97,26 @@ func (c *Pipeliner) Exec() ([]redis.Cmder, error) {
 
 func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) {
 	p := c.params
-	span, _ := tracer.StartSpanFromContext(ctx, "redis.command",
+	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName("redis"),
 		tracer.Tag(ext.TargetHost, p.host),
 		tracer.Tag(ext.TargetPort, p.port),
 		tracer.Tag("out.db", p.db),
-	)
+	}
+	if rate := p.config.analyticsRate; rate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	}
+	span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
 	cmds, err := c.Pipeliner.Exec()
 	span.SetTag(ext.ResourceName, commandsToString(cmds))
 	span.SetTag("redis.pipeline_length", strconv.Itoa(len(cmds)))
-	var opts []ddtrace.FinishOption
+	var finishOpts []ddtrace.FinishOption
 	if err != redis.Nil {
-		opts = append(opts, tracer.WithError(err))
+		finishOpts = append(finishOpts, tracer.WithError(err))
 	}
-	span.Finish(opts...)
+	span.Finish(finishOpts...)
 
 	return cmds, err
 }
@@ -156,7 +160,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			parts := strings.Split(raw, " ")
 			length := len(parts) - 1
 			p := tc.params
-			span, _ := tracer.StartSpanFromContext(ctx, "redis.command",
+			opts := []ddtrace.StartSpanOption{
 				tracer.SpanType(ext.SpanTypeRedis),
 				tracer.ServiceName(p.config.serviceName),
 				tracer.ResourceName(parts[0]),
@@ -165,13 +169,17 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 				tracer.Tag("out.db", p.db),
 				tracer.Tag("redis.raw_command", raw),
 				tracer.Tag("redis.args_length", strconv.Itoa(length)),
-			)
-			err := oldProcess(cmd)
-			var opts []ddtrace.FinishOption
-			if err != redis.Nil {
-				opts = append(opts, tracer.WithError(err))
 			}
-			span.Finish(opts...)
+			if rate := p.config.analyticsRate; rate > 0 {
+				opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+			}
+			span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+			err := oldProcess(cmd)
+			var finishOpts []ddtrace.FinishOption
+			if err != redis.Nil {
+				finishOpts = append(finishOpts, tracer.WithError(err))
+			}
+			span.Finish(finishOpts...)
 			return err
 		}
 	}
