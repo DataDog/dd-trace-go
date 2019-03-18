@@ -1,17 +1,23 @@
 package mgo
 
-import "context"
+import (
+	"context"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+)
 
 type mongoConfig struct {
-	ctx         context.Context
-	serviceName string
-	tags        map[string]string
+	ctx           context.Context
+	serviceName   string
+	analyticsRate float64
 }
 
-func defaults(cfg *mongoConfig) {
-	cfg.serviceName = "mongodb"
-	cfg.ctx = context.Background()
-	cfg.tags = make(map[string]string)
+func newConfig() *mongoConfig {
+	return &mongoConfig{
+		serviceName:   "mongodb",
+		ctx:           context.Background(),
+		analyticsRate: globalconfig.AnalyticsRate(),
+	}
 }
 
 // DialOption represents an option that can be passed to Dial
@@ -28,5 +34,21 @@ func WithServiceName(name string) DialOption {
 func WithContext(ctx context.Context) DialOption {
 	return func(cfg *mongoConfig) {
 		cfg.ctx = ctx
+	}
+}
+
+// WithAnalytics enables Trace Analytics for all started spans.
+func WithAnalytics(on bool) DialOption {
+	if on {
+		return WithAnalyticsRate(1.0)
+	}
+	return WithAnalyticsRate(0.0)
+}
+
+// WithAnalyticsRate sets the sampling rate for Trace Analytics events
+// correlated to started spans.
+func WithAnalyticsRate(rate float64) DialOption {
+	return func(cfg *mongoConfig) {
+		cfg.analyticsRate = rate
 	}
 }
