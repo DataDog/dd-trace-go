@@ -1,12 +1,18 @@
 package gocql
 
-type queryConfig struct{ serviceName, resourceName string }
+import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+type queryConfig struct {
+	serviceName, resourceName string
+	analyticsRate             float64
+}
 
 // WrapOption represents an option that can be passed to WrapQuery.
 type WrapOption func(*queryConfig)
 
 func defaults(cfg *queryConfig) {
 	cfg.serviceName = "gocql.query"
+	cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
 // WithServiceName sets the given service name for the returned query.
@@ -25,5 +31,21 @@ func WithServiceName(name string) WrapOption {
 func WithResourceName(name string) WrapOption {
 	return func(cfg *queryConfig) {
 		cfg.resourceName = name
+	}
+}
+
+// WithAnalytics enables Trace Analytics for all started spans.
+func WithAnalytics(on bool) WrapOption {
+	if on {
+		return WithAnalyticsRate(1.0)
+	}
+	return WithAnalyticsRate(0.0)
+}
+
+// WithAnalyticsRate sets the sampling rate for Trace Analytics events
+// correlated to started spans.
+func WithAnalyticsRate(rate float64) WrapOption {
+	return func(cfg *queryConfig) {
+		cfg.analyticsRate = rate
 	}
 }

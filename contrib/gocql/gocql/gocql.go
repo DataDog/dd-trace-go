@@ -17,7 +17,7 @@ import (
 type Query struct {
 	*gocql.Query
 	*params
-	traceContext context.Context
+	ctx context.Context
 }
 
 // Iter inherits from gocql.Iter and contains a span.
@@ -57,7 +57,7 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 
 // WithContext adds the specified context to the traced Query structure.
 func (tq *Query) WithContext(ctx context.Context) *Query {
-	tq.traceContext = ctx
+	tq.ctx = ctx
 	tq.Query.WithContext(ctx)
 	return tq
 }
@@ -72,13 +72,17 @@ func (tq *Query) PageState(state []byte) *Query {
 // NewChildSpan creates a new span from the params and the context.
 func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	p := tq.params
-	span, _ := tracer.StartSpanFromContext(ctx, ext.CassandraQuery,
+	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeCassandra),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(p.config.resourceName),
 		tracer.Tag(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated)),
 		tracer.Tag(ext.CassandraKeyspace, p.keyspace),
-	)
+	}
+	if rate := p.config.analyticsRate; rate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	}
+	span, _ := tracer.StartSpanFromContext(ctx, ext.CassandraQuery, opts...)
 	return span
 }
 
@@ -89,7 +93,7 @@ func (tq *Query) Exec() error {
 
 // MapScan wraps in a span query.MapScan call.
 func (tq *Query) MapScan(m map[string]interface{}) error {
-	span := tq.newChildSpan(tq.traceContext)
+	span := tq.newChildSpan(tq.ctx)
 	err := tq.Query.MapScan(m)
 	span.Finish(tracer.WithError(err))
 	return err
@@ -97,7 +101,7 @@ func (tq *Query) MapScan(m map[string]interface{}) error {
 
 // Scan wraps in a span query.Scan call.
 func (tq *Query) Scan(dest ...interface{}) error {
-	span := tq.newChildSpan(tq.traceContext)
+	span := tq.newChildSpan(tq.ctx)
 	err := tq.Query.Scan(dest...)
 	span.Finish(tracer.WithError(err))
 	return err
@@ -105,7 +109,7 @@ func (tq *Query) Scan(dest ...interface{}) error {
 
 // ScanCAS wraps in a span query.ScanCAS call.
 func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
-	span := tq.newChildSpan(tq.traceContext)
+	span := tq.newChildSpan(tq.ctx)
 	applied, err = tq.Query.ScanCAS(dest...)
 	span.Finish(tracer.WithError(err))
 	return applied, err
@@ -113,7 +117,7 @@ func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 
 // Iter starts a new span at query.Iter call.
 func (tq *Query) Iter() *Iter {
-	span := tq.newChildSpan(tq.traceContext)
+	span := tq.newChildSpan(tq.ctx)
 	iter := tq.Query.Iter()
 	span.SetTag(ext.CassandraRowCount, strconv.Itoa(iter.NumRows()))
 	span.SetTag(ext.CassandraConsistencyLevel, tq.GetConsistency().String())
