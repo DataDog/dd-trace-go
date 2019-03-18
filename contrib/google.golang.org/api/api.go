@@ -33,7 +33,7 @@ func NewClient(options ...Option) (*http.Client, error) {
 // Google APIs and traces all requests.
 func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.RoundTripper {
 	cfg := newConfig(options...)
-	return httptrace.WrapRoundTripper(transport,
+	rtOpts := []httptrace.RoundTripperOption{
 		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
 			e, ok := apiEndpoints.Get(req.URL.Hostname(), req.Method, req.URL.Path)
 			if ok {
@@ -46,5 +46,10 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 			if cfg.serviceName != "" {
 				span.SetTag(ext.ServiceName, cfg.serviceName)
 			}
-		}))
+		}),
+	}
+	if cfg.analyticsRate > 0 {
+		rtOpts = append(rtOpts, httptrace.RTWithAnalyticsRate(cfg.analyticsRate))
+	}
+	return httptrace.WrapRoundTripper(transport, rtOpts...)
 }

@@ -12,6 +12,7 @@ import (
 	urlshortener "google.golang.org/api/urlshortener/v1"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -103,4 +104,61 @@ func TestURLShortener(t *testing.T) {
 	assert.Equal(t, "400", s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, "/urlshortener/v1/url/history", s0.Tag(ext.HTTPURL))
+}
+
+func TestAnalyticsSettings(t *testing.T) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
+		svc, err := books.New(&http.Client{
+			Transport: WrapRoundTripper(badRequestTransport, opts...),
+		})
+		assert.NoError(t, err)
+		svc.Bookshelves.List("montana.banana").Do()
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+		s := spans[0]
+		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil)
+	})
+
+	t.Run("global", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.4)
+	})
+
+	t.Run("enabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 1.0, WithAnalytics(true))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil, WithAnalytics(false))
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	})
 }
