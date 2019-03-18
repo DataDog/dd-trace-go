@@ -17,12 +17,17 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func startSpanFromContext(ctx context.Context, method, operation, service string) (ddtrace.Span, context.Context) {
+func startSpanFromContext(
+	ctx context.Context, method, operation, service string, rate float64,
+) (ddtrace.Span, context.Context) {
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethod, method),
 		tracer.SpanType(ext.AppTypeRPC),
+	}
+	if rate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
 	}
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {

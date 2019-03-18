@@ -2,15 +2,17 @@ package grpc
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"net"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
 	context "golang.org/x/net/context"
@@ -445,7 +447,7 @@ func (r *rig) Close() {
 	r.listener.Close()
 }
 
-func newRig(traceClient bool, interceptorOpts ...InterceptorOption) (*rig, error) {
+func newRig(traceClient bool, interceptorOpts ...Option) (*rig, error) {
 	interceptorOpts = append([]InterceptorOption{WithServiceName("grpc")}, interceptorOpts...)
 
 	server := grpc.NewServer(
@@ -499,4 +501,80 @@ func waitForSpans(mt mocktracer.Tracer, sz int, maxWait time.Duration) {
 		}
 		time.Sleep(time.Millisecond * 100)
 	}
+}
+
+func TestAnalyticsSettings(t *testing.T) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...InterceptorOption) {
+		rig, err := newRig(true, opts...)
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		defer rig.Close()
+
+		client := rig.client
+		resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		assert.Nil(t, err)
+		assert.Equal(t, resp.Message, "passed")
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 2)
+
+		var serverSpan, clientSpan mocktracer.Span
+
+		for _, s := range spans {
+			// order of traces in buffer is not garanteed
+			switch s.OperationName() {
+			case "grpc.server":
+				serverSpan = s
+			case "grpc.client":
+				clientSpan = s
+			}
+		}
+
+		assert.Equal(t, rate, clientSpan.Tag(ext.EventSampleRate))
+		assert.Equal(t, rate, serverSpan.Tag(ext.EventSampleRate))
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil)
+	})
+
+	t.Run("global", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.4)
+	})
+
+	t.Run("enabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 1.0, WithAnalytics(true))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil, WithAnalytics(false))
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	})
 }
