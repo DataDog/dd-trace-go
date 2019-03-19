@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -37,14 +38,18 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	url := req.URL.Path
 	method := req.Method
 	resource := quantize(url, method)
-	span, _ := tracer.StartSpanFromContext(req.Context(), "elasticsearch.query",
+	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(t.config.serviceName),
 		tracer.SpanType(ext.SpanTypeElasticSearch),
 		tracer.ResourceName(resource),
 		tracer.Tag("elasticsearch.method", method),
 		tracer.Tag("elasticsearch.url", url),
 		tracer.Tag("elasticsearch.params", req.URL.Query().Encode()),
-	)
+	}
+	if t.config.analyticsRate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.config.analyticsRate))
+	}
+	span, _ := tracer.StartSpanFromContext(req.Context(), "elasticsearch.query", opts...)
 	defer span.Finish()
 
 	snip, rc, err := peek(req.Body, int(req.ContentLength), bodyCutoff)
