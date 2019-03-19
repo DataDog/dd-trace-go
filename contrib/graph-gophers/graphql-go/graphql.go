@@ -13,6 +13,8 @@ import (
 	"github.com/graph-gophers/graphql-go/errors"
 	"github.com/graph-gophers/graphql-go/introspection"
 	"github.com/graph-gophers/graphql-go/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -32,10 +34,14 @@ var _ trace.Tracer = (*Tracer)(nil)
 
 // TraceQuery traces a GraphQL query.
 func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationName string, variables map[string]interface{}, varTypes map[string]*introspection.Type) (context.Context, trace.TraceQueryFinishFunc) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.request",
+	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlQuery, queryString),
-	)
+	}
+	if t.cfg.analyticsRate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
+	}
+	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.request", opts...)
 
 	return ctx, func(errs []*errors.QueryError) {
 		var err error
@@ -53,11 +59,16 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 
 // TraceField traces a GraphQL field access.
 func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, fieldName string, trivial bool, args map[string]interface{}) (context.Context, trace.TraceFieldFinishFunc) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.field",
+	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlField, fieldName),
 		tracer.Tag(tagGraphqlType, typeName),
-	)
+	}
+	if t.cfg.analyticsRate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
+	}
+	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.field", opts...)
+
 	return ctx, func(err *errors.QueryError) {
 		// must explicitly check for nil, see issue golang/go#22729
 		if err != nil {
