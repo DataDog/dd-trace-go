@@ -60,7 +60,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 // WrapRoundTripper returns a new RoundTripper which traces all requests sent
 // over the transport.
 func WrapRoundTripper(rt http.RoundTripper, opts ...RoundTripperOption) http.RoundTripper {
-	cfg := new(roundTripperConfig)
+	cfg := newRoundTripperConfig()
 	for _, opt := range opts {
 		opt(cfg)
 	}

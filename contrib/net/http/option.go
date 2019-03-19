@@ -57,6 +57,12 @@ type roundTripperConfig struct {
 	analyticsRate float64
 }
 
+func newRoundTripperConfig() *roundTripperConfig {
+	return &roundTripperConfig{
+		analyticsRate: globalconfig.AnalyticsRate(),
+	}
+}
+
 // A RoundTripperOption represents an option that can be passed to
 // WrapRoundTripper.
 type RoundTripperOption func(*roundTripperConfig)

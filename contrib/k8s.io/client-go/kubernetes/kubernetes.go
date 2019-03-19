@@ -17,22 +17,35 @@ const (
 	prefixWatch = "watch/"
 )
 
+// WrapRoundTripperFunc creates a new WrapTransport function using the given set of
+// RountripperOption. It is useful when desiring to to enable Trace Analytics or setting
+// up a RoundTripperAfterFunc.
+func WrapRoundTripperFunc(opts ...httptrace.RoundTripperOption) func(http.RoundTripper) http.RoundTripper {
+	return func(rt http.RoundTripper) http.RoundTripper {
+		return wrapRoundTripperWithOptions(rt, opts...)
+	}
+}
+
 // WrapRoundTripper wraps a RoundTripper intended for interfacing with
 // Kubernetes and traces all requests.
 func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
-	return httptrace.WrapRoundTripper(rt,
-		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
-			span.SetTag(ext.ServiceName, "kubernetes")
-			span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
-			traceID := span.Context().TraceID()
-			if traceID == 0 {
-				// tracer is not running
-				return
-			}
-			kubeAuditID := strconv.FormatUint(traceID, 10)
-			req.Header.Set("Audit-Id", kubeAuditID)
-			span.SetTag("kubernetes.audit_id", kubeAuditID)
-		}))
+	return wrapRoundTripperWithOptions(rt)
+}
+
+func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTripperOption) http.RoundTripper {
+	opts = append(opts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
+		span.SetTag(ext.ServiceName, "kubernetes")
+		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
+		traceID := span.Context().TraceID()
+		if traceID == 0 {
+			// tracer is not running
+			return
+		}
+		kubeAuditID := strconv.FormatUint(traceID, 10)
+		req.Header.Set("Audit-Id", kubeAuditID)
+		span.SetTag("kubernetes.audit_id", kubeAuditID)
+	}))
+	return httptrace.WrapRoundTripper(rt, opts...)
 }
 
 // RequestToResource parses a Kubernetes request and extracts a resource name from it.
