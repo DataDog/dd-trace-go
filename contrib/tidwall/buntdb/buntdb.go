@@ -86,11 +86,15 @@ func WrapTx(tx *buntdb.Tx, opts ...Option) *Tx {
 }
 
 func (tx *Tx) startSpan(name string) ddtrace.Span {
-	span, _ := tracer.StartSpanFromContext(tx.cfg.ctx, "buntdb.query",
+	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(tx.cfg.serviceName),
 		tracer.ResourceName(name),
-	)
+	}
+	if tx.cfg.analyticsRate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tx.cfg.analyticsRate))
+	}
+	span, _ := tracer.StartSpanFromContext(tx.cfg.ctx, "buntdb.query", opts...)
 	return span
 }
 
