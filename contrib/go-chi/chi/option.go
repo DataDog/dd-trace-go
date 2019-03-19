@@ -28,4 +28,3 @@ func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
 		cfg.spanOpts = opts
 	}
 }
-

@@ -1,7 +1,5 @@
 package redigo // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/garyburd/redigo"
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
 type dialConfig struct {
 	serviceName   string
 	analyticsRate float64
@@ -12,7 +10,7 @@ type DialOption func(*dialConfig)
 
 func defaults(cfg *dialConfig) {
 	cfg.serviceName = "redis.conn"
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
 // WithServiceName sets the given service name for the dialled connection.

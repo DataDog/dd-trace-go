@@ -1,7 +1,5 @@
 package graphql
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
 type config struct {
 	serviceName   string
 	analyticsRate float64
@@ -12,7 +10,7 @@ type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.serviceName = "graphql.server"
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
 // WithServiceName sets the given service name for the client.

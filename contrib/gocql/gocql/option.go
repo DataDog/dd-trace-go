@@ -1,7 +1,5 @@
 package gocql
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
 type queryConfig struct {
 	serviceName, resourceName string
 	analyticsRate             float64
@@ -12,7 +10,7 @@ type WrapOption func(*queryConfig)
 
 func defaults(cfg *queryConfig) {
 	cfg.serviceName = "gocql.query"
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
 // WithServiceName sets the given service name for the returned query.

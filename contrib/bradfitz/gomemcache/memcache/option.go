@@ -1,7 +1,5 @@
 package memcache
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
 const (
 	serviceName   = "memcached"
 	operationName = "memcached.query"
@@ -17,7 +15,7 @@ type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = serviceName
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
 // WithServiceName sets the given service name for the dialled connection.

@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type config struct {
@@ -15,8 +13,8 @@ type config struct {
 
 func newConfig(options ...Option) *config {
 	cfg := &config{
-		ctx:           context.Background(),
-		analyticsRate: globalconfig.AnalyticsRate(),
+		ctx: context.Background(),
+		// analyticsRate: globalconfig.AnalyticsRate(),
 	}
 	for _, opt := range options {
 		opt(cfg)

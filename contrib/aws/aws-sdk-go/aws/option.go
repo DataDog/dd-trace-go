@@ -1,7 +1,5 @@
 package aws
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
 type config struct {
 	serviceName   string
 	analyticsRate float64
@@ -11,7 +9,7 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
 // WithServiceName sets the given service name for the dialled connection.

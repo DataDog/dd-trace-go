@@ -1,7 +1,5 @@
 package grpc
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
 // Option specifies a configuration option for the grpc package. Not all options apply
 // to all instrumented structures.
 type Option = InterceptorOption
@@ -36,7 +34,7 @@ func defaults(cfg *config) {
 	// cfg.serviceName defaults are set in interceptors
 	cfg.traceStreamCalls = true
 	cfg.traceStreamMessages = true
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
 // WithServiceName sets the given service name for the intercepted client.

@@ -1,7 +1,5 @@
 package redis // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-redis/redis"
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
 type clientConfig struct {
 	serviceName   string
 	analyticsRate float64
@@ -12,7 +10,7 @@ type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = "redis.client"
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
 // WithServiceName sets the given service name for the client.

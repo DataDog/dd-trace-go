@@ -2,8 +2,6 @@ package kafka
 
 import (
 	"context"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type config struct {
@@ -17,9 +15,9 @@ type Option func(cfg *config)
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
-		serviceName:   "kafka",
-		ctx:           context.Background(),
-		analyticsRate: globalconfig.AnalyticsRate(),
+		serviceName: "kafka",
+		ctx:         context.Background(),
+		// analyticsRate: globalconfig.AnalyticsRate(),
 	}
 	for _, opt := range opts {
 		opt(cfg)

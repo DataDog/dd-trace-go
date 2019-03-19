@@ -2,8 +2,6 @@ package mgo
 
 import (
 	"context"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type mongoConfig struct {
@@ -14,9 +12,9 @@ type mongoConfig struct {
 
 func newConfig() *mongoConfig {
 	return &mongoConfig{
-		serviceName:   "mongodb",
-		ctx:           context.Background(),
-		analyticsRate: globalconfig.AnalyticsRate(),
+		serviceName: "mongodb",
+		ctx:         context.Background(),
+		// analyticsRate: globalconfig.AnalyticsRate(),
 	}
 }
 

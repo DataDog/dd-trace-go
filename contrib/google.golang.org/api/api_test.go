@@ -127,6 +127,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	})
 
 	t.Run("global", func(t *testing.T) {
+		t.Skip("global flag disabled")
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
