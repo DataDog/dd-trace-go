@@ -29,6 +29,9 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				tracer.Tag(ext.HTTPMethod, r.Method),
 				tracer.Tag(ext.HTTPURL, r.URL.Path),
 			}
+			if cfg.analyticsRate > 0 {
+				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+			}
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 				opts = append(opts, tracer.ChildOf(spanctx))
 			}
