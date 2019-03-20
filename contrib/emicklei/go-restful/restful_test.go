@@ -19,7 +19,7 @@ func TestTrace200(t *testing.T) {
 	defer mt.Stop()
 
 	ws := new(restful.WebService)
-	ws.Filter(FilterFunction(WithServiceName("my-service")))
+	ws.Filter(FilterFunc(WithServiceName("my-service")))
 	ws.Route(ws.GET("/user/{id}").Param(restful.PathParameter("id", "user ID")).
 		To(func(request *restful.Request, response *restful.Response) {
 			_, ok := tracer.SpanFromContext(request.Request.Context())
@@ -58,7 +58,7 @@ func TestError(t *testing.T) {
 	wantErr := errors.New("oh no")
 
 	ws := new(restful.WebService)
-	ws.Filter(FilterFunction())
+	ws.Filter(FilterFunc())
 	ws.Route(ws.GET("/err").To(func(request *restful.Request, response *restful.Response) {
 		response.WriteError(500, wantErr)
 	}))
@@ -93,7 +93,7 @@ func TestPropagation(t *testing.T) {
 	tracer.Inject(pspan.Context(), tracer.HTTPHeadersCarrier(r.Header))
 
 	ws := new(restful.WebService)
-	ws.Filter(FilterFunction())
+	ws.Filter(FilterFunc())
 	ws.Route(ws.GET("/user/{id}").To(func(request *restful.Request, response *restful.Response) {
 		span, ok := tracer.SpanFromContext(request.Request.Context())
 		assert.True(ok)
@@ -109,7 +109,7 @@ func TestPropagation(t *testing.T) {
 func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
 		ws := new(restful.WebService)
-		ws.Filter(FilterFunction(opts...))
+		ws.Filter(FilterFunc(opts...))
 		ws.Route(ws.GET("/user/{id}").To(func(request *restful.Request, response *restful.Response) {}))
 
 		container := restful.NewContainer()

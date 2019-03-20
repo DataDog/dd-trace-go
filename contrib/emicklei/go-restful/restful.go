@@ -11,8 +11,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// FilterFunction returns a filter which will trace incoming request.
-func FilterFunction(configOpts ...Option) restful.FilterFunction {
+// FilterFunc returns a restful.FilterFunction which will automatically trace incoming request.
+func FilterFunc(configOpts ...Option) restful.FilterFunction {
 	cfg := newConfig()
 	for _, opt := range configOpts {
 		opt(cfg)
@@ -44,7 +44,7 @@ func FilterFunction(configOpts ...Option) restful.FilterFunction {
 	}
 }
 
-// Filter is deprecated. Please use FilterFunction.
+// Filter is deprecated. Please use FilterFunc.
 func Filter(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
 	opts := []ddtrace.StartSpanOption{
 		tracer.ResourceName(req.SelectedRoutePath()),

@@ -16,7 +16,7 @@ func Example() {
 	ws := new(restful.WebService)
 
 	// create the Datadog filter
-	filter := restfultrace.FilterFunction(
+	filter := restfultrace.FilterFunc(
 		restfultrace.WithServiceName("my-service"),
 	)
 
