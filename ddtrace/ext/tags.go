@@ -63,4 +63,8 @@ const (
 	// EventSampleRate specifies the rate at which this span will be sampled
 	// as an APM event.
 	EventSampleRate = "_dd1.sr.eausr"
+
+	// AnalyticsEvent specifies whether the span should be recorded as a Trace
+	// Search & Analytics event.
+	AnalyticsEvent = "analytics.event"
 )

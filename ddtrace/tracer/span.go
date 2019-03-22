@@ -80,9 +80,21 @@ func (s *span) SetTag(key string, value interface{}) {
 	if s.finished {
 		return
 	}
-	if key == ext.Error {
+	switch key {
+	case ext.Error:
 		s.setTagError(value, true)
 		return
+	case ext.AnalyticsEvent:
+		// "analytics.event" is a boolean alias for setting the event sampling
+		// rate to 0.0 or 1.0
+		if set, ok := value.(bool); ok {
+			if set {
+				s.setTagNumeric(ext.EventSampleRate, 1.0)
+			} else {
+				s.setTagNumeric(ext.EventSampleRate, 0.0)
+			}
+			return
+		}
 	}
 	if v, ok := value.(string); ok {
 		s.setTagString(key, v)
