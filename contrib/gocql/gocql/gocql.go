@@ -86,7 +86,6 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	return span
 }
 
-// FinishSpan ends child span
 func (tq *Query) finishSpan(span ddtrace.Span, err error) {
 	if tq.params.config.noDebugStack {
 		span.Finish(tracer.WithError(err), tracer.NoDebugStack())
