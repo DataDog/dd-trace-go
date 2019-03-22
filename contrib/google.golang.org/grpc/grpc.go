@@ -37,7 +37,7 @@ func startSpanFromContext(
 }
 
 // finishWithError applies finish option and a tag with gRPC status code, disregarding OK, EOF and Canceled errors.
-func finishWithError(span ddtrace.Span, err error, noDebugStack bool) {
+func finishWithError(span ddtrace.Span, err error, cfg *config) {
 	if err == io.EOF || err == context.Canceled {
 		err = nil
 	}
@@ -49,7 +49,7 @@ func finishWithError(span ddtrace.Span, err error, noDebugStack bool) {
 	finishOptions := []tracer.FinishOption{
 		tracer.WithError(err),
 	}
-	if noDebugStack {
+	if cfg.noDebugStack {
 		finishOptions = append(finishOptions, tracer.NoDebugStack())
 	}
 	span.Finish(finishOptions...)

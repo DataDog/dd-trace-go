@@ -34,7 +34,7 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 			ss.cfg.serverServiceName(),
 			ss.cfg.analyticsRate,
 		)
-		defer func() { finishWithError(span, err, ss.cfg.noDebugStack) }()
+		defer func() { finishWithError(span, err, ss.cfg) }()
 	}
 	err = ss.ServerStream.RecvMsg(m)
 	return err
@@ -49,7 +49,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 			ss.cfg.serverServiceName(),
 			ss.cfg.analyticsRate,
 		)
-		defer func() { finishWithError(span, err, ss.cfg.noDebugStack) }()
+		defer func() { finishWithError(span, err, ss.cfg) }()
 	}
 	err = ss.ServerStream.SendMsg(m)
 	return err
@@ -78,7 +78,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				cfg.serviceName,
 				cfg.analyticsRate,
 			)
-			defer func() { finishWithError(span, err, cfg.noDebugStack) }()
+			defer func() { finishWithError(span, err, cfg) }()
 		}
 
 		// call the original handler with a new stream, which traces each send
@@ -110,7 +110,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			cfg.analyticsRate,
 		)
 		resp, err := handler(ctx, req)
-		finishWithError(span, err, cfg.noDebugStack)
+		finishWithError(span, err, cfg)
 		return resp, err
 	}
 }
