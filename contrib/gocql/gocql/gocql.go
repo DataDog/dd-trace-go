@@ -86,6 +86,15 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	return span
 }
 
+// FinishChildSpan ends child span
+func (tq *Query) finishChildSpan(span ddtrace.Span, err error) {
+	if tq.params.config.noDebugStack {
+		span.Finish(tracer.WithError(err), tracer.NoDebugStack())
+	} else {
+		span.Finish(tracer.WithError(err))
+	}
+}
+
 // Exec is rewritten so that it passes by our custom Iter
 func (tq *Query) Exec() error {
 	return tq.Iter().Close()
@@ -95,7 +104,7 @@ func (tq *Query) Exec() error {
 func (tq *Query) MapScan(m map[string]interface{}) error {
 	span := tq.newChildSpan(tq.ctx)
 	err := tq.Query.MapScan(m)
-	span.Finish(tracer.WithError(err))
+	tq.finishChildSpan(span, err)
 	return err
 }
 
@@ -103,7 +112,7 @@ func (tq *Query) MapScan(m map[string]interface{}) error {
 func (tq *Query) Scan(dest ...interface{}) error {
 	span := tq.newChildSpan(tq.ctx)
 	err := tq.Query.Scan(dest...)
-	span.Finish(tracer.WithError(err))
+	tq.finishChildSpan(span, err)
 	return err
 }
 
@@ -111,7 +120,7 @@ func (tq *Query) Scan(dest ...interface{}) error {
 func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	span := tq.newChildSpan(tq.ctx)
 	applied, err = tq.Query.ScanCAS(dest...)
-	span.Finish(tracer.WithError(err))
+	tq.finishChildSpan(span, err)
 	return applied, err
 }
 

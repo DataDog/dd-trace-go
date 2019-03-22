@@ -2,6 +2,7 @@ package gocql
 
 type queryConfig struct {
 	serviceName, resourceName string
+	noDebugStack              bool
 	analyticsRate             float64
 }
 
@@ -45,5 +46,14 @@ func WithAnalytics(on bool) WrapOption {
 func WithAnalyticsRate(rate float64) WrapOption {
 	return func(cfg *queryConfig) {
 		cfg.analyticsRate = rate
+	}
+}
+
+// NoDebugStack prevents any error presented using the WithError finishing option
+// from generating a stack trace. This is useful in situations where errors are frequent
+// and performance is critical.
+func NoDebugStack() WrapOption {
+	return func(cfg *queryConfig) {
+		cfg.noDebugStack = true
 	}
 }
