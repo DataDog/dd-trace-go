@@ -49,9 +49,9 @@ func WithAnalyticsRate(rate float64) WrapOption {
 	}
 }
 
-// NoDebugStack prevents any error presented using the WithError finishing option
-// from generating a stack trace. This is useful in situations where errors are frequent
-// and performance is critical.
+// NoDebugStack prevents stack traces from being attached to spans finishing
+// with an error. This is useful in situations where errors are frequent and
+// performance is critical.
 func NoDebugStack() WrapOption {
 	return func(cfg *queryConfig) {
 		cfg.noDebugStack = true
