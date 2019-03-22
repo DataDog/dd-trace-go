@@ -10,11 +10,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mongodb/mongo-go-driver/bson"
-	"github.com/mongodb/mongo-go-driver/event"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/mongodb/mongo-go-driver/bson"
+	"github.com/mongodb/mongo-go-driver/event"
 )
 
 type spanKey struct {
@@ -25,20 +26,25 @@ type spanKey struct {
 type monitor struct {
 	sync.Mutex
 	spans map[spanKey]ddtrace.Span
+	cfg   *config
 }
 
 func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	hostname, port := peerInfo(evt)
 	b, _ := bson.MarshalExtJSON(evt.Command, false, false)
-	span, _ := tracer.StartSpanFromContext(ctx, "mongodb.query",
-		tracer.ServiceName("mongo"),
-		tracer.ResourceName("mongo."+evt.CommandName),
+	opts := []ddtrace.StartSpanOption{
+		tracer.ServiceName(m.cfg.serviceName),
+		tracer.ResourceName("mongo." + evt.CommandName),
 		tracer.Tag(ext.DBInstance, evt.DatabaseName),
 		tracer.Tag(ext.DBStatement, string(b)),
 		tracer.Tag(ext.DBType, "mongo"),
 		tracer.Tag(ext.PeerHostname, hostname),
 		tracer.Tag(ext.PeerPort, port),
-	)
+	}
+	if m.cfg.analyticsRate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
+	}
+	span, _ := tracer.StartSpanFromContext(ctx, "mongodb.query", opts...)
 	key := spanKey{
 		ConnectionID: evt.ConnectionID,
 		RequestID:    evt.RequestID,
@@ -74,9 +80,15 @@ func (m *monitor) Finished(evt *event.CommandFinishedEvent, err error) {
 }
 
 // NewMonitor creates a new mongodb event CommandMonitor.
-func NewMonitor() *event.CommandMonitor {
+func NewMonitor(opts ...Option) *event.CommandMonitor {
+	cfg := new(config)
+	defaults(cfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
 	m := &monitor{
 		spans: make(map[spanKey]ddtrace.Span),
+		cfg:   cfg,
 	}
 	return &event.CommandMonitor{
 		Started:   m.Started,

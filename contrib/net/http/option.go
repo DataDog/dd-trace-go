@@ -4,14 +4,19 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
-type muxConfig struct{ serviceName string }
+type muxConfig struct {
+	serviceName   string
+	analyticsRate float64
+}
 
 // MuxOption represents an option that can be passed to NewServeMux.
 type MuxOption func(*muxConfig)
 
 func defaults(cfg *muxConfig) {
+	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.serviceName = "http.router"
 }
 
@@ -19,6 +24,22 @@ func defaults(cfg *muxConfig) {
 func WithServiceName(name string) MuxOption {
 	return func(cfg *muxConfig) {
 		cfg.serviceName = name
+	}
+}
+
+// WithAnalytics enables Trace Analytics for all started spans.
+func WithAnalytics(on bool) MuxOption {
+	if on {
+		return WithAnalyticsRate(1.0)
+	}
+	return WithAnalyticsRate(0.0)
+}
+
+// WithAnalyticsRate sets the sampling rate for Trace Analytics events
+// correlated to started spans.
+func WithAnalyticsRate(rate float64) MuxOption {
+	return func(cfg *muxConfig) {
+		cfg.analyticsRate = rate
 	}
 }
 
@@ -31,8 +52,15 @@ type RoundTripperBeforeFunc func(*http.Request, ddtrace.Span)
 type RoundTripperAfterFunc func(*http.Response, ddtrace.Span)
 
 type roundTripperConfig struct {
-	before RoundTripperBeforeFunc
-	after  RoundTripperAfterFunc
+	before        RoundTripperBeforeFunc
+	after         RoundTripperAfterFunc
+	analyticsRate float64
+}
+
+func newRoundTripperConfig() *roundTripperConfig {
+	return &roundTripperConfig{
+		analyticsRate: globalconfig.AnalyticsRate(),
+	}
 }
 
 // A RoundTripperOption represents an option that can be passed to
@@ -52,5 +80,21 @@ func WithBefore(f RoundTripperBeforeFunc) RoundTripperOption {
 func WithAfter(f RoundTripperAfterFunc) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.after = f
+	}
+}
+
+// RTWithAnalytics enables Trace Analytics for all started spans.
+func RTWithAnalytics(on bool) RoundTripperOption {
+	if on {
+		return RTWithAnalyticsRate(1.0)
+	}
+	return RTWithAnalyticsRate(0.0)
+}
+
+// RTWithAnalyticsRate sets the sampling rate for Trace Analytics events
+// correlated to started spans.
+func RTWithAnalyticsRate(rate float64) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.analyticsRate = rate
 	}
 }

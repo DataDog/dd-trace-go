@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 // config holds the tracer configuration.
@@ -114,6 +115,22 @@ func WithSampler(s Sampler) StartOption {
 func WithHTTPRoundTripper(r http.RoundTripper) StartOption {
 	return func(c *config) {
 		c.httpRoundTripper = r
+	}
+}
+
+// WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
+// for integrations.
+func WithAnalytics(on bool) StartOption {
+	if on {
+		return WithAnalyticsRate(1.0)
+	}
+	return WithAnalyticsRate(0.0)
+}
+
+// WithAnalyticsRate sets the global sampling rate for sampling APM events.
+func WithAnalyticsRate(rate float64) StartOption {
+	return func(_ *config) {
+		globalconfig.SetAnalyticsRate(rate)
 	}
 }
 

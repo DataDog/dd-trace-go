@@ -8,6 +8,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
 	context "golang.org/x/net/context"
@@ -173,7 +174,11 @@ func (r *rig) Close() {
 }
 
 func newRig(traceClient bool) (*rig, error) {
-	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerInterceptor(WithServiceName("grpc"))))
+	return newRigWithOpts(traceClient, WithServiceName("grpc"))
+}
+
+func newRigWithOpts(traceClient bool, iopts ...InterceptorOption) (*rig, error) {
+	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerInterceptor(iopts...)))
 
 	RegisterFixtureServer(server, new(fixtureServer))
 
@@ -187,7 +192,7 @@ func newRig(traceClient bool) (*rig, error) {
 
 	opts := []grpc.DialOption{grpc.WithInsecure()}
 	if traceClient {
-		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor(WithServiceName("grpc"))))
+		opts = append(opts, grpc.WithUnaryInterceptor(UnaryClientInterceptor(iopts...)))
 	}
 	conn, err := grpc.Dial(li.Addr().String(), opts...)
 	if err != nil {
@@ -200,4 +205,81 @@ func newRig(traceClient bool) (*rig, error) {
 		conn:     conn,
 		client:   NewFixtureClient(conn),
 	}, err
+}
+
+func TestAnalyticsSettings(t *testing.T) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...InterceptorOption) {
+		rig, err := newRigWithOpts(true, opts...)
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		defer rig.Close()
+
+		client := rig.client
+		resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		assert.Nil(t, err)
+		assert.Equal(t, resp.Message, "passed")
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 2)
+
+		var serverSpan, clientSpan mocktracer.Span
+
+		for _, s := range spans {
+			// order of traces in buffer is not garanteed
+			switch s.OperationName() {
+			case "grpc.server":
+				serverSpan = s
+			case "grpc.client":
+				clientSpan = s
+			}
+		}
+
+		assert.Equal(t, rate, clientSpan.Tag(ext.EventSampleRate))
+		assert.Equal(t, rate, serverSpan.Tag(ext.EventSampleRate))
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil)
+	})
+
+	t.Run("global", func(t *testing.T) {
+		t.Skip("global flag disabled")
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.4)
+	})
+
+	t.Run("enabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 1.0, WithAnalytics(true))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil, WithAnalytics(false))
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	})
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type testResolver struct{}
@@ -60,4 +61,75 @@ func Test(t *testing.T) {
 		assert.Equal(t, "graphql.request", s.OperationName())
 		assert.Equal(t, "graphql.request", s.Tag(ext.ResourceName))
 	}
+}
+
+func TestAnalyticsSettings(t *testing.T) {
+	s := `
+		schema {
+			query: Query
+		}
+		type Query {
+			hello: String!
+		}
+	`
+
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
+		schema := graphql.MustParseSchema(s, new(testResolver),
+			graphql.Tracer(NewTracer(opts...)))
+		srv := httptest.NewServer(&relay.Handler{Schema: schema})
+		defer srv.Close()
+		http.Post(srv.URL, "application/json", strings.NewReader(`{
+			"query": "{ hello }"
+		}`))
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 2)
+
+		assert.Equal(t, rate, spans[0].Tag(ext.EventSampleRate))
+		assert.Equal(t, rate, spans[1].Tag(ext.EventSampleRate))
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil)
+	})
+
+	t.Run("global", func(t *testing.T) {
+		t.Skip("global flag disabled")
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.4)
+	})
+
+	t.Run("enabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 1.0, WithAnalytics(true))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil, WithAnalytics(false))
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	})
 }

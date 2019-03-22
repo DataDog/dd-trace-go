@@ -1,24 +1,19 @@
-package graphql
+package gin
+
+import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 type config struct {
-	serviceName   string
 	analyticsRate float64
 }
 
-// Option represents an option that can be used customize the Tracer.
-type Option func(*config)
-
-func defaults(cfg *config) {
-	cfg.serviceName = "graphql.server"
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-}
-
-// WithServiceName sets the given service name for the client.
-func WithServiceName(name string) Option {
-	return func(cfg *config) {
-		cfg.serviceName = name
+func newConfig() *config {
+	return &config{
+		analyticsRate: globalconfig.AnalyticsRate(),
 	}
 }
+
+// Option specifies instrumentation configuration options.
+type Option func(*config)
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) Option {

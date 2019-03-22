@@ -10,6 +10,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 func TestTrace200(t *testing.T) {
@@ -18,7 +19,7 @@ func TestTrace200(t *testing.T) {
 	defer mt.Stop()
 
 	ws := new(restful.WebService)
-	ws.Filter(Filter)
+	ws.Filter(FilterFunc(WithServiceName("my-service")))
 	ws.Route(ws.GET("/user/{id}").Param(restful.PathParameter("id", "user ID")).
 		To(func(request *restful.Request, response *restful.Response) {
 			_, ok := tracer.SpanFromContext(request.Request.Context())
@@ -43,6 +44,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 	assert.Contains(span.Tag(ext.ResourceName), "/user/{id}")
+	assert.Equal("my-service", span.Tag(ext.ServiceName))
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
@@ -56,7 +58,7 @@ func TestError(t *testing.T) {
 	wantErr := errors.New("oh no")
 
 	ws := new(restful.WebService)
-	ws.Filter(Filter)
+	ws.Filter(FilterFunc())
 	ws.Route(ws.GET("/err").To(func(request *restful.Request, response *restful.Response) {
 		response.WriteError(500, wantErr)
 	}))
@@ -91,7 +93,7 @@ func TestPropagation(t *testing.T) {
 	tracer.Inject(pspan.Context(), tracer.HTTPHeadersCarrier(r.Header))
 
 	ws := new(restful.WebService)
-	ws.Filter(Filter)
+	ws.Filter(FilterFunc())
 	ws.Route(ws.GET("/user/{id}").To(func(request *restful.Request, response *restful.Response) {
 		span, ok := tracer.SpanFromContext(request.Request.Context())
 		assert.True(ok)
@@ -102,4 +104,66 @@ func TestPropagation(t *testing.T) {
 	container.Add(ws)
 
 	container.ServeHTTP(w, r)
+}
+
+func TestAnalyticsSettings(t *testing.T) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
+		ws := new(restful.WebService)
+		ws.Filter(FilterFunc(opts...))
+		ws.Route(ws.GET("/user/{id}").To(func(request *restful.Request, response *restful.Response) {}))
+
+		container := restful.NewContainer()
+		container.Add(ws)
+		r := httptest.NewRequest("GET", "/user/123", nil)
+		w := httptest.NewRecorder()
+		container.ServeHTTP(w, r)
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+		s := spans[0]
+		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil)
+	})
+
+	t.Run("global", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.4)
+	})
+
+	t.Run("enabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 1.0, WithAnalytics(true))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil, WithAnalytics(false))
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	})
 }

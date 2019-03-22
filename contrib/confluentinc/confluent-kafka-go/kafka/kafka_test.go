@@ -4,10 +4,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -28,7 +29,7 @@ func TestConsumerChannel(t *testing.T) {
 		"socket.timeout.ms":        10,
 		"session.timeout.ms":       10,
 		"enable.auto.offset.store": false,
-	})
+	}, WithAnalyticsRate(0.3))
 	assert.NoError(t, err)
 
 	err = c.Subscribe(testTopic, nil)
@@ -72,6 +73,7 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, "Consume Topic gotest", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, int32(1), s.Tag("partition"))
+		assert.Equal(t, 0.3, s.Tag(ext.EventSampleRate))
 		assert.Equal(t, kafka.Offset(i+1), s.Tag("offset"))
 	}
 }
@@ -114,7 +116,7 @@ func TestConsumerPoll(t *testing.T) {
 		"group.id":            testGroupID,
 		"bootstrap.servers":   "127.0.0.1:9092",
 		"go.delivery.reports": true,
-	})
+	}, WithAnalyticsRate(0.1))
 	assert.NoError(t, err)
 	delivery := make(chan kafka.Event, 1)
 	err = p.Produce(&kafka.Message{
@@ -160,6 +162,7 @@ func TestConsumerPoll(t *testing.T) {
 	assert.Equal(t, "kafka.produce", s0.OperationName())
 	assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))
 	assert.Equal(t, "Produce Topic gotest", s0.Tag(ext.ResourceName))
+	assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 	assert.Equal(t, int32(0), s0.Tag("partition"))
 
@@ -167,6 +170,7 @@ func TestConsumerPoll(t *testing.T) {
 	assert.Equal(t, "kafka.consume", s1.OperationName())
 	assert.Equal(t, "kafka", s1.Tag(ext.ServiceName))
 	assert.Equal(t, "Consume Topic gotest", s1.Tag(ext.ResourceName))
+	assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 	assert.Equal(t, int32(0), s1.Tag("partition"))
 }

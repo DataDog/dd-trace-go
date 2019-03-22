@@ -40,19 +40,20 @@ func TestMySQL(t *testing.T) {
 		TableName:  tableName,
 		ExpectName: "mysql.query",
 		ExpectTags: map[string]interface{}{
-			ext.ServiceName: "mysql.db",
-			ext.SpanType:    ext.SpanTypeSQL,
-			ext.TargetHost:  "127.0.0.1",
-			ext.TargetPort:  "3306",
-			ext.DBUser:      "test",
-			ext.DBName:      "test",
+			ext.ServiceName:     "mysql.db",
+			ext.SpanType:        ext.SpanTypeSQL,
+			ext.TargetHost:      "127.0.0.1",
+			ext.TargetPort:      "3306",
+			ext.DBUser:          "test",
+			ext.DBName:          "test",
+			ext.EventSampleRate: nil,
 		},
 	}
 	sqltest.RunAll(t, testConfig)
 }
 
 func TestPostgres(t *testing.T) {
-	Register("postgres", &pq.Driver{}, WithServiceName("postgres-test"))
+	Register("postgres", &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
 	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
@@ -65,12 +66,13 @@ func TestPostgres(t *testing.T) {
 		TableName:  tableName,
 		ExpectName: "postgres.query",
 		ExpectTags: map[string]interface{}{
-			ext.ServiceName: "postgres-test",
-			ext.SpanType:    ext.SpanTypeSQL,
-			ext.TargetHost:  "127.0.0.1",
-			ext.TargetPort:  "5432",
-			ext.DBUser:      "postgres",
-			ext.DBName:      "postgres",
+			ext.ServiceName:     "postgres-test",
+			ext.SpanType:        ext.SpanTypeSQL,
+			ext.TargetHost:      "127.0.0.1",
+			ext.TargetPort:      "5432",
+			ext.DBUser:          "postgres",
+			ext.DBName:          "postgres",
+			ext.EventSampleRate: 0.2,
 		},
 	}
 	sqltest.RunAll(t, testConfig)

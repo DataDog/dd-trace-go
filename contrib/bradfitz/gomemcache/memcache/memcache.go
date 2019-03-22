@@ -56,10 +56,15 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 
 // startSpan starts a span from the context set with WithContext.
 func (c *Client) startSpan(resourceName string) ddtrace.Span {
-	span, _ := tracer.StartSpanFromContext(c.context, operationName,
+	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMemcached),
 		tracer.ServiceName(c.cfg.serviceName),
-		tracer.ResourceName(resourceName))
+		tracer.ResourceName(resourceName),
+	}
+	if rate := c.cfg.analyticsRate; rate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	}
+	span, _ := tracer.StartSpanFromContext(c.context, operationName, opts...)
 	return span
 }
 

@@ -6,6 +6,8 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -23,6 +25,7 @@ type handlers struct {
 // WrapSession wraps a session.Session, causing requests and responses to be traced.
 func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	cfg := new(config)
+	defaults(cfg)
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -40,7 +43,7 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 }
 
 func (h *handlers) Send(req *request.Request) {
-	_, ctx := tracer.StartSpanFromContext(req.Context(), h.operationName(req),
+	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ServiceName(h.serviceName(req)),
 		tracer.ResourceName(h.resourceName(req)),
@@ -49,7 +52,11 @@ func (h *handlers) Send(req *request.Request) {
 		tracer.Tag(tagAWSRegion, h.awsRegion(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
 		tracer.Tag(ext.HTTPURL, req.HTTPRequest.URL.String()),
-	)
+	}
+	if h.cfg.analyticsRate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))
+	}
+	_, ctx := tracer.StartSpanFromContext(req.Context(), h.operationName(req), opts...)
 	req.SetContext(ctx)
 }
 

@@ -1,16 +1,20 @@
 package api
 
-import "context"
+import (
+	"context"
+)
 
 type config struct {
-	serviceName string
-	ctx         context.Context
-	scopes      []string
+	serviceName   string
+	ctx           context.Context
+	analyticsRate float64
+	scopes        []string
 }
 
 func newConfig(options ...Option) *config {
 	cfg := &config{
 		ctx: context.Background(),
+		// analyticsRate: globalconfig.AnalyticsRate(),
 	}
 	for _, opt := range options {
 		opt(cfg)
@@ -41,5 +45,21 @@ func WithScopes(scopes ...string) Option {
 func WithServiceName(serviceName string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = serviceName
+	}
+}
+
+// WithAnalytics enables Trace Analytics for all started spans.
+func WithAnalytics(on bool) Option {
+	if on {
+		return WithAnalyticsRate(1.0)
+	}
+	return WithAnalyticsRate(0.0)
+}
+
+// WithAnalyticsRate sets the sampling rate for Trace Analytics events
+// correlated to started spans.
+func WithAnalyticsRate(rate float64) Option {
+	return func(cfg *config) {
+		cfg.analyticsRate = rate
 	}
 }

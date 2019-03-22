@@ -258,10 +258,14 @@ func (it *Iterator) Release() {
 }
 
 func startSpan(cfg *config, name string) ddtrace.Span {
-	span, _ := tracer.StartSpanFromContext(cfg.ctx, "leveldb.query",
+	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeLevelDB),
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName(name),
-	)
+	}
+	if cfg.analyticsRate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	span, _ := tracer.StartSpanFromContext(cfg.ctx, "leveldb.query", opts...)
 	return span
 }

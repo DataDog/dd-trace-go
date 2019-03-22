@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -18,12 +19,16 @@ type roundTripper struct {
 }
 
 func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
-	span, ctx := tracer.StartSpanFromContext(req.Context(), defaultResourceName,
+	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(defaultResourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
 		tracer.Tag(ext.HTTPURL, req.URL.Path),
-	)
+	}
+	if rate := rt.cfg.analyticsRate; rate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	}
+	span, ctx := tracer.StartSpanFromContext(req.Context(), defaultResourceName, opts...)
 	defer func() {
 		if rt.cfg.after != nil {
 			rt.cfg.after(res, span)
@@ -55,7 +60,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 // WrapRoundTripper returns a new RoundTripper which traces all requests sent
 // over the transport.
 func WrapRoundTripper(rt http.RoundTripper, opts ...RoundTripperOption) http.RoundTripper {
-	cfg := new(roundTripperConfig)
+	cfg := newRoundTripperConfig()
 	for _, opt := range opts {
 		opt(cfg)
 	}

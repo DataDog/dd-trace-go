@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 func TestMemcache(t *testing.T) {
@@ -44,7 +45,7 @@ func testMemcache(t *testing.T, addr string) {
 			"resource name should be set to the memcache command")
 	}
 
-	t.Run("traces without context", func(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -60,7 +61,7 @@ func testMemcache(t *testing.T, addr string) {
 		validateMemcacheSpan(t, spans[0], "Add")
 	})
 
-	t.Run("traces with context", func(t *testing.T) {
+	t.Run("context", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -100,6 +101,66 @@ func TestFakeServer(t *testing.T) {
 	s := bufio.NewScanner(conn)
 	assert.True(t, s.Scan())
 	assert.Equal(t, "STORED", s.Text())
+}
+
+func TestAnalyticsSettings(t *testing.T) {
+	li := makeFakeServer(t)
+	defer li.Close()
+	addr := li.Addr().String()
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
+		client := WrapClient(memcache.New(addr), opts...)
+		defer client.DeleteAll()
+		err := client.Add(&memcache.Item{Key: "key1", Value: []byte("value1")})
+		assert.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+		assert.Equal(t, rate, spans[0].Tag(ext.EventSampleRate))
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil)
+	})
+
+	t.Run("global", func(t *testing.T) {
+		t.Skip("global flag disabled")
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.4)
+	})
+
+	t.Run("enabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 1.0, WithAnalytics(true))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil, WithAnalytics(false))
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	})
 }
 
 func makeFakeServer(t *testing.T) net.Listener {

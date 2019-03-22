@@ -1,16 +1,21 @@
 package mux
 
-import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+)
 
 type routerConfig struct {
-	serviceName string
-	spanOpts    []ddtrace.StartSpanOption // additional span options to be applied
+	serviceName   string
+	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
+	analyticsRate float64
 }
 
 // RouterOption represents an option that can be passed to NewRouter.
 type RouterOption func(*routerConfig)
 
 func defaults(cfg *routerConfig) {
+	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.serviceName = "mux.router"
 }
 
@@ -26,5 +31,21 @@ func WithServiceName(name string) RouterOption {
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
 	return func(cfg *routerConfig) {
 		cfg.spanOpts = opts
+	}
+}
+
+// WithAnalytics enables Trace Analytics for all started spans.
+func WithAnalytics(on bool) RouterOption {
+	if on {
+		return WithAnalyticsRate(1.0)
+	}
+	return WithAnalyticsRate(0.0)
+}
+
+// WithAnalyticsRate sets the sampling rate for Trace Analytics events
+// correlated to started spans.
+func WithAnalyticsRate(rate float64) RouterOption {
+	return func(cfg *routerConfig) {
+		cfg.analyticsRate = rate
 	}
 }

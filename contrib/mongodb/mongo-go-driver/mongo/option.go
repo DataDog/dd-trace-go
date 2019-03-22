@@ -1,4 +1,4 @@
-package aws
+package mongo
 
 type config struct {
 	serviceName   string
@@ -9,6 +9,7 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
+	cfg.serviceName = "mongo"
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 

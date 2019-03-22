@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/julienschmidt/httprouter"
 )
@@ -22,6 +24,9 @@ func New(opts ...RouterOption) *Router {
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
+	}
+	if cfg.analyticsRate > 0 {
+		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	return &Router{httprouter.New(), cfg}
 }

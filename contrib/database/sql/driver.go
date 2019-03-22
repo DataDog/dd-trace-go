@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -62,11 +63,15 @@ func (tp *traceParams) tryTrace(ctx context.Context, resource string, query stri
 		return
 	}
 	name := fmt.Sprintf("%s.query", tp.driverName)
-	span, _ := tracer.StartSpanFromContext(ctx, name,
+	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ServiceName(tp.config.serviceName),
 		tracer.StartTime(startTime),
-	)
+	}
+	if rate := tp.config.analyticsRate; rate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	}
+	span, _ := tracer.StartSpanFromContext(ctx, name, opts...)
 	if query != "" {
 		resource = query
 	}

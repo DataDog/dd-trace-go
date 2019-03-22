@@ -19,9 +19,7 @@ func TestServerStatsHandler(t *testing.T) {
 	assert := assert.New(t)
 
 	serviceName := "grpc-service"
-	statsHandler := NewServerStatsHandler(
-		StatsOptServiceName(serviceName),
-	)
+	statsHandler := NewServerStatsHandler(WithServiceName(serviceName))
 	server, err := newServerStatsHandlerTestServer(statsHandler)
 	if err != nil {
 		t.Fatalf("failed to start test server: %s", err)

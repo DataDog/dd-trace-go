@@ -9,8 +9,10 @@ import (
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 func TestMain(m *testing.M) {
@@ -351,4 +353,77 @@ func TestCollection_Bulk(t *testing.T) {
 	spans := testMongoCollectionCommand(assert, insert)
 	assert.Equal(2, len(spans))
 	assert.Equal("mongodb.query", spans[0].OperationName())
+}
+
+func TestAnalyticsSettings(t *testing.T) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...DialOption) {
+		assert := assert.New(t)
+
+		session, err := Dial("localhost:27017", opts...)
+		assert.NoError(err)
+		defer session.Close()
+
+		db := session.DB("my_db")
+		collection := db.C("MyCollection")
+		bulk := collection.Bulk()
+		bulk.Insert(bson.D{
+			bson.DocElem{
+				Name: "entity",
+				Value: bson.DocElem{
+					Name:  "index",
+					Value: 0,
+				},
+			},
+		})
+		bulk.Run()
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		s := spans[0]
+		assert.Equal(rate, s.Tag(ext.EventSampleRate))
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil)
+	})
+
+	t.Run("global", func(t *testing.T) {
+		t.Skip("global flag disabled")
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.4)
+	})
+
+	t.Run("enabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 1.0, WithAnalytics(true))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil, WithAnalytics(false))
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	})
 }

@@ -15,8 +15,13 @@ func Example() {
 	// create new go-restful service
 	ws := new(restful.WebService)
 
-	// instrument the service with trace
-	ws.Filter(restfultrace.Filter)
+	// create the Datadog filter
+	filter := restfultrace.FilterFunc(
+		restfultrace.WithServiceName("my-service"),
+	)
+
+	// use it
+	ws.Filter(filter)
 
 	// set endpoint
 	ws.Route(ws.GET("/hello").To(

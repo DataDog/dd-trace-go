@@ -16,13 +16,19 @@ import (
 
 type clientStream struct {
 	grpc.ClientStream
-	cfg    *interceptorConfig
+	cfg    *config
 	method string
 }
 
 func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 	if cs.cfg.traceStreamMessages {
-		span, _ := startSpanFromContext(cs.Context(), cs.method, "grpc.message", cs.cfg.clientServiceName())
+		span, _ := startSpanFromContext(
+			cs.Context(),
+			cs.method,
+			"grpc.message",
+			cs.cfg.clientServiceName(),
+			cs.cfg.analyticsRate,
+		)
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
@@ -34,7 +40,13 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 
 func (cs *clientStream) SendMsg(m interface{}) (err error) {
 	if cs.cfg.traceStreamMessages {
-		span, _ := startSpanFromContext(cs.Context(), cs.method, "grpc.message", cs.cfg.clientServiceName())
+		span, _ := startSpanFromContext(
+			cs.Context(),
+			cs.method,
+			"grpc.message",
+			cs.cfg.clientServiceName(),
+			cs.cfg.analyticsRate,
+		)
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
@@ -46,8 +58,8 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 
 // StreamClientInterceptor returns a grpc.StreamClientInterceptor which will trace client
 // streams using the given set of options.
-func StreamClientInterceptor(opts ...InterceptorOption) grpc.StreamClientInterceptor {
-	cfg := new(interceptorConfig)
+func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
+	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
@@ -100,8 +112,8 @@ func StreamClientInterceptor(opts ...InterceptorOption) grpc.StreamClientInterce
 
 // UnaryClientInterceptor returns a grpc.UnaryClientInterceptor which will trace requests using
 // the given set of options.
-func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientInterceptor {
-	cfg := new(interceptorConfig)
+func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
+	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
@@ -119,11 +131,17 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 // doClientRequest starts a new span and invokes the handler with the new context
 // and options. The span should be finished by the caller.
 func doClientRequest(
-	ctx context.Context, cfg *interceptorConfig, method string, opts []grpc.CallOption,
+	ctx context.Context, cfg *config, method string, opts []grpc.CallOption,
 	handler func(ctx context.Context, opts []grpc.CallOption) error,
 ) (ddtrace.Span, error) {
 	// inject the trace id into the metadata
-	span, ctx := startSpanFromContext(ctx, method, "grpc.client", cfg.clientServiceName())
+	span, ctx := startSpanFromContext(
+		ctx,
+		method,
+		"grpc.client",
+		cfg.clientServiceName(),
+		cfg.analyticsRate,
+	)
 	ctx = injectSpanIntoContext(ctx)
 
 	// fill in the peer so we can add it to the tags

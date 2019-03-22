@@ -1,20 +1,23 @@
-package aws
+package restful
+
+import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 type config struct {
 	serviceName   string
 	analyticsRate float64
 }
 
-// Option represents an option that can be passed to Dial.
-type Option func(*config)
-
-func defaults(cfg *config) {
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
+func newConfig() *config {
+	return &config{
+		serviceName:   "go-restful",
+		analyticsRate: globalconfig.AnalyticsRate(),
+	}
 }
 
-// WithServiceName sets the given service name for the dialled connection.
-// When the service name is not explicitly set it will be inferred based on the
-// request to AWS.
+// Option specifies instrumentation configuration options.
+type Option func(*config)
+
+// WithServiceName sets the service name to by used by the filter.
 func WithServiceName(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name

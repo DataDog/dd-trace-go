@@ -1,16 +1,20 @@
 package leveldb
 
-import "context"
+import (
+	"context"
+)
 
 type config struct {
-	serviceName string
-	ctx         context.Context
+	ctx           context.Context
+	serviceName   string
+	analyticsRate float64
 }
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
 		serviceName: "leveldb",
 		ctx:         context.Background(),
+		// cfg.analyticsRate: globalconfig.AnalyticsRate(),
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -32,5 +36,21 @@ func WithContext(ctx context.Context) Option {
 func WithServiceName(serviceName string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = serviceName
+	}
+}
+
+// WithAnalytics enables Trace Analytics for all started spans.
+func WithAnalytics(on bool) Option {
+	if on {
+		return WithAnalyticsRate(1.0)
+	}
+	return WithAnalyticsRate(0.0)
+}
+
+// WithAnalyticsRate sets the sampling rate for Trace Analytics events
+// correlated to started spans.
+func WithAnalyticsRate(rate float64) Option {
+	return func(cfg *config) {
+		cfg.analyticsRate = rate
 	}
 }
