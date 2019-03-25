@@ -42,7 +42,7 @@ func (h *serverStatsHandler) HandleRPC(ctx context.Context, rs stats.RPCStats) {
 		return
 	}
 	if v, ok := rs.(*stats.End); ok {
-		finishWithError(span, v.Error, h.cfg.noDebugStack)
+		finishWithError(span, v.Error, h.cfg)
 	}
 }
 
