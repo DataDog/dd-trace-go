@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -114,74 +115,188 @@ func NewPropagator(cfg *PropagatorConfig) Propagator {
 	if cfg.PriorityHeader == "" {
 		cfg.PriorityHeader = DefaultPriorityHeader
 	}
-	return &propagator{cfg}
+	return &propagator{
+		injectors:  makeInjectors(cfg),
+		extractors: makeExtractors(cfg),
+	}
 }
 
-// propagator implements a propagator which uses TextMap internally.
+// propagator implements a Propagator that supports TextMap carriers.
 // It propagates the trace and span IDs, as well as the baggage from the
 // context.
-type propagator struct{ cfg *PropagatorConfig }
+type propagator struct {
+	injectors  []textMapPropagator
+	extractors []textMapPropagator
+}
+
+// makeInjectors returns a list of injectors to apply when propagating a
+// context. By default, only the datadog propagation style will be used.
+// If the DD_PROPAGATION_STYLE_INJECT environment variable is set,
+// this can override the default behavior.
+func makeInjectors(cfg *PropagatorConfig) []textMapPropagator {
+	dd := &datadogPropagator{cfg}
+	b3 := &b3Propagator{}
+
+	ps := os.Getenv("DD_PROPAGATION_STYLE_INJECT")
+	if ps == "" {
+		return []textMapPropagator{dd}
+	}
+	styles := propagationStyleList(ps)
+
+	var injectors []textMapPropagator
+	for _, v := range styles {
+		switch v {
+		case "Datadog":
+			injectors = append(injectors, dd)
+		case "B3":
+			injectors = append(injectors, b3)
+		default:
+			// TODO: consider logging something for invalid/unknown styles.
+		}
+	}
+
+	// If all the styles were invalid/unknown, then revert to default behavior.
+	if len(injectors) == 0 {
+		return []textMapPropagator{dd}
+	}
+	return injectors
+}
+
+func makeExtractors(cfg *PropagatorConfig) []textMapPropagator {
+	dd := &datadogPropagator{cfg}
+	b3 := &b3Propagator{}
+
+	ps := os.Getenv("DD_PROPAGATION_STYLE_EXTRACT")
+	if ps == "" {
+		return []textMapPropagator{dd}
+	}
+	styles := propagationStyleList(ps)
+
+	var extractors []textMapPropagator
+	for _, v := range styles {
+		switch v {
+		case "Datadog":
+			extractors = append(extractors, dd)
+		case "B3":
+			extractors = append(extractors, b3)
+		default:
+			// TODO: consider logging something for invalid/unknown styles.
+		}
+	}
+
+	// If all the styles were invalid/unknown, then revert to default behavior.
+	if len(extractors) == 0 {
+		return []textMapPropagator{dd}
+	}
+	return extractors
+}
+
+// propagationStyleList splits a string containing propagation styles
+// separated by space or comma, and returns a []string containing
+// only the propagation styles.
+func propagationStyleList(s string) []string {
+	f := func(r rune) bool {
+		switch r {
+		case ' ', ',':
+			return true
+		}
+		return false
+	}
+	return strings.FieldsFunc(s, f)
+}
 
 // Inject defines the Propagator to propagate SpanContext data
 // out of the current process. The implementation propagates the
 // TraceID and the current active SpanID, as well as the Span baggage.
 func (p *propagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
-	switch v := carrier.(type) {
+	switch c := carrier.(type) {
 	case TextMapWriter:
-		return p.injectTextMap(spanCtx, v)
+		// Apply all of the injectors.
+		for _, v := range p.injectors {
+			err := v.injectTextMap(spanCtx, c)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	default:
 		return ErrInvalidCarrier
 	}
 }
 
-func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
+// Extract implements Propagator.
+func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	switch c := carrier.(type) {
+	case TextMapReader:
+		// Try each extractor. The first to successfully produce a context
+		// will get returned.
+		for _, v := range p.extractors {
+			ctx, err := v.extractTextMap(c)
+			if ctx != nil {
+				return ctx, nil
+			}
+			// Special treatment for "context not found"
+			if err == ErrSpanContextNotFound {
+				continue
+			}
+			return nil, err
+		}
+		return nil, ErrSpanContextNotFound
+	default:
+		return nil, ErrInvalidCarrier
+	}
+}
+
+// textMapPropagator is used to inject and extract span contexts.
+type textMapPropagator interface {
+	injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error
+	extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error)
+}
+
+// datadogPropagator implements textMapPropagator and injects/extracts span contexts
+// using datadog headers.
+type datadogPropagator struct {
+	cfg *PropagatorConfig
+}
+
+func (d *datadogPropagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
 	ctx, ok := spanCtx.(*spanContext)
 	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
 	// propagate the TraceID and the current active SpanID
-	writer.Set(p.cfg.TraceHeader, strconv.FormatUint(ctx.traceID, 10))
-	writer.Set(p.cfg.ParentHeader, strconv.FormatUint(ctx.spanID, 10))
+	writer.Set(d.cfg.TraceHeader, strconv.FormatUint(ctx.traceID, 10))
+	writer.Set(d.cfg.ParentHeader, strconv.FormatUint(ctx.spanID, 10))
 	if ctx.hasSamplingPriority() {
-		writer.Set(p.cfg.PriorityHeader, strconv.Itoa(ctx.samplingPriority()))
+		writer.Set(d.cfg.PriorityHeader, strconv.Itoa(ctx.samplingPriority()))
 	}
 	if ctx.origin != "" {
 		writer.Set(originHeader, ctx.origin)
 	}
 	// propagate OpenTracing baggage
 	for k, v := range ctx.baggage {
-		writer.Set(p.cfg.BaggagePrefix+k, v)
+		writer.Set(d.cfg.BaggagePrefix+k, v)
 	}
 	return nil
 }
 
-// Extract implements Propagator.
-func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	switch v := carrier.(type) {
-	case TextMapReader:
-		return p.extractTextMap(v)
-	default:
-		return nil, ErrInvalidCarrier
-	}
-}
-
-func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+func (d *datadogPropagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
 		key := strings.ToLower(k)
 		switch key {
-		case p.cfg.TraceHeader:
+		case d.cfg.TraceHeader:
 			ctx.traceID, err = parseUint64(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-		case p.cfg.ParentHeader:
+		case d.cfg.ParentHeader:
 			ctx.spanID, err = parseUint64(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-		case p.cfg.PriorityHeader:
+		case d.cfg.PriorityHeader:
 			priority, err := strconv.Atoi(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
@@ -190,9 +305,60 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		case originHeader:
 			ctx.origin = v
 		default:
-			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
-				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
+			if strings.HasPrefix(key, d.cfg.BaggagePrefix) {
+				ctx.setBaggageItem(strings.TrimPrefix(key, d.cfg.BaggagePrefix), v)
 			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if ctx.traceID == 0 || ctx.spanID == 0 {
+		return nil, ErrSpanContextNotFound
+	}
+	return &ctx, nil
+}
+
+type b3Propagator struct{}
+
+func (*b3Propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
+	ctx, ok := spanCtx.(*spanContext)
+	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
+		return ErrInvalidSpanContext
+	}
+	// propagate the TraceID and the current active SpanID
+	writer.Set("x-b3-traceid", strconv.FormatUint(ctx.traceID, 16))
+	writer.Set("x-b3-spanid", strconv.FormatUint(ctx.spanID, 16))
+	if ctx.hasSamplingPriority() {
+		writer.Set("x-b3-sampled", strconv.Itoa(ctx.samplingPriority()))
+	}
+	return nil
+}
+
+func (*b3Propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+	var ctx spanContext
+	err := reader.ForeachKey(func(k, v string) error {
+		var err error
+		key := strings.ToLower(k)
+		switch key {
+		case "x-b3-traceid":
+			ctx.traceID, err = strconv.ParseUint(v, 16, 64)
+			if err != nil {
+				return ErrSpanContextCorrupted
+			}
+		case "x-b3-parentspanid":
+			ctx.spanID, err = strconv.ParseUint(v, 16, 64)
+			if err != nil {
+				return ErrSpanContextCorrupted
+			}
+		case "x-b3-sampled":
+			priority, err := strconv.Atoi(v)
+			if err != nil {
+				return ErrSpanContextCorrupted
+			}
+			ctx.setSamplingPriority(priority)
+		default:
 		}
 		return nil
 	})
