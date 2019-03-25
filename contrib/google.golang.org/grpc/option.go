@@ -1,14 +1,20 @@
 package grpc
 
+import (
+	"google.golang.org/grpc/codes"
+)
+
 // Option specifies a configuration option for the grpc package. Not all options apply
 // to all instrumented structures.
 type Option = InterceptorOption
 
 type config struct {
-	serviceName                           string
-	traceStreamCalls, traceStreamMessages bool
-	noDebugStack                          bool
-	analyticsRate                         float64
+	serviceName         string
+	nonErrorCodes       map[codes.Code]bool
+	analyticsRate       float64
+	traceStreamCalls    bool
+	traceStreamMessages bool
+	noDebugStack        bool
 }
 
 func (cfg *config) serverServiceName() string {
@@ -34,6 +40,7 @@ func defaults(cfg *config) {
 	// cfg.serviceName defaults are set in interceptors
 	cfg.traceStreamCalls = true
 	cfg.traceStreamMessages = true
+	cfg.nonErrorCodes = map[codes.Code]bool{codes.Canceled: true}
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
@@ -65,6 +72,17 @@ func WithStreamMessages(enabled bool) Option {
 func NoDebugStack() Option {
 	return func(cfg *config) {
 		cfg.noDebugStack = true
+	}
+}
+
+// NonErrorCodes determines the list of codes which will not be considered errors in instrumentation.
+// This call overrides the default handling of codes.Canceled as a non-error.
+func NonErrorCodes(cs ...codes.Code) InterceptorOption {
+	return func(cfg *config) {
+		cfg.nonErrorCodes = make(map[codes.Code]bool, len(cs))
+		for _, c := range cs {
+			cfg.nonErrorCodes[c] = true
+		}
 	}
 }
 
