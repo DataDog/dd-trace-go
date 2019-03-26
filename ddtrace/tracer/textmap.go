@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 // HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader, allowing
@@ -320,6 +321,12 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 	return &ctx, nil
 }
 
+const (
+	b3TraceIDHeader = "x-b3-traceid"
+	b3SpanIDHeader  = "x-b3-spanid"
+	b3SampledHeader = "x-b3-sampled"
+)
+
 // propagatorB3 implements Propagator and injects/extracts span contexts
 // using B3 headers. Only TextMap carriers are supported.
 type propagatorB3 struct{}
@@ -339,10 +346,14 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 		return ErrInvalidSpanContext
 	}
 	// propagate the TraceID and the current active SpanID
-	writer.Set("x-b3-traceid", strconv.FormatUint(ctx.traceID, 16))
-	writer.Set("x-b3-spanid", strconv.FormatUint(ctx.spanID, 16))
+	writer.Set(b3TraceIDHeader, strconv.FormatUint(ctx.traceID, 16))
+	writer.Set(b3SpanIDHeader, strconv.FormatUint(ctx.spanID, 16))
 	if ctx.hasSamplingPriority() {
-		writer.Set("x-b3-sampled", strconv.Itoa(ctx.samplingPriority()))
+		if ctx.samplingPriority() >= ext.PriorityAutoKeep {
+			writer.Set(b3SampledHeader, "1")
+		} else {
+			writer.Set(b3SampledHeader, "0")
+		}
 	}
 	return nil
 }
@@ -362,17 +373,17 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		var err error
 		key := strings.ToLower(k)
 		switch key {
-		case "x-b3-traceid":
+		case b3TraceIDHeader:
 			ctx.traceID, err = strconv.ParseUint(v, 16, 64)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-		case "x-b3-parentspanid":
+		case b3SpanIDHeader:
 			ctx.spanID, err = strconv.ParseUint(v, 16, 64)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-		case "x-b3-sampled":
+		case b3SampledHeader:
 			priority, err := strconv.Atoi(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
