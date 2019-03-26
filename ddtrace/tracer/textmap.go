@@ -142,7 +142,7 @@ func makeInjectors(cfg *PropagatorConfig) []Propagator {
 	if ps == "" {
 		return []Propagator{dd}
 	}
-	styles := propagationStyleList(ps)
+	styles := strings.Split(ps, ",")
 
 	var injectors []Propagator
 	for _, v := range styles {
@@ -171,7 +171,7 @@ func makeExtractors(cfg *PropagatorConfig) []Propagator {
 	if ps == "" {
 		return []Propagator{dd}
 	}
-	styles := propagationStyleList(ps)
+	styles := strings.Split(ps, ",")
 
 	var extractors []Propagator
 	for _, v := range styles {
@@ -190,20 +190,6 @@ func makeExtractors(cfg *PropagatorConfig) []Propagator {
 		return []Propagator{dd}
 	}
 	return extractors
-}
-
-// propagationStyleList splits a string containing propagation styles
-// separated by space or comma, and returns a []string containing
-// only the propagation styles.
-func propagationStyleList(s string) []string {
-	f := func(r rune) bool {
-		switch r {
-		case ' ', ',':
-			return true
-		}
-		return false
-	}
-	return strings.FieldsFunc(s, f)
 }
 
 // Inject defines the Propagator to propagate SpanContext data
