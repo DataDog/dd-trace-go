@@ -135,10 +135,9 @@ type chainedPropagator struct {
 	extractors []Propagator
 }
 
-// getPropagators returns a list of propagators to apply when propagating a
-// context. By default, only the Datadog propagation style will be used.
-// If the given environment variable is set, this can override the default
-// behavior.
+// getPropagators returns a list of propagators based on the list found in the
+// given environment variable. If the list doesn't contain a value or has invalid
+// values, the default propagator will be returned.
 func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 	dd := &propagator{cfg}
 	ps := os.Getenv(env)
@@ -178,11 +177,10 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 
 // Extract implements Propagator.
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	// Try each extractor. The first to successfully produce a context
-	// will get returned.
 	for _, v := range p.extractors {
 		ctx, err := v.Extract(carrier)
 		if ctx != nil {
+			// first extractor returns
 			return ctx, nil
 		}
 		if err == ErrSpanContextNotFound {
@@ -302,7 +300,6 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
-	// propagate the TraceID and the current active SpanID
 	writer.Set(b3TraceIDHeader, strconv.FormatUint(ctx.traceID, 16))
 	writer.Set(b3SpanIDHeader, strconv.FormatUint(ctx.spanID, 16))
 	if ctx.hasSamplingPriority() {
