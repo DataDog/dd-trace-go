@@ -57,6 +57,11 @@ func (c TextMapCarrier) ForeachKey(handler func(key, val string) error) error {
 }
 
 const (
+	headerPropagationStyleInject  = "DD_PROPAGATION_STYLE_INJECT"
+	headerPropagationStyleExtract = "DD_PROPAGATION_STYLE_EXTRACT"
+)
+
+const (
 	// DefaultBaggageHeaderPrefix specifies the prefix that will be used in
 	// HTTP headers or text maps to prefix baggage keys.
 	DefaultBaggageHeaderPrefix = "ot-baggage-"
@@ -117,8 +122,8 @@ func NewPropagator(cfg *PropagatorConfig) Propagator {
 		cfg.PriorityHeader = DefaultPriorityHeader
 	}
 	return &chainedPropagator{
-		injectors:  makeInjectors(cfg),
-		extractors: makeExtractors(cfg),
+		injectors:  getPropagators(cfg, headerPropagationStyleInject),
+		extractors: getPropagators(cfg, headerPropagationStyleExtract),
 	}
 }
 
@@ -130,66 +135,32 @@ type chainedPropagator struct {
 	extractors []Propagator
 }
 
-// makeInjectors returns a list of injectors to apply when propagating a
-// context. By default, only the datadog propagation style will be used.
-// If the DD_PROPAGATION_STYLE_INJECT environment variable is set,
-// this can override the default behavior.
-func makeInjectors(cfg *PropagatorConfig) []Propagator {
+// getPropagators returns a list of propagators to apply when propagating a
+// context. By default, only the Datadog propagation style will be used.
+// If the given environment variable is set, this can override the default
+// behavior.
+func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 	dd := &propagator{cfg}
-	b3 := &propagatorB3{}
-
-	ps := os.Getenv("DD_PROPAGATION_STYLE_INJECT")
+	ps := os.Getenv(env)
 	if ps == "" {
 		return []Propagator{dd}
 	}
-	styles := strings.Split(ps, ",")
-
-	var injectors []Propagator
-	for _, v := range styles {
+	var list []Propagator
+	for _, v := range strings.Split(ps, ",") {
 		switch strings.ToLower(v) {
 		case "datadog":
-			injectors = append(injectors, dd)
+			list = append(list, dd)
 		case "b3":
-			injectors = append(injectors, b3)
+			list = append(list, &propagatorB3{})
 		default:
 			// TODO(cgilmour): consider logging something for invalid/unknown styles.
 		}
 	}
-
-	if len(injectors) == 0 {
-		// If all the styles were invalid/unknown, then revert to default behavior.
+	if len(list) == 0 {
+		// return the default
 		return []Propagator{dd}
 	}
-	return injectors
-}
-
-func makeExtractors(cfg *PropagatorConfig) []Propagator {
-	dd := &propagator{cfg}
-	b3 := &propagatorB3{}
-
-	ps := os.Getenv("DD_PROPAGATION_STYLE_EXTRACT")
-	if ps == "" {
-		return []Propagator{dd}
-	}
-	styles := strings.Split(ps, ",")
-
-	var extractors []Propagator
-	for _, v := range styles {
-		switch strings.ToLower(v) {
-		case "datadog":
-			extractors = append(extractors, dd)
-		case "b3":
-			extractors = append(extractors, b3)
-		default:
-			// TODO(cgilmour): consider logging something for invalid/unknown styles.
-		}
-	}
-
-	if len(extractors) == 0 {
-		// If all the styles were invalid/unknown, then revert to default behavior.
-		return []Propagator{dd}
-	}
-	return extractors
+	return list
 }
 
 // Inject defines the Propagator to propagate SpanContext data

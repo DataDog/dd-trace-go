@@ -197,82 +197,84 @@ func TestTextMapPropagatorInjectExtract(t *testing.T) {
 	assert.Equal(xctx.hasPriority, ctx.hasPriority)
 }
 
-func TestEnvOverrideInject(t *testing.T) {
-	os.Setenv("DD_PROPAGATION_STYLE_INJECT", "B3")
-	defer os.Unsetenv("DD_PROPAGATION_STYLE_INJECT")
+func TestB3(t *testing.T) {
+	t.Run("inject", func(t *testing.T) {
+		os.Setenv("DD_PROPAGATION_STYLE_INJECT", "B3")
+		defer os.Unsetenv("DD_PROPAGATION_STYLE_INJECT")
 
-	tracer := newTracer()
-	root := tracer.StartSpan("web.request").(*span)
-	root.SetTag(ext.SamplingPriority, -1)
-	root.SetBaggageItem("item", "x")
-	ctx := root.Context().(*spanContext)
-	headers := TextMapCarrier(map[string]string{})
-	err := tracer.Inject(ctx, headers)
+		tracer := newTracer()
+		root := tracer.StartSpan("web.request").(*span)
+		root.SetTag(ext.SamplingPriority, -1)
+		root.SetBaggageItem("item", "x")
+		ctx := root.Context().(*spanContext)
+		headers := TextMapCarrier(map[string]string{})
+		err := tracer.Inject(ctx, headers)
 
-	assert := assert.New(t)
-	assert.Nil(err)
+		assert := assert.New(t)
+		assert.Nil(err)
 
-	assert.Equal(headers[b3TraceIDHeader], strconv.FormatUint(root.TraceID, 16))
-	assert.Equal(headers[b3SpanIDHeader], strconv.FormatUint(root.SpanID, 16))
-	assert.Equal(headers[b3SampledHeader], "0")
-}
-
-func TestEnvOverrideExtractB3(t *testing.T) {
-	os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "B3")
-	defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
-
-	headers := TextMapCarrier(map[string]string{
-		b3TraceIDHeader: "1",
-		b3SpanIDHeader:  "1",
+		assert.Equal(headers[b3TraceIDHeader], strconv.FormatUint(root.TraceID, 16))
+		assert.Equal(headers[b3SpanIDHeader], strconv.FormatUint(root.SpanID, 16))
+		assert.Equal(headers[b3SampledHeader], "0")
 	})
 
-	tracer := newTracer()
-	assert := assert.New(t)
-	ctx, err := tracer.Extract(headers)
-	assert.Nil(err)
-	sctx, ok := ctx.(*spanContext)
-	assert.True(ok)
+	t.Run("extract", func(t *testing.T) {
+		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "b3")
+		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
 
-	assert.Equal(sctx.traceID, uint64(1))
-	assert.Equal(sctx.spanID, uint64(1))
-}
+		headers := TextMapCarrier(map[string]string{
+			b3TraceIDHeader: "1",
+			b3SpanIDHeader:  "1",
+		})
 
-func TestEnvOverrideExtractMultiple(t *testing.T) {
-	os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "Datadog,B3")
-	defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
+		tracer := newTracer()
+		assert := assert.New(t)
+		ctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+		sctx, ok := ctx.(*spanContext)
+		assert.True(ok)
 
-	b3Headers := TextMapCarrier(map[string]string{
-		b3TraceIDHeader: "1",
-		b3SpanIDHeader:  "1",
-		b3SampledHeader: "1",
+		assert.Equal(sctx.traceID, uint64(1))
+		assert.Equal(sctx.spanID, uint64(1))
 	})
 
-	tracer := newTracer()
-	assert := assert.New(t)
+	t.Run("multiple", func(t *testing.T) {
+		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "Datadog,B3")
+		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
 
-	ctx, err := tracer.Extract(b3Headers)
-	assert.Nil(err)
-	sctx, ok := ctx.(*spanContext)
-	assert.True(ok)
+		b3Headers := TextMapCarrier(map[string]string{
+			b3TraceIDHeader: "1",
+			b3SpanIDHeader:  "1",
+			b3SampledHeader: "1",
+		})
 
-	assert.Equal(sctx.traceID, uint64(1))
-	assert.Equal(sctx.spanID, uint64(1))
-	assert.True(sctx.hasSamplingPriority())
-	assert.Equal(sctx.samplingPriority(), 1)
+		tracer := newTracer()
+		assert := assert.New(t)
 
-	ddHeaders := TextMapCarrier(map[string]string{
-		DefaultTraceIDHeader:  "2",
-		DefaultParentIDHeader: "2",
-		DefaultPriorityHeader: "2",
+		ctx, err := tracer.Extract(b3Headers)
+		assert.Nil(err)
+		sctx, ok := ctx.(*spanContext)
+		assert.True(ok)
+
+		assert.Equal(sctx.traceID, uint64(1))
+		assert.Equal(sctx.spanID, uint64(1))
+		assert.True(sctx.hasSamplingPriority())
+		assert.Equal(sctx.samplingPriority(), 1)
+
+		ddHeaders := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "2",
+			DefaultParentIDHeader: "2",
+			DefaultPriorityHeader: "2",
+		})
+
+		ctx, err = tracer.Extract(ddHeaders)
+		assert.Nil(err)
+		sctx, ok = ctx.(*spanContext)
+		assert.True(ok)
+
+		assert.Equal(sctx.traceID, uint64(2))
+		assert.Equal(sctx.spanID, uint64(2))
+		assert.True(sctx.hasSamplingPriority())
+		assert.Equal(sctx.samplingPriority(), 2)
 	})
-
-	ctx, err = tracer.Extract(ddHeaders)
-	assert.Nil(err)
-	sctx, ok = ctx.(*spanContext)
-	assert.True(ok)
-
-	assert.Equal(sctx.traceID, uint64(2))
-	assert.Equal(sctx.spanID, uint64(2))
-	assert.True(sctx.hasSamplingPriority())
-	assert.Equal(sctx.samplingPriority(), 2)
 }
