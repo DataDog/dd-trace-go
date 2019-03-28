@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -49,7 +50,14 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 		fn(cfg)
 	}
 	if cfg.resourceName == "" {
-		cfg.resourceName = q.Statement()
+		q := `"` + strings.SplitN(q.String(), "\"", 3)[1] + `"`
+		q, err := strconv.Unquote(q)
+		if err != nil {
+			// avoid having an empty resource as it will cause the trace
+			// to be dropped.
+			q = "_"
+		}
+		cfg.resourceName = q
 	}
 	tq := &Query{q, &params{config: cfg}, context.Background()}
 	return tq
