@@ -99,7 +99,7 @@ func TestSyncProducer(t *testing.T) {
 
 	metadataResponse := new(sarama.MetadataResponse)
 	metadataResponse.AddBroker(leader.Addr(), leader.BrokerID())
-	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, sarama.ErrNoError)
+	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, nil, sarama.ErrNoError)
 	seedBroker.Returns(metadataResponse)
 
 	prodSuccess := new(sarama.ProduceResponse)
@@ -146,7 +146,7 @@ func TestSyncProducerSendMessages(t *testing.T) {
 
 	metadataResponse := new(sarama.MetadataResponse)
 	metadataResponse.AddBroker(leader.Addr(), leader.BrokerID())
-	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, sarama.ErrNoError)
+	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, nil, sarama.ErrNoError)
 	seedBroker.Returns(metadataResponse)
 
 	prodSuccess := new(sarama.ProduceResponse)
@@ -262,7 +262,7 @@ func newMockBroker(t *testing.T) *sarama.MockBroker {
 
 	metadataResponse := new(sarama.MetadataResponse)
 	metadataResponse.AddBroker(broker.Addr(), broker.BrokerID())
-	metadataResponse.AddTopicPartition("my_topic", 0, broker.BrokerID(), nil, nil, sarama.ErrNoError)
+	metadataResponse.AddTopicPartition("my_topic", 0, broker.BrokerID(), nil, nil, nil, sarama.ErrNoError)
 	broker.Returns(metadataResponse)
 
 	prodSuccess := new(sarama.ProduceResponse)
