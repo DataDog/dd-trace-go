@@ -323,16 +323,14 @@ func TestSpanSamplingPriority(t *testing.T) {
 		v, ok := span.Metrics[keySamplingPriority]
 		assert.True(ok)
 		assert.EqualValues(priority, v)
-		assert.EqualValues(span.context.priority, v)
-		assert.True(span.context.hasPriority)
+		assert.EqualValues(*span.context.trace.priority, v)
 
 		childSpan := tracer.newChildSpan("my.child", span)
 		v0, ok0 := span.Metrics[keySamplingPriority]
 		v1, ok1 := childSpan.Metrics[keySamplingPriority]
 		assert.Equal(ok0, ok1)
 		assert.Equal(v0, v1)
-		assert.EqualValues(childSpan.context.priority, v0)
-		assert.EqualValues(childSpan.context.hasPriority, ok0)
+		assert.EqualValues(*childSpan.context.trace.priority, v0)
 	}
 }
 
