@@ -46,8 +46,8 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // WrapHandler wraps an http.Handler with tracing using the given service and resource.
-func WrapHandler(h http.Handler, service, resource string) http.Handler {
+func WrapHandler(h http.Handler, service, resource string, spanopts ...ddtrace.StartSpanOption) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		httputil.TraceAndServe(h, w, req, service, resource)
+		httputil.TraceAndServe(h, w, req, service, resource, spanopts...)
 	})
 }
