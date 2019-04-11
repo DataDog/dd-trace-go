@@ -42,7 +42,7 @@ func Example_context() {
 	}
 
 	// Create a root span, giving name, server and resource.
-	_, ctx := tracer.StartSpanFromContext(context.Background(), "my-query",
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "my-query",
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ServiceName("my-db"),
 		tracer.ResourceName("initial-access"),
@@ -54,6 +54,7 @@ func Example_context() {
 		log.Fatal(err)
 	}
 	rows.Close()
+	span.Finish(tracer.WithError(err))
 }
 
 func Example_sqlite() {
@@ -67,7 +68,7 @@ func Example_sqlite() {
 	}
 
 	// Create a root span, giving name, server and resource.
-	_, ctx := tracer.StartSpanFromContext(context.Background(), "my-query",
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "my-query",
 		tracer.SpanType("example"),
 		tracer.ServiceName("sqlite-example"),
 		tracer.ResourceName("initial-access"),
@@ -79,4 +80,5 @@ func Example_sqlite() {
 		log.Fatal(err)
 	}
 	rows.Close()
+	span.Finish(tracer.WithError(err))
 }
