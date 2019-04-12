@@ -125,7 +125,11 @@ type trace struct {
 	full     bool         // signifies that the span buffer is full
 	priority *float64     // sampling priority
 	locked   bool         // specifies if the sampling priority can be altered
-	root     *span
+
+	// root specifies the root of the trace, if known; it is nil when a span
+	// context is extracted from a carrier, at which point there are no spans in
+	// the trace yet.
+	root *span
 }
 
 var (
