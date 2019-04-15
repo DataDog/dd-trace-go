@@ -16,6 +16,9 @@ type config struct {
 // MuxOption represents an option that can be passed to NewServeMux.
 type MuxOption func(*config)
 
+// Option represents an option that can be passed to NewServeMux or WrapHandler.
+type Option = MuxOption
+
 func defaults(cfg *config) {
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.serviceName = "http.router"
@@ -44,6 +47,7 @@ func WithAnalyticsRate(rate float64) MuxOption {
 	}
 }
 
+// WithSpanOptions sets additional options for the traced Span
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
 	return func(cfg *config) {
 		cfg.spanOpts = opts

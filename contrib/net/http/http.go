@@ -10,8 +10,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-type Option = MuxOption
-
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
 type ServeMux struct {
 	*http.ServeMux
