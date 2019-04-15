@@ -302,8 +302,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Equal(ctx.traceID, pctx.traceID)
 	assert.Equal(ctx.spanID, pctx.spanID)
 	assert.Equal(ctx.baggage, pctx.baggage)
-	assert.Equal(ctx.priority, -1)
-	assert.True(ctx.hasPriority)
+	assert.Equal(*ctx.trace.priority, -1.)
 
 	// ensure a child can be created
 	child := tracer.StartSpan("db.query", ChildOf(propagated)).(*span)
@@ -312,8 +311,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.NotEqual(uint64(0), child.SpanID)
 	assert.Equal(root.SpanID, child.ParentID)
 	assert.Equal(root.TraceID, child.ParentID)
-	assert.Equal(child.context.priority, -1)
-	assert.True(child.context.hasPriority)
+	assert.Equal(*child.context.trace.priority, -1.)
 }
 
 func TestTracerSamplingPriorityPropagation(t *testing.T) {
@@ -323,10 +321,8 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	child := tracer.StartSpan("db.query", ChildOf(root.Context())).(*span)
 	assert.EqualValues(2, root.Metrics[keySamplingPriority])
 	assert.EqualValues(2, child.Metrics[keySamplingPriority])
-	assert.EqualValues(2, root.context.priority)
-	assert.EqualValues(2, child.context.priority)
-	assert.True(root.context.hasPriority)
-	assert.True(child.context.hasPriority)
+	assert.EqualValues(2., *root.context.trace.priority)
+	assert.EqualValues(2., *child.context.trace.priority)
 }
 
 func TestTracerBaggageImmutability(t *testing.T) {

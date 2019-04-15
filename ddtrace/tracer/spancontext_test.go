@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 func setupteardown(start, max int) func() {
@@ -149,6 +150,61 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	}
 }
 
+// TestSpanFinishPriority asserts that the root span will have the sampling
+// priority metric set by inheriting it from a child.
+func TestSpanFinishPriority(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport, stop := startTestTracer()
+	defer stop()
+
+	root := tracer.StartSpan(
+		"root",
+		Tag(ext.SamplingPriority, 1),
+	)
+	child := tracer.StartSpan(
+		"child",
+		ChildOf(root.Context()),
+		Tag(ext.SamplingPriority, 2),
+	)
+	child.Finish()
+	root.Finish()
+
+	tracer.forceFlush()
+
+	select {
+	case err := <-tracer.errorBuffer:
+		assert.Fail("unexpected error:", err.Error())
+	default:
+		traces := transport.Traces()
+		assert.Len(traces, 1)
+		trace := traces[0]
+		assert.Len(trace, 2)
+		for _, span := range trace {
+			if span.Name == "root" {
+				// root should have inherited child's sampling priority
+				assert.Equal(span.Metrics[keySamplingPriority], 2.)
+				return
+			}
+		}
+	}
+	assert.Fail("span not found")
+}
+
+func TestTracePriorityLocked(t *testing.T) {
+	assert := assert.New(t)
+	ddHeaders := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "2",
+		DefaultParentIDHeader: "2",
+		DefaultPriorityHeader: "2",
+	})
+
+	ctx, err := NewPropagator(nil).Extract(ddHeaders)
+	assert.Nil(err)
+	sctx, ok := ctx.(*spanContext)
+	assert.True(ok)
+	assert.True(sctx.trace.locked)
+}
+
 func TestNewSpanContext(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		span := &span{
@@ -160,9 +216,9 @@ func TestNewSpanContext(t *testing.T) {
 		assert := assert.New(t)
 		assert.Equal(ctx.traceID, span.TraceID)
 		assert.Equal(ctx.spanID, span.SpanID)
-		assert.Equal(ctx.priority, 0)
-		assert.False(ctx.hasPriority)
 		assert.NotNil(ctx.trace)
+		assert.Nil(ctx.trace.priority)
+		assert.Equal(ctx.trace.root, span)
 		assert.Contains(ctx.trace.spans, span)
 	})
 
@@ -179,10 +235,28 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.Equal(ctx.TraceID(), span.TraceID)
 		assert.Equal(ctx.SpanID(), span.SpanID)
-		assert.Equal(ctx.priority, 1)
-		assert.True(ctx.hasPriority)
-		assert.NotNil(ctx.trace)
+		assert.Equal(*ctx.trace.priority, 1.)
+		assert.Equal(ctx.trace.root, span)
 		assert.Contains(ctx.trace.spans, span)
+	})
+
+	t.Run("root", func(t *testing.T) {
+		_, _, stop := startTestTracer()
+		defer stop()
+		assert := assert.New(t)
+		ctx, err := NewPropagator(nil).Extract(TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1",
+			DefaultParentIDHeader: "2",
+			DefaultPriorityHeader: "3",
+		}))
+		assert.Nil(err)
+		sctx, ok := ctx.(*spanContext)
+		assert.True(ok)
+		span := StartSpan("some-span", ChildOf(ctx))
+		assert.EqualValues(sctx.traceID, 1)
+		assert.EqualValues(sctx.spanID, 2)
+		assert.EqualValues(*sctx.trace.priority, 3)
+		assert.Equal(sctx.trace.root, span)
 	})
 }
 
@@ -202,10 +276,11 @@ func TestSpanContextParent(t *testing.T) {
 			drop: true,
 		},
 		"priority": &spanContext{
-			baggage:     map[string]string{"A": "A", "B": "B"},
-			trace:       &trace{spans: []*span{newBasicSpan("abc")}},
-			hasPriority: true,
-			priority:    2,
+			baggage: map[string]string{"A": "A", "B": "B"},
+			trace: &trace{
+				spans:    []*span{newBasicSpan("abc")},
+				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
+			},
 		},
 		"origin": &spanContext{
 			trace:  &trace{spans: []*span{newBasicSpan("abc")}},
@@ -222,8 +297,9 @@ func TestSpanContextParent(t *testing.T) {
 			}
 			assert.NotNil(ctx.trace)
 			assert.Contains(ctx.trace.spans, s)
-			assert.Equal(ctx.hasPriority, parentCtx.hasPriority)
-			assert.Equal(ctx.priority, parentCtx.priority)
+			if parentCtx.trace != nil {
+				assert.Equal(ctx.trace.priority, parentCtx.trace.priority)
+			}
 			assert.Equal(ctx.drop, parentCtx.drop)
 			assert.Equal(ctx.baggage, parentCtx.baggage)
 			assert.Equal(ctx.origin, parentCtx.origin)
