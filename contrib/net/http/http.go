@@ -10,16 +10,18 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
+type Option = MuxOption
+
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
 type ServeMux struct {
 	*http.ServeMux
-	cfg *muxConfig
+	cfg *config
 }
 
 // NewServeMux allocates and returns an http.ServeMux augmented with the
 // global tracer.
-func NewServeMux(opts ...MuxOption) *ServeMux {
-	cfg := new(muxConfig)
+func NewServeMux(opts ...Option) *ServeMux {
+	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
@@ -46,8 +48,13 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // WrapHandler wraps an http.Handler with tracing using the given service and resource.
-func WrapHandler(h http.Handler, service, resource string, spanopts ...ddtrace.StartSpanOption) http.Handler {
+func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.Handler {
+	cfg := new(config)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		httputil.TraceAndServe(h, w, req, service, resource, spanopts...)
+		httputil.TraceAndServe(h, w, req, service, resource, cfg.spanOpts...)
 	})
 }

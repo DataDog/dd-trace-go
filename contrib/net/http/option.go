@@ -7,22 +7,23 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
-type muxConfig struct {
+type config struct {
 	serviceName   string
 	analyticsRate float64
+	spanOpts      []ddtrace.StartSpanOption
 }
 
 // MuxOption represents an option that can be passed to NewServeMux.
-type MuxOption func(*muxConfig)
+type MuxOption func(*config)
 
-func defaults(cfg *muxConfig) {
+func defaults(cfg *config) {
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.serviceName = "http.router"
 }
 
 // WithServiceName sets the given service name for the returned ServeMux.
 func WithServiceName(name string) MuxOption {
-	return func(cfg *muxConfig) {
+	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
@@ -38,8 +39,14 @@ func WithAnalytics(on bool) MuxOption {
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) MuxOption {
-	return func(cfg *muxConfig) {
+	return func(cfg *config) {
 		cfg.analyticsRate = rate
+	}
+}
+
+func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
+	return func(cfg *config) {
+		cfg.spanOpts = opts
 	}
 }
 
