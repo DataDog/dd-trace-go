@@ -370,7 +370,7 @@ const sampleRateMetricKey = "_sample_rate"
 
 // Sample samples a span with the internal sampler.
 func (t *tracer) sample(span *span) {
-	if span.context.hasPriority {
+	if span.context.hasSamplingPriority() {
 		// sampling decision was already made
 		return
 	}
