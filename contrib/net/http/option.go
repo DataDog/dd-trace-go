@@ -13,7 +13,7 @@ type config struct {
 	spanOpts      []ddtrace.StartSpanOption
 }
 
-// MuxOption represents an option that can be passed to NewServeMux.
+// DEPRECATED in favor of Option.
 type MuxOption func(*config)
 
 // Option represents an option that can be passed to NewServeMux or WrapHandler.
@@ -47,7 +47,8 @@ func WithAnalyticsRate(rate float64) MuxOption {
 	}
 }
 
-// WithSpanOptions sets additional options for the traced Span
+// WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
+// to spans started by the integration.
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
 	return func(cfg *config) {
 		cfg.spanOpts = opts

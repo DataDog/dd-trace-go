@@ -38,7 +38,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// get the resource associated to this request
 	_, route := mux.Handler(r)
 	resource := r.Method + " " + route
-	var opts []ddtrace.StartSpanOption
+	opts := mux.cfg.spanOpts
 	if mux.cfg.analyticsRate > 0 {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, mux.cfg.analyticsRate))
 	}
