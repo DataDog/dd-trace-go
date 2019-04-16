@@ -84,17 +84,10 @@ func (s *span) SetTag(key string, value interface{}) {
 	case ext.Error:
 		s.setTagError(value, true)
 		return
-	case ext.AnalyticsEvent:
-		// "analytics.event" is a boolean alias for setting the event sampling
-		// rate to 0.0 or 1.0
-		if set, ok := value.(bool); ok {
-			if set {
-				s.setTagNumeric(ext.EventSampleRate, 1.0)
-			} else {
-				s.setTagNumeric(ext.EventSampleRate, 0.0)
-			}
-			return
-		}
+	}
+	if v, ok := value.(bool); ok {
+		s.setTagBool(key, v)
+		return
 	}
 	if v, ok := value.(string); ok {
 		s.setTagString(key, v)
@@ -155,6 +148,26 @@ func (s *span) setTagString(key, v string) {
 		s.Type = v
 	default:
 		s.Meta[key] = v
+	}
+}
+
+// setTagBool sets a boolean tag on the span.
+func (s *span) setTagBool(key string, v bool) {
+	switch key {
+	case ext.AnalyticsEvent:
+		if v {
+			s.setTagNumeric(ext.EventSampleRate, 1.0)
+		} else {
+			s.setTagNumeric(ext.EventSampleRate, 0.0)
+		}
+	case ext.ManualDrop:
+		if v {
+			s.setTagNumeric(ext.SamplingPriority, ext.PriorityUserReject)
+		}
+	case ext.ManualKeep:
+		if v {
+			s.setTagNumeric(ext.SamplingPriority, ext.PriorityUserKeep)
+		}
 	}
 }
 

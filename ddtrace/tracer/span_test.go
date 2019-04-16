@@ -167,6 +167,12 @@ func TestSpanSetTag(t *testing.T) {
 
 	span.SetTag(ext.AnalyticsEvent, false)
 	assert.Equal(0.0, span.Metrics[ext.EventSampleRate])
+
+	span.SetTag(ext.ManualDrop, true)
+	assert.Equal(-1., span.Metrics[keySamplingPriority])
+
+	span.SetTag(ext.ManualKeep, true)
+	assert.Equal(2., span.Metrics[keySamplingPriority])
 }
 
 func TestSpanSetDatadogTags(t *testing.T) {
