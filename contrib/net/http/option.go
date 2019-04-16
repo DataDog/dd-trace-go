@@ -13,7 +13,7 @@ type config struct {
 	spanOpts      []ddtrace.StartSpanOption
 }
 
-// DEPRECATED in favor of Option.
+// DEPRECATED: Use Option in favor of MuxOption.
 type MuxOption func(*config)
 
 // Option represents an option that can be passed to NewServeMux or WrapHandler.
