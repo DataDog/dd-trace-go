@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -35,6 +36,7 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal(url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Equal("bar", s.Tag("foo"))
 }
 
 func TestHttpTracer500(t *testing.T) {
@@ -62,6 +64,7 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal(url, s.Tag(ext.HTTPURL))
 	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
+	assert.Equal("bar", s.Tag("foo"))
 }
 
 func TestWrapHandler200(t *testing.T) {
@@ -69,7 +72,8 @@ func TestWrapHandler200(t *testing.T) {
 	defer mt.Stop()
 	assert := assert.New(t)
 
-	handler := WrapHandler(http.HandlerFunc(handler200), "my-service", "my-resource")
+	handler := WrapHandler(http.HandlerFunc(handler200), "my-service", "my-resource",
+		WithSpanOptions(tracer.Tag("foo", "bar")))
 
 	url := "/"
 	r := httptest.NewRequest("GET", url, nil)
@@ -89,10 +93,11 @@ func TestWrapHandler200(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal(url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Equal("bar", s.Tag("foo"))
 }
 
 func TestAnalyticsSettings(t *testing.T) {
-	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...MuxOption) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
 		mux := NewServeMux(opts...)
 		mux.HandleFunc("/200", handler200)
 		r := httptest.NewRequest("GET", "/200", nil)
@@ -150,7 +155,7 @@ func TestAnalyticsSettings(t *testing.T) {
 }
 
 func router() http.Handler {
-	mux := NewServeMux(WithServiceName("my-service"))
+	mux := NewServeMux(WithServiceName("my-service"), WithSpanOptions(tracer.Tag("foo", "bar")))
 	mux.HandleFunc("/200", handler200)
 	mux.HandleFunc("/500", handler500)
 	return mux
