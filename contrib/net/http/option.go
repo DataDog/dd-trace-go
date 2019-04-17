@@ -51,7 +51,7 @@ func WithAnalyticsRate(rate float64) MuxOption {
 // to spans started by the integration.
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
 	return func(cfg *config) {
-		cfg.spanOpts = opts
+		cfg.spanOpts = append(cfg.spanOpts, opts...)
 	}
 }
 
