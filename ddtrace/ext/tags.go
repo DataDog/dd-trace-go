@@ -69,10 +69,10 @@ const (
 	AnalyticsEvent = "analytics.event"
 
 	// ManualKeep is a tag which specifies that the trace to which this span
-	// belongs too should be kept when set to true.
+	// belongs to should be kept when set to true.
 	ManualKeep = "manual.keep"
 
 	// ManualDrop is a tag which specifies that the trace to which this span
-	// belongs too should be dropped when set to true.
+	// belongs to should be dropped when set to true.
 	ManualDrop = "manual.drop"
 )

@@ -168,6 +168,12 @@ func (s *span) setTagBool(key string, v bool) {
 		if v {
 			s.setTagNumeric(ext.SamplingPriority, ext.PriorityUserKeep)
 		}
+	default:
+		if v {
+			s.setTagString(key, "true")
+		} else {
+			s.setTagString(key, "false")
+		}
 	}
 }
 
