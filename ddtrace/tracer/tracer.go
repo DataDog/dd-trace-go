@@ -2,7 +2,6 @@ package tracer
 
 import (
 	"errors"
-	"log"
 	"os"
 	"strconv"
 	"time"
@@ -314,7 +313,7 @@ func (t *tracer) flushTraces() {
 	}
 	size, count := t.payload.size(), t.payload.itemCount()
 	if t.config.debug {
-		log.Printf("Sending payload: size: %d traces: %d\n", size, count)
+		t.config.logger.Printf("Sending payload: size: %d traces: %d\n", size, count)
 	}
 	rc, err := t.config.transport.send(t.payload)
 	if err != nil {
@@ -328,7 +327,7 @@ func (t *tracer) flushTraces() {
 
 // flushErrors will process log messages that were queued
 func (t *tracer) flushErrors() {
-	logErrors(t.errorBuffer)
+	logErrors(t.errorBuffer, t.config.logger)
 }
 
 func (t *tracer) flush() {

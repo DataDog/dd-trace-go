@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,6 +39,9 @@ type config struct {
 
 	// httpRoundTripper defines the http.RoundTripper used by the agent transport.
 	httpRoundTripper http.RoundTripper
+
+	// logger is used to log all errors received and not returned by tracer.
+	logger Logger
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -48,6 +52,7 @@ func defaults(c *config) {
 	c.serviceName = filepath.Base(os.Args[0])
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
+	c.logger = log.New(os.Stderr, "", log.LstdFlags)
 }
 
 // WithPrioritySampling is deprecated, and priority sampling is enabled by default.
@@ -131,6 +136,14 @@ func WithAnalytics(on bool) StartOption {
 func WithAnalyticsRate(rate float64) StartOption {
 	return func(_ *config) {
 		globalconfig.SetAnalyticsRate(rate)
+	}
+}
+
+// WithLogger sets a logger used to output any errors encountered while processing traces that are
+// not returned.
+func WithLogger(l Logger) StartOption {
+	return func(c *config) {
+		c.logger = l
 	}
 }
 

@@ -2,7 +2,6 @@ package tracer
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 )
 
@@ -55,15 +54,15 @@ func aggregateErrors(errChan <-chan error) map[string]errorSummary {
 
 // logErrors logs the errors, preventing log file flooding, when there
 // are many messages, it caps them and shows a quick summary.
-// As of today it only logs using standard golang log package, but
+// As of today it only logs using logger provided by caller, but
 // later we could send those stats to agent // TODO(ufoot).
-func logErrors(errChan <-chan error) {
+func logErrors(errChan <-chan error, l Logger) {
 	errs := aggregateErrors(errChan)
 	for _, v := range errs {
 		var repeat string
 		if v.Count > 1 {
 			repeat = " (repeated " + strconv.Itoa(v.Count) + " times)"
 		}
-		log.Println(errorPrefix + v.Example + repeat)
+		l.Println(errorPrefix + v.Example + repeat)
 	}
 }
