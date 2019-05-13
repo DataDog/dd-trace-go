@@ -1073,3 +1073,32 @@ func cpspan(s *span) *span {
 		Error:    s.Error,
 	}
 }
+
+func Test_takeStackTrace(t *testing.T) {
+	t.Run("skips self", func(t *testing.T) {
+		val := takeStacktrace(12, 0)
+		// top frame should be runtime.main or runtime.goexit, in case of tests that's goexit
+		assert.Contains(t, val, "runtime.goexit", "should contain ")
+		assert.Contains(t, val, "testing.tRunner", "should contain parent function")
+		assert.Contains(t, val, "tracer.Test_takeStackTrace", "should contain this function")
+	})
+
+	t.Run("takes requested number of frames", func(t *testing.T) {
+		val := takeStacktrace(1, 0)
+		assert.Contains(t, val, "tracer.Test_takeStackTrace", "should contain this function")
+		// each frame consists of two strings separated by \n\t, thus number of frames == number of \n\t
+		numFrames := strings.Count(val, "\n\t")
+		assert.Equal(t, 1, numFrames, "should have length one if only one frame was requested")
+	})
+}
+
+// BenchmarkTracerStackFrames tests the performance of taking stack trace.
+func BenchmarkTracerStackFrames(b *testing.B) {
+	tracer, _, stop := startTestTracer(WithSampler(NewRateSampler(0)))
+	defer stop()
+
+	for n := 0; n < b.N; n++ {
+		span := tracer.StartSpan("test")
+		span.Finish(StackFrames(64, 0))
+	}
+}
