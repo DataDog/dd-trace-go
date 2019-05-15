@@ -44,7 +44,6 @@ type tracer struct {
 
 	// prioritySampling holds an instance of the priority sampler.
 	prioritySampling *prioritySampler
-	
 	// pid of the process
 	pid string
 }
