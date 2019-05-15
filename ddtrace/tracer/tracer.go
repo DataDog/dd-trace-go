@@ -44,6 +44,9 @@ type tracer struct {
 
 	// prioritySampling holds an instance of the priority sampler.
 	prioritySampling *prioritySampler
+	
+	// pid of the process
+	pid string
 }
 
 const (
@@ -131,6 +134,7 @@ func newTracer(opts ...StartOption) *tracer {
 		errorBuffer:      make(chan error, errorBufferSize),
 		stopped:          make(chan struct{}),
 		prioritySampling: newPrioritySampler(),
+		pid:              strconv.Itoa(os.Getpid()),
 	}
 
 	go t.worker()
@@ -269,7 +273,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	span.context = newSpanContext(span, context)
 	if context == nil || context.span == nil {
 		// this is either a root span or it has a remote parent, we should add the PID.
-		span.SetTag(ext.Pid, strconv.Itoa(os.Getpid()))
+		span.SetTag(ext.Pid, t.pid)
 	}
 	// add tags from options
 	for k, v := range opts.Tags {
