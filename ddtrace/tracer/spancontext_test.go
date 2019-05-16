@@ -1,6 +1,8 @@
 package tracer
 
 import (
+	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +39,51 @@ func TestNewSpanContextPushError(t *testing.T) {
 		assert.Equal(t, &spanBufferFullError{}, err)
 	default:
 		t.Fatal("no error pushed")
+	}
+}
+
+func TestAsyncSpanRace(t *testing.T) {
+	// This tests a regression where asynchronously finishing spans would
+	// modify a flushing root's sampling priority. The test has 100 iterations
+	// because it is not easy to reproduce the race.
+	_, _, stop := startTestTracer()
+	defer stop()
+
+	for i := 0; i < 100; i++ {
+		t.Run("", func(t *testing.T) {
+			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+			var wg sync.WaitGroup
+			done := make(chan struct{})
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				select {
+				case <-done:
+					root.Finish()
+					for i := 0; i < 500; i++ {
+						for range root.(*span).Metrics {
+							// this range simulates iterating over the metrics map
+							// as we do when encoding msgpack upon flushing.
+						}
+					}
+					return
+				}
+			}()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				select {
+				case <-done:
+					for i := 0; i < 50; i++ {
+						child, _ := StartSpanFromContext(ctx, "child", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+						child.Finish()
+					}
+					return
+				}
+			}()
+			close(done)
+			wg.Wait()
+		})
 	}
 }
 
