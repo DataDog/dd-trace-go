@@ -113,7 +113,7 @@ func (c *spanContext) baggageItem(key string) string {
 }
 
 // finish marks this span as finished in the trace.
-func (c *spanContext) finish() { c.trace.finishedOne() }
+func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
 // trace contains shared context information about a trace, such as sampling
 // priority, the root reference and a buffer of the spans which are part of the
@@ -215,7 +215,7 @@ func (t *trace) push(sp *span) {
 // finishedOne aknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span.
-func (t *trace) finishedOne() {
+func (t *trace) finishedOne(s *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.full {
@@ -229,10 +229,19 @@ func (t *trace) finishedOne() {
 	if len(t.spans) != t.finished {
 		return
 	}
+	t.finishTraceLocked(s)
+}
+
+func (t *trace) finishTraceLocked(last *span) {
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have a tracer that can receive completed traces.
 		if t.priority != nil {
-			t.root.Metrics[keySamplingPriority] = *t.priority
+			if last != t.root {
+				t.root.SetTag(keySamplingPriority, *t.priority)
+			} else {
+				// t.root already locked in (*span).Finish
+				t.root.setTagLocked(keySamplingPriority, *t.priority)
+			}
 		}
 		tr.pushTrace(t.spans)
 	}
