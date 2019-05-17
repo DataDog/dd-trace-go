@@ -21,7 +21,7 @@ func TestChildSpan(t *testing.T) {
 	var traced bool
 
 	router := echo.New()
-	router.Use(Middleware("foobar"))
+	router.Use(Middleware(WithServiceName("foobar")))
 	router.GET("/user/:id", func(c echo.Context) error {
 		called = true
 		_, traced = tracer.SpanFromContext(c.Request().Context())
@@ -45,7 +45,7 @@ func TestTrace200(t *testing.T) {
 	var traced bool
 
 	router := echo.New()
-	router.Use(Middleware("foobar"))
+	router.Use(Middleware(WithServiceName("foobar")))
 	router.GET("/user/:id", func(c echo.Context) error {
 		called = true
 		var span tracer.Span
@@ -89,7 +89,7 @@ func TestError(t *testing.T) {
 
 	// setup
 	router := echo.New()
-	router.Use(Middleware("foobar"))
+	router.Use(Middleware(WithServiceName("foobar")))
 	wantErr := errors.New("oh no")
 
 	// a handler with an error and make the requests
@@ -135,7 +135,6 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	r := httptest.NewRequest("GET", "/ping", nil)
 	w := httptest.NewRecorder()
 
-	// verify traces look good
 	router.ServeHTTP(w, r)
 	assert.True(called)
 	assert.False(traced)

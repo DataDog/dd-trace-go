@@ -11,14 +11,20 @@ import (
 	"github.com/labstack/echo"
 )
 
-// Middleware returns middleware that will trace incoming requests.
-func Middleware(service string) echo.MiddlewareFunc {
+// Middleware returns echo middleware which will trace incoming requests.
+func Middleware(opts ...MiddlewareOption) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		cfg := new(config)
+		defaults(cfg)
+		for _, fn := range opts {
+			fn(cfg)
+		}
+
 		return func(c echo.Context) error {
 			request := c.Request()
-			resource := c.Path()
+			resource := request.Method + " " + c.Path()
 			opts := []ddtrace.StartSpanOption{
-				tracer.ServiceName(service),
+				tracer.ServiceName(cfg.serviceName),
 				tracer.ResourceName(resource),
 				tracer.SpanType(ext.SpanTypeWeb),
 				tracer.Tag(ext.HTTPMethod, request.Method),
