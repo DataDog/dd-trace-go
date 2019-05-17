@@ -113,7 +113,7 @@ func (c *spanContext) baggageItem(key string) string {
 }
 
 // finish marks this span as finished in the trace.
-func (c *spanContext) finish() { c.trace.finishedOne() }
+func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
 // trace contains shared context information about a trace, such as sampling
 // priority, the root reference and a buffer of the spans which are part of the
@@ -177,9 +177,8 @@ func (t *trace) setSamplingPriorityLocked(p float64) {
 		return
 	}
 	if t.root == nil {
-		// this trace is part of a context that doesn't belong to a
-		// trace yet, meaning that the sampling priority is locked
-		// by a distributed trace.
+		// this trace is distributed (no local root); modifications
+		// to the sampling priority are not allowed.
 		t.locked = true
 	}
 	if t.priority == nil {
@@ -215,7 +214,7 @@ func (t *trace) push(sp *span) {
 // finishedOne aknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span.
-func (t *trace) finishedOne() {
+func (t *trace) finishedOne(s *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.full {
@@ -226,14 +225,18 @@ func (t *trace) finishedOne() {
 		return
 	}
 	t.finished++
+	if s == t.root && t.priority != nil {
+		// after the root has finished we lock down the priority;
+		// we won't be able to make changes to a span after finishing
+		// without causing a race condition.
+		t.root.Metrics[keySamplingPriority] = *t.priority
+		t.locked = true
+	}
 	if len(t.spans) != t.finished {
 		return
 	}
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have a tracer that can receive completed traces.
-		if t.priority != nil {
-			t.root.Metrics[keySamplingPriority] = *t.priority
-		}
 		tr.pushTrace(t.spans)
 	}
 	t.spans = nil
