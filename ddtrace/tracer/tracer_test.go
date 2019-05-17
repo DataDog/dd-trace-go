@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
@@ -826,9 +827,7 @@ func newTracerChannels() *tracer {
 	return &tracer{
 		payload:        newPayload(),
 		payloadQueue:   make(chan []*span, payloadQueueSize),
-		errorBuffer:    make(chan error, errorBufferSize),
 		flushTracesReq: make(chan struct{}, 1),
-		flushErrorsReq: make(chan struct{}, 1),
 	}
 }
 
@@ -851,6 +850,8 @@ func TestPushPayload(t *testing.T) {
 func TestPushTrace(t *testing.T) {
 	assert := assert.New(t)
 
+	tp := new(testLogger)
+	log.UseLogger(tp)
 	tracer := newTracerChannels()
 	trace := []*span{
 		&span{
@@ -877,33 +878,8 @@ func TestPushTrace(t *testing.T) {
 		tracer.pushTrace(make([]*span, i))
 	}
 	assert.Len(tracer.payloadQueue, payloadQueueSize)
-	assert.Len(tracer.errorBuffer, 2)
-}
-
-func TestPushErr(t *testing.T) {
-	assert := assert.New(t)
-
-	tracer := newTracerChannels()
-
-	err := fmt.Errorf("ooops")
-	tracer.pushError(err)
-
-	assert.Len(tracer.errorBuffer, 1, "there should be data in channel")
-	assert.Len(tracer.flushErrorsReq, 0, "no flush requested yet")
-
-	pushed := <-tracer.errorBuffer
-	assert.Equal(err, pushed)
-
-	many := errorBufferSize/2 + 1
-	for i := 0; i < many; i++ {
-		tracer.pushError(fmt.Errorf("err %d", i))
-	}
-	assert.Len(tracer.errorBuffer, many, "all errs should be in the channel, not yet blocking")
-	assert.Len(tracer.flushErrorsReq, 1, "a err flush should have been requested")
-	for i := 0; i < cap(tracer.errorBuffer); i++ {
-		tracer.pushError(fmt.Errorf("err %d", i))
-	}
-	// if we reach this, means pushError is not blocking, which is what we want to double-check
+	log.Flush()
+	assert.True(len(tp.Lines()) >= 2)
 }
 
 func TestTracerFlush(t *testing.T) {

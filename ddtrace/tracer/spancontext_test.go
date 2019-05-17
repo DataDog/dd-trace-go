@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 func setupteardown(start, max int) func() {
@@ -24,7 +25,8 @@ func setupteardown(start, max int) func() {
 func TestNewSpanContextPushError(t *testing.T) {
 	defer setupteardown(2, 2)()
 
-	tracer, _, stop := startTestTracer()
+	tp := new(testLogger)
+	_, _, stop := startTestTracer(WithLogger(tp))
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
 	parent.context.trace.push(newBasicSpan("test2")) // 2nd span in trace
@@ -34,12 +36,8 @@ func TestNewSpanContextPushError(t *testing.T) {
 	// One more should overflow.
 	child.context = newSpanContext(child, parent.context)
 
-	select {
-	case err := <-tracer.errorBuffer:
-		assert.Equal(t, &spanBufferFullError{}, err)
-	default:
-		t.Fatal("no error pushed")
-	}
+	log.Flush()
+	assert.Contains(t, tp.Lines()[0], "ERROR: trace buffer full (2)")
 }
 
 func TestAsyncSpanRace(t *testing.T) {
@@ -104,26 +102,18 @@ func TestSpanTracePushOne(t *testing.T) {
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
 	trace := root.context.trace
 
-	assert.Len(tracer.errorBuffer, 0)
 	assert.Len(trace.spans, 1)
 	assert.Equal(root, trace.spans[0], "the span is the one pushed before")
 
 	root.Finish()
 	tracer.forceFlush()
 
-	select {
-	case err := <-tracer.errorBuffer:
-		assert.Fail("unexpected error:", err.Error())
-		t.Logf("trace: %v", trace)
-	default:
-		traces := transport.Traces()
-		assert.Len(tracer.errorBuffer, 0)
-		assert.Len(traces, 1)
-		trc := traces[0]
-		assert.Len(trc, 1, "there was a trace in the channel")
-		comparePayloadSpans(t, root, trc[0])
-		assert.Equal(0, len(trace.spans), "no more spans in the trace")
-	}
+	traces := transport.Traces()
+	assert.Len(traces, 1)
+	trc := traces[0]
+	assert.Len(trc, 1, "there was a trace in the channel")
+	comparePayloadSpans(t, root, trc[0])
+	assert.Equal(0, len(trace.spans), "no more spans in the trace")
 }
 
 func TestSpanTracePushNoFinish(t *testing.T) {
@@ -131,7 +121,8 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	assert := assert.New(t)
 
-	tracer, _, stop := startTestTracer()
+	tp := new(testLogger)
+	_, _, stop := startTestTracer(WithLogger(tp))
 	defer stop()
 
 	buffer := newTrace()
@@ -143,15 +134,13 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	root.context.trace = buffer
 
 	buffer.push(root)
-	assert.Len(tracer.errorBuffer, 0)
 	assert.Len(buffer.spans, 1, "there is one span in the buffer")
 	assert.Equal(root, buffer.spans[0], "the span is the one pushed before")
 
 	select {
-	case err := <-tracer.errorBuffer:
-		assert.Fail("unexpected error:", err.Error())
-		t.Logf("buffer: %v", buffer)
 	case <-time.After(time.Second / 10):
+		log.Flush()
+		assert.Len(tp.Lines(), 0)
 		t.Logf("expected timeout, nothing should show up in buffer as the trace is not finished")
 	}
 }
@@ -178,7 +167,6 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	for i, span := range trace {
 		span.context.trace = buffer
 		buffer.push(span)
-		assert.Len(tracer.errorBuffer, 0)
 		assert.Len(buffer.spans, i+1, "there is one more span in the buffer")
 		assert.Equal(span, buffer.spans[i], "the span is the one pushed before")
 	}
@@ -188,17 +176,12 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	}
 	tracer.forceFlush()
 
-	select {
-	case err := <-tracer.errorBuffer:
-		assert.Fail("unexpected error:", err.Error())
-	default:
-		traces := transport.Traces()
-		assert.Len(traces, 1)
-		trace := traces[0]
-		assert.Len(trace, 4, "there was one trace with the right number of spans in the channel")
-		for _, span := range trace {
-			assert.Contains(trace, span, "the trace contains the spans")
-		}
+	traces := transport.Traces()
+	assert.Len(traces, 1)
+	trace = traces[0]
+	assert.Len(trace, 4, "there was one trace with the right number of spans in the channel")
+	for _, span := range trace {
+		assert.Contains(trace, span, "the trace contains the spans")
 	}
 }
 
@@ -223,20 +206,15 @@ func TestSpanFinishPriority(t *testing.T) {
 
 	tracer.forceFlush()
 
-	select {
-	case err := <-tracer.errorBuffer:
-		assert.Fail("unexpected error:", err.Error())
-	default:
-		traces := transport.Traces()
-		assert.Len(traces, 1)
-		trace := traces[0]
-		assert.Len(trace, 2)
-		for _, span := range trace {
-			if span.Name == "root" {
-				// root should have inherited child's sampling priority
-				assert.Equal(span.Metrics[keySamplingPriority], 2.)
-				return
-			}
+	traces := transport.Traces()
+	assert.Len(traces, 1)
+	trace := traces[0]
+	assert.Len(trace, 2)
+	for _, span := range trace {
+		if span.Name == "root" {
+			// root should have inherited child's sampling priority
+			assert.Equal(span.Metrics[keySamplingPriority], 2.)
+			return
 		}
 	}
 	assert.Fail("span not found")
@@ -360,12 +338,10 @@ func TestSpanContextParent(t *testing.T) {
 }
 
 func TestSpanContextPushFull(t *testing.T) {
-	oldMaxSize := traceMaxSize
-	defer func() {
-		traceMaxSize = oldMaxSize
-	}()
+	defer func(old int) { traceMaxSize = old }(traceMaxSize)
 	traceMaxSize = 2
-	tracer, _, stop := startTestTracer()
+	tp := new(testLogger)
+	_, _, stop := startTestTracer(WithLogger(tp))
 	defer stop()
 
 	span1 := newBasicSpan("span1")
@@ -375,13 +351,14 @@ func TestSpanContextPushFull(t *testing.T) {
 	buffer := newTrace()
 	assert := assert.New(t)
 	buffer.push(span1)
-	assert.Len(tracer.errorBuffer, 0)
+	log.Flush()
+	assert.Len(tp.Lines(), 0)
 	buffer.push(span2)
-	assert.Len(tracer.errorBuffer, 0)
+	log.Flush()
+	assert.Len(tp.Lines(), 0)
 	buffer.push(span3)
-	assert.Len(tracer.errorBuffer, 1)
-	err := <-tracer.errorBuffer
-	assert.Equal(&spanBufferFullError{}, err)
+	log.Flush()
+	assert.Contains(tp.Lines()[0], "ERROR: trace buffer full (2)")
 }
 
 func TestSpanContextBaggage(t *testing.T) {
@@ -414,4 +391,34 @@ func TestSpanContextIteratorBreak(t *testing.T) {
 	})
 
 	assert.Len(t, got, 0)
+}
+
+// testLogger implements a mock Printer.
+type testLogger struct {
+	mu    sync.RWMutex
+	lines []string
+}
+
+// Print implements log.Printer.
+func (tp *testLogger) Log(msg string) {
+	tp.mu.Lock()
+	defer tp.mu.Unlock()
+	if tp.lines == nil {
+		tp.lines = []string{}
+	}
+	tp.lines = append(tp.lines, msg)
+}
+
+// Lines returns the lines that were printed using this printer.
+func (tp *testLogger) Lines() []string {
+	tp.mu.RLock()
+	defer tp.mu.RUnlock()
+	return tp.lines
+}
+
+// Reset resets the printer's internal buffer.
+func (tp *testLogger) Reset() {
+	tp.mu.Lock()
+	defer tp.mu.Unlock()
+	tp.lines = tp.lines[:0]
 }
