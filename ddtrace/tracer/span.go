@@ -74,10 +74,6 @@ func (s *span) BaggageItem(key string) string {
 func (s *span) SetTag(key string, value interface{}) {
 	s.Lock()
 	defer s.Unlock()
-	s.setTagLocked(key, value)
-}
-
-func (s *span) setTagLocked(key string, value interface{}) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.

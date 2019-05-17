@@ -44,12 +44,12 @@ func TestNewSpanContextPushError(t *testing.T) {
 
 func TestAsyncSpanRace(t *testing.T) {
 	// This tests a regression where asynchronously finishing spans would
-	// modify a flushing root's sampling priority. The test has 100 iterations
-	// because it is not easy to reproduce the race.
+	// modify a flushing root's sampling priority.
 	_, _, stop := startTestTracer()
 	defer stop()
 
 	for i := 0; i < 100; i++ {
+		// The test has 100 iterations because it is not easy to reproduce the race.
 		t.Run("", func(t *testing.T) {
 			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
 			var wg sync.WaitGroup
@@ -75,16 +75,21 @@ func TestAsyncSpanRace(t *testing.T) {
 				select {
 				case <-done:
 					for i := 0; i < 50; i++ {
+						// to trigger the bug, the child should be created after the root was finished,
+						// as its being flushed
 						child, _ := StartSpanFromContext(ctx, "child", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
 						child.Finish()
 					}
 					return
 				}
 			}()
+			// closing will attempt trigger the two goroutines at approximately the same time.
 			close(done)
 			wg.Wait()
 		})
 	}
+
+	// Test passes if no panic occurs while running.
 }
 
 func TestSpanTracePushOne(t *testing.T) {
