@@ -32,6 +32,13 @@ var (
 	_ msgp.Decodable = (*spanLists)(nil)
 )
 
+// errorConfig is internal struct for passing the setTagError config.
+type errorConfig struct {
+	noDebugStack bool
+	stackFrames  uint
+	stackSkip    uint
+}
+
 // span represents a computation. Callers must call Finish when a span is
 // complete to ensure it's submitted.
 type span struct {
@@ -84,7 +91,7 @@ func (s *span) SetTag(key string, value interface{}) {
 	}
 	switch key {
 	case ext.Error:
-		s.setTagError(value, &ddtrace.ErrorConfig{})
+		s.setTagError(value, &errorConfig{})
 		return
 	}
 	if v, ok := value.(bool); ok {
@@ -106,7 +113,7 @@ func (s *span) SetTag(key string, value interface{}) {
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
 // This method is not safe for concurrent use.
-func (s *span) setTagError(value interface{}, cfg *ddtrace.ErrorConfig) {
+func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 	if s.finished {
 		return
 	}
@@ -124,12 +131,12 @@ func (s *span) setTagError(value interface{}, cfg *ddtrace.ErrorConfig) {
 		s.Error = 1
 		s.Meta[ext.ErrorMsg] = v.Error()
 		s.Meta[ext.ErrorType] = reflect.TypeOf(v).String()
-		if !cfg.NoDebugStack {
+		if !cfg.noDebugStack {
 			var stack string
-			if cfg.StackFrames == 0 {
+			if cfg.stackFrames == 0 {
 				stack = string(debug.Stack())
 			} else {
-				stack = takeStacktrace(cfg.StackFrames, cfg.SkipStackFrames)
+				stack = takeStacktrace(cfg.stackFrames, cfg.stackSkip)
 			}
 			s.Meta[ext.ErrorStack] = stack
 		}
@@ -144,14 +151,12 @@ func (s *span) setTagError(value interface{}, cfg *ddtrace.ErrorConfig) {
 }
 
 // takeStacktrace takes stacktrace
-// skips the stack frame for this function and for the call to runtime.Caller and to the caller -> setTagError
 func takeStacktrace(n, offset uint) string {
 	var builder strings.Builder
 	pcs := make([]uintptr, n)
 
 	i := 0
-	// +2 for call to runtime.Callers and this function	so that
-	// program counters start at the caller of takeStacktrace.
+	// +2 to exclude runtime.Callers and takeStacktrace
 	numFrames := runtime.Callers(2+int(offset), pcs)
 	frames := runtime.CallersFrames(pcs[:numFrames])
 
@@ -244,7 +249,11 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	}
 	if cfg.Error != nil {
 		s.Lock()
-		s.setTagError(cfg.Error, &cfg.ErrorConfig)
+		s.setTagError(cfg.Error, &errorConfig{
+			noDebugStack: cfg.NoDebugStack,
+			stackFrames:  cfg.StackFrames,
+			stackSkip:    cfg.SkipStackFrames,
+		})
 		s.Unlock()
 	}
 	s.finish(t)

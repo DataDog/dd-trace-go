@@ -78,18 +78,6 @@ type StartSpanOption func(cfg *StartSpanConfig)
 // FinishOption is a configuration option that can be used with a Span's Finish method.
 type FinishOption func(cfg *FinishConfig)
 
-// ErrorConfig is configuration for stack trace attached to error
-type ErrorConfig struct {
-	// NoDebugStack will prevent any set errors from generating an attached stack trace tag.
-	NoDebugStack bool
-
-	// StackFrames specifies the number of stack frames to be attached in spans that finish with errors.
-	StackFrames uint
-
-	// SkipStackFrames specifies the offset at which to start reporting stack frames from the stack.
-	SkipStackFrames uint
-}
-
 // FinishConfig holds the configuration for finishing a span. It is usually passed around by
 // reference to one or more FinishOption functions which shape it into its final form.
 type FinishConfig struct {
@@ -101,8 +89,14 @@ type FinishConfig struct {
 	// finishing.
 	Error error
 
-	// ErrorConfig is configuration for stack trace attached to error
-	ErrorConfig
+	// NoDebugStack will prevent any set errors from generating an attached stack trace tag.
+	NoDebugStack bool
+
+	// StackFrames specifies the number of stack frames to be attached in spans that finish with errors.
+	StackFrames uint
+
+	// SkipStackFrames specifies the offset at which to start reporting stack frames from the stack.
+	SkipStackFrames uint
 }
 
 // StartSpanConfig holds the configuration for starting a new span. It is usually passed
