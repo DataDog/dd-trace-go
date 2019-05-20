@@ -12,14 +12,13 @@ import (
 )
 
 // Middleware returns echo middleware which will trace incoming requests.
-func Middleware(opts ...MiddlewareOption) echo.MiddlewareFunc {
+func Middleware(opts ...Option) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		cfg := new(config)
 		defaults(cfg)
 		for _, fn := range opts {
 			fn(cfg)
 		}
-
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
@@ -47,7 +46,6 @@ func Middleware(opts ...MiddlewareOption) echo.MiddlewareFunc {
 			if err != nil {
 				span.SetTag(ext.Error, err)
 			}
-
 			return err
 		}
 	}

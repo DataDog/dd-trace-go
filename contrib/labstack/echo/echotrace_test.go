@@ -17,8 +17,7 @@ func TestChildSpan(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	var called bool
-	var traced bool
+	var called, traced bool
 
 	router := echo.New()
 	router.Use(Middleware(WithServiceName("foobar")))
@@ -41,8 +40,7 @@ func TestTrace200(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	var called bool
-	var traced bool
+	var called, traced bool
 
 	router := echo.New()
 	router.Use(Middleware(WithServiceName("foobar")))
@@ -84,8 +82,7 @@ func TestError(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	var called bool
-	var traced bool
+	var called, traced bool
 
 	// setup
 	router := echo.New()
@@ -122,8 +119,7 @@ func TestError(t *testing.T) {
 func TestGetSpanNotInstrumented(t *testing.T) {
 	assert := assert.New(t)
 	router := echo.New()
-	var called bool
-	var traced bool
+	var called, traced bool
 
 	router.GET("/ping", func(c echo.Context) error {
 		// Assert we don't have a span on the context.
