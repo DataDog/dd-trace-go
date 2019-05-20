@@ -55,7 +55,10 @@ func TestTrace200(t *testing.T) {
 		return c.NoContent(200)
 	})
 
+	root := tracer.StartSpan("root")
 	r := httptest.NewRequest("GET", "/user/123", nil)
+	err := tracer.Inject(root.Context(), tracer.HTTPHeadersCarrier(r.Header))
+	assert.Nil(err)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)
 
@@ -74,6 +77,7 @@ func TestTrace200(t *testing.T) {
 	assert.Contains(span.Tag(ext.ResourceName), "/user/:id")
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
+	assert.Equal(root.Context().SpanID(), span.ParentID())
 
 	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
 }
