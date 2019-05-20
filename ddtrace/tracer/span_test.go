@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -126,6 +127,21 @@ func TestSpanFinishWithErrorNoDebugStack(t *testing.T) {
 	assert.Equal("test error", span.Meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.Meta[ext.ErrorType])
 	assert.Empty(span.Meta[ext.ErrorStack])
+}
+
+func TestSpanFinishWithErrorStackFrames(t *testing.T) {
+	assert := assert.New(t)
+
+	err := errors.New("test error")
+	span := newBasicSpan("web.request")
+	span.Finish(WithError(err), StackFrames(2, 1))
+
+	assert.Equal(int32(1), span.Error)
+	assert.Equal("test error", span.Meta[ext.ErrorMsg])
+	assert.Equal("*errors.errorString", span.Meta[ext.ErrorType])
+	assert.Contains(span.Meta[ext.ErrorStack], "tracer.TestSpanFinishWithErrorStackFrames")
+	assert.Contains(span.Meta[ext.ErrorStack], "tracer.(*span).Finish")
+	assert.Equal(strings.Count(span.Meta[ext.ErrorStack], "\n\t"), 2)
 }
 
 func TestSpanSetTag(t *testing.T) {

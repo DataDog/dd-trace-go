@@ -221,3 +221,14 @@ func NoDebugStack() FinishOption {
 		cfg.NoDebugStack = true
 	}
 }
+
+// StackFrames limits the number of stack frames included into erroneous spans to n, starting from skip.
+func StackFrames(n, skip uint) FinishOption {
+	if n == 0 {
+		return NoDebugStack()
+	}
+	return func(cfg *ddtrace.FinishConfig) {
+		cfg.StackFrames = n
+		cfg.SkipStackFrames = skip
+	}
+}

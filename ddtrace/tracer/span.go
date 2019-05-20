@@ -5,7 +5,9 @@ package tracer
 import (
 	"fmt"
 	"reflect"
+	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +31,13 @@ var (
 	_ msgp.Encodable = (*spanList)(nil)
 	_ msgp.Decodable = (*spanLists)(nil)
 )
+
+// errorConfig holds customization options for setting error tags.
+type errorConfig struct {
+	noDebugStack bool
+	stackFrames  uint
+	stackSkip    uint
+}
 
 // span represents a computation. Callers must call Finish when a span is
 // complete to ensure it's submitted.
@@ -82,7 +91,7 @@ func (s *span) SetTag(key string, value interface{}) {
 	}
 	switch key {
 	case ext.Error:
-		s.setTagError(value, true)
+		s.setTagError(value, &errorConfig{})
 		return
 	}
 	if v, ok := value.(bool); ok {
@@ -104,7 +113,7 @@ func (s *span) SetTag(key string, value interface{}) {
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
 // This method is not safe for concurrent use.
-func (s *span) setTagError(value interface{}, debugStack bool) {
+func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 	if s.finished {
 		return
 	}
@@ -122,8 +131,12 @@ func (s *span) setTagError(value interface{}, debugStack bool) {
 		s.Error = 1
 		s.Meta[ext.ErrorMsg] = v.Error()
 		s.Meta[ext.ErrorType] = reflect.TypeOf(v).String()
-		if debugStack {
-			s.Meta[ext.ErrorStack] = string(debug.Stack())
+		if !cfg.noDebugStack {
+			if cfg.stackFrames == 0 {
+				s.Meta[ext.ErrorStack] = string(debug.Stack())
+			} else {
+				s.Meta[ext.ErrorStack] = takeStacktrace(cfg.stackFrames, cfg.stackSkip)
+			}
 		}
 	case nil:
 		// no error
@@ -133,6 +146,35 @@ func (s *span) setTagError(value interface{}, debugStack bool) {
 		// is the result of an error.
 		s.Error = 1
 	}
+}
+
+// takeStacktrace takes stacktrace
+func takeStacktrace(n, skip uint) string {
+	var builder strings.Builder
+	pcs := make([]uintptr, n)
+
+	// +2 to exclude runtime.Callers and takeStacktrace
+	numFrames := runtime.Callers(2+int(skip), pcs)
+	if numFrames == 0 {
+		return ""
+	}
+	frames := runtime.CallersFrames(pcs[:numFrames])
+	for i := 0; ; i++ {
+		frame, more := frames.Next()
+		if i != 0 {
+			builder.WriteByte('\n')
+		}
+		builder.WriteString(frame.Function)
+		builder.WriteByte('\n')
+		builder.WriteByte('\t')
+		builder.WriteString(frame.File)
+		builder.WriteByte(':')
+		builder.WriteString(strconv.Itoa(frame.Line))
+		if !more {
+			break
+		}
+	}
+	return builder.String()
 }
 
 // setTagString sets a string tag. This method is not safe for concurrent use.
@@ -205,7 +247,11 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	}
 	if cfg.Error != nil {
 		s.Lock()
-		s.setTagError(cfg.Error, !cfg.NoDebugStack)
+		s.setTagError(cfg.Error, &errorConfig{
+			noDebugStack: cfg.NoDebugStack,
+			stackFrames:  cfg.StackFrames,
+			stackSkip:    cfg.SkipStackFrames,
+		})
 		s.Unlock()
 	}
 	s.finish(t)

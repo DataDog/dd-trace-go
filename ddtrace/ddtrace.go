@@ -91,6 +91,12 @@ type FinishConfig struct {
 
 	// NoDebugStack will prevent any set errors from generating an attached stack trace tag.
 	NoDebugStack bool
+
+	// StackFrames specifies the number of stack frames to be attached in spans that finish with errors.
+	StackFrames uint
+
+	// SkipStackFrames specifies the offset at which to start reporting stack frames from the stack.
+	SkipStackFrames uint
 }
 
 // StartSpanConfig holds the configuration for starting a new span. It is usually passed
