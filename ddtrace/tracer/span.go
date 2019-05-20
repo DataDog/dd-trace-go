@@ -149,14 +149,16 @@ func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 }
 
 // takeStacktrace takes stacktrace
-func takeStacktrace(n, offset uint) string {
+func takeStacktrace(n, skip uint) string {
 	var builder strings.Builder
 	pcs := make([]uintptr, n)
 
 	// +2 to exclude runtime.Callers and takeStacktrace
-	numFrames := runtime.Callers(2+int(offset), pcs)
+	numFrames := runtime.Callers(2+int(skip), pcs)
+	if numFrames == 0 {
+		return ""
+	}
 	frames := runtime.CallersFrames(pcs[:numFrames])
-
 	for i := 0; ; i++ {
 		frame, more := frames.Next()
 		if i != 0 {
