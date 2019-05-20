@@ -32,7 +32,7 @@ var (
 	_ msgp.Decodable = (*spanLists)(nil)
 )
 
-// errorConfig is internal struct for passing the setTagError config.
+// errorConfig holds customization options for setting error tags.
 type errorConfig struct {
 	noDebugStack bool
 	stackFrames  uint
@@ -132,13 +132,11 @@ func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 		s.Meta[ext.ErrorMsg] = v.Error()
 		s.Meta[ext.ErrorType] = reflect.TypeOf(v).String()
 		if !cfg.noDebugStack {
-			var stack string
 			if cfg.stackFrames == 0 {
-				stack = string(debug.Stack())
+				s.Meta[ext.ErrorStack] = string(debug.Stack())
 			} else {
-				stack = takeStacktrace(cfg.stackFrames, cfg.stackSkip)
+				s.Meta[ext.ErrorStack] = takeStacktrace(cfg.stackFrames, cfg.stackSkip)
 			}
-			s.Meta[ext.ErrorStack] = stack
 		}
 	case nil:
 		// no error
@@ -155,17 +153,15 @@ func takeStacktrace(n, offset uint) string {
 	var builder strings.Builder
 	pcs := make([]uintptr, n)
 
-	i := 0
 	// +2 to exclude runtime.Callers and takeStacktrace
 	numFrames := runtime.Callers(2+int(offset), pcs)
 	frames := runtime.CallersFrames(pcs[:numFrames])
 
-	for {
+	for i := 0; ; i++ {
 		frame, more := frames.Next()
 		if i != 0 {
 			builder.WriteByte('\n')
 		}
-		i++
 		builder.WriteString(frame.Function)
 		builder.WriteByte('\n')
 		builder.WriteByte('\t')
