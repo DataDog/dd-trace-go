@@ -947,25 +947,43 @@ func TestTracerFlush(t *testing.T) {
 }
 
 func TestTracerReportsHostname(t *testing.T) {
-	os.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
-	defer os.Unsetenv("DD_TRACE_REPORT_HOSTNAME")
+	t.Run("enabled", func(t *testing.T) {
+		os.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+		defer os.Unsetenv("DD_TRACE_REPORT_HOSTNAME")
 
-	tracer, _, stop := startTestTracer()
-	defer stop()
+		tracer, _, stop := startTestTracer()
+		defer stop()
 
-	root := tracer.StartSpan("root").(*span)
-	child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
-	child.Finish()
-	root.Finish()
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
 
-	assert := assert.New(t)
+		assert := assert.New(t)
 
-	name, ok := root.Meta[keyHostname]
-	assert.True(ok)
-	assert.Equal(name, tracer.hostname)
+		name, ok := root.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(name, tracer.hostname)
 
-	_, ok = child.Meta[keyHostname]
-	assert.False(ok)
+		_, ok = child.Meta[keyHostname]
+		assert.False(ok)
+	})
+	t.Run("not enabled", func(t *testing.T) {
+		tracer, _, stop := startTestTracer()
+		defer stop()
+
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
+
+		assert := assert.New(t)
+
+		_, ok := root.Meta[keyHostname]
+		assert.False(ok)
+		_, ok = child.Meta[keyHostname]
+		assert.False(ok)
+	})
 }
 
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of

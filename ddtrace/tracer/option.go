@@ -58,7 +58,7 @@ func defaults(c *config) {
 		var err error
 		c.hostname, err = os.Hostname()
 		if err != nil {
-			log.Println("unable to look up hostname:", err)
+			log.Printf("%sunable to look up hostname: %v\n", errorPrefix, err)
 		}
 	}
 }
