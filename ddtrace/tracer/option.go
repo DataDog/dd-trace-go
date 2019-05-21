@@ -1,10 +1,10 @@
 package tracer
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -54,9 +54,12 @@ func defaults(c *config) {
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
 
-	report := os.Getenv("DD_TRACE_REPORT_HOSTNAME")
-	if b, err := strconv.ParseBool(report); err == nil && b {
+	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
+		var err error
 		c.hostname, err = os.Hostname()
+		if err != nil {
+			log.Println("unable to look up hostname:", err)
+		}
 	}
 }
 
