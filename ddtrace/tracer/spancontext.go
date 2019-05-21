@@ -225,22 +225,20 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 	t.finished++
-	if s == t.root {
-		if t.priority != nil {
-			// after the root has finished we lock down the priority;
-			// we won't be able to make changes to a span after finishing
-			// without causing a race condition.
-			t.root.Metrics[keySamplingPriority] = *t.priority
-			t.locked = true
-		}
-		if tr.hostname != "" {
-			t.root.Meta[keyHostname] = tr.hostname
-		}
+	if s == t.root && t.priority != nil {
+		// after the root has finished we lock down the priority;
+		// we won't be able to make changes to a span after finishing
+		// without causing a race condition.
+		t.root.Metrics[keySamplingPriority] = *t.priority
+		t.locked = true
 	}
 	if len(t.spans) != t.finished {
 		return
 	}
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
+		if s == t.root && tr.hostname != "" {
+			t.root.Meta[keyHostname] = tr.hostname
+		}
 		// we have a tracer that can receive completed traces.
 		tr.pushTrace(t.spans)
 	}
