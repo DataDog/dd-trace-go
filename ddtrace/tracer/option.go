@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,7 +23,7 @@ type config struct {
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler Sampler
 
-	// agentAddr specifies the hostname and  of the agent where the traces
+	// agentAddr specifies the hostname and port of the agent where the traces
 	// are sent to.
 	agentAddr string
 
@@ -38,6 +39,10 @@ type config struct {
 
 	// httpRoundTripper defines the http.RoundTripper used by the agent transport.
 	httpRoundTripper http.RoundTripper
+
+	// hostname is automatically assigned when the DD_TRACE_REPORT_HOSTNAME is set to true,
+	// and is added as a special tag to the root span of traces.
+	hostname string
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -48,6 +53,14 @@ func defaults(c *config) {
 	c.serviceName = filepath.Base(os.Args[0])
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
+
+	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
+		var err error
+		c.hostname, err = os.Hostname()
+		if err != nil {
+			log.Printf("%sunable to look up hostname: %v\n", errorPrefix, err)
+		}
+	}
 }
 
 // WithPrioritySampling is deprecated, and priority sampling is enabled by default.

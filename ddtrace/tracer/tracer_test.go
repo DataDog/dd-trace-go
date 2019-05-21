@@ -946,6 +946,47 @@ func TestTracerFlush(t *testing.T) {
 	})
 }
 
+func TestTracerReportsHostname(t *testing.T) {
+	t.Run("enabled", func(t *testing.T) {
+		os.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+		defer os.Unsetenv("DD_TRACE_REPORT_HOSTNAME")
+
+		tracer, _, stop := startTestTracer()
+		defer stop()
+
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
+
+		assert := assert.New(t)
+
+		name, ok := root.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(name, tracer.hostname)
+
+		_, ok = child.Meta[keyHostname]
+		assert.False(ok)
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		tracer, _, stop := startTestTracer()
+		defer stop()
+
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
+
+		assert := assert.New(t)
+
+		_, ok := root.Meta[keyHostname]
+		assert.False(ok)
+		_, ok = child.Meta[keyHostname]
+		assert.False(ok)
+	})
+}
+
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
