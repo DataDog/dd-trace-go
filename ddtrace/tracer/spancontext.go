@@ -236,9 +236,6 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
-		if s == t.root && tr.hostname != "" {
-			t.root.Meta[keyHostname] = tr.hostname
-		}
 		// we have a tracer that can receive completed traces.
 		tr.pushTrace(t.spans)
 	}

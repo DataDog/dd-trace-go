@@ -968,7 +968,8 @@ func TestTracerReportsHostname(t *testing.T) {
 		_, ok = child.Meta[keyHostname]
 		assert.False(ok)
 	})
-	t.Run("not enabled", func(t *testing.T) {
+
+	t.Run("disabled", func(t *testing.T) {
 		tracer, _, stop := startTestTracer()
 		defer stop()
 

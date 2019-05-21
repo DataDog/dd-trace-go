@@ -273,6 +273,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if context == nil || context.span == nil {
 		// this is either a root span or it has a remote parent, we should add the PID.
 		span.SetTag(ext.Pid, t.pid)
+		if t.hostname != "" {
+			span.SetTag(keyHostname, t.hostname)
+		}
 	}
 	// add tags from options
 	for k, v := range opts.Tags {
