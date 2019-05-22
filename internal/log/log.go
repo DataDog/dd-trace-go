@@ -84,9 +84,10 @@ type errorReport struct {
 	count uint64
 }
 
-// Error aggregates errors under the given key. The aggregated errors are printed
-// once a minute or once every DD_LOGGING_RATE number of seconds.
-func Error(key, format string, a ...interface{}) {
+// Error reports an error. Errors get aggregated and logged periodically. The
+// default is once per minute or once every DD_LOGGING_RATE number of seconds.
+func Error(format string, a ...interface{}) {
+	key := format // format should 99.9% of the time be constant
 	if reachedLimit(key) {
 		// avoid too much lock contention on spammy errors
 		return

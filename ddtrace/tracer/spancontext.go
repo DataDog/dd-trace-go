@@ -200,7 +200,7 @@ func (t *trace) push(sp *span) {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
 		t.spans = nil // GC
-		log.Error(keyErrSpanBuffer, "trace buffer full (%d), dropping trace", traceMaxSize)
+		log.Error("trace buffer full (%d), dropping trace", traceMaxSize)
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {

@@ -11,13 +11,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-const (
-	keyErrEncoding   = "error.encoding"
-	keyErrQueueFull  = "error.queue_full"
-	keyErrTransport  = "error.transport"
-	keyErrSpanBuffer = "error.buffer"
-)
-
 var _ ddtrace.Tracer = (*tracer)(nil)
 
 // tracer creates, buffers and submits Spans which are used to time blocks of
@@ -182,7 +175,7 @@ func (t *tracer) pushTrace(trace []*span) {
 	select {
 	case t.payloadQueue <- trace:
 	default:
-		log.Error(keyErrQueueFull, "payload queue full, dropping %d traces", len(trace))
+		log.Error("payload queue full, dropping %d traces", len(trace))
 	}
 	if t.syncPush != nil {
 		// only in tests
@@ -297,7 +290,7 @@ func (t *tracer) flush() {
 	log.Debug("Sending payload: size: %d traces: %d\n", size, count)
 	rc, err := t.config.transport.send(t.payload)
 	if err != nil {
-		log.Error(keyErrTransport, "lost %d traces: %v", count, err)
+		log.Error("lost %d traces: %v", count, err)
 	}
 	if err == nil {
 		t.prioritySampling.readRatesJSON(rc) // TODO: handle error?
@@ -318,7 +311,7 @@ func (t *tracer) forceFlush() {
 // larger than the threshold as a result, it sends a flush request.
 func (t *tracer) pushPayload(trace []*span) {
 	if err := t.payload.push(trace); err != nil {
-		log.Error(keyErrEncoding, "error encoding msgpack: %v", err)
+		log.Error("error encoding msgpack: %v", err)
 	}
 	if t.payload.size() > payloadSizeLimit {
 		// getting large

@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // testLogger implements a mock ddtrace.Logger.
@@ -70,10 +71,10 @@ func TestLog(t *testing.T) {
 			errrate = 10 * time.Millisecond
 
 			tp.Reset()
-			Error("a", "a message %d", 1)
-			Error("a", "another message")
-			Error("a", "third message")
-			Error("b", "b message")
+			Error("a message %d", 1)
+			Error("a message %d", 2)
+			Error("a message %d", 3)
+			Error("b message")
 
 			time.Sleep(2 * errrate)
 			assert.True(t, hasMsg("ERROR", "a message 1, 2 additional messages skipped", tp.Lines()), tp.Lines())
@@ -83,10 +84,10 @@ func TestLog(t *testing.T) {
 
 		t.Run("multi", func(t *testing.T) {
 			tp.Reset()
-			Error("a", "fourth message")
+			Error("fourth message %d", 4)
 
 			Flush()
-			assert.True(t, hasMsg("ERROR", "fourth message", tp.Lines()), tp.Lines())
+			assert.True(t, hasMsg("ERROR", "fourth message 4", tp.Lines()), tp.Lines())
 			assert.Len(t, tp.Lines(), 1)
 
 			Flush()
@@ -97,14 +98,21 @@ func TestLog(t *testing.T) {
 		t.Run("peak", func(t *testing.T) {
 			tp.Reset()
 			for i := 0; i < 51; i++ {
-				Error("a", "fifth message")
+				Error("fifth message %d", i)
 			}
 
 			Flush()
-			assert.True(t, hasMsg("ERROR", "fifth message, 50+ additional messages skipped", tp.Lines()), tp.Lines())
+			assert.True(t, hasMsg("ERROR", "fifth message 0, 50+ additional messages skipped", tp.Lines()), tp.Lines())
 			assert.Len(t, tp.Lines(), 1)
 		})
 	})
+}
+
+func BenchmarkError(b *testing.B) {
+	Error("k %s", "a") // warm up cache
+	for i := 0; i < b.N; i++ {
+		Error("k %s", "a")
+	}
 }
 
 func hasMsg(lvl, m string, lines []string) bool {
