@@ -71,7 +71,7 @@ var (
 func init() {
 	errrate = time.Minute
 	if v, ok := os.LookupEnv("DD_LOGGING_RATE"); ok {
-		if sec, err := strconv.Atoi(v); err != nil {
+		if sec, err := strconv.ParseUint(v, 10, 64); err != nil {
 			Warn("Invalid value for DD_LOGGING_RATE: %v", err)
 		} else {
 			errrate = time.Duration(sec) * time.Second
@@ -111,15 +111,12 @@ const defaultErrorLimit = 50
 // reachedLimit reports whether the maximum count has been reached for this key.
 func reachedLimit(key string) bool {
 	errmu.RLock()
-	defer errmu.RUnlock()
-	if e, ok := erragg[key]; ok {
-		// avoid too much lock contention
-		return e.count > defaultErrorLimit
-	}
-	return false
+	e, ok := erragg[key]
+	errmu.RUnlock()
+	return ok && e.count > defaultErrorLimit
 }
 
-// Flush flushes and reset all aggregated errors to the logger.
+// Flush flushes and resets all aggregated errors to the logger.
 func Flush() {
 	errmu.Lock()
 	defer errmu.Unlock()

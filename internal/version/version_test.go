@@ -10,11 +10,12 @@ import (
 )
 
 func TestTag(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		// git probably not installed; don't fail the test suite
+		t.Skip(err)
+	}
 	out, err := exec.Command("git", "show", "-s", "--format=%ct", "HEAD", Tag).CombinedOutput()
 	if err != nil {
-		if strings.Contains(err.Error(), "file not found") {
-			t.Skip("git not installed")
-		}
 		if bytes.Contains(out, []byte("unknown revision")) {
 			// test passed: the tag was not found
 			return
