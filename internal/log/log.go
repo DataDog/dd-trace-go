@@ -70,11 +70,15 @@ var (
 
 func init() {
 	errrate = time.Minute
-	if v, ok := os.LookupEnv("DD_LOGGING_RATE"); ok {
+	if v := os.Getenv("DD_LOGGING_RATE"); v != "" {
 		if sec, err := strconv.ParseUint(v, 10, 64); err != nil {
 			Warn("Invalid value for DD_LOGGING_RATE: %v", err)
 		} else {
-			errrate = time.Duration(sec) * time.Second
+			if sec > 0 {
+				errrate = time.Duration(sec) * time.Second
+			} else {
+				errrate = 0
+			}
 		}
 	}
 }
@@ -100,6 +104,10 @@ func Error(format string, a ...interface{}) {
 		report = erragg[key]
 	}
 	report.count++
+	if errrate == 0 {
+		Flush()
+		return
+	}
 	if !erron {
 		erron = true
 		time.AfterFunc(errrate, Flush)
@@ -107,7 +115,7 @@ func Error(format string, a ...interface{}) {
 }
 
 // defaultErrorLimit specifies the maximum number of errors gathered in a report.
-const defaultErrorLimit = 50
+const defaultErrorLimit = 200
 
 // reachedLimit reports whether the maximum count has been reached for this key.
 func reachedLimit(key string) bool {
@@ -138,7 +146,7 @@ func Flush() {
 }
 
 func printMsg(lvl, format string, a ...interface{}) {
-	msg := fmt.Sprintf("%s %s: %s\n", prefixMsg, lvl, fmt.Sprintf(format, a...))
+	msg := fmt.Sprintf("%s %s: %s", prefixMsg, lvl, fmt.Sprintf(format, a...))
 	mu.RLock()
 	logger.Log(msg)
 	mu.RUnlock()

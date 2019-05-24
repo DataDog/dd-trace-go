@@ -125,5 +125,5 @@ func hasMsg(lvl, m string, lines []string) bool {
 }
 
 func msg(lvl, msg string) string {
-	return fmt.Sprintf("%s %s: %s\n", prefixMsg, lvl, msg)
+	return fmt.Sprintf("%s %s: %s", prefixMsg, lvl, msg)
 }
