@@ -84,6 +84,7 @@ func init() {
 }
 
 type errorReport struct {
+	first time.Time // time when first error occurred
 	err   error
 	count uint64
 }
@@ -100,7 +101,10 @@ func Error(format string, a ...interface{}) {
 	defer errmu.Unlock()
 	report, ok := erragg[key]
 	if !ok {
-		erragg[key] = &errorReport{err: fmt.Errorf(format, a...)}
+		erragg[key] = &errorReport{
+			err:   fmt.Errorf(format, a...),
+			first: time.Now(),
+		}
 		report = erragg[key]
 	}
 	report.count++
@@ -132,9 +136,11 @@ func Flush() {
 	for _, report := range erragg {
 		msg := fmt.Sprintf("%v", report.err)
 		if report.count > defaultErrorLimit {
-			msg += fmt.Sprintf(", %d+ additional messages skipped", defaultErrorLimit)
+			msg += fmt.Sprintf(", %d+ additional messages skipped (first occurrence: %s)", defaultErrorLimit, report.first.Format(time.RFC822))
 		} else if report.count > 1 {
-			msg += fmt.Sprintf(", %d additional messages skipped", report.count-1)
+			msg += fmt.Sprintf(", %d additional messages skipped (first occurrence: %s)", report.count-1, report.first.Format(time.RFC822))
+		} else {
+			msg += fmt.Sprintf(" (occurred: %s)", report.first.Format(time.RFC822))
 		}
 		printMsg("ERROR", msg)
 	}

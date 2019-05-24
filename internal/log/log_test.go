@@ -2,6 +2,7 @@ package log
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -97,12 +98,12 @@ func TestLog(t *testing.T) {
 
 		t.Run("peak", func(t *testing.T) {
 			tp.Reset()
-			for i := 0; i < 51; i++ {
+			for i := 0; i < 201; i++ {
 				Error("fifth message %d", i)
 			}
 
 			Flush()
-			assert.True(t, hasMsg("ERROR", "fifth message 0, 50+ additional messages skipped", tp.Lines()), tp.Lines())
+			assert.True(t, hasMsg("ERROR", "fifth message 0, 200+ additional messages skipped", tp.Lines()), tp.Lines())
 			assert.Len(t, tp.Lines(), 1)
 		})
 	})
@@ -117,7 +118,7 @@ func BenchmarkError(b *testing.B) {
 
 func hasMsg(lvl, m string, lines []string) bool {
 	for _, line := range lines {
-		if msg(lvl, m) == line {
+		if strings.HasPrefix(line, msg(lvl, m)) {
 			return true
 		}
 	}
