@@ -109,7 +109,7 @@ func Error(format string, a ...interface{}) {
 	}
 	report.count++
 	if errrate == 0 {
-		Flush()
+		flushLocked()
 		return
 	}
 	if !erron {
@@ -133,6 +133,10 @@ func reachedLimit(key string) bool {
 func Flush() {
 	errmu.Lock()
 	defer errmu.Unlock()
+	flushLocked()
+}
+
+func flushLocked() {
 	for _, report := range erragg {
 		msg := fmt.Sprintf("%v", report.err)
 		if report.count > defaultErrorLimit {
