@@ -282,7 +282,7 @@ func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	return t.config.propagator.Extract(carrier)
 }
 
-// flushTraces will push any currently buffered traces to the server.
+// flush will push any currently buffered traces to the server.
 func (t *tracer) flush() {
 	if t.payload.itemCount() == 0 {
 		return

@@ -74,11 +74,7 @@ func init() {
 		if sec, err := strconv.ParseUint(v, 10, 64); err != nil {
 			Warn("Invalid value for DD_LOGGING_RATE: %v", err)
 		} else {
-			if sec > 0 {
-				errrate = time.Duration(sec) * time.Second
-			} else {
-				errrate = 0
-			}
+			errrate = time.Duration(sec) * time.Second
 		}
 	}
 }

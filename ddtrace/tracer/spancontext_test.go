@@ -137,12 +137,10 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	assert.Len(buffer.spans, 1, "there is one span in the buffer")
 	assert.Equal(root, buffer.spans[0], "the span is the one pushed before")
 
-	select {
-	case <-time.After(time.Second / 10):
-		log.Flush()
-		assert.Len(tp.Lines(), 0)
-		t.Logf("expected timeout, nothing should show up in buffer as the trace is not finished")
-	}
+	<-time.After(time.Second / 10)
+	log.Flush()
+	assert.Len(tp.Lines(), 0)
+	t.Logf("expected timeout, nothing should show up in buffer as the trace is not finished")
 }
 
 func TestSpanTracePushSeveral(t *testing.T) {
@@ -403,9 +401,6 @@ type testLogger struct {
 func (tp *testLogger) Log(msg string) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
-	if tp.lines == nil {
-		tp.lines = []string{}
-	}
 	tp.lines = append(tp.lines, msg)
 }
 
