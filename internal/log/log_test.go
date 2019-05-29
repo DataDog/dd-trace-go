@@ -22,9 +22,6 @@ type testLogger struct {
 func (tp *testLogger) Log(msg string) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
-	if tp.lines == nil {
-		tp.lines = []string{}
-	}
 	tp.lines = append(tp.lines, msg)
 }
 
@@ -83,7 +80,7 @@ func TestLog(t *testing.T) {
 			assert.Len(t, tp.Lines(), 2)
 		})
 
-		t.Run("multi", func(t *testing.T) {
+		t.Run("flush", func(t *testing.T) {
 			tp.Reset()
 			Error("fourth message %d", 4)
 
@@ -96,14 +93,24 @@ func TestLog(t *testing.T) {
 			assert.Len(t, tp.Lines(), 1)
 		})
 
-		t.Run("peak", func(t *testing.T) {
+		t.Run("limit", func(t *testing.T) {
 			tp.Reset()
-			for i := 0; i < 201; i++ {
+			for i := 0; i < defaultErrorLimit+1; i++ {
 				Error("fifth message %d", i)
 			}
 
 			Flush()
 			assert.True(t, hasMsg("ERROR", "fifth message 0, 200+ additional messages skipped", tp.Lines()), tp.Lines())
+			assert.Len(t, tp.Lines(), 1)
+		})
+
+		t.Run("instant", func(t *testing.T) {
+			tp.Reset()
+			defer func(old time.Duration) { errrate = old }(errrate)
+			errrate = time.Duration(0) * time.Second // mimic the env. var.
+
+			Error("fourth message %d", 4)
+			assert.True(t, hasMsg("ERROR", "fourth message 4", tp.Lines()), tp.Lines())
 			assert.Len(t, tp.Lines(), 1)
 		})
 	})
