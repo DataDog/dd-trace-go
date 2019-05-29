@@ -120,8 +120,9 @@ const defaultErrorLimit = 200
 func reachedLimit(key string) bool {
 	errmu.RLock()
 	e, ok := erragg[key]
+	confirm := ok && e.count > defaultErrorLimit
 	errmu.RUnlock()
-	return ok && e.count > defaultErrorLimit
+	return confirm
 }
 
 // Flush flushes and resets all aggregated errors to the logger.
