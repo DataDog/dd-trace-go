@@ -64,12 +64,11 @@ func Warn(fmt string, a ...interface{}) {
 var (
 	errmu   sync.RWMutex                // guards below fields
 	erragg  = map[string]*errorReport{} // aggregated errors
-	errrate time.Duration               // the rate at which errors are reported
+	errrate = time.Minute               // the rate at which errors are reported
 	erron   bool                        // true if errors are being aggregated
 )
 
 func init() {
-	errrate = time.Minute
 	if v := os.Getenv("DD_LOGGING_RATE"); v != "" {
 		if sec, err := strconv.ParseUint(v, 10, 64); err != nil {
 			Warn("Invalid value for DD_LOGGING_RATE: %v", err)
