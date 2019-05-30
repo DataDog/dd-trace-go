@@ -85,6 +85,9 @@ func newHTTPTransport(addr string, roundTripper http.RoundTripper) *httpTranspor
 		"Datadog-Meta-Tracer-Version":   version.Tag,
 		"Content-Type":                  "application/msgpack",
 	}
+	if v := os.Getenv("DD_ENTITY_ID"); v != "" {
+		defaultHeaders["Datadog-Entity-ID"] = v
+	}
 	return &httpTransport{
 		traceURL: fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(addr)),
 		client: &http.Client{
