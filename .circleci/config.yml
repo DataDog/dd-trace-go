@@ -51,6 +51,10 @@ jobs:
         keys:
         - v1-librdkafka-v1.0.1
     - run:
+        name: Check tags
+        command: |
+          echo $CIRCLE_PR_NUMBER
+    - run:
         name: Install librdkafka v1.0.1
         command: |
           if [ ! -d /tmp/librdkafka-v1.0.1 ] ; then
