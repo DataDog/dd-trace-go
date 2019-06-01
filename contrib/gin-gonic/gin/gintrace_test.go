@@ -2,6 +2,7 @@ package gin
 
 import (
 	"errors"
+	"fmt"
 	"html/template"
 	"net/http/httptest"
 	"testing"
@@ -85,29 +86,63 @@ func TestError(t *testing.T) {
 	// setup
 	router := gin.New()
 	router.Use(Middleware("foobar"))
-	wantErr := errors.New("oh no")
+	responseErr := errors.New("oh no")
 
-	// a handler with an error and make the requests
-	router.GET("/err", func(c *gin.Context) {
-		c.AbortWithError(500, wantErr)
+	t.Run("server error", func(*testing.T) {
+		defer mt.Reset()
+
+		// configure a handler that returns an error and 5xx status code
+		router.GET("/server_err", func(c *gin.Context) {
+			c.AbortWithError(500, responseErr)
+		})
+		r := httptest.NewRequest("GET", "/server_err", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		assert.Equal(response.StatusCode, 500)
+
+		// verify the errors and status are correct
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		if len(spans) < 1 {
+			t.Fatalf("no spans")
+		}
+		span := spans[0]
+		assert.Equal("http.request", span.OperationName())
+		assert.Equal("foobar", span.Tag(ext.ServiceName))
+		assert.Equal("500", span.Tag(ext.HTTPCode))
+		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag("gin.errors"))
+		// server errors set the ext.Error tag
+		assert.Equal("500: Internal Server Error", span.Tag(ext.Error).(error).Error())
 	})
-	r := httptest.NewRequest("GET", "/err", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, r)
-	response := w.Result()
-	assert.Equal(response.StatusCode, 500)
 
-	// verify the errors and status are correct
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	if len(spans) < 1 {
-		t.Fatalf("no spans")
-	}
-	span := spans[0]
-	assert.Equal("http.request", span.OperationName())
-	assert.Equal("foobar", span.Tag(ext.ServiceName))
-	assert.Equal("500", span.Tag(ext.HTTPCode))
-	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	t.Run("client error", func(*testing.T) {
+		defer mt.Reset()
+
+		// configure a handler that returns an error and 4xx status code
+		router.GET("/client_err", func(c *gin.Context) {
+			c.AbortWithError(418, responseErr)
+		})
+		r := httptest.NewRequest("GET", "/client_err", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		assert.Equal(response.StatusCode, 418)
+
+		// verify the errors and status are correct
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		if len(spans) < 1 {
+			t.Fatalf("no spans")
+		}
+		span := spans[0]
+		assert.Equal("http.request", span.OperationName())
+		assert.Equal("foobar", span.Tag(ext.ServiceName))
+		assert.Equal("418", span.Tag(ext.HTTPCode))
+		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag("gin.errors"))
+		// client errors do not set the ext.Error tag
+		assert.Equal(nil, span.Tag(ext.Error))
+	})
 }
 
 func TestHTML(t *testing.T) {
