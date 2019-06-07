@@ -47,6 +47,12 @@ type config struct {
 	// logger specifies the logger to use when printing errors. If not specified, the "log" package
 	// will be used.
 	logger ddtrace.Logger
+
+	// stackFrames specifies the number of stack frames to be attached in spans that finish with errors.
+	stackFrames uint
+
+	// skipFrames specifies the offset at which to start reporting stack frames from the stack.
+	skipFrames uint
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -158,6 +164,15 @@ func WithAnalyticsRate(rate float64) StartOption {
 	}
 }
 
+// stackFrames limits the number of stack frames included into erroneous spans to n, starting from skip.
+// The default is all stack frames with 0 skip.
+func WithStackFrames(n, skip uint) StartOption {
+	return func(c *config) {
+		c.stackFrames = n
+		c.skipFrames = skip
+	}
+}
+
 // StartSpanOption is a configuration option for StartSpan. It is aliased in order
 // to help godoc group all the functions returning it together. It is considered
 // more correct to refer to it as the type as the origin, ddtrace.StartSpanOption.
@@ -246,7 +261,7 @@ func NoDebugStack() FinishOption {
 	}
 }
 
-// StackFrames limits the number of stack frames included into erroneous spans to n, starting from skip.
+// stackFrames limits the number of stack frames included into erroneous spans to n, starting from skip.
 func StackFrames(n, skip uint) FinishOption {
 	if n == 0 {
 		return NoDebugStack()

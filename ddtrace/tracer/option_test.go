@@ -43,6 +43,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			WithAgentAddr("ddagent.consul.local:58126"),
 			WithGlobalTag("k", "v"),
 			WithDebugMode(true),
+			WithStackFrames(5, 2),
 		)
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
@@ -51,5 +52,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.NotNil(c.globalTags)
 		assert.Equal("v", c.globalTags["k"])
 		assert.True(c.debug)
+		assert.Equal(uint(5), c.stackFrames)
+		assert.Equal(uint(2), c.skipFrames)
 	})
 }
