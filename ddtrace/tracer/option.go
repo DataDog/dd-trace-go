@@ -164,8 +164,8 @@ func WithAnalyticsRate(rate float64) StartOption {
 	}
 }
 
-// stackFrames limits the number of stack frames included into erroneous spans to n, starting from skip.
-// The default is all stack frames with 0 skip.
+// WithStackFrames sets global limit for the number of stack frames included into erroneous spans to n,
+// starting from skip. The default is all stack frames with 0 skip.
 func WithStackFrames(n, skip uint) StartOption {
 	return func(c *config) {
 		c.stackFrames = n
@@ -261,7 +261,7 @@ func NoDebugStack() FinishOption {
 	}
 }
 
-// stackFrames limits the number of stack frames included into erroneous spans to n, starting from skip.
+// StackFrames limits the number of stack frames included into erroneous spans to n, starting from skip.
 func StackFrames(n, skip uint) FinishOption {
 	if n == 0 {
 		return NoDebugStack()
