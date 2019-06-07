@@ -41,11 +41,20 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 
 			// serve the request to the next middleware
 			err := next(c)
-
-			span.SetTag(ext.HTTPCode, strconv.Itoa(c.Response().Status))
 			if err != nil {
 				span.SetTag(ext.Error, err)
 			}
+
+			if err != nil && cfg.errorHandling {
+				span.SetTag(ext.Error, err)
+
+				// invokes the registered HTTP error handler
+				c.Error(err)
+				// error was already handled, don't propagate it
+				err = nil
+			}
+
+			span.SetTag(ext.HTTPCode, strconv.Itoa(c.Response().Status))
 			return err
 		}
 	}
