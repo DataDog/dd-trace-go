@@ -132,7 +132,7 @@ func TestErrorHandling(t *testing.T) {
 	router.HTTPErrorHandler = func(err error, ctx echo.Context) {
 		ctx.Response().WriteHeader(http.StatusInternalServerError)
 	}
-	router.Use(Middleware(WithServiceName("foobar"), WithErrorHandling()))
+	router.Use(Middleware(WithServiceName("foobar")))
 	wantErr := errors.New("oh no")
 
 	// a handler with an error and make the requests
