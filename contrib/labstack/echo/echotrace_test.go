@@ -2,6 +2,7 @@ package echo
 
 import (
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -101,6 +102,44 @@ func TestError(t *testing.T) {
 		err := wantErr
 		c.Error(err)
 		return err
+	})
+	r := httptest.NewRequest("GET", "/err", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	// verify the errors and status are correct
+	assert.True(called)
+	assert.True(traced)
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 1)
+
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal("foobar", span.Tag(ext.ServiceName))
+	assert.Equal("500", span.Tag(ext.HTTPCode))
+	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+}
+
+func TestErrorHandling(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called, traced bool
+
+	// setup
+	router := echo.New()
+	router.HTTPErrorHandler = func(err error, ctx echo.Context) {
+		ctx.Response().WriteHeader(http.StatusInternalServerError)
+	}
+	router.Use(Middleware(WithServiceName("foobar")))
+	wantErr := errors.New("oh no")
+
+	// a handler with an error and make the requests
+	router.GET("/err", func(c echo.Context) error {
+		_, traced = tracer.SpanFromContext(c.Request().Context())
+		called = true
+		return wantErr
 	})
 	r := httptest.NewRequest("GET", "/err", nil)
 	w := httptest.NewRecorder()
