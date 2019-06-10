@@ -72,19 +72,20 @@ jobs:
         # to allow running the tests against the correct version of
         # the gRPC library. The library is not committed into the
         # repository to avoid conflicts with the user's imports.
-        environment:
-          GRPC_DEST: contrib/google.golang.org/grpc.v12/vendor/google.golang.org/grpc
-        command: |
-          mkdir -p $GRPC_DEST
-          git clone --branch v1.2.0 https://github.com/grpc/grpc-go $GRPC_DEST
+        command: >
+          git clone --branch v1.2.0
+          https://github.com/grpc/grpc-go
+          contrib/google.golang.org/grpc.v12/vendor/google.golang.org/grpc
 
     - run:
         name: Vendor redis v6.15.3
         # This step vendors go-redis/redis v6.15.3 inside our redis contrib
         # to allow running the tests against the correct version of
         # the redis library.
-        command: |
-          git clone --branch v6.15.3 https://github.com/go-redis/redis contrib/go-redis/redis/vendor/github.com/go-redis/redis
+        command: >
+          git clone --branch v6.15.3
+          https://github.com/go-redis/redis
+          contrib/go-redis/redis/vendor/github.com/go-redis/redis
     - run:
         name: Fetching dependencies
         command: |
