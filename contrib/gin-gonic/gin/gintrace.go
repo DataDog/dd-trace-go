@@ -3,6 +3,7 @@ package gin // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin"
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -42,11 +43,14 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		// serve the request to the next middleware
 		c.Next()
 
-		span.SetTag(ext.HTTPCode, strconv.Itoa(c.Writer.Status()))
+		status := c.Writer.Status()
+		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
+		if status >= 500 && status < 600 {
+			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
+		}
 
 		if len(c.Errors) > 0 {
 			span.SetTag("gin.errors", c.Errors.String())
-			span.SetTag(ext.Error, c.Errors[0])
 		}
 	}
 }
