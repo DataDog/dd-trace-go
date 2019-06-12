@@ -44,7 +44,7 @@ func TestTrace200(t *testing.T) {
 	var called, traced bool
 
 	router := echo.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithServiceName("foobar"), WithAnalytics(false)))
 	router.GET("/user/:id", func(c echo.Context) error {
 		called = true
 		var span tracer.Span
@@ -78,6 +78,53 @@ func TestTrace200(t *testing.T) {
 	assert.Contains(span.Tag(ext.ResourceName), "/user/:id")
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
+	assert.Equal(root.Context().SpanID(), span.ParentID())
+
+	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+}
+
+func TestTraceAnalytics(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called, traced bool
+
+	router := echo.New()
+	router.Use(Middleware(WithServiceName("foobar"), WithAnalytics(true)))
+	router.GET("/user/:id", func(c echo.Context) error {
+		called = true
+		var span tracer.Span
+		span, traced = tracer.SpanFromContext(c.Request().Context())
+
+		// we patch the span on the request context.
+		span.SetTag("test.echo", "echony")
+		assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+		return c.NoContent(200)
+	})
+
+	root := tracer.StartSpan("root")
+	r := httptest.NewRequest("GET", "/user/123", nil)
+	err := tracer.Inject(root.Context(), tracer.HTTPHeadersCarrier(r.Header))
+	assert.Nil(err)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	// verify traces look good
+	assert.True(called)
+	assert.True(traced)
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 1)
+
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+	assert.Equal("foobar", span.Tag(ext.ServiceName))
+	assert.Equal("echony", span.Tag("test.echo"))
+	assert.Contains(span.Tag(ext.ResourceName), "/user/:id")
+	assert.Equal("200", span.Tag(ext.HTTPCode))
+	assert.Equal("GET", span.Tag(ext.HTTPMethod))
+	assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 	assert.Equal(root.Context().SpanID(), span.ParentID())
 
 	assert.Equal("/user/123", span.Tag(ext.HTTPURL))

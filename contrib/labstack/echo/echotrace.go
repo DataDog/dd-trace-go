@@ -30,6 +30,9 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				tracer.Tag(ext.HTTPURL, request.URL.Path),
 			}
 
+			if rate := cfg.analyticsRate; rate > 0 {
+				opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+			}
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(request.Header)); err == nil {
 				opts = append(opts, tracer.ChildOf(spanctx))
 			}
