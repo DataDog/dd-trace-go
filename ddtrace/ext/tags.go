@@ -57,6 +57,9 @@ const (
 	// ErrorStack specifies the stack dump.
 	ErrorStack = "error.stack"
 
+	// ErrorDetails holds details about an error which implements a formatter.
+	ErrorDetails = "error.details"
+
 	// Environment specifies the environment to use with a trace.
 	Environment = "env"
 
