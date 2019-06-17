@@ -12,9 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tinylib/msgp/msgp"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+
+	"github.com/tinylib/msgp/msgp"
+	"golang.org/x/xerrors"
 )
 
 type (
@@ -137,6 +139,13 @@ func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 			} else {
 				s.Meta[ext.ErrorStack] = takeStacktrace(cfg.stackFrames, cfg.stackSkip)
 			}
+		}
+		switch v.(type) {
+		case xerrors.Formatter:
+			s.Meta[ext.ErrorDetails] = fmt.Sprintf("%+v", v)
+		case fmt.Formatter:
+			// pkg/errors approach
+			s.Meta[ext.ErrorDetails] = fmt.Sprintf("%+v", v)
 		}
 	case nil:
 		// no error
