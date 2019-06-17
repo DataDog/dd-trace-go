@@ -55,6 +55,7 @@ type roundTripperConfig struct {
 	before        RoundTripperBeforeFunc
 	after         RoundTripperAfterFunc
 	analyticsRate float64
+	serviceName   string
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
@@ -96,5 +97,12 @@ func RTWithAnalytics(on bool) RoundTripperOption {
 func RTWithAnalyticsRate(rate float64) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.analyticsRate = rate
+	}
+}
+
+// RTWithServiceName sets the service name for the started spans.
+func RTWithServiceName(serviceName string) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.serviceName = serviceName
 	}
 }

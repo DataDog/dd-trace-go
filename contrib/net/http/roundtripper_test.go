@@ -129,3 +129,49 @@ func TestRoundTripperAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, 0.23, RTWithAnalyticsRate(0.23))
 	})
 }
+
+func TestRoundTripperServiceName(t *testing.T) {
+	assertName := func(t *testing.T, mt mocktracer.Tracer, name interface{}, opts ...RoundTripperOption) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer srv.Close()
+
+		rt := WrapRoundTripper(http.DefaultTransport, opts...)
+
+		client := &http.Client{Transport: rt}
+		client.Get(srv.URL + "/hello/world")
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+		s := spans[0]
+		assert.Equal(t, name, s.Tag(ext.ServiceName))
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertName(t, mt, nil)
+	})
+
+	t.Run("global", func(t *testing.T) {
+		mt := mocktracer.StartWithOptions(mocktracer.WithServiceName("service-name"))
+		defer mt.Stop()
+
+		assertName(t, mt, "service-name")
+	})
+
+	t.Run("span", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertName(t, mt, "span-service-name", RTWithServiceName("span-service-name"))
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.StartWithOptions(mocktracer.WithServiceName("service-name"))
+		defer mt.Stop()
+
+		assertName(t, mt, "span-service-name", RTWithServiceName("span-service-name"))
+	})
+}

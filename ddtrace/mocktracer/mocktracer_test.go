@@ -19,6 +19,17 @@ func TestStart(t *testing.T) {
 	}
 }
 
+func TestStartWithOptions(t *testing.T) {
+	trc := StartWithOptions(WithServiceName("yadda"))
+	if tt, ok := internal.GetGlobalTracer().(Tracer); !ok || tt != trc {
+		t.Fatal("not global tracer")
+	}
+	s := trc.(*mocktracer).StartSpan("op").(*mockspan)
+	if s.Tag(ext.ServiceName) != "yadda" {
+		t.Fatal("wrong service name in span")
+	}
+}
+
 func TestTracerStop(t *testing.T) {
 	Start().Stop()
 	if _, ok := internal.GetGlobalTracer().(*internal.NoopTracer); !ok {

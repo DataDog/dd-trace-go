@@ -25,8 +25,11 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		tracer.Tag(ext.HTTPMethod, req.Method),
 		tracer.Tag(ext.HTTPURL, req.URL.Path),
 	}
-	if rate := rt.cfg.analyticsRate; rate > 0 {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	if rt.cfg.analyticsRate > 0 {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.analyticsRate))
+	}
+	if rt.cfg.serviceName != "" {
+		opts = append(opts, tracer.ServiceName(rt.cfg.serviceName))
 	}
 	span, ctx := tracer.StartSpanFromContext(req.Context(), defaultResourceName, opts...)
 	defer func() {

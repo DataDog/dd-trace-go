@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -40,13 +41,33 @@ type Tracer interface {
 // to activate the mock tracer. When your test runs, use the returned
 // interface to query the tracer's state.
 func Start() Tracer {
+	return StartWithOptions()
+}
+
+// StartWithOptions is the same as Start, but it allows to specify options.
+func StartWithOptions(opts ...StartOption) Tracer {
 	var t mocktracer
+	for _, o := range opts {
+		o(&t)
+	}
 	internal.SetGlobalTracer(&t)
 	internal.Testing = true
 	return &t
 }
 
+// StartOption is an option type to be passed to StartWithOptions
+type StartOption func(*mocktracer)
+
+// WithServiceName specifies the default service name
+func WithServiceName(serviceName string) StartOption {
+	return func(t *mocktracer) {
+		t.serviceName = serviceName
+	}
+}
+
 type mocktracer struct {
+	serviceName string
+
 	sync.RWMutex  // guards below spans
 	finishedSpans []Span
 }
@@ -58,7 +79,12 @@ func (*mocktracer) Stop() {
 }
 
 func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
-	var cfg ddtrace.StartSpanConfig
+	var cfg = ddtrace.StartSpanConfig{
+		Tags: map[string]interface{}{},
+	}
+	if t.serviceName != "" {
+		cfg.Tags[ext.ServiceName] = t.serviceName
+	}
 	for _, fn := range opts {
 		fn(&cfg)
 	}
