@@ -2,6 +2,8 @@
 package sarama // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/Shopify/sarama"
 
 import (
+	"math"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -44,7 +46,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 				tracer.Tag("partition", msg.Partition),
 				tracer.Tag("offset", msg.Offset),
 			}
-			if cfg.analyticsRate > 0 {
+			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
 			// kafka supports headers, so try to extract a span context
@@ -242,7 +244,7 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 		tracer.ResourceName("Produce Topic " + msg.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 	}
-	if cfg.analyticsRate > 0 {
+	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	// if there's a span context in the headers, use that as the parent

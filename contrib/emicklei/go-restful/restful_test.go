@@ -2,6 +2,7 @@ package restful
 
 import (
 	"errors"
+	"math"
 	"net/http/httptest"
 	"testing"
 
@@ -107,7 +108,7 @@ func TestPropagation(t *testing.T) {
 }
 
 func TestAnalyticsSettings(t *testing.T) {
-	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate float64, opts ...Option) {
 		ws := new(restful.WebService)
 		ws.Filter(FilterFunc(opts...))
 		ws.Route(ws.GET("/user/{id}").To(func(request *restful.Request, response *restful.Response) {}))
@@ -121,14 +122,16 @@ func TestAnalyticsSettings(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
 		s := spans[0]
-		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+		if !math.IsNaN(rate) {
+			assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+		}
 	}
 
 	t.Run("defaults", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, nil)
+		assertRate(t, mt, globalconfig.AnalyticsRate())
 	})
 
 	t.Run("global", func(t *testing.T) {
@@ -153,7 +156,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, nil, WithAnalytics(false))
+		assertRate(t, mt, math.NaN(), WithAnalytics(false))
 	})
 
 	t.Run("override", func(t *testing.T) {

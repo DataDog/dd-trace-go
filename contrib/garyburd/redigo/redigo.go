@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"strconv"
@@ -95,8 +96,8 @@ func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 	}
-	if rate := p.config.analyticsRate; rate > 0 {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	if !math.IsNaN(p.config.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
 	span.SetTag("out.network", p.network)

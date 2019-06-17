@@ -2,6 +2,7 @@
 package aws // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
 
 import (
+	"math"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go/aws/request"
@@ -53,7 +54,7 @@ func (h *handlers) Send(req *request.Request) {
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
 		tracer.Tag(ext.HTTPURL, req.HTTPRequest.URL.String()),
 	}
-	if h.cfg.analyticsRate > 0 {
+	if !math.IsNaN(h.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))
 	}
 	_, ctx := tracer.StartSpanFromContext(req.Context(), h.operationName(req), opts...)

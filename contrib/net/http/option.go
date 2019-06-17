@@ -1,6 +1,7 @@
 package http
 
 import (
+	"math"
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -33,17 +34,24 @@ func WithServiceName(name string) MuxOption {
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) MuxOption {
-	if on {
-		return WithAnalyticsRate(1.0)
+	return func(cfg *config) {
+		if on {
+			cfg.analyticsRate = 1.0
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
-	return WithAnalyticsRate(0.0)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) MuxOption {
 	return func(cfg *config) {
-		cfg.analyticsRate = rate
+		if rate >= 0.0 && rate <= 1.0 {
+			cfg.analyticsRate = rate
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
 }
 
@@ -97,16 +105,23 @@ func WithAfter(f RoundTripperAfterFunc) RoundTripperOption {
 
 // RTWithAnalytics enables Trace Analytics for all started spans.
 func RTWithAnalytics(on bool) RoundTripperOption {
-	if on {
-		return RTWithAnalyticsRate(1.0)
+	return func(cfg *roundTripperConfig) {
+		if on {
+			cfg.analyticsRate = 1.0
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
-	return RTWithAnalyticsRate(0.0)
 }
 
 // RTWithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func RTWithAnalyticsRate(rate float64) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
-		cfg.analyticsRate = rate
+		if rate >= 0.0 && rate <= 1.0 {
+			cfg.analyticsRate = rate
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
 }

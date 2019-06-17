@@ -2,6 +2,7 @@
 package restful
 
 import (
+	"math"
 	"strconv"
 
 	"github.com/emicklei/go-restful"
@@ -25,7 +26,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 			tracer.Tag(ext.HTTPMethod, req.Request.Method),
 			tracer.Tag(ext.HTTPURL, req.Request.URL.Path),
 		}
-		if cfg.analyticsRate > 0 {
+		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Request.Header)); err == nil {

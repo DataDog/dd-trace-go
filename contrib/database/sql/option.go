@@ -1,5 +1,9 @@
 package sql
 
+import (
+	"math"
+)
+
 type registerConfig struct {
 	serviceName   string
 	analyticsRate float64
@@ -11,6 +15,7 @@ type RegisterOption func(*registerConfig)
 func defaults(cfg *registerConfig) {
 	// default cfg.serviceName set in Register based on driver name
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
+	cfg.analyticsRate = math.NaN()
 }
 
 // WithServiceName sets the given service name for the registered driver.
@@ -22,16 +27,23 @@ func WithServiceName(name string) RegisterOption {
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) RegisterOption {
-	if on {
-		return WithAnalyticsRate(1.0)
+	return func(cfg *registerConfig) {
+		if on {
+			cfg.analyticsRate = 1.0
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
-	return WithAnalyticsRate(0.0)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) RegisterOption {
 	return func(cfg *registerConfig) {
-		cfg.analyticsRate = rate
+		if rate >= 0.0 && rate <= 1.0 {
+			cfg.analyticsRate = rate
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
 }

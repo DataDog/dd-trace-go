@@ -2,6 +2,7 @@
 package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 
 import (
+	"math"
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
@@ -38,7 +39,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, route := mux.Handler(r)
 	resource := r.Method + " " + route
 	opts := mux.cfg.spanOpts
-	if mux.cfg.analyticsRate > 0 {
+	if !math.IsNaN(mux.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, mux.cfg.analyticsRate))
 	}
 	httputil.TraceAndServe(mux.ServeMux, w, r, mux.cfg.serviceName, resource, opts...)

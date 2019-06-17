@@ -1,5 +1,9 @@
 package redis // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-redis/redis"
 
+import (
+	"math"
+)
+
 type clientConfig struct {
 	serviceName   string
 	analyticsRate float64
@@ -11,6 +15,7 @@ type ClientOption func(*clientConfig)
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = "redis.client"
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
+	cfg.analyticsRate = math.NaN()
 }
 
 // WithServiceName sets the given service name for the client.
@@ -22,16 +27,23 @@ func WithServiceName(name string) ClientOption {
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) ClientOption {
-	if on {
-		return WithAnalyticsRate(1.0)
+	return func(cfg *clientConfig) {
+		if on {
+			cfg.analyticsRate = 1.0
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
-	return WithAnalyticsRate(0.0)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) ClientOption {
 	return func(cfg *clientConfig) {
-		cfg.analyticsRate = rate
+		if rate >= 0.0 && rate <= 1.0 {
+			cfg.analyticsRate = rate
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
 }

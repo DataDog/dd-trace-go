@@ -2,9 +2,14 @@
 // and integrations.
 package globalconfig
 
-import "sync"
+import (
+	"math"
+	"sync"
+)
 
-var cfg = &config{}
+var cfg = &config{
+	analyticsRate: math.NaN(),
+}
 
 type config struct {
 	mu            sync.RWMutex
