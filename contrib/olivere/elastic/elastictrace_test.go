@@ -285,16 +285,18 @@ func TestResourceNamerSettings(t *testing.T) {
 		client, err := elasticv5.NewClient(
 			elasticv5.SetURL("http://127.0.0.1:9200"),
 			elasticv5.SetHttpClient(tc),
+			elasticv5.SetSniff(false),
+			elasticv5.SetHealthcheck(false),
 		)
 		assert.NoError(t, err)
 
 		_, err = client.Get().
-			Index("/logs_2016_05/event/_search").
+			Index("logs_2016_05/event/_search").
 			Type("tweet").
 			Id("1").Do(context.TODO())
 
 		span := mt.FinishedSpans()[0]
-		assert.Equal(t, "GET /logs_?_?/event/_search", span.Tag(ext.ResourceName))
+		assert.Equal(t, "GET /logs_?_?/event/_search/tweet/?", span.Tag(ext.ResourceName))
 	})
 
 	t.Run("custom namer", func(t *testing.T) {
@@ -305,11 +307,13 @@ func TestResourceNamerSettings(t *testing.T) {
 		client, err := elasticv5.NewClient(
 			elasticv5.SetURL("http://127.0.0.1:9200"),
 			elasticv5.SetHttpClient(tc),
+			elasticv5.SetSniff(false),
+			elasticv5.SetHealthcheck(false),
 		)
 		assert.NoError(t, err)
 
 		_, err = client.Get().
-			Index("/logs_2016_05/event/_search").
+			Index("logs_2016_05/event/_search").
 			Type("tweet").
 			Id("1").Do(context.TODO())
 
