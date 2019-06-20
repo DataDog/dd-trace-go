@@ -6,6 +6,7 @@ type clientConfig struct {
 	serviceName   string
 	transport     *http.Transport
 	analyticsRate float64
+	resourceNamer func(url, method string) string
 }
 
 // ClientOption represents an option that can be used when creating a client.
@@ -14,6 +15,7 @@ type ClientOption func(*clientConfig)
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = "elastic.client"
 	cfg.transport = http.DefaultTransport.(*http.Transport)
+	cfg.resourceNamer = quantize
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
@@ -44,5 +46,12 @@ func WithAnalytics(on bool) ClientOption {
 func WithAnalyticsRate(rate float64) ClientOption {
 	return func(cfg *clientConfig) {
 		cfg.analyticsRate = rate
+	}
+}
+
+// WithResourceNamer sets a function to set the span's resource name
+func WithResourceNamer(namer func(url, method string) string) ClientOption {
+	return func(cfg *clientConfig) {
+		cfg.resourceNamer = namer
 	}
 }
