@@ -49,7 +49,10 @@ func WithAnalyticsRate(rate float64) ClientOption {
 	}
 }
 
-// WithResourceNamer sets a function to set the span's resource name
+// WithResourceNamer specifies a quantizing function which will be used to obtain a resource name for a given
+// ElasticSearch request, using the request's URL and method. Note that the default quantizer obfuscates
+// IDs and indexes and by replacing it, sensitive data could possibly be exposed, unless the new quantizer
+// specifically takes care of that.
 func WithResourceNamer(namer func(url, method string) string) ClientOption {
 	return func(cfg *clientConfig) {
 		cfg.resourceNamer = namer
