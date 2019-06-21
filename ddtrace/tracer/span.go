@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tinylib/msgp/msgp"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
@@ -57,10 +58,9 @@ type span struct {
 	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
 
-	finished    bool         `msg:"-"` // true if the span has been submitted to a tracer.
-	context     *spanContext `msg:"-"` // span propagation context
-	stackFrames uint         `msg:"-"` // number of stack frames
-	skipFrames  uint         `msg:"-"` // skipped stack frames
+	finished bool         `msg:"-"` // true if the span has been submitted to a tracer.
+	context  *spanContext `msg:"-"` // span propagation context
+	errCfg   *errorConfig `msg:"-"` // configuration for errors tracing
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -238,8 +238,10 @@ func (s *span) setTagNumeric(key string, v float64) {
 // of its part of the tracing session.
 func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	var cfg ddtrace.FinishConfig
-	cfg.StackFrames = s.stackFrames
-	cfg.SkipStackFrames = s.skipFrames
+	if s.errCfg != nil {
+		cfg.StackFrames = s.errCfg.stackFrames
+		cfg.SkipStackFrames = s.errCfg.stackSkip
+	}
 	for _, fn := range opts {
 		fn(&cfg)
 	}
