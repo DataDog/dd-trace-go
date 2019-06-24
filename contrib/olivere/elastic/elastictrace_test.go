@@ -299,7 +299,7 @@ func TestResourceNamerSettings(t *testing.T) {
 		assert.Equal(t, "GET /logs_?_?/event/_search/tweet/?", span.Tag(ext.ResourceName))
 	})
 
-	t.Run("custom namer", func(t *testing.T) {
+	t.Run("custom", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
