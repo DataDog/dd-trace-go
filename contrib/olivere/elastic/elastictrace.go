@@ -3,6 +3,8 @@ package elastic // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/olivere/elast
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -52,7 +54,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	span, _ := tracer.StartSpanFromContext(req.Context(), "elasticsearch.query", opts...)
 	defer span.Finish()
 
-	snip, rc, err := peek(req.Body, int(req.ContentLength), bodyCutoff)
+	snip, rc, err := peek(req.Body, req.Header.Get("Content-Encoding") == "gzip", int(req.ContentLength), bodyCutoff)
 	if err == nil {
 		span.SetTag("elasticsearch.body", snip)
 	}
@@ -64,7 +66,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		span.SetTag(ext.Error, err)
 	} else if res.StatusCode < 200 || res.StatusCode > 299 {
 		// HTTP error
-		snip, rc, err := peek(res.Body, int(res.ContentLength), bodyCutoff)
+		snip, rc, err := peek(res.Body, req.Header.Get("Content-Encoding") == "gzip", int(res.ContentLength), bodyCutoff)
 		if err != nil {
 			snip = http.StatusText(res.StatusCode)
 		}
@@ -98,7 +100,7 @@ func quantize(url, method string) string {
 // from to access the entire data including the snippet. max is used to specify the length
 // of the stream contained in the reader. If unknown, it should be -1. If 0 < max < n it
 // will override n.
-func peek(rc io.ReadCloser, max int, n int) (string, io.ReadCloser, error) {
+func peek(rc io.ReadCloser, gzipped bool, max int, n int) (string, io.ReadCloser, error) {
 	if rc == nil {
 		return "", rc, errors.New("empty stream")
 	}
@@ -117,5 +119,24 @@ func peek(rc io.ReadCloser, max int, n int) (string, io.ReadCloser, error) {
 	if err == io.EOF {
 		err = nil
 	}
+
+	// the snippet we just pulled out may be gzip encoded. if so, we need to
+	// decode it before we return so we can report the actual text to DataDog
+	if gzipped {
+		reader, err := gzip.NewReader(bytes.NewReader(snip))
+		if err != nil {
+			return string(snip), rc2, err
+		}
+		defer reader.Close()
+
+		buf := bytes.NewBuffer(nil)
+		_, err = buf.ReadFrom(reader)
+		if err != nil {
+			return string(snip), rc2, err
+		}
+
+		snip = buf.String()
+	}
+
 	return string(snip), rc2, err
 }
