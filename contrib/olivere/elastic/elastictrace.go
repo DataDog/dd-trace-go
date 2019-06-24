@@ -135,7 +135,7 @@ func peek(rc io.ReadCloser, gzipped bool, max, n int) (string, io.ReadCloser, er
 			return string(snip), rc2, err
 		}
 
-		snip = buf.String()
+		snip = buf.Bytes()
 	}
 
 	return string(snip), rc2, err
