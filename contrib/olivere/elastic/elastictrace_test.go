@@ -271,6 +271,57 @@ func TestQuantize(t *testing.T) {
 	}
 }
 
+func TestResourceNamerSettings(t *testing.T) {
+	staticName := "static resource name"
+	staticNamer := func(url, method string) string {
+		return staticName
+	}
+
+	t.Run("default", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		tc := NewHTTPClient()
+		client, err := elasticv5.NewClient(
+			elasticv5.SetURL("http://127.0.0.1:9200"),
+			elasticv5.SetHttpClient(tc),
+			elasticv5.SetSniff(false),
+			elasticv5.SetHealthcheck(false),
+		)
+		assert.NoError(t, err)
+
+		_, err = client.Get().
+			Index("logs_2016_05/event/_search").
+			Type("tweet").
+			Id("1").Do(context.TODO())
+
+		span := mt.FinishedSpans()[0]
+		assert.Equal(t, "GET /logs_?_?/event/_search/tweet/?", span.Tag(ext.ResourceName))
+	})
+
+	t.Run("custom", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		tc := NewHTTPClient(WithResourceNamer(staticNamer))
+		client, err := elasticv5.NewClient(
+			elasticv5.SetURL("http://127.0.0.1:9200"),
+			elasticv5.SetHttpClient(tc),
+			elasticv5.SetSniff(false),
+			elasticv5.SetHealthcheck(false),
+		)
+		assert.NoError(t, err)
+
+		_, err = client.Get().
+			Index("logs_2016_05/event/_search").
+			Type("tweet").
+			Id("1").Do(context.TODO())
+
+		span := mt.FinishedSpans()[0]
+		assert.Equal(t, staticName, span.Tag(ext.ResourceName))
+	})
+}
+
 func TestPeek(t *testing.T) {
 	assert := assert.New(t)
 

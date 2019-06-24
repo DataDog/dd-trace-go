@@ -37,7 +37,7 @@ var bodyCutoff = 5 * 1024
 func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	url := req.URL.Path
 	method := req.Method
-	resource := quantize(url, method)
+	resource := t.config.resourceNamer(url, method)
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(t.config.serviceName),
 		tracer.SpanType(ext.SpanTypeElasticSearch),

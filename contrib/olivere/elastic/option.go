@@ -6,6 +6,7 @@ type clientConfig struct {
 	serviceName   string
 	transport     *http.Transport
 	analyticsRate float64
+	resourceNamer func(url, method string) string
 }
 
 // ClientOption represents an option that can be used when creating a client.
@@ -14,6 +15,7 @@ type ClientOption func(*clientConfig)
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = "elastic.client"
 	cfg.transport = http.DefaultTransport.(*http.Transport)
+	cfg.resourceNamer = quantize
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
@@ -44,5 +46,15 @@ func WithAnalytics(on bool) ClientOption {
 func WithAnalyticsRate(rate float64) ClientOption {
 	return func(cfg *clientConfig) {
 		cfg.analyticsRate = rate
+	}
+}
+
+// WithResourceNamer specifies a quantizing function which will be used to obtain a resource name for a given
+// ElasticSearch request, using the request's URL and method. Note that the default quantizer obfuscates
+// IDs and indexes and by replacing it, sensitive data could possibly be exposed, unless the new quantizer
+// specifically takes care of that.
+func WithResourceNamer(namer func(url, method string) string) ClientOption {
+	return func(cfg *clientConfig) {
+		cfg.resourceNamer = namer
 	}
 }
