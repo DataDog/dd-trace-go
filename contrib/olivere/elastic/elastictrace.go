@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -54,7 +55,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	span, _ := tracer.StartSpanFromContext(req.Context(), "elasticsearch.query", opts...)
 	defer span.Finish()
 
-	snip, rc, err := peek(req.Body, req.Header.Get("Content-Encoding") == "gzip", int(req.ContentLength), bodyCutoff)
+	snip, rc, err := peek(req.Body, req.Header.Get("Content-Encoding"), int(req.ContentLength), bodyCutoff)
 	if err == nil {
 		span.SetTag("elasticsearch.body", snip)
 	}
@@ -66,7 +67,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		span.SetTag(ext.Error, err)
 	} else if res.StatusCode < 200 || res.StatusCode > 299 {
 		// HTTP error
-		snip, rc, err := peek(res.Body, req.Header.Get("Content-Encoding") == "gzip", int(res.ContentLength), bodyCutoff)
+		snip, rc, err := peek(res.Body, req.Header.Get("Content-Encoding"), int(res.ContentLength), bodyCutoff)
 		if err != nil {
 			snip = http.StatusText(res.StatusCode)
 		}
@@ -100,7 +101,7 @@ func quantize(url, method string) string {
 // from to access the entire data including the snippet. max is used to specify the length
 // of the stream contained in the reader. If unknown, it should be -1. If 0 < max < n it
 // will override n.
-func peek(rc io.ReadCloser, gzipped bool, max, n int) (string, io.ReadCloser, error) {
+func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser, error) {
 	if rc == nil {
 		return "", rc, errors.New("empty stream")
 	}
@@ -117,25 +118,21 @@ func peek(rc io.ReadCloser, gzipped bool, max, n int) (string, io.ReadCloser, er
 	}
 	snip, err := r.Peek(n)
 	if err == io.EOF {
-		err = nil
+		return string(snip), rc2, nil
 	}
 
-	// the snippet we just pulled out may be gzip encoded. if so, we need to
-	// decode it before we return so we can report the actual text to DataDog
-	if gzipped {
-		reader, err := gzip.NewReader(bytes.NewReader(snip))
+	if encoding == "gzip" {
+		// unpack the snippet
+		gzr, err := gzip.NewReader(bytes.NewReader(snip))
 		if err != nil {
-			return string(snip), rc2, err
+			return string(snip), rc2, nil
 		}
-		defer reader.Close()
+		defer gzr.Close()
 
-		buf := bytes.NewBuffer(nil)
-		_, err = buf.ReadFrom(reader)
+		snip, err = ioutil.ReadAll(gzr)
 		if err != nil {
-			return string(snip), rc2, err
+			return string(snip), rc2, nil
 		}
-
-		snip = buf.Bytes()
 	}
 
 	return string(snip), rc2, err
