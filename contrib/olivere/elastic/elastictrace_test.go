@@ -418,7 +418,7 @@ func TestPeek(t *testing.T) {
 		if tt.txt != "" {
 			readcloser = ioutil.NopCloser(bytes.NewBufferString(tt.txt))
 		}
-		snip, rc, err := peek(readcloser, tt.max, tt.n)
+		snip, rc, err := peek(readcloser, false, tt.max, tt.n)
 		assert.Equal(tt.err, err)
 		assert.Equal(tt.snip, snip)
 
