@@ -55,7 +55,8 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	span, _ := tracer.StartSpanFromContext(req.Context(), "elasticsearch.query", opts...)
 	defer span.Finish()
 
-	snip, rc, err := peek(req.Body, req.Header.Get("Content-Encoding"), int(req.ContentLength), bodyCutoff)
+	contentEncoding := req.Header.Get("Content-Encoding")
+	snip, rc, err := peek(req.Body, contentEncoding, int(req.ContentLength), bodyCutoff)
 	if err == nil {
 		span.SetTag("elasticsearch.body", snip)
 	}
@@ -67,7 +68,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		span.SetTag(ext.Error, err)
 	} else if res.StatusCode < 200 || res.StatusCode > 299 {
 		// HTTP error
-		snip, rc, err := peek(res.Body, req.Header.Get("Content-Encoding"), int(res.ContentLength), bodyCutoff)
+		snip, rc, err := peek(res.Body, contentEncoding, int(res.ContentLength), bodyCutoff)
 		if err != nil {
 			snip = http.StatusText(res.StatusCode)
 		}
