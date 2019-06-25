@@ -118,21 +118,22 @@ func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser,
 	}
 	snip, err := r.Peek(n)
 	if err == io.EOF {
-		return string(snip), rc2, nil
+		err = nil
+	}
+	if err != nil {
+		return string(snip), rc2, err
 	}
 
 	if encoding == "gzip" {
 		// unpack the snippet
 		gzr, err := gzip.NewReader(bytes.NewReader(snip))
 		if err != nil {
+			// snip wasn't gzip; return it as is
 			return string(snip), rc2, nil
 		}
 		defer gzr.Close()
 
 		snip, err = ioutil.ReadAll(gzr)
-		if err != nil {
-			return string(snip), rc2, nil
-		}
 	}
 
 	return string(snip), rc2, err
