@@ -65,6 +65,42 @@ func TestClientV5(t *testing.T) {
 	checkErrTrace(assert, mt)
 }
 
+func TestClientV5Gzip(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	tc := NewHTTPClient(WithServiceName("my-es-service"))
+	client, err := elasticv5.NewClient(
+		elasticv5.SetURL("http://127.0.0.1:9201"),
+		elasticv5.SetHttpClient(tc),
+		elasticv5.SetSniff(false),
+		elasticv5.SetHealthcheck(false),
+		elasticv5.SetGzip(true),
+	)
+	assert.NoError(err)
+
+	_, err = client.Index().
+		Index("twitter").Id("1").
+		Type("tweet").
+		BodyString(`{"user": "test", "message": "hello"}`).
+		Do(context.TODO())
+	assert.NoError(err)
+	checkPUTTrace(assert, mt)
+
+	mt.Reset()
+	_, err = client.Get().Index("twitter").Type("tweet").
+		Id("1").Do(context.TODO())
+	assert.NoError(err)
+	checkGETTrace(assert, mt)
+
+	mt.Reset()
+	_, err = client.Get().Index("not-real-index").
+		Id("1").Do(context.TODO())
+	assert.Error(err)
+	checkErrTrace(assert, mt)
+}
+
 func TestClientErrorCutoffV3(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -382,7 +418,7 @@ func TestPeek(t *testing.T) {
 		if tt.txt != "" {
 			readcloser = ioutil.NopCloser(bytes.NewBufferString(tt.txt))
 		}
-		snip, rc, err := peek(readcloser, tt.max, tt.n)
+		snip, rc, err := peek(readcloser, "", tt.max, tt.n)
 		assert.Equal(tt.err, err)
 		assert.Equal(tt.snip, snip)
 

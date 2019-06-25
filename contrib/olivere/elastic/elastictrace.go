@@ -3,9 +3,12 @@ package elastic // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/olivere/elast
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -52,7 +55,8 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	span, _ := tracer.StartSpanFromContext(req.Context(), "elasticsearch.query", opts...)
 	defer span.Finish()
 
-	snip, rc, err := peek(req.Body, int(req.ContentLength), bodyCutoff)
+	contentEncoding := req.Header.Get("Content-Encoding")
+	snip, rc, err := peek(req.Body, contentEncoding, int(req.ContentLength), bodyCutoff)
 	if err == nil {
 		span.SetTag("elasticsearch.body", snip)
 	}
@@ -64,7 +68,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		span.SetTag(ext.Error, err)
 	} else if res.StatusCode < 200 || res.StatusCode > 299 {
 		// HTTP error
-		snip, rc, err := peek(res.Body, int(res.ContentLength), bodyCutoff)
+		snip, rc, err := peek(res.Body, contentEncoding, int(res.ContentLength), bodyCutoff)
 		if err != nil {
 			snip = http.StatusText(res.StatusCode)
 		}
@@ -98,7 +102,7 @@ func quantize(url, method string) string {
 // from to access the entire data including the snippet. max is used to specify the length
 // of the stream contained in the reader. If unknown, it should be -1. If 0 < max < n it
 // will override n.
-func peek(rc io.ReadCloser, max int, n int) (string, io.ReadCloser, error) {
+func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser, error) {
 	if rc == nil {
 		return "", rc, errors.New("empty stream")
 	}
@@ -116,6 +120,19 @@ func peek(rc io.ReadCloser, max int, n int) (string, io.ReadCloser, error) {
 	snip, err := r.Peek(n)
 	if err == io.EOF {
 		err = nil
+	}
+	if err != nil {
+		return string(snip), rc2, err
+	}
+	if encoding == "gzip" {
+		// unpack the snippet
+		gzr, err := gzip.NewReader(bytes.NewReader(snip))
+		if err != nil {
+			// snip wasn't gzip; return it as is
+			return string(snip), rc2, nil
+		}
+		defer gzr.Close()
+		snip, err = ioutil.ReadAll(gzr)
 	}
 	return string(snip), rc2, err
 }
