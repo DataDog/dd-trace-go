@@ -12,10 +12,18 @@
 package sql
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"reflect"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 )
+
+var driverTypeToName = make(map[reflect.Type]string)
+var nameToDriver = make(map[string]driver.Driver)
+var nameToRegisterConfig = make(map[string]*registerConfig)
 
 // Register tells the sql integration package about the driver that we will be tracing. It must
 // be called before Open, if that connection is to be traced. It uses the driverName suffixed
@@ -24,11 +32,14 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	if driver == nil {
 		panic("sqltrace: Register driver is nil")
 	}
-	name := tracedDriverName(driverName)
-	if driverExists(name) {
-		// no problem, carry on
+	if _, ok := nameToRegisterConfig[driverName]; ok {
+		// already registered, don't change things
 		return
 	}
+	typ := reflect.TypeOf(driver)
+	driverTypeToName[typ] = driverName
+	nameToDriver[driverName] = driver
+
 	cfg := new(registerConfig)
 	defaults(cfg)
 	for _, fn := range opts {
@@ -37,24 +48,74 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	if cfg.serviceName == "" {
 		cfg.serviceName = driverName + ".db"
 	}
-	sql.Register(name, &tracedDriver{
-		Driver:     driver,
-		driverName: driverName,
-		config:     cfg,
-	})
+	nameToRegisterConfig[driverName] = cfg
+	// sql.Register(driverName, driver)
 }
 
 // errNotRegistered is returned when there is an attempt to open a database connection towards a driver
 // that has not previously been registered using this package.
 var errNotRegistered = errors.New("sqltrace: Register must be called before Open")
 
+type tracedConnector struct {
+	connector driver.Connector
+	driverName string
+	cfg *registerConfig
+}
+
+func (t *tracedConnector) Connect(c context.Context) (driver.Conn, error) {
+	conn, err := t.connector.Connect(c)
+	if err != nil {
+		return nil, err
+	}
+	tp := &traceParams{
+		driverName: t.driverName,
+		config:     t.cfg,
+	}
+	if dc, ok := t.connector.(*dsnConnector); ok {
+		tp.meta, _ = internal.ParseDSN(t.driverName, dc.dsn)
+	}
+	return &tracedConn{conn, tp}, err
+}
+
+func (t *tracedConnector) Driver() driver.Driver {
+	return t.connector.Driver()
+}
+
+// from Go stdlib implementation of sql.Open
+type dsnConnector struct {
+	dsn    string
+	driver driver.Driver
+}
+
+func (t dsnConnector) Connect(_ context.Context) (driver.Conn, error) {
+	return t.driver.Open(t.dsn)
+}
+
+func (t dsnConnector) Driver() driver.Driver {
+	return t.driver
+}
+
+// OpenDB returns connection to a DB using a the traced version of the given driver. In order for OpenDB
+// to work, the driver must first be registered using Register. If this did not occur, OpenDB will panic.
+func OpenDB(c driver.Connector) *sql.DB {
+	name, ok := driverTypeToName[reflect.TypeOf(c.Driver())]
+	if !ok {
+		panic("sqltrace.OpenDB: driver is not registered via sqltrace.Register")
+	}
+	tc := &tracedConnector{
+		connector: c,
+		driverName: name,
+		cfg: nameToRegisterConfig[name],
+	}
+	return sql.OpenDB(tc)
+}
+
 // Open returns connection to a DB using a the traced version of the given driver. In order for Open
-// to work, the driver must first be registered using Register or RegisterWithServiceName. If this
-// did not occur, Open will return an error.
+// to work, the driver must first be registered using Register. If this did not occur, Open will
+// return an error.
 func Open(driverName, dataSourceName string) (*sql.DB, error) {
-	name := tracedDriverName(driverName)
-	if !driverExists(name) {
+	if _, ok := nameToRegisterConfig[driverName]; !ok {
 		return nil, errNotRegistered
 	}
-	return sql.Open(name, dataSourceName)
+	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: nameToDriver[driverName]}), nil
 }
