@@ -57,9 +57,10 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 var errNotRegistered = errors.New("sqltrace: Register must be called before Open")
 
 type tracedConnector struct {
-	connector driver.Connector
+	connector  driver.Connector
 	driverName string
-	cfg *registerConfig
+	rc         *registerConfig
+	oc         *openConfig
 }
 
 func (t *tracedConnector) Connect(c context.Context) (driver.Conn, error) {
@@ -69,10 +70,13 @@ func (t *tracedConnector) Connect(c context.Context) (driver.Conn, error) {
 	}
 	tp := &traceParams{
 		driverName: t.driverName,
-		config:     t.cfg,
+		rc:         t.rc,
+		oc:         t.oc,
 	}
 	if dc, ok := t.connector.(*dsnConnector); ok {
 		tp.meta, _ = internal.ParseDSN(t.driverName, dc.dsn)
+	} else if t.oc.dsn != "" {
+		tp.meta, _ = internal.ParseDSN(t.driverName, t.oc.dsn)
 	}
 	return &tracedConn{conn, tp}, err
 }
@@ -97,15 +101,21 @@ func (t dsnConnector) Driver() driver.Driver {
 
 // OpenDB returns connection to a DB using a the traced version of the given driver. In order for OpenDB
 // to work, the driver must first be registered using Register. If this did not occur, OpenDB will panic.
-func OpenDB(c driver.Connector) *sql.DB {
+func OpenDB(c driver.Connector, opts ...OpenOption) *sql.DB {
 	name, ok := driverTypeToName[reflect.TypeOf(c.Driver())]
 	if !ok {
 		panic("sqltrace.OpenDB: driver is not registered via sqltrace.Register")
 	}
+	oc := new(openConfig)
+	OpenOptions.defaults(oc)
+	for _, fn := range opts {
+		fn(oc)
+	}
 	tc := &tracedConnector{
-		connector: c,
+		connector:  c,
 		driverName: name,
-		cfg: nameToRegisterConfig[name],
+		rc:         nameToRegisterConfig[name],
+		oc:         oc,
 	}
 	return sql.OpenDB(tc)
 }
@@ -113,9 +123,9 @@ func OpenDB(c driver.Connector) *sql.DB {
 // Open returns connection to a DB using a the traced version of the given driver. In order for Open
 // to work, the driver must first be registered using Register. If this did not occur, Open will
 // return an error.
-func Open(driverName, dataSourceName string) (*sql.DB, error) {
+func Open(driverName, dataSourceName string, opts ...OpenOption) (*sql.DB, error) {
 	if _, ok := nameToRegisterConfig[driverName]; !ok {
 		return nil, errNotRegistered
 	}
-	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: nameToDriver[driverName]}), nil
+	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: nameToDriver[driverName]}, opts...), nil
 }

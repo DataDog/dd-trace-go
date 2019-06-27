@@ -40,15 +40,16 @@ func (d *tracedDriver) Open(dsn string) (c driver.Conn, err error) {
 	}
 	tp := &traceParams{
 		driverName: d.driverName,
-		config:     d.config,
-		meta:       meta,
+		// config:     d.config,
+		meta: meta,
 	}
 	return &tracedConn{conn, tp}, err
 }
 
 // traceParams stores all information relative to the tracing
 type traceParams struct {
-	config     *registerConfig
+	rc         *registerConfig
+	oc         *openConfig
 	driverName string
 	resource   string
 	meta       map[string]string
@@ -66,11 +67,17 @@ func (tp *traceParams) tryTrace(ctx context.Context, resource string, query stri
 	name := fmt.Sprintf("%s.query", tp.driverName)
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeSQL),
-		tracer.ServiceName(tp.config.serviceName),
 		tracer.StartTime(startTime),
 	}
-	if !math.IsNaN(tp.config.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.config.analyticsRate))
+	if tp.oc.serviceName != "" {
+		opts = append(opts, tracer.ServiceName(tp.oc.serviceName))
+	} else {
+		opts = append(opts, tracer.ServiceName(tp.rc.serviceName))
+	}
+	if !math.IsNaN(tp.oc.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.oc.analyticsRate))
+	} else if !math.IsNaN(tp.rc.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.rc.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, name, opts...)
 	if query != "" {
