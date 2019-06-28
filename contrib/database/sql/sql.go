@@ -107,7 +107,7 @@ func OpenDB(c driver.Connector, opts ...OpenOption) *sql.DB {
 		panic("sqltrace.OpenDB: driver is not registered via sqltrace.Register")
 	}
 	oc := new(openConfig)
-	OpenOptions.defaults(oc)
+	openDefaults(oc)
 	for _, fn := range opts {
 		fn(oc)
 	}

@@ -61,26 +61,15 @@ func openDefaults(cfg *openConfig) {
 	cfg.analyticsRate = math.NaN()
 }
 
-type openOptions struct{}
-
-// OpenOptions is used to create the OpenOption values used in Open or OpenDB.
-var OpenOptions openOptions
-
-func (openOptions) defaults(cfg *openConfig) {
-	// default cfg.serviceName set in Register based on driver name
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.analyticsRate = math.NaN()
-}
-
-// WithServiceName sets the given service name for the opened driver.
-func (openOptions) WithServiceName(name string) OpenOption {
+// OpenWithServiceName sets the given service name for the opened database.
+func OpenWithServiceName(name string) OpenOption {
 	return func(cfg *openConfig) {
 		cfg.serviceName = name
 	}
 }
 
-// WithAnalytics enables Trace Analytics for all started spans.
-func (openOptions) WithAnalytics(on bool) OpenOption {
+// OpenWithAnalytics enables Trace Analytics for all started spans.
+func OpenWithAnalytics(on bool) OpenOption {
 	return func(cfg *openConfig) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -90,9 +79,9 @@ func (openOptions) WithAnalytics(on bool) OpenOption {
 	}
 }
 
-// WithAnalyticsRate sets the sampling rate for Trace Analytics events
+// OpenWithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func (openOptions) WithAnalyticsRate(rate float64) OpenOption {
+func OpenWithAnalyticsRate(rate float64) OpenOption {
 	return func(cfg *openConfig) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -102,10 +91,10 @@ func (openOptions) WithAnalyticsRate(rate float64) OpenOption {
 	}
 }
 
-// WithDataSourceName allows the data source name to be provided when
+// OpenWithDataSourceName allows the data source name to be provided when
 // using OpenDB and a driver.Connector.
 // The value is used to automatically set tags on spans.
-func (openOptions) WithDataSourceName(name string) OpenOption {
+func OpenWithDataSourceName(name string) OpenOption {
 	return func(cfg *openConfig) {
 		cfg.dsn = name
 	}

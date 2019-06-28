@@ -82,8 +82,8 @@ func TestOpenOptions(t *testing.T) {
 	Register("postgres", &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
 	t.Run("Open", func(t *testing.T) {
 		db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
-			OpenOptions.WithServiceName("override-test"),
-			OpenOptions.WithAnalytics(true),
+			OpenWithServiceName("override-test"),
+			OpenWithAnalytics(true),
 		)
 		if err != nil {
 			log.Fatal(err)
@@ -138,7 +138,7 @@ func TestOpenOptions(t *testing.T) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		db := OpenDB(c, OpenOptions.WithDataSourceName(dsn))
+		db := OpenDB(c, OpenWithDataSourceName(dsn))
 		defer db.Close()
 
 		testConfig := &sqltest.Config{
