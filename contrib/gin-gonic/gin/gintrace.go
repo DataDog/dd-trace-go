@@ -3,6 +3,7 @@ package gin // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin"
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -28,7 +29,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			tracer.Tag(ext.HTTPMethod, c.Request.Method),
 			tracer.Tag(ext.HTTPURL, c.Request.URL.Path),
 		}
-		if cfg.analyticsRate > 0 {
+		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(c.Request.Header)); err == nil {

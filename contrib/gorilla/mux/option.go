@@ -1,6 +1,8 @@
 package mux
 
 import (
+	"math"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -36,16 +38,23 @@ func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) RouterOption {
-	if on {
-		return WithAnalyticsRate(1.0)
+	return func(cfg *routerConfig) {
+		if on {
+			cfg.analyticsRate = 1.0
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
-	return WithAnalyticsRate(0.0)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) RouterOption {
 	return func(cfg *routerConfig) {
-		cfg.analyticsRate = rate
+		if rate >= 0.0 && rate <= 1.0 {
+			cfg.analyticsRate = rate
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
 }

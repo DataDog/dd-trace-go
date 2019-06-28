@@ -3,6 +3,7 @@ package leveldb // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/syndtr/goleve
 
 import (
 	"context"
+	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -263,7 +264,7 @@ func startSpan(cfg *config, name string) ddtrace.Span {
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName(name),
 	}
-	if cfg.analyticsRate > 0 {
+	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(cfg.ctx, "leveldb.query", opts...)

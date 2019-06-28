@@ -2,6 +2,7 @@
 package httprouter // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
 
 import (
+	"math"
 	"net/http"
 	"strings"
 
@@ -25,7 +26,7 @@ func New(opts ...RouterOption) *Router {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	if cfg.analyticsRate > 0 {
+	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	return &Router{httprouter.New(), cfg}

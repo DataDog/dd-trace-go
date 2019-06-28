@@ -2,6 +2,7 @@ package buntdb
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -91,7 +92,7 @@ func (tx *Tx) startSpan(name string) ddtrace.Span {
 		tracer.ServiceName(tx.cfg.serviceName),
 		tracer.ResourceName(name),
 	}
-	if tx.cfg.analyticsRate > 0 {
+	if !math.IsNaN(tx.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tx.cfg.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(tx.cfg.ctx, "buntdb.query", opts...)

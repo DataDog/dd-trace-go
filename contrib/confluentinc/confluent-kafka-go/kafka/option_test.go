@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,7 +11,7 @@ import (
 func TestAnalyticsSettings(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		cfg := newConfig()
-		assert.Equal(t, 0.0, cfg.analyticsRate)
+		assert.True(t, math.IsNaN(cfg.analyticsRate))
 	})
 
 	t.Run("global", func(t *testing.T) {

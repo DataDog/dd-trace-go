@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -105,8 +106,8 @@ func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) 
 		tracer.Tag(ext.TargetPort, p.port),
 		tracer.Tag("out.db", p.db),
 	}
-	if rate := p.config.analyticsRate; rate > 0 {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	if !math.IsNaN(p.config.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
 	cmds, err := c.Pipeliner.Exec()

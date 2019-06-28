@@ -2,6 +2,7 @@ package leveldb
 
 import (
 	"context"
+	"math"
 )
 
 type config struct {
@@ -15,6 +16,7 @@ func newConfig(opts ...Option) *config {
 		serviceName: "leveldb",
 		ctx:         context.Background(),
 		// cfg.analyticsRate: globalconfig.AnalyticsRate(),
+		analyticsRate: math.NaN(),
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -41,16 +43,23 @@ func WithServiceName(serviceName string) Option {
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) Option {
-	if on {
-		return WithAnalyticsRate(1.0)
+	return func(cfg *config) {
+		if on {
+			cfg.analyticsRate = 1.0
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
-	return WithAnalyticsRate(0.0)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) Option {
 	return func(cfg *config) {
-		cfg.analyticsRate = rate
+		if rate >= 0.0 && rate <= 1.0 {
+			cfg.analyticsRate = rate
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
 }

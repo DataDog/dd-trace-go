@@ -4,6 +4,7 @@
 package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc.v12"
 
 import (
+	"math"
 	"net"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
@@ -42,7 +43,7 @@ func startSpanFromContext(ctx context.Context, method, service string, rate floa
 		tracer.Tag(tagMethod, method),
 		tracer.SpanType(ext.AppTypeRPC),
 	}
-	if rate > 0 {
+	if !math.IsNaN(rate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
 	}
 	md, _ := metadata.FromContext(ctx) // nil is ok
@@ -71,7 +72,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 			tracer.Tag(tagMethod, method),
 			tracer.SpanType(ext.AppTypeRPC),
 		}
-		if cfg.analyticsRate > 0 {
+		if !math.IsNaN(cfg.analyticsRate) {
 			spanopts = append(spanopts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		span, ctx = tracer.StartSpanFromContext(ctx, "grpc.client", spanopts...)

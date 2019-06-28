@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"math"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
@@ -68,8 +69,8 @@ func (tp *traceParams) tryTrace(ctx context.Context, resource string, query stri
 		tracer.ServiceName(tp.config.serviceName),
 		tracer.StartTime(startTime),
 	}
-	if rate := tp.config.analyticsRate; rate > 0 {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	if !math.IsNaN(tp.config.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.config.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, name, opts...)
 	if query != "" {

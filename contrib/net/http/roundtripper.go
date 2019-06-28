@@ -2,6 +2,7 @@ package http
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -25,8 +26,8 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		tracer.Tag(ext.HTTPMethod, req.Method),
 		tracer.Tag(ext.HTTPURL, req.URL.Path),
 	}
-	if rate := rt.cfg.analyticsRate; rate > 0 {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	if !math.IsNaN(rt.cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(req.Context(), defaultResourceName, opts...)
 	defer func() {

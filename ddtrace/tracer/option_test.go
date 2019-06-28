@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,11 +27,11 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 	t.Run("analytics", func(t *testing.T) {
 		assert := assert.New(t)
-		assert.Equal(0., globalconfig.AnalyticsRate())
+		assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
 		newTracer(WithAnalyticsRate(0.5))
 		assert.Equal(0.5, globalconfig.AnalyticsRate())
 		newTracer(WithAnalytics(false))
-		assert.Equal(0., globalconfig.AnalyticsRate())
+		assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
 		newTracer(WithAnalytics(true))
 		assert.Equal(1., globalconfig.AnalyticsRate())
 	})

@@ -9,6 +9,7 @@ package graphql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/graph-gophers
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/graph-gophers/graphql-go/errors"
 	"github.com/graph-gophers/graphql-go/introspection"
@@ -38,7 +39,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlQuery, queryString),
 	}
-	if t.cfg.analyticsRate > 0 {
+	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.request", opts...)
@@ -64,7 +65,7 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 		tracer.Tag(tagGraphqlField, fieldName),
 		tracer.Tag(tagGraphqlType, typeName),
 	}
-	if t.cfg.analyticsRate > 0 {
+	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.field", opts...)

@@ -4,6 +4,7 @@ package gocql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gocql/gocql"
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -87,8 +88,8 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 		tracer.Tag(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated)),
 		tracer.Tag(ext.CassandraKeyspace, p.keyspace),
 	}
-	if rate := p.config.analyticsRate; rate > 0 {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	if !math.IsNaN(p.config.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, ext.CassandraQuery, opts...)
 	return span

@@ -2,6 +2,7 @@
 package mgo // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/globalsign/mgo"
 
 import (
+	"math"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -43,7 +44,7 @@ func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.S
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName("mongodb.query"),
 	}
-	if cfg.analyticsRate > 0 {
+	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(cfg.ctx, "mongodb.query", opts...)

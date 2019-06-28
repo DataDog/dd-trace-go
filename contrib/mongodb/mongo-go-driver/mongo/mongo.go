@@ -7,6 +7,7 @@ package mongo
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 
@@ -41,7 +42,7 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 		tracer.Tag(ext.PeerHostname, hostname),
 		tracer.Tag(ext.PeerPort, port),
 	}
-	if m.cfg.analyticsRate > 0 {
+	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, "mongodb.query", opts...)

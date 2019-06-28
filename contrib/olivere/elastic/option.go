@@ -1,6 +1,9 @@
 package elastic
 
-import "net/http"
+import (
+	"math"
+	"net/http"
+)
 
 type clientConfig struct {
 	serviceName   string
@@ -17,6 +20,7 @@ func defaults(cfg *clientConfig) {
 	cfg.transport = http.DefaultTransport.(*http.Transport)
 	cfg.resourceNamer = quantize
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
+	cfg.analyticsRate = math.NaN()
 }
 
 // WithServiceName sets the given service name for the client.
@@ -35,17 +39,24 @@ func WithTransport(t *http.Transport) ClientOption {
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) ClientOption {
-	if on {
-		return WithAnalyticsRate(1.0)
+	return func(cfg *clientConfig) {
+		if on {
+			cfg.analyticsRate = 1.0
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
-	return WithAnalyticsRate(0.0)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) ClientOption {
 	return func(cfg *clientConfig) {
-		cfg.analyticsRate = rate
+		if rate >= 0.0 && rate <= 1.0 {
+			cfg.analyticsRate = rate
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
 }
 

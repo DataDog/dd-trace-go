@@ -4,6 +4,7 @@ package api // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org
 //go:generate go run make_endpoints.go
 
 import (
+	"math"
 	"net/http"
 
 	"golang.org/x/oauth2/google"
@@ -48,7 +49,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 			}
 		}),
 	}
-	if cfg.analyticsRate > 0 {
+	if !math.IsNaN(cfg.analyticsRate) {
 		rtOpts = append(rtOpts, httptrace.RTWithAnalyticsRate(cfg.analyticsRate))
 	}
 	return httptrace.WrapRoundTripper(transport, rtOpts...)

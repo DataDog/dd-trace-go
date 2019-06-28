@@ -8,6 +8,7 @@ package memcache // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/bradfitz/gom
 
 import (
 	"context"
+	"math"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -61,8 +62,8 @@ func (c *Client) startSpan(resourceName string) ddtrace.Span {
 		tracer.ServiceName(c.cfg.serviceName),
 		tracer.ResourceName(resourceName),
 	}
-	if rate := c.cfg.analyticsRate; rate > 0 {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	if !math.IsNaN(c.cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, c.cfg.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(c.context, operationName, opts...)
 	return span

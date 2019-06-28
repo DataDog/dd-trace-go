@@ -2,6 +2,8 @@
 package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka"
 
 import (
+	"math"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -87,7 +89,7 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.Tag("partition", msg.TopicPartition.Partition),
 		tracer.Tag("offset", msg.TopicPartition.Offset),
 	}
-	if c.cfg.analyticsRate > 0 {
+	if !math.IsNaN(c.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, c.cfg.analyticsRate))
 	}
 	// kafka supports headers, so try to extract a span context
@@ -176,7 +178,7 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag("partition", msg.TopicPartition.Partition),
 	}
-	if p.cfg.analyticsRate > 0 {
+	if !math.IsNaN(p.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.cfg.analyticsRate))
 	}
 	carrier := NewMessageCarrier(msg)
