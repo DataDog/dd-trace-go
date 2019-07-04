@@ -217,6 +217,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		TraceID:  id,
 		ParentID: 0,
 		Start:    startTime,
+		taskEnd:  startExecutionTracerTask(operationName),
 	}
 	if context != nil {
 		// this is a child span
