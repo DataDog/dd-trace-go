@@ -22,9 +22,55 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 )
 
-var driverTypeToName = make(map[reflect.Type]string)
-var nameToDriver = make(map[string]driver.Driver)
-var nameToRegisterConfig = make(map[string]*config)
+// registeredDrivers holds a registry of all drivers registered via the sqltrace package.
+var registeredDrivers = &driverRegistry{
+	keys:    make(map[reflect.Type]string),
+	drivers: make(map[string]driver.Driver),
+	configs: make(map[string]*config),
+}
+
+type driverRegistry struct {
+	// keys maps driver types to their registered names.
+	keys map[reflect.Type]string
+	// drivers maps keys to their registered driver.
+	drivers map[string]driver.Driver
+	// configs maps keys to their registered configuration.
+	configs map[string]*config
+}
+
+// registered checks if the named driver has already been registered.
+func (d *driverRegistry) registered(name string) bool {
+	_, ok := d.configs[name]
+	return ok
+}
+
+// add adds the driver and config to the driver registy.
+func (d *driverRegistry) add(name string, driver driver.Driver, cfg *config) {
+	if d.registered(name) {
+		return
+	}
+	d.keys[reflect.TypeOf(driver)] = name
+	d.drivers[name] = driver
+	d.configs[name] = cfg
+}
+
+// name returns the name of the driver stored in the registry.
+func (d *driverRegistry) name(driver driver.Driver) (string, bool) {
+	name, ok := d.keys[reflect.TypeOf(driver)]
+	return name, ok
+}
+
+// driver returns the driver stored in the registry with the provided name.
+func (d *driverRegistry) driver(name string) (driver.Driver, bool) {
+	driver, ok := d.drivers[name]
+	return driver, ok
+}
+
+// config returns the config stored in the registry with the provided name.
+func (d *driverRegistry) config(name string) (*config, bool) {
+	config, ok := d.configs[name]
+	return config, ok
+}
 
 // Register tells the sql integration package about the driver that we will be tracing. It must
 // be called before Open, if that connection is to be traced. It uses the driverName suffixed
@@ -33,13 +79,10 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	if driver == nil {
 		panic("sqltrace: Register driver is nil")
 	}
-	if _, ok := nameToRegisterConfig[driverName]; ok {
+	if registeredDrivers.registered(driverName) {
 		// already registered, don't change things
 		return
 	}
-	typ := reflect.TypeOf(driver)
-	driverTypeToName[typ] = driverName
-	nameToDriver[driverName] = driver
 
 	cfg := new(config)
 	defaults(cfg)
@@ -49,7 +92,7 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	if cfg.serviceName == "" {
 		cfg.serviceName = driverName + ".db"
 	}
-	nameToRegisterConfig[driverName] = cfg
+	registeredDrivers.add(driverName, driver, cfg)
 }
 
 // errNotRegistered is returned when there is an attempt to open a database connection towards a driver
@@ -100,11 +143,11 @@ func (t dsnConnector) Driver() driver.Driver {
 // OpenDB returns connection to a DB using a the traced version of the given driver. In order for OpenDB
 // to work, the driver must first be registered using Register. If this did not occur, OpenDB will panic.
 func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
-	name, ok := driverTypeToName[reflect.TypeOf(c.Driver())]
+	name, ok := registeredDrivers.name(c.Driver())
 	if !ok {
 		panic("sqltrace.OpenDB: driver is not registered via sqltrace.Register")
 	}
-	rc := nameToRegisterConfig[name]
+	rc, _ := registeredDrivers.config(name)
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
@@ -129,8 +172,9 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 // to work, the driver must first be registered using Register. If this did not occur, Open will
 // return an error.
 func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
-	if _, ok := nameToRegisterConfig[driverName]; !ok {
+	if !registeredDrivers.registered(driverName) {
 		return nil, errNotRegistered
 	}
-	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: nameToDriver[driverName]}, opts...), nil
+	d, _ := registeredDrivers.driver(driverName)
+	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: d}, opts...), nil
 }
