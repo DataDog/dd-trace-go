@@ -61,6 +61,7 @@ type span struct {
 
 	finished bool         `msg:"-"` // true if the span has been submitted to a tracer.
 	context  *spanContext `msg:"-"` // span propagation context
+	taskEnd  func()       // ends execution tracer (runtime/trace) task, if started
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -262,6 +263,9 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 			stackSkip:    cfg.SkipStackFrames,
 		})
 		s.Unlock()
+	}
+	if s.taskEnd != nil {
+		s.taskEnd()
 	}
 	s.finish(t)
 }
