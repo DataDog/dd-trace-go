@@ -38,15 +38,16 @@ type driverRegistry struct {
 	configs map[string]*config
 }
 
-// registered checks if the named driver has already been registered.
-func (d *driverRegistry) registered(name string) bool {
+// isRegistered reports whether the name matches an existing entry
+// in the driver registry.
+func (d *driverRegistry) isRegistered(name string) bool {
 	_, ok := d.configs[name]
 	return ok
 }
 
-// add adds the driver and config to the driver registy.
+// add adds the driver with the given name and config to the registry.
 func (d *driverRegistry) add(name string, driver driver.Driver, cfg *config) {
-	if d.registered(name) {
+	if d.isRegistered(name) {
 		return
 	}
 	d.keys[reflect.TypeOf(driver)] = name
@@ -79,7 +80,7 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	if driver == nil {
 		panic("sqltrace: Register driver is nil")
 	}
-	if registeredDrivers.registered(driverName) {
+	if registeredDrivers.isRegistered(driverName) {
 		// already registered, don't change things
 		return
 	}
@@ -172,7 +173,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 // to work, the driver must first be registered using Register. If this did not occur, Open will
 // return an error.
 func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
-	if !registeredDrivers.registered(driverName) {
+	if !registeredDrivers.isRegistered(driverName) {
 		return nil, errNotRegistered
 	}
 	d, _ := registeredDrivers.driver(driverName)
