@@ -3,7 +3,13 @@ package sql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 import (
 	"context"
 	"database/sql/driver"
+	"fmt"
+	"math"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var _ driver.Conn = (*tracedConn)(nil)
@@ -113,4 +119,40 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 	rows, err = tc.Query(query, dargs)
 	tc.tryTrace(ctx, "Query", query, start, err)
 	return rows, err
+}
+
+// traceParams stores all information related to tracing the driver.Conn
+type traceParams struct {
+	cfg        *config
+	driverName string
+	meta       map[string]string
+}
+
+// tryTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
+func (tp *traceParams) tryTrace(ctx context.Context, resource string, query string, startTime time.Time, err error) {
+	if err == driver.ErrSkip {
+		// Not a user error: driver is telling sql package that an
+		// optional interface method is not implemented. There is
+		// nothing to trace here.
+		// See: https://github.com/DataDog/dd-trace-go/issues/270
+		return
+	}
+	name := fmt.Sprintf("%s.query", tp.driverName)
+	opts := []ddtrace.StartSpanOption{
+		tracer.ServiceName(tp.cfg.serviceName),
+		tracer.SpanType(ext.SpanTypeSQL),
+		tracer.StartTime(startTime),
+	}
+	if !math.IsNaN(tp.cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.cfg.analyticsRate))
+	}
+	span, _ := tracer.StartSpanFromContext(ctx, name, opts...)
+	if query != "" {
+		resource = query
+	}
+	span.SetTag(ext.ResourceName, resource)
+	for k, v := range tp.meta {
+		span.SetTag(k, v)
+	}
+	span.Finish(tracer.WithError(err))
 }

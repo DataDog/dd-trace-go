@@ -77,3 +77,88 @@ func TestPostgres(t *testing.T) {
 	}
 	sqltest.RunAll(t, testConfig)
 }
+
+func TestOpenOptions(t *testing.T) {
+	Register("postgres", &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
+
+	t.Run("Open", func(t *testing.T) {
+		db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+			WithServiceName("override-test"),
+			WithAnalytics(true),
+		)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+
+		testConfig := &sqltest.Config{
+			DB:         db,
+			DriverName: "postgres",
+			TableName:  tableName,
+			ExpectName: "postgres.query",
+			ExpectTags: map[string]interface{}{
+				ext.ServiceName:     "override-test",
+				ext.SpanType:        ext.SpanTypeSQL,
+				ext.TargetHost:      "127.0.0.1",
+				ext.TargetPort:      "5432",
+				ext.DBUser:          "postgres",
+				ext.DBName:          "postgres",
+				ext.EventSampleRate: 1.0,
+			},
+		}
+		sqltest.RunAll(t, testConfig)
+	})
+
+	t.Run("OpenDB", func(t *testing.T) {
+		c, err := pq.NewConnector("postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+		if err != nil {
+			log.Fatal(err)
+		}
+		db := OpenDB(c)
+		defer db.Close()
+
+		testConfig := &sqltest.Config{
+			DB:         db,
+			DriverName: "postgres",
+			TableName:  tableName,
+			ExpectName: "postgres.query",
+			ExpectTags: map[string]interface{}{
+				ext.ServiceName:     "postgres-test",
+				ext.SpanType:        ext.SpanTypeSQL,
+				ext.TargetHost:      nil,
+				ext.TargetPort:      nil,
+				ext.DBUser:          nil,
+				ext.DBName:          nil,
+				ext.EventSampleRate: 0.2,
+			},
+		}
+		sqltest.RunAll(t, testConfig)
+	})
+
+	t.Run("WithDSN", func(t *testing.T) {
+		dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
+		c, err := pq.NewConnector(dsn)
+		if err != nil {
+			log.Fatal(err)
+		}
+		db := OpenDB(c, WithDSN(dsn))
+		defer db.Close()
+
+		testConfig := &sqltest.Config{
+			DB:         db,
+			DriverName: "postgres",
+			TableName:  tableName,
+			ExpectName: "postgres.query",
+			ExpectTags: map[string]interface{}{
+				ext.ServiceName:     "postgres-test",
+				ext.SpanType:        ext.SpanTypeSQL,
+				ext.TargetHost:      "127.0.0.1",
+				ext.TargetPort:      "5432",
+				ext.DBUser:          "postgres",
+				ext.DBName:          "postgres",
+				ext.EventSampleRate: 0.2,
+			},
+		}
+		sqltest.RunAll(t, testConfig)
+	})
+}

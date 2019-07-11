@@ -8,7 +8,7 @@ import (
 
 // Option specifies a configuration option for the grpc package. Not all options apply
 // to all instrumented structures.
-type Option = InterceptorOption
+type Option func(*config)
 
 type config struct {
 	serviceName         string
@@ -36,7 +36,7 @@ func (cfg *config) clientServiceName() string {
 // InterceptorOption represents an option that can be passed to the grpc unary
 // client and server interceptors.
 // InterceptorOption is deprecated in favor of Option.
-type InterceptorOption func(*config)
+type InterceptorOption = Option
 
 func defaults(cfg *config) {
 	// cfg.serviceName defaults are set in interceptors

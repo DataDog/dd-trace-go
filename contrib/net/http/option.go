@@ -15,10 +15,10 @@ type config struct {
 }
 
 // MuxOption has been deprecated in favor of Option.
-type MuxOption func(*config)
+type MuxOption = Option
 
 // Option represents an option that can be passed to NewServeMux or WrapHandler.
-type Option = MuxOption
+type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
