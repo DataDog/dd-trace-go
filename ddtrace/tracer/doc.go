@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 // Package tracer contains Datadog's core tracing client. It is used to trace
 // requests as they flow across web servers, databases and microservices, giving
 // developers visibility into bottlenecks and troublesome requests. To start the
