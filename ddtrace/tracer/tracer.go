@@ -223,7 +223,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		ParentID: 0,
 		Start:    startTime,
 		taskEnd:  startExecutionTracerTask(operationName),
-    errCfg: &errorConfig{
+		errCfg: &errorConfig{
 			stackFrames: t.config.stackFrames,
 			stackSkip:   t.config.skipFrames,
 		},
