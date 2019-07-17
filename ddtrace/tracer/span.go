@@ -66,7 +66,7 @@ type span struct {
 
 	finished bool         `msg:"-"` // true if the span has been submitted to a tracer.
 	context  *spanContext `msg:"-"` // span propagation context
-  taskEnd  func()       // ends execution tracer (runtime/trace) task, if started
+	taskEnd  func()       // ends execution tracer (runtime/trace) task, if started
 	errCfg   *errorConfig `msg:"-"` // configuration for errors tracing
 }
 
