@@ -1,7 +1,13 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 // Package echo provides functions to trace the labstack/echo package (https://github.com/labstack/echo).
 package echo
 
 import (
+	"math"
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -30,6 +36,9 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				tracer.Tag(ext.HTTPURL, request.URL.Path),
 			}
 
+			if !math.IsNaN(cfg.analyticsRate) {
+				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+			}
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(request.Header)); err == nil {
 				opts = append(opts, tracer.ChildOf(spanctx))
 			}
@@ -41,11 +50,13 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 
 			// serve the request to the next middleware
 			err := next(c)
-
-			span.SetTag(ext.HTTPCode, strconv.Itoa(c.Response().Status))
 			if err != nil {
 				span.SetTag(ext.Error, err)
+				// invokes the registered HTTP error handler
+				c.Error(err)
 			}
+
+			span.SetTag(ext.HTTPCode, strconv.Itoa(c.Response().Status))
 			return err
 		}
 	}

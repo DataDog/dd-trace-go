@@ -1,8 +1,15 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 // Package gin provides functions to trace the gin-gonic/gin package (https://github.com/gin-gonic/gin).
 package gin // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin"
 
 import (
 	"fmt"
+	"math"
+	"net/http"
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -27,7 +34,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			tracer.Tag(ext.HTTPMethod, c.Request.Method),
 			tracer.Tag(ext.HTTPURL, c.Request.URL.Path),
 		}
-		if cfg.analyticsRate > 0 {
+		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(c.Request.Header)); err == nil {
@@ -42,11 +49,14 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		// serve the request to the next middleware
 		c.Next()
 
-		span.SetTag(ext.HTTPCode, strconv.Itoa(c.Writer.Status()))
+		status := c.Writer.Status()
+		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
+		if status >= 500 && status < 600 {
+			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
+		}
 
 		if len(c.Errors) > 0 {
 			span.SetTag("gin.errors", c.Errors.String())
-			span.SetTag(ext.Error, c.Errors[0])
 		}
 	}
 }

@@ -1,7 +1,13 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 package mgo
 
 import (
 	"context"
+	"math"
 )
 
 type mongoConfig struct {
@@ -15,6 +21,7 @@ func newConfig() *mongoConfig {
 		serviceName: "mongodb",
 		ctx:         context.Background(),
 		// analyticsRate: globalconfig.AnalyticsRate(),
+		analyticsRate: math.NaN(),
 	}
 }
 
@@ -37,16 +44,23 @@ func WithContext(ctx context.Context) DialOption {
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) DialOption {
-	if on {
-		return WithAnalyticsRate(1.0)
+	return func(cfg *mongoConfig) {
+		if on {
+			cfg.analyticsRate = 1.0
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
-	return WithAnalyticsRate(0.0)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) DialOption {
 	return func(cfg *mongoConfig) {
-		cfg.analyticsRate = rate
+		if rate >= 0.0 && rate <= 1.0 {
+			cfg.analyticsRate = rate
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
 }

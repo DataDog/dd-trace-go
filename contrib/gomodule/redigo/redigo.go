@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 // Package redigo provides functions to trace the gomodule/redigo package (https://github.com/gomodule/redigo).
 package redigo
 
@@ -5,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"strconv"
@@ -94,8 +100,8 @@ func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 	}
-	if rate := p.config.analyticsRate; rate > 0 {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	if !math.IsNaN(p.config.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
 	span.SetTag("out.network", p.network)

@@ -1,8 +1,14 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 // Package chi provides tracing functions for tracing the go-chi/chi package (https://github.com/go-chi/chi).
 package chi // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi"
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -29,7 +35,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				tracer.Tag(ext.HTTPMethod, r.Method),
 				tracer.Tag(ext.HTTPURL, r.URL.Path),
 			}
-			if cfg.analyticsRate > 0 {
+			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {

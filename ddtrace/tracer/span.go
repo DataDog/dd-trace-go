@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 //go:generate msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 
 package tracer
@@ -12,10 +17,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tinylib/msgp/msgp"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+
+	"github.com/tinylib/msgp/msgp"
+	"golang.org/x/xerrors"
 )
 
 type (
@@ -60,6 +66,7 @@ type span struct {
 
 	finished bool         `msg:"-"` // true if the span has been submitted to a tracer.
 	context  *spanContext `msg:"-"` // span propagation context
+  taskEnd  func()       // ends execution tracer (runtime/trace) task, if started
 	errCfg   *errorConfig `msg:"-"` // configuration for errors tracing
 }
 
@@ -139,6 +146,13 @@ func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 			} else {
 				s.Meta[ext.ErrorStack] = takeStacktrace(cfg.stackFrames, cfg.stackSkip)
 			}
+		}
+		switch v.(type) {
+		case xerrors.Formatter:
+			s.Meta[ext.ErrorDetails] = fmt.Sprintf("%+v", v)
+		case fmt.Formatter:
+			// pkg/errors approach
+			s.Meta[ext.ErrorDetails] = fmt.Sprintf("%+v", v)
 		}
 	case nil:
 		// no error
@@ -259,6 +273,9 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 			stackSkip:    cfg.SkipStackFrames,
 		})
 		s.Unlock()
+	}
+	if s.taskEnd != nil {
+		s.taskEnd()
 	}
 	s.finish(t)
 }

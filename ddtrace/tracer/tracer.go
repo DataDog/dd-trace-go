@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 package tracer
 
 import (
@@ -217,7 +222,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		TraceID:  id,
 		ParentID: 0,
 		Start:    startTime,
-		errCfg: &errorConfig{
+		taskEnd:  startExecutionTracerTask(operationName),
+    errCfg: &errorConfig{
 			stackFrames: t.config.stackFrames,
 			stackSkip:   t.config.skipFrames,
 		},

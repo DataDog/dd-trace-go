@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 package elastic
 
 import (
@@ -41,6 +46,42 @@ func TestClientV5(t *testing.T) {
 		elasticv5.SetHttpClient(tc),
 		elasticv5.SetSniff(false),
 		elasticv5.SetHealthcheck(false),
+	)
+	assert.NoError(err)
+
+	_, err = client.Index().
+		Index("twitter").Id("1").
+		Type("tweet").
+		BodyString(`{"user": "test", "message": "hello"}`).
+		Do(context.TODO())
+	assert.NoError(err)
+	checkPUTTrace(assert, mt)
+
+	mt.Reset()
+	_, err = client.Get().Index("twitter").Type("tweet").
+		Id("1").Do(context.TODO())
+	assert.NoError(err)
+	checkGETTrace(assert, mt)
+
+	mt.Reset()
+	_, err = client.Get().Index("not-real-index").
+		Id("1").Do(context.TODO())
+	assert.Error(err)
+	checkErrTrace(assert, mt)
+}
+
+func TestClientV5Gzip(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	tc := NewHTTPClient(WithServiceName("my-es-service"))
+	client, err := elasticv5.NewClient(
+		elasticv5.SetURL("http://127.0.0.1:9201"),
+		elasticv5.SetHttpClient(tc),
+		elasticv5.SetSniff(false),
+		elasticv5.SetHealthcheck(false),
+		elasticv5.SetGzip(true),
 	)
 	assert.NoError(err)
 
@@ -271,6 +312,57 @@ func TestQuantize(t *testing.T) {
 	}
 }
 
+func TestResourceNamerSettings(t *testing.T) {
+	staticName := "static resource name"
+	staticNamer := func(url, method string) string {
+		return staticName
+	}
+
+	t.Run("default", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		tc := NewHTTPClient()
+		client, err := elasticv5.NewClient(
+			elasticv5.SetURL("http://127.0.0.1:9200"),
+			elasticv5.SetHttpClient(tc),
+			elasticv5.SetSniff(false),
+			elasticv5.SetHealthcheck(false),
+		)
+		assert.NoError(t, err)
+
+		_, err = client.Get().
+			Index("logs_2016_05/event/_search").
+			Type("tweet").
+			Id("1").Do(context.TODO())
+
+		span := mt.FinishedSpans()[0]
+		assert.Equal(t, "GET /logs_?_?/event/_search/tweet/?", span.Tag(ext.ResourceName))
+	})
+
+	t.Run("custom", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		tc := NewHTTPClient(WithResourceNamer(staticNamer))
+		client, err := elasticv5.NewClient(
+			elasticv5.SetURL("http://127.0.0.1:9200"),
+			elasticv5.SetHttpClient(tc),
+			elasticv5.SetSniff(false),
+			elasticv5.SetHealthcheck(false),
+		)
+		assert.NoError(t, err)
+
+		_, err = client.Get().
+			Index("logs_2016_05/event/_search").
+			Type("tweet").
+			Id("1").Do(context.TODO())
+
+		span := mt.FinishedSpans()[0]
+		assert.Equal(t, staticName, span.Tag(ext.ResourceName))
+	})
+}
+
 func TestPeek(t *testing.T) {
 	assert := assert.New(t)
 
@@ -331,7 +423,7 @@ func TestPeek(t *testing.T) {
 		if tt.txt != "" {
 			readcloser = ioutil.NopCloser(bytes.NewBufferString(tt.txt))
 		}
-		snip, rc, err := peek(readcloser, tt.max, tt.n)
+		snip, rc, err := peek(readcloser, "", tt.max, tt.n)
 		assert.Equal(tt.err, err)
 		assert.Equal(tt.snip, snip)
 

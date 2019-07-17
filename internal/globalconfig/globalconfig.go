@@ -1,10 +1,20 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 // Package globalconfig stores configuration which applies globally to both the tracer
 // and integrations.
 package globalconfig
 
-import "sync"
+import (
+	"math"
+	"sync"
+)
 
-var cfg = &config{}
+var cfg = &config{
+	analyticsRate: math.NaN(),
+}
 
 type config struct {
 	mu            sync.RWMutex

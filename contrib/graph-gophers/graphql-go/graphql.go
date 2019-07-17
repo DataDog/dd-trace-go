@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 // Package graphql provides functions to trace the graph-gophers/graphql-go package (https://github.com/graph-gophers/graphql-go).
 //
 // We use the tracing mechanism available in the
@@ -9,6 +14,7 @@ package graphql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/graph-gophers
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/graph-gophers/graphql-go/errors"
 	"github.com/graph-gophers/graphql-go/introspection"
@@ -38,7 +44,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlQuery, queryString),
 	}
-	if t.cfg.analyticsRate > 0 {
+	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.request", opts...)
@@ -64,7 +70,7 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 		tracer.Tag(tagGraphqlField, fieldName),
 		tracer.Tag(tagGraphqlType, typeName),
 	}
-	if t.cfg.analyticsRate > 0 {
+	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.field", opts...)

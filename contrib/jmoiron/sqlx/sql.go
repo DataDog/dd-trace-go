@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 // Package sqlx provides functions to trace the jmoiron/sqlx package (https://github.com/jmoiron/sqlx).
 // To enable tracing, first use one of the "Register*" functions to register the sql driver that
 // you will be using, then continue using the package as you normally would.

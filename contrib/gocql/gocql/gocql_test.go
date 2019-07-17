@@ -1,9 +1,15 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 package gocql
 
 import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"testing"
 
@@ -77,7 +83,7 @@ func TestErrorWrapper(t *testing.T) {
 
 	if iter.Host() != nil {
 		assert.Equal(span.Tag(ext.TargetPort), "9042")
-		assert.Equal(span.Tag(ext.TargetHost), "127.0.0.1")
+		assert.Equal(span.Tag(ext.TargetHost), iter.Host().HostID())
 		assert.Equal(span.Tag(ext.CassandraCluster), "datacenter1")
 	}
 }
@@ -116,13 +122,13 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
 	if iter.Host() != nil {
 		assert.Equal(childSpan.Tag(ext.TargetPort), "9042")
-		assert.Equal(childSpan.Tag(ext.TargetHost), "127.0.0.1")
+		assert.Equal(childSpan.Tag(ext.TargetHost), iter.Host().HostID())
 		assert.Equal(childSpan.Tag(ext.CassandraCluster), "datacenter1")
 	}
 }
 
 func TestAnalyticsSettings(t *testing.T) {
-	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...WrapOption) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate float64, opts ...WrapOption) {
 		cluster := newCassandraCluster()
 		session, err := cluster.CreateSession()
 		assert.Nil(t, err)
@@ -133,14 +139,16 @@ func TestAnalyticsSettings(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
 		s := spans[0]
-		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+		if !math.IsNaN(rate) {
+			assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+		}
 	}
 
 	t.Run("defaults", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, nil)
+		assertRate(t, mt, globalconfig.AnalyticsRate())
 	})
 
 	t.Run("global", func(t *testing.T) {
@@ -166,7 +174,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, nil, WithAnalytics(false))
+		assertRate(t, mt, math.NaN(), WithAnalytics(false))
 	})
 
 	t.Run("override", func(t *testing.T) {

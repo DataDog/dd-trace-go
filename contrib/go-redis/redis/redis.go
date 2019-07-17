@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 // Package redis provides tracing functions for tracing the go-redis/redis package (https://github.com/go-redis/redis).
 package redis
 
@@ -5,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -105,8 +111,8 @@ func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) 
 		tracer.Tag(ext.TargetPort, p.port),
 		tracer.Tag("out.db", p.db),
 	}
-	if rate := p.config.analyticsRate; rate > 0 {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	if !math.IsNaN(p.config.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
 	cmds, err := c.Pipeliner.Exec()

@@ -1,6 +1,12 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 package kafka
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,7 +16,7 @@ import (
 func TestAnalyticsSettings(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		cfg := newConfig()
-		assert.Equal(t, 0.0, cfg.analyticsRate)
+		assert.True(t, math.IsNaN(cfg.analyticsRate))
 	})
 
 	t.Run("global", func(t *testing.T) {

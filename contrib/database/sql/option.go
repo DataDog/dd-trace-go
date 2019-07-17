@@ -1,37 +1,70 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 package sql
 
-type registerConfig struct {
+import (
+	"math"
+)
+
+type config struct {
 	serviceName   string
 	analyticsRate float64
+	dsn           string
 }
 
-// RegisterOption represents an option that can be passed to Register.
-type RegisterOption func(*registerConfig)
+// Option represents an option that can be passed to Register, Open or OpenDB.
+type Option func(*config)
 
-func defaults(cfg *registerConfig) {
+type registerConfig = config
+
+// RegisterOption has been deprecated in favor of Option.
+type RegisterOption = Option
+
+func defaults(cfg *config) {
 	// default cfg.serviceName set in Register based on driver name
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
+	cfg.analyticsRate = math.NaN()
 }
 
-// WithServiceName sets the given service name for the registered driver.
-func WithServiceName(name string) RegisterOption {
-	return func(cfg *registerConfig) {
+// WithServiceName sets the given service name when registering a driver,
+// or opening a database connection.
+func WithServiceName(name string) Option {
+	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) RegisterOption {
-	if on {
-		return WithAnalyticsRate(1.0)
+func WithAnalytics(on bool) Option {
+	return func(cfg *config) {
+		if on {
+			cfg.analyticsRate = 1.0
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
 	}
-	return WithAnalyticsRate(0.0)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) RegisterOption {
-	return func(cfg *registerConfig) {
-		cfg.analyticsRate = rate
+func WithAnalyticsRate(rate float64) Option {
+	return func(cfg *config) {
+		if rate >= 0.0 && rate <= 1.0 {
+			cfg.analyticsRate = rate
+		} else {
+			cfg.analyticsRate = math.NaN()
+		}
+	}
+}
+
+// WithDSN allows the data source name (DSN) to be provided when
+// using OpenDB and a driver.Connector.
+// The value is used to automatically set tags on spans.
+func WithDSN(name string) Option {
+	return func(cfg *config) {
+		cfg.dsn = name
 	}
 }

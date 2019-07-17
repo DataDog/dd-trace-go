@@ -1,7 +1,13 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 package buntdb
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -91,7 +97,7 @@ func (tx *Tx) startSpan(name string) ddtrace.Span {
 		tracer.ServiceName(tx.cfg.serviceName),
 		tracer.ResourceName(name),
 	}
-	if tx.cfg.analyticsRate > 0 {
+	if !math.IsNaN(tx.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tx.cfg.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(tx.cfg.ctx, "buntdb.query", opts...)

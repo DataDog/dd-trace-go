@@ -1,6 +1,12 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 package tracer
 
 import (
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -151,16 +157,23 @@ func WithHTTPRoundTripper(r http.RoundTripper) StartOption {
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
 // for integrations.
 func WithAnalytics(on bool) StartOption {
-	if on {
-		return WithAnalyticsRate(1.0)
+	return func(cfg *config) {
+		if on {
+			globalconfig.SetAnalyticsRate(1.0)
+		} else {
+			globalconfig.SetAnalyticsRate(math.NaN())
+		}
 	}
-	return WithAnalyticsRate(0.0)
 }
 
 // WithAnalyticsRate sets the global sampling rate for sampling APM events.
 func WithAnalyticsRate(rate float64) StartOption {
 	return func(_ *config) {
-		globalconfig.SetAnalyticsRate(rate)
+		if rate >= 0.0 && rate <= 1.0 {
+			globalconfig.SetAnalyticsRate(rate)
+		} else {
+			globalconfig.SetAnalyticsRate(math.NaN())
+		}
 	}
 }
 

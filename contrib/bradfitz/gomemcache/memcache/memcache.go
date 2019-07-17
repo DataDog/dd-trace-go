@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 // Package memcache provides functions to trace the bradfitz/gomemcache package (https://github.com/bradfitz/gomemcache).
 //
 // `WrapClient` will wrap a memcache `Client` and return a new struct with all
@@ -8,6 +13,7 @@ package memcache // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/bradfitz/gom
 
 import (
 	"context"
+	"math"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -61,8 +67,8 @@ func (c *Client) startSpan(resourceName string) ddtrace.Span {
 		tracer.ServiceName(c.cfg.serviceName),
 		tracer.ResourceName(resourceName),
 	}
-	if rate := c.cfg.analyticsRate; rate > 0 {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+	if !math.IsNaN(c.cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, c.cfg.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(c.context, operationName, opts...)
 	return span
