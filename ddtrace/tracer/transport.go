@@ -6,11 +6,13 @@
 package tracer
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -90,6 +92,13 @@ func newHTTPTransport(addr string, roundTripper http.RoundTripper) *httpTranspor
 		"Datadog-Meta-Tracer-Version":   version.Tag,
 		"Content-Type":                  "application/msgpack",
 	}
+	f, err := os.Open("/proc/self/cgroup")
+	if err == nil {
+		if id, ok := readContainerID(f); ok {
+			defaultHeaders["Datadog-Container-ID"] = id
+		}
+		f.Close()
+	}
 	return &httpTransport{
 		traceURL: fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(addr)),
 		client: &http.Client{
@@ -98,6 +107,29 @@ func newHTTPTransport(addr string, roundTripper http.RoundTripper) *httpTranspor
 		},
 		headers: defaultHeaders,
 	}
+}
+
+var (
+	// expLine matches a line in the /proc/self/cgroup file. It has a submatch for the last element (path), which contains the container ID.
+	expLine = regexp.MustCompile(`^\d+:[^:]*:(.+)$`)
+	// expContainerID matches contained IDs and sources. Source: https://github.com/Qard/container-info/blob/master/index.js
+	expContainerID = regexp.MustCompile(`([0-9a-f]{8}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{12}|[0-9a-f]{64})(?:.scope)?$`)
+)
+
+// readContainerID finds the first container ID reading from r and returns it.
+func readContainerID(r io.Reader) (id string, ok bool) {
+	scn := bufio.NewScanner(r)
+	for scn.Scan() {
+		path := expLine.FindStringSubmatch(scn.Text())
+		if len(path) != 2 {
+			// invalid entry, continue
+			continue
+		}
+		if id := expContainerID.FindString(path[1]); id != "" {
+			return id, true
+		}
+	}
+	return "", false
 }
 
 func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
