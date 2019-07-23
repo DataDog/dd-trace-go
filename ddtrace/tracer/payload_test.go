@@ -18,12 +18,11 @@ import (
 
 var fixedTime = now()
 
-func newSpanList(count int) spanList {
-	n := count%5 + 1 // max trace size 5
+func newSpanList(n int) spanList {
 	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
 	list := make([]*span, n)
 	for i := 0; i < n; i++ {
-		list[i] = newBasicSpan("span.list." + itoa[i])
+		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
 		list[i].Start = fixedTime
 	}
 	return list
@@ -41,7 +40,7 @@ func TestPayloadIntegrity(t *testing.T) {
 			p.reset()
 			lists := make(spanLists, n)
 			for i := 0; i < n; i++ {
-				list := newSpanList(i)
+				list := newSpanList(i%5 + 1)
 				lists[i] = list
 				p.push(list)
 			}
@@ -67,7 +66,7 @@ func TestPayloadDecode(t *testing.T) {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			p.reset()
 			for i := 0; i < n; i++ {
-				p.push(newSpanList(i))
+				p.push(newSpanList(i%5 + 1))
 			}
 			var got spanLists
 			err := msgp.Decode(p, &got)
