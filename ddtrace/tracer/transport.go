@@ -133,7 +133,6 @@ func readContainerID(r io.Reader) (id string, ok bool) {
 }
 
 func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
-	// prepare the client and send the payload
 	req, err := http.NewRequest("POST", t.traceURL, p)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %v", err)
@@ -147,6 +146,7 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	if err != nil {
 		return nil, err
 	}
+	p.waitClose()
 	if code := response.StatusCode; code >= 400 {
 		// error, check the body for context information and
 		// return a nice error.

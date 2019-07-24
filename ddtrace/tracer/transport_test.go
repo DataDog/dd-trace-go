@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -269,4 +271,38 @@ func TestCustomTransport(t *testing.T) {
 
 	// make sure our custom round tripper was used
 	assert.Len(customRoundTripper.reqs, 1)
+}
+
+// TestTransportHTTPRace defines a regression tests where the request body was being
+// read even after http.Client.Do returns. See golang/go#33244
+func TestTransportHTTPRace(t *testing.T) {
+	srv := http.Server{
+		Addr: "127.0.0.1:8889",
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body.Read(make([]byte, 4096))
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+		}),
+	}
+	done := make(chan struct{})
+	go func() {
+		srv.ListenAndServe()
+		done <- struct{}{}
+	}()
+	trans := &httpTransport{
+		traceURL: "http://127.0.0.1:8889/",
+		client:   &http.Client{},
+	}
+	p := newPayload()
+	spanList := newSpanList(50)
+	for i := 0; i < 100; i++ {
+		for j := 0; j < 100; j++ {
+			p.push(spanList)
+		}
+		trans.send(p)
+		p.reset()
+	}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancelFunc()
+	srv.Shutdown(ctx)
+	<-done
 }
