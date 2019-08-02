@@ -8,16 +8,19 @@ package gin
 import (
 	"math"
 
+	"github.com/gin-gonic/gin"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type config struct {
 	analyticsRate float64
+	resourceNamer func(c *gin.Context) string
 }
 
 func newConfig() *config {
 	return &config{
 		analyticsRate: globalconfig.AnalyticsRate(),
+		resourceNamer: handlerResourceName,
 	}
 }
 
@@ -45,4 +48,16 @@ func WithAnalyticsRate(rate float64) Option {
 			cfg.analyticsRate = math.NaN()
 		}
 	}
+}
+
+// WithResourceNamer specifies a function which will be used to obtain a resource name for a given
+// gin request, using the request's context.
+func WithResourceNamer(namer func(c *gin.Context) string) Option {
+	return func(cfg *config) {
+		cfg.resourceNamer = namer
+	}
+}
+
+func handlerResourceName(c *gin.Context) string {
+	return c.HandlerName()
 }

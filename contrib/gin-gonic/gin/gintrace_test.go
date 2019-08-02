@@ -291,3 +291,50 @@ func TestAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
 }
+
+func TestResourceNamerSettings(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	urlNamer := func(c *gin.Context) string {
+		return c.Request.URL.Path
+	}
+
+	t.Run("default", func(t *testing.T) {
+		defer mt.Reset()
+
+		router := gin.New()
+		router.Use(Middleware("foobar"))
+
+		router.GET("/test", func(c *gin.Context) {
+			span, ok := tracer.SpanFromContext(c.Request.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ResourceName), "foobar")
+		})
+
+		r := httptest.NewRequest("GET", "/test", nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, r)
+	})
+
+	t.Run("custom", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(Middleware("foobar", WithResourceNamer(urlNamer)))
+
+		router.GET("/test", func(c *gin.Context) {
+			span, ok := tracer.SpanFromContext(c.Request.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ResourceName), "/test")
+		})
+
+		r := httptest.NewRequest("GET", "/test", nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, r)
+	})
+}
