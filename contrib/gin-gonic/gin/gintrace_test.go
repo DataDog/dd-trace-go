@@ -310,7 +310,7 @@ func TestResourceNamerSettings(t *testing.T) {
 		router.GET("/test", func(c *gin.Context) {
 			span, ok := tracer.SpanFromContext(c.Request.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ResourceName), "foobar")
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ResourceName), c.HandlerName())
 		})
 
 		r := httptest.NewRequest("GET", "/test", nil)
