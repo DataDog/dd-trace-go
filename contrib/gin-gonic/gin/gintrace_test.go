@@ -297,8 +297,9 @@ func TestResourceNamerSettings(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	urlNamer := func(c *gin.Context) string {
-		return c.Request.URL.Path
+	staticName := "foo"
+	staticNamer := func(c *gin.Context) string {
+		return staticName
 	}
 
 	t.Run("default", func(t *testing.T) {
@@ -324,7 +325,26 @@ func TestResourceNamerSettings(t *testing.T) {
 		defer mt.Stop()
 
 		router := gin.New()
-		router.Use(Middleware("foobar", WithResourceNamer(urlNamer)))
+		router.Use(Middleware("foobar", WithResourceNamer(staticNamer)))
+
+		router.GET("/test", func(c *gin.Context) {
+			span, ok := tracer.SpanFromContext(c.Request.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ResourceName), staticName)
+		})
+
+		r := httptest.NewRequest("GET", "/test", nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, r)
+	})
+
+	t.Run("custom - URLPathResourceNamer", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(Middleware("foobar", WithResourceNamer(URLPathResourceNamer)))
 
 		router.GET("/test", func(c *gin.Context) {
 			span, ok := tracer.SpanFromContext(c.Request.Context())
