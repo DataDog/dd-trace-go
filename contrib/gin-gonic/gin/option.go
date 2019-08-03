@@ -58,7 +58,8 @@ func WithResourceNamer(namer func(c *gin.Context) string) Option {
 	}
 }
 
-// Function for WithResourceNamer that returns the request URL path as the resource name
+// URLPathResourceNamer can be used for WithResourceNamer and returns the
+// request URL path as the resource name
 func URLPathResourceNamer(c *gin.Context) string {
 	return c.Request.URL.Path
 }
