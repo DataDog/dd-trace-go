@@ -20,7 +20,7 @@ type config struct {
 func newConfig() *config {
 	return &config{
 		analyticsRate: globalconfig.AnalyticsRate(),
-		resourceNamer: handlerResourceName,
+		resourceNamer: defaultResourceNamer,
 	}
 }
 
@@ -58,12 +58,6 @@ func WithResourceNamer(namer func(c *gin.Context) string) Option {
 	}
 }
 
-// URLPathResourceNamer can be used for WithResourceNamer and returns the
-// request URL path as the resource name
-func URLPathResourceNamer(c *gin.Context) string {
-	return c.Request.URL.Path
-}
-
-func handlerResourceName(c *gin.Context) string {
+func defaultResourceNamer(c *gin.Context) string {
 	return c.HandlerName()
 }
