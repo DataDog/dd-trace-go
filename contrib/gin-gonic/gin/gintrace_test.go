@@ -338,23 +338,4 @@ func TestResourceNamerSettings(t *testing.T) {
 
 		router.ServeHTTP(w, r)
 	})
-
-	t.Run("custom - URLPathResourceNamer", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		router := gin.New()
-		router.Use(Middleware("foobar", WithResourceNamer(URLPathResourceNamer)))
-
-		router.GET("/test", func(c *gin.Context) {
-			span, ok := tracer.SpanFromContext(c.Request.Context())
-			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ResourceName), "/test")
-		})
-
-		r := httptest.NewRequest("GET", "/test", nil)
-		w := httptest.NewRecorder()
-
-		router.ServeHTTP(w, r)
-	})
 }
