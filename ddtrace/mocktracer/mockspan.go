@@ -66,7 +66,10 @@ func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) 
 	} else {
 		s.startTime = cfg.StartTime
 	}
-	id := nextID()
+	id := cfg.SpanID
+	if id == 0 {
+		id = nextID()
+	}
 	s.context = &spanContext{spanID: id, traceID: id, span: s}
 	if ctx, ok := cfg.Parent.(*spanContext); ok {
 		if ctx.span != nil && s.tags[ext.ServiceName] == nil {
