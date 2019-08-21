@@ -133,6 +133,12 @@ type traceParams struct {
 	meta       map[string]string
 }
 
+// SpanTagContextKey is used if you want to set the span tag in a context.
+// You can set span tag in the  context like this:
+// context.WithValue(ctx, SpanTagContextKey, map[string]string{"tag_nane":"tag_value"})
+// db.QueryContext(ctx, stmt, ...)
+const SpanTagContextKey = struct{}{}
+
 // tryTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
 func (tp *traceParams) tryTrace(ctx context.Context, resource string, query string, startTime time.Time, err error) {
 	if err == driver.ErrSkip {
@@ -158,6 +164,12 @@ func (tp *traceParams) tryTrace(ctx context.Context, resource string, query stri
 	span.SetTag(ext.ResourceName, resource)
 	for k, v := range tp.meta {
 		span.SetTag(k, v)
+	}
+	ctxMeta := ctx.Value(SpanTagContextKey)
+	if meta, ok := ctxMeta.(map[string]string); ok {
+		for k, v := range meta {
+			span.SetTag(k, v)
+		}
 	}
 	span.Finish(tracer.WithError(err))
 }
