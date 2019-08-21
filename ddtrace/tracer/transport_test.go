@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -26,6 +28,35 @@ var integration bool
 func TestMain(m *testing.M) {
 	_, integration = os.LookupEnv("INTEGRATION")
 	os.Exit(m.Run())
+}
+
+func TestReadContainerID(t *testing.T) {
+	for in, out := range map[string]string{
+		`other_line
+10:hugetlb:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa
+9:cpuset:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa
+8:pids:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa
+7:freezer:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa
+6:cpu,cpuacct:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa
+5:perf_event:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa
+4:blkio:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa
+3:devices:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa
+2:net_cls,net_prio:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa`: "8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa",
+		"10:hugetlb:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa": "8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa",
+		"10:hugetlb:/kubepods": "",
+	} {
+		id, ok := readContainerID(strings.NewReader(in))
+		if id != out {
+			t.Fatalf("%q -> %q", in, out)
+		}
+		if out == "" {
+			if ok {
+				t.Fatalf("%q: got ok=true", in)
+			}
+		} else if !ok {
+			t.Fatalf("%q: got ok=false", in)
+		}
+	}
 }
 
 // getTestSpan returns a Span with different fields set
@@ -240,4 +271,38 @@ func TestCustomTransport(t *testing.T) {
 
 	// make sure our custom round tripper was used
 	assert.Len(customRoundTripper.reqs, 1)
+}
+
+// TestTransportHTTPRace defines a regression tests where the request body was being
+// read even after http.Client.Do returns. See golang/go#33244
+func TestTransportHTTPRace(t *testing.T) {
+	srv := http.Server{
+		Addr: "127.0.0.1:8889",
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body.Read(make([]byte, 4096))
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+		}),
+	}
+	done := make(chan struct{})
+	go func() {
+		srv.ListenAndServe()
+		done <- struct{}{}
+	}()
+	trans := &httpTransport{
+		traceURL: "http://127.0.0.1:8889/",
+		client:   &http.Client{},
+	}
+	p := newPayload()
+	spanList := newSpanList(50)
+	for i := 0; i < 100; i++ {
+		for j := 0; j < 100; j++ {
+			p.push(spanList)
+		}
+		trans.send(p)
+		p.reset()
+	}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancelFunc()
+	srv.Shutdown(ctx)
+	<-done
 }

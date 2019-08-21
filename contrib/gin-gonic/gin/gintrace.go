@@ -26,7 +26,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		opt(cfg)
 	}
 	return func(c *gin.Context) {
-		resource := c.HandlerName()
+		resource := cfg.resourceNamer(c)
 		opts := []ddtrace.StartSpanOption{
 			tracer.ServiceName(service),
 			tracer.ResourceName(resource),
