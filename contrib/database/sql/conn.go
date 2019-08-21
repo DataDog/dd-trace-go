@@ -140,7 +140,7 @@ const spanTagsKey contextKey = 0 // map[string]string
 // WithSpanTags is used if you want to set the span tag in a context.
 // You can set span tag in the context like this
 //
-// WithSpanTags(ctx, map[string]string{"tag_nane":"tag_value"})
+// ctx = WithSpanTags(ctx, map[string]string{"tag_nane":"tag_value"})
 // db.QueryContext(ctx, stmt, ...)
 func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 	return context.WithValue(ctx, spanTagsKey, tags)
