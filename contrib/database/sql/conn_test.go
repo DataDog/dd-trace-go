@@ -7,58 +7,90 @@ package sql
 
 import (
 	"context"
+	"database/sql/driver"
+	"log"
 	"testing"
-	"time"
 
-	"github.com/google/go-cmp/cmp"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"github.com/go-sql-driver/mysql"
+	"github.com/lib/pq"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 func TestWithSpanTags(t *testing.T) {
+	type sqlRegister struct {
+		name   string
+		dsn    string
+		driver driver.Driver
+	}
+	type want struct {
+		opName  string
+		ctxTags map[string]string
+	}
+	testcases := []struct {
+		name        string
+		sqlRegister sqlRegister
+		want        want
+	}{
+		{
+			name: "mysql",
+			sqlRegister: sqlRegister{
+				name:   "mysql",
+				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
+				driver: &mysql.MySQLDriver{},
+			},
+			want: want{
+				opName: "mysql.query",
+				ctxTags: map[string]string{
+					"mysql_tag1": "mysql_value1",
+					"mysql_tag2": "mysql_value2",
+					"mysql_tag3": "mysql_value3",
+				},
+			},
+		},
+		{
+			name: "postgres",
+			sqlRegister: sqlRegister{
+				name:   "postgres",
+				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+				driver: &pq.Driver{},
+			},
+			want: want{
+				opName: "postgres.query",
+				ctxTags: map[string]string{
+					"pg_tag1": "pg_value1",
+					"pg_tag2": "pg_value2",
+				},
+			},
+		},
+	}
 	mt := mocktracer.Start()
 	defer mt.Stop()
+	for _, tt := range testcases {
+		t.Run(tt.name, func(t *testing.T) {
+			Register(tt.sqlRegister.name, tt.sqlRegister.driver)
+			db, err := Open(tt.sqlRegister.name, tt.sqlRegister.dsn)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
+			mt.Reset()
 
-	// set tags
-	ctxTags := map[string]string{
-		"ctx_tag1": "value1",
-		"ctx_tag2": "value2",
-		"ctx_tag3": "value3",
-	}
-	ctx := WithSpanTags(context.Background(), ctxTags)
-	query := "SELECT 1"
-	startTime := time.Date(2019, 1, 1, 1, 0, 0, 0, time.UTC)
+			ctx := WithSpanTags(context.Background(), tt.want.ctxTags)
 
-	tp := &traceParams{
-		cfg: &config{
-			serviceName: "mysql",
-		},
-		driverName: "mysql",
-	}
+			rows, err := db.QueryContext(ctx, "SELECT 1")
+			require.NoError(t, err)
+			rows.Close()
 
-	// try trace
-	tp.tryTrace(ctx, ext.SQLType, query, startTime, nil)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
 
-	// check span
-	spans := mt.FinishedSpans()
-	if len(spans) != 1 {
-		t.Fatalf("unexpected span size: %d", len(spans))
-	}
-	tags := spans[0].Tags()
-	if len(tags) == 0 {
-		t.Fatalf("unexpected tags size: %d", len(tags))
-	}
-
-	want := map[string]interface{}{
-		"resource.name": "SELECT 1",
-		"ctx_tag1":      "value1",
-		"ctx_tag2":      "value2",
-		"ctx_tag3":      "value3",
-		"service.name":  "mysql",
-		"span.type":     "sql",
-		"_dd1.sr.eausr": 0.000000, // for analysis
-	}
-	if diff := cmp.Diff(want, tags); diff != "" {
-		t.Errorf("failed (-want, +got):\n%v", diff)
+			span := spans[0]
+			require.Equal(t, tt.want.opName, span.OperationName())
+			for k, v := range tt.want.ctxTags {
+				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)
+			}
+		})
 	}
 }
