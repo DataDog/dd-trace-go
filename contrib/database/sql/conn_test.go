@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Code-Hex/dd-trace-go/ddtrace/ext"
-	"github.com/Code-Hex/dd-trace-go/ddtrace/mocktracer"
 	"github.com/google/go-cmp/cmp"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 func TestWithSpanTags(t *testing.T) {
