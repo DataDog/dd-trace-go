@@ -137,19 +137,10 @@ type contextKey int
 
 const spanTagsKey contextKey = 0 // map[string]string
 
-// WithSpanTags is used if you want to set the span tag in a context.
-// You can set span tag in the context like this
-//
-// ctx = WithSpanTags(ctx, map[string]string{"tag_nane":"tag_value"})
-// db.QueryContext(ctx, stmt, ...)
+// WithSpanTags creates a new context containing the given set of tags. They will be added
+// to any query created with the returned context.
 func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 	return context.WithValue(ctx, spanTagsKey, tags)
-}
-
-// SpanTagsFromContext is used if you want to get the span tags from a context.
-func SpanTagsFromContext(ctx context.Context) (map[string]string, bool) {
-	tags, ok := ctx.Value(spanTagsKey).(map[string]string)
-	return tags, ok
 }
 
 // tryTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
@@ -178,7 +169,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, resource string, query stri
 	for k, v := range tp.meta {
 		span.SetTag(k, v)
 	}
-	if meta, ok := SpanTagsFromContext(ctx); ok {
+	if meta, ok := ctx.Value(spanTagsKey).(map[string]string); ok {
 		for k, v := range meta {
 			span.SetTag(k, v)
 		}
