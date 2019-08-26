@@ -11,10 +11,11 @@ import (
 	"log"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 func TestWithSpanTags(t *testing.T) {
