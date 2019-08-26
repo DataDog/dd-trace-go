@@ -133,6 +133,16 @@ type traceParams struct {
 	meta       map[string]string
 }
 
+type contextKey int
+
+const spanTagsKey contextKey = 0 // map[string]string
+
+// WithSpanTags creates a new context containing the given set of tags. They will be added
+// to any query created with the returned context.
+func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
+	return context.WithValue(ctx, spanTagsKey, tags)
+}
+
 // tryTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
 func (tp *traceParams) tryTrace(ctx context.Context, resource string, query string, startTime time.Time, err error) {
 	if err == driver.ErrSkip {
@@ -158,6 +168,11 @@ func (tp *traceParams) tryTrace(ctx context.Context, resource string, query stri
 	span.SetTag(ext.ResourceName, resource)
 	for k, v := range tp.meta {
 		span.SetTag(k, v)
+	}
+	if meta, ok := ctx.Value(spanTagsKey).(map[string]string); ok {
+		for k, v := range meta {
+			span.SetTag(k, v)
+		}
 	}
 	span.Finish(tracer.WithError(err))
 }
