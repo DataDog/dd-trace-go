@@ -23,6 +23,7 @@ func TestWithSpanTags(t *testing.T) {
 		name   string
 		dsn    string
 		driver driver.Driver
+		opts   []RegisterOption
 	}
 	type want struct {
 		opName  string
@@ -39,6 +40,7 @@ func TestWithSpanTags(t *testing.T) {
 				name:   "mysql",
 				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
 				driver: &mysql.MySQLDriver{},
+				opts:   []RegisterOption{},
 			},
 			want: want{
 				opName: "mysql.query",
@@ -55,6 +57,10 @@ func TestWithSpanTags(t *testing.T) {
 				name:   "postgres",
 				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
 				driver: &pq.Driver{},
+				opts: []RegisterOption{
+					WithServiceName("postgres-test"),
+					WithAnalyticsRate(0.2),
+				},
 			},
 			want: want{
 				opName: "postgres.query",
@@ -69,7 +75,7 @@ func TestWithSpanTags(t *testing.T) {
 	defer mt.Stop()
 	for _, tt := range testcases {
 		t.Run(tt.name, func(t *testing.T) {
-			Register(tt.sqlRegister.name, tt.sqlRegister.driver)
+			Register(tt.sqlRegister.name, tt.sqlRegister.driver, tt.sqlRegister.opts...)
 			db, err := Open(tt.sqlRegister.name, tt.sqlRegister.dsn)
 			if err != nil {
 				log.Fatal(err)
