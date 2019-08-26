@@ -176,3 +176,11 @@ func TestSpanFinish(t *testing.T) {
 	assert.True(s.FinishTime().Before(time.Now()))
 	assert.Equal(want, s.Tag(ext.Error))
 }
+
+func TestSpanWithID(t *testing.T) {
+	spanID := uint64(123456789)
+	span := new(mocktracer).StartSpan("", tracer.WithSpanID(spanID))
+
+	assert := assert.New(t)
+	assert.Equal(spanID, span.Context().SpanID())
+}
