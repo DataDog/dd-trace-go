@@ -8,8 +8,8 @@ package sql
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gotest.tools/assert"
 )
 
 func TestAnalyticsSettings(t *testing.T) {

@@ -14,7 +14,6 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
@@ -80,14 +79,14 @@ func TestWithSpanTags(t *testing.T) {
 			ctx := WithSpanTags(context.Background(), tt.want.ctxTags)
 
 			rows, err := db.QueryContext(ctx, "SELECT 1")
-			require.NoError(t, err)
+			assert.NoError(t, err)
 			rows.Close()
 
 			spans := mt.FinishedSpans()
-			require.Len(t, spans, 1)
+			assert.Len(t, spans, 1)
 
 			span := spans[0]
-			require.Equal(t, tt.want.opName, span.OperationName())
+			assert.Equal(t, tt.want.opName, span.OperationName())
 			for k, v := range tt.want.ctxTags {
 				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
