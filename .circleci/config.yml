@@ -86,12 +86,21 @@ jobs:
           git clone --branch v6.15.3
           https://github.com/go-redis/redis
           contrib/go-redis/redis/vendor/github.com/go-redis/redis
+
     - run:
         name: Fetching dependencies
         command: |
           go get -v -t ./...
           go get -v -u golang.org/x/lint/golint
           go get -v -u github.com/alecthomas/gometalinter
+
+    - run:
+        name: Vendor klog v0.4.0
+        # Temporary, until kubernetes/client-go#656 gets resolved.
+        command: >
+          git clone --branch v0.4.0
+          https://github.com/kubernetes/klog
+          $GOPATH/src/k8s.io/client-go/vendor/k8s.io/klog
 
     - run:
         name: Wait for MySQL
