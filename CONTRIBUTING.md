@@ -13,5 +13,5 @@ Prepare context, which was wrong.
 
 Fixes #113
 ```
-Please apply the same logic for Pull Requests, start with the package name, followed by a colon and a description of the change, just like
+Please apply the same logic for Pull Requests and Issues: start with the package name, followed by a colon and a description of the change, just like
 the official [Go language](https://github.com/golang/go/pulls).
