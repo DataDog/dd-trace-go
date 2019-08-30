@@ -115,7 +115,7 @@ type syncProducer struct {
 func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
 	span := startProducerSpan(p.cfg, p.version, msg)
 	partition, offset, err = p.SyncProducer.SendMessage(msg)
-	finishProducerSpan(span, partition, offset, err)
+	finishProducerSpan(span, &producerSpanTag{Partition: partition, Offset: offset}, err)
 	return partition, offset, err
 }
 
@@ -129,7 +129,7 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	}
 	err := p.SyncProducer.SendMessages(msgs)
 	for i, span := range spans {
-		finishProducerSpan(span, msgs[i].Partition, msgs[i].Offset, err)
+		finishProducerSpan(span, &producerSpanTag{Partition: msgs[i].Partition, Offset: msgs[i].Offset}, err)
 	}
 	return err
 }
@@ -193,37 +193,34 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 		errors:        make(chan *sarama.ProducerError),
 	}
 	go func() {
-		type spanKey struct {
-			topic     string
-			partition int32
-			offset    int64
-		}
-		spans := make(map[spanKey]ddtrace.Span)
+		spans := make(map[uint64]ddtrace.Span)
 		defer close(wrapped.successes)
 		defer close(wrapped.errors)
 		for {
 			select {
 			case msg := <-wrapped.input:
-				key := spanKey{msg.Topic, msg.Partition, msg.Offset}
 				span := startProducerSpan(cfg, saramaConfig.Version, msg)
 				p.Input() <- msg
 				if saramaConfig.Producer.Return.Successes {
-					spans[key] = span
+					spanID := span.Context().SpanID()
+					spans[spanID] = span
 				} else {
 					// if returning successes isn't enabled, we just finish the
 					// span right away because there's no way to know when it will
 					// be done
-					finishProducerSpan(span, key.partition, key.offset, nil)
+					finishProducerSpan(span, nil, nil)
 				}
 			case msg, ok := <-p.Successes():
 				if !ok {
 					// producer was closed, so exit
 					return
 				}
-				key := spanKey{msg.Topic, msg.Partition, msg.Offset}
-				if span, ok := spans[key]; ok {
-					delete(spans, key)
-					finishProducerSpan(span, msg.Partition, msg.Offset, nil)
+				if spanctx, spanFound := getSpanContext(msg); spanFound {
+					spanID := spanctx.SpanID()
+					if span, ok := spans[spanID]; ok {
+						delete(spans, spanID)
+						finishProducerSpan(span, &producerSpanTag{Partition: msg.Partition, Offset: msg.Offset}, nil)
+					}
 				}
 				wrapped.successes <- msg
 			case err, ok := <-p.Errors():
@@ -231,10 +228,12 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 					// producer was closed
 					return
 				}
-				key := spanKey{err.Msg.Topic, err.Msg.Partition, err.Msg.Offset}
-				if span, ok := spans[key]; ok {
-					delete(spans, key)
-					finishProducerSpan(span, err.Msg.Partition, err.Msg.Offset, err.Err)
+				if spanctx, spanFound := getSpanContext(err.Msg); spanFound {
+					spanID := spanctx.SpanID()
+					if span, ok := spans[spanID]; ok {
+						delete(spans, spanID)
+						finishProducerSpan(span, nil, err.Err)
+					}
 				}
 				wrapped.errors <- err
 			}
@@ -265,8 +264,25 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 	return span
 }
 
-func finishProducerSpan(span ddtrace.Span, partition int32, offset int64, err error) {
-	span.SetTag("partition", partition)
-	span.SetTag("offset", offset)
+type producerSpanTag struct {
+	Partition int32
+	Offset    int64
+}
+
+func finishProducerSpan(span ddtrace.Span, tags *producerSpanTag, err error) {
+	if tags != nil {
+		span.SetTag("partition", tags.Partition)
+		span.SetTag("offset", tags.Offset)
+	}
 	span.Finish(tracer.WithError(err))
+}
+
+func getSpanContext(msg *sarama.ProducerMessage) (ddtrace.SpanContext, bool) {
+	carrier := NewProducerMessageCarrier(msg)
+	spanctx, err := tracer.Extract(carrier)
+	if err != nil {
+		return nil, false
+	}
+
+	return spanctx, true
 }
