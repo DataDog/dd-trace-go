@@ -131,6 +131,10 @@ jobs:
         command: dockerize -wait tcp://localhost:9042 -timeout 2m
 
     - run:
+        name: Wait for Mongo
+        command: dockerize -wait tcp://localhost:27017 -timeout 1m
+
+    - run:
         name: Linting
         command: |
           gometalinter --disable-all --vendor --deadline=60s \

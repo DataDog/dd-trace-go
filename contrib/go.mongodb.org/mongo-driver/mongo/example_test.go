@@ -8,18 +8,19 @@ package mongo_test
 import (
 	"context"
 
-	"github.com/mongodb/mongo-go-driver/bson"
-	"github.com/mongodb/mongo-go-driver/mongo"
-	"github.com/mongodb/mongo-go-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 
-	mongotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/mongodb/mongo-go-driver/mongo"
+	mongotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go.mongodb.org/mongo-driver/mongo"
 )
 
 func Example() {
 	// connect to MongoDB
 	opts := options.Client()
-	opts.SetMonitor(mongotrace.NewMonitor())
-	client, err := mongo.Connect(context.Background(), "mongodb://localhost:27017", opts)
+	opts.Monitor = mongotrace.NewMonitor()
+	opts.ApplyURI("mongodb://localhost:27017")
+	client, err := mongo.Connect(context.Background(), opts)
 	if err != nil {
 		panic(err)
 	}

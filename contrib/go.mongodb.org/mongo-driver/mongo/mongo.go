@@ -20,8 +20,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
-	"github.com/mongodb/mongo-go-driver/bson"
-	"github.com/mongodb/mongo-go-driver/event"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/event"
 )
 
 type spanKey struct {
