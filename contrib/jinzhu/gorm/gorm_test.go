@@ -6,6 +6,7 @@
 package gorm
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -14,9 +15,14 @@ import (
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/jinzhu/gorm"
 	"github.com/lib/pq"
+	"github.com/stretchr/testify/assert"
 )
 
 // tableName holds the SQL table that these tests will be run against. It must be unique cross-repo.
@@ -80,4 +86,228 @@ func TestPostgres(t *testing.T) {
 		},
 	}
 	sqltest.RunAll(t, testConfig)
+}
+
+type Product struct {
+	gorm.Model
+	Code  string
+	Price uint
+}
+
+func TestAddContext(t *testing.T) {
+	assert := assert.New(t)
+	sqltrace.Register("postgres", &pq.Driver{})
+	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	db.AutoMigrate(&Product{})
+
+	s1, ctx1 := tracer.StartSpanFromContext(context.Background(), "http.request",
+		tracer.ServiceName("fake-http-server"),
+		tracer.SpanType(ext.SpanTypeWeb),
+	)
+	defer s1.Finish()
+	s2, ctx2 := tracer.StartSpanFromContext(context.Background(), "http.request",
+		tracer.ServiceName("fake-http-server"),
+		tracer.SpanType(ext.SpanTypeWeb),
+	)
+	defer s2.Finish()
+
+	db1 := AddContext(ctx1, db)
+	db2 := AddContext(ctx2, db)
+
+	_, ok := db.Get(gormContextKey)
+	assert.False(ok)
+	assert.NotEqual(db, db1)
+	assert.NotEqual(db, db2)
+
+	v1, ok := db1.Get(gormContextKey)
+	assert.True(ok)
+	assert.Equal(v1.(context.Context), ctx1)
+
+	v2, ok := db2.Get(gormContextKey)
+	assert.True(ok)
+	assert.Equal(v2.(context.Context), ctx2)
+}
+
+func TestCallbacks(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	sqltrace.Register("postgres", &pq.Driver{})
+	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	db.AutoMigrate(&Product{})
+
+	t.Run("create", func(t *testing.T) {
+		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
+			tracer.ServiceName("fake-http-server"),
+			tracer.SpanType(ext.SpanTypeWeb),
+		)
+
+		db = AddContext(ctx, db)
+		db.Create(&Product{Code: "L1212", Price: 1000})
+
+		parentSpan.Finish()
+
+		spans := mt.FinishedSpans()
+		assert.True(len(spans) >= 2)
+
+		span := spans[len(spans)-2]
+		assert.Equal(span.OperationName(), "gorm.create")
+		assert.Equal(span.Tag(ext.SpanType), ext.SpanTypeSQL)
+		assert.Equal(span.Tag(ext.ResourceName), "products")
+	})
+
+	t.Run("query", func(t *testing.T) {
+		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
+			tracer.ServiceName("fake-http-server"),
+			tracer.SpanType(ext.SpanTypeWeb),
+		)
+
+		db = AddContext(ctx, db)
+		var product Product
+		db.First(&product, "code = ?", "L1212")
+
+		parentSpan.Finish()
+
+		spans := mt.FinishedSpans()
+		assert.True(len(spans) >= 2)
+
+		span := spans[len(spans)-2]
+		assert.Equal(span.OperationName(), "gorm.query")
+		assert.Equal(span.Tag(ext.SpanType), ext.SpanTypeSQL)
+		assert.Equal(span.Tag(ext.ResourceName), "products")
+	})
+
+	t.Run("update", func(t *testing.T) {
+		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
+			tracer.ServiceName("fake-http-server"),
+			tracer.SpanType(ext.SpanTypeWeb),
+		)
+
+		db = AddContext(ctx, db)
+		var product Product
+		db.First(&product, "code = ?", "L1212")
+		db.Model(&product).Update("Price", 2000)
+
+		parentSpan.Finish()
+
+		spans := mt.FinishedSpans()
+		assert.True(len(spans) >= 2)
+
+		span := spans[len(spans)-2]
+		assert.Equal(span.OperationName(), "gorm.update")
+		assert.Equal(span.Tag(ext.SpanType), ext.SpanTypeSQL)
+		assert.Equal(span.Tag(ext.ResourceName), "products")
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
+			tracer.ServiceName("fake-http-server"),
+			tracer.SpanType(ext.SpanTypeWeb),
+		)
+
+		db = AddContext(ctx, db)
+		var product Product
+		db.First(&product, "code = ?", "L1212")
+		db.Delete(&product)
+
+		parentSpan.Finish()
+
+		spans := mt.FinishedSpans()
+		assert.True(len(spans) >= 2)
+
+		span := spans[len(spans)-2]
+		assert.Equal(span.OperationName(), "gorm.delete")
+		assert.Equal(span.Tag(ext.SpanType), ext.SpanTypeSQL)
+		assert.Equal(span.Tag(ext.ResourceName), "products")
+	})
+}
+
+func TestAnalyticsSettings(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	sqltrace.Register("postgres", &pq.Driver{})
+	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	db.AutoMigrate(&Product{})
+
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
+		db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable", opts...)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+		db.AutoMigrate(&Product{})
+
+		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
+			tracer.ServiceName("fake-http-server"),
+			tracer.SpanType(ext.SpanTypeWeb),
+		)
+
+		db = AddContext(ctx, db)
+		db.Create(&Product{Code: "L1212", Price: 1000})
+
+		parentSpan.Finish()
+
+		spans := mt.FinishedSpans()
+		assert.True(t, len(spans) > 2)
+		s := spans[len(spans)-2]
+		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil)
+	})
+
+	t.Run("global", func(t *testing.T) {
+		t.Skip("global flag disabled")
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.4)
+	})
+
+	t.Run("enabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 1.0, WithAnalytics(true))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil, WithAnalytics(false))
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	})
 }
