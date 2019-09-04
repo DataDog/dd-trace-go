@@ -8,7 +8,7 @@ package echo
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
-	"github.com/labstack/echo"
+	"github.com/labstack/echo/v4"
 )
 
 // To start tracing requests, add the trace middleware to your echo router.
