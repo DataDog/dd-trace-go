@@ -94,7 +94,7 @@ type Product struct {
 	Price uint
 }
 
-func TestAddContext(t *testing.T) {
+func TestWithContext(t *testing.T) {
 	assert := assert.New(t)
 	sqltrace.Register("postgres", &pq.Driver{})
 	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
@@ -115,8 +115,8 @@ func TestAddContext(t *testing.T) {
 	)
 	defer s2.Finish()
 
-	db1 := AddContext(ctx1, db)
-	db2 := AddContext(ctx2, db)
+	db1 := WithContext(ctx1, db)
+	db2 := WithContext(ctx2, db)
 
 	_, ok := db.Get(gormContextKey)
 	assert.False(ok)
@@ -151,7 +151,7 @@ func TestCallbacks(t *testing.T) {
 			tracer.SpanType(ext.SpanTypeWeb),
 		)
 
-		db = AddContext(ctx, db)
+		db = WithContext(ctx, db)
 		db.Create(&Product{Code: "L1212", Price: 1000})
 
 		parentSpan.Finish()
@@ -171,7 +171,7 @@ func TestCallbacks(t *testing.T) {
 			tracer.SpanType(ext.SpanTypeWeb),
 		)
 
-		db = AddContext(ctx, db)
+		db = WithContext(ctx, db)
 		var product Product
 		db.First(&product, "code = ?", "L1212")
 
@@ -192,7 +192,7 @@ func TestCallbacks(t *testing.T) {
 			tracer.SpanType(ext.SpanTypeWeb),
 		)
 
-		db = AddContext(ctx, db)
+		db = WithContext(ctx, db)
 		var product Product
 		db.First(&product, "code = ?", "L1212")
 		db.Model(&product).Update("Price", 2000)
@@ -214,7 +214,7 @@ func TestCallbacks(t *testing.T) {
 			tracer.SpanType(ext.SpanTypeWeb),
 		)
 
-		db = AddContext(ctx, db)
+		db = WithContext(ctx, db)
 		var product Product
 		db.First(&product, "code = ?", "L1212")
 		db.Delete(&product)
@@ -256,7 +256,7 @@ func TestAnalyticsSettings(t *testing.T) {
 			tracer.SpanType(ext.SpanTypeWeb),
 		)
 
-		db = AddContext(ctx, db)
+		db = WithContext(ctx, db)
 		db.Create(&Product{Code: "L1212", Price: 1000})
 
 		parentSpan.Finish()

@@ -41,6 +41,13 @@ func Open(dialect, source string, opts ...Option) (*gorm.DB, error) {
 		fn(cfg)
 	}
 
+	WithCallbacks(db)
+
+	return db.Set(gormConfigKey, cfg), err
+}
+
+// WithCallbacks registers callbacks to the gorm.DB for tracing.
+func WithCallbacks(db *gorm.DB) {
 	cb := db.Callback()
 	cb.Create().Before("dd-trace-go").Register("dd-trace-go:before_create", beforeFunc("gorm.create"))
 	cb.Create().After("dd-trace-go").Register("dd-trace-go:after_create", after)
@@ -52,11 +59,11 @@ func Open(dialect, source string, opts ...Option) (*gorm.DB, error) {
 	cb.Query().After("dd-trace-go").Register("dd-trace-go:after_query", after)
 	cb.RowQuery().Before("dd-trace-go").Register("dd-trace-go:before_row_query", beforeFunc("gorm.row_query"))
 	cb.RowQuery().After("dd-trace-go").Register("dd-trace-go:after_row_query", after)
-
-	return db.Set(gormConfigKey, cfg), err
 }
 
-func AddContext(ctx context.Context, db *gorm.DB) *gorm.DB {
+// WithContext returns a new gorm.DB with the context added
+// to its settings store.
+func WithContext(ctx context.Context, db *gorm.DB) *gorm.DB {
 	if ctx == nil {
 		return db
 	}
@@ -86,8 +93,7 @@ func before(scope *gorm.Scope, operationName string) {
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
-		tracer.ResourceName(scope.TableName()),
-		tracer.Tag(ext.DBStatement, scope.SQL),
+		tracer.ResourceName(scope.SQL),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
