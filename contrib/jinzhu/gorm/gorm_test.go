@@ -162,7 +162,8 @@ func TestCallbacks(t *testing.T) {
 		span := spans[len(spans)-2]
 		assert.Equal(span.OperationName(), "gorm.create")
 		assert.Equal(span.Tag(ext.SpanType), ext.SpanTypeSQL)
-		assert.Equal(span.Tag(ext.ResourceName), "products")
+		assert.Equal(span.Tag(ext.ResourceName),
+			`INSERT  INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`)
 	})
 
 	t.Run("query", func(t *testing.T) {
@@ -183,7 +184,9 @@ func TestCallbacks(t *testing.T) {
 		span := spans[len(spans)-2]
 		assert.Equal(span.OperationName(), "gorm.query")
 		assert.Equal(span.Tag(ext.SpanType), ext.SpanTypeSQL)
-		assert.Equal(span.Tag(ext.ResourceName), "products")
+		assert.Equal(span.Tag(ext.ResourceName),
+			`SELECT * FROM "products"  WHERE "products"."deleted_at" IS NULL AND ((code = $1)) ORDER BY "products"."id" ASC LIMIT 1`)
+
 	})
 
 	t.Run("update", func(t *testing.T) {
@@ -205,7 +208,8 @@ func TestCallbacks(t *testing.T) {
 		span := spans[len(spans)-2]
 		assert.Equal(span.OperationName(), "gorm.update")
 		assert.Equal(span.Tag(ext.SpanType), ext.SpanTypeSQL)
-		assert.Equal(span.Tag(ext.ResourceName), "products")
+		assert.Equal(span.Tag(ext.ResourceName),
+			`UPDATE "products" SET "price" = $1, "updated_at" = $2  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $3`)
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -227,7 +231,8 @@ func TestCallbacks(t *testing.T) {
 		span := spans[len(spans)-2]
 		assert.Equal(span.OperationName(), "gorm.delete")
 		assert.Equal(span.Tag(ext.SpanType), ext.SpanTypeSQL)
-		assert.Equal(span.Tag(ext.ResourceName), "products")
+		assert.Equal(span.Tag(ext.ResourceName),
+			`UPDATE "products" SET "deleted_at"=$1  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $2`)
 	})
 }
 
