@@ -41,6 +41,12 @@ func Open(dialect, source string, opts ...Option) (*gorm.DB, error) {
 
 // WithCallbacks registers callbacks to the gorm.DB for tracing.
 func WithCallbacks(db *gorm.DB, opts ...Option) *gorm.DB {
+	afterFunc := func(operationName string) func(*gorm.Scope) {
+		return func(scope *gorm.Scope) {
+			after(scope, operationName)
+		}
+	}
+
 	cb := db.Callback()
 	cb.Create().Before("gorm:before_create").Register("dd-trace-go:before_create", before)
 	cb.Create().After("gorm:after_create").Register("dd-trace-go:after_create", afterFunc("gorm.create"))
@@ -73,12 +79,6 @@ func WithContext(ctx context.Context, db *gorm.DB) *gorm.DB {
 
 func before(scope *gorm.Scope) {
 	scope.Set(gormSpanStartTimeKey, time.Now())
-}
-
-func afterFunc(operationName string) func(*gorm.Scope) {
-	return func(scope *gorm.Scope) {
-		after(scope, operationName)
-	}
 }
 
 func after(scope *gorm.Scope, operationName string) {
