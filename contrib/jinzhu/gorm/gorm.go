@@ -9,6 +9,7 @@ package gorm
 import (
 	"context"
 	"math"
+	"time"
 
 	sqltraced "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -19,8 +20,9 @@ import (
 )
 
 const (
-	gormContextKey = "dd-trace-go:context"
-	gormConfigKey  = "dd-trace-go:config"
+	gormContextKey       = "dd-trace-go:context"
+	gormConfigKey        = "dd-trace-go:config"
+	gormSpanStartTimeKey = "dd-trace-go:span"
 )
 
 // Open opens a new (traced) database connection. The used dialect must be formerly registered
@@ -40,16 +42,16 @@ func Open(dialect, source string, opts ...Option) (*gorm.DB, error) {
 // WithCallbacks registers callbacks to the gorm.DB for tracing.
 func WithCallbacks(db *gorm.DB, opts ...Option) *gorm.DB {
 	cb := db.Callback()
-	cb.Create().Before("dd-trace-go").Register("dd-trace-go:before_create", beforeFunc("gorm.create"))
-	cb.Create().After("dd-trace-go").Register("dd-trace-go:after_create", after)
-	cb.Update().Before("dd-trace-go").Register("dd-trace-go:before_update", beforeFunc("gorm.update"))
-	cb.Update().After("dd-trace-go").Register("dd-trace-go:after_update", after)
-	cb.Delete().Before("dd-trace-go").Register("dd-trace-go:before_delete", beforeFunc("gorm.delete"))
-	cb.Delete().After("dd-trace-go").Register("dd-trace-go:after_delete", after)
-	cb.Query().Before("dd-trace-go").Register("dd-trace-go:before_query", beforeFunc("gorm.query"))
-	cb.Query().After("dd-trace-go").Register("dd-trace-go:after_query", after)
-	cb.RowQuery().Before("dd-trace-go").Register("dd-trace-go:before_row_query", beforeFunc("gorm.row_query"))
-	cb.RowQuery().After("dd-trace-go").Register("dd-trace-go:after_row_query", after)
+	cb.Create().Before("gorm:before_create").Register("dd-trace-go:before_create", before)
+	cb.Create().After("gorm:after_create").Register("dd-trace-go:after_create", afterFunc("gorm.create"))
+	cb.Update().Before("gorm:before_update").Register("dd-trace-go:before_update", before)
+	cb.Update().After("gorm:after_update").Register("dd-trace-go:after_update", afterFunc("gorm.update"))
+	cb.Delete().Before("gorm:before_delete").Register("dd-trace-go:before_delete", before)
+	cb.Delete().After("gorm:after_delete").Register("dd-trace-go:after_delete", afterFunc("gorm.delete"))
+	cb.Query().Before("gorm:query").Register("dd-trace-go:before_query", before)
+	cb.Query().After("gorm:after_query").Register("dd-trace-go:after_query", afterFunc("gorm.query"))
+	cb.RowQuery().Before("gorm:row_query").Register("dd-trace-go:before_row_query", before)
+	cb.RowQuery().After("gorm:row_query").Register("dd-trace-go:after_row_query", afterFunc("gorm.row_query"))
 
 	cfg := new(config)
 	defaults(cfg)
@@ -69,26 +71,37 @@ func WithContext(ctx context.Context, db *gorm.DB) *gorm.DB {
 	return db
 }
 
-func beforeFunc(operationName string) func(*gorm.Scope) {
+func before(scope *gorm.Scope) {
+	scope.Set(gormSpanStartTimeKey, time.Now())
+}
+
+func afterFunc(operationName string) func(*gorm.Scope) {
 	return func(scope *gorm.Scope) {
-		before(scope, operationName)
+		after(scope, operationName)
 	}
 }
 
-func before(scope *gorm.Scope, operationName string) {
+func after(scope *gorm.Scope, operationName string) {
 	v, ok := scope.Get(gormContextKey)
 	if !ok {
 		return
 	}
 	ctx := v.(context.Context)
 
-	c, ok := scope.Get(gormConfigKey)
+	v, ok = scope.Get(gormConfigKey)
 	if !ok {
 		return
 	}
-	cfg := c.(*config)
+	cfg := v.(*config)
+
+	v, ok = scope.Get(gormSpanStartTimeKey)
+	if !ok {
+		return
+	}
+	t, ok := v.(time.Time)
 
 	opts := []ddtrace.StartSpanOption{
+		tracer.StartTime(t),
 		tracer.ServiceName(cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(scope.SQL),
@@ -96,21 +109,7 @@ func before(scope *gorm.Scope, operationName string) {
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	_, ctx = tracer.StartSpanFromContext(ctx, operationName, opts...)
-	scope.Set(gormContextKey, ctx)
-}
 
-func after(scope *gorm.Scope) {
-	v, ok := scope.Get(gormContextKey)
-	if !ok {
-		return
-	}
-	ctx := v.(context.Context)
-
-	span, ok := tracer.SpanFromContext(ctx)
-	if !ok {
-		return
-	}
-
+	span, _ := tracer.StartSpanFromContext(ctx, operationName, opts...)
 	span.Finish(tracer.WithError(scope.DB().Error))
 }

@@ -157,13 +157,14 @@ func TestCallbacks(t *testing.T) {
 		parentSpan.Finish()
 
 		spans := mt.FinishedSpans()
-		assert.True(len(spans) >= 2)
+		assert.True(len(spans) >= 3)
 
-		span := spans[len(spans)-2]
-		assert.Equal(span.OperationName(), "gorm.create")
-		assert.Equal(span.Tag(ext.SpanType), ext.SpanTypeSQL)
-		assert.Equal(span.Tag(ext.ResourceName),
-			`INSERT  INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`)
+		span := spans[len(spans)-3]
+		assert.Equal("gorm.create", span.OperationName())
+		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
+		assert.Equal(
+			`INSERT  INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
+			span.Tag(ext.ResourceName))
 	})
 
 	t.Run("query", func(t *testing.T) {
@@ -182,11 +183,11 @@ func TestCallbacks(t *testing.T) {
 		assert.True(len(spans) >= 2)
 
 		span := spans[len(spans)-2]
-		assert.Equal(span.OperationName(), "gorm.query")
-		assert.Equal(span.Tag(ext.SpanType), ext.SpanTypeSQL)
-		assert.Equal(span.Tag(ext.ResourceName),
-			`SELECT * FROM "products"  WHERE "products"."deleted_at" IS NULL AND ((code = $1)) ORDER BY "products"."id" ASC LIMIT 1`)
-
+		assert.Equal("gorm.query", span.OperationName())
+		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
+		assert.Equal(
+			`SELECT * FROM "products"  WHERE "products"."deleted_at" IS NULL AND ((code = $1)) ORDER BY "products"."id" ASC LIMIT 1`,
+			span.Tag(ext.ResourceName))
 	})
 
 	t.Run("update", func(t *testing.T) {
@@ -203,13 +204,14 @@ func TestCallbacks(t *testing.T) {
 		parentSpan.Finish()
 
 		spans := mt.FinishedSpans()
-		assert.True(len(spans) >= 2)
+		assert.True(len(spans) >= 3)
 
-		span := spans[len(spans)-2]
-		assert.Equal(span.OperationName(), "gorm.update")
-		assert.Equal(span.Tag(ext.SpanType), ext.SpanTypeSQL)
-		assert.Equal(span.Tag(ext.ResourceName),
-			`UPDATE "products" SET "price" = $1, "updated_at" = $2  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $3`)
+		span := spans[len(spans)-3]
+		assert.Equal("gorm.update", span.OperationName())
+		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
+		assert.Equal(
+			`UPDATE "products" SET "price" = $1, "updated_at" = $2  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $3`,
+			span.Tag(ext.ResourceName))
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -226,13 +228,14 @@ func TestCallbacks(t *testing.T) {
 		parentSpan.Finish()
 
 		spans := mt.FinishedSpans()
-		assert.True(len(spans) >= 2)
+		assert.True(len(spans) >= 3)
 
-		span := spans[len(spans)-2]
-		assert.Equal(span.OperationName(), "gorm.delete")
-		assert.Equal(span.Tag(ext.SpanType), ext.SpanTypeSQL)
-		assert.Equal(span.Tag(ext.ResourceName),
-			`UPDATE "products" SET "deleted_at"=$1  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $2`)
+		span := spans[len(spans)-3]
+		assert.Equal("gorm.delete", span.OperationName())
+		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
+		assert.Equal(
+			`UPDATE "products" SET "deleted_at"=$1  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $2`,
+			span.Tag(ext.ResourceName))
 	})
 }
 
@@ -267,8 +270,8 @@ func TestAnalyticsSettings(t *testing.T) {
 		parentSpan.Finish()
 
 		spans := mt.FinishedSpans()
-		assert.True(t, len(spans) > 2)
-		s := spans[len(spans)-2]
+		assert.True(t, len(spans) > 3)
+		s := spans[len(spans)-3]
 		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 	}
 
