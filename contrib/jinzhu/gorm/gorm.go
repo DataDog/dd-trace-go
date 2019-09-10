@@ -40,6 +40,9 @@ func Open(dialect, source string, opts ...Option) (*gorm.DB, error) {
 }
 
 // WithCallbacks registers callbacks to the gorm.DB for tracing.
+// It should be called once, after opening the db.
+// The callbacks are triggered by Create, Update, Delete,
+// Query and RowQuery operations.
 func WithCallbacks(db *gorm.DB, opts ...Option) *gorm.DB {
 	afterFunc := func(operationName string) func(*gorm.Scope) {
 		return func(scope *gorm.Scope) {
@@ -67,8 +70,9 @@ func WithCallbacks(db *gorm.DB, opts ...Option) *gorm.DB {
 	return db.Set(gormConfigKey, cfg)
 }
 
-// WithContext returns a new gorm.DB with the context added
-// to its settings store.
+// WithContext attaches the specified context to the given db. The context will
+// be used as a basis for creating new spans. An example use case is providing
+// a context which contains a span to be used as a parent.
 func WithContext(ctx context.Context, db *gorm.DB) *gorm.DB {
 	if ctx == nil {
 		return db

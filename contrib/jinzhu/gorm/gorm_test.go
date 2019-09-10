@@ -94,44 +94,6 @@ type Product struct {
 	Price uint
 }
 
-func TestWithContext(t *testing.T) {
-	assert := assert.New(t)
-	sqltrace.Register("postgres", &pq.Driver{})
-	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-	db.AutoMigrate(&Product{})
-
-	s1, ctx1 := tracer.StartSpanFromContext(context.Background(), "http.request",
-		tracer.ServiceName("fake-http-server"),
-		tracer.SpanType(ext.SpanTypeWeb),
-	)
-	defer s1.Finish()
-	s2, ctx2 := tracer.StartSpanFromContext(context.Background(), "http.request",
-		tracer.ServiceName("fake-http-server"),
-		tracer.SpanType(ext.SpanTypeWeb),
-	)
-	defer s2.Finish()
-
-	db1 := WithContext(ctx1, db)
-	db2 := WithContext(ctx2, db)
-
-	_, ok := db.Get(gormContextKey)
-	assert.False(ok)
-	assert.NotEqual(db, db1)
-	assert.NotEqual(db, db2)
-
-	v1, ok := db1.Get(gormContextKey)
-	assert.True(ok)
-	assert.Equal(v1.(context.Context), ctx1)
-
-	v2, ok := db2.Get(gormContextKey)
-	assert.True(ok)
-	assert.Equal(v2.(context.Context), ctx2)
-}
-
 func TestCallbacks(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
