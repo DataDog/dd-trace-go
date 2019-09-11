@@ -19,6 +19,7 @@ jobs:
         POSTGRES_PASSWORD: postgres
         POSTGRES_USER: postgres
         POSTGRES_DB: postgres
+    - image: consul:1.6.0
     - image: redis:3.2
     - image: elasticsearch:2
       environment:
@@ -133,6 +134,10 @@ jobs:
     - run:
         name: Wait for Mongo
         command: dockerize -wait tcp://localhost:27017 -timeout 1m
+
+    - run:
+        name: Wait for Consul
+        command: dockerize -wait http://localhost:8500 -timeout 1m
 
     - run:
         name: Linting
