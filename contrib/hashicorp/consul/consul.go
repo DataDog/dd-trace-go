@@ -10,14 +10,14 @@ import (
 	consul "github.com/hashicorp/consul/api"
 )
 
-// A Client is used to trace requests to Consul
+// Client wraps the regular *consul.Client and augments it with tracing. Use NewClient to initialize it.
 type Client struct {
 	*consul.Client
 
 	ctx context.Context
 }
 
-// NewClient returns a traced Consul client
+// NewClient returns a traced Consul client.
 func NewClient(config *consul.Config) (*Client, error) {
 	c, err := consul.NewClient(config)
 	if err != nil {
@@ -32,14 +32,14 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 	return c
 }
 
-// A KV is used to trace requests to Consul's KV
+// A KV is used to trace requests to Consul's KV.
 type KV struct {
 	*consul.KV
 
 	ctx context.Context
 }
 
-// KV returns the KV for the Client
+// KV returns the KV for the Client.
 func (c *Client) KV() *KV {
 	ctx := c.ctx
 	return &KV{c.Client.KV(), ctx}
@@ -74,7 +74,7 @@ func (k *KV) Get(key string, q *consul.QueryOptions) (*consul.KVPair, *consul.Qu
 	return pair, meta, err
 }
 
-// List is used to lookup all keys under a prefix
+// List is used to lookup all keys under a prefix.
 func (k *KV) List(prefix string, q *consul.QueryOptions) ([]*consul.KVPair, *consul.QueryMeta, error) {
 	span := k.startSpan("LIST", prefix)
 	pairs, meta, err := k.KV.List(prefix, q)
@@ -121,7 +121,7 @@ func (k *KV) Release(p *consul.KVPair, q *consul.WriteOptions) (bool, *consul.Wr
 	return r, meta, err
 }
 
-// Delete is used to delete a single key
+// Delete is used to delete a single key.
 func (k *KV) Delete(key string, w *consul.WriteOptions) (*consul.WriteMeta, error) {
 	span := k.startSpan("DELETE", key)
 	meta, err := k.KV.Delete(key, w)
@@ -138,7 +138,7 @@ func (k *KV) DeleteCAS(p *consul.KVPair, q *consul.WriteOptions) (bool, *consul.
 	return r, meta, err
 }
 
-// DeleteTree is used to delete all keys under a prefix
+// DeleteTree is used to delete all keys under a prefix.
 func (k *KV) DeleteTree(prefix string, w *consul.WriteOptions) (*consul.WriteMeta, error) {
 	span := k.startSpan("DELETETREE", prefix)
 	meta, err := k.KV.DeleteTree(prefix, w)
