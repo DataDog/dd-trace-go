@@ -3,6 +3,9 @@ package consul
 import (
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	consul "github.com/hashicorp/consul/api"
 )
 
@@ -21,6 +24,8 @@ func BenchmarkKV(b *testing.B) {
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 			client, err := consul.NewClient(consul.DefaultConfig())
 			if err != nil {
 				b.FailNow()
@@ -53,6 +58,8 @@ func BenchmarkTracedKV(b *testing.B) {
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
+			tracer.Start()
+			defer tracer.Stop()
 			client, err := NewClient(consul.DefaultConfig())
 			if err != nil {
 				b.FailNow()
