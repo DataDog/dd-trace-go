@@ -66,11 +66,9 @@ func TestClient_KV(t *testing.T) {
 	defer mt.Stop()
 
 	client, _ := NewClient(consul.DefaultConfig())
-	clientCtx := client.ctx
 	kv := client.KV()
-	kvCtx := kv.ctx
 
-	assert.Equal(clientCtx, kvCtx)
+	assert.Equal(client.ctx, kv.ctx)
 }
 
 func TestKV_Put(t *testing.T) {
