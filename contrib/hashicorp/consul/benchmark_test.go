@@ -6,72 +6,63 @@ import (
 	consul "github.com/hashicorp/consul/api"
 )
 
-func getKV(b *testing.B) *consul.KV {
-	defer b.ResetTimer()
-
-	client, err := consul.NewClient(consul.DefaultConfig())
-	if err != nil {
-		panic(err)
+func BenchmarkKV(b *testing.B) {
+	key := "test.key"
+	pair := &consul.KVPair{Key: key, Value: []byte("test_value")}
+	testCases := []struct {
+		f    func(k *consul.KV) error
+		name string
+	}{
+		{func(kv *consul.KV) error { _, err := kv.Put(pair, nil); return err }, "Put"},
+		{func(kv *consul.KV) error { _, _, err := kv.Get(key, nil); return err }, "Get"},
+		{func(kv *consul.KV) error { _, _, err := kv.List(key, nil); return err }, "List"},
+		{func(kv *consul.KV) error { _, err := kv.Delete(key, nil); return err }, "Delete"},
 	}
-	kv := client.KV()
-	return kv
-}
 
-func getTracedKV(b *testing.B) *KV {
-	defer b.ResetTimer()
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			client, err := consul.NewClient(consul.DefaultConfig())
+			if err != nil {
+				b.FailNow()
+			}
+			kv := client.KV()
+			b.ResetTimer()
 
-	client, err := NewClient(consul.DefaultConfig())
-	if err != nil {
-		panic(err)
-	}
-	kv := client.KV()
-	return kv
-}
-
-func BenchmarkKV_Put(b *testing.B) {
-	kv := getKV(b)
-	p := &consul.KVPair{Key: "test", Value: []byte("1000")}
-	for i := 0; i < b.N; i++ {
-		_, err := kv.Put(p, nil)
-		if err != nil {
-			panic(err)
-		}
-	}
-}
-
-func BenchmarkTracedKV_Put(b *testing.B) {
-	kv := getTracedKV(b)
-	p := &consul.KVPair{Key: "test", Value: []byte("1000")}
-	for i := 0; i < b.N; i++ {
-		_, err := kv.Put(p, nil)
-		if err != nil {
-			panic(err)
-		}
+			for i := 0; i < b.N; i++ {
+				err = tc.f(kv)
+				if err != nil {
+					b.FailNow()
+				}
+			}
+		})
 	}
 }
 
-func BenchmarkKV_Get(b *testing.B) {
-	kv := getKV(b)
-	for i := 0; i < b.N; i++ {
-		pair, _, err := kv.Get("test", nil)
-		if err != nil {
-			panic(err)
-		}
-		if pair == nil {
-			panic(pair)
-		}
+func BenchmarkTracedKV(b *testing.B) {
+	key := "test.key"
+	pair := &consul.KVPair{Key: key, Value: []byte("test_value")}
+	testCases := []struct {
+		f    func(k *KV) error
+		name string
+	}{
+		{func(kv *KV) error { _, err := kv.Put(pair, nil); return err }, "Put"},
+		{func(kv *KV) error { _, _, err := kv.Get(key, nil); return err }, "Get"},
+		{func(kv *KV) error { _, _, err := kv.List(key, nil); return err }, "List"},
+		{func(kv *KV) error { _, err := kv.Delete(key, nil); return err }, "Delete"},
 	}
-}
 
-func BenchmarkTracedKV_Get(b *testing.B) {
-	kv := getTracedKV(b)
-	for i := 0; i < b.N; i++ {
-		pair, _, err := kv.Get("test", nil)
-		if err != nil {
-			panic(err)
-		}
-		if pair == nil {
-			panic(pair)
-		}
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			client, err := NewClient(consul.DefaultConfig())
+			if err != nil {
+				b.FailNow()
+			}
+			kv := client.KV()
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				tc.f(kv)
+			}
+		})
 	}
 }
