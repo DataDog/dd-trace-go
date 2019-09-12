@@ -3,10 +3,11 @@ package consul
 import (
 	"context"
 
-	consul "github.com/hashicorp/consul/api"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	consul "github.com/hashicorp/consul/api"
 )
 
 // A Client is used to trace requests to Consul
