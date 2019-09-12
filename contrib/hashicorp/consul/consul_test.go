@@ -3,6 +3,7 @@ package consul
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	consul "github.com/hashicorp/consul/api"
@@ -19,16 +20,6 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
-}
-
-func kv() *KV {
-	client, err := NewClient(consul.DefaultConfig())
-	if err != nil {
-		panic(err)
-	}
-	// Get a handle to the KV API
-	kv := client.KV()
-	return kv
 }
 
 func TestClient(t *testing.T) {
@@ -71,177 +62,46 @@ func TestClient_KV(t *testing.T) {
 	assert.Equal(client.ctx, kv.ctx)
 }
 
-func TestKV_Put(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	kv := kv()
+func TestKV(t *testing.T) {
+	key := "test.key"
+	pair := &consul.KVPair{Key: key, Value: []byte("test_value")}
+	testCases := []struct {
+		f            func(k *KV)
+		resourceName string
+	}{
+		{func(kv *KV) { kv.Put(pair, nil) }, "Put"},
+		{func(kv *KV) { kv.Get(key, nil) }, "Get"},
+		{func(kv *KV) { kv.List(key, nil) }, "List"},
+		{func(kv *KV) { kv.Keys(key, "", nil) }, "Keys"},
+		{func(kv *KV) { kv.CAS(pair, nil) }, "CAS"},
+		{func(kv *KV) { kv.Acquire(pair, nil) }, "Acquire"},
+		{func(kv *KV) { kv.Release(pair, nil) }, "Release"},
+		{func(kv *KV) { kv.Delete(key, nil) }, "Delete"},
+		{func(kv *KV) { kv.DeleteCAS(pair, nil) }, "DeleteCAS"},
+		{func(kv *KV) { kv.DeleteTree(key, nil) }, "DeleteTree"},
+	}
 
-	p := &consul.KVPair{Key: "test_key", Value: []byte("test_value")}
-	kv.Put(p, nil)
+	for _, tc := range testCases {
+		t.Run(tc.resourceName, func(t *testing.T) {
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			client, err := NewClient(consul.DefaultConfig())
+			if err != nil {
+				panic(err)
+			}
+			kv := client.KV()
 
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
-	assert.Equal("consul.command", span.OperationName())
-	assert.Equal("PUT", span.Tag(ext.ResourceName))
-	assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
-	assert.Equal("consul", span.Tag(ext.ServiceName))
-}
+			tc.f(kv)
 
-func TestKV_Get(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	kv := kv()
-
-	kv.Get("test", nil)
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
-	assert.Equal("consul.command", span.OperationName())
-	assert.Equal("GET", span.Tag(ext.ResourceName))
-	assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
-	assert.Equal("consul", span.Tag(ext.ServiceName))
-}
-
-func TestKV_List(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	kv := kv()
-
-	kv.List("test", nil)
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
-	assert.Equal("consul.command", span.OperationName())
-	assert.Equal("LIST", span.Tag(ext.ResourceName))
-	assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
-	assert.Equal("consul", span.Tag(ext.ServiceName))
-}
-
-func TestKV_Keys(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	kv := kv()
-
-	kv.Keys("test", "", nil)
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
-	assert.Equal("consul.command", span.OperationName())
-	assert.Equal("KEYS", span.Tag(ext.ResourceName))
-	assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
-	assert.Equal("consul", span.Tag(ext.ServiceName))
-}
-
-func TestKV_CAS(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	kv := kv()
-
-	p := &consul.KVPair{Key: "test_key", Value: []byte("test_value")}
-	kv.CAS(p, nil)
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
-	assert.Equal("consul.command", span.OperationName())
-	assert.Equal("CAS", span.Tag(ext.ResourceName))
-	assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
-	assert.Equal("consul", span.Tag(ext.ServiceName))
-}
-
-func TestKV_Acquire(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	kv := kv()
-
-	p := &consul.KVPair{Key: "test_key", Value: []byte("test_value")}
-	kv.Acquire(p, nil)
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
-	assert.Equal("consul.command", span.OperationName())
-	assert.Equal("ACQUIRE", span.Tag(ext.ResourceName))
-	assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
-	assert.Equal("consul", span.Tag(ext.ServiceName))
-}
-
-func TestKV_Release(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	kv := kv()
-
-	p := &consul.KVPair{Key: "test_key", Value: []byte("test_value")}
-	kv.Release(p, nil)
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
-	assert.Equal("consul.command", span.OperationName())
-	assert.Equal("RELEASE", span.Tag(ext.ResourceName))
-	assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
-	assert.Equal("consul", span.Tag(ext.ServiceName))
-}
-
-func TestKV_Delete(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	kv := kv()
-
-	kv.Delete("test", nil)
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
-	assert.Equal("consul.command", span.OperationName())
-	assert.Equal("DELETE", span.Tag(ext.ResourceName))
-	assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
-	assert.Equal("consul", span.Tag(ext.ServiceName))
-}
-
-func TestKV_DeleteCAS(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	kv := kv()
-
-	p := &consul.KVPair{Key: "test_key", Value: []byte("test_value")}
-	kv.DeleteCAS(p, nil)
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
-	assert.Equal("consul.command", span.OperationName())
-	assert.Equal("DELETECAS", span.Tag(ext.ResourceName))
-	assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
-	assert.Equal("consul", span.Tag(ext.ServiceName))
-}
-
-func TestKV_DeleteTree(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	kv := kv()
-
-	kv.DeleteTree("test", nil)
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
-	assert.Equal("consul.command", span.OperationName())
-	assert.Equal("DELETETREE", span.Tag(ext.ResourceName))
-	assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
-	assert.Equal("consul", span.Tag(ext.ServiceName))
+			spans := mt.FinishedSpans()
+			assert.Len(spans, 1)
+			span := spans[0]
+			assert.Equal("consul.command", span.OperationName())
+			assert.Equal(strings.ToUpper(tc.resourceName), span.Tag(ext.ResourceName))
+			assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
+			assert.Equal("consul", span.Tag(ext.ServiceName))
+			assert.Equal(key, span.Tag("consul.key"))
+		})
+	}
 }
