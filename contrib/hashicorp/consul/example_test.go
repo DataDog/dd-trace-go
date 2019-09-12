@@ -12,16 +12,15 @@ import (
 
 func Example() {
 	// Get a new Consul client
-	client, err := NewClient(consul.DefaultConfig())
+	client, err := NewClient(consul.DefaultConfig(), WithServiceName("consul.example"))
 	if err != nil {
 		panic(err)
 	}
 
 	// Optionally, create a new root span
-	root, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
+	root, ctx := tracer.StartSpanFromContext(context.Background(), "root_span",
 		tracer.SpanType(ext.SpanTypeConsul),
-		tracer.ServiceName("consul.example"),
-		tracer.ResourceName("/home"),
+		tracer.ServiceName("example"),
 	)
 	defer root.Finish()
 	client = client.WithContext(ctx)

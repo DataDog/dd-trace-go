@@ -2,6 +2,7 @@ package consul
 
 import (
 	"context"
+	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -14,16 +15,27 @@ import (
 type Client struct {
 	*consul.Client
 
-	ctx context.Context
+	config *clientConfig
+	ctx    context.Context
 }
 
 // NewClient returns a traced Consul client.
-func NewClient(config *consul.Config) (*Client, error) {
+func NewClient(config *consul.Config, opts ...ClientOption) (*Client, error) {
 	c, err := consul.NewClient(config)
 	if err != nil {
 		return nil, err
 	}
-	return &Client{c, context.Background()}, nil
+	return WrapClient(c, opts...), nil
+}
+
+// WrapClient wraps a given consul.Client with a tracer under the given service name.
+func WrapClient(c *consul.Client, opts ...ClientOption) *Client {
+	cfg := new(clientConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	return &Client{c, cfg, context.Background()}
 }
 
 // WithContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.
@@ -36,23 +48,26 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 type KV struct {
 	*consul.KV
 
-	ctx context.Context
+	config *clientConfig
+	ctx    context.Context
 }
 
 // KV returns the KV for the Client.
 func (c *Client) KV() *KV {
-	ctx := c.ctx
-	return &KV{c.Client.KV(), ctx}
+	return &KV{c.Client.KV(), c.config, c.ctx}
 }
 
 func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
 	opts := []ddtrace.StartSpanOption{
 		tracer.ResourceName(resourceName),
-		tracer.ServiceName("consul"),
+		tracer.ServiceName(k.config.serviceName),
 		tracer.SpanType(ext.SpanTypeConsul),
 		tracer.Tag("consul.key", key),
 	}
-	span, _ := tracer.StartSpanFromContext(k.ctx, "consul.command", opts...)
+	if !math.IsNaN(k.config.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, k.config.analyticsRate))
+	}
+	span, _ := tracer.StartSpanFromContext(k.ctx, k.config.spanName, opts...)
 	return span
 }
 
