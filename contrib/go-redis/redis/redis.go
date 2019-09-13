@@ -176,8 +176,8 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 				tracer.Tag("redis.raw_command", raw),
 				tracer.Tag("redis.args_length", strconv.Itoa(length)),
 			}
-			if rate := p.config.analyticsRate; rate > 0 {
-				opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
+			if !math.IsNaN(p.config.analyticsRate) {
+				opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 			}
 			span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
 			err := oldProcess(cmd)
