@@ -251,11 +251,15 @@ func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
 		client := NewClient(&redis.Options{Addr: "127.0.0.1:6379"}, opts...)
 		client.Set("test_key", "test_value", 0)
+		pipeline := client.Pipeline()
+		pipeline.Expire("pipeline_counter", time.Hour)
+		pipeline.(*Pipeliner).ExecWithContext(context.Background())
 
 		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 1)
-		s := spans[0]
-		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+		assert.Len(t, spans, 2)
+		for _, s := range spans {
+			assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+		}
 	}
 
 	t.Run("defaults", func(t *testing.T) {
@@ -300,5 +304,12 @@ func TestAnalyticsSettings(t *testing.T) {
 		globalconfig.SetAnalyticsRate(0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	})
+
+	t.Run("zero", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 0.0, WithAnalyticsRate(0.0))
 	})
 }
