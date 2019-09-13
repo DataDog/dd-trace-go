@@ -36,7 +36,7 @@ func TestClient(t *testing.T) {
 	assert.Nil(err)
 }
 
-func TestClient_error(t *testing.T) {
+func TestClientError(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -51,7 +51,7 @@ func TestClient_error(t *testing.T) {
 
 }
 
-func TestClient_KV(t *testing.T) {
+func TestClientKV(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
