@@ -65,24 +65,21 @@ func TestClientKV(t *testing.T) {
 func TestKV(t *testing.T) {
 	key := "test.key"
 	pair := &consul.KVPair{Key: key, Value: []byte("test_value")}
-	testCases := []struct {
-		f            func(k *KV)
-		resourceName string
-	}{
-		{func(kv *KV) { kv.Put(pair, nil) }, "Put"},
-		{func(kv *KV) { kv.Get(key, nil) }, "Get"},
-		{func(kv *KV) { kv.List(key, nil) }, "List"},
-		{func(kv *KV) { kv.Keys(key, "", nil) }, "Keys"},
-		{func(kv *KV) { kv.CAS(pair, nil) }, "CAS"},
-		{func(kv *KV) { kv.Acquire(pair, nil) }, "Acquire"},
-		{func(kv *KV) { kv.Release(pair, nil) }, "Release"},
-		{func(kv *KV) { kv.Delete(key, nil) }, "Delete"},
-		{func(kv *KV) { kv.DeleteCAS(pair, nil) }, "DeleteCAS"},
-		{func(kv *KV) { kv.DeleteTree(key, nil) }, "DeleteTree"},
+	testCases := map[string]func(kv *KV){
+		"Put":        func(kv *KV) { kv.Put(pair, nil) },
+		"Get":        func(kv *KV) { kv.Get(key, nil) },
+		"List":       func(kv *KV) { kv.List(key, nil) },
+		"Keys":       func(kv *KV) { kv.Keys(key, "", nil) },
+		"CAS":        func(kv *KV) { kv.CAS(pair, nil) },
+		"Acquire":    func(kv *KV) { kv.Acquire(pair, nil) },
+		"Release":    func(kv *KV) { kv.Release(pair, nil) },
+		"Delete":     func(kv *KV) { kv.Delete(key, nil) },
+		"DeleteCAS":  func(kv *KV) { kv.DeleteCAS(pair, nil) },
+		"DeleteTree": func(kv *KV) { kv.DeleteTree(key, nil) },
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.resourceName, func(t *testing.T) {
+	for name, testFunc := range testCases {
+		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
 			mt := mocktracer.Start()
 			defer mt.Stop()
@@ -92,13 +89,13 @@ func TestKV(t *testing.T) {
 			}
 			kv := client.KV()
 
-			tc.f(kv)
+			testFunc(kv)
 
 			spans := mt.FinishedSpans()
 			assert.Len(spans, 1)
 			span := spans[0]
 			assert.Equal("consul.command", span.OperationName())
-			assert.Equal(strings.ToUpper(tc.resourceName), span.Tag(ext.ResourceName))
+			assert.Equal(strings.ToUpper(name), span.Tag(ext.ResourceName))
 			assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
 			assert.Equal("consul", span.Tag(ext.ServiceName))
 			assert.Equal(key, span.Tag("consul.key"))

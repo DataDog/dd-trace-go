@@ -3,7 +3,6 @@ package consul
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	consul "github.com/hashicorp/consul/api"
@@ -12,20 +11,15 @@ import (
 func BenchmarkKV(b *testing.B) {
 	key := "test.key"
 	pair := &consul.KVPair{Key: key, Value: []byte("test_value")}
-	testCases := []struct {
-		f    func(k *consul.KV) error
-		name string
-	}{
-		{func(kv *consul.KV) error { _, err := kv.Put(pair, nil); return err }, "Put"},
-		{func(kv *consul.KV) error { _, _, err := kv.Get(key, nil); return err }, "Get"},
-		{func(kv *consul.KV) error { _, _, err := kv.List(key, nil); return err }, "List"},
-		{func(kv *consul.KV) error { _, err := kv.Delete(key, nil); return err }, "Delete"},
+	testCases := map[string](func(k *consul.KV) error){
+		"Put":    func(kv *consul.KV) error { _, err := kv.Put(pair, nil); return err },
+		"Get":    func(kv *consul.KV) error { _, _, err := kv.Get(key, nil); return err },
+		"List":   func(kv *consul.KV) error { _, _, err := kv.List(key, nil); return err },
+		"Delete": func(kv *consul.KV) error { _, err := kv.Delete(key, nil); return err },
 	}
 
-	for _, tc := range testCases {
-		b.Run(tc.name, func(b *testing.B) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
+	for name, testFunc := range testCases {
+		b.Run(name, func(b *testing.B) {
 			client, err := consul.NewClient(consul.DefaultConfig())
 			if err != nil {
 				b.FailNow()
@@ -34,7 +28,7 @@ func BenchmarkKV(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				err = tc.f(kv)
+				err = testFunc(kv)
 				if err != nil {
 					b.FailNow()
 				}
@@ -46,18 +40,15 @@ func BenchmarkKV(b *testing.B) {
 func BenchmarkTracedKV(b *testing.B) {
 	key := "test.key"
 	pair := &consul.KVPair{Key: key, Value: []byte("test_value")}
-	testCases := []struct {
-		f    func(k *KV) error
-		name string
-	}{
-		{func(kv *KV) error { _, err := kv.Put(pair, nil); return err }, "Put"},
-		{func(kv *KV) error { _, _, err := kv.Get(key, nil); return err }, "Get"},
-		{func(kv *KV) error { _, _, err := kv.List(key, nil); return err }, "List"},
-		{func(kv *KV) error { _, err := kv.Delete(key, nil); return err }, "Delete"},
+	testCases := map[string](func(k *KV) error){
+		"Put":    func(kv *KV) error { _, err := kv.Put(pair, nil); return err },
+		"Get":    func(kv *KV) error { _, _, err := kv.Get(key, nil); return err },
+		"List":   func(kv *KV) error { _, _, err := kv.List(key, nil); return err },
+		"Delete": func(kv *KV) error { _, err := kv.Delete(key, nil); return err },
 	}
 
-	for _, tc := range testCases {
-		b.Run(tc.name, func(b *testing.B) {
+	for name, testFunc := range testCases {
+		b.Run(name, func(b *testing.B) {
 			tracer.Start()
 			defer tracer.Stop()
 			client, err := NewClient(consul.DefaultConfig())
@@ -68,7 +59,7 @@ func BenchmarkTracedKV(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				tc.f(kv)
+				testFunc(kv)
 			}
 		})
 	}
