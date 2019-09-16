@@ -188,6 +188,37 @@ func TestTracerStartSpan(t *testing.T) {
 	})
 }
 
+func TestTracerRuntimeMetrics(t *testing.T) {
+	t.Run("on", func(t *testing.T) {
+		tp := new(testLogger)
+		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
+		defer tracer.Stop()
+		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
+	})
+
+	t.Run("off", func(t *testing.T) {
+		tp := new(testLogger)
+		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
+		defer tracer.Stop()
+		assert.Len(t, tp.Lines(), 0)
+		s := tracer.StartSpan("op").(*span)
+		_, ok := s.Meta["language"]
+		assert.False(t, ok)
+	})
+
+	t.Run("spans", func(t *testing.T) {
+		tracer := newTracer(WithRuntimeMetrics(), WithServiceName("main"))
+		defer tracer.Stop()
+
+		s := tracer.StartSpan("op").(*span)
+		assert.Equal(t, s.Meta["language"], "go")
+
+		s = tracer.StartSpan("op", ServiceName("secondary")).(*span)
+		_, ok := s.Meta["language"]
+		assert.False(t, ok)
+	})
+}
+
 func TestTracerStartSpanOptions(t *testing.T) {
 	tracer := newTracer()
 	now := time.Now()

@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"math"
 	"net/http"
 	"os"
@@ -53,6 +54,14 @@ type config struct {
 	// logger specifies the logger to use when printing errors. If not specified, the "log" package
 	// will be used.
 	logger ddtrace.Logger
+
+	// runtimeMetrics specifies whether collection of runtime metrics is enabled.
+	runtimeMetrics bool
+
+	// dogstatsdAddr specifies the address to connect for sending metrics to the
+	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
+	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
+	dogstatsdAddr string
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -63,6 +72,15 @@ func defaults(c *config) {
 	c.serviceName = filepath.Base(os.Args[0])
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
+
+	statsdHost, statsdPort := "localhost", "8125"
+	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
+		statsdHost = v
+	}
+	if v := os.Getenv("DD_DOGSTATSD_PORT"); v != "" {
+		statsdPort = v
+	}
+	c.dogstatsdAddr = fmt.Sprintf("%s:%s", statsdHost, statsdPort)
 
 	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
 		var err error
@@ -168,6 +186,23 @@ func WithAnalyticsRate(rate float64) StartOption {
 		} else {
 			globalconfig.SetAnalyticsRate(math.NaN())
 		}
+	}
+}
+
+// WithRuntimeMetrics enables automatic collection of runtime metrics every 10 seconds.
+func WithRuntimeMetrics() StartOption {
+	return func(cfg *config) {
+		cfg.runtimeMetrics = true
+	}
+}
+
+// WithDogstatsdAddress specifies the address to connect to for sending metrics
+// to the Datadog Agent. If not set, it defaults to "localhost:8125" or to the
+// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
+// This option is in effect when WithRuntimeMetrics is enabled.
+func WithDogstatsdAddress(addr string) StartOption {
+	return func(cfg *config) {
+		cfg.dogstatsdAddr = addr
 	}
 }
 
