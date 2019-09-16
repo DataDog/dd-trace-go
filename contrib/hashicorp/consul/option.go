@@ -4,12 +4,10 @@ import "math"
 
 const (
 	serviceName = "consul"
-	spanName    = "consul.command"
 )
 
 type clientConfig struct {
 	serviceName   string
-	spanName      string
 	analyticsRate float64
 }
 
@@ -18,7 +16,6 @@ type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = serviceName
-	cfg.spanName = spanName
 	cfg.analyticsRate = math.NaN()
 }
 
@@ -26,13 +23,6 @@ func defaults(cfg *clientConfig) {
 func WithServiceName(name string) ClientOption {
 	return func(cfg *clientConfig) {
 		cfg.serviceName = name
-	}
-}
-
-// WithSpanName sets the given span name for the client.
-func WithSpanName(name string) ClientOption {
-	return func(cfg *clientConfig) {
-		cfg.spanName = name
 	}
 }
 
