@@ -72,4 +72,7 @@ const (
 
 	// SpanTypeMessageProducer marks a span as a queue operation.
 	SpanTypeMessageProducer = "queue"
+
+	// SpanTypeConsul marks a span as a Consul operation.
+	SpanTypeConsul = "consul"
 )
