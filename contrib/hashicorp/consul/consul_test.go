@@ -28,9 +28,7 @@ func TestClient(t *testing.T) {
 	defer mt.Stop()
 
 	client, err := NewClient(consul.DefaultConfig())
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(err)
 
 	assert.NotNil(client)
 	assert.Nil(err)
@@ -82,9 +80,7 @@ func TestKV(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 			client, err := NewClient(consul.DefaultConfig())
-			if err != nil {
-				panic(err)
-			}
+			assert.NoError(err)
 			kv := client.KV()
 
 			testFunc(kv)
