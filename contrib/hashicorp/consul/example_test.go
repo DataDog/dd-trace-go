@@ -11,6 +11,7 @@ import (
 	consul "github.com/hashicorp/consul/api"
 )
 
+// Here's an example illustrating a simple use case for interacting with consul with tracing enabled.
 func Example() {
 	// Get a new Consul client
 	client, err := NewClient(consul.DefaultConfig(), WithServiceName("consul.example"))
