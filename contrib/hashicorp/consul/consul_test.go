@@ -65,7 +65,7 @@ func TestClientKV(t *testing.T) {
 func TestKV(t *testing.T) {
 	key := "test.key"
 	pair := &consul.KVPair{Key: key, Value: []byte("test_value")}
-	testCases := map[string]func(kv *KV){
+	for name, testFunc := range map[string]func(kv *KV){
 		"Put":        func(kv *KV) { kv.Put(pair, nil) },
 		"Get":        func(kv *KV) { kv.Get(key, nil) },
 		"List":       func(kv *KV) { kv.List(key, nil) },
@@ -76,9 +76,7 @@ func TestKV(t *testing.T) {
 		"Delete":     func(kv *KV) { kv.Delete(key, nil) },
 		"DeleteCAS":  func(kv *KV) { kv.DeleteCAS(pair, nil) },
 		"DeleteTree": func(kv *KV) { kv.DeleteTree(key, nil) },
-	}
-
-	for name, testFunc := range testCases {
+	} {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
 			mt := mocktracer.Start()

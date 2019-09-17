@@ -11,14 +11,13 @@ import (
 func BenchmarkKV(b *testing.B) {
 	key := "test.key"
 	pair := &consul.KVPair{Key: key, Value: []byte("test_value")}
-	testCases := map[string](func(k *consul.KV) error){
+
+	for name, testFunc := range map[string](func(k *consul.KV) error){
 		"Put":    func(kv *consul.KV) error { _, err := kv.Put(pair, nil); return err },
 		"Get":    func(kv *consul.KV) error { _, _, err := kv.Get(key, nil); return err },
 		"List":   func(kv *consul.KV) error { _, _, err := kv.List(key, nil); return err },
 		"Delete": func(kv *consul.KV) error { _, err := kv.Delete(key, nil); return err },
-	}
-
-	for name, testFunc := range testCases {
+	} {
 		b.Run(name, func(b *testing.B) {
 			client, err := consul.NewClient(consul.DefaultConfig())
 			if err != nil {
@@ -40,14 +39,13 @@ func BenchmarkKV(b *testing.B) {
 func BenchmarkTracedKV(b *testing.B) {
 	key := "test.key"
 	pair := &consul.KVPair{Key: key, Value: []byte("test_value")}
-	testCases := map[string](func(k *KV) error){
+
+	for name, testFunc := range map[string](func(k *KV) error){
 		"Put":    func(kv *KV) error { _, err := kv.Put(pair, nil); return err },
 		"Get":    func(kv *KV) error { _, _, err := kv.Get(key, nil); return err },
 		"List":   func(kv *KV) error { _, _, err := kv.List(key, nil); return err },
 		"Delete": func(kv *KV) error { _, err := kv.Delete(key, nil); return err },
-	}
-
-	for name, testFunc := range testCases {
+	} {
 		b.Run(name, func(b *testing.B) {
 			tracer.Start()
 			defer tracer.Stop()
