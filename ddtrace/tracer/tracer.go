@@ -30,15 +30,15 @@ type tracer struct {
 	*config
 	*payload
 
-	// chanFlush triggers a flush of the buffered payload. If the sent channel is
+	// flushChan triggers a flush of the buffered payload. If the sent channel is
 	// not nil (only in tests), it will receive confirmation of a finished flush.
-	chanFlush chan chan<- struct{}
+	flushChan chan chan<- struct{}
 
-	// chanExit requests that the tracer stops.
-	chanExit chan struct{}
+	// exitChan requests that the tracer stops.
+	exitChan chan struct{}
 
-	// chanPayload receives traces to be added to the payload.
-	chanPayload chan []*span
+	// payloadChan receives traces to be added to the payload.
+	payloadChan chan []*span
 
 	// stopped is a channel that will be closed when the worker has exited.
 	stopped chan struct{}
@@ -134,9 +134,9 @@ func newTracer(opts ...StartOption) *tracer {
 	t := &tracer{
 		config:           c,
 		payload:          newPayload(),
-		chanFlush:        make(chan chan<- struct{}),
-		chanExit:         make(chan struct{}),
-		chanPayload:      make(chan []*span, payloadQueueSize),
+		flushChan:        make(chan chan<- struct{}),
+		exitChan:         make(chan struct{}),
+		payloadChan:      make(chan []*span, payloadQueueSize),
 		stopped:          make(chan struct{}),
 		prioritySampling: newPrioritySampler(),
 		pid:              strconv.Itoa(os.Getpid()),
@@ -156,19 +156,19 @@ func (t *tracer) worker() {
 
 	for {
 		select {
-		case trace := <-t.chanPayload:
+		case trace := <-t.payloadChan:
 			t.pushPayload(trace)
 
 		case <-ticker.C:
 			t.flushPayload()
 
-		case confirm := <-t.chanFlush:
+		case confirm := <-t.flushChan:
 			t.flushPayload()
 			if confirm != nil {
 				confirm <- struct{}{}
 			}
 
-		case <-t.chanExit:
+		case <-t.exitChan:
 			t.flushPayload()
 			return
 		}
@@ -182,7 +182,7 @@ func (t *tracer) pushTrace(trace []*span) {
 	default:
 	}
 	select {
-	case t.chanPayload <- trace:
+	case t.payloadChan <- trace:
 	default:
 		log.Error("payload queue full, dropping %d traces", len(trace))
 	}
@@ -276,7 +276,7 @@ func (t *tracer) Stop() {
 	case <-t.stopped:
 		return
 	default:
-		t.chanExit <- struct{}{}
+		t.exitChan <- struct{}{}
 		<-t.stopped
 	}
 }
@@ -317,7 +317,7 @@ func (t *tracer) pushPayload(trace []*span) {
 	if t.payload.size() > payloadSizeLimit {
 		// getting large
 		select {
-		case t.chanFlush <- nil:
+		case t.flushChan <- nil:
 		default:
 			// flush already queued
 		}

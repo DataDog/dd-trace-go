@@ -31,7 +31,7 @@ import (
 // synchronously.
 func (t *tracer) forceFlush() {
 	confirm := make(chan struct{})
-	t.chanFlush <- confirm
+	t.flushChan <- confirm
 	<-confirm
 }
 
@@ -839,8 +839,8 @@ func TestWorker(t *testing.T) {
 func newTracerChannels() *tracer {
 	return &tracer{
 		payload:     newPayload(),
-		chanPayload: make(chan []*span, payloadQueueSize),
-		chanFlush:   make(chan chan<- struct{}, 1),
+		payloadChan: make(chan []*span, payloadQueueSize),
+		flushChan:   make(chan chan<- struct{}, 1),
 	}
 }
 
@@ -852,12 +852,12 @@ func TestPushPayload(t *testing.T) {
 	// half payload size reached, we have 1 item, no flush request
 	tracer.pushPayload([]*span{s})
 	assert.Equal(t, tracer.payload.itemCount(), 1)
-	assert.Len(t, tracer.chanFlush, 0)
+	assert.Len(t, tracer.flushChan, 0)
 
 	// payload size exceeded, we have 2 items and a flush request
 	tracer.pushPayload([]*span{s})
 	assert.Equal(t, tracer.payload.itemCount(), 2)
-	assert.Len(t, tracer.chanFlush, 1)
+	assert.Len(t, tracer.flushChan, 1)
 }
 
 func TestPushTrace(t *testing.T) {
@@ -880,17 +880,17 @@ func TestPushTrace(t *testing.T) {
 	}
 	tracer.pushTrace(trace)
 
-	assert.Len(tracer.chanPayload, 1)
-	assert.Len(tracer.chanFlush, 0, "no flush requested yet")
+	assert.Len(tracer.payloadChan, 1)
+	assert.Len(tracer.flushChan, 0, "no flush requested yet")
 
-	t0 := <-tracer.chanPayload
+	t0 := <-tracer.payloadChan
 	assert.Equal(trace, t0)
 
 	many := payloadQueueSize + 2
 	for i := 0; i < many; i++ {
 		tracer.pushTrace(make([]*span, i))
 	}
-	assert.Len(tracer.chanPayload, payloadQueueSize)
+	assert.Len(tracer.payloadChan, payloadQueueSize)
 	log.Flush()
 	assert.True(len(tp.Lines()) >= 2)
 }
