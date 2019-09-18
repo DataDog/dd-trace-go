@@ -6,8 +6,8 @@
 package tracer
 
 import (
-	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -80,7 +80,7 @@ func defaults(c *config) {
 	if v := os.Getenv("DD_DOGSTATSD_PORT"); v != "" {
 		statsdPort = v
 	}
-	c.dogstatsdAddr = fmt.Sprintf("%s:%s", statsdHost, statsdPort)
+	c.dogstatsdAddr = net.JoinHostPort(statsdHost, statsdPort)
 
 	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
 		var err error

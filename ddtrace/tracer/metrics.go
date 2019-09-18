@@ -35,7 +35,12 @@ func (t *tracer) reportMetrics(statsd gauger, interval time.Duration) {
 			tags = append(tags, "env:"+vv)
 		}
 	}
-	gc := debug.GCStats{PauseQuantiles: make([]time.Duration, 5)}
+	gc := debug.GCStats{
+		// When len(stats.PauseQuantiles) is 5, it will be filled with the
+		// minimum, 25%, 50%, 75%, and maximum pause times. See the documentation
+		// for (runtime/debug).ReadGCStats.
+		PauseQuantiles: make([]time.Duration, 5),
+	}
 
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
@@ -82,13 +87,8 @@ func (t *tracer) reportMetrics(statsd gauger, interval time.Duration) {
 			statsd.Gauge("runtime.go.mem_stats.num_gc", float64(ms.NumGC), tags, 1)
 			statsd.Gauge("runtime.go.mem_stats.num_forced_gc", float64(ms.NumForcedGC), tags, 1)
 			statsd.Gauge("runtime.go.mem_stats.gc_cpu_fraction", ms.GCCPUFraction, tags, 1)
-			if ms.EnableGC {
-				statsd.Gauge("runtime.go.mem_stats.enable_gc", float64(1), tags, 1)
-				for i, p := range []string{"min", "25p", "50p", "75p", "max"} {
-					statsd.Gauge("runtime.go.gc_stats.pause_quantiles."+p, float64(gc.PauseQuantiles[i]), tags, 1)
-				}
-			} else {
-				statsd.Gauge("runtime.go.mem_stats.enable_gc", float64(0), tags, 1)
+			for i, p := range []string{"min", "25p", "50p", "75p", "max"} {
+				statsd.Gauge("runtime.go.gc_stats.pause_quantiles."+p, float64(gc.PauseQuantiles[i]), tags, 1)
 			}
 
 		case <-t.stopped:

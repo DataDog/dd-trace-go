@@ -77,9 +77,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 
 		t.Run("option", func(t *testing.T) {
-			tracer := newTracer(WithDogstatsdAddress("1.2.3:4"))
+			tracer := newTracer(WithDogstatsdAddress("10.1.0.12:4002"))
 			c := tracer.config
-			assert.Equal(t, c.dogstatsdAddr, "1.2.3:4")
+			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
 		})
 	})
 

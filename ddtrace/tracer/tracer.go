@@ -140,11 +140,7 @@ func newTracer(opts ...StartOption) *tracer {
 		pid:              strconv.Itoa(os.Getpid()),
 	}
 	if c.runtimeMetrics {
-		statsd, err := statsd.New(
-			t.config.dogstatsdAddr,
-			statsd.Buffered(),
-			statsd.WithMaxMessagesPerPayload(40),
-		)
+		statsd, err := statsd.NewBuffered(t.config.dogstatsdAddr, 40)
 		if err != nil {
 			log.Warn("Runtime metrics disabled: %v", err)
 		} else {
