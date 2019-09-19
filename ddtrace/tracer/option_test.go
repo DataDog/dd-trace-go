@@ -61,7 +61,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	})
 
 	t.Run("envs", func(t *testing.T) {
-		if err := os.Setenv("DD_SERVICE_NAME", "env:test, aKey:aVal,bKey:bVal"); err != nil {
+		if err := os.Setenv("DD_SERVICE_NAME", "TEST_SERVICE"); err != nil {
 			panic("could not set environment variable DD_SERVICE_NAME during testing")
 		}
 		if err := os.Setenv("DD_TRACE_GLOBAL_TAGS", "env:test, aKey:aVal,bKey:bVal"); err != nil {
