@@ -27,6 +27,14 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
+// forceFlush forces a flush of data (traces and services) to the agent
+// synchronously.
+func (t *tracer) forceFlush() {
+	confirm := make(chan struct{})
+	t.flushChan <- confirm
+	<-confirm
+}
+
 func (t *tracer) newEnvSpan(service, env string) *span {
 	return t.StartSpan("test.op", SpanType("test"), ServiceName(service), ResourceName("/"), Tag(ext.Environment, env)).(*span)
 }
@@ -830,9 +838,9 @@ func TestWorker(t *testing.T) {
 
 func newTracerChannels() *tracer {
 	return &tracer{
-		payload:        newPayload(),
-		payloadQueue:   make(chan []*span, payloadQueueSize),
-		flushTracesReq: make(chan struct{}, 1),
+		payload:     newPayload(),
+		payloadChan: make(chan []*span, payloadQueueSize),
+		flushChan:   make(chan chan<- struct{}, 1),
 	}
 }
 
@@ -844,12 +852,12 @@ func TestPushPayload(t *testing.T) {
 	// half payload size reached, we have 1 item, no flush request
 	tracer.pushPayload([]*span{s})
 	assert.Equal(t, tracer.payload.itemCount(), 1)
-	assert.Len(t, tracer.flushTracesReq, 0)
+	assert.Len(t, tracer.flushChan, 0)
 
 	// payload size exceeded, we have 2 items and a flush request
 	tracer.pushPayload([]*span{s})
 	assert.Equal(t, tracer.payload.itemCount(), 2)
-	assert.Len(t, tracer.flushTracesReq, 1)
+	assert.Len(t, tracer.flushChan, 1)
 }
 
 func TestPushTrace(t *testing.T) {
@@ -872,17 +880,17 @@ func TestPushTrace(t *testing.T) {
 	}
 	tracer.pushTrace(trace)
 
-	assert.Len(tracer.payloadQueue, 1)
-	assert.Len(tracer.flushTracesReq, 0, "no flush requested yet")
+	assert.Len(tracer.payloadChan, 1)
+	assert.Len(tracer.flushChan, 0, "no flush requested yet")
 
-	t0 := <-tracer.payloadQueue
+	t0 := <-tracer.payloadChan
 	assert.Equal(trace, t0)
 
 	many := payloadQueueSize + 2
 	for i := 0; i < many; i++ {
 		tracer.pushTrace(make([]*span, i))
 	}
-	assert.Len(tracer.payloadQueue, payloadQueueSize)
+	assert.Len(tracer.payloadChan, payloadQueueSize)
 	log.Flush()
 	assert.True(len(tp.Lines()) >= 2)
 }

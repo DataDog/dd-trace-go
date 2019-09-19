@@ -30,11 +30,15 @@ type tracer struct {
 	*config
 	*payload
 
-	flushAllReq    chan chan<- struct{}
-	flushTracesReq chan struct{}
-	exitReq        chan struct{}
+	// flushChan triggers a flush of the buffered payload. If the sent channel is
+	// not nil (only in tests), it will receive confirmation of a finished flush.
+	flushChan chan chan<- struct{}
 
-	payloadQueue chan []*span
+	// exitChan requests that the tracer stops.
+	exitChan chan struct{}
+
+	// payloadChan receives traces to be added to the payload.
+	payloadChan chan []*span
 
 	// stopped is a channel that will be closed when the worker has exited.
 	stopped chan struct{}
@@ -46,6 +50,7 @@ type tracer struct {
 
 	// prioritySampling holds an instance of the priority sampler.
 	prioritySampling *prioritySampler
+
 	// pid of the process
 	pid string
 }
@@ -129,10 +134,9 @@ func newTracer(opts ...StartOption) *tracer {
 	t := &tracer{
 		config:           c,
 		payload:          newPayload(),
-		flushAllReq:      make(chan chan<- struct{}),
-		flushTracesReq:   make(chan struct{}, 1),
-		exitReq:          make(chan struct{}),
-		payloadQueue:     make(chan []*span, payloadQueueSize),
+		flushChan:        make(chan chan<- struct{}),
+		exitChan:         make(chan struct{}),
+		payloadChan:      make(chan []*span, payloadQueueSize),
 		stopped:          make(chan struct{}),
 		prioritySampling: newPrioritySampler(),
 		pid:              strconv.Itoa(os.Getpid()),
@@ -152,21 +156,20 @@ func (t *tracer) worker() {
 
 	for {
 		select {
-		case trace := <-t.payloadQueue:
+		case trace := <-t.payloadChan:
 			t.pushPayload(trace)
 
 		case <-ticker.C:
-			t.flush()
+			t.flushPayload()
 
-		case done := <-t.flushAllReq:
-			t.flush()
-			done <- struct{}{}
+		case confirm := <-t.flushChan:
+			t.flushPayload()
+			if confirm != nil {
+				confirm <- struct{}{}
+			}
 
-		case <-t.flushTracesReq:
-			t.flush()
-
-		case <-t.exitReq:
-			t.flush()
+		case <-t.exitChan:
+			t.flushPayload()
 			return
 		}
 	}
@@ -179,7 +182,7 @@ func (t *tracer) pushTrace(trace []*span) {
 	default:
 	}
 	select {
-	case t.payloadQueue <- trace:
+	case t.payloadChan <- trace:
 	default:
 		log.Error("payload queue full, dropping %d traces", len(trace))
 	}
@@ -273,7 +276,7 @@ func (t *tracer) Stop() {
 	case <-t.stopped:
 		return
 	default:
-		t.exitReq <- struct{}{}
+		t.exitChan <- struct{}{}
 		<-t.stopped
 	}
 }
@@ -289,7 +292,7 @@ func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 }
 
 // flush will push any currently buffered traces to the server.
-func (t *tracer) flush() {
+func (t *tracer) flushPayload() {
 	if t.payload.itemCount() == 0 {
 		return
 	}
@@ -305,15 +308,6 @@ func (t *tracer) flush() {
 	t.payload.reset()
 }
 
-// forceFlush forces a flush of data (traces and services) to the agent.
-// Flushes are done by a background task on a regular basis, so you never
-// need to call this manually, mostly useful for testing and debugging.
-func (t *tracer) forceFlush() {
-	done := make(chan struct{})
-	t.flushAllReq <- done
-	<-done
-}
-
 // pushPayload pushes the trace onto the payload. If the payload becomes
 // larger than the threshold as a result, it sends a flush request.
 func (t *tracer) pushPayload(trace []*span) {
@@ -323,7 +317,7 @@ func (t *tracer) pushPayload(trace []*span) {
 	if t.payload.size() > payloadSizeLimit {
 		// getting large
 		select {
-		case t.flushTracesReq <- struct{}{}:
+		case t.flushChan <- nil:
 		default:
 			// flush already queued
 		}
