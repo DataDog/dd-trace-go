@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -60,7 +61,6 @@ type StartOption func(*config)
 
 // defaults sets the default values for a config.
 func defaults(c *config) {
-	c.serviceName = filepath.Base(os.Args[0])
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
 
@@ -70,6 +70,34 @@ func defaults(c *config) {
 		if err != nil {
 			log.Warn("unable to look up hostname: %v", err)
 		}
+	}
+
+	if os.Getenv("DD_TRACE_GLOBAL_TAGS") != "" {
+
+		if c.globalTags == nil {
+			c.globalTags = make(map[string]interface{})
+		}
+
+		osTags := os.Getenv("DD_TRACE_GLOBAL_TAGS")
+		if osTags != "" {
+			for _, tag := range strings.Split(osTags, ",") {
+				if tag != "" {
+					tag = strings.TrimSpace(tag)
+					var keyVal = strings.Split(tag, ":")
+					if len(keyVal) == 2 {
+						var key = strings.TrimSpace(keyVal[0])
+						var val = strings.TrimSpace(keyVal[1])
+						c.globalTags[key] = val
+					}
+				}
+			}
+		}
+	}
+
+	if os.Getenv("DD_SERVICE_NAME") != "" {
+		c.serviceName = os.Getenv("DD_SERVICE_NAME")
+	} else {
+		c.serviceName = filepath.Base(os.Args[0])
 	}
 }
 

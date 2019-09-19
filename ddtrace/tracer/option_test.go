@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"math"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -57,5 +58,35 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.NotNil(c.globalTags)
 		assert.Equal("v", c.globalTags["k"])
 		assert.True(c.debug)
+	})
+
+	t.Run("envs", func(t *testing.T) {
+		if err := os.Setenv("DD_SERVICE_NAME", "env:test, aKey:aVal,bKey:bVal"); err != nil {
+			panic("could not set environment variable DD_SERVICE_NAME during testing")
+		}
+		if err := os.Setenv("DD_TRACE_GLOBAL_TAGS", "env:test, aKey:aVal,bKey:bVal"); err != nil {
+			panic("could not set environment variable DD_TRACE_GLOBAL_TAGS during testing")
+		}
+
+		assert := assert.New(t)
+		var c config
+		defaults(&c)
+		assert.Equal("TEST_SERVICE", c.serviceName)
+
+		env, ok := c.globalTags["env"]
+		assert.True(ok, "has the env key")
+		assert.Equal("test", env)
+
+		aVal, ok := c.globalTags["aKey"]
+		assert.True(ok, "has aKey key")
+		assert.Equal("aVal", aVal)
+
+		bVal, ok := c.globalTags["bKey"]
+		assert.True(ok, "has bKey key")
+		assert.Equal("bVal", bVal)
+
+		cVal, ok := c.globalTags["cKey"]
+		assert.False(ok, "does not have cKey")
+		assert.Equal("", cVal)
 	})
 }
