@@ -87,6 +87,10 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 		cVal, ok := c.globalTags["cKey"]
 		assert.False(ok, "does not have cKey")
-		assert.Equal("", cVal)
+		assert.Equal(nil, cVal)
+
+		// unset the environment variables
+		os.Unsetenv("DD_SERVICE_NAME")
+		os.Unsetenv("DD_TRACE_GLOBAL_TAGS")
 	})
 }
