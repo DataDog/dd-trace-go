@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"math"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,6 +28,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal(float64(1), c.sampler.(RateSampler).Rate())
 		assert.Equal("tracer.test", c.serviceName)
 		assert.Equal("localhost:8126", c.agentAddr)
+		assert.Equal("localhost:8125", c.dogstatsdAddr)
 		assert.Equal(nil, c.httpRoundTripper)
 	})
 
@@ -39,6 +41,46 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
 		newTracer(WithAnalytics(true))
 		assert.Equal(1., globalconfig.AnalyticsRate())
+	})
+
+	t.Run("dogstatsd", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			tracer := newTracer()
+			c := tracer.config
+			assert.Equal(t, c.dogstatsdAddr, "localhost:8125")
+		})
+
+		t.Run("env-host", func(t *testing.T) {
+			os.Setenv("DD_AGENT_HOST", "my-host")
+			defer os.Unsetenv("DD_AGENT_HOST")
+			tracer := newTracer()
+			c := tracer.config
+			assert.Equal(t, c.dogstatsdAddr, "my-host:8125")
+		})
+
+		t.Run("env-port", func(t *testing.T) {
+			os.Setenv("DD_DOGSTATSD_PORT", "123")
+			defer os.Unsetenv("DD_DOGSTATSD_PORT")
+			tracer := newTracer()
+			c := tracer.config
+			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
+		})
+
+		t.Run("env-both", func(t *testing.T) {
+			os.Setenv("DD_AGENT_HOST", "my-host")
+			os.Setenv("DD_DOGSTATSD_PORT", "123")
+			defer os.Unsetenv("DD_AGENT_HOST")
+			defer os.Unsetenv("DD_DOGSTATSD_PORT")
+			tracer := newTracer()
+			c := tracer.config
+			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
+		})
+
+		t.Run("option", func(t *testing.T) {
+			tracer := newTracer(WithDogstatsdAddress("10.1.0.12:4002"))
+			c := tracer.config
+			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
+		})
 	})
 
 	t.Run("other", func(t *testing.T) {

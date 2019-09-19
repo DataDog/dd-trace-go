@@ -14,6 +14,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"github.com/DataDog/datadog-go/statsd"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)
@@ -141,6 +143,15 @@ func newTracer(opts ...StartOption) *tracer {
 		prioritySampling: newPrioritySampler(),
 		pid:              strconv.Itoa(os.Getpid()),
 	}
+	if c.runtimeMetrics {
+		statsd, err := statsd.NewBuffered(t.config.dogstatsdAddr, 40)
+		if err != nil {
+			log.Warn("Runtime metrics disabled: %v", err)
+		} else {
+			log.Debug("Runtime metrics enabled.")
+			go t.reportMetrics(statsd, defaultMetricsReportInterval)
+		}
+	}
 
 	go t.worker()
 
@@ -253,6 +264,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		span.SetTag(ext.Pid, t.pid)
 		if t.hostname != "" {
 			span.SetTag(keyHostname, t.hostname)
+		}
+		if _, ok := opts.Tags[ext.ServiceName]; !ok && t.config.runtimeMetrics {
+			// this is a root span in the global service; runtime metrics should
+			// be linked to it:
+			span.SetTag("language", "go")
 		}
 	}
 	// add tags from options
