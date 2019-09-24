@@ -6,7 +6,7 @@ jobs:
     resource_class: xlarge
 
     docker:
-    - image: circleci/golang:latest
+    - image: circleci/golang:1.10
     - image: cassandra:3.7
     - image: circleci/mysql:5.7
       environment:
