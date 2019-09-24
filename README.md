@@ -9,7 +9,7 @@ go get gopkg.in/DataDog/dd-trace-go.v1/ddtrace
 
 Requires:
 
-* Go 1.9
+* Go >= 1.10
 * Datadog's Trace Agent >= 5.21.1
 
 ### Documentation
