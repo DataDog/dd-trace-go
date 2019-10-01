@@ -55,6 +55,11 @@ type tracer struct {
 
 	// pid of the process
 	pid string
+
+	// rulesSampling holds an instance of the rules sampler. These are user-defined
+	// rules for applying a sampling rate to spans that match the designated service
+	// or operation name.
+	rulesSampling *rulesSampler
 }
 
 const (
@@ -140,6 +145,7 @@ func newTracer(opts ...StartOption) *tracer {
 		exitChan:         make(chan struct{}),
 		payloadChan:      make(chan []*span, payloadQueueSize),
 		stopped:          make(chan struct{}),
+		rulesSampling:    newRulesSampler(c.rulesConfig),
 		prioritySampling: newPrioritySampler(),
 		pid:              strconv.Itoa(os.Getpid()),
 	}
@@ -368,6 +374,9 @@ func (t *tracer) sample(span *span) {
 	}
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, rs.Rate())
+	}
+	if t.rulesSampling.apply(span) {
+		return
 	}
 	t.prioritySampling.apply(span)
 }

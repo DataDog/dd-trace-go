@@ -62,6 +62,9 @@ type config struct {
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
 	dogstatsdAddr string
+
+	// rulesConfig ...
+	rulesConfig string
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -212,6 +215,14 @@ func WithRuntimeMetrics() StartOption {
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
 		cfg.dogstatsdAddr = addr
+	}
+}
+
+// WithSamplingRules specifies the sampling rates to apply to spans based on the
+// provided rules.
+func WithSamplingRules(rules string) StartOption {
+	return func(cfg *config) {
+		cfg.rulesConfig = rules
 	}
 }
 

@@ -9,10 +9,16 @@ import (
 	"encoding/json"
 	"io"
 	"math"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+
+	"golang.org/x/time/rate"
 )
 
 // Sampler is the generic interface of any sampler. It must be safe for concurrent use.
@@ -146,4 +152,170 @@ func (ps *prioritySampler) apply(spn *span) {
 		spn.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
 	}
 	spn.SetTag(keySamplingPriorityRate, rate)
+}
+
+type rulesSampler struct {
+	rules   []rule
+	limiter *rate.Limiter
+	// "effective rate" calculations
+	mu           sync.Mutex
+	ts           int64
+	allowed      int
+	total        int
+	previousRate float64
+}
+
+func newRulesSampler(config string) *rulesSampler {
+	return &rulesSampler{
+		rules:   parseRules(config),
+		limiter: rate.NewLimiter(rate.Limit(100), 100),
+	}
+}
+
+func (rs *rulesSampler) apply(span *span) bool {
+	matched := false
+	sr := 0.0
+	for _, v := range rs.rules {
+		if v.match(span) {
+			matched = true
+			sr = v.Rate
+			break
+		}
+	}
+	if !matched {
+		return false
+	}
+	// rate sample
+	span.SetTag("_dd.rule_psr", sr)
+	if !sampledByRate(span.TraceID, sr) {
+		span.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
+		return true
+	}
+	// global rate limit and effective rate calculations
+	defer rs.mu.Unlock()
+	rs.mu.Lock()
+	if ts := time.Now().Unix(); ts > rs.ts {
+		// update "previous rate" and reset
+		if ts-rs.ts == 1 && rs.total > 0 && rs.allowed > 0 {
+			rs.previousRate = float64(rs.allowed) / float64(rs.total)
+		} else {
+			rs.previousRate = 0.0
+		}
+		rs.ts = ts
+		rs.allowed = 0
+		rs.total = 0
+	}
+
+	rs.total++
+	// calculate effective rate, and tag the span
+	er := (rs.previousRate + (float64(rs.allowed) / float64(rs.total))) / 2.0
+	span.SetTag("_dd.limit_psr", er)
+	if !rs.limiter.Allow() {
+		span.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
+		return true
+	}
+	span.SetTag(ext.SamplingPriority, ext.PriorityAutoKeep)
+	rs.allowed++
+
+	return true
+}
+
+type matchFunc func(string) bool
+
+type rule struct {
+	Service matchFunc
+	Name    matchFunc
+	Rate    float64
+}
+
+func (r *rule) match(s *span) bool {
+	if r.Service != nil && !r.Service(s.Service) {
+		return false
+	}
+	if r.Name != nil && !r.Name(s.Name) {
+		return false
+	}
+	return true
+}
+
+// parseRules uses the rules config to produce a list of rules
+// to apply during sampling. The initial implementation is simple
+// preprocessing and lookups. It may be replaced with a proper parser
+// if necessary in the future.
+func parseRules(config string) []rule {
+	// split the rules config into invididual rules
+	tokens := strings.FieldsFunc(config, func(r rune) bool {
+		switch r {
+		case ';', '\n':
+			return true
+		default:
+			return false
+		}
+	})
+	// match functions for service and span name
+	any := func(s string) bool {
+		return true
+	}
+	equals := func(s string) matchFunc {
+		return func(v string) bool {
+			return s == v
+		}
+	}
+	regex := func(r *regexp.Regexp) matchFunc {
+		return func(v string) bool {
+			return r.MatchString(v)
+		}
+	}
+	optionalMatch := func(key string, line string) matchFunc {
+		key = key + "="
+		idx := strings.Index(line, key)
+		if idx < 0 {
+			return any
+		}
+		val := line[idx+len(key):]
+		if idx := strings.Index(val, " "); idx >= 0 {
+			val = val[:idx]
+		}
+		if val == "" {
+			return any
+		}
+		re, err := regexp.Compile(val)
+		if err != nil {
+			return nil
+		}
+		if _, complete := re.LiteralPrefix(); complete {
+			return equals(val)
+		}
+		return regex(re)
+	}
+
+	// each rule must have at least a valid rate, but the
+	// span's service and name are optional
+	var rules []rule
+	for _, line := range tokens {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// extract rate (required)
+		idx := strings.Index(line, "rate=")
+		if idx < 0 {
+			continue
+		}
+		rv := line[idx+len("rate="):]
+		if idx := strings.Index(rv, " "); idx >= 0 {
+			rv = rv[:idx]
+		}
+		rate, err := strconv.ParseFloat(rv, 64)
+		if err != nil {
+			continue
+		}
+		r := rule{
+			Service: optionalMatch("service", line),
+			Name:    optionalMatch("name", line),
+			Rate:    rate,
+		}
+		rules = append(rules, r)
+	}
+	return rules
 }
