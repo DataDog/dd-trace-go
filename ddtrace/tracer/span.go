@@ -297,11 +297,6 @@ func (s *span) finish(finishTime int64) {
 		s.Duration = finishTime - s.Start
 	}
 	s.finished = true
-
-	if s.context.drop {
-		// not sampled by local sampler
-		return
-	}
 	s.context.finish()
 }
 
