@@ -75,7 +75,4 @@ const (
 
 	// SpanTypeConsul marks a span as a Consul operation.
 	SpanTypeConsul = "consul"
-
-	// SpanTypeVault marks a span as a Vault operation.
-	SpanTypeVault = "vault"
 )
