@@ -196,6 +196,37 @@ func TestTracerStartSpan(t *testing.T) {
 	})
 }
 
+func TestTracerRuntimeMetrics(t *testing.T) {
+	t.Run("on", func(t *testing.T) {
+		tp := new(testLogger)
+		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
+		defer tracer.Stop()
+		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
+	})
+
+	t.Run("off", func(t *testing.T) {
+		tp := new(testLogger)
+		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
+		defer tracer.Stop()
+		assert.Len(t, tp.Lines(), 0)
+		s := tracer.StartSpan("op").(*span)
+		_, ok := s.Meta["language"]
+		assert.False(t, ok)
+	})
+
+	t.Run("spans", func(t *testing.T) {
+		tracer := newTracer(WithRuntimeMetrics(), WithServiceName("main"))
+		defer tracer.Stop()
+
+		s := tracer.StartSpan("op").(*span)
+		assert.Equal(t, s.Meta["language"], "go")
+
+		s = tracer.StartSpan("op", ServiceName("secondary")).(*span)
+		_, ok := s.Meta["language"]
+		assert.False(t, ok)
+	})
+}
+
 func TestTracerStartSpanOptions(t *testing.T) {
 	tracer := newTracer()
 	now := time.Now()
@@ -521,9 +552,9 @@ func TestTracerEdgeSampler(t *testing.T) {
 	count := payloadQueueSize / 3
 
 	for i := 0; i < count; i++ {
-		span0 := tracer0.newRootSpan("pylons.request", "pylons", "/")
+		span0 := tracer0.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 		span0.Finish()
-		span1 := tracer1.newRootSpan("pylons.request", "pylons", "/")
+		span1 := tracer1.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 		span1.Finish()
 	}
 
@@ -693,6 +724,50 @@ func TestTracerTraceMaxSize(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+func TestStartDroppedSpan(t *testing.T) {
+	tracer, _, stop := startTestTracer(WithSampler(NewRateSampler(0)))
+	defer stop()
+
+	t.Run("root", func(t *testing.T) {
+		root := tracer.StartSpan("root")
+		span, ok := root.(*droppedSpan)
+		assert.True(t, ok)
+		assert.True(t, span.traceID > 0)
+	})
+
+	t.Run("child", func(t *testing.T) {
+		root := tracer.StartSpan("root")
+		child := tracer.StartSpan("child", ChildOf(root.Context()))
+		span, ok := child.(*droppedSpan)
+		assert.True(t, ok)
+		assert.True(t, span.traceID > 0)
+	})
+
+	t.Run("priority", func(t *testing.T) {
+		root := tracer.StartSpan("root", Tag(ext.SamplingPriority, 0))
+		_, ok := root.(*droppedSpan)
+		assert.False(t, ok)
+	})
+
+	t.Run("priority-private", func(t *testing.T) {
+		root := tracer.StartSpan("root", Tag(keySamplingPriority, 0))
+		_, ok := root.(*droppedSpan)
+		assert.False(t, ok)
+	})
+
+	t.Run("propagation", func(t *testing.T) {
+		root := tracer.StartSpan("root")
+		textmap := make(TextMapCarrier)
+		err := tracer.Inject(root.Context(), textmap)
+		assert.NoError(t, err)
+		assert.Equal(t, "-1", textmap[DefaultPriorityHeader])
+		assert.Equal(t, fmt.Sprint(root.(*droppedSpan).traceID), textmap[DefaultTraceIDHeader])
+		assert.Equal(t, fmt.Sprint(root.(*droppedSpan).traceID), textmap[DefaultParentIDHeader])
+		_, err = tracer.Extract(textmap)
+		assert.NoError(t, err)
+	})
 }
 
 func TestTracerRace(t *testing.T) {

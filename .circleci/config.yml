@@ -6,7 +6,7 @@ jobs:
     resource_class: xlarge
 
     docker:
-    - image: circleci/golang:latest
+    - image: circleci/golang:1.10
     - image: cassandra:3.7
     - image: circleci/mysql:5.7
       environment:
@@ -50,7 +50,7 @@ jobs:
 
     - restore_cache:
         keys:
-        - v1-librdkafka-v1.1.0
+        - v1-librdkafka-v1.1.0-{{ checksum "/etc/os-release" }}
     - run:
         name: Install librdkafka v1.1.0
         command: |
@@ -63,7 +63,7 @@ jobs:
           (cd /tmp/librdkafka-v1.1.0 && sudo make install)
           sudo ldconfig
     - save_cache:
-        key: v1-librdkafka-v1.1.0
+        key: v1-librdkafka-v1.1.0-{{ checksum "/etc/os-release" }}
         paths:
         - /tmp/librdkafka-v1.1.0
 

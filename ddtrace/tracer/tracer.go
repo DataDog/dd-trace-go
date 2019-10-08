@@ -14,6 +14,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"github.com/DataDog/datadog-go/statsd"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)
@@ -141,6 +143,15 @@ func newTracer(opts ...StartOption) *tracer {
 		prioritySampling: newPrioritySampler(),
 		pid:              strconv.Itoa(os.Getpid()),
 	}
+	if c.runtimeMetrics {
+		statsd, err := statsd.NewBuffered(t.config.dogstatsdAddr, 40)
+		if err != nil {
+			log.Warn("Runtime metrics disabled: %v", err)
+		} else {
+			log.Debug("Runtime metrics enabled.")
+			go t.reportMetrics(statsd, defaultMetricsReportInterval)
+		}
+	}
 
 	go t.worker()
 
@@ -198,21 +209,31 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for _, fn := range options {
 		fn(&opts)
 	}
+	id := opts.SpanID
+	if id == 0 {
+		id = random.Uint64()
+	}
+	var parent *spanContext
+	if opts.Parent != nil {
+		switch ctx := opts.Parent.(type) {
+		case *spanContext:
+			parent = ctx
+		case *droppedSpanContext:
+			// this trace was dropped by the client sampler; we return the same
+			// no-op span for every started child
+			return ctx.droppedSpan
+		}
+	} else {
+		if !t.isLocallySampled(id, &opts) {
+			// this is a local root and the client sampler decided to drop the trace
+			return &droppedSpan{traceID: id}
+		}
+	}
 	var startTime int64
 	if opts.StartTime.IsZero() {
 		startTime = now()
 	} else {
 		startTime = opts.StartTime.UnixNano()
-	}
-	var context *spanContext
-	if opts.Parent != nil {
-		if ctx, ok := opts.Parent.(*spanContext); ok {
-			context = ctx
-		}
-	}
-	id := opts.SpanID
-	if id == 0 {
-		id = random.Uint64()
 	}
 	// span defaults
 	span := &span{
@@ -227,32 +248,37 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		Start:    startTime,
 		taskEnd:  startExecutionTracerTask(operationName),
 	}
-	if context != nil {
+	if parent != nil {
 		// this is a child span
-		span.TraceID = context.traceID
-		span.ParentID = context.spanID
-		if context.hasSamplingPriority() {
-			span.Metrics[keySamplingPriority] = float64(context.samplingPriority())
+		span.TraceID = parent.traceID
+		span.ParentID = parent.spanID
+		if parent.hasSamplingPriority() {
+			span.Metrics[keySamplingPriority] = float64(parent.samplingPriority())
 		}
-		if context.span != nil {
-			// local parent, inherit service
-			context.span.RLock()
-			span.Service = context.span.Service
-			context.span.RUnlock()
+		if parent.span != nil {
+			// the span has a local parent; inherit its service
+			parent.span.RLock()
+			span.Service = parent.span.Service
+			parent.span.RUnlock()
 		} else {
-			// remote parent
-			if context.origin != "" {
-				// mark origin
-				span.Meta[keyOrigin] = context.origin
+			// the span has a remote parent
+			if parent.origin != "" {
+				// the remote propagated an origin; mark it
+				span.Meta[keyOrigin] = parent.origin
 			}
 		}
 	}
-	span.context = newSpanContext(span, context)
-	if context == nil || context.span == nil {
+	span.context = newSpanContext(span, parent)
+	if parent == nil || parent.span == nil {
 		// this is either a root span or it has a remote parent, we should add the PID.
 		span.SetTag(ext.Pid, t.pid)
 		if t.hostname != "" {
 			span.SetTag(keyHostname, t.hostname)
+		}
+		if _, ok := opts.Tags[ext.ServiceName]; !ok && t.config.runtimeMetrics {
+			// this is a root span in the global service; runtime metrics should
+			// be linked to it:
+			span.SetTag("language", "go")
 		}
 	}
 	// add tags from options
@@ -263,9 +289,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for k, v := range t.config.globalTags {
 		span.SetTag(k, v)
 	}
-	if context == nil {
-		// this is a brand new trace, sample it
-		t.sample(span)
+	if parent == nil && !span.context.hasSamplingPriority() {
+		// this is a brand new trace with no sampling priority
+		t.prioritySampling.apply(span)
 	}
 	return span
 }
@@ -283,6 +309,9 @@ func (t *tracer) Stop() {
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
+	if dctx, ok := ctx.(*droppedSpanContext); ok {
+		ctx = dctx.spanContext
+	}
 	return t.config.propagator.Inject(ctx, carrier)
 }
 
@@ -328,22 +357,31 @@ func (t *tracer) pushPayload(trace []*span) {
 	}
 }
 
+// isLocallySampled reports whether a newly started span with the given configuration
+// and id should be sampled. The function may also alter cfg by introducing further
+// tags.
+func (t *tracer) isLocallySampled(id uint64, cfg *ddtrace.StartSpanConfig) bool {
+	_, ok1 := cfg.Tags[ext.SamplingPriority]
+	_, ok2 := cfg.Tags[keySamplingPriority]
+	if ok1 || ok2 {
+		// a span with user defined sampling priority stays
+		return true
+	}
+	rs, ok := t.config.sampler.(*rateSampler)
+	if !ok || rs.Rate() >= 1 {
+		// either not a rate sampler or all-permissive
+		return true
+	}
+	// TODO(v2): This is hacky and renders the Sampler interface useless. See issue #508.
+	if !sampledByRate(id, rs.Rate()) {
+		return false
+	}
+	if cfg.Tags == nil {
+		cfg.Tags = make(map[string]interface{}, 1)
+	}
+	cfg.Tags[sampleRateMetricKey] = rs.Rate()
+	return true
+}
+
 // sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.
 const sampleRateMetricKey = "_sample_rate"
-
-// Sample samples a span with the internal sampler.
-func (t *tracer) sample(span *span) {
-	if span.context.hasSamplingPriority() {
-		// sampling decision was already made
-		return
-	}
-	sampler := t.config.sampler
-	if !sampler.Sample(span) {
-		span.context.drop = true
-		return
-	}
-	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
-		span.Metrics[sampleRateMetricKey] = rs.Rate()
-	}
-	t.prioritySampling.apply(span)
-}
