@@ -17,7 +17,7 @@ func ExampleNewHTTPClient() {
 		Address:    "http://vault.mydomain.com:8200",
 	})
 	if err != nil {
-		log.Panicf("Failed to create vault client: %s\n", err)
+		log.Fatalf("Failed to create vault client: %s\n", err)
 	}
 
 	// This call wil be traced
@@ -34,7 +34,7 @@ func ExampleNewHTTPClient_withOptions() {
 		Address: "http://vault.mydomain.com:8200",
 	})
 	if err != nil {
-		log.Panicf("Failed to create vault client: %s\n", err)
+		log.Fatalf("Failed to create vault client: %s\n", err)
 	}
 
 	// This call wil be traced
@@ -59,7 +59,7 @@ func ExampleWrapHTTPClient() {
 		Address:    "http://vault.mydomain.com:8200",
 	})
 	if err != nil {
-		log.Panicf("Failed to create vault client: %s\n", err)
+		log.Fatalf("Failed to create vault client: %s\n", err)
 	}
 
 	// This call wil be traced
@@ -87,7 +87,7 @@ func ExampleWrapHTTPClient_withOptions() {
 		Address: "http://vault.mydomain.com:8200",
 	})
 	if err != nil {
-		log.Panicf("Failed to create vault client: %s\n", err)
+		log.Fatalf("Failed to create vault client: %s\n", err)
 	}
 
 	// This call wil be traced
