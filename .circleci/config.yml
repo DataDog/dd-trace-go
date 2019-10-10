@@ -48,6 +48,11 @@ jobs:
     steps:
     - checkout
 
+    - run:
+        name: Check copyright
+        command: |
+          go run checkcopyright.go
+
     - restore_cache:
         keys:
         - v1-librdkafka-v1.1.0-{{ checksum "/etc/os-release" }}
