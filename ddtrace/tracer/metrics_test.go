@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -26,14 +27,11 @@ func TestReportMetrics(t *testing.T) {
 	}
 
 	var tg testGauger
-	ch := make(chan struct{}, 30)
-	tg.ch = ch
 	go trc.reportMetrics(&tg, time.Millisecond)
-	for i := 0; i < 30; i++ {
-		<-ch
-	}
+	err := tg.Wait(30, 1*time.Second)
 	close(trc.stopped)
 	assert := assert.New(t)
+	assert.NoError(err)
 	calls := tg.CallNames()
 	tags := tg.Tags()
 	assert.True(len(calls) > 30)
@@ -46,10 +44,11 @@ func TestReportMetrics(t *testing.T) {
 }
 
 type testGauger struct {
-	mu    sync.RWMutex
-	calls []string
-	tags  []string
-	ch    chan<- struct{}
+	mu     sync.RWMutex
+	calls  []string
+	tags   []string
+	waitCh chan struct{}
+	n      int
 }
 
 func (tg *testGauger) Gauge(name string, value float64, tags []string, rate float64) error {
@@ -57,9 +56,11 @@ func (tg *testGauger) Gauge(name string, value float64, tags []string, rate floa
 	defer tg.mu.Unlock()
 	tg.calls = append(tg.calls, name)
 	tg.tags = tags
-	select {
-	case tg.ch <- struct{}{}:
-	default:
+	if tg.n > 0 {
+		tg.n--
+		if tg.n == 0 {
+			close(tg.waitCh)
+		}
 	}
 	return nil
 }
@@ -81,4 +82,28 @@ func (tg *testGauger) Reset() {
 	defer tg.mu.Unlock()
 	tg.calls = tg.calls[:0]
 	tg.tags = tg.tags[:0]
+	if tg.waitCh != nil {
+		close(tg.waitCh)
+	}
+	tg.n = 0
+}
+
+// Wait blocks until n metrics have been reported using the testGauger or until duration d passes.
+// If d passes, or a wait is already active, an error is returned.
+func (tg *testGauger) Wait(n int, d time.Duration) error {
+	tg.mu.Lock()
+	if tg.waitCh != nil {
+		tg.mu.Unlock()
+		return fmt.Errorf("already waiting")
+	}
+	tg.waitCh = make(chan struct{})
+	tg.n = n
+	tg.mu.Unlock()
+
+	select {
+	case <-tg.waitCh:
+		return nil
+	case <-time.After(d):
+		return fmt.Errorf("timed out after waiting %v for gauge events", d)
+	}
 }
