@@ -26,8 +26,12 @@ func TestReportMetrics(t *testing.T) {
 	}
 
 	var tg testGauger
+	ch := make(chan struct{}, 30)
+	tg.ch = ch
 	go trc.reportMetrics(&tg, time.Millisecond)
-	time.Sleep(5 * time.Millisecond)
+	for i := 0; i < 30; i++ {
+		<-ch
+	}
 	close(trc.stopped)
 	assert := assert.New(t)
 	calls := tg.CallNames()
@@ -45,6 +49,7 @@ type testGauger struct {
 	mu    sync.RWMutex
 	calls []string
 	tags  []string
+	ch    chan<- struct{}
 }
 
 func (tg *testGauger) Gauge(name string, value float64, tags []string, rate float64) error {
@@ -52,6 +57,10 @@ func (tg *testGauger) Gauge(name string, value float64, tags []string, rate floa
 	defer tg.mu.Unlock()
 	tg.calls = append(tg.calls, name)
 	tg.tags = tags
+	select {
+	case tg.ch <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -71,4 +80,5 @@ func (tg *testGauger) Reset() {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	tg.calls = tg.calls[:0]
+	tg.tags = tg.tags[:0]
 }
