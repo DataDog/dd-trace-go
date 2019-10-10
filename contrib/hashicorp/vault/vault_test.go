@@ -28,6 +28,7 @@ func TestClient(t *testing.T) {
 		assert.NotNil(client)
 		assert.Nil(err)
 	})
+
 	t.Run("error", func(t *testing.T) {
 		assert := assert.New(t)
 		var config = &api.Config{
@@ -150,6 +151,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal(200, span.Tag(ext.HTTPCode))
 		assert.Zero(span.Tag(ext.Error))
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Zero(span.Tag("vault.namespace"))
 	})
 
@@ -174,6 +176,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal(200, span.Tag(ext.HTTPCode))
 		assert.Zero(span.Tag(ext.Error))
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Zero(span.Tag("vault.namespace"))
 	})
 
@@ -205,6 +208,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal(200, span.Tag(ext.HTTPCode))
 		assert.Zero(span.Tag(ext.Error))
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Zero(span.Tag("vault.namespace"))
 	})
 }
@@ -239,7 +243,8 @@ func TestReadError(t *testing.T) {
 	assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
 	assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 	assert.Equal(404, span.Tag(ext.HTTPCode))
-	assert.NotZero(span.Tag(ext.Error))
+	assert.Equal(true, span.Tag(ext.Error))
+	assert.NotZero(span.Tag(ext.ErrorMsg))
 	assert.Zero(span.Tag("vault.namespace"))
 }
 
@@ -258,6 +263,7 @@ func TestNamespace(t *testing.T) {
 	client.SetNamespace(namespace)
 	key := secretMountPath + "/testNamespace"
 	fullPath := "/v1" + key
+
 	t.Run("write", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -279,8 +285,10 @@ func TestNamespace(t *testing.T) {
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal(200, span.Tag(ext.HTTPCode))
 		assert.Zero(span.Tag(ext.Error))
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Equal(namespace, span.Tag("vault.namespace"))
 	})
+
 	t.Run("read", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -307,6 +315,7 @@ func TestNamespace(t *testing.T) {
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal(200, span.Tag(ext.HTTPCode))
 		assert.Zero(span.Tag(ext.Error))
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Equal(namespace, span.Tag("vault.namespace"))
 	})
 }

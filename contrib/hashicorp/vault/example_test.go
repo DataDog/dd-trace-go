@@ -5,46 +5,44 @@ import (
 	"log"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/hashicorp/vault"
+	vaulttrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/hashicorp/vault"
 
 	"github.com/hashicorp/vault/api"
 )
 
-// This is the most basic way to enable tracing with Vault
+// This is the most basic way to enable tracing with Vault.
 func ExampleNewHTTPClient() {
 	c, err := api.NewClient(&api.Config{
-		HttpClient: vault.NewHTTPClient(),
+		HttpClient: vaulttrace.NewHTTPClient(),
 		Address:    "http://vault.mydomain.com:8200",
 	})
 	if err != nil {
-		log.Fatalf("Failed to create vault client: %s\n", err)
+		log.Fatalf("Failed to create Vault client: %s\n", err)
 	}
-
 	// This call wil be traced
 	c.Logical().Read("/secret/key")
 }
 
-// Options can be passed in to configure the tracer
+// NewHTTPClient can be called with additional options to configure the integration.
 func ExampleNewHTTPClient_withOptions() {
 	c, err := api.NewClient(&api.Config{
-		HttpClient: vault.NewHTTPClient(
-			vault.WithServiceName("my.vault"),
-			vault.WithAnalytics(true),
-			vault.WithAnalyticsRate(1.0)),
+		HttpClient: vaulttrace.NewHTTPClient(
+			vaulttrace.WithServiceName("my.vault"),
+			vaulttrace.WithAnalytics(true),
+		),
 		Address: "http://vault.mydomain.com:8200",
 	})
 	if err != nil {
-		log.Fatalf("Failed to create vault client: %s\n", err)
+		log.Fatalf("Failed to create Vault client: %s\n", err)
 	}
-
 	// This call wil be traced
 	c.Logical().Read("/secret/key")
 }
 
-// If you already have an *http.Client that you're using (c in this example), you can continue to use it by
-// calling WrapHTTPClient to wrap the tracing code around its Transport.
+// If you already have an http.Client that you're using, you can add tracing to it
+// with WrapHTTPClient.
 func ExampleWrapHTTPClient() {
-	// We use a custom *http.Client to talk to vault.
+	// We use a custom *http.Client to talk to Vault.
 	c := &http.Client{
 		CheckRedirect: func(r *http.Request, via []*http.Request) error {
 			if len(via) > 5 {
@@ -53,22 +51,21 @@ func ExampleWrapHTTPClient() {
 			return nil
 		},
 	}
-
 	client, err := api.NewClient(&api.Config{
-		HttpClient: vault.WrapHTTPClient(c),
+		HttpClient: vaulttrace.WrapHTTPClient(c),
 		Address:    "http://vault.mydomain.com:8200",
 	})
 	if err != nil {
-		log.Fatalf("Failed to create vault client: %s\n", err)
+		log.Fatalf("Failed to create Vault client: %s\n", err)
 	}
 
 	// This call wil be traced
 	client.Logical().Read("/secret/key")
 }
 
-// Options can be passed in to configure the tracer
+// WrapHTTPClient can be called with additional options to configure the integration.
 func ExampleWrapHTTPClient_withOptions() {
-	// We use a custom *http.Client to talk to vault.
+	// We use a custom *http.Client to talk to Vault.
 	c := &http.Client{
 		CheckRedirect: func(r *http.Request, via []*http.Request) error {
 			if len(via) > 5 {
@@ -77,19 +74,17 @@ func ExampleWrapHTTPClient_withOptions() {
 			return nil
 		},
 	}
-
 	client, err := api.NewClient(&api.Config{
-		HttpClient: vault.WrapHTTPClient(
+		HttpClient: vaulttrace.WrapHTTPClient(
 			c,
-			vault.WithServiceName("my.vault"),
-			vault.WithAnalytics(true),
-			vault.WithAnalyticsRate(1.0)),
+			vaulttrace.WithServiceName("my.vault"),
+			vaulttrace.WithAnalytics(true),
+		),
 		Address: "http://vault.mydomain.com:8200",
 	})
 	if err != nil {
-		log.Fatalf("Failed to create vault client: %s\n", err)
+		log.Fatalf("Failed to create Vault client: %s\n", err)
 	}
-
 	// This call wil be traced
 	client.Logical().Read("/secret/key")
 }

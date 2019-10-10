@@ -8,8 +8,7 @@ type config struct {
 	serviceName   string
 }
 
-// Option can be passed to NewHTTPClient and WrapHTTPClient to configure the tracer.
-// They can be created with the functions WithAnalytics, WithAnalyticsRate, and WithServiceName
+// Option can be passed to NewHTTPClient and WrapHTTPClient to configure the integration.
 type Option func(*config)
 
 func defaults(cfg *config) {
