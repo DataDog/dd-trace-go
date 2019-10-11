@@ -1,6 +1,6 @@
 // Package vault contains functions to construct or augment an http.Client that
 // will integrate with the github.com/hashicorp/vault/api and collect traces to
-// send to DataDog.
+// send to Datadog.
 //
 // The easiest way to use this package is to create an http.Client with
 // NewHTTPClient, and put it in the Vault API config that is passed to the
@@ -23,9 +23,8 @@ import (
 	"github.com/hashicorp/vault/sdk/helper/consts"
 )
 
-// NewHTTPClient returns an http.Client for use in the config for the vault api
-// Client. Options can be optionally passed in to configure various tracer
-// features such as Analytics
+// NewHTTPClient returns an http.Client for use in the Vault API config
+// Client. A set of options can be passed in for further configuration.
 func NewHTTPClient(opts ...Option) *http.Client {
 	dc := api.DefaultConfig()
 	c := dc.HttpClient
@@ -33,9 +32,8 @@ func NewHTTPClient(opts ...Option) *http.Client {
 	return c
 }
 
-// WrapHTTPClient takes an existing http.Client and wraps the transport with
-// the tracing code. This will leave the existing Transport in place underneath,
-// only adding tracing code around it.
+// WrapHTTPClient takes an existing http.Client and wraps the underlying
+// transport with tracing.
 func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 	if c.Transport == nil {
 		c.Transport = http.DefaultTransport
@@ -58,15 +56,15 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 				s.SetTag("vault.namespace", ns)
 			}
 		}),
-		httptrace.WithAfter(func(r *http.Response, s ddtrace.Span) {
-			if r == nil {
+		httptrace.WithAfter(func(res *http.Response, s ddtrace.Span) {
+			if res == nil {
 				// An error occurred during the request.
 				return
 			}
-			s.SetTag(ext.HTTPCode, r.StatusCode)
-			if r.StatusCode >= 400 {
+			s.SetTag(ext.HTTPCode, res.StatusCode)
+			if res.StatusCode >= 400 {
 				s.SetTag(ext.Error, true)
-				s.SetTag(ext.ErrorMsg, fmt.Sprintf("%d: %s", r.StatusCode, http.StatusText(r.StatusCode)))
+				s.SetTag(ext.ErrorMsg, fmt.Sprintf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))
 			}
 		}),
 	)

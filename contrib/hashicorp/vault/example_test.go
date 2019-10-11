@@ -23,7 +23,7 @@ func ExampleNewHTTPClient() {
 	c.Logical().Read("/secret/key")
 }
 
-// NewHTTPClient can be called with additional options to configure the integration.
+// NewHTTPClient can be called with additional options for further configuration.
 func ExampleNewHTTPClient_withOptions() {
 	c, err := api.NewClient(&api.Config{
 		HttpClient: vaulttrace.NewHTTPClient(

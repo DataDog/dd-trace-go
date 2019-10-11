@@ -21,24 +21,11 @@ func TestClient(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	t.Run("ok", func(t *testing.T) {
-		assert := assert.New(t)
-		client, err := api.NewClient(&api.Config{HttpClient: NewHTTPClient()})
-		assert.NoError(err)
-		assert.NotNil(client)
-		assert.Nil(err)
-	})
-
-	t.Run("error", func(t *testing.T) {
-		assert := assert.New(t)
-		var config = &api.Config{
-			HttpClient: NewHTTPClient(),
-			Address:    "http://bad host.com",
-		}
-		client, err := api.NewClient(config)
-		assert.Nil(client)
-		assert.Error(err)
-	})
+	assert := assert.New(t)
+	client, err := api.NewClient(&api.Config{HttpClient: NewHTTPClient()})
+	assert.NoError(err)
+	assert.NotNil(client)
+	assert.Nil(err)
 }
 
 func setupServer(t *testing.T) (*httptest.Server, func()) {
@@ -61,11 +48,9 @@ func setupServer(t *testing.T) (*httptest.Server, func()) {
 			}
 			secret := api.Secret{Data: make(map[string]interface{})}
 			json.Unmarshal([]byte(val), &secret.Data)
-			secretJSON, err := json.Marshal(secret)
-			if err != nil {
+			if err := json.NewEncoder(w).Encode(secret); err != nil {
 				t.Fatal(err)
 			}
-			fmt.Fprintf(w, "%s\n", secretJSON)
 		}
 	}))
 	return ts, func() {
@@ -114,6 +99,8 @@ func TestWrapHTTPClient(t *testing.T) {
 	testMountReadWrite(client, t)
 }
 
+// mountKV mounts the K/V engine on secretMountPath and returns a function to unmount it.
+// See: https://www.vaultproject.io/docs/secrets/
 func mountKV(c *api.Client, t *testing.T) func() {
 	secretMount := api.MountInput{
 		Type:        "kv",
