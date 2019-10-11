@@ -306,3 +306,135 @@ func TestNamespace(t *testing.T) {
 		assert.Equal(namespace, span.Tag("vault.namespace"))
 	})
 }
+
+func getWriteSpan(t *testing.T, conf *api.Config) mocktracer.Span {
+	assert := assert.New(t)
+	client, err := api.NewClient(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mountKV(client, t)()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	_, err = client.Logical().Write(
+		secretMountPath+"/key",
+		map[string]interface{}{"Key1": "Val1", "Key2": "Val2"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 1)
+	return spans[0]
+}
+
+func TestOptionServiceName(t *testing.T) {
+	assert := assert.New(t)
+
+	ts, cleanupTs := setupServer(t)
+	defer cleanupTs()
+
+	t.Run("WithServiceName", func(t *testing.T) {
+		// Check default
+		config := &api.Config{
+			HttpClient: NewHTTPClient(),
+			Address:    ts.URL,
+		}
+		span := getWriteSpan(t, config)
+		assert.Equal(serviceName, span.Tag(ext.ServiceName))
+
+		customServiceName := "someServiceName"
+		config = &api.Config{
+			HttpClient: NewHTTPClient(WithServiceName(customServiceName)),
+			Address:    ts.URL,
+		}
+		span = getWriteSpan(t, config)
+		assert.Equal(customServiceName, span.Tag(ext.ServiceName))
+	})
+
+	t.Run("WithAnalytics", func(t *testing.T) {
+		// With no option, default should be no tag.
+		config := &api.Config{
+			HttpClient: NewHTTPClient(),
+			Address:    ts.URL,
+		}
+		span := getWriteSpan(t, config)
+		// Zero value for type (nil), not 0.0 float value
+		assert.Zero(span.Tag(ext.EventSampleRate))
+
+		// True should set the tag to 1.0
+		config = &api.Config{
+			HttpClient: NewHTTPClient(WithAnalytics(true)),
+			Address:    ts.URL,
+		}
+		span = getWriteSpan(t, config)
+		assert.Equal(1.0, span.Tag(ext.EventSampleRate))
+
+		// false should remove the tag.
+		config = &api.Config{
+			HttpClient: NewHTTPClient(WithAnalytics(false)),
+			Address:    ts.URL,
+		}
+		span = getWriteSpan(t, config)
+		// Zero value for type (nil), not 0.0 float value
+		assert.Zero(span.Tag(ext.EventSampleRate))
+
+		//Last option should win
+		config = &api.Config{
+			HttpClient: NewHTTPClient(WithAnalyticsRate(0.7), WithAnalytics(true)),
+			Address:    ts.URL,
+		}
+		span = getWriteSpan(t, config)
+		assert.Equal(1.0, span.Tag(ext.EventSampleRate))
+	})
+
+	t.Run("WithAnalyticsRate", func(t *testing.T) {
+		//Negative Should be removed.
+		config := &api.Config{
+			HttpClient: NewHTTPClient(WithAnalyticsRate(-10.0)),
+			Address:    ts.URL,
+		}
+		span := getWriteSpan(t, config)
+		// Zero value for type (nil), not 0.0 float value
+		assert.Zero(span.Tag(ext.EventSampleRate))
+
+		// >1 Should be removed.
+		config = &api.Config{
+			HttpClient: NewHTTPClient(WithAnalyticsRate(10.0)),
+			Address:    ts.URL,
+		}
+		span = getWriteSpan(t, config)
+		// Zero value for type (nil), not 0.0 float value
+		assert.Zero(span.Tag(ext.EventSampleRate))
+
+		// Highest rate
+		rate := 1.0
+		config = &api.Config{
+			HttpClient: NewHTTPClient(WithAnalyticsRate(rate)),
+			Address:    ts.URL,
+		}
+		span = getWriteSpan(t, config)
+		assert.Equal(rate, span.Tag(ext.EventSampleRate))
+
+		// Lowest rate
+		rate = 0.0
+		config = &api.Config{
+			HttpClient: NewHTTPClient(WithAnalyticsRate(rate)),
+			Address:    ts.URL,
+		}
+		span = getWriteSpan(t, config)
+		assert.Equal(rate, span.Tag(ext.EventSampleRate))
+
+		// Last option should win.
+		rate = 0.5
+		config = &api.Config{
+			HttpClient: NewHTTPClient(WithAnalytics(true), WithAnalyticsRate(rate)),
+			Address:    ts.URL,
+		}
+		span = getWriteSpan(t, config)
+		assert.Equal(rate, span.Tag(ext.EventSampleRate))
+	})
+
+}
