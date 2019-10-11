@@ -84,6 +84,7 @@ func (tg *testGauger) Reset() {
 	tg.tags = tg.tags[:0]
 	if tg.waitCh != nil {
 		close(tg.waitCh)
+		tg.waitCh = nil
 	}
 	tg.n = 0
 }
