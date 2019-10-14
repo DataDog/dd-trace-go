@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 // Package vault contains functions to construct or augment an http.Client that
 // will integrate with the github.com/hashicorp/vault/api and collect traces to
 // send to Datadog.

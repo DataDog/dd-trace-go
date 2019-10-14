@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2019 Datadog, Inc.
+
 package vault
 
 import (
@@ -16,17 +21,6 @@ import (
 )
 
 const secretMountPath = "/ns1/ns2/secret"
-
-func TestClient(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	assert := assert.New(t)
-	client, err := api.NewClient(&api.Config{HttpClient: NewHTTPClient()})
-	assert.NoError(err)
-	assert.NotNil(client)
-	assert.Nil(err)
-}
 
 func setupServer(t *testing.T) (*httptest.Server, func()) {
 	storage := make(map[string]string)
@@ -71,8 +65,8 @@ func setupClient(ts *httptest.Server) (*api.Client, error) {
 }
 
 func TestNewHTTPClient(t *testing.T) {
-	ts, cleanupTs := setupServer(t)
-	defer cleanupTs()
+	ts, cleanup := setupServer(t)
+	defer cleanup()
 
 	client, err := setupClient(ts)
 	if err != nil {
@@ -82,8 +76,8 @@ func TestNewHTTPClient(t *testing.T) {
 }
 
 func TestWrapHTTPClient(t *testing.T) {
-	ts, cleanupTs := setupServer(t)
-	defer cleanupTs()
+	ts, cleanup := setupServer(t)
+	defer cleanup()
 
 	httpClient := http.Client{}
 	config := &api.Config{
@@ -116,12 +110,12 @@ func mountKV(c *api.Client, t *testing.T) func() {
 }
 
 func testMountReadWrite(c *api.Client, t *testing.T) {
-	assert := assert.New(t)
 	key := secretMountPath + "/test"
 	fullPath := "/v1" + key
 	data := map[string]interface{}{"Key1": "Val1", "Key2": "Val2"}
 
 	t.Run("mount", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		defer mountKV(c, t)()
@@ -137,12 +131,13 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Equal(http.MethodPost+" /v1/sys/mounts/ns1/ns2/secret", span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal(200, span.Tag(ext.HTTPCode))
-		assert.Zero(span.Tag(ext.Error))
-		assert.Zero(span.Tag(ext.ErrorMsg))
-		assert.Zero(span.Tag("vault.namespace"))
+		assert.Nil(span.Tag(ext.Error))
+		assert.Nil(span.Tag(ext.ErrorMsg))
+		assert.Nil(span.Tag("vault.namespace"))
 	})
 
 	t.Run("write", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		defer mountKV(c, t)()
@@ -162,12 +157,13 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Equal(http.MethodPut+" "+fullPath, span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal(200, span.Tag(ext.HTTPCode))
-		assert.Zero(span.Tag(ext.Error))
-		assert.Zero(span.Tag(ext.ErrorMsg))
-		assert.Zero(span.Tag("vault.namespace"))
+		assert.Nil(span.Tag(ext.Error))
+		assert.Nil(span.Tag(ext.ErrorMsg))
+		assert.Nil(span.Tag("vault.namespace"))
 	})
 
 	t.Run("read", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		defer mountKV(c, t)()
@@ -194,9 +190,9 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal(200, span.Tag(ext.HTTPCode))
-		assert.Zero(span.Tag(ext.Error))
-		assert.Zero(span.Tag(ext.ErrorMsg))
-		assert.Zero(span.Tag("vault.namespace"))
+		assert.Nil(span.Tag(ext.Error))
+		assert.Nil(span.Tag(ext.ErrorMsg))
+		assert.Nil(span.Tag("vault.namespace"))
 	})
 }
 
@@ -205,8 +201,8 @@ func TestReadError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	ts, cleanupTs := setupServer(t)
-	defer cleanupTs()
+	ts, cleanup := setupServer(t)
+	defer cleanup()
 	client, err := setupClient(ts)
 	if err != nil {
 		t.Fatal(err)
@@ -231,15 +227,13 @@ func TestReadError(t *testing.T) {
 	assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 	assert.Equal(404, span.Tag(ext.HTTPCode))
 	assert.Equal(true, span.Tag(ext.Error))
-	assert.NotZero(span.Tag(ext.ErrorMsg))
-	assert.Zero(span.Tag("vault.namespace"))
+	assert.NotNil(span.Tag(ext.ErrorMsg))
+	assert.Nil(span.Tag("vault.namespace"))
 }
 
 func TestNamespace(t *testing.T) {
-	assert := assert.New(t)
-
-	ts, cleanupTs := setupServer(t)
-	defer cleanupTs()
+	ts, cleanup := setupServer(t)
+	defer cleanup()
 	client, err := setupClient(ts)
 	if err != nil {
 		t.Fatal(err)
@@ -252,6 +246,7 @@ func TestNamespace(t *testing.T) {
 	fullPath := "/v1" + key
 
 	t.Run("write", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -271,12 +266,13 @@ func TestNamespace(t *testing.T) {
 		assert.Equal(http.MethodPut+" "+fullPath, span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal(200, span.Tag(ext.HTTPCode))
-		assert.Zero(span.Tag(ext.Error))
-		assert.Zero(span.Tag(ext.ErrorMsg))
+		assert.Nil(span.Tag(ext.Error))
+		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Equal(namespace, span.Tag("vault.namespace"))
 	})
 
 	t.Run("read", func(t *testing.T) {
+		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -301,140 +297,119 @@ func TestNamespace(t *testing.T) {
 		assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal(200, span.Tag(ext.HTTPCode))
-		assert.Zero(span.Tag(ext.Error))
-		assert.Zero(span.Tag(ext.ErrorMsg))
+		assert.Nil(span.Tag(ext.Error))
+		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Equal(namespace, span.Tag("vault.namespace"))
 	})
 }
 
-func getWriteSpan(t *testing.T, conf *api.Config) mocktracer.Span {
-	assert := assert.New(t)
-	client, err := api.NewClient(conf)
-	if err != nil {
-		t.Fatal(err)
+func TestOption(t *testing.T) {
+	ts, cleanup := setupServer(t)
+	defer cleanup()
+
+	for _, tt := range []struct {
+		name string
+		opts []Option
+		test func(assert *assert.Assertions, span mocktracer.Span)
+	}{
+		{
+			name: "Default options",
+			opts: []Option{},
+			test: func(assert *assert.Assertions, span mocktracer.Span) {
+				assert.Equal(defaultServiceName, span.Tag(ext.ServiceName))
+				assert.Nil(span.Tag(ext.EventSampleRate))
+			},
+		},
+		{
+			name: "Custom service name",
+			opts: []Option{WithServiceName("someServiceName")},
+			test: func(assert *assert.Assertions, span mocktracer.Span) {
+				assert.Equal("someServiceName", span.Tag(ext.ServiceName))
+			},
+		},
+		{
+			name: "WithAnalytics(true)",
+			opts: []Option{WithAnalytics(true)},
+			test: func(assert *assert.Assertions, span mocktracer.Span) {
+				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
+			},
+		},
+		{
+			name: "WithAnalytics(false)",
+			opts: []Option{WithAnalytics(false)},
+			test: func(assert *assert.Assertions, span mocktracer.Span) {
+				assert.Nil(span.Tag(ext.EventSampleRate))
+			},
+		},
+		{
+			name: "WithAnalytics Last option wins",
+			opts: []Option{WithAnalyticsRate(0.7), WithAnalytics(true)},
+			test: func(assert *assert.Assertions, span mocktracer.Span) {
+				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
+			},
+		},
+		{
+			name: "WithAnalyticsRate Negative rate",
+			opts: []Option{WithAnalyticsRate(-10.0)},
+			test: func(assert *assert.Assertions, span mocktracer.Span) {
+				assert.Nil(span.Tag(ext.EventSampleRate))
+			},
+		},
+		{
+			name: "WithAnalyticsRate Greater than 1 rate",
+			opts: []Option{WithAnalyticsRate(10.0)},
+			test: func(assert *assert.Assertions, span mocktracer.Span) {
+				assert.Nil(span.Tag(ext.EventSampleRate))
+			},
+		},
+		{
+			name: "WithAnalyticsRate(1.0)",
+			opts: []Option{WithAnalyticsRate(1.0)},
+			test: func(assert *assert.Assertions, span mocktracer.Span) {
+				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
+			},
+		},
+		{
+			name: "WithAnalyticsRate(0.0)",
+			opts: []Option{WithAnalyticsRate(0.0)},
+			test: func(assert *assert.Assertions, span mocktracer.Span) {
+				assert.Equal(0.0, span.Tag(ext.EventSampleRate))
+			},
+		},
+		{
+			name: "WithAnalyticsRate Last option wins",
+			opts: []Option{WithAnalytics(true), WithAnalyticsRate(0.7)},
+			test: func(assert *assert.Assertions, span mocktracer.Span) {
+				assert.Equal(0.7, span.Tag(ext.EventSampleRate))
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			config := &api.Config{
+				HttpClient: NewHTTPClient(tt.opts...),
+				Address:    ts.URL,
+			}
+			client, err := api.NewClient(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer mountKV(client, t)()
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			_, err = client.Logical().Write(
+				secretMountPath+"/key",
+				map[string]interface{}{"Key1": "Val1", "Key2": "Val2"},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			spans := mt.FinishedSpans()
+			assert.Len(spans, 1)
+			span := spans[0]
+			tt.test(assert, span)
+		})
 	}
-	defer mountKV(client, t)()
-
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	_, err = client.Logical().Write(
-		secretMountPath+"/key",
-		map[string]interface{}{"Key1": "Val1", "Key2": "Val2"},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	return spans[0]
-}
-
-func TestOptionServiceName(t *testing.T) {
-	assert := assert.New(t)
-
-	ts, cleanupTs := setupServer(t)
-	defer cleanupTs()
-
-	t.Run("WithServiceName", func(t *testing.T) {
-		// Check default
-		config := &api.Config{
-			HttpClient: NewHTTPClient(),
-			Address:    ts.URL,
-		}
-		span := getWriteSpan(t, config)
-		assert.Equal(serviceName, span.Tag(ext.ServiceName))
-
-		customServiceName := "someServiceName"
-		config = &api.Config{
-			HttpClient: NewHTTPClient(WithServiceName(customServiceName)),
-			Address:    ts.URL,
-		}
-		span = getWriteSpan(t, config)
-		assert.Equal(customServiceName, span.Tag(ext.ServiceName))
-	})
-
-	t.Run("WithAnalytics", func(t *testing.T) {
-		// With no option, default should be no tag.
-		config := &api.Config{
-			HttpClient: NewHTTPClient(),
-			Address:    ts.URL,
-		}
-		span := getWriteSpan(t, config)
-		// Zero value for type (nil), not 0.0 float value
-		assert.Zero(span.Tag(ext.EventSampleRate))
-
-		// True should set the tag to 1.0
-		config = &api.Config{
-			HttpClient: NewHTTPClient(WithAnalytics(true)),
-			Address:    ts.URL,
-		}
-		span = getWriteSpan(t, config)
-		assert.Equal(1.0, span.Tag(ext.EventSampleRate))
-
-		// false should remove the tag.
-		config = &api.Config{
-			HttpClient: NewHTTPClient(WithAnalytics(false)),
-			Address:    ts.URL,
-		}
-		span = getWriteSpan(t, config)
-		// Zero value for type (nil), not 0.0 float value
-		assert.Zero(span.Tag(ext.EventSampleRate))
-
-		//Last option should win
-		config = &api.Config{
-			HttpClient: NewHTTPClient(WithAnalyticsRate(0.7), WithAnalytics(true)),
-			Address:    ts.URL,
-		}
-		span = getWriteSpan(t, config)
-		assert.Equal(1.0, span.Tag(ext.EventSampleRate))
-	})
-
-	t.Run("WithAnalyticsRate", func(t *testing.T) {
-		//Negative Should be removed.
-		config := &api.Config{
-			HttpClient: NewHTTPClient(WithAnalyticsRate(-10.0)),
-			Address:    ts.URL,
-		}
-		span := getWriteSpan(t, config)
-		// Zero value for type (nil), not 0.0 float value
-		assert.Zero(span.Tag(ext.EventSampleRate))
-
-		// >1 Should be removed.
-		config = &api.Config{
-			HttpClient: NewHTTPClient(WithAnalyticsRate(10.0)),
-			Address:    ts.URL,
-		}
-		span = getWriteSpan(t, config)
-		// Zero value for type (nil), not 0.0 float value
-		assert.Zero(span.Tag(ext.EventSampleRate))
-
-		// Highest rate
-		rate := 1.0
-		config = &api.Config{
-			HttpClient: NewHTTPClient(WithAnalyticsRate(rate)),
-			Address:    ts.URL,
-		}
-		span = getWriteSpan(t, config)
-		assert.Equal(rate, span.Tag(ext.EventSampleRate))
-
-		// Lowest rate
-		rate = 0.0
-		config = &api.Config{
-			HttpClient: NewHTTPClient(WithAnalyticsRate(rate)),
-			Address:    ts.URL,
-		}
-		span = getWriteSpan(t, config)
-		assert.Equal(rate, span.Tag(ext.EventSampleRate))
-
-		// Last option should win.
-		rate = 0.5
-		config = &api.Config{
-			HttpClient: NewHTTPClient(WithAnalytics(true), WithAnalyticsRate(rate)),
-			Address:    ts.URL,
-		}
-		span = getWriteSpan(t, config)
-		assert.Equal(rate, span.Tag(ext.EventSampleRate))
-	})
-
 }
