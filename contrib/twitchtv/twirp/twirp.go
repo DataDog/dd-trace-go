@@ -55,7 +55,7 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 	if !ok {
 		svc = "unknown service"
 	}
-	name := pkg + "." + svc
+	name := fmt.Sprintf("%s.%s client", pkg, svc)
 	if wc.cfg.serviceName != "" {
 		name = wc.cfg.serviceName
 	}
@@ -149,7 +149,7 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 		if !ok {
 			svc = "unknown service"
 		}
-		name := pkg + "." + svc
+		name := fmt.Sprintf("%s.%s server", pkg, svc)
 		if cfg.serviceName != "" {
 			name = cfg.serviceName
 		}
