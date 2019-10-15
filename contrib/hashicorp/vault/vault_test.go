@@ -307,84 +307,73 @@ func TestOption(t *testing.T) {
 	ts, cleanup := setupServer(t)
 	defer cleanup()
 
-	for _, tt := range []struct {
-		name string
+	for ttName, tt := range map[string]struct {
 		opts []Option
 		test func(assert *assert.Assertions, span mocktracer.Span)
 	}{
-		{
-			name: "Default options",
+		"DefaultOptions": {
 			opts: []Option{},
 			test: func(assert *assert.Assertions, span mocktracer.Span) {
 				assert.Equal(defaultServiceName, span.Tag(ext.ServiceName))
 				assert.Nil(span.Tag(ext.EventSampleRate))
 			},
 		},
-		{
-			name: "Custom service name",
+		"CustomServiceName": {
 			opts: []Option{WithServiceName("someServiceName")},
 			test: func(assert *assert.Assertions, span mocktracer.Span) {
 				assert.Equal("someServiceName", span.Tag(ext.ServiceName))
 			},
 		},
-		{
-			name: "WithAnalytics(true)",
+		"WithAnalyticsTrue": {
 			opts: []Option{WithAnalytics(true)},
 			test: func(assert *assert.Assertions, span mocktracer.Span) {
 				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 			},
 		},
-		{
-			name: "WithAnalytics(false)",
+		"WithAnalyticsFalse": {
 			opts: []Option{WithAnalytics(false)},
 			test: func(assert *assert.Assertions, span mocktracer.Span) {
 				assert.Nil(span.Tag(ext.EventSampleRate))
 			},
 		},
-		{
-			name: "WithAnalytics Last option wins",
+		"WithAnalyticsLastOptionWins": {
 			opts: []Option{WithAnalyticsRate(0.7), WithAnalytics(true)},
 			test: func(assert *assert.Assertions, span mocktracer.Span) {
 				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 			},
 		},
-		{
-			name: "WithAnalyticsRate Negative rate",
+		"WithAnalyticsRateNegative": {
 			opts: []Option{WithAnalyticsRate(-10.0)},
 			test: func(assert *assert.Assertions, span mocktracer.Span) {
 				assert.Nil(span.Tag(ext.EventSampleRate))
 			},
 		},
-		{
-			name: "WithAnalyticsRate Greater than 1 rate",
+		"WithAnalyticsRateGreaterThanOne": {
 			opts: []Option{WithAnalyticsRate(10.0)},
 			test: func(assert *assert.Assertions, span mocktracer.Span) {
 				assert.Nil(span.Tag(ext.EventSampleRate))
 			},
 		},
-		{
-			name: "WithAnalyticsRate(1.0)",
+		"WithAnalyticsRateMax": {
 			opts: []Option{WithAnalyticsRate(1.0)},
 			test: func(assert *assert.Assertions, span mocktracer.Span) {
 				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 			},
 		},
-		{
-			name: "WithAnalyticsRate(0.0)",
+		"WithAnalyticsRateMin": {
 			opts: []Option{WithAnalyticsRate(0.0)},
 			test: func(assert *assert.Assertions, span mocktracer.Span) {
 				assert.Equal(0.0, span.Tag(ext.EventSampleRate))
 			},
 		},
-		{
-			name: "WithAnalyticsRate Last option wins",
+		"WithAnalyticsRateLastOptionWins": {
 			opts: []Option{WithAnalytics(true), WithAnalyticsRate(0.7)},
 			test: func(assert *assert.Assertions, span mocktracer.Span) {
 				assert.Equal(0.7, span.Tag(ext.EventSampleRate))
 			},
 		},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(ttName, func(t *testing.T) {
 			assert := assert.New(t)
 			config := &api.Config{
 				HttpClient: NewHTTPClient(tt.opts...),
