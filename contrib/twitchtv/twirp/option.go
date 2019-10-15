@@ -7,6 +7,8 @@ package twirp
 
 import (
 	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type config struct {
@@ -18,8 +20,7 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.analyticsRate = math.NaN()
+	cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
 // WithServiceName sets the given service name for the dialled connection.

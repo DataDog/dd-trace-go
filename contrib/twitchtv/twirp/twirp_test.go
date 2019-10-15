@@ -7,49 +7,157 @@ package twirp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/twitchtv/twirp"
 	"github.com/twitchtv/twirp/ctxsetters"
 )
 
-func TestServerHooks(t *testing.T) {
+type mockClient struct {
+	code int
+	err  error
+}
+
+func (mc *mockClient) Do(req *http.Request) (*http.Response, error) {
+	if mc.err != nil {
+		return nil, mc.err
+	}
+	req.Body = nil
+	res := &http.Response{
+		Status:     fmt.Sprintf("%d %s", mc.code, http.StatusText(mc.code)),
+		StatusCode: mc.code,
+		Proto:      req.Proto,
+		ProtoMajor: req.ProtoMajor,
+		ProtoMinor: req.ProtoMinor,
+		Request:    req,
+	}
+	return res, nil
+}
+
+func TestClient(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	hooks := NewServerHooks(WithServiceName("twirp-test"), WithAnalytics(true))
-	server := func(assert *assert.Assertions, twerr twirp.Error) {
-		ctx := context.Background()
-		ctx = ctxsetters.WithPackageName(ctx, "twirp.test")
-		ctx = ctxsetters.WithServiceName(ctx, "Example")
-		ctx, err := hooks.RequestReceived(ctx)
-		assert.NoError(err)
+	ctx := context.Background()
+	ctx = ctxsetters.WithPackageName(ctx, "twirp.test")
+	ctx = ctxsetters.WithServiceName(ctx, "Example")
+	ctx = ctxsetters.WithMethodName(ctx, "Method")
 
-		ctx = ctxsetters.WithMethodName(ctx, "Method")
-		ctx, err = hooks.RequestRouted(ctx)
-		assert.NoError(err)
-
-		if twerr != nil {
-			ctx = ctxsetters.WithStatusCode(ctx, twirp.ServerHTTPStatusFromErrorCode(twerr.Code()))
-			ctx = hooks.Error(ctx, twerr)
-		} else {
-			ctx = hooks.ResponsePrepared(ctx)
-			ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
-		}
-
-		hooks.ResponseSent(ctx)
-	}
+	url := "http://localhost/twirp/twirp.test/Example/Method"
 
 	t.Run("success", func(t *testing.T) {
 		defer mt.Reset()
 		assert := assert.New(t)
 
-		server(assert, nil)
+		mc := &mockClient{code: 200}
+		wc := WrapClient(mc)
+
+		req, err := http.NewRequest("POST", url, nil)
+		assert.NoError(err)
+		req = req.WithContext(ctx)
+
+		_, err = wc.Do(req)
+		assert.NoError(err)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
+		assert.Equal("twirp.test.Example", span.Tag(ext.ServiceName))
+		assert.Equal("twirp.request", span.OperationName())
+		assert.Equal("Method", span.Tag(ext.ResourceName))
+		assert.Equal("200", span.Tag(ext.HTTPCode))
+	})
+
+	t.Run("server error", func(t *testing.T) {
+		defer mt.Reset()
+		assert := assert.New(t)
+
+		mc := &mockClient{code: 500}
+		wc := WrapClient(mc)
+
+		req, err := http.NewRequest("POST", url, nil)
+		assert.NoError(err)
+		req = req.WithContext(ctx)
+
+		_, err = wc.Do(req)
+		assert.NoError(err)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
+		assert.Equal("twirp.test.Example", span.Tag(ext.ServiceName))
+		assert.Equal("twirp.request", span.OperationName())
+		assert.Equal("Method", span.Tag(ext.ResourceName))
+		assert.Equal("500", span.Tag(ext.HTTPCode))
+		assert.Equal("500 Internal Server Error", span.Tag(ext.Error).(error).Error())
+	})
+
+	t.Run("timeout", func(t *testing.T) {
+		defer mt.Reset()
+		assert := assert.New(t)
+
+		mc := &mockClient{err: context.DeadlineExceeded}
+		wc := WrapClient(mc)
+
+		req, err := http.NewRequest("POST", url, nil)
+		assert.NoError(err)
+		req = req.WithContext(ctx)
+
+		_, err = wc.Do(req)
+		assert.Equal(context.DeadlineExceeded, err)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
+		assert.Equal("twirp.test.Example", span.Tag(ext.ServiceName))
+		assert.Equal("twirp.request", span.OperationName())
+		assert.Equal("Method", span.Tag(ext.ResourceName))
+		assert.Equal(context.DeadlineExceeded, span.Tag(ext.Error))
+	})
+}
+
+func mockServer(hooks *twirp.ServerHooks, assert *assert.Assertions, twerr twirp.Error) {
+	ctx := context.Background()
+	ctx = ctxsetters.WithPackageName(ctx, "twirp.test")
+	ctx = ctxsetters.WithServiceName(ctx, "Example")
+	ctx, err := hooks.RequestReceived(ctx)
+	assert.NoError(err)
+
+	ctx = ctxsetters.WithMethodName(ctx, "Method")
+	ctx, err = hooks.RequestRouted(ctx)
+	assert.NoError(err)
+
+	if twerr != nil {
+		ctx = ctxsetters.WithStatusCode(ctx, twirp.ServerHTTPStatusFromErrorCode(twerr.Code()))
+		ctx = hooks.Error(ctx, twerr)
+	} else {
+		ctx = hooks.ResponsePrepared(ctx)
+		ctx = ctxsetters.WithStatusCode(ctx, http.StatusOK)
+	}
+
+	hooks.ResponseSent(ctx)
+}
+
+func TestServerHooks(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	hooks := NewServerHooks(WithServiceName("twirp-test"), WithAnalytics(true))
+
+	t.Run("success", func(t *testing.T) {
+		defer mt.Reset()
+		assert := assert.New(t)
+
+		mockServer(hooks, assert, nil)
 
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
@@ -65,7 +173,7 @@ func TestServerHooks(t *testing.T) {
 		defer mt.Reset()
 		assert := assert.New(t)
 
-		server(assert, twirp.InternalError("something bad or unexpected happened"))
+		mockServer(hooks, assert, twirp.InternalError("something bad or unexpected happened"))
 
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
@@ -76,5 +184,61 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("Method", span.Tag(ext.ResourceName))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.Error).(error).Error())
+	})
+}
+
+func TestAnalyticsSettings(t *testing.T) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
+		hooks := NewServerHooks(opts...)
+		assert := assert.New(t)
+		mockServer(hooks, assert, nil)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		s := spans[0]
+		assert.Equal(rate, s.Tag(ext.EventSampleRate))
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil)
+	})
+
+	t.Run("global", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.4)
+	})
+
+	t.Run("enabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 1.0, WithAnalytics(true))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, nil, WithAnalytics(false))
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
 }

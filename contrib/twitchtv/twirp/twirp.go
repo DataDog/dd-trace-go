@@ -7,8 +7,11 @@ package twirp
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net/http"
+	"os"
+	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -23,13 +26,89 @@ const (
 	httpSpanKey   contextKey = 1
 )
 
+type TwirpClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+type wrappedClient struct {
+	c   TwirpClient
+	cfg *config
+}
+
+// WrapClient wraps a TwirpClient to add disributed tracing to its requests.
+func WrapClient(c TwirpClient, opts ...Option) TwirpClient {
+	cfg := new(config)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	return &wrappedClient{c: c, cfg: cfg}
+}
+
+func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
+	ctx := req.Context()
+	pkg, ok := twirp.PackageName(ctx)
+	if !ok {
+		pkg = "unknown package"
+	}
+	svc, ok := twirp.ServiceName(ctx)
+	if !ok {
+		svc = "unknown service"
+	}
+	name := pkg + "." + svc
+	if wc.cfg.serviceName != "" {
+		name = wc.cfg.serviceName
+	}
+	opts := []tracer.StartSpanOption{
+		tracer.SpanType(ext.SpanTypeHTTP),
+		tracer.ServiceName(name),
+		tracer.Tag(ext.HTTPMethod, req.Method),
+		tracer.Tag(ext.HTTPURL, req.URL.Path),
+	}
+	if method, ok := twirp.MethodName(ctx); ok {
+		opts = append(opts, tracer.ResourceName(method))
+	}
+	if !math.IsNaN(wc.cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, wc.cfg.analyticsRate))
+	}
+
+	span, ctx := tracer.StartSpanFromContext(req.Context(), "twirp.request", opts...)
+	defer span.Finish()
+
+	req = req.WithContext(ctx)
+	err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "contrib/twitchtv/twirp.wrappedClient: failed to inject http headers: %v\n", err)
+	}
+
+	res, err := wc.c.Do(req)
+	if err != nil {
+		span.SetTag(ext.Error, err)
+	} else {
+		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
+		// treat 4XX and 5XX as errors for a client
+		if res.StatusCode >= 400 && res.StatusCode < 600 {
+			span.SetTag(ext.Error, fmt.Errorf("%s", res.Status))
+		}
+	}
+	return res, err
+}
+
 // WrapServer wraps a http.Handler to add distributed tracing to a Twirp server.
-func WrapServer(h http.Handler) http.Handler {
+func WrapServer(h http.Handler, opts ...Option) http.Handler {
+	cfg := new(config)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
 			tracer.Tag(ext.HTTPMethod, r.Method),
-			tracer.Tag(ext.HTTPURL, r.URL.String()),
+			tracer.Tag(ext.HTTPURL, r.URL.Path),
+		}
+		if !math.IsNaN(cfg.analyticsRate) {
+			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 			opts = append(opts, tracer.ChildOf(spanctx))
