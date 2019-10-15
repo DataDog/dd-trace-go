@@ -5,7 +5,11 @@
 
 package vault
 
-import "math"
+import (
+	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+)
 
 type config struct {
 	analyticsRate float64
@@ -19,7 +23,7 @@ type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.serviceName = defaultServiceName
-	cfg.analyticsRate = math.NaN()
+	cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
 // WithAnalytics enables or disables Trace Analytics for all started spans.
