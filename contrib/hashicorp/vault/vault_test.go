@@ -342,18 +342,6 @@ func TestOption(t *testing.T) {
 				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 			},
 		},
-		"WithAnalyticsRateNegative": {
-			opts: []Option{WithAnalyticsRate(-10.0)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
-				assert.Nil(span.Tag(ext.EventSampleRate))
-			},
-		},
-		"WithAnalyticsRateGreaterThanOne": {
-			opts: []Option{WithAnalyticsRate(10.0)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
-				assert.Nil(span.Tag(ext.EventSampleRate))
-			},
-		},
 		"WithAnalyticsRateMax": {
 			opts: []Option{WithAnalyticsRate(1.0)},
 			test: func(assert *assert.Assertions, span mocktracer.Span) {
