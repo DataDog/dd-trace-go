@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -95,7 +96,7 @@ func (tg *testGauger) Wait(n int, d time.Duration) error {
 	tg.mu.Lock()
 	if tg.waitCh != nil {
 		tg.mu.Unlock()
-		return fmt.Errorf("already waiting")
+		return errors.New("already waiting")
 	}
 	tg.waitCh = make(chan struct{})
 	tg.n = n
@@ -105,6 +106,6 @@ func (tg *testGauger) Wait(n int, d time.Duration) error {
 	case <-tg.waitCh:
 		return nil
 	case <-time.After(d):
-		return fmt.Errorf("timed out after waiting %v for gauge events", d)
+		return fmt.Errorf("timed out after waiting %s for gauge events", d)
 	}
 }
