@@ -78,7 +78,7 @@ func TestClient(t *testing.T) {
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 	})
 
-	t.Run("server error", func(t *testing.T) {
+	t.Run("server-error", func(t *testing.T) {
 		defer mt.Reset()
 		assert := assert.New(t)
 
