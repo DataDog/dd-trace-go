@@ -8,6 +8,7 @@ package twirp
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"testing"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/twitchtv/twirp"
 	"github.com/twitchtv/twirp/ctxsetters"
+	"github.com/twitchtv/twirp/example"
 )
 
 type mockClient struct {
@@ -70,7 +72,7 @@ func TestClient(t *testing.T) {
 		assert.Len(spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal("twirp.test.Example", span.Tag(ext.ServiceName))
+		assert.Equal("twirp.test.Example client", span.Tag(ext.ServiceName))
 		assert.Equal("twirp.request", span.OperationName())
 		assert.Equal("Method", span.Tag(ext.ResourceName))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
@@ -94,7 +96,7 @@ func TestClient(t *testing.T) {
 		assert.Len(spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal("twirp.test.Example", span.Tag(ext.ServiceName))
+		assert.Equal("twirp.test.Example client", span.Tag(ext.ServiceName))
 		assert.Equal("twirp.request", span.OperationName())
 		assert.Equal("Method", span.Tag(ext.ResourceName))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
@@ -119,7 +121,7 @@ func TestClient(t *testing.T) {
 		assert.Len(spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal("twirp.test.Example", span.Tag(ext.ServiceName))
+		assert.Equal("twirp.test.Example client", span.Tag(ext.ServiceName))
 		assert.Equal("twirp.request", span.OperationName())
 		assert.Equal("Method", span.Tag(ext.ResourceName))
 		assert.Equal(context.DeadlineExceeded, span.Tag(ext.Error))
@@ -241,4 +243,72 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+type notifyListener struct {
+	net.Listener
+	ch chan<- struct{}
+}
+
+func (n *notifyListener) Accept() (c net.Conn, err error) {
+	if n.ch != nil {
+		close(n.ch)
+		n.ch = nil
+	}
+	return n.Listener.Accept()
+}
+
+type haberdasher int32
+
+func (h haberdasher) MakeHat(ctx context.Context, size *example.Size) (*example.Hat, error) {
+	if size.Inches != int32(h) {
+		return nil, twirp.InvalidArgumentError("Inches", "Only size of %d is allowed")
+	}
+	hat := &example.Hat{
+		Size:  size.Inches,
+		Color: "purple",
+		Name:  "doggie beanie",
+	}
+	return hat, nil
+}
+
+func TestHaberdash(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	assert := assert.New(t)
+
+	l, err := net.Listen("tcp4", "127.0.0.1:0")
+	assert.NoError(err)
+	defer l.Close()
+
+	readyCh := make(chan struct{})
+	nl := &notifyListener{Listener: l, ch: readyCh}
+
+	server := WrapServer(example.NewHaberdasherServer(haberdasher(6), NewServerHooks()))
+	errCh := make(chan error)
+	go func() {
+		err := http.Serve(nl, server)
+		if err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
+		close(errCh)
+	}()
+
+	select {
+	case <-readyCh:
+		break
+	case err := <-errCh:
+		assert.FailNow("server not started", err)
+	}
+
+	client := example.NewHaberdasherJSONClient("http://"+nl.Addr().String(), WrapClient(&http.Client{}))
+	hat, err := client.MakeHat(context.Background(), &example.Size{Inches: 6})
+	assert.NoError(err)
+	assert.Equal("purple", hat.Color)
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 3)
+	assert.Equal("twitch.twirp.example.Haberdasher server", spans[0].Tag(ext.ServiceName))
+	assert.Equal("twitch.twirp.example.Haberdasher server", spans[1].Tag(ext.ServiceName))
+	assert.Equal("twitch.twirp.example.Haberdasher client", spans[2].Tag(ext.ServiceName))
 }

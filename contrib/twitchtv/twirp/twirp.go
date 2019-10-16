@@ -26,17 +26,20 @@ const (
 	httpSpanKey   contextKey = 1
 )
 
-type TwirpClient interface {
+// HTTPClient is duplicated from twirp's generated service code.
+// It is declared in this package so that the client can be wrapped
+// to initiate traces.
+type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
 type wrappedClient struct {
-	c   TwirpClient
+	c   HTTPClient
 	cfg *config
 }
 
-// WrapClient wraps a TwirpClient to add disributed tracing to its requests.
-func WrapClient(c TwirpClient, opts ...Option) TwirpClient {
+// WrapClient wraps a HTTPClient to add disributed tracing to its requests.
+func WrapClient(c HTTPClient, opts ...Option) HTTPClient {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
@@ -49,11 +52,11 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
 	pkg, ok := twirp.PackageName(ctx)
 	if !ok {
-		pkg = "unknown package"
+		pkg = "unknown_package"
 	}
 	svc, ok := twirp.ServiceName(ctx)
 	if !ok {
-		svc = "unknown service"
+		svc = "unknown_service"
 	}
 	name := fmt.Sprintf("%s.%s client", pkg, svc)
 	if wc.cfg.serviceName != "" {
@@ -70,6 +73,9 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 	}
 	if !math.IsNaN(wc.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, wc.cfg.analyticsRate))
+	}
+	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header)); err == nil {
+		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 
 	span, ctx := tracer.StartSpanFromContext(req.Context(), "twirp.request", opts...)
@@ -103,7 +109,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		opts := []tracer.StartSpanOption{
-			tracer.SpanType(ext.SpanTypeHTTP),
+			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.Tag(ext.HTTPMethod, r.Method),
 			tracer.Tag(ext.HTTPURL, r.URL.Path),
 		}
@@ -143,11 +149,11 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 	return func(ctx context.Context) (context.Context, error) {
 		pkg, ok := twirp.PackageName(ctx)
 		if !ok {
-			pkg = "unknown package"
+			pkg = "unknown_package"
 		}
 		svc, ok := twirp.ServiceName(ctx)
 		if !ok {
-			svc = "unknown service"
+			svc = "unknown_service"
 		}
 		name := fmt.Sprintf("%s.%s server", pkg, svc)
 		if cfg.serviceName != "" {
