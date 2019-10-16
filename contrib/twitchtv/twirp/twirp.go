@@ -3,7 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-2019 Datadog, Inc.
 
-package twirp
+// Package twirp provides tracing functions for tracing clients and servers generated
+// by the twirp framework (https://github.com/twitchtv/twirp).
+package twirp // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/twitchtv/twirp"
 
 import (
 	"context"
@@ -22,8 +24,8 @@ import (
 type contextKey int
 
 const (
-	twirpErrorKey contextKey = 0
-	httpSpanKey   contextKey = 1
+	twirpErrorKey contextKey = iota
+	httpSpanKey
 )
 
 // HTTPClient is duplicated from twirp's generated service code.
@@ -180,7 +182,6 @@ func requestRoutedHook(cfg *config) func(context.Context) (context.Context, erro
 		if !ok {
 			return ctx, nil
 		}
-
 		method, ok := twirp.MethodName(ctx)
 		if !ok {
 			return ctx, nil
@@ -202,11 +203,9 @@ func responseSentHook(cfg *config) func(context.Context) {
 		if !ok {
 			return
 		}
-
 		if sc, ok := twirp.StatusCode(ctx); ok {
 			span.SetTag(ext.HTTPCode, sc)
 		}
-
 		err, _ := ctx.Value(twirpErrorKey).(twirp.Error)
 		span.Finish(tracer.WithError(err))
 	}
