@@ -24,6 +24,7 @@ type spanContext struct {
 
 	trace *trace // reference to the trace that this span belongs too
 	span  *span  // reference to the span that hosts this context
+	drop  bool   // when true, the span will not be sent to the agent
 
 	// the below group should propagate cross-process
 
@@ -48,6 +49,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	}
 	if parent != nil {
 		context.trace = parent.trace
+		context.drop = parent.drop
 		context.origin = parent.origin
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
