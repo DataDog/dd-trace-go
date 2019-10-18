@@ -25,7 +25,6 @@ type contextKey int
 
 const (
 	twirpErrorKey contextKey = iota
-	httpSpanKey
 )
 
 // HTTPClient is duplicated from twirp's generated service code.
@@ -51,27 +50,25 @@ func WrapClient(c HTTPClient, opts ...Option) HTTPClient {
 }
 
 func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
-	ctx := req.Context()
-	pkg, ok := twirp.PackageName(ctx)
-	if !ok {
-		pkg = "unknown_package"
-	}
-	svc, ok := twirp.ServiceName(ctx)
-	if !ok {
-		svc = "unknown_service"
-	}
-	name := fmt.Sprintf("%s.%s client", pkg, svc)
-	if wc.cfg.serviceName != "" {
-		name = wc.cfg.serviceName
-	}
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
-		tracer.ServiceName(name),
 		tracer.Tag(ext.HTTPMethod, req.Method),
 		tracer.Tag(ext.HTTPURL, req.URL.Path),
 	}
+	if wc.cfg.serviceName != "" {
+		opts = append(opts, tracer.ServiceName(wc.cfg.serviceName))
+	}
+	ctx := req.Context()
+	if pkg, ok := twirp.PackageName(ctx); ok {
+		opts = append(opts, tracer.Tag("twirp.package", pkg))
+	} else {
+		fmt.Println("no package")
+	}
+	if svc, ok := twirp.ServiceName(ctx); ok {
+		opts = append(opts, tracer.Tag("twirp.service", svc))
+	}
 	if method, ok := twirp.MethodName(ctx); ok {
-		opts = append(opts, tracer.ResourceName(method))
+		opts = append(opts, tracer.Tag("twirp.method", method))
 	}
 	if !math.IsNaN(wc.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, wc.cfg.analyticsRate))
@@ -115,6 +112,9 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			tracer.Tag(ext.HTTPMethod, r.Method),
 			tracer.Tag(ext.HTTPURL, r.URL.Path),
 		}
+		if cfg.serviceName != "" {
+			opts = append(opts, tracer.ServiceName(cfg.serviceName))
+		}
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
@@ -125,7 +125,6 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 		span, ctx := tracer.StartSpanFromContext(r.Context(), "twirp.request", opts...)
 		defer span.Finish()
 
-		ctx = context.WithValue(ctx, httpSpanKey, span)
 		r = r.WithContext(ctx)
 		h.ServeHTTP(w, r)
 	})
@@ -149,27 +148,20 @@ func NewServerHooks(opts ...Option) *twirp.ServerHooks {
 
 func requestReceivedHook(cfg *config) func(context.Context) (context.Context, error) {
 	return func(ctx context.Context) (context.Context, error) {
-		pkg, ok := twirp.PackageName(ctx)
-		if !ok {
-			pkg = "unknown_package"
-		}
-		svc, ok := twirp.ServiceName(ctx)
-		if !ok {
-			svc = "unknown_service"
-		}
-		name := fmt.Sprintf("%s.%s server", pkg, svc)
-		if cfg.serviceName != "" {
-			name = cfg.serviceName
-		}
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
-			tracer.ServiceName(name),
+		}
+		if cfg.serviceName != "" {
+			opts = append(opts, tracer.ServiceName(cfg.serviceName))
+		}
+		if pkg, ok := twirp.PackageName(ctx); ok {
+			opts = append(opts, tracer.Tag("twirp.package", pkg))
+		}
+		if svc, ok := twirp.ServiceName(ctx); ok {
+			opts = append(opts, tracer.Tag("twirp.service", svc))
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
-		}
-		if span, ok := ctx.Value(httpSpanKey).(tracer.Span); ok {
-			span.SetTag(ext.ServiceName, name)
 		}
 		_, ctx = tracer.StartSpanFromContext(ctx, "twirp.request", opts...)
 		return ctx, nil
@@ -182,11 +174,9 @@ func requestRoutedHook(cfg *config) func(context.Context) (context.Context, erro
 		if !ok {
 			return ctx, nil
 		}
-		method, ok := twirp.MethodName(ctx)
-		if !ok {
-			return ctx, nil
+		if method, ok := twirp.MethodName(ctx); ok {
+			span.SetTag("twirp.method", method)
 		}
-		span.SetTag(ext.ResourceName, method)
 		return ctx, nil
 	}
 }
