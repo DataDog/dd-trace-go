@@ -303,8 +303,11 @@ func TestSpanContextParent(t *testing.T) {
 		"basic": &spanContext{
 			baggage: map[string]string{"A": "A", "B": "B"},
 			trace:   newTrace(),
+			drop:    true,
 		},
-		"nil-trace": &spanContext{},
+		"nil-trace": &spanContext{
+			drop: true,
+		},
 		"priority": &spanContext{
 			baggage: map[string]string{"A": "A", "B": "B"},
 			trace: &trace{
@@ -330,6 +333,7 @@ func TestSpanContextParent(t *testing.T) {
 			if parentCtx.trace != nil {
 				assert.Equal(ctx.trace.priority, parentCtx.trace.priority)
 			}
+			assert.Equal(ctx.drop, parentCtx.drop)
 			assert.Equal(ctx.baggage, parentCtx.baggage)
 			assert.Equal(ctx.origin, parentCtx.origin)
 		})
