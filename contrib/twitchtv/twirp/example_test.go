@@ -17,7 +17,6 @@ import (
 )
 
 func ExampleWrapClient() {
-	// Start the tracer
 	tracer.Start()
 	defer tracer.Stop()
 
@@ -35,12 +34,11 @@ func ExampleWrapClient() {
 type hatmaker struct{}
 
 func (hatmaker) MakeHat(ctx context.Context, size *example.Size) (*example.Hat, error) {
-	hat := &example.Hat{
-		Size: 42,
+	return &example.Hat{
+		Size:  42,
 		Color: "cornflower blue",
-		Name: "oversized blue hat",
-	}
-	return hat, nil
+		Name:  "oversized blue hat",
+	}, nil
 }
 
 func ExampleNewServerHooks() {

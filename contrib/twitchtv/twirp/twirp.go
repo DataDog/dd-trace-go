@@ -12,11 +12,11 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"os"
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/twitchtv/twirp"
 )
@@ -61,8 +61,6 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
 	if pkg, ok := twirp.PackageName(ctx); ok {
 		opts = append(opts, tracer.Tag("twirp.package", pkg))
-	} else {
-		fmt.Println("no package")
 	}
 	if svc, ok := twirp.ServiceName(ctx); ok {
 		opts = append(opts, tracer.Tag("twirp.service", svc))
@@ -80,12 +78,12 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 	span, ctx := tracer.StartSpanFromContext(req.Context(), "twirp.request", opts...)
 	defer span.Finish()
 
-	req = req.WithContext(ctx)
 	err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "contrib/twitchtv/twirp.wrappedClient: failed to inject http headers: %v\n", err)
+		log.Warn("contrib/twitchtv/twirp.wrappedClient: failed to inject http headers: %v\n", err)
 	}
 
+	req = req.WithContext(ctx)
 	res, err := wc.c.Do(req)
 	if err != nil {
 		span.SetTag(ext.Error, err)
