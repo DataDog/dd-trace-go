@@ -39,7 +39,7 @@ type wrappedClient struct {
 	cfg *config
 }
 
-// WrapClient wraps a HTTPClient to add disributed tracing to its requests.
+// WrapClient wraps an HTTPClient to add distributed tracing to its requests.
 func WrapClient(c HTTPClient, opts ...Option) HTTPClient {
 	cfg := new(config)
 	defaults(cfg)
