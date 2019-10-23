@@ -41,12 +41,6 @@ func (hatmaker) MakeHat(ctx context.Context, size *example.Size) (*example.Hat, 
 	}, nil
 }
 
-func ExampleNewServerHooks() {
-	server := example.NewHaberdasherServer(hatmaker{}, twirptrace.NewServerHooks())
-	// Note: it is recommended to use WrapServer in conjunction with NewServerHooks
-	http.ListenAndServe(":8080", server)
-}
-
 func ExampleWrapServer() {
 	server := example.NewHaberdasherServer(hatmaker{}, twirptrace.NewServerHooks())
 	traced := twirptrace.WrapServer(server)

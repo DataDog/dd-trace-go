@@ -129,6 +129,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 }
 
 // NewServerHooks creates the callback hooks for a twirp server to perform tracing.
+// It is used in conjunction with WrapServer.
 func NewServerHooks(opts ...Option) *twirp.ServerHooks {
 	cfg := new(config)
 	defaults(cfg)
