@@ -230,11 +230,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		Name:     operationName,
 		Service:  t.config.serviceName,
 		Resource: operationName,
-		Meta:     map[string]string{},
-		Metrics:  map[string]float64{},
 		SpanID:   id,
 		TraceID:  id,
-		ParentID: 0,
 		Start:    startTime,
 		taskEnd:  startExecutionTracerTask(operationName),
 	}
@@ -243,7 +240,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		span.TraceID = context.traceID
 		span.ParentID = context.spanID
 		if context.hasSamplingPriority() {
-			span.Metrics[keySamplingPriority] = float64(context.samplingPriority())
+			span.setMetric(keySamplingPriority, float64(context.samplingPriority()))
 		}
 		if context.span != nil {
 			// local parent, inherit service
@@ -254,21 +251,21 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			// remote parent
 			if context.origin != "" {
 				// mark origin
-				span.Meta[keyOrigin] = context.origin
+				span.setMeta(keyOrigin, context.origin)
 			}
 		}
 	}
 	span.context = newSpanContext(span, context)
 	if context == nil || context.span == nil {
 		// this is either a root span or it has a remote parent, we should add the PID.
-		span.SetTag(ext.Pid, t.pid)
+		span.setMeta(ext.Pid, t.pid)
 		if t.hostname != "" {
-			span.SetTag(keyHostname, t.hostname)
+			span.setMeta(keyHostname, t.hostname)
 		}
 		if _, ok := opts.Tags[ext.ServiceName]; !ok && t.config.runtimeMetrics {
 			// this is a root span in the global service; runtime metrics should
 			// be linked to it:
-			span.SetTag("language", "go")
+			span.setMeta("language", "go")
 		}
 	}
 	// add tags from options
@@ -359,7 +356,7 @@ func (t *tracer) sample(span *span) {
 		return
 	}
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
-		span.Metrics[sampleRateMetricKey] = rs.Rate()
+		span.setMetric(sampleRateMetricKey, rs.Rate())
 	}
 	t.prioritySampling.apply(span)
 }

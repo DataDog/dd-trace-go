@@ -232,7 +232,7 @@ func (t *trace) finishedOne(s *span) {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		t.root.Metrics[keySamplingPriority] = *t.priority
+		t.root.setMetric(keySamplingPriority, *t.priority)
 		t.locked = true
 	}
 	if len(t.spans) != t.finished {
