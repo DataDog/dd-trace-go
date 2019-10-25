@@ -22,8 +22,7 @@ func TestImplementsTracer(t *testing.T) {
 	var _ graphql.Tracer = (*gqlTracer)(nil)
 }
 
-func createTodoClient(t graphql.Tracer) *client.Client {
-
+func newTodoClient(t graphql.Tracer) *client.Client {
 	c := client.New(handler.GraphQL(
 		todo.NewExecutableSchema(todo.New()),
 		handler.Tracer(t),
@@ -57,7 +56,7 @@ func TestRootSpan(t *testing.T) {
 		tracerOpts []Option
 		test       func(assert *assert.Assertions, spans []mocktracer.Span)
 	}{
-		"Defaults": {
+		"default": {
 			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
 				root := findRootSpan(spans)
 				assert.NotNil(root)
@@ -112,7 +111,7 @@ func TestRootSpan(t *testing.T) {
 			assert := assert.New(t)
 			mt := mocktracer.Start()
 			defer mt.Stop()
-			c := createTodoClient(New(tt.tracerOpts...))
+			c := newTodoClient(New(tt.tracerOpts...))
 
 			var createResp struct {
 				CreateTodo struct{ ID string }
@@ -132,7 +131,7 @@ func TestResolver(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	c := createTodoClient(New())
+	c := newTodoClient(New())
 
 	var createResp struct {
 		CreateTodo struct{ ID string }
@@ -143,9 +142,9 @@ func TestResolver(t *testing.T) {
 		return
 	}
 	spans := mt.FinishedSpans()
-	span := findSpanWithTag(spans, ext.ResourceName, "MyMutation_createTodo")
+	span := findSpanWithTag(spans, ext.ResourceName, "Field_createTodo")
 	assert.NotNil(span)
 	assert.Equal("MyMutation_createTodo", span.Tag(ext.SpanName))
-	assert.Equal("MyMutation", span.Tag(resolverObject))
-	assert.Equal("createTodo", span.Tag(resolverField))
+	assert.Equal("MyMutation", span.Tag(tagResolverObject))
+	assert.Equal("createTodo", span.Tag(tagResolverField))
 }

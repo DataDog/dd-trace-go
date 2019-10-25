@@ -20,10 +20,11 @@ import (
 )
 
 const (
-	resolverObject = "resolver.object"
-	resolverField  = "resolver.field"
-	defaultResourceName = "gqlgen"
+	tagResolverObject = "resolver.object"
+	tagResolverField  = "resolver.field"
 )
+
+const defaultResourceName = "gqlgen"
 
 type gqlTracer struct {
 	cfg config
@@ -42,20 +43,24 @@ func New(opts ...Option) graphql.Tracer {
 
 // gqlTracer implements the graphql.Tracer interface.
 func (t *gqlTracer) StartOperationParsing(ctx context.Context) context.Context {
+	// not implemented
 	return ctx
 }
 
 // gqlTracer implements the graphql.Tracer interface.
 func (t *gqlTracer) EndOperationParsing(ctx context.Context) {
+	// not implemented
 }
 
 // gqlTracer implements the graphql.Tracer interface.
 func (t *gqlTracer) StartOperationValidation(ctx context.Context) context.Context {
+	// not implemented
 	return ctx
 }
 
 // gqlTracer implements the graphql.Tracer interface.
 func (t *gqlTracer) EndOperationValidation(ctx context.Context) {
+	// not implemented
 }
 
 func (t *gqlTracer) StartOperationExecution(ctx context.Context) context.Context {
@@ -86,27 +91,36 @@ func (t *gqlTracer) StartFieldExecution(ctx context.Context, field graphql.Colle
 }
 
 func (t *gqlTracer) StartFieldResolverExecution(ctx context.Context, rc *graphql.ResolverContext) context.Context {
-	// This will be the span created in StartFieldExecution.
+	// This is the span created in StartFieldExecution.
 	// StartFieldResolverExecution is called only once per StartFieldExecution, so we can add context to the
 	// span rather than starting a child span.
-	span, _ := tracer.SpanFromContext(ctx)
+	span, ok := tracer.SpanFromContext(ctx)
+	if !ok {
+		return ctx
+	}
 	span.SetTag(ext.SpanName, rc.Object+"_"+rc.Field.Name)
-	span.SetTag(ext.ResourceName, rc.Object+"_"+rc.Field.Name)
-	span.SetTag(resolverObject, rc.Object)
-	span.SetTag(resolverField, rc.Field.Name)
+	span.SetTag(tagResolverObject, rc.Object)
+	span.SetTag(tagResolverField, rc.Field.Name)
 	return ctx
 }
 
 // gqlTracer implements the graphql.Tracer interface.
 func (t *gqlTracer) StartFieldChildExecution(ctx context.Context) context.Context {
+	// not implemented
 	return ctx
 }
 
 func (t *gqlTracer) EndFieldExecution(ctx context.Context) {
-	span, _ := tracer.SpanFromContext(ctx)
+	span, ok := tracer.SpanFromContext(ctx)
+	if !ok {
+		return
+	}
 	defer span.Finish()
 	resCtx := graphql.GetResolverContext(ctx)
 	reqCtx := graphql.GetRequestContext(ctx)
+	if resCtx == nil || reqCtx == nil {
+		return
+	}
 	errList := reqCtx.GetErrors(resCtx)
 	if len(errList) != 0 {
 		span.SetTag(ext.Error, true)
@@ -118,6 +132,9 @@ func (t *gqlTracer) EndFieldExecution(ctx context.Context) {
 }
 
 func (t *gqlTracer) EndOperationExecution(ctx context.Context) {
-	span, _ := tracer.SpanFromContext(ctx)
+	span, ok := tracer.SpanFromContext(ctx)
+	if !ok {
+		return
+	}
 	span.Finish()
 }

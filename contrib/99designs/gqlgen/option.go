@@ -18,7 +18,7 @@ type config struct {
 	analyticsRate float64
 }
 
-// Option instances can be passed to New to configure the integration.
+// An Option configures the gqlgen integration.
 type Option func(t *config)
 
 func defaults(t *config) {

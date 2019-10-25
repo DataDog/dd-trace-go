@@ -9,16 +9,16 @@ import (
 	"log"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/99designs/gqlgen"
+	gqlgentrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/99designs/gqlgen"
 
 	"github.com/99designs/gqlgen/example/todo"
 	"github.com/99designs/gqlgen/handler"
 )
 
 func ExampleNew() {
-	tracer := gqlgen.New(
-		gqlgen.WithAnalytics(true),
-		gqlgen.WithServiceName("todoServer"),
+	tracer := gqlgentrace.New(
+		gqlgentrace.WithAnalytics(true),
+		gqlgentrace.WithServiceName("todoServer"),
 	)
 	http.Handle("/query", handler.GraphQL(
 		todo.NewExecutableSchema(todo.New()),
