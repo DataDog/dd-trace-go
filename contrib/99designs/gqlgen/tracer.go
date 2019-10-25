@@ -24,26 +24,23 @@ const (
 	tagResolverField  = "resolver.field"
 )
 
-const defaultResourceName = "gqlgen"
-
 type gqlTracer struct {
-	cfg config
+	cfg *config
 }
 
 // New creates an a graphql.Tracer instance that can be passed to a gqlgen handler.
 // Options can be passed in for further configuration.
 func New(opts ...Option) graphql.Tracer {
-	var t gqlTracer
-	defaults(&t.cfg)
+	t := &gqlTracer{cfg: &config{}}
+	defaults(t.cfg)
 	for _, o := range opts {
-		o(&t.cfg)
+		o(t.cfg)
 	}
-	return &t
+	return t
 }
 
 // gqlTracer implements the graphql.Tracer interface.
 func (t *gqlTracer) StartOperationParsing(ctx context.Context) context.Context {
-	// not implemented
 	return ctx
 }
 
@@ -54,7 +51,6 @@ func (t *gqlTracer) EndOperationParsing(ctx context.Context) {
 
 // gqlTracer implements the graphql.Tracer interface.
 func (t *gqlTracer) StartOperationValidation(ctx context.Context) context.Context {
-	// not implemented
 	return ctx
 }
 
@@ -64,41 +60,51 @@ func (t *gqlTracer) EndOperationValidation(ctx context.Context) {
 }
 
 func (t *gqlTracer) StartOperationExecution(ctx context.Context) context.Context {
-	rctx := graphql.GetRequestContext(ctx)
-	name := defaultResourceName
-	if rctx != nil && rctx.OperationName != "" {
-		name = rctx.OperationName
-	}
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeGraphql),
-		tracer.ResourceName(name),
 		tracer.ServiceName(t.cfg.serviceName),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
+	rctx := graphql.GetRequestContext(ctx)
+	if rctx != nil {
+		opts = append(opts, tracer.Tag("query", rctx.RawQuery))
+		if rctx.OperationName != "" {
+			opts = append(opts, tracer.ResourceName(rctx.OperationName))
+		}
+		if rctx.ComplexityLimit > 0 {
+			opts = append(opts,
+				tracer.Tag("complexityLimit", rctx.ComplexityLimit),
+				tracer.Tag("operationComplexity", rctx.OperationComplexity),
+			)
+		}
+		for key, val := range rctx.Variables {
+			opts = append(opts,
+				tracer.Tag(fmt.Sprintf("variables.%s", key), fmt.Sprintf("%+v", val)),
+			)
+		}
+	}
+
 	if s, ok := tracer.SpanFromContext(ctx); ok {
 		opts = append(opts, tracer.ChildOf(s.Context()))
 	}
-	_, ctx = tracer.StartSpanFromContext(ctx, name, opts...)
+	_, ctx = tracer.StartSpanFromContext(ctx, "gqlgen.operation", opts...)
 	return ctx
 }
 
 func (t *gqlTracer) StartFieldExecution(ctx context.Context, field graphql.CollectedField) context.Context {
-	span, ctx := tracer.StartSpanFromContext(ctx, "Field_"+field.Name)
-	span.SetTag("field", field.Name)
+	span, ctx := tracer.StartSpanFromContext(ctx, "gqlgen.field_execution")
+	span.SetTag(ext.ResourceName, field.Name)
 	return ctx
 }
 
 func (t *gqlTracer) StartFieldResolverExecution(ctx context.Context, rc *graphql.ResolverContext) context.Context {
-	// This is the span created in StartFieldExecution.
-	// StartFieldResolverExecution is called only once per StartFieldExecution, so we can add context to the
-	// span rather than starting a child span.
 	span, ok := tracer.SpanFromContext(ctx)
 	if !ok {
 		return ctx
 	}
-	span.SetTag(ext.SpanName, rc.Object+"_"+rc.Field.Name)
+	span.SetTag(ext.ResourceName, rc.Object+"."+rc.Field.Name)
 	span.SetTag(tagResolverObject, rc.Object)
 	span.SetTag(tagResolverField, rc.Field.Name)
 	return ctx
@@ -106,7 +112,6 @@ func (t *gqlTracer) StartFieldResolverExecution(ctx context.Context, rc *graphql
 
 // gqlTracer implements the graphql.Tracer interface.
 func (t *gqlTracer) StartFieldChildExecution(ctx context.Context) context.Context {
-	// not implemented
 	return ctx
 }
 
@@ -117,16 +122,19 @@ func (t *gqlTracer) EndFieldExecution(ctx context.Context) {
 	}
 	defer span.Finish()
 	resCtx := graphql.GetResolverContext(ctx)
+	if resCtx == nil {
+		return
+	}
 	reqCtx := graphql.GetRequestContext(ctx)
-	if resCtx == nil || reqCtx == nil {
+	if reqCtx == nil {
 		return
 	}
 	errList := reqCtx.GetErrors(resCtx)
 	if len(errList) != 0 {
 		span.SetTag(ext.Error, true)
 		for idx, err := range errList {
-			span.SetTag(fmt.Sprintf("gqlgen.error_%d.message", idx), err.Error())
-			span.SetTag(fmt.Sprintf("gqlgen.error_%d.kind", idx), fmt.Sprintf("%T", err))
+			span.SetTag(fmt.Sprintf("error_%d.message", idx), err.Error())
+			span.SetTag(fmt.Sprintf("error_%d.kind", idx), fmt.Sprintf("%T", err))
 		}
 	}
 }

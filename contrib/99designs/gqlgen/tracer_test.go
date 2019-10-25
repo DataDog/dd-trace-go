@@ -30,78 +30,44 @@ func newTodoClient(t graphql.Tracer) *client.Client {
 	return c
 }
 
-// findRootSpan returns the first root span it finds in a slice of spans, or nil if none is found.
-func findRootSpan(spans []mocktracer.Span) mocktracer.Span {
-	for _, span := range spans {
-		if span.ParentID() == 0 {
-			return span
-		}
-	}
-	return nil
-}
-
-// findRootSpan returns the first span it finds with a matching tag value in a slice of spans, or nil if none is found.
-func findSpanWithTag(spans []mocktracer.Span, tag string, val interface{}) mocktracer.Span {
-	for _, span := range spans {
-		if span.Tag(tag) == val {
-			return span
-		}
-	}
-	return nil
-}
-
-func TestRootSpan(t *testing.T) {
+func TestOptions(t *testing.T) {
 	for name, tt := range map[string]struct {
-		clientOpts []client.Option
 		tracerOpts []Option
-		test       func(assert *assert.Assertions, spans []mocktracer.Span)
+		test       func(assert *assert.Assertions, root mocktracer.Span)
 	}{
 		"default": {
-			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
-				root := findRootSpan(spans)
+			test: func(assert *assert.Assertions, root mocktracer.Span) {
 				assert.NotNil(root)
-				assert.Equal(root.Tag(ext.ResourceName), defaultResourceName)
+				assert.Equal(root.Tag(ext.ResourceName), "gqlgen.operation")
 				assert.Equal(root.Tag(ext.ServiceName), defaultServiceName)
 				assert.Equal(root.Tag(ext.SpanType), ext.SpanTypeGraphql)
 				assert.Nil(root.Tag(ext.EventSampleRate))
 			},
 		},
-		"OperationName": {
-			clientOpts: []client.Option{client.Operation("CreateTodo")},
-			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
-				root := findRootSpan(spans)
-				assert.NotNil(root)
-				assert.Equal(root.Tag(ext.ResourceName), "CreateTodo")
-			},
-		},
-		"ServiceName": {
+		"WithServiceName": {
 			tracerOpts: []Option{WithServiceName("TodoServer")},
-			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
-				root := findRootSpan(spans)
+			test: func(assert *assert.Assertions, root mocktracer.Span) {
 				assert.NotNil(root)
-				assert.Equal(root.Tag(ext.ServiceName), "TodoServer")
+				assert.Equal("TodoServer", root.Tag(ext.ServiceName))
 			},
 		},
 		"WithAnalytics/true": {
 			tracerOpts: []Option{WithAnalytics(true)},
-			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
-				root := findRootSpan(spans)
+			test: func(assert *assert.Assertions, root mocktracer.Span) {
 				assert.NotNil(root)
 				assert.Equal(1.0, root.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalytics/false": {
 			tracerOpts: []Option{WithAnalytics(false)},
-			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
-				root := findRootSpan(spans)
+			test: func(assert *assert.Assertions, root mocktracer.Span) {
 				assert.NotNil(root)
 				assert.Nil(root.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsRate": {
 			tracerOpts: []Option{WithAnalyticsRate(0.5)},
-			test: func(assert *assert.Assertions, spans []mocktracer.Span) {
-				root := findRootSpan(spans)
+			test: func(assert *assert.Assertions, root mocktracer.Span) {
 				assert.NotNil(root)
 				assert.Equal(0.5, root.Tag(ext.EventSampleRate))
 			},
@@ -116,13 +82,21 @@ func TestRootSpan(t *testing.T) {
 			var createResp struct {
 				CreateTodo struct{ ID string }
 			}
-			err := c.Post(`mutation CreateTodo{ createTodo(todo: {text: "todo text"}) {id} }`, &createResp, tt.clientOpts...)
+			err := c.Post(`mutation CreateTodo{ createTodo(todo: {text: "todo text"}) {id} }`, &createResp)
 			if err != nil {
 				t.Error(err)
 				return
 			}
-			spans := mt.FinishedSpans()
-			tt.test(assert, spans)
+			var root mocktracer.Span
+			for _, span := range mt.FinishedSpans() {
+				if span.ParentID() == 0 {
+					root = span
+				}
+			}
+			assert.NotNil(root)
+			if root != nil {
+				tt.test(assert, root)
+			}
 		})
 	}
 }
@@ -136,15 +110,40 @@ func TestResolver(t *testing.T) {
 	var createResp struct {
 		CreateTodo struct{ ID string }
 	}
-	err := c.Post(`mutation CreateTodo{ createTodo(todo: {text: "todo text"}) {id} }`, &createResp)
+	operation := "CreateTodo"
+	query := `mutation CreateTodo($text: String!){ createTodo(todo: {text: $text}) {id} }`
+	todoText := "todo text"
+	err := c.Post(query, &createResp, client.Var("text", todoText), client.Operation(operation))
 	if err != nil {
 		t.Error(err)
 		return
 	}
+
 	spans := mt.FinishedSpans()
-	span := findSpanWithTag(spans, ext.ResourceName, "Field_createTodo")
-	assert.NotNil(span)
-	assert.Equal("MyMutation_createTodo", span.Tag(ext.SpanName))
-	assert.Equal("MyMutation", span.Tag(tagResolverObject))
-	assert.Equal("createTodo", span.Tag(tagResolverField))
+	var root mocktracer.Span
+	var resolver mocktracer.Span
+	var field mocktracer.Span
+	for _, span := range spans {
+		switch span.Tag(ext.ResourceName) {
+		case operation:
+			root = span
+		case "MyMutation.createTodo":
+			resolver = span
+		case "Todo.id":
+			field = span
+		}
+	}
+	assert.NotNil(root)
+	assert.Equal(query, root.Tag("query"))
+	assert.Equal(todoText, root.Tag("variables.text"))
+
+	assert.NotNil(resolver)
+	assert.Equal("createTodo", resolver.Tag(tagResolverField))
+	assert.Equal("MyMutation", resolver.Tag(tagResolverObject))
+	assert.Equal(root.SpanID(), resolver.ParentID())
+
+	assert.NotNil(field)
+	assert.Equal("id", field.Tag(tagResolverField))
+	assert.Equal("Todo", field.Tag(tagResolverObject))
+	assert.Equal(resolver.SpanID(), field.ParentID())
 }

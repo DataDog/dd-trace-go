@@ -22,7 +22,6 @@ func ExampleNew() {
 	)
 	http.Handle("/query", handler.GraphQL(
 		todo.NewExecutableSchema(todo.New()),
-		// We can add our tracer in when we set up the query handler.
 		handler.Tracer(tracer),
 	))
 	log.Fatal(http.ListenAndServe(":8080", nil))
