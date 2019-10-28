@@ -5,6 +5,8 @@
 
 // Package gqlgen contains an implementation of a gqlgen tracer, and functions to construct and configure the tracer.
 // The tracer can be passed to the gqlgen handler (see package github.com/99designs/gqlgen/handler)
+//
+// When enabling introspection, please note that introspection queries may cause large traces to be created.
 package gqlgen
 
 import (
