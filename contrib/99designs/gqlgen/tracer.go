@@ -20,23 +20,29 @@ import (
 )
 
 const (
-	tagResolverObject = "resolver.object"
-	tagResolverField  = "resolver.field"
+	tagGraphQLQuery        = "graphql.query"
+	tagComplexityLimit     = "complexityLimit"
+	tagOperationComplexity = "operationComplexity"
+)
+
+const (
+	spanGQLGenOperation    = "gqlgen.operation"
+	spanGQLGenField        = "gqlgen.field"
 )
 
 type gqlTracer struct {
 	cfg *config
 }
 
-// New creates an a graphql.Tracer instance that can be passed to a gqlgen handler.
+// NewTracer creates an a graphql.Tracer instance that can be passed to a gqlgen handler.
 // Options can be passed in for further configuration.
-func New(opts ...Option) graphql.Tracer {
-	t := &gqlTracer{cfg: &config{}}
-	defaults(t.cfg)
-	for _, o := range opts {
-		o(t.cfg)
+func NewTracer(opts ...Option) graphql.Tracer {
+	cfg := new(config)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
 	}
-	return t
+	return &gqlTracer{cfg: cfg}
 }
 
 // gqlTracer implements the graphql.Tracer interface.
@@ -61,7 +67,7 @@ func (t *gqlTracer) EndOperationValidation(ctx context.Context) {
 
 func (t *gqlTracer) StartOperationExecution(ctx context.Context) context.Context {
 	opts := []ddtrace.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeGraphql),
+		tracer.SpanType(ext.SpanTypeGraphQL),
 		tracer.ServiceName(t.cfg.serviceName),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
@@ -69,14 +75,14 @@ func (t *gqlTracer) StartOperationExecution(ctx context.Context) context.Context
 	}
 	rctx := graphql.GetRequestContext(ctx)
 	if rctx != nil {
-		opts = append(opts, tracer.Tag("query", rctx.RawQuery))
+		opts = append(opts, tracer.Tag(tagGraphQLQuery, rctx.RawQuery))
 		if rctx.OperationName != "" {
 			opts = append(opts, tracer.ResourceName(rctx.OperationName))
 		}
 		if rctx.ComplexityLimit > 0 {
 			opts = append(opts,
-				tracer.Tag("complexityLimit", rctx.ComplexityLimit),
-				tracer.Tag("operationComplexity", rctx.OperationComplexity),
+				tracer.Tag(tagComplexityLimit, rctx.ComplexityLimit),
+				tracer.Tag(tagOperationComplexity, rctx.OperationComplexity),
 			)
 		}
 		for key, val := range rctx.Variables {
@@ -85,16 +91,15 @@ func (t *gqlTracer) StartOperationExecution(ctx context.Context) context.Context
 			)
 		}
 	}
-
 	if s, ok := tracer.SpanFromContext(ctx); ok {
 		opts = append(opts, tracer.ChildOf(s.Context()))
 	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "gqlgen.operation", opts...)
+	_, ctx = tracer.StartSpanFromContext(ctx, spanGQLGenOperation, opts...)
 	return ctx
 }
 
 func (t *gqlTracer) StartFieldExecution(ctx context.Context, field graphql.CollectedField) context.Context {
-	span, ctx := tracer.StartSpanFromContext(ctx, "gqlgen.field_execution")
+	span, ctx := tracer.StartSpanFromContext(ctx, spanGQLGenField)
 	span.SetTag(ext.ResourceName, field.Name)
 	return ctx
 }
@@ -105,8 +110,6 @@ func (t *gqlTracer) StartFieldResolverExecution(ctx context.Context, rc *graphql
 		return ctx
 	}
 	span.SetTag(ext.ResourceName, rc.Object+"."+rc.Field.Name)
-	span.SetTag(tagResolverObject, rc.Object)
-	span.SetTag(tagResolverField, rc.Field.Name)
 	return ctx
 }
 
@@ -129,13 +132,14 @@ func (t *gqlTracer) EndFieldExecution(ctx context.Context) {
 	if reqCtx == nil {
 		return
 	}
-	errList := reqCtx.GetErrors(resCtx)
-	if len(errList) != 0 {
-		span.SetTag(ext.Error, true)
-		for idx, err := range errList {
-			span.SetTag(fmt.Sprintf("error_%d.message", idx), err.Error())
-			span.SetTag(fmt.Sprintf("error_%d.kind", idx), fmt.Sprintf("%T", err))
-		}
+	errs := reqCtx.GetErrors(resCtx)
+	switch n := len(errs); n {
+	case 0:
+		// no error
+	case 1:
+		span.SetTag(ext.Error, errs[0])
+	default:
+		span.SetTag(ext.Error, fmt.Sprintf("%s (and %d more errors)", errs[0], n-1))
 	}
 }
 

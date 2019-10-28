@@ -37,38 +37,33 @@ func TestOptions(t *testing.T) {
 	}{
 		"default": {
 			test: func(assert *assert.Assertions, root mocktracer.Span) {
-				assert.NotNil(root)
-				assert.Equal(root.Tag(ext.ResourceName), "gqlgen.operation")
+				assert.Equal(root.OperationName(), spanGQLGenOperation)
 				assert.Equal(root.Tag(ext.ServiceName), defaultServiceName)
-				assert.Equal(root.Tag(ext.SpanType), ext.SpanTypeGraphql)
+				assert.Equal(root.Tag(ext.SpanType), ext.SpanTypeGraphQL)
 				assert.Nil(root.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithServiceName": {
 			tracerOpts: []Option{WithServiceName("TodoServer")},
 			test: func(assert *assert.Assertions, root mocktracer.Span) {
-				assert.NotNil(root)
 				assert.Equal("TodoServer", root.Tag(ext.ServiceName))
 			},
 		},
 		"WithAnalytics/true": {
 			tracerOpts: []Option{WithAnalytics(true)},
 			test: func(assert *assert.Assertions, root mocktracer.Span) {
-				assert.NotNil(root)
 				assert.Equal(1.0, root.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalytics/false": {
 			tracerOpts: []Option{WithAnalytics(false)},
 			test: func(assert *assert.Assertions, root mocktracer.Span) {
-				assert.NotNil(root)
 				assert.Nil(root.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsRate": {
 			tracerOpts: []Option{WithAnalyticsRate(0.5)},
 			test: func(assert *assert.Assertions, root mocktracer.Span) {
-				assert.NotNil(root)
 				assert.Equal(0.5, root.Tag(ext.EventSampleRate))
 			},
 		},
@@ -77,7 +72,7 @@ func TestOptions(t *testing.T) {
 			assert := assert.New(t)
 			mt := mocktracer.Start()
 			defer mt.Stop()
-			c := newTodoClient(New(tt.tracerOpts...))
+			c := newTodoClient(NewTracer(tt.tracerOpts...))
 
 			var createResp struct {
 				CreateTodo struct{ ID string }
@@ -94,9 +89,7 @@ func TestOptions(t *testing.T) {
 				}
 			}
 			assert.NotNil(root)
-			if root != nil {
-				tt.test(assert, root)
-			}
+			tt.test(assert, root)
 		})
 	}
 }
@@ -105,7 +98,7 @@ func TestResolver(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	c := newTodoClient(New())
+	c := newTodoClient(NewTracer())
 
 	var createResp struct {
 		CreateTodo struct{ ID string }
@@ -120,9 +113,7 @@ func TestResolver(t *testing.T) {
 	}
 
 	spans := mt.FinishedSpans()
-	var root mocktracer.Span
-	var resolver mocktracer.Span
-	var field mocktracer.Span
+	var root, resolver, field mocktracer.Span
 	for _, span := range spans {
 		switch span.Tag(ext.ResourceName) {
 		case operation:
@@ -134,16 +125,20 @@ func TestResolver(t *testing.T) {
 		}
 	}
 	assert.NotNil(root)
-	assert.Equal(query, root.Tag("query"))
+	assert.Equal(spanGQLGenOperation, root.OperationName())
+	assert.Equal(query, root.Tag(tagGraphQLQuery))
+	assert.Equal(defaultServiceName, root.Tag(ext.ServiceName))
+	assert.Equal(ext.SpanTypeGraphQL, root.Tag(ext.SpanType))
 	assert.Equal(todoText, root.Tag("variables.text"))
 
 	assert.NotNil(resolver)
-	assert.Equal("createTodo", resolver.Tag(tagResolverField))
-	assert.Equal("MyMutation", resolver.Tag(tagResolverObject))
+	assert.Equal(spanGQLGenField, resolver.OperationName())
+	assert.Equal(defaultServiceName, resolver.Tag(ext.ServiceName))
 	assert.Equal(root.SpanID(), resolver.ParentID())
 
 	assert.NotNil(field)
-	assert.Equal("id", field.Tag(tagResolverField))
-	assert.Equal("Todo", field.Tag(tagResolverObject))
+	assert.Equal(spanGQLGenField, field.OperationName())
+	assert.Equal(defaultServiceName, field.Tag(ext.ServiceName))
 	assert.Equal(resolver.SpanID(), field.ParentID())
+
 }
