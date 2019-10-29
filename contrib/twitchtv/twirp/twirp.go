@@ -52,11 +52,9 @@ func WrapClient(c HTTPClient, opts ...Option) HTTPClient {
 func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
+		tracer.ServiceName(wc.cfg.clientServiceName()),
 		tracer.Tag(ext.HTTPMethod, req.Method),
 		tracer.Tag(ext.HTTPURL, req.URL.Path),
-	}
-	if wc.cfg.serviceName != "" {
-		opts = append(opts, tracer.ServiceName(wc.cfg.serviceName))
 	}
 	ctx := req.Context()
 	if pkg, ok := twirp.PackageName(ctx); ok {
@@ -90,14 +88,15 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 	} else {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
 		// treat 4XX and 5XX as errors for a client
-		if res.StatusCode >= 400 && res.StatusCode < 600 {
-			span.SetTag(ext.Error, fmt.Errorf("%s", res.Status))
+		if res.StatusCode >= 400 {
+			span.SetTag(ext.Error, true)
+			span.SetTag(ext.ErrorMsg, fmt.Sprintf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))
 		}
 	}
 	return res, err
 }
 
-// WrapServer wraps a http.Handler to add distributed tracing to a Twirp server.
+// WrapServer wraps an http.Handler to add distributed tracing to a Twirp server.
 func WrapServer(h http.Handler, opts ...Option) http.Handler {
 	cfg := new(config)
 	defaults(cfg)
@@ -107,11 +106,9 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
+			tracer.ServiceName(cfg.serverServiceName()),
 			tracer.Tag(ext.HTTPMethod, r.Method),
 			tracer.Tag(ext.HTTPURL, r.URL.Path),
-		}
-		if cfg.serviceName != "" {
-			opts = append(opts, tracer.ServiceName(cfg.serviceName))
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -120,7 +117,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			opts = append(opts, tracer.ChildOf(spanctx))
 		}
 
-		span, ctx := tracer.StartSpanFromContext(r.Context(), "twirp.request", opts...)
+		span, ctx := tracer.StartSpanFromContext(r.Context(), "twirp.handler", opts...)
 		defer span.Finish()
 
 		r = r.WithContext(ctx)
@@ -145,13 +142,19 @@ func NewServerHooks(opts ...Option) *twirp.ServerHooks {
 	}
 }
 
+func spanNameFromContext(ctx context.Context) string {
+	svc, ok := twirp.ServiceName(ctx)
+	if !ok {
+		return "twirp.service"
+	}
+	return fmt.Sprintf("twirp.%s", svc)
+}
+
 func requestReceivedHook(cfg *config) func(context.Context) (context.Context, error) {
 	return func(ctx context.Context) (context.Context, error) {
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
-		}
-		if cfg.serviceName != "" {
-			opts = append(opts, tracer.ServiceName(cfg.serviceName))
+			tracer.ServiceName(cfg.serverServiceName()),
 		}
 		if pkg, ok := twirp.PackageName(ctx); ok {
 			opts = append(opts, tracer.Tag("twirp.package", pkg))
@@ -162,7 +165,7 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		_, ctx = tracer.StartSpanFromContext(ctx, "twirp.request", opts...)
+		_, ctx = tracer.StartSpanFromContext(ctx, spanNameFromContext(ctx), opts...)
 		return ctx, nil
 	}
 }
@@ -174,6 +177,7 @@ func requestRoutedHook(cfg *config) func(context.Context) (context.Context, erro
 			return ctx, nil
 		}
 		if method, ok := twirp.MethodName(ctx); ok {
+			span.SetTag(ext.ResourceName, method)
 			span.SetTag("twirp.method", method)
 		}
 		return ctx, nil

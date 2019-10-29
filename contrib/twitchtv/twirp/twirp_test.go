@@ -31,6 +31,7 @@ func (mc *mockClient) Do(req *http.Request) (*http.Response, error) {
 	if mc.err != nil {
 		return nil, mc.err
 	}
+	// the request body in a response should be nil based on the documentation of http.Response
 	req.Body = nil
 	res := &http.Response{
 		Status:     fmt.Sprintf("%d %s", mc.code, http.StatusText(mc.code)),
@@ -104,7 +105,7 @@ func TestClient(t *testing.T) {
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
-		assert.Equal("500 Internal Server Error", span.Tag(ext.Error).(error).Error())
+		assert.Equal(true, span.Tag(ext.Error).(bool))
 	})
 
 	t.Run("timeout", func(t *testing.T) {
@@ -172,7 +173,7 @@ func TestServerHooks(t *testing.T) {
 		span := spans[0]
 		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 		assert.Equal("twirp-test", span.Tag(ext.ServiceName))
-		assert.Equal("twirp.request", span.OperationName())
+		assert.Equal("twirp.Example", span.OperationName())
 		assert.Equal("twirp.test", span.Tag("twirp.package"))
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
@@ -190,7 +191,7 @@ func TestServerHooks(t *testing.T) {
 		span := spans[0]
 		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 		assert.Equal("twirp-test", span.Tag(ext.ServiceName))
-		assert.Equal("twirp.request", span.OperationName())
+		assert.Equal("twirp.Example", span.OperationName())
 		assert.Equal("twirp.test", span.Tag("twirp.package"))
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
