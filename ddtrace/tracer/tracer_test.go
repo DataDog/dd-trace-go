@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -1035,6 +1036,22 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 		span.Finish()
+	}
+}
+
+func BenchmarkStartSpan(b *testing.B) {
+	tracer, _, stop := startTestTracer(WithSampler(NewRateSampler(0)))
+	defer stop()
+	root := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+	ctx := ContextWithSpan(context.TODO(), root)
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		s, ok := SpanFromContext(ctx)
+		if !ok {
+			b.Fatal("no span")
+		}
+		StartSpan("op", ChildOf(s.Context()))
 	}
 }
 

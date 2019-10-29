@@ -107,16 +107,16 @@ func (s *span) SetTag(key string, value interface{}) {
 		return
 	}
 	if v, ok := value.(string); ok {
-		s.setTagString(key, v)
+		s.setMeta(key, v)
 		return
 	}
 	if v, ok := toFloat64(value); ok {
-		s.setTagNumeric(key, v)
+		s.setMetric(key, v)
 		return
 	}
 	// not numeric, not a string and not an error, the likelihood of this
 	// happening is close to zero, but we should nevertheless account for it.
-	s.Meta[key] = fmt.Sprint(value)
+	s.setMeta(key, fmt.Sprint(value))
 }
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
@@ -137,21 +137,21 @@ func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 		// if anyone sets an error value as the tag, be nice here
 		// and provide all the benefits.
 		s.Error = 1
-		s.Meta[ext.ErrorMsg] = v.Error()
-		s.Meta[ext.ErrorType] = reflect.TypeOf(v).String()
+		s.setMeta(ext.ErrorMsg, v.Error())
+		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
 		if !cfg.noDebugStack {
 			if cfg.stackFrames == 0 {
-				s.Meta[ext.ErrorStack] = string(debug.Stack())
+				s.setMeta(ext.ErrorStack, string(debug.Stack()))
 			} else {
-				s.Meta[ext.ErrorStack] = takeStacktrace(cfg.stackFrames, cfg.stackSkip)
+				s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
 			}
 		}
 		switch v.(type) {
 		case xerrors.Formatter:
-			s.Meta[ext.ErrorDetails] = fmt.Sprintf("%+v", v)
+			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
 		case fmt.Formatter:
 			// pkg/errors approach
-			s.Meta[ext.ErrorDetails] = fmt.Sprintf("%+v", v)
+			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
 		}
 	case nil:
 		// no error
@@ -192,8 +192,11 @@ func takeStacktrace(n, skip uint) string {
 	return builder.String()
 }
 
-// setTagString sets a string tag. This method is not safe for concurrent use.
-func (s *span) setTagString(key, v string) {
+// setMeta sets a string tag. This method is not safe for concurrent use.
+func (s *span) setMeta(key, v string) {
+	if s.Meta == nil {
+		s.Meta = make(map[string]string, 1)
+	}
 	switch key {
 	case ext.SpanName:
 		s.Name = v
@@ -213,30 +216,33 @@ func (s *span) setTagBool(key string, v bool) {
 	switch key {
 	case ext.AnalyticsEvent:
 		if v {
-			s.setTagNumeric(ext.EventSampleRate, 1.0)
+			s.setMetric(ext.EventSampleRate, 1.0)
 		} else {
-			s.setTagNumeric(ext.EventSampleRate, 0.0)
+			s.setMetric(ext.EventSampleRate, 0.0)
 		}
 	case ext.ManualDrop:
 		if v {
-			s.setTagNumeric(ext.SamplingPriority, ext.PriorityUserReject)
+			s.setMetric(ext.SamplingPriority, ext.PriorityUserReject)
 		}
 	case ext.ManualKeep:
 		if v {
-			s.setTagNumeric(ext.SamplingPriority, ext.PriorityUserKeep)
+			s.setMetric(ext.SamplingPriority, ext.PriorityUserKeep)
 		}
 	default:
 		if v {
-			s.setTagString(key, "true")
+			s.setMeta(key, "true")
 		} else {
-			s.setTagString(key, "false")
+			s.setMeta(key, "false")
 		}
 	}
 }
 
-// setTagNumeric sets a numeric tag, in our case called a metric. This method
+// setMetric sets a numeric tag, in our case called a metric. This method
 // is not safe for concurrent use.
-func (s *span) setTagNumeric(key string, v float64) {
+func (s *span) setMetric(key string, v float64) {
+	if s.Metrics == nil {
+		s.Metrics = make(map[string]float64, 1)
+	}
 	switch key {
 	case ext.SamplingPriority:
 		// setting sampling priority per spec
