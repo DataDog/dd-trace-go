@@ -78,6 +78,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 					stream, err = streamer(ctx, desc, cc, method, opts...)
 					return err
 				})
+			span.SetTag(tagMethodKind, streamDescMethodKind(desc))
 			if err != nil {
 				finishWithError(span, err, cfg)
 				return nil, err
@@ -128,6 +129,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 			func(ctx context.Context, opts []grpc.CallOption) error {
 				return invoker(ctx, method, req, reply, cc, opts...)
 			})
+		span.SetTag(tagMethodKind, methodKindUnary)
 		finishWithError(span, err, cfg)
 		return err
 	}

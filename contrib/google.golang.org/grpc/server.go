@@ -84,6 +84,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				cfg.analyticsRate,
 			)
 			defer func() { finishWithError(span, err, cfg) }()
+			span.SetTag(tagMethodKind, streamDescMethodKind(desc))
 		}
 
 		// call the original handler with a new stream, which traces each send
@@ -114,6 +115,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			cfg.serverServiceName(),
 			cfg.analyticsRate,
 		)
+		span.SetTag(tagMethodKind, methodKindUnary)
 		resp, err := handler(ctx, req)
 		finishWithError(span, err, cfg)
 		return resp, err
