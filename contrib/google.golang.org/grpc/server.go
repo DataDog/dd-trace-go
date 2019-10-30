@@ -84,7 +84,14 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				cfg.analyticsRate,
 			)
 			defer func() { finishWithError(span, err, cfg) }()
-			span.SetTag(tagMethodKind, streamDescMethodKind(desc))
+			switch {
+			case info.IsServerStream && info.IsClientStream:
+				span.SetTag(tagMethodKind, methodKindBidiStreaming)
+			case info.IsServerStream:
+				span.SetTag(tagMethodKind, methodKindServerStreaming)
+			default:
+				span.SetTag(tagMethodKind, methodKindClientStreaming)
+			}
 		}
 
 		// call the original handler with a new stream, which traces each send

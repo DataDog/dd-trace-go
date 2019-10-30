@@ -96,10 +96,12 @@ func TestUnary(t *testing.T) {
 			assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
 			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
+			assert.Equal(clientSpan.Tag(tagMethodKind), methodKindUnary)
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 			assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
 			assert.Equal(serverSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
+			assert.Equal(serverSpan.Tag(tagMethodKind), methodKindUnary)
 		})
 	}
 }
@@ -151,7 +153,12 @@ func TestStreaming(t *testing.T) {
 				assert.Equal(t, rig.port, span.Tag(ext.TargetPort),
 					"expected target host port to be set in span: %v", span)
 				fallthrough
-			case "grpc.server", "grpc.message":
+			case "grpc.server":
+				assert.Equal(t, methodKindBidiStreaming, span.Tag(tagMethodKind),
+					"expected tag %s == %s, but found %s.",
+					tagMethodKind, methodKindBidiStreaming, span.Tag(tagMethodKind))
+				fallthrough
+			case "grpc.message":
 				wantCode := codes.OK
 				if errTag := span.Tag("error"); errTag != nil {
 					if err, ok := errTag.(error); ok {

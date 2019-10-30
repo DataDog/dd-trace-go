@@ -5,8 +5,6 @@
 
 package grpc
 
-import "google.golang.org/grpc"
-
 // Tags used for gRPC
 const (
 	tagMethod     = "grpc.method"
@@ -20,14 +18,3 @@ const (
 	methodKindServerStreaming = "server_streaming"
 	methodKindBidiStreaming   = "bidi_streaming"
 )
-
-func streamDescMethodKind(desc *grpc.StreamDesc) string {
-	switch {
-	case desc.ServerStreams && desc.ClientStreams:
-		return methodKindBidiStreaming
-	case desc.ServerStreams:
-		return methodKindServerStreaming
-	default:
-		return methodKindClientStreaming
-	}
-}

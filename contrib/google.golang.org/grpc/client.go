@@ -78,7 +78,14 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 					stream, err = streamer(ctx, desc, cc, method, opts...)
 					return err
 				})
-			span.SetTag(tagMethodKind, streamDescMethodKind(desc))
+			switch {
+			case desc.ServerStreams && desc.ClientStreams:
+				span.SetTag(tagMethodKind, methodKindBidiStreaming)
+			case desc.ServerStreams:
+				span.SetTag(tagMethodKind, methodKindServerStreaming)
+			default:
+				span.SetTag(tagMethodKind, methodKindClientStreaming)
+			}
 			if err != nil {
 				finishWithError(span, err, cfg)
 				return nil, err
