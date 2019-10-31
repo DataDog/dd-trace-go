@@ -180,6 +180,17 @@ func (t *tracer) worker() {
 			}
 
 		case <-t.exitChan:
+		loop:
+			// the loop ensures that the payload channel is fully drained
+			// before the final flush to ensure no traces are lost (see #526)
+			for {
+				select {
+				case trace := <-t.payloadChan:
+					t.pushPayload(trace)
+				default:
+					break loop
+				}
+			}
 			t.flushPayload()
 			return
 		}
