@@ -38,7 +38,11 @@ func (tp *testLogger) Lines() []string {
 }
 
 // Reset resets the logger's internal buffer.
-func (tp *testLogger) Reset() { tp.lines = tp.lines[:0] }
+func (tp *testLogger) Reset() {
+	tp.mu.Lock()
+	tp.lines = tp.lines[:0]
+	tp.mu.Unlock()
+}
 
 func TestLog(t *testing.T) {
 	defer func(old ddtrace.Logger) { UseLogger(old) }(logger)
