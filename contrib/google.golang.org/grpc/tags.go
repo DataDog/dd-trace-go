@@ -7,14 +7,14 @@ package grpc
 
 // Tags used for gRPC
 const (
-	tagMethod     = "grpc.method"
-	tagCode       = "grpc.code"
+	tagMethodName = "grpc.method.name"
 	tagMethodKind = "grpc.method.kind"
+	tagCode       = "grpc.code"
 )
 
 const (
 	methodKindUnary           = "unary"
-	methodKindClientStreaming = "client_streaming"
-	methodKindServerStreaming = "server_streaming"
-	methodKindBidiStreaming   = "bidi_streaming"
+	methodKindClientStream = "client_streaming"
+	methodKindServerStream = "server_streaming"
+	methodKindBidiStream   = "bidi_streaming"
 )

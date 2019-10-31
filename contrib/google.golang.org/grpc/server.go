@@ -9,6 +9,7 @@ import (
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type serverStream struct {
@@ -75,6 +76,21 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 
 		// if we've enabled call tracing, create a span
 		if cfg.traceStreamCalls {
+			var methodKind string
+			if info != nil {
+				switch {
+				case info.IsServerStream && info.IsClientStream:
+					methodKind = methodKindBidiStream
+				case info.IsServerStream:
+					methodKind = methodKindServerStream
+				case info.IsClientStream:
+					methodKind = methodKindClientStream
+				}
+			}
+			var spanOpts []ddtrace.StartSpanOption
+			if methodKind != "" {
+				spanOpts = []ddtrace.StartSpanOption{ tracer.Tag(tagMethodKind, methodKind) }
+			}
 			var span ddtrace.Span
 			span, ctx = startSpanFromContext(
 				ctx,
@@ -82,16 +98,10 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				"grpc.server",
 				cfg.serviceName,
 				cfg.analyticsRate,
+				spanOpts...,
 			)
 			defer func() { finishWithError(span, err, cfg) }()
-			switch {
-			case info.IsServerStream && info.IsClientStream:
-				span.SetTag(tagMethodKind, methodKindBidiStreaming)
-			case info.IsServerStream:
-				span.SetTag(tagMethodKind, methodKindServerStreaming)
-			default:
-				span.SetTag(tagMethodKind, methodKindClientStreaming)
-			}
+
 		}
 
 		// call the original handler with a new stream, which traces each send

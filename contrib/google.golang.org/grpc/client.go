@@ -70,22 +70,25 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 		fn(cfg)
 	}
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		var methodKind string
+		if desc != nil {
+			switch {
+			case desc.ServerStreams && desc.ClientStreams:
+				methodKind = methodKindBidiStream
+			case desc.ServerStreams:
+				methodKind = methodKindServerStream
+			case desc.ClientStreams:
+				methodKind = methodKindClientStream
+			}
+		}
 		var stream grpc.ClientStream
 		if cfg.traceStreamCalls {
-			span, err := doClientRequest(ctx, cfg, method, opts,
+			span, err := doClientRequest(ctx, cfg, method, methodKind, opts,
 				func(ctx context.Context, opts []grpc.CallOption) error {
 					var err error
 					stream, err = streamer(ctx, desc, cc, method, opts...)
 					return err
 				})
-			switch {
-			case desc.ServerStreams && desc.ClientStreams:
-				span.SetTag(tagMethodKind, methodKindBidiStreaming)
-			case desc.ServerStreams:
-				span.SetTag(tagMethodKind, methodKindServerStreaming)
-			default:
-				span.SetTag(tagMethodKind, methodKindClientStreaming)
-			}
 			if err != nil {
 				finishWithError(span, err, cfg)
 				return nil, err
@@ -132,11 +135,10 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 		fn(cfg)
 	}
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		span, err := doClientRequest(ctx, cfg, method, opts,
+		span, err := doClientRequest(ctx, cfg, method, methodKindUnary, opts,
 			func(ctx context.Context, opts []grpc.CallOption) error {
 				return invoker(ctx, method, req, reply, cc, opts...)
 			})
-		span.SetTag(tagMethodKind, methodKindUnary)
 		finishWithError(span, err, cfg)
 		return err
 	}
@@ -145,9 +147,13 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 // doClientRequest starts a new span and invokes the handler with the new context
 // and options. The span should be finished by the caller.
 func doClientRequest(
-	ctx context.Context, cfg *config, method string, opts []grpc.CallOption,
+	ctx context.Context, cfg *config, method string, methodKind string, opts []grpc.CallOption,
 	handler func(ctx context.Context, opts []grpc.CallOption) error,
 ) (ddtrace.Span, error) {
+	var spanOpts []ddtrace.StartSpanOption
+	if methodKind != "" {
+		spanOpts = []ddtrace.StartSpanOption{ tracer.Tag(tagMethodKind, methodKind) }
+	}
 	// inject the trace id into the metadata
 	span, ctx := startSpanFromContext(
 		ctx,
@@ -155,6 +161,7 @@ func doClientRequest(
 		"grpc.client",
 		cfg.clientServiceName(),
 		cfg.analyticsRate,
+		spanOpts...
 	)
 	ctx = injectSpanIntoContext(ctx)
 

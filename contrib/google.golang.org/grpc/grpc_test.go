@@ -154,9 +154,9 @@ func TestStreaming(t *testing.T) {
 					"expected target host port to be set in span: %v", span)
 				fallthrough
 			case "grpc.server":
-				assert.Equal(t, methodKindBidiStreaming, span.Tag(tagMethodKind),
+				assert.Equal(t, methodKindBidiStream, span.Tag(tagMethodKind),
 					"expected tag %s == %s, but found %s.",
-					tagMethodKind, methodKindBidiStreaming, span.Tag(tagMethodKind))
+					tagMethodKind, methodKindBidiStream, span.Tag(tagMethodKind))
 				fallthrough
 			case "grpc.message":
 				wantCode := codes.OK
@@ -169,7 +169,7 @@ func TestStreaming(t *testing.T) {
 					"expected grpc code to be set in span: %v", span)
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.ResourceName),
 					"expected resource name to be set in span: %v", span)
-				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethod),
+				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethodName),
 					"expected grpc method name to be set in span: %v", span)
 			}
 		}
