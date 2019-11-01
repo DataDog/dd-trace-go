@@ -26,7 +26,7 @@ import (
 func startSpanFromContext(
 	ctx context.Context, method, operation, service string, rate float64, opts ...ddtrace.StartSpanOption,
 ) (ddtrace.Span, context.Context) {
-	opts = append(opts, 
+	opts = append(opts,
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethodName, method),

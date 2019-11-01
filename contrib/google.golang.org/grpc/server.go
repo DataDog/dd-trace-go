@@ -89,7 +89,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 			}
 			var spanOpts []ddtrace.StartSpanOption
 			if methodKind != "" {
-				spanOpts = []ddtrace.StartSpanOption{ tracer.Tag(tagMethodKind, methodKind) }
+				spanOpts = []ddtrace.StartSpanOption{tracer.Tag(tagMethodKind, methodKind)}
 			}
 			var span ddtrace.Span
 			span, ctx = startSpanFromContext(

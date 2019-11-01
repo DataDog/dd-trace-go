@@ -152,7 +152,7 @@ func doClientRequest(
 ) (ddtrace.Span, error) {
 	var spanOpts []ddtrace.StartSpanOption
 	if methodKind != "" {
-		spanOpts = []ddtrace.StartSpanOption{ tracer.Tag(tagMethodKind, methodKind) }
+		spanOpts = []ddtrace.StartSpanOption{tracer.Tag(tagMethodKind, methodKind)}
 	}
 	// inject the trace id into the metadata
 	span, ctx := startSpanFromContext(
@@ -161,7 +161,7 @@ func doClientRequest(
 		"grpc.client",
 		cfg.clientServiceName(),
 		cfg.analyticsRate,
-		spanOpts...
+		spanOpts...,
 	)
 	ctx = injectSpanIntoContext(ctx)
 

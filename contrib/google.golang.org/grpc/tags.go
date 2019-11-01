@@ -13,7 +13,7 @@ const (
 )
 
 const (
-	methodKindUnary           = "unary"
+	methodKindUnary        = "unary"
 	methodKindClientStream = "client_streaming"
 	methodKindServerStream = "server_streaming"
 	methodKindBidiStream   = "bidi_streaming"
