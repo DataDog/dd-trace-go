@@ -53,6 +53,13 @@ jobs:
         command: |
           go run checkcopyright.go
 
+    - run:
+        name: Check gofmt
+        command: |
+          if [ "$(gofmt -e -l . | wc -l)" -gt 0 ]; then
+            exit 1
+          fi
+
     - restore_cache:
         keys:
         - v1-librdkafka-v1.1.0-{{ checksum "/etc/os-release" }}
