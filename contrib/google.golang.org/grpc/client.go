@@ -150,10 +150,6 @@ func doClientRequest(
 	ctx context.Context, cfg *config, method string, methodKind string, opts []grpc.CallOption,
 	handler func(ctx context.Context, opts []grpc.CallOption) error,
 ) (ddtrace.Span, error) {
-	var spanOpts []ddtrace.StartSpanOption
-	if methodKind != "" {
-		spanOpts = []ddtrace.StartSpanOption{tracer.Tag(tagMethodKind, methodKind)}
-	}
 	// inject the trace id into the metadata
 	span, ctx := startSpanFromContext(
 		ctx,
@@ -161,8 +157,10 @@ func doClientRequest(
 		"grpc.client",
 		cfg.clientServiceName(),
 		cfg.analyticsRate,
-		spanOpts...,
 	)
+	if methodKind != "" {
+		span.SetTag(tagMethodKind, methodKind)
+	}
 	ctx = injectSpanIntoContext(ctx)
 
 	// fill in the peer so we can add it to the tags

@@ -24,14 +24,14 @@ import (
 )
 
 func startSpanFromContext(
-	ctx context.Context, method, operation, service string, rate float64, opts ...ddtrace.StartSpanOption,
+	ctx context.Context, method, operation, service string, rate float64,
 ) (ddtrace.Span, context.Context) {
-	opts = append(opts,
+	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethodName, method),
 		tracer.SpanType(ext.AppTypeRPC),
-	)
+	}
 	if !math.IsNaN(rate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
 	}
