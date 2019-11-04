@@ -49,7 +49,7 @@ func TestServerStatsHandler(t *testing.T) {
 		"grpc.code":     codes.OK.String(),
 		"service.name":  serviceName,
 		"resource.name": "/grpc.Fixture/Ping",
-		"grpc.method":   "/grpc.Fixture/Ping",
+		tagMethodName:   "/grpc.Fixture/Ping",
 	}, span.Tags())
 }
 

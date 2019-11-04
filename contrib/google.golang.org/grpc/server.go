@@ -6,9 +6,10 @@
 package grpc
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 type serverStream struct {
@@ -83,6 +84,14 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				cfg.serviceName,
 				cfg.analyticsRate,
 			)
+			switch {
+			case info.IsServerStream && info.IsClientStream:
+				span.SetTag(tagMethodKind, methodKindBidiStream)
+			case info.IsServerStream:
+				span.SetTag(tagMethodKind, methodKindServerStream)
+			case info.IsClientStream:
+				span.SetTag(tagMethodKind, methodKindClientStream)
+			}
 			defer func() { finishWithError(span, err, cfg) }()
 		}
 
@@ -114,6 +123,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			cfg.serverServiceName(),
 			cfg.analyticsRate,
 		)
+		span.SetTag(tagMethodKind, methodKindUnary)
 		resp, err := handler(ctx, req)
 		finishWithError(span, err, cfg)
 		return resp, err

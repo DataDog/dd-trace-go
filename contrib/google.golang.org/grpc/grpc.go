@@ -29,7 +29,7 @@ func startSpanFromContext(
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
-		tracer.Tag(tagMethod, method),
+		tracer.Tag(tagMethodName, method),
 		tracer.SpanType(ext.AppTypeRPC),
 	}
 	if !math.IsNaN(rate) {
