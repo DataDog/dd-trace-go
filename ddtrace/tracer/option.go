@@ -138,6 +138,13 @@ func WithAgentAddr(addr string) StartOption {
 	}
 }
 
+// WithEnv sets the global environment name. If set, the tracer will tag all
+// traces with "env":"<environment name>". By default, the environment name
+// is not set.
+func WithEnv(env string) StartOption {
+	return WithGlobalTag(ext.Environment, env)
+}
+
 // WithGlobalTag sets a key/value pair which will be set as a tag on all spans
 // created by tracer. This option may be used multiple times.
 func WithGlobalTag(k string, v interface{}) StartOption {

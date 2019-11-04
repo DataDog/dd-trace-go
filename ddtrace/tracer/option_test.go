@@ -10,8 +10,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func withTransport(t transport) StartOption {
@@ -91,6 +93,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			WithAgentAddr("ddagent.consul.local:58126"),
 			WithGlobalTag("k", "v"),
 			WithDebugMode(true),
+			WithEnv("testEnv"),
 		)
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
@@ -98,6 +101,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal("ddagent.consul.local:58126", c.agentAddr)
 		assert.NotNil(c.globalTags)
 		assert.Equal("v", c.globalTags["k"])
+		assert.Equal("testEnv", c.globalTags[ext.Environment])
 		assert.True(c.debug)
 	})
 }
