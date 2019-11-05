@@ -78,7 +78,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
 		})
 
-		t.Run("env-dd_env", func(t *testing.T) {
+		t.Run("env-env", func(t *testing.T) {
 			os.Setenv("DD_ENV", "testEnv")
 			defer os.Unsetenv("DD_ENV")
 			tracer := newTracer()
@@ -94,8 +94,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	})
 
 	t.Run("other", func(t *testing.T) {
-		// Set a DD_ENV to ensure WithEnv overrides it.
-		os.Setenv("DD_ENV", "doodo")
+		// Set DD_ENV to ensure WithEnv overrides it.
+		os.Setenv("DD_ENV", "DD_ENV")
 		defer os.Unsetenv("DD_ENV")
 		assert := assert.New(t)
 		tracer := newTracer(
