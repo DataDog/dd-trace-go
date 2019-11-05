@@ -78,6 +78,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
 		})
 
+		t.Run("env-dd_env", func(t *testing.T) {
+			os.Setenv("DD_ENV", "testEnv")
+			defer os.Unsetenv("DD_ENV")
+			tracer := newTracer()
+			c := tracer.config
+			assert.Equal(t, "testEnv", c.globalTags[ext.Environment])
+		})
+
 		t.Run("option", func(t *testing.T) {
 			tracer := newTracer(WithDogstatsdAddress("10.1.0.12:4002"))
 			c := tracer.config
@@ -86,6 +94,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	})
 
 	t.Run("other", func(t *testing.T) {
+		// Set a DD_ENV to ensure WithEnv overrides it.
+		os.Setenv("DD_ENV", "doodo")
+		defer os.Unsetenv("DD_ENV")
 		assert := assert.New(t)
 		tracer := newTracer(
 			WithSampler(NewRateSampler(0.5)),

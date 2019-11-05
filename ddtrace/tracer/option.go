@@ -89,6 +89,9 @@ func defaults(c *config) {
 			log.Warn("unable to look up hostname: %v", err)
 		}
 	}
+	if v := os.Getenv("DD_ENV"); v != "" {
+		WithEnv(v)(c)
+	}
 }
 
 // WithLogger sets logger as the tracer's error printer.
@@ -138,9 +141,8 @@ func WithAgentAddr(addr string) StartOption {
 	}
 }
 
-// WithEnv sets the global environment name. If set, the tracer will tag all
-// traces with "env":"<environment name>". By default, the environment name
-// is not set.
+// WithEnv sets the environment to which all traces started by the tracer will be submitted.
+// The default value is the environment variable DD_ENV, if it is set.
 func WithEnv(env string) StartOption {
 	return WithGlobalTag(ext.Environment, env)
 }
