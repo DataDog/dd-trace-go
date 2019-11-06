@@ -14,7 +14,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -28,8 +27,7 @@ type Client struct {
 	*redis.Client
 	*params
 
-	mu  sync.RWMutex // guards ctx
-	ctx context.Context
+	process func(cmd redis.Cmder) error
 }
 
 var _ redis.Cmdable = (*Client)(nil)
@@ -84,10 +82,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 
 // Pipeline creates a Pipeline from a Client
 func (c *Client) Pipeline() redis.Pipeliner {
-	c.mu.RLock()
-	ctx := c.ctx
-	c.mu.RUnlock()
-	return &Pipeliner{c.Client.Pipeline(), c.params, ctx}
+	return &Pipeliner{c.Client.Pipeline(), c.params, c.Client.Context()}
 }
 
 // ExecWithContext calls Pipeline.Exec(). It ensures that the resulting Redis calls
@@ -139,18 +134,18 @@ func commandsToString(cmds []redis.Cmder) string {
 
 // WithContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.
 func (c *Client) WithContext(ctx context.Context) *Client {
-	c.mu.Lock()
-	c.ctx = ctx
-	c.mu.Unlock()
-	return c
+	newClient := &Client{
+		Client:  c.Client.WithContext(ctx),
+		params:  c.params,
+		process: c.process,
+	}
+	newClient.Client.WrapProcess(createWrapperFromClient(newClient))
+	return newClient
 }
 
 // Context returns the active context in the client.
 func (c *Client) Context() context.Context {
-	c.mu.RLock()
-	ctx := c.ctx
-	c.mu.RUnlock()
-	return ctx
+	return c.Client.Context()
 }
 
 // createWrapperFromClient returns a new createWrapper function which wraps the processor with tracing
@@ -158,10 +153,11 @@ func (c *Client) Context() context.Context {
 // documentation for the github.com/go-redis/redis.(*baseClient).WrapProcess function.
 func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
 	return func(oldProcess func(cmd redis.Cmder) error) func(cmd redis.Cmder) error {
+		if tc.process == nil {
+			tc.process = oldProcess
+		}
 		return func(cmd redis.Cmder) error {
-			tc.mu.RLock()
-			ctx := tc.ctx
-			tc.mu.RUnlock()
+			ctx := tc.Client.Context()
 			raw := cmderToString(cmd)
 			parts := strings.Split(raw, " ")
 			length := len(parts) - 1
@@ -180,7 +176,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 			}
 			span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
-			err := oldProcess(cmd)
+			err := tc.process(cmd)
 			var finishOpts []ddtrace.FinishOption
 			if err != redis.Nil {
 				finishOpts = append(finishOpts, tracer.WithError(err))
