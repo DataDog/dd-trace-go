@@ -93,10 +93,18 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 	})
 
-	t.Run("other", func(t *testing.T) {
-		// Set DD_ENV to ensure WithEnv overrides it.
+	t.Run("envOverride", func(t *testing.T) {
 		os.Setenv("DD_ENV", "DD_ENV")
 		defer os.Unsetenv("DD_ENV")
+		assert := assert.New(t)
+		tracer := newTracer(
+			WithEnv("testEnv"),
+		)
+		c := tracer.config
+		assert.Equal("testEnv", c.globalTags[ext.Environment])
+	})
+
+	t.Run("other", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer := newTracer(
 			WithSampler(NewRateSampler(0.5)),
