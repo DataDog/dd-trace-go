@@ -314,11 +314,13 @@ func TestAnalyticsSettings(t *testing.T) {
 	})
 }
 
+type testKey string
+
 func TestWithContextRace(t *testing.T) {
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
 
-	k := "key"
+	k := testKey("key")
 	v := "val"
 	v2 := "val2"
 	ctx := context.WithValue(context.Background(), k, v)
