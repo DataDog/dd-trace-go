@@ -34,6 +34,9 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if !math.IsNaN(rt.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.analyticsRate))
 	}
+	if rt.cfg.serviceName != "" {
+		opts = append(opts, tracer.ServiceName(rt.cfg.serviceName))
+	}
 	span, ctx := tracer.StartSpanFromContext(req.Context(), defaultResourceName, opts...)
 	defer func() {
 		if rt.cfg.after != nil {
