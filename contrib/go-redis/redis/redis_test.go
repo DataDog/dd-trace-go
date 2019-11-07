@@ -313,3 +313,56 @@ func TestAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, 0.0, WithAnalyticsRate(0.0))
 	})
 }
+
+func TestWithContextRace(t *testing.T) {
+	opts := &redis.Options{Addr: "127.0.0.1:6379"}
+	assert := assert.New(t)
+
+	k := "key"
+	v := "val"
+	v2 := "val2"
+	ctx := context.WithValue(context.Background(), k, v)
+	client := NewClient(opts, WithServiceName("my-redis")).WithContext(ctx)
+	ctx2 := context.WithValue(context.Background(), k, v2)
+	client2 := client.WithContext(ctx2)
+
+	assert.Equal(ctx, client.Context())
+	assert.Equal(v, client.Context().Value(k))
+	assert.Equal(ctx2, client2.Context())
+	assert.Equal(v2, client2.Context().Value(k))
+}
+
+func TestWithContextProcess(t *testing.T) {
+	opts := &redis.Options{Addr: "127.0.0.1:6379"}
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := NewClient(opts, WithServiceName("my-redis"))
+	incorrectName := "incorrect.parent.span"
+	incorrectParent, ctx := tracer.StartSpanFromContext(context.Background(), incorrectName)
+	client = client.WithContext(ctx)
+
+	correctName := "correct.parent.span"
+	correctParent, ctx := tracer.StartSpanFromContext(context.Background(), correctName)
+	client = client.WithContext(ctx)
+	client.Set("test_key", "test_value", 0)
+
+	correctParent.Finish()
+	incorrectParent.Finish()
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 3)
+	var parent, child mocktracer.Span
+	for _, s := range spans {
+		switch s.OperationName() {
+		case correctName:
+			parent = s
+		case "redis.command":
+			child = s
+		}
+	}
+	assert.NotNil(parent)
+	assert.NotNil(child)
+	assert.Equal(parent.SpanID(), child.ParentID())
+}
