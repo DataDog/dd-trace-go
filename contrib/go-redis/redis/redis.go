@@ -134,13 +134,13 @@ func commandsToString(cmds []redis.Cmder) string {
 
 // WithContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.
 func (c *Client) WithContext(ctx context.Context) *Client {
-	newClient := &Client{
+	clone := &Client{
 		Client:  c.Client.WithContext(ctx),
 		params:  c.params,
 		process: c.process,
 	}
-	newClient.Client.WrapProcess(createWrapperFromClient(newClient))
-	return newClient
+	clone.Client.WrapProcess(createWrapperFromClient(clone))
+	return clone
 }
 
 // Context returns the active context in the client.
