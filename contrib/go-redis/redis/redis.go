@@ -143,11 +143,6 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 	return clone
 }
 
-// Context returns the active context in the client.
-func (c *Client) Context() context.Context {
-	return c.Client.Context()
-}
-
 // createWrapperFromClient returns a new createWrapper function which wraps the processor with tracing
 // information obtained from the provided Client. To understand this functionality better see the
 // documentation for the github.com/go-redis/redis.(*baseClient).WrapProcess function.

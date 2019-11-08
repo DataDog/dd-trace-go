@@ -319,19 +319,42 @@ type testKey string
 func TestWithContextRace(t *testing.T) {
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
-	k := testKey("key")
-	v := "val"
-	v2 := "val2"
-	ctx := context.WithValue(context.Background(), k, v)
-	client := NewClient(opts, WithServiceName("my-redis")).WithContext(ctx)
-	ctx2 := context.WithValue(context.Background(), k, v2)
+	client := NewClient(opts, WithServiceName("my-redis"))
+	s1, ctx := tracer.StartSpanFromContext(context.Background(), "span1.name")
+	client = client.WithContext(ctx)
+	s2, ctx2 := tracer.StartSpanFromContext(context.Background(), "span2.name")
 	client2 := client.WithContext(ctx2)
+	client.Set("test_key", "test_value", 0)
+	client2.Get("test_key")
+	s1.Finish()
+	s2.Finish()
 
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 4)
+	var span1, span2, setSpan, getSpan mocktracer.Span
+	for _, s := range spans {
+		switch s.Tag(ext.ResourceName) {
+		case "span1.name":
+			span1 = s
+		case "span2.name":
+			span2 = s
+		case "set":
+			setSpan = s
+		case "get":
+			getSpan = s
+		}
+	}
 	assert.Equal(ctx, client.Context())
-	assert.Equal(v, client.Context().Value(k))
 	assert.Equal(ctx2, client2.Context())
-	assert.Equal(v2, client2.Context().Value(k))
+	assert.NotNil(span1)
+	assert.NotNil(span2)
+	assert.NotNil(setSpan)
+	assert.NotNil(getSpan)
+	assert.Equal(span1.SpanID(), setSpan.ParentID())
+	assert.Equal(span2.SpanID(), getSpan.ParentID())
 }
 
 func TestWithContextProcess(t *testing.T) {
@@ -341,30 +364,27 @@ func TestWithContextProcess(t *testing.T) {
 	defer mt.Stop()
 
 	client := NewClient(opts, WithServiceName("my-redis"))
-	incorrectName := "incorrect.parent.span"
-	incorrectParent, ctx := tracer.StartSpanFromContext(context.Background(), incorrectName)
+	span1, ctx := tracer.StartSpanFromContext(context.Background(), "span1.name")
 	client = client.WithContext(ctx)
-
-	correctName := "correct.parent.span"
-	correctParent, ctx := tracer.StartSpanFromContext(context.Background(), correctName)
+	span2Name := "span2.name"
+	span2, ctx := tracer.StartSpanFromContext(context.Background(), span2Name)
 	client = client.WithContext(ctx)
 	client.Set("test_key", "test_value", 0)
-
-	correctParent.Finish()
-	incorrectParent.Finish()
+	span1.Finish()
+	span2.Finish()
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 3)
-	var parent, child mocktracer.Span
+	var mspan1, mspan2 mocktracer.Span
 	for _, s := range spans {
 		switch s.OperationName() {
-		case correctName:
-			parent = s
+		case span2Name:
+			mspan1 = s
 		case "redis.command":
-			child = s
+			mspan2 = s
 		}
 	}
-	assert.NotNil(parent)
-	assert.NotNil(child)
-	assert.Equal(parent.SpanID(), child.ParentID())
+	assert.NotNil(mspan1)
+	assert.NotNil(mspan2)
+	assert.Equal(mspan1.SpanID(), mspan2.ParentID())
 }
