@@ -109,7 +109,7 @@ func WithAfter(f RoundTripperAfterFunc) RoundTripperOption {
 	}
 }
 
-// RTWithServiceName sets the given service name for the RoundTripper
+// RTWithServiceName sets the given service name for the RoundTripper.
 func RTWithServiceName(name string) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.serviceName = name
