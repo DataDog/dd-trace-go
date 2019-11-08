@@ -316,7 +316,7 @@ func TestAnalyticsSettings(t *testing.T) {
 
 type testKey string
 
-func TestWithContextRace(t *testing.T) {
+func TestWithContext(t *testing.T) {
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -355,36 +355,4 @@ func TestWithContextRace(t *testing.T) {
 	assert.NotNil(getSpan)
 	assert.Equal(span1.SpanID(), setSpan.ParentID())
 	assert.Equal(span2.SpanID(), getSpan.ParentID())
-}
-
-func TestWithContextProcess(t *testing.T) {
-	opts := &redis.Options{Addr: "127.0.0.1:6379"}
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	client := NewClient(opts, WithServiceName("my-redis"))
-	span1, ctx := tracer.StartSpanFromContext(context.Background(), "span1.name")
-	client = client.WithContext(ctx)
-	span2Name := "span2.name"
-	span2, ctx := tracer.StartSpanFromContext(context.Background(), span2Name)
-	client = client.WithContext(ctx)
-	client.Set("test_key", "test_value", 0)
-	span1.Finish()
-	span2.Finish()
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 3)
-	var mspan1, mspan2 mocktracer.Span
-	for _, s := range spans {
-		switch s.OperationName() {
-		case span2Name:
-			mspan1 = s
-		case "redis.command":
-			mspan2 = s
-		}
-	}
-	assert.NotNil(mspan1)
-	assert.NotNil(mspan2)
-	assert.Equal(mspan1.SpanID(), mspan2.ParentID())
 }
