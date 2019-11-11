@@ -314,8 +314,6 @@ func TestAnalyticsSettings(t *testing.T) {
 	})
 }
 
-type testKey string
-
 func TestWithContext(t *testing.T) {
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
@@ -323,8 +321,8 @@ func TestWithContext(t *testing.T) {
 	defer mt.Stop()
 
 	client := NewClient(opts, WithServiceName("my-redis"))
-	s1, ctx := tracer.StartSpanFromContext(context.Background(), "span1.name")
-	client = client.WithContext(ctx)
+	s1, ctx1 := tracer.StartSpanFromContext(context.Background(), "span1.name")
+	client = client.WithContext(ctx1)
 	s2, ctx2 := tracer.StartSpanFromContext(context.Background(), "span2.name")
 	client2 := client.WithContext(ctx2)
 	client.Set("test_key", "test_value", 0)
@@ -347,7 +345,7 @@ func TestWithContext(t *testing.T) {
 			getSpan = s
 		}
 	}
-	assert.Equal(ctx, client.Context())
+	assert.Equal(ctx1, client.Context())
 	assert.Equal(ctx2, client2.Context())
 	assert.NotNil(span1)
 	assert.NotNil(span2)
