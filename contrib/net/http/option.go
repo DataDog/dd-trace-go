@@ -80,6 +80,7 @@ type roundTripperConfig struct {
 	before        RoundTripperBeforeFunc
 	after         RoundTripperAfterFunc
 	analyticsRate float64
+	serviceName   string
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
@@ -105,6 +106,13 @@ func WithBefore(f RoundTripperBeforeFunc) RoundTripperOption {
 func WithAfter(f RoundTripperAfterFunc) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.after = f
+	}
+}
+
+// RTWithServiceName sets the given service name for the RoundTripper.
+func RTWithServiceName(name string) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.serviceName = name
 	}
 }
 

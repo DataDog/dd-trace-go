@@ -134,3 +134,43 @@ func TestRoundTripperAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, 0.23, RTWithAnalyticsRate(0.23))
 	})
 }
+
+func TestServiceName(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	}))
+	defer s.Close()
+
+	t.Run("option", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		serviceName := "testServer"
+		rt := WrapRoundTripper(http.DefaultTransport, RTWithServiceName(serviceName))
+		client := &http.Client{
+			Transport: rt,
+		}
+		client.Get(s.URL + "/hello/world")
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+		assert.Equal(t, serviceName, spans[0].Tag(ext.ServiceName))
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		serviceName := "testServer"
+		rt := WrapRoundTripper(http.DefaultTransport,
+			RTWithServiceName("wrongServiceName"),
+			WithBefore(func(_ *http.Request, span ddtrace.Span) {
+				span.SetTag(ext.ServiceName, serviceName)
+			}),
+		)
+		client := &http.Client{
+			Transport: rt,
+		}
+		client.Get(s.URL + "/hello/world")
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+		assert.Equal(t, serviceName, spans[0].Tag(ext.ServiceName))
+	})
+}
