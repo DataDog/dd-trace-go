@@ -313,3 +313,44 @@ func TestAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, 0.0, WithAnalyticsRate(0.0))
 	})
 }
+
+func TestWithContext(t *testing.T) {
+	opts := &redis.Options{Addr: "127.0.0.1:6379"}
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client1 := NewClient(opts, WithServiceName("my-redis"))
+	s1, ctx1 := tracer.StartSpanFromContext(context.Background(), "span1.name")
+	client1 = client1.WithContext(ctx1)
+	s2, ctx2 := tracer.StartSpanFromContext(context.Background(), "span2.name")
+	client2 := client1.WithContext(ctx2)
+	client1.Set("test_key", "test_value", 0)
+	client2.Get("test_key")
+	s1.Finish()
+	s2.Finish()
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 4)
+	var span1, span2, setSpan, getSpan mocktracer.Span
+	for _, s := range spans {
+		switch s.Tag(ext.ResourceName) {
+		case "span1.name":
+			span1 = s
+		case "span2.name":
+			span2 = s
+		case "set":
+			setSpan = s
+		case "get":
+			getSpan = s
+		}
+	}
+	assert.Equal(ctx1, client1.Context())
+	assert.Equal(ctx2, client2.Context())
+	assert.NotNil(span1)
+	assert.NotNil(span2)
+	assert.NotNil(setSpan)
+	assert.NotNil(getSpan)
+	assert.Equal(span1.SpanID(), setSpan.ParentID())
+	assert.Equal(span2.SpanID(), getSpan.ParentID())
+}
