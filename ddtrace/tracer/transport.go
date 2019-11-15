@@ -147,12 +147,12 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 		return nil, err
 	}
 	p.waitClose()
+	defer response.Body.Close()
 	if code := response.StatusCode; code >= 400 {
 		// error, check the body for context information and
 		// return a nice error.
 		msg := make([]byte, 1000)
 		n, _ := response.Body.Read(msg)
-		response.Body.Close()
 		txt := http.StatusText(code)
 		if n > 0 {
 			return nil, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
