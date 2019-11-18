@@ -28,7 +28,9 @@ func TestReportMetrics(t *testing.T) {
 	}
 
 	var tg testGauger
-	go trc.reportMetrics(&tg, time.Millisecond)
+	tg.statsTags = statsTags(trc.config)
+	trc.statsd = &tg
+	go trc.reportMetrics(time.Millisecond)
 	err := tg.Wait(35, 1*time.Second)
 	close(trc.stopped)
 	assert := assert.New(t)
@@ -45,24 +47,41 @@ func TestReportMetrics(t *testing.T) {
 }
 
 type testGauger struct {
-	mu     sync.RWMutex
-	calls  []string
-	tags   []string
-	waitCh chan struct{}
-	n      int
+	statsTags []string
+	mu        sync.RWMutex
+	calls     []string
+	tags      []string
+	waitCh    chan struct{}
+	n         int
 }
 
 func (tg *testGauger) Gauge(name string, value float64, tags []string, rate float64) error {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	tg.calls = append(tg.calls, name)
-	tg.tags = tags
+	tg.tags = append(tags, tg.statsTags...)
 	if tg.n > 0 {
 		tg.n--
 		if tg.n == 0 {
 			close(tg.waitCh)
 		}
 	}
+	return nil
+}
+
+func (tg *testGauger) Incr(name string, tags []string, rate float64) error {
+	return nil
+}
+
+func (tg *testGauger) Count(name string, value int64, tags []string, rate float64) error {
+	return nil
+}
+
+func (tg *testGauger) Timing(name string, value time.Duration, tags []string, rate float64) error {
+	return nil
+}
+
+func (tg *testGauger) Close() error {
 	return nil
 }
 

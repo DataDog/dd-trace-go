@@ -94,6 +94,22 @@ func defaults(c *config) {
 	}
 }
 
+func statsTags(c *config) []string {
+	var tags []string
+	if c.serviceName != "" {
+		tags = append(tags, "service:"+c.serviceName)
+	}
+	if c.hostname != "" {
+		tags = append(tags, "host:"+c.hostname)
+	}
+	if v, ok := c.globalTags[ext.Environment]; ok {
+		if vv, ok := v.(string); ok {
+			tags = append(tags, "env:"+vv)
+		}
+	}
+	return tags
+}
+
 // WithLogger sets logger as the tracer's error printer.
 func WithLogger(logger ddtrace.Logger) StartOption {
 	return func(c *config) {
