@@ -12,23 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-
 	"github.com/stretchr/testify/assert"
 )
 
 func TestReportMetrics(t *testing.T) {
 	trc := &tracer{
 		stopped: make(chan struct{}),
-		config: &config{
-			serviceName: "my-service",
-			hostname:    "my-host",
-			globalTags:  map[string]interface{}{ext.Environment: "my-env"},
-		},
 	}
 
 	var tg testGauger
-	tg.statsTags = statsTags(trc.config)
 	trc.statsd = &tg
 	go trc.reportMetrics(time.Millisecond)
 	err := tg.Wait(35, 1*time.Second)
@@ -36,30 +28,25 @@ func TestReportMetrics(t *testing.T) {
 	assert := assert.New(t)
 	assert.NoError(err)
 	calls := tg.CallNames()
-	tags := tg.Tags()
-	assert.True(len(calls) >= 35)
+	assert.True(len(calls) > 30)
 	assert.Contains(calls, "runtime.go.num_cpu")
 	assert.Contains(calls, "runtime.go.mem_stats.alloc")
 	assert.Contains(calls, "runtime.go.gc_stats.pause_quantiles.75p")
-	assert.Contains(tags, "service:my-service")
-	assert.Contains(tags, "env:my-env")
-	assert.Contains(tags, "host:my-host")
 }
 
 type testGauger struct {
-	statsTags []string
-	mu        sync.RWMutex
-	calls     []string
-	tags      []string
-	waitCh    chan struct{}
-	n         int
+	mu     sync.RWMutex
+	calls  []string
+	tags   []string
+	waitCh chan struct{}
+	n      int
 }
 
 func (tg *testGauger) Gauge(name string, value float64, tags []string, rate float64) error {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	tg.calls = append(tg.calls, name)
-	tg.tags = append(tags, tg.statsTags...)
+	tg.tags = tags
 	if tg.n > 0 {
 		tg.n--
 		if tg.n == 0 {

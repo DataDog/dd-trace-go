@@ -57,10 +57,10 @@ type tracer struct {
 	pid string
 
 	// statsd client for tracer metrics.
-	statsd tracerStats
+	statsd statsdClient
 }
 
-type tracerStats interface {
+type statsdClient interface {
 	Incr(name string, tags []string, rate float64) error
 	Count(name string, value int64, tags []string, rate float64) error
 	Gauge(name string, value float64, tags []string, rate float64) error
@@ -167,7 +167,7 @@ func newTracer(opts ...StartOption) *tracer {
 		log.SetLevel(log.LevelDebug)
 	}
 
-	var stats tracerStats
+	var stats statsdClient
 	stats, err := statsd.New(c.dogstatsdAddr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
 	if err != nil {
 		log.Warn("Runtime and tracer metrics disabled: %v", err)
