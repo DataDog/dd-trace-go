@@ -79,24 +79,33 @@ func TestTracerCleanStop(t *testing.T) {
 		}()
 	}
 
-	go func() {
-		for {
-			Start(withTransport(transport))
-			time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
-			Stop()
-			time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
-			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
-			time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
-			Stop()
-			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
-			Stop()
-			select {
-			case <-finished:
-				return
-			default:
+	for i := 0; i < 3; i++ {
+		go func() {
+			for {
+				time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
+				Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
+				select {
+				case <-finished:
+					return
+				default:
+				}
 			}
-		}
-	}()
+		}()
+	}
+
+	for i := 0; i < 3; i++ {
+		go func() {
+			for {
+				time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
+				Stop()
+				select {
+				case <-finished:
+					return
+				default:
+				}
+			}
+		}()
+	}
 
 	wg.Wait()
 	close(finished)
