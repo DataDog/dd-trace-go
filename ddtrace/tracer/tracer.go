@@ -229,6 +229,9 @@ func (t *tracer) worker() {
 				}
 			}
 			t.flushPayload()
+			t.statsd.Incr("datadog.tracer.stopped", nil, 1)
+			t.statsd.Close()
+			t.statsd = &nopStats{}
 			return
 		}
 	}
@@ -340,9 +343,6 @@ func (t *tracer) Stop() {
 		t.exitChan <- struct{}{}
 		<-t.stopped
 	}
-	t.statsd.Incr("datadog.tracer.stopped", nil, 1)
-	t.statsd.Close()
-	t.statsd = &nopStats{}
 }
 
 // Inject uses the configured or default TextMap Propagator.
