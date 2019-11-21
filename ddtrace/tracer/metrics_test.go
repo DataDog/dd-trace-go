@@ -20,7 +20,7 @@ func TestReportMetrics(t *testing.T) {
 		stopped: make(chan struct{}),
 	}
 
-	var tg testGauger
+	var tg testMetricsStatsd
 	trc.statsd = &tg
 	go trc.reportMetrics(time.Millisecond)
 	err := tg.Wait(35, 1*time.Second)
@@ -34,7 +34,7 @@ func TestReportMetrics(t *testing.T) {
 	assert.Contains(calls, "runtime.go.gc_stats.pause_quantiles.75p")
 }
 
-type testGauger struct {
+type testMetricsStatsd struct {
 	mu     sync.RWMutex
 	calls  []string
 	tags   []string
@@ -42,7 +42,7 @@ type testGauger struct {
 	n      int
 }
 
-func (tg *testGauger) Gauge(name string, value float64, tags []string, rate float64) error {
+func (tg *testMetricsStatsd) Gauge(name string, value float64, tags []string, rate float64) error {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	tg.calls = append(tg.calls, name)
@@ -56,35 +56,35 @@ func (tg *testGauger) Gauge(name string, value float64, tags []string, rate floa
 	return nil
 }
 
-func (tg *testGauger) Incr(name string, tags []string, rate float64) error {
+func (tg *testMetricsStatsd) Incr(name string, tags []string, rate float64) error {
 	return nil
 }
 
-func (tg *testGauger) Count(name string, value int64, tags []string, rate float64) error {
+func (tg *testMetricsStatsd) Count(name string, value int64, tags []string, rate float64) error {
 	return nil
 }
 
-func (tg *testGauger) Timing(name string, value time.Duration, tags []string, rate float64) error {
+func (tg *testMetricsStatsd) Timing(name string, value time.Duration, tags []string, rate float64) error {
 	return nil
 }
 
-func (tg *testGauger) Close() error {
+func (tg *testMetricsStatsd) Close() error {
 	return nil
 }
 
-func (tg *testGauger) CallNames() []string {
+func (tg *testMetricsStatsd) CallNames() []string {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
 	return tg.calls
 }
 
-func (tg *testGauger) Tags() []string {
+func (tg *testMetricsStatsd) Tags() []string {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
 	return tg.tags
 }
 
-func (tg *testGauger) Reset() {
+func (tg *testMetricsStatsd) Reset() {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	tg.calls = tg.calls[:0]
@@ -96,9 +96,9 @@ func (tg *testGauger) Reset() {
 	tg.n = 0
 }
 
-// Wait blocks until n metrics have been reported using the testGauger or until duration d passes.
+// Wait blocks until n metrics have been reported using the testMetricsStatsd or until duration d passes.
 // If d passes, or a wait is already active, an error is returned.
-func (tg *testGauger) Wait(n int, d time.Duration) error {
+func (tg *testMetricsStatsd) Wait(n int, d time.Duration) error {
 	tg.mu.Lock()
 	if tg.waitCh != nil {
 		tg.mu.Unlock()

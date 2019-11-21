@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -59,7 +58,6 @@ func TestTracerCleanStop(t *testing.T) {
 		return
 	}
 	var wg sync.WaitGroup
-	finished := make(chan struct{})
 	transport := newDummyTransport()
 
 	n := 5000
@@ -79,36 +77,32 @@ func TestTracerCleanStop(t *testing.T) {
 		}()
 	}
 
-	for i := 0; i < 3; i++ {
-		go func() {
-			for {
-				time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
-				Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
-				select {
-				case <-finished:
-					return
-				default:
-				}
-			}
-		}()
-	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < n; i++ {
+			Start(withTransport(transport))
+			time.Sleep(time.Millisecond)
+			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
+		}
+	}()
 
-	for i := 0; i < 3; i++ {
-		go func() {
-			for {
-				time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
-				Stop()
-				select {
-				case <-finished:
-					return
-				default:
-				}
-			}
-		}()
-	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < n; i++ {
+			Stop()
+			Stop()
+			Stop()
+			time.Sleep(time.Millisecond)
+			Stop()
+			Stop()
+			Stop()
+		}
+	}()
 
 	wg.Wait()
-	close(finished)
 }
 
 func TestTracerStart(t *testing.T) {
