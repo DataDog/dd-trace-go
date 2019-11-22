@@ -55,9 +55,6 @@ type tracer struct {
 
 	// pid of the process
 	pid string
-
-	// statsd client for tracer metrics.
-	statsd statsdClient
 }
 
 type statsdClient interface {
@@ -166,13 +163,16 @@ func newTracer(opts ...StartOption) *tracer {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
-
-	var stats statsdClient
-	stats, err := statsd.New(c.dogstatsdAddr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
-	if err != nil {
-		log.Warn("Runtime and tracer metrics disabled: %v", err)
-		stats = &nopStats{}
+	if c.statsd == nil {
+		stats, err := statsd.New(c.dogstatsdAddr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
+		if err != nil {
+			log.Warn("Runtime and tracer metrics disabled: %v", err)
+			c.statsd = &nopStats{}
+		} else {
+			c.statsd = stats
+		}
 	}
+
 	t := &tracer{
 		config:           c,
 		payload:          newPayload(),
@@ -182,9 +182,8 @@ func newTracer(opts ...StartOption) *tracer {
 		stopped:          make(chan struct{}),
 		prioritySampling: newPrioritySampler(),
 		pid:              strconv.Itoa(os.Getpid()),
-		statsd:           stats,
 	}
-	t.statsd.Incr("datadog.tracer.started", nil, 1)
+	t.config.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")
 		go t.reportMetrics(defaultMetricsReportInterval)
@@ -206,11 +205,11 @@ func (t *tracer) worker() {
 			t.pushPayload(trace)
 
 		case <-ticker.C:
-			t.statsd.Incr("datadog.trace.flush.count", []string{"reason:scheduled"}, 1)
+			t.config.statsd.Incr("datadog.trace.flush.count", []string{"reason:scheduled"}, 1)
 			t.flushPayload()
 
 		case confirm := <-t.flushChan:
-			t.statsd.Incr("datadog.trace.flush.count", []string{"reason:size"}, 1)
+			t.config.statsd.Incr("datadog.trace.flush.count", []string{"reason:size"}, 1)
 			t.flushPayload()
 			if confirm != nil {
 				confirm <- struct{}{}
@@ -228,10 +227,11 @@ func (t *tracer) worker() {
 					break loop
 				}
 			}
+			t.config.statsd.Incr("datadog.trace.flush.count", []string{"reason:shutdown"}, 1)
 			t.flushPayload()
-			t.statsd.Incr("datadog.tracer.stopped", nil, 1)
-			t.statsd.Close()
-			t.statsd = &nopStats{}
+			t.config.statsd.Incr("datadog.tracer.stopped", nil, 1)
+			t.config.statsd.Close()
+			t.config.statsd = &nopStats{}
 			return
 		}
 	}
@@ -358,7 +358,7 @@ func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 // flush will push any currently buffered traces to the server.
 func (t *tracer) flushPayload() {
 	defer func(start time.Time) {
-		t.statsd.Timing("datadog.tracer.flush.duration", time.Since(start), nil, 1)
+		t.config.statsd.Timing("datadog.tracer.flush.duration", time.Since(start), nil, 1)
 	}(time.Now())
 	if t.payload.itemCount() == 0 {
 		return
@@ -367,11 +367,11 @@ func (t *tracer) flushPayload() {
 	log.Debug("Sending payload: size: %d traces: %d\n", size, count)
 	rc, err := t.config.transport.send(t.payload)
 	if err != nil {
-		t.statsd.Count("datadog.tracer.flush.traces_lost", int64(count), nil, 1)
+		t.config.statsd.Count("datadog.tracer.flush.traces_lost", int64(count), nil, 1)
 		log.Error("lost %d traces: %v", count, err)
 	} else {
-		t.statsd.Count("datadog.tracer.flush.bytes", int64(size), nil, 1)
-		t.statsd.Count("datadog.tracer.flush.traces", int64(count), nil, 1)
+		t.config.statsd.Count("datadog.tracer.flush.bytes", int64(size), nil, 1)
+		t.config.statsd.Count("datadog.tracer.flush.traces", int64(count), nil, 1)
 		t.prioritySampling.readRatesJSON(rc)
 	}
 	t.payload.reset()
@@ -381,7 +381,7 @@ func (t *tracer) flushPayload() {
 // larger than the threshold as a result, it sends a flush request.
 func (t *tracer) pushPayload(trace []*span) {
 	if err := t.payload.push(trace); err != nil {
-		t.statsd.Incr("datadog.tracer.payload.error", nil, 1)
+		t.config.statsd.Incr("datadog.tracer.payload.error", nil, 1)
 		log.Error("error encoding msgpack: %v", err)
 	}
 	if t.payload.size() > payloadSizeLimit {

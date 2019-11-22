@@ -1192,3 +1192,65 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 		span.Finish(StackFrames(64, 0))
 	}
 }
+
+type testTracerStatsd struct {
+	measurements map[string]int
+	counts       map[string]int64
+}
+
+func (tg *testTracerStatsd) Incr(name string, tags []string, rate float64) error {
+	tg.measurements[name] = tg.measurements[name] + 1
+	return nil
+}
+
+func (tg *testTracerStatsd) Count(name string, value int64, tags []string, rate float64) error {
+	tg.measurements[name] = tg.measurements[name] + 1
+	tg.counts[name] = tg.counts[name] + value
+	return nil
+}
+
+func (tg *testTracerStatsd) Gauge(name string, value float64, tags []string, rate float64) error {
+	return nil
+}
+
+func (tg *testTracerStatsd) Timing(name string, value time.Duration, tags []string, rate float64) error {
+	tg.measurements[name] = tg.measurements[name] + 1
+	return nil
+}
+
+func (tg *testTracerStatsd) Close() error {
+	return nil
+}
+
+func withTracer(s statsdClient) StartOption {
+	return func(c *config) {
+		c.statsd = s
+	}
+}
+
+func TestTracerMetrics(t *testing.T) {
+	assert := assert.New(t)
+
+	statsd := &testTracerStatsd{
+		measurements: make(map[string]int),
+		counts:       make(map[string]int64),
+	}
+	tracer := newTracer(withTracer(statsd))
+	internal.SetGlobalTracer(tracer)
+	for i := 0; i < 10; i++ {
+		tracer.StartSpan("operation").Finish()
+	}
+	tracer.flushChan <- nil
+	for i := 0; i < 10; i++ {
+		tracer.StartSpan("operation").Finish()
+	}
+	tracer.Stop()
+
+	assert.Equal(1, statsd.measurements["datadog.tracer.started"])
+	assert.Equal(1, statsd.measurements["datadog.tracer.stopped"])
+	assert.Equal(2, statsd.measurements["datadog.trace.flush.count"])
+	assert.Equal(2, statsd.measurements["datadog.tracer.flush.duration"])
+	assert.Equal(2, statsd.measurements["datadog.tracer.flush.bytes"])
+	assert.Equal(2, statsd.measurements["datadog.tracer.flush.traces"])
+	assert.Equal(int64(20), statsd.counts["datadog.tracer.flush.traces"])
+}

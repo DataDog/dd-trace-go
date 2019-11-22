@@ -62,6 +62,9 @@ type config struct {
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
 	dogstatsdAddr string
+
+	// statsd is used for tracking metrics associated with the runtime and the tracer.
+	statsd statsdClient
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.

@@ -16,12 +16,14 @@ import (
 )
 
 func TestReportMetrics(t *testing.T) {
+	var tg testMetricsStatsd
 	trc := &tracer{
 		stopped: make(chan struct{}),
+		config: &config{
+			statsd: &tg,
+		},
 	}
 
-	var tg testMetricsStatsd
-	trc.statsd = &tg
 	go trc.reportMetrics(time.Millisecond)
 	err := tg.Wait(35, 1*time.Second)
 	close(trc.stopped)
