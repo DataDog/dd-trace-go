@@ -1196,6 +1196,7 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 type testTracerStatsd struct {
 	measurements map[string]int
 	counts       map[string]int64
+	closed       bool
 }
 
 func (tg *testTracerStatsd) Incr(name string, tags []string, rate float64) error {
@@ -1219,6 +1220,7 @@ func (tg *testTracerStatsd) Timing(name string, value time.Duration, tags []stri
 }
 
 func (tg *testTracerStatsd) Close() error {
+	tg.closed = true
 	return nil
 }
 
@@ -1230,27 +1232,33 @@ func withTracer(s statsdClient) StartOption {
 
 func TestTracerMetrics(t *testing.T) {
 	assert := assert.New(t)
-
 	statsd := &testTracerStatsd{
 		measurements: make(map[string]int),
 		counts:       make(map[string]int64),
 	}
 	tracer := newTracer(withTracer(statsd))
+	tracer.syncPush = make(chan struct{})
 	internal.SetGlobalTracer(tracer)
-	for i := 0; i < 10; i++ {
-		tracer.StartSpan("operation").Finish()
-	}
-	tracer.flushChan <- nil
-	for i := 0; i < 10; i++ {
-		tracer.StartSpan("operation").Finish()
-	}
-	tracer.Stop()
 
+	tracer.StartSpan("operation").Finish()
+	flush := make(chan struct{}, 0)
+	tracer.flushChan <- flush
+	<-flush
 	assert.Equal(1, statsd.measurements["datadog.tracer.started"])
+	assert.Equal(1, statsd.measurements["datadog.trace.flush.count"])
+	assert.Equal(1, statsd.measurements["datadog.tracer.flush.duration"])
+	assert.Equal(1, statsd.measurements["datadog.tracer.flush.bytes"])
+	assert.Equal(1, statsd.measurements["datadog.tracer.flush.traces"])
+	assert.Equal(int64(1), statsd.counts["datadog.tracer.flush.traces"])
+	assert.False(statsd.closed)
+
+	tracer.StartSpan("operation").Finish()
+	tracer.Stop()
 	assert.Equal(1, statsd.measurements["datadog.tracer.stopped"])
 	assert.Equal(2, statsd.measurements["datadog.trace.flush.count"])
 	assert.Equal(2, statsd.measurements["datadog.tracer.flush.duration"])
 	assert.Equal(2, statsd.measurements["datadog.tracer.flush.bytes"])
 	assert.Equal(2, statsd.measurements["datadog.tracer.flush.traces"])
-	assert.Equal(int64(20), statsd.counts["datadog.tracer.flush.traces"])
+	assert.Equal(int64(2), statsd.counts["datadog.tracer.flush.traces"])
+	assert.True(statsd.closed)
 }
