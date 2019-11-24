@@ -170,7 +170,7 @@ func newTracer(opts ...StartOption) *tracer {
 		exitChan:         make(chan struct{}),
 		payloadChan:      make(chan []*span, payloadQueueSize),
 		stopped:          make(chan struct{}),
-		rulesSampling:    newRulesSampler(c.rulesConfig),
+		rulesSampling:    newRulesSampler(c.samplingRules),
 		prioritySampling: newPrioritySampler(),
 		pid:              strconv.Itoa(os.Getpid()),
 	}

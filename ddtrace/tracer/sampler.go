@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"regexp"
@@ -155,7 +156,7 @@ func (ps *prioritySampler) apply(spn *span) {
 }
 
 type rulesSampler struct {
-	rules   []rule
+	rules   []SamplingRule
 	limiter *rate.Limiter
 	// "effective rate" calculations
 	mu           sync.Mutex
@@ -165,9 +166,9 @@ type rulesSampler struct {
 	previousRate float64
 }
 
-func newRulesSampler(config string) *rulesSampler {
+func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	return &rulesSampler{
-		rules:   parseRules(config),
+		rules:   rules,
 		limiter: rate.NewLimiter(rate.Limit(100), 100),
 	}
 }
@@ -178,7 +179,7 @@ func (rs *rulesSampler) apply(span *span) bool {
 	for _, v := range rs.rules {
 		if v.match(span) {
 			matched = true
-			sr = v.Rate
+			sr = v.rate
 			break
 		}
 	}
@@ -222,17 +223,90 @@ func (rs *rulesSampler) apply(span *span) bool {
 
 type matchFunc func(string) bool
 
-type rule struct {
-	Service matchFunc
-	Name    matchFunc
-	Rate    float64
+func matchEqual(s string) matchFunc {
+	return func(v string) bool {
+		return s == v
+	}
 }
 
-func (r *rule) match(s *span) bool {
-	if r.Service != nil && !r.Service(s.Service) {
+func matchRegexp(r *regexp.Regexp) matchFunc {
+	return func(v string) bool {
+		return r.MatchString(v)
+	}
+}
+
+// SamplingRule placeholder comment
+type SamplingRule struct {
+	service matchFunc
+	name    matchFunc
+	rate    float64
+	err     error
+}
+
+// NewSamplingRule placeholder comment
+func NewSamplingRule() *SamplingRule {
+	return &SamplingRule{
+		rate: 1.0,
+	}
+}
+
+// Service placeholder comment
+func (sr *SamplingRule) Service(s string) *SamplingRule {
+	sr.optimalMatch(&sr.service, s)
+	return sr
+}
+
+// Name placeholder comment
+func (sr *SamplingRule) Name(n string) *SamplingRule {
+	sr.optimalMatch(&sr.name, n)
+	return sr
+}
+
+// Rate placeholder comment
+func (sr *SamplingRule) Rate(r float64) *SamplingRule {
+	if r >= 0.0 && r <= 1.0 {
+		sr.rate = r
+	} else {
+		sr.err = fmt.Errorf("invalid sampling rate for rule: %f", r)
+	}
+	return sr
+}
+
+// Error placeholder comment
+func (sr *SamplingRule) Error() error {
+	return sr.err
+}
+
+// optimalMatch applies a direct string match if the
+// provided value is a literal string instead of regular expression.
+// in microbenchmarks, this is significantly faster.
+// if the value can't be validated with regexp.Compile, an error
+// is retained, and can be checked with Error()
+func (sr *SamplingRule) optimalMatch(mf *matchFunc, s string) {
+	if s == "" {
+		*mf = nil
+		return
+	}
+	isComplete := func(re *regexp.Regexp) bool {
+		_, complete := re.LiteralPrefix()
+		return complete
+	}
+	re, err := regexp.Compile(s)
+	switch {
+	case err != nil:
+		sr.err = err
+	case isComplete(re):
+		*mf = matchEqual(s)
+	default:
+		*mf = matchRegexp(re)
+	}
+}
+
+func (sr *SamplingRule) match(spn *span) bool {
+	if sr.service != nil && !sr.service(spn.Service) {
 		return false
 	}
-	if r.Name != nil && !r.Name(s.Name) {
+	if sr.name != nil && !sr.name(spn.Name) {
 		return false
 	}
 	return true
@@ -242,7 +316,7 @@ func (r *rule) match(s *span) bool {
 // to apply during sampling. The initial implementation is simple
 // preprocessing and lookups. It may be replaced with a proper parser
 // if necessary in the future.
-func parseRules(config string) []rule {
+func parseRules(config string) []*SamplingRule {
 	// split the rules config into invididual rules
 	tokens := strings.FieldsFunc(config, func(r rune) bool {
 		switch r {
@@ -253,45 +327,21 @@ func parseRules(config string) []rule {
 		}
 	})
 	// match functions for service and span name
-	any := func(s string) bool {
-		return true
-	}
-	equals := func(s string) matchFunc {
-		return func(v string) bool {
-			return s == v
-		}
-	}
-	regex := func(r *regexp.Regexp) matchFunc {
-		return func(v string) bool {
-			return r.MatchString(v)
-		}
-	}
-	optionalMatch := func(key string, line string) matchFunc {
-		key = key + "="
-		idx := strings.Index(line, key)
+	extractValue := func(key string, line string) (string, bool) {
+		idx := strings.Index(line, key+"=")
 		if idx < 0 {
-			return any
+			return "", false
 		}
-		val := line[idx+len(key):]
+		val := line[idx+len(key)+1:]
 		if idx := strings.Index(val, " "); idx >= 0 {
 			val = val[:idx]
 		}
-		if val == "" {
-			return any
-		}
-		re, err := regexp.Compile(val)
-		if err != nil {
-			return nil
-		}
-		if _, complete := re.LiteralPrefix(); complete {
-			return equals(val)
-		}
-		return regex(re)
+		return val, true
 	}
 
 	// each rule must have at least a valid rate, but the
 	// span's service and name are optional
-	var rules []rule
+	var rules []*SamplingRule
 	for _, line := range tokens {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -310,10 +360,12 @@ func parseRules(config string) []rule {
 		if err != nil {
 			continue
 		}
-		r := rule{
-			Service: optionalMatch("service", line),
-			Name:    optionalMatch("name", line),
-			Rate:    rate,
+		r := NewSamplingRule().Rate(rate)
+		if svc, ok := extractValue("service", line); ok {
+			r = r.Service(svc)
+		}
+		if n, ok := extractValue("name", line); ok {
+			r = r.Name(n)
 		}
 		rules = append(rules, r)
 	}
