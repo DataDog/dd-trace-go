@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"golang.org/x/time/rate"
 )
@@ -157,6 +159,7 @@ func (ps *prioritySampler) apply(spn *span) {
 
 type rulesSampler struct {
 	rules   []SamplingRule
+	rate    float64
 	limiter *rate.Limiter
 	// "effective rate" calculations
 	mu           sync.Mutex
@@ -167,9 +170,51 @@ type rulesSampler struct {
 }
 
 func newRulesSampler(rules []SamplingRule) *rulesSampler {
+	rate := sampleRate()
 	return &rulesSampler{
 		rules:   rules,
-		limiter: rate.NewLimiter(rate.Limit(100), 100),
+		rate:    rate,
+		limiter: rateLimiter(rate),
+	}
+}
+
+func sampleRate() float64 {
+	rate := 1.0
+	v := os.Getenv("DD_TRACE_SAMPLE_RATE")
+	if v == "" {
+		return rate
+	}
+	r, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		log.Warn("using default rate %f because DD_TRACE_SAMPLE_RATE is invalid: %v", rate, err)
+		return rate
+	}
+	if r >= 0.0 && r <= 1.0 {
+		return r
+	}
+	log.Warn("using default rate %f because provided value is out of range: %f", rate, r)
+	return rate
+}
+
+func rateLimiter(r float64) *rate.Limiter {
+	v := os.Getenv("DD_TRACE_RATE_LIMIT")
+	if v == "" {
+		return nil
+	}
+	l, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		log.Warn("using default rate limit because DD_TRACE_RATE_LIMIT is invalid: %v", err)
+		return nil
+	}
+	switch {
+	case l < 0.0:
+		return nil
+	case l == 0.0:
+		return rate.NewLimiter(0.0, 0)
+	case (r * l) < 1.0:
+		return rate.NewLimiter(rate.Limit(l), 1)
+	default:
+		return rate.NewLimiter(rate.Limit(l), int(math.Ceil(r*l)))
 	}
 }
 
