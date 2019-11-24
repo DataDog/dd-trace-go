@@ -348,6 +348,9 @@ func (sr *SamplingRule) optimalMatch(mf *matchFunc, s string) {
 }
 
 func (sr *SamplingRule) match(spn *span) bool {
+	if sr.err != nil {
+		return false
+	}
 	if sr.service != nil && !sr.service(spn.Service) {
 		return false
 	}
