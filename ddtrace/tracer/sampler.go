@@ -7,13 +7,11 @@ package tracer
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"math"
 	"os"
 	"regexp"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -158,7 +156,7 @@ func (ps *prioritySampler) apply(spn *span) {
 }
 
 type rulesSampler struct {
-	rules   []SamplingRule
+	rules   []samplingRule
 	rate    float64
 	limiter *rate.Limiter
 	// "effective rate" calculations
@@ -172,10 +170,45 @@ type rulesSampler struct {
 func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	rate := sampleRate()
 	return &rulesSampler{
-		rules:   rules,
+		rules:   samplingRules(rules),
 		rate:    rate,
 		limiter: rateLimiter(rate),
 	}
+}
+
+// samplingRules validates the user-provided rules and returns an internal representation.
+// If the DD_TRACE_SAMPLING_RULES environment variable is set, then the rules from
+// tracer.WithSamplingRules are ignored.
+func samplingRules(rules []SamplingRule) []samplingRule {
+	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
+	if rulesFromEnv != "" {
+		rules = rules[:0]
+		err := json.Unmarshal([]byte(rulesFromEnv), &rules)
+		if err != nil {
+			log.Warn("error parsing DD_TRACE_SAMPLING_RULES: %v", err)
+			return nil
+		}
+	}
+	validRules := make([]samplingRule, 0, len(rules))
+	for _, v := range rules {
+		s, err := regexp.Compile(v.Service)
+		if err != nil {
+			log.Warn("ignoring rule %v: %v", v, err)
+		}
+		n, err := regexp.Compile(v.Name)
+		if err != nil {
+			log.Warn("ignoring rule %v: %v", v, err)
+		}
+		if v.Rate < 0.0 || v.Rate > 1.0 {
+			log.Warn("ignoring rule %v: rate is out of range", v)
+		}
+		validRules = append(validRules, samplingRule{
+			service: s,
+			name:    n,
+			rate:    v.Rate,
+		})
+	}
+	return validRules
 }
 
 func sampleRate() float64 {
@@ -266,156 +299,32 @@ func (rs *rulesSampler) apply(span *span) bool {
 	return true
 }
 
-type matchFunc func(string) bool
-
-func matchEqual(s string) matchFunc {
-	return func(v string) bool {
-		return s == v
-	}
-}
-
-func matchRegexp(r *regexp.Regexp) matchFunc {
-	return func(v string) bool {
-		return r.MatchString(v)
-	}
-}
-
 // SamplingRule placeholder comment
 type SamplingRule struct {
-	service matchFunc
-	name    matchFunc
+	Service string  `json:"service"`
+	Name    string  `json:"name"`
+	Rate    float64 `json:"rate"`
+}
+
+type samplingRule struct {
+	service *regexp.Regexp
+	name    *regexp.Regexp
 	rate    float64
-	err     error
 }
 
-// NewSamplingRule placeholder comment
-func NewSamplingRule() *SamplingRule {
-	return &SamplingRule{
-		rate: 1.0,
-	}
-}
-
-// Service placeholder comment
-func (sr *SamplingRule) Service(s string) *SamplingRule {
-	sr.optimalMatch(&sr.service, s)
-	return sr
-}
-
-// Name placeholder comment
-func (sr *SamplingRule) Name(n string) *SamplingRule {
-	sr.optimalMatch(&sr.name, n)
-	return sr
-}
-
-// Rate placeholder comment
-func (sr *SamplingRule) Rate(r float64) *SamplingRule {
-	if r >= 0.0 && r <= 1.0 {
-		sr.rate = r
-	} else {
-		sr.err = fmt.Errorf("invalid sampling rate for rule: %f", r)
-	}
-	return sr
-}
-
-// Error placeholder comment
-func (sr *SamplingRule) Error() error {
-	return sr.err
-}
-
-// optimalMatch applies a direct string match if the
-// provided value is a literal string instead of regular expression.
-// in microbenchmarks, this is significantly faster.
-// if the value can't be validated with regexp.Compile, an error
-// is retained, and can be checked with Error()
-func (sr *SamplingRule) optimalMatch(mf *matchFunc, s string) {
-	if s == "" {
-		*mf = nil
-		return
-	}
-	isComplete := func(re *regexp.Regexp) bool {
-		_, complete := re.LiteralPrefix()
-		return complete
-	}
-	re, err := regexp.Compile(s)
-	switch {
-	case err != nil:
-		sr.err = err
-	case isComplete(re):
-		*mf = matchEqual(s)
-	default:
-		*mf = matchRegexp(re)
-	}
-}
-
-func (sr *SamplingRule) match(spn *span) bool {
-	if sr.err != nil {
+func (sr *samplingRule) match(s *span) bool {
+	if sr.service != nil && !matchRE(sr.service, s.Service) {
 		return false
 	}
-	if sr.service != nil && !sr.service(spn.Service) {
-		return false
-	}
-	if sr.name != nil && !sr.name(spn.Name) {
+	if sr.name != nil && !matchRE(sr.name, s.Name) {
 		return false
 	}
 	return true
 }
 
-// parseRules uses the rules config to produce a list of rules
-// to apply during sampling. The initial implementation is simple
-// preprocessing and lookups. It may be replaced with a proper parser
-// if necessary in the future.
-func parseRules(config string) []*SamplingRule {
-	// split the rules config into invididual rules
-	tokens := strings.FieldsFunc(config, func(r rune) bool {
-		switch r {
-		case ';', '\n':
-			return true
-		default:
-			return false
-		}
-	})
-	// match functions for service and span name
-	extractValue := func(key string, line string) (string, bool) {
-		idx := strings.Index(line, key+"=")
-		if idx < 0 {
-			return "", false
-		}
-		val := line[idx+len(key)+1:]
-		if idx := strings.Index(val, " "); idx >= 0 {
-			val = val[:idx]
-		}
-		return val, true
+func matchRE(re *regexp.Regexp, v string) bool {
+	if p, c := re.LiteralPrefix(); c {
+		return p == v
 	}
-
-	// each rule must have at least a valid rate, but the
-	// span's service and name are optional
-	var rules []*SamplingRule
-	for _, line := range tokens {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		// extract rate (required)
-		idx := strings.Index(line, "rate=")
-		if idx < 0 {
-			continue
-		}
-		rv := line[idx+len("rate="):]
-		if idx := strings.Index(rv, " "); idx >= 0 {
-			rv = rv[:idx]
-		}
-		rate, err := strconv.ParseFloat(rv, 64)
-		if err != nil {
-			continue
-		}
-		r := NewSamplingRule().Rate(rate)
-		if svc, ok := extractValue("service", line); ok {
-			r = r.Service(svc)
-		}
-		if n, ok := extractValue("name", line); ok {
-			r = r.Name(n)
-		}
-		rules = append(rules, r)
-	}
-	return rules
+	return re.MatchString(v)
 }
