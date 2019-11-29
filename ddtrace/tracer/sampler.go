@@ -172,7 +172,7 @@ func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	return &rulesSampler{
 		rules:   samplingRules(rules),
 		rate:    rate,
-		limiter: rateLimiter(rate),
+		limiter: newRateLimiter(rate),
 	}
 }
 
@@ -229,7 +229,7 @@ func sampleRate() float64 {
 	return rate
 }
 
-func rateLimiter(r float64) *rate.Limiter {
+func newRateLimiter(r float64) *rate.Limiter {
 	v := os.Getenv("DD_TRACE_RATE_LIMIT")
 	if v == "" {
 		return nil

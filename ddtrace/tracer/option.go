@@ -245,7 +245,7 @@ func WithDogstatsdAddress(addr string) StartOption {
 
 // WithSamplingRules specifies the sampling rates to apply to spans based on the
 // provided rules.
-func WithSamplingRules(rules ...SamplingRule) StartOption {
+func WithSamplingRules(rules []SamplingRule) StartOption {
 	return func(cfg *config) {
 		cfg.samplingRules = rules
 	}
