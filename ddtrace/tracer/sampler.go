@@ -186,9 +186,9 @@ func samplingRules(rules []*SamplingRule) []*SamplingRule {
 	if rulesFromEnv != "" {
 		rules = rules[:0]
 		jsonRules := []struct {
-			Service   string  `json:"service"`
-			Operation string  `json:"operation"`
-			Rate      float64 `json:"rate"`
+			Service   string      `json:"service"`
+			Operation string      `json:"operation"`
+			Rate      json.Number `json:"rate"`
 		}{}
 		err := json.Unmarshal([]byte(rulesFromEnv), &jsonRules)
 		if err != nil {
@@ -196,23 +196,32 @@ func samplingRules(rules []*SamplingRule) []*SamplingRule {
 			return nil
 		}
 		for _, v := range jsonRules {
+			if v.Rate == "" {
+				log.Warn("error parsing rule: rate not provided")
+				continue
+			}
+			rate, err := v.Rate.Float64()
+			if err != nil {
+				log.Warn("error parsing rule: invalid rate: %v", err)
+				continue
+			}
 			switch {
 			case v.Service != "" && v.Operation != "":
-				rules = append(rules, ServiceOperationRule(v.Service, v.Operation, v.Rate))
+				rules = append(rules, ServiceOperationRule(v.Service, v.Operation, rate))
 			case v.Service != "":
-				rules = append(rules, ServiceRule(v.Service, v.Rate))
+				rules = append(rules, ServiceRule(v.Service, rate))
 			case v.Operation != "":
-				rules = append(rules, OperationRule(v.Operation, v.Rate))
+				rules = append(rules, OperationRule(v.Operation, rate))
 			}
 		}
 	}
 	validRules := make([]*SamplingRule, 0, len(rules))
 	for _, v := range rules {
 		if v.err != nil {
-			log.Warn("ignoring rule %v: %v", v, v.err)
+			log.Warn("ignoring rule %+v: %v", v, v.err)
 		}
 		if v.Rate < 0.0 || v.Rate > 1.0 {
-			log.Warn("ignoring rule %v: rate is out of range", v)
+			log.Warn("ignoring rule %+v: rate is out of range", v)
 		}
 		validRules = append(validRules, v)
 	}
@@ -294,15 +303,15 @@ func (rs *rulesSampler) apply(span *span) bool {
 	}
 
 	rs.total++
+	if rs.limiter != nil && !rs.limiter.Allow() {
+		span.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
+	} else {
+		rs.allowed++
+		span.SetTag(ext.SamplingPriority, ext.PriorityAutoKeep)
+	}
 	// calculate effective rate, and tag the span
 	er := (rs.previousRate + (float64(rs.allowed) / float64(rs.total))) / 2.0
 	span.SetTag("_dd.limit_psr", er)
-	if !rs.limiter.Allow() {
-		span.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
-		return true
-	}
-	span.SetTag(ext.SamplingPriority, ext.PriorityAutoKeep)
-	rs.allowed++
 
 	return true
 }
@@ -363,6 +372,13 @@ func ServiceOperationRule(service string, operation string, rate float64) *Sampl
 		sr.err = fmt.Errorf("operation '%s' is invalid: %v", operation, err)
 	}
 	return sr
+}
+
+// RateRule returns a *SamplingRule that applies the provided sampling rate to all spans.
+func RateRule(rate float64) *SamplingRule {
+	return &SamplingRule{
+		Rate: rate,
+	}
 }
 
 // anchoredRE returns the updated expression, adding the start-of-line (^) and
