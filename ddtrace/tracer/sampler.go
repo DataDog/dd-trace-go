@@ -7,11 +7,13 @@ package tracer
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -156,7 +158,7 @@ func (ps *prioritySampler) apply(spn *span) {
 }
 
 type rulesSampler struct {
-	rules   []samplingRule
+	rules   []*SamplingRule
 	rate    float64
 	limiter *rate.Limiter
 	// "effective rate" calculations
@@ -167,7 +169,7 @@ type rulesSampler struct {
 	previousRate float64
 }
 
-func newRulesSampler(rules []SamplingRule) *rulesSampler {
+func newRulesSampler(rules []*SamplingRule) *rulesSampler {
 	rate := sampleRate()
 	return &rulesSampler{
 		rules:   samplingRules(rules),
@@ -179,34 +181,40 @@ func newRulesSampler(rules []SamplingRule) *rulesSampler {
 // samplingRules validates the user-provided rules and returns an internal representation.
 // If the DD_TRACE_SAMPLING_RULES environment variable is set, then the rules from
 // tracer.WithSamplingRules are ignored.
-func samplingRules(rules []SamplingRule) []samplingRule {
+func samplingRules(rules []*SamplingRule) []*SamplingRule {
 	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
 	if rulesFromEnv != "" {
 		rules = rules[:0]
-		err := json.Unmarshal([]byte(rulesFromEnv), &rules)
+		jsonRules := []struct {
+			Service   string  `json:"service"`
+			Operation string  `json:"operation"`
+			Rate      float64 `json:"rate"`
+		}{}
+		err := json.Unmarshal([]byte(rulesFromEnv), &jsonRules)
 		if err != nil {
 			log.Warn("error parsing DD_TRACE_SAMPLING_RULES: %v", err)
 			return nil
 		}
-	}
-	validRules := make([]samplingRule, 0, len(rules))
-	for _, v := range rules {
-		s, err := regexp.Compile(v.Service)
-		if err != nil {
-			log.Warn("ignoring rule %v: %v", v, err)
+		for _, v := range jsonRules {
+			switch {
+			case v.Service != "" && v.Operation != "":
+				rules = append(rules, ServiceOperationRule(v.Service, v.Operation, v.Rate))
+			case v.Service != "":
+				rules = append(rules, ServiceRule(v.Service, v.Rate))
+			case v.Operation != "":
+				rules = append(rules, OperationRule(v.Operation, v.Rate))
+			}
 		}
-		n, err := regexp.Compile(v.Name)
-		if err != nil {
-			log.Warn("ignoring rule %v: %v", v, err)
+	}
+	validRules := make([]*SamplingRule, 0, len(rules))
+	for _, v := range rules {
+		if v.err != nil {
+			log.Warn("ignoring rule %v: %v", v, v.err)
 		}
 		if v.Rate < 0.0 || v.Rate > 1.0 {
 			log.Warn("ignoring rule %v: rate is out of range", v)
 		}
-		validRules = append(validRules, samplingRule{
-			service: s,
-			name:    n,
-			rate:    v.Rate,
-		})
+		validRules = append(validRules, v)
 	}
 	return validRules
 }
@@ -257,7 +265,7 @@ func (rs *rulesSampler) apply(span *span) bool {
 	for _, v := range rs.rules {
 		if v.match(span) {
 			matched = true
-			sr = v.rate
+			sr = v.Rate
 			break
 		}
 	}
@@ -299,24 +307,86 @@ func (rs *rulesSampler) apply(span *span) bool {
 	return true
 }
 
-// SamplingRule placeholder comment
+// SamplingRule is used for applying sampling rates to spans that match
+// the service name, operation or both.
+// It's recommended to use the helper functions (ServiceRule, OperationRule,
+// ServiceOperationRule) instead of directly creating a SamplingRule.
 type SamplingRule struct {
-	Service string  `json:"service"`
-	Name    string  `json:"name"`
-	Rate    float64 `json:"rate"`
+	Service   *regexp.Regexp
+	Operation *regexp.Regexp
+	Rate      float64
+	err       error
 }
 
-type samplingRule struct {
-	service *regexp.Regexp
-	name    *regexp.Regexp
-	rate    float64
+// ServiceRule returns a *SamplingRule that applies the provided sampling rate
+// to spans that match the service name provided.
+// The value for service can include regular expression syntax.
+func ServiceRule(service string, rate float64) *SamplingRule {
+	re, err := regexp.Compile(anchoredRE(service))
+	if err != nil {
+		err = fmt.Errorf("service '%s' is invalid: %v", service, err)
+	}
+	return &SamplingRule{
+		Service: re,
+		Rate:    rate,
+		err:     err,
+	}
 }
 
-func (sr *samplingRule) match(s *span) bool {
-	if sr.service != nil && !matchRE(sr.service, s.Service) {
+// OperationRule returns a *SamplingRule that applies the provided sampling rate
+// to spans that match the operation name provided.
+// The value for operation can include regular expression syntax.
+func OperationRule(operation string, rate float64) *SamplingRule {
+	re, err := regexp.Compile(anchoredRE(operation))
+	if err != nil {
+		err = fmt.Errorf("operation '%s' is invalid: %v", operation, err)
+	}
+	return &SamplingRule{
+		Operation: re,
+		Rate:      rate,
+		err:       err,
+	}
+}
+
+// ServiceOperationRule returns a *SamplingRule that applies the provided sampling rate
+// to spans matching both the service and operation names provided.
+// The value for service and operation can include regular expression syntax.
+func ServiceOperationRule(service string, operation string, rate float64) *SamplingRule {
+	sr := &SamplingRule{}
+	var err error
+	sr.Service, err = regexp.Compile(anchoredRE(service))
+	if err != nil {
+		sr.err = fmt.Errorf("service '%s' is invalid: %v", service, err)
+	}
+	sr.Operation, err = regexp.Compile(anchoredRE(operation))
+	if err != nil && sr.err != nil {
+		sr.err = fmt.Errorf("operation '%s' is invalid: %v", operation, err)
+	}
+	return sr
+}
+
+// anchoredRE returns the updated expression, adding the start-of-line (^) and
+// end-of-line ($) anchors if they are not present.
+func anchoredRE(s string) string {
+	if len(s) == 0 {
+		return "^$"
+	}
+	sb := &strings.Builder{}
+	if s[0] != '^' {
+		sb.WriteByte('^')
+	}
+	sb.WriteString(s)
+	if s[len(s)-1] != '$' || (len(s) > 1 && s[len(s)-2] == '\\') {
+		sb.WriteByte('$')
+	}
+	return sb.String()
+}
+
+func (sr *SamplingRule) match(s *span) bool {
+	if sr.Service != nil && !matchRE(sr.Service, s.Service) {
 		return false
 	}
-	if sr.name != nil && !matchRE(sr.name, s.Name) {
+	if sr.Operation != nil && !matchRE(sr.Operation, s.Name) {
 		return false
 	}
 	return true
