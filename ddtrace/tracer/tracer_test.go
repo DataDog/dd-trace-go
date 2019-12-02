@@ -1192,35 +1192,3 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 		span.Finish(StackFrames(64, 0))
 	}
 }
-
-func TestTracerMetrics(t *testing.T) {
-	assert := assert.New(t)
-	var tg testStatsdClient
-	tracer := newTracer(withStats(&tg))
-	tracer.syncPush = make(chan struct{})
-	internal.SetGlobalTracer(tracer)
-
-	tracer.StartSpan("operation").Finish()
-	flush := make(chan struct{}, 0)
-	tracer.flushChan <- flush
-	<-flush
-	calls := tg.CallsByName()
-	assert.Equal(1, calls["datadog.tracer.started"])
-	assert.Equal(1, calls["datadog.trace.flush.count"])
-	assert.Equal(1, calls["datadog.tracer.flush.duration"])
-	assert.Equal(1, calls["datadog.tracer.flush.bytes"])
-	assert.Equal(1, calls["datadog.tracer.flush.traces"])
-	assert.Equal(int64(1), tg.Counts()["datadog.tracer.flush.traces"])
-	assert.False(tg.closed)
-
-	tracer.StartSpan("operation").Finish()
-	tracer.Stop()
-	calls = tg.CallsByName()
-	assert.Equal(1, calls["datadog.tracer.stopped"])
-	assert.Equal(2, calls["datadog.trace.flush.count"])
-	assert.Equal(2, calls["datadog.tracer.flush.duration"])
-	assert.Equal(2, calls["datadog.tracer.flush.bytes"])
-	assert.Equal(2, calls["datadog.tracer.flush.traces"])
-	assert.Equal(int64(2), tg.Counts()["datadog.tracer.flush.traces"])
-	assert.True(tg.closed)
-}

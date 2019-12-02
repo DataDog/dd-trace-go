@@ -6,11 +6,8 @@
 package tracer
 
 import (
-	"errors"
-	"fmt"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -58,36 +55,6 @@ type tracer struct {
 
 	// pid of the process
 	pid string
-}
-
-type statsdClient interface {
-	Incr(name string, tags []string, rate float64) error
-	Count(name string, value int64, tags []string, rate float64) error
-	Gauge(name string, value float64, tags []string, rate float64) error
-	Timing(name string, value time.Duration, tags []string, rate float64) error
-	Close() error
-}
-
-type noopStats struct{}
-
-func (n *noopStats) Incr(name string, tags []string, rate float64) error {
-	return nil
-}
-
-func (n *noopStats) Count(name string, value int64, tags []string, rate float64) error {
-	return nil
-}
-
-func (n *noopStats) Gauge(name string, value float64, tags []string, rate float64) error {
-	return nil
-}
-
-func (n *noopStats) Timing(name string, value time.Duration, tags []string, rate float64) error {
-	return nil
-}
-
-func (n *noopStats) Close() error {
-	return nil
 }
 
 const (
@@ -170,7 +137,7 @@ func newTracer(opts ...StartOption) *tracer {
 		client, err := statsd.New(c.dogstatsdAddr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
 		if err != nil {
 			log.Warn("Runtime and tracer metrics disabled: %v", err)
-			c.statsd = &noopStats{}
+			c.statsd = &noopStatsdClient{}
 		} else {
 			c.statsd = client
 		}
@@ -234,7 +201,7 @@ func (t *tracer) worker() {
 			t.flushPayload()
 			t.config.statsd.Incr("datadog.tracer.stopped", nil, 1)
 			t.config.statsd.Close()
-			t.config.statsd = &noopStats{}
+			t.config.statsd = &noopStatsdClient{}
 			return
 		}
 	}
@@ -419,259 +386,4 @@ func (t *tracer) sample(span *span) {
 		span.setMetric(sampleRateMetricKey, rs.Rate())
 	}
 	t.prioritySampling.apply(span)
-}
-
-type testStatsdClient struct {
-	mu          sync.RWMutex
-	gaugeCalls  []gaugeCall
-	incrCalls   []incrCall
-	countCalls  []countCall
-	timingCalls []timingCall
-	counts      map[string]int64
-	tags        []string
-	waitCh      chan struct{}
-	n           int
-	closed      bool
-}
-
-type gaugeCall struct {
-	name  string
-	value float64
-	tags  []string
-	rate  float64
-}
-
-type incrCall struct {
-	name string
-	tags []string
-	rate float64
-}
-
-type countCall struct {
-	name  string
-	value int64
-	tags  []string
-	rate  float64
-}
-
-type timingCall struct {
-	name  string
-	value time.Duration
-	tags  []string
-	rate  float64
-}
-
-func withStats(s statsdClient) StartOption {
-	return func(c *config) {
-		c.statsd = s
-	}
-}
-
-func (tg *testStatsdClient) addCount(name string, value int64) {
-	if tg.counts == nil {
-		tg.counts = make(map[string]int64)
-	}
-	tg.counts[name] += value
-}
-
-func (tg *testStatsdClient) Gauge(name string, value float64, tags []string, rate float64) error {
-	tg.mu.Lock()
-	defer tg.mu.Unlock()
-	c := gaugeCall{
-		name:  name,
-		value: value,
-		tags:  make([]string, len(tags)),
-		rate:  rate,
-	}
-	copy(c.tags, tags)
-	tg.gaugeCalls = append(tg.gaugeCalls, c)
-	tg.tags = tags
-	if tg.n > 0 {
-		tg.n--
-		if tg.n == 0 {
-			close(tg.waitCh)
-		}
-	}
-	return nil
-}
-
-func (tg *testStatsdClient) Incr(name string, tags []string, rate float64) error {
-	tg.mu.Lock()
-	defer tg.mu.Unlock()
-	tg.addCount(name, 1)
-	c := incrCall{
-		name: name,
-		tags: make([]string, len(tags)),
-		rate: rate,
-	}
-	copy(c.tags, tags)
-	tg.incrCalls = append(tg.incrCalls, c)
-	tg.tags = tags
-	if tg.n > 0 {
-		tg.n--
-		if tg.n == 0 {
-			close(tg.waitCh)
-		}
-	}
-	return nil
-}
-
-func (tg *testStatsdClient) Count(name string, value int64, tags []string, rate float64) error {
-	tg.mu.Lock()
-	defer tg.mu.Unlock()
-	tg.addCount(name, value)
-	c := countCall{
-		name:  name,
-		value: value,
-		tags:  make([]string, len(tags)),
-		rate:  rate,
-	}
-	copy(c.tags, tags)
-	tg.countCalls = append(tg.countCalls, c)
-	tg.tags = tags
-	if tg.n > 0 {
-		tg.n--
-		if tg.n == 0 {
-			close(tg.waitCh)
-		}
-	}
-	return nil
-}
-
-func (tg *testStatsdClient) Timing(name string, value time.Duration, tags []string, rate float64) error {
-	tg.mu.Lock()
-	defer tg.mu.Unlock()
-	c := timingCall{
-		name:  name,
-		value: value,
-		tags:  make([]string, len(tags)),
-		rate:  rate,
-	}
-	copy(c.tags, tags)
-	tg.timingCalls = append(tg.timingCalls, c)
-	tg.tags = tags
-	if tg.n > 0 {
-		tg.n--
-		if tg.n == 0 {
-			close(tg.waitCh)
-		}
-	}
-	return nil
-}
-
-func (tg *testStatsdClient) Close() error {
-	tg.closed = true
-	return nil
-}
-
-func (tg *testStatsdClient) GaugeCalls() []gaugeCall {
-	tg.mu.RLock()
-	defer tg.mu.RUnlock()
-	c := make([]gaugeCall, len(tg.gaugeCalls))
-	copy(c, tg.gaugeCalls)
-	return c
-}
-
-func (tg *testStatsdClient) IncrCalls() []incrCall {
-	tg.mu.RLock()
-	defer tg.mu.RUnlock()
-	c := make([]incrCall, len(tg.incrCalls))
-	copy(c, tg.incrCalls)
-	return c
-}
-
-func (tg *testStatsdClient) CountCalls() []countCall {
-	tg.mu.RLock()
-	defer tg.mu.RUnlock()
-	c := make([]countCall, len(tg.countCalls))
-	copy(c, tg.countCalls)
-	return c
-}
-
-func (tg *testStatsdClient) CallNames() []string {
-	tg.mu.RLock()
-	defer tg.mu.RUnlock()
-	n := make([]string, 0)
-	for _, c := range tg.gaugeCalls {
-		n = append(n, c.name)
-	}
-	for _, c := range tg.incrCalls {
-		n = append(n, c.name)
-	}
-	for _, c := range tg.countCalls {
-		n = append(n, c.name)
-	}
-	for _, c := range tg.timingCalls {
-		n = append(n, c.name)
-	}
-	return n
-}
-
-func (tg *testStatsdClient) CallsByName() map[string]int {
-	tg.mu.RLock()
-	defer tg.mu.RUnlock()
-	counts := make(map[string]int)
-	for _, c := range tg.gaugeCalls {
-		counts[c.name]++
-	}
-	for _, c := range tg.incrCalls {
-		counts[c.name]++
-	}
-	for _, c := range tg.countCalls {
-		counts[c.name]++
-	}
-	for _, c := range tg.timingCalls {
-		counts[c.name]++
-	}
-	return counts
-}
-
-func (tg *testStatsdClient) Counts() map[string]int64 {
-	tg.mu.RLock()
-	defer tg.mu.RUnlock()
-	c := make(map[string]int64)
-	for key, value := range tg.counts {
-		c[key] = value
-	}
-	return c
-}
-
-func (tg *testStatsdClient) Tags() []string {
-	tg.mu.RLock()
-	defer tg.mu.RUnlock()
-	t := make([]string, len(tg.tags))
-	copy(t, tg.tags)
-	return t
-}
-
-func (tg *testStatsdClient) Reset() {
-	tg.mu.Lock()
-	defer tg.mu.Unlock()
-	tg.gaugeCalls = tg.gaugeCalls[:0]
-	tg.tags = tg.tags[:0]
-	if tg.waitCh != nil {
-		close(tg.waitCh)
-		tg.waitCh = nil
-	}
-	tg.n = 0
-}
-
-// Wait blocks until n metrics have been reported using the testStatsdClient or until duration d passes.
-// If d passes, or a wait is already active, an error is returned.
-func (tg *testStatsdClient) Wait(n int, d time.Duration) error {
-	tg.mu.Lock()
-	if tg.waitCh != nil {
-		tg.mu.Unlock()
-		return errors.New("already waiting")
-	}
-	tg.waitCh = make(chan struct{})
-	tg.n = n
-	tg.mu.Unlock()
-
-	select {
-	case <-tg.waitCh:
-		return nil
-	case <-time.After(d):
-		return fmt.Errorf("timed out after waiting %s for gauge events", d)
-	}
 }

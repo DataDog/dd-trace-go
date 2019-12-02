@@ -17,6 +17,36 @@ import (
 // be reported.
 const defaultMetricsReportInterval = 10 * time.Second
 
+type statsdClient interface {
+	Incr(name string, tags []string, rate float64) error
+	Count(name string, value int64, tags []string, rate float64) error
+	Gauge(name string, value float64, tags []string, rate float64) error
+	Timing(name string, value time.Duration, tags []string, rate float64) error
+	Close() error
+}
+
+type noopStatsdClient struct{}
+
+func (*noopStatsdClient) Incr(_ string, _ []string, _ float64) error {
+	return nil
+}
+
+func (*noopStatsdClient) Count(_ string, _ int64, _ []string, _ float64) error {
+	return nil
+}
+
+func (*noopStatsdClient) Gauge(_ string, _ float64, _ []string, _ float64) error {
+	return nil
+}
+
+func (*noopStatsdClient) Timing(_ string, _ time.Duration, _ []string, _ float64) error {
+	return nil
+}
+
+func (*noopStatsdClient) Close() error {
+	return nil
+}
+
 // reportMetrics periodically reports go runtime metrics to the specified gauger at
 // the given interval.
 func (t *tracer) reportMetrics(interval time.Duration) {
