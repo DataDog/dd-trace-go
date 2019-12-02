@@ -201,17 +201,25 @@ func (t *trace) push(sp *span) {
 	if t.full {
 		return
 	}
+	tr, haveTracer := internal.GetGlobalTracer().(*tracer)
 	if len(t.spans) >= traceMaxSize {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
 		t.spans = nil // GC
 		log.Error("trace buffer full (%d), dropping trace", traceMaxSize)
+		if haveTracer {
+			tr.config.statsd.Incr("datadog.tracer.traces.dropped", nil, 1)
+			tr.config.statsd.Count("datadog.tracer.spans.dropped", int64(len(t.spans)), nil, 1)
+		}
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
 		t.setSamplingPriorityLocked(v)
 	}
 	t.spans = append(t.spans, sp)
+	if haveTracer {
+		tr.config.statsd.Incr("datadog.tracer.spans.started", nil, 1)
+	}
 }
 
 // finishedOne aknowledges that another span in the trace has finished, and checks
@@ -241,6 +249,7 @@ func (t *trace) finishedOne(s *span) {
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have a tracer that can receive completed traces.
 		tr.pushTrace(t.spans)
+		tr.config.statsd.Incr("datadog.tracer.spans.finished", nil, 1)
 	}
 	t.spans = nil
 	t.finished = 0 // important, because a buffer can be used for several flushes
