@@ -219,9 +219,11 @@ func samplingRules(rules []*SamplingRule) []*SamplingRule {
 	for _, v := range rules {
 		if v.err != nil {
 			log.Warn("ignoring rule %+v: %v", v, v.err)
+			continue
 		}
-		if v.Rate < 0.0 || v.Rate > 1.0 {
+		if !(v.Rate >= 0.0 && v.Rate <= 1.0) {
 			log.Warn("ignoring rule %+v: rate is out of range", v)
+			continue
 		}
 		validRules = append(validRules, v)
 	}
@@ -368,9 +370,10 @@ func ServiceOperationRule(service string, operation string, rate float64) *Sampl
 		sr.err = fmt.Errorf("service '%s' is invalid: %v", service, err)
 	}
 	sr.Operation, err = regexp.Compile(anchoredRE(operation))
-	if err != nil && sr.err != nil {
+	if err != nil && sr.err == nil {
 		sr.err = fmt.Errorf("operation '%s' is invalid: %v", operation, err)
 	}
+	sr.Rate = rate
 	return sr
 }
 
