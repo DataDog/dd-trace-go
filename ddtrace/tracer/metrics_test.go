@@ -152,7 +152,7 @@ func (tg *testStatsdClient) CountCalls() []testStatsdCall {
 func (tg *testStatsdClient) CallNames() []string {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
-	n := make([]string, 0)
+	var n []string
 	for _, c := range tg.gaugeCalls {
 		n = append(n, c.name)
 	}
@@ -209,6 +209,10 @@ func (tg *testStatsdClient) Reset() {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	tg.gaugeCalls = tg.gaugeCalls[:0]
+	tg.incrCalls = tg.incrCalls[:0]
+	tg.countCalls = tg.countCalls[:0]
+	tg.timingCalls = tg.timingCalls[:0]
+	tg.counts = make(map[string]int64)
 	tg.tags = tg.tags[:0]
 	if tg.waitCh != nil {
 		close(tg.waitCh)

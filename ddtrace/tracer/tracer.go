@@ -8,6 +8,7 @@ package tracer
 import (
 	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -55,6 +56,8 @@ type tracer struct {
 
 	// pid of the process
 	pid string
+
+	spansStarted, spansFinished, tracesDropped, spansDropped int64
 }
 
 const (
@@ -162,6 +165,17 @@ func newTracer(opts ...StartOption) *tracer {
 	return t
 }
 
+func (t *tracer) sendSpanStats() {
+	spansStarted := atomic.SwapInt64(&t.spansStarted, 0)
+	spansFinished := atomic.SwapInt64(&t.spansFinished, 0)
+	tracesDropped := atomic.SwapInt64(&t.tracesDropped, 0)
+	spansDropped := atomic.SwapInt64(&t.spansDropped, 0)
+	t.config.statsd.Count("datadog.tracer.spans.started", spansStarted, nil, 1)
+	t.config.statsd.Count("datadog.tracer.spans.finished", spansFinished, nil, 1)
+	t.config.statsd.Count("datadog.tracer.traces.dropped", tracesDropped, nil, 1)
+	t.config.statsd.Count("datadog.tracer.spans.dropped", spansDropped, nil, 1)
+}
+
 // worker receives finished traces to be added into the payload, as well
 // as periodically flushes traces to the transport.
 func (t *tracer) worker() {
@@ -177,6 +191,7 @@ func (t *tracer) worker() {
 		case <-ticker.C:
 			t.config.statsd.Incr("datadog.trace.flush.count", []string{"reason:scheduled"}, 1)
 			t.flushPayload()
+			t.sendSpanStats()
 
 		case confirm := <-t.flushChan:
 			t.config.statsd.Incr("datadog.trace.flush.count", []string{"reason:size"}, 1)

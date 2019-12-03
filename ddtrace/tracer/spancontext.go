@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -201,17 +202,25 @@ func (t *trace) push(sp *span) {
 	if t.full {
 		return
 	}
+	tr, haveTracer := internal.GetGlobalTracer().(*tracer)
 	if len(t.spans) >= traceMaxSize {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
 		t.spans = nil // GC
 		log.Error("trace buffer full (%d), dropping trace", traceMaxSize)
+		if haveTracer {
+			atomic.AddInt64(&tr.tracesDropped, 1)
+			atomic.AddInt64(&tr.tracesDropped, int64(len(t.spans)))
+		}
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
 		t.setSamplingPriorityLocked(v)
 	}
 	t.spans = append(t.spans, sp)
+	if haveTracer {
+		atomic.AddInt64(&tr.spansStarted, 1)
+	}
 }
 
 // finishedOne aknowledges that another span in the trace has finished, and checks
@@ -242,6 +251,7 @@ func (t *trace) finishedOne(s *span) {
 		// we have a tracer that can receive completed traces.
 		tr.pushTrace(t.spans)
 		tr.config.statsd.Incr("datadog.tracer.spans.finished", nil, 1)
+		atomic.AddInt64(&tr.spansFinished, 1)
 	}
 	t.spans = nil
 	t.finished = 0 // important, because a buffer can be used for several flushes
