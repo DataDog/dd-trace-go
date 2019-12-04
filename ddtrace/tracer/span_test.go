@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -235,25 +236,42 @@ func TestSpanString(t *testing.T) {
 }
 
 func TestSpanSetMetric(t *testing.T) {
-	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-
-	// check the map is properly initialized
-	span.SetTag("bytes", 1024.42)
-	assert.Equal(3, len(span.Metrics))
-	assert.Equal(1024.42, span.Metrics["bytes"])
-	_, ok := span.Metrics[keySamplingPriority]
-	assert.True(ok)
-	_, ok = span.Metrics[keySamplingPriorityRate]
-	assert.True(ok)
-
-	// operating on a finished span is a no-op
-	span.Finish()
-	span.SetTag("finished.test", 1337)
-	assert.Equal(3, len(span.Metrics))
-	_, ok = span.Metrics["finished.test"]
-	assert.False(ok)
+	for name, tt := range map[string]func(assert *assert.Assertions, span *span){
+		"init": func(assert *assert.Assertions, span *span) {
+			assert.Equal(2, len(span.Metrics))
+			_, ok := span.Metrics[keySamplingPriority]
+			assert.True(ok)
+			_, ok = span.Metrics[keySamplingPriorityRate]
+			assert.True(ok)
+		},
+		"float": func(assert *assert.Assertions, span *span) {
+			span.SetTag("bytes", 1024.42)
+			assert.Equal(1024.42, span.Metrics["bytes"])
+		},
+		"int": func(assert *assert.Assertions, span *span) {
+			span.SetTag("bytes", 1024)
+			assert.Equal(1024.0, span.Metrics["bytes"])
+		},
+		"toobig": func(assert *assert.Assertions, span *span) {
+			span.SetTag("bytes", int64(1)<<60)
+			assert.Equal(0.0, span.Metrics["bytes"])
+			assert.Equal(fmt.Sprint(int64(1)<<60), span.Meta["bytes"])
+		},
+		"finished": func(assert *assert.Assertions, span *span) {
+			span.Finish()
+			span.SetTag("finished.test", 1337)
+			assert.Equal(2, len(span.Metrics))
+			_, ok := span.Metrics["finished.test"]
+			assert.False(ok)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			tracer := newTracer(withTransport(newDefaultTransport()))
+			span := tracer.newRootSpan("pylons.request", "pylons", "/")
+			tt(assert, span)
+		})
+	}
 }
 
 func TestSpanError(t *testing.T) {

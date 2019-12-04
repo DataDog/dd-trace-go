@@ -13,6 +13,8 @@ import (
 // toFloat64 attempts to convert value into a float64. If it succeeds it returns
 // the value and true, otherwise 0 and false.
 func toFloat64(value interface{}) (f float64, ok bool) {
+	const max = (int64(1) << 53)
+	const min = (-max)
 	switch i := value.(type) {
 	case byte:
 		return float64(i), true
@@ -27,6 +29,9 @@ func toFloat64(value interface{}) (f float64, ok bool) {
 	case int32:
 		return float64(i), true
 	case int64:
+		if i > max || i < min {
+			return 0, false
+		}
 		return float64(i), true
 	case uint:
 		return float64(i), true
@@ -35,6 +40,9 @@ func toFloat64(value interface{}) (f float64, ok bool) {
 	case uint32:
 		return float64(i), true
 	case uint64:
+		if i > uint64(max) {
+			return 0, false
+		}
 		return float64(i), true
 	default:
 		return 0, false

@@ -32,6 +32,8 @@ func TestToFloat64(t *testing.T) {
 		10: {"a", 0, false},
 		11: {float32(1.25), 1.25, true},
 		12: {float64(1.25), 1.25, true},
+		13: {uint64(1) << 60, 0, false},
+		14: {-(int64(1) << 60), 0, false},
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			f, ok := toFloat64(tt.value)
