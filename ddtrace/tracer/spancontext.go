@@ -250,7 +250,6 @@ func (t *trace) finishedOne(s *span) {
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have a tracer that can receive completed traces.
 		tr.pushTrace(t.spans)
-		tr.config.statsd.Incr("datadog.tracer.spans.finished", nil, 1)
 		atomic.AddInt64(&tr.spansFinished, 1)
 	}
 	t.spans = nil

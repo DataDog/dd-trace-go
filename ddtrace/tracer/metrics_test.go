@@ -53,6 +53,8 @@ func withStatsdClient(s statsdClient) StartOption {
 }
 
 func (tg *testStatsdClient) addCount(name string, value int64) {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
 	if tg.counts == nil {
 		tg.counts = make(map[string]int64)
 	}

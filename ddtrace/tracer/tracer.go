@@ -8,6 +8,7 @@ package tracer
 import (
 	"os"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -46,6 +47,13 @@ type tracer struct {
 	// stopped is a channel that will be closed when the worker has exited.
 	stopped chan struct{}
 
+	// stopping synchronizes calls to Stop() to ensure the tracer is stopped
+	// exactly once.
+	stopping sync.Mutex
+
+	// wg is used to wait for the worker goroutines to exit before Stop() returns.
+	wg sync.WaitGroup
+
 	// syncPush is used for testing. When non-nil, it causes pushTrace to become
 	// a synchronous (blocking) operation, meaning that it will only return after
 	// the trace has been fully processed and added onto the payload.
@@ -57,6 +65,8 @@ type tracer struct {
 	// pid of the process
 	pid string
 
+	// These integers track metrics about spans and traces as they are started,
+	// finished, and dropped
 	spansStarted, spansFinished, tracesDropped, spansDropped int64
 }
 
@@ -64,6 +74,10 @@ const (
 	// flushInterval is the interval at which the payload contents will be flushed
 	// to the transport.
 	flushInterval = 2 * time.Second
+
+	// statsInterval is the interval at which span statistics will be sent with the
+	// statsd client.
+	statsInterval = 1 * time.Second
 
 	// payloadMaxLimit is the maximum payload size allowed and should indicate the
 	// maximum size of the package that the agent can receive.
@@ -161,7 +175,9 @@ func newTracer(opts ...StartOption) *tracer {
 		log.Debug("Runtime metrics enabled.")
 		go t.reportMetrics(defaultMetricsReportInterval)
 	}
+	t.wg.Add(2)
 	go t.worker()
+	go t.statsSender()
 	return t
 }
 
@@ -176,9 +192,29 @@ func (t *tracer) sendSpanStats() {
 	t.config.statsd.Count("datadog.tracer.spans.dropped", spansDropped, nil, 1)
 }
 
+func (t *tracer) statsSender() {
+	defer t.wg.Done()
+	ticker := time.NewTicker(statsInterval)
+	defer ticker.Stop()
+	defer func() {
+		t.config.statsd.Close()
+		t.config.statsd = &noopStatsdClient{}
+	}()
+	for {
+		select {
+		case <-ticker.C:
+			t.sendSpanStats()
+		case <-t.stopped:
+			t.sendSpanStats()
+			return
+		}
+	}
+}
+
 // worker receives finished traces to be added into the payload, as well
 // as periodically flushes traces to the transport.
 func (t *tracer) worker() {
+	defer t.wg.Done()
 	defer close(t.stopped)
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
@@ -191,7 +227,6 @@ func (t *tracer) worker() {
 		case <-ticker.C:
 			t.config.statsd.Incr("datadog.trace.flush.count", []string{"reason:scheduled"}, 1)
 			t.flushPayload()
-			t.sendSpanStats()
 
 		case confirm := <-t.flushChan:
 			t.config.statsd.Incr("datadog.trace.flush.count", []string{"reason:size"}, 1)
@@ -215,8 +250,6 @@ func (t *tracer) worker() {
 			t.config.statsd.Incr("datadog.trace.flush.count", []string{"reason:shutdown"}, 1)
 			t.flushPayload()
 			t.config.statsd.Incr("datadog.tracer.stopped", nil, 1)
-			t.config.statsd.Close()
-			t.config.statsd = &noopStatsdClient{}
 			return
 		}
 	}
@@ -321,12 +354,14 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 
 // Stop stops the tracer.
 func (t *tracer) Stop() {
+	t.stopping.Lock()
+	defer t.stopping.Unlock()
 	select {
 	case <-t.stopped:
 		return
 	default:
-		t.exitChan <- struct{}{}
-		<-t.stopped
+		close(t.exitChan)
+		t.wg.Wait()
 	}
 }
 
