@@ -68,8 +68,9 @@ type config struct {
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
 
-	// rulesConfig ...
-	samplingRules []*SamplingRule
+	// samplingRules contains user-defined rules determine the sampling rate to apply
+	// to spans.
+	samplingRules []SamplingRule
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -245,7 +246,7 @@ func WithDogstatsdAddress(addr string) StartOption {
 
 // WithSamplingRules specifies the sampling rates to apply to spans based on the
 // provided rules.
-func WithSamplingRules(rules []*SamplingRule) StartOption {
+func WithSamplingRules(rules []SamplingRule) StartOption {
 	return func(cfg *config) {
 		cfg.samplingRules = rules
 	}

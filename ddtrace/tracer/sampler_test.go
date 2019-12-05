@@ -8,6 +8,8 @@ package tracer
 import (
 	"io/ioutil"
 	"math"
+	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/time/rate"
 )
 
 func TestPrioritySampler(t *testing.T) {
@@ -178,4 +181,130 @@ func TestRateSamplerSetting(t *testing.T) {
 	assert.Equal(float64(1), rs.Rate())
 	rs.SetRate(0.5)
 	assert.Equal(float64(0.5), rs.Rate())
+}
+
+func TestRuleEnvVars(t *testing.T) {
+	t.Run("sample-rate", func(t *testing.T) {
+		assert := assert.New(t)
+		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
+		for _, tt := range []struct {
+			in  string
+			out float64
+		}{
+			{in: "", out: 0.0},
+			{in: "0.0", out: 0.0},
+			{in: "0.5", out: 0.5},
+			{in: "1.0", out: 1.0},
+			{in: "42.0", out: 0.0},    // default if out of range
+			{in: "1point0", out: 0.0}, // default if invalid value
+		} {
+			os.Setenv("DD_TRACE_SAMPLE_RATE", tt.in)
+			res := sampleRate()
+			assert.Equal(tt.out, res)
+		}
+	})
+
+	t.Run("rate-limit", func(t *testing.T) {
+		assert := assert.New(t)
+		defer os.Unsetenv("DD_TRACE_RATE_LIMIT")
+		for _, tt := range []struct {
+			in  string
+			out *rate.Limiter
+		}{
+			{in: "", out: nil},
+			{in: "0.0", out: rate.NewLimiter(0.0, 0)},
+			{in: "0.5", out: rate.NewLimiter(0.5, 1)},
+			{in: "1.0", out: rate.NewLimiter(1.0, 1)},
+			{in: "42.0", out: rate.NewLimiter(42.0, 42)},
+			{in: "-1.0", out: nil},    // default if out of range
+			{in: "1point0", out: nil}, // default if invalid value
+		} {
+			os.Setenv("DD_TRACE_RATE_LIMIT", tt.in)
+			res := newRateLimiter(1.0)
+			assert.Equal(tt.out, res)
+		}
+	})
+
+	t.Run("sampling-rules", func(t *testing.T) {
+		assert := assert.New(t)
+		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
+		// represents hard-coded rules
+		rules := []SamplingRule{
+			RateRule(1.0),
+		}
+
+		// env overrides provided rules
+		os.Setenv("DD_TRACE_SAMPLING_RULES", "[]")
+		validRules := samplingRules(rules)
+		assert.Len(validRules, 0)
+
+		// valid rules
+		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "rate": 1.0}]`)
+		validRules = samplingRules(rules)
+		assert.Len(validRules, 1)
+
+		// invalid rule ignored
+		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "rate": 42.0}]`)
+		validRules = samplingRules(rules)
+		assert.Len(validRules, 0)
+	})
+}
+
+func TestRulesSampler(t *testing.T) {
+	makeSpan := func(op string, svc string) *span {
+		return newSpan(op, svc, "", 0, 0, 0)
+
+	}
+
+	t.Run("no-rules", func(t *testing.T) {
+		assert := assert.New(t)
+		rs := newRulesSampler(nil)
+
+		span := makeSpan("http.request", "test-service")
+		result := rs.apply(span)
+		assert.False(result)
+	})
+
+	t.Run("matching", func(t *testing.T) {
+		ruleSets := [][]SamplingRule{
+			{ServiceRule("test-service", 1.0)},
+			{OperationRule("http.request", 1.0)},
+			{ServiceOperationRule("test-service", "http.request", 1.0)},
+			{{Service: regexp.MustCompile("^test-"), Operation: regexp.MustCompile("http\\..*"), Rate: 1.0}},
+			{ServiceRule("other-service-1", 0.0), ServiceRule("other-service-2", 0.0), ServiceRule("test-service", 1.0)},
+		}
+		for _, v := range ruleSets {
+			t.Run("", func(t *testing.T) {
+				assert := assert.New(t)
+				rs := newRulesSampler(v)
+
+				span := makeSpan("http.request", "test-service")
+				result := rs.apply(span)
+				assert.True(result)
+				assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
+				assert.Equal(0.5, span.Metrics["_dd.limit_psr"])
+			})
+		}
+	})
+
+	t.Run("default-rate", func(t *testing.T) {
+		ruleSets := [][]SamplingRule{
+			{},
+			{ServiceRule("other-service", 0.0)},
+		}
+		for _, v := range ruleSets {
+			t.Run("", func(t *testing.T) {
+				assert := assert.New(t)
+				os.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
+				defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
+				rs := newRulesSampler(v)
+
+				span := makeSpan("http.request", "test-service")
+				result := rs.apply(span)
+				assert.True(result)
+				assert.Equal(0.8, span.Metrics["_dd.rule_psr"])
+				assert.Equal(0.5, span.Metrics["_dd.limit_psr"])
+			})
+		}
+	})
 }
