@@ -173,6 +173,7 @@ func newTracer(opts ...StartOption) *tracer {
 	t.config.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")
+		t.wg.Add(1)
 		go t.reportMetrics(defaultMetricsReportInterval)
 	}
 	t.wg.Add(2)
@@ -196,16 +197,14 @@ func (t *tracer) statsSender() {
 	defer t.wg.Done()
 	ticker := time.NewTicker(statsInterval)
 	defer ticker.Stop()
-	defer func() {
-		t.config.statsd.Close()
-		t.config.statsd = &noopStatsdClient{}
-	}()
 	for {
 		select {
 		case <-ticker.C:
 			t.sendSpanStats()
 		case <-t.stopped:
 			t.sendSpanStats()
+			t.config.statsd.Close()
+			t.config.statsd = &noopStatsdClient{}
 			return
 		}
 	}
@@ -225,11 +224,11 @@ func (t *tracer) worker() {
 			t.pushPayload(trace)
 
 		case <-ticker.C:
-			t.config.statsd.Incr("datadog.trace.flush.count", []string{"reason:scheduled"}, 1)
+			t.config.statsd.Incr("datadog.tracer.flush.count", []string{"reason:scheduled"}, 1)
 			t.flushPayload()
 
 		case confirm := <-t.flushChan:
-			t.config.statsd.Incr("datadog.trace.flush.count", []string{"reason:size"}, 1)
+			t.config.statsd.Incr("datadog.tracer.flush.count", []string{"reason:size"}, 1)
 			t.flushPayload()
 			if confirm != nil {
 				confirm <- struct{}{}
@@ -247,7 +246,7 @@ func (t *tracer) worker() {
 					break loop
 				}
 			}
-			t.config.statsd.Incr("datadog.trace.flush.count", []string{"reason:shutdown"}, 1)
+			t.config.statsd.Incr("datadog.tracer.flush.count", []string{"reason:shutdown"}, 1)
 			t.flushPayload()
 			t.config.statsd.Incr("datadog.tracer.stopped", nil, 1)
 			return
@@ -377,12 +376,12 @@ func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 
 // flush will push any currently buffered traces to the server.
 func (t *tracer) flushPayload() {
-	defer func(start time.Time) {
-		t.config.statsd.Timing("datadog.tracer.flush.duration", time.Since(start), nil, 1)
-	}(time.Now())
 	if t.payload.itemCount() == 0 {
 		return
 	}
+	defer func(start time.Time) {
+		t.config.statsd.Timing("datadog.tracer.flush.duration", time.Since(start), nil, 1)
+	}(time.Now())
 	size, count := t.payload.size(), t.payload.itemCount()
 	log.Debug("Sending payload: size: %d traces: %d\n", size, count)
 	rc, err := t.config.transport.send(t.payload)

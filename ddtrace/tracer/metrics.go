@@ -50,6 +50,7 @@ func (*noopStatsdClient) Close() error {
 // reportMetrics periodically reports go runtime metrics at
 // the given interval.
 func (t *tracer) reportMetrics(interval time.Duration) {
+	defer t.wg.Done()
 	var (
 		ms   runtime.MemStats
 		tags []string

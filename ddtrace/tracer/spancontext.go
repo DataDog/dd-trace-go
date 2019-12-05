@@ -210,7 +210,7 @@ func (t *trace) push(sp *span) {
 		log.Error("trace buffer full (%d), dropping trace", traceMaxSize)
 		if haveTracer {
 			atomic.AddInt64(&tr.tracesDropped, 1)
-			atomic.AddInt64(&tr.tracesDropped, int64(len(t.spans)))
+			atomic.AddInt64(&tr.spansDropped, int64(len(t.spans)))
 		}
 		return
 	}

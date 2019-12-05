@@ -252,6 +252,7 @@ func TestReportMetrics(t *testing.T) {
 		},
 	}
 
+	trc.wg.Add(1)
 	go trc.reportMetrics(time.Millisecond)
 	err := tg.Wait(35, 1*time.Second)
 	close(trc.stopped)
@@ -270,12 +271,12 @@ func TestTracerMetrics(t *testing.T) {
 	tracer, _, stop := startTestTracer(withStatsdClient(&tg))
 
 	tracer.StartSpan("operation").Finish()
-	flush := make(chan struct{}, 0)
+	flush := make(chan struct{})
 	tracer.flushChan <- flush
 	<-flush
 	calls := tg.CallsByName()
 	assert.Equal(1, calls["datadog.tracer.started"])
-	assert.Equal(1, calls["datadog.trace.flush.count"])
+	assert.Equal(1, calls["datadog.tracer.flush.count"])
 	assert.Equal(1, calls["datadog.tracer.flush.duration"])
 	assert.Equal(1, calls["datadog.tracer.flush.bytes"])
 	assert.Equal(1, calls["datadog.tracer.flush.traces"])
@@ -286,7 +287,7 @@ func TestTracerMetrics(t *testing.T) {
 	stop()
 	calls = tg.CallsByName()
 	assert.Equal(1, calls["datadog.tracer.stopped"])
-	assert.Equal(2, calls["datadog.trace.flush.count"])
+	assert.Equal(2, calls["datadog.tracer.flush.count"])
 	assert.Equal(2, calls["datadog.tracer.flush.duration"])
 	assert.Equal(2, calls["datadog.tracer.flush.bytes"])
 	assert.Equal(2, calls["datadog.tracer.flush.traces"])
