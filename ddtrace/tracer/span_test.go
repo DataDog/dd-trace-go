@@ -245,17 +245,30 @@ func TestSpanSetMetric(t *testing.T) {
 			assert.True(ok)
 		},
 		"float": func(assert *assert.Assertions, span *span) {
-			span.SetTag("bytes", 1024.42)
-			assert.Equal(1024.42, span.Metrics["bytes"])
+			span.SetTag("temp", 72.42)
+			assert.Equal(72.42, span.Metrics["temp"])
 		},
 		"int": func(assert *assert.Assertions, span *span) {
 			span.SetTag("bytes", 1024)
 			assert.Equal(1024.0, span.Metrics["bytes"])
 		},
+		"max": func(assert *assert.Assertions, span *span) {
+			span.SetTag("bytes", maxIntToFloat)
+			assert.Equal(float64(maxIntToFloat), span.Metrics["bytes"])
+		},
+		"min": func(assert *assert.Assertions, span *span) {
+			span.SetTag("bytes", minIntToFloat)
+			assert.Equal(float64(minIntToFloat), span.Metrics["bytes"])
+		},
 		"toobig": func(assert *assert.Assertions, span *span) {
-			span.SetTag("bytes", int64(1)<<60)
+			span.SetTag("bytes", maxIntToFloat+1)
 			assert.Equal(0.0, span.Metrics["bytes"])
-			assert.Equal(fmt.Sprint(int64(1)<<60), span.Meta["bytes"])
+			assert.Equal(fmt.Sprint(maxIntToFloat+1), span.Meta["bytes"])
+		},
+		"toosmall": func(assert *assert.Assertions, span *span) {
+			span.SetTag("bytes", minIntToFloat-1)
+			assert.Equal(0.0, span.Metrics["bytes"])
+			assert.Equal(fmt.Sprint(minIntToFloat-1), span.Meta["bytes"])
 		},
 		"finished": func(assert *assert.Assertions, span *span) {
 			span.Finish()
@@ -268,7 +281,7 @@ func TestSpanSetMetric(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
 			tracer := newTracer(withTransport(newDefaultTransport()))
-			span := tracer.newRootSpan("pylons.request", "pylons", "/")
+			span := tracer.newRootSpan("http.request", "mux.router", "/")
 			tt(assert, span)
 		})
 	}
