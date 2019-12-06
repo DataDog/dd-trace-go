@@ -236,6 +236,8 @@ func TestSpanString(t *testing.T) {
 }
 
 func TestSpanSetMetric(t *testing.T) {
+	const intUpperLimit = int64(1) << 53
+	const intLowerLimit = -intUpperLimit
 	for name, tt := range map[string]func(assert *assert.Assertions, span *span){
 		"init": func(assert *assert.Assertions, span *span) {
 			assert.Equal(2, len(span.Metrics))
@@ -253,22 +255,22 @@ func TestSpanSetMetric(t *testing.T) {
 			assert.Equal(1024.0, span.Metrics["bytes"])
 		},
 		"max": func(assert *assert.Assertions, span *span) {
-			span.SetTag("bytes", maxIntToFloat)
-			assert.Equal(float64(maxIntToFloat), span.Metrics["bytes"])
+			span.SetTag("bytes", intUpperLimit-1)
+			assert.Equal(float64(intUpperLimit-1), span.Metrics["bytes"])
 		},
 		"min": func(assert *assert.Assertions, span *span) {
-			span.SetTag("bytes", minIntToFloat)
-			assert.Equal(float64(minIntToFloat), span.Metrics["bytes"])
+			span.SetTag("bytes", intLowerLimit+1)
+			assert.Equal(float64(intLowerLimit+1), span.Metrics["bytes"])
 		},
 		"toobig": func(assert *assert.Assertions, span *span) {
-			span.SetTag("bytes", maxIntToFloat+1)
+			span.SetTag("bytes", intUpperLimit)
 			assert.Equal(0.0, span.Metrics["bytes"])
-			assert.Equal(fmt.Sprint(maxIntToFloat+1), span.Meta["bytes"])
+			assert.Equal(fmt.Sprint(intUpperLimit), span.Meta["bytes"])
 		},
 		"toosmall": func(assert *assert.Assertions, span *span) {
-			span.SetTag("bytes", minIntToFloat-1)
+			span.SetTag("bytes", intLowerLimit)
 			assert.Equal(0.0, span.Metrics["bytes"])
-			assert.Equal(fmt.Sprint(minIntToFloat-1), span.Meta["bytes"])
+			assert.Equal(fmt.Sprint(intLowerLimit), span.Meta["bytes"])
 		},
 		"finished": func(assert *assert.Assertions, span *span) {
 			span.Finish()
