@@ -155,16 +155,31 @@ func (ps *prioritySampler) apply(spn *span) {
 	spn.SetTag(keySamplingPriorityRate, rate)
 }
 
+// rulesSampler allows a user-defined list of rules to apply to spans.
+// These rules can match based on the span's Service, Operation or both.
+// When making a sampling decision, the rules are checked in order until
+// a match is found.
+// If a match is found, the rate from that rule is used.
+// If no match is found, and the DD_TRACE_SAMPLE_RATE environment variable
+// was set to a valid rate, that value is used.
+// Otherwise, the rules sampler didn't apply to the span, and the decision
+// is passed to the priority sampler.
+//
+// The rate is used to determine if the span should be sampled, but an upper
+// limit can be defined using the DD_TRACE_RATE_LIMIT environment variable.
+// Its value is the number of spans to sample per second.
+// Spans that matched the rules but exceeded the rate limit are not sampled.
 type rulesSampler struct {
 	rules   []SamplingRule
 	rate    float64
 	limiter *rate.Limiter
+
 	// "effective rate" calculations
-	mu           sync.Mutex
-	ts           int64
-	allowed      int
-	total        int
-	previousRate float64
+	mu           sync.Mutex // guards below fields
+	ts           int64      // timestamp, to detect when counters need resetting
+	allowed      int        // number of spans allowed by rate limiter
+	total        int        // number of spans checked by rate limiter
+	previousRate float64    // previous second's rate, averaged with current rate for smoothing
 }
 
 func newRulesSampler(rules []SamplingRule) *rulesSampler {
@@ -225,21 +240,21 @@ func samplingRules(rules []SamplingRule) []SamplingRule {
 }
 
 func sampleRate() float64 {
-	rate := 0.0
+	const defaultRate = 0.0
 	v := os.Getenv("DD_TRACE_SAMPLE_RATE")
 	if v == "" {
-		return rate
+		return defaultRate
 	}
 	r, err := strconv.ParseFloat(v, 64)
 	if err != nil {
-		log.Warn("using default rate %f because DD_TRACE_SAMPLE_RATE is invalid: %v", rate, err)
-		return rate
+		log.Warn("using default rate %f because DD_TRACE_SAMPLE_RATE is invalid: %v", defaultRate, err)
+		return defaultRate
 	}
 	if r >= 0.0 && r <= 1.0 {
 		return r
 	}
-	log.Warn("using default rate %f because provided value is out of range: %f", rate, r)
-	return rate
+	log.Warn("using default rate %f because provided value is out of range: %f", defaultRate, r)
+	return defaultRate
 }
 
 func newRateLimiter(r float64) *rate.Limiter {
@@ -265,24 +280,26 @@ func newRateLimiter(r float64) *rate.Limiter {
 }
 
 func (rs *rulesSampler) apply(span *span) bool {
-	matched := false
-	sr := 0.0
-	for _, v := range rs.rules {
-		if v.match(span) {
+	var matched bool
+	rate := 0.0
+	for _, rule := range rs.rules {
+		if rule.match(span) {
 			matched = true
-			sr = v.Rate
+			rate = rule.Rate
 			break
 		}
 	}
 	if !matched {
 		if rs.rate == 0.0 {
+			// no matching rule or global rate, so we want to fall back
+			// to priority sampling
 			return false
 		}
-		sr = rs.rate
+		rate = rs.rate
 	}
 	// rate sample
-	span.SetTag("_dd.rule_psr", sr)
-	if !sampledByRate(span.TraceID, sr) {
+	span.SetTag("_dd.rule_psr", rate)
+	if !sampledByRate(span.TraceID, rate) {
 		span.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
 		return true
 	}
@@ -323,17 +340,17 @@ type SamplingRule struct {
 	Service   *regexp.Regexp
 	Operation *regexp.Regexp
 	Rate      float64
-	// fields for exact match instead of regexp
-	svc string
-	op  string
+
+	exactService   string
+	exactOperation string
 }
 
 // ServiceRule returns a SamplingRule that applies the provided sampling rate
 // to spans that match the service name provided.
 func ServiceRule(service string, rate float64) SamplingRule {
 	return SamplingRule{
-		svc:  service,
-		Rate: rate,
+		exactService: service,
+		Rate:         rate,
 	}
 }
 
@@ -341,8 +358,8 @@ func ServiceRule(service string, rate float64) SamplingRule {
 // to spans that match the operation name provided.
 func OperationRule(operation string, rate float64) SamplingRule {
 	return SamplingRule{
-		op:   operation,
-		Rate: rate,
+		exactOperation: operation,
+		Rate:           rate,
 	}
 }
 
@@ -350,9 +367,9 @@ func OperationRule(operation string, rate float64) SamplingRule {
 // to spans matching both the service and operation names provided.
 func ServiceOperationRule(service string, operation string, rate float64) SamplingRule {
 	return SamplingRule{
-		svc:  service,
-		op:   operation,
-		Rate: rate,
+		exactService:   service,
+		exactOperation: operation,
+		Rate:           rate,
 	}
 }
 
@@ -366,12 +383,12 @@ func RateRule(rate float64) SamplingRule {
 func (sr *SamplingRule) match(s *span) bool {
 	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
 		return false
-	} else if sr.svc != "" && sr.svc != s.Service {
+	} else if sr.exactService != "" && sr.exactService != s.Service {
 		return false
 	}
 	if sr.Operation != nil && !sr.Operation.MatchString(s.Name) {
 		return false
-	} else if sr.op != "" && sr.op != s.Name {
+	} else if sr.exactOperation != "" && sr.exactOperation != s.Name {
 		return false
 	}
 	return true
