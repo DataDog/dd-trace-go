@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -307,4 +308,155 @@ func TestRulesSampler(t *testing.T) {
 			})
 		}
 	})
+}
+
+func BenchmarkRulesSampler(b *testing.B) {
+	b.Run("no-rules", func(b *testing.B) {
+		tracer := newTracer()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep)).Finish()
+		}
+	})
+
+	b.Run("unmatching-rules", func(b *testing.B) {
+		rules := []SamplingRule{
+			ServiceRule("test-service", 1.0),
+			ServiceOperationRule("postgres.db", "db.query", 1.0),
+			OperationRule("notweb.request", 1.0),
+		}
+		tracer := newTracer(WithSamplingRules(rules))
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep)).Finish()
+		}
+	})
+
+	b.Run("matching-rules", func(b *testing.B) {
+		rules := []SamplingRule{
+			ServiceRule("test-service", 1.0),
+			ServiceOperationRule("postgres.db", "db.query", 1.0),
+			OperationRule("web.request", 1.0),
+		}
+		tracer := newTracer(WithSamplingRules(rules))
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep)).Finish()
+		}
+	})
+}
+
+// https://dave.cheney.net/2013/06/30/how-to-write-benchmarks-in-go#compiler-optimisation
+var matched bool
+
+func BenchmarkRulesSamplerImpls(b *testing.B) {
+	b.Run("structs", func(b *testing.B) {
+		rules := []SamplingRule{
+			ServiceRule("test-service", 1.0),
+			ServiceOperationRule("postgres.db", "db.query", 1.0),
+			OperationRule("web.request", 1.0),
+		}
+		sampler := newRulesSampler(rules)
+		span := newSpan("web.request", "xyz-service", "", 0, 0, 0)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			matched = sampler.apply(span)
+		}
+	})
+
+	b.Run("pointers", func(b *testing.B) {
+		rules := []SamplingRule{
+			ServiceRule("test-service", 1.0),
+			ServiceOperationRule("postgres.db", "db.query", 1.0),
+			OperationRule("web.request", 1.0),
+		}
+		sampler := newRulesSamplerP(rules)
+		span := newSpan("web.request", "xyz-service", "", 0, 0, 0)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			matched = sampler.apply(span)
+		}
+	})
+}
+
+type rulesSamplerP struct {
+	rules   []*SamplingRule
+	rate    float64
+	limiter *rate.Limiter
+
+	// "effective rate" calculations
+	mu           sync.Mutex // guards below fields
+	ts           int64      // timestamp, to detect when counters need resetting
+	allowed      int        // number of spans allowed by rate limiter
+	total        int        // number of spans checked by rate limiter
+	previousRate float64    // previous second's rate, averaged with current rate for smoothing
+}
+
+func newRulesSamplerP(rules []SamplingRule) *rulesSamplerP {
+	rate := sampleRate()
+	rules = samplingRules(rules)
+	rulesP := make([]*SamplingRule, len(rules))
+	for i := range rules {
+		r := new(SamplingRule)
+		*r = rules[i]
+		rulesP[i] = r
+	}
+	return &rulesSamplerP{
+		rules:   rulesP,
+		rate:    rate,
+		limiter: newRateLimiter(rate),
+	}
+}
+
+func (rs *rulesSamplerP) apply(span *span) bool {
+	matched := false
+	rate := 0.0
+	for _, v := range rs.rules {
+		if v.match(span) {
+			matched = true
+			rate = v.Rate
+			break
+		}
+	}
+	if !matched {
+		if rs.rate == 0.0 {
+			// no matching rule or global rate, so we want to fall back
+			// to priority sampling
+			return false
+		}
+		rate = rs.rate
+	}
+	// rate sample
+	span.SetTag("_dd.rule_psr", rate)
+	if !sampledByRate(span.TraceID, rate) {
+		span.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
+		return true
+	}
+	// global rate limit and effective rate calculations
+	defer rs.mu.Unlock()
+	rs.mu.Lock()
+	if ts := time.Now().Unix(); ts > rs.ts {
+		// update "previous rate" and reset
+		if ts-rs.ts == 1 && rs.total > 0 && rs.allowed > 0 {
+			rs.previousRate = float64(rs.allowed) / float64(rs.total)
+		} else {
+			rs.previousRate = 0.0
+		}
+		rs.ts = ts
+		rs.allowed = 0
+		rs.total = 0
+	}
+
+	rs.total++
+	if rs.limiter != nil && !rs.limiter.Allow() {
+		span.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
+	} else {
+		rs.allowed++
+		span.SetTag(ext.SamplingPriority, ext.PriorityAutoKeep)
+	}
+	// calculate effective rate, and tag the span
+	er := (rs.previousRate + (float64(rs.allowed) / float64(rs.total))) / 2.0
+	span.SetTag("_dd.limit_psr", er)
+
+	return true
 }
