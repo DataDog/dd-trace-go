@@ -176,25 +176,28 @@ type rulesSampler struct {
 
 	// "effective rate" calculations
 	mu           sync.Mutex // guards below fields
-	ts           int64      // timestamp, to detect when counters need resetting
+	ts           time.Time  // timestamp, to detect when counters need resetting
 	allowed      int        // number of spans allowed by rate limiter
 	total        int        // number of spans checked by rate limiter
 	previousRate float64    // previous second's rate, averaged with current rate for smoothing
 }
 
+// newRulesSampler configures a *rulesSampler instance using rules provided in the tracer's StartOptions.
+// Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
 func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	rate := sampleRate()
 	return &rulesSampler{
-		rules:   samplingRules(rules),
+		rules:   appliedSamplingRules(rules),
 		rate:    rate,
 		limiter: newRateLimiter(rate),
+		ts:      time.Now().Truncate(time.Second),
 	}
 }
 
-// samplingRules validates the user-provided rules and returns an internal representation.
+// appliedSamplingRules validates the user-provided rules and returns an internal representation.
 // If the DD_TRACE_SAMPLING_RULES environment variable is set, then the rules from
 // tracer.WithSamplingRules are ignored.
-func samplingRules(rules []SamplingRule) []SamplingRule {
+func appliedSamplingRules(rules []SamplingRule) []SamplingRule {
 	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
 	if rulesFromEnv != "" {
 		rules = rules[:0]
@@ -239,6 +242,8 @@ func samplingRules(rules []SamplingRule) []SamplingRule {
 	return validRules
 }
 
+// sampleRate returns the rate to apply when the rate sampler's rules didn't match.
+// A zero value means the rate sampler
 func sampleRate() float64 {
 	const defaultRate = 0.0
 	v := os.Getenv("DD_TRACE_SAMPLE_RATE")
@@ -257,31 +262,34 @@ func sampleRate() float64 {
 	return defaultRate
 }
 
+// newRateLimiter configures and returns a *rate.Limiter instance that is used when applying sampling rules.
+// The limit can be set with the DD_TRACE_RATE_LIMIT environment variable. Invalid values are ignored with
+// a warning message.
 func newRateLimiter(r float64) *rate.Limiter {
+	defaultLimiter := rate.NewLimiter(rate.Inf, 0)
 	v := os.Getenv("DD_TRACE_RATE_LIMIT")
 	if v == "" {
-		return nil
+		return defaultLimiter
 	}
 	l, err := strconv.ParseFloat(v, 64)
 	if err != nil {
 		log.Warn("using default rate limit because DD_TRACE_RATE_LIMIT is invalid: %v", err)
-		return nil
+		return defaultLimiter
 	}
-	switch {
-	case l < 0.0:
-		return nil
-	case l == 0.0:
-		return rate.NewLimiter(0.0, 0)
-	case (r * l) < 1.0:
-		return rate.NewLimiter(rate.Limit(l), 1)
-	default:
-		return rate.NewLimiter(rate.Limit(l), int(math.Ceil(r*l)))
+	if l < 0.0 {
+		log.Warn("using default rate limit because DD_TRACE_RATE_LIMIT is negative: %f", l)
+		return defaultLimiter
 	}
+	return rate.NewLimiter(rate.Limit(l), int(math.Ceil(r*l)))
 }
 
+// apply uses the sampling rules to determine the sampling rate for the
+// provided span. If the rules don't match, and a default rate hasn't been
+// set using DD_TRACE_SAMPLE_RATE, then it returns false and the span is not
+// modified.
 func (rs *rulesSampler) apply(span *span) bool {
 	var matched bool
-	rate := 0.0
+	rate := rs.rate
 	for _, rule := range rs.rules {
 		if rule.match(span) {
 			matched = true
@@ -289,13 +297,10 @@ func (rs *rulesSampler) apply(span *span) bool {
 			break
 		}
 	}
-	if !matched {
-		if rs.rate == 0.0 {
-			// no matching rule or global rate, so we want to fall back
-			// to priority sampling
-			return false
-		}
-		rate = rs.rate
+	if !matched && rate == 0.0 {
+		// no matching rule or global rate, so we want to fall back
+		// to priority sampling
+		return false
 	}
 	// rate sample
 	span.SetTag("_dd.rule_psr", rate)
@@ -304,22 +309,23 @@ func (rs *rulesSampler) apply(span *span) bool {
 		return true
 	}
 	// global rate limit and effective rate calculations
-	defer rs.mu.Unlock()
 	rs.mu.Lock()
-	if ts := time.Now().Unix(); ts > rs.ts {
+	defer rs.mu.Unlock()
+	ts := time.Now()
+	if d := ts.Sub(rs.ts).Truncate(time.Second); d >= time.Second {
 		// update "previous rate" and reset
-		if ts-rs.ts == 1 && rs.total > 0 && rs.allowed > 0 {
+		if d == time.Second && rs.total > 0 && rs.allowed > 0 {
 			rs.previousRate = float64(rs.allowed) / float64(rs.total)
 		} else {
 			rs.previousRate = 0.0
 		}
-		rs.ts = ts
+		rs.ts = ts.Truncate(time.Second)
 		rs.allowed = 0
 		rs.total = 0
 	}
 
 	rs.total++
-	if rs.limiter != nil && !rs.limiter.Allow() {
+	if rs.limiter != nil && !rs.limiter.AllowN(ts, 1) {
 		span.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
 	} else {
 		rs.allowed++
@@ -380,6 +386,7 @@ func RateRule(rate float64) SamplingRule {
 	}
 }
 
+// match returns true when the span's details match all the expected values in the rule.
 func (sr *SamplingRule) match(s *span) bool {
 	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
 		return false
