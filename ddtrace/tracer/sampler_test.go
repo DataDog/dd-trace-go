@@ -212,13 +212,13 @@ func TestRuleEnvVars(t *testing.T) {
 			in  string
 			out *rate.Limiter
 		}{
-			{in: "", out: nil},
+			{in: "", out: rate.NewLimiter(rate.Inf, 0)},
 			{in: "0.0", out: rate.NewLimiter(0.0, 0)},
 			{in: "0.5", out: rate.NewLimiter(0.5, 1)},
 			{in: "1.0", out: rate.NewLimiter(1.0, 1)},
 			{in: "42.0", out: rate.NewLimiter(42.0, 42)},
-			{in: "-1.0", out: nil},    // default if out of range
-			{in: "1point0", out: nil}, // default if invalid value
+			{in: "-1.0", out: rate.NewLimiter(rate.Inf, 0)},    // default if out of range
+			{in: "1point0", out: rate.NewLimiter(rate.Inf, 0)}, // default if invalid value
 		} {
 			os.Setenv("DD_TRACE_RATE_LIMIT", tt.in)
 			res := newRateLimiter(1.0)
@@ -236,17 +236,17 @@ func TestRuleEnvVars(t *testing.T) {
 
 		// env overrides provided rules
 		os.Setenv("DD_TRACE_SAMPLING_RULES", "[]")
-		validRules := samplingRules(rules)
+		validRules := appliedSamplingRules(rules)
 		assert.Len(validRules, 0)
 
 		// valid rules
 		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "rate": 1.0}]`)
-		validRules = samplingRules(rules)
+		validRules = appliedSamplingRules(rules)
 		assert.Len(validRules, 1)
 
 		// invalid rule ignored
 		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "rate": 42.0}]`)
-		validRules = samplingRules(rules)
+		validRules = appliedSamplingRules(rules)
 		assert.Len(validRules, 0)
 	})
 }
@@ -394,7 +394,7 @@ type rulesSamplerP struct {
 
 func newRulesSamplerP(rules []SamplingRule) *rulesSamplerP {
 	rate := sampleRate()
-	rules = samplingRules(rules)
+	rules = appliedSamplingRules(rules)
 	rulesP := make([]*SamplingRule, len(rules))
 	for i := range rules {
 		r := new(SamplingRule)
