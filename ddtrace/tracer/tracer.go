@@ -9,7 +9,6 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -67,7 +66,7 @@ type tracer struct {
 
 	// These integers track metrics about spans and traces as they are started,
 	// finished, and dropped
-	spansStarted, spansFinished, tracesDropped, spansDropped int64
+	spansStarted, spansFinished, tracesDropped int64
 }
 
 const (
@@ -174,40 +173,12 @@ func newTracer(opts ...StartOption) *tracer {
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")
 		t.wg.Add(1)
-		go t.reportMetrics(defaultMetricsReportInterval)
+		go t.reportRuntimeMetrics(defaultMetricsReportInterval)
 	}
 	t.wg.Add(2)
 	go t.worker()
-	go t.statsSender()
+	go t.reportHealthMetrics()
 	return t
-}
-
-func (t *tracer) sendSpanStats() {
-	spansStarted := atomic.SwapInt64(&t.spansStarted, 0)
-	spansFinished := atomic.SwapInt64(&t.spansFinished, 0)
-	tracesDropped := atomic.SwapInt64(&t.tracesDropped, 0)
-	spansDropped := atomic.SwapInt64(&t.spansDropped, 0)
-	t.config.statsd.Count("datadog.tracer.spans.started", spansStarted, nil, 1)
-	t.config.statsd.Count("datadog.tracer.spans.finished", spansFinished, nil, 1)
-	t.config.statsd.Count("datadog.tracer.traces.dropped", tracesDropped, nil, 1)
-	t.config.statsd.Count("datadog.tracer.spans.dropped", spansDropped, nil, 1)
-}
-
-func (t *tracer) statsSender() {
-	defer t.wg.Done()
-	ticker := time.NewTicker(statsInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			t.sendSpanStats()
-		case <-t.stopped:
-			t.sendSpanStats()
-			t.config.statsd.Close()
-			t.config.statsd = &noopStatsdClient{}
-			return
-		}
-	}
 }
 
 // worker receives finished traces to be added into the payload, as well
@@ -224,11 +195,11 @@ func (t *tracer) worker() {
 			t.pushPayload(trace)
 
 		case <-ticker.C:
-			t.config.statsd.Incr("datadog.tracer.flush.count", []string{"reason:scheduled"}, 1)
+			t.config.statsd.Incr("datadog.tracer.flush_count", []string{"reason:scheduled"}, 1)
 			t.flushPayload()
 
 		case confirm := <-t.flushChan:
-			t.config.statsd.Incr("datadog.tracer.flush.count", []string{"reason:size"}, 1)
+			t.config.statsd.Incr("datadog.tracer.flush_count", []string{"reason:size"}, 1)
 			t.flushPayload()
 			if confirm != nil {
 				confirm <- struct{}{}
@@ -246,7 +217,7 @@ func (t *tracer) worker() {
 					break loop
 				}
 			}
-			t.config.statsd.Incr("datadog.tracer.flush.count", []string{"reason:shutdown"}, 1)
+			t.config.statsd.Incr("datadog.tracer.flush_count", []string{"reason:shutdown"}, 1)
 			t.flushPayload()
 			t.config.statsd.Incr("datadog.tracer.stopped", nil, 1)
 			return
@@ -380,17 +351,17 @@ func (t *tracer) flushPayload() {
 		return
 	}
 	defer func(start time.Time) {
-		t.config.statsd.Timing("datadog.tracer.flush.duration", time.Since(start), nil, 1)
+		t.config.statsd.Timing("datadog.tracer.flush_duration", time.Since(start), nil, 1)
 	}(time.Now())
 	size, count := t.payload.size(), t.payload.itemCount()
 	log.Debug("Sending payload: size: %d traces: %d\n", size, count)
 	rc, err := t.config.transport.send(t.payload)
 	if err != nil {
-		t.config.statsd.Count("datadog.tracer.flush.traces_lost", int64(count), nil, 1)
+		t.config.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
 		log.Error("lost %d traces: %v", count, err)
 	} else {
-		t.config.statsd.Count("datadog.tracer.flush.bytes", int64(size), nil, 1)
-		t.config.statsd.Count("datadog.tracer.flush.traces", int64(count), nil, 1)
+		t.config.statsd.Count("datadog.tracer.flush_bytes", int64(size), nil, 1)
+		t.config.statsd.Count("datadog.tracer.flush_traces", int64(count), nil, 1)
 		t.prioritySampling.readRatesJSON(rc)
 	}
 	t.payload.reset()
@@ -400,7 +371,7 @@ func (t *tracer) flushPayload() {
 // larger than the threshold as a result, it sends a flush request.
 func (t *tracer) pushPayload(trace []*span) {
 	if err := t.payload.push(trace); err != nil {
-		t.config.statsd.Incr("datadog.tracer.payload.error", nil, 1)
+		t.config.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
 		log.Error("error encoding msgpack: %v", err)
 	}
 	if t.payload.size() > payloadSizeLimit {

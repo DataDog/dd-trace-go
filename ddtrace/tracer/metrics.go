@@ -8,6 +8,7 @@ package tracer
 import (
 	"runtime"
 	"runtime/debug"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -47,9 +48,9 @@ func (*noopStatsdClient) Close() error {
 	return nil
 }
 
-// reportMetrics periodically reports go runtime metrics at
+// reportRuntimeMetrics periodically reports go runtime metrics at
 // the given interval.
-func (t *tracer) reportMetrics(interval time.Duration) {
+func (t *tracer) reportRuntimeMetrics(interval time.Duration) {
 	defer t.wg.Done()
 	var (
 		ms   runtime.MemStats
@@ -113,6 +114,29 @@ func (t *tracer) reportMetrics(interval time.Duration) {
 			}
 
 		case <-t.stopped:
+			return
+		}
+	}
+}
+
+func (t *tracer) sendHealthMetrics() {
+	t.config.statsd.Count("datadog.tracer.spans_started", atomic.SwapInt64(&t.spansStarted, 0), nil, 1)
+	t.config.statsd.Count("datadog.tracer.spans_finished", atomic.SwapInt64(&t.spansFinished, 0), nil, 1)
+	t.config.statsd.Count("datadog.tracer.traces_dropped", atomic.SwapInt64(&t.tracesDropped, 0), []string{"reason:trace_too_large"}, 1)
+}
+
+func (t *tracer) reportHealthMetrics() {
+	defer t.wg.Done()
+	ticker := time.NewTicker(statsInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			t.sendHealthMetrics()
+		case <-t.stopped:
+			t.sendHealthMetrics()
+			t.config.statsd.Close()
+			t.config.statsd = &noopStatsdClient{}
 			return
 		}
 	}

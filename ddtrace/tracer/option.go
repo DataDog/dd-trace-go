@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 // config holds the tracer configuration.
@@ -98,7 +99,7 @@ func defaults(c *config) {
 }
 
 func statsTags(c *config) []string {
-	var tags []string
+	tags := []string{"version:" + version.Tag}
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
 	}
