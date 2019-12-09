@@ -235,9 +235,12 @@ func TestSpanString(t *testing.T) {
 	assert.NotEqual("", span.String())
 }
 
+const (
+	intUpperLimit = int64(1) << 53
+	intLowerLimit = -intUpperLimit
+)
+
 func TestSpanSetMetric(t *testing.T) {
-	const intUpperLimit = int64(1) << 53
-	const intLowerLimit = -intUpperLimit
 	for name, tt := range map[string]func(assert *assert.Assertions, span *span){
 		"init": func(assert *assert.Assertions, span *span) {
 			assert.Equal(2, len(span.Metrics))

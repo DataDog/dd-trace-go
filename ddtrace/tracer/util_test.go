@@ -14,8 +14,6 @@ import (
 )
 
 func TestToFloat64(t *testing.T) {
-	const intUpperLimit = int64(1) << 53
-	const intLowerLimit = -intUpperLimit
 	for i, tt := range [...]struct {
 		value interface{}
 		f     float64
