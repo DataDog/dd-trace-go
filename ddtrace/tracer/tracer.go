@@ -76,7 +76,7 @@ const (
 
 	// statsInterval is the interval at which span statistics will be sent with the
 	// statsd client.
-	statsInterval = 1 * time.Second
+	statsInterval = 10 * time.Second
 
 	// payloadMaxLimit is the maximum payload size allowed and should indicate the
 	// maximum size of the package that the agent can receive.
@@ -362,7 +362,9 @@ func (t *tracer) flushPayload() {
 	} else {
 		t.config.statsd.Count("datadog.tracer.flush_bytes", int64(size), nil, 1)
 		t.config.statsd.Count("datadog.tracer.flush_traces", int64(count), nil, 1)
-		t.prioritySampling.readRatesJSON(rc)
+		if t.prioritySampling.readRatesJSON(rc) != nil {
+			t.config.statsd.Incr("datadog.tracer.decode_error", nil, 1)
+		}
 	}
 	t.payload.reset()
 }

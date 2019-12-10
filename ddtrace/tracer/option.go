@@ -99,7 +99,11 @@ func defaults(c *config) {
 }
 
 func statsTags(c *config) []string {
-	tags := []string{"version:" + version.Tag}
+	tags := []string{
+		"lang:go",
+		"version:" + version.Tag,
+		"lang_version:" + runtime.Version(),
+	}
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
 	}

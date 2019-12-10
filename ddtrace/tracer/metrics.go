@@ -136,7 +136,6 @@ func (t *tracer) reportHealthMetrics() {
 		case <-t.stopped:
 			t.sendHealthMetrics()
 			t.config.statsd.Close()
-			t.config.statsd = &noopStatsdClient{}
 			return
 		}
 	}
