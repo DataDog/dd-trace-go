@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
