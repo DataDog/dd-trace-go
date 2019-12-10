@@ -29,7 +29,7 @@ func TestReportMetrics(t *testing.T) {
 
 	var tg testGauger
 	go trc.reportMetrics(&tg, time.Millisecond)
-	err := tg.Wait(30, 1*time.Second)
+	err := tg.Wait(35, 1*time.Second)
 	close(trc.stopped)
 	assert := assert.New(t)
 	assert.NoError(err)
