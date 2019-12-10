@@ -32,6 +32,13 @@ func TestToFloat64(t *testing.T) {
 		10: {"a", 0, false},
 		11: {float32(1.25), 1.25, true},
 		12: {float64(1.25), 1.25, true},
+		13: {intUpperLimit, 0, false},
+		14: {intUpperLimit + 1, 0, false},
+		15: {intUpperLimit - 1, float64(intUpperLimit - 1), true},
+		16: {intLowerLimit, 0, false},
+		17: {intLowerLimit - 1, 0, false},
+		18: {intLowerLimit + 1, float64(intLowerLimit + 1), true},
+		19: {-1024, -1024.0, true},
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			f, ok := toFloat64(tt.value)

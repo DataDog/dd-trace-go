@@ -114,8 +114,7 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMetric(key, v)
 		return
 	}
-	// not numeric, not a string and not an error, the likelihood of this
-	// happening is close to zero, but we should nevertheless account for it.
+	// not numeric, not a string, not a bool, and not an error
 	s.setMeta(key, fmt.Sprint(value))
 }
 
