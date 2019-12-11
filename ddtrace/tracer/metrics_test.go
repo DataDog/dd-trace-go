@@ -35,7 +35,7 @@ func TestReportMetrics(t *testing.T) {
 	assert.NoError(err)
 	calls := tg.CallNames()
 	tags := tg.Tags()
-	assert.True(len(calls) > 30)
+	assert.True(len(calls) >= 35)
 	assert.Contains(calls, "runtime.go.num_cpu")
 	assert.Contains(calls, "runtime.go.mem_stats.alloc")
 	assert.Contains(calls, "runtime.go.gc_stats.pause_quantiles.75p")
