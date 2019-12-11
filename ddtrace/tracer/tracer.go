@@ -46,11 +46,10 @@ type tracer struct {
 	// stopped is a channel that will be closed when the worker has exited.
 	stopped chan struct{}
 
-	// stopping synchronizes calls to Stop() to ensure the tracer is stopped
-	// exactly once.
-	stopping sync.Mutex
+	// stopOnce ensures the tracer is stopped exactly once.
+	stopOnce sync.Once
 
-	// wg is used to wait for the worker goroutines to exit before Stop() returns.
+	// wg waits for all goroutines to exit when stopping.
 	wg sync.WaitGroup
 
 	// syncPush is used for testing. When non-nil, it causes pushTrace to become
@@ -74,7 +73,7 @@ const (
 	// to the transport.
 	flushInterval = 2 * time.Second
 
-	// statsInterval is the interval at which span statistics will be sent with the
+	// statsInterval is the interval at which health metrics will be sent with the
 	// statsd client.
 	statsInterval = 10 * time.Second
 
@@ -152,8 +151,8 @@ func newTracer(opts ...StartOption) *tracer {
 	if c.statsd == nil {
 		client, err := statsd.New(c.dogstatsdAddr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
 		if err != nil {
-			log.Warn("Runtime and tracer metrics disabled: %v", err)
-			c.statsd = &noopStatsdClient{}
+			log.Warn("Runtime and health metrics disabled: %v", err)
+			c.statsd = &statsd.NoOpClient{}
 		} else {
 			c.statsd = client
 		}
@@ -173,19 +172,29 @@ func newTracer(opts ...StartOption) *tracer {
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")
 		t.wg.Add(1)
-		go t.reportRuntimeMetrics(defaultMetricsReportInterval)
+		go func() {
+			defer t.wg.Done()
+			t.reportRuntimeMetrics(defaultMetricsReportInterval)
+		}()
 	}
-	t.wg.Add(2)
-	go t.worker()
-	go t.reportHealthMetrics()
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		t.worker()
+	}()
+
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		t.reportHealthMetrics(statsInterval)
+	}()
 	return t
 }
 
 // worker receives finished traces to be added into the payload, as well
 // as periodically flushes traces to the transport.
 func (t *tracer) worker() {
-	defer t.wg.Done()
-	defer close(t.stopped)
+	defer t.config.statsd.Close()
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
 
@@ -195,11 +204,11 @@ func (t *tracer) worker() {
 			t.pushPayload(trace)
 
 		case <-ticker.C:
-			t.config.statsd.Incr("datadog.tracer.flush_count", []string{"reason:scheduled"}, 1)
+			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.flushPayload()
 
 		case confirm := <-t.flushChan:
-			t.config.statsd.Incr("datadog.tracer.flush_count", []string{"reason:size"}, 1)
+			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
 			t.flushPayload()
 			if confirm != nil {
 				confirm <- struct{}{}
@@ -217,7 +226,7 @@ func (t *tracer) worker() {
 					break loop
 				}
 			}
-			t.config.statsd.Incr("datadog.tracer.flush_count", []string{"reason:shutdown"}, 1)
+			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:shutdown"}, 1)
 			t.flushPayload()
 			t.config.statsd.Incr("datadog.tracer.stopped", nil, 1)
 			return
@@ -324,15 +333,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 
 // Stop stops the tracer.
 func (t *tracer) Stop() {
-	t.stopping.Lock()
-	defer t.stopping.Unlock()
-	select {
-	case <-t.stopped:
-		return
-	default:
+	t.stopOnce.Do(func() {
 		close(t.exitChan)
 		t.wg.Wait()
-	}
+		close(t.stopped)
+	})
 }
 
 // Inject uses the configured or default TextMap Propagator.

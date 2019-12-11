@@ -26,32 +26,9 @@ type statsdClient interface {
 	Close() error
 }
 
-type noopStatsdClient struct{}
-
-func (*noopStatsdClient) Incr(_ string, _ []string, _ float64) error {
-	return nil
-}
-
-func (*noopStatsdClient) Count(_ string, _ int64, _ []string, _ float64) error {
-	return nil
-}
-
-func (*noopStatsdClient) Gauge(_ string, _ float64, _ []string, _ float64) error {
-	return nil
-}
-
-func (*noopStatsdClient) Timing(_ string, _ time.Duration, _ []string, _ float64) error {
-	return nil
-}
-
-func (*noopStatsdClient) Close() error {
-	return nil
-}
-
 // reportRuntimeMetrics periodically reports go runtime metrics at
 // the given interval.
 func (t *tracer) reportRuntimeMetrics(interval time.Duration) {
-	defer t.wg.Done()
 	var (
 		ms   runtime.MemStats
 		tags []string
@@ -113,29 +90,22 @@ func (t *tracer) reportRuntimeMetrics(interval time.Duration) {
 				statsd.Gauge("runtime.go.gc_stats.pause_quantiles."+p, float64(gc.PauseQuantiles[i]), tags, 1)
 			}
 
-		case <-t.stopped:
+		case <-t.exitChan:
 			return
 		}
 	}
 }
 
-func (t *tracer) sendHealthMetrics() {
-	t.config.statsd.Count("datadog.tracer.spans_started", atomic.SwapInt64(&t.spansStarted, 0), nil, 1)
-	t.config.statsd.Count("datadog.tracer.spans_finished", atomic.SwapInt64(&t.spansFinished, 0), nil, 1)
-	t.config.statsd.Count("datadog.tracer.traces_dropped", atomic.SwapInt64(&t.tracesDropped, 0), []string{"reason:trace_too_large"}, 1)
-}
-
-func (t *tracer) reportHealthMetrics() {
-	defer t.wg.Done()
-	ticker := time.NewTicker(statsInterval)
+func (t *tracer) reportHealthMetrics(interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			t.sendHealthMetrics()
-		case <-t.stopped:
-			t.sendHealthMetrics()
-			t.config.statsd.Close()
+			t.config.statsd.Count("datadog.tracer.spans_started", atomic.SwapInt64(&t.spansStarted, 0), nil, 1)
+			t.config.statsd.Count("datadog.tracer.spans_finished", atomic.SwapInt64(&t.spansFinished, 0), nil, 1)
+			t.config.statsd.Count("datadog.tracer.traces_dropped", atomic.SwapInt64(&t.tracesDropped, 0), []string{"reason:trace_too_large"}, 1)
+		case <-t.exitChan:
 			return
 		}
 	}

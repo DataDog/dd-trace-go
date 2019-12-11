@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -243,19 +245,23 @@ func (tg *testStatsdClient) Wait(n int, d time.Duration) error {
 	}
 }
 
-func TestReportMetrics(t *testing.T) {
+func TestReportRuntimeMetrics(t *testing.T) {
 	var tg testStatsdClient
 	trc := &tracer{
-		stopped: make(chan struct{}),
+		stopped:  make(chan struct{}),
+		exitChan: make(chan struct{}),
 		config: &config{
 			statsd: &tg,
 		},
 	}
 
 	trc.wg.Add(1)
-	go trc.reportRuntimeMetrics(time.Millisecond)
+	go func() {
+		defer trc.wg.Done()
+		trc.reportRuntimeMetrics(time.Millisecond)
+	}()
 	err := tg.Wait(35, 1*time.Second)
-	close(trc.stopped)
+	close(trc.exitChan)
 	assert := assert.New(t)
 	assert.NoError(err)
 	calls := tg.CallNames()
@@ -263,6 +269,45 @@ func TestReportMetrics(t *testing.T) {
 	assert.Contains(calls, "runtime.go.num_cpu")
 	assert.Contains(calls, "runtime.go.mem_stats.alloc")
 	assert.Contains(calls, "runtime.go.gc_stats.pause_quantiles.75p")
+}
+
+func TestReportHealthMetrics(t *testing.T) {
+	assert := assert.New(t)
+	var tg testStatsdClient
+	trc := &tracer{
+		config: &config{
+			statsd:    &tg,
+			sampler:   NewAllSampler(),
+			transport: newDummyTransport(),
+		},
+		payload:          newPayload(),
+		flushChan:        make(chan chan<- struct{}),
+		exitChan:         make(chan struct{}),
+		payloadChan:      make(chan []*span, payloadQueueSize),
+		stopped:          make(chan struct{}),
+		prioritySampling: newPrioritySampler(),
+	}
+	internal.SetGlobalTracer(trc)
+	defer internal.SetGlobalTracer(&internal.NoopTracer{})
+
+	trc.wg.Add(1)
+	go func() {
+		defer trc.wg.Done()
+		trc.worker()
+	}()
+	trc.wg.Add(1)
+	go func() {
+		defer trc.wg.Done()
+		trc.reportHealthMetrics(time.Millisecond)
+	}()
+
+	trc.StartSpan("operation").Finish()
+	tg.Wait(3, 1*time.Second)
+	counts := tg.Counts()
+	assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
+	assert.Equal(int64(1), counts["datadog.tracer.spans_finished"])
+	assert.Equal(int64(0), counts["datadog.tracer.traces_dropped"])
+	trc.Stop()
 }
 
 func TestTracerMetrics(t *testing.T) {
@@ -274,27 +319,20 @@ func TestTracerMetrics(t *testing.T) {
 	flush := make(chan struct{})
 	tracer.flushChan <- flush
 	<-flush
+
 	calls := tg.CallsByName()
+	counts := tg.Counts()
 	assert.Equal(1, calls["datadog.tracer.started"])
-	assert.Equal(1, calls["datadog.tracer.flush_count"])
+	assert.Equal(1, calls["datadog.tracer.flush_triggered"])
 	assert.Equal(1, calls["datadog.tracer.flush_duration"])
 	assert.Equal(1, calls["datadog.tracer.flush_bytes"])
 	assert.Equal(1, calls["datadog.tracer.flush_traces"])
-	assert.Equal(int64(1), tg.Counts()["datadog.tracer.flush_traces"])
+	assert.Equal(int64(1), counts["datadog.tracer.flush_traces"])
 	assert.False(tg.closed)
 
 	tracer.StartSpan("operation").Finish()
 	stop()
 	calls = tg.CallsByName()
-	counts := tg.Counts()
 	assert.Equal(1, calls["datadog.tracer.stopped"])
-	assert.Equal(2, calls["datadog.tracer.flush_count"])
-	assert.Equal(2, calls["datadog.tracer.flush_duration"])
-	assert.Equal(2, calls["datadog.tracer.flush_bytes"])
-	assert.Equal(2, calls["datadog.tracer.flush_traces"])
-	assert.Equal(int64(2), counts["datadog.tracer.spans_started"])
-	assert.Equal(int64(2), counts["datadog.tracer.spans_finished"])
-	assert.Equal(int64(0), counts["datadog.tracer.traces_dropped"])
-	assert.Equal(int64(2), counts["datadog.tracer.flush_traces"])
 	assert.True(tg.closed)
 }
