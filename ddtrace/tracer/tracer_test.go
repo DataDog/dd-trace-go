@@ -147,7 +147,6 @@ func TestTracerStart(t *testing.T) {
 	t.Run("deadlock/direct", func(t *testing.T) {
 		tr, _, stop := startTestTracer()
 		defer stop()
-		go tr.worker()
 		tr.forceFlush() // blocks until worker is started
 		select {
 		case <-tr.stopped:

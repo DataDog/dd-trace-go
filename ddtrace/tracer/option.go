@@ -11,12 +11,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 // config holds the tracer configuration.
@@ -62,6 +64,9 @@ type config struct {
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
 	dogstatsdAddr string
+
+	// statsd is used for tracking metrics associated with the runtime and the tracer.
+	statsd statsdClient
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -92,6 +97,26 @@ func defaults(c *config) {
 	if v := os.Getenv("DD_ENV"); v != "" {
 		WithEnv(v)(c)
 	}
+}
+
+func statsTags(c *config) []string {
+	tags := []string{
+		"lang:go",
+		"version:" + version.Tag,
+		"lang_version:" + runtime.Version(),
+	}
+	if c.serviceName != "" {
+		tags = append(tags, "service:"+c.serviceName)
+	}
+	if c.hostname != "" {
+		tags = append(tags, "host:"+c.hostname)
+	}
+	if v, ok := c.globalTags[ext.Environment]; ok {
+		if vv, ok := v.(string); ok {
+			tags = append(tags, "env:"+vv)
+		}
+	}
+	return tags
 }
 
 // WithLogger sets logger as the tracer's error printer.
