@@ -156,7 +156,7 @@ func (ps *prioritySampler) apply(spn *span) {
 }
 
 // rulesSampler allows a user-defined list of rules to apply to spans.
-// These rules can match based on the span's Service, Operation or both.
+// These rules can match based on the span's Service, Name or both.
 // When making a sampling decision, the rules are checked in order until
 // a match is found.
 // If a match is found, the rate from that rule is used.
@@ -201,9 +201,9 @@ func appliedSamplingRules(rules []SamplingRule) []SamplingRule {
 	if rulesFromEnv != "" {
 		rules = rules[:0]
 		jsonRules := []struct {
-			Service   string      `json:"service"`
-			Operation string      `json:"operation"`
-			Rate      json.Number `json:"rate"`
+			Service string      `json:"service"`
+			Name    string      `json:"name"`
+			Rate    json.Number `json:"rate"`
 		}{}
 		err := json.Unmarshal([]byte(rulesFromEnv), &jsonRules)
 		if err != nil {
@@ -221,12 +221,12 @@ func appliedSamplingRules(rules []SamplingRule) []SamplingRule {
 				continue
 			}
 			switch {
-			case v.Service != "" && v.Operation != "":
-				rules = append(rules, ServiceOperationRule(v.Service, v.Operation, rate))
+			case v.Service != "" && v.Name != "":
+				rules = append(rules, NameServiceRule(v.Name, v.Service, rate))
 			case v.Service != "":
 				rules = append(rules, ServiceRule(v.Service, rate))
-			case v.Operation != "":
-				rules = append(rules, OperationRule(v.Operation, rate))
+			case v.Name != "":
+				rules = append(rules, NameRule(v.Name, rate))
 			}
 		}
 	}
@@ -340,15 +340,15 @@ func (rs *rulesSampler) applyRate(span *span, rate float64, now time.Time) {
 }
 
 // SamplingRule is used for applying sampling rates to spans that match
-// the service name, operation or both.
-// For basic usage, consider using the helper functions ServiceRule, OperationRule, etc.
+// the service name, operation name or both.
+// For basic usage, consider using the helper functions ServiceRule, NameRule, etc.
 type SamplingRule struct {
-	Service   *regexp.Regexp
-	Operation *regexp.Regexp
-	Rate      float64
+	Service *regexp.Regexp
+	Name    *regexp.Regexp
+	Rate    float64
 
-	exactService   string
-	exactOperation string
+	exactService string
+	exactName    string
 }
 
 // ServiceRule returns a SamplingRule that applies the provided sampling rate
@@ -360,22 +360,22 @@ func ServiceRule(service string, rate float64) SamplingRule {
 	}
 }
 
-// OperationRule returns a SamplingRule that applies the provided sampling rate
+// NameRule returns a SamplingRule that applies the provided sampling rate
 // to spans that match the operation name provided.
-func OperationRule(operation string, rate float64) SamplingRule {
+func NameRule(name string, rate float64) SamplingRule {
 	return SamplingRule{
-		exactOperation: operation,
-		Rate:           rate,
+		exactName: name,
+		Rate:      rate,
 	}
 }
 
-// ServiceOperationRule returns a SamplingRule that applies the provided sampling rate
-// to spans matching both the service and operation names provided.
-func ServiceOperationRule(service string, operation string, rate float64) SamplingRule {
+// NameServiceRule returns a SamplingRule that applies the provided sampling rate
+// to spans matching both the operation and service names provided.
+func NameServiceRule(name string, service string, rate float64) SamplingRule {
 	return SamplingRule{
-		exactService:   service,
-		exactOperation: operation,
-		Rate:           rate,
+		exactService: service,
+		exactName:    name,
+		Rate:         rate,
 	}
 }
 
@@ -393,9 +393,9 @@ func (sr *SamplingRule) match(s *span) bool {
 	} else if sr.exactService != "" && sr.exactService != s.Service {
 		return false
 	}
-	if sr.Operation != nil && !sr.Operation.MatchString(s.Name) {
+	if sr.Name != nil && !sr.Name.MatchString(s.Name) {
 		return false
-	} else if sr.exactOperation != "" && sr.exactOperation != s.Name {
+	} else if sr.exactName != "" && sr.exactName != s.Name {
 		return false
 	}
 	return true

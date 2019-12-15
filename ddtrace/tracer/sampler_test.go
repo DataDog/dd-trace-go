@@ -273,9 +273,9 @@ func TestRulesSampler(t *testing.T) {
 	t.Run("matching", func(t *testing.T) {
 		ruleSets := [][]SamplingRule{
 			{ServiceRule("test-service", 1.0)},
-			{OperationRule("http.request", 1.0)},
-			{ServiceOperationRule("test-service", "http.request", 1.0)},
-			{{Service: regexp.MustCompile("^test-"), Operation: regexp.MustCompile("http\\..*"), Rate: 1.0}},
+			{NameRule("http.request", 1.0)},
+			{NameServiceRule("http.request", "test-service", 1.0)},
+			{{Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile("http\\..*"), Rate: 1.0}},
 			{ServiceRule("other-service-1", 0.0), ServiceRule("other-service-2", 0.0), ServiceRule("test-service", 1.0)},
 		}
 		for _, v := range ruleSets {
@@ -447,8 +447,8 @@ func BenchmarkRulesSampler(b *testing.B) {
 	b.Run("unmatching-rules", func(b *testing.B) {
 		rules := []SamplingRule{
 			ServiceRule("test-service", 1.0),
-			ServiceOperationRule("postgres.db", "db.query", 1.0),
-			OperationRule("notweb.request", 1.0),
+			NameServiceRule("db.query", "postgres.db", 1.0),
+			NameRule("notweb.request", 1.0),
 		}
 		tracer := newTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
@@ -457,8 +457,8 @@ func BenchmarkRulesSampler(b *testing.B) {
 	b.Run("matching-rules", func(b *testing.B) {
 		rules := []SamplingRule{
 			ServiceRule("test-service", 1.0),
-			ServiceOperationRule("postgres.db", "db.query", 1.0),
-			OperationRule("web.request", 1.0),
+			NameServiceRule("db.query", "postgres.db", 1.0),
+			NameRule("web.request", 1.0),
 		}
 		tracer := newTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
@@ -467,28 +467,28 @@ func BenchmarkRulesSampler(b *testing.B) {
 	b.Run("mega-rules", func(b *testing.B) {
 		rules := []SamplingRule{
 			ServiceRule("test-service", 1.0),
-			ServiceOperationRule("postgres.db", "db.query", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("notweb.request", 1.0),
-			OperationRule("web.request", 1.0),
+			NameServiceRule("db.query", "postgres.db", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("notweb.request", 1.0),
+			NameRule("web.request", 1.0),
 		}
 		tracer := newTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
