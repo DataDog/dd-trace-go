@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
@@ -296,19 +297,28 @@ func TestRulesSampler(t *testing.T) {
 			{},
 			{ServiceRule("other-service", 0.0)},
 		}
-		for _, v := range ruleSets {
-			t.Run("", func(t *testing.T) {
-				assert := assert.New(t)
-				os.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
-				defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
-				rs := newRulesSampler(v)
+		for _, rules := range ruleSets {
+			sampleRates := []float64{
+				0.0,
+				0.8,
+				1.0,
+			}
+			for _, rate := range sampleRates {
+				t.Run("", func(t *testing.T) {
+					assert := assert.New(t)
+					os.Setenv("DD_TRACE_SAMPLE_RATE", fmt.Sprint(rate))
+					defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
+					rs := newRulesSampler(rules)
 
-				span := makeSpan("http.request", "test-service")
-				result := rs.apply(span)
-				assert.True(result)
-				assert.Equal(0.8, span.Metrics["_dd.rule_psr"])
-				assert.Equal(0.5, span.Metrics["_dd.limit_psr"])
-			})
+					span := makeSpan("http.request", "test-service")
+					result := rs.apply(span)
+					assert.True(result)
+					assert.Equal(rate, span.Metrics["_dd.rule_psr"])
+					if rate > 0.0 {
+						assert.Equal(0.5, span.Metrics["_dd.limit_psr"])
+					}
+				})
+			}
 		}
 	})
 }
@@ -335,10 +345,11 @@ func TestRulesSamplerInternals(t *testing.T) {
 		assert := assert.New(t)
 		ts := time.Now()
 		rs := &rulesSampler{
+			limiter:      rate.NewLimiter(rate.Inf, 0),
 			ts:           ts.Truncate(time.Second).Add(-1 * time.Second),
 			previousRate: 1.0,
 			allowed:      1,
-			total:        1,
+			seen:         1,
 		}
 		span := makeSpanAt("http.request", "test-service", ts)
 		rs.applyRate(span, 1.0, ts)
@@ -354,7 +365,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 			ts:           ts.Truncate(time.Second).Add(-1 * time.Second),
 			previousRate: 1.0,
 			allowed:      1,
-			total:        1,
+			seen:         1,
 		}
 		// first span kept, second dropped
 		span := makeSpanAt("http.request", "test-service", ts)

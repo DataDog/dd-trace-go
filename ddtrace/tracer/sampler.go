@@ -177,8 +177,8 @@ type rulesSampler struct {
 	// "effective rate" calculations
 	mu           sync.Mutex // guards below fields
 	ts           time.Time  // timestamp, to detect when counters need resetting
-	allowed      int        // number of spans allowed by rate limiter
-	total        int        // number of spans checked by rate limiter
+	allowed      int        // number of spans allowed by rate limiter since ts
+	seen         int        // number of spans checked by rate limiter since ts
 	previousRate float64    // previous second's rate, averaged with current rate for smoothing
 }
 
@@ -305,7 +305,7 @@ func (rs *rulesSampler) apply(span *span) bool {
 	return true
 }
 
-func (rs *rulesSampler) applyRate(span *span, rate float64, ts time.Time) {
+func (rs *rulesSampler) applyRate(span *span, rate float64, now time.Time) {
 	// rate sample
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
@@ -315,27 +315,27 @@ func (rs *rulesSampler) applyRate(span *span, rate float64, ts time.Time) {
 	// global rate limit and effective rate calculations
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	if d := ts.Sub(rs.ts).Truncate(time.Second); d >= time.Second {
+	if d := now.Sub(rs.ts).Truncate(time.Second); d >= time.Second {
 		// update "previous rate" and reset
-		if d == time.Second && rs.total > 0 && rs.allowed > 0 {
-			rs.previousRate = float64(rs.allowed) / float64(rs.total)
+		if d == time.Second && rs.seen > 0 && rs.allowed > 0 {
+			rs.previousRate = float64(rs.allowed) / float64(rs.seen)
 		} else {
 			rs.previousRate = 0.0
 		}
-		rs.ts = ts.Truncate(time.Second)
+		rs.ts = now.Truncate(time.Second)
 		rs.allowed = 0
-		rs.total = 0
+		rs.seen = 0
 	}
 
-	rs.total++
-	if rs.limiter != nil && !rs.limiter.AllowN(ts, 1) {
-		span.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
-	} else {
+	rs.seen++
+	if rs.limiter.AllowN(now, 1) {
 		rs.allowed++
 		span.SetTag(ext.SamplingPriority, ext.PriorityAutoKeep)
+	} else {
+		span.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
 	}
 	// calculate effective rate, and tag the span
-	er := (rs.previousRate + (float64(rs.allowed) / float64(rs.total))) / 2.0
+	er := (rs.previousRate + (float64(rs.allowed) / float64(rs.seen))) / 2.0
 	span.SetTag(keyRulesSamplerLimiterRate, er)
 }
 
