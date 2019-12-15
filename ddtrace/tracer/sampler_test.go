@@ -192,16 +192,20 @@ func TestRuleEnvVars(t *testing.T) {
 			in  string
 			out float64
 		}{
-			{in: "", out: 0.0},
+			{in: "", out: math.NaN()},
 			{in: "0.0", out: 0.0},
 			{in: "0.5", out: 0.5},
 			{in: "1.0", out: 1.0},
-			{in: "42.0", out: 0.0},    // default if out of range
-			{in: "1point0", out: 0.0}, // default if invalid value
+			{in: "42.0", out: math.NaN()},    // default if out of range
+			{in: "1point0", out: math.NaN()}, // default if invalid value
 		} {
 			os.Setenv("DD_TRACE_SAMPLE_RATE", tt.in)
 			res := sampleRate()
-			assert.Equal(tt.out, res)
+			if math.IsNaN(tt.out) {
+				assert.True(math.IsNaN(res))
+			} else {
+				assert.Equal(tt.out, res)
+			}
 		}
 	})
 
