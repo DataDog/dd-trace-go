@@ -182,7 +182,7 @@ type rulesSampler struct {
 	previousRate float64    // previous second's rate, averaged with current rate for smoothing
 }
 
-// newRulesSampler configures a *rulesSampler instance using rules provided in the tracer's StartOptions.
+// newRulesSampler configures a *rulesSampler instance using the given set of rules.
 // Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
 func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	rate := sampleRate()
@@ -195,8 +195,7 @@ func newRulesSampler(rules []SamplingRule) *rulesSampler {
 }
 
 // appliedSamplingRules validates the user-provided rules and returns an internal representation.
-// If the DD_TRACE_SAMPLING_RULES environment variable is set, then the rules from
-// tracer.WithSamplingRules are ignored.
+// If the DD_TRACE_SAMPLING_RULES environment variable is set, it will replace the given rules.
 func appliedSamplingRules(rules []SamplingRule) []SamplingRule {
 	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
 	if rulesFromEnv != "" {
@@ -242,8 +241,8 @@ func appliedSamplingRules(rules []SamplingRule) []SamplingRule {
 	return validRules
 }
 
-// sampleRate returns the rate to apply when the rate sampler's rules didn't match.
-// A zero value means the rate sampler
+// sampleRate returns the sampling rate found in the DD_TRACE_SAMPLE_RATE environment variable. If it is invalid and
+// not within the 0-1 range, the default value of 0 is returned.
 func sampleRate() float64 {
 	const defaultRate = 0.0
 	v := os.Getenv("DD_TRACE_SAMPLE_RATE")
@@ -262,9 +261,8 @@ func sampleRate() float64 {
 	return defaultRate
 }
 
-// newRateLimiter configures and returns a *rate.Limiter instance that is used when applying sampling rules.
-// The limit can be set with the DD_TRACE_RATE_LIMIT environment variable. Invalid values are ignored with
-// a warning message.
+// newRateLimiter returns a new rate limiter which allows r events per second.
+// The DD_TRACE_LIMIT environment variable may override r.
 func newRateLimiter(r float64) *rate.Limiter {
 	defaultLimiter := rate.NewLimiter(rate.Inf, 0)
 	v := os.Getenv("DD_TRACE_RATE_LIMIT")
@@ -302,16 +300,21 @@ func (rs *rulesSampler) apply(span *span) bool {
 		// to priority sampling
 		return false
 	}
+
+	rs.applyRate(span, rate, time.Now())
+	return true
+}
+
+func (rs *rulesSampler) applyRate(span *span, rate float64, ts time.Time) {
 	// rate sample
-	span.SetTag("_dd.rule_psr", rate)
+	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
 		span.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
-		return true
+		return
 	}
 	// global rate limit and effective rate calculations
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	ts := time.Now()
 	if d := ts.Sub(rs.ts).Truncate(time.Second); d >= time.Second {
 		// update "previous rate" and reset
 		if d == time.Second && rs.total > 0 && rs.allowed > 0 {
@@ -333,15 +336,12 @@ func (rs *rulesSampler) apply(span *span) bool {
 	}
 	// calculate effective rate, and tag the span
 	er := (rs.previousRate + (float64(rs.allowed) / float64(rs.total))) / 2.0
-	span.SetTag("_dd.limit_psr", er)
-
-	return true
+	span.SetTag(keyRulesSamplerLimiterRate, er)
 }
 
 // SamplingRule is used for applying sampling rates to spans that match
 // the service name, operation or both.
-// It's recommended to use the helper functions (ServiceRule, OperationRule,
-// ServiceOperationRule) instead of directly creating a SamplingRule.
+// For basic usage, consider using the helper functions ServiceRule, OperationRule, etc.
 type SamplingRule struct {
 	Service   *regexp.Regexp
 	Operation *regexp.Regexp

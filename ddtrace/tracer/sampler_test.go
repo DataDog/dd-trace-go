@@ -254,7 +254,6 @@ func TestRuleEnvVars(t *testing.T) {
 func TestRulesSampler(t *testing.T) {
 	makeSpan := func(op string, svc string) *span {
 		return newSpan(op, svc, "", 0, 0, 0)
-
 	}
 
 	t.Run("no-rules", func(t *testing.T) {
@@ -310,13 +309,126 @@ func TestRulesSampler(t *testing.T) {
 	})
 }
 
+func TestRulesSamplerInternals(t *testing.T) {
+	makeSpanAt := func(op string, svc string, ts time.Time) *span {
+		s := newSpan(op, svc, "", 0, 0, 0)
+		s.Start = ts.UnixNano()
+		return s
+	}
+
+	t.Run("zero-rate", func(t *testing.T) {
+		assert := assert.New(t)
+		ts := time.Now()
+		rs := &rulesSampler{}
+		span := makeSpanAt("http.request", "test-service", ts)
+		rs.applyRate(span, 0.0, ts)
+		assert.Equal(0.0, span.Metrics["_dd.rule_psr"])
+		_, ok := span.Metrics["_dd.limit_psr"]
+		assert.False(ok)
+	})
+
+	t.Run("full-rate", func(t *testing.T) {
+		assert := assert.New(t)
+		ts := time.Now()
+		rs := &rulesSampler{
+			ts:           ts.Truncate(time.Second).Add(-1 * time.Second),
+			previousRate: 1.0,
+			allowed:      1,
+			total:        1,
+		}
+		span := makeSpanAt("http.request", "test-service", ts)
+		rs.applyRate(span, 1.0, ts)
+		assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
+		assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
+	})
+
+	t.Run("limited-rate", func(t *testing.T) {
+		assert := assert.New(t)
+		ts := time.Now()
+		rs := &rulesSampler{
+			limiter:      rate.NewLimiter(rate.Limit(1.0), 1),
+			ts:           ts.Truncate(time.Second).Add(-1 * time.Second),
+			previousRate: 1.0,
+			allowed:      1,
+			total:        1,
+		}
+		// first span kept, second dropped
+		span := makeSpanAt("http.request", "test-service", ts)
+		rs.applyRate(span, 1.0, ts)
+		assert.EqualValues(ext.PriorityAutoKeep, span.Metrics[keySamplingPriority])
+		assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
+		assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
+		span = makeSpanAt("http.request", "test-service", ts)
+		rs.applyRate(span, 1.0, ts)
+		assert.EqualValues(ext.PriorityAutoReject, span.Metrics[keySamplingPriority])
+		assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
+		assert.Equal(0.75, span.Metrics["_dd.limit_psr"])
+	})
+}
+
 func BenchmarkRulesSampler(b *testing.B) {
+	const batchSize = 500
+	newTracer := func(opts ...StartOption) *tracer {
+		c := new(config)
+		defaults(c)
+		for _, fn := range opts {
+			fn(c)
+		}
+		return &tracer{
+			config:           c,
+			payloadChan:      make(chan []*span, batchSize),
+			flushChan:        make(chan chan<- struct{}, 1),
+			stopped:          make(chan struct{}),
+			exitChan:         make(chan struct{}, 1),
+			rulesSampling:    newRulesSampler(c.samplingRules),
+			prioritySampling: newPrioritySampler(),
+		}
+	}
+
+	benchmarkStartSpan := func(b *testing.B, t *tracer) {
+		internal.SetGlobalTracer(t)
+		defer func() {
+			close(t.stopped)
+			internal.SetGlobalTracer(&internal.NoopTracer{})
+		}()
+		t.prioritySampling.readRatesJSON(ioutil.NopCloser(strings.NewReader(
+			`{
+                                        "rate_by_service":{
+                                                "service:obfuscate.http,env:":0.5,
+                                                "service:obfuscate.http,env:none":0.5
+                                        }
+                                }`,
+		)),
+		)
+		spans := make([]Span, batchSize)
+		b.StopTimer()
+		b.ResetTimer()
+		// b.Log("b.N =", b.N)
+		for i := 0; i < b.N; i += batchSize {
+			n := batchSize
+			if i+batchSize > b.N {
+				n = b.N - i
+			}
+			b.StartTimer()
+			for j := 0; j < n; j++ {
+				spans[j] = t.StartSpan("web.request")
+			}
+			b.StopTimer()
+			for j := 0; j < n; j++ {
+				spans[j].Finish()
+			}
+			d := 0
+			for len(t.payloadChan) > 0 {
+				<-t.payloadChan
+				d++
+			}
+			// b.Log("discarded", d, "payloads")
+		}
+	}
+
 	b.Run("no-rules", func(b *testing.B) {
 		tracer := newTracer()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep)).Finish()
-		}
+		benchmarkStartSpan(b, tracer)
 	})
 
 	b.Run("unmatching-rules", func(b *testing.B) {
@@ -326,10 +438,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			OperationRule("notweb.request", 1.0),
 		}
 		tracer := newTracer(WithSamplingRules(rules))
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep)).Finish()
-		}
+		benchmarkStartSpan(b, tracer)
 	})
 
 	b.Run("matching-rules", func(b *testing.B) {
@@ -339,10 +448,37 @@ func BenchmarkRulesSampler(b *testing.B) {
 			OperationRule("web.request", 1.0),
 		}
 		tracer := newTracer(WithSamplingRules(rules))
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep)).Finish()
+		benchmarkStartSpan(b, tracer)
+	})
+
+	b.Run("mega-rules", func(b *testing.B) {
+		rules := []SamplingRule{
+			ServiceRule("test-service", 1.0),
+			ServiceOperationRule("postgres.db", "db.query", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("notweb.request", 1.0),
+			OperationRule("web.request", 1.0),
 		}
+		tracer := newTracer(WithSamplingRules(rules))
+		benchmarkStartSpan(b, tracer)
 	})
 }
 
