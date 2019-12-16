@@ -67,22 +67,22 @@ jobs:
 
     - restore_cache:
         keys:
-        - v1-librdkafka-v1.1.0-{{ checksum "/etc/os-release" }}
+        - v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
     - run:
-        name: Install librdkafka v1.1.0
+        name: Install librdkafka v1.3.0
         command: |
-          if [ ! -d /tmp/librdkafka-v1.1.0 ] ; then
+          if [ ! -d /tmp/librdkafka-v1.3.0 ] ; then
             echo "building librdkafka"
-            git clone --branch v1.1.0 https://github.com/edenhill/librdkafka.git /tmp/librdkafka-v1.1.0
-            (cd /tmp/librdkafka-v1.1.0 && ./configure && make)
+            git clone --branch v1.3.0 https://github.com/edenhill/librdkafka.git /tmp/librdkafka-v1.3.0
+            (cd /tmp/librdkafka-v1.3.0 && ./configure && make)
           fi
           echo "installing librdkafka"
-          (cd /tmp/librdkafka-v1.1.0 && sudo make install)
+          (cd /tmp/librdkafka-v1.3.0 && sudo make install)
           sudo ldconfig
     - save_cache:
-        key: v1-librdkafka-v1.1.0-{{ checksum "/etc/os-release" }}
+        key: v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
         paths:
-        - /tmp/librdkafka-v1.1.0
+        - /tmp/librdkafka-v1.3.0
 
     - run:
         name: Vendor gRPC v1.2.0
