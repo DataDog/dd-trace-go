@@ -286,6 +286,11 @@ func newRateLimiter(r float64) *rate.Limiter {
 // set using DD_TRACE_SAMPLE_RATE, then it returns false and the span is not
 // modified.
 func (rs *rulesSampler) apply(span *span) bool {
+	if len(rs.rules) == 0 && math.IsNaN(rs.rate) {
+		// short path when disabled
+		return false
+	}
+
 	var matched bool
 	rate := rs.rate
 	for _, rule := range rs.rules {
