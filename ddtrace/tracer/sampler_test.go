@@ -323,6 +323,26 @@ func TestRulesSampler(t *testing.T) {
 	})
 }
 
+func TestRulesSamplerConcurrency(t *testing.T) {
+	rules := []SamplingRule{
+		ServiceRule("test-service", 1.0),
+		NameServiceRule("db.query", "postgres.db", 1.0),
+		NameRule("notweb.request", 1.0),
+	}
+	tracer := newTracer(WithSamplingRules(rules))
+	span := func(wg *sync.WaitGroup) {
+		defer wg.Done()
+		tracer.StartSpan("db.query", ServiceName("postgres.db")).Finish()
+	}
+
+	wg := &sync.WaitGroup{}
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go span(wg)
+	}
+	wg.Wait()
+}
+
 func TestRulesSamplerInternals(t *testing.T) {
 	makeSpanAt := func(op string, svc string, ts time.Time) *span {
 		s := newSpan(op, svc, "", 0, 0, 0)
@@ -346,7 +366,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 		ts := time.Now()
 		rs := &rulesSampler{
 			limiter:      rate.NewLimiter(rate.Inf, 0),
-			ts:           ts.Truncate(time.Second).Add(-1 * time.Second),
+			previousTime: ts.Truncate(time.Second).Add(-1 * time.Second),
 			previousRate: 1.0,
 			allowed:      1,
 			seen:         1,
@@ -362,7 +382,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 		ts := time.Now()
 		rs := &rulesSampler{
 			limiter:      rate.NewLimiter(rate.Limit(1.0), 1),
-			ts:           ts.Truncate(time.Second).Add(-1 * time.Second),
+			previousTime: ts.Truncate(time.Second).Add(-1 * time.Second),
 			previousRate: 1.0,
 			allowed:      1,
 			seen:         1,

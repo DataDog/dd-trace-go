@@ -176,10 +176,10 @@ type rulesSampler struct {
 
 	// "effective rate" calculations
 	mu           sync.Mutex // guards below fields
-	ts           time.Time  // timestamp, to detect when counters need resetting
-	allowed      int        // number of spans allowed by rate limiter since ts
-	seen         int        // number of spans checked by rate limiter since ts
+	previousTime time.Time  // timestamp, to detect when counters need resetting
 	previousRate float64    // previous second's rate, averaged with current rate for smoothing
+	allowed      int        // number of spans allowed by rate limiter since previousTime
+	seen         int        // number of spans checked by rate limiter since previousTime
 }
 
 // newRulesSampler configures a *rulesSampler instance using the given set of rules.
@@ -187,10 +187,10 @@ type rulesSampler struct {
 func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	rate := sampleRate()
 	return &rulesSampler{
-		rules:   appliedSamplingRules(rules),
-		rate:    rate,
-		limiter: newRateLimiter(rate),
-		ts:      time.Now().Truncate(time.Second),
+		rules:        appliedSamplingRules(rules),
+		rate:         rate,
+		limiter:      newRateLimiter(rate),
+		previousTime: time.Now().Truncate(time.Second),
 	}
 }
 
@@ -311,7 +311,6 @@ func (rs *rulesSampler) apply(span *span) bool {
 }
 
 func (rs *rulesSampler) applyRate(span *span, rate float64, now time.Time) {
-	// rate sample
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
 		span.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
@@ -320,14 +319,14 @@ func (rs *rulesSampler) applyRate(span *span, rate float64, now time.Time) {
 	// global rate limit and effective rate calculations
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	if d := now.Sub(rs.ts).Truncate(time.Second); d >= time.Second {
+	if d := now.Sub(rs.previousTime).Truncate(time.Second); d >= time.Second {
 		// update "previous rate" and reset
 		if d == time.Second && rs.seen > 0 && rs.allowed > 0 {
 			rs.previousRate = float64(rs.allowed) / float64(rs.seen)
 		} else {
 			rs.previousRate = 0.0
 		}
-		rs.ts = now.Truncate(time.Second)
+		rs.previousTime = now.Truncate(time.Second)
 		rs.allowed = 0
 		rs.seen = 0
 	}
