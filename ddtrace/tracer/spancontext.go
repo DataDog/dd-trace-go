@@ -249,7 +249,7 @@ func (t *trace) finishedOne(s *span) {
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have a tracer that can receive completed traces.
 		tr.pushTrace(t.spans)
-		atomic.AddInt64(&tr.spansFinished, 1)
+		atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
 	}
 	t.spans = nil
 	t.finished = 0 // important, because a buffer can be used for several flushes
