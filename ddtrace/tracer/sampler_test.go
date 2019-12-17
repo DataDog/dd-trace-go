@@ -245,12 +245,12 @@ func TestRuleEnvVars(t *testing.T) {
 		assert.Len(validRules, 0)
 
 		// valid rules
-		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "rate": 1.0}]`)
+		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": 1.0}]`)
 		validRules = appliedSamplingRules(rules)
 		assert.Len(validRules, 1)
 
 		// invalid rule ignored
-		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "rate": 42.0}]`)
+		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": 42.0}]`)
 		validRules = appliedSamplingRules(rules)
 		assert.Len(validRules, 0)
 	})

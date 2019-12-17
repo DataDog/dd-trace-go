@@ -39,9 +39,9 @@
 //
 // Sampling rules can also be configured at runtime using the DD_TRACE_SAMPLING_RULES
 // environment variable. When set, it overrides rules set by tracer.WithSamplingRules.
-// The value is a JSON array of objects. Each object must have a "rate", and the "name"
-// and "service" fields are optional.
-//    export DD_TRACE_SAMPLING_RULES='[{"name": "web.request", "rate": 1.0}]'
+// The value is a JSON array of objects. Each object must have a "sample_rate", and the
+// "name" and "service" fields are optional.
+//    export DD_TRACE_SAMPLING_RULES='[{"name": "web.request", "sample_rate": 1.0}]'
 //
 // All spans created by the tracer contain a context hereby referred to as the span
 // context. Note that this is different from Go's context. The span context is used

@@ -203,7 +203,7 @@ func appliedSamplingRules(rules []SamplingRule) []SamplingRule {
 		jsonRules := []struct {
 			Service string      `json:"service"`
 			Name    string      `json:"name"`
-			Rate    json.Number `json:"rate"`
+			Rate    json.Number `json:"sample_rate"`
 		}{}
 		err := json.Unmarshal([]byte(rulesFromEnv), &jsonRules)
 		if err != nil {
