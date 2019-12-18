@@ -253,7 +253,7 @@ func globalSampleRate() float64 {
 }
 
 // newSamplingLimiter returns a rate limiter which restricts the number of traces sampled per second.
-// This defaults to 100.0. The DD_TRACE_LIMIT environment variable may override the default.
+// This defaults to 100.0. The DD_TRACE_RATE_LIMIT environment variable may override the default.
 func newSamplingLimiter() *samplingLimiter {
 	limit := 100.0
 	v := os.Getenv("DD_TRACE_RATE_LIMIT")
