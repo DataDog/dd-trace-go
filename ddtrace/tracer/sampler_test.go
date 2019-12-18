@@ -201,7 +201,7 @@ func TestRuleEnvVars(t *testing.T) {
 			{in: "1point0", out: math.NaN()}, // default if invalid value
 		} {
 			os.Setenv("DD_TRACE_SAMPLE_RATE", tt.in)
-			res := sampleRate()
+			res := globalSampleRate()
 			if math.IsNaN(tt.out) {
 				assert.True(math.IsNaN(res))
 			} else {
@@ -217,17 +217,17 @@ func TestRuleEnvVars(t *testing.T) {
 			in  string
 			out *rate.Limiter
 		}{
-			{in: "", out: rate.NewLimiter(rate.Inf, 0)},
+			{in: "", out: rate.NewLimiter(100.0, 100)},
 			{in: "0.0", out: rate.NewLimiter(0.0, 0)},
 			{in: "0.5", out: rate.NewLimiter(0.5, 1)},
 			{in: "1.0", out: rate.NewLimiter(1.0, 1)},
 			{in: "42.0", out: rate.NewLimiter(42.0, 42)},
-			{in: "-1.0", out: rate.NewLimiter(rate.Inf, 0)},    // default if out of range
-			{in: "1point0", out: rate.NewLimiter(rate.Inf, 0)}, // default if invalid value
+			{in: "-1.0", out: rate.NewLimiter(100.0, 100)},    // default if out of range
+			{in: "1point0", out: rate.NewLimiter(100.0, 100)}, // default if invalid value
 		} {
 			os.Setenv("DD_TRACE_RATE_LIMIT", tt.in)
-			res := newRateLimiter(1.0)
-			assert.Equal(tt.out, res)
+			res := newSamplingLimiter()
+			assert.Equal(tt.out, res.limiter)
 		}
 	})
 
@@ -249,8 +249,26 @@ func TestRuleEnvVars(t *testing.T) {
 		validRules = appliedSamplingRules(rules)
 		assert.Len(validRules, 1)
 
+		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": 1.0},`+
+			`{"name": "wxyz", "sample_rate": 0.9},`+
+			`{"service": "efgh", "name": "lmnop", "sample_rate": 0.42}]`)
+		validRules = appliedSamplingRules(rules)
+		assert.Len(validRules, 3)
+
 		// invalid rule ignored
 		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": 42.0}]`)
+		validRules = appliedSamplingRules(rules)
+		assert.Len(validRules, 0)
+
+		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": "all of them"}]`)
+		validRules = appliedSamplingRules(rules)
+		assert.Len(validRules, 0)
+
+		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd"}]`)
+		validRules = appliedSamplingRules(rules)
+		assert.Len(validRules, 0)
+
+		os.Setenv("DD_TRACE_SAMPLING_RULES", `not JSON at all`)
 		validRules = appliedSamplingRules(rules)
 		assert.Len(validRules, 0)
 	})
@@ -288,6 +306,27 @@ func TestRulesSampler(t *testing.T) {
 				assert.True(result)
 				assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
 				assert.Equal(0.5, span.Metrics["_dd.limit_psr"])
+			})
+		}
+	})
+
+	t.Run("not-matching", func(t *testing.T) {
+		ruleSets := [][]SamplingRule{
+			{ServiceRule("toast-service", 1.0)},
+			{NameRule("grpc.request", 1.0)},
+			{NameServiceRule("http.request", "toast-service", 1.0)},
+			{{Service: regexp.MustCompile("^toast-"), Name: regexp.MustCompile("http\\..*"), Rate: 1.0}},
+			{{Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile("grpc\\..*"), Rate: 1.0}},
+			{ServiceRule("other-service-1", 0.0), ServiceRule("other-service-2", 0.0), ServiceRule("toast-service", 1.0)},
+		}
+		for _, v := range ruleSets {
+			t.Run("", func(t *testing.T) {
+				assert := assert.New(t)
+				rs := newRulesSampler(v)
+
+				span := makeSpan("http.request", "test-service")
+				result := rs.apply(span)
+				assert.False(result)
 			})
 		}
 	})
@@ -352,10 +391,10 @@ func TestRulesSamplerInternals(t *testing.T) {
 
 	t.Run("zero-rate", func(t *testing.T) {
 		assert := assert.New(t)
-		ts := time.Now()
+		now := time.Now()
 		rs := &rulesSampler{}
-		span := makeSpanAt("http.request", "test-service", ts)
-		rs.applyRate(span, 0.0, ts)
+		span := makeSpanAt("http.request", "test-service", now)
+		rs.applyRate(span, 0.0, now)
 		assert.Equal(0.0, span.Metrics["_dd.rule_psr"])
 		_, ok := span.Metrics["_dd.limit_psr"]
 		assert.False(ok)
@@ -363,41 +402,95 @@ func TestRulesSamplerInternals(t *testing.T) {
 
 	t.Run("full-rate", func(t *testing.T) {
 		assert := assert.New(t)
-		ts := time.Now()
-		rs := &rulesSampler{
-			limiter:      rate.NewLimiter(rate.Inf, 0),
-			previousTime: ts.Truncate(time.Second).Add(-1 * time.Second),
-			previousRate: 1.0,
-			allowed:      1,
-			seen:         1,
-		}
-		span := makeSpanAt("http.request", "test-service", ts)
-		rs.applyRate(span, 1.0, ts)
+		now := time.Now()
+		rs := newRulesSampler(nil)
+		// set samplingLimiter to specific state
+		rs.limiter.currentPeriod = now.Truncate(time.Second).Add(-1 * time.Second)
+		rs.limiter.previousRate = 1.0
+		rs.limiter.allowed = 1
+		rs.limiter.seen = 1
+
+		span := makeSpanAt("http.request", "test-service", now)
+		rs.applyRate(span, 1.0, now)
 		assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
 		assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
 	})
 
 	t.Run("limited-rate", func(t *testing.T) {
 		assert := assert.New(t)
-		ts := time.Now()
-		rs := &rulesSampler{
-			limiter:      rate.NewLimiter(rate.Limit(1.0), 1),
-			previousTime: ts.Truncate(time.Second).Add(-1 * time.Second),
-			previousRate: 1.0,
-			allowed:      1,
-			seen:         1,
-		}
+		now := time.Now()
+		rs := newRulesSampler(nil)
+		// force sampling limiter to 1.0 spans/sec
+		rs.limiter.limiter = rate.NewLimiter(rate.Limit(1.0), 1)
+		rs.limiter.currentPeriod = now.Truncate(time.Second).Add(-1 * time.Second)
+		rs.limiter.previousRate = 1.0
+		rs.limiter.allowed = 1
+		rs.limiter.seen = 1
 		// first span kept, second dropped
-		span := makeSpanAt("http.request", "test-service", ts)
-		rs.applyRate(span, 1.0, ts)
+		span := makeSpanAt("http.request", "test-service", now)
+		rs.applyRate(span, 1.0, now)
 		assert.EqualValues(ext.PriorityAutoKeep, span.Metrics[keySamplingPriority])
 		assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
 		assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
-		span = makeSpanAt("http.request", "test-service", ts)
-		rs.applyRate(span, 1.0, ts)
+		span = makeSpanAt("http.request", "test-service", now)
+		rs.applyRate(span, 1.0, now)
 		assert.EqualValues(ext.PriorityAutoReject, span.Metrics[keySamplingPriority])
 		assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
 		assert.Equal(0.75, span.Metrics["_dd.limit_psr"])
+	})
+}
+
+func TestSamplingLimiter(t *testing.T) {
+	t.Run("resets-every-second", func(t *testing.T) {
+		assert := assert.New(t)
+		sl := newSamplingLimiter()
+		sl.previousRate = 0.99
+		sl.allowed = 42
+		sl.seen = 100
+		// exact point it should reset
+		now := time.Now().Add(1 * time.Second).Truncate(time.Second)
+
+		sampled, _ := sl.samplingDecision(now)
+		assert.True(sampled)
+		assert.Equal(0.42, sl.previousRate)
+		assert.Equal(now, sl.currentPeriod)
+		assert.Equal(1, sl.seen)
+		assert.Equal(1, sl.allowed)
+	})
+
+	t.Run("averages-rates", func(t *testing.T) {
+		assert := assert.New(t)
+		sl := newSamplingLimiter()
+		sl.previousRate = 0.42
+		sl.allowed = 41
+		sl.seen = 99
+		// this event occurs within the current period
+		now := sl.currentPeriod
+
+		sampled, rate := sl.samplingDecision(now)
+		assert.True(sampled)
+		assert.Equal(0.42, rate)
+		assert.Equal(now, sl.currentPeriod)
+		assert.Equal(100, sl.seen)
+		assert.Equal(42, sl.allowed)
+
+	})
+
+	t.Run("discards-rate", func(t *testing.T) {
+		assert := assert.New(t)
+		sl := newSamplingLimiter()
+		sl.previousRate = 0.42
+		sl.allowed = 42
+		sl.seen = 100
+		// exact point it should discard previous rate
+		now := time.Now().Add(2 * time.Second).Truncate(time.Second)
+
+		sampled, _ := sl.samplingDecision(now)
+		assert.True(sampled)
+		assert.Equal(0.0, sl.previousRate)
+		assert.Equal(now, sl.currentPeriod)
+		assert.Equal(1, sl.seen)
+		assert.Equal(1, sl.allowed)
 	})
 }
 
