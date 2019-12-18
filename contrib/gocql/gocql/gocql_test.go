@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"testing"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -35,6 +36,10 @@ func newCassandraCluster() *gocql.ClusterConfig {
 	// since we're testing another behavior and not the client).
 	// Check: https://github.com/gocql/gocql/issues/946
 	cluster.DisableInitialHostLookup = true
+	// the default timeouts (600ms) are sometimes too short in CI and cause
+	// PRs being tested to flake due to this integration.
+	cluster.ConnectTimeout = 2 * time.Second
+	cluster.Timeout = 2 * time.Second
 	return cluster
 }
 
