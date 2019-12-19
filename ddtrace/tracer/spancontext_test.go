@@ -111,7 +111,7 @@ func TestSpanTracePushOne(t *testing.T) {
 	assert.Equal(root, trace.spans[0], "the span is the one pushed before")
 
 	root.Finish()
-	tracer.forceFlush()
+	tracer.forceFlush(transport)
 
 	traces := transport.Traces()
 	assert.Len(traces, 1)
@@ -177,7 +177,7 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	for _, span := range trace {
 		span.Finish()
 	}
-	tracer.forceFlush()
+	tracer.forceFlush(transport)
 
 	traces := transport.Traces()
 	assert.Len(traces, 1)
@@ -207,7 +207,7 @@ func TestSpanFinishPriority(t *testing.T) {
 	child.Finish()
 	root.Finish()
 
-	tracer.forceFlush()
+	tracer.forceFlush(transport)
 
 	traces := transport.Traces()
 	assert.Len(traces, 1)

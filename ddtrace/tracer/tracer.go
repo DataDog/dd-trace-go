@@ -46,6 +46,9 @@ type tracer struct {
 	// stopped is a channel that will be closed when the worker has exited.
 	stopped chan struct{}
 
+	// climit limits the number of concurrent outgoing connections
+	climit chan struct{}
+
 	// stopOnce ensures the tracer is stopped exactly once.
 	stopOnce sync.Once
 
@@ -89,6 +92,10 @@ const (
 	// payloadSizeLimit specifies the maximum allowed size of the payload before
 	// it will trigger a flush to the transport.
 	payloadSizeLimit = payloadMaxLimit / 2
+
+	// concurrentConnectionLimit specifies the maximum number of concurrent outgoing
+	// connections allowed.
+	concurrentConnectionLimit = 100
 )
 
 // Start starts the tracer with the given set of options. It will stop and replace
@@ -171,6 +178,7 @@ func newTracer(opts ...StartOption) *tracer {
 		payloadChan:      make(chan []*span, payloadQueueSize),
 		stopped:          make(chan struct{}),
 		rulesSampling:    newRulesSampler(c.samplingRules),
+		climit:           make(chan struct{}, concurrentConnectionLimit),
 		prioritySampling: newPrioritySampler(),
 		pid:              strconv.Itoa(os.Getpid()),
 	}
@@ -361,23 +369,29 @@ func (t *tracer) flushPayload() {
 	if t.payload.itemCount() == 0 {
 		return
 	}
-	defer func(start time.Time) {
-		t.config.statsd.Timing("datadog.tracer.flush_duration", time.Since(start), nil, 1)
-	}(time.Now())
-	size, count := t.payload.size(), t.payload.itemCount()
-	log.Debug("Sending payload: size: %d traces: %d\n", size, count)
-	rc, err := t.config.transport.send(t.payload)
-	if err != nil {
-		t.config.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
-		log.Error("lost %d traces: %v", count, err)
-	} else {
-		t.config.statsd.Count("datadog.tracer.flush_bytes", int64(size), nil, 1)
-		t.config.statsd.Count("datadog.tracer.flush_traces", int64(count), nil, 1)
-		if err := t.prioritySampling.readRatesJSON(rc); err != nil {
-			t.config.statsd.Incr("datadog.tracer.decode_error", nil, 1)
+	t.climit <- struct{}{}
+	t.wg.Add(1)
+	go func(p *payload) {
+		defer func(start time.Time) {
+			<-t.climit
+			t.wg.Done()
+			t.config.statsd.Timing("datadog.tracer.flush_duration", time.Since(start), nil, 1)
+		}(time.Now())
+		size, count := p.size(), p.itemCount()
+		log.Debug("Sending payload: size: %d traces: %d\n", size, count)
+		rc, err := t.config.transport.send(p)
+		if err != nil {
+			t.config.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
+			log.Error("lost %d traces: %v", count, err)
+		} else {
+			t.config.statsd.Count("datadog.tracer.flush_bytes", int64(size), nil, 1)
+			t.config.statsd.Count("datadog.tracer.flush_traces", int64(count), nil, 1)
+			if err := t.prioritySampling.readRatesJSON(rc); err != nil {
+				t.config.statsd.Incr("datadog.tracer.decode_error", nil, 1)
+			}
 		}
-	}
-	t.payload.reset()
+	}(t.payload)
+	t.payload = newPayload()
 }
 
 // pushPayload pushes the trace onto the payload. If the payload becomes

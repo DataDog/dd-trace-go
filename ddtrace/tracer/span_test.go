@@ -345,7 +345,7 @@ func TestSpanErrorNil(t *testing.T) {
 
 // Prior to a bug fix, this failed when running `go test -race`
 func TestSpanModifyWhileFlushing(t *testing.T) {
-	tracer, _, stop := startTestTracer()
+	tracer, transport, stop := startTestTracer()
 	defer stop()
 
 	done := make(chan struct{})
@@ -366,7 +366,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		case <-done:
 			return
 		default:
-			tracer.forceFlush()
+			tracer.forceFlush(transport)
 		}
 	}
 }

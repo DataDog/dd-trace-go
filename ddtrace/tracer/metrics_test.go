@@ -286,6 +286,7 @@ func TestReportHealthMetrics(t *testing.T) {
 		payloadChan:      make(chan []*span, payloadQueueSize),
 		stopped:          make(chan struct{}),
 		rulesSampling:    newRulesSampler(nil),
+		climit:           make(chan struct{}, concurrentConnectionLimit),
 		prioritySampling: newPrioritySampler(),
 	}
 	internal.SetGlobalTracer(trc)
@@ -317,14 +318,13 @@ func TestTracerMetrics(t *testing.T) {
 	tracer, _, stop := startTestTracer(withStatsdClient(&tg))
 
 	tracer.StartSpan("operation").Finish()
-	flush := make(chan struct{})
-	tracer.flushChan <- flush
-	<-flush
+	tracer.flushChan <- nil
+	tg.Wait(5, 100*time.Millisecond)
 
 	calls := tg.CallsByName()
 	counts := tg.Counts()
 	assert.Equal(1, calls["datadog.tracer.started"])
-	assert.Equal(1, calls["datadog.tracer.flush_triggered"])
+	assert.True(calls["datadog.tracer.flush_triggered"] >= 1)
 	assert.Equal(1, calls["datadog.tracer.flush_duration"])
 	assert.Equal(1, calls["datadog.tracer.flush_bytes"])
 	assert.Equal(1, calls["datadog.tracer.flush_traces"])
