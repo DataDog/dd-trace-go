@@ -285,6 +285,7 @@ func TestReportHealthMetrics(t *testing.T) {
 		exitChan:         make(chan struct{}),
 		payloadChan:      make(chan []*span, payloadQueueSize),
 		stopped:          make(chan struct{}),
+		rulesSampling:    newRulesSampler(nil),
 		prioritySampling: newPrioritySampler(),
 	}
 	internal.SetGlobalTracer(trc)
