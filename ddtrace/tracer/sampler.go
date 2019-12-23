@@ -170,9 +170,9 @@ func (ps *prioritySampler) apply(spn *span) {
 // Its value is the number of spans to sample per second.
 // Spans that matched the rules but exceeded the rate limit are not sampled.
 type rulesSampler struct {
-	rules      []SamplingRule   // the rules to match spans with
-	globalRate float64          // a rate to apply when no rules match a span
-	limiter    *samplingLimiter // used to limit the volume of spans sampled
+	rules      []SamplingRule // the rules to match spans with
+	globalRate float64        // a rate to apply when no rules match a span
+	limiter    *rateLimiter   // used to limit the volume of spans sampled
 }
 
 // newRulesSampler configures a *rulesSampler instance using the given set of rules.
@@ -181,7 +181,7 @@ func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	return &rulesSampler{
 		rules:      appliedSamplingRules(rules),
 		globalRate: globalSampleRate(),
-		limiter:    newSamplingLimiter(),
+		limiter:    newRateLimiter(),
 	}
 }
 
@@ -252,10 +252,13 @@ func globalSampleRate() float64 {
 	return defaultRate
 }
 
-// newSamplingLimiter returns a rate limiter which restricts the number of traces sampled per second.
+// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
+const defaultRateLimit = 100.0
+
+// newRateLimiter returns a rate limiter which restricts the number of traces sampled per second.
 // This defaults to 100.0. The DD_TRACE_RATE_LIMIT environment variable may override the default.
-func newSamplingLimiter() *samplingLimiter {
-	limit := 100.0
+func newRateLimiter() *rateLimiter {
+	limit := defaultRateLimit
 	v := os.Getenv("DD_TRACE_RATE_LIMIT")
 	if v != "" {
 		l, err := strconv.ParseFloat(v, 64)
@@ -268,9 +271,9 @@ func newSamplingLimiter() *samplingLimiter {
 			limit = l
 		}
 	}
-	return &samplingLimiter{
-		limiter:       rate.NewLimiter(rate.Limit(limit), int(math.Ceil(limit))),
-		currentPeriod: time.Now().Truncate(time.Second),
+	return &rateLimiter{
+		limiter:  rate.NewLimiter(rate.Limit(limit), int(math.Ceil(limit))),
+		prevTime: time.Now(),
 	}
 }
 
@@ -310,7 +313,7 @@ func (rs *rulesSampler) applyRate(span *span, rate float64, now time.Time) {
 		return
 	}
 
-	sampled, rate := rs.limiter.samplingDecision(now)
+	sampled, rate := rs.limiter.allowOne(now)
 	if sampled {
 		span.SetTag(ext.SamplingPriority, ext.PriorityAutoKeep)
 	} else {
@@ -381,35 +384,34 @@ func (sr *SamplingRule) match(s *span) bool {
 	return true
 }
 
-// samplingLimiter is used to limit the quantity of spans sampled by the rules sampler
-// and internally maintains measurements for "effective rate".
-type samplingLimiter struct {
+// rateLimiter is a wrapper on top of golang.org/x/time/rate which implements a rate limiter but also
+// returns the effective rate of allowance.
+type rateLimiter struct {
 	limiter *rate.Limiter
 
-	// "effective rate" calculations
-	mu            sync.Mutex // guards below fields
-	currentPeriod time.Time  // timestamp, to detect when counters need resetting
-	previousRate  float64    // previous second's rate, averaged with current rate for smoothing
-	allowed       int        // number of spans allowed by rate limiter in the current period
-	seen          int        // number of spans checked by rate limiter in the current period
+	mu       sync.Mutex // guards below fields
+	prevTime time.Time  // time at which prevRate was set
+	prevRate float64    // previous second's rate.
+	allowed  int        // number of spans allowed in the current period
+	seen     int        // number of spans seen in the current period
 }
 
-// samplingDecision returns the rate limiter's decision to allow the span to be sampled, and the
+// allowOne returns the rate limiter's decision to allow the span to be sampled, and the
 // effective rate at the time it is called. The effective rate is computed by averaging the rate
 // for the previous second with the current rate
-func (r *samplingLimiter) samplingDecision(now time.Time) (bool, float64) {
+func (r *rateLimiter) allowOne(now time.Time) (bool, float64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if d := now.Sub(r.currentPeriod).Truncate(time.Second); d >= time.Second {
+	if d := now.Sub(r.prevTime); d >= time.Second {
 		// enough time has passed to reset the counters
-		if d == time.Second && r.seen > 0 && r.allowed > 0 {
-			// exactly one second, so update previousRate
-			r.previousRate = float64(r.allowed) / float64(r.seen)
+		if d.Truncate(time.Second) == time.Second && r.seen > 0 {
+			// exactly one second, so update prevRate
+			r.prevRate = float64(r.allowed) / float64(r.seen)
 		} else {
 			// more than one second, so reset previous rate
-			r.previousRate = 0.0
+			r.prevRate = 0.0
 		}
-		r.currentPeriod = now.Truncate(time.Second)
+		r.prevTime = now
 		r.allowed = 0
 		r.seen = 0
 	}
@@ -420,7 +422,9 @@ func (r *samplingLimiter) samplingDecision(now time.Time) (bool, float64) {
 		r.allowed++
 		sampled = true
 	}
-	// calculate effective rate
-	er := (r.previousRate + (float64(r.allowed) / float64(r.seen))) / 2.0
+	// TODO(x): This algorithm is wrong. When there were no spans in the previous period prevRate will be 0.0
+	// and the resulting effective rate will be half of the actual rate. We should fix the algorithm by using
+	// a similar method as we do in the Datadog Agent in the rate limiter (using a decay period).
+	er := (r.prevRate + (float64(r.allowed) / float64(r.seen))) / 2.0
 	return sampled, er
 }

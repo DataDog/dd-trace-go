@@ -226,7 +226,7 @@ func TestRuleEnvVars(t *testing.T) {
 			{in: "1point0", out: rate.NewLimiter(100.0, 100)}, // default if invalid value
 		} {
 			os.Setenv("DD_TRACE_RATE_LIMIT", tt.in)
-			res := newSamplingLimiter()
+			res := newRateLimiter()
 			assert.Equal(tt.out, res.limiter)
 		}
 	})
@@ -405,8 +405,8 @@ func TestRulesSamplerInternals(t *testing.T) {
 		now := time.Now()
 		rs := newRulesSampler(nil)
 		// set samplingLimiter to specific state
-		rs.limiter.currentPeriod = now.Truncate(time.Second).Add(-1 * time.Second)
-		rs.limiter.previousRate = 1.0
+		rs.limiter.prevTime = now.Add(-1 * time.Second)
+		rs.limiter.prevRate = 1.0
 		rs.limiter.allowed = 1
 		rs.limiter.seen = 1
 
@@ -422,8 +422,8 @@ func TestRulesSamplerInternals(t *testing.T) {
 		rs := newRulesSampler(nil)
 		// force sampling limiter to 1.0 spans/sec
 		rs.limiter.limiter = rate.NewLimiter(rate.Limit(1.0), 1)
-		rs.limiter.currentPeriod = now.Truncate(time.Second).Add(-1 * time.Second)
-		rs.limiter.previousRate = 1.0
+		rs.limiter.prevTime = now.Add(-1 * time.Second)
+		rs.limiter.prevRate = 1.0
 		rs.limiter.allowed = 1
 		rs.limiter.seen = 1
 		// first span kept, second dropped
@@ -443,34 +443,34 @@ func TestRulesSamplerInternals(t *testing.T) {
 func TestSamplingLimiter(t *testing.T) {
 	t.Run("resets-every-second", func(t *testing.T) {
 		assert := assert.New(t)
-		sl := newSamplingLimiter()
-		sl.previousRate = 0.99
+		sl := newRateLimiter()
+		sl.prevRate = 0.99
 		sl.allowed = 42
 		sl.seen = 100
 		// exact point it should reset
-		now := time.Now().Add(1 * time.Second).Truncate(time.Second)
+		now := time.Now().Add(1 * time.Second)
 
-		sampled, _ := sl.samplingDecision(now)
+		sampled, _ := sl.allowOne(now)
 		assert.True(sampled)
-		assert.Equal(0.42, sl.previousRate)
-		assert.Equal(now, sl.currentPeriod)
+		assert.Equal(0.42, sl.prevRate)
+		assert.Equal(now, sl.prevTime)
 		assert.Equal(1, sl.seen)
 		assert.Equal(1, sl.allowed)
 	})
 
 	t.Run("averages-rates", func(t *testing.T) {
 		assert := assert.New(t)
-		sl := newSamplingLimiter()
-		sl.previousRate = 0.42
+		sl := newRateLimiter()
+		sl.prevRate = 0.42
 		sl.allowed = 41
 		sl.seen = 99
 		// this event occurs within the current period
-		now := sl.currentPeriod
+		now := sl.prevTime
 
-		sampled, rate := sl.samplingDecision(now)
+		sampled, rate := sl.allowOne(now)
 		assert.True(sampled)
 		assert.Equal(0.42, rate)
-		assert.Equal(now, sl.currentPeriod)
+		assert.Equal(now, sl.prevTime)
 		assert.Equal(100, sl.seen)
 		assert.Equal(42, sl.allowed)
 
@@ -478,17 +478,17 @@ func TestSamplingLimiter(t *testing.T) {
 
 	t.Run("discards-rate", func(t *testing.T) {
 		assert := assert.New(t)
-		sl := newSamplingLimiter()
-		sl.previousRate = 0.42
+		sl := newRateLimiter()
+		sl.prevRate = 0.42
 		sl.allowed = 42
 		sl.seen = 100
 		// exact point it should discard previous rate
-		now := time.Now().Add(2 * time.Second).Truncate(time.Second)
+		now := time.Now().Add(2 * time.Second)
 
-		sampled, _ := sl.samplingDecision(now)
+		sampled, _ := sl.allowOne(now)
 		assert.True(sampled)
-		assert.Equal(0.0, sl.previousRate)
-		assert.Equal(now, sl.currentPeriod)
+		assert.Equal(0.0, sl.prevRate)
+		assert.Equal(now, sl.prevTime)
 		assert.Equal(1, sl.seen)
 		assert.Equal(1, sl.allowed)
 	})
