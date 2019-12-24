@@ -30,7 +30,8 @@ import (
 
 // forceFlush triggers a flush of the tracer's payload and waits for the transport to
 // receive it. The wait will time out after 1 second.
-func (t *tracer) forceFlush(transport *dummyTransport) {
+func (t *tracer) forceFlush() {
+	transport := t.config.transport.(*dummyTransport)
 	t.flushChan <- nil
 	transport.waitFlush(1 * time.Second)
 }
@@ -479,7 +480,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	}))
 	addr := srv.Listener.Addr().String()
 
-	tr, transport, stop := startTestTracer(
+	tr, _, stop := startTestTracer(
 		withTransport(newHTTPTransport(addr, defaultRoundTripper)),
 	)
 	defer stop()
@@ -492,7 +493,8 @@ func TestTracerPrioritySampler(t *testing.T) {
 	assert.EqualValues(s.context.samplingPriority(), s.Metrics[keySamplingPriority])
 	s.Finish()
 
-	tr.forceFlush(transport) // obtain new rates
+	tr.flushChan <- nil
+	time.Sleep(100 * time.Millisecond)
 
 	for i, tt := range []struct {
 		service, env string
@@ -584,7 +586,7 @@ func TestTracerConcurrent(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.forceFlush(transport)
+	tracer.forceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 3)
 	assert.Len(traces[0], 1)
@@ -602,7 +604,7 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 	parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 	parent.Finish()
 
-	tracer.forceFlush(transport)
+	tracer.forceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 1)
@@ -611,7 +613,7 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 	child := tracer.newChildSpan("redis.command", parent)
 	child.Finish()
 
-	tracer.forceFlush(transport)
+	tracer.forceFlush()
 
 	traces = transport.Traces()
 	assert.Len(traces, 1)
@@ -645,7 +647,7 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.forceFlush(transport)
+	tracer.forceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, 2)
 	assert.Len(traces[0], 2)
@@ -675,7 +677,7 @@ func TestTracerAtomicFlush(t *testing.T) {
 
 	root.Finish()
 
-	tracer.forceFlush(transport)
+	tracer.forceFlush()
 	traces = transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 4, "all spans should show up at once")
@@ -797,7 +799,7 @@ func TestTracerRace(t *testing.T) {
 
 	wg.Wait()
 
-	tracer.forceFlush(transport)
+	tracer.forceFlush()
 	traces := transport.Traces()
 	assert.Len(traces, total, "we should have exactly as many traces as expected")
 	for _, trace := range traces {
@@ -939,7 +941,7 @@ func TestTracerFlush(t *testing.T) {
 		root := tracer.StartSpan("root")
 		tracer.StartSpan("child.direct", ChildOf(root.Context())).Finish()
 		root.Finish()
-		tracer.forceFlush(transport)
+		tracer.forceFlush()
 
 		list := transport.Traces()
 		assert.Len(list, 1)
@@ -960,7 +962,7 @@ func TestTracerFlush(t *testing.T) {
 			t.Fatal(err)
 		}
 		tracer.StartSpan("child.extracted", ChildOf(sctx)).Finish()
-		tracer.forceFlush(transport)
+		tracer.forceFlush()
 		list := transport.Traces()
 		assert.Len(list, 1)
 		assert.Len(list[0], 1)
@@ -1072,14 +1074,11 @@ func startTestTracer(opts ...StartOption) (*tracer, *dummyTransport, func()) {
 // Mock Transport with a real Encoder
 type dummyTransport struct {
 	sync.RWMutex
-	traces  spanLists
-	sendsig *sync.Cond
+	traces spanLists
 }
 
 func newDummyTransport() *dummyTransport {
-	t := &dummyTransport{traces: spanLists{}}
-	t.sendsig = sync.NewCond(t)
-	return t
+	return &dummyTransport{traces: spanLists{}}
 }
 
 func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
@@ -1090,7 +1089,6 @@ func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
 	t.Lock()
 	t.traces = append(t.traces, traces...)
 	t.Unlock()
-	t.sendsig.Broadcast()
 	ok := ioutil.NopCloser(strings.NewReader("OK"))
 	return ok, nil
 }
@@ -1102,16 +1100,21 @@ func decode(p *payload) (spanLists, error) {
 }
 
 func (t *dummyTransport) waitFlush(timeout time.Duration) {
-	c := make(chan struct{})
-	go func() {
-		t.Lock()
-		defer t.Unlock()
-		defer close(c)
-		t.sendsig.Wait()
-	}()
-	select {
-	case <-c:
-	case <-time.After(timeout):
+	t.Lock()
+	c := len(t.traces)
+	t.Unlock()
+	for {
+		select {
+		case <-time.After(timeout):
+		default:
+			t.Lock()
+			nc := len(t.traces)
+			t.Unlock()
+			if nc > c {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
 	}
 }
 

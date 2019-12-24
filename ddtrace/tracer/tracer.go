@@ -369,8 +369,8 @@ func (t *tracer) flushPayload() {
 	if t.payload.itemCount() == 0 {
 		return
 	}
-	t.climit <- struct{}{}
 	t.wg.Add(1)
+	t.climit <- struct{}{}
 	go func(p *payload) {
 		defer func(start time.Time) {
 			<-t.climit
