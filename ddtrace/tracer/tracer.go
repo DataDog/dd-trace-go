@@ -35,7 +35,7 @@ type tracer struct {
 
 	// flushChan triggers a flush of the buffered payload. If the sent channel is
 	// not nil (only in tests), it will receive confirmation of a finished flush.
-	flushChan chan chan<- struct{}
+	flushChan chan struct{}
 
 	// exitChan requests that the tracer stops.
 	exitChan chan struct{}
@@ -173,7 +173,7 @@ func newTracer(opts ...StartOption) *tracer {
 	t := &tracer{
 		config:           c,
 		payload:          newPayload(),
-		flushChan:        make(chan chan<- struct{}),
+		flushChan:        make(chan struct{}),
 		exitChan:         make(chan struct{}),
 		payloadChan:      make(chan []*span, payloadQueueSize),
 		stopped:          make(chan struct{}),
@@ -221,12 +221,9 @@ func (t *tracer) worker() {
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.flushPayload()
 
-		case confirm := <-t.flushChan:
+		case <-t.flushChan:
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
 			t.flushPayload()
-			if confirm != nil {
-				confirm <- struct{}{}
-			}
 
 		case <-t.exitChan:
 		loop:
@@ -404,7 +401,7 @@ func (t *tracer) pushPayload(trace []*span) {
 	if t.payload.size() > payloadSizeLimit {
 		// getting large
 		select {
-		case t.flushChan <- nil:
+		case t.flushChan <- struct{}{}:
 		default:
 			// flush already queued
 		}

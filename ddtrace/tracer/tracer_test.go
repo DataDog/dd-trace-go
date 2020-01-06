@@ -28,12 +28,12 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
-// forceFlush triggers a flush of the tracer's payload and waits for the transport to
-// receive it. The wait will time out after 1 second.
-func (t *tracer) forceFlush() {
+// flushAndWait triggers a flush of the tracer's payload and waits for the transport to
+// receive at least n traces. The wait will time out after 1 second.
+func (t *tracer) flushAndWait(n int) {
 	transport := t.config.transport.(*dummyTransport)
-	t.flushChan <- nil
-	transport.waitFlush(1 * time.Second)
+	t.flushChan <- struct{}{}
+	transport.waitFlush(n, 5*time.Second)
 }
 
 func (t *tracer) newEnvSpan(service, env string) *span {
@@ -493,7 +493,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	assert.EqualValues(s.context.samplingPriority(), s.Metrics[keySamplingPriority])
 	s.Finish()
 
-	tr.flushChan <- nil
+	tr.flushChan <- struct{}{}
 	time.Sleep(100 * time.Millisecond)
 
 	for i, tt := range []struct {
@@ -586,7 +586,7 @@ func TestTracerConcurrent(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.forceFlush()
+	tracer.flushAndWait(3)
 	traces := transport.Traces()
 	assert.Len(traces, 3)
 	assert.Len(traces[0], 1)
@@ -604,7 +604,7 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 	parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 	parent.Finish()
 
-	tracer.forceFlush()
+	tracer.flushAndWait(1)
 	traces := transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 1)
@@ -613,7 +613,7 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 	child := tracer.newChildSpan("redis.command", parent)
 	child.Finish()
 
-	tracer.forceFlush()
+	tracer.flushAndWait(1)
 
 	traces = transport.Traces()
 	assert.Len(traces, 1)
@@ -647,7 +647,7 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.forceFlush()
+	tracer.flushAndWait(2)
 	traces := transport.Traces()
 	assert.Len(traces, 2)
 	assert.Len(traces[0], 2)
@@ -668,16 +668,15 @@ func TestTracerAtomicFlush(t *testing.T) {
 	span1.Finish()
 	span2.Finish()
 
-	// Trigger a flush. Nothing should be flushed, so we can't forceFlush.
-	c := make(chan struct{})
-	tracer.flushChan <- c
-	<-c
+	// Trigger a flush. Nothing should be flushed, so we can't flushAndWait.
+	tracer.flushChan <- struct{}{}
+	time.Sleep(100 * time.Millisecond)
 	traces := transport.Traces()
 	assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
 
 	root.Finish()
 
-	tracer.forceFlush()
+	tracer.flushAndWait(1)
 	traces = transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 4, "all spans should show up at once")
@@ -799,7 +798,7 @@ func TestTracerRace(t *testing.T) {
 
 	wg.Wait()
 
-	tracer.forceFlush()
+	tracer.flushAndWait(total)
 	traces := transport.Traces()
 	assert.Len(traces, total, "we should have exactly as many traces as expected")
 	for _, trace := range traces {
@@ -875,7 +874,7 @@ func newTracerChannels() *tracer {
 	return &tracer{
 		payload:     newPayload(),
 		payloadChan: make(chan []*span, payloadQueueSize),
-		flushChan:   make(chan chan<- struct{}, 1),
+		flushChan:   make(chan struct{}, 1),
 	}
 }
 
@@ -941,7 +940,7 @@ func TestTracerFlush(t *testing.T) {
 		root := tracer.StartSpan("root")
 		tracer.StartSpan("child.direct", ChildOf(root.Context())).Finish()
 		root.Finish()
-		tracer.forceFlush()
+		tracer.flushAndWait(1)
 
 		list := transport.Traces()
 		assert.Len(list, 1)
@@ -962,7 +961,7 @@ func TestTracerFlush(t *testing.T) {
 			t.Fatal(err)
 		}
 		tracer.StartSpan("child.extracted", ChildOf(sctx)).Finish()
-		tracer.forceFlush()
+		tracer.flushAndWait(1)
 		list := transport.Traces()
 		assert.Len(list, 1)
 		assert.Len(list[0], 1)
@@ -1099,18 +1098,17 @@ func decode(p *payload) (spanLists, error) {
 	return traces, err
 }
 
-func (t *dummyTransport) waitFlush(timeout time.Duration) {
-	t.Lock()
-	c := len(t.traces)
-	t.Unlock()
+func (t *dummyTransport) waitFlush(n int, timeout time.Duration) {
+	a := time.After(timeout)
 	for {
 		select {
-		case <-time.After(timeout):
+		case <-a:
+			panic("timed out waiting for flush")
 		default:
 			t.Lock()
-			nc := len(t.traces)
+			l := len(t.traces)
 			t.Unlock()
-			if nc > c {
+			if l >= n {
 				return
 			}
 			time.Sleep(5 * time.Millisecond)

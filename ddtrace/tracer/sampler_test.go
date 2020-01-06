@@ -505,7 +505,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 		return &tracer{
 			config:           c,
 			payloadChan:      make(chan []*span, batchSize),
-			flushChan:        make(chan chan<- struct{}, 1),
+			flushChan:        make(chan struct{}, 1),
 			stopped:          make(chan struct{}),
 			exitChan:         make(chan struct{}, 1),
 			rulesSampling:    newRulesSampler(c.samplingRules),

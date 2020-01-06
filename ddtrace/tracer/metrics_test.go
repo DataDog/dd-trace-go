@@ -281,7 +281,7 @@ func TestReportHealthMetrics(t *testing.T) {
 			transport: newDummyTransport(),
 		},
 		payload:          newPayload(),
-		flushChan:        make(chan chan<- struct{}),
+		flushChan:        make(chan struct{}),
 		exitChan:         make(chan struct{}),
 		payloadChan:      make(chan []*span, payloadQueueSize),
 		stopped:          make(chan struct{}),
@@ -318,7 +318,7 @@ func TestTracerMetrics(t *testing.T) {
 	tracer, _, stop := startTestTracer(withStatsdClient(&tg))
 
 	tracer.StartSpan("operation").Finish()
-	tracer.flushChan <- nil
+	tracer.flushChan <- struct{}{}
 	tg.Wait(5, 100*time.Millisecond)
 
 	calls := tg.CallsByName()
