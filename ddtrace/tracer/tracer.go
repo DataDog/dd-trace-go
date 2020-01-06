@@ -373,7 +373,7 @@ func (t *tracer) flushPayload() {
 	} else {
 		t.config.statsd.Count("datadog.tracer.flush_bytes", int64(size), nil, 1)
 		t.config.statsd.Count("datadog.tracer.flush_traces", int64(count), nil, 1)
-		if t.prioritySampling.readRatesJSON(rc) != nil {
+		if err := t.prioritySampling.readRatesJSON(rc); err != nil {
 			t.config.statsd.Incr("datadog.tracer.decode_error", nil, 1)
 		}
 	}
