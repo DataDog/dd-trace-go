@@ -30,10 +30,10 @@ import (
 
 // flushAndWait triggers a flush of the tracer's payload and waits for the transport to
 // receive at least n traces. The wait will time out after 1 second.
-func (t *tracer) flushAndWait(n int) {
+func (t *tracer) flushAndWait(ts *testing.T, n int) {
 	transport := t.config.transport.(*dummyTransport)
 	t.flushChan <- struct{}{}
-	transport.waitFlush(n, 5*time.Second)
+	transport.waitFlush(ts, n)
 }
 
 func (t *tracer) newEnvSpan(service, env string) *span {
@@ -586,7 +586,7 @@ func TestTracerConcurrent(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.flushAndWait(3)
+	tracer.flushAndWait(t, 3)
 	traces := transport.Traces()
 	assert.Len(traces, 3)
 	assert.Len(traces[0], 1)
@@ -604,7 +604,7 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 	parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 	parent.Finish()
 
-	tracer.flushAndWait(1)
+	tracer.flushAndWait(t, 1)
 	traces := transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 1)
@@ -613,7 +613,7 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 	child := tracer.newChildSpan("redis.command", parent)
 	child.Finish()
 
-	tracer.flushAndWait(1)
+	tracer.flushAndWait(t, 1)
 
 	traces = transport.Traces()
 	assert.Len(traces, 1)
@@ -647,7 +647,7 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.flushAndWait(2)
+	tracer.flushAndWait(t, 2)
 	traces := transport.Traces()
 	assert.Len(traces, 2)
 	assert.Len(traces[0], 2)
@@ -676,7 +676,7 @@ func TestTracerAtomicFlush(t *testing.T) {
 
 	root.Finish()
 
-	tracer.flushAndWait(1)
+	tracer.flushAndWait(t, 1)
 	traces = transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 4, "all spans should show up at once")
@@ -798,7 +798,7 @@ func TestTracerRace(t *testing.T) {
 
 	wg.Wait()
 
-	tracer.flushAndWait(total)
+	tracer.flushAndWait(t, total)
 	traces := transport.Traces()
 	assert.Len(traces, total, "we should have exactly as many traces as expected")
 	for _, trace := range traces {
@@ -940,7 +940,7 @@ func TestTracerFlush(t *testing.T) {
 		root := tracer.StartSpan("root")
 		tracer.StartSpan("child.direct", ChildOf(root.Context())).Finish()
 		root.Finish()
-		tracer.flushAndWait(1)
+		tracer.flushAndWait(t, 1)
 
 		list := transport.Traces()
 		assert.Len(list, 1)
@@ -961,7 +961,7 @@ func TestTracerFlush(t *testing.T) {
 			t.Fatal(err)
 		}
 		tracer.StartSpan("child.extracted", ChildOf(sctx)).Finish()
-		tracer.flushAndWait(1)
+		tracer.flushAndWait(t, 1)
 		list := transport.Traces()
 		assert.Len(list, 1)
 		assert.Len(list[0], 1)
@@ -1098,17 +1098,18 @@ func decode(p *payload) (spanLists, error) {
 	return traces, err
 }
 
-func (t *dummyTransport) waitFlush(n int, timeout time.Duration) {
-	a := time.After(timeout)
+func (t *dummyTransport) waitFlush(ts *testing.T, n int) {
+	a := time.After(1 * time.Second)
 	for {
 		select {
 		case <-a:
-			panic("timed out waiting for flush")
+			//panic("timed out waiting for flush")
+			ts.Fatalf("Timed out waiting for flush.")
 		default:
 			t.Lock()
 			l := len(t.traces)
 			t.Unlock()
-			if l >= n {
+			if l == n {
 				return
 			}
 			time.Sleep(5 * time.Millisecond)

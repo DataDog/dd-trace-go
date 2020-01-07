@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -112,7 +111,7 @@ func TestSpanTracePushOne(t *testing.T) {
 	assert.Equal(root, trace.spans[0], "the span is the one pushed before")
 
 	root.Finish()
-	tracer.flushAndWait(1)
+	tracer.flushAndWait(t, 1)
 
 	traces := transport.Traces()
 	assert.Len(traces, 1)
@@ -178,9 +177,7 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	for _, span := range trace {
 		span.Finish()
 	}
-	fmt.Println("flush and wait")
-	tracer.flushAndWait(1)
-	fmt.Println("flush and wait DONE")
+	tracer.flushAndWait(t, 1)
 
 	traces := transport.Traces()
 	assert.Len(traces, 1)
@@ -210,7 +207,7 @@ func TestSpanFinishPriority(t *testing.T) {
 	child.Finish()
 	root.Finish()
 
-	tracer.flushAndWait(1)
+	tracer.flushAndWait(t, 1)
 
 	traces := transport.Traces()
 	assert.Len(traces, 1)
