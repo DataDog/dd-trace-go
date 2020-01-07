@@ -51,6 +51,6 @@ func (rs *safeSource) Uint64() uint64 { return uint64(rs.Int63()) }
 
 func (rs *safeSource) Seed(seed int64) {
 	rs.Lock()
-	rs.Seed(seed)
+	rs.source.Seed(seed)
 	rs.Unlock()
 }
