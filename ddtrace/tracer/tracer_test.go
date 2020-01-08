@@ -1099,12 +1099,11 @@ func decode(p *payload) (spanLists, error) {
 }
 
 func (t *dummyTransport) waitFlush(ts *testing.T, n int) {
-	a := time.After(1 * time.Second)
+	timeout := time.After(1 * time.Second)
 	for {
 		select {
-		case <-a:
-			//panic("timed out waiting for flush")
-			ts.Fatalf("Timed out waiting for flush.")
+		case <-timeout:
+			ts.Fatalf("Timed out waiting for %d traces.", n)
 		default:
 			t.Lock()
 			l := len(t.traces)
