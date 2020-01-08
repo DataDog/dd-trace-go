@@ -27,6 +27,10 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		}
 		return func(c echo.Context) error {
 			request := c.Request()
+			if cfg.filter != nil && !cfg.filter(request) {
+				return next(c)
+			}
+
 			resource := request.Method + " " + c.Path()
 			opts := []ddtrace.StartSpanOption{
 				tracer.ServiceName(cfg.serviceName),

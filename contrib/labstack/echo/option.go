@@ -7,11 +7,13 @@ package echo
 
 import (
 	"math"
+	"net/http"
 )
 
 type config struct {
 	serviceName   string
 	analyticsRate float64
+	filter        func(r *http.Request) bool
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -49,5 +51,14 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithFilter allows to select the requests that will have trace added. If
+// filter returns true the trace will be added, otherwise all middleware actions
+// will be skipped.
+func WithFilter(filter func(r *http.Request) bool) Option {
+	return func(cfg *config) {
+		cfg.filter = filter
 	}
 }

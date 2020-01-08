@@ -230,3 +230,30 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	assert.True(called)
 	assert.False(traced)
 }
+
+func TestFilter(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called, traced bool
+
+	filter := func(r *http.Request) bool {
+		return r.RequestURI != "/user/123"
+	}
+
+	router := echo.New()
+	router.Use(Middleware(WithServiceName("foobar"), WithFilter(filter)))
+	router.GET("/user/:id", func(c echo.Context) error {
+		called = true
+		_, traced = tracer.SpanFromContext(c.Request().Context())
+		return c.NoContent(200)
+	})
+
+	r := httptest.NewRequest("GET", "/user/123", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	// verify traces look good
+	assert.True(called)
+	assert.False(traced)
+}
