@@ -10,6 +10,8 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -28,6 +30,9 @@ type Option func(*config)
 func defaults(cfg *config) {
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.serviceName = "http.router"
+	if !math.IsNaN(cfg.analyticsRate) {
+		cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Tag(ext.EventSampleRate, cfg.analyticsRate)}
+	}
 }
 
 // WithServiceName sets the given service name for the returned ServeMux.
