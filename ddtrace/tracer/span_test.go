@@ -366,7 +366,8 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		case <-done:
 			return
 		default:
-			tracer.forceFlush()
+			tracer.flushChan <- struct{}{}
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }

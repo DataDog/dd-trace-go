@@ -28,12 +28,12 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
-// forceFlush forces a flush of data (traces and services) to the agent
-// synchronously.
-func (t *tracer) forceFlush() {
-	confirm := make(chan struct{})
-	t.flushChan <- confirm
-	<-confirm
+// flushAndWait triggers a flush of the tracer's payload and waits for the transport to
+// receive at least n traces. The wait will time out after 1 second.
+func (t *tracer) flushAndWait(ts *testing.T, n int) {
+	transport := t.config.transport.(*dummyTransport)
+	t.flushChan <- struct{}{}
+	transport.waitFlush(ts, n)
 }
 
 func (t *tracer) newEnvSpan(service, env string) *span {
@@ -136,7 +136,7 @@ func TestTracerStart(t *testing.T) {
 		Start()
 
 		// ensure at least one worker started and handles requests
-		internal.GetGlobalTracer().(*tracer).forceFlush()
+		internal.GetGlobalTracer().(*tracer).pushTrace([]*span{})
 
 		Stop()
 		Stop()
@@ -147,7 +147,7 @@ func TestTracerStart(t *testing.T) {
 	t.Run("deadlock/direct", func(t *testing.T) {
 		tr, _, stop := startTestTracer()
 		defer stop()
-		tr.forceFlush() // blocks until worker is started
+		tr.pushTrace([]*span{}) // blocks until worker is started
 		select {
 		case <-tr.stopped:
 			t.Fatal("stopped channel should be open")
@@ -493,7 +493,8 @@ func TestTracerPrioritySampler(t *testing.T) {
 	assert.EqualValues(s.context.samplingPriority(), s.Metrics[keySamplingPriority])
 	s.Finish()
 
-	tr.forceFlush() // obtain new rates
+	tr.flushChan <- struct{}{}
+	time.Sleep(100 * time.Millisecond)
 
 	for i, tt := range []struct {
 		service, env string
@@ -585,7 +586,7 @@ func TestTracerConcurrent(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.forceFlush()
+	tracer.flushAndWait(t, 3)
 	traces := transport.Traces()
 	assert.Len(traces, 3)
 	assert.Len(traces[0], 1)
@@ -603,7 +604,7 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 	parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 	parent.Finish()
 
-	tracer.forceFlush()
+	tracer.flushAndWait(t, 1)
 	traces := transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 1)
@@ -612,7 +613,7 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 	child := tracer.newChildSpan("redis.command", parent)
 	child.Finish()
 
-	tracer.forceFlush()
+	tracer.flushAndWait(t, 1)
 
 	traces = transport.Traces()
 	assert.Len(traces, 1)
@@ -646,7 +647,7 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	}()
 
 	wg.Wait()
-	tracer.forceFlush()
+	tracer.flushAndWait(t, 2)
 	traces := transport.Traces()
 	assert.Len(traces, 2)
 	assert.Len(traces[0], 2)
@@ -667,13 +668,15 @@ func TestTracerAtomicFlush(t *testing.T) {
 	span1.Finish()
 	span2.Finish()
 
-	tracer.forceFlush()
+	// Trigger a flush. Nothing should be flushed, so we can't flushAndWait.
+	tracer.flushChan <- struct{}{}
+	time.Sleep(100 * time.Millisecond)
 	traces := transport.Traces()
 	assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
 
 	root.Finish()
 
-	tracer.forceFlush()
+	tracer.flushAndWait(t, 1)
 	traces = transport.Traces()
 	assert.Len(traces, 1)
 	assert.Len(traces[0], 4, "all spans should show up at once")
@@ -795,7 +798,7 @@ func TestTracerRace(t *testing.T) {
 
 	wg.Wait()
 
-	tracer.forceFlush()
+	tracer.flushAndWait(t, total)
 	traces := transport.Traces()
 	assert.Len(traces, total, "we should have exactly as many traces as expected")
 	for _, trace := range traces {
@@ -871,7 +874,7 @@ func newTracerChannels() *tracer {
 	return &tracer{
 		payload:     newPayload(),
 		payloadChan: make(chan []*span, payloadQueueSize),
-		flushChan:   make(chan chan<- struct{}, 1),
+		flushChan:   make(chan struct{}, 1),
 	}
 }
 
@@ -937,7 +940,7 @@ func TestTracerFlush(t *testing.T) {
 		root := tracer.StartSpan("root")
 		tracer.StartSpan("child.direct", ChildOf(root.Context())).Finish()
 		root.Finish()
-		tracer.forceFlush()
+		tracer.flushAndWait(t, 1)
 
 		list := transport.Traces()
 		assert.Len(list, 1)
@@ -958,7 +961,7 @@ func TestTracerFlush(t *testing.T) {
 			t.Fatal(err)
 		}
 		tracer.StartSpan("child.extracted", ChildOf(sctx)).Finish()
-		tracer.forceFlush()
+		tracer.flushAndWait(t, 1)
 		list := transport.Traces()
 		assert.Len(list, 1)
 		assert.Len(list[0], 1)
@@ -1093,6 +1096,24 @@ func decode(p *payload) (spanLists, error) {
 	var traces spanLists
 	err := msgp.Decode(p, &traces)
 	return traces, err
+}
+
+func (t *dummyTransport) waitFlush(ts *testing.T, n int) {
+	timeout := time.After(1 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			ts.Fatalf("Timed out waiting for %d traces.", n)
+		default:
+			t.Lock()
+			l := len(t.traces)
+			t.Unlock()
+			if l == n {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
 }
 
 func encode(traces [][]*span) (*payload, error) {
