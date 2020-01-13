@@ -109,10 +109,20 @@ func TestAnalyticsSettings(t *testing.T) {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
 
+		f := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			message := "Hello \n"
+			w.Write([]byte(message))
+		})
+		handler := WrapHandler(f, "my-service", "my-resource", opts...)
+		r = httptest.NewRequest("GET", "/200", nil)
+		w = httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+
 		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 1)
-		s := spans[0]
-		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+		assert.Len(t, spans, 2)
+		for _, s := range spans {
+			assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+		}
 	}
 
 	t.Run("defaults", func(t *testing.T) {
