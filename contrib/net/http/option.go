@@ -47,6 +47,7 @@ func WithAnalytics(on bool) MuxOption {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
+			cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Tag(ext.EventSampleRate, cfg.analyticsRate)}
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
@@ -59,6 +60,7 @@ func WithAnalyticsRate(rate float64) MuxOption {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
+			cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Tag(ext.EventSampleRate, cfg.analyticsRate)}
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
