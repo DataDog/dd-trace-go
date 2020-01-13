@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"math"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -49,13 +50,18 @@ func RunAll(t *testing.T, cfg *Config) {
 	cfg.mockTracer = mocktracer.Start()
 	defer cfg.mockTracer.Stop()
 
-	for name, test := range map[string]func(*Config) func(*testing.T){
+	tests := map[string]func(*Config) func(*testing.T){
 		"Ping":          testPing,
 		"Query":         testQuery,
 		"Statement":     testStatement,
 		"BeginRollback": testBeginRollback,
 		"Exec":          testExec,
-	} {
+	}
+	if cfg.SupportsUint64 {
+		tests["Uint64"] = testUint64
+	}
+
+	for name, test := range tests {
 		t.Run(name, test(cfg))
 	}
 }
@@ -210,12 +216,29 @@ func testExec(cfg *Config) func(*testing.T) {
 	}
 }
 
+func testUint64(cfg *Config) func(*testing.T) {
+	return func(t *testing.T) {
+		assert := assert.New(t)
+		rows, err := cfg.DB.Query("SELECT ?", uint64(math.MaxUint64))
+		assert.NoError(err)
+		assert.NotNil(rows)
+		assert.True(rows.Next())
+		var result uint64
+		rows.Scan(&result)
+		assert.Equal(uint64(math.MaxUint64), result)
+		assert.False(rows.Next())
+		assert.NoError(rows.Err())
+		assert.NoError(rows.Close())
+	}
+}
+
 // Config holds the test configuration.
 type Config struct {
 	*sql.DB
-	mockTracer mocktracer.Tracer
-	DriverName string
-	TableName  string
-	ExpectName string
-	ExpectTags map[string]interface{}
+	mockTracer     mocktracer.Tracer
+	DriverName     string
+	TableName      string
+	ExpectName     string
+	ExpectTags     map[string]interface{}
+	SupportsUint64 bool
 }

@@ -6,10 +6,8 @@
 package sql
 
 import (
-	"context"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"testing"
 
@@ -18,7 +16,6 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
-	"github.com/stretchr/testify/assert"
 )
 
 // tableName holds the SQL table that these tests will be run against. It must be unique cross-repo.
@@ -56,22 +53,9 @@ func TestMySQL(t *testing.T) {
 			ext.DBName:          "test",
 			ext.EventSampleRate: nil,
 		},
+		SupportsUint64: true,
 	}
 	sqltest.RunAll(t, testConfig)
-	// additional test for uint64 values, supported by go-sql-driver/mysql
-	t.Run("Uint64", func(t *testing.T) {
-		assert := assert.New(t)
-		rows, err := db.QueryContext(context.Background(), "SELECT ?", uint64(math.MaxUint64))
-		assert.NoError(err)
-		assert.NotNil(rows)
-		assert.True(rows.Next())
-		var result uint64
-		rows.Scan(&result)
-		assert.Equal(uint64(math.MaxUint64), result)
-		assert.False(rows.Next())
-		assert.NoError(rows.Err())
-		assert.NoError(rows.Close())
-	})
 }
 
 func TestPostgres(t *testing.T) {
