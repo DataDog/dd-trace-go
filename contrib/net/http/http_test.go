@@ -8,7 +8,6 @@ package http
 import (
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -103,8 +102,8 @@ func TestWrapHandler200(t *testing.T) {
 }
 
 func TestAnalyticsSettings(t *testing.T) {
-	asserts := []func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option){
-		func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
+	tests := map[string]func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option){
+		"ServeMux": func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
 			mux := NewServeMux(opts...)
 			mux.HandleFunc("/200", handler200)
 			r := httptest.NewRequest("GET", "/200", nil)
@@ -116,7 +115,7 @@ func TestAnalyticsSettings(t *testing.T) {
 			s := spans[0]
 			assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 		},
-		func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
+		"WrapHandler": func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
 			f := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				message := "Hello \n"
 				w.Write([]byte(message))
@@ -133,15 +132,15 @@ func TestAnalyticsSettings(t *testing.T) {
 		},
 	}
 
-	for assert := range asserts {
-		t.Run("defaults/"+strconv.Itoa(assert), func(t *testing.T) {
+	for name, test := range tests {
+		t.Run("defaults/"+name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			asserts[assert](t, mt, nil)
+			test(t, mt, nil)
 		})
 
-		t.Run("global/"+strconv.Itoa(assert), func(t *testing.T) {
+		t.Run("global/"+name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
@@ -149,24 +148,24 @@ func TestAnalyticsSettings(t *testing.T) {
 			defer globalconfig.SetAnalyticsRate(rate)
 			globalconfig.SetAnalyticsRate(0.4)
 
-			asserts[assert](t, mt, 0.4)
+			test(t, mt, 0.4)
 		})
 
-		t.Run("enabled/"+strconv.Itoa(assert), func(t *testing.T) {
+		t.Run("enabled/"+name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			asserts[assert](t, mt, 1.0, WithAnalytics(true))
+			test(t, mt, 1.0, WithAnalytics(true))
 		})
 
-		t.Run("disabled/"+strconv.Itoa(assert), func(t *testing.T) {
+		t.Run("disabled/"+name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			asserts[assert](t, mt, nil, WithAnalytics(false))
+			test(t, mt, nil, WithAnalytics(false))
 		})
 
-		t.Run("override/"+strconv.Itoa(assert), func(t *testing.T) {
+		t.Run("override/"+name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
@@ -174,7 +173,7 @@ func TestAnalyticsSettings(t *testing.T) {
 			defer globalconfig.SetAnalyticsRate(rate)
 			globalconfig.SetAnalyticsRate(0.4)
 
-			asserts[assert](t, mt, 0.23, WithAnalyticsRate(0.23))
+			test(t, mt, 0.23, WithAnalyticsRate(0.23))
 		})
 	}
 }
