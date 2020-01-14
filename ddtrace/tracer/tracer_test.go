@@ -1081,6 +1081,9 @@ func newDummyTransport() *dummyTransport {
 }
 
 func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
+	if p.buf.Len() > payloadSizeLimit*2 {
+		return nil, fmt.Errorf("received payload that is too large")
+	}
 	traces, err := decode(p)
 	if err != nil {
 		return nil, err
@@ -1211,4 +1214,24 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 		span := tracer.StartSpan("test")
 		span.Finish(StackFrames(64, 0))
 	}
+}
+
+// Make sure the tracer flushes when the payload gets too big. (see #569)
+func TestPayloadSizeFlush(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport, stop := startTestTracer()
+	defer stop()
+
+	for i := 0; i < 50; i++ {
+		root := tracer.StartSpan("root")
+		for j := 0; j < 10000; j++ {
+			span := tracer.StartSpan("testchild", ChildOf(root.Context()))
+			span.Finish()
+		}
+		root.Finish()
+	}
+
+	tracer.flushAndWait(t, 50)
+	traces := transport.Traces()
+	assert.Len(traces, 50)
 }

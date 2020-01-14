@@ -173,7 +173,7 @@ func newTracer(opts ...StartOption) *tracer {
 	t := &tracer{
 		config:           c,
 		payload:          newPayload(),
-		flushChan:        make(chan struct{}),
+		flushChan:        make(chan struct{}, 1),
 		exitChan:         make(chan struct{}),
 		payloadChan:      make(chan []*span, payloadQueueSize),
 		stopped:          make(chan struct{}),
