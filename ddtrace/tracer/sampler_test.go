@@ -496,22 +496,6 @@ func TestSamplingLimiter(t *testing.T) {
 
 func BenchmarkRulesSampler(b *testing.B) {
 	const batchSize = 500
-	newTracer := func(opts ...StartOption) *tracer {
-		c := new(config)
-		defaults(c)
-		for _, fn := range opts {
-			fn(c)
-		}
-		return &tracer{
-			config:           c,
-			payloadChan:      make(chan []*span, batchSize),
-			flushChan:        make(chan struct{}, 1),
-			stopped:          make(chan struct{}),
-			exitChan:         make(chan struct{}, 1),
-			rulesSampling:    newRulesSampler(c.samplingRules),
-			prioritySampling: newPrioritySampler(),
-		}
-	}
 
 	benchmarkStartSpan := func(b *testing.B, t *tracer) {
 		internal.SetGlobalTracer(t)
@@ -553,7 +537,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 	}
 
 	b.Run("no-rules", func(b *testing.B) {
-		tracer := newTracer()
+		tracer := newUnstartedTracer()
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -563,7 +547,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameServiceRule("db.query", "postgres.db", 1.0),
 			NameRule("notweb.request", 1.0),
 		}
-		tracer := newTracer(WithSamplingRules(rules))
+		tracer := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -573,7 +557,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameServiceRule("db.query", "postgres.db", 1.0),
 			NameRule("web.request", 1.0),
 		}
-		tracer := newTracer(WithSamplingRules(rules))
+		tracer := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -603,7 +587,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameRule("notweb.request", 1.0),
 			NameRule("web.request", 1.0),
 		}
-		tracer := newTracer(WithSamplingRules(rules))
+		tracer := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 }

@@ -142,7 +142,7 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
-func newTracer(opts ...StartOption) *tracer {
+func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := new(config)
 	defaults(c)
 	for _, fn := range opts {
@@ -169,11 +169,10 @@ func newTracer(opts ...StartOption) *tracer {
 			c.statsd = client
 		}
 	}
-
-	t := &tracer{
+	return &tracer{
 		config:           c,
 		payload:          newPayload(),
-		flushChan:        make(chan struct{}),
+		flushChan:        make(chan struct{}, 1),
 		exitChan:         make(chan struct{}),
 		payloadChan:      make(chan []*span, payloadQueueSize),
 		stopped:          make(chan struct{}),
@@ -182,6 +181,11 @@ func newTracer(opts ...StartOption) *tracer {
 		prioritySampling: newPrioritySampler(),
 		pid:              strconv.Itoa(os.Getpid()),
 	}
+}
+
+func newTracer(opts ...StartOption) *tracer {
+	t := newUnstartedTracer(opts...)
+	c := t.config
 	t.config.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")

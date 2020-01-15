@@ -247,13 +247,7 @@ func (tg *testStatsdClient) Wait(n int, d time.Duration) error {
 
 func TestReportRuntimeMetrics(t *testing.T) {
 	var tg testStatsdClient
-	trc := &tracer{
-		stopped:  make(chan struct{}),
-		exitChan: make(chan struct{}),
-		config: &config{
-			statsd: &tg,
-		},
-	}
+	trc := newUnstartedTracer(withStatsdClient(&tg))
 
 	trc.wg.Add(1)
 	go func() {
@@ -274,21 +268,7 @@ func TestReportRuntimeMetrics(t *testing.T) {
 func TestReportHealthMetrics(t *testing.T) {
 	assert := assert.New(t)
 	var tg testStatsdClient
-	trc := &tracer{
-		config: &config{
-			statsd:    &tg,
-			sampler:   NewAllSampler(),
-			transport: newDummyTransport(),
-		},
-		payload:          newPayload(),
-		flushChan:        make(chan struct{}),
-		exitChan:         make(chan struct{}),
-		payloadChan:      make(chan []*span, payloadQueueSize),
-		stopped:          make(chan struct{}),
-		rulesSampling:    newRulesSampler(nil),
-		climit:           make(chan struct{}, concurrentConnectionLimit),
-		prioritySampling: newPrioritySampler(),
-	}
+	trc := newUnstartedTracer(withStatsdClient(&tg))
 	internal.SetGlobalTracer(trc)
 	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 
