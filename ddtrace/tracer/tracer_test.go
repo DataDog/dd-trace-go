@@ -870,16 +870,8 @@ func TestWorker(t *testing.T) {
 	}
 }
 
-func newTracerChannels() *tracer {
-	return &tracer{
-		payload:     newPayload(),
-		payloadChan: make(chan []*span, payloadQueueSize),
-		flushChan:   make(chan struct{}, 1),
-	}
-}
-
 func TestPushPayload(t *testing.T) {
-	tracer := newTracerChannels()
+	tracer := newUnstartedTracer()
 	s := newBasicSpan("3MB")
 	s.Meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
 
@@ -899,7 +891,7 @@ func TestPushTrace(t *testing.T) {
 
 	tp := new(testLogger)
 	log.UseLogger(tp)
-	tracer := newTracerChannels()
+	tracer := newUnstartedTracer()
 	trace := []*span{
 		&span{
 			Name:     "pylons.request",
