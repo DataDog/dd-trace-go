@@ -126,6 +126,13 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 	return rows, err
 }
 
+func (tc *tracedConn) CheckNamedValue(value *driver.NamedValue) error {
+	if checker, ok := tc.Conn.(driver.NamedValueChecker); ok {
+		return checker.CheckNamedValue(value)
+	}
+	return driver.ErrSkip
+}
+
 // traceParams stores all information related to tracing the driver.Conn
 type traceParams struct {
 	cfg        *config
