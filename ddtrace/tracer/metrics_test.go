@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-
 	"github.com/stretchr/testify/assert"
 )
 
@@ -268,37 +266,30 @@ func TestReportRuntimeMetrics(t *testing.T) {
 func TestReportHealthMetrics(t *testing.T) {
 	assert := assert.New(t)
 	var tg testStatsdClient
-	trc := newUnstartedTracer(withStatsdClient(&tg))
-	internal.SetGlobalTracer(trc)
-	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 
-	trc.wg.Add(1)
-	go func() {
-		defer trc.wg.Done()
-		trc.worker()
-	}()
-	trc.wg.Add(1)
-	go func() {
-		defer trc.wg.Done()
-		trc.reportHealthMetrics(time.Millisecond)
-	}()
+	defer func(old time.Duration) { statsInterval = old }(statsInterval)
+	statsInterval = time.Millisecond
 
-	trc.StartSpan("operation").Finish()
+	tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
+	defer stop()
+
+	tracer.StartSpan("operation").Finish()
+	flush(1)
 	tg.Wait(3, 1*time.Second)
+
 	counts := tg.Counts()
 	assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
 	assert.Equal(int64(1), counts["datadog.tracer.spans_finished"])
 	assert.Equal(int64(0), counts["datadog.tracer.traces_dropped"])
-	trc.Stop()
 }
 
 func TestTracerMetrics(t *testing.T) {
 	assert := assert.New(t)
 	var tg testStatsdClient
-	tracer, _, stop := startTestTracer(withStatsdClient(&tg))
+	tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
 
 	tracer.StartSpan("operation").Finish()
-	tracer.flushChan <- struct{}{}
+	flush(1)
 	tg.Wait(5, 100*time.Millisecond)
 
 	calls := tg.CallsByName()

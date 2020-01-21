@@ -33,10 +33,6 @@ type tracer struct {
 	*config
 	*payload
 
-	// flushChan triggers a flush of the buffered payload. If the sent channel is
-	// not nil (only in tests), it will receive confirmation of a finished flush.
-	flushChan chan struct{}
-
 	// exitChan requests that the tracer stops.
 	exitChan chan struct{}
 
@@ -54,11 +50,6 @@ type tracer struct {
 
 	// wg waits for all goroutines to exit when stopping.
 	wg sync.WaitGroup
-
-	// syncPush is used for testing. When non-nil, it causes pushTrace to become
-	// a synchronous (blocking) operation, meaning that it will only return after
-	// the trace has been fully processed and added onto the payload.
-	syncPush chan struct{}
 
 	// prioritySampling holds an instance of the priority sampler.
 	prioritySampling *prioritySampler
@@ -81,10 +72,6 @@ const (
 	// to the transport.
 	flushInterval = 2 * time.Second
 
-	// statsInterval is the interval at which health metrics will be sent with the
-	// statsd client.
-	statsInterval = 10 * time.Second
-
 	// payloadMaxLimit is the maximum payload size allowed and should indicate the
 	// maximum size of the package that the agent can receive.
 	payloadMaxLimit = 9.5 * 1024 * 1024 // 9.5 MB
@@ -97,6 +84,10 @@ const (
 	// connections allowed.
 	concurrentConnectionLimit = 100
 )
+
+// statsInterval is the interval at which health metrics will be sent with the
+// statsd client; replaced in tests.
+var statsInterval = 10 * time.Second
 
 // Start starts the tracer with the given set of options. It will stop and replace
 // any running tracer, meaning that calling it several times will result in a restart
@@ -172,7 +163,6 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	return &tracer{
 		config:           c,
 		payload:          newPayload(),
-		flushChan:        make(chan struct{}, 1),
 		exitChan:         make(chan struct{}),
 		payloadChan:      make(chan []*span, payloadQueueSize),
 		stopped:          make(chan struct{}),
@@ -198,7 +188,13 @@ func newTracer(opts ...StartOption) *tracer {
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
-		t.worker()
+		tick := t.config.tickChan
+		if tick == nil {
+			ticker := time.NewTicker(flushInterval)
+			defer ticker.Stop()
+			tick = ticker.C
+		}
+		t.worker(tick)
 	}()
 
 	t.wg.Add(1)
@@ -211,23 +207,17 @@ func newTracer(opts ...StartOption) *tracer {
 
 // worker receives finished traces to be added into the payload, as well
 // as periodically flushes traces to the transport.
-func (t *tracer) worker() {
+func (t *tracer) worker(tick <-chan time.Time) {
 	defer t.config.statsd.Close()
-	ticker := time.NewTicker(flushInterval)
-	defer ticker.Stop()
 
 	for {
 		select {
 		case trace := <-t.payloadChan:
 			t.pushPayload(trace)
 
-		case <-ticker.C:
+		case <-tick:
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
-			t.flushPayload()
-
-		case <-t.flushChan:
-			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
-			t.flushPayload()
+			t.flush()
 
 		case <-t.exitChan:
 		loop:
@@ -242,7 +232,7 @@ func (t *tracer) worker() {
 				}
 			}
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:shutdown"}, 1)
-			t.flushPayload()
+			t.flush()
 			t.config.statsd.Incr("datadog.tracer.stopped", nil, 1)
 			return
 		}
@@ -259,10 +249,6 @@ func (t *tracer) pushTrace(trace []*span) {
 	case t.payloadChan <- trace:
 	default:
 		log.Error("payload queue full, dropping %d traces", len(trace))
-	}
-	if t.syncPush != nil {
-		// only in tests
-		<-t.syncPush
 	}
 }
 
@@ -366,7 +352,7 @@ func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 }
 
 // flush will push any currently buffered traces to the server.
-func (t *tracer) flushPayload() {
+func (t *tracer) flush() {
 	if t.payload.itemCount() == 0 {
 		return
 	}
@@ -403,16 +389,8 @@ func (t *tracer) pushPayload(trace []*span) {
 		log.Error("error encoding msgpack: %v", err)
 	}
 	if t.payload.size() > payloadSizeLimit {
-		// getting large
-		select {
-		case t.flushChan <- struct{}{}:
-		default:
-			// flush already queued
-		}
-	}
-	if t.syncPush != nil {
-		// only in tests
-		t.syncPush <- struct{}{}
+		t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
+		t.flush()
 	}
 }
 
