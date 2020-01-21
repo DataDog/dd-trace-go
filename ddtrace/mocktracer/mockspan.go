@@ -100,13 +100,12 @@ type mockspan struct {
 	name         string
 	tags         map[string]interface{}
 	finishTime   time.Time
+	finished     bool
 
 	startTime time.Time
 	parentID  uint64
 	context   *spanContext
 	tracer    *mocktracer
-
-	finished bool
 }
 
 // SetTag sets a given tag on the span.

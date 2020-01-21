@@ -179,16 +179,15 @@ func TestSpanFinish(t *testing.T) {
 
 func TestSpanFinishTwice(t *testing.T) {
 	s := basicSpan("http.request")
-	want := errors.New("some error")
-	s.Finish(tracer.WithError(want))
+	wantError := errors.New("some error")
+	s.Finish(tracer.WithError(wantError))
 
 	assert := assert.New(t)
-
-	previousFinishTime := s.finishTime
+	wantTime := s.finishTime
 	time.Sleep(2 * time.Millisecond)
 	s.Finish(tracer.WithError(errors.New("new error")))
-	assert.Equal(previousFinishTime, s.finishTime)
-	assert.Equal(want, s.Tag(ext.Error))
+	assert.Equal(wantTime, s.finishTime)
+	assert.Equal(wantError, s.Tag(ext.Error))
 	assert.Equal(len(s.tracer.finishedSpans), 1)
 }
 
