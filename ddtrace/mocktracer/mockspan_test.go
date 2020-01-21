@@ -177,6 +177,25 @@ func TestSpanFinish(t *testing.T) {
 	assert.Equal(want, s.Tag(ext.Error))
 }
 
+func TestSpanFinishTwice(t *testing.T) {
+	s := basicSpan("http.request")
+	want := errors.New("some error")
+	s.Finish(tracer.WithError(want))
+
+	assert := assert.New(t)
+	assert.False(s.FinishTime().IsZero())
+	assert.True(s.FinishTime().Before(time.Now()))
+	assert.Equal(want, s.Tag(ext.Error))
+
+	// the finish must be idempotent
+	previousFinishTime := s.finishTime
+	time.Sleep(2 * time.Millisecond)
+	s.Finish(tracer.WithError(errors.New("new error")))
+	assert.Equal(previousFinishTime, s.finishTime)
+	assert.Equal(want, s.Tag(ext.Error))
+	assert.Equal(len(s.tracer.finishedSpans), 1)
+}
+
 func TestSpanWithID(t *testing.T) {
 	spanID := uint64(123456789)
 	span := new(mocktracer).StartSpan("", tracer.WithSpanID(spanID))
