@@ -59,5 +59,5 @@ func WithResourceNamer(namer func(c *gin.Context) string) Option {
 }
 
 func defaultResourceNamer(c *gin.Context) string {
-	return c.HandlerName()
+	return c.Request.Method + " " + c.FullPath()
 }
