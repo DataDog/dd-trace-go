@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader, allowing
@@ -157,7 +158,7 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 		case "b3":
 			list = append(list, &propagatorB3{})
 		default:
-			// TODO(cgilmour): consider logging something for invalid/unknown styles.
+			log.Warn("unrecognized propagator: %s\n", v)
 		}
 	}
 	if len(list) == 0 {
