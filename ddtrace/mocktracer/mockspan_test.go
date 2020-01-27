@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package mocktracer
 
@@ -175,6 +175,20 @@ func TestSpanFinish(t *testing.T) {
 	assert.False(s.FinishTime().IsZero())
 	assert.True(s.FinishTime().Before(time.Now()))
 	assert.Equal(want, s.Tag(ext.Error))
+}
+
+func TestSpanFinishTwice(t *testing.T) {
+	s := basicSpan("http.request")
+	wantError := errors.New("some error")
+	s.Finish(tracer.WithError(wantError))
+
+	assert := assert.New(t)
+	wantTime := s.finishTime
+	time.Sleep(2 * time.Millisecond)
+	s.Finish(tracer.WithError(errors.New("new error")))
+	assert.Equal(wantTime, s.finishTime)
+	assert.Equal(wantError, s.Tag(ext.Error))
+	assert.Equal(len(s.tracer.finishedSpans), 1)
 }
 
 func TestSpanWithID(t *testing.T) {

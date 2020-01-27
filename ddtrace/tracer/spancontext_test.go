@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package tracer
 
@@ -31,7 +31,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	defer setupteardown(2, 2)()
 
 	tp := new(testLogger)
-	_, _, stop := startTestTracer(WithLogger(tp))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp))
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
 	parent.context.trace.push(newBasicSpan("test2")) // 2nd span in trace
@@ -48,7 +48,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 func TestAsyncSpanRace(t *testing.T) {
 	// This tests a regression where asynchronously finishing spans would
 	// modify a flushing root's sampling priority.
-	_, _, stop := startTestTracer()
+	_, _, _, stop := startTestTracer(t)
 	defer stop()
 
 	for i := 0; i < 100; i++ {
@@ -100,7 +100,7 @@ func TestSpanTracePushOne(t *testing.T) {
 
 	assert := assert.New(t)
 
-	tracer, transport, stop := startTestTracer()
+	_, transport, flush, stop := startTestTracer(t)
 	defer stop()
 
 	traceID := random.Uint64()
@@ -111,7 +111,7 @@ func TestSpanTracePushOne(t *testing.T) {
 	assert.Equal(root, trace.spans[0], "the span is the one pushed before")
 
 	root.Finish()
-	tracer.forceFlush()
+	flush(1)
 
 	traces := transport.Traces()
 	assert.Len(traces, 1)
@@ -127,7 +127,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	assert := assert.New(t)
 
 	tp := new(testLogger)
-	_, _, stop := startTestTracer(WithLogger(tp))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp))
 	defer stop()
 
 	buffer := newTrace()
@@ -153,7 +153,7 @@ func TestSpanTracePushSeveral(t *testing.T) {
 
 	assert := assert.New(t)
 
-	tracer, transport, stop := startTestTracer()
+	_, transport, flush, stop := startTestTracer(t)
 	defer stop()
 	buffer := newTrace()
 	assert.NotNil(buffer)
@@ -177,7 +177,7 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	for _, span := range trace {
 		span.Finish()
 	}
-	tracer.forceFlush()
+	flush(1)
 
 	traces := transport.Traces()
 	assert.Len(traces, 1)
@@ -192,7 +192,7 @@ func TestSpanTracePushSeveral(t *testing.T) {
 // priority metric set by inheriting it from a child.
 func TestSpanFinishPriority(t *testing.T) {
 	assert := assert.New(t)
-	tracer, transport, stop := startTestTracer()
+	tracer, transport, flush, stop := startTestTracer(t)
 	defer stop()
 
 	root := tracer.StartSpan(
@@ -207,7 +207,7 @@ func TestSpanFinishPriority(t *testing.T) {
 	child.Finish()
 	root.Finish()
 
-	tracer.forceFlush()
+	flush(1)
 
 	traces := transport.Traces()
 	assert.Len(traces, 1)
@@ -274,7 +274,7 @@ func TestNewSpanContext(t *testing.T) {
 	})
 
 	t.Run("root", func(t *testing.T) {
-		_, _, stop := startTestTracer()
+		_, _, _, stop := startTestTracer(t)
 		defer stop()
 		assert := assert.New(t)
 		ctx, err := NewPropagator(nil).Extract(TextMapCarrier(map[string]string{
@@ -344,7 +344,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	defer func(old int) { traceMaxSize = old }(traceMaxSize)
 	traceMaxSize = 2
 	tp := new(testLogger)
-	_, _, stop := startTestTracer(WithLogger(tp))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp))
 	defer stop()
 
 	span1 := newBasicSpan("span1")

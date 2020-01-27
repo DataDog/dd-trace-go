@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package tracer
 
@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"sync/atomic"
 
 	"github.com/tinylib/msgp/msgp"
 )
@@ -64,14 +65,14 @@ func (p *payload) push(t spanList) error {
 	if err := msgp.Encode(&p.buf, t); err != nil {
 		return err
 	}
-	p.count++
+	atomic.AddUint64(&p.count, 1)
 	p.updateHeader()
 	return nil
 }
 
 // itemCount returns the number of items available in the srteam.
 func (p *payload) itemCount() int {
-	return int(p.count)
+	return int(atomic.LoadUint64(&p.count))
 }
 
 // size returns the payload size in bytes. After the first read the value becomes
@@ -83,7 +84,7 @@ func (p *payload) size() int {
 // reset resets the internal buffer, counter and read offset.
 func (p *payload) reset() {
 	p.off = 8
-	p.count = 0
+	atomic.StoreUint64(&p.count, 0)
 	p.buf.Reset()
 	select {
 	case <-p.closed:
@@ -102,7 +103,7 @@ const (
 // updateHeader updates the payload header based on the number of items currently
 // present in the stream.
 func (p *payload) updateHeader() {
-	n := p.count
+	n := atomic.LoadUint64(&p.count)
 	switch {
 	case n <= 15:
 		p.header[7] = msgpackArrayFix + byte(n)

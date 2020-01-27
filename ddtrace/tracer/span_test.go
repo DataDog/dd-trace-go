@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package tracer
 
@@ -80,7 +80,7 @@ func TestSpanFinishTwice(t *testing.T) {
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
 
-	tracer, _, stop := startTestTracer()
+	tracer, _, _, stop := startTestTracer(t)
 	defer stop()
 
 	assert.Equal(tracer.payload.itemCount(), 0)
@@ -89,13 +89,13 @@ func TestSpanFinishTwice(t *testing.T) {
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	time.Sleep(wait)
 	span.Finish()
-	assert.Equal(tracer.payload.itemCount(), 1)
+	tracer.awaitPayload(t, 1)
 
 	previousDuration := span.Duration
 	time.Sleep(wait)
 	span.Finish()
 	assert.Equal(previousDuration, span.Duration)
-	assert.Equal(tracer.payload.itemCount(), 1)
+	tracer.awaitPayload(t, 1)
 }
 
 func TestSpanFinishWithTime(t *testing.T) {
@@ -345,7 +345,7 @@ func TestSpanErrorNil(t *testing.T) {
 
 // Prior to a bug fix, this failed when running `go test -race`
 func TestSpanModifyWhileFlushing(t *testing.T) {
-	tracer, _, stop := startTestTracer()
+	tracer, _, _, stop := startTestTracer(t)
 	defer stop()
 
 	done := make(chan struct{})
@@ -366,7 +366,8 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		case <-done:
 			return
 		default:
-			tracer.forceFlush()
+			tracer.flush()
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }

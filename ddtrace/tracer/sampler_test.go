@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package tracer
 
@@ -496,22 +496,6 @@ func TestSamplingLimiter(t *testing.T) {
 
 func BenchmarkRulesSampler(b *testing.B) {
 	const batchSize = 500
-	newTracer := func(opts ...StartOption) *tracer {
-		c := new(config)
-		defaults(c)
-		for _, fn := range opts {
-			fn(c)
-		}
-		return &tracer{
-			config:           c,
-			payloadChan:      make(chan []*span, batchSize),
-			flushChan:        make(chan chan<- struct{}, 1),
-			stopped:          make(chan struct{}),
-			exitChan:         make(chan struct{}, 1),
-			rulesSampling:    newRulesSampler(c.samplingRules),
-			prioritySampling: newPrioritySampler(),
-		}
-	}
 
 	benchmarkStartSpan := func(b *testing.B, t *tracer) {
 		internal.SetGlobalTracer(t)
@@ -553,7 +537,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 	}
 
 	b.Run("no-rules", func(b *testing.B) {
-		tracer := newTracer()
+		tracer := newUnstartedTracer()
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -563,7 +547,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameServiceRule("db.query", "postgres.db", 1.0),
 			NameRule("notweb.request", 1.0),
 		}
-		tracer := newTracer(WithSamplingRules(rules))
+		tracer := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -573,7 +557,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameServiceRule("db.query", "postgres.db", 1.0),
 			NameRule("web.request", 1.0),
 		}
-		tracer := newTracer(WithSamplingRules(rules))
+		tracer := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -603,7 +587,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameRule("notweb.request", 1.0),
 			NameRule("web.request", 1.0),
 		}
-		tracer := newTracer(WithSamplingRules(rules))
+		tracer := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 }

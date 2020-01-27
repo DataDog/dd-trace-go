@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package mocktracer // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
@@ -100,6 +100,7 @@ type mockspan struct {
 	name         string
 	tags         map[string]interface{}
 	finishTime   time.Time
+	finished     bool
 
 	startTime time.Time
 	parentID  uint64
@@ -111,6 +112,9 @@ type mockspan struct {
 func (s *mockspan) SetTag(key string, value interface{}) {
 	s.Lock()
 	defer s.Unlock()
+	if s.finished {
+		return
+	}
 	if s.tags == nil {
 		s.tags = make(map[string]interface{}, 1)
 	}
@@ -198,8 +202,12 @@ func (s *mockspan) Finish(opts ...ddtrace.FinishOption) {
 		s.SetTag(ext.Error, cfg.Error)
 	}
 	s.Lock()
+	defer s.Unlock()
+	if s.finished {
+		return
+	}
+	s.finished = true
 	s.finishTime = t
-	s.Unlock()
 	s.tracer.addFinishedSpan(s)
 }
 

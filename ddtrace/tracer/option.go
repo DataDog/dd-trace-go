@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package tracer
 
@@ -71,6 +71,10 @@ type config struct {
 	// samplingRules contains user-defined rules determine the sampling rate to apply
 	// to spans.
 	samplingRules []SamplingRule
+
+	// tickChan specifies a channel which will receive the time every time the tracer must flush.
+	// It defaults to time.Ticker; replaced in tests.
+	tickChan <-chan time.Time
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.

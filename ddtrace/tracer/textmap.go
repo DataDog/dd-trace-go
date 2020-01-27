@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package tracer
 
@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader, allowing
@@ -157,7 +158,7 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 		case "b3":
 			list = append(list, &propagatorB3{})
 		default:
-			// TODO(cgilmour): consider logging something for invalid/unknown styles.
+			log.Warn("unrecognized propagator: %s\n", v)
 		}
 	}
 	if len(list) == 0 {

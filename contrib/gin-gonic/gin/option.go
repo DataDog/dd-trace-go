@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package gin
 
@@ -59,5 +59,5 @@ func WithResourceNamer(namer func(c *gin.Context) string) Option {
 }
 
 func defaultResourceNamer(c *gin.Context) string {
-	return c.HandlerName()
+	return c.Request.Method + " " + c.FullPath()
 }
