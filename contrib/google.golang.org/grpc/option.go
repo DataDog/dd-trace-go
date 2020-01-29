@@ -22,6 +22,7 @@ type config struct {
 	traceStreamCalls    bool
 	traceStreamMessages bool
 	noDebugStack        bool
+	ignoredMethods      map[string]struct{}
 }
 
 func (cfg *config) serverServiceName() string {
@@ -114,5 +115,17 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithIgnoredMethods specifies full methods to be ignored by the server side interceptor.
+// When an incoming request's full method is in ms, no spans will be created.
+func WithIgnoredMethods(ms ...string) Option {
+	ims := make(map[string]struct{}, len(ms))
+	for _, e := range ms {
+		ims[e] = struct{}{}
+	}
+	return func(cfg *config) {
+		cfg.ignoredMethods = ims
 	}
 }
