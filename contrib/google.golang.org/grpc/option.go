@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package grpc
 
@@ -22,6 +22,7 @@ type config struct {
 	traceStreamCalls    bool
 	traceStreamMessages bool
 	noDebugStack        bool
+	ignoredMethods      map[string]struct{}
 }
 
 func (cfg *config) serverServiceName() string {
@@ -114,5 +115,17 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithIgnoredMethods specifies full methods to be ignored by the server side interceptor.
+// When an incoming request's full method is in ms, no spans will be created.
+func WithIgnoredMethods(ms ...string) Option {
+	ims := make(map[string]struct{}, len(ms))
+	for _, e := range ms {
+		ims[e] = struct{}{}
+	}
+	return func(cfg *config) {
+		cfg.ignoredMethods = ims
 	}
 }

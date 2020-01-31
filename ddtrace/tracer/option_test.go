@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package tracer
 
@@ -9,14 +9,23 @@ import (
 	"math"
 	"os"
 	"testing"
+	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 func withTransport(t transport) StartOption {
 	return func(c *config) {
 		c.transport = t
+	}
+}
+
+func withTickChan(ch <-chan time.Time) StartOption {
+	return func(c *config) {
+		c.tickChan = ch
 	}
 }
 
@@ -76,11 +85,29 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
 		})
 
+		t.Run("env-env", func(t *testing.T) {
+			os.Setenv("DD_ENV", "testEnv")
+			defer os.Unsetenv("DD_ENV")
+			tracer := newTracer()
+			c := tracer.config
+			assert.Equal(t, "testEnv", c.globalTags[ext.Environment])
+		})
+
 		t.Run("option", func(t *testing.T) {
 			tracer := newTracer(WithDogstatsdAddress("10.1.0.12:4002"))
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
 		})
+	})
+
+	t.Run("override", func(t *testing.T) {
+		os.Setenv("DD_ENV", "dev")
+		defer os.Unsetenv("DD_ENV")
+		assert := assert.New(t)
+		env := "production"
+		tracer := newTracer(WithEnv(env))
+		c := tracer.config
+		assert.Equal(env, c.globalTags[ext.Environment])
 	})
 
 	t.Run("other", func(t *testing.T) {
@@ -91,6 +118,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			WithAgentAddr("ddagent.consul.local:58126"),
 			WithGlobalTag("k", "v"),
 			WithDebugMode(true),
+			WithEnv("testEnv"),
 		)
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
@@ -98,6 +126,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal("ddagent.consul.local:58126", c.agentAddr)
 		assert.NotNil(c.globalTags)
 		assert.Equal("v", c.globalTags["k"])
+		assert.Equal("testEnv", c.globalTags[ext.Environment])
 		assert.True(c.debug)
 	})
 

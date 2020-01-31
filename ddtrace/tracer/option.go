@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package tracer
 
@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 // config holds the tracer configuration.
@@ -63,6 +65,17 @@ type config struct {
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
 	dogstatsdAddr string
+
+	// statsd is used for tracking metrics associated with the runtime and the tracer.
+	statsd statsdClient
+
+	// samplingRules contains user-defined rules determine the sampling rate to apply
+	// to spans.
+	samplingRules []SamplingRule
+
+	// tickChan specifies a channel which will receive the time every time the tracer must flush.
+	// It defaults to time.Ticker; replaced in tests.
+	tickChan <-chan time.Time
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -117,6 +130,29 @@ func defaults(c *config) {
 	} else {
 		c.serviceName = filepath.Base(os.Args[0])
 	}
+	if v := os.Getenv("DD_ENV"); v != "" {
+		WithEnv(v)(c)
+	}
+}
+
+func statsTags(c *config) []string {
+	tags := []string{
+		"lang:go",
+		"version:" + version.Tag,
+		"lang_version:" + runtime.Version(),
+	}
+	if c.serviceName != "" {
+		tags = append(tags, "service:"+c.serviceName)
+	}
+	if c.hostname != "" {
+		tags = append(tags, "host:"+c.hostname)
+	}
+	if v, ok := c.globalTags[ext.Environment]; ok {
+		if vv, ok := v.(string); ok {
+			tags = append(tags, "env:"+vv)
+		}
+	}
+	return tags
 }
 
 // WithLogger sets logger as the tracer's error printer.
@@ -164,6 +200,12 @@ func WithAgentAddr(addr string) StartOption {
 	return func(c *config) {
 		c.agentAddr = addr
 	}
+}
+
+// WithEnv sets the environment to which all traces started by the tracer will be submitted.
+// The default value is the environment variable DD_ENV, if it is set.
+func WithEnv(env string) StartOption {
+	return WithGlobalTag(ext.Environment, env)
 }
 
 // WithGlobalTag sets a key/value pair which will be set as a tag on all spans
@@ -231,6 +273,14 @@ func WithRuntimeMetrics() StartOption {
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
 		cfg.dogstatsdAddr = addr
+	}
+}
+
+// WithSamplingRules specifies the sampling rates to apply to spans based on the
+// provided rules.
+func WithSamplingRules(rules []SamplingRule) StartOption {
+	return func(cfg *config) {
+		cfg.samplingRules = rules
 	}
 }
 

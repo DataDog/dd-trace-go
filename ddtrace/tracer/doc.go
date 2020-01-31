@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 // Package tracer contains Datadog's core tracing client. It is used to trace
 // requests as they flow across web servers, databases and microservices, giving
@@ -19,6 +19,29 @@
 // requests, one would do:
 //   s := tracer.NewRateSampler(0.3)
 //   tracer.Start(tracer.WithSampler(s))
+//
+// More precise control of sampling rates can be configured using sampling rules.
+// This can be applied based on span name, service or both, and is used to determine
+// the sampling rate to apply.
+//   rules := []tracer.SamplingRule{
+//         // sample 10% of traces with the span name "web.request"
+//         tracer.NameRule("web.request", 0.1),
+//         // sample 20% of traces for the service "test-service"
+//         tracer.ServiceRule("test-service", 0.2),
+//         // sample 30% of traces when the span name is "db.query" and the service
+//         // is "postgres.db"
+//         tracer.NameServiceRule("db.query", "postgres.db", 0.3),
+//         // sample 100% of traces when service and name match these regular expressions
+//         {Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile("http\\..*"), Rate: 1.0},
+//   }
+//   tracer.Start(tracer.WithSamplingRules(rules))
+//   defer tracer.Stop()
+//
+// Sampling rules can also be configured at runtime using the DD_TRACE_SAMPLING_RULES
+// environment variable. When set, it overrides rules set by tracer.WithSamplingRules.
+// The value is a JSON array of objects. Each object must have a "sample_rate", and the
+// "name" and "service" fields are optional.
+//    export DD_TRACE_SAMPLING_RULES='[{"name": "web.request", "sample_rate": 1.0}]'
 //
 // All spans created by the tracer contain a context hereby referred to as the span
 // context. Note that this is different from Go's context. The span context is used

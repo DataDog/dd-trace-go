@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package grpc
 
@@ -70,9 +70,20 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 		fn(cfg)
 	}
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		var methodKind string
+		if desc != nil {
+			switch {
+			case desc.ServerStreams && desc.ClientStreams:
+				methodKind = methodKindBidiStream
+			case desc.ServerStreams:
+				methodKind = methodKindServerStream
+			case desc.ClientStreams:
+				methodKind = methodKindClientStream
+			}
+		}
 		var stream grpc.ClientStream
 		if cfg.traceStreamCalls {
-			span, err := doClientRequest(ctx, cfg, method, opts,
+			span, err := doClientRequest(ctx, cfg, method, methodKind, opts,
 				func(ctx context.Context, opts []grpc.CallOption) error {
 					var err error
 					stream, err = streamer(ctx, desc, cc, method, opts...)
@@ -124,7 +135,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 		fn(cfg)
 	}
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		span, err := doClientRequest(ctx, cfg, method, opts,
+		span, err := doClientRequest(ctx, cfg, method, methodKindUnary, opts,
 			func(ctx context.Context, opts []grpc.CallOption) error {
 				return invoker(ctx, method, req, reply, cc, opts...)
 			})
@@ -136,7 +147,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 // doClientRequest starts a new span and invokes the handler with the new context
 // and options. The span should be finished by the caller.
 func doClientRequest(
-	ctx context.Context, cfg *config, method string, opts []grpc.CallOption,
+	ctx context.Context, cfg *config, method string, methodKind string, opts []grpc.CallOption,
 	handler func(ctx context.Context, opts []grpc.CallOption) error,
 ) (ddtrace.Span, error) {
 	// inject the trace id into the metadata
@@ -147,6 +158,9 @@ func doClientRequest(
 		cfg.clientServiceName(),
 		cfg.analyticsRate,
 	)
+	if methodKind != "" {
+		span.SetTag(tagMethodKind, methodKind)
+	}
 	ctx = injectSpanIntoContext(ctx)
 
 	// fill in the peer so we can add it to the tags

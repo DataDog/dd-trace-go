@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package grpc
 
@@ -96,10 +96,12 @@ func TestUnary(t *testing.T) {
 			assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
 			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
+			assert.Equal(clientSpan.Tag(tagMethodKind), methodKindUnary)
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 			assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
 			assert.Equal(serverSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
+			assert.Equal(serverSpan.Tag(tagMethodKind), methodKindUnary)
 		})
 	}
 }
@@ -151,7 +153,12 @@ func TestStreaming(t *testing.T) {
 				assert.Equal(t, rig.port, span.Tag(ext.TargetPort),
 					"expected target host port to be set in span: %v", span)
 				fallthrough
-			case "grpc.server", "grpc.message":
+			case "grpc.server":
+				assert.Equal(t, methodKindBidiStream, span.Tag(tagMethodKind),
+					"expected tag %s == %s, but found %s.",
+					tagMethodKind, methodKindBidiStream, span.Tag(tagMethodKind))
+				fallthrough
+			case "grpc.message":
 				wantCode := codes.OK
 				if errTag := span.Tag("error"); errTag != nil {
 					if err, ok := errTag.(error); ok {
@@ -162,7 +169,7 @@ func TestStreaming(t *testing.T) {
 					"expected grpc code to be set in span: %v", span)
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.ResourceName),
 					"expected resource name to be set in span: %v", span)
-				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethod),
+				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethodName),
 					"expected grpc method name to be set in span: %v", span)
 			}
 		}
@@ -449,7 +456,6 @@ type rig struct {
 func (r *rig) Close() {
 	r.server.Stop()
 	r.conn.Close()
-	r.listener.Close()
 }
 
 func newRig(traceClient bool, interceptorOpts ...Option) (*rig, error) {
@@ -582,5 +588,78 @@ func TestAnalyticsSettings(t *testing.T) {
 		globalconfig.SetAnalyticsRate(0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	})
+}
+
+func TestIgnoredMethods(t *testing.T) {
+	t.Run("unary", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		for _, c := range []struct {
+			ignore []string
+			exp    int
+		}{
+			{ignore: []string{}, exp: 2},
+			{ignore: []string{"/some/endpoint"}, exp: 2},
+			{ignore: []string{"/grpc.Fixture/Ping"}, exp: 1},
+			{ignore: []string{"/grpc.Fixture/Ping", "/additional/endpoint"}, exp: 1},
+		} {
+			rig, err := newRig(true, WithIgnoredMethods(c.ignore...))
+			if err != nil {
+				t.Fatalf("error setting up rig: %s", err)
+			}
+			client := rig.client
+			resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+			assert.Nil(t, err)
+			assert.Equal(t, resp.Message, "passed")
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, c.exp)
+			rig.Close()
+			mt.Reset()
+		}
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		for _, c := range []struct {
+			ignore []string
+			exp    int
+		}{
+			// client span: 1 send + 1 recv(OK) + 1 stream finish (OK)
+			// server span: 1 send + 2 recv(OK + EOF) + 1 stream finish(EOF)
+			{ignore: []string{}, exp: 7},
+			{ignore: []string{"/some/endpoint"}, exp: 7},
+			{ignore: []string{"/grpc.Fixture/StreamPing"}, exp: 3},
+			{ignore: []string{"/grpc.Fixture/StreamPing", "/additional/endpoint"}, exp: 3},
+		} {
+			rig, err := newRig(true, WithIgnoredMethods(c.ignore...))
+			if err != nil {
+				t.Fatalf("error setting up rig: %s", err)
+			}
+
+			ctx, done := context.WithCancel(context.Background())
+			client := rig.client
+			stream, err := client.StreamPing(ctx)
+			assert.NoError(t, err)
+
+			err = stream.Send(&FixtureRequest{Name: "pass"})
+			assert.NoError(t, err)
+
+			resp, err := stream.Recv()
+			assert.NoError(t, err)
+			assert.Equal(t, resp.Message, "passed")
+
+			assert.NoError(t, stream.CloseSend())
+			done() // close stream from client side
+			rig.Close()
+
+			waitForSpans(mt, c.exp, 5*time.Second)
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, c.exp)
+			mt.Reset()
+		}
 	})
 }

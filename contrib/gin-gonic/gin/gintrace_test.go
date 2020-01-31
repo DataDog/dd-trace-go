@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package gin
 
@@ -76,7 +76,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
-	assert.Contains(span.Tag(ext.ResourceName), "gin.TestTrace200")
+	assert.Contains(span.Tag(ext.ResourceName), "GET /user/:id")
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	// TODO(x) would be much nicer to have "/user/:id" here
@@ -311,7 +311,7 @@ func TestResourceNamerSettings(t *testing.T) {
 		router.GET("/test", func(c *gin.Context) {
 			span, ok := tracer.SpanFromContext(c.Request.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ResourceName), c.HandlerName())
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ResourceName), "GET /test")
 		})
 
 		r := httptest.NewRequest("GET", "/test", nil)

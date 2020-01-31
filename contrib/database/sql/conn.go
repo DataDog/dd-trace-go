@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package sql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 
@@ -124,6 +124,13 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 	rows, err = tc.Query(query, dargs)
 	tc.tryTrace(ctx, "Query", query, start, err)
 	return rows, err
+}
+
+func (tc *tracedConn) CheckNamedValue(value *driver.NamedValue) error {
+	if checker, ok := tc.Conn.(driver.NamedValueChecker); ok {
+		return checker.CheckNamedValue(value)
+	}
+	return driver.ErrSkip
 }
 
 // traceParams stores all information related to tracing the driver.Conn

@@ -1,12 +1,13 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package tracer
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -24,6 +25,7 @@ type spanContext struct {
 
 	trace *trace // reference to the trace that this span belongs too
 	span  *span  // reference to the span that hosts this context
+	drop  bool   // when true, the span will not be sent to the agent
 
 	// the below group should propagate cross-process
 
@@ -48,6 +50,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	}
 	if parent != nil {
 		context.trace = parent.trace
+		context.drop = parent.drop
 		context.origin = parent.origin
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
@@ -199,17 +202,24 @@ func (t *trace) push(sp *span) {
 	if t.full {
 		return
 	}
+	tr, haveTracer := internal.GetGlobalTracer().(*tracer)
 	if len(t.spans) >= traceMaxSize {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
 		t.spans = nil // GC
 		log.Error("trace buffer full (%d), dropping trace", traceMaxSize)
+		if haveTracer {
+			atomic.AddInt64(&tr.tracesDropped, 1)
+		}
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
 		t.setSamplingPriorityLocked(v)
 	}
 	t.spans = append(t.spans, sp)
+	if haveTracer {
+		atomic.AddInt64(&tr.spansStarted, 1)
+	}
 }
 
 // finishedOne aknowledges that another span in the trace has finished, and checks
@@ -230,7 +240,7 @@ func (t *trace) finishedOne(s *span) {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		t.root.Metrics[keySamplingPriority] = *t.priority
+		t.root.setMetric(keySamplingPriority, *t.priority)
 		t.locked = true
 	}
 	if len(t.spans) != t.finished {
@@ -239,6 +249,7 @@ func (t *trace) finishedOne(s *span) {
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have a tracer that can receive completed traces.
 		tr.pushTrace(t.spans)
+		atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
 	}
 	t.spans = nil
 	t.finished = 0 // important, because a buffer can be used for several flushes

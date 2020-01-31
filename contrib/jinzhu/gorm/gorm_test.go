@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package gorm
 
@@ -125,7 +125,7 @@ func TestCallbacks(t *testing.T) {
 		assert.Equal("gorm.create", span.OperationName())
 		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		assert.Equal(
-			`INSERT  INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
+			`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
 			span.Tag(ext.ResourceName))
 	})
 

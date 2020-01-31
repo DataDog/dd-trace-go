@@ -1,18 +1,15 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 // Package http provides functions to trace the net/http package (https://golang.org/pkg/net/http).
 package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 
 import (
-	"math"
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
@@ -43,11 +40,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// get the resource associated to this request
 	_, route := mux.Handler(r)
 	resource := r.Method + " " + route
-	opts := mux.cfg.spanOpts
-	if !math.IsNaN(mux.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, mux.cfg.analyticsRate))
-	}
-	httputil.TraceAndServe(mux.ServeMux, w, r, mux.cfg.serviceName, resource, opts...)
+	httputil.TraceAndServe(mux.ServeMux, w, r, mux.cfg.serviceName, resource, mux.cfg.spanOpts...)
 }
 
 // WrapHandler wraps an http.Handler with tracing using the given service and resource.

@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 //go:generate protoc -I . fixtures_test.proto --go_out=plugins=grpc:.
 
@@ -29,7 +29,7 @@ func startSpanFromContext(
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
-		tracer.Tag(tagMethod, method),
+		tracer.Tag(tagMethodName, method),
 		tracer.SpanType(ext.AppTypeRPC),
 	}
 	if !math.IsNaN(rate) {

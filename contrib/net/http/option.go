@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package http
 
@@ -10,6 +10,8 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -28,6 +30,9 @@ type Option func(*config)
 func defaults(cfg *config) {
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.serviceName = "http.router"
+	if !math.IsNaN(cfg.analyticsRate) {
+		cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Tag(ext.EventSampleRate, cfg.analyticsRate)}
+	}
 }
 
 // WithServiceName sets the given service name for the returned ServeMux.
@@ -42,6 +47,7 @@ func WithAnalytics(on bool) MuxOption {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
+			cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Tag(ext.EventSampleRate, cfg.analyticsRate)}
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
@@ -54,6 +60,7 @@ func WithAnalyticsRate(rate float64) MuxOption {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
+			cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Tag(ext.EventSampleRate, cfg.analyticsRate)}
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
@@ -80,6 +87,7 @@ type roundTripperConfig struct {
 	before        RoundTripperBeforeFunc
 	after         RoundTripperAfterFunc
 	analyticsRate float64
+	serviceName   string
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
@@ -105,6 +113,13 @@ func WithBefore(f RoundTripperBeforeFunc) RoundTripperOption {
 func WithAfter(f RoundTripperAfterFunc) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.after = f
+	}
+}
+
+// RTWithServiceName sets the given service name for the RoundTripper.
+func RTWithServiceName(name string) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.serviceName = name
 	}
 }
 

@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package gocql
 
@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"testing"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -35,6 +36,10 @@ func newCassandraCluster() *gocql.ClusterConfig {
 	// since we're testing another behavior and not the client).
 	// Check: https://github.com/gocql/gocql/issues/946
 	cluster.DisableInitialHostLookup = true
+	// the default timeouts (600ms) are sometimes too short in CI and cause
+	// PRs being tested to flake due to this integration.
+	cluster.ConnectTimeout = 2 * time.Second
+	cluster.Timeout = 2 * time.Second
 	return cluster
 }
 

@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package http
 
@@ -33,6 +33,9 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	}
 	if !math.IsNaN(rt.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.analyticsRate))
+	}
+	if rt.cfg.serviceName != "" {
+		opts = append(opts, tracer.ServiceName(rt.cfg.serviceName))
 	}
 	span, ctx := tracer.StartSpanFromContext(req.Context(), defaultResourceName, opts...)
 	defer func() {

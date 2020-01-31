@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package grpc
 
@@ -53,7 +53,7 @@ func TestClientStatsHandler(t *testing.T) {
 		"grpc.code":     codes.OK.String(),
 		"service.name":  serviceName,
 		"resource.name": "/grpc.Fixture/Ping",
-		"grpc.method":   "/grpc.Fixture/Ping",
+		tagMethodName:   "/grpc.Fixture/Ping",
 		ext.TargetHost:  "127.0.0.1",
 		ext.TargetPort:  server.port,
 	}, span.Tags())

@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2019 Datadog, Inc.
+// Copyright 2016-2020 Datadog, Inc.
 
 package redigo
 
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/gomodule/redigo/redis"
 	"github.com/stretchr/testify/assert"
@@ -235,4 +236,19 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func TestDoWithTimeout(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	url := "redis://127.0.0.1:6379"
+	client, err := DialURL(url, WithServiceName("redis-service"))
+	assert.Nil(err)
+	_, err = redis.DoWithTimeout(client, time.Second, "SET", "ONE", " TWO")
+	assert.NoError(err)
+
+	spans := mt.FinishedSpans()
+	assert.True(len(spans) > 0)
 }
