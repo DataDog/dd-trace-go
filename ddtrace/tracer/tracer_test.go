@@ -496,8 +496,9 @@ func TestTracerPrioritySampler(t *testing.T) {
 	s := tr.newEnvSpan("pylons", "")
 	assert.Equal(1., s.Metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.Metrics[keySamplingPriority])
-	assert.True(s.context.hasSamplingPriority())
-	assert.EqualValues(s.context.samplingPriority(), s.Metrics[keySamplingPriority])
+	p, ok := s.context.samplingPriority()
+	assert.True(ok)
+	assert.EqualValues(p, s.Metrics[keySamplingPriority])
 	s.Finish()
 
 	tr.awaitPayload(t, 1)
@@ -532,8 +533,9 @@ func TestTracerPrioritySampler(t *testing.T) {
 		prio, ok := s.Metrics[keySamplingPriority]
 		assert.True(ok)
 		assert.Contains([]float64{0, 1}, prio)
-		assert.True(s.context.hasSamplingPriority())
-		assert.EqualValues(s.context.samplingPriority(), prio)
+		p, ok := s.context.samplingPriority()
+		assert.True(ok)
+		assert.EqualValues(p, prio)
 
 		// injectable
 		h := make(http.Header)

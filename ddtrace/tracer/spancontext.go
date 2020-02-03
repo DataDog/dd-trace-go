@@ -93,15 +93,11 @@ func (c *spanContext) setSamplingPriority(p int) {
 	c.trace.setSamplingPriority(float64(p))
 }
 
-func (c *spanContext) samplingPriority() int {
+func (c *spanContext) samplingPriority() (int, bool) {
 	if c.trace == nil {
-		return 0
+		return 0, false
 	}
 	return c.trace.samplingPriority()
-}
-
-func (c *spanContext) hasSamplingPriority() bool {
-	return c.trace != nil && c.trace.hasSamplingPriority()
 }
 
 func (c *spanContext) setBaggageItem(key, val string) {
@@ -158,19 +154,13 @@ func newTrace() *trace {
 	return &trace{spans: make([]*span, 0, traceStartSize)}
 }
 
-func (t *trace) hasSamplingPriority() bool {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.priority != nil
-}
-
-func (t *trace) samplingPriority() int {
+func (t *trace) samplingPriority() (int, bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.priority == nil {
-		return 0
+		return 0, false
 	}
-	return int(*t.priority)
+	return int(*t.priority), true
 }
 
 func (t *trace) setSamplingPriority(p float64) {
