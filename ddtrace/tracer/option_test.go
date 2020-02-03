@@ -134,7 +134,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		if err := os.Setenv("DD_SERVICE_NAME", "TEST_SERVICE"); err != nil {
 			panic("could not set environment variable DD_SERVICE_NAME during testing")
 		}
-		if err := os.Setenv("DD_TRACE_GLOBAL_TAGS", "env:test, aKey:aVal,bKey:bVal"); err != nil {
+		if err := os.Setenv("DD_TAGS", "env:test, aKey:aVal,bKey:bVal"); err != nil {
 			panic("could not set environment variable DD_TRACE_GLOBAL_TAGS during testing")
 		}
 
@@ -161,6 +161,6 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 		// unset the environment variables
 		os.Unsetenv("DD_SERVICE_NAME")
-		os.Unsetenv("DD_TRACE_GLOBAL_TAGS")
+		os.Unsetenv("DD_TAGS")
 	})
 }

@@ -103,33 +103,29 @@ func defaults(c *config) {
 		}
 	}
 
-	if os.Getenv("DD_TRACE_GLOBAL_TAGS") != "" {
+	if v := os.Getenv("DD_TAGS"); v != "" {
+		for _, tag := range strings.Split(v, ",") {
+			if tag == "" {
+				continue
+			}
 
-		if c.globalTags == nil {
-			c.globalTags = make(map[string]interface{})
-		}
-
-		osTags := os.Getenv("DD_TRACE_GLOBAL_TAGS")
-		if osTags != "" {
-			for _, tag := range strings.Split(osTags, ",") {
-				if tag != "" {
-					tag = strings.TrimSpace(tag)
-					var keyVal = strings.Split(tag, ":")
-					if len(keyVal) == 2 {
-						var key = strings.TrimSpace(keyVal[0])
-						var val = strings.TrimSpace(keyVal[1])
-						c.globalTags[key] = val
-					}
-				}
+			kv := strings.SplitN(strings.TrimSpace(tag), ":", 2)
+			k := strings.TrimSpace(kv[0])
+			switch len(kv) {
+			case 1:
+				WithGlobalTag(k, "")(c)
+			case 2:
+				WithGlobalTag(k, strings.TrimSpace(kv[1]))(c)
 			}
 		}
 	}
 
-	if os.Getenv("DD_SERVICE_NAME") != "" {
-		c.serviceName = os.Getenv("DD_SERVICE_NAME")
+	if v := os.Getenv("DD_SERVICE_NAME"); v != "" {
+		c.serviceName = v
 	} else {
 		c.serviceName = filepath.Base(os.Args[0])
 	}
+
 	if v := os.Getenv("DD_ENV"); v != "" {
 		WithEnv(v)(c)
 	}
