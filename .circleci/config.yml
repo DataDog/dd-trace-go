@@ -108,6 +108,7 @@ jobs:
     - run:
         name: Fetching dependencies
         command: |
+          go get -v -t github.com/googleapis/gnostic@v0.4.0 # This is a temporary fix for k8s.io/client-go/kubernetes
           go get -v -t ./...
           go get -v -u golang.org/x/lint/golint
           go get -v -u github.com/alecthomas/gometalinter
