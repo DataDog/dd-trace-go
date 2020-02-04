@@ -140,7 +140,7 @@ var (
 	// by default we allocate for a handful of spans within the trace,
 	// reasonable as span is actually way bigger, and avoids re-allocating
 	// over and over. Could be fine-tuned at runtime.
-	traceStartSize = 10
+	traceStartSize = uint32(10)
 	// traceMaxSize is the maximum number of spans we keep in memory.
 	// This is to avoid memory leaks, if above that value, spans are randomly
 	// dropped and ignore, resulting in corrupted tracing data, but ensuring
@@ -151,7 +151,7 @@ var (
 // newTrace creates a new trace using the given callback which will be called
 // upon completion of the trace.
 func newTrace() *trace {
-	return &trace{spans: make([]*span, 0, traceStartSize)}
+	return &trace{spans: make([]*span, 0, atomic.LoadUint32(&traceStartSize))}
 }
 
 func (t *trace) samplingPriority() (p int, ok bool) {
@@ -236,6 +236,12 @@ func (t *trace) finishedOne(s *span) {
 	if len(t.spans) != t.finished {
 		return
 	}
+
+	// Adjust the starting trace size to avoid allocations.
+	if uint32(len(t.spans)) > atomic.LoadUint32(&traceStartSize) {
+		atomic.StoreUint32(&traceStartSize, uint32(len(t.spans)))
+	}
+
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have a tracer that can receive completed traces.
 		tr.pushTrace(t.spans)
