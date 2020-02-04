@@ -93,7 +93,7 @@ func (c *spanContext) setSamplingPriority(p int) {
 	c.trace.setSamplingPriority(float64(p))
 }
 
-func (c *spanContext) samplingPriority() (int, bool) {
+func (c *spanContext) samplingPriority() (p int, ok bool) {
 	if c.trace == nil {
 		return 0, false
 	}
@@ -154,7 +154,7 @@ func newTrace() *trace {
 	return &trace{spans: make([]*span, 0, traceStartSize)}
 }
 
-func (t *trace) samplingPriority() (int, bool) {
+func (t *trace) samplingPriority() (p int, ok bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.priority == nil {
