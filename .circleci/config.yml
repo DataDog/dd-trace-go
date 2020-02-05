@@ -109,7 +109,7 @@ jobs:
         name: Vendor github.com/googleapis/gnostic for k8s.io/client-go
         # This step checks out k8s.io/client-go and vendors 
         # github.com/googleapis/gnostic to fix a breaking change made in
-        # gnostic. See kubernetes/client-go#731
+        # gnostic. See kubernetes/client-go#741
         command: |
           git clone https://github.com/kubernetes/client-go $GOPATH/src/k8s.io/client-go
           git clone --branch v0.4.0 https://github.com/googleapis/gnostic $GOPATH/src/k8s.io/client-go/vendor/github.com/googleapis/gnostic
