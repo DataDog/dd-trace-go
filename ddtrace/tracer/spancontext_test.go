@@ -19,7 +19,7 @@ import (
 func setupteardown(start, max int) func() {
 	oldStartSize := traceStartSize
 	oldMaxSize := traceMaxSize
-	traceStartSize = uint32(start)
+	traceStartSize = start
 	traceMaxSize = max
 	return func() {
 		traceStartSize = oldStartSize
