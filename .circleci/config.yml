@@ -110,6 +110,7 @@ jobs:
         # This step checks out k8s.io/client-go and vendors 
         # github.com/googleapis/gnostic to fix a breaking change made in
         # gnostic. See kubernetes/client-go#741
+        # TODO(knusbaum): remove this once the breaking change is resolved or propagated
         command: |
           git clone https://github.com/kubernetes/client-go $GOPATH/src/k8s.io/client-go
           git clone --branch v0.4.0 https://github.com/googleapis/gnostic $GOPATH/src/k8s.io/client-go/vendor/github.com/googleapis/gnostic
