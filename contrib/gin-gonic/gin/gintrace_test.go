@@ -76,7 +76,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
-	assert.Contains(span.Tag(ext.ResourceName), "GET /user/:id")
+	assert.Contains(span.Tag(ext.ResourceName), "gin.TestTrace200")
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	// TODO(x) would be much nicer to have "/user/:id" here
@@ -311,7 +311,7 @@ func TestResourceNamerSettings(t *testing.T) {
 		router.GET("/test", func(c *gin.Context) {
 			span, ok := tracer.SpanFromContext(c.Request.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ResourceName), "GET /test")
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ResourceName), c.HandlerName())
 		})
 
 		r := httptest.NewRequest("GET", "/test", nil)
