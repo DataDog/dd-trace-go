@@ -187,6 +187,8 @@ func TestTracerStartSpan(t *testing.T) {
 			ext.PriorityAutoReject,
 			ext.PriorityAutoKeep,
 		}, span.Metrics[keySamplingPriority])
+		// A span is not measured unless made so specifically
+		assert.NotEqual(span.Meta[keyMeasured], "1")
 	})
 
 	t.Run("priority", func(t *testing.T) {
@@ -200,6 +202,12 @@ func TestTracerStartSpan(t *testing.T) {
 		span := tracer.StartSpan("/home/user", Tag(ext.SpanName, "db.query")).(*span)
 		assert.Equal(t, "db.query", span.Name)
 		assert.Equal(t, "/home/user", span.Resource)
+	})
+
+	t.Run("measured span", func(t *testing.T) {
+		tracer := newTracer()
+		span := tracer.StartSpan("/home/user", MeasureSpan()).(*span)
+		assert.Equal(t, "1", span.Meta[keyMeasured])
 	})
 }
 
@@ -243,6 +251,7 @@ func TestTracerStartSpanOptions(t *testing.T) {
 		ResourceName("test.resource"),
 		StartTime(now),
 		WithSpanID(420),
+		MeasureSpan(),
 	}
 	span := tracer.StartSpan("web.request", opts...).(*span)
 	assert := assert.New(t)
@@ -252,6 +261,7 @@ func TestTracerStartSpanOptions(t *testing.T) {
 	assert.Equal(now.UnixNano(), span.Start)
 	assert.Equal(uint64(420), span.SpanID)
 	assert.Equal(uint64(420), span.TraceID)
+	assert.Equal("1", span.Meta[keyMeasured])
 }
 
 func TestTracerStartChildSpan(t *testing.T) {
@@ -320,6 +330,21 @@ func TestStartSpanOrigin(t *testing.T) {
 	err = tracer.Inject(child2.Context(), carrier2)
 	assert.Nil(err)
 	assert.Equal("synthetics", carrier2[originHeader])
+}
+
+func TestMeasuredSpan(t *testing.T) {
+	// Create three spans for a single trace.
+	// The first two are measured but the third one is not.
+	assert := assert.New(t)
+
+	tracer := newTracer(WithServiceName("my-service"))
+	root := tracer.StartSpan("web.request", ResourceName("/resource"), MeasureSpan()).(*span)
+	assert.Equal(root.Meta[keyMeasured], "1")
+	child := tracer.StartSpan("custom_operation", ChildOf(root.Context()), MeasureSpan()).(*span)
+	assert.Equal(child.Meta[keyMeasured], "1")
+	// child2 will not inherit the measured flag
+	child2 := tracer.StartSpan("nested_custom_operation", ChildOf(root.Context())).(*span)
+	assert.NotEqual(child2.Meta[keyMeasured], "1")
 }
 
 func TestPropagationDefaults(t *testing.T) {

@@ -288,6 +288,12 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
+// MeasureSpan adds the measured key to a span, thereby making it eligible for
+// APM metrics/stats calculation.
+func MeasureSpan() StartSpanOption {
+	return Tag(keyMeasured, "1")
+}
+
 // WithSpanID sets the SpanID on the started span, instead of using a random number.
 // If there is no parent Span (eg from ChildOf), then the TraceID will also be set to the
 // value given here.
