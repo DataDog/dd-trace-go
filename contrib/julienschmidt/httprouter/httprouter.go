@@ -14,13 +14,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
-	"github.com/julienschmidt/httprouter"
 )
 
 // Router is a traced version of httprouter.Router.
 type Router struct {
-	*httprouter.Router
+	http.Handler
 	config *routerConfig
 }
 
@@ -34,7 +32,9 @@ func New(opts ...RouterOption) *Router {
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	return &Router{httprouter.New(), cfg}
+	r := &Router{r.config.handler, cfg}
+	r.config.handler = nil
+	return r
 }
 
 // ServeHTTP implements http.Handler.
@@ -46,5 +46,5 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
-	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, r.config.spanOpts...)
+	httputil.TraceAndServe(r.Handler, w, req, r.config.serviceName, resource, r.config.spanOpts...)
 }

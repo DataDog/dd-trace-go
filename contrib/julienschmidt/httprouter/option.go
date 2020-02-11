@@ -7,7 +7,9 @@ package httprouter
 
 import (
 	"math"
+	"net/http"
 
+	"github.com/julienschmidt/httprouter"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -16,6 +18,7 @@ type routerConfig struct {
 	serviceName   string
 	spanOpts      []ddtrace.StartSpanOption
 	analyticsRate float64
+	handler       http.Handler
 }
 
 // RouterOption represents an option that can be passed to New.
@@ -24,6 +27,7 @@ type RouterOption func(*routerConfig)
 func defaults(cfg *routerConfig) {
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.serviceName = "http.router"
+	cfg.handler = httprouter.New()
 }
 
 // WithServiceName sets the given service name for the returned router.
@@ -60,5 +64,12 @@ func WithAnalyticsRate(rate float64) RouterOption {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithHandler sets the handler.
+func WithHandler(h http.Handler) RouterOption {
+	return func(cfg *routerConfig) {
+		cfg.handler = h
 	}
 }
