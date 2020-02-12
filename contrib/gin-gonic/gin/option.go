@@ -7,6 +7,7 @@ package gin
 
 import (
 	"math"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -59,5 +60,15 @@ func WithResourceNamer(namer func(c *gin.Context) string) Option {
 }
 
 func defaultResourceNamer(c *gin.Context) string {
-	return c.Request.Method + " " + c.FullPath()
+	// getName is a hacky way to check whether *gin.Context implements the FullPath()
+	// method introduced in v1.4.0, falling back to the previous implementation otherwise.
+	getName := func(req *http.Request, c interface{ HandlerName() string }) string {
+		if fp, ok := c.(interface {
+			FullPath() string
+		}); ok {
+			return req.Method + " " + fp.FullPath()
+		}
+		return c.HandlerName()
+	}
+	return getName(c.Request, c)
 }
