@@ -62,7 +62,7 @@ func Test(t *testing.T) {
 	{
 		s := spans[1]
 		assert.Equal(t, "query TestQuery() { hello }", s.Tag(tagGraphqlQuery))
-		assert.Equal(t, "TestQuery", s.Tag(tagGraphqlOperation))
+		assert.Equal(t, "TestQuery", s.Tag(tagGraphqlOperationName))
 		assert.Nil(t, s.Tag(ext.Error))
 		assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
 		assert.Equal(t, "graphql.request", s.OperationName())

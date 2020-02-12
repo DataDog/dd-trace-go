@@ -25,10 +25,10 @@ import (
 )
 
 const (
-	tagGraphqlField     = "graphql.field"
-	tagGraphqlQuery     = "graphql.query"
-	tagGraphqlType      = "graphql.type"
-	tagGraphqlOperation = "graphql.operation"
+	tagGraphqlField         = "graphql.field"
+	tagGraphqlQuery         = "graphql.query"
+	tagGraphqlType          = "graphql.type"
+	tagGraphqlOperationName = "graphql.operation.name"
 )
 
 // A Tracer implements the graphql-go/trace.Tracer interface by sending traces
@@ -44,7 +44,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlQuery, queryString),
-		tracer.Tag(tagGraphqlOperation, operationName),
+		tracer.Tag(tagGraphqlOperationName, operationName),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
