@@ -284,8 +284,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// this is a child span
 		span.TraceID = context.traceID
 		span.ParentID = context.spanID
-		if context.hasSamplingPriority() {
-			span.setMetric(keySamplingPriority, float64(context.samplingPriority()))
+		if p, ok := context.samplingPriority(); ok {
+			span.setMetric(keySamplingPriority, float64(p))
 		}
 		if context.span != nil {
 			// local parent, inherit service
@@ -394,7 +394,7 @@ const sampleRateMetricKey = "_sample_rate"
 
 // Sample samples a span with the internal sampler.
 func (t *tracer) sample(span *span) {
-	if span.context.hasSamplingPriority() {
+	if _, ok := span.context.samplingPriority(); ok {
 		// sampling decision was already made
 		return
 	}

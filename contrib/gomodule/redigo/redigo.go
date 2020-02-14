@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"time"
 
 	redis "github.com/gomodule/redigo/redis"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -24,6 +25,12 @@ import (
 // Conn is an implementation of the redis.Conn interface that supports tracing
 type Conn struct {
 	redis.Conn
+	*params
+}
+
+// ConnWithTimeout is an implementation of the redis.ConnWithTimeout interface that supports tracing
+type ConnWithTimeout struct {
+	redis.ConnWithTimeout
 	*params
 }
 
@@ -53,6 +60,14 @@ func parseOptions(options ...interface{}) ([]redis.DialOption, *dialConfig) {
 	return dialOpts, cfg
 }
 
+func wrapConn(c redis.Conn, p *params) redis.Conn {
+	if connWithTimeout, ok := c.(redis.ConnWithTimeout); ok {
+		return ConnWithTimeout{connWithTimeout, p}
+	}
+
+	return Conn{c, p}
+}
+
 // Dial dials into the network address and returns a traced redis.Conn.
 // The set of supported options must be either of type redis.DialOption or this package's DialOption.
 func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
@@ -65,7 +80,7 @@ func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	tc := Conn{c, &params{cfg, network, host, port}}
+	tc := wrapConn(c, &params{cfg, network, host, port})
 	return tc, nil
 }
 
@@ -89,13 +104,12 @@ func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 	}
 	network := "tcp"
 	c, err := redis.DialURL(rawurl, dialOpts...)
-	tc := Conn{c, &params{cfg, network, host, port}}
+	tc := wrapConn(c, &params{cfg, network, host, port})
 	return tc, err
 }
 
 // newChildSpan creates a span inheriting from the given context. It adds to the span useful metadata about the traced Redis connection
-func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
-	p := tc.params
+func newChildSpan(ctx context.Context, p *params) ddtrace.Span {
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
@@ -110,11 +124,7 @@ func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 	return span
 }
 
-// Do wraps redis.Conn.Do. It sends a command to the Redis server and returns the received reply.
-// In the process it emits a span containing key information about the command sent.
-// When passed a context.Context as the final argument, Do will ensure that any span created
-// inherits from this context. The rest of the arguments are passed through to the Redis server unchanged.
-func (tc Conn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
+func withSpan(do func(commandName string, args ...interface{}) (interface{}, error), p *params, commandName string, args ...interface{}) (reply interface{}, err error) {
 	var (
 		ctx context.Context
 		ok  bool
@@ -126,7 +136,7 @@ func (tc Conn) Do(commandName string, args ...interface{}) (reply interface{}, e
 		}
 	}
 
-	span := tc.newChildSpan(ctx)
+	span := newChildSpan(ctx, p)
 	defer func() {
 		span.Finish(tracer.WithError(err))
 	}()
@@ -158,5 +168,46 @@ func (tc Conn) Do(commandName string, args ...interface{}) (reply interface{}, e
 		}
 	}
 	span.SetTag("redis.raw_command", b.String())
-	return tc.Conn.Do(commandName, args...)
+	return do(commandName, args...)
+}
+
+// Do wraps redis.Conn.Do. It sends a command to the Redis server and returns the received reply.
+// In the process it emits a span containing key information about the command sent.
+// When passed a context.Context as the final argument, Do will ensure that any span created
+// inherits from this context. The rest of the arguments are passed through to the Redis server unchanged.
+func (tc Conn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
+	return withSpan(
+		tc.Conn.Do,
+		tc.params,
+		commandName,
+		args...,
+	)
+}
+
+// Do wraps redis.Conn.Do. It sends a command to the Redis server and returns the received reply.
+// In the process it emits a span containing key information about the command sent.
+// When passed a context.Context as the final argument, Do will ensure that any span created
+// inherits from this context. The rest of the arguments are passed through to the Redis server unchanged.
+func (tc ConnWithTimeout) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
+	return withSpan(
+		tc.ConnWithTimeout.Do,
+		tc.params,
+		commandName,
+		args...,
+	)
+}
+
+// DoWithTimeout wraps redis.Conn.DoWithTimeout. It sends a command to the Redis server and returns the received reply.
+// In the process it emits a span containing key information about the command sent.
+// When passed a context.Context as the final argument, Do will ensure that any span created
+// inherits from this context. The rest of the arguments are passed through to the Redis server unchanged.
+func (tc ConnWithTimeout) DoWithTimeout(readTimeout time.Duration, commandName string, args ...interface{}) (reply interface{}, err error) {
+	return withSpan(
+		func(commandName string, args ...interface{}) (interface{}, error) {
+			return tc.ConnWithTimeout.DoWithTimeout(readTimeout, commandName, args...)
+		},
+		tc.params,
+		commandName,
+		args...,
+	)
 }

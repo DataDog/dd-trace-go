@@ -32,7 +32,7 @@ func (ss *serverStream) Context() context.Context {
 }
 
 func (ss *serverStream) RecvMsg(m interface{}) (err error) {
-	if ss.cfg.traceStreamMessages {
+	if _, ok := ss.cfg.ignoredMethods[ss.method]; ss.cfg.traceStreamMessages && !ok {
 		span, _ := startSpanFromContext(
 			ss.ctx,
 			ss.method,
@@ -47,7 +47,7 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 }
 
 func (ss *serverStream) SendMsg(m interface{}) (err error) {
-	if ss.cfg.traceStreamMessages {
+	if _, ok := ss.cfg.ignoredMethods[ss.method]; ss.cfg.traceStreamMessages && !ok {
 		span, _ := startSpanFromContext(
 			ss.ctx,
 			ss.method,
@@ -73,9 +73,8 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 	}
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		ctx := ss.Context()
-
 		// if we've enabled call tracing, create a span
-		if cfg.traceStreamCalls {
+		if _, ok := cfg.ignoredMethods[info.FullMethod]; cfg.traceStreamCalls && !ok {
 			var span ddtrace.Span
 			span, ctx = startSpanFromContext(
 				ctx,
@@ -116,6 +115,9 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 		fn(cfg)
 	}
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if _, ok := cfg.ignoredMethods[info.FullMethod]; ok {
+			return handler(ctx, req)
+		}
 		span, ctx := startSpanFromContext(
 			ctx,
 			info.FullMethod,

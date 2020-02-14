@@ -255,24 +255,24 @@ func (s *span) setMetric(key string, v float64) {
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *span) Finish(opts ...ddtrace.FinishOption) {
-	var cfg ddtrace.FinishConfig
-	for _, fn := range opts {
-		fn(&cfg)
-	}
-	var t int64
-	if cfg.FinishTime.IsZero() {
-		t = now()
-	} else {
-		t = cfg.FinishTime.UnixNano()
-	}
-	if cfg.Error != nil {
-		s.Lock()
-		s.setTagError(cfg.Error, &errorConfig{
-			noDebugStack: cfg.NoDebugStack,
-			stackFrames:  cfg.StackFrames,
-			stackSkip:    cfg.SkipStackFrames,
-		})
-		s.Unlock()
+	t := now()
+	if len(opts) > 0 {
+		var cfg ddtrace.FinishConfig
+		for _, fn := range opts {
+			fn(&cfg)
+		}
+		if !cfg.FinishTime.IsZero() {
+			t = cfg.FinishTime.UnixNano()
+		}
+		if cfg.Error != nil {
+			s.Lock()
+			s.setTagError(cfg.Error, &errorConfig{
+				noDebugStack: cfg.NoDebugStack,
+				stackFrames:  cfg.StackFrames,
+				stackSkip:    cfg.SkipStackFrames,
+			})
+			s.Unlock()
+		}
 	}
 	if s.taskEnd != nil {
 		s.taskEnd()
