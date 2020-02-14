@@ -87,7 +87,7 @@ func (t *tracer) reportRuntimeMetrics(interval time.Duration) {
 				statsd.Gauge("runtime.go.gc_stats.pause_quantiles."+p, float64(gc.PauseQuantiles[i]), nil, 1)
 			}
 
-		case <-t.exitChan:
+		case <-t.stop:
 			return
 		}
 	}
@@ -102,7 +102,7 @@ func (t *tracer) reportHealthMetrics(interval time.Duration) {
 			t.config.statsd.Count("datadog.tracer.spans_started", atomic.SwapInt64(&t.spansStarted, 0), nil, 1)
 			t.config.statsd.Count("datadog.tracer.spans_finished", atomic.SwapInt64(&t.spansFinished, 0), nil, 1)
 			t.config.statsd.Count("datadog.tracer.traces_dropped", atomic.SwapInt64(&t.tracesDropped, 0), []string{"reason:trace_too_large"}, 1)
-		case <-t.exitChan:
+		case <-t.stop:
 			return
 		}
 	}

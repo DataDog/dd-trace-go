@@ -253,7 +253,7 @@ func TestReportRuntimeMetrics(t *testing.T) {
 		trc.reportRuntimeMetrics(time.Millisecond)
 	}()
 	err := tg.Wait(35, 1*time.Second)
-	close(trc.exitChan)
+	close(trc.stop)
 	assert := assert.New(t)
 	assert.NoError(err)
 	calls := tg.CallNames()
