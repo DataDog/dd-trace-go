@@ -100,6 +100,7 @@ type mockspan struct {
 	name         string
 	tags         map[string]interface{}
 	finishTime   time.Time
+	finished     bool
 
 	startTime time.Time
 	parentID  uint64
@@ -111,6 +112,9 @@ type mockspan struct {
 func (s *mockspan) SetTag(key string, value interface{}) {
 	s.Lock()
 	defer s.Unlock()
+	if s.finished {
+		return
+	}
 	if s.tags == nil {
 		s.tags = make(map[string]interface{}, 1)
 	}
@@ -198,8 +202,12 @@ func (s *mockspan) Finish(opts ...ddtrace.FinishOption) {
 		s.SetTag(ext.Error, cfg.Error)
 	}
 	s.Lock()
+	defer s.Unlock()
+	if s.finished {
+		return
+	}
+	s.finished = true
 	s.finishTime = t
-	s.Unlock()
 	s.tracer.addFinishedSpan(s)
 }
 

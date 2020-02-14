@@ -41,7 +41,8 @@ func Test(t *testing.T) {
 	defer mt.Stop()
 
 	http.Post(srv.URL, "application/json", strings.NewReader(`{
-		"query": "{ hello }"
+		"query": "query TestQuery() { hello }",
+		"operationName": "TestQuery"
 	}`))
 
 	spans := mt.FinishedSpans()
@@ -60,7 +61,8 @@ func Test(t *testing.T) {
 
 	{
 		s := spans[1]
-		assert.Equal(t, "{ hello }", s.Tag(tagGraphqlQuery))
+		assert.Equal(t, "query TestQuery() { hello }", s.Tag(tagGraphqlQuery))
+		assert.Equal(t, "TestQuery", s.Tag(tagGraphqlOperationName))
 		assert.Nil(t, s.Tag(ext.Error))
 		assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
 		assert.Equal(t, "graphql.request", s.OperationName())

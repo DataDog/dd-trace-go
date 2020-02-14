@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"testing"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -19,6 +20,12 @@ import (
 func withTransport(t transport) StartOption {
 	return func(c *config) {
 		c.transport = t
+	}
+}
+
+func withTickChan(ch <-chan time.Time) StartOption {
+	return func(c *config) {
+		c.tickChan = ch
 	}
 }
 

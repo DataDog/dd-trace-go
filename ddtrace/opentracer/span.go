@@ -66,7 +66,6 @@ func (s *span) LogFields(fields ...log.Field) {
 func (s *span) LogKV(keyVals ...interface{}) {
 	fields, err := log.InterleavedKVToFields(keyVals...)
 	if err != nil {
-		// TODO(gbbr): create a log package
 		return
 	}
 	s.LogFields(fields...)
