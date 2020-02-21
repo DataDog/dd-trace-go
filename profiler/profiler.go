@@ -28,8 +28,7 @@ var (
 var ErrMissingAPIKey = errors.New("API key is missing; provide it using the profiler.WithAPIKey option")
 
 // Start starts the profiler. It may return an error if an API key is not provided by means of
-// the WithAPIKey option, or if a hostname is not found. In the latter case, it may be provided
-// using the WithHostname option.
+// the WithAPIKey option, or if a hostname is not found.
 func Start(opts ...Option) error {
 	cfg := defaultConfig()
 	for _, opt := range opts {

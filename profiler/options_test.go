@@ -28,12 +28,6 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, "my-url", cfg.apiURL)
 	})
 
-	t.Run("WithHostname", func(t *testing.T) {
-		var cfg config
-		WithHostname("my-hostname")(&cfg)
-		assert.Equal(t, "my-hostname", cfg.hostname)
-	})
-
 	t.Run("WithPeriod", func(t *testing.T) {
 		var cfg config
 		WithPeriod(2 * time.Second)(&cfg)

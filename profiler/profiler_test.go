@@ -47,14 +47,14 @@ func TestStart(t *testing.T) {
 	})
 
 	t.Run("options", func(t *testing.T) {
-		if err := Start(WithAPIKey("123"), WithHostname("my-host")); err != nil {
+		if err := Start(WithAPIKey("123")); err != nil {
 			t.Fatal(err)
 		}
 		defer Stop()
 
 		mu.Lock()
 		require.NotNil(t, activeProfiler)
-		assert.Equal(t, "my-host", activeProfiler.cfg.hostname)
+		assert.NotEmpty(t, activeProfiler.cfg.hostname)
 		mu.Unlock()
 	})
 }

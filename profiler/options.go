@@ -95,13 +95,6 @@ func WithURL(url string) Option {
 	}
 }
 
-// WithHostname allows specifying a custom hostname.
-func WithHostname(hostname string) Option {
-	return func(cfg *config) {
-		cfg.hostname = hostname
-	}
-}
-
 // WithPeriod specifies the interval at which to collect profiles.
 func WithPeriod(d time.Duration) Option {
 	return func(cfg *config) {
