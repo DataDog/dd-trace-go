@@ -288,10 +288,9 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
-// MeasureSpan adds the measured key to a span, thereby making it eligible for
-// APM metrics/stats calculation.
+// MeasureSpan marks this span to be measured for metrics and stats calculations.
 func MeasureSpan() StartSpanOption {
-	return Tag(keyMeasured, "1")
+	return Tag(keyMeasured, 1)
 }
 
 // WithSpanID sets the SpanID on the started span, instead of using a random number.

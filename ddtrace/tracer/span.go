@@ -344,5 +344,5 @@ const (
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
 	keyRulesSamplerLimiterRate = "_dd.limit_psr"
-	keyMeasured             = "_dd.measured"
+	keyMeasured                = "_dd.measured"
 )

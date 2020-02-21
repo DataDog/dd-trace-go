@@ -204,10 +204,10 @@ func TestTracerStartSpan(t *testing.T) {
 		assert.Equal(t, "/home/user", span.Resource)
 	})
 
-	t.Run("measured span", func(t *testing.T) {
+	t.Run("measured", func(t *testing.T) {
 		tracer := newTracer()
 		span := tracer.StartSpan("/home/user", MeasureSpan()).(*span)
-		assert.Equal(t, "1", span.Meta[keyMeasured])
+		assert.Equal(t, float64(1), span.Metrics[keyMeasured])
 	})
 }
 
@@ -261,7 +261,7 @@ func TestTracerStartSpanOptions(t *testing.T) {
 	assert.Equal(now.UnixNano(), span.Start)
 	assert.Equal(uint64(420), span.SpanID)
 	assert.Equal(uint64(420), span.TraceID)
-	assert.Equal("1", span.Meta[keyMeasured])
+	assert.Equal(float64(1), span.Metrics[keyMeasured])
 }
 
 func TestTracerStartChildSpan(t *testing.T) {
@@ -339,12 +339,12 @@ func TestMeasuredSpan(t *testing.T) {
 
 	tracer := newTracer(WithServiceName("my-service"))
 	root := tracer.StartSpan("web.request", ResourceName("/resource"), MeasureSpan()).(*span)
-	assert.Equal(root.Meta[keyMeasured], "1")
+	assert.Equal(float64(1), root.Metrics[keyMeasured])
 	child := tracer.StartSpan("custom_operation", ChildOf(root.Context()), MeasureSpan()).(*span)
-	assert.Equal(child.Meta[keyMeasured], "1")
+	assert.Equal(float64(1), child.Metrics[keyMeasured])
 	// child2 will not inherit the measured flag
 	child2 := tracer.StartSpan("nested_custom_operation", ChildOf(root.Context())).(*span)
-	assert.NotEqual(child2.Meta[keyMeasured], "1")
+	assert.NotEqual(float64(1), child2.Metrics[keyMeasured])
 }
 
 func TestPropagationDefaults(t *testing.T) {
