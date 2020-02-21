@@ -16,6 +16,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // maxRetries specifies the maximum number of retries to have when an error occurs.
@@ -46,7 +48,7 @@ func (p *profiler) upload(bat batch) error {
 		if rerr, ok := err.(*retriableError); ok {
 			statsd.Count("datadog.profiler.go.upload_retry", 1, nil, 1)
 			wait := backoffDuration(i+1, p.cfg.cpuDuration)
-			p.log("Upload failed: %v. Trying again in %s...", rerr, wait)
+			log.Error("Uploading profile failed: %v. Trying again in %s...", rerr, wait)
 			time.Sleep(wait)
 			continue
 		}

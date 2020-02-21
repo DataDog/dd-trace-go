@@ -7,7 +7,6 @@ package profiler
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,7 +42,6 @@ type config struct {
 	service, env  string
 	hostname      string
 	statsd        StatsdClient
-	log           *log.Logger
 	tags          []string
 	types         map[ProfileType]struct{}
 	period        time.Duration
@@ -65,7 +63,6 @@ func defaultConfig() *config {
 		env:           defaultEnv,
 		service:       filepath.Base(os.Args[0]),
 		statsd:        noopStatsdClient{},
-		log:           log.New(os.Stderr, "Datadog Profiler: ", log.LstdFlags),
 		period:        DefaultPeriod,
 		cpuDuration:   DefaultDuration,
 		blockRate:     DefaultBlockRate,
@@ -176,12 +173,5 @@ func WithTags(tags ...string) Option {
 func WithStatsd(client StatsdClient) Option {
 	return func(cfg *config) {
 		cfg.statsd = client
-	}
-}
-
-// WithLogger specifies a custom logger for logging errors.
-func WithLogger(logger *log.Logger) Option {
-	return func(cfg *config) {
-		cfg.log = logger
 	}
 }

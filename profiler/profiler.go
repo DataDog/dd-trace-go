@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -115,7 +117,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			for t := range p.cfg.types {
 				prof, err := p.runProfile(t)
 				if err != nil {
-					p.log("Error getting %s profile: %v; skipping.\n", t, err)
+					log.Error("Error getting %s profile: %v; skipping.\n", t, err)
 					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, fmt.Sprintf("profile_type:%v", t)), 1)
 					continue
 				}
@@ -127,9 +129,6 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		}
 	}
 }
-
-// log logs the given message using the configured logger.
-func (p *profiler) log(fmt string, v ...interface{}) { p.cfg.log.Printf(fmt, v...) }
 
 // enqueueUpload pushes a batch of profiles onto the queue to be uploaded. If there is no room, it will
 // evict the oldest profile to make some. Typically a batch would be one of each enabled profile.
@@ -143,7 +142,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 			select {
 			case <-p.out:
 				p.cfg.statsd.Count("datadog.profiler.go.queue_full", 1, p.cfg.tags, 1)
-				p.log("Evicting one profile batch from the upload queue to make room.\n")
+				log.Warn("Evicting one profile batch from the upload queue to make room.\n")
 			default:
 				// queue is empty; contents likely got uploaded
 			}
@@ -156,7 +155,7 @@ func (p *profiler) send() {
 	defer close(p.exit)
 	for bat := range p.out {
 		if err := p.uploadFunc(bat); err != nil {
-			p.log("Failed to upload profile: %v\n", err)
+			log.Error("Failed to upload profile: %v\n", err)
 		}
 	}
 }
