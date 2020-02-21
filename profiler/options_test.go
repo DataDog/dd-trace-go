@@ -6,7 +6,6 @@
 package profiler
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -60,11 +59,7 @@ func TestDefaultConfig(t *testing.T) {
 		cfg := defaultConfig()
 		assert := assert.New(t)
 		assert.Equal(defaultAPIURL, cfg.apiURL)
-		if v := os.Getenv("DD_ENV"); v != "" {
-			assert.Equal(v, cfg.env)
-		} else {
-			assert.Equal(defaultEnv, cfg.env)
-		}
+		assert.Equal(defaultEnv, cfg.env)
 		assert.Equal(filepath.Base(os.Args[0]), cfg.service)
 		assert.Equal(len(defaultProfileTypes), len(cfg.types))
 		for _, pt := range defaultProfileTypes {
@@ -77,60 +72,6 @@ func TestDefaultConfig(t *testing.T) {
 		assert.Equal(DefaultDuration, cfg.cpuDuration)
 		assert.Equal(DefaultMutexFraction, cfg.mutexFraction)
 		assert.Equal(DefaultBlockRate, cfg.blockRate)
-	})
-
-	t.Run("env", func(t *testing.T) {
-		env, val := "DD_API_KEY", "123"
-		t.Run(env, func(t *testing.T) {
-			os.Setenv(env, val)
-			cfg := defaultConfig()
-			assert.Equal(t, val, cfg.apiKey)
-			os.Unsetenv(env)
-		})
-
-		env, val = "DD_HOSTNAME", "my-hostname"
-		t.Run(env, func(t *testing.T) {
-			os.Setenv(env, val)
-			cfg := defaultConfig()
-			assert.Equal(t, val, cfg.hostname)
-			os.Unsetenv(env)
-		})
-
-		env, val = "DD_ENV", "my-env"
-		t.Run(env, func(t *testing.T) {
-			os.Setenv(env, val)
-			cfg := defaultConfig()
-			assert.Equal(t, val, cfg.env)
-			os.Unsetenv(env)
-		})
-
-		env, val = "DD_SERVICE_NAME", "my-service"
-		t.Run(env, func(t *testing.T) {
-			os.Setenv(env, val)
-			cfg := defaultConfig()
-			assert.Equal(t, val, cfg.service)
-			os.Unsetenv(env)
-		})
-
-		env, val = "DD_PROFILE_URL", "http://my.url"
-		t.Run(env, func(t *testing.T) {
-			os.Setenv(env, val)
-			cfg := defaultConfig()
-			assert.Equal(t, val, cfg.apiURL)
-			os.Unsetenv(env)
-		})
-
-		env, val = "DD_PROFILE_TAGS", "a:b,c:d"
-		t.Run(env, func(t *testing.T) {
-			os.Setenv(env, val)
-			cfg := defaultConfig()
-			assert.ElementsMatch(t, []string{
-				"a:b",
-				"c:d",
-				fmt.Sprintf("pid:%d", os.Getpid()),
-			}, cfg.tags)
-			os.Unsetenv(env)
-		})
 	})
 }
 

@@ -25,11 +25,11 @@ var (
 )
 
 // ErrMissingAPIKey is returned when an API key was not found by the profiler.
-var ErrMissingAPIKey = errors.New("API key is missing; provide it using the profiler.WithAPIKey option or the DD_API_KEY environment variable")
+var ErrMissingAPIKey = errors.New("API key is missing; provide it using the profiler.WithAPIKey option")
 
-// Start starts the profiler. It may return an error if an API key is not provided by means of an
-// option or the DD_API_KEY environment variable, or if a hostname is not found. In the latter case,
-// it may be provided using the WithHostname option.
+// Start starts the profiler. It may return an error if an API key is not provided by means of
+// the WithAPIKey option, or if a hostname is not found. In the latter case, it may be provided
+// using the WithHostname option.
 func Start(opts ...Option) error {
 	cfg := defaultConfig()
 	for _, opt := range opts {

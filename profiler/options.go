@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -72,26 +71,8 @@ func defaultConfig() *config {
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
 	}
-	if v := os.Getenv("DD_API_KEY"); v != "" {
-		c.apiKey = v
-	}
-	if v := os.Getenv("DD_HOSTNAME"); v != "" {
-		c.hostname = v
-	}
-	if v := os.Getenv("DD_ENV"); v != "" {
-		c.env = v
-	}
-	if v := os.Getenv("DD_SERVICE_NAME"); v != "" {
-		c.service = v
-	}
-	if v := os.Getenv("DD_PROFILE_URL"); v != "" {
-		c.apiURL = v
-	}
-	if v := os.Getenv("DD_PROFILE_TAGS"); v != "" {
-		for _, tag := range strings.Split(v, ",") {
-			c.tags = append(c.tags, tag)
-		}
-	}
+	// TODO(x): add support for environment variables once we figure out
+	// the naming standards.
 	return &c
 }
 

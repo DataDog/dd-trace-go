@@ -4,6 +4,6 @@
 // Copyright 2016-2020 Datadog, Inc.
 
 // Package profiler periodically collects and sends profiles to the Datadog API. Use
-// Start to start the profiler. An API key needs to be specified by means of an option
-// or the environment variable DD_API_KEY.
+// Start to start the profiler. An API key needs to be specified by means of the WithAPIKey
+// option.
 package profiler
