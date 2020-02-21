@@ -33,17 +33,14 @@ type tracer struct {
 	*config
 	*payload
 
-	// exitChan requests that the tracer stops.
-	exitChan chan struct{}
-
 	// payloadChan receives traces to be added to the payload.
 	payloadChan chan []*span
 
-	// stopped is a channel that will be closed when the worker has exited.
-	stopped chan struct{}
-
 	// climit limits the number of concurrent outgoing connections
 	climit chan struct{}
+
+	// stop causes the tracer to shut down when closed.
+	stop chan struct{}
 
 	// stopOnce ensures the tracer is stopped exactly once.
 	stopOnce sync.Once
@@ -163,9 +160,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	return &tracer{
 		config:           c,
 		payload:          newPayload(),
-		exitChan:         make(chan struct{}),
 		payloadChan:      make(chan []*span, payloadQueueSize),
-		stopped:          make(chan struct{}),
+		stop:             make(chan struct{}),
 		rulesSampling:    newRulesSampler(c.samplingRules),
 		climit:           make(chan struct{}, concurrentConnectionLimit),
 		prioritySampling: newPrioritySampler(),
@@ -219,7 +215,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.flush()
 
-		case <-t.exitChan:
+		case <-t.stop:
 		loop:
 			// the loop ensures that the payload channel is fully drained
 			// before the final flush to ensure no traces are lost (see #526)
@@ -241,7 +237,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 
 func (t *tracer) pushTrace(trace []*span) {
 	select {
-	case <-t.stopped:
+	case <-t.stop:
 		return
 	default:
 	}
@@ -335,10 +331,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 // Stop stops the tracer.
 func (t *tracer) Stop() {
 	t.stopOnce.Do(func() {
-		close(t.exitChan)
-		t.wg.Wait()
-		close(t.stopped)
+		close(t.stop)
 	})
+	t.wg.Wait()
 }
 
 // Inject uses the configured or default TextMap Propagator.

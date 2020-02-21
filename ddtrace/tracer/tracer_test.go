@@ -156,14 +156,14 @@ func TestTracerStart(t *testing.T) {
 		defer stop()
 		tr.pushTrace([]*span{}) // blocks until worker is started
 		select {
-		case <-tr.stopped:
+		case <-tr.stop:
 			t.Fatal("stopped channel should be open")
 		default:
 			// OK
 		}
 		tr.Stop()
 		select {
-		case <-tr.stopped:
+		case <-tr.stop:
 			// OK
 		default:
 			t.Fatal("stopped channel should be closed")
