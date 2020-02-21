@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/datadog-go/statsd"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -66,7 +67,7 @@ func TestDefaultConfig(t *testing.T) {
 			_, ok := cfg.types[pt]
 			assert.True(ok)
 		}
-		_, ok := cfg.statsd.(noopStatsdClient)
+		_, ok := cfg.statsd.(*statsd.NoOpClient)
 		assert.True(ok)
 		assert.Equal(DefaultPeriod, cfg.period)
 		assert.Equal(DefaultDuration, cfg.cpuDuration)

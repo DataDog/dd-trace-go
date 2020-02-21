@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/DataDog/datadog-go/statsd"
 )
 
 const (
@@ -61,7 +63,7 @@ func defaultConfig() *config {
 		apiURL:        defaultAPIURL,
 		env:           defaultEnv,
 		service:       filepath.Base(os.Args[0]),
-		statsd:        noopStatsdClient{},
+		statsd:        &statsd.NoOpClient{},
 		period:        DefaultPeriod,
 		cpuDuration:   DefaultDuration,
 		blockRate:     DefaultBlockRate,

@@ -181,11 +181,3 @@ type StatsdClient interface {
 	// Timing creates a distribution of the values registered as the duration of a certain event.
 	Timing(event string, duration time.Duration, tags []string, rate float64) error
 }
-
-// noopStatsdClient is a no-op implementation of StatsdClient.
-type noopStatsdClient struct{}
-
-func (noopStatsdClient) Count(name string, value int64, tags []string, rate float64) error { return nil }
-func (noopStatsdClient) Timing(name string, value time.Duration, tags []string, rate float64) error {
-	return nil
-}
