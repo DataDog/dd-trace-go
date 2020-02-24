@@ -188,7 +188,8 @@ func TestTracerStartSpan(t *testing.T) {
 			ext.PriorityAutoKeep,
 		}, span.Metrics[keySamplingPriority])
 		// A span is not measured unless made so specifically
-		assert.NotEqual(span.Meta[keyMeasured], "1")
+		_, ok := span.Meta[keyMeasured]
+		assert.False(ok)
 	})
 
 	t.Run("priority", func(t *testing.T) {
@@ -330,21 +331,6 @@ func TestStartSpanOrigin(t *testing.T) {
 	err = tracer.Inject(child2.Context(), carrier2)
 	assert.Nil(err)
 	assert.Equal("synthetics", carrier2[originHeader])
-}
-
-func TestMeasuredSpan(t *testing.T) {
-	// Create three spans for a single trace.
-	// The first two are measured but the third one is not.
-	assert := assert.New(t)
-
-	tracer := newTracer(WithServiceName("my-service"))
-	root := tracer.StartSpan("web.request", ResourceName("/resource"), MeasureSpan()).(*span)
-	assert.Equal(float64(1), root.Metrics[keyMeasured])
-	child := tracer.StartSpan("custom_operation", ChildOf(root.Context()), MeasureSpan()).(*span)
-	assert.Equal(float64(1), child.Metrics[keyMeasured])
-	// child2 will not inherit the measured flag
-	child2 := tracer.StartSpan("nested_custom_operation", ChildOf(root.Context())).(*span)
-	assert.NotEqual(float64(1), child2.Metrics[keyMeasured])
 }
 
 func TestPropagationDefaults(t *testing.T) {
