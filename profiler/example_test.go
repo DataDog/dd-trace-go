@@ -15,7 +15,9 @@ import (
 func Example() {
 	err := profiler.Start(
 		profiler.WithAPIKey("123key"),
+		profiler.WithService("users-db"),
 		profiler.WithEnv("staging"),
+		profiler.WithTags("version:1.2.0"),
 	)
 	if err != nil {
 		log.Fatal(err)

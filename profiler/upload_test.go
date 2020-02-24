@@ -60,7 +60,7 @@ func TestTryUpload(t *testing.T) {
 	defer func(old *http.Client) { httpClient = old }(httpClient)
 	p := unstartedProfiler(
 		WithURL(srv.URL+"/"),
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithEnv("my-env"),
 		WithTags("tag1:1", "tag2:2"),
 	)

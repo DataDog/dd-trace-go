@@ -122,8 +122,8 @@ func WithProfileTypes(types ...ProfileType) Option {
 	}
 }
 
-// WithServiceName specifies the service name to attach a profile.
-func WithServiceName(name string) Option {
+// WithService specifies the service name to attach a profile.
+func WithService(name string) Option {
 	return func(cfg *config) {
 		cfg.service = name
 	}
