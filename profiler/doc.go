@@ -6,4 +6,4 @@
 // Package profiler periodically collects and sends profiles to the Datadog API. Use
 // Start to start the profiler. An API key needs to be specified by means of the WithAPIKey
 // option.
-package profiler
+package profiler // import "gopkg.in/DataDog/dd-trace-go.v1/profiler"
