@@ -130,18 +130,23 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.True(c.debug)
 	})
 
-	t.Run("envs", func(t *testing.T) {
-		if err := os.Setenv("DD_SERVICE_NAME", "TEST_SERVICE"); err != nil {
-			panic("could not set environment variable DD_SERVICE_NAME during testing")
-		}
-		if err := os.Setenv("DD_TAGS", "env:test, aKey:aVal,bKey:bVal"); err != nil {
-			panic("could not set environment variable DD_TRACE_GLOBAL_TAGS during testing")
-		}
+	t.Run("env-service", func(t *testing.T) {
+		os.Setenv("DD_SERVICE_NAME", "TEST_SERVICE")
+		defer os.Unsetenv("DD_SERVICE_NAME")
 
 		assert := assert.New(t)
 		var c config
 		defaults(&c)
 		assert.Equal("TEST_SERVICE", c.serviceName)
+	})
+
+	t.Run("env-tags", func(t *testing.T) {
+		os.Setenv("DD_TAGS", "env:test, aKey:aVal,bKey:bVal")
+		defer os.Unsetenv("DD_TAGS")
+
+		assert := assert.New(t)
+		var c config
+		defaults(&c)
 
 		env, ok := c.globalTags["env"]
 		assert.True(ok, "has the env key")
@@ -158,9 +163,5 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		cVal, ok := c.globalTags["cKey"]
 		assert.False(ok, "does not have cKey")
 		assert.Equal(nil, cVal)
-
-		// unset the environment variables
-		os.Unsetenv("DD_SERVICE_NAME")
-		os.Unsetenv("DD_TAGS")
 	})
 }

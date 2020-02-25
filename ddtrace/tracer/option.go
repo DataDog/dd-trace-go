@@ -102,6 +102,15 @@ func defaults(c *config) {
 			log.Warn("unable to look up hostname: %v", err)
 		}
 	}
+	if v := os.Getenv("DD_ENV"); v != "" {
+		WithEnv(v)(c)
+	}
+
+	if v := os.Getenv("DD_SERVICE_NAME"); v != "" {
+		WithServiceName(v)(c)
+	} else {
+		c.serviceName = filepath.Base(os.Args[0])
+	}
 
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		for _, tag := range strings.Split(v, ",") {
@@ -118,16 +127,6 @@ func defaults(c *config) {
 				WithGlobalTag(k, strings.TrimSpace(kv[1]))(c)
 			}
 		}
-	}
-
-	if v := os.Getenv("DD_SERVICE_NAME"); v != "" {
-		c.serviceName = v
-	} else {
-		c.serviceName = filepath.Base(os.Args[0])
-	}
-
-	if v := os.Getenv("DD_ENV"); v != "" {
-		WithEnv(v)(c)
 	}
 }
 
