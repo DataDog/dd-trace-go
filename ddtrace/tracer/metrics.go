@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -29,7 +30,6 @@ type statsdClient interface {
 // reportRuntimeMetrics periodically reports go runtime metrics at
 // the given interval.
 func (t *tracer) reportRuntimeMetrics(interval time.Duration) {
-	var ms runtime.MemStats
 	gc := debug.GCStats{
 		// When len(stats.PauseQuantiles) is 5, it will be filled with the
 		// minimum, 25%, 50%, 75%, and maximum pause times. See the documentation
@@ -43,7 +43,7 @@ func (t *tracer) reportRuntimeMetrics(interval time.Duration) {
 		select {
 		case <-tick.C:
 			log.Debug("Reporting runtime metrics...")
-			runtime.ReadMemStats(&ms)
+			ms := internal.MemStats()
 			debug.ReadGCStats(&gc)
 
 			statsd := t.config.statsd
