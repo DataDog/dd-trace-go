@@ -141,27 +141,20 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	})
 
 	t.Run("env-tags", func(t *testing.T) {
-		os.Setenv("DD_TAGS", "env:test, aKey:aVal,bKey:bVal")
+		os.Setenv("DD_TAGS", "env:test, aKey:aVal,bKey:bVal, cKey:")
 		defer os.Unsetenv("DD_TAGS")
 
 		assert := assert.New(t)
 		var c config
 		defaults(&c)
 
-		env, ok := c.globalTags["env"]
-		assert.True(ok, "has the env key")
-		assert.Equal("test", env)
+		assert.Equal("test", c.globalTags["env"])
+		assert.Equal("aVal", c.globalTags["aKey"])
+		assert.Equal("bVal", c.globalTags["bKey"])
+		assert.Equal("", c.globalTags["cKey"])
 
-		aVal, ok := c.globalTags["aKey"]
-		assert.True(ok, "has aKey key")
-		assert.Equal("aVal", aVal)
-
-		bVal, ok := c.globalTags["bKey"]
-		assert.True(ok, "has bKey key")
-		assert.Equal("bVal", bVal)
-
-		cVal, ok := c.globalTags["cKey"]
-		assert.False(ok, "does not have cKey")
-		assert.Equal(nil, cVal)
+		dVal, ok := c.globalTags["dKey"]
+		assert.False(ok)
+		assert.Equal(nil, dVal)
 	})
 }

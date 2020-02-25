@@ -117,7 +117,6 @@ func defaults(c *config) {
 			if tag == "" {
 				continue
 			}
-
 			kv := strings.SplitN(strings.TrimSpace(tag), ":", 2)
 			k := strings.TrimSpace(kv[0])
 			switch len(kv) {
