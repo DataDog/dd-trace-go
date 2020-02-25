@@ -87,7 +87,8 @@ func TestTryUpload(t *testing.T) {
 		t.Fatal("timeout")
 	}
 
-	assert.ElementsMatch(t, []string{
+	assert := assert.New(t)
+	assert.ElementsMatch([]string{
 		"host:my-host",
 		"runtime:go",
 		"service:my-service",
@@ -104,11 +105,11 @@ func TestTryUpload(t *testing.T) {
 		"types[1]": "alloc_objects,alloc_space",
 		"data[1]":  "my-heap-profile",
 	} {
-		assert.Equal(t, v, fields[k], k)
+		assert.Equal(v, fields[k], k)
 	}
 	for _, k := range []string{"recording-start", "recording-end"} {
 		_, ok := fields[k]
-		assert.True(t, ok, k)
+		assert.True(ok, k)
 	}
 }
 
