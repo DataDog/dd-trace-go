@@ -131,8 +131,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	})
 
 	t.Run("env-service", func(t *testing.T) {
-		os.Setenv("DD_SERVICE_NAME", "TEST_SERVICE")
-		defer os.Unsetenv("DD_SERVICE_NAME")
+		os.Setenv("DD_SERVICE", "TEST_SERVICE")
+		defer os.Unsetenv("DD_SERVICE")
 
 		assert := assert.New(t)
 		var c config

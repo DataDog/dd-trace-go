@@ -85,7 +85,6 @@ type StartOption func(*config)
 func defaults(c *config) {
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
-
 	statsdHost, statsdPort := "localhost", "8125"
 	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
 		statsdHost = v
@@ -94,7 +93,6 @@ func defaults(c *config) {
 		statsdPort = v
 	}
 	c.dogstatsdAddr = net.JoinHostPort(statsdHost, statsdPort)
-
 	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
 		var err error
 		c.hostname, err = os.Hostname()
@@ -105,19 +103,18 @@ func defaults(c *config) {
 	if v := os.Getenv("DD_ENV"); v != "" {
 		WithEnv(v)(c)
 	}
-
-	if v := os.Getenv("DD_SERVICE_NAME"); v != "" {
-		WithServiceName(v)(c)
+	if v := os.Getenv("DD_SERVICE"); v != "" {
+		c.serviceName = v
 	} else {
 		c.serviceName = filepath.Base(os.Args[0])
 	}
-
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		for _, tag := range strings.Split(v, ",") {
+			tag = strings.TrimSpace(tag)
 			if tag == "" {
 				continue
 			}
-			kv := strings.SplitN(strings.TrimSpace(tag), ":", 2)
+			kv := strings.SplitN(tag, ":", 2)
 			k := strings.TrimSpace(kv[0])
 			switch len(kv) {
 			case 1:
