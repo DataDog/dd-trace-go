@@ -204,7 +204,7 @@ func TestProfilerPassthrough(t *testing.T) {
 	var bat batch
 	select {
 	case bat = <-out:
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(1000 * time.Millisecond):
 		t.Fatal("time expired")
 	}
 
