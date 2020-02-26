@@ -34,6 +34,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				tracer.ServiceName(cfg.serviceName),
 				tracer.Tag(ext.HTTPMethod, r.Method),
 				tracer.Tag(ext.HTTPURL, r.URL.Path),
+				tracer.MeasureSpan(),
 			}
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

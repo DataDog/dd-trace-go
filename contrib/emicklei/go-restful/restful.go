@@ -30,6 +30,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.Tag(ext.HTTPMethod, req.Request.Method),
 			tracer.Tag(ext.HTTPURL, req.Request.URL.Path),
+			tracer.MeasureSpan(),
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -57,6 +58,7 @@ func Filter(req *restful.Request, resp *restful.Response, chain *restful.FilterC
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, req.Request.Method),
 		tracer.Tag(ext.HTTPURL, req.Request.URL.Path),
+		tracer.MeasureSpan(),
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Request.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))

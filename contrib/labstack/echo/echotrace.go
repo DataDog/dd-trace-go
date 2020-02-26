@@ -34,6 +34,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				tracer.SpanType(ext.SpanTypeWeb),
 				tracer.Tag(ext.HTTPMethod, request.Method),
 				tracer.Tag(ext.HTTPURL, request.URL.Path),
+				tracer.MeasureSpan(),
 			}
 
 			if !math.IsNaN(cfg.analyticsRate) {

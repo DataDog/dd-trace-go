@@ -80,7 +80,7 @@ func NewRouter(opts ...RouterOption) *Router {
 		fn(cfg)
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
-		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate), tracer.MeasureSpan())
 	}
 	return &Router{
 		Router: mux.NewRouter(),

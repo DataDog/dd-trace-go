@@ -55,6 +55,7 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 		tracer.ServiceName(wc.cfg.clientServiceName()),
 		tracer.Tag(ext.HTTPMethod, req.Method),
 		tracer.Tag(ext.HTTPURL, req.URL.Path),
+		tracer.MeasureSpan(),
 	}
 	ctx := req.Context()
 	if pkg, ok := twirp.PackageName(ctx); ok {
@@ -109,6 +110,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			tracer.ServiceName(cfg.serverServiceName()),
 			tracer.Tag(ext.HTTPMethod, r.Method),
 			tracer.Tag(ext.HTTPURL, r.URL.Path),
+			tracer.MeasureSpan(),
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -155,6 +157,7 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.ServiceName(cfg.serverServiceName()),
+			tracer.MeasureSpan(),
 		}
 		if pkg, ok := twirp.PackageName(ctx); ok {
 			opts = append(opts, tracer.Tag("twirp.package", pkg))
