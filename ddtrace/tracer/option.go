@@ -85,6 +85,7 @@ type StartOption func(*config)
 func defaults(c *config) {
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
+
 	statsdHost, statsdPort := "localhost", "8125"
 	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
 		statsdHost = v
@@ -93,6 +94,7 @@ func defaults(c *config) {
 		statsdPort = v
 	}
 	c.dogstatsdAddr = net.JoinHostPort(statsdHost, statsdPort)
+
 	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
 		var err error
 		c.hostname, err = os.Hostname()
