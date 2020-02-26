@@ -180,8 +180,14 @@ func WithPropagator(p Propagator) StartOption {
 	}
 }
 
-// WithServiceName sets the default service name to be used with the tracer.
+// WithServiceName sets the default service name to be used with the tracer. It is
+// deprecated in favour of WithService and will be removed in the next major version.
 func WithServiceName(name string) StartOption {
+	return WithService(name)
+}
+
+// WithService sets the default service name to be used with the tracer.
+func WithService(name string) StartOption {
 	return func(c *config) {
 		c.serviceName = name
 	}
