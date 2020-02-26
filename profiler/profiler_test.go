@@ -202,14 +202,10 @@ func TestProfilerPassthrough(t *testing.T) {
 	}
 	p.run()
 	var bat batch
-loop:
-	for {
-		select {
-		case bat = <-p.out:
-			break loop
-		case <-time.After(500 * time.Millisecond):
-			t.Fatal("time expired")
-		}
+	select {
+	case bat = <-out:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("time expired")
 	}
 
 	assert.Equal(t, 2, len(bat.profiles))
