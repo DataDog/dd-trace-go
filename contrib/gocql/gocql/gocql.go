@@ -92,7 +92,7 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 		tracer.ResourceName(p.config.resourceName),
 		tracer.Tag(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated)),
 		tracer.Tag(ext.CassandraKeyspace, p.keyspace),
-		tracer.MeasureSpan(),
+		tracer.Measured(),
 	}
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))

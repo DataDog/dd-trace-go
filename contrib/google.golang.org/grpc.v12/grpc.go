@@ -47,7 +47,7 @@ func startSpanFromContext(ctx context.Context, method, service string, rate floa
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethod, method),
 		tracer.SpanType(ext.AppTypeRPC),
-		tracer.MeasureSpan(),
+		tracer.Measured(),
 	}
 	if !math.IsNaN(rate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
@@ -77,7 +77,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 		spanopts := []ddtrace.StartSpanOption{
 			tracer.Tag(tagMethod, method),
 			tracer.SpanType(ext.AppTypeRPC),
-			tracer.MeasureSpan(),
+			tracer.Measured(),
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
 			spanopts = append(spanopts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

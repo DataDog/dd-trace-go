@@ -68,7 +68,7 @@ func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
 		tracer.ServiceName(k.config.serviceName),
 		tracer.SpanType(ext.SpanTypeConsul),
 		tracer.Tag("consul.key", key),
-		tracer.MeasureSpan(),
+		tracer.Measured(),
 	}
 	if !math.IsNaN(k.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, k.config.analyticsRate))

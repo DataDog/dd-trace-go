@@ -32,8 +32,9 @@ func New(opts ...RouterOption) *Router {
 		fn(cfg)
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
-		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate), tracer.MeasureSpan())
+		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	return &Router{httprouter.New(), cfg}
 }
 

@@ -33,7 +33,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.Tag(ext.HTTPMethod, c.Request.Method),
 			tracer.Tag(ext.HTTPURL, c.Request.URL.Path),
-			tracer.MeasureSpan(),
+			tracer.Measured(),
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -64,7 +64,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 // HTML will trace the rendering of the template as a child of the span in the given context.
 func HTML(c *gin.Context, code int, name string, obj interface{}) {
-	span, _ := tracer.StartSpanFromContext(c.Request.Context(), "gin.render.html", tracer.MeasureSpan())
+	span, _ := tracer.StartSpanFromContext(c.Request.Context(), "gin.render.html", tracer.Measured())
 	span.SetTag("go.template", name)
 	defer func() {
 		if r := recover(); r != nil {
