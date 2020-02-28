@@ -294,8 +294,8 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
-// MeasureSpan marks this span to be measured for metrics and stats calculations.
-func MeasureSpan() StartSpanOption {
+// Measured marks this span to be measured for metrics and stats calculations.
+func Measured() StartSpanOption {
 	return Tag(keyMeasured, 1)
 }
 

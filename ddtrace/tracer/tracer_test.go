@@ -207,7 +207,7 @@ func TestTracerStartSpan(t *testing.T) {
 
 	t.Run("measured", func(t *testing.T) {
 		tracer := newTracer()
-		span := tracer.StartSpan("/home/user", MeasureSpan()).(*span)
+		span := tracer.StartSpan("/home/user", Measured()).(*span)
 		assert.Equal(t, float64(1), span.Metrics[keyMeasured])
 	})
 }
@@ -252,7 +252,7 @@ func TestTracerStartSpanOptions(t *testing.T) {
 		ResourceName("test.resource"),
 		StartTime(now),
 		WithSpanID(420),
-		MeasureSpan(),
+		Measured(),
 	}
 	span := tracer.StartSpan("web.request", opts...).(*span)
 	assert := assert.New(t)
