@@ -208,7 +208,7 @@ func TestTracerStartSpan(t *testing.T) {
 	t.Run("measured", func(t *testing.T) {
 		tracer := newTracer()
 		span := tracer.StartSpan("/home/user", Measured()).(*span)
-		assert.Equal(t, float64(1), span.Metrics[keyMeasured])
+		assert.Equal(t, 1.0, span.Metrics[keyMeasured])
 	})
 }
 
@@ -262,7 +262,7 @@ func TestTracerStartSpanOptions(t *testing.T) {
 	assert.Equal(now.UnixNano(), span.Start)
 	assert.Equal(uint64(420), span.SpanID)
 	assert.Equal(uint64(420), span.TraceID)
-	assert.Equal(float64(1), span.Metrics[keyMeasured])
+	assert.Equal(1.0, span.Metrics[keyMeasured])
 }
 
 func TestTracerStartChildSpan(t *testing.T) {
