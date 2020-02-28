@@ -204,6 +204,8 @@ func TestProfilerPassthrough(t *testing.T) {
 	var bat batch
 	select {
 	case bat = <-out:
+	// TODO (knusbaum) this timeout is long because we were seeing timeouts at 500ms.
+	// it would be nice to have a time-independent way to test this
 	case <-time.After(1000 * time.Millisecond):
 		t.Fatal("time expired")
 	}
