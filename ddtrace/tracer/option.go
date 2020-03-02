@@ -315,6 +315,11 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
+// Measured marks this span to be measured for metrics and stats calculations.
+func Measured() StartSpanOption {
+	return Tag(keyMeasured, 1)
+}
+
 // WithSpanID sets the SpanID on the started span, instead of using a random number.
 // If there is no parent Span (eg from ChildOf), then the TraceID will also be set to the
 // value given here.

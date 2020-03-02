@@ -187,6 +187,9 @@ func TestTracerStartSpan(t *testing.T) {
 			ext.PriorityAutoReject,
 			ext.PriorityAutoKeep,
 		}, span.Metrics[keySamplingPriority])
+		// A span is not measured unless made so specifically
+		_, ok := span.Meta[keyMeasured]
+		assert.False(ok)
 	})
 
 	t.Run("priority", func(t *testing.T) {
@@ -200,6 +203,12 @@ func TestTracerStartSpan(t *testing.T) {
 		span := tracer.StartSpan("/home/user", Tag(ext.SpanName, "db.query")).(*span)
 		assert.Equal(t, "db.query", span.Name)
 		assert.Equal(t, "/home/user", span.Resource)
+	})
+
+	t.Run("measured", func(t *testing.T) {
+		tracer := newTracer()
+		span := tracer.StartSpan("/home/user", Measured()).(*span)
+		assert.Equal(t, 1.0, span.Metrics[keyMeasured])
 	})
 }
 
@@ -243,6 +252,7 @@ func TestTracerStartSpanOptions(t *testing.T) {
 		ResourceName("test.resource"),
 		StartTime(now),
 		WithSpanID(420),
+		Measured(),
 	}
 	span := tracer.StartSpan("web.request", opts...).(*span)
 	assert := assert.New(t)
@@ -252,6 +262,7 @@ func TestTracerStartSpanOptions(t *testing.T) {
 	assert.Equal(now.UnixNano(), span.Start)
 	assert.Equal(uint64(420), span.SpanID)
 	assert.Equal(uint64(420), span.TraceID)
+	assert.Equal(1.0, span.Metrics[keyMeasured])
 }
 
 func TestTracerStartChildSpan(t *testing.T) {
