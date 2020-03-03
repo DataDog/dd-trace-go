@@ -164,7 +164,6 @@ func (tp *traceParams) tryTrace(ctx context.Context, resource string, query stri
 		tracer.ServiceName(tp.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.StartTime(startTime),
-		tracer.Measured(),
 	}
 	if !math.IsNaN(tp.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.cfg.analyticsRate))

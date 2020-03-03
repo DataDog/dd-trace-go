@@ -56,7 +56,6 @@ func TestClientStatsHandler(t *testing.T) {
 		tagMethodName:   "/grpc.Fixture/Ping",
 		ext.TargetHost:  "127.0.0.1",
 		ext.TargetPort:  server.port,
-		"_dd.measured":  1,
 	}, span.Tags())
 }
 

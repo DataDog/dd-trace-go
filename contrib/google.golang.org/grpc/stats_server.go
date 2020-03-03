@@ -36,6 +36,7 @@ func (h *serverStatsHandler) TagRPC(ctx context.Context, rti *stats.RPCTagInfo) 
 		"grpc.server",
 		h.cfg.serverServiceName(),
 		h.cfg.analyticsRate,
+		true,
 	)
 	return ctx
 }

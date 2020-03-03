@@ -39,6 +39,7 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 			"grpc.message",
 			ss.cfg.serverServiceName(),
 			ss.cfg.analyticsRate,
+			true,
 		)
 		defer func() { finishWithError(span, err, ss.cfg) }()
 	}
@@ -54,6 +55,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 			"grpc.message",
 			ss.cfg.serverServiceName(),
 			ss.cfg.analyticsRate,
+			true,
 		)
 		defer func() { finishWithError(span, err, ss.cfg) }()
 	}
@@ -82,6 +84,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				"grpc.server",
 				cfg.serviceName,
 				cfg.analyticsRate,
+				true,
 			)
 			switch {
 			case info.IsServerStream && info.IsClientStream:
@@ -124,6 +127,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			"grpc.server",
 			cfg.serverServiceName(),
 			cfg.analyticsRate,
+			true,
 		)
 		span.SetTag(tagMethodKind, methodKindUnary)
 		resp, err := handler(ctx, req)

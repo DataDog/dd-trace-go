@@ -113,6 +113,5 @@ func startSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) 
 		tracer.ServiceName("dns"),
 		tracer.ResourceName(dns.OpcodeToString[opcode]),
 		tracer.SpanType(ext.SpanTypeDNS),
-		tracer.Measured(),
 	)
 }

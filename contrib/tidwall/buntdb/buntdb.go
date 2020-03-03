@@ -96,7 +96,6 @@ func (tx *Tx) startSpan(name string) ddtrace.Span {
 		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(tx.cfg.serviceName),
 		tracer.ResourceName(name),
-		tracer.Measured(),
 	}
 	if !math.IsNaN(tx.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tx.cfg.analyticsRate))

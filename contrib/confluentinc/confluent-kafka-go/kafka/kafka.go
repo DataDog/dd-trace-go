@@ -183,7 +183,6 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.ResourceName("Produce Topic " + *msg.TopicPartition.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag("partition", msg.TopicPartition.Partition),
-		tracer.Measured(),
 	}
 	if !math.IsNaN(p.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.cfg.analyticsRate))
