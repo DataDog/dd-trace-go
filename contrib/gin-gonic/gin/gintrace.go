@@ -64,7 +64,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 // HTML will trace the rendering of the template as a child of the span in the given context.
 func HTML(c *gin.Context, code int, name string, obj interface{}) {
-	span, _ := tracer.StartSpanFromContext(c.Request.Context(), "gin.render.html", tracer.Measured())
+	span, _ := tracer.StartSpanFromContext(c.Request.Context(), "gin.render.html")
 	span.SetTag("go.template", name)
 	defer func() {
 		if r := recover(); r != nil {
