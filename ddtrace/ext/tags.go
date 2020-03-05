@@ -43,6 +43,12 @@ const (
 	// ServiceName defines the Service name for this Span.
 	ServiceName = "service.name"
 
+	// Service defines the Service tag for this Span.
+	Service = "service"
+
+	// Version is a tag that specifies the current application version.
+	Version = "version"
+
 	// ResourceName defines the Resource name for the Span.
 	ResourceName = "resource.name"
 

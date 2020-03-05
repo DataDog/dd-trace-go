@@ -1014,6 +1014,96 @@ func TestTracerReportsHostname(t *testing.T) {
 	})
 }
 
+func TestEnvTags(t *testing.T) {
+	t.Run("service", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "servenv")
+		defer os.Unsetenv("DD_SERVICE")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		assert.Equal("servenv", sp.Meta[ext.Service])
+	})
+	t.Run("version", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "servenv")
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+		defer os.Unsetenv("DD_SERVICE")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		assert.Equal("1.2.3", sp.Meta[ext.Version])
+	})
+	t.Run("noversion", func(t *testing.T) {
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		_, ok := sp.Meta[ext.Version]
+		assert.False(ok)
+	})
+	t.Run("serviceOverride", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "servenv")
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+		defer os.Unsetenv("DD_SERVICE")
+
+		tracer, _, _, stop := startTestTracer(t, WithGlobalTag(ext.Service, "otherservenv"))
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		assert.Equal("otherservenv", sp.Meta[ext.Service])
+		_, ok := sp.Meta[ext.Version]
+		assert.False(ok)
+	})
+	t.Run("serviceOverride2", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "servenv")
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+		defer os.Unsetenv("DD_SERVICE")
+
+		tracer, _, _, stop := startTestTracer(t, WithService("otherservenv"))
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		assert.Equal("otherservenv", sp.Meta[ext.Service])
+		_, ok := sp.Meta[ext.Version]
+		assert.False(ok)
+	})
+	t.Run("serviceOverride3", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "servenv")
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+		defer os.Unsetenv("DD_SERVICE")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request", ServiceName("otherservenv")).(*span)
+		sp2 := tracer.StartSpan("http.request", Tag(ext.Service, "otherservenv")).(*span)
+
+		assert.Equal("otherservenv", sp.Meta[ext.Service])
+		_, ok := sp.Meta[ext.Version]
+		assert.False(ok)
+
+		assert.Equal("otherservenv", sp2.Meta[ext.Service])
+		_, ok = sp2.Meta[ext.Version]
+		assert.False(ok)
+	})
+}
+
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {

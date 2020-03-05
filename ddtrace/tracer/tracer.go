@@ -313,6 +313,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			span.setMeta("language", "go")
 		}
 	}
+	if t.config.service != "" {
+		span.SetTag(ext.Service, t.config.service)
+	}
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
@@ -320,6 +323,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	// add global tags
 	for k, v := range t.config.globalTags {
 		span.SetTag(k, v)
+	}
+	if t.config.version != "" && span.Meta[ext.Service] == t.config.service {
+		span.SetTag(ext.Version, t.config.version)
 	}
 	if context == nil {
 		// this is a brand new trace, sample it

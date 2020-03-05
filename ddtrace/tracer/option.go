@@ -30,6 +30,12 @@ type config struct {
 	// serviceName specifies the name of this application.
 	serviceName string
 
+	// service specifies the service tag set with DD_SERVICE that will be sent with all traces.
+	service string
+
+	// version specifies the version of this application
+	version string
+
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler Sampler
 
@@ -107,6 +113,10 @@ func defaults(c *config) {
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
 		c.serviceName = v
+		c.service = v
+		if ver := os.Getenv("DD_VERSION"); ver != "" {
+			c.version = ver
+		}
 	} else {
 		c.serviceName = filepath.Base(os.Args[0])
 	}
@@ -190,6 +200,7 @@ func WithServiceName(name string) StartOption {
 func WithService(name string) StartOption {
 	return func(c *config) {
 		c.serviceName = name
+		WithGlobalTag(ext.Service, name)(c)
 	}
 }
 
@@ -300,7 +311,10 @@ func Tag(k string, v interface{}) StartSpanOption {
 
 // ServiceName sets the given service name on the started span. For example "http.server".
 func ServiceName(name string) StartSpanOption {
-	return Tag(ext.ServiceName, name)
+	return func(cfg *ddtrace.StartSpanConfig) {
+		Tag(ext.ServiceName, name)(cfg)
+		Tag(ext.Service, name)(cfg)
+	}
 }
 
 // ResourceName sets the given resource name on the started span. A resource could
