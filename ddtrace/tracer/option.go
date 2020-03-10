@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -82,7 +83,6 @@ type StartOption func(*config)
 
 // defaults sets the default values for a config.
 func defaults(c *config) {
-	c.serviceName = filepath.Base(os.Args[0])
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
 
@@ -104,6 +104,27 @@ func defaults(c *config) {
 	}
 	if v := os.Getenv("DD_ENV"); v != "" {
 		WithEnv(v)(c)
+	}
+	if v := os.Getenv("DD_SERVICE"); v != "" {
+		c.serviceName = v
+	} else {
+		c.serviceName = filepath.Base(os.Args[0])
+	}
+	if v := os.Getenv("DD_TAGS"); v != "" {
+		for _, tag := range strings.Split(v, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag == "" {
+				continue
+			}
+			kv := strings.SplitN(tag, ":", 2)
+			k := strings.TrimSpace(kv[0])
+			switch len(kv) {
+			case 1:
+				WithGlobalTag(k, "")(c)
+			case 2:
+				WithGlobalTag(k, strings.TrimSpace(kv[1]))(c)
+			}
+		}
 	}
 }
 
@@ -292,6 +313,11 @@ func ResourceName(name string) StartSpanOption {
 // the Datadog APM product could be "web", "db" or "cache".
 func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
+}
+
+// Measured marks this span to be measured for metrics and stats calculations.
+func Measured() StartSpanOption {
+	return Tag(keyMeasured, 1)
 }
 
 // WithSpanID sets the SpanID on the started span, instead of using a random number.

@@ -204,14 +204,12 @@ func TestProfilerPassthrough(t *testing.T) {
 	}
 	p.run()
 	var bat batch
-loop:
-	for {
-		select {
-		case bat = <-p.out:
-			break loop
-		case <-time.After(500 * time.Millisecond):
-			t.Fatal("time expired")
-		}
+	select {
+	case bat = <-out:
+	// TODO (knusbaum) this timeout is long because we were seeing timeouts at 500ms.
+	// it would be nice to have a time-independent way to test this
+	case <-time.After(1000 * time.Millisecond):
+		t.Fatal("time expired")
 	}
 
 	assert := assert.New(t)
