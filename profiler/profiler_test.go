@@ -32,17 +32,18 @@ func TestStart(t *testing.T) {
 
 		mu.Lock()
 		require.NotNil(t, activeProfiler)
+		assert := assert.New(t)
 		if host, err := os.Hostname(); err != nil {
-			assert.Equal(t, host, activeProfiler.cfg.hostname)
+			assert.Equal(host, activeProfiler.cfg.hostname)
 		}
-		assert.Equal(t, defaultAPIURL, activeProfiler.cfg.apiURL)
-		assert.Equal(t, DefaultPeriod, activeProfiler.cfg.period)
-		assert.Equal(t, len(defaultProfileTypes), len(activeProfiler.cfg.types))
+		assert.Equal(defaultAPIURL, activeProfiler.cfg.apiURL)
+		assert.Equal(DefaultPeriod, activeProfiler.cfg.period)
+		assert.Equal(len(defaultProfileTypes), len(activeProfiler.cfg.types))
 		for _, pt := range defaultProfileTypes {
 			_, ok := activeProfiler.cfg.types[pt]
-			assert.True(t, ok)
+			assert.True(ok)
 		}
-		assert.Equal(t, DefaultDuration, activeProfiler.cfg.cpuDuration)
+		assert.Equal(DefaultDuration, activeProfiler.cfg.cpuDuration)
 		mu.Unlock()
 	})
 
@@ -149,18 +150,19 @@ func TestProfilerInternal(t *testing.T) {
 			t.Fatalf("missing batch")
 		}
 
-		assert.EqualValues(t, 1, writeHeap)
-		assert.EqualValues(t, 1, startCPU)
-		assert.EqualValues(t, 1, stopCPU)
+		assert := assert.New(t)
+		assert.EqualValues(1, writeHeap)
+		assert.EqualValues(1, startCPU)
+		assert.EqualValues(1, stopCPU)
 
-		assert.Equal(t, 2, len(bat.profiles))
+		assert.Equal(2, len(bat.profiles))
 		firstTypes := []string{
 			bat.profiles[0].types[0],
 			bat.profiles[1].types[0],
 		}
 		sort.Strings(firstTypes)
-		assert.Equal(t, "alloc_objects", firstTypes[0])
-		assert.Equal(t, "samples", firstTypes[1])
+		assert.Equal("alloc_objects", firstTypes[0])
+		assert.Equal("samples", firstTypes[1])
 
 		p.exit <- struct{}{}
 		<-wait
@@ -210,16 +212,17 @@ func TestProfilerPassthrough(t *testing.T) {
 		t.Fatal("time expired")
 	}
 
-	assert.Equal(t, 2, len(bat.profiles))
+	assert := assert.New(t)
+	assert.Equal(2, len(bat.profiles))
 	firstTypes := []string{
 		bat.profiles[0].types[0],
 		bat.profiles[1].types[0],
 	}
 	sort.Strings(firstTypes)
-	assert.Equal(t, "alloc_objects", firstTypes[0])
-	assert.Equal(t, "samples", firstTypes[1])
-	assert.NotEmpty(t, bat.profiles[0].data)
-	assert.NotEmpty(t, bat.profiles[1].data)
+	assert.Equal("alloc_objects", firstTypes[0])
+	assert.Equal("samples", firstTypes[1])
+	assert.NotEmpty(bat.profiles[0].data)
+	assert.NotEmpty(bat.profiles[1].data)
 }
 
 func unstartedProfiler(opts ...Option) *profiler {
