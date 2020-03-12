@@ -72,22 +72,24 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestAddProfileType(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
 		cfg := defaultConfig()
 		_, ok := cfg.types[MutexProfile]
-		assert.False(t, ok)
+		assert.False(ok)
 		n := len(cfg.types)
 		cfg.addProfileType(MutexProfile)
-		assert.Len(t, cfg.types, n+1)
+		assert.Len(cfg.types, n+1)
 		_, ok = cfg.types[MutexProfile]
-		assert.True(t, ok)
+		assert.True(ok)
 	})
 
 	t.Run("nil", func(t *testing.T) {
 		var cfg config
-		assert.Nil(t, cfg.types)
+		assert := assert.New(t)
+		assert.Nil(cfg.types)
 		cfg.addProfileType(MutexProfile)
-		assert.Len(t, cfg.types, 1)
+		assert.Len(cfg.types, 1)
 		_, ok := cfg.types[MutexProfile]
-		assert.True(t, ok)
+		assert.True(ok)
 	})
 }
