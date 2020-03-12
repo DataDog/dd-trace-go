@@ -1024,8 +1024,9 @@ func TestEnvTags(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
-		assert.Equal("servenv", sp.Meta[ext.Service])
+		assert.Equal("servenv", sp.Service)
 	})
+
 	t.Run("version", func(t *testing.T) {
 		os.Setenv("DD_SERVICE", "servenv")
 		os.Setenv("DD_VERSION", "1.2.3")
@@ -1039,6 +1040,7 @@ func TestEnvTags(t *testing.T) {
 		sp := tracer.StartSpan("http.request").(*span)
 		assert.Equal("1.2.3", sp.Meta[ext.Version])
 	})
+
 	t.Run("noversion", func(t *testing.T) {
 		os.Setenv("DD_VERSION", "1.2.3")
 		defer os.Unsetenv("DD_VERSION")
@@ -1051,11 +1053,12 @@ func TestEnvTags(t *testing.T) {
 		_, ok := sp.Meta[ext.Version]
 		assert.False(ok)
 	})
+
 	t.Run("noversion2", func(t *testing.T) {
 		os.Setenv("DD_VERSION", "1.2.3")
 		defer os.Unsetenv("DD_VERSION")
 
-		tracer, _, _, stop := startTestTracer(t, WithGlobalTag(ext.Service, "otherservenv"))
+		tracer, _, _, stop := startTestTracer(t, WithGlobalTag(ext.ServiceName, "otherservenv"))
 		defer stop()
 
 		assert := assert.New(t)
@@ -1063,21 +1066,23 @@ func TestEnvTags(t *testing.T) {
 		_, ok := sp.Meta[ext.Version]
 		assert.False(ok)
 	})
+
 	t.Run("serviceOverride", func(t *testing.T) {
 		os.Setenv("DD_SERVICE", "servenv")
 		os.Setenv("DD_VERSION", "1.2.3")
 		defer os.Unsetenv("DD_VERSION")
 		defer os.Unsetenv("DD_SERVICE")
 
-		tracer, _, _, stop := startTestTracer(t, WithGlobalTag(ext.Service, "otherservenv"))
+		tracer, _, _, stop := startTestTracer(t, WithGlobalTag(ext.ServiceName, "otherservenv"))
 		defer stop()
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
-		assert.Equal("otherservenv", sp.Meta[ext.Service])
+		assert.Equal("otherservenv", sp.Service)
 		_, ok := sp.Meta[ext.Version]
 		assert.False(ok)
 	})
+
 	t.Run("serviceOverride2", func(t *testing.T) {
 		os.Setenv("DD_SERVICE", "servenv")
 		os.Setenv("DD_VERSION", "1.2.3")
@@ -1089,10 +1094,11 @@ func TestEnvTags(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request").(*span)
-		assert.Equal("otherservenv", sp.Meta[ext.Service])
+		assert.Equal("otherservenv", sp.Service)
 		_, ok := sp.Meta[ext.Version]
 		assert.False(ok)
 	})
+
 	t.Run("serviceOverride3", func(t *testing.T) {
 		os.Setenv("DD_SERVICE", "servenv")
 		os.Setenv("DD_VERSION", "1.2.3")
@@ -1104,13 +1110,13 @@ func TestEnvTags(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv")).(*span)
-		sp2 := tracer.StartSpan("http.request", Tag(ext.Service, "otherservenv")).(*span)
+		sp2 := tracer.StartSpan("http.request", Tag(ext.ServiceName, "otherservenv")).(*span)
 
-		assert.Equal("otherservenv", sp.Meta[ext.Service])
+		assert.Equal("otherservenv", sp.Service)
 		_, ok := sp.Meta[ext.Version]
 		assert.False(ok)
 
-		assert.Equal("otherservenv", sp2.Meta[ext.Service])
+		assert.Equal("otherservenv", sp2.Service)
 		_, ok = sp2.Meta[ext.Version]
 		assert.False(ok)
 	})
