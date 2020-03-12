@@ -321,7 +321,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for k, v := range t.config.globalTags {
 		span.SetTag(k, v)
 	}
-	if span.Service == t.config.envService && t.config.version != "" {
+	if t.config.version != "" && span.Service == t.config.envService {
 		span.SetTag(ext.Version, t.config.version)
 	}
 	if context == nil {
