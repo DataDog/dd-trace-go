@@ -348,11 +348,10 @@ func StartTime(t time.Time) StartSpanOption {
 // AnalyticsRate sets a custom analytics rate for a span if !math.IsNaN(rate).
 // otherwise, it does nothing.
 func AnalyticsRate(rate float64) StartSpanOption {
-	if !math.IsNaN(rate) {
-		return Tag(ext.EventSampleRate, rate)
-	} else {
+	if math.IsNaN(rate) {
 		return func(cfg *ddtrace.StartSpanConfig) {}
 	}
+	return Tag(ext.EventSampleRate, rate)
 }
 
 // FinishOption is a configuration option for FinishSpan. It is aliased in order
