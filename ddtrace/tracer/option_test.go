@@ -173,6 +173,19 @@ func TestVersion(t *testing.T) {
 		assert.Equal("1.2.3", v)
 	})
 
+	t.Run("option", func(t *testing.T) {
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+
+		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"))
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		v := sp.Meta[ext.Version]
+		assert.Equal("4.5.6", v)
+	})
+
 	t.Run("unset", func(t *testing.T) {
 		os.Setenv("DD_VERSION", "1.2.3")
 		defer os.Unsetenv("DD_VERSION")
