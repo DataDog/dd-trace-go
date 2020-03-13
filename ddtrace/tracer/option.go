@@ -30,9 +30,6 @@ type config struct {
 	// serviceName specifies the name of this application.
 	serviceName string
 
-	// envService specifies the service tag set with DD_SERVICE that will be sent with all traces unless overridden.
-	envService string
-
 	// version specifies the version of this application
 	version string
 
@@ -113,12 +110,11 @@ func defaults(c *config) {
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
 		c.serviceName = v
-		c.envService = v
-		if ver := os.Getenv("DD_VERSION"); ver != "" {
-			c.version = ver
-		}
 	} else {
 		c.serviceName = filepath.Base(os.Args[0])
+	}
+	if ver := os.Getenv("DD_VERSION"); ver != "" {
+		c.version = ver
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		for _, tag := range strings.Split(v, ",") {
@@ -290,6 +286,14 @@ func WithDogstatsdAddress(addr string) StartOption {
 func WithSamplingRules(rules []SamplingRule) StartOption {
 	return func(cfg *config) {
 		cfg.samplingRules = rules
+	}
+}
+
+// WithServiceVersion specifies the version of the service that is running. This will
+// be included in spans from this service in the "version" tag.
+func WithServiceVersion(version string) StartOption {
+	return func(cfg *config) {
+		cfg.version = version
 	}
 }
 
