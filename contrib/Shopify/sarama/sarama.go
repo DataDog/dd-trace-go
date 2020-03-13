@@ -50,6 +50,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 				tracer.SpanType(ext.SpanTypeMessageConsumer),
 				tracer.Tag("partition", msg.Partition),
 				tracer.Tag("offset", msg.Offset),
+				tracer.Measured(),
 			}
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

@@ -50,6 +50,7 @@ func TestServerStatsHandler(t *testing.T) {
 		"service.name":  serviceName,
 		"resource.name": "/grpc.Fixture/Ping",
 		tagMethodName:   "/grpc.Fixture/Ping",
+		"_dd.measured":  1,
 	}, span.Tags())
 }
 
