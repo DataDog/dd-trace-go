@@ -6,10 +6,10 @@
 package grpc
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc/stats"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 // NewServerStatsHandler returns a gRPC server stats.Handler to trace RPC calls.
@@ -35,8 +35,8 @@ func (h *serverStatsHandler) TagRPC(ctx context.Context, rti *stats.RPCTagInfo) 
 		rti.FullMethodName,
 		"grpc.server",
 		h.cfg.serverServiceName(),
-		h.cfg.analyticsRate,
-		true,
+		tracer.AnalyticsRate(h.cfg.analyticsRate),
+		tracer.Measured(),
 	)
 	return ctx
 }

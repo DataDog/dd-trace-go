@@ -345,6 +345,16 @@ func StartTime(t time.Time) StartSpanOption {
 	}
 }
 
+// AnalyticsRate sets a custom analytics rate for a span if !math.IsNaN(rate).
+// otherwise, it does nothing.
+func AnalyticsRate(rate float64) StartSpanOption {
+	if !math.IsNaN(rate) {
+		return Tag(ext.EventSampleRate, rate)
+	} else {
+		return func(cfg *ddtrace.StartSpanConfig) {}
+	}
+}
+
 // FinishOption is a configuration option for FinishSpan. It is aliased in order
 // to help godoc group all the functions returning it together. It is considered
 // more correct to refer to it as the type as the origin, ddtrace.FinishOption.

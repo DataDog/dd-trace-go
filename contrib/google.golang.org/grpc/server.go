@@ -7,6 +7,7 @@ package grpc
 
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -38,8 +39,8 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 			ss.method,
 			"grpc.message",
 			ss.cfg.serverServiceName(),
-			ss.cfg.analyticsRate,
-			true,
+			tracer.AnalyticsRate(ss.cfg.analyticsRate),
+			tracer.Measured(),
 		)
 		defer func() { finishWithError(span, err, ss.cfg) }()
 	}
@@ -54,8 +55,8 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 			ss.method,
 			"grpc.message",
 			ss.cfg.serverServiceName(),
-			ss.cfg.analyticsRate,
-			true,
+			tracer.AnalyticsRate(ss.cfg.analyticsRate),
+			tracer.Measured(),
 		)
 		defer func() { finishWithError(span, err, ss.cfg) }()
 	}
@@ -83,8 +84,8 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				info.FullMethod,
 				"grpc.server",
 				cfg.serviceName,
-				cfg.analyticsRate,
-				true,
+				tracer.AnalyticsRate(cfg.analyticsRate),
+				tracer.Measured(),
 			)
 			switch {
 			case info.IsServerStream && info.IsClientStream:
@@ -126,8 +127,8 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			info.FullMethod,
 			"grpc.server",
 			cfg.serverServiceName(),
-			cfg.analyticsRate,
-			true,
+			tracer.AnalyticsRate(cfg.analyticsRate),
+			tracer.Measured(),
 		)
 		span.SetTag(tagMethodKind, methodKindUnary)
 		resp, err := handler(ctx, req)
