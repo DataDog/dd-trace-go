@@ -47,6 +47,7 @@ func startSpanFromContext(ctx context.Context, method, service string, rate floa
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethod, method),
 		tracer.SpanType(ext.AppTypeRPC),
+		tracer.Measured(),
 	}
 	if !math.IsNaN(rate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))

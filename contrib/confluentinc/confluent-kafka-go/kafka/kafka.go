@@ -93,6 +93,7 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag("partition", msg.TopicPartition.Partition),
 		tracer.Tag("offset", msg.TopicPartition.Offset),
+		tracer.Measured(),
 	}
 	if !math.IsNaN(c.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, c.cfg.analyticsRate))

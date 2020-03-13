@@ -355,6 +355,16 @@ func StartTime(t time.Time) StartSpanOption {
 	}
 }
 
+// AnalyticsRate sets a custom analytics rate for a span. It decides the percentage
+// of events that will be picked up by the App Analytics product. It's represents a
+// float64 between 0 and 1 where 0.5 would represent 50% of events.
+func AnalyticsRate(rate float64) StartSpanOption {
+	if math.IsNaN(rate) {
+		return func(cfg *ddtrace.StartSpanConfig) {}
+	}
+	return Tag(ext.EventSampleRate, rate)
+}
+
 // FinishOption is a configuration option for FinishSpan. It is aliased in order
 // to help godoc group all the functions returning it together. It is considered
 // more correct to refer to it as the type as the origin, ddtrace.FinishOption.

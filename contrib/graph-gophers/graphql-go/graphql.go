@@ -45,6 +45,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlQuery, queryString),
 		tracer.Tag(tagGraphqlOperationName, operationName),
+		tracer.Measured(),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
@@ -71,6 +72,7 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlField, fieldName),
 		tracer.Tag(tagGraphqlType, typeName),
+		tracer.Measured(),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
