@@ -44,14 +44,12 @@ func TestServerStatsHandler(t *testing.T) {
 	assert.NotZero(span.StartTime())
 	assert.True(span.FinishTime().After(span.StartTime()))
 	assert.Equal("grpc.server", span.OperationName())
-	assert.Equal(map[string]interface{}{
-		"span.type":     ext.AppTypeRPC,
-		"grpc.code":     codes.OK.String(),
-		"service.name":  serviceName,
-		"service":       serviceName,
-		"resource.name": "/grpc.Fixture/Ping",
-		tagMethodName:   "/grpc.Fixture/Ping",
-	}, span.Tags())
+	tags := span.Tags()
+	assert.Equal(ext.AppTypeRPC, tags["span.type"])
+	assert.Equal(codes.OK.String(), tags["grpc.code"])
+	assert.Equal(serviceName, tags["service.name"])
+	assert.Equal("/grpc.Fixture/Ping", tags["resource.name"])
+	assert.Equal("/grpc.Fixture/Ping", tags[tagMethodName])
 }
 
 func newServerStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {
