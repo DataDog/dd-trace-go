@@ -1014,6 +1014,78 @@ func TestTracerReportsHostname(t *testing.T) {
 	})
 }
 
+func TestVersion(t *testing.T) {
+	t.Run("env", func(t *testing.T) {
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		v := sp.Meta[ext.Version]
+		assert.Equal("1.2.3", v)
+	})
+
+	t.Run("option", func(t *testing.T) {
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+
+		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"))
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		v := sp.Meta[ext.Version]
+		assert.Equal("4.5.6", v)
+	})
+
+	t.Run("unset", func(t *testing.T) {
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+
+		tracer, _, _, stop := startTestTracer(t, WithService("servenv"))
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request", ServiceName("otherservenv")).(*span)
+		_, ok := sp.Meta[ext.Version]
+		assert.False(ok)
+	})
+
+	t.Run("unset2", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "servenv")
+		defer os.Unsetenv("DD_SERVICE")
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request", ServiceName("otherservenv")).(*span)
+		_, ok := sp.Meta[ext.Version]
+		assert.False(ok)
+	})
+
+	t.Run("unset3", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "servenv")
+		defer os.Unsetenv("DD_SERVICE")
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+
+		// WithGlobalTag sets ext.ServiceName on each individual span, so version will not be set.
+		tracer, _, _, stop := startTestTracer(t, WithGlobalTag(ext.ServiceName, "otherservenv"))
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		_, ok := sp.Meta[ext.Version]
+		assert.False(ok)
+	})
+}
+
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
