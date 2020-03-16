@@ -1068,22 +1068,6 @@ func TestVersion(t *testing.T) {
 		_, ok := sp.Meta[ext.Version]
 		assert.False(ok)
 	})
-
-	t.Run("unset3", func(t *testing.T) {
-		os.Setenv("DD_SERVICE", "servenv")
-		defer os.Unsetenv("DD_SERVICE")
-		os.Setenv("DD_VERSION", "1.2.3")
-		defer os.Unsetenv("DD_VERSION")
-
-		// WithGlobalTag sets ext.ServiceName on each individual span, so version will not be set.
-		tracer, _, _, stop := startTestTracer(t, WithGlobalTag(ext.ServiceName, "otherservenv"))
-		defer stop()
-
-		assert := assert.New(t)
-		sp := tracer.StartSpan("http.request").(*span)
-		_, ok := sp.Meta[ext.Version]
-		assert.False(ok)
-	})
 }
 
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
