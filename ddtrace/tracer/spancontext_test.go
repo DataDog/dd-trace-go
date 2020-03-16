@@ -301,15 +301,17 @@ func TestSpanContextParent(t *testing.T) {
 	}
 	for name, parentCtx := range map[string]*spanContext{
 		"basic": &spanContext{
-			baggage: map[string]string{"A": "A", "B": "B"},
-			trace:   newTrace(),
-			drop:    true,
+			baggage:    map[string]string{"A": "A", "B": "B"},
+			hasBaggage: 1,
+			trace:      newTrace(),
+			drop:       true,
 		},
 		"nil-trace": &spanContext{
 			drop: true,
 		},
 		"priority": &spanContext{
-			baggage: map[string]string{"A": "A", "B": "B"},
+			baggage:    map[string]string{"A": "A", "B": "B"},
+			hasBaggage: 1,
 			trace: &trace{
 				spans:    []*span{newBasicSpan("abc")},
 				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
@@ -333,9 +335,9 @@ func TestSpanContextParent(t *testing.T) {
 			if parentCtx.trace != nil {
 				assert.Equal(ctx.trace.priority, parentCtx.trace.priority)
 			}
-			assert.Equal(ctx.drop, parentCtx.drop)
-			assert.Equal(ctx.baggage, parentCtx.baggage)
-			assert.Equal(ctx.origin, parentCtx.origin)
+			assert.Equal(parentCtx.drop, ctx.drop)
+			assert.Equal(parentCtx.baggage, ctx.baggage)
+			assert.Equal(parentCtx.origin, ctx.origin)
 		})
 	}
 }
@@ -376,7 +378,7 @@ func TestSpanContextIterator(t *testing.T) {
 	assert := assert.New(t)
 
 	got := make(map[string]string)
-	ctx := spanContext{baggage: map[string]string{"key": "value"}}
+	ctx := spanContext{baggage: map[string]string{"key": "value"}, hasBaggage: 1}
 	ctx.ForeachBaggageItem(func(k, v string) bool {
 		got[k] = v
 		return true
@@ -424,7 +426,7 @@ func (tp *testLogger) Reset() {
 }
 
 func BenchmarkBaggageItemPresent(b *testing.B) {
-	ctx := spanContext{baggage: map[string]string{"key": "value"}}
+	ctx := spanContext{baggage: map[string]string{"key": "value"}, hasBaggage: 1}
 	for n := 0; n < b.N; n++ {
 		ctx.ForeachBaggageItem(func(k, v string) bool {
 			return true
