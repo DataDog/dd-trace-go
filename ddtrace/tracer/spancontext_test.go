@@ -422,3 +422,21 @@ func (tp *testLogger) Reset() {
 	defer tp.mu.Unlock()
 	tp.lines = tp.lines[:0]
 }
+
+func BenchmarkBaggageItemPresent(b *testing.B) {
+	ctx := spanContext{baggage: map[string]string{"key": "value"}}
+	for n := 0; n < b.N; n++ {
+		ctx.ForeachBaggageItem(func(k, v string) bool {
+			return true
+		})
+	}
+}
+
+func BenchmarkBaggageItemEmpty(b *testing.B) {
+	ctx := spanContext{}
+	for n := 0; n < b.N; n++ {
+		ctx.ForeachBaggageItem(func(k, v string) bool {
+			return true
+		})
+	}
+}
