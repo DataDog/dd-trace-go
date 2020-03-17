@@ -3,8 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-2020 Datadog, Inc.
 
-// Package web provides functions to trace the zenazn/goji/web package (https://github.com/zenazn/goji).
-package web // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/zenazn/goji/web"
+// Package web provides functions to trace the zenazn/goji.v1/web package (https://github.com/zenazn/goji).
+package web // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/zenazn/goji.v1/web"
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
-	"github.com/zenazn/goji/web"
+	"github.com/zenazn/goji.v1/web"
 )
 
 // Middleware returns a goji middleware function that will trace incoming requests.
