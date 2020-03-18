@@ -17,7 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/zenazn/goji.v1/web"
+	"github.com/zenazn/goji/web"
 )
 
 func TestNoRouter(t *testing.T) {
