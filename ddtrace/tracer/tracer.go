@@ -321,6 +321,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for k, v := range t.config.globalTags {
 		span.SetTag(k, v)
 	}
+	if t.config.version != "" && span.Service == t.config.serviceName {
+		span.SetTag(ext.Version, t.config.version)
+	}
 	if context == nil {
 		// this is a brand new trace, sample it
 		t.sample(span)
