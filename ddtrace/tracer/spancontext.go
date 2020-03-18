@@ -32,9 +32,10 @@ type spanContext struct {
 	traceID uint64
 	spanID  uint64
 
-	mu      sync.RWMutex // guards below fields
-	baggage map[string]string
-	origin  string // e.g. "synthetics"
+	mu         sync.RWMutex // guards below fields
+	baggage    map[string]string
+	hasBaggage int32  // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
+	origin     string // e.g. "synthetics"
 }
 
 // newSpanContext creates a new SpanContext to serve as context for the given
@@ -77,6 +78,9 @@ func (c *spanContext) TraceID() uint64 { return c.traceID }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
+	if atomic.LoadInt32(&c.hasBaggage) == 0 {
+		return
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for k, v := range c.baggage {
@@ -104,12 +108,16 @@ func (c *spanContext) setBaggageItem(key, val string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.baggage == nil {
+		atomic.StoreInt32(&c.hasBaggage, 1)
 		c.baggage = make(map[string]string, 1)
 	}
 	c.baggage[key] = val
 }
 
 func (c *spanContext) baggageItem(key string) string {
+	if atomic.LoadInt32(&c.hasBaggage) == 0 {
+		return ""
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.baggage[key]
