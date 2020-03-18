@@ -115,6 +115,9 @@ func (c *spanContext) setBaggageItem(key, val string) {
 }
 
 func (c *spanContext) baggageItem(key string) string {
+	if atomic.LoadInt32(&c.hasBaggage) == 0 {
+		return ""
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.baggage[key]
