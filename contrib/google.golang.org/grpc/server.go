@@ -83,7 +83,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				ctx,
 				info.FullMethod,
 				"grpc.server",
-				cfg.serviceName,
+				cfg.serverServiceName(),
 				tracer.AnalyticsRate(cfg.analyticsRate),
 				tracer.Measured(),
 			)
