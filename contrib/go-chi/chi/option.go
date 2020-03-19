@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -22,7 +23,11 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = "chi.router"
+	cfg.serviceName = globalconfig.ServiceName()
+	if cfg.serviceName == "" ||
+		cfg.serviceName == tracer.DefaultServiceName {
+		cfg.serviceName = "chi.router"
+	}
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 

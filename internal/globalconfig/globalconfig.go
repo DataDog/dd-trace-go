@@ -19,6 +19,7 @@ var cfg = &config{
 type config struct {
 	mu            sync.RWMutex
 	analyticsRate float64
+	serviceName   string
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -35,4 +36,18 @@ func SetAnalyticsRate(rate float64) {
 	cfg.mu.Lock()
 	cfg.analyticsRate = rate
 	cfg.mu.Unlock()
+}
+
+// ServiceName returns the global service name set for this application.
+func ServiceName() string {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	return cfg.serviceName
+}
+
+// SetServiceName sets the global service name set for this application.
+func SetServiceName(name string) {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	cfg.serviceName = name
 }

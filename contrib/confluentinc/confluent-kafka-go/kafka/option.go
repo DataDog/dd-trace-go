@@ -8,12 +8,16 @@ package kafka
 import (
 	"context"
 	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type config struct {
-	ctx           context.Context
-	serviceName   string
-	analyticsRate float64
+	ctx                 context.Context
+	consumerServiceName string
+	producerServiceName string
+	analyticsRate       float64
 }
 
 // An Option customizes the config.
@@ -21,10 +25,15 @@ type Option func(cfg *config)
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
-		serviceName: "kafka",
-		ctx:         context.Background(),
+		ctx: context.Background(),
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
+	}
+	cfg.consumerServiceName = "kafka"
+	cfg.producerServiceName = globalconfig.ServiceName()
+	if cfg.producerServiceName == "" ||
+		cfg.producerServiceName == tracer.DefaultServiceName {
+		cfg.producerServiceName = "kafka"
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -42,7 +51,8 @@ func WithContext(ctx context.Context) Option {
 // WithServiceName sets the config service name to serviceName.
 func WithServiceName(serviceName string) Option {
 	return func(cfg *config) {
-		cfg.serviceName = serviceName
+		cfg.consumerServiceName = serviceName
+		cfg.producerServiceName = serviceName
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -31,7 +32,11 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 		fn(cfg)
 	}
 	if cfg.serviceName == "" {
-		cfg.serviceName = "grpc.server"
+		cfg.serviceName = globalconfig.ServiceName()
+		if cfg.serviceName == "" ||
+			cfg.serviceName == tracer.DefaultServiceName {
+			cfg.serviceName = "grpc.server"
+		}
 	}
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		span, ctx := startSpanFromContext(ctx, info.FullMethod, cfg.serviceName, cfg.analyticsRate)

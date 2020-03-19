@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -23,7 +24,11 @@ type RouterOption func(*routerConfig)
 
 func defaults(cfg *routerConfig) {
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.serviceName = "mux.router"
+	cfg.serviceName = globalconfig.ServiceName()
+	if cfg.serviceName == "" ||
+		cfg.serviceName == tracer.DefaultServiceName {
+		cfg.serviceName = "mux.router"
+	}
 }
 
 // WithServiceName sets the given service name for the router.

@@ -88,7 +88,7 @@ func (c *Consumer) traceEventsChannel(in chan kafka.Event) chan kafka.Event {
 
 func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(c.cfg.serviceName),
+		tracer.ServiceName(c.cfg.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + *msg.TopicPartition.Topic),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag("partition", msg.TopicPartition.Partition),
@@ -179,7 +179,7 @@ func (p *Producer) traceProduceChannel(out chan *kafka.Message) chan *kafka.Mess
 
 func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(p.cfg.serviceName),
+		tracer.ServiceName(p.cfg.producerServiceName),
 		tracer.ResourceName("Produce Topic " + *msg.TopicPartition.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag("partition", msg.TopicPartition.Partition),

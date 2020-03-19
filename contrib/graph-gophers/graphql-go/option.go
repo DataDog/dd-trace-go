@@ -18,7 +18,11 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = "graphql.server"
+	cfg.serviceName = globalconfig.ServiceName()
+	if cfg.serviceName == "" ||
+		cfg.serviceName == tracer.DefaultServiceName {
+		cfg.serviceName = "graphql.server"
+	}
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.analyticsRate = math.NaN()
 }

@@ -29,7 +29,11 @@ type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.serviceName = "http.router"
+	cfg.serviceName = globalconfig.ServiceName()
+	if cfg.serviceName == "" ||
+		cfg.serviceName == tracer.DefaultServiceName {
+		cfg.serviceName = "http.router"
+	}
 	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

@@ -22,6 +22,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
+// DefaultServiceName is the service name that will be given to the tracer
+// if one is not configured with WithServiceName or the DD_SERVICE
+// environment variable.
+var DefaultServiceName string = filepath.Base(os.Args[0])
+
 // config holds the tracer configuration.
 type config struct {
 	// debug, when true, writes details to logs.
@@ -111,7 +116,7 @@ func defaults(c *config) {
 	if v := os.Getenv("DD_SERVICE"); v != "" {
 		c.serviceName = v
 	} else {
-		c.serviceName = filepath.Base(os.Args[0])
+		c.serviceName = DefaultServiceName
 	}
 	if ver := os.Getenv("DD_VERSION"); ver != "" {
 		c.version = ver

@@ -27,7 +27,11 @@ type config struct {
 
 func (cfg *config) serverServiceName() string {
 	if cfg.serviceName == "" {
-		return "grpc.server"
+		cfg.serviceName = globalconfig.ServiceName()
+		if cfg.serviceName == "" ||
+			cfg.serviceName == tracer.DefaultServiceName {
+			cfg.serviceName = "grpc.server"
+		}
 	}
 	return cfg.serviceName
 }
