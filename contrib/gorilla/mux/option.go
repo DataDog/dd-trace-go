@@ -15,6 +15,7 @@ import (
 type routerConfig struct {
 	serviceName   string
 	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
+	finishOpts    []ddtrace.FinishOption    // span finish options to be applied
 	analyticsRate float64
 }
 
@@ -38,6 +39,14 @@ func WithServiceName(name string) RouterOption {
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
 	return func(cfg *routerConfig) {
 		cfg.spanOpts = opts
+	}
+}
+
+// WithFinishOptions applies the given set of options on finish to the spans
+// started by the router.
+func WithFinishOptions(opts ...ddtrace.FinishOption) RouterOption {
+	return func(cfg *routerConfig) {
+		cfg.finishOpts = opts
 	}
 }
 

@@ -35,7 +35,7 @@ func TestTraceAndServe(t *testing.T) {
 			http.Error(w, "some error", http.StatusServiceUnavailable)
 			called = true
 		}
-		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource")
+		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
 		spans := mt.FinishedSpans()
 		span := spans[0]
 
@@ -64,7 +64,7 @@ func TestTraceAndServe(t *testing.T) {
 			called = true
 		}
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource")
+			TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
 		}))
 		defer srv.Close()
 
@@ -117,7 +117,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.NoError(err)
 		w := httptest.NewRecorder()
 
-		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource")
+		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
 
 		var p, c mocktracer.Span
 		spans := mt.FinishedSpans()
@@ -149,7 +149,7 @@ func TestTraceAndServe(t *testing.T) {
 		r = r.WithContext(tracer.ContextWithSpan(r.Context(), parent))
 		w := httptest.NewRecorder()
 
-		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource")
+		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
 
 		var p, c mocktracer.Span
 		spans := mt.FinishedSpans()

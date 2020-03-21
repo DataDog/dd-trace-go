@@ -15,6 +15,7 @@ import (
 type config struct {
 	serviceName   string
 	spanOpts      []ddtrace.StartSpanOption
+	finishOpts    []ddtrace.FinishOption
 	analyticsRate float64
 }
 
@@ -37,6 +38,13 @@ func WithServiceName(name string) Option {
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
 	return func(cfg *config) {
 		cfg.spanOpts = opts
+	}
+}
+
+// WithFinishOptions applies the given set of options on finish to the span started by the mux.
+func WithFinishOptions(opts ...ddtrace.FinishOption) Option {
+	return func(cfg *config) {
+		cfg.finishOpts = opts
 	}
 }
 

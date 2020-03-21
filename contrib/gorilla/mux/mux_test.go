@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -112,6 +113,21 @@ func TestSpanOptions(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Equal(1, len(spans))
 	assert.Equal(2, spans[0].Tag(ext.SamplingPriority))
+}
+
+func TestFinishOptions(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	then := time.Now().Add(-time.Minute)
+	mux := NewRouter(WithFinishOptions(tracer.FinishTime(then)))
+	r := httptest.NewRequest("GET", "http://localhost/missing", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+
+	spans := mt.FinishedSpans()
+	assert.Equal(1, len(spans))
+	assert.Equal(then, spans[0].FinishTime())
 }
 
 // TestImplementingMethods is a regression tests asserting that all the mux.Router methods

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -77,8 +78,11 @@ func TestWrapHandler200(t *testing.T) {
 	defer mt.Stop()
 	assert := assert.New(t)
 
+	then := time.Now().Add(-time.Minute)
 	handler := WrapHandler(http.HandlerFunc(handler200), "my-service", "my-resource",
-		WithSpanOptions(tracer.Tag("foo", "bar")))
+		WithSpanOptions(tracer.Tag("foo", "bar")),
+		WithFinishOptions(tracer.FinishTime(then)),
+	)
 
 	url := "/"
 	r := httptest.NewRequest("GET", url, nil)
@@ -99,6 +103,7 @@ func TestWrapHandler200(t *testing.T) {
 	assert.Equal(url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
+	assert.Equal(then, s.FinishTime())
 }
 
 func TestAnalyticsSettings(t *testing.T) {
