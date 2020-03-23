@@ -14,7 +14,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -173,7 +172,6 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 func newTracer(opts ...StartOption) *tracer {
 	t := newUnstartedTracer(opts...)
 	c := t.config
-	globalconfig.SetServiceName(c.serviceName)
 	c.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")

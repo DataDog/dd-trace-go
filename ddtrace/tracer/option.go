@@ -22,11 +22,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
-// DefaultServiceName is the service name that will be given to the tracer
-// if one is not configured with WithServiceName or the DD_SERVICE
-// environment variable.
-var DefaultServiceName string = filepath.Base(os.Args[0])
-
 // config holds the tracer configuration.
 type config struct {
 	// debug, when true, writes details to logs.
@@ -115,8 +110,9 @@ func defaults(c *config) {
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
 		c.serviceName = v
+		globalconfig.SetServiceName(c.serviceName)
 	} else {
-		c.serviceName = DefaultServiceName
+		c.serviceName = filepath.Base(os.Args[0])
 	}
 	if ver := os.Getenv("DD_VERSION"); ver != "" {
 		c.version = ver
@@ -191,16 +187,22 @@ func WithPropagator(p Propagator) StartOption {
 	}
 }
 
-// WithServiceName sets the default service name to be used with the tracer. It is
-// deprecated in favour of WithService and will be removed in the next major version.
+// WithServiceName sets the default service name to be used with the tracer. This will
+// not affect the service name used by any integrations. It is deprecated in favour of
+// WithService and will be removed in the next major version.
 func WithServiceName(name string) StartOption {
-	return WithService(name)
+	return func(c *config) {
+		c.serviceName = name
+	}
 }
 
-// WithService sets the default service name to be used with the tracer.
+// WithService sets the default service name to be used with the tracer. It will also be
+// used as the service name for server and framework integrations
+// (e.g. http servers, grpc, etc.)
 func WithService(name string) StartOption {
 	return func(c *config) {
 		c.serviceName = name
+		globalconfig.SetServiceName(c.serviceName)
 	}
 }
 

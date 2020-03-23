@@ -30,8 +30,7 @@ type Option func(*config)
 func defaults(cfg *config) {
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.serviceName = globalconfig.ServiceName()
-	if cfg.serviceName == "" ||
-		cfg.serviceName == tracer.DefaultServiceName {
+	if cfg.serviceName == "" {
 		cfg.serviceName = "http.router"
 	}
 	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}

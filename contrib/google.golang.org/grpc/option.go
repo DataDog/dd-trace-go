@@ -8,7 +8,6 @@ package grpc
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"google.golang.org/grpc/codes"
@@ -31,8 +30,7 @@ type config struct {
 func (cfg *config) serverServiceName() string {
 	if cfg.serviceName == "" {
 		cfg.serviceName = globalconfig.ServiceName()
-		if cfg.serviceName == "" ||
-			cfg.serviceName == tracer.DefaultServiceName {
+		if cfg.serviceName == "" {
 			cfg.serviceName = "grpc.server"
 		}
 	}

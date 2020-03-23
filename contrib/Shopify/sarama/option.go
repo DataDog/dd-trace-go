@@ -8,7 +8,6 @@ package sarama
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -21,8 +20,7 @@ type config struct {
 func defaults(cfg *config) {
 	cfg.consumerServiceName = "kafka"
 	cfg.producerServiceName = globalconfig.ServiceName()
-	if cfg.producerServiceName == "" ||
-		cfg.producerServiceName == tracer.DefaultServiceName {
+	if cfg.producerServiceName == "" {
 		cfg.producerServiceName = "kafka"
 	}
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()

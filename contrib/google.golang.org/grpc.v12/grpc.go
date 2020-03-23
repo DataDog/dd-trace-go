@@ -33,8 +33,7 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 	}
 	if cfg.serviceName == "" {
 		cfg.serviceName = globalconfig.ServiceName()
-		if cfg.serviceName == "" ||
-			cfg.serviceName == tracer.DefaultServiceName {
+		if cfg.serviceName == "" {
 			cfg.serviceName = "grpc.server"
 		}
 	}

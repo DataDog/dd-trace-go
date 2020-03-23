@@ -9,7 +9,6 @@ import (
 	"context"
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -31,8 +30,7 @@ func newConfig(opts ...Option) *config {
 	}
 	cfg.consumerServiceName = "kafka"
 	cfg.producerServiceName = globalconfig.ServiceName()
-	if cfg.producerServiceName == "" ||
-		cfg.producerServiceName == tracer.DefaultServiceName {
+	if cfg.producerServiceName == "" {
 		cfg.producerServiceName = "kafka"
 	}
 	for _, opt := range opts {
