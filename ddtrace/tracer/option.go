@@ -193,6 +193,7 @@ func WithPropagator(p Propagator) StartOption {
 func WithServiceName(name string) StartOption {
 	return func(c *config) {
 		c.serviceName = name
+		globalconfig.SetServiceName("")
 	}
 }
 

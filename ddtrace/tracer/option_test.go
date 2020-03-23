@@ -176,4 +176,17 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("api-intake", tracer.config.serviceName)
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
+
+	t.Run("env-with-option", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "api-intake")
+		defer os.Unsetenv("DD_SERVICE")
+		assert := assert.New(t)
+
+		tracer := newTracer(
+			WithServiceName("api-intake"),
+		)
+
+		assert.Equal("api-intake", tracer.config.serviceName)
+		assert.Equal("", globalconfig.ServiceName())
+	})
 }
