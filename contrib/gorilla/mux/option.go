@@ -7,6 +7,7 @@ package mux
 
 import (
 	"math"
+	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -16,6 +17,7 @@ type routerConfig struct {
 	serviceName   string
 	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
 	analyticsRate float64
+	resourceNamer func(*Router, *http.Request) string
 }
 
 // RouterOption represents an option that can be passed to NewRouter.
@@ -24,6 +26,7 @@ type RouterOption func(*routerConfig)
 func defaults(cfg *routerConfig) {
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.serviceName = "mux.router"
+	cfg.resourceNamer = defaultResourceNamer
 }
 
 // WithServiceName sets the given service name for the router.
@@ -61,5 +64,13 @@ func WithAnalyticsRate(rate float64) RouterOption {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithResourceNamer specifies a quantizing function which will be used to
+// obtain the resource name for a given request.
+func WithResourceNamer(namer func(router *Router, req *http.Request) string) RouterOption {
+	return func(cfg *routerConfig) {
+		cfg.resourceNamer = namer
 	}
 }
