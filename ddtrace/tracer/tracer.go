@@ -172,7 +172,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 func newTracer(opts ...StartOption) *tracer {
 	t := newUnstartedTracer(opts...)
 	c := t.config
-	c.statsd.Incr("datadog.tracer.started", nil, 1)
+	t.config.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")
 		t.wg.Add(1)
