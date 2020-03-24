@@ -38,7 +38,7 @@ func SetAnalyticsRate(rate float64) {
 	cfg.mu.Unlock()
 }
 
-// ServiceName returns the global service name set for this application.
+// ServiceName returns the default service name used by non-client integrations such as servers and frameworks.
 func ServiceName() string {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
