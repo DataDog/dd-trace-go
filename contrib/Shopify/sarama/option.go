@@ -19,9 +19,9 @@ type config struct {
 
 func defaults(cfg *config) {
 	cfg.consumerServiceName = "kafka"
-	cfg.producerServiceName = globalconfig.ServiceName()
-	if cfg.producerServiceName == "" {
-		cfg.producerServiceName = "kafka"
+	cfg.producerServiceName = "kafka"
+	if svc := globalconfig.ServiceName(); svc != "" {
+		cfg.producerServiceName = svc
 	}
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.analyticsRate = math.NaN()

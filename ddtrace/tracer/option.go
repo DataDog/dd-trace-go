@@ -187,9 +187,11 @@ func WithPropagator(p Propagator) StartOption {
 	}
 }
 
-// WithServiceName sets the default service name to be used with the tracer. This will
-// not affect the service name used by any integrations. It is deprecated in favour of
-// WithService and will be removed in the next major version.
+// WithServiceName is deprecated. Please use WithService.
+// If you are using an older version and you are upgrading from WithServiceName
+// to WithService, please note that WithService will determine the service name of
+// server and framework integrations. This provides a better experience of the
+// product.
 func WithServiceName(name string) StartOption {
 	return func(c *config) {
 		c.serviceName = name

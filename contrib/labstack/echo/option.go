@@ -20,9 +20,9 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = globalconfig.ServiceName()
-	if cfg.serviceName == "" {
-		cfg.serviceName = "echo"
+	cfg.serviceName = "echo"
+	if svc := globalconfig.ServiceName(); svc != "" {
+		cfg.serviceName = svc
 	}
 	cfg.analyticsRate = math.NaN()
 }

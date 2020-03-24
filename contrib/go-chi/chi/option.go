@@ -22,9 +22,9 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = globalconfig.ServiceName()
-	if cfg.serviceName == "" {
-		cfg.serviceName = "chi.router"
+	cfg.serviceName = "chi.router"
+	if svc := globalconfig.ServiceName(); svc != "" {
+		cfg.serviceName = svc
 	}
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 }

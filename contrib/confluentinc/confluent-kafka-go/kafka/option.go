@@ -29,9 +29,9 @@ func newConfig(opts ...Option) *config {
 		analyticsRate: math.NaN(),
 	}
 	cfg.consumerServiceName = "kafka"
-	cfg.producerServiceName = globalconfig.ServiceName()
-	if cfg.producerServiceName == "" {
-		cfg.producerServiceName = "kafka"
+	cfg.producerServiceName = "kafka"
+	if svc := globalconfig.ServiceName(); svc != "" {
+		cfg.producerServiceName = svc
 	}
 	for _, opt := range opts {
 		opt(cfg)

@@ -29,9 +29,9 @@ type config struct {
 
 func (cfg *config) serverServiceName() string {
 	if cfg.serviceName == "" {
-		cfg.serviceName = globalconfig.ServiceName()
-		if cfg.serviceName == "" {
-			cfg.serviceName = "grpc.server"
+		cfg.serviceName = "grpc.server"
+		if svc := globalconfig.ServiceName(); svc != "" {
+			cfg.serviceName = svc
 		}
 	}
 	return cfg.serviceName

@@ -32,9 +32,9 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 		fn(cfg)
 	}
 	if cfg.serviceName == "" {
-		cfg.serviceName = globalconfig.ServiceName()
-		if cfg.serviceName == "" {
-			cfg.serviceName = "grpc.server"
+		cfg.serviceName = "grpc.server"
+		if svc := globalconfig.ServiceName(); svc != "" {
+			cfg.serviceName = svc
 		}
 	}
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
