@@ -197,9 +197,7 @@ func WithServiceName(name string) StartOption {
 	}
 }
 
-// WithService sets the default service name to be used with the tracer. It will also be
-// used as the service name for server and framework integrations
-// (e.g. http servers, grpc, etc.)
+// WithService sets the default service name for the program.
 func WithService(name string) StartOption {
 	return func(c *config) {
 		c.serviceName = name
