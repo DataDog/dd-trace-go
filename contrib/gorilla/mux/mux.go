@@ -97,18 +97,27 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var (
 		match    mux.RouteMatch
 		spanopts []ddtrace.StartSpanOption
-		route    = "unknown"
 	)
 	// get the resource associated to this request
 	if r.Match(req, &match) && match.Route != nil {
-		if r, err := match.Route.GetPathTemplate(); err == nil {
-			route = r
-		}
 		if h, err := match.Route.GetHostTemplate(); err == nil {
 			spanopts = append(spanopts, tracer.Tag("mux.host", h))
 		}
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
-	resource := req.Method + " " + route
+	resource := r.config.resourceNamer(r, req)
 	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, r.config.finishOpts, spanopts...)
+}
+
+// defaultResourceNamer attempts to quantize the resource for an HTTP request by
+// retrieving the path template associated with the route from the request.
+func defaultResourceNamer(router *Router, req *http.Request) string {
+	var match mux.RouteMatch
+	// get the resource associated with the given request
+	if router.Match(req, &match) && match.Route != nil {
+		if r, err := match.Route.GetPathTemplate(); err == nil {
+			return req.Method + " " + r
+		}
+	}
+	return req.Method + " unknown"
 }
