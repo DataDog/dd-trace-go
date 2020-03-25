@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	elasticv3 "gopkg.in/olivere/elastic.v3"
 	elasticv5 "gopkg.in/olivere/elastic.v5"
+	elasticv7 "gopkg.in/olivere/elastic.v7"
 
 	"testing"
 )
@@ -33,6 +34,41 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+func TestClientV7(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	tc := NewHTTPClient(WithServiceName("my-es-service"))
+	client, err := elasticv7.NewClient(
+		elasticv7.SetURL("http://127.0.0.1:9202"),
+		elasticv7.SetHttpClient(tc),
+		elasticv7.SetSniff(false),
+		elasticv7.SetHealthcheck(false),
+	)
+	assert.NoError(err)
+
+	_, err = client.Index().
+		Index("twitter").Id("1").
+		Type("tweet").
+		BodyString(`{"user": "test", "message": "hello"}`).
+		Do(context.TODO())
+	assert.NoError(err)
+	checkPUTTrace(assert, mt)
+
+	mt.Reset()
+	_, err = client.Get().Index("twitter").Type("tweet").
+		Id("1").Do(context.TODO())
+	assert.NoError(err)
+	checkGETTrace(assert, mt)
+
+	mt.Reset()
+	_, err = client.Get().Index("not-real-index").
+		Id("1").Do(context.TODO())
+	assert.Error(err)
+	checkErrTrace(assert, mt)
 }
 
 func TestClientV5(t *testing.T) {
