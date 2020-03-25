@@ -43,7 +43,7 @@ func TestClientV7(t *testing.T) {
 
 	tc := NewHTTPClient(WithServiceName("my-es-service"))
 	client, err := elasticv7.NewClient(
-		elasticv7.SetURL("http://127.0.0.1:9202"),
+		elasticv7.SetURL("http://127.0.0.1:9201"),
 		elasticv7.SetHttpClient(tc),
 		elasticv7.SetSniff(false),
 		elasticv7.SetHealthcheck(false),
