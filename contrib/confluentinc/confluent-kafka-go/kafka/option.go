@@ -24,14 +24,14 @@ type Option func(cfg *config)
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
-		ctx: context.Background(),
+		ctx:                 context.Background(),
+		consumerServiceName: "kafka",
+		producerServiceName: "kafka",
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
 	}
-	cfg.consumerServiceName = "kafka"
-	cfg.producerServiceName = "kafka"
 	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.producerServiceName = svc
+		cfg.consumerServiceName = svc
 	}
 	for _, opt := range opts {
 		opt(cfg)
