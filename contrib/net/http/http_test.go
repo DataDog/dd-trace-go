@@ -6,16 +6,14 @@
 package http
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"testing"
-	"time"
-
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 )
 
 func TestHttpTracer200(t *testing.T) {
@@ -78,10 +76,8 @@ func TestWrapHandler200(t *testing.T) {
 	defer mt.Stop()
 	assert := assert.New(t)
 
-	then := time.Now().Add(-time.Minute)
 	handler := WrapHandler(http.HandlerFunc(handler200), "my-service", "my-resource",
 		WithSpanOptions(tracer.Tag("foo", "bar")),
-		WithFinishOptions(tracer.FinishTime(then)),
 	)
 
 	url := "/"
@@ -103,7 +99,28 @@ func TestWrapHandler200(t *testing.T) {
 	assert.Equal(url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
-	assert.Equal(then, s.FinishTime())
+}
+
+func TestNoStack(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	assert := assert.New(t)
+
+	handler := WrapHandler(http.HandlerFunc(handler500), "my-service", "my-resource",
+		NoDebugStack())
+
+	r := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+	assert.Equal(http.StatusInternalServerError, w.Code)
+	assert.Equal("500!\n", w.Body.String())
+
+	spans := mt.FinishedSpans()
+	assert.Equal(1, len(spans))
+	s := spans[0]
+	assert.EqualError(spans[0].Tags()[ext.Error].(error), "500: Internal Server Error")
+	assert.Equal("<mock no debug stack>", s.Tags()[ext.ErrorStack])
+
 }
 
 func TestAnalyticsSettings(t *testing.T) {

@@ -198,3 +198,24 @@ func TestOptions(t *testing.T) {
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
 }
+
+func TestNoDebugStack(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	m := web.New()
+	m.Use(Middleware(NoDebugStack()))
+	m.Get("/user/:id", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "failed", http.StatusInternalServerError)
+	})
+
+	r := httptest.NewRequest("GET", "/user/123", nil)
+	w := httptest.NewRecorder()
+
+	m.ServeHTTP(w, r)
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+	s := spans[0]
+	assert.EqualError(t, s.Tags()[ext.Error].(error), "500: Internal Server Error")
+	assert.Equal(t, "<mock no debug stack>", spans[0].Tags()[ext.ErrorStack])
+}

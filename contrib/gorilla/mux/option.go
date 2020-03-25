@@ -6,6 +6,7 @@
 package mux
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -42,11 +43,12 @@ func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
 	}
 }
 
-// WithFinishOptions applies the given set of options on finish to the spans
-// started by the router.
-func WithFinishOptions(opts ...ddtrace.FinishOption) RouterOption {
+// NoDebugStack prevents stack traces from being attached to spans finishing
+// with an error. This is useful in situations where errors are frequent and
+// performance is critical.
+func NoDebugStack() RouterOption {
 	return func(cfg *routerConfig) {
-		cfg.finishOpts = opts
+		cfg.finishOpts = append(cfg.finishOpts, tracer.NoDebugStack())
 	}
 }
 

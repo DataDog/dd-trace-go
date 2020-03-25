@@ -77,11 +77,12 @@ func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
 	}
 }
 
-// WithFinishOptions defines a set of additional ddtrace.FinishOption to be applied
-// on close to spans started by the integration.
-func WithFinishOptions(opts ...ddtrace.FinishOption) Option {
+// NoDebugStack prevents stack traces from being attached to spans finishing
+// with an error. This is useful in situations where errors are frequent and
+// performance is critical.
+func NoDebugStack() Option {
 	return func(cfg *config) {
-		cfg.finishOpts = append(cfg.finishOpts, opts...)
+		cfg.finishOpts = append(cfg.finishOpts, tracer.NoDebugStack())
 	}
 }
 
