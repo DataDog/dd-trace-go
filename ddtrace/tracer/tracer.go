@@ -133,6 +133,7 @@ const payloadQueueSize = 1000
 func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := new(config)
 	defaults(c)
+	globalconfig.SetServiceName(c.serviceName)
 	for _, fn := range opts {
 		fn(c)
 	}

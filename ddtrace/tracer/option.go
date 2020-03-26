@@ -110,7 +110,6 @@ func defaults(c *config) {
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
 		c.serviceName = v
-		globalconfig.SetServiceName(c.serviceName)
 	} else {
 		c.serviceName = filepath.Base(os.Args[0])
 	}
@@ -195,6 +194,10 @@ func WithPropagator(p Propagator) StartOption {
 func WithServiceName(name string) StartOption {
 	return func(c *config) {
 		c.serviceName = name
+		if globalconfig.ServiceName() != "" {
+			log.Warn("ddtrace/tracer: deprecated config WithServiceName should not be used " +
+				"with `WithService` or `DD_SERVICE` integration service name will not be set.")
+		}
 		globalconfig.SetServiceName("")
 	}
 }
