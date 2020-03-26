@@ -217,5 +217,5 @@ func TestNoDebugStack(t *testing.T) {
 	assert.Len(t, spans, 1)
 	s := spans[0]
 	assert.EqualError(t, s.Tags()[ext.Error].(error), "500: Internal Server Error")
-	assert.Equal(t, "<mock no debug stack>", spans[0].Tags()[ext.ErrorStack])
+	assert.Equal(t, "<debug stack disabled>", spans[0].Tags()[ext.ErrorStack])
 }

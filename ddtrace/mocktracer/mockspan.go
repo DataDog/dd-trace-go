@@ -202,7 +202,7 @@ func (s *mockspan) Finish(opts ...ddtrace.FinishOption) {
 		s.SetTag(ext.Error, cfg.Error)
 	}
 	if cfg.NoDebugStack {
-		s.SetTag(ext.ErrorStack, "<mock no debug stack>")
+		s.SetTag(ext.ErrorStack, "<debug stack disabled>")
 	}
 	s.Lock()
 	defer s.Unlock()

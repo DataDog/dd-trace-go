@@ -128,7 +128,7 @@ func TestNoDebugStack(t *testing.T) {
 	assert.Equal(1, len(spans))
 	s := spans[0]
 	assert.EqualError(s.Tags()[ext.Error].(error), "500: Internal Server Error")
-	assert.Equal("<mock no debug stack>", spans[0].Tags()[ext.ErrorStack])
+	assert.Equal("<debug stack disabled>", spans[0].Tags()[ext.ErrorStack])
 }
 
 // TestImplementingMethods is a regression tests asserting that all the mux.Router methods
