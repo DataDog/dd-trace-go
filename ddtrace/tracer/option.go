@@ -189,14 +189,13 @@ func WithPropagator(p Propagator) StartOption {
 // WithServiceName is deprecated. Please use WithService.
 // If you are using an older version and you are upgrading from WithServiceName
 // to WithService, please note that WithService will determine the service name of
-// server and framework integrations. This provides a better experience of the
-// product.
+// server and framework integrations.
 func WithServiceName(name string) StartOption {
 	return func(c *config) {
 		c.serviceName = name
 		if globalconfig.ServiceName() != "" {
 			log.Warn("ddtrace/tracer: deprecated config WithServiceName should not be used " +
-				"with `WithService` or `DD_SERVICE` integration service name will not be set.")
+				"with `WithService` or `DD_SERVICE`; integration service name will not be set.")
 		}
 		globalconfig.SetServiceName("")
 	}
