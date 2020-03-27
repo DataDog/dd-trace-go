@@ -7,6 +7,8 @@ package echo
 
 import (
 	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type config struct {
@@ -19,6 +21,9 @@ type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.serviceName = "echo"
+	if svc := globalconfig.ServiceName(); svc != "" {
+		cfg.serviceName = svc
+	}
 	cfg.analyticsRate = math.NaN()
 }
 

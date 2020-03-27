@@ -7,15 +7,22 @@ package sarama
 
 import (
 	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type config struct {
-	serviceName   string
-	analyticsRate float64
+	consumerServiceName string
+	producerServiceName string
+	analyticsRate       float64
 }
 
 func defaults(cfg *config) {
-	cfg.serviceName = "kafka"
+	cfg.producerServiceName = "kafka"
+	cfg.consumerServiceName = "kafka"
+	if svc := globalconfig.ServiceName(); svc != "" {
+		cfg.consumerServiceName = svc
+	}
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.analyticsRate = math.NaN()
 }
@@ -26,7 +33,8 @@ type Option func(cfg *config)
 // WithServiceName sets the given service name for the intercepted client.
 func WithServiceName(name string) Option {
 	return func(cfg *config) {
-		cfg.serviceName = name
+		cfg.consumerServiceName = name
+		cfg.producerServiceName = name
 	}
 }
 

@@ -24,6 +24,9 @@ type RouterOption func(*routerConfig)
 func defaults(cfg *routerConfig) {
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.serviceName = "http.router"
+	if svc := globalconfig.ServiceName(); svc != "" {
+		cfg.serviceName = svc
+	}
 }
 
 // WithServiceName sets the given service name for the returned router.

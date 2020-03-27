@@ -28,6 +28,9 @@ type RouterOption func(*routerConfig)
 func defaults(cfg *routerConfig) {
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.serviceName = "mux.router"
+	if svc := globalconfig.ServiceName(); svc != "" {
+		cfg.serviceName = svc
+	}
 	cfg.resourceNamer = defaultResourceNamer
 }
 

@@ -114,7 +114,6 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert := assert.New(t)
 		tracer := newTracer(
 			WithSampler(NewRateSampler(0.5)),
-			WithServiceName("api-intake"),
 			WithAgentAddr("ddagent.consul.local:58126"),
 			WithGlobalTag("k", "v"),
 			WithDebugMode(true),
@@ -122,22 +121,11 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		)
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
-		assert.Equal("api-intake", c.serviceName)
 		assert.Equal("ddagent.consul.local:58126", c.agentAddr)
 		assert.NotNil(c.globalTags)
 		assert.Equal("v", c.globalTags["k"])
 		assert.Equal("testEnv", c.globalTags[ext.Environment])
 		assert.True(c.debug)
-	})
-
-	t.Run("env-service", func(t *testing.T) {
-		os.Setenv("DD_SERVICE", "TEST_SERVICE")
-		defer os.Unsetenv("DD_SERVICE")
-
-		assert := assert.New(t)
-		var c config
-		defaults(&c)
-		assert.Equal("TEST_SERVICE", c.serviceName)
 	})
 
 	t.Run("env-tags", func(t *testing.T) {
@@ -156,5 +144,49 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		dVal, ok := c.globalTags["dKey"]
 		assert.False(ok)
 		assert.Equal(nil, dVal)
+	})
+}
+
+func TestServiceName(t *testing.T) {
+	t.Run("WithServiceName", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer := newTracer(
+			WithServiceName("api-intake"),
+		)
+
+		assert.Equal("api-intake", tracer.config.serviceName)
+		assert.Equal("", globalconfig.ServiceName())
+	})
+
+	t.Run("WithService", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer := newTracer(
+			WithService("api-intake"),
+		)
+		assert.Equal("api-intake", tracer.config.serviceName)
+		assert.Equal("api-intake", globalconfig.ServiceName())
+	})
+
+	t.Run("env", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "api-intake")
+		defer os.Unsetenv("DD_SERVICE")
+		assert := assert.New(t)
+		tracer := newTracer()
+
+		assert.Equal("api-intake", tracer.config.serviceName)
+		assert.Equal("api-intake", globalconfig.ServiceName())
+	})
+
+	t.Run("combo", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "api-intake")
+		defer os.Unsetenv("DD_SERVICE")
+		assert := assert.New(t)
+
+		tracer := newTracer(
+			WithServiceName("api-intake"),
+		)
+
+		assert.Equal("api-intake", tracer.config.serviceName)
+		assert.Equal("", globalconfig.ServiceName())
 	})
 }

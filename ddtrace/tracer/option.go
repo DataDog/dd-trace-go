@@ -110,6 +110,7 @@ func defaults(c *config) {
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
 		c.serviceName = v
+		globalconfig.SetServiceName(v)
 	} else {
 		c.serviceName = filepath.Base(os.Args[0])
 	}
@@ -186,16 +187,26 @@ func WithPropagator(p Propagator) StartOption {
 	}
 }
 
-// WithServiceName sets the default service name to be used with the tracer. It is
-// deprecated in favour of WithService and will be removed in the next major version.
+// WithServiceName is deprecated. Please use WithService.
+// If you are using an older version and you are upgrading from WithServiceName
+// to WithService, please note that WithService will determine the service name of
+// server and framework integrations.
 func WithServiceName(name string) StartOption {
-	return WithService(name)
+	return func(c *config) {
+		c.serviceName = name
+		if globalconfig.ServiceName() != "" {
+			log.Warn("ddtrace/tracer: deprecated config WithServiceName should not be used " +
+				"with `WithService` or `DD_SERVICE`; integration service name will not be set.")
+		}
+		globalconfig.SetServiceName("")
+	}
 }
 
-// WithService sets the default service name to be used with the tracer.
+// WithService sets the default service name for the program.
 func WithService(name string) StartOption {
 	return func(c *config) {
 		c.serviceName = name
+		globalconfig.SetServiceName(c.serviceName)
 	}
 }
 

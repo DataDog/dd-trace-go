@@ -23,6 +23,9 @@ type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.serviceName = "chi.router"
+	if svc := globalconfig.ServiceName(); svc != "" {
+		cfg.serviceName = svc
+	}
 	cfg.analyticsRate = globalconfig.AnalyticsRate()
 }
 
