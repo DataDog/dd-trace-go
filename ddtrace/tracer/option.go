@@ -110,6 +110,7 @@ func defaults(c *config) {
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
 		c.serviceName = v
+		globalconfig.SetServiceName(v)
 	} else {
 		c.serviceName = filepath.Base(os.Args[0])
 	}

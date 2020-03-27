@@ -14,7 +14,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -134,7 +133,6 @@ const payloadQueueSize = 1000
 func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := new(config)
 	defaults(c)
-	globalconfig.SetServiceName(c.serviceName)
 	for _, fn := range opts {
 		fn(c)
 	}
