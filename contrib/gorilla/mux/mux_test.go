@@ -114,6 +114,23 @@ func TestSpanOptions(t *testing.T) {
 	assert.Equal(2, spans[0].Tag(ext.SamplingPriority))
 }
 
+func TestNoDebugStack(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	mux := NewRouter(NoDebugStack())
+	mux.Handle("/500", errorHandler(http.StatusInternalServerError)).Host("localhost")
+	r := httptest.NewRequest("GET", "http://localhost/500", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+	assert.Equal(http.StatusInternalServerError, w.Code)
+	spans := mt.FinishedSpans()
+	assert.Equal(1, len(spans))
+	s := spans[0]
+	assert.EqualError(s.Tags()[ext.Error].(error), "500: Internal Server Error")
+	assert.Equal("<debug stack disabled>", spans[0].Tags()[ext.ErrorStack])
+}
+
 // TestImplementingMethods is a regression tests asserting that all the mux.Router methods
 // returning the router will return the modified traced version of it and not the original
 // router.

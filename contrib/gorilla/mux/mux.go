@@ -106,7 +106,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
 	resource := r.config.resourceNamer(r, req)
-	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, spanopts...)
+	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, r.config.finishOpts, spanopts...)
 }
 
 // defaultResourceNamer attempts to quantize the resource for an HTTP request by

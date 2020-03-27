@@ -78,7 +78,8 @@ func TestWrapHandler200(t *testing.T) {
 	assert := assert.New(t)
 
 	handler := WrapHandler(http.HandlerFunc(handler200), "my-service", "my-resource",
-		WithSpanOptions(tracer.Tag("foo", "bar")))
+		WithSpanOptions(tracer.Tag("foo", "bar")),
+	)
 
 	url := "/"
 	r := httptest.NewRequest("GET", url, nil)
@@ -99,6 +100,28 @@ func TestWrapHandler200(t *testing.T) {
 	assert.Equal(url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
+}
+
+func TestNoStack(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	assert := assert.New(t)
+
+	handler := WrapHandler(http.HandlerFunc(handler500), "my-service", "my-resource",
+		NoDebugStack())
+
+	r := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+	assert.Equal(http.StatusInternalServerError, w.Code)
+	assert.Equal("500!\n", w.Body.String())
+
+	spans := mt.FinishedSpans()
+	assert.Equal(1, len(spans))
+	s := spans[0]
+	assert.EqualError(spans[0].Tags()[ext.Error].(error), "500: Internal Server Error")
+	assert.Equal("<debug stack disabled>", s.Tags()[ext.ErrorStack])
+
 }
 
 func TestAnalyticsSettings(t *testing.T) {
