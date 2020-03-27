@@ -19,6 +19,7 @@ type config struct {
 	serviceName   string
 	analyticsRate float64
 	spanOpts      []ddtrace.StartSpanOption
+	finishOpts    []ddtrace.FinishOption
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -76,6 +77,15 @@ func WithAnalyticsRate(rate float64) MuxOption {
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
 	return func(cfg *config) {
 		cfg.spanOpts = append(cfg.spanOpts, opts...)
+	}
+}
+
+// NoDebugStack prevents stack traces from being attached to spans finishing
+// with an error. This is useful in situations where errors are frequent and
+// performance is critical.
+func NoDebugStack() Option {
+	return func(cfg *config) {
+		cfg.finishOpts = append(cfg.finishOpts, tracer.NoDebugStack())
 	}
 }
 

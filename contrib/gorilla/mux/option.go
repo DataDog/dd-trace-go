@@ -10,12 +10,14 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type routerConfig struct {
 	serviceName   string
 	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
+	finishOpts    []ddtrace.FinishOption    // span finish options to be applied
 	analyticsRate float64
 	resourceNamer func(*Router, *http.Request) string
 }
@@ -44,6 +46,15 @@ func WithServiceName(name string) RouterOption {
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
 	return func(cfg *routerConfig) {
 		cfg.spanOpts = opts
+	}
+}
+
+// NoDebugStack prevents stack traces from being attached to spans finishing
+// with an error. This is useful in situations where errors are frequent and
+// performance is critical.
+func NoDebugStack() RouterOption {
+	return func(cfg *routerConfig) {
+		cfg.finishOpts = append(cfg.finishOpts, tracer.NoDebugStack())
 	}
 }
 
