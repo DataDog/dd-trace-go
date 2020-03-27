@@ -148,7 +148,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 }
 
 func TestServiceName(t *testing.T) {
-	t.Run("with-service-name", func(t *testing.T) {
+	t.Run("WithServiceName", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer := newTracer(
 			WithServiceName("api-intake"),
@@ -158,7 +158,7 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("", globalconfig.ServiceName())
 	})
 
-	t.Run("with-service", func(t *testing.T) {
+	t.Run("WithService", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer := newTracer(
 			WithService("api-intake"),
@@ -167,7 +167,7 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
-	t.Run("env-service", func(t *testing.T) {
+	t.Run("env", func(t *testing.T) {
 		os.Setenv("DD_SERVICE", "api-intake")
 		defer os.Unsetenv("DD_SERVICE")
 		assert := assert.New(t)
@@ -177,7 +177,7 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
-	t.Run("env-with-option", func(t *testing.T) {
+	t.Run("combo", func(t *testing.T) {
 		os.Setenv("DD_SERVICE", "api-intake")
 		defer os.Unsetenv("DD_SERVICE")
 		assert := assert.New(t)
