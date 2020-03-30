@@ -72,7 +72,7 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 // WithContext adds the specified context to the traced Query structure.
 func (tq *Query) WithContext(ctx context.Context) *Query {
 	tq.ctx = ctx
-	tq.Query.WithContext(ctx)
+	tq.Query = tq.Query.WithContext(ctx)
 	return tq
 }
 
