@@ -65,7 +65,7 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 		}
 		cfg.resourceName = q
 	}
-	tq := &Query{q, &params{config: cfg}, q.Context()}
+	tq := &Query{q, &params{config: cfg}, context.Background()}
 	return tq
 }
 
