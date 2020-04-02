@@ -73,6 +73,26 @@ func defaultConfig() *config {
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
 	}
+
+	if v := os.Getenv("DD_ENV"); v != "" {
+		WithEnv(v)(c)
+	}
+	if v := os.Getenv("DD_SERVICE"); v != "" {
+		WithService(v)(c)
+	}
+	if v := os.Getenv("DD_VERSION"); v != "" {
+		WithVersion(v)(c)
+	}
+	if v := os.Getenv("DD_TAGS"); v != "" {
+		for _, tag := range strings.Split(v, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag == "" {
+				continue
+			}
+			WithTags(tag)(c)
+		}
+	}
+
 	// TODO(x): add support for environment variables once we figure out
 	// the naming standards.
 	return &c
@@ -122,7 +142,7 @@ func WithProfileTypes(types ...ProfileType) Option {
 	}
 }
 
-// WithService specifies the service name to attach a profile.
+// WithService specifies the service name to attach to a profile.
 func WithService(name string) Option {
 	return func(cfg *config) {
 		cfg.service = name
@@ -134,6 +154,11 @@ func WithEnv(env string) Option {
 	return func(cfg *config) {
 		cfg.env = env
 	}
+}
+
+// WithVersion specifies the service version tag to attach to profiles
+func WithVersion(version string) Option {
+	return WithTags("version:" + version)
 }
 
 // WithTags specifies a set of tags to be attached to the profiler. These may help
