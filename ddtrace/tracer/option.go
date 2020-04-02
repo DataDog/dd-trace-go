@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,7 +97,7 @@ func defaults(c *config) {
 	if v := os.Getenv("DD_DOGSTATSD_PORT"); v != "" {
 		statsdPort = v
 	}
-	c.dogstatsdAddr = net.JoinHostPort(statsdHost, statsdPort)
+	WithDogstatsdAddress(net.JoinHostPort(statsdHost, statsdPort))
 
 	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
 		var err error
@@ -109,13 +110,23 @@ func defaults(c *config) {
 		WithEnv(v)(c)
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
-		c.serviceName = v
+		WithService(v)
 		globalconfig.SetServiceName(v)
 	} else {
-		c.serviceName = filepath.Base(os.Args[0])
+		WithService(filepath.Base(os.Args[0]))
 	}
 	if ver := os.Getenv("DD_VERSION"); ver != "" {
-		c.version = ver
+		WithServiceVersion(ver)
+	}
+	if analyticsStr := os.Getenv("DD_TRACE_ANALYTICS_ENABLED"); analyticsStr != "" {
+		if v, err := strconv.ParseBool(analyticsStr); err == nil {
+			WithAnalytics(v)
+		}
+	}
+	if runtimeMetricsStr := os.Getenv("DD_RUNTIME_METRICS_ENABLED"); runtimeMetricsStr != "" {
+		if v, err := strconv.ParseBool(runtimeMetricsStr); err == nil && v {
+			WithRuntimeMetrics()
+		}
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		for _, tag := range strings.Split(v, ",") {
