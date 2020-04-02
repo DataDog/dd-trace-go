@@ -67,15 +67,15 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		span.SetTag("network.destination.ip", httpTraceResult.remoteIP)
 		span.SetTag("network.destination.port", httpTraceResult.remotePort)
 		span.SetTag("http.content_type", res.Header.Get("Content-Type"))
-		span.SetTag("http.connect_time", httpTraceResult.Connect)
-		span.SetTag("http.dns_lookup_time", httpTraceResult.DNSLookup)
-		span.SetTag("http.pretransfer_time", httpTraceResult.Pretransfer)
-		span.SetTag("http.starttransfer_time", httpTraceResult.StartTransfer)
+		span.SetTag("http.connect_time", httpTraceResult.Connect.Nanoseconds())
+		span.SetTag("http.dns_lookup_time", httpTraceResult.DNSLookup.Nanoseconds())
+		span.SetTag("http.pretransfer_time", httpTraceResult.Pretransfer.Nanoseconds())
+		span.SetTag("http.starttransfer_time", httpTraceResult.StartTransfer.Nanoseconds())
 		span.SetTag("http.is_tls", httpTraceResult.isTLS)
 		span.SetTag("http.is_reused", httpTraceResult.isReused)
 
 		if httpTraceResult.isTLS {
-			span.SetTag("http.tls_handshake_time", httpTraceResult.TLSHandshake)
+			span.SetTag("http.tls_handshake_time", httpTraceResult.TLSHandshake.Nanoseconds())
 		}
 
 		// treat 5XX as errors

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -71,9 +70,9 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, listenIP, s1.Tag("network.destination.ip"))
 	assert.Equal(t, listenPort, s1.Tag("network.destination.port"))
 	assert.Equal(t, "text/plain; charset=utf-8", s1.Tag("http.content_type"))
-	assert.Equal(t, 0*time.Second, s1.Tag("http.dns_lookup_time"))
-	assert.True(t, 1*time.Second > s1.Tag("http.pretransfer_time").(time.Duration))
-	assert.True(t, 1*time.Second > s1.Tag("http.starttransfer_time").(time.Duration))
+	assert.Equal(t, int64(0), s1.Tag("http.dns_lookup_time"))
+	assert.Less(t, s1.Tag("http.pretransfer_time"), int64(1000000))
+	assert.Less(t, s1.Tag("http.starttransfer_time"), int64(1000000))
 	assert.Equal(t, false, s1.Tag("http.is_tls"))
 	assert.Equal(t, true, s1.Tag("CalledBefore"))
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
