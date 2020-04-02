@@ -63,6 +63,9 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 // WriteHeader sends an HTTP response header with status code.
 // It also sets the status code to the span.
 func (w *responseWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
 	w.ResponseWriter.WriteHeader(status)
 	w.status = status
 	w.span.SetTag(ext.HTTPCode, strconv.Itoa(status))
