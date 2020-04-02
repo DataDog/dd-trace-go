@@ -29,7 +29,8 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(defaultResourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
-		tracer.Tag(ext.HTTPURL, req.URL.Path),
+		tracer.Tag(ext.HTTPURL, req.URL.String()),
+		tracer.Tag("http.path", req.URL.Path),
 	}
 	if !math.IsNaN(rt.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.analyticsRate))
@@ -47,6 +48,11 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if rt.cfg.before != nil {
 		rt.cfg.before(req, span)
 	}
+
+	// Inject Go's "httptrace" context into the request
+	var httpTraceResult httpTraceResult
+	ctx = WithClientTrace(ctx, &httpTraceResult)
+
 	// inject the span context into the http request
 	err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
 	if err != nil {
@@ -58,11 +64,26 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		span.SetTag("http.errors", err.Error())
 	} else {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
+		span.SetTag("network.destination.ip", httpTraceResult.remoteIP)
+		span.SetTag("network.destination.port", httpTraceResult.remotePort)
+		span.SetTag("http.content_type", res.Header.Get("Content-Type"))
+		span.SetTag("http.connect_time", httpTraceResult.Connect)
+		span.SetTag("http.dns_lookup_time", httpTraceResult.DNSLookup)
+		span.SetTag("http.pretransfer_time", httpTraceResult.Pretransfer)
+		span.SetTag("http.starttransfer_time", httpTraceResult.StartTransfer)
+		span.SetTag("http.is_tls", httpTraceResult.isTLS)
+		span.SetTag("http.is_reused", httpTraceResult.isReused)
+
+		if httpTraceResult.isTLS {
+			span.SetTag("http.tls_handshake_time", httpTraceResult.TLSHandshake)
+		}
+
 		// treat 5XX as errors
 		if res.StatusCode/100 == 5 {
 			span.SetTag("http.errors", res.Status)
 		}
 	}
+
 	return res, err
 }
 

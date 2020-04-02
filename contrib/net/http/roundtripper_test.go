@@ -6,9 +6,11 @@
 package http
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -33,6 +35,8 @@ func TestRoundTripper(t *testing.T) {
 		w.Write([]byte("Hello World"))
 	}))
 	defer s.Close()
+
+	listenIP, listenPort, _ := net.SplitHostPort(s.Listener.Addr().String())
 
 	rt := WrapRoundTripper(http.DefaultTransport,
 		WithBefore(func(req *http.Request, span ddtrace.Span) {
@@ -61,7 +65,16 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, "http.request", s1.Tag(ext.ResourceName))
 	assert.Equal(t, "200", s1.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s1.Tag(ext.HTTPMethod))
-	assert.Equal(t, "/hello/world", s1.Tag(ext.HTTPURL))
+	assert.Equal(t, "/hello/world", s1.Tag("http.path"))
+	assert.Contains(t, s1.Tag(ext.HTTPURL), "/hello/world")
+	assert.Contains(t, s1.Tag(ext.HTTPURL), "http://")
+	assert.Equal(t, listenIP, s1.Tag("network.destination.ip"))
+	assert.Equal(t, listenPort, s1.Tag("network.destination.port"))
+	assert.Equal(t, "text/plain; charset=utf-8", s1.Tag("http.content_type"))
+	assert.Equal(t, 0*time.Second, s1.Tag("http.dns_lookup_time"))
+	assert.True(t, 1*time.Second > s1.Tag("http.pretransfer_time").(time.Duration))
+	assert.True(t, 1*time.Second > s1.Tag("http.starttransfer_time").(time.Duration))
+	assert.Equal(t, false, s1.Tag("http.is_tls"))
 	assert.Equal(t, true, s1.Tag("CalledBefore"))
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
 }
