@@ -162,4 +162,23 @@ func TestTraceAndServe(t *testing.T) {
 		assert.True(called)
 		assert.Equal(c.ParentID(), p.SpanID())
 	})
+
+	t.Run("doubleStatus", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		r, err := http.NewRequest("GET", "/", nil)
+		assert.NoError(err)
+		w := httptest.NewRecorder()
+		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		assert.Equal("200", spans[0].Tag(ext.HTTPCode))
+	})
 }
