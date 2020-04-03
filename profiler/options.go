@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -75,13 +76,13 @@ func defaultConfig() *config {
 	}
 
 	if v := os.Getenv("DD_ENV"); v != "" {
-		WithEnv(v)(c)
+		WithEnv(v)(&c)
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
-		WithService(v)(c)
+		WithService(v)(&c)
 	}
 	if v := os.Getenv("DD_VERSION"); v != "" {
-		WithVersion(v)(c)
+		WithVersion(v)(&c)
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		for _, tag := range strings.Split(v, ",") {
@@ -89,7 +90,7 @@ func defaultConfig() *config {
 			if tag == "" {
 				continue
 			}
-			WithTags(tag)(c)
+			WithTags(tag)(&c)
 		}
 	}
 
