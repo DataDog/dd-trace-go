@@ -93,9 +93,6 @@ func defaultConfig() *config {
 			WithTags(tag)(&c)
 		}
 	}
-
-	// TODO(x): add support for environment variables once we figure out
-	// the naming standards.
 	return &c
 }
 

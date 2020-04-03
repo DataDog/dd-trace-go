@@ -47,6 +47,101 @@ func TestOptions(t *testing.T) {
 		assert.True(t, ok)
 		assert.Len(t, cfg.types, 1)
 	})
+
+	t.Run("WithService", func(t *testing.T) {
+		var cfg config
+		WithService("serviceName")(&cfg)
+		assert.Equal(t, "serviceName", cfg.service)
+	})
+
+	t.Run("WithService/override", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "envService")
+		defer os.Unsetenv("DD_SERVICE")
+		cfg := defaultConfig()
+		WithService("serviceName")(cfg)
+		assert.Equal(t, "serviceName", cfg.service)
+	})
+
+	t.Run("WithEnv", func(t *testing.T) {
+		var cfg config
+		WithEnv("envName")(&cfg)
+		assert.Equal(t, "envName", cfg.env)
+	})
+
+	t.Run("WithEnv/override", func(t *testing.T) {
+		os.Setenv("DD_ENV", "envEnv")
+		defer os.Unsetenv("DD_ENV")
+		cfg := defaultConfig()
+		WithEnv("envName")(cfg)
+		assert.Equal(t, "envName", cfg.env)
+	})
+
+	t.Run("WithVersion", func(t *testing.T) {
+		var cfg config
+		WithVersion("1.2.3")(&cfg)
+		assert.Contains(t, cfg.tags, "version:1.2.3")
+	})
+
+	t.Run("WithVersion/override", func(t *testing.T) {
+		os.Setenv("DD_VERSION", "envVersion")
+		defer os.Unsetenv("DD_VERSION")
+		cfg := defaultConfig()
+		WithVersion("1.2.3")(cfg)
+		assert.Contains(t, cfg.tags, "version:1.2.3")
+	})
+
+	t.Run("WithTags", func(t *testing.T) {
+		var cfg config
+		WithTags("a:1", "b:2", "c:3")(&cfg)
+		assert.Contains(t, cfg.tags, "a:1")
+		assert.Contains(t, cfg.tags, "b:2")
+		assert.Contains(t, cfg.tags, "c:3")
+	})
+
+	t.Run("WithTags/override", func(t *testing.T) {
+		os.Setenv("DD_TAGS", "env1:tag1,env2:tag2")
+		defer os.Unsetenv("DD_TAGS")
+		cfg := defaultConfig()
+		WithTags("a:1", "b:2", "c:3")(cfg)
+		assert.Contains(t, cfg.tags, "a:1")
+		assert.Contains(t, cfg.tags, "b:2")
+		assert.Contains(t, cfg.tags, "c:3")
+		assert.Contains(t, cfg.tags, "env1:tag1")
+		assert.Contains(t, cfg.tags, "env2:tag2")
+	})
+}
+
+func TestEnvVars(t *testing.T) {
+	t.Run("DD_ENV", func(t *testing.T) {
+		os.Setenv("DD_ENV", "someEnv")
+		defer os.Unsetenv("DD_ENV")
+		cfg := defaultConfig()
+		assert.Equal(t, "someEnv", cfg.env)
+	})
+
+	t.Run("DD_SERVICE", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "someService")
+		defer os.Unsetenv("DD_SERVICE")
+		cfg := defaultConfig()
+		assert.Equal(t, "someService", cfg.service)
+	})
+
+	t.Run("DD_VERSION", func(t *testing.T) {
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+		cfg := defaultConfig()
+		assert.Contains(t, cfg.tags, "version:1.2.3")
+	})
+
+	t.Run("DD_TAGS", func(t *testing.T) {
+		os.Setenv("DD_TAGS", "a:1,b:2,c:3")
+		defer os.Unsetenv("DD_TAGS")
+		cfg := defaultConfig()
+		assert.Contains(t, cfg.tags, "a:1")
+		assert.Contains(t, cfg.tags, "b:2")
+		assert.Contains(t, cfg.tags, "c:3")
+	})
+
 }
 
 func TestDefaultConfig(t *testing.T) {
