@@ -141,7 +141,6 @@ func TestEnvVars(t *testing.T) {
 		assert.Contains(t, cfg.tags, "b:2")
 		assert.Contains(t, cfg.tags, "c:3")
 	})
-
 }
 
 func TestDefaultConfig(t *testing.T) {
