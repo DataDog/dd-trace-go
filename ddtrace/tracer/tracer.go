@@ -137,7 +137,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		fn(c)
 	}
 	if c.transport == nil {
-		c.transport = newTransport(c.agentAddr, c.httpRoundTripper)
+		c.transport = newTransport(c.agentAddr, c.httpClient)
 	}
 	if c.propagator == nil {
 		c.propagator = NewPropagator(nil)
