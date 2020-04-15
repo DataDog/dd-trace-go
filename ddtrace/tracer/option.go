@@ -244,6 +244,7 @@ func WithSampler(s Sampler) StartOption {
 }
 
 // WithHTTPRoundTripper is deprecated. Please consider using WithHTTPClient instead.
+// The function allows customizing the underlying HTTP transport for emitting spans.
 func WithHTTPRoundTripper(r http.RoundTripper) StartOption {
 	return WithHTTPClient(&http.Client{
 		Transport: r,
