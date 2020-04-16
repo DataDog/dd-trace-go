@@ -21,11 +21,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
-var (
+var defaultClient = &http.Client{
 	// We copy the transport to avoid using the default one, as it might be
 	// augmented with tracing and we don't want these calls to be recorded.
 	// See https://golang.org/pkg/net/http/#DefaultTransport .
-	defaultRoundTripper = &http.Transport{
+	Transport: &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
 			Timeout:   30 * time.Second,
@@ -36,14 +36,15 @@ var (
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
-	}
-)
+	},
+	Timeout: defaultHTTPTimeout,
+}
 
 const (
 	defaultHostname    = "localhost"
 	defaultPort        = "8126"
 	defaultAddress     = defaultHostname + ":" + defaultPort
-	defaultHTTPTimeout = time.Second             // defines the current timeout before giving up with the send process
+	defaultHTTPTimeout = 2 * time.Second         // defines the current timeout before giving up with the send process
 	traceCountHeader   = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
 )
 
@@ -64,16 +65,16 @@ type transport interface {
 // running on a non-default port, if it's located on another machine, or when
 // otherwise needing to customize the transport layer, for instance when using
 // a unix domain socket.
-func newTransport(addr string, roundTripper http.RoundTripper) transport {
-	if roundTripper == nil {
-		roundTripper = defaultRoundTripper
+func newTransport(addr string, client *http.Client) transport {
+	if client == nil {
+		client = defaultClient
 	}
-	return newHTTPTransport(addr, roundTripper)
+	return newHTTPTransport(addr, client)
 }
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultAddress, defaultRoundTripper)
+	return newHTTPTransport(defaultAddress, defaultClient)
 }
 
 type httpTransport struct {
@@ -83,7 +84,7 @@ type httpTransport struct {
 }
 
 // newHTTPTransport returns an httpTransport for the given endpoint
-func newHTTPTransport(addr string, roundTripper http.RoundTripper) *httpTransport {
+func newHTTPTransport(addr string, client *http.Client) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
 	defaultHeaders := map[string]string{
 		"Datadog-Meta-Lang":             "go",
@@ -101,11 +102,8 @@ func newHTTPTransport(addr string, roundTripper http.RoundTripper) *httpTranspor
 	}
 	return &httpTransport{
 		traceURL: fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(addr)),
-		client: &http.Client{
-			Transport: roundTripper,
-			Timeout:   defaultHTTPTimeout,
-		},
-		headers: defaultHeaders,
+		client:   client,
+		headers:  defaultHeaders,
 	}
 }
 

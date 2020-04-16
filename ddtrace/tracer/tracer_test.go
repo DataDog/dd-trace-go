@@ -499,7 +499,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	addr := srv.Listener.Addr().String()
 
 	tr, _, flush, stop := startTestTracer(t,
-		withTransport(newHTTPTransport(addr, defaultRoundTripper)),
+		withTransport(newHTTPTransport(addr, defaultClient)),
 	)
 	defer stop()
 

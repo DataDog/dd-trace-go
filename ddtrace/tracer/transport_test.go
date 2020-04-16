@@ -127,7 +127,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultAddress, defaultRoundTripper)
+		transport := newHTTPTransport(defaultAddress, defaultClient)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
@@ -196,7 +196,7 @@ func TestTransportResponse(t *testing.T) {
 			}))
 			defer ln.Close()
 			addr := ln.Addr().String()
-			transport := newHTTPTransport(addr, defaultRoundTripper)
+			transport := newHTTPTransport(addr, defaultClient)
 			rc, err := transport.send(newPayload())
 			if tt.err != "" {
 				assert.Equal(tt.err, err.Error())
@@ -230,7 +230,7 @@ func TestTraceCountHeader(t *testing.T) {
 	assert.Nil(err)
 	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
 	for _, tc := range testCases {
-		transport := newHTTPTransport(host, defaultRoundTripper)
+		transport := newHTTPTransport(host, defaultClient)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
@@ -246,7 +246,7 @@ type recordingRoundTripper struct {
 
 func (r *recordingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	r.reqs = append(r.reqs, req)
-	return defaultRoundTripper.RoundTrip(req)
+	return defaultClient.Transport.RoundTrip(req)
 }
 
 func TestCustomTransport(t *testing.T) {
@@ -263,7 +263,7 @@ func TestCustomTransport(t *testing.T) {
 	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
 
 	customRoundTripper := new(recordingRoundTripper)
-	transport := newHTTPTransport(host, customRoundTripper)
+	transport := newHTTPTransport(host, &http.Client{Transport: customRoundTripper})
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
 	_, err = transport.send(p)
@@ -271,6 +271,24 @@ func TestCustomTransport(t *testing.T) {
 
 	// make sure our custom round tripper was used
 	assert.Len(customRoundTripper.reqs, 1)
+}
+
+func TestWithHTTPClient(t *testing.T) {
+	assert := assert.New(t)
+	srv := mockDatadogAPINewServer(t)
+	defer srv.Close()
+
+	u, err := url.Parse(srv.URL)
+	assert.NoError(err)
+	rt := new(recordingRoundTripper)
+	trc := newTracer(WithAgentAddr(u.Host), WithHTTPClient(&http.Client{Transport: rt}))
+	defer trc.Stop()
+
+	p, err := encode(getTestTrace(1, 1))
+	assert.NoError(err)
+	_, err = trc.config.transport.send(p)
+	assert.NoError(err)
+	assert.Len(rt.reqs, 1)
 }
 
 // TestTransportHTTPRace defines a regression tests where the request body was being

@@ -50,8 +50,8 @@ type config struct {
 	// propagator propagates span context cross-process
 	propagator Propagator
 
-	// httpRoundTripper defines the http.RoundTripper used by the agent transport.
-	httpRoundTripper http.RoundTripper
+	// httpClient specifies the HTTP client to be used by the agent's transport.
+	httpClient *http.Client
 
 	// hostname is automatically assigned when the DD_TRACE_REPORT_HOSTNAME is set to true,
 	// and is added as a special tag to the root span of traces.
@@ -243,12 +243,19 @@ func WithSampler(s Sampler) StartOption {
 	}
 }
 
-// WithHTTPRoundTripper allows customizing the underlying HTTP transport for
-// emitting spans. This is useful for advanced customization such as emitting
-// spans to a unix domain socket. The default should be used in most cases.
+// WithHTTPRoundTripper is deprecated. Please consider using WithHTTPClient instead.
+// The function allows customizing the underlying HTTP transport for emitting spans.
 func WithHTTPRoundTripper(r http.RoundTripper) StartOption {
+	return WithHTTPClient(&http.Client{
+		Transport: r,
+		Timeout:   defaultHTTPTimeout,
+	})
+}
+
+// WithHTTPClient specifies the HTTP client to use when emitting spans to the agent.
+func WithHTTPClient(client *http.Client) StartOption {
 	return func(c *config) {
-		c.httpRoundTripper = r
+		c.httpClient = client
 	}
 }
 
