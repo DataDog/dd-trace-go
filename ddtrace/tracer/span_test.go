@@ -404,6 +404,35 @@ func TestSpanSamplingPriority(t *testing.T) {
 	}
 }
 
+func TestSpanLog(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		expect := fmt.Sprintf("dd.trace_id=%d dd.span_id=%d dd.service=tracer.test", span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+
+	t.Run("env", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		expect := fmt.Sprintf("dd.trace_id=%d dd.span_id=%d dd.service=tracer.test dd.env=testenv", span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+
+	t.Run("version", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		expect := fmt.Sprintf("dd.trace_id=%d dd.span_id=%d dd.service=tracer.test dd.version=1.2.3", span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+}
+
 func BenchmarkSetTagMetric(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
