@@ -59,9 +59,10 @@ func WithAnalyticsRate(rate float64) ClientOption {
 	}
 }
 
-// WithValueTags enables tracing of values used in operations
-func WithValueTags(on bool) ClientOption {
+// WithValueTags specifies whether values assigned to keys in memcache operations
+// should be added to spans as tags.
+func WithValueTags() ClientOption {
 	return func(cfg *clientConfig) {
-		cfg.withValueTags = on
+		cfg.withValueTags = true
 	}
 }

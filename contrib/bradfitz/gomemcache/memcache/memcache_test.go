@@ -38,7 +38,7 @@ func TestMemcacheIntegration(t *testing.T) {
 }
 
 func testMemcache(t *testing.T, addr string) {
-	client := WrapClient(memcache.New(addr), WithServiceName("test-memcache"), WithValueTags(true))
+	client := WrapClient(memcache.New(addr), WithServiceName("test-memcache"), WithValueTags())
 	defer client.DeleteAll()
 
 	validateMemcacheSpan := func(t *testing.T, span mocktracer.Span, resourceName string) {
