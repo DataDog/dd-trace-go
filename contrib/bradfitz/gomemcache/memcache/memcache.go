@@ -83,8 +83,8 @@ func (c *Client) Add(item *memcache.Item) error {
 	span.SetTag("item.key", item.Key)
 	if c.cfg.withValueTags {
 		span.SetTag("item.value", item.Value)
-		span.SetTag("item.expiration", item.Expiration)
 	}
+	span.SetTag("item.expiration", item.Expiration)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -96,8 +96,8 @@ func (c *Client) CompareAndSwap(item *memcache.Item) error {
 	span.SetTag("item.key", item.Key)
 	if c.cfg.withValueTags {
 		span.SetTag("item.value", item.Value)
-		span.SetTag("item.expiration", item.Expiration)
 	}
+	span.SetTag("item.expiration", item.Expiration)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -178,8 +178,8 @@ func (c *Client) Replace(item *memcache.Item) error {
 	span.SetTag("item.key", item.Key)
 	if c.cfg.withValueTags {
 		span.SetTag("item.value", item.Value)
-		span.SetTag("item.expiration", item.Expiration)
 	}
+	span.SetTag("item.expiration", item.Expiration)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -191,8 +191,8 @@ func (c *Client) Set(item *memcache.Item) error {
 	span.SetTag("item.key", item.Key)
 	if c.cfg.withValueTags {
 		span.SetTag("item.value", item.Value)
-		span.SetTag("item.expiration", item.Expiration)
 	}
+	span.SetTag("item.expiration", item.Expiration)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -202,9 +202,7 @@ func (c *Client) Touch(key string, seconds int32) error {
 	span := c.startSpan("Touch")
 	err := c.Client.Touch(key, seconds)
 	span.SetTag("item.key", key)
-	if c.cfg.withValueTags {
-		span.SetTag("item.expiration", seconds)
-	}
+	span.SetTag("item.expiration", seconds)
 	span.Finish(tracer.WithError(err))
 	return err
 }
