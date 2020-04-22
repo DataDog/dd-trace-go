@@ -337,6 +337,7 @@ func (s *span) String() string {
 	return strings.Join(lines, "\n")
 }
 
+// Format implements fmt.Formatter.
 func (s *span) Format(f fmt.State, c rune) {
 	switch c {
 	case 's':
@@ -349,6 +350,8 @@ func (s *span) Format(f fmt.State, c rune) {
 		if v := s.Meta[ext.Version]; v != "" {
 			fmt.Fprintf(f, " dd.version=%s", v)
 		}
+	default:
+		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
 	}
 }
 
