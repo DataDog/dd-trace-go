@@ -431,6 +431,7 @@ func TestSpanLog(t *testing.T) {
 		expect := fmt.Sprintf("dd.trace_id=%d dd.span_id=%d dd.service=tracer.test dd.version=1.2.3", span.TraceID, span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
+
 	t.Run("badformat", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"))
