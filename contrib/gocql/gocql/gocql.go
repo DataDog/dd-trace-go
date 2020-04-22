@@ -56,14 +56,9 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 		fn(cfg)
 	}
 	if cfg.resourceName == "" {
-		q := `"` + strings.SplitN(q.String(), "\"", 3)[1] + `"`
-		q, err := strconv.Unquote(q)
-		if err != nil {
-			// avoid having an empty resource as it will cause the trace
-			// to be dropped.
-			q = "_"
+		if parts := strings.SplitN(q.String(), "\"", 3); len(parts) == 3 {
+			cfg.resourceName = parts[1]
 		}
-		cfg.resourceName = q
 	}
 	tq := &Query{q, &params{config: cfg}, context.Background()}
 	return tq
