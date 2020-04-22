@@ -17,6 +17,7 @@ const (
 type clientConfig struct {
 	serviceName   string
 	analyticsRate float64
+	withValueTags bool
 }
 
 // ClientOption represents an option that can be passed to Dial.
@@ -55,5 +56,13 @@ func WithAnalyticsRate(rate float64) ClientOption {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithValueTags specifies whether values assigned to keys in memcache operations
+// should be added to spans as tags.
+func WithValueTags() ClientOption {
+	return func(cfg *clientConfig) {
+		cfg.withValueTags = true
 	}
 }
