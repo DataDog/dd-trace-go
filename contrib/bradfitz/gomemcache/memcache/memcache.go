@@ -80,6 +80,11 @@ func (c *Client) startSpan(resourceName string) ddtrace.Span {
 func (c *Client) Add(item *memcache.Item) error {
 	span := c.startSpan("Add")
 	err := c.Client.Add(item)
+	span.SetTag("item.key", item.Key)
+	if c.cfg.withValueTags {
+		span.SetTag("item.value", item.Value)
+	}
+	span.SetTag("item.expiration", item.Expiration)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -88,6 +93,11 @@ func (c *Client) Add(item *memcache.Item) error {
 func (c *Client) CompareAndSwap(item *memcache.Item) error {
 	span := c.startSpan("CompareAndSwap")
 	err := c.Client.CompareAndSwap(item)
+	span.SetTag("item.key", item.Key)
+	if c.cfg.withValueTags {
+		span.SetTag("item.value", item.Value)
+	}
+	span.SetTag("item.expiration", item.Expiration)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -96,6 +106,11 @@ func (c *Client) CompareAndSwap(item *memcache.Item) error {
 func (c *Client) Decrement(key string, delta uint64) (newValue uint64, err error) {
 	span := c.startSpan("Decrement")
 	newValue, err = c.Client.Decrement(key, delta)
+	span.SetTag("item.key", key)
+	if c.cfg.withValueTags {
+		span.SetTag("item.value.before", newValue-delta)
+		span.SetTag("item.value.after", newValue)
+	}
 	span.Finish(tracer.WithError(err))
 	return newValue, err
 }
@@ -104,6 +119,7 @@ func (c *Client) Decrement(key string, delta uint64) (newValue uint64, err error
 func (c *Client) Delete(key string) error {
 	span := c.startSpan("Delete")
 	err := c.Client.Delete(key)
+	span.SetTag("item.key", key)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -128,6 +144,7 @@ func (c *Client) FlushAll() error {
 func (c *Client) Get(key string) (item *memcache.Item, err error) {
 	span := c.startSpan("Get")
 	item, err = c.Client.Get(key)
+	span.SetTag("item.key", key)
 	span.Finish(tracer.WithError(err))
 	return item, err
 }
@@ -136,6 +153,7 @@ func (c *Client) Get(key string) (item *memcache.Item, err error) {
 func (c *Client) GetMulti(keys []string) (map[string]*memcache.Item, error) {
 	span := c.startSpan("GetMulti")
 	items, err := c.Client.GetMulti(keys)
+	span.SetTag("item.keys", keys)
 	span.Finish(tracer.WithError(err))
 	return items, err
 }
@@ -144,6 +162,11 @@ func (c *Client) GetMulti(keys []string) (map[string]*memcache.Item, error) {
 func (c *Client) Increment(key string, delta uint64) (newValue uint64, err error) {
 	span := c.startSpan("Increment")
 	newValue, err = c.Client.Increment(key, delta)
+	span.SetTag("item.key", key)
+	if c.cfg.withValueTags {
+		span.SetTag("item.value.before", newValue-delta)
+		span.SetTag("item.value.after", newValue)
+	}
 	span.Finish(tracer.WithError(err))
 	return newValue, err
 }
@@ -152,6 +175,11 @@ func (c *Client) Increment(key string, delta uint64) (newValue uint64, err error
 func (c *Client) Replace(item *memcache.Item) error {
 	span := c.startSpan("Replace")
 	err := c.Client.Replace(item)
+	span.SetTag("item.key", item.Key)
+	if c.cfg.withValueTags {
+		span.SetTag("item.value", item.Value)
+	}
+	span.SetTag("item.expiration", item.Expiration)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -160,6 +188,11 @@ func (c *Client) Replace(item *memcache.Item) error {
 func (c *Client) Set(item *memcache.Item) error {
 	span := c.startSpan("Set")
 	err := c.Client.Set(item)
+	span.SetTag("item.key", item.Key)
+	if c.cfg.withValueTags {
+		span.SetTag("item.value", item.Value)
+	}
+	span.SetTag("item.expiration", item.Expiration)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -168,6 +201,8 @@ func (c *Client) Set(item *memcache.Item) error {
 func (c *Client) Touch(key string, seconds int32) error {
 	span := c.startSpan("Touch")
 	err := c.Client.Touch(key, seconds)
+	span.SetTag("item.key", key)
+	span.SetTag("item.expiration", seconds)
 	span.Finish(tracer.WithError(err))
 	return err
 }
