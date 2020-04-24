@@ -35,7 +35,7 @@ func TestRoundTripper(t *testing.T) {
 	}))
 	defer s.Close()
 
-	listenIP, listenPort, _ := net.SplitHostPort(s.Listener.Addr().String())
+	ip, port, _ := net.SplitHostPort(s.Listener.Addr().String())
 
 	rt := WrapRoundTripper(http.DefaultTransport,
 		WithBefore(func(req *http.Request, span ddtrace.Span) {
@@ -67,8 +67,8 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, "/hello/world", s1.Tag("http.path"))
 	assert.Contains(t, s1.Tag(ext.HTTPURL), "/hello/world")
 	assert.Contains(t, s1.Tag(ext.HTTPURL), "http://")
-	assert.Equal(t, listenIP, s1.Tag("network.destination.ip"))
-	assert.Equal(t, listenPort, s1.Tag("network.destination.port"))
+	assert.Equal(t, ip, s1.Tag("network.destination.ip"))
+	assert.Equal(t, port, s1.Tag("network.destination.port"))
 	assert.Equal(t, "text/plain; charset=utf-8", s1.Tag("http.content_type"))
 	assert.Equal(t, int64(0), s1.Tag("http.dns_lookup_time"))
 	assert.Less(t, s1.Tag("http.pretransfer_time"), int64(1000000))
