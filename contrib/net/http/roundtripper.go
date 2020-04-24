@@ -56,7 +56,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 
 	// Inject Go's "httptrace" context into the request
 	var httpTraceResult httpTraceResult
-	ctx = WithClientTrace(ctx, &httpTraceResult)
+	ctx = withClientTrace(ctx, &httpTraceResult)
 
 	err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
 	if err != nil {
@@ -140,7 +140,7 @@ type httpTraceResult struct {
 	remotePort       string
 }
 
-func WithClientTrace(ctx context.Context, r *httpTraceResult) context.Context {
+func withClientTrace(ctx context.Context, r *httpTraceResult) context.Context {
 	return httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
 		DNSStart: func(i httptrace.DNSStartInfo) {
 			r.dnsStart = time.Now()
