@@ -32,8 +32,8 @@ const (
 )
 
 const (
-	defaultAPIURL = "https://intake.profile.datadoghq.com/v1/input"
-	defaultEnv    = "none"
+	defaultSite = "datadoghq.com"
+	defaultEnv  = "none"
 )
 
 var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
@@ -52,6 +52,10 @@ type config struct {
 	blockRate     int
 }
 
+func profilingURLForSite(site string) string {
+	return fmt.Sprintf("https://intake.profile.%s/v1/input", site)
+}
+
 func (c *config) addProfileType(t ProfileType) {
 	if c.types == nil {
 		c.types = make(map[ProfileType]struct{})
@@ -61,8 +65,8 @@ func (c *config) addProfileType(t ProfileType) {
 
 func defaultConfig() *config {
 	c := config{
-		apiURL:        defaultAPIURL,
 		env:           defaultEnv,
+		apiURL:        profilingURLForSite(defaultSite),
 		service:       filepath.Base(os.Args[0]),
 		statsd:        &statsd.NoOpClient{},
 		period:        DefaultPeriod,
@@ -75,6 +79,9 @@ func defaultConfig() *config {
 		c.addProfileType(t)
 	}
 
+	if v := os.Getenv("DD_SITE"); v != "" {
+		WithSite(v)(&c)
+	}
 	if v := os.Getenv("DD_ENV"); v != "" {
 		WithEnv(v)(&c)
 	}
@@ -172,5 +179,13 @@ func WithTags(tags ...string) Option {
 func WithStatsd(client StatsdClient) Option {
 	return func(cfg *config) {
 		cfg.statsd = client
+	}
+}
+
+// WithSite specifies the datadog site (datadoghq.com, datadoghq.eu, etc.)
+// which profiles will be sent to.
+func WithSite(site string) Option {
+	return func(cfg *config) {
+		cfg.apiURL = profilingURLForSite(site)
 	}
 }
