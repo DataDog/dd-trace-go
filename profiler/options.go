@@ -31,7 +31,7 @@ const (
 )
 
 const (
-	defaultAPIURL = "https://beta-intake.profile.datadoghq.com/v1/input"
+	defaultAPIURL = "https://intake.profile.datadoghq.com/v1/input"
 	defaultEnv    = "none"
 )
 
