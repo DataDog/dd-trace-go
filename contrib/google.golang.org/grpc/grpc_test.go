@@ -8,6 +8,7 @@ package grpc
 import (
 	"fmt"
 	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -109,7 +110,7 @@ func TestUnary(t *testing.T) {
 func TestStreaming(t *testing.T) {
 	// creates a stream, then sends/recvs two pings, then closes the stream
 	runPings := func(t *testing.T, ctx context.Context, client FixtureClient) {
-		stream, err := client.StreamPing(ctx)
+		stream, err := client.Streamaing(ctx)
 		assert.NoError(t, err)
 
 		for i := 0; i < 2; i++ {
@@ -662,4 +663,112 @@ func TestIgnoredMethods(t *testing.T) {
 			mt.Reset()
 		}
 	})
+}
+
+func TestWithMetadataTags(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(true, WithMetadataTags())
+	if err != nil {
+		t.Fatalf("error setting up rig: %s", err)
+	}
+	defer rig.Close()
+
+	ctx := context.Background()
+	ctx = metadata.AppendToOutgoingContext(ctx, "test-key", "test-value")
+	span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
+	rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
+	span.Finish()
+
+	spans := mt.FinishedSpans()
+
+	var serverSpan mocktracer.Span
+
+	for _, s := range spans {
+		switch s.OperationName() {
+		case "grpc.server":
+			serverSpan = s
+		}
+	}
+
+	span, _ = tracer.SpanFromContext(ctx)
+	assert.NotContains(t, serverSpan.Tags(), tagMetadataPrefix+"x-datadog-trace-id")
+	assert.NotContains(t, serverSpan.Tags(), tagMetadataPrefix+"x-datadog-parent-id")
+	assert.NotContains(t, serverSpan.Tags(), tagMetadataPrefix+"x-datadog-sampling-priority")
+	assert.Equal(t, serverSpan.Tag(tagMetadataPrefix+"test-key"), []string{"test-value"})
+}
+
+func TestIgnoredMetadata(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	for _, c := range []struct {
+		ignore []string
+		exp    int
+	}{
+		{ignore: []string{}, exp: 2},
+		{ignore: []string{tagMetadataPrefix + "unknown"}, exp: 2},
+		{ignore: []string{tagMetadataPrefix + "test-key"}, exp: 1},
+	} {
+		rig, err := newRig(true, WithMetadataTags(), WithIgnoredMetadata(c.ignore...))
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		client := rig.client
+		resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		assert.Nil(t, err)
+		assert.Equal(t, resp.Message, "passed")
+
+		spans := mt.FinishedSpans()
+
+		var serverSpan mocktracer.Span
+
+		for _, s := range spans {
+			switch s.OperationName() {
+			case "grpc.server":
+				serverSpan = s
+			}
+		}
+
+		var cnt int
+
+		for k := range serverSpan.Tags() {
+			if strings.HasPrefix(k, tagMetadataPrefix) {
+				cnt++
+			}
+		}
+
+		assert.Equal(t, cnt, c.exp)
+		rig.Close()
+		mt.Reset()
+	}
+}
+
+func TestWithRequestTags(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(true, WithRequestTags())
+	if err != nil {
+		t.Fatalf("error setting up rig: %s", err)
+	}
+	defer rig.Close()
+
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
+	rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
+	span.Finish()
+
+	spans := mt.FinishedSpans()
+
+	var serverSpan mocktracer.Span
+
+	for _, s := range spans {
+		switch s.OperationName() {
+		case "grpc.server":
+			serverSpan = s
+		}
+	}
+
+	span, _ = tracer.SpanFromContext(ctx)
+	assert.Equal(t, serverSpan.Tag(tagRequest), "{\"name\":\"pass\"}")
 }

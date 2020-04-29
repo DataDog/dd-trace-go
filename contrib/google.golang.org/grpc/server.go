@@ -6,6 +6,11 @@
 package grpc
 
 import (
+	"google.golang.org/grpc/metadata"
+
+	"github.com/golang/protobuf/jsonpb"
+	"github.com/golang/protobuf/proto"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
@@ -131,6 +136,23 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			tracer.Measured(),
 		)
 		span.SetTag(tagMethodKind, methodKindUnary)
+
+		if cfg.withMetadataTags {
+			md, _ := metadata.FromIncomingContext(ctx) // nil is ok
+			for k, v := range md {
+				if _, ok := cfg.ignoredMetadata[k]; !ok {
+					span.SetTag(tagMetadataPrefix+k, v)
+				}
+			}
+		}
+		if cfg.withRequestTags {
+			m := jsonpb.Marshaler{}
+			if p, ok := req.(proto.Message); ok {
+				if s, err := m.MarshalToString(p); err == nil {
+					span.SetTag(tagRequest, s)
+				}
+			}
+		}
 		resp, err := handler(ctx, req)
 		finishWithError(span, err, cfg)
 		return resp, err
