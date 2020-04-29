@@ -706,18 +706,19 @@ func TestIgnoredMetadata(t *testing.T) {
 		ignore []string
 		exp    int
 	}{
-		{ignore: []string{}, exp: 2},
-		{ignore: []string{tagMetadataPrefix + "unknown"}, exp: 2},
-		{ignore: []string{tagMetadataPrefix + "test-key"}, exp: 1},
+		{ignore: []string{}, exp: 1},
+		{ignore: []string{tagMetadataPrefix + "unknown"}, exp: 1},
+		{ignore: []string{tagMetadataPrefix + "test-key"}, exp: 0},
 	} {
 		rig, err := newRig(true, WithMetadataTags(), WithIgnoredMetadata(c.ignore...))
 		if err != nil {
 			t.Fatalf("error setting up rig: %s", err)
 		}
-		client := rig.client
-		resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
-		assert.Nil(t, err)
-		assert.Equal(t, resp.Message, "passed")
+		ctx := context.Background()
+		ctx = metadata.AppendToOutgoingContext(ctx, "test-key", "test-value")
+		span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
+		rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
+		span.Finish()
 
 		spans := mt.FinishedSpans()
 
@@ -769,6 +770,5 @@ func TestWithRequestTags(t *testing.T) {
 		}
 	}
 
-	span, _ = tracer.SpanFromContext(ctx)
 	assert.Equal(t, serverSpan.Tag(tagRequest), "{\"name\":\"pass\"}")
 }
