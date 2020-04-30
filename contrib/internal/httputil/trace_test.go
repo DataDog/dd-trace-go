@@ -45,6 +45,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("service", span.Tag(ext.ServiceName))
 		assert.Equal("resource", span.Tag(ext.ResourceName))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
+		assert.Equal(r.Host, "http.host")
 		assert.Equal("/", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
 		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
