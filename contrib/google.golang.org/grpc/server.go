@@ -6,16 +6,14 @@
 package grpc
 
 import (
-	"google.golang.org/grpc/metadata"
-
-	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/proto"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
+	"github.com/golang/protobuf/jsonpb"
+	"github.com/golang/protobuf/proto"
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 type serverStream struct {
@@ -146,7 +144,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			}
 		}
 		if cfg.withRequestTags {
-			m := jsonpb.Marshaler{}
+			var m jsonpb.Marshaler
 			if p, ok := req.(proto.Message); ok {
 				if s, err := m.MarshalToString(p); err == nil {
 					span.SetTag(tagRequest, s)
