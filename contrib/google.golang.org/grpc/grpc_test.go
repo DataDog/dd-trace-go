@@ -31,7 +31,7 @@ import (
 func TestUnary(t *testing.T) {
 	assert := assert.New(t)
 
-	rig, err := newRig(true)
+	rig, err := newRig(true, WithRequestTags())
 	if err != nil {
 		t.Fatalf("error setting up rig: %s", err)
 	}
@@ -43,18 +43,21 @@ func TestUnary(t *testing.T) {
 		error       bool
 		wantMessage string
 		wantCode    codes.Code
+		wantReqTag  string
 	}{
 		"OK": {
 			message:     "pass",
 			error:       false,
 			wantMessage: "passed",
 			wantCode:    codes.OK,
+			wantReqTag:  "{\"name\":\"pass\"}",
 		},
 		"Invalid": {
 			message:     "invalid",
 			error:       true,
 			wantMessage: "",
 			wantCode:    codes.InvalidArgument,
+			wantReqTag:  "{\"name\":\"invalid\"}",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -103,6 +106,7 @@ func TestUnary(t *testing.T) {
 			assert.Equal(serverSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
 			assert.Equal(serverSpan.Tag(tagMethodKind), methodKindUnary)
+			assert.Equal(serverSpan.Tag(tagRequest), tt.wantReqTag)
 		})
 	}
 }
@@ -335,7 +339,7 @@ func TestPreservesMetadata(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	rig, err := newRig(true)
+	rig, err := newRig(true, WithMetadataTags())
 	if err != nil {
 		t.Fatalf("error setting up rig: %s", err)
 	}
@@ -350,6 +354,13 @@ func TestPreservesMetadata(t *testing.T) {
 	md := rig.fixtureServer.lastRequestMetadata.Load().(metadata.MD)
 	assert.Equal(t, []string{"test-value"}, md.Get("test-key"),
 		"existing metadata should be preserved")
+
+	spans := mt.FinishedSpans()
+	s := spans[0]
+	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-trace-id")
+	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-parent-id")
+	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-sampling-priority")
+	assert.Equal(t, s.Tag(tagMetadataPrefix+"test-key"), []string{"test-value"})
 }
 
 func TestStreamSendsErrorCode(t *testing.T) {
@@ -665,40 +676,6 @@ func TestIgnoredMethods(t *testing.T) {
 	})
 }
 
-func TestWithMetadataTags(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	rig, err := newRig(true, WithMetadataTags())
-	if err != nil {
-		t.Fatalf("error setting up rig: %s", err)
-	}
-	defer rig.Close()
-
-	ctx := context.Background()
-	ctx = metadata.AppendToOutgoingContext(ctx, "test-key", "test-value")
-	span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
-	rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
-	span.Finish()
-
-	spans := mt.FinishedSpans()
-
-	var serverSpan mocktracer.Span
-
-	for _, s := range spans {
-		switch s.OperationName() {
-		case "grpc.server":
-			serverSpan = s
-		}
-	}
-
-	span, _ = tracer.SpanFromContext(ctx)
-	assert.NotContains(t, serverSpan.Tags(), tagMetadataPrefix+"x-datadog-trace-id")
-	assert.NotContains(t, serverSpan.Tags(), tagMetadataPrefix+"x-datadog-parent-id")
-	assert.NotContains(t, serverSpan.Tags(), tagMetadataPrefix+"x-datadog-sampling-priority")
-	assert.Equal(t, serverSpan.Tag(tagMetadataPrefix+"test-key"), []string{"test-value"})
-}
-
 func TestIgnoredMetadata(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -740,32 +717,4 @@ func TestIgnoredMetadata(t *testing.T) {
 		rig.Close()
 		mt.Reset()
 	}
-}
-
-func TestWithRequestTags(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	rig, err := newRig(true, WithRequestTags())
-	if err != nil {
-		t.Fatalf("error setting up rig: %s", err)
-	}
-	defer rig.Close()
-
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
-	rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
-	span.Finish()
-
-	spans := mt.FinishedSpans()
-
-	var serverSpan mocktracer.Span
-
-	for _, s := range spans {
-		switch s.OperationName() {
-		case "grpc.server":
-			serverSpan = s
-		}
-	}
-
-	assert.Equal(t, serverSpan.Tag(tagRequest), "{\"name\":\"pass\"}")
 }
