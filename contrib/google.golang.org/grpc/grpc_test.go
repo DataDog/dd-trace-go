@@ -723,7 +723,6 @@ func TestIgnoredMetadata(t *testing.T) {
 		spans := mt.FinishedSpans()
 
 		var serverSpan mocktracer.Span
-
 		for _, s := range spans {
 			switch s.OperationName() {
 			case "grpc.server":
@@ -732,13 +731,11 @@ func TestIgnoredMetadata(t *testing.T) {
 		}
 
 		var cnt int
-
 		for k := range serverSpan.Tags() {
 			if strings.HasPrefix(k, tagMetadataPrefix) {
 				cnt++
 			}
 		}
-
 		assert.Equal(t, cnt, c.exp)
 		rig.Close()
 		mt.Reset()
