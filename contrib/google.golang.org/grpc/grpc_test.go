@@ -114,7 +114,7 @@ func TestUnary(t *testing.T) {
 func TestStreaming(t *testing.T) {
 	// creates a stream, then sends/recvs two pings, then closes the stream
 	runPings := func(t *testing.T, ctx context.Context, client FixtureClient) {
-		stream, err := client.Streamaing(ctx)
+		stream, err := client.StreamPing(ctx)
 		assert.NoError(t, err)
 
 		for i := 0; i < 2; i++ {
