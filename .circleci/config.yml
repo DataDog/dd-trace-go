@@ -152,13 +152,6 @@ jobs:
           - /go/src/k8s.io
 
     - run:
-        name: list sources.
-        command: |
-          ls /go/src/
-          ls /go/src/k8s.io || true
-          ls /go/src/gopkg.in || true
-
-    - run:
         name: Vendor klog v0.4.0
         # Temporary, until kubernetes/client-go#656 gets resolved.
         command: >
