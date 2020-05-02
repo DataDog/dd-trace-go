@@ -48,10 +48,10 @@ jobs:
     steps:
     - checkout
 
-    # - run:
-    #     name: Check milestone
-    #     command: |
-    #       go run checkmilestone.go
+    - run:
+        name: Check milestone
+        command: |
+          go run checkmilestone.go
 
     - run:
         name: Check copyright
