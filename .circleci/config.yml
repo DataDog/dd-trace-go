@@ -115,13 +115,23 @@ jobs:
           git clone --branch v0.17.3 https://github.com/kubernetes/client-go $GOPATH/src/k8s.io/client-go
           git clone --branch v0.17.3 https://github.com/kubernetes/apimachinery $GOPATH/src/k8s.io/apimachinery
           git clone --branch v0.4.0 https://github.com/googleapis/gnostic $GOPATH/src/k8s.io/client-go/vendor/github.com/googleapis/gnostic
-
+    
+    - restore_cache:
+        keys:
+          - go-pkg-cache-v1-{{ checksum "ddtrace/Gopkg.toml" }}
+          - go-pkg-cache-v1
     - run:
         name: Fetching dependencies
         command: |
           go get -v -t ./...
           go get -v -u golang.org/x/lint/golint
           go get -v -u github.com/alecthomas/gometalinter
+    - save_cache:
+        key: go-pkg-cache-v1-{{ checksum "ddtrace/Gopkg.toml" }}
+        # caching gopkg.in can be gnarly until we move to go.mod
+        paths:
+          - /go/src/github.com
+          - /go/src/golang.org
 
     - run:
         name: Vendor klog v0.4.0
