@@ -683,9 +683,9 @@ func TestIgnoredMetadata(t *testing.T) {
 		ignore []string
 		exp    int
 	}{
-		{ignore: []string{}, exp: 1},
-		{ignore: []string{tagMetadataPrefix + "unknown"}, exp: 1},
-		{ignore: []string{tagMetadataPrefix + "test-key"}, exp: 0},
+		{ignore: []string{}, exp: 4},
+		{ignore: []string{"unknown"}, exp: 5},
+		{ignore: []string{"test-key"}, exp: 4},
 	} {
 		rig, err := newRig(true, WithMetadataTags(), WithIgnoredMetadata(c.ignore...))
 		if err != nil {
