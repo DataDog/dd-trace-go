@@ -683,16 +683,16 @@ func TestIgnoredMetadata(t *testing.T) {
 		ignore []string
 		exp    int
 	}{
-		{ignore: []string{}, exp: 4},
-		{ignore: []string{"unknown"}, exp: 5},
+		{ignore: []string{}, exp: 5},
 		{ignore: []string{"test-key"}, exp: 4},
+		{ignore: []string{"test-key", "test-key2"}, exp: 3},
 	} {
 		rig, err := newRig(true, WithMetadataTags(), WithIgnoredMetadata(c.ignore...))
 		if err != nil {
 			t.Fatalf("error setting up rig: %s", err)
 		}
 		ctx := context.Background()
-		ctx = metadata.AppendToOutgoingContext(ctx, "test-key", "test-value")
+		ctx = metadata.AppendToOutgoingContext(ctx, "test-key", "test-value", "test-key2", "test-value2")
 		span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
 		rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
 		span.Finish()
@@ -713,7 +713,7 @@ func TestIgnoredMetadata(t *testing.T) {
 				cnt++
 			}
 		}
-		assert.Equal(t, cnt, c.exp)
+		assert.Equal(t, c.exp, cnt)
 		rig.Close()
 		mt.Reset()
 	}
