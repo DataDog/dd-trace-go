@@ -134,6 +134,13 @@ jobs:
           - /go/src/golang.org
 
     - run:
+        name: Check gofmt
+        command: |
+          ls /go/src/
+          ls /go/src/k8s.io || true
+          ls /go/src/gopkg.in || true
+
+    - run:
         name: Vendor klog v0.4.0
         # Temporary, until kubernetes/client-go#656 gets resolved.
         command: >
