@@ -7,10 +7,13 @@ package profiler
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/DataDog/datadog-go/statsd"
 )
@@ -52,8 +55,12 @@ type config struct {
 	blockRate     int
 }
 
-func profilingURLForSite(site string) string {
-	return fmt.Sprintf("https://intake.profile.%s/v1/input", site)
+func urlForSite(site string) (string, error) {
+	u := fmt.Sprintf("https://intake.profile.%s/v1/input", site)
+	if _, err := url.Parse(u); err != nil {
+		return "", err
+	}
+	return u, nil
 }
 
 func (c *config) addProfileType(t ProfileType) {
@@ -64,9 +71,10 @@ func (c *config) addProfileType(t ProfileType) {
 }
 
 func defaultConfig() *config {
+	u, _ := urlForSite(defaultSite)
 	c := config{
 		env:           defaultEnv,
-		apiURL:        profilingURLForSite(defaultSite),
+		apiURL:        u,
 		service:       filepath.Base(os.Args[0]),
 		statsd:        &statsd.NoOpClient{},
 		period:        DefaultPeriod,
@@ -186,6 +194,11 @@ func WithStatsd(client StatsdClient) Option {
 // which profiles will be sent to.
 func WithSite(site string) Option {
 	return func(cfg *config) {
-		cfg.apiURL = profilingURLForSite(site)
+		u, err := urlForSite(site)
+		if err != nil {
+			log.Warn("profiler: ignoring bad site %s: %s", site, err)
+			return
+		}
+		cfg.apiURL = u
 	}
 }
