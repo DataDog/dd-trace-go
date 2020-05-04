@@ -115,13 +115,41 @@ jobs:
           git clone --branch v0.17.3 https://github.com/kubernetes/client-go $GOPATH/src/k8s.io/client-go
           git clone --branch v0.17.3 https://github.com/kubernetes/apimachinery $GOPATH/src/k8s.io/apimachinery
           git clone --branch v0.4.0 https://github.com/googleapis/gnostic $GOPATH/src/k8s.io/client-go/vendor/github.com/googleapis/gnostic
-
+    
+    # CircleCI recommends caches be ~500MB. We split the cache into 
+    # two parts to achieve this.
+    # We specifically do not cache gopkg.in to avoid caching Datadog
+    # We can cache other packages here or wait to move to go modules
+    # in the future.
+    - restore_cache:
+        keys:
+          - go-pkg-part-1-cache-v1-{{ checksum "ddtrace/Gopkg.toml" }}
+          - go-pkg-part-1-cache-v1
+    - restore_cache:
+        keys:
+          - go-pkg-part-2-cache-v2-{{ checksum "ddtrace/Gopkg.toml" }}
+          - go-pkg-part-2-cache-v2
     - run:
         name: Fetching dependencies
         command: |
           go get -v -t ./...
           go get -v -u golang.org/x/lint/golint
           go get -v -u github.com/alecthomas/gometalinter
+    - save_cache:
+        key: go-pkg-part-1-cache-v1-{{ checksum "ddtrace/Gopkg.toml" }}
+        paths:
+          - /go/src/github.com
+          - /go/src/golang.org
+    - save_cache:
+        key: go-pkg-part-2-cache-v2-{{ checksum "ddtrace/Gopkg.toml" }}
+        paths:
+          - /go/src/cloud.google.com
+          - /go/src/google.google.org
+          - /go/src/go.mongodb.org
+          - /go/src/go.opencensus.io
+          - /go/src/golang.org
+          - /go/src/sigs.k8s.io
+          - /go/src/k8s.io
 
     - run:
         name: Vendor klog v0.4.0
