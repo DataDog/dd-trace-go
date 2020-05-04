@@ -48,10 +48,10 @@ jobs:
     steps:
     - checkout
 
-    - run:
-        name: Check milestone
-        command: |
-          go run checkmilestone.go
+    # - run:
+    #     name: Check milestone
+    #     command: |
+    #       go run checkmilestone.go
 
     - run:
         name: Check copyright
@@ -107,7 +107,7 @@ jobs:
 
     - run:
         name: Vendor github.com/googleapis/gnostic for k8s.io/client-go
-        # This step checks out k8s.io/client-go and vendors 
+        # This step checks out k8s.io/client-go and vendors
         # github.com/googleapis/gnostic to fix a breaking change made in
         # gnostic. See kubernetes/client-go#741
         # TODO(knusbaum): remove this once the breaking change is resolved or propagated
@@ -206,4 +206,9 @@ jobs:
     - run:
         name: Testing
         command: |
-          INTEGRATION=1 go test -v -race `go list ./...`
+              mkdir /tmp/test-results
+              INTEGRATION=1 gotestsum --junitfile /tmp/test-results/result.xml -- -race `go list ./...`
+    - store_artifacts:
+        path: /tmp/test-results
+    - store_test_results:
+        path: /tmp/test-results
