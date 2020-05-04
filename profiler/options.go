@@ -196,7 +196,7 @@ func WithSite(site string) Option {
 	return func(cfg *config) {
 		u, err := urlForSite(site)
 		if err != nil {
-			log.Warn("profiler: ignoring bad site %s: %s", site, err)
+			log.Warn("profiler: ignoring invalid site %s: %s", site, err)
 			return
 		}
 		cfg.apiURL = u
