@@ -319,7 +319,9 @@ func TestPass(t *testing.T) {
 
 	client := rig.client
 
-	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+	ctx := context.Background()
+	ctx = metadata.AppendToOutgoingContext(ctx, "test-key", "test-value")
+	resp, err := client.Ping(ctx, &FixtureRequest{Name: "pass"})
 	assert.Nil(err)
 	assert.Equal(resp.Message, "passed")
 
@@ -332,6 +334,8 @@ func TestPass(t *testing.T) {
 	assert.Equal(s.Tag(ext.ServiceName), "grpc")
 	assert.Equal(s.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
 	assert.Equal(s.Tag(ext.SpanType), ext.AppTypeRPC)
+	assert.NotContains(s.Tags(), tagRequest)
+	assert.NotContains(s.Tags(), tagMetadataPrefix+"test-key")
 	assert.True(s.FinishTime().Sub(s.StartTime()) > 0)
 }
 
