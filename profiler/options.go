@@ -35,8 +35,8 @@ const (
 )
 
 const (
-	defaultSite = "datadoghq.com"
-	defaultEnv  = "none"
+	defaultAPIURL = "https://intake.profile.datadoghq.com/v1/input"
+	defaultEnv    = "none"
 )
 
 var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
@@ -57,10 +57,8 @@ type config struct {
 
 func urlForSite(site string) (string, error) {
 	u := fmt.Sprintf("https://intake.profile.%s/v1/input", site)
-	if _, err := url.Parse(u); err != nil {
-		return "", err
-	}
-	return u, nil
+	_, err := url.Parse(u)
+	return u, err
 }
 
 func (c *config) addProfileType(t ProfileType) {
@@ -71,10 +69,9 @@ func (c *config) addProfileType(t ProfileType) {
 }
 
 func defaultConfig() *config {
-	u, _ := urlForSite(defaultSite)
 	c := config{
 		env:           defaultEnv,
-		apiURL:        u,
+		apiURL:        defaultAPIURL,
 		service:       filepath.Base(os.Args[0]),
 		statsd:        &statsd.NoOpClient{},
 		period:        DefaultPeriod,
@@ -196,7 +193,7 @@ func WithSite(site string) Option {
 	return func(cfg *config) {
 		u, err := urlForSite(site)
 		if err != nil {
-			log.Warn("profiler: ignoring invalid site %s: %s", site, err)
+			log.Error("profiler: invalid site provided, using %s (%s)", defaultAPIURL, err)
 			return
 		}
 		cfg.apiURL = u
