@@ -45,38 +45,6 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("service", span.Tag(ext.ServiceName))
 		assert.Equal("resource", span.Tag(ext.ResourceName))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
-		assert.Equal(nil, span.Tag("http.host"))
-		assert.Equal("/", span.Tag(ext.HTTPURL))
-		assert.Equal("503", span.Tag(ext.HTTPCode))
-		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
-	})
-
-	t.Run("works with host", func(t *testing.T) {
-		mt := mocktracer.Start()
-		assert := assert.New(t)
-		defer mt.Stop()
-
-		called := false
-		w := httptest.NewRecorder()
-		r, err := http.NewRequest("GET", "http://localhost/", nil)
-		assert.NoError(err)
-		handler := func(w http.ResponseWriter, r *http.Request) {
-			_, ok := w.(http.Hijacker)
-			assert.False(ok)
-			http.Error(w, "some error", http.StatusServiceUnavailable)
-			called = true
-		}
-		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
-		spans := mt.FinishedSpans()
-		span := spans[0]
-
-		assert.True(called)
-		assert.Len(spans, 1)
-		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
-		assert.Equal("service", span.Tag(ext.ServiceName))
-		assert.Equal("resource", span.Tag(ext.ResourceName))
-		assert.Equal("GET", span.Tag(ext.HTTPMethod))
-		assert.Equal("localhost", span.Tag("http.host"))
 		assert.Equal("/", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
 		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
@@ -212,5 +180,40 @@ func TestTraceAndServe(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
 		assert.Equal("200", spans[0].Tag(ext.HTTPCode))
+	})
+}
+
+func TestTraceAndServeHost(t *testing.T) {
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}
+
+	t.Run("on", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		w := httptest.NewRecorder()
+		r, err := http.NewRequest("GET", "http://localhost/", nil)
+		assert.NoError(err)
+		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
+		span := mt.FinishedSpans()[0]
+
+		assert.EqualValues("localhost", span.Tag("http.host"))
+	})
+
+	t.Run("off", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		w := httptest.NewRecorder()
+		r, err := http.NewRequest("GET", "/", nil)
+		assert.NoError(err)
+		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
+		span := mt.FinishedSpans()[0]
+
+		assert.EqualValues(nil, span.Tag("http.host"))
 	})
 }
