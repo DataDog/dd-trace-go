@@ -36,6 +36,7 @@ func TestStart(t *testing.T) {
 		if host, err := os.Hostname(); err != nil {
 			assert.Equal(host, activeProfiler.cfg.hostname)
 		}
+		assert.Equal(defaultAPIURL, activeProfiler.cfg.apiURL)
 		assert.Equal(DefaultPeriod, activeProfiler.cfg.period)
 		assert.Equal(len(defaultProfileTypes), len(activeProfiler.cfg.types))
 		for _, pt := range defaultProfileTypes {
