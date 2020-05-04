@@ -64,16 +64,16 @@ func TestOptions(t *testing.T) {
 
 	t.Run("WithSite", func(t *testing.T) {
 		var cfg config
-		WithSite("some.other.site")(&cfg)
-		assert.Equal(t, "https://intake.profile.some.other.site/v1/input", cfg.apiURL)
+		WithSite("datadog.eu")(&cfg)
+		assert.Equal(t, "https://intake.profile.datadog.eu/v1/input", cfg.apiURL)
 	})
 
 	t.Run("WithSite/override", func(t *testing.T) {
 		os.Setenv("DD_SITE", "wrong.site")
 		defer os.Unsetenv("DD_SITE")
 		cfg := defaultConfig()
-		WithSite("some.other.site")(cfg)
-		assert.Equal(t, "https://intake.profile.some.other.site/v1/input", cfg.apiURL)
+		WithSite("datadog.eu")(cfg)
+		assert.Equal(t, "https://intake.profile.datadog.eu/v1/input", cfg.apiURL)
 	})
 
 	t.Run("WithEnv", func(t *testing.T) {
@@ -127,10 +127,10 @@ func TestOptions(t *testing.T) {
 
 func TestEnvVars(t *testing.T) {
 	t.Run("DD_SITE", func(t *testing.T) {
-		os.Setenv("DD_SITE", "some.other.site")
+		os.Setenv("DD_SITE", "datadog.eu")
 		defer os.Unsetenv("DD_SITE")
 		cfg := defaultConfig()
-		assert.Equal(t, "https://intake.profile.some.other.site/v1/input", cfg.apiURL)
+		assert.Equal(t, "https://intake.profile.datadog.eu/v1/input", cfg.apiURL)
 	})
 
 	t.Run("DD_ENV", func(t *testing.T) {
@@ -168,7 +168,7 @@ func TestDefaultConfig(t *testing.T) {
 	t.Run("base", func(t *testing.T) {
 		cfg := defaultConfig()
 		assert := assert.New(t)
-		assert.Equal("https://intake.profile.datadoghq.com/v1/input", cfg.apiURL)
+		assert.Equal(defaultAPIURL, cfg.apiURL)
 		assert.Equal(defaultEnv, cfg.env)
 		assert.Equal(filepath.Base(os.Args[0]), cfg.service)
 		assert.Equal(len(defaultProfileTypes), len(cfg.types))
