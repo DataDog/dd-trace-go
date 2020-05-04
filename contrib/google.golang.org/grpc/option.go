@@ -150,7 +150,8 @@ func WithMetadataTags() Option {
 	}
 }
 
-// WithIgnoredMetadata specifies keys to be ignored while tracing the metadata.
+// WithIgnoredMetadata specifies keys to be ignored while tracing the metadata. Must be used
+// in conjunction with WithMetadataTags.
 func WithIgnoredMetadata(ms ...string) Option {
 	return func(cfg *config) {
 		for _, e := range ms {
