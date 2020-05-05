@@ -184,7 +184,7 @@ func TestTraceAndServe(t *testing.T) {
 }
 
 func TestTraceAndServeHost(t *testing.T) {
-	handler := http.HandlerFunc((w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	t.Run("on", func(t *testing.T) {
