@@ -337,24 +337,6 @@ func (s *span) String() string {
 	return strings.Join(lines, "\n")
 }
 
-// Format implements fmt.Formatter.
-func (s *span) Format(f fmt.State, c rune) {
-	switch c {
-	case 's':
-		fmt.Fprint(f, s.String())
-	case 'v':
-		fmt.Fprintf(f, "dd.trace_id=%d dd.span_id=%d dd.service=%s", s.TraceID, s.SpanID, s.Service)
-		if e := s.Meta[ext.Environment]; e != "" {
-			fmt.Fprintf(f, " dd.env=%s", e)
-		}
-		if v := s.Meta[ext.Version]; v != "" {
-			fmt.Fprintf(f, " dd.version=%s", v)
-		}
-	default:
-		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
-	}
-}
-
 const (
 	keySamplingPriority        = "_sampling_priority_v1"
 	keySamplingPriorityRate    = "_sampling_priority_rate_v1"
