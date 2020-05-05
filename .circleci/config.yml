@@ -107,7 +107,7 @@ jobs:
 
     - run:
         name: Vendor github.com/googleapis/gnostic for k8s.io/client-go
-        # This step checks out k8s.io/client-go and vendors 
+        # This step checks out k8s.io/client-go and vendors
         # github.com/googleapis/gnostic to fix a breaking change made in
         # gnostic. See kubernetes/client-go#741
         # TODO(knusbaum): remove this once the breaking change is resolved or propagated
@@ -115,8 +115,8 @@ jobs:
           git clone --branch v0.17.3 https://github.com/kubernetes/client-go $GOPATH/src/k8s.io/client-go
           git clone --branch v0.17.3 https://github.com/kubernetes/apimachinery $GOPATH/src/k8s.io/apimachinery
           git clone --branch v0.4.0 https://github.com/googleapis/gnostic $GOPATH/src/k8s.io/client-go/vendor/github.com/googleapis/gnostic
-    
-    # CircleCI recommends caches be ~500MB. We split the cache into 
+
+    # CircleCI recommends caches be ~500MB. We split the cache into
     # two parts to achieve this.
     # We specifically do not cache gopkg.in to avoid caching Datadog
     # We can cache other packages here or wait to move to go modules
@@ -206,4 +206,9 @@ jobs:
     - run:
         name: Testing
         command: |
-          INTEGRATION=1 go test -v -race `go list ./...`
+              mkdir /tmp/test-results
+              INTEGRATION=1 gotestsum --junitfile /tmp/test-results/result.xml -- -race `go list ./...`
+    - store_artifacts:
+        path: /tmp/test-results
+    - store_test_results:
+        path: /tmp/test-results
