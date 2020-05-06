@@ -346,12 +346,13 @@ func (s *span) Format(f fmt.State, c rune) {
 	case 'v':
 		if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
 			fmt.Fprintf(f, "dd.service=%s ", tr.config.serviceName)
-		}
-		if e := s.Meta[ext.Environment]; e != "" {
-			fmt.Fprintf(f, "dd.env=%s ", e)
-		}
-		if v := s.Meta[ext.Version]; v != "" {
-			fmt.Fprintf(f, "dd.version=%s ", v)
+			if env, ok := tr.config.globalTags[ext.Environment]; ok {
+				fmt.Fprintf(f, "dd.env=%s ", env)
+			}
+			if tr.config.version != "" {
+				fmt.Fprintf(f, "dd.version=%s ", tr.config.version)
+			}
+
 		}
 		fmt.Fprintf(f, "dd.trace_id=%d dd.span_id=%d", s.TraceID, s.SpanID)
 	default:
