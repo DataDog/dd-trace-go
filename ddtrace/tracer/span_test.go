@@ -443,10 +443,10 @@ func TestSpanLog(t *testing.T) {
 
 	t.Run("subservice", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"))
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
 		defer stop()
 		span := tracer.StartSpan("test.request", ServiceName("subservice name")).(*span)
-		expect := fmt.Sprintf("dd.service=tracer.test dd.trace_id=%d dd.span_id=%d", span.TraceID, span.SpanID)
+		expect := fmt.Sprintf("dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id=%d dd.span_id=%d", span.TraceID, span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
