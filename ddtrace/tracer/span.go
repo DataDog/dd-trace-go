@@ -19,6 +19,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 	"github.com/tinylib/msgp/msgp"
 	"golang.org/x/xerrors"
@@ -343,13 +344,16 @@ func (s *span) Format(f fmt.State, c rune) {
 	case 's':
 		fmt.Fprint(f, s.String())
 	case 'v':
-		fmt.Fprintf(f, "dd.trace_id=%d dd.span_id=%d dd.service=%s", s.TraceID, s.SpanID, s.Service)
+		if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
+			fmt.Fprintf(f, "dd.service=%s ", tr.config.serviceName)
+		}
 		if e := s.Meta[ext.Environment]; e != "" {
-			fmt.Fprintf(f, " dd.env=%s", e)
+			fmt.Fprintf(f, "dd.env=%s ", e)
 		}
 		if v := s.Meta[ext.Version]; v != "" {
-			fmt.Fprintf(f, " dd.version=%s", v)
+			fmt.Fprintf(f, "dd.version=%s ", v)
 		}
+		fmt.Fprintf(f, "dd.trace_id=%d dd.span_id=%d", s.TraceID, s.SpanID)
 	default:
 		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
 	}
