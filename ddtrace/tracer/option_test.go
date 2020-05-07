@@ -145,6 +145,33 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.False(ok)
 		assert.Equal(nil, dVal)
 	})
+
+	t.Run("dd_tags/service", func(t *testing.T) {
+		os.Setenv("DD_TAGS", "service:testservice")
+		defer os.Unsetenv("DD_TAGS")
+		assert := assert.New(t)
+		var c config
+		defaults(&c)
+		assert.Equal("testservice", c.serviceName)
+	})
+
+	t.Run("dd_tags/version", func(t *testing.T) {
+		os.Setenv("DD_TAGS", "version:1.2.3")
+		defer os.Unsetenv("DD_TAGS")
+		assert := assert.New(t)
+		var c config
+		defaults(&c)
+		assert.Equal("1.2.3", c.version)
+	})
+
+	t.Run("dd_tags/env", func(t *testing.T) {
+		os.Setenv("DD_TAGS", "env:testenv")
+		defer os.Unsetenv("DD_TAGS")
+		assert := assert.New(t)
+		var c config
+		defaults(&c)
+		assert.Equal("testenv", c.globalTags["env"])
+	})
 }
 
 func TestServiceName(t *testing.T) {
