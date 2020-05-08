@@ -356,7 +356,6 @@ func (s *span) Format(f fmt.State, c rune) {
 			if tr.config.version != "" {
 				fmt.Fprintf(f, "dd.version=%s ", tr.config.version)
 			}
-
 		} else {
 			if env := os.Getenv("DD_ENV"); env != "" {
 				fmt.Fprintf(f, "dd.env=%s ", env)
