@@ -105,6 +105,18 @@ func defaults(c *config) {
 			log.Warn("unable to look up hostname: %v", err)
 		}
 	}
+	if v := os.Getenv("DD_ENV"); v != "" {
+		WithEnv(v)(c)
+	}
+	if v := os.Getenv("DD_SERVICE"); v != "" {
+		c.serviceName = v
+		globalconfig.SetServiceName(v)
+	} else {
+		c.serviceName = filepath.Base(os.Args[0])
+	}
+	if ver := os.Getenv("DD_VERSION"); ver != "" {
+		c.version = ver
+	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		for _, tag := range strings.Split(v, ",") {
 			tag = strings.TrimSpace(tag)
@@ -113,34 +125,13 @@ func defaults(c *config) {
 			}
 			kv := strings.SplitN(tag, ":", 2)
 			k := strings.TrimSpace(kv[0])
-			var v string
-			if len(kv) == 2 {
-				v = strings.TrimSpace(kv[1])
-			}
-			switch k {
-			case "service":
-				c.serviceName = v
-				globalconfig.SetServiceName(v)
-			case "env":
-				WithEnv(v)(c)
-			case "version":
-				c.version = v
-			default:
-				WithGlobalTag(k, v)(c)
+			switch len(kv) {
+			case 1:
+				WithGlobalTag(k, "")(c)
+			case 2:
+				WithGlobalTag(k, strings.TrimSpace(kv[1]))(c)
 			}
 		}
-	}
-	if v := os.Getenv("DD_ENV"); v != "" {
-		WithEnv(v)(c)
-	}
-	if v := os.Getenv("DD_SERVICE"); v != "" {
-		c.serviceName = v
-		globalconfig.SetServiceName(v)
-	} else if c.serviceName == "" {
-		c.serviceName = filepath.Base(os.Args[0])
-	}
-	if ver := os.Getenv("DD_VERSION"); ver != "" {
-		c.version = ver
 	}
 }
 
