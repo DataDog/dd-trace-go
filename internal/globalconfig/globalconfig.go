@@ -47,7 +47,7 @@ func ServiceName() string {
 
 // SetServiceName sets the global service name set for this application.
 func SetServiceName(name string) {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
 	cfg.serviceName = name
 }
