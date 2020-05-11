@@ -41,6 +41,10 @@ func defaults(cfg *config) {
 }
 
 // WithServiceName sets the given service name for the returned ServeMux.
+// The service name is the name of the local service, not of the service being
+// called: to specify the service name of the callee you can use
+//
+//  WithSpanOptions(tracer.Tag(ext.PeerService, "callee-service-name"))
 func WithServiceName(name string) MuxOption {
 	return func(cfg *config) {
 		cfg.serviceName = name
