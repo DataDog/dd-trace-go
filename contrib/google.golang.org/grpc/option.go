@@ -25,6 +25,9 @@ type config struct {
 	traceStreamMessages bool
 	noDebugStack        bool
 	ignoredMethods      map[string]struct{}
+	withMetadataTags    bool
+	ignoredMetadata     map[string]struct{}
+	withRequestTags     bool
 }
 
 func (cfg *config) serverServiceName() string {
@@ -56,6 +59,11 @@ func defaults(cfg *config) {
 	cfg.nonErrorCodes = map[codes.Code]bool{codes.Canceled: true}
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	cfg.analyticsRate = math.NaN()
+	cfg.ignoredMetadata = map[string]struct{}{
+		"x-datadog-trace-id":          {},
+		"x-datadog-parent-id":         {},
+		"x-datadog-sampling-priority": {},
+	}
 }
 
 // WithServiceName sets the given service name for the intercepted client.
@@ -132,5 +140,29 @@ func WithIgnoredMethods(ms ...string) Option {
 	}
 	return func(cfg *config) {
 		cfg.ignoredMethods = ims
+	}
+}
+
+// WithMetadataTags specifies whether gRPC metadata should be added to spans as tags.
+func WithMetadataTags() Option {
+	return func(cfg *config) {
+		cfg.withMetadataTags = true
+	}
+}
+
+// WithIgnoredMetadata specifies keys to be ignored while tracing the metadata. Must be used
+// in conjunction with WithMetadataTags.
+func WithIgnoredMetadata(ms ...string) Option {
+	return func(cfg *config) {
+		for _, e := range ms {
+			cfg.ignoredMetadata[e] = struct{}{}
+		}
+	}
+}
+
+// WithRequestTags specifies whether gRPC requests should be added to spans as tags.
+func WithRequestTags() Option {
+	return func(cfg *config) {
+		cfg.withRequestTags = true
 	}
 }
