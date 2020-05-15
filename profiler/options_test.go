@@ -62,6 +62,20 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, "serviceName", cfg.service)
 	})
 
+	t.Run("WithSite", func(t *testing.T) {
+		var cfg config
+		WithSite("datadog.eu")(&cfg)
+		assert.Equal(t, "https://intake.profile.datadog.eu/v1/input", cfg.apiURL)
+	})
+
+	t.Run("WithSite/override", func(t *testing.T) {
+		os.Setenv("DD_SITE", "wrong.site")
+		defer os.Unsetenv("DD_SITE")
+		cfg := defaultConfig()
+		WithSite("datadog.eu")(cfg)
+		assert.Equal(t, "https://intake.profile.datadog.eu/v1/input", cfg.apiURL)
+	})
+
 	t.Run("WithEnv", func(t *testing.T) {
 		var cfg config
 		WithEnv("envName")(&cfg)
@@ -112,6 +126,13 @@ func TestOptions(t *testing.T) {
 }
 
 func TestEnvVars(t *testing.T) {
+	t.Run("DD_SITE", func(t *testing.T) {
+		os.Setenv("DD_SITE", "datadog.eu")
+		defer os.Unsetenv("DD_SITE")
+		cfg := defaultConfig()
+		assert.Equal(t, "https://intake.profile.datadog.eu/v1/input", cfg.apiURL)
+	})
+
 	t.Run("DD_ENV", func(t *testing.T) {
 		os.Setenv("DD_ENV", "someEnv")
 		defer os.Unsetenv("DD_ENV")
