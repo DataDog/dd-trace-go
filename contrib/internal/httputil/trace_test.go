@@ -182,3 +182,34 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("200", spans[0].Tag(ext.HTTPCode))
 	})
 }
+
+func TestTraceAndServeHost(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	t.Run("on", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		r, err := http.NewRequest("GET", "http://localhost/", nil)
+		assert.NoError(err)
+		TraceAndServe(handler, httptest.NewRecorder(), r, "service", "resource", nil)
+		span := mt.FinishedSpans()[0]
+
+		assert.EqualValues("localhost", span.Tag("http.host"))
+	})
+
+	t.Run("off", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		r, err := http.NewRequest("GET", "/", nil)
+		assert.NoError(err)
+		TraceAndServe(handler, httptest.NewRecorder(), r, "service", "resource", nil)
+		span := mt.FinishedSpans()[0]
+
+		assert.EqualValues(nil, span.Tag("http.host"))
+	})
+}
