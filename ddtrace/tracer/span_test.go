@@ -8,6 +8,7 @@ package tracer
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -402,6 +403,101 @@ func TestSpanSamplingPriority(t *testing.T) {
 		assert.Equal(v0, v1)
 		assert.EqualValues(*childSpan.context.trace.priority, v0)
 	}
+}
+
+func TestSpanLog(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		expect := fmt.Sprintf("dd.service=tracer.test dd.trace_id=%d dd.span_id=%d", span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+
+	t.Run("env", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		expect := fmt.Sprintf("dd.service=tracer.test dd.env=testenv dd.trace_id=%d dd.span_id=%d", span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+
+	t.Run("version", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		expect := fmt.Sprintf("dd.service=tracer.test dd.version=1.2.3 dd.trace_id=%d dd.span_id=%d", span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+
+	t.Run("full", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		expect := fmt.Sprintf("dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id=%d dd.span_id=%d", span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+
+	t.Run("subservice", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
+		defer stop()
+		span := tracer.StartSpan("test.request", ServiceName("subservice name")).(*span)
+		expect := fmt.Sprintf("dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id=%d dd.span_id=%d", span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+
+	t.Run("env", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "tracer.test")
+		defer os.Unsetenv("DD_SERVICE")
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+		os.Setenv("DD_ENV", "testenv")
+		defer os.Unsetenv("DD_ENV")
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		expect := fmt.Sprintf("dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id=%d dd.span_id=%d", span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+
+	t.Run("badformat", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		expect := fmt.Sprintf("%%!b(ddtrace.Span=dd.service=tracer.test dd.version=1.2.3 dd.trace_id=%d dd.span_id=%d)", span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%b", span))
+	})
+
+	t.Run("notracer/options", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
+		span := tracer.StartSpan("test.request").(*span)
+		stop()
+		expect := fmt.Sprintf("dd.service=tracer.test dd.trace_id=%d dd.span_id=%d", span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+
+	t.Run("notracer/env", func(t *testing.T) {
+		os.Setenv("DD_SERVICE", "tracer.test")
+		defer os.Unsetenv("DD_SERVICE")
+		os.Setenv("DD_VERSION", "1.2.3")
+		defer os.Unsetenv("DD_VERSION")
+		os.Setenv("DD_ENV", "testenv")
+		defer os.Unsetenv("DD_ENV")
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t)
+		span := tracer.StartSpan("test.request").(*span)
+		stop()
+		expect := fmt.Sprintf("dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id=%d dd.span_id=%d", span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
 }
 
 func BenchmarkSetTagMetric(b *testing.B) {

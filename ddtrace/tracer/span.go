@@ -9,6 +9,7 @@ package tracer
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"runtime"
 	"runtime/debug"
@@ -19,6 +20,8 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/tinylib/msgp/msgp"
 	"golang.org/x/xerrors"
@@ -335,6 +338,36 @@ func (s *span) String() string {
 	}
 	s.RUnlock()
 	return strings.Join(lines, "\n")
+}
+
+// Format implements fmt.Formatter.
+func (s *span) Format(f fmt.State, c rune) {
+	switch c {
+	case 's':
+		fmt.Fprint(f, s.String())
+	case 'v':
+		if svc := globalconfig.ServiceName(); svc != "" {
+			fmt.Fprintf(f, "dd.service=%s ", svc)
+		}
+		if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
+			if env, ok := tr.config.globalTags[ext.Environment]; ok {
+				fmt.Fprintf(f, "dd.env=%s ", env)
+			}
+			if tr.config.version != "" {
+				fmt.Fprintf(f, "dd.version=%s ", tr.config.version)
+			}
+		} else {
+			if env := os.Getenv("DD_ENV"); env != "" {
+				fmt.Fprintf(f, "dd.env=%s ", env)
+			}
+			if v := os.Getenv("DD_VERSION"); v != "" {
+				fmt.Fprintf(f, "dd.version=%s ", v)
+			}
+		}
+		fmt.Fprintf(f, "dd.trace_id=%d dd.span_id=%d", s.TraceID, s.SpanID)
+	default:
+		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
+	}
 }
 
 const (
