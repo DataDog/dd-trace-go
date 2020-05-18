@@ -38,7 +38,7 @@ func TestMemcacheIntegration(t *testing.T) {
 }
 
 func testMemcache(t *testing.T, addr string) {
-	client := WrapClient(memcache.New(addr), WithServiceName("test-memcache"), WithValueTags())
+	client := WrapClient(memcache.New(addr), WithServiceName("test-memcache"))
 	defer client.DeleteAll()
 
 	validateMemcacheSpan := func(t *testing.T, span mocktracer.Span, resourceName string) {
@@ -76,9 +76,8 @@ func testMemcache(t *testing.T, addr string) {
 		err := client.
 			WithContext(ctx).
 			Add(&memcache.Item{
-				Key:        "key2",
-				Value:      []byte("value2"),
-				Expiration: 10,
+				Key:   "key2",
+				Value: []byte("value2"),
 			})
 		assert.Nil(t, err)
 
@@ -90,9 +89,6 @@ func testMemcache(t *testing.T, addr string) {
 		assert.Equal(t, span, spans[1])
 		assert.Equal(t, spans[1].TraceID(), spans[0].TraceID(),
 			"memcache span should be part of the parent trace")
-		assert.Equal(t, "key2", spans[0].Tag("item.key"))
-		assert.Equal(t, []byte("value2"), spans[0].Tag("item.value"))
-		assert.Equal(t, int32(10), spans[0].Tag("item.expiration"))
 	})
 }
 
