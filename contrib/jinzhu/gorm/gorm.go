@@ -81,6 +81,17 @@ func WithContext(ctx context.Context, db *gorm.DB) *gorm.DB {
 	return db
 }
 
+// Context returns the context attached to a given db (via WithContext). If a
+// context has not been attached to db, returns context.Background.
+func Context(db *gorm.DB) context.Context {
+	if v, ok := db.Get(gormContextKey); ok {
+		if ctx, ok := v.(context.Context); ok {
+			return ctx
+		}
+	}
+	return context.Background()
+}
+
 func before(scope *gorm.Scope) {
 	scope.Set(gormSpanStartTimeKey, time.Now())
 }
