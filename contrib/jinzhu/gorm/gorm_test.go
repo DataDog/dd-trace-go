@@ -293,12 +293,12 @@ func TestContext(t *testing.T) {
 	t.Run("with", func(t *testing.T) {
 		testCtx := context.WithValue(context.Background(), "test context", true)
 		db := WithContext(testCtx, db)
-		ctx := Context(db)
+		ctx := ContextFromDB(db)
 		assert.Equal(t, testCtx, ctx)
 	})
 
 	t.Run("without", func(t *testing.T) {
-		ctx := Context(db)
+		ctx := ContextFromDB(db)
 		assert.Equal(t, context.Background(), ctx)
 	})
 }
