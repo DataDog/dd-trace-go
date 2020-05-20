@@ -81,7 +81,7 @@ func WithContext(ctx context.Context, db *gorm.DB) *gorm.DB {
 	return db
 }
 
-// Context returns the context attached to a given db (via WithContext). If a
+// ContextFromDB returns the context attached to a given db (via WithContext). If a
 // context has not been attached to db, returns context.Background.
 func ContextFromDB(db *gorm.DB) context.Context {
 	if v, ok := db.Get(gormContextKey); ok {
