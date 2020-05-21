@@ -12,3 +12,7 @@ bin/
 *.swp
 
 /contrib/google.golang.org/grpc.v12/vendor/
+
+# TODO(gbbr): explain why
+/go.sum
+/go.mod
