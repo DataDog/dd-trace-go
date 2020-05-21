@@ -291,7 +291,6 @@ func TestContext(t *testing.T) {
 	defer db.Close()
 
 	t.Run("with", func(t *testing.T) {
-		// should not use basic type string as key in context.WithValue (golint)
 		type key string
 		testCtx := context.WithValue(context.Background(), key("test context"), true)
 		db := WithContext(testCtx, db)
