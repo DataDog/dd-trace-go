@@ -7,9 +7,12 @@ package profiler
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -35,8 +38,10 @@ const (
 )
 
 const (
-	defaultAPIURL = "https://intake.profile.datadoghq.com/v1/input"
-	defaultEnv    = "none"
+	defaultAPIURL    = "https://intake.profile.datadoghq.com/v1/input"
+	defaultAgentHost = "localhost"
+	defaultAgentPort = "8126"
+	defaultEnv       = "none"
 )
 
 var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
@@ -44,6 +49,7 @@ var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
 type config struct {
 	apiKey        string
 	apiURL        string
+	agentURL      string
 	service, env  string
 	hostname      string
 	statsd        StatsdClient
@@ -68,6 +74,17 @@ func (c *config) addProfileType(t ProfileType) {
 	c.types[t] = struct{}{}
 }
 
+func (c *config) skippingAgent() bool {
+	return c.apiKey != ""
+}
+
+func (c *config) targetURL() string {
+	if c.skippingAgent() {
+		return c.apiURL
+	}
+	return c.agentURL
+}
+
 func defaultConfig() *config {
 	c := config{
 		env:           defaultEnv,
@@ -84,6 +101,17 @@ func defaultConfig() *config {
 		c.addProfileType(t)
 	}
 
+	agentHost, agentPort := defaultAgentHost, defaultAgentPort
+	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
+		agentHost = v
+	}
+	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
+		agentPort = v
+	}
+	WithAgentAddr(net.JoinHostPort(agentHost, agentPort))(&c)
+	if v := os.Getenv("DD_API_KEY"); v != "" {
+		WithAPIKey(v)(&c)
+	}
 	if v := os.Getenv("DD_SITE"); v != "" {
 		WithSite(v)(&c)
 	}
@@ -105,13 +133,31 @@ func defaultConfig() *config {
 			WithTags(tag)(&c)
 		}
 	}
+	WithTags(
+		"profiler_version:"+version.Tag,
+		"runtime_version:"+strings.TrimPrefix(runtime.Version(), "go"),
+		"runtime_compiler:"+runtime.Compiler,
+		"runtime_arch:"+runtime.GOARCH,
+		"runtime_os:"+runtime.GOOS,
+	)(&c)
+	// not for public use
+	if v := os.Getenv("DD_PROFILING_URL"); v != "" {
+		WithURL(v)(&c)
+	}
 	return &c
 }
 
 // An Option is used to configure the profiler's behaviour.
 type Option func(*config)
 
-// WithAPIKey specifies the API key to use when connecting to the Datadog API.
+// WithAgentAddr specified the hostname to use to reach datadog trace agent.
+func WithAgentAddr(hostport string) Option {
+	return func(cfg *config) {
+		cfg.agentURL = "http://" + hostport + "/profiling/v1/input"
+	}
+}
+
+// WithAPIKey specifies the API key to use when connecting to the Datadog API directly, skipping the agent.
 func WithAPIKey(key string) Option {
 	return func(cfg *config) {
 		cfg.apiKey = key

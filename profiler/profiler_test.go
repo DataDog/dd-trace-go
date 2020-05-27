@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"io"
+	"net"
 	"os"
 	"runtime"
 	"sort"
@@ -20,12 +21,8 @@ import (
 )
 
 func TestStart(t *testing.T) {
-	t.Run("api-key", func(t *testing.T) {
-		require.Equal(t, ErrMissingAPIKey, Start())
-	})
-
 	t.Run("defaults", func(t *testing.T) {
-		if err := Start(WithAPIKey("123")); err != nil {
+		if err := Start(); err != nil {
 			t.Fatal(err)
 		}
 		defer Stop()
@@ -36,6 +33,9 @@ func TestStart(t *testing.T) {
 		if host, err := os.Hostname(); err != nil {
 			assert.Equal(host, activeProfiler.cfg.hostname)
 		}
+		assert.False(activeProfiler.cfg.skippingAgent())
+		assert.Equal("http://"+net.JoinHostPort(defaultAgentHost, defaultAgentPort)+"/profiling/v1/input",
+			activeProfiler.cfg.agentURL)
 		assert.Equal(defaultAPIURL, activeProfiler.cfg.apiURL)
 		assert.Equal(DefaultPeriod, activeProfiler.cfg.period)
 		assert.Equal(len(defaultProfileTypes), len(activeProfiler.cfg.types))
@@ -48,7 +48,7 @@ func TestStart(t *testing.T) {
 	})
 
 	t.Run("options", func(t *testing.T) {
-		if err := Start(WithAPIKey("123")); err != nil {
+		if err := Start(); err != nil {
 			t.Fatal(err)
 		}
 		defer Stop()
@@ -62,12 +62,12 @@ func TestStart(t *testing.T) {
 
 func TestStartStopIdempotency(t *testing.T) {
 	t.Run("linear", func(t *testing.T) {
-		Start(WithAPIKey("123"))
-		Start(WithAPIKey("123"))
-		Start(WithAPIKey("123"))
-		Start(WithAPIKey("123"))
-		Start(WithAPIKey("123"))
-		Start(WithAPIKey("123"))
+		Start()
+		Start()
+		Start()
+		Start()
+		Start()
+		Start()
 
 		Stop()
 		Stop()
@@ -84,7 +84,7 @@ func TestStartStopIdempotency(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				for j := 0; j < 1000; j++ {
-					Start(WithAPIKey("123"))
+					Start()
 				}
 			}()
 		}
@@ -101,7 +101,7 @@ func TestStartStopIdempotency(t *testing.T) {
 	})
 
 	t.Run("stop", func(t *testing.T) {
-		Start(WithAPIKey("123"), WithPeriod(time.Minute))
+		Start(WithPeriod(time.Minute))
 		defer Stop()
 
 		mu.Lock()
@@ -223,6 +223,34 @@ func TestProfilerPassthrough(t *testing.T) {
 	assert.Equal("samples", firstTypes[1])
 	assert.NotEmpty(bat.profiles[0].data)
 	assert.NotEmpty(bat.profiles[1].data)
+}
+
+func TestStopOnOldAgent(t *testing.T) {
+	p := unstartedProfiler(WithPeriod(100 * time.Millisecond))
+	p.cfg.cpuDuration = 1 * time.Millisecond
+	uploadCount := 0
+	p.uploadFunc = func(bat batch) error {
+		uploadCount++
+		return errOldAgent
+	}
+	p.run()
+	defer p.stop()
+	timeout := time.After(1000 * time.Millisecond)
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+
+out:
+	for {
+		select {
+		case <-p.exit:
+			break out
+		case <-timeout:
+			t.Fatalf("timed out")
+		}
+	}
+
+	// Should have only done 1 upload
+	assert.Equal(t, 1, uploadCount)
 }
 
 func unstartedProfiler(opts ...Option) *profiler {
