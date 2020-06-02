@@ -6,7 +6,9 @@ jobs:
     resource_class: xlarge
 
     docker:
-    - image: circleci/golang:1.12
+    - image: circleci/golang:1.13
+      environment:
+        GO111MODULE: "on"
     - image: cassandra:3.7
     - image: circleci/mysql:5.7
       environment:
@@ -85,71 +87,27 @@ jobs:
         - /tmp/librdkafka-v1.3.0
 
     - run:
-        name: Vendor gRPC v1.2.0
-        # This step vendors gRPC v1.2.0 inside our gRPC.v12 contrib
-        # to allow running the tests against the correct version of
-        # the gRPC library. The library is not committed into the
-        # repository to avoid conflicts with the user's imports.
-        command: >
-          git clone --branch v1.2.0
-          https://github.com/grpc/grpc-go
-          contrib/google.golang.org/grpc.v12/vendor/google.golang.org/grpc
-
-    - run:
-        name: Vendor redis v6.15.3
-        # This step vendors go-redis/redis v6.15.3 inside our redis contrib
-        # to allow running the tests against the correct version of
-        # the redis library.
-        command: >
-          git clone --branch v6.15.3
-          https://github.com/go-redis/redis
-          contrib/go-redis/redis/vendor/github.com/go-redis/redis
-
-    - run:
-        name: Vendor github.com/googleapis/gnostic for k8s.io/client-go
-        # This step checks out k8s.io/client-go and vendors
-        # github.com/googleapis/gnostic to fix a breaking change made in
-        # gnostic. See kubernetes/client-go#741
-        # TODO(knusbaum): remove this once the breaking change is resolved or propagated
+        name: Vendor conflicting dependencies
         command: |
-          git clone --branch v0.17.3 https://github.com/kubernetes/client-go $GOPATH/src/k8s.io/client-go
-          git clone --branch v0.17.3 https://github.com/kubernetes/apimachinery $GOPATH/src/k8s.io/apimachinery
-          git clone --branch v0.4.0 https://github.com/googleapis/gnostic $GOPATH/src/k8s.io/client-go/vendor/github.com/googleapis/gnostic
+          go get k8s.io/client-go@v0.17.0
+          go get k8s.io/apimachinery@v0.17.0
+          go get google.golang.org/grpc@v1.2.0
+          go get github.com/zenazn/goji@64eb341 # tag "v1.0"
 
-    # CircleCI recommends caches be ~500MB. We split the cache into
-    # two parts to achieve this.
-    # We specifically do not cache gopkg.in to avoid caching Datadog
-    # We can cache other packages here or wait to move to go modules
-    # in the future.
     - restore_cache:
-        keys:
-          - go-pkg-part-1-cache-v1-{{ checksum "ddtrace/Gopkg.toml" }}
-          - go-pkg-part-1-cache-v1
-    - restore_cache:
-        keys:
-          - go-pkg-part-2-cache-v2-{{ checksum "ddtrace/Gopkg.toml" }}
-          - go-pkg-part-2-cache-v2
+        key: go-pkg-mod-{{ checksum "go.sum" }}
+
     - run:
         name: Fetching dependencies
         command: |
-          go get -v -t ./...
+          go mod tidy
           go get -v -u golang.org/x/lint/golint
-          go get -v -u github.com/alecthomas/gometalinter
+          curl https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
+
     - save_cache:
-        key: go-pkg-part-1-cache-v1-{{ checksum "ddtrace/Gopkg.toml" }}
+        key: go-pkg-mod-{{ checksum "go.sum" }}
         paths:
-          - /go/src/github.com
-          - /go/src/golang.org
-    - save_cache:
-        key: go-pkg-part-2-cache-v2-{{ checksum "ddtrace/Gopkg.toml" }}
-        paths:
-          - /go/src/cloud.google.com
-          - /go/src/google.google.org
-          - /go/src/go.mongodb.org
-          - /go/src/go.opencensus.io
-          - /go/src/golang.org
-          - /go/src/sigs.k8s.io
-          - /go/src/k8s.io
+          - /go/pkg/mod
 
     - run:
         name: Vendor klog v0.4.0
@@ -195,20 +153,16 @@ jobs:
         name: Wait for Consul
         command: dockerize -wait http://localhost:8500 -timeout 1m
 
-    - run:
-        name: Linting
-        command: |
-          gometalinter --disable-all --vendor --deadline=60s \
-            --enable=golint \
-            --enable=vet \
-            ./...
+        #   - run:
+        #       name: Linting
+        #       command: |
+        #         gometalinter --disable-all --vendor --deadline=60s \
+        #           --enable=golint \
+        #           --enable=vet \
+        #           ./...
 
     - run:
         name: Testing
         command: |
-              mkdir /tmp/test-results
-              INTEGRATION=1 gotestsum --junitfile /tmp/test-results/result.xml -- -race `go list ./...`
-    - store_artifacts:
-        path: /tmp/test-results
-    - store_test_results:
-        path: /tmp/test-results
+              INTEGRATION=1 go test -race `go list ./...` # | grep -v grpc.v12`
+              #go test ./contrib/google.golang.org/grpc.v12/...

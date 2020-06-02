@@ -13,7 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
-	sarama "gopkg.in/Shopify/sarama.v1"
+	"github.com/Shopify/sarama"
 )
 
 type partitionConsumer struct {
