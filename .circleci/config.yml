@@ -87,35 +87,10 @@ jobs:
         - /tmp/librdkafka-v1.3.0
 
     - run:
-        name: Vendor conflicting dependencies
+        name: Enforce some dependencies
         command: |
           go get k8s.io/client-go@v0.17.0
           go get k8s.io/apimachinery@v0.17.0
-          go get google.golang.org/grpc@v1.2.0
-          go get github.com/zenazn/goji@64eb341 # tag "v1.0"
-
-    - restore_cache:
-        key: go-pkg-mod-{{ checksum "go.sum" }}
-
-    - run:
-        name: Fetching dependencies
-        command: |
-          go mod tidy
-          go get -v -u golang.org/x/lint/golint
-          curl https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
-
-    - save_cache:
-        key: go-pkg-mod-{{ checksum "go.sum" }}
-        paths:
-          - /go/pkg/mod
-
-    - run:
-        name: Vendor klog v0.4.0
-        # Temporary, until kubernetes/client-go#656 gets resolved.
-        command: >
-          git clone --branch v0.4.0
-          https://github.com/kubernetes/klog
-          $GOPATH/src/k8s.io/client-go/vendor/k8s.io/klog
 
     - run:
         name: Wait for MySQL
@@ -153,16 +128,16 @@ jobs:
         name: Wait for Consul
         command: dockerize -wait http://localhost:8500 -timeout 1m
 
-        #   - run:
-        #       name: Linting
-        #       command: |
-        #         gometalinter --disable-all --vendor --deadline=60s \
-        #           --enable=golint \
-        #           --enable=vet \
-        #           ./...
+    - run:
+        name: Linting
+        command: |
+          # TODO(gbbr): linting
+          # go get -v -u golang.org/x/lint/golint
+          # golint `go list ./...` | grep -v globalsign/mgo/collection.go
 
     - run:
         name: Testing
         command: |
-              INTEGRATION=1 go test -race `go list ./...` # | grep -v grpc.v12`
-              #go test ./contrib/google.golang.org/grpc.v12/...
+              INTEGRATION=1 go test -race `go list ./... | grep -v grpc.v12`
+              go get google.golang.org/grpc@v1.2.0
+              go test ./contrib/google.golang.org/grpc.v12/...
