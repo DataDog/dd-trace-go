@@ -281,3 +281,25 @@ func TestAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
 }
+
+func TestContext(t *testing.T) {
+	sqltrace.Register("postgres", &pq.Driver{})
+	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	t.Run("with", func(t *testing.T) {
+		type key string
+		testCtx := context.WithValue(context.Background(), key("test context"), true)
+		db := WithContext(testCtx, db)
+		ctx := ContextFromDB(db)
+		assert.Equal(t, testCtx, ctx)
+	})
+
+	t.Run("without", func(t *testing.T) {
+		ctx := ContextFromDB(db)
+		assert.Equal(t, context.Background(), ctx)
+	})
+}
