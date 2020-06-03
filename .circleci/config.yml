@@ -111,6 +111,7 @@ jobs:
         # github.com/googleapis/gnostic to fix a breaking change made in
         # gnostic. See kubernetes/client-go#741
         # TODO(knusbaum): remove this once the breaking change is resolved or propagated
+        # bump
         command: |
           git clone --branch v0.17.3 https://github.com/kubernetes/client-go $GOPATH/src/k8s.io/client-go
           git clone --branch v0.17.3 https://github.com/kubernetes/apimachinery $GOPATH/src/k8s.io/apimachinery
