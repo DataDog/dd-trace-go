@@ -20,6 +20,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+
+	"github.com/DataDog/datadog-go/statsd"
 )
 
 // config holds the tracer configuration.
@@ -32,6 +34,9 @@ type config struct {
 
 	// version specifies the version of this application
 	version string
+
+	// env contains the environment that this application will run under.
+	env string
 
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler Sampler
@@ -84,8 +89,8 @@ type config struct {
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
-// defaults sets the default values for a config.
-func defaults(c *config) {
+func newConfig(opts ...StartOption) *config {
+	c := new(config)
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
 
@@ -106,13 +111,11 @@ func defaults(c *config) {
 		}
 	}
 	if v := os.Getenv("DD_ENV"); v != "" {
-		WithEnv(v)(c)
+		c.env = v
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
 		c.serviceName = v
 		globalconfig.SetServiceName(v)
-	} else {
-		c.serviceName = filepath.Base(os.Args[0])
 	}
 	if ver := os.Getenv("DD_VERSION"); ver != "" {
 		c.version = ver
@@ -133,6 +136,61 @@ func defaults(c *config) {
 			}
 		}
 	}
+
+	// Apply the user's options
+	for _, fn := range opts {
+		fn(c)
+	}
+
+	// If env, service, or version is unset, look for tags
+	if c.env == "" {
+		if v, ok := c.globalTags["env"]; ok {
+			if e, ok := v.(string); ok {
+				c.env = e
+			}
+		}
+	}
+	if c.serviceName == "" {
+		if v, ok := c.globalTags["service"]; ok {
+			if s, ok := v.(string); ok {
+				c.serviceName = s
+				globalconfig.SetServiceName(s)
+			}
+		} else {
+			c.serviceName = filepath.Base(os.Args[0])
+		}
+	}
+	if c.version == "" {
+		if v, ok := c.globalTags["version"]; ok {
+			if ver, ok := v.(string); ok {
+				c.version = ver
+			}
+		}
+	}
+
+	if c.transport == nil {
+		c.transport = newTransport(c.agentAddr, c.httpClient)
+	}
+	if c.propagator == nil {
+		c.propagator = NewPropagator(nil)
+	}
+	if c.logger != nil {
+		log.UseLogger(c.logger)
+	}
+	if c.debug {
+		log.SetLevel(log.LevelDebug)
+	}
+	if c.statsd == nil {
+		client, err := statsd.New(c.dogstatsdAddr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
+		if err != nil {
+			log.Warn("Runtime and health metrics disabled: %v", err)
+			c.statsd = &statsd.NoOpClient{}
+		} else {
+			c.statsd = client
+		}
+	}
+
+	return c
 }
 
 func statsTags(c *config) []string {
@@ -143,6 +201,9 @@ func statsTags(c *config) []string {
 	}
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
+	}
+	if c.env != "" {
+		tags = append(tags, "env:"+c.env)
 	}
 	if c.hostname != "" {
 		tags = append(tags, "host:"+c.hostname)
@@ -221,7 +282,9 @@ func WithAgentAddr(addr string) StartOption {
 // WithEnv sets the environment to which all traces started by the tracer will be submitted.
 // The default value is the environment variable DD_ENV, if it is set.
 func WithEnv(env string) StartOption {
-	return WithGlobalTag(ext.Environment, env)
+	return func(c *config) {
+		c.env = env
+	}
 }
 
 // WithGlobalTag sets a key/value pair which will be set as a tag on all spans

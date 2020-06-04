@@ -350,8 +350,8 @@ func (s *span) Format(f fmt.State, c rune) {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
 		if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
-			if env, ok := tr.config.globalTags[ext.Environment]; ok {
-				fmt.Fprintf(f, "dd.env=%s ", env)
+			if tr.config.env != "" {
+				fmt.Fprintf(f, "dd.env=%s ", tr.config.env)
 			}
 			if tr.config.version != "" {
 				fmt.Fprintf(f, "dd.version=%s ", tr.config.version)
