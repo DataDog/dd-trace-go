@@ -2,142 +2,193 @@ version: 2
 
 jobs:
   build:
-    working_directory: /go/src/gopkg.in/DataDog/dd-trace-go.v1
-    resource_class: xlarge
-
     docker:
-    - image: circleci/golang:1.13
-      environment:
-        GO111MODULE: "on"
-    - image: cassandra:3.7
-    - image: circleci/mysql:5.7
-      environment:
-        MYSQL_ROOT_PASSWORD: admin
-        MYSQL_PASSWORD: test
-        MYSQL_USER: test
-        MYSQL_DATABASE: test
-    - image: circleci/postgres:9.5
-      environment:
-        POSTGRES_PASSWORD: postgres
-        POSTGRES_USER: postgres
-        POSTGRES_DB: postgres
-    - image: consul:1.6.0
-    - image: redis:3.2
-    - image: elasticsearch:2
-      environment:
-        ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-    - image: elasticsearch:5
-      environment:
-        ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-    - image: datadog/docker-dd-agent
-      environment:
-        DD_APM_ENABLED: "true"
-        DD_BIND_HOST: "0.0.0.0"
-        DD_API_KEY: invalid_key_but_this_is_fine
-    - image: circleci/mongo:latest-ram
-    - image: memcached:1.5.9
-    - image: confluentinc/cp-zookeeper:5.0.0
-      environment:
-        ZOOKEEPER_CLIENT_PORT: "2181"
-    - image: confluentinc/cp-kafka:5.0.0
-      environment:
-        KAFKA_ZOOKEEPER_CONNECT: localhost:2181
-        KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-        KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-        KAFKA_CREATE_TOPICS: gotest:1:1
-        KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-
+      - image: circleci/golang:1.12
+        environment:
+          GO111MODULE: "on"
+          GOPATH: "/home/circleci/go"
+    working_directory: /home/circleci/go/src/gopkg.in/DataDog/dd-trace-go.v1
     steps:
     - checkout
 
     - run:
-        name: Check milestone
+        name: milestone
         command: |
           go run checkmilestone.go
 
     - run:
-        name: Check copyright
+        name: copyright
         command: |
           go run checkcopyright.go
 
     - run:
-        name: Check gofmt
+        name: gofmt
         command: |
           if [ "$(gofmt -e -l . | wc -l)" -gt 0 ]; then
             exit 1
           fi
 
-    - restore_cache:
-        keys:
-        - v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
     - run:
-        name: Install librdkafka v1.3.0
+        name: lint
         command: |
-          if [ ! -d /tmp/librdkafka-v1.3.0 ] ; then
-            echo "building librdkafka"
-            git clone --branch v1.3.0 https://github.com/edenhill/librdkafka.git /tmp/librdkafka-v1.3.0
-            (cd /tmp/librdkafka-v1.3.0 && ./configure && make)
-          fi
-          echo "installing librdkafka"
-          (cd /tmp/librdkafka-v1.3.0 && sudo make install)
-          sudo ldconfig
-    - save_cache:
-        key: v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
+          go get -u golang.org/x/lint/golint
+          curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
+          ./bin/gometalinter --disable-all --vendor --deadline=60s --enable=golint ./...
+
+    - run:
+        name: build
+        command: |
+          go build ./ddtrace/...
+
+    - persist_to_workspace:
+        root: /home/circleci/go
         paths:
-        - /tmp/librdkafka-v1.3.0
+          - src
+          - pkg
+          - bin
 
-    - run:
-        name: Enforce some dependencies
-        command: |
-          go get k8s.io/client-go@v0.17.0
-          go get k8s.io/apimachinery@v0.17.0
+  test-core:
+    working_directory: /home/circleci/go/src/gopkg.in/DataDog/dd-trace-go.v1
+    docker:
+      - image: circleci/golang:1.13
+        environment:
+          GO111MODULE: "on"
+          GOPATH: "/home/circleci/go"
 
-    - run:
-        name: Wait for MySQL
-        command: dockerize -wait tcp://localhost:3306 -timeout 1m
+    steps:
+      - attach_workspace:
+          at: /home/circleci/go
 
-    - run:
-        name: Wait for Postgres
-        command: dockerize -wait tcp://localhost:5432 -timeout 1m
+      - run:
+          name: Testing
+          command: go test -v -race `go list ./... | grep -v /contrib/`
 
-    - run:
-        name: Wait for Redis
-        command: dockerize -wait tcp://localhost:6379 -timeout 1m
+  test-contrib:
+    resource_class: xlarge
+    working_directory: /home/circleci/go/src/gopkg.in/DataDog/dd-trace-go.v1
+    docker:
+      - image: circleci/golang:1.13
+        environment:
+          GO111MODULE: "on"
+          GOPATH: "/home/circleci/go"
+      - image: cassandra:3.7
+      - image: circleci/mysql:5.7
+        environment:
+          MYSQL_ROOT_PASSWORD: admin
+          MYSQL_PASSWORD: test
+          MYSQL_USER: test
+          MYSQL_DATABASE: test
+      - image: circleci/postgres:9.5
+        environment:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+      - image: consul:1.6.0
+      - image: redis:3.2
+      - image: elasticsearch:2
+        environment:
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+      - image: elasticsearch:5
+        environment:
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+      - image: datadog/docker-dd-agent
+        environment:
+          DD_APM_ENABLED: "true"
+          DD_BIND_HOST: "0.0.0.0"
+          DD_API_KEY: invalid_key_but_this_is_fine
+      - image: circleci/mongo:latest-ram
+      - image: memcached:1.5.9
+      - image: confluentinc/cp-zookeeper:5.0.0
+        environment:
+          ZOOKEEPER_CLIENT_PORT: "2181"
+      - image: confluentinc/cp-kafka:5.0.0
+        environment:
+          KAFKA_ZOOKEEPER_CONNECT: localhost:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+          KAFKA_CREATE_TOPICS: gotest:1:1
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
 
-    - run:
-        name: Wait for ElasticSearch (1)
-        command: dockerize -wait http://localhost:9200 -timeout 1m
+    steps:
+      - attach_workspace:
+          at: /home/circleci/go
 
-    - run:
-        name: Wait for ElasticSearch (2)
-        command: dockerize -wait http://localhost:9201 -timeout 1m
+      - restore_cache:
+          keys:
+          - v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
+      - run:
+          name: Install librdkafka v1.3.0
+          command: |
+            if [ ! -d /tmp/librdkafka-v1.3.0 ] ; then
+              echo "building librdkafka"
+              git clone --branch v1.3.0 https://github.com/edenhill/librdkafka.git /tmp/librdkafka-v1.3.0
+              (cd /tmp/librdkafka-v1.3.0 && ./configure && make)
+            fi
+            echo "installing librdkafka"
+            (cd /tmp/librdkafka-v1.3.0 && sudo make install)
+            sudo ldconfig
+      - save_cache:
+          key: v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
+          paths:
+          - /tmp/librdkafka-v1.3.0
 
-    - run:
-        name: Wait for Datadog Agent
-        command: dockerize -wait tcp://127.0.0.1:8126 -timeout 1m
+      - run:
+          name: Enforce some dependencies
+          command: |
+            go get k8s.io/client-go@v0.17.0
+            go get k8s.io/apimachinery@v0.17.0
 
-    - run:
-        name: Wait for Cassandra
-        command: dockerize -wait tcp://localhost:9042 -timeout 2m
+      - run:
+          name: Wait for MySQL
+          command: dockerize -wait tcp://localhost:3306 -timeout 1m
 
-    - run:
-        name: Wait for Mongo
-        command: dockerize -wait tcp://localhost:27017 -timeout 1m
+      - run:
+          name: Wait for Postgres
+          command: dockerize -wait tcp://localhost:5432 -timeout 1m
 
-    - run:
-        name: Wait for Consul
-        command: dockerize -wait http://localhost:8500 -timeout 1m
+      - run:
+          name: Wait for Redis
+          command: dockerize -wait tcp://localhost:6379 -timeout 1m
 
-    - run:
-        name: Linting
-        command: |
-          # TODO(gbbr): linting
-          # go get -v -u golang.org/x/lint/golint
-          # golint `go list ./...` | grep -v globalsign/mgo/collection.go
+      - run:
+          name: Wait for ElasticSearch (1)
+          command: dockerize -wait http://localhost:9200 -timeout 1m
 
-    - run:
-        name: Testing
-        command: |
-              INTEGRATION=1 go test -race `go list ./... | grep -v grpc.v12`
-              go get google.golang.org/grpc@v1.2.0
-              go test ./contrib/google.golang.org/grpc.v12/...
+      - run:
+          name: Wait for ElasticSearch (2)
+          command: dockerize -wait http://localhost:9201 -timeout 1m
+
+      - run:
+          name: Wait for Datadog Agent
+          command: dockerize -wait tcp://127.0.0.1:8126 -timeout 1m
+
+      - run:
+          name: Wait for Cassandra
+          command: dockerize -wait tcp://localhost:9042 -timeout 2m
+
+      - run:
+          name: Wait for Mongo
+          command: dockerize -wait tcp://localhost:27017 -timeout 1m
+
+      - run:
+          name: Wait for Consul
+          command: dockerize -wait http://localhost:8500 -timeout 1m
+
+      - run:
+          name: Testing
+          command: |
+                INTEGRATION=1 go test -v -race `go list ./contrib/... | grep -v grpc.v12`
+                go get google.golang.org/grpc@v1.2.0
+                go test -v ./contrib/google.golang.org/grpc.v12/...
+
+workflows:
+  version: 2
+  build-and-test:
+    jobs:
+      - build
+      - test-core:
+          requires:
+            - build
+      - test-contrib:
+          requires:
+          - build
