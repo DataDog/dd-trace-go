@@ -6,7 +6,7 @@ jobs:
     resource_class: xlarge
 
     docker:
-    - image: circleci/golang:1.13
+    - image: circleci/golang:1.12
     - image: cassandra:3.7
     - image: circleci/mysql:5.7
       environment:
@@ -104,6 +104,13 @@ jobs:
           git clone --branch v6.15.3
           https://github.com/go-redis/redis
           contrib/go-redis/redis/vendor/github.com/go-redis/redis
+
+    - run:
+        name: Match k8s versions
+        command: |
+          git clone --branch v0.17.0 https://github.com/kubernetes/client-go $GOPATH/src/k8s.io/client-go
+          git clone --branch v0.17.0 https://github.com/kubernetes/apimachinery $GOPATH/src/k8s.io/apimachinery
+
 
     # CircleCI recommends caches be ~500MB. We split the cache into
     # two parts to achieve this.
