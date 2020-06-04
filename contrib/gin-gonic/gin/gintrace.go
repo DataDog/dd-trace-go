@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,6 +26,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", service, cfg)
 	return func(c *gin.Context) {
 		resource := cfg.resourceNamer(c)
 		opts := []ddtrace.StartSpanOption{

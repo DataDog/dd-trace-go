@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // WrapClient wraps a memcache.Client so that all requests are traced using the
@@ -29,6 +30,7 @@ func WrapClient(client *memcache.Client, opts ...ClientOption) *Client {
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/bradfitz/gomemcache/memcache: Wrapping Client: %#v", cfg)
 	return &Client{
 		Client:  client,
 		cfg:     cfg,

@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/gorilla/mux"
 )
@@ -83,6 +84,7 @@ func NewRouter(opts ...RouterOption) *Router {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
+	log.Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
 	return &Router{
 		Router: mux.NewRouter(),
 		config: cfg,

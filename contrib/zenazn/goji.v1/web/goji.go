@@ -36,6 +36,7 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
+	log.Debug("contrib/zenazn/goji.v1/web: Configuring Middleware: %#v", cfg)
 	return func(c *web.C, h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resource := r.Method
@@ -44,7 +45,7 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 				resource += fmt.Sprintf(" %s", p)
 			} else {
 				warnonce.Do(func() {
-					log.Warn("contrib/zenazn/goji.v1: routes are unavailable. To enable them add the goji Router middleware before the tracer middleware.")
+					log.Warn("contrib/zenazn/goji.v1/web: routes are unavailable. To enable them add the goji Router middleware before the tracer middleware.")
 				})
 			}
 			httputil.TraceAndServe(h, w, r, cfg.serviceName, resource, cfg.finishOpts, cfg.spanOpts...)

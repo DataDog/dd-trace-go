@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/Shopify/sarama"
 )
@@ -35,6 +36,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/Shopify/sarama: Wrapping Partition Consumer: %#v", cfg)
 	wrapped := &partitionConsumer{
 		PartitionConsumer: pc,
 		messages:          make(chan *sarama.ConsumerMessage),
@@ -142,6 +144,7 @@ func WrapSyncProducer(saramaConfig *sarama.Config, producer sarama.SyncProducer,
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/Shopify/sarama: Wrapping Sync Producer: %#v", cfg)
 	if saramaConfig == nil {
 		saramaConfig = sarama.NewConfig()
 	}
@@ -183,6 +186,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/Shopify/sarama: Wrapping Async Producer: %#v", cfg)
 	if saramaConfig == nil {
 		saramaConfig = sarama.NewConfig()
 	}

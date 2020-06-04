@@ -46,6 +46,7 @@ func WrapClient(c HTTPClient, opts ...Option) HTTPClient {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/twitchtv/twirp: Wrapping Client: %#v", cfg)
 	return &wrappedClient{c: c, cfg: cfg}
 }
 
@@ -103,6 +104,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/twitchtv/twirp: Wrapping Server: %#v", cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
@@ -134,6 +136,7 @@ func NewServerHooks(opts ...Option) *twirp.ServerHooks {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/twitchtv/twirp: Creating Server Hooks: %#v", cfg)
 	return &twirp.ServerHooks{
 		RequestReceived:  requestReceivedHook(cfg),
 		RequestRouted:    requestRoutedHook(cfg),

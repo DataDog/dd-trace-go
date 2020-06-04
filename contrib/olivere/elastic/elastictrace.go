@@ -22,6 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // NewHTTPClient returns a new http.Client which traces requests under the given service name.
@@ -31,6 +32,7 @@ func NewHTTPClient(opts ...ClientOption) *http.Client {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/olivere/elastic: Configuring HTTP Client: %#v", cfg)
 	return &http.Client{Transport: &httpTransport{config: cfg}}
 }
 

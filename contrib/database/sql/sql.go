@@ -25,6 +25,7 @@ import (
 	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // registeredDrivers holds a registry of all drivers registered via the sqltrace package.
@@ -98,6 +99,7 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	if cfg.serviceName == "" {
 		cfg.serviceName = driverName + ".db"
 	}
+	log.Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
 	registeredDrivers.add(driverName, driver, cfg)
 }
 

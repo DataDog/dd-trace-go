@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // ListenAndServe calls dns.ListenAndServe with a wrapped Handler.
@@ -35,6 +36,7 @@ type Handler struct {
 
 // WrapHandler creates a new, wrapped DNS handler.
 func WrapHandler(handler dns.Handler) *Handler {
+	log.Debug("contrib/miekg/dns: Wrapping Handler")
 	return &Handler{
 		Handler: handler,
 	}

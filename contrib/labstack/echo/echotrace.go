@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/labstack/echo"
 )
@@ -25,6 +26,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		for _, fn := range opts {
 			fn(cfg)
 		}
+		log.Debug("contrib/labstack/echo: Configuring Middleware: %#v", cfg)
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
