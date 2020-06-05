@@ -64,6 +64,27 @@ jobs:
           curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
           ./bin/gometalinter --disable-all --vendor --deadline=60s --enable=golint ./...
 
+  staticcheck:
+    <<: *plain-go113
+
+    steps:
+    - checkout
+
+    - run:
+        name: setup
+        command: |
+          go get k8s.io/client-go@v0.17.0
+          go get k8s.io/apimachinery@v0.17.0
+
+    - run:
+        name: install
+        command: |
+          go install honnef.co/go/tools/cmd/staticcheck
+          
+    - run:
+        name: staticcheck
+        command: |
+          $GOPATH/bin/staticcheck -checks="inherit,-SA1019,-SA5001" `go list ./... | grep -v /vendor/ | grep -v /grpc.v12`
 
   test-core:
     <<: *plain-go113
@@ -145,7 +166,7 @@ jobs:
           - /tmp/librdkafka-v1.3.0
 
       - run:
-          name: Enforce some dependencies
+          name: Match k8s versions
           command: |
             go get k8s.io/client-go@v0.17.0
             go get k8s.io/apimachinery@v0.17.0
@@ -200,6 +221,7 @@ workflows:
       - build
       - metadata
       - lint
+      - staticcheck
       - test-core:
           requires:
             - build

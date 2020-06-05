@@ -23,10 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const (
-	debug         = false
-	cassandraHost = "127.0.0.1:9042"
-)
+const cassandraHost = "127.0.0.1:9042"
 
 func newCassandraCluster() *gocql.ClusterConfig {
 	cluster := gocql.NewCluster(cassandraHost)
