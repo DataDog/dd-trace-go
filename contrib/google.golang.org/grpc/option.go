@@ -31,13 +31,13 @@ type config struct {
 }
 
 func (cfg *config) serverServiceName() string {
-	if cfg.serviceName == "" {
-		cfg.serviceName = "grpc.server"
-		if svc := globalconfig.ServiceName(); svc != "" {
-			cfg.serviceName = svc
-		}
+	if cfg.serviceName != "" {
+		return cfg.serviceName
 	}
-	return cfg.serviceName
+	if svc := globalconfig.ServiceName(); svc != "" {
+		return svc
+	}
+	return "grpc.server"
 }
 
 func (cfg *config) clientServiceName() string {
