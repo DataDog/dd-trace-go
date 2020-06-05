@@ -8,7 +8,7 @@ plain-go113: &plain-go113
         GOPATH: "/home/circleci/go"
 
 jobs:
-  build:
+  build-go1.12:
     docker:
       - image: circleci/golang:1.12
         environment:
@@ -21,12 +21,6 @@ jobs:
         name: build
         command: |
           go build ./ddtrace/...
-
-    - persist_to_workspace:
-        root: /home/circleci
-        paths:
-          - go
-          - dd-trace-go.v1
 
   metadata:
     <<: *plain-go113
@@ -69,9 +63,7 @@ jobs:
     <<: *plain-go113
 
     steps:
-      - attach_workspace:
-          at: /home/circleci
-
+      - checkout
       - run:
           name: Testing
           command: go test -v -race `go list ./... | grep -v /contrib/`
@@ -122,8 +114,7 @@ jobs:
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
 
     steps:
-      - attach_workspace:
-          at: /home/circleci
+      - checkout
 
       - restore_cache:
           keys:
@@ -197,12 +188,8 @@ workflows:
   version: 2
   build-and-test:
     jobs:
-      - build
+      - build-go1.12
       - metadata
       - lint
-      - test-core:
-          requires:
-            - build
-      - test-contrib:
-          requires:
-          - build
+      - test-core
+      - test-contrib
