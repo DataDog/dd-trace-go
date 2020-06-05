@@ -9,14 +9,13 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestReadContainerID(t *testing.T) {
-	defer func(origCgroupPath string) {
-		cgroupPath = origCgroupPath
-	}(cgroupPath)
-
 	for in, out := range map[string]string{
 		`other_line
 10:hugetlb:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa
@@ -31,13 +30,25 @@ func TestReadContainerID(t *testing.T) {
 		"10:hugetlb:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa": "8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa",
 		"10:hugetlb:/kubepods": "",
 	} {
-		revert := testOverrideCgroup(t, in)
-		defer revert()
-		id := ContainerID()
+		id := readContainerID(strings.NewReader(in))
 		if id != out {
-			t.Fatalf("%q -> %q (expected %q)", in, id, out)
+			t.Fatalf("%q -> %q", in, out)
 		}
 	}
+}
+
+func TestContainerIDCached(t *testing.T) {
+	defer func(origCgroupCID *string) { cgroupCID = origCgroupCID }(cgroupCID)
+
+	cid := "8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa"
+	testOverrideCgroup(t, "10:hugetlb:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/"+cid)
+	actualCID := ContainerID()
+	assert.Equal(t, cid, actualCID)
+
+	// Now we change the cgroup file contents. It shouldn't be read again since previous execution should be cached.
+	testOverrideCgroup(t, "10:hugetlb:/kubepods")
+	actualCID = ContainerID()
+	assert.Equal(t, cid, actualCID)
 }
 
 func testOverrideCgroup(t *testing.T, in string) func() {

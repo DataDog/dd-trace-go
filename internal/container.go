@@ -7,6 +7,7 @@ package internal
 
 import (
 	"bufio"
+	"io"
 	"os"
 	"regexp"
 )
@@ -18,24 +19,37 @@ var (
 	expContainerID = regexp.MustCompile(`([0-9a-f]{8}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{12}|[0-9a-f]{64})(?:.scope)?$`)
 	// cgroupPath is the path to the cgroup file where we can find the container id if one exists.
 	cgroupPath = "/proc/self/cgroup"
+	// cgroupCID is a pointer for the container id last read from cgroupPath. nil means this read hasn't happened yet
+	cgroupCID *string
 )
 
-// ContainerID attempts to return the container ID from /proc/self/cgroup or empty on failure.
-func ContainerID() string {
-	f, err := os.Open(cgroupPath)
-	if err == nil {
-		defer f.Close()
-		scn := bufio.NewScanner(f)
-		for scn.Scan() {
-			path := expLine.FindStringSubmatch(scn.Text())
-			if len(path) != 2 {
-				// invalid entry, continue
-				continue
-			}
-			if id := expContainerID.FindString(path[1]); id != "" {
-				return id
-			}
+// readContainerID finds the first container ID reading from r and returns it.
+func readContainerID(r io.Reader) string {
+	scn := bufio.NewScanner(r)
+	for scn.Scan() {
+		path := expLine.FindStringSubmatch(scn.Text())
+		if len(path) != 2 {
+			// invalid entry, continue
+			continue
+		}
+		if id := expContainerID.FindString(path[1]); id != "" {
+			return id
 		}
 	}
 	return ""
+}
+
+// ContainerID attempts to return the container ID from /proc/self/cgroup or empty on failure.
+func ContainerID() string {
+	if cgroupCID != nil {
+		return *cgroupCID
+	}
+	f, err := os.Open(cgroupPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	cid := readContainerID(f)
+	cgroupCID = &cid
+	return cid
 }

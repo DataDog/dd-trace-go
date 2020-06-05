@@ -89,15 +89,15 @@ func (p *profiler) doRequest(bat batch) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("POST", p.targetURL, body)
+	req, err := http.NewRequest("POST", p.cfg.targetURL, body)
 	if err != nil {
 		return err
 	}
 	if p.cfg.skippingAgent() {
 		req.Header.Set("DD-API-KEY", p.cfg.apiKey)
 	}
-	if p.containerID != "" {
-		req.Header.Set("Datadog-Container-ID", p.containerID)
+	if containerID != "" {
+		req.Header.Set("Datadog-Container-ID", containerID)
 	}
 	req.Header.Set("Content-Type", contentType)
 

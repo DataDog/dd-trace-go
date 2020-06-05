@@ -37,6 +37,7 @@ func TestStart(t *testing.T) {
 		assert.Equal("http://"+net.JoinHostPort(defaultAgentHost, defaultAgentPort)+"/profiling/v1/input",
 			activeProfiler.cfg.agentURL)
 		assert.Equal(defaultAPIURL, activeProfiler.cfg.apiURL)
+		assert.Equal(activeProfiler.cfg.agentURL, activeProfiler.cfg.targetURL)
 		assert.Equal(DefaultPeriod, activeProfiler.cfg.period)
 		assert.Equal(len(defaultProfileTypes), len(activeProfiler.cfg.types))
 		for _, pt := range defaultProfileTypes {
@@ -223,34 +224,6 @@ func TestProfilerPassthrough(t *testing.T) {
 	assert.Equal("samples", firstTypes[1])
 	assert.NotEmpty(bat.profiles[0].data)
 	assert.NotEmpty(bat.profiles[1].data)
-}
-
-func TestStopOnOldAgent(t *testing.T) {
-	p := unstartedProfiler(WithPeriod(100 * time.Millisecond))
-	p.cfg.cpuDuration = 1 * time.Millisecond
-	uploadCount := 0
-	p.uploadFunc = func(bat batch) error {
-		uploadCount++
-		return errOldAgent
-	}
-	p.run()
-	defer p.stop()
-	timeout := time.After(1000 * time.Millisecond)
-	tick := time.NewTicker(200 * time.Millisecond)
-	defer tick.Stop()
-
-out:
-	for {
-		select {
-		case <-p.exit:
-			break out
-		case <-timeout:
-			t.Fatalf("timed out")
-		}
-	}
-
-	// Should have only done 1 upload
-	assert.Equal(t, 1, uploadCount)
 }
 
 func unstartedProfiler(opts ...Option) *profiler {

@@ -7,7 +7,6 @@ package profiler
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 	"net"
 	"net/url"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-go/statsd"
 )
@@ -48,6 +48,7 @@ var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
 
 type config struct {
 	apiKey        string
+	targetURL     string
 	apiURL        string
 	agentURL      string
 	service, env  string
@@ -78,11 +79,12 @@ func (c *config) skippingAgent() bool {
 	return c.apiKey != ""
 }
 
-func (c *config) targetURL() string {
+func (c *config) updateTargetURL() {
 	if c.skippingAgent() {
-		return c.apiURL
+		c.targetURL = c.apiURL
+	} else {
+		c.targetURL = c.agentURL
 	}
-	return c.agentURL
 }
 
 func defaultConfig() *config {
@@ -150,10 +152,11 @@ func defaultConfig() *config {
 // An Option is used to configure the profiler's behaviour.
 type Option func(*config)
 
-// WithAgentAddr specified the hostname to use to reach datadog trace agent.
+// WithAgentAddr specifies the address to use when reaching the Datadog Agent.
 func WithAgentAddr(hostport string) Option {
 	return func(cfg *config) {
 		cfg.agentURL = "http://" + hostport + "/profiling/v1/input"
+		cfg.updateTargetURL()
 	}
 }
 
@@ -161,6 +164,7 @@ func WithAgentAddr(hostport string) Option {
 func WithAPIKey(key string) Option {
 	return func(cfg *config) {
 		cfg.apiKey = key
+		cfg.updateTargetURL()
 	}
 }
 
@@ -168,6 +172,7 @@ func WithAPIKey(key string) Option {
 func WithURL(url string) Option {
 	return func(cfg *config) {
 		cfg.apiURL = url
+		cfg.updateTargetURL()
 	}
 }
 

@@ -65,24 +65,20 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
-	cfg         *config // profile configuration
-	targetURL   string  // url to which we'll try uploading
-	containerID string
-	out         chan batch        // upload queue
-	uploadFunc  func(batch) error // defaults to (*profiler).upload; replaced in tests
-	exit        chan struct{}     // exit signals the profiler to stop; it is closed after stopping
-	stopOnce    sync.Once         // stopOnce ensures the profiler is stopped exactly once.
-	wg          sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
+	cfg        *config           // profile configuration
+	out        chan batch        // upload queue
+	uploadFunc func(batch) error // defaults to (*profiler).upload; replaced in tests
+	exit       chan struct{}     // exit signals the profiler to stop; it is closed after stopping
+	stopOnce   sync.Once         // stopOnce ensures the profiler is stopped exactly once.
+	wg         sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
 }
 
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(cfg *config) *profiler {
 	p := profiler{
-		cfg:         cfg,
-		targetURL:   cfg.targetURL(),
-		containerID: containerID,
-		out:         make(chan batch, outChannelSize),
-		exit:        make(chan struct{}),
+		cfg:  cfg,
+		out:  make(chan batch, outChannelSize),
+		exit: make(chan struct{}),
 	}
 	p.uploadFunc = p.upload
 	return &p
@@ -98,15 +94,15 @@ func (p *profiler) run() {
 	}
 	p.wg.Add(1)
 	go func() {
+		defer p.wg.Done()
 		tick := time.NewTicker(p.cfg.period)
 		defer tick.Stop()
 		p.collect(tick.C)
-		p.wg.Done()
 	}()
 	p.wg.Add(1)
 	go func() {
+		defer p.wg.Done()
 		p.send()
-		p.wg.Done()
 	}()
 }
 
@@ -162,18 +158,8 @@ func (p *profiler) enqueueUpload(bat batch) {
 // send takes profiles from the output queue and uploads them.
 func (p *profiler) send() {
 	for bat := range p.out {
-		if p.uploadFunc == nil {
-			continue
-		}
 		if err := p.uploadFunc(bat); err != nil {
 			log.Error("Failed to upload profile: %v\n", err)
-
-			if err == errOldAgent {
-				// Turn any future uploads into noops since we know they won't work.
-				p.uploadFunc = nil
-				// Trigger stop of the profiler (do it async otherwise we'd deadlock).
-				go p.stop()
-			}
 		}
 	}
 }

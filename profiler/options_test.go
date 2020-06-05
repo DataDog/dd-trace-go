@@ -22,7 +22,7 @@ func TestOptions(t *testing.T) {
 		WithAgentAddr("test:123")(&cfg)
 		expectedURL := "http://test:123/profiling/v1/input"
 		assert.Equal(t, expectedURL, cfg.agentURL)
-		assert.Equal(t, expectedURL, cfg.targetURL())
+		assert.Equal(t, expectedURL, cfg.targetURL)
 	})
 
 	t.Run("WithAgentAddr/override", func(t *testing.T) {
@@ -34,13 +34,15 @@ func TestOptions(t *testing.T) {
 		WithAgentAddr("test:123")(&cfg)
 		expectedURL := "http://test:123/profiling/v1/input"
 		assert.Equal(t, expectedURL, cfg.agentURL)
-		assert.Equal(t, expectedURL, cfg.targetURL())
+		assert.Equal(t, expectedURL, cfg.targetURL)
 	})
 
 	t.Run("WithAPIKey", func(t *testing.T) {
 		var cfg config
 		WithAPIKey("123")(&cfg)
 		assert.Equal(t, "123", cfg.apiKey)
+		assert.True(t, cfg.skippingAgent())
+		assert.Equal(t, cfg.apiURL, cfg.targetURL)
 	})
 
 	t.Run("WithAPIKey/override", func(t *testing.T) {
@@ -49,21 +51,24 @@ func TestOptions(t *testing.T) {
 		var cfg config
 		WithAPIKey("123")(&cfg)
 		assert.Equal(t, "123", cfg.apiKey)
+		assert.True(t, cfg.skippingAgent())
+		assert.Equal(t, cfg.apiURL, cfg.targetURL)
 	})
 
 	t.Run("WithURL", func(t *testing.T) {
 		var cfg config
 		WithURL("my-url")(&cfg)
 		assert.Equal(t, "my-url", cfg.apiURL)
+		assert.Equal(t, cfg.agentURL, cfg.targetURL)
 	})
 
-	t.Run("WithAPIKey + WithURL", func(t *testing.T) {
+	t.Run("WithAPIKey+WithURL", func(t *testing.T) {
 		var cfg config
 		WithAPIKey("123")(&cfg)
 		WithURL("http://test:123/test")(&cfg)
 		assert.Equal(t, "123", cfg.apiKey)
 		assert.True(t, cfg.skippingAgent())
-		assert.Equal(t, "http://test:123/test", cfg.targetURL())
+		assert.Equal(t, "http://test:123/test", cfg.targetURL)
 	})
 
 	t.Run("WithPeriod", func(t *testing.T) {
@@ -239,8 +244,8 @@ func TestDefaultConfig(t *testing.T) {
 		assert := assert.New(t)
 		assert.Equal(defaultAPIURL, cfg.apiURL)
 		assert.Equal(defaultAgentURL, cfg.agentURL)
+		assert.Equal(defaultAgentURL, cfg.targetURL)
 		assert.False(cfg.skippingAgent())
-		assert.Equal(defaultAgentURL, cfg.targetURL())
 		assert.Equal(defaultEnv, cfg.env)
 		assert.Equal(filepath.Base(os.Args[0]), cfg.service)
 		assert.Equal(len(defaultProfileTypes), len(cfg.types))
