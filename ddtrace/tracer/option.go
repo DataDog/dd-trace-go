@@ -89,11 +89,8 @@ type config struct {
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
-func newConfig(opts ...StartOption) *config {
-	c := new(config)
-	c.sampler = NewAllSampler()
-	c.agentAddr = defaultAddress
-
+// loadEnv reads certain config values from the environment.
+func (c *config) loadEnv() {
 	statsdHost, statsdPort := "localhost", "8125"
 	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
 		statsdHost = v
@@ -136,13 +133,11 @@ func newConfig(opts ...StartOption) *config {
 			}
 		}
 	}
+}
 
-	// Apply the user's options
-	for _, fn := range opts {
-		fn(c)
-	}
-
-	// If env, service, or version is unset, look for tags
+// fallbackToTags checks if env, service, and version are set. If not,
+// it tries to load their values from globalTags.
+func (c *config) fallbackToTags() {
 	if c.env == "" {
 		if v, ok := c.globalTags["env"]; ok {
 			if e, ok := v.(string); ok {
@@ -156,8 +151,6 @@ func newConfig(opts ...StartOption) *config {
 				c.serviceName = s
 				globalconfig.SetServiceName(s)
 			}
-		} else {
-			c.serviceName = filepath.Base(os.Args[0])
 		}
 	}
 	if c.version == "" {
@@ -167,7 +160,14 @@ func newConfig(opts ...StartOption) *config {
 			}
 		}
 	}
+}
 
+// defaults ensures that certain fields in the tracer are set to their default
+// values, if a value has not been configured.
+func (c *config) defaults() {
+	if c.serviceName == "" {
+		c.serviceName = filepath.Base(os.Args[0])
+	}
 	if c.transport == nil {
 		c.transport = newTransport(c.agentAddr, c.httpClient)
 	}
@@ -189,7 +189,20 @@ func newConfig(opts ...StartOption) *config {
 			c.statsd = client
 		}
 	}
+}
 
+func newConfig(opts ...StartOption) *config {
+	c := new(config)
+	c.sampler = NewAllSampler()
+	c.agentAddr = defaultAddress
+
+	c.loadEnv()
+
+	for _, fn := range opts {
+		fn(c)
+	}
+	c.fallbackToTags()
+	c.defaults()
 	return c
 }
 
