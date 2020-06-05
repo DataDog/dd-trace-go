@@ -22,7 +22,7 @@ const outChannelSize = 5
 var (
 	mu             sync.Mutex
 	activeProfiler *profiler
-	containerID    = internal.ContainerID()
+	containerID    = internal.ContainerID() // replaced in tests
 )
 
 // Start starts the profiler. It may return an error if an API key is not provided by means of

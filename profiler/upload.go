@@ -27,8 +27,6 @@ var errOldAgent = errors.New("datadog agent is not accepting profiles. Agent-bas
 	"require Datadog agent >= 7.20")
 
 var httpClient = &http.Client{
-	// TODO(alexjf): Lets bump this? Intake times out at 30 seconds, we probably shouldn't bail out earlier than this.
-	//               This might require some reworking of the upload queue though...
 	Timeout: 5 * time.Second,
 }
 

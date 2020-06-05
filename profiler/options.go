@@ -47,10 +47,12 @@ const (
 var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
 
 type config struct {
-	apiKey        string
+	apiKey string
+	// targetURL is the upload destination URL. It will be set by the profiler on start to either apiURL or agentURL
+	// based on the other options.
 	targetURL     string
-	apiURL        string
-	agentURL      string
+	apiURL        string // apiURL is the Datadog intake API URL
+	agentURL      string // agentURL is the Datadog agent profiling URL
 	service, env  string
 	hostname      string
 	statsd        StatsdClient

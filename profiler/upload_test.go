@@ -26,6 +26,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var testBatch = batch{
+	start: time.Now().Add(-10 * time.Second),
+	end:   time.Now(),
+	host:  "my-host",
+	profiles: []*profile{
+		{
+			types: []string{"cpu"},
+			data:  []byte("my-cpu-profile"),
+		},
+		{
+			types: []string{"alloc_objects", "alloc_space"},
+			data:  []byte("my-heap-profile"),
+		},
+	},
+}
+
 func TestTryUpload(t *testing.T) {
 	// Force an empty containerid on this test.
 	defer func(cid string) { containerID = cid }(containerID)
@@ -40,8 +56,7 @@ func TestTryUpload(t *testing.T) {
 		WithTags("tag1:1", "tag2:2"),
 	)
 	require.NoError(t, err)
-	bat := makeFakeBatch()
-	err = p.doRequest(bat)
+	err = p.doRequest(testBatch)
 	require.NoError(t, err)
 	header, fields, tags := waiter()
 
@@ -87,8 +102,7 @@ func TestOldAgent(t *testing.T) {
 		WithTags("tag1:1", "tag2:2"),
 	)
 	require.NoError(t, err)
-	bat := makeFakeBatch()
-	err = p.doRequest(bat)
+	err = p.doRequest(testBatch)
 	assert.Equal(t, errOldAgent, err)
 }
 
@@ -106,8 +120,7 @@ func TestContainerIDHeader(t *testing.T) {
 		WithTags("tag1:1", "tag2:2"),
 	)
 	require.NoError(t, err)
-	bat := makeFakeBatch()
-	err = p.doRequest(bat)
+	err = p.doRequest(testBatch)
 	require.NoError(t, err)
 
 	header, _, _ := waiter()
@@ -202,21 +215,4 @@ func makeTestServer(t *testing.T, statusCode int) (*httptest.Server, *url.URL, t
 	}
 
 	return srv, srvURL, waiter
-}
-
-func makeFakeBatch() batch {
-	cpu := profile{
-		types: []string{"cpu"},
-		data:  []byte("my-cpu-profile"),
-	}
-	heap := profile{
-		types: []string{"alloc_objects", "alloc_space"},
-		data:  []byte("my-heap-profile"),
-	}
-	return batch{
-		start:    time.Now().Add(-10 * time.Second),
-		end:      time.Now(),
-		host:     "my-host",
-		profiles: []*profile{&cpu, &heap},
-	}
 }
