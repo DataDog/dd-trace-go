@@ -195,9 +195,7 @@ func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
-
 	c.loadEnv()
-
 	for _, fn := range opts {
 		fn(c)
 	}
