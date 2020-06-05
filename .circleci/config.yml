@@ -1,13 +1,36 @@
 version: 2
 
+plain-go113: &plain-go113
+  working_directory: /home/circleci/dd-trace-go.v1
+  docker:
+    - image: circleci/golang:1.13
+      environment:
+        GOPATH: "/home/circleci/go"
+
 jobs:
   build:
     docker:
       - image: circleci/golang:1.12
         environment:
-          GO111MODULE: "on"
           GOPATH: "/home/circleci/go"
-    working_directory: /home/circleci/go/src/gopkg.in/DataDog/dd-trace-go.v1
+    working_directory: /home/circleci/dd-trace-go.v1
+    steps:
+    - checkout
+
+    - run:
+        name: build
+        command: |
+          go build ./ddtrace/...
+
+    - persist_to_workspace:
+        root: /home/circleci
+        paths:
+          - go
+          - dd-trace-go.v1
+
+  metadata:
+    <<: *plain-go113
+
     steps:
     - checkout
 
@@ -20,6 +43,12 @@ jobs:
         name: copyright
         command: |
           go run checkcopyright.go
+
+  lint:
+    <<: *plain-go113
+
+    steps:
+    - checkout
 
     - run:
         name: gofmt
@@ -35,29 +64,13 @@ jobs:
           curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
           ./bin/gometalinter --disable-all --vendor --deadline=60s --enable=golint ./...
 
-    - run:
-        name: build
-        command: |
-          go build ./ddtrace/...
-
-    - persist_to_workspace:
-        root: /home/circleci/go
-        paths:
-          - src
-          - pkg
-          - bin
 
   test-core:
-    working_directory: /home/circleci/go/src/gopkg.in/DataDog/dd-trace-go.v1
-    docker:
-      - image: circleci/golang:1.13
-        environment:
-          GO111MODULE: "on"
-          GOPATH: "/home/circleci/go"
+    <<: *plain-go113
 
     steps:
       - attach_workspace:
-          at: /home/circleci/go
+          at: /home/circleci
 
       - run:
           name: Testing
@@ -65,11 +78,10 @@ jobs:
 
   test-contrib:
     resource_class: xlarge
-    working_directory: /home/circleci/go/src/gopkg.in/DataDog/dd-trace-go.v1
+    working_directory: /home/circleci/dd-trace-go.v1
     docker:
       - image: circleci/golang:1.13
         environment:
-          GO111MODULE: "on"
           GOPATH: "/home/circleci/go"
       - image: cassandra:3.7
       - image: circleci/mysql:5.7
@@ -111,7 +123,7 @@ jobs:
 
     steps:
       - attach_workspace:
-          at: /home/circleci/go
+          at: /home/circleci
 
       - restore_cache:
           keys:
@@ -186,6 +198,8 @@ workflows:
   build-and-test:
     jobs:
       - build
+      - metadata
+      - lint
       - test-core:
           requires:
             - build
