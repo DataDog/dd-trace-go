@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	sarama "gopkg.in/Shopify/sarama.v1"
+
+	"github.com/Shopify/sarama"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestConsumer(t *testing.T) {

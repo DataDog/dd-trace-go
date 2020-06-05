@@ -7,7 +7,8 @@ package sarama
 
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	sarama "gopkg.in/Shopify/sarama.v1"
+
+	"github.com/Shopify/sarama"
 )
 
 // A ProducerMessageCarrier injects and extracts traces from a sarama.ProducerMessage.

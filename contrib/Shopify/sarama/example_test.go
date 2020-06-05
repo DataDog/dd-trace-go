@@ -8,9 +8,9 @@ package sarama_test
 import (
 	"log"
 
+	"github.com/Shopify/sarama"
 	saramatrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/Shopify/sarama"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	sarama "gopkg.in/Shopify/sarama.v1"
 )
 
 func Example_asyncProducer() {
