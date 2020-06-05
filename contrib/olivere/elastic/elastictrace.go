@@ -88,7 +88,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 var (
-	idRegexp         = regexp.MustCompile("/([0-9]+)([/\\?]|$)")
+	idRegexp         = regexp.MustCompile(`/([0-9]+)([/\\?]|$)`)
 	idPlaceholder    = []byte("/?$2")
 	indexRegexp      = regexp.MustCompile("[0-9]{2,}")
 	indexPlaceholder = []byte("?")
@@ -138,7 +138,7 @@ func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser,
 			return string(snip), rc2, nil
 		}
 		defer gzr.Close()
-		snip, err = ioutil.ReadAll(gzr)
+		snip, _ = ioutil.ReadAll(gzr)
 	}
 	return string(snip), rc2, err
 }

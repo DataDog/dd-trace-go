@@ -37,6 +37,7 @@ func TestSpanFromContext(t *testing.T) {
 		assert.False(ok)
 		_, ok = span.(*internal.NoopSpan)
 		assert.True(ok)
+		//lint:ignore SA1012 we need to ensure here that no panic occurs
 		span, ok = SpanFromContext(nil)
 		assert.False(ok)
 		_, ok = span.(*internal.NoopSpan)

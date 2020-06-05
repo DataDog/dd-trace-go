@@ -44,7 +44,7 @@ func Test(t *testing.T) {
 
 	span, ctx := tracer.StartSpanFromContext(ctx, "mongodb-test")
 
-	addr := fmt.Sprintf("mongodb://localhost:27017/?connect=direct")
+	addr := "mongodb://localhost:27017/?connect=direct"
 	opts := options.Client()
 	opts.Monitor = NewMonitor()
 	opts.ApplyURI(addr)
@@ -79,7 +79,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 		defer cancel()
 
-		addr := fmt.Sprintf("mongodb://localhost:27017/?connect=direct")
+		addr := "mongodb://localhost:27017/?connect=direct"
 		mongopts := options.Client()
 		mongopts.Monitor = NewMonitor(opts...)
 		mongopts.ApplyURI(addr)

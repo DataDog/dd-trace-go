@@ -139,7 +139,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		assert.Nil(t, err)
 		q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
 		iter := WrapQuery(q, opts...).Iter()
-		err = iter.Close()
+		assert.NoError(t, iter.Close())
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)

@@ -34,7 +34,7 @@ func (q *Query) Iter() *Iter {
 // All invokes and traces Query.All
 func (q *Query) All(result interface{}) error {
 	span := newChildSpanFromContext(q.cfg, q.tags)
-	err := q.All(result)
+	err := q.Query.All(result)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -42,7 +42,7 @@ func (q *Query) All(result interface{}) error {
 // Apply invokes and traces Query.Apply
 func (q *Query) Apply(change mgo.Change, result interface{}) (info *mgo.ChangeInfo, err error) {
 	span := newChildSpanFromContext(q.cfg, q.tags)
-	info, err = q.Apply(change, result)
+	info, err = q.Query.Apply(change, result)
 	span.Finish(tracer.WithError(err))
 	return info, err
 }
@@ -50,7 +50,7 @@ func (q *Query) Apply(change mgo.Change, result interface{}) (info *mgo.ChangeIn
 // Count invokes and traces Query.Count
 func (q *Query) Count() (n int, err error) {
 	span := newChildSpanFromContext(q.cfg, q.tags)
-	n, err = q.Count()
+	n, err = q.Query.Count()
 	span.Finish(tracer.WithError(err))
 	return n, err
 }
@@ -58,7 +58,7 @@ func (q *Query) Count() (n int, err error) {
 // Distinct invokes and traces Query.Distinct
 func (q *Query) Distinct(key string, result interface{}) error {
 	span := newChildSpanFromContext(q.cfg, q.tags)
-	err := q.Distinct(key, result)
+	err := q.Query.Distinct(key, result)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -66,7 +66,7 @@ func (q *Query) Distinct(key string, result interface{}) error {
 // Explain invokes and traces Query.Explain
 func (q *Query) Explain(result interface{}) error {
 	span := newChildSpanFromContext(q.cfg, q.tags)
-	err := q.Explain(result)
+	err := q.Query.Explain(result)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -74,7 +74,7 @@ func (q *Query) Explain(result interface{}) error {
 // For invokes and traces Query.For
 func (q *Query) For(result interface{}, f func() error) error {
 	span := newChildSpanFromContext(q.cfg, q.tags)
-	err := q.For(result, f)
+	err := q.Query.For(result, f)
 	span.Finish(tracer.WithError(err))
 	return err
 }
@@ -82,7 +82,7 @@ func (q *Query) For(result interface{}, f func() error) error {
 // MapReduce invokes and traces Query.MapReduce
 func (q *Query) MapReduce(job *mgo.MapReduce, result interface{}) (info *mgo.MapReduceInfo, err error) {
 	span := newChildSpanFromContext(q.cfg, q.tags)
-	info, err = q.MapReduce(job, result)
+	info, err = q.Query.MapReduce(job, result)
 	span.Finish(tracer.WithError(err))
 	return info, err
 }
@@ -90,7 +90,7 @@ func (q *Query) MapReduce(job *mgo.MapReduce, result interface{}) (info *mgo.Map
 // One invokes and traces Query.One
 func (q *Query) One(result interface{}) error {
 	span := newChildSpanFromContext(q.cfg, q.tags)
-	err := q.One(result)
+	err := q.Query.One(result)
 	span.Finish(tracer.WithError(err))
 	return err
 }

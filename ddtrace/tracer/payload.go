@@ -96,8 +96,8 @@ func (p *payload) reset() {
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
 const (
 	msgpackArrayFix byte = 144  // up to 15 items
-	msgpackArray16       = 0xdc // up to 2^16-1 items, followed by size in 2 bytes
-	msgpackArray32       = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
+	msgpackArray16  byte = 0xdc // up to 2^16-1 items, followed by size in 2 bytes
+	msgpackArray32  byte = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
 )
 
 // updateHeader updates the payload header based on the number of items currently

@@ -22,8 +22,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const debug = false
-
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
 	if !ok {

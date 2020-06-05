@@ -24,8 +24,6 @@ import (
 	"testing"
 )
 
-const debug = false
-
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
 	if !ok {
@@ -336,6 +334,7 @@ func TestResourceNamerSettings(t *testing.T) {
 			Type("tweet").
 			Id("1").Do(context.TODO())
 
+		assert.NoError(t, err)
 		span := mt.FinishedSpans()[0]
 		assert.Equal(t, "GET /logs_?_?/event/_search/tweet/?", span.Tag(ext.ResourceName))
 	})
@@ -358,6 +357,7 @@ func TestResourceNamerSettings(t *testing.T) {
 			Type("tweet").
 			Id("1").Do(context.TODO())
 
+		assert.NoError(t, err)
 		span := mt.FinishedSpans()[0]
 		assert.Equal(t, staticName, span.Tag(ext.ResourceName))
 	})

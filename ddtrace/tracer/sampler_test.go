@@ -293,7 +293,7 @@ func TestRulesSampler(t *testing.T) {
 			{ServiceRule("test-service", 1.0)},
 			{NameRule("http.request", 1.0)},
 			{NameServiceRule("http.request", "test-service", 1.0)},
-			{{Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile("http\\..*"), Rate: 1.0}},
+			{{Service: regexp.MustCompile(`^test-`), Name: regexp.MustCompile(`http\..*`), Rate: 1.0}},
 			{ServiceRule("other-service-1", 0.0), ServiceRule("other-service-2", 0.0), ServiceRule("test-service", 1.0)},
 		}
 		for _, v := range ruleSets {
@@ -315,8 +315,8 @@ func TestRulesSampler(t *testing.T) {
 			{ServiceRule("toast-service", 1.0)},
 			{NameRule("grpc.request", 1.0)},
 			{NameServiceRule("http.request", "toast-service", 1.0)},
-			{{Service: regexp.MustCompile("^toast-"), Name: regexp.MustCompile("http\\..*"), Rate: 1.0}},
-			{{Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile("grpc\\..*"), Rate: 1.0}},
+			{{Service: regexp.MustCompile(`^toast-`), Name: regexp.MustCompile(`http\..*`), Rate: 1.0}},
+			{{Service: regexp.MustCompile(`^test-`), Name: regexp.MustCompile(`grpc\..*`), Rate: 1.0}},
 			{ServiceRule("other-service-1", 0.0), ServiceRule("other-service-2", 0.0), ServiceRule("toast-service", 1.0)},
 		}
 		for _, v := range ruleSets {

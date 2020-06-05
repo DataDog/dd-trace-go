@@ -60,30 +60,24 @@ func TestAsyncSpanRace(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				select {
-				case <-done:
-					root.Finish()
-					for i := 0; i < 500; i++ {
-						for range root.(*span).Metrics {
-							// this range simulates iterating over the metrics map
-							// as we do when encoding msgpack upon flushing.
-						}
+				<-done
+				root.Finish()
+				for i := 0; i < 500; i++ {
+					for range root.(*span).Metrics {
+						// this range simulates iterating over the metrics map
+						// as we do when encoding msgpack upon flushing.
 					}
-					return
 				}
 			}()
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				select {
-				case <-done:
-					for i := 0; i < 50; i++ {
-						// to trigger the bug, the child should be created after the root was finished,
-						// as its being flushed
-						child, _ := StartSpanFromContext(ctx, "child", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
-						child.Finish()
-					}
-					return
+				<-done
+				for i := 0; i < 50; i++ {
+					// to trigger the bug, the child should be created after the root was finished,
+					// as its being flushed
+					child, _ := StartSpanFromContext(ctx, "child", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+					child.Finish()
 				}
 			}()
 			// closing will attempt trigger the two goroutines at approximately the same time.

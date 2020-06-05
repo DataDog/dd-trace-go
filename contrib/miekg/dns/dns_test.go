@@ -6,6 +6,7 @@
 package dns
 
 import (
+	"log"
 	"net"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func TestDNS(t *testing.T) {
 	go func() {
 		err := ListenAndServe(addr, "udp", mux)
 		if err != nil {
-			t.Fatal(err)
+			log.Fatal(err)
 		}
 	}()
 	waitTillUDPReady(t, addr)

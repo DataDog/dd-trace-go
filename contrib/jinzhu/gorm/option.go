@@ -12,7 +12,6 @@ import (
 type config struct {
 	serviceName   string
 	analyticsRate float64
-	dsn           string
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.

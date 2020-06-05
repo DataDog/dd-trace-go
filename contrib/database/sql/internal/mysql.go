@@ -17,7 +17,6 @@
 package internal
 
 import (
-	"crypto/tls"
 	"errors"
 	"strings"
 	"time"
@@ -58,7 +57,6 @@ type mySQLConfig struct {
 	Loc              *time.Location    // Location for time.Time values
 	MaxAllowedPacket int               // Max packet size allowed
 	TLSConfig        string            // TLS configuration name
-	tls              *tls.Config       // TLS configuration
 	Timeout          time.Duration     // Dial timeout
 	ReadTimeout      time.Duration     // I/O read timeout
 	WriteTimeout     time.Duration     // I/O write timeout
