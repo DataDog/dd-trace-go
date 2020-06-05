@@ -6,13 +6,8 @@
 package internal
 
 import (
-	"io"
-	"io/ioutil"
-	"os"
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestReadContainerID(t *testing.T) {
@@ -34,42 +29,5 @@ func TestReadContainerID(t *testing.T) {
 		if id != out {
 			t.Fatalf("%q -> %q", in, out)
 		}
-	}
-}
-
-func TestContainerIDCached(t *testing.T) {
-	defer func(origCgroupCID *string) { cgroupCID = origCgroupCID }(cgroupCID)
-
-	cid := "8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa"
-	testOverrideCgroup(t, "10:hugetlb:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/"+cid)
-	actualCID := ContainerID()
-	assert.Equal(t, cid, actualCID)
-
-	// Now we change the cgroup file contents. It shouldn't be read again since previous execution should be cached.
-	testOverrideCgroup(t, "10:hugetlb:/kubepods")
-	actualCID = ContainerID()
-	assert.Equal(t, cid, actualCID)
-}
-
-func testOverrideCgroup(t *testing.T, in string) func() {
-	origCgroupPath := cgroupPath
-
-	tmpFile, err := ioutil.TempFile(os.TempDir(), "fake-cgroup-")
-	if err != nil {
-		t.Fatalf("failed to create fake cgroup file: %v", err)
-	}
-	cgroupPath = tmpFile.Name()
-	_, err = io.WriteString(tmpFile, in)
-	if err != nil {
-		t.Fatalf("failed writing to fake cgroup file: %v", err)
-	}
-	err = tmpFile.Close()
-	if err != nil {
-		t.Fatalf("failed closing fake cgroup file: %v", err)
-	}
-
-	return func() {
-		os.Remove(tmpFile.Name())
-		cgroupPath = origCgroupPath
 	}
 }

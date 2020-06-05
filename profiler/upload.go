@@ -93,7 +93,7 @@ func (p *profiler) doRequest(bat batch) error {
 	if err != nil {
 		return err
 	}
-	if p.cfg.skippingAgent() {
+	if p.cfg.targetURL == p.cfg.apiURL {
 		req.Header.Set("DD-API-KEY", p.cfg.apiKey)
 	}
 	if containerID != "" {
@@ -110,7 +110,7 @@ func (p *profiler) doRequest(bat batch) error {
 		// 5xx can be retried
 		return &retriableError{errors.New(resp.Status)}
 	}
-	if resp.StatusCode == 404 && !p.cfg.skippingAgent() {
+	if resp.StatusCode == 404 && p.cfg.targetURL == p.cfg.agentURL {
 		// 404 from the agent means we have an old agent version without profiling endpoint
 		return errOldAgent
 	}

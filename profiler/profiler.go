@@ -28,25 +28,15 @@ var (
 // Start starts the profiler. It may return an error if an API key is not provided by means of
 // the WithAPIKey option, or if a hostname is not found.
 func Start(opts ...Option) error {
-	cfg := defaultConfig()
-	for _, opt := range opts {
-		opt(cfg)
-	}
-	if cfg.hostname == "" {
-		hostname, err := os.Hostname()
-		if err != nil {
-			if cfg.skippingAgent() {
-				return fmt.Errorf("could not obtain hostname: %v; try specifying it using profiler.WithHostname", err)
-			}
-			log.Warn("unable to look up hostname: %v", err)
-		}
-		cfg.hostname = hostname
-	}
 	mu.Lock()
 	if activeProfiler != nil {
 		activeProfiler.stop()
 	}
-	activeProfiler = newProfiler(cfg)
+	p, err := newProfiler(opts...)
+	if err != nil {
+		return err
+	}
+	activeProfiler = p
 	activeProfiler.run()
 	mu.Unlock()
 	return nil
@@ -74,14 +64,33 @@ type profiler struct {
 }
 
 // newProfiler creates a new, unstarted profiler.
-func newProfiler(cfg *config) *profiler {
+func newProfiler(opts ...Option) (*profiler, error) {
+	cfg := defaultConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	if cfg.apiKey != "" {
+		cfg.targetURL = cfg.apiURL
+	} else {
+		cfg.targetURL = cfg.agentURL
+	}
+	if cfg.hostname == "" {
+		hostname, err := os.Hostname()
+		if err != nil {
+			if cfg.targetURL == cfg.apiURL {
+				return nil, fmt.Errorf("could not obtain hostname: %v; try specifying it using profiler.WithHostname", err)
+			}
+			log.Warn("unable to look up hostname: %v", err)
+		}
+		cfg.hostname = hostname
+	}
 	p := profiler{
 		cfg:  cfg,
 		out:  make(chan batch, outChannelSize),
 		exit: make(chan struct{}),
 	}
 	p.uploadFunc = p.upload
-	return &p
+	return &p, nil
 }
 
 // run runs the profiler.

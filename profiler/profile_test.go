@@ -21,7 +21,7 @@ func TestRunProfile(t *testing.T) {
 			_, err := w.Write([]byte("my-heap-profile"))
 			return err
 		}
-		p := unstartedProfiler()
+		p, err := unstartedProfiler()
 		prof, err := p.runProfile(HeapProfile)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []string{
@@ -39,7 +39,7 @@ func TestRunProfile(t *testing.T) {
 		defer func(old func()) { stopCPUProfile = old }(stopCPUProfile)
 		stopCPUProfile = func() {}
 
-		p := unstartedProfiler(CPUDuration(10 * time.Millisecond))
+		p, err := unstartedProfiler(CPUDuration(10 * time.Millisecond))
 		start := time.Now()
 		prof, err := p.runProfile(CPUProfile)
 		end := time.Now()
@@ -58,7 +58,7 @@ func TestRunProfile(t *testing.T) {
 			return err
 		}
 
-		p := unstartedProfiler()
+		p, err := unstartedProfiler()
 		prof, err := p.runProfile(MutexProfile)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []string{
@@ -74,7 +74,7 @@ func TestRunProfile(t *testing.T) {
 			return err
 		}
 
-		p := unstartedProfiler()
+		p, err := unstartedProfiler()
 		prof, err := p.runProfile(BlockProfile)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, []string{

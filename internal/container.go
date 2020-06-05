@@ -17,11 +17,19 @@ var (
 	expLine = regexp.MustCompile(`^\d+:[^:]*:(.+)$`)
 	// expContainerID matches contained IDs and sources. Source: https://github.com/Qard/container-info/blob/master/index.js
 	expContainerID = regexp.MustCompile(`([0-9a-f]{8}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{12}|[0-9a-f]{64})(?:.scope)?$`)
-	// cgroupPath is the path to the cgroup file where we can find the container id if one exists.
-	cgroupPath = "/proc/self/cgroup"
-	// cgroupCID is a pointer for the container id last read from cgroupPath. nil means this read hasn't happened yet
-	cgroupCID *string
+	// containerID is the containerID read at init from /proc/self/cgroup
+	containerID string
 )
+
+func init() {
+	f, err := os.Open("/proc/self/cgroup")
+	if err != nil {
+		containerID = ""
+		return
+	}
+	defer f.Close()
+	containerID = readContainerID(f)
+}
 
 // readContainerID finds the first container ID reading from r and returns it.
 func readContainerID(r io.Reader) string {
@@ -39,17 +47,7 @@ func readContainerID(r io.Reader) string {
 	return ""
 }
 
-// ContainerID attempts to return the container ID from /proc/self/cgroup or empty on failure.
+// ContainerID returns the container id read from /proc/self/cgroup on app init.
 func ContainerID() string {
-	if cgroupCID != nil {
-		return *cgroupCID
-	}
-	f, err := os.Open(cgroupPath)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	cid := readContainerID(f)
-	cgroupCID = &cid
-	return cid
+	return containerID
 }

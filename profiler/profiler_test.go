@@ -33,7 +33,6 @@ func TestStart(t *testing.T) {
 		if host, err := os.Hostname(); err != nil {
 			assert.Equal(host, activeProfiler.cfg.hostname)
 		}
-		assert.False(activeProfiler.cfg.skippingAgent())
 		assert.Equal("http://"+net.JoinHostPort(defaultAgentHost, defaultAgentPort)+"/profiling/v1/input",
 			activeProfiler.cfg.agentURL)
 		assert.Equal(defaultAPIURL, activeProfiler.cfg.apiURL)
@@ -117,10 +116,11 @@ func TestStartStopIdempotency(t *testing.T) {
 
 func TestProfilerInternal(t *testing.T) {
 	t.Run("collect", func(t *testing.T) {
-		p := unstartedProfiler(
+		p, err := unstartedProfiler(
 			CPUDuration(1*time.Millisecond),
 			WithProfileTypes(HeapProfile, CPUProfile),
 		)
+		require.NoError(t, err)
 		var startCPU, stopCPU, writeHeap uint64
 		defer func(old func(_ io.Writer) error) { startCPUProfile = old }(startCPUProfile)
 		startCPUProfile = func(_ io.Writer) error {
@@ -174,7 +174,8 @@ func TestSetProfileFraction(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		start := runtime.SetMutexProfileFraction(-1)
 		defer runtime.SetMutexProfileFraction(start)
-		p := unstartedProfiler(WithProfileTypes(MutexProfile))
+		p, err := unstartedProfiler(WithProfileTypes(MutexProfile))
+		require.NoError(t, err)
 		p.run()
 		p.stop()
 		assert.NotEqual(t, start, runtime.SetMutexProfileFraction(-1))
@@ -183,7 +184,8 @@ func TestSetProfileFraction(t *testing.T) {
 	t.Run("off", func(t *testing.T) {
 		start := runtime.SetMutexProfileFraction(-1)
 		defer runtime.SetMutexProfileFraction(start)
-		p := unstartedProfiler()
+		p, err := unstartedProfiler()
+		require.NoError(t, err)
 		p.run()
 		p.stop()
 		assert.Equal(t, start, runtime.SetMutexProfileFraction(-1))
@@ -195,10 +197,10 @@ func TestProfilerPassthrough(t *testing.T) {
 		return
 	}
 	out := make(chan batch)
-	cfg := defaultConfig()
-	cfg.period = 200 * time.Millisecond
-	cfg.cpuDuration = 1 * time.Millisecond
-	p := newProfiler(cfg)
+	p, err := newProfiler()
+	require.NoError(t, err)
+	p.cfg.period = 200 * time.Millisecond
+	p.cfg.cpuDuration = 1 * time.Millisecond
 	p.uploadFunc = func(bat batch) error {
 		out <- bat
 		return nil
@@ -226,12 +228,11 @@ func TestProfilerPassthrough(t *testing.T) {
 	assert.NotEmpty(bat.profiles[1].data)
 }
 
-func unstartedProfiler(opts ...Option) *profiler {
-	cfg := defaultConfig()
-	for _, opt := range opts {
-		opt(cfg)
+func unstartedProfiler(opts ...Option) (*profiler, error) {
+	p, err := newProfiler(opts...)
+	if err != nil {
+		return nil, err
 	}
-	p := newProfiler(cfg)
 	p.uploadFunc = func(_ batch) error { return nil }
-	return p
+	return p, nil
 }

@@ -33,14 +33,15 @@ func TestTryUpload(t *testing.T) {
 
 	srv, srvURL, waiter := makeTestServer(t, 200)
 	defer srv.Close()
-	p := unstartedProfiler(
+	p, err := unstartedProfiler(
 		WithAgentAddr(srvURL.Host),
 		WithService("my-service"),
 		WithEnv("my-env"),
 		WithTags("tag1:1", "tag2:2"),
 	)
+	require.NoError(t, err)
 	bat := makeFakeBatch()
-	err := p.doRequest(bat)
+	err = p.doRequest(bat)
 	require.NoError(t, err)
 	header, fields, tags := waiter()
 
@@ -79,14 +80,15 @@ func TestTryUpload(t *testing.T) {
 func TestOldAgent(t *testing.T) {
 	srv, srvURL, _ := makeTestServer(t, 404)
 	defer srv.Close()
-	p := unstartedProfiler(
+	p, err := unstartedProfiler(
 		WithAgentAddr(srvURL.Host),
 		WithService("my-service"),
 		WithEnv("my-env"),
 		WithTags("tag1:1", "tag2:2"),
 	)
+	require.NoError(t, err)
 	bat := makeFakeBatch()
-	err := p.doRequest(bat)
+	err = p.doRequest(bat)
 	assert.Equal(t, errOldAgent, err)
 }
 
@@ -97,14 +99,15 @@ func TestContainerIDHeader(t *testing.T) {
 
 	srv, srvURL, waiter := makeTestServer(t, 200)
 	defer srv.Close()
-	p := unstartedProfiler(
+	p, err := unstartedProfiler(
 		WithAgentAddr(srvURL.Host),
 		WithService("my-service"),
 		WithEnv("my-env"),
 		WithTags("tag1:1", "tag2:2"),
 	)
+	require.NoError(t, err)
 	bat := makeFakeBatch()
-	err := p.doRequest(bat)
+	err = p.doRequest(bat)
 	require.NoError(t, err)
 
 	header, _, _ := waiter()
@@ -131,7 +134,8 @@ func BenchmarkDoRequest(b *testing.B) {
 		host:     "my-host",
 		profiles: []*profile{&prof},
 	}
-	p := unstartedProfiler()
+	p, err := unstartedProfiler()
+	require.NoError(b, err)
 	b.ReportAllocs()
 	b.ResetTimer()
 

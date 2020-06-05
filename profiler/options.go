@@ -75,18 +75,6 @@ func (c *config) addProfileType(t ProfileType) {
 	c.types[t] = struct{}{}
 }
 
-func (c *config) skippingAgent() bool {
-	return c.apiKey != ""
-}
-
-func (c *config) updateTargetURL() {
-	if c.skippingAgent() {
-		c.targetURL = c.apiURL
-	} else {
-		c.targetURL = c.agentURL
-	}
-}
-
 func defaultConfig() *config {
 	c := config{
 		env:           defaultEnv,
@@ -156,7 +144,6 @@ type Option func(*config)
 func WithAgentAddr(hostport string) Option {
 	return func(cfg *config) {
 		cfg.agentURL = "http://" + hostport + "/profiling/v1/input"
-		cfg.updateTargetURL()
 	}
 }
 
@@ -164,7 +151,6 @@ func WithAgentAddr(hostport string) Option {
 func WithAPIKey(key string) Option {
 	return func(cfg *config) {
 		cfg.apiKey = key
-		cfg.updateTargetURL()
 	}
 }
 
@@ -172,7 +158,6 @@ func WithAPIKey(key string) Option {
 func WithURL(url string) Option {
 	return func(cfg *config) {
 		cfg.apiURL = url
-		cfg.updateTargetURL()
 	}
 }
 
