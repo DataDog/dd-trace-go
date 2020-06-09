@@ -190,3 +190,9 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("", globalconfig.ServiceName())
 	})
 }
+
+func TestGlobalTag(t *testing.T) {
+	var c config
+	WithGlobalTag("k", "v")(&c)
+	assert.Contains(t, statsTags(&c), "k:v")
+}

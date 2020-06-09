@@ -147,9 +147,9 @@ func statsTags(c *config) []string {
 	if c.hostname != "" {
 		tags = append(tags, "host:"+c.hostname)
 	}
-	if v, ok := c.globalTags[ext.Environment]; ok {
-		if vv, ok := v.(string); ok {
-			tags = append(tags, "env:"+vv)
+	for k, v := range c.globalTags {
+		if vstr, ok := v.(string); ok {
+			tags = append(tags, k+":"+vstr)
 		}
 	}
 	return tags
