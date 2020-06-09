@@ -158,8 +158,7 @@ func newConfig(opts ...StartOption) *config {
 				c.serviceName = s
 				globalconfig.SetServiceName(s)
 			}
-		}
-		else {
+		} else {
 			c.serviceName = filepath.Base(os.Args[0])
 		}
 	}
