@@ -57,7 +57,7 @@ jobs:
         command: |
           go get -u golang.org/x/lint/golint
           curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
-          ./bin/gometalinter --disable-all --vendor --deadline=600s --enable=golint ./...
+          ./bin/gometalinter --disable-all --vendor --deadline=60s --enable=golint ./...
 
 
   test-core:
