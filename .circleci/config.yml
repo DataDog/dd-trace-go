@@ -61,13 +61,14 @@ jobs:
 
 
   test-core:
+    resource_class: xlarge
     <<: *plain-go113
 
     steps:
       - checkout
       - run:
           name: Testing
-          command: go test -v -timeout 60s -race `go list ./... | grep -v /contrib/`
+          command: go test -v -race `go list ./... | grep -v /contrib/`
 
   test-contrib:
     resource_class: xlarge
