@@ -92,8 +92,7 @@ func newHTTPTransport(addr string, client *http.Client) *httpTransport {
 		"Datadog-Meta-Tracer-Version":   version.Tag,
 		"Content-Type":                  "application/msgpack",
 	}
-	cid := internal.ContainerID()
-	if cid != "" {
+	if cid := internal.ContainerID(); cid != "" {
 		defaultHeaders["Datadog-Container-ID"] = cid
 	}
 	return &httpTransport{

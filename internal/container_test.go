@@ -30,7 +30,7 @@ func TestReadContainerID(t *testing.T) {
 		"10:hugetlb:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa": "8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa",
 		"10:hugetlb:/kubepods": "",
 	} {
-		id := readContainerID(strings.NewReader(in))
+		id := parseContainerID(strings.NewReader(in))
 		if id != out {
 			t.Fatalf("%q -> %q", in, out)
 		}
@@ -38,8 +38,6 @@ func TestReadContainerID(t *testing.T) {
 }
 
 func TestReadContainerIDFromCgroup(t *testing.T) {
-	defer func(p string) { cgroupPath = p }(cgroupPath)
-
 	cid := "8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa"
 	cgroupContents := "10:hugetlb:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/" + cid
 
@@ -48,7 +46,6 @@ func TestReadContainerIDFromCgroup(t *testing.T) {
 		t.Fatalf("failed to create fake cgroup file: %v", err)
 	}
 	defer os.Remove(tmpFile.Name())
-	cgroupPath = tmpFile.Name()
 	_, err = io.WriteString(tmpFile, cgroupContents)
 	if err != nil {
 		t.Fatalf("failed writing to fake cgroup file: %v", err)
@@ -58,6 +55,6 @@ func TestReadContainerIDFromCgroup(t *testing.T) {
 		t.Fatalf("failed closing fake cgroup file: %v", err)
 	}
 
-	actualCID := readContainerIDFromCgroup()
+	actualCID := readContainerID(tmpFile.Name())
 	assert.Equal(t, cid, actualCID)
 }
