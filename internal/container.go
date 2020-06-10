@@ -22,6 +22,7 @@ var (
 	expLine = regexp.MustCompile(`^\d+:[^:]*:(.+)$`)
 	// expContainerID matches contained IDs and sources. Source: https://github.com/Qard/container-info/blob/master/index.js
 	expContainerID = regexp.MustCompile(`([0-9a-f]{8}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{12}|[0-9a-f]{64})(?:.scope)?$`)
+
 	// containerID is the containerID read at init from /proc/self/cgroup
 	containerID string
 )
