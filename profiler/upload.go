@@ -23,6 +23,9 @@ import (
 // maxRetries specifies the maximum number of retries to have when an error occurs.
 const maxRetries = 2
 
+var errOldAgent = errors.New("Datadog Agent is not accepting profiles. Agent-based profiling deployments " +
+	"require Datadog Agent >= 7.20")
+
 var httpClient = &http.Client{
 	Timeout: 5 * time.Second,
 }
@@ -84,11 +87,16 @@ func (p *profiler) doRequest(bat batch) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("POST", p.cfg.apiURL, body)
+	req, err := http.NewRequest("POST", p.cfg.targetURL, body)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("DD-API-KEY", p.cfg.apiKey)
+	if p.cfg.apiKey != "" {
+		req.Header.Set("DD-API-KEY", p.cfg.apiKey)
+	}
+	if containerID != "" {
+		req.Header.Set("Datadog-Container-ID", containerID)
+	}
 	req.Header.Set("Content-Type", contentType)
 
 	resp, err := httpClient.Do(req)
@@ -99,6 +107,10 @@ func (p *profiler) doRequest(bat batch) error {
 	if resp.StatusCode/100 == 5 {
 		// 5xx can be retried
 		return &retriableError{errors.New(resp.Status)}
+	}
+	if resp.StatusCode == 404 && p.cfg.targetURL == p.cfg.agentURL {
+		// 404 from the agent means we have an old agent version without profiling endpoint
+		return errOldAgent
 	}
 	if resp.StatusCode != 200 {
 		return errors.New(resp.Status)

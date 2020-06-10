@@ -6,13 +6,13 @@
 package profiler
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"runtime"
 	"sync"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -22,33 +22,21 @@ const outChannelSize = 5
 var (
 	mu             sync.Mutex
 	activeProfiler *profiler
+	containerID    = internal.ContainerID() // replaced in tests
 )
-
-// ErrMissingAPIKey is returned when an API key was not found by the profiler.
-var ErrMissingAPIKey = errors.New("API key is missing; provide it using the profiler.WithAPIKey option")
 
 // Start starts the profiler. It may return an error if an API key is not provided by means of
 // the WithAPIKey option, or if a hostname is not found.
 func Start(opts ...Option) error {
-	cfg := defaultConfig()
-	for _, opt := range opts {
-		opt(cfg)
-	}
-	if cfg.apiKey == "" {
-		return ErrMissingAPIKey
-	}
-	if cfg.hostname == "" {
-		hostname, err := os.Hostname()
-		if err != nil {
-			return fmt.Errorf("could not obtain hostname: %v; try specifying it using profiler.WithHostname", err)
-		}
-		cfg.hostname = hostname
-	}
 	mu.Lock()
 	if activeProfiler != nil {
 		activeProfiler.stop()
 	}
-	activeProfiler = newProfiler(cfg)
+	p, err := newProfiler(opts...)
+	if err != nil {
+		return err
+	}
+	activeProfiler = p
 	activeProfiler.run()
 	mu.Unlock()
 	return nil
@@ -71,17 +59,38 @@ type profiler struct {
 	out        chan batch        // upload queue
 	uploadFunc func(batch) error // defaults to (*profiler).upload; replaced in tests
 	exit       chan struct{}     // exit signals the profiler to stop; it is closed after stopping
+	stopOnce   sync.Once         // stopOnce ensures the profiler is stopped exactly once.
+	wg         sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
 }
 
 // newProfiler creates a new, unstarted profiler.
-func newProfiler(cfg *config) *profiler {
+func newProfiler(opts ...Option) (*profiler, error) {
+	cfg := defaultConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	if cfg.apiKey != "" {
+		cfg.targetURL = cfg.apiURL
+	} else {
+		cfg.targetURL = cfg.agentURL
+	}
+	if cfg.hostname == "" {
+		hostname, err := os.Hostname()
+		if err != nil {
+			if cfg.targetURL == cfg.apiURL {
+				return nil, fmt.Errorf("could not obtain hostname: %v; try specifying it using profiler.WithHostname", err)
+			}
+			log.Warn("unable to look up hostname: %v", err)
+		}
+		cfg.hostname = hostname
+	}
 	p := profiler{
 		cfg:  cfg,
 		out:  make(chan batch, outChannelSize),
 		exit: make(chan struct{}),
 	}
 	p.uploadFunc = p.upload
-	return &p
+	return &p, nil
 }
 
 // run runs the profiler.
@@ -92,12 +101,18 @@ func (p *profiler) run() {
 	if _, ok := p.cfg.types[BlockProfile]; ok {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
 	}
+	p.wg.Add(1)
 	go func() {
+		defer p.wg.Done()
 		tick := time.NewTicker(p.cfg.period)
 		defer tick.Stop()
 		p.collect(tick.C)
 	}()
-	go p.send()
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		p.send()
+	}()
 }
 
 // collect runs the profile types found in the configuration whenever the ticker receives
@@ -151,7 +166,6 @@ func (p *profiler) enqueueUpload(bat batch) {
 
 // send takes profiles from the output queue and uploads them.
 func (p *profiler) send() {
-	defer close(p.exit)
 	for bat := range p.out {
 		if err := p.uploadFunc(bat); err != nil {
 			log.Error("Failed to upload profile: %v\n", err)
@@ -161,15 +175,10 @@ func (p *profiler) send() {
 
 // stop stops the profiler.
 func (p *profiler) stop() {
-	select {
-	case <-p.exit:
-		// already stopped
-		return
-	default:
-		// running
-	}
-	p.exit <- struct{}{}
-	<-p.exit
+	p.stopOnce.Do(func() {
+		close(p.exit)
+	})
+	p.wg.Wait()
 }
 
 // StatsdClient implementations can count and time certain event occurrences that happen
