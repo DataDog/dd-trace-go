@@ -6,8 +6,13 @@
 package internal
 
 import (
+	"io"
+	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestReadContainerID(t *testing.T) {
@@ -30,4 +35,29 @@ func TestReadContainerID(t *testing.T) {
 			t.Fatalf("%q -> %q", in, out)
 		}
 	}
+}
+
+func TestReadContainerIDFromCgroup(t *testing.T) {
+	defer func(p string) { cgroupPath = p }(cgroupPath)
+
+	cid := "8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa"
+	cgroupContents := "10:hugetlb:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/" + cid
+
+	tmpFile, err := ioutil.TempFile(os.TempDir(), "fake-cgroup-")
+	if err != nil {
+		t.Fatalf("failed to create fake cgroup file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	cgroupPath = tmpFile.Name()
+	_, err = io.WriteString(tmpFile, cgroupContents)
+	if err != nil {
+		t.Fatalf("failed writing to fake cgroup file: %v", err)
+	}
+	err = tmpFile.Close()
+	if err != nil {
+		t.Fatalf("failed closing fake cgroup file: %v", err)
+	}
+
+	actualCID := readContainerIDFromCgroup()
+	assert.Equal(t, cid, actualCID)
 }
