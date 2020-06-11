@@ -1,0 +1,25 @@
+stages:
+  - deploy
+
+variables:
+  INDEX_FILE: index.txt
+
+.common: &common
+  tags: [ "runner:main", "size:large" ]
+
+copy_to_s3:
+  <<: *common
+  stage: deploy
+  image: registry.gitlab.com/gitlab-org/cloud-deploy/aws-base:latest
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "v1"'
+      when: on_success
+  script:
+    - export ACCESS_KEY_ID=$(aws ssm get-parameter --region us-east-1 --name ci.dd-trace-go.secret_key_id --with-decryption --query "Parameter.Value" --out text)
+    - export SECRET_ACCESS_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.dd-trace-go.secret_sec_key_id --with-decryption --query "Parameter.Value" --out text)
+    - export AWS_ACCESS_KEY_ID=$ACCESS_KEY_ID
+    - export AWS_SECRET_ACCESS_KEY=$SECRET_ACCESS_KEY
+    - echo $CI_COMMIT_REF_NAME >> $INDEX_FILE
+    - echo $CI_COMMIT_SHA >> $INDEX_FILE
+    - echo $GITLAB_USER_NAME >> $INDEX_FILE
+    - aws s3 cp $INDEX_FILE s3://datadog-reliability-env/go/$INDEX_FILE
