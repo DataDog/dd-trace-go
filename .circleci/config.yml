@@ -143,40 +143,17 @@ jobs:
             go get k8s.io/apimachinery@v0.17.0
 
       - run:
-          name: Wait for MySQL
-          command: dockerize -wait tcp://localhost:3306 -timeout 1m
-
-      - run:
-          name: Wait for Postgres
-          command: dockerize -wait tcp://localhost:5432 -timeout 1m
-
-      - run:
-          name: Wait for Redis
-          command: dockerize -wait tcp://localhost:6379 -timeout 1m
-
-      - run:
-          name: Wait for ElasticSearch (1)
-          command: dockerize -wait http://localhost:9200 -timeout 1m
-
-      - run:
-          name: Wait for ElasticSearch (2)
-          command: dockerize -wait http://localhost:9201 -timeout 1m
-
-      - run:
-          name: Wait for Datadog Agent
-          command: dockerize -wait tcp://127.0.0.1:8126 -timeout 1m
-
-      - run:
-          name: Wait for Cassandra
-          command: dockerize -wait tcp://localhost:9042 -timeout 2m
-
-      - run:
-          name: Wait for Mongo
-          command: dockerize -wait tcp://localhost:27017 -timeout 1m
-
-      - run:
-          name: Wait for Consul
-          command: dockerize -wait http://localhost:8500 -timeout 1m
+          name: Wait for ready state
+          command: |
+            time dockerize -wait tcp://localhost:3306 -timeout 1m  # postgres
+            time dockerize -wait tcp://localhost:5432 -timeout 1m  # mysql
+            time dockerize -wait tcp://localhost:6379 -timeout 1m  # redis
+            time dockerize -wait http://localhost:9200 -timeout 1m # elasticsearch (1)
+            time dockerize -wait http://localhost:9201 -timeout 1m # elasticsearch (2)
+            time dockerize -wait tcp://127.0.0.1:8126 -timeout 1m  # trace-agent
+            time dockerize -wait tcp://localhost:9042 -timeout 2m  # cassandra
+            time dockerize -wait tcp://localhost:27017 -timeout 1m # mongo
+            time dockerize -wait http://localhost:8500 -timeout 1m # consul
 
       - run:
           name: Testing
