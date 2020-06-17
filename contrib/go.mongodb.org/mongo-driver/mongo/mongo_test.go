@@ -65,6 +65,7 @@ func Test(t *testing.T) {
 	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
 
 	s := spans[0]
+	assert.Equal(t, ext.SpanTypeMongoDB, s.Tag(ext.SpanType))
 	assert.Equal(t, "mongo", s.Tag(ext.ServiceName))
 	assert.Equal(t, "mongo.insert", s.Tag(ext.ResourceName))
 	assert.Equal(t, hostname, s.Tag(ext.PeerHostname))
