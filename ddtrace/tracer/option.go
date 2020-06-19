@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"fmt"
 	"math"
 	"net"
 	"net/http"
@@ -80,38 +79,6 @@ type config struct {
 	// tickChan specifies a channel which will receive the time every time the tracer must flush.
 	// It defaults to time.Ticker; replaced in tests.
 	tickChan <-chan time.Time
-}
-
-func (c *config) prettyString() string {
-	return fmt.Sprintf(`Config:
-	Debug: %t
-	Service: %s
-	Version: %s
-	Sampler: %T
-	Agent Address: %s
-	Global Tags: %v
-	Transport: %T
-	Propagator: %T
-	Http Client: %T
-	Hostname: %s
-	Logger: %T
-	Runtime Metrics: %t
-	Dogstatsd Address: %s
-	Sampling Rules: %v`,
-		c.debug,
-		c.serviceName,
-		c.version,
-		c.sampler,
-		c.agentAddr,
-		c.globalTags,
-		c.transport,
-		c.propagator,
-		c.httpClient,
-		c.hostname,
-		c.logger,
-		c.runtimeMetrics,
-		c.dogstatsdAddr,
-		c.samplingRules)
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
