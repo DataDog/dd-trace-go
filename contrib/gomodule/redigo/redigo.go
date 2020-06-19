@@ -93,7 +93,7 @@ func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 // The returned redis.Conn is traced.
 func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
-	og.Debug("contrib/gomodule/redigo: Dialing %s, %#v", rawurl, cfg)
+	log.Debug("contrib/gomodule/redigo: Dialing %s, %#v", rawurl, cfg)
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		return Conn{}, err
