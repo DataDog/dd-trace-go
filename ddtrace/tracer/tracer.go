@@ -144,6 +144,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 
 func newTracer(opts ...StartOption) *tracer {
 	t := newUnstartedTracer(opts...)
+	logStartup(t)
 	c := t.config
 	t.config.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
