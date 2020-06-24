@@ -8,6 +8,7 @@ package tracer
 import (
 	"bufio"
 	"os"
+	"strings"
 )
 
 func osName() string {
@@ -22,7 +23,7 @@ func osName() string {
 				name = strings.Trim(parts[1], "\"")
 			}
 		}
-		return version
+		return name
 	}
 	return "Linux (Unknown Distribution)"
 }
