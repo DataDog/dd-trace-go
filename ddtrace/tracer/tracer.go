@@ -15,8 +15,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"github.com/DataDog/datadog-go/statsd"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)
@@ -131,32 +129,7 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 const payloadQueueSize = 1000
 
 func newUnstartedTracer(opts ...StartOption) *tracer {
-	c := new(config)
-	defaults(c)
-	for _, fn := range opts {
-		fn(c)
-	}
-	if c.transport == nil {
-		c.transport = newTransport(c.agentAddr, c.httpClient)
-	}
-	if c.propagator == nil {
-		c.propagator = NewPropagator(nil)
-	}
-	if c.logger != nil {
-		log.UseLogger(c.logger)
-	}
-	if c.debug {
-		log.SetLevel(log.LevelDebug)
-	}
-	if c.statsd == nil {
-		client, err := statsd.New(c.dogstatsdAddr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
-		if err != nil {
-			log.Warn("Runtime and health metrics disabled: %v", err)
-			c.statsd = &statsd.NoOpClient{}
-		} else {
-			c.statsd = client
-		}
-	}
+	c := newConfig(opts...)
 	return &tracer{
 		config:           c,
 		payload:          newPayload(),
@@ -323,6 +296,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	if t.config.version != "" && span.Service == t.config.serviceName {
 		span.SetTag(ext.Version, t.config.version)
+	}
+	if t.config.env != "" {
+		span.SetTag(ext.Environment, t.env)
 	}
 	if context == nil {
 		// this is a brand new trace, sample it

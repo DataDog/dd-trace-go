@@ -1015,23 +1015,7 @@ func TestTracerReportsHostname(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
-	t.Run("env", func(t *testing.T) {
-		os.Setenv("DD_VERSION", "1.2.3")
-		defer os.Unsetenv("DD_VERSION")
-
-		tracer, _, _, stop := startTestTracer(t)
-		defer stop()
-
-		assert := assert.New(t)
-		sp := tracer.StartSpan("http.request").(*span)
-		v := sp.Meta[ext.Version]
-		assert.Equal("1.2.3", v)
-	})
-
-	t.Run("option", func(t *testing.T) {
-		os.Setenv("DD_VERSION", "1.2.3")
-		defer os.Unsetenv("DD_VERSION")
-
+	t.Run("normal", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"))
 		defer stop()
 
@@ -1042,25 +1026,7 @@ func TestVersion(t *testing.T) {
 	})
 
 	t.Run("unset", func(t *testing.T) {
-		os.Setenv("DD_VERSION", "1.2.3")
-		defer os.Unsetenv("DD_VERSION")
-
-		tracer, _, _, stop := startTestTracer(t, WithService("servenv"))
-		defer stop()
-
-		assert := assert.New(t)
-		sp := tracer.StartSpan("http.request", ServiceName("otherservenv")).(*span)
-		_, ok := sp.Meta[ext.Version]
-		assert.False(ok)
-	})
-
-	t.Run("unset2", func(t *testing.T) {
-		os.Setenv("DD_SERVICE", "servenv")
-		defer os.Unsetenv("DD_SERVICE")
-		os.Setenv("DD_VERSION", "1.2.3")
-		defer os.Unsetenv("DD_VERSION")
-
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"), WithService("servenv"))
 		defer stop()
 
 		assert := assert.New(t)
