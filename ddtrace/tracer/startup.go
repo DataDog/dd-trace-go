@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
-		"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type startupInfo struct {

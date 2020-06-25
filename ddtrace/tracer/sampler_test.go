@@ -235,7 +235,6 @@ func TestRuleEnvVars(t *testing.T) {
 		assert := assert.New(t)
 		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
 
-
 		// env overrides provided rules
 		os.Setenv("DD_TRACE_SAMPLING_RULES", "[]")
 		rules, _ := samplingRulesFromEnv()

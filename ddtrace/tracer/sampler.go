@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"fmt"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
