@@ -234,41 +234,45 @@ func TestRuleEnvVars(t *testing.T) {
 	t.Run("sampling-rules", func(t *testing.T) {
 		assert := assert.New(t)
 		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
-		// represents hard-coded rules
-		rules := []SamplingRule{
-			RateRule(1.0),
-		}
+
 
 		// env overrides provided rules
 		os.Setenv("DD_TRACE_SAMPLING_RULES", "[]")
+		rules, _ := samplingRulesFromEnv()
 		validRules := appliedSamplingRules(rules)
 		assert.Len(validRules, 0)
 
 		// valid rules
 		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": 1.0}]`)
+		rules, _ = samplingRulesFromEnv()
 		validRules = appliedSamplingRules(rules)
 		assert.Len(validRules, 1)
 
 		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": 1.0},`+
 			`{"name": "wxyz", "sample_rate": 0.9},`+
 			`{"service": "efgh", "name": "lmnop", "sample_rate": 0.42}]`)
+		rules, _ = samplingRulesFromEnv()
 		validRules = appliedSamplingRules(rules)
 		assert.Len(validRules, 3)
 
 		// invalid rule ignored
 		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": 42.0}]`)
+		rules, _ = samplingRulesFromEnv()
 		validRules = appliedSamplingRules(rules)
 		assert.Len(validRules, 0)
 
 		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": "all of them"}]`)
+		rules, _ = samplingRulesFromEnv()
 		validRules = appliedSamplingRules(rules)
 		assert.Len(validRules, 0)
 
 		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd"}]`)
+		rules, _ = samplingRulesFromEnv()
 		validRules = appliedSamplingRules(rules)
 		assert.Len(validRules, 0)
 
 		os.Setenv("DD_TRACE_SAMPLING_RULES", `not JSON at all`)
+		rules, _ = samplingRulesFromEnv()
 		validRules = appliedSamplingRules(rules)
 		assert.Len(validRules, 0)
 	})
@@ -368,7 +372,7 @@ func TestRulesSamplerConcurrency(t *testing.T) {
 		NameServiceRule("db.query", "postgres.db", 1.0),
 		NameRule("notweb.request", 1.0),
 	}
-	tracer := newTracer(WithSamplingRules(rules))
+	tracer, _ := newTracer(WithSamplingRules(rules))
 	span := func(wg *sync.WaitGroup) {
 		defer wg.Done()
 		tracer.StartSpan("db.query", ServiceName("postgres.db")).Finish()
@@ -537,7 +541,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 	}
 
 	b.Run("no-rules", func(b *testing.B) {
-		tracer := newUnstartedTracer()
+		tracer, _ := newUnstartedTracer()
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -547,7 +551,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameServiceRule("db.query", "postgres.db", 1.0),
 			NameRule("notweb.request", 1.0),
 		}
-		tracer := newUnstartedTracer(WithSamplingRules(rules))
+		tracer, _ := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -557,7 +561,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameServiceRule("db.query", "postgres.db", 1.0),
 			NameRule("web.request", 1.0),
 		}
-		tracer := newUnstartedTracer(WithSamplingRules(rules))
+		tracer, _ := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -587,7 +591,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameRule("notweb.request", 1.0),
 			NameRule("web.request", 1.0),
 		}
-		tracer := newUnstartedTracer(WithSamplingRules(rules))
+		tracer, _ := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 }

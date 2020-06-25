@@ -14,9 +14,10 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+		"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-type startupLog struct {
+type startupInfo struct {
 	// Common startup status
 	Date                  string                 `json:"date"`
 	OSName                string                 `json:"os_name"`
@@ -33,7 +34,7 @@ type startupLog struct {
 	AnalyticsEnabled      bool                   `json:"analytics_enabled"`
 	SampleRate            float64                `json:"sample_rate"`
 	SamplingRules         []SamplingRule         `json:"sampling_rules"`
-	SamplingRulesError    string                 `json:"sampling_rules_error"`
+	SamplingRulesError    error                  `json:"sampling_rules_error"`
 	Tags                  map[string]interface{} `json:"tags"`
 	RuntimeMetricsEnabled bool                   `json:"runtime_metrics_enabled"`
 
@@ -46,10 +47,9 @@ func agentReachable(t *tracer) (bool, error) {
 	return false, nil
 }
 
-func logStartup(t *tracer) {
+func newStartupInfo(t *tracer) *startupInfo {
 	reachable, reachableErr := agentReachable(t)
-
-	sl := startupLog{
+	return &startupInfo{
 		Date:                  time.Now().Format("2006-01-02 15:04:05"),
 		OSName:                osName(),
 		OSVersion:             osVersion(),
@@ -65,15 +65,18 @@ func logStartup(t *tracer) {
 		AnalyticsEnabled:      globalconfig.AnalyticsRate() != math.NaN(),
 		SampleRate:            t.prioritySampling.defaultRate,
 		SamplingRules:         t.rulesSampling.rules,
-		SamplingRulesError:    "TODO",
+		SamplingRulesError:    nil,
 		Tags:                  t.globalTags,
 		RuntimeMetricsEnabled: t.config.runtimeMetrics,
 		GlobalService:         globalconfig.ServiceName(),
 	}
-	bs, err := json.Marshal(sl)
+}
+
+func logStartup(info *startupInfo) {
+	bs, err := json.Marshal(info)
 	if err != nil {
-		fmt.Printf("Failed to serialize json for startup log: %#v\n", sl)
+		fmt.Printf("Failed to serialize json for startup log: %#v\n", info)
 		return
 	}
-	fmt.Printf("Startup: %s\n", string(bs))
+	log.Warn("Startup: %s\n", string(bs))
 }

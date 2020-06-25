@@ -125,7 +125,7 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 		TraceHeader:   "tid",
 		ParentHeader:  "pid",
 	})
-	tracer := newTracer(WithPropagator(propagator))
+	tracer, _ := newTracer(WithPropagator(propagator))
 
 	root := tracer.StartSpan("web.request").(*span)
 	root.SetBaggageItem("item", "x")
@@ -152,7 +152,7 @@ func TestTextMapPropagatorOrigin(t *testing.T) {
 		DefaultTraceIDHeader:  "1",
 		DefaultParentIDHeader: "1",
 	})
-	tracer := newTracer()
+	tracer, _ := newTracer()
 	ctx, err := tracer.Extract(src)
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestTextMapPropagatorInjectExtract(t *testing.T) {
 		TraceHeader:   "tid",
 		ParentHeader:  "pid",
 	})
-	tracer := newTracer(WithPropagator(propagator))
+	tracer, _ := newTracer(WithPropagator(propagator))
 	root := tracer.StartSpan("web.request").(*span)
 	root.SetTag(ext.SamplingPriority, -1)
 	root.SetBaggageItem("item", "x")
@@ -206,7 +206,7 @@ func TestB3(t *testing.T) {
 		os.Setenv("DD_PROPAGATION_STYLE_INJECT", "B3")
 		defer os.Unsetenv("DD_PROPAGATION_STYLE_INJECT")
 
-		tracer := newTracer()
+		tracer, _ := newTracer()
 		root := tracer.StartSpan("web.request").(*span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
@@ -231,7 +231,7 @@ func TestB3(t *testing.T) {
 			b3SpanIDHeader:  "1",
 		})
 
-		tracer := newTracer()
+		tracer, _ := newTracer()
 		assert := assert.New(t)
 		ctx, err := tracer.Extract(headers)
 		assert.Nil(err)
@@ -252,7 +252,7 @@ func TestB3(t *testing.T) {
 			b3SampledHeader: "1",
 		})
 
-		tracer := newTracer()
+		tracer, _ := newTracer()
 		assert := assert.New(t)
 
 		ctx, err := tracer.Extract(b3Headers)

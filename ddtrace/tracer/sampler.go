@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"fmt"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -185,42 +186,54 @@ func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	}
 }
 
+func samplingRulesFromEnv() ([]SamplingRule, error) {
+	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
+	if rulesFromEnv == "" {
+		return nil, nil
+	}
+	//var rules []SamplingRule
+	rules := make([]SamplingRule, 0)
+	jsonRules := []struct {
+		Service string      `json:"service"`
+		Name    string      `json:"name"`
+		Rate    json.Number `json:"sample_rate"`
+	}{}
+	err := json.Unmarshal([]byte(rulesFromEnv), &jsonRules)
+	if err != nil {
+		log.Warn("error parsing DD_TRACE_SAMPLING_RULES: %v", err)
+		return nil, fmt.Errorf("error parsing DD_TRACE_SAMPLING_RULES: %v", err)
+	}
+	var errStr string
+	for _, v := range jsonRules {
+		if v.Rate == "" {
+			log.Warn("error parsing rule: rate not provided")
+			errStr += "error parsing rule: rate not provided"
+			continue
+		}
+		rate, err := v.Rate.Float64()
+		if err != nil {
+			log.Warn("error parsing rule: invalid rate: %v", err)
+			errStr += fmt.Sprintf("error parsing rule: invalid rate: %v", err)
+			continue
+		}
+		switch {
+		case v.Service != "" && v.Name != "":
+			rules = append(rules, NameServiceRule(v.Name, v.Service, rate))
+		case v.Service != "":
+			rules = append(rules, ServiceRule(v.Service, rate))
+		case v.Name != "":
+			rules = append(rules, NameRule(v.Name, rate))
+		}
+	}
+	if errStr != "" {
+		return rules, fmt.Errorf("WARN parsing DD_TRACE_SAMPLING_RULES: %s", errStr)
+	}
+	return rules, nil
+}
+
 // appliedSamplingRules validates the user-provided rules and returns an internal representation.
 // If the DD_TRACE_SAMPLING_RULES environment variable is set, it will replace the given rules.
 func appliedSamplingRules(rules []SamplingRule) []SamplingRule {
-	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
-	if rulesFromEnv != "" {
-		rules = rules[:0]
-		jsonRules := []struct {
-			Service string      `json:"service"`
-			Name    string      `json:"name"`
-			Rate    json.Number `json:"sample_rate"`
-		}{}
-		err := json.Unmarshal([]byte(rulesFromEnv), &jsonRules)
-		if err != nil {
-			log.Warn("error parsing DD_TRACE_SAMPLING_RULES: %v", err)
-			return nil
-		}
-		for _, v := range jsonRules {
-			if v.Rate == "" {
-				log.Warn("error parsing rule: rate not provided")
-				continue
-			}
-			rate, err := v.Rate.Float64()
-			if err != nil {
-				log.Warn("error parsing rule: invalid rate: %v", err)
-				continue
-			}
-			switch {
-			case v.Service != "" && v.Name != "":
-				rules = append(rules, NameServiceRule(v.Name, v.Service, rate))
-			case v.Service != "":
-				rules = append(rules, ServiceRule(v.Service, rate))
-			case v.Name != "":
-				rules = append(rules, NameRule(v.Name, rate))
-			}
-		}
-	}
 	validRules := make([]SamplingRule, 0, len(rules))
 	for _, v := range rules {
 		if !(v.Rate >= 0.0 && v.Rate <= 1.0) {

@@ -245,7 +245,7 @@ func (tg *testStatsdClient) Wait(n int, d time.Duration) error {
 
 func TestReportRuntimeMetrics(t *testing.T) {
 	var tg testStatsdClient
-	trc := newUnstartedTracer(withStatsdClient(&tg))
+	trc, _ := newUnstartedTracer(withStatsdClient(&tg))
 
 	trc.wg.Add(1)
 	go func() {

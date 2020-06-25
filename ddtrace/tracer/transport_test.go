@@ -252,7 +252,7 @@ func TestWithHTTPClient(t *testing.T) {
 	u, err := url.Parse(srv.URL)
 	assert.NoError(err)
 	rt := new(recordingRoundTripper)
-	trc := newTracer(WithAgentAddr(u.Host), WithHTTPClient(&http.Client{Transport: rt}))
+	trc, _ := newTracer(WithAgentAddr(u.Host), WithHTTPClient(&http.Client{Transport: rt}))
 	defer trc.Stop()
 
 	p, err := encode(getTestTrace(1, 1))

@@ -91,7 +91,9 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
-	internal.SetGlobalTracer(newTracer(opts...))
+	t, info := newTracer(opts...)
+	internal.SetGlobalTracer(t)
+	logStartup(info)
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -130,7 +132,11 @@ const payloadQueueSize = 1000
 
 func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := newConfig(opts...)
-	return &tracer{
+	envRules, envRulesErr := samplingRulesFromEnv()
+	if envRules != nil {
+		c.samplingRules = envRules
+	}
+	t := &tracer{
 		config:           c,
 		payload:          newPayload(),
 		payloadChan:      make(chan []*span, payloadQueueSize),
@@ -140,11 +146,15 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		prioritySampling: newPrioritySampler(),
 		pid:              strconv.Itoa(os.Getpid()),
 	}
+	info := newStartupInfo(t)
+	if envRulesErr != nil {
+		info.SamplingRulesError = envRulesErr
+	}
+	return t, info
 }
 
-func newTracer(opts ...StartOption) *tracer {
-	t := newUnstartedTracer(opts...)
-	logStartup(t)
+func newTracer(opts ...StartOption) (*tracer, *startupInfo) {
+	t, info := newUnstartedTracer(opts...)
 	c := t.config
 	t.config.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
@@ -172,7 +182,7 @@ func newTracer(opts ...StartOption) *tracer {
 		defer t.wg.Done()
 		t.reportHealthMetrics(statsInterval)
 	}()
-	return t
+	return t, info
 }
 
 // worker receives finished traces to be added into the payload, as well
