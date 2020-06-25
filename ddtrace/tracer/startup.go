@@ -9,7 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
+	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -43,11 +46,37 @@ type startupInfo struct {
 }
 
 func agentReachable(t *tracer) (bool, error) {
-	// TODO
-	return false, nil
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(t.config.agentAddr)), strings.NewReader("[]"))
+	if err != nil {
+		return false, fmt.Errorf("cannot create http request: %v", err)
+	}
+
+	req.Header.Set(traceCountHeader, "0")
+	req.Header.Set("Content-Length", "2")
+	c := &http.Client{}
+	response, err := c.Do(req)
+	if err != nil {
+		return false, err
+	}
+	if code := response.StatusCode; code != 200 {
+		// error, check the body for context information and
+		// return a nice error.
+		msg := make([]byte, 1000)
+		n, _ := response.Body.Read(msg)
+		response.Body.Close()
+		txt := http.StatusText(code)
+		if n > 0 {
+			return false, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
+		}
+		return false, fmt.Errorf("%s", txt)
+	}
+	return true, nil
 }
 
 func newStartupInfo(t *tracer) *startupInfo {
+	if startupLogs := os.Getenv("DD_TRACE_STARTUP_LOGS"); startupLogs == "0" {
+		return &startupInfo{}
+	}
 	reachable, reachableErr := agentReachable(t)
 	return &startupInfo{
 		Date:                  time.Now().Format("2006-01-02 15:04:05"),
@@ -56,7 +85,7 @@ func newStartupInfo(t *tracer) *startupInfo {
 		Version:               version.Tag,
 		Lang:                  "Go",
 		LangVersion:           runtime.Version(),
-		Env:                   "TODO: #675",
+		Env:                   t.config.env,
 		Service:               t.config.serviceName,
 		AgentURL:              t.config.agentAddr,
 		AgentReachable:        reachable,
@@ -73,9 +102,12 @@ func newStartupInfo(t *tracer) *startupInfo {
 }
 
 func logStartup(info *startupInfo) {
+	if startupLogs := os.Getenv("DD_TRACE_STARTUP_LOGS"); startupLogs == "0" {
+		return
+	}
 	bs, err := json.Marshal(info)
 	if err != nil {
-		fmt.Printf("Failed to serialize json for startup log: %#v\n", info)
+		log.Error("Failed to serialize json for startup log: %#v\n", info)
 		return
 	}
 	log.Warn("Startup: %s\n", string(bs))

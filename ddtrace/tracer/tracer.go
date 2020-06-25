@@ -130,7 +130,7 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
-func newUnstartedTracer(opts ...StartOption) *tracer {
+func newUnstartedTracer(opts ...StartOption) (*tracer, *startupInfo) {
 	c := newConfig(opts...)
 	envRules, envRulesErr := samplingRulesFromEnv()
 	if envRules != nil {
