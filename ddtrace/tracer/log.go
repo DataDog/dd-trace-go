@@ -11,7 +11,6 @@ import (
 	"math"
 	"net/http"
 	"runtime"
-	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -48,34 +47,19 @@ type startupInfo struct {
 }
 
 func agentReachable(t *tracer) error {
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(t.config.agentAddr)), strings.NewReader("[]"))
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(t.config.agentAddr)), nil)
 	if err != nil {
 		return fmt.Errorf("cannot create http request: %v", err)
 	}
-
-	req.Header.Set(traceCountHeader, "0")
-	req.Header.Set("Content-Length", "2")
-	response, err := defaultClient.Do(req)
+	_, err = defaultClient.Do(req)
 	if err != nil {
 		return err
-	}
-	if code := response.StatusCode; code != 200 {
-		// error, check the body for context information and
-		// return a nice error.
-		msg := make([]byte, 1000)
-		n, _ := response.Body.Read(msg)
-		response.Body.Close()
-		txt := http.StatusText(code)
-		if n > 0 {
-			return fmt.Errorf("%s (Status: %s)", msg[:n], txt)
-		}
-		return fmt.Errorf("%s", txt)
 	}
 	return nil
 }
 
 func newStartupInfo(t *tracer) *startupInfo {
-	if !envBool("DD_TRACE_STARTUP_LOGS", true) {
+	if !boolEnv("DD_TRACE_STARTUP_LOGS", true) {
 		return &startupInfo{}
 	}
 	return &startupInfo{

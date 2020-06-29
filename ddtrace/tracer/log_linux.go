@@ -31,11 +31,11 @@ func osName() string {
 func osVersion() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {
-		return unknownVersion
+		return unknown
 	}
 	defer f.Close()
 	s := bufio.NewScanner(f)
-	version := unknownVersion
+	version := unknown
 	for s.Scan() {
 		parts := strings.SplitN(s.Text(), "=", 2)
 		switch parts[0] {

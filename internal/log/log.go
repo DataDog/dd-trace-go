@@ -66,6 +66,7 @@ func Warn(fmt string, a ...interface{}) {
 	printMsg("WARN", fmt, a...)
 }
 
+// Info prints an informational message.
 func Info(fmt string, a ...interface{}) {
 	printMsg("INFO", fmt, a...)
 }

@@ -198,7 +198,7 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 	}{}
 	err := json.Unmarshal([]byte(rulesFromEnv), &jsonRules)
 	if err != nil {
-		log.Warn("error parsing DD_TRACE_SAMPLING_RULES: %v", err)
+		log.Warn("Error parsing DD_TRACE_SAMPLING_RULES: %v", err)
 		return nil, fmt.Errorf("error parsing DD_TRACE_SAMPLING_RULES: %v", err)
 	}
 	rules := make([]SamplingRule, 0, len(jsonRules))
@@ -206,13 +206,13 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 	for _, v := range jsonRules {
 		if v.Rate == "" {
 			log.Warn("Error parsing rule: rate not provided")
-			errStr += "error parsing rule: rate not provided "
+			errStr += "rate not provided "
 			continue
 		}
 		rate, err := v.Rate.Float64()
 		if err != nil {
-			log.Warn("error parsing rule: invalid rate: %v", err)
-			errStr += fmt.Sprintf("error parsing rule: invalid rate: %v ", err)
+			log.Warn("Error parsing rule: invalid rate: %v", err)
+			errStr += fmt.Sprintf("invalid rate: %v ", err)
 			continue
 		}
 		switch {
