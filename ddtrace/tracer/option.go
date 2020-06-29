@@ -484,3 +484,13 @@ func StackFrames(n, skip uint) FinishOption {
 		cfg.SkipStackFrames = skip
 	}
 }
+
+// boolEnv returns the parsed boolean value of an environment variable, or 
+// default if it fails to parse.
+func boolEnv(key string, default bool) bool {
+	v, err := strconv.ParseBool(os.GetEnv(key))
+	if err != nil {
+		return default
+	}
+	return v
+}

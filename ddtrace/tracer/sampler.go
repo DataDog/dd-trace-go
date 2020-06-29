@@ -191,8 +191,6 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 	if rulesFromEnv == "" {
 		return nil, nil
 	}
-	//var rules []SamplingRule
-	rules := make([]SamplingRule, 0)
 	jsonRules := []struct {
 		Service string      `json:"service"`
 		Name    string      `json:"name"`
@@ -203,17 +201,18 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 		log.Warn("error parsing DD_TRACE_SAMPLING_RULES: %v", err)
 		return nil, fmt.Errorf("error parsing DD_TRACE_SAMPLING_RULES: %v", err)
 	}
+	rules := make([]SamplingRule, 0, len(jsonRules))
 	var errStr string
 	for _, v := range jsonRules {
 		if v.Rate == "" {
-			log.Warn("error parsing rule: rate not provided")
-			errStr += "error parsing rule: rate not provided"
+			log.Warn("Error parsing rule: rate not provided")
+			errStr += "error parsing rule: rate not provided "
 			continue
 		}
 		rate, err := v.Rate.Float64()
 		if err != nil {
 			log.Warn("error parsing rule: invalid rate: %v", err)
-			errStr += fmt.Sprintf("error parsing rule: invalid rate: %v", err)
+			errStr += fmt.Sprintf("error parsing rule: invalid rate: %v ", err)
 			continue
 		}
 		switch {
@@ -226,7 +225,7 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 		}
 	}
 	if errStr != "" {
-		return rules, fmt.Errorf("WARN parsing DD_TRACE_SAMPLING_RULES: %s", errStr)
+		return rules, fmt.Errorf("error(s) parsing DD_TRACE_SAMPLING_RULES: %s", errStr)
 	}
 	return rules, nil
 }

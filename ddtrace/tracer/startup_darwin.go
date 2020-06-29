@@ -18,7 +18,7 @@ func osName() string {
 func osVersion() string {
 	out, err := exec.Command("sw_vers", "-productVersion").Output()
 	if err != nil {
-		return "(Unknown Version)"
+		return unknown
 	}
 	return strings.Trim(string(out), "\n")
 }

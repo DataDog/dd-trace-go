@@ -66,6 +66,10 @@ func Warn(fmt string, a ...interface{}) {
 	printMsg("WARN", fmt, a...)
 }
 
+func Info(fmt string, a ...interface{}) {
+	printMsg("INFO", fmt, a...)
+}
+
 var (
 	errmu   sync.RWMutex                // guards below fields
 	erragg  = map[string]*errorReport{} // aggregated errors

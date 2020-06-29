@@ -5,14 +5,22 @@
 
 package tracer
 
+import (
+	"fmt"
+	"runtime"
+	"strings"
+
+	"golang.org/x/sys/windows/registry"
+)
+
 func osName() string {
-	return "windows"
+	return runtime.GOOS
 }
 
 func osVersion() string {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows NT\CurrentVersion`, registry.QUERY_VALUE)
 	if err != nil {
-		log.Fatal(err)
+		return unknown
 	}
 	defer k.Close()
 
@@ -26,21 +34,21 @@ func osVersion() string {
 			version.WriteString(fmt.Sprintf(".%d", min))
 		}
 	} else {
-		version.WriteString("(Unknown Version)")
+		version.WriteString(unknown)
 	}
 
 	ed, _, err := k.GetStringValue("EditionID")
 	if err == nil {
 		version.WriteString(" " + ed)
 	} else {
-		version.WriteString(" (Unknown Edition)")
+		version.WriteString(" Unknown Edition")
 	}
 
 	build, _, err := k.GetStringValue("CurrentBuild")
 	if err == nil {
 		version.WriteString(" Build " + build)
 	} else {
-		version.WriteString(" (Unknown Build)")
+		version.WriteString(" Unknown Build")
 	}
 	return version.String()
 }

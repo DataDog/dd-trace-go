@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -20,43 +19,45 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
-type startupInfo struct {
-	// Common startup status
-	Date                  string                 `json:"date"`
-	OSName                string                 `json:"os_name"`
-	OSVersion             string                 `json:"os_version"`
-	Version               string                 `json:"version"`
-	Lang                  string                 `json:"lang"`
-	LangVersion           string                 `json:"lang_version"`
-	Env                   string                 `json:"env"`
-	Service               string                 `json:"service"`
-	AgentURL              string                 `json:"agent_url"`
-	AgentReachable        bool                   `json:"agent_reachable"`
-	AgentError            error                  `json:"agent_error"`
-	Debug                 bool                   `json:"debug"`
-	AnalyticsEnabled      bool                   `json:"analytics_enabled"`
-	SampleRate            float64                `json:"sample_rate"`
-	SamplingRules         []SamplingRule         `json:"sampling_rules"`
-	SamplingRulesError    error                  `json:"sampling_rules_error"`
-	Tags                  map[string]interface{} `json:"tags"`
-	RuntimeMetricsEnabled bool                   `json:"runtime_metrics_enabled"`
+const (
+	unknown = "unknown"
+)
 
-	//Go-tracer-specific startup status
-	GlobalService string `json:"global_service"`
+type startupInfo struct {
+	Date                  string                 `json:"date"`    // ISO 8601 date and time of start
+	OSName                string                 `json:"os_name"` // Windows, Darwin, Debian, etc.
+	OSVersion             string                 `json:"os_version"`
+	Version               string                 `json:"version"`              // Tracer version
+	Lang                  string                 `json:"lang"`                 // "Go"
+	LangVersion           string                 `json:"lang_version"`         // Go version, e.g. go1.13
+	Env                   string                 `json:"env"`                  // Tracer env
+	Service               string                 `json:"service"`              // Tracer Service
+	AgentURL              string                 `json:"agent_url"`            // The address of the agent
+	AgentError            error                  `json:"agent_error"`          // Any error that occurred trying to connect to agent
+	Debug                 bool                   `json:"debug"`                // Whether debug mode is enabled
+	AnalyticsEnabled      bool                   `json:"analytics_enabled"`    // True if there is a global analytics rate set
+	SampleRate            float64                `json:"sample_rate"`          // The default sampling rate for the priority sampler
+	SamplingRules         []SamplingRule         `json:"sampling_rules"`       // Rules used by the rules sampler
+	SamplingRulesError    error                  `json:"sampling_rules_error"` // Any errors that occurred while parsing sampling rules
+	Tags                  map[string]interface{} `json:"tags"`                 // Global tags
+	RuntimeMetricsEnabled bool                   `json:"runtime_metrics_enabled"`
+	HealthMetricsEnabled  bool                   `json:"health_metrics_enabled"`
+	ApplicationVersion    string                 `json:"dd_version"`     // Version of the user's application
+	Architecture          string                 `json:"architecture"`   // Architecture of host machine
+	GlobalService         string                 `json:"global_service"` // Global service string. If not-nil should be same as Service. (#614)
 }
 
-func agentReachable(t *tracer) (bool, error) {
+func agentReachable(t *tracer) error {
 	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(t.config.agentAddr)), strings.NewReader("[]"))
 	if err != nil {
-		return false, fmt.Errorf("cannot create http request: %v", err)
+		return fmt.Errorf("cannot create http request: %v", err)
 	}
 
 	req.Header.Set(traceCountHeader, "0")
 	req.Header.Set("Content-Length", "2")
-	c := &http.Client{}
-	response, err := c.Do(req)
+	response, err := defaultClient.Do(req)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if code := response.StatusCode; code != 200 {
 		// error, check the body for context information and
@@ -66,18 +67,17 @@ func agentReachable(t *tracer) (bool, error) {
 		response.Body.Close()
 		txt := http.StatusText(code)
 		if n > 0 {
-			return false, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
+			return fmt.Errorf("%s (Status: %s)", msg[:n], txt)
 		}
-		return false, fmt.Errorf("%s", txt)
+		return fmt.Errorf("%s", txt)
 	}
-	return true, nil
+	return nil
 }
 
 func newStartupInfo(t *tracer) *startupInfo {
-	if startupLogs := os.Getenv("DD_TRACE_STARTUP_LOGS"); startupLogs == "0" {
+	if !envBool("DD_TRACE_STARTUP_LOGS", true) {
 		return &startupInfo{}
 	}
-	reachable, reachableErr := agentReachable(t)
 	return &startupInfo{
 		Date:                  time.Now().Format(time.RFC3339),
 		OSName:                osName(),
@@ -88,21 +88,22 @@ func newStartupInfo(t *tracer) *startupInfo {
 		Env:                   t.config.env,
 		Service:               t.config.serviceName,
 		AgentURL:              t.config.agentAddr,
-		AgentReachable:        reachable,
-		AgentError:            reachableErr,
+		AgentError:            agentReachable(t),
 		Debug:                 t.config.debug,
-		AnalyticsEnabled:      globalconfig.AnalyticsRate() != math.NaN(),
+		AnalyticsEnabled:      !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:            t.prioritySampling.defaultRate,
 		SamplingRules:         t.rulesSampling.rules,
-		SamplingRulesError:    nil,
 		Tags:                  t.globalTags,
 		RuntimeMetricsEnabled: t.config.runtimeMetrics,
+		HealthMetricsEnabled:  t.config.runtimeMetrics,
+		ApplicationVersion:    t.config.version,
+		Architecture:          runtime.GOARCH,
 		GlobalService:         globalconfig.ServiceName(),
 	}
 }
 
 func logStartup(info *startupInfo) {
-	if startupLogs := os.Getenv("DD_TRACE_STARTUP_LOGS"); startupLogs == "0" {
+	if !boolEnv("DD_TRACE_STARTUP_LOGS", true) {
 		return
 	}
 	bs, err := json.Marshal(info)
@@ -110,5 +111,5 @@ func logStartup(info *startupInfo) {
 		log.Error("Failed to serialize json for startup log: %#v\n", info)
 		return
 	}
-	log.Warn("Startup: %s\n", string(bs))
+	log.Info("Startup: %s\n", string(bs))
 }

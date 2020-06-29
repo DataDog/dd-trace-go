@@ -132,7 +132,7 @@ const payloadQueueSize = 1000
 
 func newUnstartedTracer(opts ...StartOption) (*tracer, *startupInfo) {
 	c := newConfig(opts...)
-	envRules, envRulesErr := samplingRulesFromEnv()
+	envRules, err := samplingRulesFromEnv()
 	if envRules != nil {
 		c.samplingRules = envRules
 	}
@@ -147,8 +147,8 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, *startupInfo) {
 		pid:              strconv.Itoa(os.Getpid()),
 	}
 	info := newStartupInfo(t)
-	if envRulesErr != nil {
-		info.SamplingRulesError = envRulesErr
+	if err != nil {
+		info.SamplingRulesError = err
 	}
 	return t, info
 }
