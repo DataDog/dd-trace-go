@@ -46,8 +46,8 @@ type startupInfo struct {
 	GlobalService         string                 `json:"global_service"`          // Global service string. If not-nil should be same as Service. (#614)
 }
 
-func agentReachable(t *tracer) error {
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(t.config.agentAddr)), nil)
+func agentReachable(endpoint string) error {
+	req, err := http.NewRequest("POST", endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("cannot create http request: %v", err)
 	}
@@ -77,7 +77,7 @@ func logStartup(t *tracer) {
 		Env:                   t.config.env,
 		Service:               t.config.serviceName,
 		AgentURL:              t.config.agentAddr,
-		AgentError:            agentReachable(t),
+		AgentError:            agentReachable(fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(t.config.agentAddr))),
 		Debug:                 t.config.debug,
 		AnalyticsEnabled:      !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:            fmt.Sprintf("%f", t.rulesSampling.globalRate),
