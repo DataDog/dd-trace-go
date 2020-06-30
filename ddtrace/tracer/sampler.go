@@ -396,6 +396,7 @@ func (sr *SamplingRule) match(s *span) bool {
 	return true
 }
 
+// MarshalJSON implements the json.Marshaler interface.
 func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 	s := struct {
 		Service string  `json:"service"`

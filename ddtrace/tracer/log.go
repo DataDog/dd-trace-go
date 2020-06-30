@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"net/http"
 	"runtime"
 	"time"
 
@@ -46,18 +45,6 @@ type startupInfo struct {
 	GlobalService         string            `json:"global_service"`          // Global service string. If not-nil should be same as Service. (#614)
 }
 
-func agentReachable(endpoint string) error {
-	req, err := http.NewRequest("POST", endpoint, nil)
-	if err != nil {
-		return fmt.Errorf("cannot create http request: %v", err)
-	}
-	_, err = defaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func logStartup(t *tracer) {
 	if !boolEnv("DD_TRACE_STARTUP_LOGS", true) {
 		return
@@ -76,8 +63,7 @@ func logStartup(t *tracer) {
 		LangVersion:           runtime.Version(),
 		Env:                   t.config.env,
 		Service:               t.config.serviceName,
-		AgentURL:              t.config.agentAddr,
-		AgentError:            fmt.Sprintf("%s", agentReachable(fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(t.config.agentAddr)))),
+		AgentURL:              t.transport.endpoint(),
 		Debug:                 t.config.debug,
 		AnalyticsEnabled:      !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:            fmt.Sprintf("%f", t.rulesSampling.globalRate),
@@ -89,9 +75,11 @@ func logStartup(t *tracer) {
 		Architecture:          runtime.GOARCH,
 		GlobalService:         globalconfig.ServiceName(),
 	}
-	_, err := samplingRulesFromEnv()
-	if err != nil {
+	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
+	}
+	if err := t.transport.testConn(); err != nil {
+		info.AgentError = fmt.Sprintf("%s", err)
 	}
 	bs, err := json.Marshal(info)
 	if err != nil {

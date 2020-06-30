@@ -1151,6 +1151,14 @@ func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
 	return ok, nil
 }
 
+func (t *dummyTransport) endpoint() string {
+	return "test"
+}
+
+func (t *dummyTransport) testConn() error {
+	return nil
+}
+
 func decode(p *payload) (spanLists, error) {
 	var traces spanLists
 	err := msgp.Decode(p, &traces)
