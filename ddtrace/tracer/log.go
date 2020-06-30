@@ -23,27 +23,27 @@ const (
 )
 
 type startupInfo struct {
-	Date                  string                 `json:"date"`    // ISO 8601 date and time of start
-	OSName                string                 `json:"os_name"` // Windows, Darwin, Debian, etc.
-	OSVersion             string                 `json:"os_version"`
-	Version               string                 `json:"version"`              // Tracer version
-	Lang                  string                 `json:"lang"`                 // "Go"
-	LangVersion           string                 `json:"lang_version"`         // Go version, e.g. go1.13
-	Env                   string                 `json:"env"`                  // Tracer env
-	Service               string                 `json:"service"`              // Tracer Service
-	AgentURL              string                 `json:"agent_url"`            // The address of the agent
-	AgentError            error                  `json:"agent_error"`          // Any error that occurred trying to connect to agent
-	Debug                 bool                   `json:"debug"`                // Whether debug mode is enabled
-	AnalyticsEnabled      bool                   `json:"analytics_enabled"`    // True if there is a global analytics rate set
-	SampleRate            float64                `json:"sample_rate"`          // The default sampling rate for the priority sampler
-	SamplingRules         []SamplingRule         `json:"sampling_rules"`       // Rules used by the rules sampler
-	SamplingRulesError    error                  `json:"sampling_rules_error"` // Any errors that occurred while parsing sampling rules
-	Tags                  map[string]interface{} `json:"tags"`                 // Global tags
-	RuntimeMetricsEnabled bool                   `json:"runtime_metrics_enabled"`
-	HealthMetricsEnabled  bool                   `json:"health_metrics_enabled"`
-	ApplicationVersion    string                 `json:"dd_version"`     // Version of the user's application
-	Architecture          string                 `json:"architecture"`   // Architecture of host machine
-	GlobalService         string                 `json:"global_service"` // Global service string. If not-nil should be same as Service. (#614)
+	Date                  string                 `json:"date"`                    // ISO 8601 date and time of start
+	OSName                string                 `json:"os_name"`                 // Windows, Darwin, Debian, etc.
+	OSVersion             string                 `json:"os_version"`              // Version of the OS
+	Version               string                 `json:"version"`                 // Tracer version
+	Lang                  string                 `json:"lang"`                    // "Go"
+	LangVersion           string                 `json:"lang_version"`            // Go version, e.g. go1.13
+	Env                   string                 `json:"env"`                     // Tracer env
+	Service               string                 `json:"service"`                 // Tracer Service
+	AgentURL              string                 `json:"agent_url"`               // The address of the agent
+	AgentError            error                  `json:"agent_error"`             // Any error that occurred trying to connect to agent
+	Debug                 bool                   `json:"debug"`                   // Whether debug mode is enabled
+	AnalyticsEnabled      bool                   `json:"analytics_enabled"`       // True if there is a global analytics rate set
+	SampleRate            string                 `json:"sample_rate"`             // The default sampling rate for the rules sampler
+	SamplingRules         []SamplingRule         `json:"sampling_rules"`          // Rules used by the rules sampler
+	SamplingRulesError    error                  `json:"sampling_rules_error"`    // Any errors that occurred while parsing sampling rules
+	Tags                  map[string]interface{} `json:"tags"`                    // Global tags
+	RuntimeMetricsEnabled bool                   `json:"runtime_metrics_enabled"` // Whether or not runtime metrics are enabled
+	HealthMetricsEnabled  bool                   `json:"health_metrics_enabled"`  // Whether or not health metrics are enabled
+	ApplicationVersion    string                 `json:"dd_version"`              // Version of the user's application
+	Architecture          string                 `json:"architecture"`            // Architecture of host machine
+	GlobalService         string                 `json:"global_service"`          // Global service string. If not-nil should be same as Service. (#614)
 }
 
 func agentReachable(t *tracer) error {
@@ -58,11 +58,16 @@ func agentReachable(t *tracer) error {
 	return nil
 }
 
-func newStartupInfo(t *tracer) *startupInfo {
+func logStartup(t *tracer) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("RECOVERED IN LOGSTARTUP: %#v\n", r)
+		}
+	}()
 	if !boolEnv("DD_TRACE_STARTUP_LOGS", true) {
-		return &startupInfo{}
+		return
 	}
-	return &startupInfo{
+	info := startupInfo{
 		Date:                  time.Now().Format(time.RFC3339),
 		OSName:                osName(),
 		OSVersion:             osVersion(),
@@ -75,7 +80,7 @@ func newStartupInfo(t *tracer) *startupInfo {
 		AgentError:            agentReachable(t),
 		Debug:                 t.config.debug,
 		AnalyticsEnabled:      !math.IsNaN(globalconfig.AnalyticsRate()),
-		SampleRate:            t.prioritySampling.defaultRate,
+		SampleRate:            fmt.Sprintf("%f", t.rulesSampling.globalRate),
 		SamplingRules:         t.rulesSampling.rules,
 		Tags:                  t.globalTags,
 		RuntimeMetricsEnabled: t.config.runtimeMetrics,
@@ -84,15 +89,13 @@ func newStartupInfo(t *tracer) *startupInfo {
 		Architecture:          runtime.GOARCH,
 		GlobalService:         globalconfig.ServiceName(),
 	}
-}
-
-func logStartup(info *startupInfo) {
-	if !boolEnv("DD_TRACE_STARTUP_LOGS", true) {
-		return
+	_, err := samplingRulesFromEnv()
+	if err != nil {
+		info.SamplingRulesError = err
 	}
 	bs, err := json.Marshal(info)
 	if err != nil {
-		log.Error("Failed to serialize json for startup log: %#v\n", info)
+		log.Error("Failed to serialize json for startup log: (%v) %#v\n", err, info)
 		return
 	}
 	log.Info("Startup: %s\n", string(bs))

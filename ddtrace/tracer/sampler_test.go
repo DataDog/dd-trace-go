@@ -371,7 +371,7 @@ func TestRulesSamplerConcurrency(t *testing.T) {
 		NameServiceRule("db.query", "postgres.db", 1.0),
 		NameRule("notweb.request", 1.0),
 	}
-	tracer, _ := newTracer(WithSamplingRules(rules))
+	tracer := newTracer(WithSamplingRules(rules))
 	span := func(wg *sync.WaitGroup) {
 		defer wg.Done()
 		tracer.StartSpan("db.query", ServiceName("postgres.db")).Finish()
@@ -540,7 +540,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 	}
 
 	b.Run("no-rules", func(b *testing.B) {
-		tracer, _ := newUnstartedTracer()
+		tracer := newUnstartedTracer()
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -550,7 +550,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameServiceRule("db.query", "postgres.db", 1.0),
 			NameRule("notweb.request", 1.0),
 		}
-		tracer, _ := newUnstartedTracer(WithSamplingRules(rules))
+		tracer := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -560,7 +560,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameServiceRule("db.query", "postgres.db", 1.0),
 			NameRule("web.request", 1.0),
 		}
-		tracer, _ := newUnstartedTracer(WithSamplingRules(rules))
+		tracer := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -590,7 +590,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameRule("notweb.request", 1.0),
 			NameRule("web.request", 1.0),
 		}
-		tracer, _ := newUnstartedTracer(WithSamplingRules(rules))
+		tracer := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 }

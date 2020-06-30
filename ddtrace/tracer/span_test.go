@@ -67,7 +67,7 @@ func TestSpanOperationName(t *testing.T) {
 func TestSpanFinish(t *testing.T) {
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
-	tracer, _ := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// the finish should set finished and the duration
@@ -219,7 +219,7 @@ func TestSpanSetDatadogTags(t *testing.T) {
 
 func TestSpanStart(t *testing.T) {
 	assert := assert.New(t)
-	tracer, _ := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// a new span sets the Start after the initialization
@@ -228,7 +228,7 @@ func TestSpanStart(t *testing.T) {
 
 func TestSpanString(t *testing.T) {
 	assert := assert.New(t)
-	tracer, _ := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	// don't bother checking the contents, just make sure it works.
 	assert.NotEqual("", span.String())
@@ -286,7 +286,7 @@ func TestSpanSetMetric(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
-			tracer, _ := newTracer(withTransport(newDefaultTransport()))
+			tracer := newTracer(withTransport(newDefaultTransport()))
 			span := tracer.newRootSpan("http.request", "mux.router", "/")
 			tt(assert, span)
 		})
@@ -295,7 +295,7 @@ func TestSpanSetMetric(t *testing.T) {
 
 func TestSpanError(t *testing.T) {
 	assert := assert.New(t)
-	tracer, _ := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the error is set in the default meta
@@ -320,7 +320,7 @@ func TestSpanError(t *testing.T) {
 
 func TestSpanError_Typed(t *testing.T) {
 	assert := assert.New(t)
-	tracer, _ := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the error is set in the default meta
@@ -334,7 +334,7 @@ func TestSpanError_Typed(t *testing.T) {
 
 func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
-	tracer, _ := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// don't set the error if it's nil
@@ -375,7 +375,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 
 func TestSpanSamplingPriority(t *testing.T) {
 	assert := assert.New(t)
-	tracer, _ := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer(withTransport(newDefaultTransport()))
 
 	span := tracer.newRootSpan("my.name", "my.service", "my.resource")
 	_, ok := span.Metrics[keySamplingPriority]

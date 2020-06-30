@@ -53,7 +53,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 	t.Run("dogstatsd", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
-			tracer, _ := newTracer()
+			tracer := newTracer()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "localhost:8125")
 		})
@@ -61,7 +61,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("env-host", func(t *testing.T) {
 			os.Setenv("DD_AGENT_HOST", "my-host")
 			defer os.Unsetenv("DD_AGENT_HOST")
-			tracer, _ := newTracer()
+			tracer := newTracer()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "my-host:8125")
 		})
@@ -69,7 +69,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("env-port", func(t *testing.T) {
 			os.Setenv("DD_DOGSTATSD_PORT", "123")
 			defer os.Unsetenv("DD_DOGSTATSD_PORT")
-			tracer, _ := newTracer()
+			tracer := newTracer()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
 		})
@@ -79,7 +79,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_DOGSTATSD_PORT", "123")
 			defer os.Unsetenv("DD_AGENT_HOST")
 			defer os.Unsetenv("DD_DOGSTATSD_PORT")
-			tracer, _ := newTracer()
+			tracer := newTracer()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
 		})
@@ -87,13 +87,13 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("env-env", func(t *testing.T) {
 			os.Setenv("DD_ENV", "testEnv")
 			defer os.Unsetenv("DD_ENV")
-			tracer, _ := newTracer()
+			tracer := newTracer()
 			c := tracer.config
 			assert.Equal(t, "testEnv", c.env)
 		})
 
 		t.Run("option", func(t *testing.T) {
-			tracer, _ := newTracer(WithDogstatsdAddress("10.1.0.12:4002"))
+			tracer := newTracer(WithDogstatsdAddress("10.1.0.12:4002"))
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
 		})
@@ -104,14 +104,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		defer os.Unsetenv("DD_ENV")
 		assert := assert.New(t)
 		env := "production"
-		tracer, _ := newTracer(WithEnv(env))
+		tracer := newTracer(WithEnv(env))
 		c := tracer.config
 		assert.Equal(env, c.env)
 	})
 
 	t.Run("other", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _ := newTracer(
+		tracer := newTracer(
 			WithSampler(NewRateSampler(0.5)),
 			WithAgentAddr("ddagent.consul.local:58126"),
 			WithGlobalTag("k", "v"),
