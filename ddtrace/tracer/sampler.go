@@ -396,6 +396,27 @@ func (sr *SamplingRule) match(s *span) bool {
 	return true
 }
 
+func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
+	s := struct {
+		Service string  `json:"service"`
+		Name    string  `json:"name"`
+		Rate    float64 `json:"sample_rate"`
+	}{}
+	if sr.exactService != "" {
+		s.Service = sr.exactService
+	} else if sr.Service != nil {
+		s.Service = fmt.Sprintf("%s", sr.Service)
+	}
+	if sr.exactName != "" {
+		s.Name = sr.exactName
+	} else if sr.Name != nil {
+		fmt.Printf("NAME: %#v, %v, %s\n", sr.Name, sr.Name, sr.Name)
+		s.Name = fmt.Sprintf("%s", sr.Name)
+	}
+	s.Rate = sr.Rate
+	return json.Marshal(&s)
+}
+
 // rateLimiter is a wrapper on top of golang.org/x/time/rate which implements a rate limiter but also
 // returns the effective rate of allowance.
 type rateLimiter struct {
