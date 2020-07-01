@@ -1155,10 +1155,6 @@ func (t *dummyTransport) endpoint() string {
 	return "test"
 }
 
-func (t *dummyTransport) testConn() error {
-	return nil
-}
-
 func decode(p *payload) (spanLists, error) {
 	var traces spanLists
 	err := msgp.Decode(p, &traces)

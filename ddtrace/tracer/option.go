@@ -487,11 +487,11 @@ func StackFrames(n, skip uint) FinishOption {
 }
 
 // boolEnv returns the parsed boolean value of an environment variable, or
-// d if it fails to parse.
-func boolEnv(key string, d bool) bool {
+// def if it fails to parse.
+func boolEnv(key string, def bool) bool {
 	v, err := strconv.ParseBool(os.Getenv(key))
 	if err != nil {
-		return d
+		return def
 	}
 	return v
 }

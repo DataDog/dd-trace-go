@@ -52,8 +52,8 @@ type transport interface {
 	// send sends the payload p to the agent using the transport set up.
 	// It returns a non-nil response body when no error occurred.
 	send(p *payload) (body io.ReadCloser, err error)
+	// endpoint returns the URL to which the transport will send traces.
 	endpoint() string
-	testConn() error
 }
 
 // newTransport returns a new Transport implementation that sends traces to a
@@ -136,18 +136,6 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 
 func (t *httpTransport) endpoint() string {
 	return t.traceURL
-}
-
-func (t *httpTransport) testConn() error {
-	req, err := http.NewRequest("POST", t.traceURL, nil)
-	if err != nil {
-		return fmt.Errorf("cannot create http request: %v", err)
-	}
-	_, err = defaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // resolveAddr resolves the given agent address and fills in any missing host

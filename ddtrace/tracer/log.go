@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
 	"runtime"
 	"time"
 
@@ -45,6 +46,18 @@ type startupInfo struct {
 	GlobalService         string            `json:"global_service"`          // Global service string. If not-nil should be same as Service. (#614)
 }
 
+func agentReachable(endpoint string) error {
+	req, err := http.NewRequest("POST", endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("cannot create http request: %v", err)
+	}
+	_, err = defaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func logStartup(t *tracer) {
 	if !boolEnv("DD_TRACE_STARTUP_LOGS", true) {
 		return
@@ -78,7 +91,7 @@ func logStartup(t *tracer) {
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
 	}
-	if err := t.transport.testConn(); err != nil {
+	if err := agentReachable(t.transport.endpoint()); err != nil {
 		info.AgentError = fmt.Sprintf("%s", err)
 	}
 	bs, err := json.Marshal(info)
