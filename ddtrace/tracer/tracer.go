@@ -132,7 +132,10 @@ const payloadQueueSize = 1000
 
 func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := newConfig(opts...)
-	envRules, _ := samplingRulesFromEnv()
+	envRules, err := samplingRulesFromEnv()
+	if err != nil {
+		log.Warn("Error(s) reading sampling rules: %s", err)
+	}
 	if envRules != nil {
 		c.samplingRules = envRules
 	}
