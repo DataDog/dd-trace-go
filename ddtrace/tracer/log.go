@@ -22,6 +22,7 @@ const (
 	unknown = "unknown"
 )
 
+// startupInfo contains various information about the status of the tracer on startup.
 type startupInfo struct {
 	Date                  string            `json:"date"`                    // ISO 8601 date and time of start
 	OSName                string            `json:"os_name"`                 // Windows, Darwin, Debian, etc.
@@ -46,6 +47,8 @@ type startupInfo struct {
 	GlobalService         string            `json:"global_service"`          // Global service string. If not-nil should be same as Service. (#614)
 }
 
+// agentReachable determines whether or not the tracer is able to connect
+// to endpoint, which should be the full URL returned by transport.endpoint
 func agentReachable(endpoint string) error {
 	req, err := http.NewRequest("POST", endpoint, nil)
 	if err != nil {
@@ -58,6 +61,8 @@ func agentReachable(endpoint string) error {
 	return nil
 }
 
+// logStartup generates a startupInfo for a tracer and writes it to the log in 
+// JSON format. 
 func logStartup(t *tracer) {
 	if !boolEnv("DD_TRACE_STARTUP_LOGS", true) {
 		return
