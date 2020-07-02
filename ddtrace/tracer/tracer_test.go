@@ -1152,7 +1152,7 @@ func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
 }
 
 func (t *dummyTransport) endpoint() string {
-	return "test"
+	return "http://localhost:9/v0.4/traces"
 }
 
 func decode(p *payload) (spanLists, error) {

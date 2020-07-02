@@ -411,7 +411,6 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 	if sr.exactName != "" {
 		s.Name = sr.exactName
 	} else if sr.Name != nil {
-		fmt.Printf("NAME: %#v, %v, %s\n", sr.Name, sr.Name, sr.Name)
 		s.Name = fmt.Sprintf("%s", sr.Name)
 	}
 	s.Rate = sr.Rate
