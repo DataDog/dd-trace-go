@@ -56,13 +56,14 @@ func agentReachable(endpoint string) error {
 	}
 	_, err = defaultClient.Do(req)
 	if err != nil {
+		log.Warn("Unable to reach agent: %s", err)
 		return err
 	}
 	return nil
 }
 
-// logStartup generates a startupInfo for a tracer and writes it to the log in 
-// JSON format. 
+// logStartup generates a startupInfo for a tracer and writes it to the log in
+// JSON format.
 func logStartup(t *tracer) {
 	if !boolEnv("DD_TRACE_STARTUP_LOGS", true) {
 		return
