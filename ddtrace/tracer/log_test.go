@@ -54,7 +54,6 @@ func TestStartupLog(t *testing.T) {
 		tp.Reset()
 		logStartup(tracer)
 		assert.Len(tp.Lines(), 1)
-		//fmt.Printf("tp.Lines(): %#v\n", tp.Lines())
 		assert.Regexp(`Datadog Tracer v1\.25\.0 INFO: Startup: {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sampling_rules":\[{"service":"mysql","name":"","sample_rate":0\.75}\],"sampling_rules_error":"","tags":{"tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"health_metrics_enabled":true,"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service"}`, tp.Lines()[0])
 	})
 
