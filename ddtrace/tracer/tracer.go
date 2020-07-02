@@ -139,7 +139,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if envRules != nil {
 		c.samplingRules = envRules
 	}
-	t := &tracer{
+	return &tracer{
 		config:           c,
 		payload:          newPayload(),
 		payloadChan:      make(chan []*span, payloadQueueSize),
@@ -149,7 +149,6 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		prioritySampling: newPrioritySampler(),
 		pid:              strconv.Itoa(os.Getpid()),
 	}
-	return t
 }
 
 func newTracer(opts ...StartOption) *tracer {
