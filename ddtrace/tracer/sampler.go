@@ -186,6 +186,8 @@ func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	}
 }
 
+// samplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES
+// environment variable.
 func samplingRulesFromEnv() ([]SamplingRule, error) {
 	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
 	if rulesFromEnv == "" {
@@ -228,7 +230,6 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 }
 
 // appliedSamplingRules validates the user-provided rules and returns an internal representation.
-// If the DD_TRACE_SAMPLING_RULES environment variable is set, it will replace the given rules.
 func appliedSamplingRules(rules []SamplingRule) []SamplingRule {
 	validRules := make([]SamplingRule, 0, len(rules))
 	for _, v := range rules {
