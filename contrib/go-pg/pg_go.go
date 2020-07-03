@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2020 Datadog, Inc.
+
 package pg
 
 import (
@@ -12,7 +17,7 @@ import (
 
 const gopgStartSpan = "dd-trace-go:span"
 
-// ADd QueryHook to existing go_pg.DB instance
+// Hook add QueryHook to existing go_pg.DB instance
 func Hook(db *pg.DB) *pg.DB {
 	db.AddQueryHook(&QueryHook{})
 	return db
@@ -21,25 +26,25 @@ func Hook(db *pg.DB) *pg.DB {
 // QueryHook for go_pg
 type QueryHook struct{}
 
-// This hook is executed before query is sent
+// BeforeQuery is executed before query is sent
 // Start measure, when query is started
 func (h *QueryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context.Context, error) {
 	if qe.Stash == nil {
 		qe.Stash = make(map[interface{}]interface{})
 	}
 
-	unformatedSql, _ := qe.UnformattedQuery()
+	unformatedSQL, _ := qe.UnformattedQuery()
 
 	opts := []ddtrace.StartSpanOption{
 		tracer.StartTime(time.Now()),
 		tracer.SpanType(ext.SpanTypeSQL),
-		tracer.ResourceName(string(unformatedSql)),
+		tracer.ResourceName(string(unformatedSQL)),
 	}
 	_, ctx = tracer.StartSpanFromContext(ctx, "gopg", opts...)
 	return ctx, qe.Err
 }
 
-// Hook is executed after query is finished
+// AfterQuery is executed after query is finished
 func (h *QueryHook) AfterQuery(ctx context.Context, qe *pg.QueryEvent) error {
 	span, ok := tracer.SpanFromContext(ctx)
 	if !ok {
