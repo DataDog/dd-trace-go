@@ -47,16 +47,16 @@ type startupInfo struct {
 	GlobalService         string            `json:"global_service"`          // Global service string. If not-nil should be same as Service. (#614)
 }
 
-// agentReachable determines whether or not the tracer is able to connect
-// to endpoint, which should be the full URL returned by transport.endpoint
-func agentReachable(endpoint string) error {
+// checkEndpoint tries to connect to endpoint, which should be the full URL
+// returned by transport.endpoint. If the endpoint is not reachable,
+// checkEndpoint returns an error explaining why.
+func checkEndpoint(endpoint string) error {
 	req, err := http.NewRequest("POST", endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("cannot create http request: %v", err)
 	}
 	_, err = defaultClient.Do(req)
 	if err != nil {
-		log.Warn("Unable to reach agent: %s", err)
 		return err
 	}
 	return nil
@@ -65,9 +65,6 @@ func agentReachable(endpoint string) error {
 // logStartup generates a startupInfo for a tracer and writes it to the log in
 // JSON format.
 func logStartup(t *tracer) {
-	if !boolEnv("DD_TRACE_STARTUP_LOGS", true) {
-		return
-	}
 	tags := make(map[string]string)
 	for k, v := range t.globalTags {
 		tags[k] = fmt.Sprintf("%v", v)
@@ -96,14 +93,16 @@ func logStartup(t *tracer) {
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
+		log.Warn("DATADOG TRACER DIAGNOSTICS Error(s) parsing DD_TRACE_SAMPLING_RULES: %s", err)
 	}
-	if err := agentReachable(t.transport.endpoint()); err != nil {
+	if err := checkEndpoint(t.transport.endpoint()); err != nil {
 		info.AgentError = fmt.Sprintf("%s", err)
+		log.Warn("DATADOG TRACER DIAGNOSTICS Unable to reach agent: %s", err)
 	}
 	bs, err := json.Marshal(info)
 	if err != nil {
-		log.Warn("Failed to serialize json for startup log: (%v) %#v\n", err, info)
+		log.Warn("DATADOG TRACER DIAGNOSTICS Failed to serialize json for startup log (%v) %#v\n", err, info)
 		return
 	}
-	log.Info("Startup: %s\n", string(bs))
+	log.Info("DATADOG TRACER CONFIGURATION %s\n", string(bs))
 }

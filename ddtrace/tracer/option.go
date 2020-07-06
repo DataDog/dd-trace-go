@@ -30,6 +30,10 @@ type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
 
+	// logStartup, when true, causes various startup info to be written
+	// when the tracer starts.
+	logStartup bool
+
 	// serviceName specifies the name of this application.
 	serviceName string
 
@@ -136,6 +140,7 @@ func newConfig(opts ...StartOption) *config {
 			}
 		}
 	}
+	c.logStartup = boolEnv("DD_TRACE_STARTUP_LOGS", true)
 	for _, fn := range opts {
 		fn(c)
 	}

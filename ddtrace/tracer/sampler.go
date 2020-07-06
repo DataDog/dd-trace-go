@@ -7,12 +7,14 @@ package tracer
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -203,15 +205,15 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 		return nil, fmt.Errorf("error unmarshalling JSON: %v", err)
 	}
 	rules := make([]SamplingRule, 0, len(jsonRules))
-	var errStr string
-	for _, v := range jsonRules {
+	var errs []string
+	for i, v := range jsonRules {
 		if v.Rate == "" {
-			errStr += "rate not provided "
+			errs = append(errs, fmt.Sprintf("at index %d: rate not provided", i))
 			continue
 		}
 		rate, err := v.Rate.Float64()
 		if err != nil {
-			errStr += fmt.Sprintf("invalid rate: %v ", err)
+			errs = append(errs, fmt.Sprintf("at index %d: %v", i, err))
 			continue
 		}
 		switch {
@@ -223,8 +225,8 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 			rules = append(rules, NameRule(v.Name, rate))
 		}
 	}
-	if errStr != "" {
-		return rules, fmt.Errorf("error(s) parsing DD_TRACE_SAMPLING_RULES: %s", errStr)
+	if len(errs) != 0 {
+		return rules, errors.New(strings.Join(errs, ", "))
 	}
 	return rules, nil
 }

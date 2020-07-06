@@ -93,7 +93,9 @@ func Start(opts ...StartOption) {
 	}
 	t := newTracer(opts...)
 	internal.SetGlobalTracer(t)
-	logStartup(t)
+	if t.config.logStartup {
+		logStartup(t)
+	}
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -134,7 +136,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := newConfig(opts...)
 	envRules, err := samplingRulesFromEnv()
 	if err != nil {
-		log.Warn("Error(s) reading sampling rules: %s", err)
+		log.Warn("Error(s) parsing DD_TRACE_SAMPLING_RULES: %s", err)
 	}
 	if envRules != nil {
 		c.samplingRules = envRules
