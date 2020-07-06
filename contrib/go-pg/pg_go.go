@@ -7,17 +7,15 @@ package pg
 
 import (
 	"context"
-	"time"
 
-	"github.com/go-pg/pg/v10"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/go-pg/pg/v10"
 )
 
-const gopgStartSpan = "dd-trace-go:span"
-
-// Hook add QueryHook to existing go_pg.DB instance
+// Hook wraps the given DB to generate APM data.
 func Hook(db *pg.DB) *pg.DB {
 	db.AddQueryHook(&QueryHook{})
 	return db
@@ -29,16 +27,14 @@ type QueryHook struct{}
 // BeforeQuery is executed before query is sent
 // Start measure, when query is started
 func (h *QueryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context.Context, error) {
-	if qe.Stash == nil {
-		qe.Stash = make(map[interface{}]interface{})
+	query, err := qe.UnformattedQuery()
+	if err != nil {
+		query = []byte("unknown")
 	}
 
-	unformatedSQL, _ := qe.UnformattedQuery()
-
 	opts := []ddtrace.StartSpanOption{
-		tracer.StartTime(time.Now()),
 		tracer.SpanType(ext.SpanTypeSQL),
-		tracer.ResourceName(string(unformatedSQL)),
+		tracer.ResourceName(string(query)),
 	}
 	_, ctx = tracer.StartSpanFromContext(ctx, "gopg", opts...)
 	return ctx, qe.Err
@@ -50,7 +46,6 @@ func (h *QueryHook) AfterQuery(ctx context.Context, qe *pg.QueryEvent) error {
 	if !ok {
 		return nil
 	}
-
 	span.Finish(tracer.WithError(qe.Err))
 
 	return qe.Err

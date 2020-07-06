@@ -9,17 +9,17 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-pg/pg/v10"
-	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/go-pg/pg/v10"
+	"github.com/stretchr/testify/assert"
 )
 
-func GetPostgresConnection() *pg.DB {
+func getPostgresConnection() *pg.DB {
 	db := pg.Connect(&pg.Options{
 		User:     "postgres",
-		Password: "",
 		Database: "postgres",
 	})
 	return db
@@ -30,7 +30,7 @@ func TestSelect(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	conn := GetPostgresConnection()
+	conn := getPostgresConnection()
 	Hook(conn)
 
 	parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
