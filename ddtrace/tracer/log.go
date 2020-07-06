@@ -96,12 +96,12 @@ func logStartup(t *tracer) {
 	}
 	if err := checkEndpoint(t.transport.endpoint()); err != nil {
 		info.AgentError = fmt.Sprintf("%s", err)
-		log.Warn("DATADOG TRACER DIAGNOSTICS Unable to reach agent: %s", err)
+		log.Warn("DIAGNOSTICS Unable to reach agent: %s", err)
 	}
 	bs, err := json.Marshal(info)
 	if err != nil {
-		log.Warn("DATADOG TRACER DIAGNOSTICS Failed to serialize json for startup log (%v) %#v\n", err, info)
+		log.Warn("DIAGNOSTICS Failed to serialize json for startup log (%v) %#v\n", err, info)
 		return
 	}
-	log.Info("DATADOG TRACER CONFIGURATION %s\n", string(bs))
+	log.Info("CONFIGURATION %s\n", string(bs))
 }
