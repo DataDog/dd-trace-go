@@ -93,7 +93,6 @@ func logStartup(t *tracer) {
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
-		log.Warn("DATADOG TRACER DIAGNOSTICS Error(s) parsing DD_TRACE_SAMPLING_RULES: %s", err)
 	}
 	if err := checkEndpoint(t.transport.endpoint()); err != nil {
 		info.AgentError = fmt.Sprintf("%s", err)
