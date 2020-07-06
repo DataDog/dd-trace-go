@@ -102,11 +102,13 @@ type roundTripperConfig struct {
 	after         RoundTripperAfterFunc
 	analyticsRate float64
 	serviceName   string
+	resourceNamer func(req *http.Request) string
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
 	return &roundTripperConfig{
 		analyticsRate: globalconfig.AnalyticsRate(),
+		resourceNamer: defaultResourceNamer,
 	}
 }
 
@@ -128,6 +130,18 @@ func WithAfter(f RoundTripperAfterFunc) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.after = f
 	}
+}
+
+// RTWithResourceNamer specifies a function which will be used to
+// obtain the resource name for a given request.
+func RTWithResourceNamer(namer func(req *http.Request) string) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.resourceNamer = namer
+	}
+}
+
+func defaultResourceNamer(_ *http.Request) string {
+	return "http.request"
 }
 
 // RTWithServiceName sets the given service name for the RoundTripper.
