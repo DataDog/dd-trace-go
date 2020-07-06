@@ -200,7 +200,7 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 	}{}
 	err := json.Unmarshal([]byte(rulesFromEnv), &jsonRules)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing DD_TRACE_SAMPLING_RULES: %v", err)
+		return nil, fmt.Errorf("error unmarshalling JSON: %v", err)
 	}
 	rules := make([]SamplingRule, 0, len(jsonRules))
 	var errStr string
