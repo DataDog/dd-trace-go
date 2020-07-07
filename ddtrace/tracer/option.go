@@ -94,6 +94,8 @@ type config struct {
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
+// newConfig renders the tracer configuration based on defaults, environment variables
+// and passed user opts.
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
@@ -107,6 +109,9 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.dogstatsdAddr = net.JoinHostPort(statsdHost, statsdPort)
 
+	if v := os.Getenv("DD_TRACE_ANALYTICS_ENABLED"); v != "" {
+		globalconfig.SetAnalyticsRate(1.0)
+	}
 	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
 		var err error
 		c.hostname, err = os.Hostname()
