@@ -17,20 +17,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func getPostgresConnection() *pg.DB {
-	db := pg.Connect(&pg.Options{
-		User:     "postgres",
-		Database: "postgres",
-	})
-	return db
-}
-
 func TestSelect(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	conn := getPostgresConnection()
+	conn := pg.Connect(&pg.Options{
+		User:     "postgres",
+		Database: "postgres",
+	})
+
 	Hook(conn)
 
 	parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
@@ -39,11 +35,15 @@ func TestSelect(t *testing.T) {
 	)
 
 	var n int
-	_, _ = conn.WithContext(ctx).QueryOne(pg.Scan(&n), "SELECT 1")
+	res, err := conn.WithContext(ctx).QueryOne(pg.Scan(&n), "SELECT 1")
 	parentSpan.Finish()
 	spans := mt.FinishedSpans()
 
-	assert.True(len(spans) == 2)
+	assert.Equal(1, res.RowsAffected())
+	assert.Equal(1, res.RowsReturned())
+	assert.Equal(2, len(spans))
+	assert.Equal(nil, err)
+	assert.Equal(1, n)
 	assert.Equal("gopg", spans[0].OperationName())
 	assert.Equal("http.request", spans[1].OperationName())
 }

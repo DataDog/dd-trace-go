@@ -17,16 +17,13 @@ import (
 
 // Hook wraps the given DB to generate APM data.
 func Hook(db *pg.DB) *pg.DB {
-	db.AddQueryHook(&QueryHook{})
+	db.AddQueryHook(&queryHook{})
 	return db
 }
 
-// QueryHook for go_pg
-type QueryHook struct{}
+type queryHook struct{}
 
-// BeforeQuery is executed before query is sent
-// Start measure, when query is started
-func (h *QueryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context.Context, error) {
+func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context.Context, error) {
 	query, err := qe.UnformattedQuery()
 	if err != nil {
 		query = []byte("unknown")
@@ -40,8 +37,7 @@ func (h *QueryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context
 	return ctx, qe.Err
 }
 
-// AfterQuery is executed after query is finished
-func (h *QueryHook) AfterQuery(ctx context.Context, qe *pg.QueryEvent) error {
+func (h *queryHook) AfterQuery(ctx context.Context, qe *pg.QueryEvent) error {
 	span, ok := tracer.SpanFromContext(ctx)
 	if !ok {
 		return nil
