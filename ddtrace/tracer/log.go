@@ -103,5 +103,5 @@ func logStartup(t *tracer) {
 		log.Warn("DIAGNOSTICS Failed to serialize json for startup log (%v) %#v\n", err, info)
 		return
 	}
-	log.Info("CONFIGURATION %s\n", string(bs))
+	log.Info("DATADOG TRACER CONFIGURATION %s\n", string(bs))
 }
