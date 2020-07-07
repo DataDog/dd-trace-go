@@ -7,29 +7,27 @@ package pg
 
 import (
 	"context"
+	"log"
 
-	ddpggo "gopkg.in/DataDog/dd-trace-go.v1/contrib/pg-go/pg_go"
+	pggotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/pg-go/pg_go"
 
 	"github.com/go-pg/pg/v10"
 )
 
-// To trace Cassandra commands, use our query wrapper WrapQuery.
+// To trace Postgres queries, wrap pg.Connect instance with pggotrace.Hook.
 func Example() {
-	// Initialise a postgres session as usual.
+	var user struct {
+		Name string
+	}
 	conn := pg.Connect(&pg.Options{
-		User:     "postgres",
-		Database: "postgres",
+		User:     "pggotest",
+		Database: "datadog",
 	})
 
 	// Wrap connection with Hook, which catch
-	Hook(conn)
-
-	// To n is stored result, in this case 1
-	var n int
-
-	// For tracing is required execute query with context.
-	_, err := conn.WithContext(context.Background()).QueryOne(pg.Scan(&n), "SELECT 1")
+	pggotrace.Hook(conn)
+	_, err := conn.WithContext(context.Background()).QueryOne(&user, "SELECT name FROM users")
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 }
