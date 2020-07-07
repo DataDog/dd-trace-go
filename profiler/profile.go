@@ -29,6 +29,8 @@ const (
 	// MutexProfile reports the lock contentions. When you think your CPU is not fully utilized due
 	// to a mutex contention, use this profile. Mutex profile is not enabled by default.
 	MutexProfile
+	// GoroutineProfile reports stack traces of all current goroutines
+	GoroutineProfile
 )
 
 func (t ProfileType) String() string {
@@ -41,6 +43,8 @@ func (t ProfileType) String() string {
 		return "mutex"
 	case BlockProfile:
 		return "block"
+	case GoroutineProfile:
+		return "goroutine"
 	default:
 		return "unknown"
 	}
@@ -75,6 +79,8 @@ func (p *profiler) runProfile(t ProfileType) (*profile, error) {
 		return mutexProfile(p.cfg)
 	case BlockProfile:
 		return blockProfile(p.cfg)
+	case GoroutineProfile:
+		return goroutineProfile(p.cfg)
 	default:
 		return nil, errors.New("profile type not implemented")
 	}
@@ -158,6 +164,21 @@ func mutexProfile(cfg *config) (*profile, error) {
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
 		types: []string{"contentions"},
+		data:  buf.Bytes(),
+	}, nil
+}
+
+func goroutineProfile(cfg *config) (*profile, error) {
+	var buf bytes.Buffer
+	start := now()
+	if err := lookupProfile("goroutine", &buf); err != nil {
+		return nil, err
+	}
+	end := now()
+	tags := append(cfg.tags, "profile_type:goroutine")
+	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
+	return &profile{
+		types: []string{"goroutines"},
 		data:  buf.Bytes(),
 	}, nil
 }
