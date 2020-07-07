@@ -47,8 +47,8 @@ type startupInfo struct {
 	GlobalService         string            `json:"global_service"`          // Global service string. If not-nil should be same as Service. (#614)
 }
 
-// checkEndpoint tries to connect to endpoint, which should be the full URL
-// returned by transport.endpoint. If the endpoint is not reachable,
+// checkEndpoint tries to connect to the URL specified by endpoint.
+// If the endpoint is not reachable,
 // checkEndpoint returns an error explaining why.
 func checkEndpoint(endpoint string) error {
 	req, err := http.NewRequest("POST", endpoint, nil)
