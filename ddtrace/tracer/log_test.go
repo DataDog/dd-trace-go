@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"math"
-	"net/http"
 	"os"
 	"testing"
 
@@ -64,7 +63,6 @@ func TestStartupLog(t *testing.T) {
 		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
 		tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
 		defer stop()
-		tracer.transport = newHTTPTransport("localhost:9", http.DefaultClient)
 
 		tp.Reset()
 		logStartup(tracer)
@@ -74,14 +72,23 @@ func TestStartupLog(t *testing.T) {
 }
 
 func TestLogSamplingRules(t *testing.T) {
-	t.Run("partial", func(t *testing.T) {
-		assert := assert.New(t)
-		tp := new(testLogger)
-		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
-		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
-		_, _, _, stop := startTestTracer(t, WithLogger(tp))
-		defer stop()
+	assert := assert.New(t)
+	tp := new(testLogger)
+	os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
+	defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
+	_, _, _, stop := startTestTracer(t, WithLogger(tp))
+	defer stop()
 
-		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ WARN: DIAGNOSTICS Error\(s\) parsing DD_TRACE_SAMPLING_RULES: at index 1: rate not provided, at index 3: rate not provided$`, tp.Lines()[0])
-	})
+	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ WARN: DIAGNOSTICS Error\(s\) parsing DD_TRACE_SAMPLING_RULES:\nat index 1: rate not provided\nat index 3: rate not provided$`, tp.Lines()[0])
+}
+
+func TestLogAgentReachable(t *testing.T) {
+	assert := assert.New(t)
+	tp := new(testLogger)
+	tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
+	defer stop()
+	tp.Reset()
+	logStartup(tracer)
+	assert.Len(tp.Lines(), 2)
+	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ WARN: DIAGNOSTICS Unable to reach agent: Post`, tp.Lines()[0])
 }

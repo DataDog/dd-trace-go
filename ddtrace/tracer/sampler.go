@@ -226,7 +226,7 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 		}
 	}
 	if len(errs) != 0 {
-		return rules, errors.New(strings.Join(errs, ", "))
+		return rules, errors.New(strings.Join(errs, "\n"))
 	}
 	return rules, nil
 }

@@ -136,7 +136,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := newConfig(opts...)
 	envRules, err := samplingRulesFromEnv()
 	if err != nil {
-		log.Warn("DIAGNOSTICS Error(s) parsing DD_TRACE_SAMPLING_RULES: %s", err)
+		log.Warn("DIAGNOSTICS Error(s) parsing DD_TRACE_SAMPLING_RULES:\n%s", err)
 	}
 	if envRules != nil {
 		c.samplingRules = envRules
