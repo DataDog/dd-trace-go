@@ -84,15 +84,4 @@ func TestLogSamplingRules(t *testing.T) {
 
 		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ WARN: DIAGNOSTICS Error\(s\) parsing DD_TRACE_SAMPLING_RULES: at index 1: rate not provided, at index 3: rate not provided$`, tp.Lines()[0])
 	})
-
-	t.Run("fail", func(t *testing.T) {
-		assert := assert.New(t)
-		tp := new(testLogger)
-		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": "invalid"}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}]`)
-		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
-		_, _, _, stop := startTestTracer(t, WithLogger(tp))
-		defer stop()
-
-		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ WARN: DIAGNOSTICS Error\(s\) parsing DD_TRACE_SAMPLING_RULES: error unmarshalling JSON: json: invalid number literal, trying to unmarshal "\\"invalid\\"" into Number$`, tp.Lines()[0])
-	})
 }
