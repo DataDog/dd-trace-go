@@ -21,6 +21,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/stretchr/testify/assert"
@@ -190,6 +191,7 @@ func TestTracerStartSpan(t *testing.T) {
 		// A span is not measured unless made so specifically
 		_, ok := span.Meta[keyMeasured]
 		assert.False(ok)
+		assert.Equal(globalconfig.GetRuntimeID(), span.Meta[ext.RuntimeID])
 	})
 
 	t.Run("priority", func(t *testing.T) {

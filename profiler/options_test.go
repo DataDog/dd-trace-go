@@ -14,6 +14,7 @@ import (
 
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 func TestOptions(t *testing.T) {
@@ -242,6 +243,7 @@ func TestDefaultConfig(t *testing.T) {
 		assert.Equal(DefaultDuration, cfg.cpuDuration)
 		assert.Equal(DefaultMutexFraction, cfg.mutexFraction)
 		assert.Equal(DefaultBlockRate, cfg.blockRate)
+		assert.Contains(cfg.tags, "runtime-id:"+globalconfig.GetRuntimeID())
 	})
 }
 
