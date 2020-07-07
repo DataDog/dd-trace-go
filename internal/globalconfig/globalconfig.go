@@ -56,8 +56,8 @@ func SetServiceName(name string) {
 	cfg.serviceName = name
 }
 
-// GetRuntimeID returns this process's unique runtime id.
-func GetRuntimeID() string {
+// RuntimeID returns this process's unique runtime id.
+func RuntimeID() string {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 	return cfg.runtimeID

@@ -132,7 +132,7 @@ func defaultConfig() *config {
 		"runtime_compiler:"+runtime.Compiler,
 		"runtime_arch:"+runtime.GOARCH,
 		"runtime_os:"+runtime.GOOS,
-		"runtime-id:"+globalconfig.GetRuntimeID(),
+		"runtime-id:"+globalconfig.RuntimeID(),
 	)(&c)
 	// not for public use
 	if v := os.Getenv("DD_PROFILING_URL"); v != "" {

@@ -191,7 +191,8 @@ func TestTracerStartSpan(t *testing.T) {
 		// A span is not measured unless made so specifically
 		_, ok := span.Meta[keyMeasured]
 		assert.False(ok)
-		assert.Equal(globalconfig.GetRuntimeID(), span.Meta[ext.RuntimeID])
+		assert.Equal(globalconfig.RuntimeID(), span.Meta[ext.RuntimeID])
+		assert.NotEqual("", span.Meta[ext.RuntimeID])
 	})
 
 	t.Run("priority", func(t *testing.T) {

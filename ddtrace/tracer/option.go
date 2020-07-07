@@ -138,7 +138,7 @@ func newConfig(opts ...StartOption) *config {
 	for _, fn := range opts {
 		fn(c)
 	}
-	WithGlobalTag(ext.RuntimeID, globalconfig.GetRuntimeID())(c)
+	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	if c.env == "" {
 		if v, ok := c.globalTags["env"]; ok {
 			if e, ok := v.(string); ok {

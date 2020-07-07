@@ -76,7 +76,7 @@ func TestTryUpload(t *testing.T) {
 		fmt.Sprintf("runtime_compiler:%s", runtime.Compiler),
 		fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
 		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
-		fmt.Sprintf("runtime-id:%s", globalconfig.GetRuntimeID()),
+		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
 	}, tags)
 	for k, v := range map[string]string{
 		"format":   "pprof",

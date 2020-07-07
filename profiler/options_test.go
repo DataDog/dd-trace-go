@@ -243,7 +243,7 @@ func TestDefaultConfig(t *testing.T) {
 		assert.Equal(DefaultDuration, cfg.cpuDuration)
 		assert.Equal(DefaultMutexFraction, cfg.mutexFraction)
 		assert.Equal(DefaultBlockRate, cfg.blockRate)
-		assert.Contains(cfg.tags, "runtime-id:"+globalconfig.GetRuntimeID())
+		assert.Contains(cfg.tags, "runtime-id:"+globalconfig.RuntimeID())
 	})
 }
 
