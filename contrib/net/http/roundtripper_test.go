@@ -6,6 +6,7 @@
 package http
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -34,6 +35,8 @@ func TestRoundTripper(t *testing.T) {
 	}))
 	defer s.Close()
 
+	ip, port, _ := net.SplitHostPort(s.Listener.Addr().String())
+
 	rt := WrapRoundTripper(http.DefaultTransport,
 		WithBefore(func(req *http.Request, span ddtrace.Span) {
 			span.SetTag("CalledBefore", true)
@@ -61,7 +64,16 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, "http.request", s1.Tag(ext.ResourceName))
 	assert.Equal(t, "200", s1.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s1.Tag(ext.HTTPMethod))
-	assert.Equal(t, "/hello/world", s1.Tag(ext.HTTPURL))
+	assert.Equal(t, "/hello/world", s1.Tag("http.path"))
+	assert.Contains(t, s1.Tag(ext.HTTPURL), "/hello/world")
+	assert.Contains(t, s1.Tag(ext.HTTPURL), "http://")
+	assert.Equal(t, ip, s1.Tag("network.destination.ip"))
+	assert.Equal(t, port, s1.Tag("network.destination.port"))
+	assert.Equal(t, "text/plain; charset=utf-8", s1.Tag("http.content_type"))
+	assert.Equal(t, int64(0), s1.Tag("http.dns_lookup_time"))
+	assert.Less(t, s1.Tag("http.pretransfer_time"), int64(1000000))
+	assert.Less(t, s1.Tag("http.starttransfer_time"), int64(1000000))
+	assert.Equal(t, false, s1.Tag("http.is_tls"))
 	assert.Equal(t, true, s1.Tag("CalledBefore"))
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
 }
