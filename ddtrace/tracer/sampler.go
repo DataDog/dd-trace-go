@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -182,7 +181,7 @@ type rulesSampler struct {
 // Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
 func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	return &rulesSampler{
-		rules:      appliedSamplingRules(rules),
+		rules:      rules,
 		globalRate: globalSampleRate(),
 		limiter:    newRateLimiter(),
 	}
@@ -216,6 +215,10 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 			errs = append(errs, fmt.Sprintf("at index %d: %v", i, err))
 			continue
 		}
+		if !(rate >= 0.0 && rate <= 1.0) {
+			log.Warn("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v)
+			continue
+		}
 		switch {
 		case v.Service != "" && v.Name != "":
 			rules = append(rules, NameServiceRule(v.Name, v.Service, rate))
@@ -226,22 +229,9 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 		}
 	}
 	if len(errs) != 0 {
-		return rules, errors.New(strings.Join(errs, "\n"))
+		return rules, fmt.Errorf("found errors:\n\t%s", strings.Join(errs, "\n\t"))
 	}
 	return rules, nil
-}
-
-// appliedSamplingRules validates the user-provided rules and returns an internal representation.
-func appliedSamplingRules(rules []SamplingRule) []SamplingRule {
-	validRules := make([]SamplingRule, 0, len(rules))
-	for _, v := range rules {
-		if !(v.Rate >= 0.0 && v.Rate <= 1.0) {
-			log.Warn("ignoring rule %+v: rate is out of range", v)
-			continue
-		}
-		validRules = append(validRules, v)
-	}
-	return validRules
 }
 
 // globalSampleRate returns the sampling rate found in the DD_TRACE_SAMPLE_RATE environment variable.
