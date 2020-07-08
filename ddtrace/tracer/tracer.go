@@ -91,7 +91,11 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
-	internal.SetGlobalTracer(newTracer(opts...))
+	t := newTracer(opts...)
+	internal.SetGlobalTracer(t)
+	if t.config.logStartup {
+		logStartup(t)
+	}
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -130,6 +134,13 @@ const payloadQueueSize = 1000
 
 func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := newConfig(opts...)
+	envRules, err := samplingRulesFromEnv()
+	if err != nil {
+		log.Warn("DIAGNOSTICS Error(s) parsing DD_TRACE_SAMPLING_RULES: %s", err)
+	}
+	if envRules != nil {
+		c.samplingRules = envRules
+	}
 	return &tracer{
 		config:           c,
 		payload:          newPayload(),

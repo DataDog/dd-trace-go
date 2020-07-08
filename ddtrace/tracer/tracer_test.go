@@ -64,6 +64,9 @@ func TestTracerCleanStop(t *testing.T) {
 	if testing.Short() {
 		return
 	}
+	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
+	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
+
 	var wg sync.WaitGroup
 	transport := newDummyTransport()
 
@@ -1149,6 +1152,10 @@ func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
 	t.Unlock()
 	ok := ioutil.NopCloser(strings.NewReader("OK"))
 	return ok, nil
+}
+
+func (t *dummyTransport) endpoint() string {
+	return "http://localhost:9/v0.4/traces"
 }
 
 func decode(p *payload) (spanLists, error) {

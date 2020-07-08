@@ -52,6 +52,8 @@ type transport interface {
 	// send sends the payload p to the agent using the transport set up.
 	// It returns a non-nil response body when no error occurred.
 	send(p *payload) (body io.ReadCloser, err error)
+	// endpoint returns the URL to which the transport will send traces.
+	endpoint() string
 }
 
 // newTransport returns a new Transport implementation that sends traces to a
@@ -130,6 +132,10 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 		return nil, fmt.Errorf("%s", txt)
 	}
 	return response.Body, nil
+}
+
+func (t *httpTransport) endpoint() string {
+	return t.traceURL
 }
 
 // resolveAddr resolves the given agent address and fills in any missing host

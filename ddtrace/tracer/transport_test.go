@@ -245,6 +245,8 @@ func TestCustomTransport(t *testing.T) {
 }
 
 func TestWithHTTPClient(t *testing.T) {
+	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
+	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
 	assert := assert.New(t)
 	srv := mockDatadogAPINewServer(t)
 	defer srv.Close()

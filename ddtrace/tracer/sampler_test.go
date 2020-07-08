@@ -234,43 +234,47 @@ func TestRuleEnvVars(t *testing.T) {
 	t.Run("sampling-rules", func(t *testing.T) {
 		assert := assert.New(t)
 		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
-		// represents hard-coded rules
-		rules := []SamplingRule{
-			RateRule(1.0),
+
+		for _, tt := range []struct {
+			value  string
+			ruleN  int
+			errStr string
+		}{
+			{
+				value: "[]",
+				ruleN: 0,
+			}, {
+				value: `[{"service": "abcd", "sample_rate": 1.0}]`,
+				ruleN: 1,
+			}, {
+				value: `[{"service": "abcd", "sample_rate": 1.0},{"name": "wxyz", "sample_rate": 0.9},{"service": "efgh", "name": "lmnop", "sample_rate": 0.42}]`,
+				ruleN: 3,
+			}, {
+				// invalid rule ignored
+				value: `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
+				ruleN: 1,
+			}, {
+				value:  `[{"service": "abcd", "sample_rate": "all of them"}]`,
+				errStr: "found errors:\n\tat index 0: strconv.ParseFloat: parsing \"all of them\": invalid syntax",
+			}, {
+				value:  `[{"service": "abcd"}, {"service": "d", "sample_rate": "invalid"}]`,
+				errStr: "found errors:\n\tat index 0: rate not provided\n\tat index 1: strconv.ParseFloat: parsing \"invalid\": invalid syntax",
+			}, {
+				value:  `not JSON at all`,
+				errStr: `error unmarshalling JSON: invalid character 'o' in literal null (expecting 'u')`,
+			},
+		} {
+			t.Run("", func(t *testing.T) {
+				os.Setenv("DD_TRACE_SAMPLING_RULES", tt.value)
+				rules, err := samplingRulesFromEnv()
+				if tt.errStr == "" {
+					assert.NoError(err)
+				} else {
+					assert.Equal(err.Error(), tt.errStr)
+				}
+				assert.Len(rules, tt.ruleN)
+			})
 		}
-
-		// env overrides provided rules
-		os.Setenv("DD_TRACE_SAMPLING_RULES", "[]")
-		validRules := appliedSamplingRules(rules)
-		assert.Len(validRules, 0)
-
-		// valid rules
-		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": 1.0}]`)
-		validRules = appliedSamplingRules(rules)
-		assert.Len(validRules, 1)
-
-		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": 1.0},`+
-			`{"name": "wxyz", "sample_rate": 0.9},`+
-			`{"service": "efgh", "name": "lmnop", "sample_rate": 0.42}]`)
-		validRules = appliedSamplingRules(rules)
-		assert.Len(validRules, 3)
-
-		// invalid rule ignored
-		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": 42.0}]`)
-		validRules = appliedSamplingRules(rules)
-		assert.Len(validRules, 0)
-
-		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd", "sample_rate": "all of them"}]`)
-		validRules = appliedSamplingRules(rules)
-		assert.Len(validRules, 0)
-
-		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "abcd"}]`)
-		validRules = appliedSamplingRules(rules)
-		assert.Len(validRules, 0)
-
-		os.Setenv("DD_TRACE_SAMPLING_RULES", `not JSON at all`)
-		validRules = appliedSamplingRules(rules)
-		assert.Len(validRules, 0)
 	})
 }
 
