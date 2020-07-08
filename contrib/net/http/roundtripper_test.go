@@ -6,6 +6,7 @@
 package http
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -172,5 +173,41 @@ func TestServiceName(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
 		assert.Equal(t, serviceName, spans[0].Tag(ext.ServiceName))
+	})
+}
+
+func TestResourceNamer(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	}))
+	defer s.Close()
+
+	t.Run("default", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		rt := WrapRoundTripper(http.DefaultTransport)
+		client := &http.Client{
+			Transport: rt,
+		}
+		client.Get(s.URL + "/hello/world")
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+		assert.Equal(t, "http.request", spans[0].Tag(ext.ResourceName))
+	})
+
+	t.Run("custom", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		customNamer := func(req *http.Request) string {
+			return fmt.Sprintf("%s %s", req.Method, req.URL.Path)
+		}
+		rt := WrapRoundTripper(http.DefaultTransport, RTWithResourceNamer(customNamer))
+		client := &http.Client{
+			Transport: rt,
+		}
+		client.Get(s.URL + "/hello/world")
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+		assert.Equal(t, "GET /hello/world", spans[0].Tag(ext.ResourceName))
 	})
 }
