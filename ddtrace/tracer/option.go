@@ -110,7 +110,9 @@ func newConfig(opts ...StartOption) *config {
 	c.dogstatsdAddr = net.JoinHostPort(statsdHost, statsdPort)
 
 	if v := os.Getenv("DD_TRACE_ANALYTICS_ENABLED"); v != "" {
-		globalconfig.SetAnalyticsRate(1.0)
+		if on, err := strconv.ParseBool(v); err == nil && on {
+			globalconfig.SetAnalyticsRate(1.0)
+		}
 	}
 	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
 		var err error
