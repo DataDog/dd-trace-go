@@ -82,4 +82,20 @@ func TestRunProfile(t *testing.T) {
 		}, prof.types)
 		assert.Equal(t, []byte("block"), prof.data)
 	})
+
+	t.Run("goroutine", func(t *testing.T) {
+		defer func(old func(_ string, _ io.Writer) error) { lookupProfile = old }(lookupProfile)
+		lookupProfile = func(name string, w io.Writer) error {
+			_, err := w.Write([]byte(name))
+			return err
+		}
+
+		p, err := unstartedProfiler()
+		prof, err := p.runProfile(GoroutineProfile)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{
+			"goroutines",
+		}, prof.types)
+		assert.Equal(t, []byte("goroutine"), prof.data)
+	})
 }
