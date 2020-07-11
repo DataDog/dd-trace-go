@@ -9,7 +9,7 @@ import (
 	"context"
 	"log"
 
-	pggotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/pg-go/pg_go"
+	pggotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-pg/pg"
 
 	"github.com/go-pg/pg/v10"
 )
