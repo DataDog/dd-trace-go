@@ -253,13 +253,7 @@ func TestRuleEnvVars(t *testing.T) {
 				// invalid rule ignored
 				value: `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
 				ruleN: 1,
-			}, {
-				value:  `[{"service": "abcd", "sample_rate": "all of them"}]`,
-				errStr: "found errors:\n\tat index 0: strconv.ParseFloat: parsing \"all of them\": invalid syntax",
-			}, {
-				value:  `[{"service": "abcd"}, {"service": "d", "sample_rate": "invalid"}]`,
-				errStr: "found errors:\n\tat index 0: rate not provided\n\tat index 1: strconv.ParseFloat: parsing \"invalid\": invalid syntax",
-			}, {
+			},  {
 				value:  `not JSON at all`,
 				errStr: `error unmarshalling JSON: invalid character 'o' in literal null (expecting 'u')`,
 			},
