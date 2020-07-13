@@ -253,7 +253,7 @@ func TestRuleEnvVars(t *testing.T) {
 				// invalid rule ignored
 				value: `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
 				ruleN: 1,
-			},  {
+			}, {
 				value:  `not JSON at all`,
 				errStr: `error unmarshalling JSON: invalid character 'o' in literal null (expecting 'u')`,
 			},
