@@ -8,6 +8,8 @@ package mgo
 import (
 	"context"
 	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 type mongoConfig struct {
@@ -17,11 +19,15 @@ type mongoConfig struct {
 }
 
 func newConfig() *mongoConfig {
+	rate := math.NaN()
+	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {
+		rate = 1.0
+	}
 	return &mongoConfig{
 		serviceName: "mongodb",
 		ctx:         context.Background(),
 		// analyticsRate: globalconfig.AnalyticsRate(),
-		analyticsRate: math.NaN(),
+		analyticsRate: rate,
 	}
 }
 

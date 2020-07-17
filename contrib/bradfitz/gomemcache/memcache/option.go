@@ -7,6 +7,8 @@ package memcache
 
 import (
 	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 const (
@@ -25,7 +27,11 @@ type ClientOption func(*clientConfig)
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = serviceName
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.analyticsRate = math.NaN()
+	if internal.BoolEnv("DD_TRACE_MEMCACHE_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = math.NaN()
+	}
 }
 
 // WithServiceName sets the given service name for the dialled connection.

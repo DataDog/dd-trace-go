@@ -8,6 +8,7 @@ package twirp
 import (
 	"math"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -20,7 +21,11 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	if internal.BoolEnv("DD_TRACE_TWIRP_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = globalconfig.AnalyticsRate()
+	}
 }
 
 func (cfg *config) serverServiceName() string {

@@ -7,6 +7,8 @@ package gorm
 
 import (
 	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 type config struct {
@@ -21,7 +23,11 @@ type Option func(*config)
 func defaults(cfg *config) {
 	cfg.serviceName = "gorm.db"
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.analyticsRate = math.NaN()
+	if internal.BoolEnv("DD_TRACE_GORM_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = math.NaN()
+	}
 }
 
 // WithServiceName sets the given service name when registering a driver,

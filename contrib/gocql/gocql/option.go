@@ -7,6 +7,8 @@ package gocql
 
 import (
 	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 type queryConfig struct {
@@ -21,7 +23,11 @@ type WrapOption func(*queryConfig)
 func defaults(cfg *queryConfig) {
 	cfg.serviceName = "gocql.query"
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.analyticsRate = math.NaN()
+	if internal.BoolEnv("DD_TRACE_GOCQL_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = math.NaN()
+	}
 }
 
 // WithServiceName sets the given service name for the returned query.

@@ -8,6 +8,7 @@ package sarama
 import (
 	"math"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -24,7 +25,11 @@ func defaults(cfg *config) {
 		cfg.consumerServiceName = svc
 	}
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.analyticsRate = math.NaN()
+	if internal.BoolEnv("DD_TRACE_SARAMA_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = math.NaN()
+	}
 }
 
 // An Option is used to customize the config for the sarama tracer.

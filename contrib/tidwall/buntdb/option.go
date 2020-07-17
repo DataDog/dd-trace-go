@@ -8,6 +8,8 @@ package buntdb
 import (
 	"context"
 	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 type config struct {
@@ -20,7 +22,11 @@ func defaults(cfg *config) {
 	cfg.serviceName = "buntdb"
 	cfg.ctx = context.Background()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.analyticsRate = math.NaN()
+	if internal.BoolEnv("DD_TRACE_BUNTDB_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = math.NaN()
+	}
 }
 
 // An Option customizes the config.
