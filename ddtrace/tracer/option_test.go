@@ -70,27 +70,6 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 	})
 
-	t.Run("analyticsEnv", func(t *testing.T) {
-		assert := assert.New(t)
-		assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
-		os.Setenv("DD_TRACE_ANALYTICS_ENABLED", "true")
-		defer os.Unsetenv("DD_TRACE_ANALYTICS_ENABLED")
-		newTracer()
-		assert.Equal(1.0, globalconfig.AnalyticsRate())
-		os.Setenv("DD_TRACE_ANALYTICS_ENABLED", "false")
-		newTracer()
-		assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
-		os.Setenv("DD_TRACE_ANALYTICS_ENABLED", "true")
-		newTracer(WithAnalytics(false))
-		assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
-		os.Setenv("DD_TRACE_ANALYTICS_ENABLED", "false")
-		newTracer(WithAnalytics(true))
-		assert.Equal(1.0, globalconfig.AnalyticsRate())
-		os.Setenv("DD_TRACE_ANALYTICS_ENABLED", "false")
-		newTracer(WithAnalyticsRate(0.5))
-		assert.Equal(0.5, globalconfig.AnalyticsRate())
-	})
-
 	t.Run("dogstatsd", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			tracer := newTracer()
