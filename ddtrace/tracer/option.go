@@ -109,7 +109,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.dogstatsdAddr = net.JoinHostPort(statsdHost, statsdPort)
 
-	if boolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
+	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
 	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
@@ -146,11 +146,6 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
-	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
-		globalconfig.SetAnalyticsRate(1.0)
-	} else {
-		globalconfig.SetAnalyticsRate(math.NaN())
-	}
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	for _, fn := range opts {
