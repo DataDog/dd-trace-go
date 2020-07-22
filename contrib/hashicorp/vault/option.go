@@ -8,6 +8,7 @@ package vault
 import (
 	"math"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -23,7 +24,11 @@ type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.serviceName = defaultServiceName
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	if internal.BoolEnv("DD_TRACE_VAULT_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = globalconfig.AnalyticsRate()
+	}
 }
 
 // WithAnalytics enables or disables Trace Analytics for all started spans.

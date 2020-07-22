@@ -226,6 +226,24 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
 	})
 
+	t.Run("env", func(t *testing.T) {
+		os.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
+		defer os.Unsetenv("DD_RUNTIME_METRICS_ENABLED")
+		tp := new(testLogger)
+		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
+		defer tracer.Stop()
+		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
+	})
+
+	t.Run("overrideEnv", func(t *testing.T) {
+		os.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
+		defer os.Unsetenv("DD_RUNTIME_METRICS_ENABLED")
+		tp := new(testLogger)
+		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
+		defer tracer.Stop()
+		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
+	})
+
 	t.Run("off", func(t *testing.T) {
 		tp := new(testLogger)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))

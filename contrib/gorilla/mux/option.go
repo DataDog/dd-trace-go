@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -26,7 +27,11 @@ type routerConfig struct {
 type RouterOption func(*routerConfig)
 
 func defaults(cfg *routerConfig) {
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	if internal.BoolEnv("DD_TRACE_MUX_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = globalconfig.AnalyticsRate()
+	}
 	cfg.serviceName = "mux.router"
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc

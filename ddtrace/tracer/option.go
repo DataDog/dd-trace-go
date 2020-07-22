@@ -12,12 +12,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -109,7 +109,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.dogstatsdAddr = net.JoinHostPort(statsdHost, statsdPort)
 
-	if boolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
+	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
 	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
@@ -145,7 +145,9 @@ func newConfig(opts ...StartOption) *config {
 			}
 		}
 	}
-	c.logStartup = boolEnv("DD_TRACE_STARTUP_LOGS", true)
+	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
+	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
+	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	for _, fn := range opts {
 		fn(c)
 	}
@@ -495,14 +497,4 @@ func StackFrames(n, skip uint) FinishOption {
 		cfg.StackFrames = n
 		cfg.SkipStackFrames = skip
 	}
-}
-
-// boolEnv returns the parsed boolean value of an environment variable, or
-// def if it fails to parse.
-func boolEnv(key string, def bool) bool {
-	v, err := strconv.ParseBool(os.Getenv(key))
-	if err != nil {
-		return def
-	}
-	return v
 }

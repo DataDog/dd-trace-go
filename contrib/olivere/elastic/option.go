@@ -8,6 +8,8 @@ package elastic
 import (
 	"math"
 	"net/http"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 type clientConfig struct {
@@ -25,7 +27,11 @@ func defaults(cfg *clientConfig) {
 	cfg.transport = http.DefaultTransport.(*http.Transport)
 	cfg.resourceNamer = quantize
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.analyticsRate = math.NaN()
+	if internal.BoolEnv("DD_TRACE_ELASTIC_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = math.NaN()
+	}
 }
 
 // WithServiceName sets the given service name for the client.

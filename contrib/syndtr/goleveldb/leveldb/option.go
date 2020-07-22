@@ -8,6 +8,8 @@ package leveldb
 import (
 	"context"
 	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 type config struct {
@@ -22,6 +24,9 @@ func newConfig(opts ...Option) *config {
 		ctx:         context.Background(),
 		// cfg.analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
+	}
+	if internal.BoolEnv("DD_TRACE_LEVELDB_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
 	}
 	for _, opt := range opts {
 		opt(cfg)

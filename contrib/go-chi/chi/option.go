@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -26,7 +27,11 @@ func defaults(cfg *config) {
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc
 	}
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
+	if internal.BoolEnv("DD_TRACE_CHI_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = globalconfig.AnalyticsRate()
+	}
 }
 
 // WithServiceName sets the given service name for the router.

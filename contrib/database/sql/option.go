@@ -7,6 +7,8 @@ package sql
 
 import (
 	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 type config struct {
@@ -26,7 +28,11 @@ type RegisterOption = Option
 func defaults(cfg *config) {
 	// default cfg.serviceName set in Register based on driver name
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.analyticsRate = math.NaN()
+	if internal.BoolEnv("DD_TRACE_SQL_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = math.NaN()
+	}
 }
 
 // WithServiceName sets the given service name when registering a driver,

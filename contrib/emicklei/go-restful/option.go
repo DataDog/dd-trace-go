@@ -8,6 +8,7 @@ package restful
 import (
 	"math"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -17,9 +18,13 @@ type config struct {
 }
 
 func newConfig() *config {
+	rate := globalconfig.AnalyticsRate()
+	if internal.BoolEnv("DD_TRACE_RESTFUL_ANALYTICS_ENABLED", false) {
+		rate = 1.0
+	}
 	return &config{
 		serviceName:   "go-restful",
-		analyticsRate: globalconfig.AnalyticsRate(),
+		analyticsRate: rate,
 	}
 }
 

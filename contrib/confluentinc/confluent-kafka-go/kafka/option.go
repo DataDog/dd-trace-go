@@ -9,6 +9,7 @@ import (
 	"context"
 	"math"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -29,6 +30,9 @@ func newConfig(opts ...Option) *config {
 		producerServiceName: "kafka",
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
+	}
+	if internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
 	}
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.consumerServiceName = svc
