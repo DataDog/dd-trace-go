@@ -11,7 +11,7 @@ import (
 )
 
 // BoolEnv returns the parsed boolean value of an environment variable, or
-// def if it fails to parse.
+// def otherwise.
 func BoolEnv(key string, def bool) bool {
 	v, err := strconv.ParseBool(os.Getenv(key))
 	if err != nil {
