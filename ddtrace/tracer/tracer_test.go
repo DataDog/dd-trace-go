@@ -51,7 +51,7 @@ loop:
 		case <-timeout:
 			tst.Fatalf("timed out waiting for payload to contain %d", n)
 		default:
-			if t.payload.itemCount() == n {
+			if t.traceWriter.(*agentTraceWriter).payload.itemCount() == n {
 				break loop
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -604,7 +604,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 		span1.Finish()
 	}
 
-	assert.Equal(tracer0.payload.itemCount(), 0)
+	assert.Equal(tracer0.traceWriter.(*agentTraceWriter).payload.itemCount(), 0)
 	tracer1.awaitPayload(t, count)
 }
 
@@ -915,11 +915,11 @@ func TestPushPayload(t *testing.T) {
 	s.Meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
 
 	// half payload size reached
-	tracer.pushPayload([]*span{s})
+	tracer.pushTrace([]*span{s})
 	tracer.awaitPayload(t, 1)
 
 	// payload size exceeded
-	tracer.pushPayload([]*span{s})
+	tracer.pushTrace([]*span{s})
 	flush(2)
 }
 
@@ -943,18 +943,18 @@ func TestPushTrace(t *testing.T) {
 	}
 	tracer.pushTrace(trace)
 
-	assert.Len(tracer.payloadChan, 1)
+	assert.Len(tracer.out, 1)
 
-	t0 := <-tracer.payloadChan
+	t0 := <-tracer.out
 	assert.Equal(trace, t0)
 
 	many := payloadQueueSize + 2
 	for i := 0; i < many; i++ {
 		tracer.pushTrace(make([]*span, i))
 	}
-	assert.Len(tracer.payloadChan, payloadQueueSize)
+	assert.Len(tracer.out, payloadQueueSize)
 	log.Flush()
-	assert.True(len(tp.Lines()) >= 2)
+	assert.True(len(tp.Lines()) >= 1)
 }
 
 func TestTracerFlush(t *testing.T) {
