@@ -15,7 +15,8 @@ import (
 	"github.com/go-pg/pg/v10"
 )
 
-// Hook wraps the given DB to generate APM data.
+// Hook wraps the given pg.Connect with QueryHooks.
+// go-pg support QueryHook, and this is used for achieve tracing sql.
 func Hook(db *pg.DB) *pg.DB {
 	db.AddQueryHook(&queryHook{})
 	return db
@@ -23,6 +24,8 @@ func Hook(db *pg.DB) *pg.DB {
 
 type queryHook struct{}
 
+// BeforeQuery is called, before query is executed,
+// Span is created and stored to given context.Context.
 func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context.Context, error) {
 	query, err := qe.UnformattedQuery()
 	if err != nil {
@@ -33,10 +36,14 @@ func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(string(query)),
 	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "gopg", opts...)
+	_, ctx = tracer.StartSpanFromContext(ctx, "go-pg", opts...)
 	return ctx, qe.Err
 }
 
+// AfterQuery hook is Called after query is ended and finish
+// span, which was created in BeforeQuery.
+// If error is occurred while sql execution, then error is stored to span and is visible
+// in Datadog APM.
 func (h *queryHook) AfterQuery(ctx context.Context, qe *pg.QueryEvent) error {
 	span, ok := tracer.SpanFromContext(ctx)
 	if !ok {

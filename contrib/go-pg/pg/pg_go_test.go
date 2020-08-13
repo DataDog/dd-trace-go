@@ -21,21 +21,25 @@ func TestSelect(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
-
+	// Created connection with go-pg
 	conn := pg.Connect(&pg.Options{
 		User:     "postgres",
 		Database: "postgres",
 	})
 
+	// Wrap connection with Hook
 	Hook(conn)
 
+	// Create fake-http-server span.
 	parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 		tracer.ServiceName("fake-http-server"),
 		tracer.SpanType(ext.SpanTypeWeb),
 	)
 
 	var n int
+	// Execute query
 	res, err := conn.WithContext(ctx).QueryOne(pg.Scan(&n), "SELECT 1")
+	// Finish fake-http-server span
 	parentSpan.Finish()
 	spans := mt.FinishedSpans()
 
