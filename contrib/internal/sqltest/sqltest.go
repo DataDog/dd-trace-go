@@ -71,6 +71,7 @@ func testPing(cfg *Config) func(*testing.T) {
 
 		span := spans[0]
 		assert.Equal(cfg.ExpectName, span.OperationName())
+		cfg.ExpectTags["sql.query_type"] = "Ping"
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
@@ -90,6 +91,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 		assert.Len(spans, 1)
 
 		span := spans[0]
+		cfg.ExpectTags["sql.query_type"] = "Query"
 		assert.Equal(cfg.ExpectName, span.OperationName())
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
@@ -116,6 +118,7 @@ func testStatement(cfg *Config) func(*testing.T) {
 
 		span := spans[0]
 		assert.Equal(cfg.ExpectName, span.OperationName())
+		cfg.ExpectTags["sql.query_type"] = "Prepare"
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
@@ -128,6 +131,7 @@ func testStatement(cfg *Config) func(*testing.T) {
 		assert.Len(spans, 1)
 		span = spans[0]
 		assert.Equal(cfg.ExpectName, span.OperationName())
+		cfg.ExpectTags["sql.query_type"] = "Exec"
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
@@ -147,6 +151,7 @@ func testBeginRollback(cfg *Config) func(*testing.T) {
 
 		span := spans[0]
 		assert.Equal(cfg.ExpectName, span.OperationName())
+		cfg.ExpectTags["sql.query_type"] = "Begin"
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
@@ -159,6 +164,7 @@ func testBeginRollback(cfg *Config) func(*testing.T) {
 		assert.Len(spans, 1)
 		span = spans[0]
 		assert.Equal(cfg.ExpectName, span.OperationName())
+		cfg.ExpectTags["sql.query_type"] = "Rollback"
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
@@ -195,6 +201,7 @@ func testExec(cfg *Config) func(*testing.T) {
 			}
 		}
 		assert.NotNil(span, "span not found")
+		cfg.ExpectTags["sql.query_type"] = "Exec"
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
@@ -204,6 +211,7 @@ func testExec(cfg *Config) func(*testing.T) {
 			}
 		}
 		assert.NotNil(span, "span not found")
+		cfg.ExpectTags["sql.query_type"] = "Commit"
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
