@@ -48,6 +48,6 @@ func TestSelect(t *testing.T) {
 	assert.Equal(2, len(spans))
 	assert.Equal(nil, err)
 	assert.Equal(1, n)
-	assert.Equal("gopg", spans[0].OperationName())
+	assert.Equal("go-pg", spans[0].OperationName())
 	assert.Equal("http.request", spans[1].OperationName())
 }
