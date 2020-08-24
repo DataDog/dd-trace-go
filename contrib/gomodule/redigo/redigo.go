@@ -136,6 +136,11 @@ func withSpan(do func(commandName string, args ...interface{}) (interface{}, err
 		}
 	}
 
+	if ctx == nil {
+		// Passing a nil context was working up to Go 1.15, where issue #37908
+		// was closed.
+		ctx = context.Background()
+	}
 	span := newChildSpan(ctx, p)
 	defer func() {
 		span.Finish(tracer.WithError(err))
