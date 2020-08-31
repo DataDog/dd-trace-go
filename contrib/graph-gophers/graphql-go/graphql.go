@@ -68,6 +68,9 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 
 // TraceField traces a GraphQL field access.
 func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, fieldName string, trivial bool, args map[string]interface{}) (context.Context, trace.TraceFieldFinishFunc) {
+	if t.cfg.omitTrivial && trivial {
+		return ctx, func(queryError *errors.QueryError) {}
+	}
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlField, fieldName),

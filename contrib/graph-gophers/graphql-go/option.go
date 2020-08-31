@@ -15,6 +15,7 @@ import (
 type config struct {
 	serviceName   string
 	analyticsRate float64
+	omitTrivial   bool
 }
 
 // Option represents an option that can be used customize the Tracer.
@@ -60,5 +61,12 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithOmitTrivial enables omission of graphql fields marked as trivial.
+func WithOmitTrivial() Option {
+	return func(cfg *config) {
+		cfg.omitTrivial = true
 	}
 }
