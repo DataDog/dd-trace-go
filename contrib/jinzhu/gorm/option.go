@@ -9,12 +9,15 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+
+	"github.com/jinzhu/gorm"
 )
 
 type config struct {
 	serviceName   string
 	analyticsRate float64
 	dsn           string
+	tagFns        map[string]func(scope *gorm.Scope) interface{}
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -58,5 +61,16 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithCustomTag will cause the given tagFn to be evaluated after executing
+// a query and attach the result to the span tagged by the key.
+func WithCustomTag(tag string, tagFn func(scope *gorm.Scope) interface{}) Option {
+	return func(cfg *config) {
+		if cfg.tagFns == nil {
+			cfg.tagFns = make(map[string]func(scope *gorm.Scope) interface{})
+		}
+		cfg.tagFns[tag] = tagFn
 	}
 }
