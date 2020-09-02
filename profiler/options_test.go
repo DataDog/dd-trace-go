@@ -37,18 +37,20 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("WithAPIKey", func(t *testing.T) {
+		var validKey = "12345678901234567890123456789012"
 		var cfg config
-		WithAPIKey("123")(&cfg)
-		assert.Equal(t, "123", cfg.apiKey)
+		WithAPIKey(validKey)(&cfg)
+		assert.Equal(t, validKey, cfg.apiKey)
 		assert.Equal(t, cfg.apiURL, cfg.targetURL)
 	})
 
 	t.Run("WithAPIKey/override", func(t *testing.T) {
 		os.Setenv("DD_API_KEY", "apikey")
 		defer os.Unsetenv("DD_API_KEY")
+		var validKey = "12345678901234567890123456789012"
 		var cfg config
-		WithAPIKey("123")(&cfg)
-		assert.Equal(t, "123", cfg.apiKey)
+		WithAPIKey(validKey)(&cfg)
+		assert.Equal(t, validKey, cfg.apiKey)
 	})
 
 	t.Run("WithURL", func(t *testing.T) {
@@ -179,10 +181,11 @@ func TestEnvVars(t *testing.T) {
 	})
 
 	t.Run("DD_API_KEY", func(t *testing.T) {
-		os.Setenv("DD_API_KEY", "123")
+		var validKey = "12345678901234567890123456789012"
+		os.Setenv("DD_API_KEY", validKey)
 		defer os.Unsetenv("DD_API_KEY")
 		cfg := defaultConfig()
-		assert.Equal(t, "123", cfg.apiKey)
+		assert.Equal(t, validKey, cfg.apiKey)
 	})
 
 	t.Run("DD_SITE", func(t *testing.T) {

@@ -45,6 +45,9 @@ const (
 	defaultEnv       = "none"
 )
 
+// Length of valid API key
+const optionApiKeyLength      = 32
+
 var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
 
 type config struct {
@@ -69,6 +72,19 @@ func urlForSite(site string) (string, error) {
 	u := fmt.Sprintf("https://intake.profile.%s/v1/input", site)
 	_, err := url.Parse(u)
 	return u, err
+}
+
+// Check for API key constraints:
+func apiKeyCheck(key string) bool {
+	if optionApiKeyLength != len(key) {
+		return false
+	}
+	for _, c := range key {
+		if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *config) addProfileType(t ProfileType) {
@@ -152,8 +168,12 @@ func WithAgentAddr(hostport string) Option {
 }
 
 // WithAPIKey specifies the API key to use when connecting to the Datadog API directly, skipping the agent.
+// If the API key might be invalid, emit a warning but otherwise do nothing.
 func WithAPIKey(key string) Option {
 	return func(cfg *config) {
+		if !apiKeyCheck(key) {
+			log.Error("profiler: invalid API key provided, will try to use $DD_API_KEY.")
+		}
 		cfg.apiKey = key
 	}
 }
