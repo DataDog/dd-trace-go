@@ -76,7 +76,7 @@ func urlForSite(site string) (string, error) {
 
 // Check for API key constraints:
 func apiKeyCheck(key string) bool {
-	if optionApiKeyLength != len(key) {
+	if optionAPIKeyLength != len(key) {
 		return false
 	}
 	for _, c := range key {
