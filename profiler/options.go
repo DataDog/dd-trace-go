@@ -46,7 +46,7 @@ const (
 )
 
 // Length of valid API key
-const optionApiKeyLength = 32
+const optionAPIKeyLength = 32
 
 var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
 
