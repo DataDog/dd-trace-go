@@ -46,7 +46,7 @@ const (
 )
 
 // Length of valid API key
-const optionApiKeyLength      = 32
+const optionApiKeyLength = 32
 
 var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
 
@@ -168,12 +168,8 @@ func WithAgentAddr(hostport string) Option {
 }
 
 // WithAPIKey specifies the API key to use when connecting to the Datadog API directly, skipping the agent.
-// If the API key might be invalid, emit a warning but otherwise do nothing.
 func WithAPIKey(key string) Option {
 	return func(cfg *config) {
-		if !apiKeyCheck(key) {
-			log.Error("profiler: invalid API key provided, will try to use $DD_API_KEY.")
-		}
 		cfg.apiKey = key
 	}
 }

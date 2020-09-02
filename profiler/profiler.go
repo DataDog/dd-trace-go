@@ -70,6 +70,9 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		opt(cfg)
 	}
 	if cfg.apiKey != "" {
+		if !apiKeyCheck(cfg.apiKey) {
+			return nil, fmt.Errorf("API key has incorrect form (must be 32-character lowercase alphanumeric string). Check calls to profiler.WithAPIKey or the DD_API_KEY environment variable. API key is not required in many configurations.")
+		}
 		cfg.targetURL = cfg.apiURL
 	} else {
 		cfg.targetURL = cfg.agentURL
