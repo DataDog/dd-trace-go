@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -45,9 +46,6 @@ const (
 	defaultEnv       = "none"
 )
 
-// Length of valid API key
-const optionAPIKeyLength = 32
-
 var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
 
 type config struct {
@@ -74,17 +72,27 @@ func urlForSite(site string) (string, error) {
 	return u, err
 }
 
-// Check for API key constraints:
-func apiKeyCheck(key string) bool {
-	if optionAPIKeyLength != len(key) {
+// isAPIKeyValid reports whether the given string is a structurally valid API key
+func isAPIKeyValid(key string) bool {
+	if len(key) != 32 {
 		return false
 	}
 	for _, c := range key {
-		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+		if !unicode.IsLetter(c) && !unicode.IsLower(c) && !unicode.IsNumber(c) {
 			return false
 		}
 	}
 	return true
+}
+
+// sanitizeAPIKey prepares an API key for display, by censoring everything
+// beyond the first 8 characters of the input
+func sanitizeAPIKey(key string) string {
+	ret := []byte(key)
+	for i := 8; i < len(ret); i++ {
+		ret[i] = '*'
+	}
+	return string(ret)
 }
 
 func (c *config) addProfileType(t ProfileType) {

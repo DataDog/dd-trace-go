@@ -70,8 +70,8 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		opt(cfg)
 	}
 	if cfg.apiKey != "" {
-		if !apiKeyCheck(cfg.apiKey) {
-			return nil, fmt.Errorf("API key has incorrect format; try checking your DD_API_KEY environment variable if submitting an API key is necessary for your configuration")
+		if !isAPIKeyValid(cfg.apiKey) {
+			return nil, fmt.Errorf("API key has incorrect format: %s", sanitizeAPIKey(cfg.apiKey))
 		}
 		cfg.targetURL = cfg.apiURL
 	} else {
