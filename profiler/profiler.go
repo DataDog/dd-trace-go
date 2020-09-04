@@ -71,7 +71,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	}
 	if cfg.apiKey != "" {
 		if !isAPIKeyValid(cfg.apiKey) {
-			return nil, fmt.Errorf("API key has incorrect format: %s", sanitizeAPIKey(cfg.apiKey))
+			return nil, fmt.Errorf("API key has incorrect format")
 		}
 		cfg.targetURL = cfg.apiURL
 	} else {

@@ -85,16 +85,6 @@ func isAPIKeyValid(key string) bool {
 	return true
 }
 
-// sanitizeAPIKey prepares an API key for display, by censoring everything
-// beyond the first 8 characters of the input
-func sanitizeAPIKey(key string) string {
-	ret := []byte(key)
-	for i := 8; i < len(ret); i++ {
-		ret[i] = '*'
-	}
-	return string(ret)
-}
-
 func (c *config) addProfileType(t ProfileType) {
 	if c.types == nil {
 		c.types = make(map[ProfileType]struct{})
