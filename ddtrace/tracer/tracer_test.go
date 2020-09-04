@@ -1150,8 +1150,7 @@ func startTestTracer(t interface {
 // Mock Transport with a real Encoder
 type dummyTransport struct {
 	sync.RWMutex
-	traces    spanLists
-	sendError error
+	traces spanLists
 }
 
 func newDummyTransport() *dummyTransport {
@@ -1165,9 +1164,6 @@ func (t *dummyTransport) Len() int {
 }
 
 func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
-	if t.sendError != nil {
-		return nil, t.sendError
-	}
 	traces, err := decode(p)
 	if err != nil {
 		return nil, err

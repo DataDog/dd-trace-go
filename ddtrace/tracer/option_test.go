@@ -17,16 +17,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// withTransportSendError will cause err to be returned on any call to (transport).send()
-// if the tracer is configured with a dummyTransport,
-func withTransportSendError(err error) StartOption {
-	return func(c *config) {
-		if t, ok := c.transport.(*dummyTransport); ok {
-			t.sendError = err
-		}
-	}
-}
-
 func withTransport(t transport) StartOption {
 	return func(c *config) {
 		c.transport = t
