@@ -16,7 +16,8 @@ import (
 )
 
 func TestPropagation(t *testing.T) {
-	ctx, topic, sub, mt := setup(t)
+	ctx, topic, sub, mt, cleanup := setup(t)
+	defer cleanup()
 
 	// Publisher
 	span, pctx := tracer.StartSpanFromContext(ctx, "propagation-test", tracer.WithSpanID(42)) // set the root trace ID
@@ -76,7 +77,8 @@ func TestPropagation(t *testing.T) {
 }
 
 func TestPropagationNoParentSpan(t *testing.T) {
-	ctx, topic, sub, mt := setup(t)
+	ctx, topic, sub, mt, cleanup := setup(t)
+	defer cleanup()
 
 	// Publisher
 	// no parent span
@@ -135,7 +137,8 @@ func TestPropagationNoParentSpan(t *testing.T) {
 }
 
 func TestPropagationNoPubsliherSpan(t *testing.T) {
-	ctx, topic, sub, mt := setup(t)
+	ctx, topic, sub, mt, cleanup := setup(t)
+	defer cleanup()
 
 	// Publisher
 	// no tracing on publisher side
@@ -180,19 +183,15 @@ func TestPropagationNoPubsliherSpan(t *testing.T) {
 	assert.Empty(t, spans[0].Tag(ext.Error))
 }
 
-func setup(t *testing.T) (context.Context, *pubsub.Topic, *pubsub.Subscription, mocktracer.Tracer) {
+func setup(t *testing.T) (context.Context, *pubsub.Topic, *pubsub.Subscription, mocktracer.Tracer, func()) {
 	mt := mocktracer.Start()
-	t.Cleanup(mt.Stop)
 
 	srv := pstest.NewServer()
-	t.Cleanup(func() { srv.Close() })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	t.Cleanup(cancel)
 
 	conn, err := grpc.Dial(srv.Addr, grpc.WithInsecure())
 	assert.NoError(t, err)
-	t.Cleanup(func() { conn.Close() })
 
 	client, err := pubsub.NewClient(ctx, "project", option.WithGRPCConn(conn))
 	assert.NoError(t, err)
@@ -210,5 +209,11 @@ func setup(t *testing.T) (context.Context, *pubsub.Topic, *pubsub.Subscription, 
 
 	sub := client.Subscription("subscription")
 
-	return ctx, topic, sub, mt
+	return ctx, topic, sub, mt, func() {
+		// use t.Cleanup() once go 1.14 is available
+		conn.Close()
+		cancel()
+		srv.Close()
+		mt.Stop()
+	}
 }
