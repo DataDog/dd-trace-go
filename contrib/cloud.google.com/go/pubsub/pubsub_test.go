@@ -15,63 +15,34 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-func TestDatadogTracePropagation(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	srv := pstest.NewServer()
-	defer srv.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	conn, err := grpc.Dial(srv.Addr, grpc.WithInsecure())
-	assert.NoError(t, err)
-	defer conn.Close()
-
-	client, err := pubsub.NewClient(ctx, "project", option.WithGRPCConn(conn))
-	assert.NoError(t, err)
-
-	_, err = client.CreateTopic(ctx, "topic")
-	assert.NoError(t, err)
-
-	topic := client.Topic("topic")
-	topic.EnableMessageOrdering = true
-
-	_, err = client.CreateSubscription(ctx, "subscription", pubsub.SubscriptionConfig{
-		Topic: topic,
-	})
-	assert.NoError(t, err)
-
-	sub := client.Subscription("subscription")
+func TestPropagation(t *testing.T) {
+	ctx, topic, sub, mt := setup(t)
 
 	// Publisher
-	{
-		span, pctx := tracer.StartSpanFromContext(ctx, "propagation-test", tracer.WithSpanID(42)) // set the root trace ID
-		_, err := Publish(pctx, topic, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"})
-		assert.NoError(t, err)
-		span.Finish()
-	}
+	span, pctx := tracer.StartSpanFromContext(ctx, "propagation-test", tracer.WithSpanID(42)) // set the root trace ID
+	_, err := Publish(pctx, topic, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"})
+	assert.NoError(t, err)
+	span.Finish()
 
 	// Subscriber
-	msgID := ""
-	spanID := uint64(0)
-	{
-		called := false
-		err := sub.Receive(ctx, ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
-			assert.False(t, called, "callback called twice")
-			assert.Equal(t, msg.Data, []byte("hello"), "wrong payload")
-			span, ok := tracer.SpanFromContext(ctx)
-			assert.True(t, ok, "no span")
-			assert.Equal(t, uint64(42), span.Context().TraceID(), "wrong trace id") // gist of the test: the trace ID must be the same as the root trace ID set above
-			msgID = msg.ID
-			spanID = span.Context().SpanID()
-			msg.Ack()
-			called = true
-		}))
-		assert.True(t, called, "callback not called")
-		assert.NoError(t, err)
-	}
+	var (
+		msgID  string
+		spanID uint64
+		called bool
+	)
+	err = sub.Receive(ctx, ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
+		assert.False(t, called, "callback called twice")
+		assert.Equal(t, msg.Data, []byte("hello"), "wrong payload")
+		span, ok := tracer.SpanFromContext(ctx)
+		assert.True(t, ok, "no span")
+		assert.Equal(t, uint64(42), span.Context().TraceID(), "wrong trace id") // gist of the test: the trace ID must be the same as the root trace ID set above
+		msgID = msg.ID
+		spanID = span.Context().SpanID()
+		msg.Ack()
+		called = true
+	}))
+	assert.True(t, called, "callback not called")
+	assert.NoError(t, err)
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 3, "wrong number of spans")
@@ -104,63 +75,34 @@ func TestDatadogTracePropagation(t *testing.T) {
 	assert.Empty(t, spans[2].Tag(ext.Error))
 }
 
-func TestDatadogTracePropagationNoParentSpan(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	srv := pstest.NewServer()
-	defer srv.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	conn, err := grpc.Dial(srv.Addr, grpc.WithInsecure())
-	assert.NoError(t, err)
-	defer conn.Close()
-
-	client, err := pubsub.NewClient(ctx, "project", option.WithGRPCConn(conn))
-	assert.NoError(t, err)
-
-	_, err = client.CreateTopic(ctx, "topic")
-	assert.NoError(t, err)
-
-	topic := client.Topic("topic")
-	topic.EnableMessageOrdering = true
-
-	_, err = client.CreateSubscription(ctx, "subscription", pubsub.SubscriptionConfig{
-		Topic: topic,
-	})
-	assert.NoError(t, err)
-
-	sub := client.Subscription("subscription")
+func TestPropagationNoParentSpan(t *testing.T) {
+	ctx, topic, sub, mt := setup(t)
 
 	// Publisher
-	{
-		// no parent span
-		_, err := Publish(ctx, topic, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"})
-		assert.NoError(t, err)
-	}
+	// no parent span
+	_, err := Publish(ctx, topic, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"})
+	assert.NoError(t, err)
 
 	// Subscriber
-	msgID := ""
-	spanID := uint64(0)
-	traceID := uint64(0)
-	{
-		called := false
-		err := sub.Receive(ctx, ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
-			assert.False(t, called, "callback called twice")
-			assert.Equal(t, msg.Data, []byte("hello"), "wrong payload")
-			span, ok := tracer.SpanFromContext(ctx)
-			assert.True(t, ok, "no span")
-			msgID = msg.ID
-			spanID = span.Context().SpanID()
-			traceID = span.Context().TraceID()
-			msg.Ack()
-			called = true
-		}))
-		assert.True(t, called, "callback not called")
-		assert.NoError(t, err)
-	}
+	var (
+		msgID   string
+		spanID  uint64
+		traceID uint64
+		called  bool
+	)
+	err = sub.Receive(ctx, ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
+		assert.False(t, called, "callback called twice")
+		assert.Equal(t, msg.Data, []byte("hello"), "wrong payload")
+		span, ok := tracer.SpanFromContext(ctx)
+		assert.True(t, ok, "no span")
+		msgID = msg.ID
+		spanID = span.Context().SpanID()
+		traceID = span.Context().TraceID()
+		msg.Ack()
+		called = true
+	}))
+	assert.True(t, called, "callback not called")
+	assert.NoError(t, err)
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 2, "wrong number of spans")
@@ -192,19 +134,65 @@ func TestDatadogTracePropagationNoParentSpan(t *testing.T) {
 	assert.Empty(t, spans[1].Tag(ext.Error))
 }
 
-func TestDatadogTracePropagationNoPubsliherSpan(t *testing.T) {
+func TestPropagationNoPubsliherSpan(t *testing.T) {
+	ctx, topic, sub, mt := setup(t)
+
+	// Publisher
+	// no tracing on publisher side
+	_, err := topic.Publish(ctx, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"}).Get(ctx)
+	assert.NoError(t, err)
+
+	// Subscriber
+	var (
+		msgID   string
+		spanID  uint64
+		traceID uint64
+		called  bool
+	)
+	err = sub.Receive(ctx, ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
+		assert.False(t, called, "callback called twice")
+		assert.Equal(t, msg.Data, []byte("hello"), "wrong payload")
+		span, ok := tracer.SpanFromContext(ctx)
+		assert.True(t, ok, "no span")
+		msgID = msg.ID
+		spanID = span.Context().SpanID()
+		traceID = span.Context().TraceID()
+		msg.Ack()
+		called = true
+	}))
+	assert.True(t, called, "callback not called")
+	assert.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1, "wrong number of spans")
+	assert.Equal(t, "pubsub.receive", spans[0].OperationName())
+
+	assert.Equal(t, ext.SpanTypeMessageConsumer, spans[0].Tag(ext.SpanType))
+	assert.Equal(t, "projects/project/subscriptions/subscription", spans[0].Tag(ext.ResourceName))
+	assert.Equal(t, traceID, spans[0].TraceID())
+	assert.Equal(t, spanID, spans[0].SpanID())
+	assert.Equal(t, 5, spans[0].Tag("message_size"))
+	assert.Equal(t, 0, spans[0].Tag("num_attributes")) // no tracing attributes
+	assert.Equal(t, "xxx", spans[0].Tag("ordering_key"))
+	assert.NotEmpty(t, spans[0].Tag("message_id"))
+	assert.Equal(t, msgID, spans[0].Tag("message_id"))
+	assert.NotEmpty(t, spans[0].Tag("publish_time"))
+	assert.Empty(t, spans[0].Tag(ext.Error))
+}
+
+func setup(t *testing.T) (context.Context, *pubsub.Topic, *pubsub.Subscription, mocktracer.Tracer) {
 	mt := mocktracer.Start()
-	defer mt.Stop()
+	t.Cleanup(mt.Stop)
 
 	srv := pstest.NewServer()
-	defer srv.Close()
+	t.Cleanup(func() { srv.Close() })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	t.Cleanup(cancel)
 
 	conn, err := grpc.Dial(srv.Addr, grpc.WithInsecure())
 	assert.NoError(t, err)
-	defer conn.Close()
+	t.Cleanup(func() { conn.Close() })
 
 	client, err := pubsub.NewClient(ctx, "project", option.WithGRPCConn(conn))
 	assert.NoError(t, err)
@@ -222,48 +210,5 @@ func TestDatadogTracePropagationNoPubsliherSpan(t *testing.T) {
 
 	sub := client.Subscription("subscription")
 
-	// Publisher
-	{
-		// no tracing on publisher side
-		_, err := topic.Publish(ctx, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"}).Get(ctx)
-		assert.NoError(t, err)
-	}
-
-	// Subscriber
-var (
-    msgID string
-    spanID, traceID uint64
-)
-	{
-		called := false
-		err := sub.Receive(ctx, ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
-			assert.False(t, called, "callback called twice")
-			assert.Equal(t, msg.Data, []byte("hello"), "wrong payload")
-			span, ok := tracer.SpanFromContext(ctx)
-			assert.True(t, ok, "no span")
-			msgID = msg.ID
-			spanID = span.Context().SpanID()
-			traceID = span.Context().TraceID()
-			msg.Ack()
-			called = true
-		}))
-		assert.True(t, called, "callback not called")
-		assert.NoError(t, err)
-	}
-
-	spans := mt.FinishedSpans()
-	assert.Len(t, spans, 1, "wrong number of spans")
-	assert.Equal(t, "pubsub.receive", spans[0].OperationName())
-
-	assert.Equal(t, ext.SpanTypeMessageConsumer, spans[0].Tag(ext.SpanType))
-	assert.Equal(t, "projects/project/subscriptions/subscription", spans[0].Tag(ext.ResourceName))
-	assert.Equal(t, traceID, spans[0].TraceID())
-	assert.Equal(t, spanID, spans[0].SpanID())
-	assert.Equal(t, 5, spans[0].Tag("message_size"))
-	assert.Equal(t, 0, spans[0].Tag("num_attributes")) // no tracing attributes
-	assert.Equal(t, "xxx", spans[0].Tag("ordering_key"))
-	assert.NotEmpty(t, spans[0].Tag("message_id"))
-	assert.Equal(t, msgID, spans[0].Tag("message_id"))
-	assert.NotEmpty(t, spans[0].Tag("publish_time"))
-	assert.Empty(t, spans[0].Tag(ext.Error))
+	return ctx, topic, sub, mt
 }
