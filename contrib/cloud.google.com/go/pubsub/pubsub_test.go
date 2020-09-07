@@ -230,9 +230,10 @@ func TestDatadogTracePropagationNoPubsliherSpan(t *testing.T) {
 	}
 
 	// Subscriber
-	msgID := ""
-	spanID := uint64(0)
-	traceID := uint64(0)
+var (
+    msgID string
+    spanID, traceID uint64
+)
 	{
 		called := false
 		err := sub.Receive(ctx, ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
