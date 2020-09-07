@@ -58,9 +58,9 @@ type transport interface {
 
 // newTransport returns a new Transport implementation that sends traces to a
 // trace agent running on the given hostname and port, using a given
-// http.RoundTripper. If the zero values for hostname and port are provided,
+// *http.Client. If the zero values for hostname and port are provided,
 // the default values will be used ("localhost" for hostname, and "8126" for
-// port). If roundTripper is nil, a default is used.
+// port). If client is nil, a default is used.
 //
 // In general, using this method is only necessary if you have a trace agent
 // running on a non-default port, if it's located on another machine, or when

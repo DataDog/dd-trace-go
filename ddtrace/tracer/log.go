@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -51,10 +52,12 @@ type startupInfo struct {
 // If the endpoint is not reachable, checkEndpoint returns an error
 // explaining why.
 func checkEndpoint(endpoint string) error {
-	req, err := http.NewRequest("POST", endpoint, nil)
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader([]byte{0x90}))
 	if err != nil {
 		return fmt.Errorf("cannot create http request: %v", err)
 	}
+	req.Header.Set(traceCountHeader, "0")
+	req.Header.Set("Content-Type", "application/msgpack")
 	_, err = defaultClient.Do(req)
 	if err != nil {
 		return err
