@@ -303,3 +303,44 @@ func TestContext(t *testing.T) {
 		assert.Equal(t, context.Background(), ctx)
 	})
 }
+
+func TestCustomTags(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	sqltrace.Register("postgres", &pq.Driver{})
+	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+		WithCustomTag("custom_tag", func(scope *gorm.Scope) interface{} {
+			return scope.SQLVars[3]
+		}),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	db.AutoMigrate(&Product{})
+
+	parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
+		tracer.ServiceName("fake-http-server"),
+		tracer.SpanType(ext.SpanTypeWeb),
+	)
+
+	db = WithContext(ctx, db)
+	db.Create(&Product{Code: "L1212", Price: 1000})
+
+	parentSpan.Finish()
+
+	spans := mt.FinishedSpans()
+	assert.True(len(spans) >= 3)
+
+	// We deterministically expect the span to be the third last,
+	// followed by the underlying postgres DB trace and the above http.request span.
+	span := spans[len(spans)-3]
+	assert.Equal("gorm.create", span.OperationName())
+	assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
+	assert.Equal("L1212", span.Tag("custom_tag"))
+	assert.Equal(
+		`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
+		span.Tag(ext.ResourceName))
+}

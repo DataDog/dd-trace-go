@@ -124,6 +124,11 @@ func after(scope *gorm.Scope, operationName string) {
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
+	if cfg.tagFns != nil {
+		for key, tagFn := range cfg.tagFns {
+			opts = append(opts, tracer.Tag(key, tagFn(scope)))
+		}
+	}
 
 	span, _ := tracer.StartSpanFromContext(ctx, operationName, opts...)
 	span.Finish(tracer.WithError(scope.DB().Error))
