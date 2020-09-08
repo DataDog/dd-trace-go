@@ -35,7 +35,7 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message) (serverI
 		msg.Attributes = make(map[string]string)
 	}
 	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
-		log.Debugf("failed injecting tracing attributes: %v", err)
+		log.Debugf("contrib/cloud.google.com/go/pubsub.v1/: failed injecting tracing attributes: %v", err)
 	}
 	span.SetTag("num_attributes", len(msg.Attributes))
 	serverID, err = t.Publish(ctx, msg).Get(ctx)
