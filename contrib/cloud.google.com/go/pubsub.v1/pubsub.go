@@ -34,8 +34,7 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message) (serverI
 	if msg.Attributes == nil {
 		msg.Attributes = make(map[string]string)
 	}
-	ierr := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes))
-	if ierr != nil {
+	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
 		log.Debugf("failed injecting tracing attributes: %v", err)
 	}
 	span.SetTag("num_attributes", len(msg.Attributes))
