@@ -10,28 +10,26 @@ import (
 )
 
 func ExamplePublish() {
-	ctx := context.Background()
-	client, err := pubsub.NewClient(ctx, "project-id")
+	client, err := pubsub.NewClient(context.Background(), "project-id")
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	topic := client.Topic("topic")
-	_, err = ddpubsub.Publish(ctx, topic, &pubsub.Message{Data: []byte("hello world!")})
+	_, err = ddpubsub.Publish(context.Background(), topic, &pubsub.Message{Data: []byte("hello world!")})
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
 func ExampleReceive() {
-	ctx := context.Background()
-	client, err := pubsub.NewClient(ctx, "project-id")
+	client, err := pubsub.NewClient(context.Background(), "project-id")
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	sub := client.Subscription("subscription")
-	err = sub.Receive(ctx, ddpubsub.ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
+	err = sub.Receive(context.Background(), ddpubsub.ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
 		// TODO: Handle message.
 	}))
 	if err != nil {

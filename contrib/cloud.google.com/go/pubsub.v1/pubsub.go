@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 
+	"github.com/apex/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
@@ -27,7 +28,10 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message) (serverI
 	if msg.Attributes == nil {
 		msg.Attributes = make(map[string]string)
 	}
-	tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes))
+	ierr := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes))
+	if ierr != nil {
+		log.Debugf("failed injecting tracing attributes: %v", err)
+	}
 	span.SetTag("num_attributes", len(msg.Attributes))
 	serverID, err = t.Publish(ctx, msg).Get(ctx)
 	span.SetTag("server_id", serverID)
