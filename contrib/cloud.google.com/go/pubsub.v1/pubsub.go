@@ -3,9 +3,10 @@ package pubsub
 import (
 	"context"
 
-	"cloud.google.com/go/pubsub"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"cloud.google.com/go/pubsub"
 )
 
 // Publish publishes a message on the specified topic, waits for publishing to complete, and returns the result.

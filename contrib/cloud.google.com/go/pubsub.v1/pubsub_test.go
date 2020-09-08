@@ -5,14 +5,15 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	"cloud.google.com/go/pubsub"
 	"cloud.google.com/go/pubsub/pstest"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func TestPropagation(t *testing.T) {
@@ -187,26 +188,19 @@ func setup(t *testing.T) (context.Context, *pubsub.Topic, *pubsub.Subscription, 
 	mt := mocktracer.Start()
 
 	srv := pstest.NewServer()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-
 	conn, err := grpc.Dial(srv.Addr, grpc.WithInsecure())
 	assert.NoError(t, err)
-
 	client, err := pubsub.NewClient(ctx, "project", option.WithGRPCConn(conn))
 	assert.NoError(t, err)
-
 	_, err = client.CreateTopic(ctx, "topic")
 	assert.NoError(t, err)
-
 	topic := client.Topic("topic")
 	topic.EnableMessageOrdering = true
-
 	_, err = client.CreateSubscription(ctx, "subscription", pubsub.SubscriptionConfig{
 		Topic: topic,
 	})
 	assert.NoError(t, err)
-
 	sub := client.Subscription("subscription")
 
 	return ctx, topic, sub, mt, func() {
