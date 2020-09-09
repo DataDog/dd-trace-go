@@ -123,9 +123,9 @@ func TestLogWriter(t *testing.T) {
 		h.add([]*span{s})
 		h.flush()
 		json := string(buf.Bytes())
-		assert.NotContains(json, `"nan":0`)
-		assert.Contains(json, `"+inf":null`)
-		assert.Contains(json, `"-inf":null`)
+		assert.NotContains(json, `"nan":`)
+		assert.NotContains(json, `"+inf":`)
+		assert.NotContains(json, `"-inf":`)
 	})
 
 	t.Run("fullspan", func(t *testing.T) {
@@ -186,9 +186,6 @@ func TestLogWriter(t *testing.T) {
 				"zero":    0.0,
 				"big":     math.MaxFloat64,
 				"small":   math.SmallestNonzeroFloat64,
-				"-inf":    0,
-				"+inf":    0,
-				"nan":     0,
 			},
 			SpanID:   "a",
 			TraceID:  "b",

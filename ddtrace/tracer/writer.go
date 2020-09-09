@@ -147,7 +147,7 @@ func (h *logTraceWriter) resetBuffer() {
 // One important departure from encoding/json is that infinities and nans are encoded
 // as null rather than signalling an error.
 func encodeFloat(p []byte, f float64) []byte {
-	if math.IsInf(f, -1) || math.IsInf(f, 1) || math.IsNaN(f) {
+	if math.IsInf(f, 0) || math.IsNaN(f) {
 		return append(p, "null"...)
 	}
 	abs := math.Abs(f)
@@ -196,6 +196,10 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 	h.buf.WriteString(`},"metrics":{`)
 	first = true
 	for k, v := range s.Metrics {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			// The trace forwarder does not support infinity or nan, so we do not send metrics with those values.
+			continue
+		}
 		if first {
 			h.buf.WriteByte('"')
 			first = false
