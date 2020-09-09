@@ -78,7 +78,7 @@ func isAPIKeyValid(key string) bool {
 		return false
 	}
 	for _, c := range key {
-		if !unicode.IsLetter(c) && !unicode.IsLower(c) && !unicode.IsNumber(c) {
+		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
 			return false
 		}
 	}
