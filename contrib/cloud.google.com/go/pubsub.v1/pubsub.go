@@ -19,7 +19,7 @@ import (
 
 // Publish publishes a message on the specified topic and returns a PublishResult.
 // This function is functionally equivalent to t.Publish(ctx, msg), but it also starts a publish
-// span and it ensures that the datadog tracing metadata is propagated as attributes attached to
+// span and it ensures that the tracing metadata is propagated as attributes attached to
 // the published message.
 func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message) *PublishResult {
 	span, ctx := tracer.StartSpanFromContext(
