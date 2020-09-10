@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -17,7 +18,32 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
+// testAPIKey is an example API key for validation purposes
+const testAPIKey = "12345678901234567890123456789012"
+
 func TestOptions(t *testing.T) {
+	t.Run("APIKeyChecks", func(t *testing.T) {
+		var apikeytests = []struct {
+			in  string
+			out bool
+		}{
+			{"", false}, // Fail, empty string
+			{"1234567890123456789012345678901", false},   // Fail, too short
+			{"123456789012345678901234567890123", false}, // Fail, too long
+			{"12345678901234567890123456789012", true},   // Pass, numeric only
+			{"abcdefabcdabcdefabcdefabcdefabcd", true},   // Pass, alpha only
+			{"abcdefabcdabcdef7890abcdef789012", true},   // Pass, alphanumeric
+			{"abcdefabcdabcdef7890Abcdef789012", false},  // Fail, contains an uppercase
+			{"abcdefabcdabcdef7890@bcdef789012", false},  // Fail, contains an ASCII symbol
+			{"abcdefabcdabcdef7890ábcdef789012", false},  // Fail, lowercase extended ASCII
+			{"abcdefabcdabcdef7890ábcdef78901", false},   // Fail, lowercase extended ASCII, conservative
+		}
+
+		for i, tt := range apikeytests {
+			assert.Equal(t, tt.out, isAPIKeyValid(tt.in), strconv.Itoa(i)+" : "+tt.in)
+		}
+	})
+
 	t.Run("WithAgentAddr", func(t *testing.T) {
 		var cfg config
 		WithAgentAddr("test:123")(&cfg)
@@ -38,17 +64,18 @@ func TestOptions(t *testing.T) {
 
 	t.Run("WithAPIKey", func(t *testing.T) {
 		var cfg config
-		WithAPIKey("123")(&cfg)
-		assert.Equal(t, "123", cfg.apiKey)
+		WithAPIKey(testAPIKey)(&cfg)
+		assert.Equal(t, testAPIKey, cfg.apiKey)
 		assert.Equal(t, cfg.apiURL, cfg.targetURL)
 	})
 
 	t.Run("WithAPIKey/override", func(t *testing.T) {
 		os.Setenv("DD_API_KEY", "apikey")
 		defer os.Unsetenv("DD_API_KEY")
+		var testAPIKey = "12345678901234567890123456789012"
 		var cfg config
-		WithAPIKey("123")(&cfg)
-		assert.Equal(t, "123", cfg.apiKey)
+		WithAPIKey(testAPIKey)(&cfg)
+		assert.Equal(t, testAPIKey, cfg.apiKey)
 	})
 
 	t.Run("WithURL", func(t *testing.T) {
@@ -179,10 +206,10 @@ func TestEnvVars(t *testing.T) {
 	})
 
 	t.Run("DD_API_KEY", func(t *testing.T) {
-		os.Setenv("DD_API_KEY", "123")
+		os.Setenv("DD_API_KEY", testAPIKey)
 		defer os.Unsetenv("DD_API_KEY")
 		cfg := defaultConfig()
-		assert.Equal(t, "123", cfg.apiKey)
+		assert.Equal(t, testAPIKey, cfg.apiKey)
 	})
 
 	t.Run("DD_SITE", func(t *testing.T) {

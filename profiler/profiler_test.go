@@ -58,6 +58,16 @@ func TestStart(t *testing.T) {
 		assert.NotEmpty(t, activeProfiler.cfg.hostname)
 		mu.Unlock()
 	})
+
+	t.Run("options/GoodAPIKey", func(t *testing.T) {
+		_, err := newProfiler(WithAPIKey("12345678901234567890123456789012"))
+		assert.Nil(t, err)
+	})
+
+	t.Run("options/BadAPIKey", func(t *testing.T) {
+		_, err := newProfiler(WithAPIKey("aaaa"))
+		assert.NotNil(t, err)
+	})
 }
 
 func TestStartStopIdempotency(t *testing.T) {

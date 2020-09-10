@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -70,6 +71,9 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		opt(cfg)
 	}
 	if cfg.apiKey != "" {
+		if !isAPIKeyValid(cfg.apiKey) {
+			return nil, errors.New("API key has incorrect format")
+		}
 		cfg.targetURL = cfg.apiURL
 	} else {
 		cfg.targetURL = cfg.agentURL
