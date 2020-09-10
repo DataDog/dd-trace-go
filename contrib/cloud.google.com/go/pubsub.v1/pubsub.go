@@ -8,18 +8,20 @@ package pubsub
 
 import (
 	"context"
+	"sync"
 
-	"github.com/apex/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"cloud.google.com/go/pubsub"
 )
 
-// Publish publishes a message on the specified topic, waits for publishing to complete, and returns the result.
-// It is functionally equivalent to (*pubsub.Topic).Publish(ctx, msg).Get(ctx), but it also ensures that the datadog
-// tracing metadata is propagated as attributes attached to the published message.
-func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message) (serverID string, err error) {
+// Publish publishes a message on the specified topic and returns a PublishResult.
+// This function is functionally equivalent to t.Publish(ctx, msg), but it also starts a publish
+// span and it ensures that the datadog tracing metadata is propagated as attributes attached to
+// the published message.
+func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message) *PublishResult {
 	span, ctx := tracer.StartSpanFromContext(
 		ctx,
 		"pubsub.publish",
@@ -28,19 +30,35 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message) (serverI
 		tracer.Tag("message_size", len(msg.Data)),
 		tracer.Tag("ordering_key", msg.OrderingKey),
 	)
-	defer func() {
-		span.Finish(tracer.WithError(err))
-	}()
 	if msg.Attributes == nil {
 		msg.Attributes = make(map[string]string)
 	}
 	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
-		log.Debugf("contrib/cloud.google.com/go/pubsub.v1/: failed injecting tracing attributes: %v", err)
+		log.Debug("contrib/cloud.google.com/go/pubsub.v1/: failed injecting tracing attributes: %v", err)
 	}
 	span.SetTag("num_attributes", len(msg.Attributes))
-	serverID, err = t.Publish(ctx, msg).Get(ctx)
-	span.SetTag("server_id", serverID)
-	return
+	return &PublishResult{
+		PublishResult: t.Publish(ctx, msg),
+		span:          span,
+	}
+}
+
+// PublishResult wraps *pubsub.PublishResult
+type PublishResult struct {
+	*pubsub.PublishResult
+	once sync.Once
+	span tracer.Span
+}
+
+// Get wraps (pubsub.PublishResult).Get(ctx). When this function returns the publish span
+// created in Publish is completed.
+func (r *PublishResult) Get(ctx context.Context) (string, error) {
+	serverID, err := r.PublishResult.Get(ctx)
+	r.once.Do(func() {
+		r.span.SetTag("server_id", serverID)
+		r.span.Finish(tracer.WithError(err))
+	})
+	return serverID, err
 }
 
 // ReceiveTracer returns a receive callback that wraps the supplied callback, and extracts the datadog tracing metadata

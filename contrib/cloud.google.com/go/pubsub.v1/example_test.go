@@ -9,7 +9,7 @@ import (
 	"context"
 	"log"
 
-	ddpubsub "gopkg.in/DataDog/dd-trace-go.v1/contrib/cloud.google.com/go/pubsub.v1"
+	pubsubtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/cloud.google.com/go/pubsub.v1"
 
 	"cloud.google.com/go/pubsub"
 )
@@ -21,7 +21,7 @@ func ExamplePublish() {
 	}
 
 	topic := client.Topic("topic")
-	_, err = ddpubsub.Publish(context.Background(), topic, &pubsub.Message{Data: []byte("hello world!")})
+	_, err = pubsubtrace.Publish(context.Background(), topic, &pubsub.Message{Data: []byte("hello world!")}).Get(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func ExampleReceive() {
 	}
 
 	sub := client.Subscription("subscription")
-	err = sub.Receive(context.Background(), ddpubsub.ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
+	err = sub.Receive(context.Background(), pubsubtrace.ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
 		// TODO: Handle message.
 	}))
 	if err != nil {
