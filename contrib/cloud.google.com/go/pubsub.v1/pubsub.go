@@ -61,8 +61,8 @@ func (r *PublishResult) Get(ctx context.Context) (string, error) {
 	return serverID, err
 }
 
-// ReceiveTracer returns a receive callback that wraps the supplied callback, and extracts the datadog tracing metadata
-// if it exists attached to the received message.
+// ReceiveTracer returns a receive callback that wraps the supplied callback, and extracts any tracing metadata
+// attached to the received message.
 func ReceiveTracer(s *pubsub.Subscription, f func(context.Context, *pubsub.Message)) func(context.Context, *pubsub.Message) {
 	return func(ctx context.Context, msg *pubsub.Message) {
 		parentSpanCtx, _ := tracer.Extract(tracer.TextMapCarrier(msg.Attributes))
