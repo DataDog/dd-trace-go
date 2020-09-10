@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
