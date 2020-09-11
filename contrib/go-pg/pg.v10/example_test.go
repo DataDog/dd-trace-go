@@ -9,30 +9,23 @@ import (
 	"context"
 	"log"
 
-	pggotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-pg/pg"
+	pgtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-pg/pg.v10"
 
 	"github.com/go-pg/pg/v10"
 )
 
-// To trace Postgres query using go-pg ORM.
-// Create a connection with pg.Connect and wrap instance with pggotrace.Hook
-// For proper query tracing, context must be passed to query,
-// where will be stored Span with information about query
 func Example() {
-	var user struct {
-		Name string
-	}
-	// Create go-pg connection as usually.
-	// More you can find in official documentation:
-	// https://pg.uptrace.dev/
 	conn := pg.Connect(&pg.Options{
 		User:     "go-pg-test",
 		Database: "datadog",
 	})
 
-	// Wrap pg.connect with pggotrace.Hook for start tracing postgres queries.
-	pggotrace.Hook(conn)
+	// Wrap the connection with the APM hook
+	pgtrace.Wrap(conn)
 	// For correct tracing, must be query execute with context.
+	var user struct {
+		Name string
+	}
 	_, err := conn.WithContext(context.Background()).QueryOne(&user, "SELECT name FROM users")
 	if err != nil {
 		log.Fatal(err)
