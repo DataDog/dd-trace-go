@@ -39,7 +39,7 @@ func TestPropagation(t *testing.T) {
 		pubTime string
 		called  bool
 	)
-	err = sub.Receive(ctx, ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
 		assert.False(called, "callback called twice")
 		assert.Equal(msg.Data, []byte("hello"), "wrong payload")
 		span, ok := tracer.SpanFromContext(ctx)
@@ -104,7 +104,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		pubTime string
 		called  bool
 	)
-	err = sub.Receive(ctx, ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
 		assert.False(called, "callback called twice")
 		assert.Equal(msg.Data, []byte("hello"), "wrong payload")
 		span, ok := tracer.SpanFromContext(ctx)
@@ -167,7 +167,7 @@ func TestPropagationNoPubsliherSpan(t *testing.T) {
 		pubTime string
 		called  bool
 	)
-	err = sub.Receive(ctx, ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
 		assert.False(called, "callback called twice")
 		assert.Equal(msg.Data, []byte("hello"), "wrong payload")
 		span, ok := tracer.SpanFromContext(ctx)

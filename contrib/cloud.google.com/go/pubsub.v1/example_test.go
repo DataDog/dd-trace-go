@@ -34,7 +34,7 @@ func ExampleReceive() {
 	}
 
 	sub := client.Subscription("subscription")
-	err = sub.Receive(context.Background(), pubsubtrace.ReceiveTracer(sub, func(ctx context.Context, msg *pubsub.Message) {
+	err = sub.Receive(context.Background(), pubsubtrace.WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
 		// TODO: Handle message.
 	}))
 	if err != nil {

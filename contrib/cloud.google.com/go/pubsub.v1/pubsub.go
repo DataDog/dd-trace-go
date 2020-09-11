@@ -21,6 +21,8 @@ import (
 // This function is functionally equivalent to t.Publish(ctx, msg), but it also starts a publish
 // span and it ensures that the tracing metadata is propagated as attributes attached to
 // the published message.
+// It is required to call (*PublishResult).Get(ctx) on the value returned by Publish to complete
+// the span.
 func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message) *PublishResult {
 	span, ctx := tracer.StartSpanFromContext(
 		ctx,
@@ -50,8 +52,8 @@ type PublishResult struct {
 	span tracer.Span
 }
 
-// Get wraps (pubsub.PublishResult).Get(ctx). When this function returns the publish span
-// created in Publish is completed.
+// Get wraps (pubsub.PublishResult).Get(ctx). When this function returns the publish
+// span created in Publish is completed.
 func (r *PublishResult) Get(ctx context.Context) (string, error) {
 	serverID, err := r.PublishResult.Get(ctx)
 	r.once.Do(func() {
@@ -61,9 +63,10 @@ func (r *PublishResult) Get(ctx context.Context) (string, error) {
 	return serverID, err
 }
 
-// ReceiveTracer returns a receive callback that wraps the supplied callback, and extracts any tracing metadata
-// attached to the received message.
-func ReceiveTracer(s *pubsub.Subscription, f func(context.Context, *pubsub.Message)) func(context.Context, *pubsub.Message) {
+// WrapReceiveHandler returns a receive handler that wraps the supplied handler,
+// extracts any tracing metadata attached to the received message, and starts a
+// receive span.
+func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.Message)) func(context.Context, *pubsub.Message) {
 	return func(ctx context.Context, msg *pubsub.Message) {
 		parentSpanCtx, _ := tracer.Extract(tracer.TextMapCarrier(msg.Attributes))
 		span, ctx := tracer.StartSpanFromContext(

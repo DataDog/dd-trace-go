@@ -182,7 +182,7 @@ jobs:
       - run:
           name: Testing
           command: |
-                INTEGRATION=1 go test -v -race `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api`
+                INTEGRATION=1 go test -v -race `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api -e cloud.google.com/go/pubsub.v1`
 
                 go get google.golang.org/api@v0.28.0 # TODO(x): fix breaking change in api_test.go
                 go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
@@ -190,6 +190,9 @@ jobs:
 
                 go get google.golang.org/grpc@v1.2.0
                 go test -v ./contrib/google.golang.org/grpc.v12/...
+
+                go get cloud.google.com/go/pubsub@v1.6.1
+                go test -v ./contrib/cloud.google.com/go/pubsub.v1/...
 
 workflows:
   version: 2
