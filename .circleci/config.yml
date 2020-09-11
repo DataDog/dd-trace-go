@@ -142,6 +142,7 @@ jobs:
           command: |
             go get k8s.io/client-go@v0.17.0
             go get k8s.io/apimachinery@v0.17.0
+            go get cloud.google.com/go/pubsub@v1.6.1
 
       - run:
           name: Wait for MySQL
