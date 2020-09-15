@@ -230,3 +230,40 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	assert.True(called)
 	assert.False(traced)
 }
+
+func TestSkipper(t *testing.T) {
+	assert := assert.New(t)
+	router := echo.New()
+
+	router.Use(Middleware(WithSkipper(func(c echo.Context) bool {
+		return c.Request().RequestURI == "/skip"
+	})))
+
+	tests := []struct {
+		uri       string
+		called    bool
+		wantTrace bool
+	}{
+		{uri: "/trace", wantTrace: true},
+		{uri: "/skip", wantTrace: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.uri, func(t *testing.T) {
+			var called, traced bool
+
+			router.GET(tt.uri, func(c echo.Context) error {
+				called = true
+				_, traced = tracer.SpanFromContext(c.Request().Context())
+				return c.NoContent(200)
+			})
+
+			r := httptest.NewRequest("GET", tt.uri, nil)
+			w := httptest.NewRecorder()
+
+			router.ServeHTTP(w, r)
+			assert.True(called)
+			assert.Equal(tt.wantTrace, traced)
+		})
+	}
+}

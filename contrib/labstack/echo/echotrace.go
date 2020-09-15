@@ -26,6 +26,10 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			fn(cfg)
 		}
 		return func(c echo.Context) error {
+			if cfg.skipper(c) {
+				return next(c)
+			}
+
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
 			opts := []ddtrace.StartSpanOption{

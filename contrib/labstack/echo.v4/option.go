@@ -9,11 +9,14 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/labstack/echo/v4/middleware"
 )
 
 type config struct {
 	serviceName   string
 	analyticsRate float64
+	skipper       middleware.Skipper
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -25,6 +28,7 @@ func defaults(cfg *config) {
 		cfg.serviceName = svc
 	}
 	cfg.analyticsRate = math.NaN()
+	cfg.skipper = middleware.DefaultSkipper
 }
 
 // WithServiceName sets the given service name for the system.
@@ -54,5 +58,13 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithSkipper defines a function to skip middleware. Returning true skips processing
+// the middleware.
+func WithSkipper(skipper middleware.Skipper) Option {
+	return func(cfg *config) {
+		cfg.skipper = skipper
 	}
 }
