@@ -143,7 +143,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	}
 	sampler := newPrioritySampler()
 	var writer traceWriter
-	if c.lambda {
+	if c.logToStdout {
 		writer = newLogTraceWriter(c)
 	} else {
 		writer = newAgentTraceWriter(c, sampler)

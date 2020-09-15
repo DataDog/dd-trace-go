@@ -17,8 +17,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-var _ traceWriter = &agentTraceWriter{}
-var _ traceWriter = &logTraceWriter{}
+func TestImplementsTraceWriter(t *testing.T) {
+	assert.Implements(t, (*traceWriter)(nil), &agentTraceWriter{})
+	assert.Implements(t, (*traceWriter)(nil), &logTraceWriter{})
+}
 
 // makeSpan returns a span, adding n entries to meta and metrics each.
 func makeSpan(n int) *span {
