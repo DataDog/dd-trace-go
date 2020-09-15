@@ -30,6 +30,9 @@ type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
 
+	// lambda, when true, enables the lambda trace writer
+	logToStdout bool
+
 	// logStartup, when true, causes various startup info to be written
 	// when the tracer starts.
 	logStartup bool
@@ -145,6 +148,11 @@ func newConfig(opts ...StartOption) *config {
 			}
 		}
 	}
+	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
+		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
+		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
+		c.logToStdout = true
+	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
@@ -245,6 +253,13 @@ func WithPrioritySampling() StartOption {
 func WithDebugMode(enabled bool) StartOption {
 	return func(c *config) {
 		c.debug = enabled
+	}
+}
+
+// WithLambdaMode enables lambda mode on the tracer, for use with AWS Lambda.
+func WithLambdaMode(enabled bool) StartOption {
+	return func(c *config) {
+		c.logToStdout = enabled
 	}
 }
 
