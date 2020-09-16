@@ -86,6 +86,21 @@ func (c *Client) Pipeline() redis.Pipeliner {
 	return &Pipeliner{c.Client.Pipeline(), c.params, c.Client.Context()}
 }
 
+// Pipelined executes a function parameter to build a Pipeline and then immediately executes it.
+func (c *Client) Pipelined(fn func(redis.Pipeliner) error) ([]redis.Cmder, error) {
+	return c.Pipeline().Pipelined(fn)
+}
+
+// TxPipelined executes a function parameter to build a Transactional Pipeline and then immediately executes it.
+func (c *Client) TxPipelined(fn func(redis.Pipeliner) error) ([]redis.Cmder, error) {
+	return c.TxPipeline().Pipelined(fn)
+}
+
+// TxPipeline acts like Pipeline, but wraps queued commands with MULTI/EXEC.
+func (c *Client) TxPipeline() redis.Pipeliner {
+	return &Pipeliner{c.Client.TxPipeline(), c.params, c.Client.Context()}
+}
+
 // ExecWithContext calls Pipeline.Exec(). It ensures that the resulting Redis calls
 // are traced, and that emitted spans are children of the given Context.
 func (c *Pipeliner) ExecWithContext(ctx context.Context) ([]redis.Cmder, error) {
@@ -131,6 +146,15 @@ func commandsToString(cmds []redis.Cmder) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// Pipelined executes a function parameter to build a Pipeline and then immediately executes the built pipeline.
+func (c *Pipeliner) Pipelined(fn func(redis.Pipeliner) error) ([]redis.Cmder, error) {
+	if err := fn(c); err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	return c.Exec()
 }
 
 // WithContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.
