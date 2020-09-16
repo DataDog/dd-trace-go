@@ -55,11 +55,13 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	res, err = rt.base.RoundTrip(req.WithContext(ctx))
 	if err != nil {
 		span.SetTag("http.errors", err.Error())
+		span.SetTag(ext.Error, err)
 	} else {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
 		// treat 5XX as errors
 		if res.StatusCode/100 == 5 {
 			span.SetTag("http.errors", res.Status)
+			span.SetTag(ext.Error, fmt.Errorf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))
 		}
 	}
 	return res, err
