@@ -158,7 +158,7 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	assert.Equal(t, nil, s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, "/hello/world", s0.Tag(ext.HTTPURL))
-	assert.Equal(t, fmt.Errorf("net/http: request canceled"), s0.Tag(ext.Error))
+	assert.NotNil(t, s0.Tag(ext.Error))
 	assert.Equal(t, true, s0.Tag("CalledBefore"))
 	assert.Equal(t, true, s0.Tag("CalledAfter"))
 }
