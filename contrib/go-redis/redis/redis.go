@@ -153,9 +153,8 @@ func (c *Pipeliner) Pipelined(fn func(redis.Pipeliner) error) ([]redis.Cmder, er
 	if err := fn(c); err != nil {
 		return nil, err
 	}
-	cmds, err := c.Exec()
-	_ = c.Close()
-	return cmds, err
+	defer c.Close()
+	return c.Exec()
 }
 
 // WithContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.
