@@ -264,6 +264,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		TraceID:  id,
 		Start:    startTime,
 		taskEnd:  startExecutionTracerTask(operationName),
+		errCfg:   errorConfig{noDebugStack: t.config.noDebugStack},
 	}
 	if context != nil {
 		// this is a child span

@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -59,7 +60,7 @@ loop:
 	}
 }
 
-// TestTracerFrenetic does frenetic testing in a scenario where the tracer is started
+// TestTracerCleanStop does frenetic testing in a scenario where the tracer is started
 // and stopped in parallel with spans being created.
 func TestTracerCleanStop(t *testing.T) {
 	if testing.Short() {
@@ -440,6 +441,19 @@ func TestTracerSpanGlobalTags(t *testing.T) {
 	assert.Equal("value", s.Meta["key"])
 	child := tracer.StartSpan("db.query", ChildOf(s.Context())).(*span)
 	assert.Equal("value", child.Meta["key"])
+}
+
+func TestTracerNoDebugStack(t *testing.T) {
+	assert := assert.New(t)
+	tracer := newTracer(WithDebugStack(false))
+	s := tracer.StartSpan("web.request").(*span)
+	err := errors.New("test error")
+	s.Finish(WithError(err))
+
+	assert.Equal(int32(1), s.Error)
+	assert.Equal("test error", s.Meta[ext.ErrorMsg])
+	assert.Equal("*errors.errorString", s.Meta[ext.ErrorType])
+	assert.Empty(s.Meta[ext.ErrorStack])
 }
 
 func TestNewSpan(t *testing.T) {

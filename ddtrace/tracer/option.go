@@ -92,6 +92,10 @@ type config struct {
 	// tickChan specifies a channel which will receive the time every time the tracer must flush.
 	// It defaults to time.Ticker; replaced in tests.
 	tickChan <-chan time.Time
+
+	// noDebugStack disables the collection of debug stack traces globally. No traces reporting
+	// errors will record a stack trace when this option is set.
+	noDebugStack bool
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -246,6 +250,15 @@ func WithLogger(logger ddtrace.Logger) StartOption {
 func WithPrioritySampling() StartOption {
 	return func(c *config) {
 		// This is now enabled by default.
+	}
+}
+
+// WithDebugStack can be used to globally enable or disable the collection of stack traces when
+// spans finish with errors. It is enabled by default. This is a global version of the NoDebugStack
+// FinishOption.
+func WithDebugStack(enabled bool) StartOption {
+	return func(c *config) {
+		c.noDebugStack = !enabled
 	}
 }
 
