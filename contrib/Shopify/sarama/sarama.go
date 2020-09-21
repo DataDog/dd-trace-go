@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/Shopify/sarama"
 )
@@ -176,7 +177,8 @@ func (p *asyncProducer) Errors() <-chan *sarama.ProducerError {
 
 // WrapAsyncProducer wraps a sarama.AsyncProducer so that all produced messages
 // are traced. It requires the underlying sarama Config so we can know whether
-// or not sucesses will be returned.
+// or not successes will be returned. Tracing requires at least sarama.V0_11_0_0
+// version which is the first version that supports headers.
 func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts ...Option) sarama.AsyncProducer {
 	cfg := new(config)
 	defaults(cfg)
@@ -185,6 +187,9 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	}
 	if saramaConfig == nil {
 		saramaConfig = sarama.NewConfig()
+		saramaConfig.Version = sarama.V0_11_0_0
+	} else if !saramaConfig.Version.IsAtLeast(sarama.V0_11_0_0) {
+		log.Error("Tracing Sarama async producer requires at least sarama.V0_11_0_0 version")
 	}
 	wrapped := &asyncProducer{
 		AsyncProducer: p,
