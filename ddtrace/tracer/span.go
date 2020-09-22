@@ -66,11 +66,11 @@ type span struct {
 	TraceID  uint64             `msg:"trace_id"`          // identifier of the root span
 	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
-	errCfg   errorConfig        `msg:"-"`                 // configuration for errors tracing
 
-	finished bool         `msg:"-"` // true if the span has been submitted to a tracer.
-	context  *spanContext `msg:"-"` // span propagation context
-	taskEnd  func()       // ends execution tracer (runtime/trace) task, if started
+	noDebugStack bool         `msg:"-"` // disables debug stack traces
+	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
+	context      *spanContext `msg:"-"` // span propagation context
+	taskEnd      func()       // ends execution tracer (runtime/trace) task, if started
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -103,7 +103,7 @@ func (s *span) SetTag(key string, value interface{}) {
 	}
 	switch key {
 	case ext.Error:
-		s.setTagError(value, &s.errCfg)
+		s.setTagError(value, &errorConfig{})
 		return
 	}
 	if v, ok := value.(bool); ok {
@@ -262,7 +262,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	t := now()
 	if len(opts) > 0 {
 		cfg := ddtrace.FinishConfig{
-			NoDebugStack: s.errCfg.noDebugStack,
+			NoDebugStack: s.noDebugStack,
 		}
 		for _, fn := range opts {
 			fn(&cfg)

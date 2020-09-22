@@ -257,14 +257,14 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	// span defaults
 	span := &span{
-		Name:     operationName,
-		Service:  t.config.serviceName,
-		Resource: operationName,
-		SpanID:   id,
-		TraceID:  id,
-		Start:    startTime,
-		taskEnd:  startExecutionTracerTask(operationName),
-		errCfg:   errorConfig{noDebugStack: t.config.noDebugStack},
+		Name:         operationName,
+		Service:      t.config.serviceName,
+		Resource:     operationName,
+		SpanID:       id,
+		TraceID:      id,
+		Start:        startTime,
+		taskEnd:      startExecutionTracerTask(operationName),
+		noDebugStack: t.config.noDebugStack,
 	}
 	if context != nil {
 		// this is a child span
