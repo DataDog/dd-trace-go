@@ -46,6 +46,7 @@ type startupInfo struct {
 	ApplicationVersion    string            `json:"dd_version"`              // Version of the user's application
 	Architecture          string            `json:"architecture"`            // Architecture of host machine
 	GlobalService         string            `json:"global_service"`          // Global service string. If not-nil should be same as Service. (#614)
+	LambdaMode            string            `json:"lambda_mode"`             // Whether or not the client has enabled lambda mode
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -93,13 +94,16 @@ func logStartup(t *tracer) {
 		ApplicationVersion:    t.config.version,
 		Architecture:          runtime.GOARCH,
 		GlobalService:         globalconfig.ServiceName(),
+		LambdaMode:            fmt.Sprintf("%t", t.config.logToStdout),
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
 	}
-	if err := checkEndpoint(t.transport.endpoint()); err != nil {
-		info.AgentError = fmt.Sprintf("%s", err)
-		log.Warn("DIAGNOSTICS Unable to reach agent: %s", err)
+	if !t.config.logToStdout {
+		if err := checkEndpoint(t.transport.endpoint()); err != nil {
+			info.AgentError = fmt.Sprintf("%s", err)
+			log.Warn("DIAGNOSTICS Unable to reach agent: %s", err)
+		}
 	}
 	bs, err := json.Marshal(info)
 	if err != nil {
