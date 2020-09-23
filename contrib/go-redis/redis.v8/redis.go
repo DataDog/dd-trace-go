@@ -23,7 +23,7 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
-type dataDogHook struct {
+type datadogHook struct {
 	*params
 }
 
@@ -55,12 +55,11 @@ func NewClient(opt *redis.Options, opts ...ClientOption) redis.UniversalClient {
 		config: cfg,
 	}
 	client := redis.NewClient(opt)
-	hook := &dataDogHook{params: params}
-	client.AddHook(hook)
+	client.AddHook(&datadogHook{params: params})
 	return client
 }
 
-func (ddh *dataDogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
 	raw := cmderToString(cmd)
 	parts := strings.Split(raw, " ")
 	length := len(parts) - 1
@@ -82,7 +81,7 @@ func (ddh *dataDogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 	return ctx, nil
 }
 
-func (ddh *dataDogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
+func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
 	var span tracer.Span
 	span, _ = tracer.SpanFromContext(ctx)
 	var finishOpts []ddtrace.FinishOption
@@ -94,7 +93,7 @@ func (ddh *dataDogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error
 	return nil
 }
 
-func (ddh *dataDogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
 	raw := commandsToString(cmds)
 	parts := strings.Split(raw, " ")
 	length := len(parts) - 1
@@ -118,7 +117,7 @@ func (ddh *dataDogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 	return ctx, nil
 }
 
-func (ddh *dataDogHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+func (ddh *datadogHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
 	var span tracer.Span
 	span, _ = tracer.SpanFromContext(ctx)
 	var finishOpts []ddtrace.FinishOption
