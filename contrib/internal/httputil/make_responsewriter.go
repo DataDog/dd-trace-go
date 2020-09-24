@@ -48,12 +48,13 @@ import (
 //
 // This code is generated because we have to account for all the permutations
 // of the interfaces.
-func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) http.ResponseWriter {
+func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) (http.ResponseWriter, *responseWriter) {
 {{- range .Interfaces }}
 	h{{.}}, ok{{.}} := w.(http.{{.}})
 {{- end }}
 
-	w = newResponseWriter(w, span)
+	orig := newResponseWriter(w, span)
+	w = orig
 	switch {
 {{- range .Combinations }}
 	{{- range . }}
@@ -68,6 +69,6 @@ func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) http.ResponseW
 {{- end }}
 	}
 
-	return w
+	return w, orig
 }
 `

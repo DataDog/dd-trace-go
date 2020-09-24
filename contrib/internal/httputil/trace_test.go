@@ -90,7 +90,7 @@ func TestTraceAndServe(t *testing.T) {
 		_, ok = w.(http.Pusher)
 		assert.True(t, ok)
 
-		w = wrapResponseWriter(w, nil)
+		w, _ = wrapResponseWriter(w, nil)
 		_, ok = w.(http.ResponseWriter)
 		assert.True(t, ok)
 		_, ok = w.(http.Pusher)

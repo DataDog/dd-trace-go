@@ -36,9 +36,13 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, servi
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
-	defer span.Finish(finishopts...)
-
-	w = wrapResponseWriter(w, span)
+	w, wp := wrapResponseWriter(w, span)
+	defer func() {
+		if err := wp.ExtractError(); err != nil {
+			finishopts = append(finishopts, tracer.WithError(err))
+		}
+		span.Finish(finishopts...)
+	}()
 
 	h.ServeHTTP(w, r.WithContext(ctx))
 }
@@ -48,11 +52,12 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, servi
 type responseWriter struct {
 	http.ResponseWriter
 	span   ddtrace.Span
+	err    error
 	status int
 }
 
 func newResponseWriter(w http.ResponseWriter, span ddtrace.Span) *responseWriter {
-	return &responseWriter{w, span, 0}
+	return &responseWriter{w, span, nil, 0}
 }
 
 // Write writes the data to the connection as part of an HTTP reply.
@@ -75,6 +80,10 @@ func (w *responseWriter) WriteHeader(status int) {
 	w.status = status
 	w.span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 	if status >= 500 && status < 600 {
-		w.span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
+		w.err = fmt.Errorf("%d: %s", status, http.StatusText(status))
 	}
+}
+
+func (w *responseWriter) ExtractError() error {
+	return w.err
 }

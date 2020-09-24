@@ -8,8 +8,9 @@
 package httputil
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"net/http"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 // wrapResponseWriter wraps an underlying http.ResponseWriter so that it can
@@ -20,13 +21,14 @@ import (
 //
 // This code is generated because we have to account for all the permutations
 // of the interfaces.
-func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) http.ResponseWriter {
+func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) (http.ResponseWriter, *responseWriter) {
 	hFlusher, okFlusher := w.(http.Flusher)
 	hPusher, okPusher := w.(http.Pusher)
 	hCloseNotifier, okCloseNotifier := w.(http.CloseNotifier)
 	hHijacker, okHijacker := w.(http.Hijacker)
 
-	w = newResponseWriter(w, span)
+	orig := newResponseWriter(w, span)
+	w = orig
 	switch {
 	case okFlusher && okPusher && okCloseNotifier && okHijacker:
 		w = struct {
@@ -122,5 +124,5 @@ func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) http.ResponseW
 		}{w, hHijacker}
 	}
 
-	return w
+	return w, orig
 }
