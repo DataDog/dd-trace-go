@@ -39,42 +39,63 @@ func TestChildSpan(t *testing.T) {
 }
 
 func TestTrace200(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	assertDoRequest := func(assert *assert.Assertions, mt mocktracer.Tracer, router *chi.Mux) {
+		r := httptest.NewRequest("GET", "/user/123", nil)
+		w := httptest.NewRecorder()
 
-	router := chi.NewRouter()
-	router.Use(Middleware(WithServiceName("foobar")))
-	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
-		span, ok := tracer.SpanFromContext(r.Context())
-		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
-		id := chi.URLParam(r, "id")
-		w.Write([]byte(id))
+		// do and verify the request
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		assert.Equal(response.StatusCode, 200)
+
+		// verify traces look good
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		if len(spans) < 1 {
+			t.Fatalf("no spans")
+		}
+		span := spans[0]
+		assert.Equal("http.request", span.OperationName())
+		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+		assert.Equal("foobar", span.Tag(ext.ServiceName))
+		assert.Equal("GET /user/{id}", span.Tag(ext.ResourceName))
+		assert.Equal("200", span.Tag(ext.HTTPCode))
+		assert.Equal("GET", span.Tag(ext.HTTPMethod))
+		assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	}
+
+	t.Run("response written", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := chi.NewRouter()
+		router.Use(Middleware(WithServiceName("foobar")))
+		router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+			span, ok := tracer.SpanFromContext(r.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+			id := chi.URLParam(r, "id")
+			_, err := w.Write([]byte(id))
+			assert.NoError(err)
+		})
+		assertDoRequest(assert, mt, router)
 	})
 
-	r := httptest.NewRequest("GET", "/user/123", nil)
-	w := httptest.NewRecorder()
+	t.Run("no response written", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	// do and verify the request
-	router.ServeHTTP(w, r)
-	response := w.Result()
-	assert.Equal(response.StatusCode, 200)
-
-	// verify traces look good
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	if len(spans) < 1 {
-		t.Fatalf("no spans")
-	}
-	span := spans[0]
-	assert.Equal("http.request", span.OperationName())
-	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
-	assert.Equal("foobar", span.Tag(ext.ServiceName))
-	assert.Equal("GET /user/{id}", span.Tag(ext.ResourceName))
-	assert.Equal("200", span.Tag(ext.HTTPCode))
-	assert.Equal("GET", span.Tag(ext.HTTPMethod))
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+		router := chi.NewRouter()
+		router.Use(Middleware(WithServiceName("foobar")))
+		router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+			span, ok := tracer.SpanFromContext(r.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+		})
+		assertDoRequest(assert, mt, router)
+	})
 }
 
 func TestError(t *testing.T) {
