@@ -116,7 +116,7 @@ type syncProducer struct {
 func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
 	span := startProducerSpan(p.cfg, p.version, msg)
 	partition, offset, err = p.SyncProducer.SendMessage(msg)
-	finishProducerSpan(span, &producerSpanTag{Partition: partition, Offset: offset}, err)
+	finishProducerSpan(span, partition, offset, err)
 	return partition, offset, err
 }
 
@@ -130,7 +130,7 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	}
 	err := p.SyncProducer.SendMessages(msgs)
 	for i, span := range spans {
-		finishProducerSpan(span, &producerSpanTag{Partition: msgs[i].Partition, Offset: msgs[i].Offset}, err)
+		finishProducerSpan(span, msgs[i].Partition, msgs[i].Offset, err)
 	}
 	return err
 }
@@ -213,7 +213,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 					// if returning successes isn't enabled, we just finish the
 					// span right away because there's no way to know when it will
 					// be done
-					finishProducerSpan(span, nil, nil)
+					span.Finish()
 				}
 			case msg, ok := <-p.Successes():
 				if !ok {
@@ -224,7 +224,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 					spanID := spanctx.SpanID()
 					if span, ok := spans[spanID]; ok {
 						delete(spans, spanID)
-						finishProducerSpan(span, &producerSpanTag{Partition: msg.Partition, Offset: msg.Offset}, nil)
+						finishProducerSpan(span, msg.Partition, msg.Offset, nil)
 					}
 				}
 				wrapped.successes <- msg
@@ -237,7 +237,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 					spanID := spanctx.SpanID()
 					if span, ok := spans[spanID]; ok {
 						delete(spans, spanID)
-						finishProducerSpan(span, nil, err.Err)
+						span.Finish(tracer.WithError(err))
 					}
 				}
 				wrapped.errors <- err
@@ -269,16 +269,9 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 	return span
 }
 
-type producerSpanTag struct {
-	Partition int32
-	Offset    int64
-}
-
-func finishProducerSpan(span ddtrace.Span, tags *producerSpanTag, err error) {
-	if tags != nil {
-		span.SetTag("partition", tags.Partition)
-		span.SetTag("offset", tags.Offset)
-	}
+func finishProducerSpan(span ddtrace.Span, partition int32, offset int64, err error) {
+	span.SetTag("partition", partition)
+	span.SetTag("offset", offset)
 	span.Finish(tracer.WithError(err))
 }
 
