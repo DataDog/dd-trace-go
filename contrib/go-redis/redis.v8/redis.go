@@ -10,7 +10,7 @@ package redis
 import (
 	"bytes"
 	"context"
-	"fmt"
+
 	"math"
 	"net"
 	"strconv"
@@ -26,6 +26,8 @@ import (
 type datadogHook struct {
 	*params
 }
+
+var _ redis.Hook = (*datadogHook)(nil)
 
 // params holds the tracer and a set of parameters which are recorded with every trace.
 type params struct {
@@ -60,7 +62,7 @@ func NewClient(opt *redis.Options, opts ...ClientOption) redis.UniversalClient {
 }
 
 func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
-	raw := cmderToString(cmd)
+	raw := cmd.String()
 	parts := strings.Split(raw, " ")
 	length := len(parts) - 1
 	p := ddh.params
@@ -135,28 +137,8 @@ func (ddh *datadogHook) AfterProcessPipeline(ctx context.Context, cmds []redis.C
 func commandsToString(cmds []redis.Cmder) string {
 	var b bytes.Buffer
 	for _, cmd := range cmds {
-		b.WriteString(cmderToString(cmd))
+		b.WriteString(cmd.String())
 		b.WriteString("\n")
 	}
 	return b.String()
-}
-
-func cmderToString(cmd redis.Cmder) string {
-	// We want to support multiple versions of the go-redis library. In
-	// older versions Cmder implements the Stringer interface, while in
-	// newer versions that was removed, and this String method which
-	// sometimes returns an error is used instead. By doing a type assertion
-	// we can support both versions.
-	if stringer, ok := cmd.(fmt.Stringer); ok {
-		return stringer.String()
-	}
-
-	args := cmd.Args()
-	if len(args) == 0 {
-		return ""
-	}
-	if str, ok := args[0].(string); ok {
-		return str
-	}
-	return ""
 }
