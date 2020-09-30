@@ -21,7 +21,7 @@ jobs:
     - run:
         name: build
         command: |
-          go build ./ddtrace/... ./profiler/...
+          go build -mod=readonly ./ddtrace/... ./profiler/...
 
   metadata:
     <<: *plain-go113
@@ -32,12 +32,12 @@ jobs:
     - run:
         name: milestone
         command: |
-          go run checkmilestone.go
+          go run -mod=readonly checkmilestone.go
 
     - run:
         name: copyright
         command: |
-          go run checkcopyright.go
+          go run -mod=readonly checkcopyright.go
 
   lint:
     <<: *plain-go113
@@ -68,7 +68,7 @@ jobs:
       - checkout
       - run:
           name: Testing
-          command: go test -v -race `go list ./... | grep -v /contrib/`
+          command: go test -mod=readonly -v -race `go list ./... | grep -v /contrib/`
 
   test-contrib:
     resource_class: xlarge
@@ -138,13 +138,6 @@ jobs:
           - /tmp/librdkafka-v1.3.0
 
       - run:
-          name: Enforce some dependencies
-          command: |
-            go get k8s.io/client-go@v0.17.0
-            go get k8s.io/apimachinery@v0.17.0
-            go get cloud.google.com/go/pubsub@v1.6.1
-
-      - run:
           name: Wait for MySQL
           command: dockerize -wait tcp://localhost:3306 -timeout 1m
 
@@ -183,7 +176,7 @@ jobs:
       - run:
           name: Testing
           command: |
-                INTEGRATION=1 go test -v -race `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api`
+                INTEGRATION=1 go test -mod=readonly -v -race `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api`
                 go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
                 go test -v ./contrib/google.golang.org/api/...
                 go get google.golang.org/grpc@v1.2.0
