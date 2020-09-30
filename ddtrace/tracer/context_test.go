@@ -79,8 +79,6 @@ func TestStartSpanFromNilContext(t *testing.T) {
 	_, _, _, stop := startTestTracer(t)
 	defer stop()
 
-	// Go before 1.15: StartSpanFromContext(nil, ...) worked; calling ctx.Value would segfault
-	// Go == 1.15: StartSpanFromContext(nil, ...) would panic: cannot create context from nil parent
 	child, ctx := StartSpanFromContext(nil, "http.request")
 	assert := assert.New(t)
 	// ensure the returned context works
