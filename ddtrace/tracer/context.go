@@ -40,11 +40,10 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 // option is passed, the span from context will take precedence over it as the parent span.
 // If ctx is nil, this will use context.Background().
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context) {
-	// default to context.Background() to avoid panics on Go >= 1.15
 	if ctx == nil {
+		// default to context.Background() to avoid panics on Go >= 1.15
 		ctx = context.Background()
 	}
-
 	if s, ok := SpanFromContext(ctx); ok {
 		opts = append(opts, ChildOf(s.Context()))
 	}
