@@ -61,6 +61,10 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			// set the status code
 			status := ww.Status()
+			// 0 status means one has not yet been sent in which case net/http library will write StatusOK
+			if ww.Status() == 0 {
+				status = http.StatusOK
+			}
 			span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 
 			if status >= 500 && status < 600 {
