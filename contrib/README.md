@@ -17,6 +17,7 @@ First, find the library which you'd like to integrate with. The naming conventio
 * If the package is hosted on Github (eg. `github.com/user/repo`) and has version `v2.1.0`, it will be located at the shorthand path `user/repo.v2`.
 * If the package is from anywhere else (eg. `google.golang.org/grpc`) and has no stable version, it can be found under the full import path, followed by the version suffix (in this example `.v0`).
 * All new integrations should be suffixed with `.vN` where `N` is the major version that is being covered.
+* The package itself should retain its un-versioned name. For example, the integration under `user/repo.v2` stays as `package repo`, and does not become `package repo.v2`
 
 Each integration comes with thorough documentation and usage examples. A good overview can be seen on our 
 [godoc](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/contrib) page.
