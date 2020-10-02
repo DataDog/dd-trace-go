@@ -27,8 +27,6 @@ type datadogHook struct {
 	*params
 }
 
-var _ redis.Hook = (*datadogHook)(nil)
-
 // params holds the tracer and a set of parameters which are recorded with every trace.
 type params struct {
 	host   string

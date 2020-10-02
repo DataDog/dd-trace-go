@@ -23,6 +23,9 @@ import (
 
 const debug = false
 
+// ensure it's a redis.Hook
+var _ redis.Hook = (*datadogHook)(nil)
+
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
 	if !ok {
