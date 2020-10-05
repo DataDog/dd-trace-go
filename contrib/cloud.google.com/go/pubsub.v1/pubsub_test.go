@@ -86,6 +86,28 @@ func TestPropagation(t *testing.T) {
 	}, spans[2].Tags())
 }
 
+func TestPropagationWithServiceName(t *testing.T) {
+	assert := assert.New(t)
+	ctx, topic, sub, mt, cleanup := setup(t)
+	defer cleanup()
+
+	// Publisher
+	span, pctx := tracer.StartSpanFromContext(ctx, "service-name-test")
+	_, err := Publish(pctx, topic, &pubsub.Message{Data: []byte("hello")}).Get(pctx)
+	assert.NoError(err)
+	span.Finish()
+
+	// Subscriber
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
+		msg.Ack()
+	}, WithServiceName("example.service")))
+	assert.NoError(err)
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 3, "wrong number of spans")
+	assert.Equal("example.service", spans[2].Tag(ext.ServiceName))
+}
+
 func TestPropagationNoParentSpan(t *testing.T) {
 	assert := assert.New(t)
 	ctx, topic, sub, mt, cleanup := setup(t)
