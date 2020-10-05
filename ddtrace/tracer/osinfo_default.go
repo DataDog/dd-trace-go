@@ -16,5 +16,5 @@ func osName() string {
 }
 
 func osVersion() string {
-	return unknownVersion
+	return unknown
 }
