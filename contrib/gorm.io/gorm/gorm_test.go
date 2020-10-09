@@ -144,13 +144,13 @@ func TestCallbacks(t *testing.T) {
 		parentSpan.Finish()
 
 		spans := mt.FinishedSpans()
-		a.True(len(spans) >= 3)
+		a.True(len(spans) >= 2)
 
-		span := spans[len(spans)-3]
+		span := spans[len(spans)-2]
 		a.Equal("gorm.create", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(
-			`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
+			`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "id"`,
 			span.Tag(ext.ResourceName))
 	})
 
@@ -173,7 +173,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.query", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(
-			`SELECT * FROM "products"  WHERE "products"."deleted_at" IS NULL AND ((code = $1)) ORDER BY "products"."id" ASC LIMIT 1`,
+			`SELECT * FROM "products" WHERE code = $1 AND "products"."deleted_at" IS NULL ORDER BY "products"."id" LIMIT 1`,
 			span.Tag(ext.ResourceName))
 	})
 
@@ -191,13 +191,13 @@ func TestCallbacks(t *testing.T) {
 		parentSpan.Finish()
 
 		spans := mt.FinishedSpans()
-		a.True(len(spans) >= 3)
+		a.True(len(spans) >= 2)
 
-		span := spans[len(spans)-3]
+		span := spans[len(spans)-2]
 		a.Equal("gorm.update", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(
-			`UPDATE "products" SET "price" = $1, "updated_at" = $2  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $3`,
+			`UPDATE "products" SET "price"=$1,"updated_at"=$2 WHERE code = $3 AND "products"."deleted_at" IS NULL AND code = $4 AND "id" = $5`,
 			span.Tag(ext.ResourceName))
 	})
 
@@ -215,13 +215,13 @@ func TestCallbacks(t *testing.T) {
 		parentSpan.Finish()
 
 		spans := mt.FinishedSpans()
-		a.True(len(spans) >= 3)
+		a.True(len(spans) >= 2)
 
-		span := spans[len(spans)-3]
+		span := spans[len(spans)-2]
 		a.Equal("gorm.delete", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(
-			`UPDATE "products" SET "deleted_at"=$1  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $2`,
+			`UPDATE "products" SET "deleted_at"=$1 WHERE code = $2 AND "products"."deleted_at" IS NULL AND code = $3 AND "id" = $4 AND code = $5 AND "products"."id" = $6`,
 			span.Tag(ext.ResourceName))
 	})
 }
