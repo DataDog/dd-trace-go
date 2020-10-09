@@ -22,6 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 
 	mysqlgorm "gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
