@@ -52,33 +52,33 @@ func Open(getDialector func(db *sql.DB) gorm.Dialector, driverName, source strin
 // Query and RowQuery operations.
 func WithCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 	afterFunc := func(operationName string) func(*gorm.DB) {
-		return func(scope *gorm.DB) {
-			after(scope, operationName)
+		return func(db *gorm.DB) {
+			after(db, operationName)
 		}
 	}
 
 	cb := db.Callback()
-	err := cb.Create().Before("gorm:before_create").Register("dd-trace-go:before_create", before)
+	err := cb.Create().Before("gorm:create").Register("dd-trace-go:before_create", before)
 	if err != nil {
 		return db, err
 	}
-	err = cb.Create().After("gorm:after_create").Register("dd-trace-go:after_create", afterFunc("gorm.create"))
+	err = cb.Create().After("gorm:create").Register("dd-trace-go:after_create", afterFunc("gorm.create"))
 	if err != nil {
 		return db, err
 	}
-	err = cb.Update().Before("gorm:before_update").Register("dd-trace-go:before_update", before)
+	err = cb.Update().Before("gorm:update").Register("dd-trace-go:before_update", before)
 	if err != nil {
 		return db, err
 	}
-	err = cb.Update().After("gorm:after_update").Register("dd-trace-go:after_update", afterFunc("gorm.update"))
+	err = cb.Update().After("gorm:update").Register("dd-trace-go:after_update", afterFunc("gorm.update"))
 	if err != nil {
 		return db, err
 	}
-	err = cb.Delete().Before("gorm:before_delete").Register("dd-trace-go:before_delete", before)
+	err = cb.Delete().Before("gorm:delete").Register("dd-trace-go:before_delete", before)
 	if err != nil {
 		return db, err
 	}
-	err = cb.Delete().After("gorm:after_delete").Register("dd-trace-go:after_delete", afterFunc("gorm.delete"))
+	err = cb.Delete().After("gorm:delete").Register("dd-trace-go:after_delete", afterFunc("gorm.delete"))
 	if err != nil {
 		return db, err
 	}
@@ -86,15 +86,15 @@ func WithCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 	if err != nil {
 		return db, err
 	}
-	err = cb.Query().After("gorm:after_query").Register("dd-trace-go:after_query", afterFunc("gorm.query"))
+	err = cb.Query().After("gorm:query").Register("dd-trace-go:after_query", afterFunc("gorm.query"))
 	if err != nil {
 		return db, err
 	}
-	err = cb.Row().Before("gorm:row_query").Register("dd-trace-go:before_row_query", before)
+	err = cb.Row().Before("gorm:query").Register("dd-trace-go:before_row_query", before)
 	if err != nil {
 		return db, err
 	}
-	err = cb.Row().After("gorm:row_query").Register("dd-trace-go:after_row_query", afterFunc("gorm.row_query"))
+	err = cb.Row().After("gorm:query").Register("dd-trace-go:after_row_query", afterFunc("gorm.row_query"))
 	if err != nil {
 		return db, err
 	}
@@ -134,20 +134,20 @@ func before(scope *gorm.DB) {
 	scope.Set(gormSpanStartTimeKey, time.Now())
 }
 
-func after(scope *gorm.DB, operationName string) {
-	v, ok := scope.Get(gormContextKey)
+func after(db *gorm.DB, operationName string) {
+	v, ok := db.Get(gormContextKey)
 	if !ok {
 		return
 	}
 	ctx := v.(context.Context)
 
-	v, ok = scope.Get(gormConfigKey)
+	v, ok = db.Get(gormConfigKey)
 	if !ok {
 		return
 	}
 	cfg := v.(*config)
 
-	v, ok = scope.Get(gormSpanStartTimeKey)
+	v, ok = db.Get(gormSpanStartTimeKey)
 	if !ok {
 		return
 	}
@@ -157,12 +157,12 @@ func after(scope *gorm.DB, operationName string) {
 		tracer.StartTime(t),
 		tracer.ServiceName(cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
-		tracer.ResourceName(scope.Statement.SQL.String()),
+		tracer.ResourceName(db.Statement.SQL.String()),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 
 	span, _ := tracer.StartSpanFromContext(ctx, operationName, opts...)
-	span.Finish(tracer.WithError(scope.Error))
+	span.Finish(tracer.WithError(db.Error))
 }

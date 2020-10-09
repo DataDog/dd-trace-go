@@ -74,8 +74,8 @@ func TestMySQL(t *testing.T) {
 			ext.SpanType:    ext.SpanTypeSQL,
 			ext.TargetHost:  "127.0.0.1",
 			ext.TargetPort:  "3306",
-			"db.user":       "test",
-			"db.name":       "test",
+			ext.DBUser:       "test",
+			ext.DBName:       "test",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
@@ -99,12 +99,12 @@ func TestPostgres(t *testing.T) {
 		TableName:  tableName,
 		ExpectName: "pgx.query",
 		ExpectTags: map[string]interface{}{
-			ext.ServiceName: "postgres.db",
+			ext.ServiceName: "pgx.db",
 			ext.SpanType:    ext.SpanTypeSQL,
 			ext.TargetHost:  "127.0.0.1",
 			ext.TargetPort:  "5432",
-			"db.user":       "postgres",
-			"db.name":       "postgres",
+			ext.DBUser:       "postgres",
+			ext.DBName:       "postgres",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
@@ -263,8 +263,8 @@ func TestAnalyticsSettings(t *testing.T) {
 		parentSpan.Finish()
 
 		spans := mt.FinishedSpans()
-		assert.True(t, len(spans) > 3)
-		s := spans[len(spans)-3]
+		assert.True(t, len(spans) > 2)
+		s := spans[len(spans)-2]
 		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 	}
 
@@ -329,6 +329,11 @@ func TestContext(t *testing.T) {
 	})
 
 	t.Run("without", func(t *testing.T) {
+		db, err = Open(postgresDialector, "pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		ctx := ContextFromDB(db)
 		assert.Equal(t, context.Background(), ctx)
 	})
