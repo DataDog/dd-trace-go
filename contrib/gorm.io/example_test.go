@@ -26,7 +26,7 @@ func ExampleOpen() {
 	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithServiceName("my-service"))
 
 	// Open the registered driver, allowing all uses of the returned *gorm.DB to be traced.
-	db, err := gormtrace.Open(postgresDialector, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
+	db, err := gormtrace.Open(postgresDialector, "pgx", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
