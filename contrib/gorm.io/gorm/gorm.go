@@ -3,8 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-2020 Datadog, Inc.
 
-// Package gormv2 provides helper functions for tracing the gorm.io/gorm package (https://github.com/go-gorm/gorm).
-package gormv2
+// Package gorm provides helper functions for tracing the gorm.io/gorm package (https://github.com/go-gorm/gorm).
+package gorm
 
 import (
 	"context"

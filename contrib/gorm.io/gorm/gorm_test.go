@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-2020 Datadog, Inc.
 
-package gormv2
+package gorm
 
 import (
 	"context"
@@ -74,8 +74,8 @@ func TestMySQL(t *testing.T) {
 			ext.SpanType:    ext.SpanTypeSQL,
 			ext.TargetHost:  "127.0.0.1",
 			ext.TargetPort:  "3306",
-			ext.DBUser:       "test",
-			ext.DBName:       "test",
+			ext.DBUser:      "test",
+			ext.DBName:      "test",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
@@ -103,8 +103,8 @@ func TestPostgres(t *testing.T) {
 			ext.SpanType:    ext.SpanTypeSQL,
 			ext.TargetHost:  "127.0.0.1",
 			ext.TargetPort:  "5432",
-			ext.DBUser:       "postgres",
-			ext.DBName:       "postgres",
+			ext.DBUser:      "postgres",
+			ext.DBName:      "postgres",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
