@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-2020 Datadog, Inc.
 
-// Package gorm provides helper functions for tracing the gorm.io/gorm package (https://github.com/go-gorm/gorm).
+// Package gormv2 provides helper functions for tracing the gorm.io/gorm package (https://github.com/go-gorm/gorm).
 package gormv2
 
 import (
@@ -26,12 +26,12 @@ const (
 	gormSpanStartTimeKey = "dd-trace-go:span"
 )
 
-// Open opens a new (traced) database connection. The used dialect must be formerly registered
+// Open opens a new (traced) database connection. The used driver must be formerly registered
 // using (gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql).Register.
-func Open(getDialector func(db *sql.DB) gorm.Dialector, source string, opts ...Option) (*gorm.DB, error) {
+func Open(getDialector func(db *sql.DB) gorm.Dialector, driverName, source string, opts ...Option) (*gorm.DB, error) {
 	dialector := getDialector(nil)
 
-	sqldb, err := sqltraced.Open(dialector.Name(), source)
+	sqldb, err := sqltraced.Open(driverName, source)
 	if err != nil {
 		return nil, err
 	}

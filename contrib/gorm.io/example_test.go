@@ -23,7 +23,7 @@ func postgresDialector(db *sql.DB) gorm.Dialector {
 
 func ExampleOpen() {
 	// Register augments the provided driver with tracing, enabling it to be loaded by gormtrace.Open.
-	sqltrace.Register("postgres", &stdlib.Driver{}, sqltrace.WithServiceName("my-service"))
+	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithServiceName("my-service"))
 
 	// Open the registered driver, allowing all uses of the returned *gorm.DB to be traced.
 	db, err := gormtrace.Open(postgresDialector, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")

@@ -33,7 +33,7 @@ import (
 // tableName holds the SQL table that these tests will be run against. It must be unique cross-repo.
 const tableName = "testgorm"
 
-func mySqlDialector(db *sql.DB) gorm.Dialector {
+func mySQLDialector(db *sql.DB) gorm.Dialector {
 	return mysqlgorm.New(mysqlgorm.Config{Conn: db})
 }
 
@@ -53,7 +53,7 @@ func TestMain(m *testing.M) {
 
 func TestMySQL(t *testing.T) {
 	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("mysql-test"))
-	db, err := Open(mySqlDialector, "test:test@tcp(127.0.0.1:3306)/test")
+	db, err := Open(mySQLDialector, "mysql", "test:test@tcp(127.0.0.1:3306)/test")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestMySQL(t *testing.T) {
 
 func TestPostgres(t *testing.T) {
 	sqltrace.Register("pgx", &stdlib.Driver{})
-	db, err := Open(postgresDialector, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	db, err := Open(postgresDialector, "pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestCallbacks(t *testing.T) {
 	defer mt.Stop()
 
 	sqltrace.Register("pgx", &stdlib.Driver{})
-	db, err := Open(postgresDialector, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	db, err := Open(postgresDialector, "pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	defer mt.Stop()
 
 	sqltrace.Register("pgx", &stdlib.Driver{})
-	db, err := Open(postgresDialector, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	db, err := Open(postgresDialector, "pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	}
 
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
-		db, err := Open(postgresDialector, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable", opts...)
+		db, err := Open(postgresDialector, "pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable", opts...)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -314,7 +314,7 @@ func TestAnalyticsSettings(t *testing.T) {
 
 func TestContext(t *testing.T) {
 	sqltrace.Register("pgx", &stdlib.Driver{})
-	db, err := Open(postgresDialector, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	db, err := Open(postgresDialector, "pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
