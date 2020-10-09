@@ -97,7 +97,7 @@ func TestPostgres(t *testing.T) {
 		DB:         internalDB,
 		DriverName: "pgx",
 		TableName:  tableName,
-		ExpectName: "postgres.query",
+		ExpectName: "pgx.query",
 		ExpectTags: map[string]interface{}{
 			ext.ServiceName: "postgres.db",
 			ext.SpanType:    ext.SpanTypeSQL,
