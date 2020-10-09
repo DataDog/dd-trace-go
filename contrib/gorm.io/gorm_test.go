@@ -81,7 +81,7 @@ func TestMySQL(t *testing.T) {
 }
 
 func TestPostgres(t *testing.T) {
-	sqltrace.Register("postgres", &stdlib.Driver{})
+	sqltrace.Register("pgx", &stdlib.Driver{})
 	db, err := Open(postgresDialector, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
@@ -94,7 +94,7 @@ func TestPostgres(t *testing.T) {
 
 	testConfig := &sqltest.Config{
 		DB:         internalDB,
-		DriverName: "postgres",
+		DriverName: "pgx",
 		TableName:  tableName,
 		ExpectName: "postgres.query",
 		ExpectTags: map[string]interface{}{
@@ -120,7 +120,7 @@ func TestCallbacks(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	sqltrace.Register("postgres", &stdlib.Driver{})
+	sqltrace.Register("pgx", &stdlib.Driver{})
 	db, err := Open(postgresDialector, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
@@ -229,7 +229,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	sqltrace.Register("postgres", &stdlib.Driver{})
+	sqltrace.Register("pgx", &stdlib.Driver{})
 	db, err := Open(postgresDialector, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
@@ -313,7 +313,7 @@ func TestAnalyticsSettings(t *testing.T) {
 }
 
 func TestContext(t *testing.T) {
-	sqltrace.Register("postgres", &stdlib.Driver{})
+	sqltrace.Register("pgx", &stdlib.Driver{})
 	db, err := Open(postgresDialector, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)

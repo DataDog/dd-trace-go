@@ -28,7 +28,7 @@ const (
 
 // Open opens a new (traced) database connection. The used dialect must be formerly registered
 // using (gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql).Register.
-func Open(getDialector func (db *sql.DB) gorm.Dialector, source string, opts ...Option) (*gorm.DB, error) {
+func Open(getDialector func(db *sql.DB) gorm.Dialector, source string, opts ...Option) (*gorm.DB, error) {
 	dialector := getDialector(nil)
 
 	sqldb, err := sqltraced.Open(dialector.Name(), source)
@@ -42,14 +42,15 @@ func Open(getDialector func (db *sql.DB) gorm.Dialector, source string, opts ...
 	if err != nil {
 		return db, err
 	}
-	return WithCallbacks(db, opts...), err
+
+	return WithCallbacks(db, opts...)
 }
 
 // WithCallbacks registers callbacks to the gorm.DB for tracing.
 // It should be called once, after opening the db.
 // The callbacks are triggered by Create, Update, Delete,
 // Query and RowQuery operations.
-func WithCallbacks(db *gorm.DB, opts ...Option) *gorm.DB {
+func WithCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 	afterFunc := func(operationName string) func(*gorm.DB) {
 		return func(scope *gorm.DB) {
 			after(scope, operationName)
@@ -57,23 +58,54 @@ func WithCallbacks(db *gorm.DB, opts ...Option) *gorm.DB {
 	}
 
 	cb := db.Callback()
-	cb.Create().Before("gorm:before_create").Register("dd-trace-go:before_create", before)
-	cb.Create().After("gorm:after_create").Register("dd-trace-go:after_create", afterFunc("gorm.create"))
-	cb.Update().Before("gorm:before_update").Register("dd-trace-go:before_update", before)
-	cb.Update().After("gorm:after_update").Register("dd-trace-go:after_update", afterFunc("gorm.update"))
-	cb.Delete().Before("gorm:before_delete").Register("dd-trace-go:before_delete", before)
-	cb.Delete().After("gorm:after_delete").Register("dd-trace-go:after_delete", afterFunc("gorm.delete"))
-	cb.Query().Before("gorm:query").Register("dd-trace-go:before_query", before)
-	cb.Query().After("gorm:after_query").Register("dd-trace-go:after_query", afterFunc("gorm.query"))
-	cb.Row().Before("gorm:row_query").Register("dd-trace-go:before_row_query", before)
-	cb.Row().After("gorm:row_query").Register("dd-trace-go:after_row_query", afterFunc("gorm.row_query"))
+	err := cb.Create().Before("gorm:before_create").Register("dd-trace-go:before_create", before)
+	if err != nil {
+		return db, err
+	}
+	err = cb.Create().After("gorm:after_create").Register("dd-trace-go:after_create", afterFunc("gorm.create"))
+	if err != nil {
+		return db, err
+	}
+	err = cb.Update().Before("gorm:before_update").Register("dd-trace-go:before_update", before)
+	if err != nil {
+		return db, err
+	}
+	err = cb.Update().After("gorm:after_update").Register("dd-trace-go:after_update", afterFunc("gorm.update"))
+	if err != nil {
+		return db, err
+	}
+	err = cb.Delete().Before("gorm:before_delete").Register("dd-trace-go:before_delete", before)
+	if err != nil {
+		return db, err
+	}
+	err = cb.Delete().After("gorm:after_delete").Register("dd-trace-go:after_delete", afterFunc("gorm.delete"))
+	if err != nil {
+		return db, err
+	}
+	err = cb.Query().Before("gorm:query").Register("dd-trace-go:before_query", before)
+	if err != nil {
+		return db, err
+	}
+	err = cb.Query().After("gorm:after_query").Register("dd-trace-go:after_query", afterFunc("gorm.query"))
+	if err != nil {
+		return db, err
+	}
+	err = cb.Row().Before("gorm:row_query").Register("dd-trace-go:before_row_query", before)
+	if err != nil {
+		return db, err
+	}
+	err = cb.Row().After("gorm:row_query").Register("dd-trace-go:after_row_query", afterFunc("gorm.row_query"))
+	if err != nil {
+		return db, err
+	}
 
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	return db.Set(gormConfigKey, cfg)
+
+	return db.Set(gormConfigKey, cfg), nil
 }
 
 // WithContext attaches the specified context to the given db. The context will
