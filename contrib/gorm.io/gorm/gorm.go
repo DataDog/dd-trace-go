@@ -21,7 +21,6 @@ import (
 )
 
 const (
-	gormContextKey       = "dd-trace-go:context"
 	gormConfigKey        = "dd-trace-go:config"
 	gormSpanStartTimeKey = "dd-trace-go:span"
 )
@@ -56,6 +55,19 @@ func WithCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 			after(db, operationName)
 		}
 	}
+
+	cfg := new(config)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+
+	ctx := context.Background()
+	if db.Statement != nil && db.Statement.Context != nil {
+		ctx = db.Statement.Context
+	}
+
+	db = db.WithContext(context.WithValue(ctx, gormConfigKey, cfg))
 
 	cb := db.Callback()
 	err := cb.Create().Before("gorm:create").Register("dd-trace-go:before_create", before)
@@ -99,13 +111,9 @@ func WithCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 		return db, err
 	}
 
-	cfg := new(config)
-	defaults(cfg)
-	for _, fn := range opts {
-		fn(cfg)
-	}
 
-	return db.Set(gormConfigKey, cfg), nil
+
+	return db, nil
 }
 
 // WithContext attaches the specified context to the given db. The context will
@@ -115,43 +123,48 @@ func WithContext(ctx context.Context, db *gorm.DB) *gorm.DB {
 	if ctx == nil {
 		return db
 	}
-	db = db.Set(gormContextKey, ctx)
-	return db
+
+	if db.Statement != nil && db.Statement.Context != nil {
+		ctx = context.WithValue(ctx, gormConfigKey, db.Statement.Context.Value(gormConfigKey))
+	}
+
+
+	return db.WithContext(ctx)
 }
 
 // ContextFromDB returns any context previously attached to db using WithContext,
 // otherwise returning context.Background.
 func ContextFromDB(db *gorm.DB) context.Context {
-	if v, ok := db.Get(gormContextKey); ok {
-		if ctx, ok := v.(context.Context); ok {
-			return ctx
+	if db.Statement != nil {
+		if v, ok := db.Statement.Context.(context.Context); ok {
+			return v
 		}
 	}
+
 	return context.Background()
 }
 
 func before(scope *gorm.DB) {
-	scope.Set(gormSpanStartTimeKey, time.Now())
+	if scope.Statement != nil && scope.Statement.Context != nil {
+		scope.Statement.Context = context.WithValue(scope.Statement.Context, gormSpanStartTimeKey, time.Now())
+	}
 }
 
 func after(db *gorm.DB, operationName string) {
-	v, ok := db.Get(gormContextKey)
-	if !ok {
+	ctx := db.Statement.Context
+	if ctx == nil {
 		return
 	}
-	ctx := v.(context.Context)
 
-	v, ok = db.Get(gormConfigKey)
+	cfg, ok := ctx.Value(gormConfigKey).(*config)
 	if !ok {
 		return
 	}
-	cfg := v.(*config)
 
-	v, ok = db.Get(gormSpanStartTimeKey)
+	t, ok := ctx.Value(gormSpanStartTimeKey).(time.Time)
 	if !ok {
 		return
 	}
-	t, ok := v.(time.Time)
 
 	opts := []ddtrace.StartSpanOption{
 		tracer.StartTime(t),

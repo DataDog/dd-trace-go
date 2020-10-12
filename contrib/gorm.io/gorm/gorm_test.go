@@ -197,7 +197,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.update", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(
-			`UPDATE "products" SET "price"=$1,"updated_at"=$2 WHERE code = $3 AND "products"."deleted_at" IS NULL AND code = $4 AND "id" = $5`,
+			`UPDATE "products" SET "price"=$1,"updated_at"=$2 WHERE "id" = $3`,
 			span.Tag(ext.ResourceName))
 	})
 
@@ -221,7 +221,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.delete", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(
-			`UPDATE "products" SET "deleted_at"=$1 WHERE code = $2 AND "products"."deleted_at" IS NULL AND code = $3 AND "id" = $4 AND code = $5 AND "products"."id" = $6`,
+			`UPDATE "products" SET "deleted_at"=$1 WHERE "products"."id" = $2`,
 			span.Tag(ext.ResourceName))
 	})
 }
