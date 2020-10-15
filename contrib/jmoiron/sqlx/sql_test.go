@@ -81,3 +81,28 @@ func TestPostgres(t *testing.T) {
 	}
 	sqltest.RunAll(t, testConfig)
 }
+
+func TestOpenWithOptions(t *testing.T) {
+	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("mysql-test"))
+	dbx, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test", sqltrace.WithServiceName("other-service"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer dbx.Close()
+
+	testConfig := &sqltest.Config{
+		DB:         dbx.DB,
+		DriverName: "mysql",
+		TableName:  tableName,
+		ExpectName: "mysql.query",
+		ExpectTags: map[string]interface{}{
+			ext.ServiceName: "other-service",
+			ext.SpanType:    ext.SpanTypeSQL,
+			ext.TargetHost:  "127.0.0.1",
+			ext.TargetPort:  "3306",
+			ext.DBUser:      "test",
+			ext.DBName:      "test",
+		},
+	}
+	sqltest.RunAll(t, testConfig)
+}
