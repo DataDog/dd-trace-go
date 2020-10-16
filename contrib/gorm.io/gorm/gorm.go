@@ -20,9 +20,11 @@ import (
 	"gorm.io/gorm"
 )
 
+type key string
+
 const (
-	gormConfigKey        = "dd-trace-go:config"
-	gormSpanStartTimeKey = "dd-trace-go:span"
+	gormConfigKey        = key("dd-trace-go:config")
+	gormSpanStartTimeKey = key("dd-trace-go:span")
 )
 
 // Open opens a new (traced) database connection. The used driver must be formerly registered
