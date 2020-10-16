@@ -28,15 +28,12 @@ const (
 // Open opens a new (traced) database connection. The used driver must be formerly registered
 // using (gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql).Register.
 func Open(getDialector func(db *sql.DB) gorm.Dialector, driverName, source string, opts ...Option) (*gorm.DB, error) {
-	dialector := getDialector(nil)
-
 	sqldb, err := sqltraced.Open(driverName, source)
 	if err != nil {
 		return nil, err
 	}
 
-	dialector = getDialector(sqldb)
-
+	dialector := getDialector(sqldb)
 	db, err := gorm.Open(dialector, &gorm.Config{})
 	if err != nil {
 		return db, err
@@ -111,8 +108,6 @@ func WithCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 		return db, err
 	}
 
-
-
 	return db, nil
 }
 
@@ -123,11 +118,9 @@ func WithContext(ctx context.Context, db *gorm.DB) *gorm.DB {
 	if ctx == nil {
 		return db
 	}
-
 	if db.Statement != nil && db.Statement.Context != nil {
 		ctx = context.WithValue(ctx, gormConfigKey, db.Statement.Context.Value(gormConfigKey))
 	}
-
 
 	return db.WithContext(ctx)
 }

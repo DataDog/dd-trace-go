@@ -7,14 +7,14 @@ package gorm_test
 
 import (
 	"database/sql"
-	"github.com/jackc/pgx/v4/stdlib"
-	gorm2 "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorm.io/gorm"
-	"gorm.io/driver/postgres"
 	"log"
 
-	"gorm.io/gorm"
-
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
+	gormtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorm.io/gorm"
+
+	"github.com/jackc/pgx/v4/stdlib"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func postgresDialector(db *sql.DB) gorm.Dialector {
@@ -26,7 +26,7 @@ func ExampleOpen() {
 	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithServiceName("my-service"))
 
 	// Open the registered driver, allowing all uses of the returned *gorm.DB to be traced.
-	db, err := gorm2.Open(postgresDialector, "pgx", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
+	db, err := gormtrace.Open(postgresDialector, "pgx", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
