@@ -321,20 +321,12 @@ func TestContext(t *testing.T) {
 	}
 
 	t.Run("with", func(t *testing.T) {
+		const contextKey = "text context"
+
 		type key string
-		testCtx := context.WithValue(context.Background(), key("test context"), true)
+		testCtx := context.WithValue(context.Background(), key(contextKey), true)
 		db := WithContext(testCtx, db)
 		ctx := ContextFromDB(db)
-		assert.Equal(t, testCtx, ctx)
-	})
-
-	t.Run("without", func(t *testing.T) {
-		db, err = Open(postgresDialector, "pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		ctx := ContextFromDB(db)
-		assert.Equal(t, context.Background(), ctx)
+		assert.Equal(t, testCtx.Value(key(contextKey)), ctx.Value(key(contextKey)))
 	})
 }
