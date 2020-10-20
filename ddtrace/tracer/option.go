@@ -30,6 +30,9 @@ type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
 
+	// lambda, when true, enables the lambda trace writer
+	logToStdout bool
+
 	// logStartup, when true, causes various startup info to be written
 	// when the tracer starts.
 	logStartup bool
@@ -89,6 +92,10 @@ type config struct {
 	// tickChan specifies a channel which will receive the time every time the tracer must flush.
 	// It defaults to time.Ticker; replaced in tests.
 	tickChan <-chan time.Time
+
+	// noDebugStack disables the collection of debug stack traces globally. No traces reporting
+	// errors will record a stack trace when this option is set.
+	noDebugStack bool
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -144,6 +151,11 @@ func newConfig(opts ...StartOption) *config {
 				WithGlobalTag(k, strings.TrimSpace(kv[1]))(c)
 			}
 		}
+	}
+	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
+		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
+		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
+		c.logToStdout = true
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
@@ -241,10 +253,26 @@ func WithPrioritySampling() StartOption {
 	}
 }
 
+// WithDebugStack can be used to globally enable or disable the collection of stack traces when
+// spans finish with errors. It is enabled by default. This is a global version of the NoDebugStack
+// FinishOption.
+func WithDebugStack(enabled bool) StartOption {
+	return func(c *config) {
+		c.noDebugStack = !enabled
+	}
+}
+
 // WithDebugMode enables debug mode on the tracer, resulting in more verbose logging.
 func WithDebugMode(enabled bool) StartOption {
 	return func(c *config) {
 		c.debug = enabled
+	}
+}
+
+// WithLambdaMode enables lambda mode on the tracer, for use with AWS Lambda.
+func WithLambdaMode(enabled bool) StartOption {
+	return func(c *config) {
+		c.logToStdout = enabled
 	}
 }
 

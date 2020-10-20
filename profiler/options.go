@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -69,6 +70,19 @@ func urlForSite(site string) (string, error) {
 	u := fmt.Sprintf("https://intake.profile.%s/v1/input", site)
 	_, err := url.Parse(u)
 	return u, err
+}
+
+// isAPIKeyValid reports whether the given string is a structurally valid API key
+func isAPIKeyValid(key string) bool {
+	if len(key) != 32 {
+		return false
+	}
+	for _, c := range key {
+		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *config) addProfileType(t ProfileType) {

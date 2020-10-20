@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -18,11 +17,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 )
 
 const debug = false
+
+// ensure it's a redis.Hook
+var _ redis.Hook = (*datadogHook)(nil)
 
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
@@ -34,6 +36,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestClientEvalSha(t *testing.T) {
+	ctx := context.Background()
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -41,10 +44,10 @@ func TestClientEvalSha(t *testing.T) {
 
 	client := NewClient(opts, WithServiceName("my-redis"))
 
-	sha1 := client.ScriptLoad("return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}").Val()
+	sha1 := client.ScriptLoad(ctx, "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}").Val()
 	mt.Reset()
 
-	client.EvalSha(sha1, []string{"key1", "key2", "first", "second"})
+	client.EvalSha(ctx, sha1, []string{"key1", "key2", "first", "second"})
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
@@ -58,35 +61,15 @@ func TestClientEvalSha(t *testing.T) {
 	assert.Equal("evalsha", span.Tag(ext.ResourceName))
 }
 
-// https://github.com/DataDog/dd-trace-go/issues/387
-func TestIssue387(t *testing.T) {
-	opts := &redis.Options{Addr: "127.0.0.1:6379"}
-	client := NewClient(opts, WithServiceName("my-redis"))
-	n := 1000
-
-	client.Set("test_key", "test_value", 0)
-
-	var wg sync.WaitGroup
-	wg.Add(n)
-	for i := 0; i < n; i++ {
-		go func() {
-			defer wg.Done()
-			client.WithContext(context.Background()).Get("test_key").Result()
-		}()
-	}
-	wg.Wait()
-
-	// should not result in a race
-}
-
 func TestClient(t *testing.T) {
+	ctx := context.Background()
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	client := NewClient(opts, WithServiceName("my-redis"))
-	client.Set("test_key", "test_value", 0)
+	client.Set(ctx, "test_key", "test_value", 0)
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
@@ -102,6 +85,7 @@ func TestClient(t *testing.T) {
 }
 
 func TestPipeline(t *testing.T) {
+	ctx := context.Background()
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -109,10 +93,10 @@ func TestPipeline(t *testing.T) {
 
 	client := NewClient(opts, WithServiceName("my-redis"))
 	pipeline := client.Pipeline()
-	pipeline.Expire("pipeline_counter", time.Hour)
+	pipeline.Expire(ctx, "pipeline_counter", time.Hour)
 
 	// Exec with context test
-	pipeline.(*Pipeliner).ExecWithContext(context.Background())
+	pipeline.Exec(ctx)
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
@@ -127,55 +111,11 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("1", span.Tag("redis.pipeline_length"))
 
 	mt.Reset()
-	pipeline.Expire("pipeline_counter", time.Hour)
-	pipeline.Expire("pipeline_counter_1", time.Minute)
+	pipeline.Expire(ctx, "pipeline_counter", time.Hour)
+	pipeline.Expire(ctx, "pipeline_counter_1", time.Minute)
 
 	// Rewriting Exec
-	pipeline.Exec()
-
-	spans = mt.FinishedSpans()
-	assert.Len(spans, 1)
-
-	span = spans[0]
-	assert.Equal("redis.command", span.OperationName())
-	assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
-	assert.Equal("my-redis", span.Tag(ext.ServiceName))
-	assert.Equal("expire pipeline_counter 3600: false\nexpire pipeline_counter_1 60: false\n", span.Tag(ext.ResourceName))
-	assert.Equal("2", span.Tag("redis.pipeline_length"))
-}
-
-func TestPipelined(t *testing.T) {
-	opts := &redis.Options{Addr: "127.0.0.1:6379"}
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	client := NewClient(opts, WithServiceName("my-redis"))
-	_, err := client.Pipelined(func(p redis.Pipeliner) error {
-		p.Expire("pipeline_counter", time.Hour)
-		return nil
-	})
-	assert.NoError(err)
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-
-	span := spans[0]
-	assert.Equal("redis.command", span.OperationName())
-	assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
-	assert.Equal("my-redis", span.Tag(ext.ServiceName))
-	assert.Equal("expire pipeline_counter 3600: false\n", span.Tag(ext.ResourceName))
-	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
-	assert.Equal("6379", span.Tag(ext.TargetPort))
-	assert.Equal("1", span.Tag("redis.pipeline_length"))
-
-	mt.Reset()
-	_, err = client.Pipelined(func(p redis.Pipeliner) error {
-		p.Expire("pipeline_counter", time.Hour)
-		p.Expire("pipeline_counter_1", time.Minute)
-		return nil
-	})
-	assert.NoError(err)
+	pipeline.Exec(ctx)
 
 	spans = mt.FinishedSpans()
 	assert.Len(spans, 1)
@@ -189,6 +129,7 @@ func TestPipelined(t *testing.T) {
 }
 
 func TestChildSpan(t *testing.T) {
+	ctx := context.Background()
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -196,9 +137,9 @@ func TestChildSpan(t *testing.T) {
 
 	// Parent span
 	client := NewClient(opts, WithServiceName("my-redis"))
-	root, ctx := tracer.StartSpanFromContext(context.Background(), "parent.span")
-	client = client.WithContext(ctx)
-	client.Set("test_key", "test_value", 0)
+	root, ctx := tracer.StartSpanFromContext(ctx, "parent.span")
+
+	client.Set(ctx, "test_key", "test_value", 0)
 	root.Finish()
 
 	spans := mt.FinishedSpans()
@@ -223,16 +164,17 @@ func TestChildSpan(t *testing.T) {
 }
 
 func TestMultipleCommands(t *testing.T) {
+	ctx := context.Background()
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	client := NewClient(opts, WithServiceName("my-redis"))
-	client.Set("test_key", "test_value", 0)
-	client.Get("test_key")
-	client.Incr("int_key")
-	client.ClientList()
+	client.Set(ctx, "test_key", "test_value", 0)
+	client.Get(ctx, "test_key")
+	client.Incr(ctx, "int_key")
+	client.ClientList(ctx)
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 4)
@@ -250,13 +192,14 @@ func TestMultipleCommands(t *testing.T) {
 
 func TestError(t *testing.T) {
 	t.Run("wrong-port", func(t *testing.T) {
+		ctx := context.Background()
 		opts := &redis.Options{Addr: "127.0.0.1:6378"} // wrong port
 		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
 		client := NewClient(opts, WithServiceName("my-redis"))
-		_, err := client.Get("key").Result()
+		_, err := client.Get(ctx, "key").Result()
 
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
@@ -271,13 +214,14 @@ func TestError(t *testing.T) {
 	})
 
 	t.Run("nil", func(t *testing.T) {
+		ctx := context.Background()
 		opts := &redis.Options{Addr: "127.0.0.1:6379"}
 		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
 		client := NewClient(opts, WithServiceName("my-redis"))
-		_, err := client.Get("non_existent_key").Result()
+		_, err := client.Get(ctx, "non_existent_key").Result()
 
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
@@ -293,11 +237,12 @@ func TestError(t *testing.T) {
 }
 func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
+		ctx := context.Background()
 		client := NewClient(&redis.Options{Addr: "127.0.0.1:6379"}, opts...)
-		client.Set("test_key", "test_value", 0)
+		client.Set(ctx, "test_key", "test_value", 0)
 		pipeline := client.Pipeline()
-		pipeline.Expire("pipeline_counter", time.Hour)
-		pipeline.(*Pipeliner).ExecWithContext(context.Background())
+		pipeline.Expire(ctx, "pipeline_counter", time.Hour)
+		pipeline.Exec(ctx)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 2)
@@ -364,13 +309,15 @@ func TestWithContext(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
+	ctx1 := context.Background()
+	ctx2 := context.Background()
 	client1 := NewClient(opts, WithServiceName("my-redis"))
-	s1, ctx1 := tracer.StartSpanFromContext(context.Background(), "span1.name")
-	client1 = client1.WithContext(ctx1)
-	s2, ctx2 := tracer.StartSpanFromContext(context.Background(), "span2.name")
-	client2 := client1.WithContext(ctx2)
-	client1.Set("test_key", "test_value", 0)
-	client2.Get("test_key")
+	s1, ctx1 := tracer.StartSpanFromContext(ctx1, "span1.name")
+
+	s2, ctx2 := tracer.StartSpanFromContext(ctx2, "span2.name")
+	client2 := NewClient(opts, WithServiceName("my-redis"))
+	client1.Set(ctx1, "test_key", "test_value", 0)
+	client2.Get(ctx2, "test_key")
 	s1.Finish()
 	s2.Finish()
 
@@ -389,8 +336,7 @@ func TestWithContext(t *testing.T) {
 			getSpan = s
 		}
 	}
-	assert.Equal(ctx1, client1.Context())
-	assert.Equal(ctx2, client2.Context())
+
 	assert.NotNil(span1)
 	assert.NotNil(span2)
 	assert.NotNil(setSpan)

@@ -116,13 +116,11 @@ func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 // When passed a context.Context as the final argument, Do will ensure that any span created
 // inherits from this context. The rest of the arguments are passed through to the Redis server unchanged.
 func (tc Conn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
-	var (
-		ctx context.Context
-		ok  bool
-	)
+	ctx := context.Background()
+
 	if n := len(args); n > 0 {
-		ctx, ok = args[n-1].(context.Context)
-		if ok {
+		if argCtx, ok := args[n-1].(context.Context); ok {
+			ctx = argCtx
 			args = args[:n-1]
 		}
 	}

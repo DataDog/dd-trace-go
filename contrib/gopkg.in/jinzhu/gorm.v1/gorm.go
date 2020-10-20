@@ -16,7 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
-	"github.com/jinzhu/gorm"
+	"gopkg.in/jinzhu/gorm.v1"
 )
 
 const (

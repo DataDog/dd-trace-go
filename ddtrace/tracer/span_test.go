@@ -84,7 +84,7 @@ func TestSpanFinishTwice(t *testing.T) {
 	tracer, _, _, stop := startTestTracer(t)
 	defer stop()
 
-	assert.Equal(tracer.payload.itemCount(), 0)
+	assert.Equal(tracer.traceWriter.(*agentTraceWriter).payload.itemCount(), 0)
 
 	// the finish must be idempotent
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
@@ -367,7 +367,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		case <-done:
 			return
 		default:
-			tracer.flush()
+			tracer.traceWriter.flush()
 			time.Sleep(10 * time.Millisecond)
 		}
 	}

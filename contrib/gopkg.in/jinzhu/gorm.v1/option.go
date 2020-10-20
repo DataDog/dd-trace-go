@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
-	"github.com/jinzhu/gorm"
+	"gopkg.in/jinzhu/gorm.v1"
 )
 
 type config struct {

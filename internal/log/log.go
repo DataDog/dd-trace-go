@@ -38,6 +38,7 @@ var (
 
 // UseLogger sets l as the active logger.
 func UseLogger(l ddtrace.Logger) {
+	Flush()
 	mu.Lock()
 	defer mu.Unlock()
 	logger = l
