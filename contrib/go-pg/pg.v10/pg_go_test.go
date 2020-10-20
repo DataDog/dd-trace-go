@@ -17,6 +17,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestImplementsHook(t *testing.T) {
+	var _ pg.QueryHook = (*queryHook)(nil)
+}
+
 func TestSelect(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
