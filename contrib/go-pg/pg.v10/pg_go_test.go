@@ -39,6 +39,8 @@ func TestSelect(t *testing.T) {
 	)
 
 	var n int
+	// Using WithContext will make the postgres span a child of
+	// the span inside ctx (parentSpan)
 	res, err := conn.WithContext(ctx).QueryOne(pg.Scan(&n), "SELECT 1")
 	parentSpan.Finish()
 	spans := mt.FinishedSpans()
