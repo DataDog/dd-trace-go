@@ -20,7 +20,7 @@ func Example() {
 		Database: "datadog",
 	})
 
-	// Wrap the connection with the APM hook
+	// Wrap the connection with the APM hook.
 	pgtrace.Wrap(conn)
 	var user struct {
 		Name string
