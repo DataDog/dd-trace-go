@@ -22,11 +22,10 @@ func Example() {
 
 	// Wrap the connection with the APM hook
 	pgtrace.Wrap(conn)
-	// For correct tracing, must be query execute with context.
 	var user struct {
 		Name string
 	}
-	_, err := conn.WithContext(context.Background()).QueryOne(&user, "SELECT name FROM users")
+	_, err := conn.QueryOne(&user, "SELECT name FROM users")
 	if err != nil {
 		log.Fatal(err)
 	}
