@@ -6,7 +6,6 @@
 package pg_test
 
 import (
-	"context"
 	"log"
 
 	pgtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-pg/pg.v10"
