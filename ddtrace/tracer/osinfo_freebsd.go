@@ -3,12 +3,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-2020 Datadog, Inc.
 
-// +build !windows,!linux,!darwin,!freebsd
-
 package tracer
 
 import (
+	"os/exec"
 	"runtime"
+	"strings"
 )
 
 func osName() string {
@@ -16,5 +16,9 @@ func osName() string {
 }
 
 func osVersion() string {
-	return unknown
+	out, err := exec.Command("uname", "-r").Output()
+	if err != nil {
+		return unknown
+	}
+	return strings.Split(string(out), "-")[0]
 }
