@@ -20,8 +20,8 @@ import (
 
 // Open opens a new (traced) connection to the database using the given driver and source.
 // Note that the driver must formerly be registered using database/sql integration's Register.
-func Open(driverName, dataSourceName string) (*sqlx.DB, error) {
-	db, err := sqltraced.Open(driverName, dataSourceName)
+func Open(driverName, dataSourceName string, opts ...sqltraced.Option) (*sqlx.DB, error) {
+	db, err := sqltraced.Open(driverName, dataSourceName, opts...)
 	if err != nil {
 		return nil, err
 	}

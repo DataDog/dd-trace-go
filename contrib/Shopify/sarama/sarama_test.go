@@ -36,8 +36,9 @@ func TestConsumer(t *testing.T) {
 			SetMessage("test-topic", 0, 0, sarama.StringEncoder("hello")).
 			SetMessage("test-topic", 0, 1, sarama.StringEncoder("world")),
 	})
-
-	client, err := sarama.NewClient([]string{broker.Addr()}, sarama.NewConfig())
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.MinVersion
+	client, err := sarama.NewClient([]string{broker.Addr()}, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,6 +114,7 @@ func TestSyncProducer(t *testing.T) {
 	leader.Returns(prodSuccess)
 
 	cfg := sarama.NewConfig()
+	cfg.Version = sarama.MinVersion
 	cfg.Producer.Return.Successes = true
 
 	producer, err := sarama.NewSyncProducer([]string{seedBroker.Addr()}, cfg)
@@ -160,6 +162,7 @@ func TestSyncProducerSendMessages(t *testing.T) {
 	leader.Returns(prodSuccess)
 
 	cfg := sarama.NewConfig()
+	cfg.Version = sarama.MinVersion
 	cfg.Producer.Return.Successes = true
 	cfg.Producer.Flush.Messages = 2
 
