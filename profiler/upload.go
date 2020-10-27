@@ -27,7 +27,7 @@ var errOldAgent = errors.New("Datadog Agent is not accepting profiles. Agent-bas
 	"require Datadog Agent >= 7.20")
 
 var httpClient = &http.Client{
-	Timeout: 5 * time.Second,
+	Timeout: 10 * time.Second,
 }
 
 // backoffDuration calculates the backoff duration given an attempt number and max duration
