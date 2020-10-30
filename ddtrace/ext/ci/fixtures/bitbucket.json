@@ -1,0 +1,392 @@
+[
+  [
+    {
+      "BITBUCKET_BRANCH": "master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "/foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/foo/bar",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "/foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/foo/bar",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "foo/bar",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "/foo/bar~",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/foo/bar~",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "/foo/~/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/foo/~/bar",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "~/foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo",
+      "HOME": "/not-my-home",
+      "USERPROFILE": "/not-my-home"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/not-my-home/foo/bar",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "~foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "~foo/bar",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "~",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo",
+      "HOME": "/not-my-home",
+      "USERPROFILE": "/not-my-home"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/not-my-home",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "/foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/foo/bar",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "origin/master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "/foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/foo/bar",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "refs/heads/master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "/foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/foo/bar",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "refs/heads/feature/one",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "/foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/foo/bar",
+      "git.branch": "feature/one",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "origin/master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "/foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/foo/bar",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "refs/heads/master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "/foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/foo/bar",
+      "git.branch": "master",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "origin/master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "/foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo",
+      "BITBUCKET_TAG": "origin/tags/0.1.0"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/foo/bar",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url",
+      "git.tag": "0.1.0"
+    }
+  ],
+  [
+    {
+      "BITBUCKET_BRANCH": "refs/heads/master",
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_CLONE_DIR": "/foo/bar",
+      "BITBUCKET_COMMIT": "bitbucket-commit",
+      "BITBUCKET_GIT_SSH_ORIGIN": "bitbucket-repo-url",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo",
+      "BITBUCKET_TAG": "refs/heads/tags/0.1.0"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "ci.workspace_path": "/foo/bar",
+      "git.commit.sha": "bitbucket-commit",
+      "git.commit_sha": "bitbucket-commit",
+      "git.repository_url": "bitbucket-repo-url",
+      "git.tag": "0.1.0"
+    }
+  ]
+]
