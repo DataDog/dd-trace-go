@@ -114,6 +114,9 @@ func after(scope *gorm.Scope, operationName string) {
 		return
 	}
 	t, ok := v.(time.Time)
+	if !ok {
+		return
+	}
 
 	opts := []ddtrace.StartSpanOption{
 		tracer.StartTime(t),
