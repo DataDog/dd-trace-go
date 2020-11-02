@@ -105,7 +105,7 @@ func (s *span) SetTag(key string, value interface{}) {
 }
 
 // SetTags adds multiple key/value metadata to the span from the map.
-func (s *span) SetTags(tags map[string]interface{}) {
+func (s *span) SetTags(tags map[string]string) {
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -115,7 +115,7 @@ func (s *span) SetTags(tags map[string]interface{}) {
 		return
 	}
 	for key, value := range tags {
-		s.setTag(key, value)
+		s.setMeta(key, value)
 	}
 }
 

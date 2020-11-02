@@ -208,15 +208,14 @@ func TestSpanSetTags(t *testing.T) {
 	assert := assert.New(t)
 
 	span := newBasicSpan("test")
-	tags := map[string]interface{}{
+	tags := map[string]string{
 		"component": "tracer",
-		"tagInt": 1234,
-		"some.bool": true,
+		"git.repository_url": "https://github.com/DataDog/dd-trace-go.git",
 	}
 	span.SetTags(tags)
-	assert.Equal("tracer", span.Meta["component"])
-	assert.Equal(float64(1234), span.Metrics["tagInt"])
-	assert.Equal("true", span.Meta["some.bool"])
+	for key, value := range tags {
+		assert.Equal(value, span.Meta[key])
+	}
 }
 
 
