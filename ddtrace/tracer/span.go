@@ -101,6 +101,27 @@ func (s *span) SetTag(key string, value interface{}) {
 	if s.finished {
 		return
 	}
+	s.setTag(key, value)
+}
+
+// SetTags adds multiple key/value metadata to the span from the map.
+func (s *span) SetTags(tags map[string]interface{}) {
+	s.Lock()
+	defer s.Unlock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		return
+	}
+	for key, value := range tags {
+		s.setTag(key, value)
+	}
+}
+
+// setTag adds a set of key/value metadata to the span.
+// This method is not safe for concurrent use.
+func (s *span) setTag(key string, value interface{}) {
 	switch key {
 	case ext.Error:
 		s.setTagError(value, &errorConfig{})

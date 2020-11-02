@@ -204,6 +204,22 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal("false", span.Meta["some.other.bool"])
 }
 
+func TestSpanSetTags(t *testing.T) {
+	assert := assert.New(t)
+
+	span := newBasicSpan("test")
+	tags := map[string]interface{}{
+		"component": "tracer",
+		"tagInt": 1234,
+		"some.bool": true,
+	}
+	span.SetTags(tags)
+	assert.Equal("tracer", span.Meta["component"])
+	assert.Equal(float64(1234), span.Metrics["tagInt"])
+	assert.Equal("true", span.Meta["some.bool"])
+}
+
+
 func TestSpanSetDatadogTags(t *testing.T) {
 	assert := assert.New(t)
 
