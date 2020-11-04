@@ -74,3 +74,22 @@ func TestStartSpanFromContext(t *testing.T) {
 	assert.Equal("gin", got.Service)
 	assert.Equal("/", got.Resource)
 }
+
+func TestStartSpanFromNilContext(t *testing.T) {
+	_, _, _, stop := startTestTracer(t)
+	defer stop()
+
+	child, ctx := StartSpanFromContext(nil, "http.request")
+	assert := assert.New(t)
+	// ensure the returned context works
+	assert.Nil(ctx.Value("not_found_key"))
+
+	internalSpan, ok := child.(*span)
+	assert.True(ok)
+	assert.Equal("http.request", internalSpan.Name)
+
+	// the returned context includes the span
+	ctxSpan, ok := SpanFromContext(ctx)
+	assert.True(ok)
+	assert.Equal(child, ctxSpan)
+}
