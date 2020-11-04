@@ -178,7 +178,8 @@ func (p *asyncProducer) Errors() <-chan *sarama.ProducerError {
 // WrapAsyncProducer wraps a sarama.AsyncProducer so that all produced messages
 // are traced. It requires the underlying sarama Config so we can know whether
 // or not successes will be returned. Tracing requires at least sarama.V0_11_0_0
-// version which is the first version that supports headers.
+// version which is the first version that supports headers. Only spans of
+// successfully published messages have partition and offset tags set.
 func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts ...Option) sarama.AsyncProducer {
 	cfg := new(config)
 	defaults(cfg)
