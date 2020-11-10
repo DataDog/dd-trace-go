@@ -137,7 +137,6 @@ func TestError(t *testing.T) {
 		// verify the errors and status are correct
 		spans := mt.FinishedSpans()
 		assertSpan(assert, spans, code)
-
 	})
 
 	t.Run("with custome isError function", func(t *testing.T) {
@@ -155,7 +154,6 @@ func TestError(t *testing.T) {
 		))
 
 		code := 404
-
 		// a handler with an error and make the requests
 		router.Get("/err", func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("%d!", code), code)
