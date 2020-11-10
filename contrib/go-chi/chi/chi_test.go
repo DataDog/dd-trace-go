@@ -147,7 +147,6 @@ func TestError(t *testing.T) {
 
 		// setup
 		router := chi.NewRouter()
-
 		router.Use(Middleware(
 			WithServiceName("foobar"),
 			WithStatusCheck(func(statusCode int) bool {
@@ -171,7 +170,6 @@ func TestError(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assertSpan(assert, spans, code)
 	})
-
 }
 
 func TestGetSpanNotInstrumented(t *testing.T) {
