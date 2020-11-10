@@ -150,7 +150,7 @@ func TestError(t *testing.T) {
 
 		router.Use(Middleware(
 			WithServiceName("foobar"),
-			WithIsErrorCheck(func(statusCode int) bool {
+			WithStatusCheck(func(statusCode int) bool {
 				return statusCode >= 400
 			}),
 		))
