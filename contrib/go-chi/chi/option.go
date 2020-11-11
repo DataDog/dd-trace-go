@@ -33,7 +33,6 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-
 	cfg.statusCheck = isServerError
 }
 

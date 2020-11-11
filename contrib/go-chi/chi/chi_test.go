@@ -114,6 +114,7 @@ func TestError(t *testing.T) {
 		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
 		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
 	}
+
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
 		mt := mocktracer.Start()
@@ -152,7 +153,6 @@ func TestError(t *testing.T) {
 				return statusCode >= 400
 			}),
 		))
-
 		code := 404
 		// a handler with an error and make the requests
 		router.Get("/err", func(w http.ResponseWriter, r *http.Request) {
