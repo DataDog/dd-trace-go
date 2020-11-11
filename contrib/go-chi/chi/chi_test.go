@@ -114,7 +114,7 @@ func TestError(t *testing.T) {
 		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
 		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
 	}
-	t.Run("with default isError function", func(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -139,7 +139,7 @@ func TestError(t *testing.T) {
 		assertSpan(assert, spans, code)
 	})
 
-	t.Run("with custome isError function", func(t *testing.T) {
+	t.Run("custom", func(t *testing.T) {
 		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()

@@ -75,9 +75,9 @@ func WithAnalyticsRate(rate float64) Option {
 	}
 }
 
-// WithStatusCheck sets the function which is used to decide whther the
-// status should be marked as an error
-func WithStatusCheck(statusCheck func(statusCode int) bool) Option {
+// WithStatusCheck specifies a function fn which reports whether the passed
+// statusCode should be considered an error.
+func WithStatusCheck(fn func(statusCode int) bool) Option {
 	return func(cfg *config) {
 		cfg.statusCheck = statusCheck
 	}
