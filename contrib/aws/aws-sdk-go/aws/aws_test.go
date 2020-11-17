@@ -7,10 +7,12 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -141,4 +143,36 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func TestRetries(t *testing.T) {
+	cfg := aws.NewConfig().
+		WithRegion("us-west-2").
+		WithDisableSSL(true).
+		WithCredentials(credentials.AnonymousCredentials)
+
+	session := WrapSession(session.Must(session.NewSession(cfg)))
+	expectedError := errors.New("an error")
+	session.Handlers.Send.PushBack(func(r *request.Request) {
+		r.Error = expectedError
+		r.Retryable = aws.Bool(true)
+	})
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	root, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+	s3api := s3.New(session)
+	req, _ := s3api.GetObjectRequest(&s3.GetObjectInput{
+		Bucket: aws.String("BUCKET"),
+		Key:    aws.String("KEY"),
+	})
+	req.SetContext(ctx)
+	err := req.Send()
+	root.Finish()
+
+	assert.Equal(t, 3, req.RetryCount)
+	assert.Same(t, expectedError, err)
+	assert.Len(t, mt.UnfinishedSpans(), 0)
+	assert.Len(t, mt.FinishedSpans(), 2)
 }
