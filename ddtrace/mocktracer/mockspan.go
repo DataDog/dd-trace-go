@@ -211,6 +211,7 @@ func (s *mockspan) Finish(opts ...ddtrace.FinishOption) {
 	}
 	s.finished = true
 	s.finishTime = t
+	s.tracer.removeUnfinishedSpan(s)
 	s.tracer.addFinishedSpan(s)
 }
 
