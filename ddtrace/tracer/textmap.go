@@ -337,7 +337,6 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if len(v) > 16 {
 				v = v[len(v)-16:]
 			}
-
 			ctx.traceID, err = strconv.ParseUint(v, 16, 64)
 			if err != nil {
 				return ErrSpanContextCorrupted

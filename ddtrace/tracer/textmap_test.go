@@ -242,6 +242,26 @@ func TestB3(t *testing.T) {
 		assert.Equal(sctx.spanID, uint64(1))
 	})
 
+	t.Run("extract_32", func(t *testing.T) {
+		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "b3")
+		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
+
+		headers := TextMapCarrier(map[string]string{
+			b3TraceIDHeader: "6e96719ded9c1864a21ba1551789e3f5",
+			b3SpanIDHeader:  "a1eb5bf36e56e50e",
+		})
+
+		tracer := newTracer()
+		assert := assert.New(t)
+		ctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+		sctx, ok := ctx.(*spanContext)
+		assert.True(ok)
+
+		assert.Equal(sctx.traceID, uint64(11681107445354718197))
+		assert.Equal(sctx.spanID, uint64(11667520360719770894))
+	})
+
 	t.Run("multiple", func(t *testing.T) {
 		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "Datadog,B3")
 		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
