@@ -24,14 +24,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// NewHTTPClient returns a new http.Client which traces requests under the given service name.
-func NewHTTPClient(opts ...ClientOption) *TracedRoundTripper {
+// NewRoundTripper returns a new http.Client which traces requests under the given service name.
+func NewRoundTripper(opts ...ClientOption) http.RoundTripper {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	return &TracedRoundTripper{config: *cfg}
+	return &roundTripper{config: *cfg}
 }
 
 // bodyCutoff specifies the maximum number of bytes that will be stored as a tag
@@ -39,13 +39,13 @@ func NewHTTPClient(opts ...ClientOption) *TracedRoundTripper {
 var bodyCutoff = 5 * 1024
 
 // TracedRoundTripper is a traced HTTP transport that captures Elasticsearch spans.
-type TracedRoundTripper struct {
+type roundTripper struct {
 	config clientConfig
 }
 
 // RoundTrip satisfies the RoundTripper interface, wraps the sub Transport and
 // captures a span of the Elasticsearch request.
-func (t *TracedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	url := req.URL.Path
 	method := req.Method
 	resource := t.config.resourceNamer(url, method)
