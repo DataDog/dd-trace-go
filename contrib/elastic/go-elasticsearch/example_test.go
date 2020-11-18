@@ -3,20 +3,17 @@ package elastic_test
 import (
 	"context"
 	"log"
-	"net/http"
 	"strings"
 
-	elastictrace "github.com/abruneau/dd-trace-go-elasticsearch"
 	"github.com/elastic/go-elasticsearch"
 	"github.com/elastic/go-elasticsearch/esapi"
+	elastictrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func Example_v7() {
-	var tp http.RoundTripper
-	tp = elastictrace.NewHTTPClient(elastictrace.WithServiceName("my-es-service"))
 	cfg := elasticsearch.Config{
-		Transport: tp,
+		Transport: elastictrace.NewRoundTripper(elastictrace.WithServiceName("my-es-service")),
 		Addresses: []string{
 			"http://127.0.0.1:9200",
 		},

@@ -14,7 +14,7 @@ import (
 
 type clientConfig struct {
 	serviceName   string
-	transport     *http.Transport
+	transport     http.RoundTripper
 	analyticsRate float64
 	resourceNamer func(url, method string) string
 }
@@ -24,7 +24,7 @@ type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = "elastic.client"
-	cfg.transport = http.DefaultTransport.(*http.Transport)
+	cfg.transport = http.DefaultTransport
 	cfg.resourceNamer = quantize
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_ELASTIC_ANALYTICS_ENABLED", false) {
@@ -35,9 +35,9 @@ func defaults(cfg *clientConfig) {
 }
 
 // WithTransport sets the given transport as an http.Transport for the client.
-func WithTransport(t *http.Transport) ClientOption {
+func WithTransport(t *http.RoundTripper) ClientOption {
 	return func(cfg *clientConfig) {
-		cfg.transport = t
+		cfg.transport = *t
 	}
 }
 

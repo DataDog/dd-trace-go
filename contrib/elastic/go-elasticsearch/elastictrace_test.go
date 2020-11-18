@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -36,10 +35,8 @@ func TestClientV8(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	var tp http.RoundTripper
-	tp = NewHTTPClient(WithServiceName("my-es-service"))
 	cfg := elasticsearch.Config{
-		Transport: tp,
+		Transport: NewRoundTripper(WithServiceName("my-es-service")),
 		Addresses: []string{
 			"http://127.0.0.1:9200",
 		},
@@ -83,10 +80,8 @@ func TestClientErrorCutoffV7(t *testing.T) {
 	}()
 	bodyCutoff = 10
 
-	var tp http.RoundTripper
-	tp = NewHTTPClient(WithServiceName("my-es-service"))
 	cfg := elasticsearch.Config{
-		Transport: tp,
+		Transport: NewRoundTripper(WithServiceName("my-es-service")),
 		Addresses: []string{
 			"http://127.0.0.1:9200",
 		},
@@ -109,10 +104,8 @@ func TestClientV7Failure(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	var tp http.RoundTripper
-	tp = NewHTTPClient(WithServiceName("my-es-service"))
 	cfg := elasticsearch.Config{
-		Transport: tp,
+		Transport: NewRoundTripper(WithServiceName("my-es-service")),
 		Addresses: []string{
 			"http://127.0.0.1:29201", // inexistent service, it must fail
 		},
@@ -200,10 +193,8 @@ func TestResourceNamerSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		var tp http.RoundTripper
-		tp = NewHTTPClient()
 		cfg := elasticsearch.Config{
-			Transport: tp,
+			Transport: NewRoundTripper(),
 			Addresses: []string{
 				"http://127.0.0.1:9200",
 			},
@@ -224,10 +215,8 @@ func TestResourceNamerSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		var tp http.RoundTripper
-		tp = NewHTTPClient(WithResourceNamer(staticNamer))
 		cfg := elasticsearch.Config{
-			Transport: tp,
+			Transport: NewRoundTripper(WithResourceNamer(staticNamer)),
 			Addresses: []string{
 				"http://127.0.0.1:9200",
 			},
@@ -321,10 +310,9 @@ func TestPeek(t *testing.T) {
 
 func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
-		var tp http.RoundTripper
-		tp = NewHTTPClient(opts...)
+
 		cfg := elasticsearch.Config{
-			Transport: tp,
+			Transport: NewRoundTripper(opts...),
 			Addresses: []string{
 				"http://127.0.0.1:9200",
 			},
