@@ -227,12 +227,10 @@ func TestB3(t *testing.T) {
 		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
 
 		var tests = []struct {
-			label string
-			in    TextMapCarrier
-			out   []uint64 // contains [<trace_id>, <span_id>]
+			in  TextMapCarrier
+			out []uint64 // contains [<trace_id>, <span_id>]
 		}{
 			{
-				"only_ones",
 				TextMapCarrier{
 					b3TraceIDHeader: "1",
 					b3SpanIDHeader:  "1",
@@ -240,7 +238,6 @@ func TestB3(t *testing.T) {
 				[]uint64{1, 1},
 			},
 			{
-				"64_bits",
 				TextMapCarrier{
 					b3TraceIDHeader: "feeb0599801f4700",
 					b3SpanIDHeader:  "f8f5c76089ad8da5",
@@ -248,7 +245,6 @@ func TestB3(t *testing.T) {
 				[]uint64{18368781661998368512, 17939463908140879269},
 			},
 			{
-				"128_bits",
 				TextMapCarrier{
 					b3TraceIDHeader: "6e96719ded9c1864a21ba1551789e3f5",
 					b3SpanIDHeader:  "a1eb5bf36e56e50e",
@@ -258,7 +254,7 @@ func TestB3(t *testing.T) {
 		}
 
 		for _, test := range tests {
-			t.Run(test.label, func(t *testing.T) {
+			t.Run("", func(t *testing.T) {
 				tracer := newTracer()
 				assert := assert.New(t)
 				ctx, err := tracer.Extract(test.in)
