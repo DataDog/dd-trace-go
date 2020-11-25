@@ -100,7 +100,7 @@ func heapProfile(cfg *config) (*profile, error) {
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
 		name: "heap",
-		data:  buf.Bytes(),
+		data: buf.Bytes(),
 	}, nil
 }
 
@@ -124,7 +124,7 @@ func cpuProfile(cfg *config) (*profile, error) {
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
 		name: "cpu",
-		data:  buf.Bytes(),
+		data: buf.Bytes(),
 	}, nil
 }
 
@@ -149,7 +149,7 @@ func blockProfile(cfg *config) (*profile, error) {
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
 		name: "block",
-		data:  buf.Bytes(),
+		data: buf.Bytes(),
 	}, nil
 }
 
@@ -164,7 +164,7 @@ func mutexProfile(cfg *config) (*profile, error) {
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
 		name: "mutex",
-		data:  buf.Bytes(),
+		data: buf.Bytes(),
 	}, nil
 }
 
@@ -179,7 +179,7 @@ func goroutineProfile(cfg *config) (*profile, error) {
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
 		name: "goroutines",
-		data:  buf.Bytes(),
+		data: buf.Bytes(),
 	}, nil
 }
 

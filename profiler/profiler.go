@@ -134,7 +134,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				// record the actual start and end timestamps for the batch,
 				// it is how the backend understands the client-side
 				// configured CPU profile duration: (start-end).
-				end:   now.Add(p.cfg.cpuDuration),
+				end: now.Add(p.cfg.cpuDuration),
 			}
 			for t := range p.cfg.types {
 				prof, err := p.runProfile(t)
