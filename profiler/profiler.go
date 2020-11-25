@@ -130,7 +130,11 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			bat := batch{
 				host:  p.cfg.hostname,
 				start: now,
-				end:   now.Add(p.cfg.cpuDuration), // abstraction violation
+				// NB: while this is technically wrong in that it does not
+				// record the actual start and end timestamps for the batch,
+				// it is how the backend understands the client-side
+				// configured CPU profile duration: (start-end).
+				end:   now.Add(p.cfg.cpuDuration),
 			}
 			for t := range p.cfg.types {
 				prof, err := p.runProfile(t)
