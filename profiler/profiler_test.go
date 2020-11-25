@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"runtime"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -167,13 +166,6 @@ func TestProfilerInternal(t *testing.T) {
 		assert.EqualValues(1, stopCPU)
 
 		assert.Equal(2, len(bat.profiles))
-		firstTypes := []string{
-			bat.profiles[0].types[0],
-			bat.profiles[1].types[0],
-		}
-		sort.Strings(firstTypes)
-		assert.Equal("alloc_objects", firstTypes[0])
-		assert.Equal("samples", firstTypes[1])
 
 		p.exit <- struct{}{}
 		<-wait
@@ -227,13 +219,6 @@ func TestProfilerPassthrough(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Equal(2, len(bat.profiles))
-	firstTypes := []string{
-		bat.profiles[0].types[0],
-		bat.profiles[1].types[0],
-	}
-	sort.Strings(firstTypes)
-	assert.Equal("alloc_objects", firstTypes[0])
-	assert.Equal("samples", firstTypes[1])
 	assert.NotEmpty(bat.profiles[0].data)
 	assert.NotEmpty(bat.profiles[1].data)
 }

@@ -53,8 +53,8 @@ func (t ProfileType) String() string {
 // profile specifies a pprof's data (gzipped protobuf), and the types contained
 // within it.
 type profile struct {
-	types []string
-	data  []byte
+	name string
+	data []byte
 }
 
 // batch is a collection of profiles of different types, collected at roughly the same time. It maps
@@ -99,7 +99,7 @@ func heapProfile(cfg *config) (*profile, error) {
 	tags := append(cfg.tags, "profile_type:heap")
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
-		types: []string{"alloc_objects", "alloc_space", "inuse_objects", "inuse_space"},
+		name: "heap",
 		data:  buf.Bytes(),
 	}, nil
 }
@@ -123,7 +123,7 @@ func cpuProfile(cfg *config) (*profile, error) {
 	tags := append(cfg.tags, "profile_type:cpu")
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
-		types: []string{"samples", "cpu"},
+		name: "cpu",
 		data:  buf.Bytes(),
 	}, nil
 }
@@ -148,7 +148,7 @@ func blockProfile(cfg *config) (*profile, error) {
 	tags := append(cfg.tags, "profile_type:block")
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
-		types: []string{"delay"},
+		name: "block",
 		data:  buf.Bytes(),
 	}, nil
 }
@@ -163,7 +163,7 @@ func mutexProfile(cfg *config) (*profile, error) {
 	tags := append(cfg.tags, "profile_type:mutex")
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
-		types: []string{"contentions"},
+		name: "mutex",
 		data:  buf.Bytes(),
 	}, nil
 }
@@ -178,7 +178,7 @@ func goroutineProfile(cfg *config) (*profile, error) {
 	tags := append(cfg.tags, "profile_type:goroutine")
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
-		types: []string{"goroutines"},
+		name: "goroutines",
 		data:  buf.Bytes(),
 	}, nil
 }

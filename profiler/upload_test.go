@@ -34,11 +34,11 @@ var testBatch = batch{
 	host:  "my-host",
 	profiles: []*profile{
 		{
-			types: []string{"cpu"},
+			name: "cpu",
 			data:  []byte("my-cpu-profile"),
 		},
 		{
-			types: []string{"alloc_objects", "alloc_space"},
+			name: "heap",
 			data:  []byte("my-heap-profile"),
 		},
 	},
@@ -80,18 +80,20 @@ func TestTryUpload(t *testing.T) {
 		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
 	}, tags)
 	for k, v := range map[string]string{
-		"format":   "pprof",
-		"runtime":  "go",
-		"types[0]": "cpu",
-		"data[0]":  "my-cpu-profile",
-		"types[1]": "alloc_objects,alloc_space",
-		"data[1]":  "my-heap-profile",
+		"version":  "3",
+		"family":   "go",
+		"data[cpu.pprof]":  "my-cpu-profile",
+		"data[heap.pprof]":  "my-heap-profile",
 	} {
 		assert.Equal(v, fields[k], k)
 	}
-	for _, k := range []string{"recording-start", "recording-end"} {
+	for _, k := range []string{"start", "end"} {
 		_, ok := fields[k]
-		assert.True(ok, k)
+		assert.True(ok, "key should be present: %s", k)
+	}
+	for _, k := range []string{"runtime", "format"} {
+		_, ok := fields[k]
+		assert.False(ok, "key should not be present: %s", k)
 	}
 }
 
@@ -159,7 +161,7 @@ func BenchmarkDoRequest(b *testing.B) {
 	}))
 	defer srv.Close()
 	prof := profile{
-		types: []string{"alloc_objects"},
+		name: "heap",
 		data:  []byte("my-heap-profile"),
 	}
 	bat := batch{
