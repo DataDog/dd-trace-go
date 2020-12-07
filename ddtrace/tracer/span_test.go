@@ -244,7 +244,7 @@ const (
 func TestSpanSetMetric(t *testing.T) {
 	for name, tt := range map[string]func(assert *assert.Assertions, span *span){
 		"init": func(assert *assert.Assertions, span *span) {
-			assert.Equal(2, len(span.Metrics))
+			assert.Equal(3, len(span.Metrics))
 			_, ok := span.Metrics[keySamplingPriority]
 			assert.True(ok)
 			_, ok = span.Metrics[keySamplingPriorityRate]
@@ -279,7 +279,7 @@ func TestSpanSetMetric(t *testing.T) {
 		"finished": func(assert *assert.Assertions, span *span) {
 			span.Finish()
 			span.SetTag("finished.test", 1337)
-			assert.Equal(2, len(span.Metrics))
+			assert.Equal(3, len(span.Metrics))
 			_, ok := span.Metrics["finished.test"]
 			assert.False(ok)
 		},
@@ -497,6 +497,25 @@ func TestSpanLog(t *testing.T) {
 		stop()
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d"`, span.TraceID, span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+}
+
+func TestUnsetMetric(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		span := span{Metrics: map[string]float64{"key": 1}}
+		span.unsetMetric("key")
+		_, ok := span.Metrics["key"]
+		assert.False(t, ok)
+	})
+	t.Run("nil metrics", func(t *testing.T) {
+		span := span{}
+		span.unsetMetric("key")
+		assert.Nil(t, span.Metrics)
+	})
+	t.Run("empty metrics", func(t *testing.T) {
+		span := span{Metrics: make(map[string]float64)}
+		span.unsetMetric("key")
+		assert.Len(t, span.Metrics, 0)
 	})
 }
 

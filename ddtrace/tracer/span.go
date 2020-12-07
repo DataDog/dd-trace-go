@@ -66,6 +66,7 @@ type span struct {
 	TraceID  uint64             `msg:"trace_id"`          // identifier of the root span
 	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
+	TopLevel bool               `msg:"top_level"`         // boolean indicating if the span is a top level
 
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
@@ -256,6 +257,12 @@ func (s *span) setMetric(key string, v float64) {
 	}
 }
 
+// unsetMetric unsets a numeric tag, in our case called a metric. This method
+// is not safe for concurrent use.
+func (s *span) unsetMetric(key string) {
+	delete(s.Metrics, key)
+}
+
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *span) Finish(opts ...ddtrace.FinishOption) {
@@ -381,4 +388,7 @@ const (
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
 	keyRulesSamplerLimiterRate = "_dd.limit_psr"
 	keyMeasured                = "_dd.measured"
+	// topLevelKey is the key of top level metric indicating if a span is top level.
+	// a top level span is a local root (parent span of the local trace) or the first span of each service.
+	topLevelKey = "_top_level"
 )
