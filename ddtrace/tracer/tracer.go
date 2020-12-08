@@ -308,9 +308,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		span.SetTag(k, v)
 	}
 	if context == nil || context.span == nil || context.span.Service != span.Service {
-		span.setMetric(topLevelKey, 1)
+		span.setMetric(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
-		span.unsetMetric(keyMeasured)
+		delete(span.Metrics, keyMeasured)
 	}
 	if t.config.version != "" && span.Service == t.config.serviceName {
 		span.SetTag(ext.Version, t.config.version)

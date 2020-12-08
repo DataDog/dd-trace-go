@@ -500,25 +500,6 @@ func TestSpanLog(t *testing.T) {
 	})
 }
 
-func TestUnsetMetric(t *testing.T) {
-	t.Run("default", func(t *testing.T) {
-		span := span{Metrics: map[string]float64{"key": 1}}
-		span.unsetMetric("key")
-		_, ok := span.Metrics["key"]
-		assert.False(t, ok)
-	})
-	t.Run("nil metrics", func(t *testing.T) {
-		span := span{}
-		span.unsetMetric("key")
-		assert.Nil(t, span.Metrics)
-	})
-	t.Run("empty metrics", func(t *testing.T) {
-		span := span{Metrics: make(map[string]float64)}
-		span.unsetMetric("key")
-		assert.Len(t, span.Metrics, 0)
-	})
-}
-
 func BenchmarkSetTagMetric(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
