@@ -67,7 +67,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			}
 			span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 
-			if cfg.statusCheck(status) {
+			if cfg.isStatusError(status) {
 				// mark 5xx server error
 				span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 			}

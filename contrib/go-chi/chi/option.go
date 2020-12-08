@@ -17,7 +17,7 @@ type config struct {
 	serviceName   string
 	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
 	analyticsRate float64
-	statusCheck   func(statusCode int) bool
+	isStatusError   func(statusCode int) bool
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -33,7 +33,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.statusCheck = isServerError
+	cfg.isStatusError = isServerError
 }
 
 // WithServiceName sets the given service name for the router.
@@ -78,7 +78,7 @@ func WithAnalyticsRate(rate float64) Option {
 // statusCode should be considered an error.
 func WithStatusCheck(fn func(statusCode int) bool) Option {
 	return func(cfg *config) {
-		cfg.statusCheck = statusCheck
+		cfg.isStatusError = isStatusError
 	}
 }
 
