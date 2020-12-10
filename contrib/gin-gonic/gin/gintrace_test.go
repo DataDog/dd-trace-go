@@ -339,3 +339,95 @@ func TestResourceNamerSettings(t *testing.T) {
 		router.ServeHTTP(w, r)
 	})
 }
+
+func TestServiceName(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(Middleware(""))
+		router.GET("/ping", func(c *gin.Context) {
+			span, ok := tracer.SpanFromContext(c.Request.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "gin.router")
+			c.Status(200)
+		})
+
+		r := httptest.NewRequest("GET", "/ping", nil)
+		w := httptest.NewRecorder()
+
+		// do and verify the request
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		assert.Equal(response.StatusCode, 200)
+
+		// verify traces look good
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assert.Equal("gin.router", span.Tag(ext.ServiceName))
+	})
+
+	t.Run("global", func(t *testing.T) {
+		globalconfig.SetServiceName("global-service")
+		defer globalconfig.SetServiceName("")
+
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(Middleware(""))
+		router.GET("/ping", func(c *gin.Context) {
+			span, ok := tracer.SpanFromContext(c.Request.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "global-service")
+			c.Status(200)
+		})
+
+		r := httptest.NewRequest("GET", "/ping", nil)
+		w := httptest.NewRecorder()
+
+		// do and verify the request
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		assert.Equal(response.StatusCode, 200)
+
+		// verify traces look good
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assert.Equal("global-service", span.Tag(ext.ServiceName))
+	})
+
+	t.Run("custom", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(Middleware("my-service"))
+		router.GET("/ping", func(c *gin.Context) {
+			span, ok := tracer.SpanFromContext(c.Request.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "my-service")
+			c.Status(200)
+		})
+
+		r := httptest.NewRequest("GET", "/ping", nil)
+		w := httptest.NewRecorder()
+
+		// do and verify the request
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		assert.Equal(response.StatusCode, 200)
+
+		// verify traces look good
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assert.Equal("my-service", span.Tag(ext.ServiceName))
+	})
+}
