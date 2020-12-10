@@ -226,20 +226,46 @@ func TestB3(t *testing.T) {
 		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "b3")
 		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
 
-		headers := TextMapCarrier(map[string]string{
-			b3TraceIDHeader: "1",
-			b3SpanIDHeader:  "1",
-		})
+		var tests = []struct {
+			in  TextMapCarrier
+			out []uint64 // contains [<trace_id>, <span_id>]
+		}{
+			{
+				TextMapCarrier{
+					b3TraceIDHeader: "1",
+					b3SpanIDHeader:  "1",
+				},
+				[]uint64{1, 1},
+			},
+			{
+				TextMapCarrier{
+					b3TraceIDHeader: "feeb0599801f4700",
+					b3SpanIDHeader:  "f8f5c76089ad8da5",
+				},
+				[]uint64{18368781661998368512, 17939463908140879269},
+			},
+			{
+				TextMapCarrier{
+					b3TraceIDHeader: "6e96719ded9c1864a21ba1551789e3f5",
+					b3SpanIDHeader:  "a1eb5bf36e56e50e",
+				},
+				[]uint64{11681107445354718197, 11667520360719770894},
+			},
+		}
 
-		tracer := newTracer()
-		assert := assert.New(t)
-		ctx, err := tracer.Extract(headers)
-		assert.Nil(err)
-		sctx, ok := ctx.(*spanContext)
-		assert.True(ok)
+		for _, test := range tests {
+			t.Run("", func(t *testing.T) {
+				tracer := newTracer()
+				assert := assert.New(t)
+				ctx, err := tracer.Extract(test.in)
+				assert.Nil(err)
+				sctx, ok := ctx.(*spanContext)
+				assert.True(ok)
 
-		assert.Equal(sctx.traceID, uint64(1))
-		assert.Equal(sctx.spanID, uint64(1))
+				assert.Equal(sctx.traceID, test.out[0])
+				assert.Equal(sctx.spanID, test.out[1])
+			})
+		}
 	})
 
 	t.Run("multiple", func(t *testing.T) {

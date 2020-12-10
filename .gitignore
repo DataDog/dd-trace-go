@@ -10,6 +10,8 @@ bin/
 *.cov
 *.lock
 *.swp
+.idea
+dd-trace-go.iml
 
 /contrib/google.golang.org/grpc.v12/vendor/
 
