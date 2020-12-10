@@ -383,5 +383,5 @@ const (
 	keyMeasured                = "_dd.measured"
 	// keyTopLevel is the key of top level metric indicating if a span is top level.
 	// A top level span is a local root (parent span of the local trace) or the first span of each service.
-	keyTopLevel = "_top_level"
+	keyTopLevel = "_dd.top_level"
 )
