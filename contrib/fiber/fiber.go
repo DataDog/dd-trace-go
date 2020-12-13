@@ -30,8 +30,8 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.ServiceName(cfg.serviceName),
-			tracer.Tag(ext.HTTPMethod, c.Context().Method),
-			tracer.Tag(ext.HTTPURL, c.Context().Path),
+			tracer.Tag(ext.HTTPMethod, c.Method()),
+			tracer.Tag(ext.HTTPURL, c.Request().URI().String()),
 			tracer.Measured(),
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
