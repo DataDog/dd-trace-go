@@ -60,7 +60,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		}
 		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 
-		if status >= 500 && status < 600 {
+		if cfg.isStatusError(status) {
 			// mark 5xx server error
 			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 		}
