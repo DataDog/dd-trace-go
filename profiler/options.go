@@ -6,8 +6,10 @@
 package profiler
 
 import (
+	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -46,6 +48,25 @@ const (
 	defaultEnv       = "none"
 )
 
+var defaultClient = &http.Client{
+	// We copy the transport to avoid using the default one, as it might be
+	// augmented with tracing and we don't want these calls to be recorded.
+	// See https://golang.org/pkg/net/http/#DefaultTransport .
+	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}).DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
+	Timeout: 10 * time.Second,
+}
+
 var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
 
 type config struct {
@@ -58,6 +79,7 @@ type config struct {
 	service, env  string
 	hostname      string
 	statsd        StatsdClient
+	httpClient    *http.Client
 	tags          []string
 	types         map[ProfileType]struct{}
 	period        time.Duration
@@ -98,6 +120,7 @@ func defaultConfig() *config {
 		apiURL:        defaultAPIURL,
 		service:       filepath.Base(os.Args[0]),
 		statsd:        &statsd.NoOpClient{},
+		httpClient:    defaultClient,
 		period:        DefaultPeriod,
 		cpuDuration:   DefaultDuration,
 		blockRate:     DefaultBlockRate,
@@ -252,4 +275,24 @@ func WithSite(site string) Option {
 		}
 		cfg.apiURL = u
 	}
+}
+
+// WithHTTPClient specifies the HTTP client to use when submitting profiles to Site.
+// In general, using this method is only necessary if you have need to customize the
+// transport layer, for instance when using a unix domain socket.
+func WithHTTPClient(client *http.Client) Option {
+	return func(cfg *config) {
+		cfg.httpClient = client
+	}
+}
+
+// WithUDSClient convenience, configures the client to dial a Unix Domain Socket
+func WithUDSClient(socketPath string) Option {
+	return WithHTTPClient(&http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", socketPath)
+			},
+		},
+	})
 }
