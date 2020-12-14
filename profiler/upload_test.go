@@ -65,7 +65,7 @@ func TestTryUpload(t *testing.T) {
 			description:  "test against Unix Domain Socket server",
 			startService: makeSocketServer,
 			exopts: func(udsPath string) []Option {
-				return []Option{WithUDSClient(udsPath)}
+				return []Option{WithUDS(udsPath)}
 			},
 		},
 	}

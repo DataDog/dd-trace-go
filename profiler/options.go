@@ -42,10 +42,11 @@ const (
 )
 
 const (
-	defaultAPIURL    = "https://intake.profile.datadoghq.com/v1/input"
-	defaultAgentHost = "localhost"
-	defaultAgentPort = "8126"
-	defaultEnv       = "none"
+	defaultAPIURL      = "https://intake.profile.datadoghq.com/v1/input"
+	defaultAgentHost   = "localhost"
+	defaultAgentPort   = "8126"
+	defaultEnv         = "none"
+	defaultHTTPTimeout = 10 * time.Second // defines the current timeout before giving up with the send process
 )
 
 var defaultClient = &http.Client{
@@ -64,7 +65,7 @@ var defaultClient = &http.Client{
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	},
-	Timeout: 10 * time.Second,
+	Timeout: defaultHTTPTimeout,
 }
 
 var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
@@ -286,13 +287,14 @@ func WithHTTPClient(client *http.Client) Option {
 	}
 }
 
-// WithUDSClient convenience, configures the client to dial a Unix Domain Socket
-func WithUDSClient(socketPath string) Option {
+// WithUDS convenience, configures the client to dial a Unix Domain Socket
+func WithUDS(socketPath string) Option {
 	return WithHTTPClient(&http.Client{
 		Transport: &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 				return net.Dial("unix", socketPath)
 			},
 		},
+		Timeout: defaultHTTPTimeout,
 	})
 }
