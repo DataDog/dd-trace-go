@@ -172,7 +172,7 @@ func TestRetries(t *testing.T) {
 
 	assert.Equal(t, 3, req.RetryCount)
 	assert.Same(t, expectedError, err)
-	assert.Len(t, mt.UnfinishedSpans(), 0)
+	assert.Len(t, mt.OpenSpans(), 0)
 	assert.Len(t, mt.FinishedSpans(), 1)
 	assert.Equal(t, mt.FinishedSpans()[0].Tag(tagAWSRetryCount), 3)
 }

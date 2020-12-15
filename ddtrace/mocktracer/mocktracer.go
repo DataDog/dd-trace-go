@@ -27,8 +27,8 @@ var _ Tracer = (*mocktracer)(nil)
 
 // Tracer exposes an interface for querying the currently running mock tracer.
 type Tracer interface {
-	// UnfinishedSpans returns the set of started spans.
-	UnfinishedSpans() []Span
+	// OpenSpans returns the set of started spans that have not been finished yet.
+	OpenSpans() []Span
 
 	// FinishedSpans returns the set of finished spans.
 	FinishedSpans() []Span
@@ -49,15 +49,16 @@ type Tracer interface {
 // interface to query the tracer's state.
 func Start() Tracer {
 	var t mocktracer
+	t.Reset()
 	internal.SetGlobalTracer(&t)
 	internal.Testing = true
 	return &t
 }
 
 type mocktracer struct {
-	sync.RWMutex    // guards below spans
-	unfinishedSpans []Span
-	finishedSpans   []Span
+	sync.RWMutex  // guards below spans
+	finishedSpans []Span
+	openSpans     map[uint64]Span
 }
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
@@ -72,14 +73,18 @@ func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOp
 		fn(&cfg)
 	}
 	span := newSpan(t, operationName, &cfg)
-	t.addUnfinishedSpan(span)
+	t.addOpenSpan(span)
 	return span
 }
 
-func (t *mocktracer) UnfinishedSpans() []Span {
+func (t *mocktracer) OpenSpans() []Span {
 	t.RLock()
 	defer t.RUnlock()
-	return t.unfinishedSpans
+	spans := make([]Span, 0, len(t.openSpans))
+	for _, s := range t.openSpans {
+		spans = append(spans, s)
+	}
+	return spans
 }
 
 func (t *mocktracer) FinishedSpans() []Span {
@@ -91,34 +96,20 @@ func (t *mocktracer) FinishedSpans() []Span {
 func (t *mocktracer) Reset() {
 	t.Lock()
 	defer t.Unlock()
-	t.unfinishedSpans = nil
+	t.openSpans = make(map[uint64]Span)
 	t.finishedSpans = nil
 }
 
-func (t *mocktracer) addUnfinishedSpan(s Span) {
+func (t *mocktracer) addOpenSpan(s Span) {
 	t.Lock()
 	defer t.Unlock()
-	t.unfinishedSpans = append(t.unfinishedSpans, s)
-}
-
-func (t *mocktracer) removeUnfinishedSpan(s Span) {
-	t.Lock()
-	defer t.Unlock()
-	idx := -1
-	for i, si := range t.unfinishedSpans {
-		if si == s {
-			idx = i
-			break
-		}
-	}
-	if idx >= 0 {
-		t.unfinishedSpans = append(t.unfinishedSpans[:idx], t.unfinishedSpans[idx+1:]...)
-	}
+	t.openSpans[s.SpanID()] = s
 }
 
 func (t *mocktracer) addFinishedSpan(s Span) {
 	t.Lock()
 	defer t.Unlock()
+	delete(t.openSpans, s.SpanID())
 	if t.finishedSpans == nil {
 		t.finishedSpans = make([]Span, 0, 1)
 	}
