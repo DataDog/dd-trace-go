@@ -358,7 +358,7 @@ func WithHTTPClient(client *http.Client) StartOption {
 	}
 }
 
-// WithUDS convenience, configures the client to dial a Unix Domain Socket
+// WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) StartOption {
 	return WithHTTPClient(&http.Client{
 		Transport: &http.Transport{
