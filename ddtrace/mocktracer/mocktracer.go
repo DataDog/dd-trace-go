@@ -49,7 +49,6 @@ type Tracer interface {
 // interface to query the tracer's state.
 func Start() Tracer {
 	var t mocktracer
-	t.Reset()
 	internal.SetGlobalTracer(&t)
 	internal.Testing = true
 	return &t
@@ -96,13 +95,16 @@ func (t *mocktracer) FinishedSpans() []Span {
 func (t *mocktracer) Reset() {
 	t.Lock()
 	defer t.Unlock()
-	t.openSpans = make(map[uint64]Span)
+	t.openSpans = nil
 	t.finishedSpans = nil
 }
 
 func (t *mocktracer) addOpenSpan(s Span) {
 	t.Lock()
 	defer t.Unlock()
+	if t.openSpans == nil {
+		t.openSpans = make(map[uint64]Span)
+	}
 	t.openSpans[s.SpanID()] = s
 }
 
