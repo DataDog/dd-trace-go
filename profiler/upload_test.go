@@ -50,20 +50,20 @@ func TestTryUpload(t *testing.T) {
 	containerID = ""
 
 	fixtures := []struct {
-		description  string
-		startService startServer
-		exopts       func(string) []Option
+		description     string
+		startTestServer startTestServerFn
+		exopts          func(string) []Option
 	}{
 		{
-			description:  "test against httptest.Server",
-			startService: makeTestServer,
+			description:     "test against httptest.Server",
+			startTestServer: startHTTPTestServer,
 			exopts: func(host string) []Option {
 				return []Option{WithAgentAddr(host)}
 			},
 		},
 		{
-			description:  "test against Unix Domain Socket server",
-			startService: makeSocketServer,
+			description:     "test against Unix Domain Socket server",
+			startTestServer: startSocketTestServer,
 			exopts: func(udsPath string) []Option {
 				return []Option{WithUDS(udsPath)}
 			},
@@ -72,7 +72,7 @@ func TestTryUpload(t *testing.T) {
 
 	for _, f := range fixtures {
 		t.Run(f.description, func(t *testing.T) {
-			srv, address, waiter := f.startService(t, 200)
+			srv, address, waiter := f.startTestServer(t, 200)
 			defer srv.Close()
 
 			opts := []Option{
@@ -122,7 +122,7 @@ func TestTryUpload(t *testing.T) {
 }
 
 func TestOldAgent(t *testing.T) {
-	srv, host, _ := makeTestServer(t, 404)
+	srv, host, _ := startHTTPTestServer(t, 404)
 	defer srv.Close()
 	p, err := unstartedProfiler(
 		WithAgentAddr(host),
@@ -140,7 +140,7 @@ func TestContainerIDHeader(t *testing.T) {
 	defer func(cid string) { containerID = cid }(containerID)
 	containerID = "fakeContainerID"
 
-	srv, host, waiter := makeTestServer(t, 200)
+	srv, host, waiter := startHTTPTestServer(t, 200)
 	defer srv.Close()
 	p, err := unstartedProfiler(
 		WithAgentAddr(host),
@@ -186,12 +186,22 @@ func BenchmarkDoRequest(b *testing.B) {
 	}
 }
 
-type testServerWaiter func() (http.Header, map[string]string, []string)
+type (
+	// testServerWaiter blocking, captures requests sent to test server for verification
+	testServerWaiter func() (http.Header, map[string]string, []string)
 
-type makeServer func(handler http.Handler) (io.Closer, string)
-type startServer func(*testing.T, int) (io.Closer, string, testServerWaiter)
+	// makeServerFn creates test server given an http.Handler
+	makeServerFn func(handler http.Handler) (srv io.Closer, address string)
 
-func startTestServer(t *testing.T, statusCode int, newServer makeServer) (io.Closer, string, testServerWaiter) {
+	// startTestServerFn starts a test server, returns a server closer, address, and function that
+	// blocks until test server receives a request and captures request data for testing.
+	// Implementations: startHTTPTestServer, startSocketTestServer
+	startTestServerFn func(*testing.T, int) (srv io.Closer, address string, requestWaiter testServerWaiter)
+)
+
+// startRequestCaptureServer creates a handler and waiter function to verify requests sent to the test server,
+// returns server and address created by makeServerFn
+func startRequestCaptureServer(t *testing.T, statusCode int, newServer makeServerFn) (server io.Closer, address string, requestWaiter testServerWaiter) {
 	wait := make(chan struct{})
 	var header http.Header
 	fields := make(map[string]string)
@@ -242,6 +252,7 @@ func startTestServer(t *testing.T, statusCode int, newServer makeServer) (io.Clo
 	return srv, path, waiter
 }
 
+// testServer because httptest.Server inexplicably exposes a Close that doesn't return an error
 type testServer struct {
 	s *httptest.Server
 }
@@ -251,8 +262,8 @@ func (ts testServer) Close() error {
 	return nil
 }
 
-func makeTestServer(t *testing.T, statusCode int) (io.Closer, string, testServerWaiter) {
-	return startTestServer(t, statusCode, func(handler http.Handler) (io.Closer, string) {
+func startHTTPTestServer(t *testing.T, statusCode int) (srv io.Closer, address string, requestWaiter testServerWaiter) {
+	return startRequestCaptureServer(t, statusCode, func(handler http.Handler) (io.Closer, string) {
 		srv := httptest.NewServer(handler)
 		srvURL, err := url.Parse(srv.URL)
 		if err != nil {
@@ -264,8 +275,8 @@ func makeTestServer(t *testing.T, statusCode int) (io.Closer, string, testServer
 	})
 }
 
-func makeSocketServer(t *testing.T, statusCode int) (io.Closer, string, testServerWaiter) {
-	return startTestServer(t, statusCode, func(handler http.Handler) (io.Closer, string) {
+func startSocketTestServer(t *testing.T, statusCode int) (srv io.Closer, socketPath string, requestWaiter testServerWaiter) {
+	return startRequestCaptureServer(t, statusCode, func(handler http.Handler) (io.Closer, string) {
 		srv := &http.Server{Handler: handler}
 		udsPath := "/tmp/com.datadoghq.dd-trace-go.profiler.test.sock"
 		unixListener, err := net.Listen("unix", udsPath)
