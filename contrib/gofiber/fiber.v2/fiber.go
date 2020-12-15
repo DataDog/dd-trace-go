@@ -4,7 +4,7 @@
 // Copyright 2016-2020 Datadog, Inc.
 
 // Package fiber provides tracing functions for tracing the fiber package (https://github.com/gofiber/fiber).
-package fiber // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/fiber/fiber"
+package fiber // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gofiber/fiber.v2"
 
 import (
 	"fmt"
@@ -42,9 +42,6 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		span, _ := tracer.StartSpanFromContext(c.Context(), "http.request", opts...)
 		defer span.Finish()
 
-		err := c.Next()
-
-		//set the resource name (URI) as we get it only once the handler is executed
 		resourceName := c.Path()
 		if resourceName == "" {
 			resourceName = "unknown"
@@ -52,10 +49,14 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		resourceName = c.Method() + " " + resourceName
 		span.SetTag(ext.ResourceName, resourceName)
 
-		// set the status code
+		//pass the execution down the line
+		err := c.Next()
+
 		status := c.Response().StatusCode()
-		// 0 status means one has not yet been sent in which case net/http library will write StatusOK
+		//on the off chance we don't yet have a status after the rest of the things have run
 		if status == 0 {
+			//0 - means we do not have a status code at this point
+			//in case the response was returned by a middleware without one
 			status = http.StatusOK
 		}
 		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
@@ -64,7 +65,6 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 			// mark 5xx server error
 			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 		}
-
 		return err
 	}
 }
