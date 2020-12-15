@@ -161,7 +161,7 @@ func TestRetries(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	root, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+	ctx := context.Background()
 	s3api := s3.New(session)
 	req, _ := s3api.GetObjectRequest(&s3.GetObjectInput{
 		Bucket: aws.String("BUCKET"),
@@ -169,10 +169,10 @@ func TestRetries(t *testing.T) {
 	})
 	req.SetContext(ctx)
 	err := req.Send()
-	root.Finish()
 
 	assert.Equal(t, 3, req.RetryCount)
 	assert.Same(t, expectedError, err)
 	assert.Len(t, mt.UnfinishedSpans(), 0)
-	assert.Len(t, mt.FinishedSpans(), 2)
+	assert.Len(t, mt.FinishedSpans(), 1)
+	assert.Equal(t, mt.FinishedSpans()[0].Tag(tagAWSRetryCount), 3)
 }
