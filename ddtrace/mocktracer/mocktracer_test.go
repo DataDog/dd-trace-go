@@ -74,9 +74,14 @@ func TestTracerStartSpan(t *testing.T) {
 
 func TestTracerFinishedSpans(t *testing.T) {
 	var mt mocktracer
+	assert.Empty(t, mt.FinishedSpans())
+	assert.Empty(t, mt.OpenSpans())
 	parent := newSpan(&mt, "http.request", &ddtrace.StartSpanConfig{})
 	child := mt.StartSpan("db.query", tracer.ChildOf(parent.Context()))
+	assert.Empty(t, mt.FinishedSpans())
+	assert.Len(t, mt.OpenSpans(), 1)
 	child.Finish()
+	assert.Empty(t, mt.OpenSpans())
 	parent.Finish()
 	found := 0
 	for _, s := range mt.FinishedSpans() {
@@ -93,15 +98,20 @@ func TestTracerFinishedSpans(t *testing.T) {
 }
 
 func TestTracerReset(t *testing.T) {
-	var mt mocktracer
-	mt.StartSpan("db.query").Finish()
-
 	assert := assert.New(t)
+	var mt mocktracer
+
+	span := mt.StartSpan("db.query")
+	assert.Len(mt.openSpans, 1)
+
+	span.Finish()
 	assert.Len(mt.finishedSpans, 1)
+	assert.Len(mt.openSpans, 0)
 
 	mt.Reset()
 
 	assert.Nil(mt.finishedSpans)
+	assert.Nil(mt.openSpans)
 }
 
 func TestTracerInject(t *testing.T) {
