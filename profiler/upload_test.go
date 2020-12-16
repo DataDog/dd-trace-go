@@ -49,83 +49,76 @@ func TestTryUpload(t *testing.T) {
 	defer func(cid string) { containerID = cid }(containerID)
 	containerID = ""
 
-	fixtures := []struct {
-		description     string
-		startTestServer startTestServerFn
-		exopts          func(string) []Option
-	}{
-		{
-			description:     "test against httptest.Server",
-			startTestServer: startHTTPTestServer,
-			exopts: func(host string) []Option {
-				return []Option{WithAgentAddr(host)}
-			},
-		},
-		{
-			description:     "test against Unix Domain Socket server",
-			startTestServer: startSocketTestServer,
-			exopts: func(udsPath string) []Option {
-				return []Option{WithUDS(udsPath)}
-			},
-		},
+	srv, srvURL, waiter := makeHTTPTestServer(t, 200)
+	defer srv.Close()
+	p, err := unstartedProfiler(
+		WithAgentAddr(srvURL.Host),
+		WithService("my-service"),
+		WithEnv("my-env"),
+		WithTags("tag1:1", "tag2:2"),
+	)
+	require.NoError(t, err)
+	err = p.doRequest(testBatch)
+	require.NoError(t, err)
+	header, fields, tags := waiter()
+
+	assert := assert.New(t)
+	assert.Empty(header.Get("Datadog-Container-ID"))
+	assert.ElementsMatch([]string{
+		"host:my-host",
+		"runtime:go",
+		"service:my-service",
+		"env:my-env",
+		"tag1:1",
+		"tag2:2",
+		fmt.Sprintf("pid:%d", os.Getpid()),
+		fmt.Sprintf("profiler_version:%s", version.Tag),
+		fmt.Sprintf("runtime_version:%s", strings.TrimPrefix(runtime.Version(), "go")),
+		fmt.Sprintf("runtime_compiler:%s", runtime.Compiler),
+		fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
+		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
+		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
+	}, tags)
+	for k, v := range map[string]string{
+		"format":   "pprof",
+		"runtime":  "go",
+		"types[0]": "cpu",
+		"data[0]":  "my-cpu-profile",
+		"types[1]": "alloc_objects,alloc_space",
+		"data[1]":  "my-heap-profile",
+	} {
+		assert.Equal(v, fields[k], k)
 	}
-
-	for _, f := range fixtures {
-		t.Run(f.description, func(t *testing.T) {
-			srv, address, waiter := f.startTestServer(t, 200)
-			defer srv.Close()
-
-			opts := []Option{
-				WithService("my-service"),
-				WithEnv("my-env"),
-				WithTags("tag1:1", "tag2:2"),
-			}
-			p, err := unstartedProfiler(append(opts, f.exopts(address)...)...)
-			require.NoError(t, err)
-			err = p.doRequest(testBatch)
-			require.NoError(t, err)
-			header, fields, tags := waiter()
-
-			assert := assert.New(t)
-			assert.Empty(header.Get("Datadog-Container-ID"))
-			assert.ElementsMatch([]string{
-				"host:my-host",
-				"runtime:go",
-				"service:my-service",
-				"env:my-env",
-				"tag1:1",
-				"tag2:2",
-				fmt.Sprintf("pid:%d", os.Getpid()),
-				fmt.Sprintf("profiler_version:%s", version.Tag),
-				fmt.Sprintf("runtime_version:%s", strings.TrimPrefix(runtime.Version(), "go")),
-				fmt.Sprintf("runtime_compiler:%s", runtime.Compiler),
-				fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
-				fmt.Sprintf("runtime_os:%s", runtime.GOOS),
-				fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
-			}, tags)
-			for k, v := range map[string]string{
-				"format":   "pprof",
-				"runtime":  "go",
-				"types[0]": "cpu",
-				"data[0]":  "my-cpu-profile",
-				"types[1]": "alloc_objects,alloc_space",
-				"data[1]":  "my-heap-profile",
-			} {
-				assert.Equal(v, fields[k], k)
-			}
-			for _, k := range []string{"recording-start", "recording-end"} {
-				_, ok := fields[k]
-				assert.True(ok, k)
-			}
-		})
+	for _, k := range []string{"recording-start", "recording-end"} {
+		_, ok := fields[k]
+		assert.True(ok, k)
 	}
 }
 
-func TestOldAgent(t *testing.T) {
-	srv, host, _ := startHTTPTestServer(t, 404)
+func TestTryUploadUDS(t *testing.T) {
+	srv, udsPath, waiter := makeSocketTestServer(t, 200)
 	defer srv.Close()
 	p, err := unstartedProfiler(
-		WithAgentAddr(host),
+		WithUDS(udsPath),
+	)
+	require.NoError(t, err)
+	err = p.doRequest(testBatch)
+	require.NoError(t, err)
+	header, _, tags := waiter()
+
+	assert := assert.New(t)
+	assert.Empty(header.Get("Datadog-Container-ID"))
+	assert.ElementsMatch([]string{
+		"host:my-host",
+		"runtime:go",
+	}, tags[0:2])
+}
+
+func TestOldAgent(t *testing.T) {
+	srv, srvURL, _ := makeHTTPTestServer(t, 404)
+	defer srv.Close()
+	p, err := unstartedProfiler(
+		WithAgentAddr(srvURL.Host),
 		WithService("my-service"),
 		WithEnv("my-env"),
 		WithTags("tag1:1", "tag2:2"),
@@ -140,10 +133,10 @@ func TestContainerIDHeader(t *testing.T) {
 	defer func(cid string) { containerID = cid }(containerID)
 	containerID = "fakeContainerID"
 
-	srv, host, waiter := startHTTPTestServer(t, 200)
+	srv, srvURL, waiter := makeHTTPTestServer(t, 200)
 	defer srv.Close()
 	p, err := unstartedProfiler(
-		WithAgentAddr(host),
+		WithAgentAddr(srvURL.Host),
 		WithService("my-service"),
 		WithEnv("my-env"),
 		WithTags("tag1:1", "tag2:2"),
@@ -186,28 +179,15 @@ func BenchmarkDoRequest(b *testing.B) {
 	}
 }
 
-type (
-	// testServerWaiter blocking, captures requests sent to test server for verification
-	testServerWaiter func() (http.Header, map[string]string, []string)
+type testServerWaiter func() (http.Header, map[string]string, []string)
 
-	// makeServerFn creates test server given an http.Handler
-	makeServerFn func(handler http.Handler) (srv io.Closer, address string)
-
-	// startTestServerFn starts a test server, returns a server closer, address, and function that
-	// blocks until test server receives a request and captures request data for testing.
-	// Implementations: startHTTPTestServer, startSocketTestServer
-	startTestServerFn func(*testing.T, int) (srv io.Closer, address string, requestWaiter testServerWaiter)
-)
-
-// startRequestCaptureServer creates a handler and waiter function to verify requests sent to the test server,
-// returns server and address created by makeServerFn
-func startRequestCaptureServer(t *testing.T, statusCode int, newServer makeServerFn) (server io.Closer, address string, requestWaiter testServerWaiter) {
+func makeHTTPTestServer(t *testing.T, statusCode int) (*httptest.Server, *url.URL, testServerWaiter) {
 	wait := make(chan struct{})
 	var header http.Header
 	fields := make(map[string]string)
 	var tags []string
 
-	srv, path := newServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(statusCode)
 		header = req.Header
 		_, params, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
@@ -238,6 +218,13 @@ func startRequestCaptureServer(t *testing.T, statusCode int, newServer makeServe
 		close(wait)
 	}))
 
+	srvURL, err := url.Parse(srv.URL)
+	if err != nil {
+		srv.Close()
+		t.Fatalf("failed to parse server url")
+		return nil, nil, nil
+	}
+
 	waiter := func() (http.Header, map[string]string, []string) {
 		select {
 		case <-wait:
@@ -249,41 +236,65 @@ func startRequestCaptureServer(t *testing.T, statusCode int, newServer makeServe
 		}
 	}
 
-	return srv, path, waiter
+	return srv, srvURL, waiter
 }
 
-// testServer because httptest.Server inexplicably exposes a Close that doesn't return an error
-type testServer struct {
-	s *httptest.Server
-}
+func makeSocketTestServer(t *testing.T, statusCode int) (srv *http.Server, udsPath string, waiter testServerWaiter) {
+	wait := make(chan struct{})
+	var header http.Header
+	fields := make(map[string]string)
+	var tags []string
 
-func (ts testServer) Close() error {
-	ts.s.Close()
-	return nil
-}
+	srv = &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			w.WriteHeader(statusCode)
+			header = req.Header
+			_, params, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			mr := multipart.NewReader(req.Body, params["boundary"])
+			defer req.Body.Close()
+			for {
+				p, err := mr.NextPart()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				slurp, err := ioutil.ReadAll(p)
+				if err != nil {
+					t.Fatal(err)
+				}
+				switch k := p.FormName(); k {
+				case "tags[]":
+					tags = append(tags, string(slurp))
+				default:
+					fields[k] = string(slurp)
+				}
+			}
+			close(wait)
+		}),
+	}
 
-func startHTTPTestServer(t *testing.T, statusCode int) (srv io.Closer, address string, requestWaiter testServerWaiter) {
-	return startRequestCaptureServer(t, statusCode, func(handler http.Handler) (io.Closer, string) {
-		srv := httptest.NewServer(handler)
-		srvURL, err := url.Parse(srv.URL)
-		if err != nil {
-			srv.Close()
-			t.Fatalf("failed to parse server url")
-			return nil, ""
+	waiter = func() (http.Header, map[string]string, []string) {
+		select {
+		case <-wait:
+			// OK
+			return header, fields, tags
+		case <-time.After(time.Second):
+			t.Fatalf("timeout")
+			return nil, nil, nil
 		}
-		return testServer{srv}, srvURL.Host
-	})
-}
+	}
 
-func startSocketTestServer(t *testing.T, statusCode int) (srv io.Closer, socketPath string, requestWaiter testServerWaiter) {
-	return startRequestCaptureServer(t, statusCode, func(handler http.Handler) (io.Closer, string) {
-		srv := &http.Server{Handler: handler}
-		udsPath := "/tmp/com.datadoghq.dd-trace-go.profiler.test.sock"
-		unixListener, err := net.Listen("unix", udsPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		go srv.Serve(unixListener)
-		return srv, udsPath
-	})
+	udsPath = "/tmp/com.datadoghq.dd-trace-go.profiler.test.sock"
+	unixListener, err := net.Listen("unix", udsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(unixListener)
+
+	return srv, udsPath, waiter
 }
