@@ -72,7 +72,14 @@ func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOp
 		fn(&cfg)
 	}
 	span := newSpan(t, operationName, &cfg)
-	t.addOpenSpan(span)
+
+	t.Lock()
+	defer t.Unlock()
+	if t.openSpans == nil {
+		t.openSpans = make(map[uint64]Span)
+	}
+	t.openSpans[span.SpanID()] = span
+
 	return span
 }
 
@@ -97,15 +104,6 @@ func (t *mocktracer) Reset() {
 	defer t.Unlock()
 	t.openSpans = nil
 	t.finishedSpans = nil
-}
-
-func (t *mocktracer) addOpenSpan(s Span) {
-	t.Lock()
-	defer t.Unlock()
-	if t.openSpans == nil {
-		t.openSpans = make(map[uint64]Span)
-	}
-	t.openSpans[s.SpanID()] = s
 }
 
 func (t *mocktracer) addFinishedSpan(s Span) {
