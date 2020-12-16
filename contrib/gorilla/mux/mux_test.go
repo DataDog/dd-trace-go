@@ -222,17 +222,16 @@ func TestSkippingOption(t *testing.T) {
 	mux.Handle("/skip", okHandler()).Host("localhost")
 	mux.Handle("/200", okHandler()).Host("localhost")
 
-	for _, ht := range tests {
-		t.Run(ht.url, func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.url, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
-			r := httptest.NewRequest("GET", "http://localhost"+ht.url, nil)
+			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
 			w := httptest.NewRecorder()
-
 			mux.ServeHTTP(w, r)
 
 			spans := mt.FinishedSpans()
-			assert.Equal(t, ht.spanCount, len(spans), "")
+			assert.Equal(t, test.spanCount, len(spans))
 		})
 	}
 }
