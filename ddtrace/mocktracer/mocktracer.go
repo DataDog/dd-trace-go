@@ -100,7 +100,9 @@ func (t *mocktracer) FinishedSpans() []Span {
 func (t *mocktracer) Reset() {
 	t.Lock()
 	defer t.Unlock()
-	t.openSpans = nil
+	for k := range t.openSpans {
+	    delete(t.openSpans, k)
+	}
 	t.finishedSpans = nil
 }
 
