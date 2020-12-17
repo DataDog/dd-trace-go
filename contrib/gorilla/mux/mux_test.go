@@ -199,11 +199,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	})
 }
 
-func TestSkippingOption(t *testing.T) {
-	skippingFunc := func(req *http.Request) bool {
-		return req.URL.Path == "/skip"
-	}
-
+func TestIgnoreRequestOption(t *testing.T) {
 	tests := []struct {
 		url       string
 		spanCount int
@@ -217,8 +213,9 @@ func TestSkippingOption(t *testing.T) {
 			spanCount: 1,
 		},
 	}
-
-	mux := NewRouter(WithSkippingFunc(skippingFunc))
+	mux := NewRouter(WithIgnoreRequest(func(req *http.Request) bool {
+		return req.URL.Path == "/skip"
+	}))
 	mux.Handle("/skip", okHandler()).Host("localhost")
 	mux.Handle("/200", okHandler()).Host("localhost")
 

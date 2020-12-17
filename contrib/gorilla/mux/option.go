@@ -21,7 +21,7 @@ type routerConfig struct {
 	finishOpts    []ddtrace.FinishOption    // span finish options to be applied
 	analyticsRate float64
 	resourceNamer func(*Router, *http.Request) string
-	skippingFunc  func(*http.Request) bool
+	ignoreRequest func(*http.Request) bool
 }
 
 // RouterOption represents an option that can be passed to NewRouter.
@@ -38,14 +38,14 @@ func defaults(cfg *routerConfig) {
 		cfg.serviceName = svc
 	}
 	cfg.resourceNamer = defaultResourceNamer
-	cfg.skippingFunc = defaultSkippingFunc
+	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 }
 
-// WithSkippingFunc holds the function to use for determining if the
+// WithIgnoreRequest holds the function to use for determining if the
 // incoming HTTP request tracing should be skipped.
-func WithSkippingFunc(f func(*http.Request) bool) RouterOption {
+func WithIgnoreRequest(f func(*http.Request) bool) RouterOption {
 	return func(cfg *routerConfig) {
-		cfg.skippingFunc = f
+		cfg.ignoreRequest = f
 	}
 }
 
