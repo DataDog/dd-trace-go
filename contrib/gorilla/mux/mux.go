@@ -98,7 +98,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		r.Router.ServeHTTP(w, req)
 		return
 	}
-
 	var (
 		match    mux.RouteMatch
 		spanopts []ddtrace.StartSpanOption
