@@ -49,6 +49,8 @@ func RunAll(t *testing.T, cfg *Config) {
 	cfg.mockTracer = mocktracer.Start()
 	defer cfg.mockTracer.Stop()
 
+	// Make sure testConnect runs first to ensure a connection is established
+	t.Run("Connect", testConnect(cfg))
 	for name, test := range map[string]func(*Config) func(*testing.T){
 		"Ping":          testPing,
 		"Query":         testQuery,
@@ -57,6 +59,24 @@ func RunAll(t *testing.T, cfg *Config) {
 		"Exec":          testExec,
 	} {
 		t.Run(name, test(cfg))
+	}
+}
+
+func testConnect(cfg *Config) func(*testing.T) {
+	return func(t *testing.T) {
+		cfg.mockTracer.Reset()
+		assert := assert.New(t)
+		err := cfg.DB.Ping()
+		assert.Nil(err)
+		spans := cfg.mockTracer.FinishedSpans()
+		assert.Len(spans, 2)
+
+		span := spans[0]
+		assert.Equal(cfg.ExpectName, span.OperationName())
+		cfg.ExpectTags["sql.query_type"] = "Connect"
+		for k, v := range cfg.ExpectTags {
+			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
+		}
 	}
 }
 
