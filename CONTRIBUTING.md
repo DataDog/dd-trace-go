@@ -15,3 +15,8 @@ Fixes #113
 ```
 Please apply the same logic for Pull Requests and Issues: start with the package name, followed by a colon and a description of the change, just like
 the official [Go language](https://github.com/golang/go/pulls).
+
+### Style guidelines
+
+A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.
+It will help tremendously in avoiding comments and speeding up the PR process.
