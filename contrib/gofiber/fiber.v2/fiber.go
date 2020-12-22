@@ -31,7 +31,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.ServiceName(cfg.serviceName),
 			tracer.Tag(ext.HTTPMethod, c.Method()),
-			tracer.Tag(ext.HTTPURL, c.Request().URI().String()),
+			tracer.Tag(ext.HTTPURL, string(c.Request().URI().PathOriginal())),
 			tracer.Measured(),
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
@@ -40,6 +40,8 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 
 		opts = append(opts, cfg.spanOpts...)
 		span, _ := tracer.StartSpanFromContext(c.Context(), "http.request", opts...)
+
+		fmt.Printf("Starting Span")
 		defer span.Finish()
 
 		resourceName := c.Path()
