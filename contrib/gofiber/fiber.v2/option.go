@@ -75,7 +75,7 @@ func WithAnalyticsRate(rate float64) Option {
 	}
 }
 
-//WithStatusCheck allow setting of a function to tell whether a status code is an error
+// WithStatusCheck allow setting of a function to tell whether a status code is an error
 func WithStatusCheck(fn func(statusCode int) bool) Option {
 	return func(cfg *config) {
 		cfg.isStatusError = fn

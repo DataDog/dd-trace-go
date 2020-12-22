@@ -51,14 +51,14 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		resourceName = c.Method() + " " + resourceName
 		span.SetTag(ext.ResourceName, resourceName)
 
-		//pass the execution down the line
+		// pass the execution down the line
 		err := c.Next()
 
 		status := c.Response().StatusCode()
-		//on the off chance we don't yet have a status after the rest of the things have run
+		// on the off chance we don't yet have a status after the rest of the things have run
 		if status == 0 {
-			//0 - means we do not have a status code at this point
-			//in case the response was returned by a middleware without one
+			// 0 - means we do not have a status code at this point
+			// in case the response was returned by a middleware without one
 			status = http.StatusOK
 		}
 		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
