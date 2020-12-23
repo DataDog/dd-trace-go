@@ -7,12 +7,12 @@ package gorm
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"github.com/jackc/pgx/v4/stdlib"
 	"log"
 	"os"
 	"testing"
+
+	"github.com/jackc/pgx/v4/stdlib"
 
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
@@ -34,14 +34,6 @@ import (
 // tableName holds the SQL table that these tests will be run against. It must be unique cross-repo.
 const tableName = "testgorm"
 
-func mySQLDialector(db *sql.DB) gorm.Dialector {
-	return mysqlgorm.New(mysqlgorm.Config{Conn: db})
-}
-
-func postgresDialector(db *sql.DB) gorm.Dialector {
-	return postgres.New(postgres.Config{Conn: db})
-}
-
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
 	if !ok {
@@ -54,7 +46,12 @@ func TestMain(m *testing.M) {
 
 func TestMySQL(t *testing.T) {
 	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("mysql-test"))
-	db, err := Open(mySQLDialector, "mysql", "test:test@tcp(127.0.0.1:3306)/test")
+	sqlDb, err := sqltrace.Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db, err := Open(mysqlgorm.New(mysqlgorm.Config{Conn: sqlDb}), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -83,7 +80,12 @@ func TestMySQL(t *testing.T) {
 
 func TestPostgres(t *testing.T) {
 	sqltrace.Register("pgx", &stdlib.Driver{})
-	db, err := Open(postgresDialector, "pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	sqlDb, err := sqltrace.Open("pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db, err := Open(postgres.New(postgres.Config{Conn: sqlDb}), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -122,7 +124,12 @@ func TestCallbacks(t *testing.T) {
 	defer mt.Stop()
 
 	sqltrace.Register("pgx", &stdlib.Driver{})
-	db, err := Open(postgresDialector, "pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	sqlDb, err := sqltrace.Open("pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db, err := Open(postgres.New(postgres.Config{Conn: sqlDb}), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -231,7 +238,12 @@ func TestAnalyticsSettings(t *testing.T) {
 	defer mt.Stop()
 
 	sqltrace.Register("pgx", &stdlib.Driver{})
-	db, err := Open(postgresDialector, "pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	sqlDb, err := sqltrace.Open("pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db, err := Open(postgres.New(postgres.Config{Conn: sqlDb}), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -242,7 +254,13 @@ func TestAnalyticsSettings(t *testing.T) {
 	}
 
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
-		db, err := Open(postgresDialector, "pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable", opts...)
+		sqltrace.Register("pgx", &stdlib.Driver{})
+		sqlDb, err := sqltrace.Open("pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		db, err := Open(postgres.New(postgres.Config{Conn: sqlDb}), &gorm.Config{})
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -315,7 +333,12 @@ func TestAnalyticsSettings(t *testing.T) {
 
 func TestContext(t *testing.T) {
 	sqltrace.Register("pgx", &stdlib.Driver{})
-	db, err := Open(postgresDialector, "pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	sqlDb, err := sqltrace.Open("pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db, err := Open(postgres.New(postgres.Config{Conn: sqlDb}), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}

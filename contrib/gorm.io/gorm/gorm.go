@@ -8,11 +8,9 @@ package gorm
 
 import (
 	"context"
-	"database/sql"
 	"math"
 	"time"
 
-	sqltraced "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -29,14 +27,8 @@ const (
 
 // Open opens a new (traced) database connection. The used driver must be formerly registered
 // using (gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql).Register.
-func Open(getDialector func(db *sql.DB) gorm.Dialector, driverName, source string, opts ...Option) (*gorm.DB, error) {
-	sqldb, err := sqltraced.Open(driverName, source)
-	if err != nil {
-		return nil, err
-	}
-
-	dialector := getDialector(sqldb)
-	db, err := gorm.Open(dialector, &gorm.Config{})
+func Open(dialector gorm.Dialector, cfg *gorm.Config, opts ...Option) (*gorm.DB, error) {
+	db, err := gorm.Open(dialector, cfg)
 	if err != nil {
 		return db, err
 	}
