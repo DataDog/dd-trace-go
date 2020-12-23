@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-2020 Datadog, Inc.
 
-package chi
+package fiber
 
 import (
 	"math"
@@ -15,25 +15,26 @@ import (
 
 type config struct {
 	serviceName   string
+	isStatusError func(statusCode int) bool
 	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
 	analyticsRate float64
-	isStatusError func(statusCode int) bool
 }
 
 // Option represents an option that can be passed to NewRouter.
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = "chi.router"
+	cfg.serviceName = "fiber"
+	cfg.isStatusError = isServerError
+
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc
 	}
-	if internal.BoolEnv("DD_TRACE_CHI_ANALYTICS_ENABLED", false) {
+	if internal.BoolEnv("DD_TRACE_FIBER_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.isStatusError = isServerError
 }
 
 // WithServiceName sets the given service name for the router.
@@ -74,8 +75,7 @@ func WithAnalyticsRate(rate float64) Option {
 	}
 }
 
-// WithStatusCheck specifies a function fn which reports whether the passed
-// statusCode should be considered an error.
+// WithStatusCheck allow setting of a function to tell whether a status code is an error
 func WithStatusCheck(fn func(statusCode int) bool) Option {
 	return func(cfg *config) {
 		cfg.isStatusError = fn

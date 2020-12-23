@@ -20,6 +20,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
+const (
+	// headerComputedTopLevel specifies that the client has marked top-level spans, when set.
+	// Any non-empty value will mean 'yes'.
+	headerComputedTopLevel = "Datadog-Client-Computed-Top-Level"
+)
+
 var defaultClient = &http.Client{
 	// We copy the transport to avoid using the default one, as it might be
 	// augmented with tracing and we don't want these calls to be recorded.
@@ -114,6 +120,7 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	}
 	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
 	req.Header.Set("Content-Length", strconv.Itoa(p.size()))
+	req.Header.Set(headerComputedTopLevel, "yes")
 	response, err := t.client.Do(req)
 	if err != nil {
 		return nil, err

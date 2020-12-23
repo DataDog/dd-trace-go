@@ -26,10 +26,6 @@ const maxRetries = 2
 var errOldAgent = errors.New("Datadog Agent is not accepting profiles. Agent-based profiling deployments " +
 	"require Datadog Agent >= 7.20")
 
-var httpClient = &http.Client{
-	Timeout: 5 * time.Second,
-}
-
 // backoffDuration calculates the backoff duration given an attempt number and max duration
 func backoffDuration(attempt int, max time.Duration) time.Duration {
 	// https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
@@ -99,7 +95,7 @@ func (p *profiler) doRequest(bat batch) error {
 	}
 	req.Header.Set("Content-Type", contentType)
 
-	resp, err := httpClient.Do(req)
+	resp, err := p.cfg.httpClient.Do(req)
 	if err != nil {
 		return &retriableError{err}
 	}

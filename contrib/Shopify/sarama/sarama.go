@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/Shopify/sarama"
 )
@@ -176,7 +177,9 @@ func (p *asyncProducer) Errors() <-chan *sarama.ProducerError {
 
 // WrapAsyncProducer wraps a sarama.AsyncProducer so that all produced messages
 // are traced. It requires the underlying sarama Config so we can know whether
-// or not sucesses will be returned.
+// or not successes will be returned. Tracing requires at least sarama.V0_11_0_0
+// version which is the first version that supports headers. Only spans of
+// successfully published messages have partition and offset tags set.
 func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts ...Option) sarama.AsyncProducer {
 	cfg := new(config)
 	defaults(cfg)
@@ -185,6 +188,9 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	}
 	if saramaConfig == nil {
 		saramaConfig = sarama.NewConfig()
+		saramaConfig.Version = sarama.V0_11_0_0
+	} else if !saramaConfig.Version.IsAtLeast(sarama.V0_11_0_0) {
+		log.Error("Tracing Sarama async producer requires at least sarama.V0_11_0_0 version")
 	}
 	wrapped := &asyncProducer{
 		AsyncProducer: p,
@@ -193,37 +199,34 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 		errors:        make(chan *sarama.ProducerError),
 	}
 	go func() {
-		type spanKey struct {
-			topic     string
-			partition int32
-			offset    int64
-		}
-		spans := make(map[spanKey]ddtrace.Span)
+		spans := make(map[uint64]ddtrace.Span)
 		defer close(wrapped.successes)
 		defer close(wrapped.errors)
 		for {
 			select {
 			case msg := <-wrapped.input:
-				key := spanKey{msg.Topic, msg.Partition, msg.Offset}
 				span := startProducerSpan(cfg, saramaConfig.Version, msg)
 				p.Input() <- msg
 				if saramaConfig.Producer.Return.Successes {
-					spans[key] = span
+					spanID := span.Context().SpanID()
+					spans[spanID] = span
 				} else {
 					// if returning successes isn't enabled, we just finish the
 					// span right away because there's no way to know when it will
 					// be done
-					finishProducerSpan(span, key.partition, key.offset, nil)
+					span.Finish()
 				}
 			case msg, ok := <-p.Successes():
 				if !ok {
 					// producer was closed, so exit
 					return
 				}
-				key := spanKey{msg.Topic, msg.Partition, msg.Offset}
-				if span, ok := spans[key]; ok {
-					delete(spans, key)
-					finishProducerSpan(span, msg.Partition, msg.Offset, nil)
+				if spanctx, spanFound := getSpanContext(msg); spanFound {
+					spanID := spanctx.SpanID()
+					if span, ok := spans[spanID]; ok {
+						delete(spans, spanID)
+						finishProducerSpan(span, msg.Partition, msg.Offset, nil)
+					}
 				}
 				wrapped.successes <- msg
 			case err, ok := <-p.Errors():
@@ -231,10 +234,12 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 					// producer was closed
 					return
 				}
-				key := spanKey{err.Msg.Topic, err.Msg.Partition, err.Msg.Offset}
-				if span, ok := spans[key]; ok {
-					delete(spans, key)
-					finishProducerSpan(span, err.Msg.Partition, err.Msg.Offset, err.Err)
+				if spanctx, spanFound := getSpanContext(err.Msg); spanFound {
+					spanID := spanctx.SpanID()
+					if span, ok := spans[spanID]; ok {
+						delete(spans, spanID)
+						span.Finish(tracer.WithError(err))
+					}
 				}
 				wrapped.errors <- err
 			}
@@ -269,4 +274,14 @@ func finishProducerSpan(span ddtrace.Span, partition int32, offset int64, err er
 	span.SetTag("partition", partition)
 	span.SetTag("offset", offset)
 	span.Finish(tracer.WithError(err))
+}
+
+func getSpanContext(msg *sarama.ProducerMessage) (ddtrace.SpanContext, bool) {
+	carrier := NewProducerMessageCarrier(msg)
+	spanctx, err := tracer.Extract(carrier)
+	if err != nil {
+		return nil, false
+	}
+
+	return spanctx, true
 }

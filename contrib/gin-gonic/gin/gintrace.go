@@ -19,16 +19,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Middleware returns middleware that will trace incoming requests.
+// Middleware returns middleware that will trace incoming requests. If service is empty then the
+// default service name will be used.
 func Middleware(service string, opts ...Option) gin.HandlerFunc {
-	cfg := newConfig()
+	cfg := newConfig(service)
 	for _, opt := range opts {
 		opt(cfg)
 	}
 	return func(c *gin.Context) {
 		resource := cfg.resourceNamer(c)
 		opts := []ddtrace.StartSpanOption{
-			tracer.ServiceName(service),
+			tracer.ServiceName(cfg.serviceName),
 			tracer.ResourceName(resource),
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.Tag(ext.HTTPMethod, c.Request.Method),

@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"math"
 	"net"
 	"net/http"
@@ -355,6 +356,18 @@ func WithHTTPClient(client *http.Client) StartOption {
 	return func(c *config) {
 		c.httpClient = client
 	}
+}
+
+// WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
+func WithUDS(socketPath string) StartOption {
+	return WithHTTPClient(&http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", socketPath)
+			},
+		},
+		Timeout: defaultHTTPTimeout,
+	})
 }
 
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled

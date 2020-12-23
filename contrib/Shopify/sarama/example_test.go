@@ -15,6 +15,7 @@ import (
 
 func Example_asyncProducer() {
 	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0 // minimum version that supports headers which are required for tracing
 
 	producer, err := sarama.NewAsyncProducer([]string{"localhost:9092"}, cfg)
 	if err != nil {
