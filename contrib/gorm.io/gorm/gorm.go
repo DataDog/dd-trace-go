@@ -21,7 +21,6 @@ import (
 type key string
 
 const (
-	gormConfigKey        = key("dd-trace-go:config")
 	gormSpanStartTimeKey = key("dd-trace-go:span")
 )
 
@@ -33,32 +32,21 @@ func Open(dialector gorm.Dialector, cfg *gorm.Config, opts ...Option) (*gorm.DB,
 		return db, err
 	}
 
-	return WithCallbacks(db, opts...)
+	return withCallbacks(db, opts...)
 }
 
-// WithCallbacks registers callbacks to the gorm.DB for tracing.
-// It should be called once, after opening the db.
-// The callbacks are triggered by Create, Update, Delete,
-// Query and RowQuery operations.
-func WithCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
-	afterFunc := func(operationName string) func(*gorm.DB) {
-		return func(db *gorm.DB) {
-			after(db, operationName)
-		}
-	}
-
+func withCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
 
-	ctx := context.Background()
-	if db.Statement != nil && db.Statement.Context != nil {
-		ctx = db.Statement.Context
+	afterFunc := func(operationName string) func(*gorm.DB) {
+		return func(db *gorm.DB) {
+			after(db, operationName, cfg)
+		}
 	}
-
-	db = db.WithContext(context.WithValue(ctx, gormConfigKey, cfg))
 
 	cb := db.Callback()
 	err := cb.Create().Before("gorm:create").Register("dd-trace-go:before_create", before)
@@ -105,49 +93,18 @@ func WithCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 	return db, nil
 }
 
-// WithContext attaches the specified context to the given db. The context will
-// be used as a basis for creating new spans. An example use case is providing
-// a context which contains a span to be used as a parent.
-func WithContext(ctx context.Context, db *gorm.DB) *gorm.DB {
-	if ctx == nil {
-		return db
-	}
-	if db.Statement != nil && db.Statement.Context != nil {
-		ctx = context.WithValue(ctx, gormConfigKey, db.Statement.Context.Value(gormConfigKey))
-	}
-
-	return db.WithContext(ctx)
-}
-
-// ContextFromDB returns any context previously attached to db using WithContext,
-// otherwise returning context.Background.
-func ContextFromDB(db *gorm.DB) context.Context {
-	if db.Statement != nil {
-		if v, ok := db.Statement.Context.(context.Context); ok {
-			return v
-		}
-	}
-
-	return context.Background()
-}
-
 func before(scope *gorm.DB) {
 	if scope.Statement != nil && scope.Statement.Context != nil {
 		scope.Statement.Context = context.WithValue(scope.Statement.Context, gormSpanStartTimeKey, time.Now())
 	}
 }
 
-func after(db *gorm.DB, operationName string) {
+func after(db *gorm.DB, operationName string, cfg *config) {
+	if db.Statement == nil || db.Statement.Context == nil {
+		return
+	}
+
 	ctx := db.Statement.Context
-	if ctx == nil {
-		return
-	}
-
-	cfg, ok := ctx.Value(gormConfigKey).(*config)
-	if !ok {
-		return
-	}
-
 	t, ok := ctx.Value(gormSpanStartTimeKey).(time.Time)
 	if !ok {
 		return

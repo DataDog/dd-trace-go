@@ -145,7 +145,7 @@ func TestCallbacks(t *testing.T) {
 			tracer.SpanType(ext.SpanTypeWeb),
 		)
 
-		db = WithContext(ctx, db)
+		db = db.WithContext(ctx)
 		db.Create(&Product{Code: "L1212", Price: 1000})
 
 		parentSpan.Finish()
@@ -167,7 +167,7 @@ func TestCallbacks(t *testing.T) {
 			tracer.SpanType(ext.SpanTypeWeb),
 		)
 
-		db = WithContext(ctx, db)
+		db = db.WithContext(ctx)
 		var product Product
 		db.First(&product, "code = ?", "L1212")
 
@@ -190,7 +190,7 @@ func TestCallbacks(t *testing.T) {
 			tracer.SpanType(ext.SpanTypeWeb),
 		)
 
-		db = WithContext(ctx, db)
+		db = db.WithContext(ctx)
 		var product Product
 		db.First(&product, "code = ?", "L1212")
 		db.Model(&product).Update("Price", 2000)
@@ -214,7 +214,7 @@ func TestCallbacks(t *testing.T) {
 			tracer.SpanType(ext.SpanTypeWeb),
 		)
 
-		db = WithContext(ctx, db)
+		db = db.WithContext(ctx)
 		var product Product
 		db.First(&product, "code = ?", "L1212")
 		db.Delete(&product)
@@ -264,7 +264,7 @@ func TestAnalyticsSettings(t *testing.T) {
 			log.Fatal(err)
 		}
 
-		db = WithContext(ctx, db)
+		db = db.WithContext(ctx)
 		db.Create(&Product{Code: "L1212", Price: 1000})
 
 		parentSpan.Finish()
@@ -337,8 +337,8 @@ func TestContext(t *testing.T) {
 
 		type key string
 		testCtx := context.WithValue(context.Background(), key(contextKey), true)
-		db := WithContext(testCtx, db)
-		ctx := ContextFromDB(db)
+		db := db.WithContext(testCtx)
+		ctx := db.Statement.Context
 		assert.Equal(t, testCtx.Value(key(contextKey)), ctx.Value(key(contextKey)))
 	})
 }
