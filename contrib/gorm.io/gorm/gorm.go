@@ -31,7 +31,6 @@ func Open(dialector gorm.Dialector, cfg *gorm.Config, opts ...Option) (*gorm.DB,
 	if err != nil {
 		return db, err
 	}
-
 	return withCallbacks(db, opts...)
 }
 
@@ -89,7 +88,6 @@ func withCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 	if err != nil {
 		return db, err
 	}
-
 	return db, nil
 }
 

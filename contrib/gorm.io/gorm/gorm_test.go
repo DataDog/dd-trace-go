@@ -12,8 +12,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jackc/pgx/v4/stdlib"
-
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -22,8 +20,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/jackc/pgx/v4/stdlib"
 	_ "github.com/lib/pq"
-
 	mysqlgorm "gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -33,8 +31,8 @@ import (
 
 // tableName holds the SQL table that these tests will be run against. It must be unique cross-repo.
 const (
-	tableName = "testgorm"
-	pgConnString = "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
+	tableName       = "testgorm"
+	pgConnString    = "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
 	mysqlConnString = "test:test@tcp(127.0.0.1:3306)/test"
 )
 
@@ -232,7 +230,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.delete", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(
-			`UPDATE "products" SET "deleted_at"=$1 WHERE "products"."id" = $2`,
+			`UPDATE "products" SET "deleted_at"=$1 WHERE "products"."id" = $2 AND "products"."deleted_at" IS NULL`,
 			span.Tag(ext.ResourceName))
 	})
 }

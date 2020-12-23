@@ -8,10 +8,10 @@ package gorm_test
 import (
 	"log"
 
+	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	gormtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorm.io/gorm"
 
 	"github.com/jackc/pgx/v4/stdlib"
-	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
