@@ -34,11 +34,11 @@ var testBatch = batch{
 	host:  "my-host",
 	profiles: []*profile{
 		{
-			name: "cpu",
+			name: CPUProfile.Filename(),
 			data: []byte("my-cpu-profile"),
 		},
 		{
-			name: "heap",
+			name: HeapProfile.Filename(),
 			data: []byte("my-heap-profile"),
 		},
 	},
