@@ -66,7 +66,7 @@ func TestTrace200(t *testing.T) {
 		assert.Equal("/user/123", span.Tag(ext.HTTPURL))
 	}
 
-	t.Run("response written", func(t *testing.T) {
+	t.Run("response", func(t *testing.T) {
 		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -80,7 +80,7 @@ func TestTrace200(t *testing.T) {
 		assertDoRequest(assert, mt, router)
 	})
 
-	t.Run("no response written", func(t *testing.T) {
+	t.Run("no-response", func(t *testing.T) {
 		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
