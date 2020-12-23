@@ -32,7 +32,11 @@ import (
 )
 
 // tableName holds the SQL table that these tests will be run against. It must be unique cross-repo.
-const tableName = "testgorm"
+const (
+	tableName = "testgorm"
+	pgConnString = "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
+	mysqlConnString = "test:test@tcp(127.0.0.1:3306)/test"
+)
 
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
@@ -46,7 +50,7 @@ func TestMain(m *testing.M) {
 
 func TestMySQL(t *testing.T) {
 	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("mysql-test"))
-	sqlDb, err := sqltrace.Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")
+	sqlDb, err := sqltrace.Open("mysql", mysqlConnString)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -80,7 +84,7 @@ func TestMySQL(t *testing.T) {
 
 func TestPostgres(t *testing.T) {
 	sqltrace.Register("pgx", &stdlib.Driver{})
-	sqlDb, err := sqltrace.Open("pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	sqlDb, err := sqltrace.Open("pgx", pgConnString)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -124,7 +128,7 @@ func TestCallbacks(t *testing.T) {
 	defer mt.Stop()
 
 	sqltrace.Register("pgx", &stdlib.Driver{})
-	sqlDb, err := sqltrace.Open("pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	sqlDb, err := sqltrace.Open("pgx", pgConnString)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -228,7 +232,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.delete", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(
-			`UPDATE "products" SET "deleted_at"=$1 WHERE "products"."id" = $2 AND "products"."deleted_at" IS NULL`,
+			`UPDATE "products" SET "deleted_at"=$1 WHERE "products"."id" = $2`,
 			span.Tag(ext.ResourceName))
 	})
 }
@@ -238,7 +242,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	defer mt.Stop()
 
 	sqltrace.Register("pgx", &stdlib.Driver{})
-	sqlDb, err := sqltrace.Open("pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	sqlDb, err := sqltrace.Open("pgx", pgConnString)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -322,7 +326,7 @@ func TestAnalyticsSettings(t *testing.T) {
 
 func TestContext(t *testing.T) {
 	sqltrace.Register("pgx", &stdlib.Driver{})
-	sqlDb, err := sqltrace.Open("pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	sqlDb, err := sqltrace.Open("pgx", pgConnString)
 	if err != nil {
 		log.Fatal(err)
 	}
