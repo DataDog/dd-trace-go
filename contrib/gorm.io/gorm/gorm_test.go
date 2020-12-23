@@ -228,7 +228,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.delete", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(
-			`UPDATE "products" SET "deleted_at"=$1 WHERE "products"."id" = $2`,
+			`UPDATE "products" SET "deleted_at"=$1 WHERE "products"."id" = $2 AND "products"."deleted_at" IS NULL`,
 			span.Tag(ext.ResourceName))
 	})
 }
