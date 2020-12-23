@@ -254,26 +254,15 @@ func TestAnalyticsSettings(t *testing.T) {
 	}
 
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
-		sqltrace.Register("pgx", &stdlib.Driver{})
-		sqlDb, err := sqltrace.Open("pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		db, err := Open(postgres.New(postgres.Config{Conn: sqlDb}), &gorm.Config{})
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = db.AutoMigrate(&Product{})
-		if err != nil {
-			log.Fatal(err)
-		}
-
 		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 			tracer.ServiceName("fake-http-server"),
 			tracer.SpanType(ext.SpanTypeWeb),
 		)
+
+		db, err := Open(postgres.New(postgres.Config{Conn: sqlDb}), &gorm.Config{}, opts...)
+		if err != nil {
+			log.Fatal(err)
+		}
 
 		db = WithContext(ctx, db)
 		db.Create(&Product{Code: "L1212", Price: 1000})
