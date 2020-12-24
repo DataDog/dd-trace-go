@@ -344,6 +344,26 @@ func TestSpanErrorNil(t *testing.T) {
 	assert.Equal(nMeta, len(span.Meta))
 }
 
+func TestUniqueTagKeys(t *testing.T) {
+	assert := assert.New(t)
+	span := newBasicSpan("web.request")
+
+	//check to see if setMeta correctly wipes out a metric tag
+	span.SetTag("foo.bar", 12)
+	span.SetTag("foo.bar", "val")
+
+	assert.Equal(0.0, span.Metrics["foo.bar"])
+	assert.Equal("val", span.Meta["foo.bar"])
+
+	//check to see if setMetric correctly wipes out a meta tag
+	span.SetTag("foo.bar", "val")
+	span.SetTag("foo.bar", 12)
+
+	assert.Equal(12.0, span.Metrics["foo.bar"])
+	assert.Equal("", span.Meta["foo.bar"])
+
+}
+
 // Prior to a bug fix, this failed when running `go test -race`
 func TestSpanModifyWhileFlushing(t *testing.T) {
 	tracer, _, _, stop := startTestTracer(t)
