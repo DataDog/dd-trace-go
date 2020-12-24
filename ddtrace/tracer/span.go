@@ -118,7 +118,11 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMetric(key, v)
 		return
 	}
-	// not numeric, not a string, not a bool, and not an error
+	if v, ok := value.(fmt.Stringer); ok {
+		s.setMeta(key, v.String())
+		return
+	}
+	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
 	s.setMeta(key, fmt.Sprint(value))
 }
 
