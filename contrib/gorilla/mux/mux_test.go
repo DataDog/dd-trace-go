@@ -199,6 +199,40 @@ func TestAnalyticsSettings(t *testing.T) {
 	})
 }
 
+func TestIgnoreRequestOption(t *testing.T) {
+	tests := []struct {
+		url       string
+		spanCount int
+	}{
+		{
+			url:       "/skip",
+			spanCount: 0,
+		},
+		{
+			url:       "/200",
+			spanCount: 1,
+		},
+	}
+	mux := NewRouter(WithIgnoreRequest(func(req *http.Request) bool {
+		return req.URL.Path == "/skip"
+	}))
+	mux.Handle("/skip", okHandler()).Host("localhost")
+	mux.Handle("/200", okHandler()).Host("localhost")
+
+	for _, test := range tests {
+		t.Run(test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, test.spanCount, len(spans))
+		})
+	}
+}
+
 func TestResourceNamer(t *testing.T) {
 	staticName := "static resource name"
 	staticNamer := func(*Router, *http.Request) string {

@@ -63,7 +63,7 @@ func startSpanFromContext(ctx context.Context, method, service string, rate floa
 	return tracer.StartSpanFromContext(ctx, "grpc.server", opts...)
 }
 
-// UnaryClientInterceptor will add tracing to a gprc client.
+// UnaryClientInterceptor will add tracing to a grpc client.
 func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientInterceptor {
 	cfg := new(interceptorConfig)
 	defaults(cfg)
