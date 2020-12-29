@@ -541,6 +541,17 @@ func BenchmarkSetTagString(b *testing.B) {
 	}
 }
 
+func BenchmarkSetTagStringer(b *testing.B) {
+	span := newBasicSpan("bench.span")
+	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	value := &stringer{}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		k := string(keys[i%len(keys)])
+		span.SetTag(k, value)
+	}
+}
+
 func BenchmarkSetTagField(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := []string{ext.ServiceName, ext.ResourceName, ext.SpanType}
@@ -555,3 +566,9 @@ func BenchmarkSetTagField(b *testing.B) {
 type boomError struct{}
 
 func (e *boomError) Error() string { return "boom" }
+
+type stringer struct{}
+
+func (s *stringer) String() string {
+	return "string"
+}
