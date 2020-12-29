@@ -200,6 +200,7 @@ func (s *span) setMeta(key, v string) {
 	if s.Meta == nil {
 		s.Meta = make(map[string]string, 1)
 	}
+	delete(s.Metrics, key)
 	switch key {
 	case ext.SpanName:
 		s.Name = v
@@ -246,6 +247,7 @@ func (s *span) setMetric(key string, v float64) {
 	if s.Metrics == nil {
 		s.Metrics = make(map[string]float64, 1)
 	}
+	delete(s.Meta, key)
 	switch key {
 	case ext.SamplingPriority:
 		// setting sampling priority per spec
