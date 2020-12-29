@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-2020 Datadog, Inc.
+
 package profiler
 
 import (
@@ -16,34 +21,99 @@ func newTestMetrics(now time.Time) *metrics {
 	return m
 }
 
+func valsRing(vals ...time.Duration) [256]uint64 {
+	var ring [256]uint64
+	for i := 0; i < len(vals) && i < 256; i++ {
+		ring[i] = uint64(vals[i])
+	}
+	return ring
+}
+
+func timeRing(vals ...time.Time) [256]uint64 {
+	var ring [256]uint64
+	for i := 0; i < len(vals) && i < 256; i++ {
+		ring[i] = uint64(vals[i].UnixNano())
+	}
+	return ring
+}
+
 func TestMetricsCompute(t *testing.T) {
+	now := now()
 	prev := runtime.MemStats{
-		TotalAlloc: 100,
-		Mallocs:    10,
-		Frees:      2,
-		HeapAlloc:  75,
+		TotalAlloc:   100,
+		Mallocs:      10,
+		Frees:        2,
+		HeapAlloc:    75,
+		NumGC:        1,
+		PauseTotalNs: uint64(2 * time.Second),
+		PauseEnd:     timeRing(now.Add(-11 * time.Second)),
+		PauseNs:      valsRing(2 * time.Second),
 	}
 	curr := runtime.MemStats{
-		TotalAlloc: 150,
-		Mallocs:    14,
-		Frees:      30,
-		HeapAlloc:  50,
+		TotalAlloc:   150,
+		Mallocs:      14,
+		Frees:        30,
+		HeapAlloc:    50,
+		NumGC:        3,
+		PauseTotalNs: uint64(3 * time.Second),
+		PauseEnd:     timeRing(now.Add(-11*time.Second), now.Add(-9*time.Second), now.Add(-time.Second)),
+		PauseNs:      valsRing(time.Second, time.Second/2, time.Second/2),
 	}
 
-	points := computeMetrics(&prev, &curr, 10*time.Second)
-	assert.Equal(t, []point{
-		{metric: "go_alloc_bytes_per_sec", value: 5},
-		{metric: "go_allocs_per_sec", value: 0.4},
-		{metric: "go_frees_per_sec", value: 2.8},
-		{metric: "go_heap_growth_bytes_per_sec", value: -2.5},
-	}, points)
+	assert.Equal(t,
+		[]point{
+			{metric: "go_alloc_bytes_per_sec", value: 5},
+			{metric: "go_allocs_per_sec", value: 0.4},
+			{metric: "go_frees_per_sec", value: 2.8},
+			{metric: "go_heap_growth_bytes_per_sec", value: -2.5},
+			{metric: "go_gcs_per_sec", value: 0.2},
+			{metric: "go_gc_pause_time", value: 0.1}, // % of time spent paused
+			{metric: "go_max_gc_pause_time", value: float64(time.Second / 2)},
+		},
+		computeMetrics(&prev, &curr, 10*time.Second, now))
 
-	assert.Equal(t, []point{
-		{metric: "go_alloc_bytes_per_sec", value: 0},
-		{metric: "go_allocs_per_sec", value: 0},
-		{metric: "go_frees_per_sec", value: 0},
-		{metric: "go_heap_growth_bytes_per_sec", value: 0},
-	}, computeMetrics(&prev, &prev, 10*time.Second), "identical memstats")
+	assert.Equal(t,
+		[]point{
+			{metric: "go_alloc_bytes_per_sec", value: 0},
+			{metric: "go_allocs_per_sec", value: 0},
+			{metric: "go_frees_per_sec", value: 0},
+			{metric: "go_heap_growth_bytes_per_sec", value: 0},
+			{metric: "go_gcs_per_sec", value: 0},
+			{metric: "go_gc_pause_time", value: 0},
+			{metric: "go_max_gc_pause_time", value: 0},
+		},
+		computeMetrics(&prev, &prev, 10*time.Second, now),
+		"identical memstats")
+}
+
+func TestMetricsMaxPauseNs(t *testing.T) {
+	start := now()
+
+	assert.Equal(t, uint64(0),
+		maxPauseNs(&runtime.MemStats{}, start),
+		"max is 0 for empty pause buffers")
+
+	assert.Equal(t, uint64(time.Second),
+		maxPauseNs(
+			&runtime.MemStats{
+				NumGC:    3,
+				PauseNs:  valsRing(time.Minute, time.Second, time.Millisecond),
+				PauseEnd: timeRing(start.Add(-1), start, start.Add(1)),
+			},
+			start,
+		),
+		"only values in period are considered")
+
+	assert.Equal(t, uint64(time.Minute),
+		maxPauseNs(
+			&runtime.MemStats{
+				NumGC:    1000,
+				PauseNs:  valsRing(time.Second, time.Minute, time.Millisecond),
+				PauseEnd: timeRing(),
+			},
+			time.Unix(0, 0),
+		),
+		"should terminate if all values are in period")
 }
 
 func TestMetricsReport(t *testing.T) {
@@ -52,8 +122,13 @@ func TestMetricsReport(t *testing.T) {
 	var buf bytes.Buffer
 	m := newTestMetrics(now)
 
-	m.compute = func(prev *runtime.MemStats, curr *runtime.MemStats, periodInSec time.Duration) []point {
-		return []point{{metric: "metric_name", value: 1.1}}
+	m.compute = func(_ *runtime.MemStats, _ *runtime.MemStats, _ time.Duration, _ time.Time) []point {
+		return []point{
+			{metric: "metric_name", value: 1.1},
+			{metric: "does_not_include_NaN", value: math.NaN()},
+			{metric: "does_not_include_+Inf", value: math.Inf(1)},
+			{metric: "does_not_include_-Inf", value: math.Inf(-1)},
+		}
 	}
 
 	err = m.report(now.Add(time.Second), &buf)
@@ -78,18 +153,4 @@ func TestMetricsCollectFrequency(t *testing.T) {
 	err = m.report(now.Add(time.Second), &buf)
 	assert.NoError(t, err, "one second between calls should work")
 	assert.NotEmpty(t, buf)
-}
-
-func TestMetricsRemoveInvalid(t *testing.T) {
-	assert.Equal(t,
-		[]point{
-			{metric: "bar", value: 1.0},
-		},
-		removeInvalid(
-			[]point{
-				{metric: "foo", value: math.NaN()},
-				{metric: "bar", value: 1.0},
-				{metric: "fiz", value: math.Inf(1)},
-				{metric: "buz", value: math.Inf(-1)},
-			}))
 }
