@@ -165,7 +165,7 @@ func TestProfilerInternal(t *testing.T) {
 		assert.EqualValues(1, startCPU)
 		assert.EqualValues(1, stopCPU)
 
-		assert.Equal(2, len(bat.profiles))
+		assert.Equal(3, len(bat.profiles))
 
 		p.exit <- struct{}{}
 		<-wait
