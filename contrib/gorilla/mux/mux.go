@@ -94,6 +94,10 @@ func NewRouter(opts ...RouterOption) *Router {
 // We only need to rewrite this function to be able to trace
 // all the incoming requests to the underlying multiplexer
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if r.config.ignoreRequest(req) {
+		r.Router.ServeHTTP(w, req)
+		return
+	}
 	var (
 		match    mux.RouteMatch
 		spanopts []ddtrace.StartSpanOption
