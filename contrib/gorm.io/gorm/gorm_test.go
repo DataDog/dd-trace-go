@@ -22,11 +22,10 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v4/stdlib"
 	_ "github.com/lib/pq"
+	"github.com/stretchr/testify/assert"
 	mysqlgorm "gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-
-	"github.com/stretchr/testify/assert"
 )
 
 // tableName holds the SQL table that these tests will be run against. It must be unique cross-repo.
