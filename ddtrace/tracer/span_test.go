@@ -352,7 +352,7 @@ func TestUniqueTagKeys(t *testing.T) {
 	span.SetTag("foo.bar", 12)
 	span.SetTag("foo.bar", "val")
 
-	assert.Equal(0.0, span.Metrics["foo.bar"])
+	assert.NotContains(span.Metrics, "foo.bar")
 	assert.Equal("val", span.Meta["foo.bar"])
 
 	//check to see if setMetric correctly wipes out a meta tag
@@ -360,8 +360,7 @@ func TestUniqueTagKeys(t *testing.T) {
 	span.SetTag("foo.bar", 12)
 
 	assert.Equal(12.0, span.Metrics["foo.bar"])
-	assert.Equal("", span.Meta["foo.bar"])
-
+	assert.NotContains(span.Meta, "foo.bar")
 }
 
 // Prior to a bug fix, this failed when running `go test -race`
