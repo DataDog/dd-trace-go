@@ -48,17 +48,22 @@ type Tracer interface {
 // to activate the mock tracer. When your test runs, use the returned
 // interface to query the tracer's state.
 func Start() Tracer {
-	var t mocktracer
-	t.openSpans = make(map[uint64]Span)
-	internal.SetGlobalTracer(&t)
+	t := newMockTracer()
+	internal.SetGlobalTracer(t)
 	internal.Testing = true
-	return &t
+	return t
 }
 
 type mocktracer struct {
 	sync.RWMutex  // guards below spans
 	finishedSpans []Span
 	openSpans     map[uint64]Span
+}
+
+func newMockTracer() *mocktracer {
+	var t mocktracer
+	t.openSpans = make(map[uint64]Span)
+	return &t
 }
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
@@ -75,8 +80,8 @@ func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOp
 	span := newSpan(t, operationName, &cfg)
 
 	t.Lock()
-	defer t.Unlock()
 	t.openSpans[span.SpanID()] = span
+	t.Unlock()
 
 	return span
 }
@@ -101,7 +106,7 @@ func (t *mocktracer) Reset() {
 	t.Lock()
 	defer t.Unlock()
 	for k := range t.openSpans {
-	    delete(t.openSpans, k)
+		delete(t.openSpans, k)
 	}
 	t.finishedSpans = nil
 }

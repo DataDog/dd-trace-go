@@ -193,7 +193,7 @@ func TestSpanFinishTwice(t *testing.T) {
 
 func TestSpanWithID(t *testing.T) {
 	spanID := uint64(123456789)
-	span := new(mocktracer).StartSpan("", tracer.WithSpanID(spanID))
+	span := newMockTracer().StartSpan("", tracer.WithSpanID(spanID))
 
 	assert := assert.New(t)
 	assert.Equal(spanID, span.Context().SpanID())
