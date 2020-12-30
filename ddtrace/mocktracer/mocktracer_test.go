@@ -116,12 +116,13 @@ func TestTracerReset(t *testing.T) {
 	assert := assert.New(t)
 	mt := newMockTracer()
 
-	span := mt.StartSpan("db.query")
-	assert.Len(mt.openSpans, 1)
+	span := mt.StartSpan("parent")
+	_ = mt.StartSpan("child", tracer.ChildOf(span.Context()))
+	assert.Len(mt.openSpans, 2)
 
 	span.Finish()
 	assert.Len(mt.finishedSpans, 1)
-	assert.Len(mt.openSpans, 0)
+	assert.Len(mt.openSpans, 1)
 
 	mt.Reset()
 
