@@ -22,7 +22,7 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 		if err != nil {
 			return
 		}
-	case "postgres":
+	case "postgres", "pgx":
 		meta, err = parsePostgresDSN(dsn)
 		if err != nil {
 			return

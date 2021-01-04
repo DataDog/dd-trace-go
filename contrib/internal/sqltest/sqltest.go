@@ -102,7 +102,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 func testStatement(cfg *Config) func(*testing.T) {
 	query := "INSERT INTO %s(name) VALUES(%s)"
 	switch cfg.DriverName {
-	case "postgres":
+	case "postgres", "pgx":
 		query = fmt.Sprintf(query, cfg.TableName, "$1")
 	case "mysql":
 		query = fmt.Sprintf(query, cfg.TableName, "?")
