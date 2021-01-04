@@ -138,7 +138,10 @@ func newConfig(opts ...StartOption) *config {
 		c.version = ver
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		for _, tag := range strings.Split(v, ",") {
+		tags := strings.FieldsFunc(v, func(r rune) bool {
+			return r == ',' || r == ' '
+		})
+		for _, tag := range tags {
 			tag = strings.TrimSpace(tag)
 			if tag == "" {
 				continue
@@ -149,6 +152,9 @@ func newConfig(opts ...StartOption) *config {
 			case 1:
 				WithGlobalTag(k, "")(c)
 			case 2:
+				if len(k) == 0 {
+					continue
+				}
 				WithGlobalTag(k, strings.TrimSpace(kv[1]))(c)
 			}
 		}

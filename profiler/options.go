@@ -156,7 +156,10 @@ func defaultConfig() *config {
 		WithVersion(v)(&c)
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		for _, tag := range strings.Split(v, ",") {
+		tags := strings.FieldsFunc(v, func(r rune) bool {
+			return r == ',' || r == ' '
+		})
+		for _, tag := range tags {
 			tag = strings.TrimSpace(tag)
 			if tag == "" {
 				continue

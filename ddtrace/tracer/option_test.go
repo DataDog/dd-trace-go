@@ -249,6 +249,44 @@ func TestServiceName(t *testing.T) {
 	})
 }
 
+//DD_TAGS applicable only
+func TestTagSeparators(t *testing.T) {
+	t.Run("env-tags", func(t *testing.T) {
+		os.Setenv("DD_TAGS", "env:test,aKey:aVal bKey:bVal cKey:")
+		defer os.Unsetenv("DD_TAGS")
+
+		assert := assert.New(t)
+		c := newConfig()
+
+		assert.Equal("test", c.globalTags["env"])
+		assert.Equal("aVal", c.globalTags["aKey"])
+		assert.Equal("bVal", c.globalTags["bKey"])
+		assert.Equal("", c.globalTags["cKey"])
+
+		dVal, ok := c.globalTags["dKey"]
+		assert.False(ok)
+		assert.Equal(nil, dVal)
+	})
+
+	t.Run("env-tags", func(t *testing.T) {
+		os.Setenv("DD_TAGS", "env:test aKey:aVal     bKey :bVal dKey: dVal cKey:")
+		defer os.Unsetenv("DD_TAGS")
+
+		assert := assert.New(t)
+		c := newConfig()
+
+		assert.Equal("test", c.globalTags["env"])
+		assert.Equal("aVal", c.globalTags["aKey"])
+		assert.Equal("", c.globalTags["bKey"])
+		assert.NotContains(c.globalTags, "bVal")
+		assert.Equal("", c.globalTags["cKey"])
+
+		fVal, ok := c.globalTags["fKey"]
+		assert.False(ok)
+		assert.Equal(nil, fVal)
+	})
+}
+
 func TestVersionConfig(t *testing.T) {
 	t.Run("WithServiceVersion", func(t *testing.T) {
 		assert := assert.New(t)
