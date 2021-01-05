@@ -344,3 +344,53 @@ func TestCustomTags(t *testing.T) {
 		`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
 		span.Tag(ext.ResourceName))
 }
+
+func TestError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	sqltrace.Register("postgres", &pq.Driver{})
+	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	db.AutoMigrate(&Product{})
+
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, errExist bool, opts ...Option) {
+		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
+			tracer.ServiceName("fake-http-server"),
+			tracer.SpanType(ext.SpanTypeWeb),
+		)
+
+		db = WithContext(ctx, db)
+		db.Select(Product{Code: "L1212", Price: 1000})
+
+		parentSpan.Finish()
+
+		spans := mt.FinishedSpans()
+		assert.True(t, len(spans) > 3)
+		s := spans[len(spans)-3]
+		assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, true)
+	})
+
+	t.Run("errcheck", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		errFn := func(err error) bool {
+			if err == gorm.ErrRecordNotFound {
+				return false
+			}
+			return true
+		}
+		assertRate(t, mt, false, WithErrorCheck(errFn))
+	})
+}
