@@ -349,28 +349,23 @@ func TestError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	sqltrace.Register("postgres", &pq.Driver{})
-	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-	db.AutoMigrate(&Product{})
-
 	assertErrCheck := func(t *testing.T, mt mocktracer.Tracer, errExist bool, opts ...Option) {
-		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
-			tracer.ServiceName("fake-http-server"),
-			tracer.SpanType(ext.SpanTypeWeb),
-		)
+		sqltrace.Register("postgres", &pq.Driver{})
+		db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable", opts...)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+		db.AutoMigrate(&Product{})
 
-		db = WithContext(ctx, db)
-		db.Select(Product{Code: "L1212", Price: 1000})
-
-		parentSpan.Finish()
+		db = WithContext(context.Background(), db)
+		db.Find(&Product{}, Product{Code: "L1212", Price: 1000})
 
 		spans := mt.FinishedSpans()
-		assert.True(t, len(spans) > 3)
-		s := spans[len(spans)-3]
+		assert.True(t, len(spans) > 1)
+
+		// Get last span (gorm.db)
+		s := spans[len(spans)-1]
 		assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
 	}
 
