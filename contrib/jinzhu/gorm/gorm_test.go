@@ -357,7 +357,7 @@ func TestError(t *testing.T) {
 	defer db.Close()
 	db.AutoMigrate(&Product{})
 
-	assertRate := func(t *testing.T, mt mocktracer.Tracer, errExist bool, opts ...Option) {
+	assertErrCheck := func(t *testing.T, mt mocktracer.Tracer, errExist bool, opts ...Option) {
 		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 			tracer.ServiceName("fake-http-server"),
 			tracer.SpanType(ext.SpanTypeWeb),
@@ -378,7 +378,7 @@ func TestError(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, true)
+		assertErrCheck(t, mt, true)
 	})
 
 	t.Run("errcheck", func(t *testing.T) {
@@ -391,6 +391,6 @@ func TestError(t *testing.T) {
 			}
 			return true
 		}
-		assertRate(t, mt, false, WithErrorCheck(errFn))
+		assertErrCheck(t, mt, false, WithErrorCheck(errFn))
 	})
 }
