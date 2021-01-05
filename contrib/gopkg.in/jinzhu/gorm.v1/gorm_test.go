@@ -359,7 +359,7 @@ func TestError(t *testing.T) {
 		db.AutoMigrate(&Product{})
 
 		db = WithContext(context.Background(), db)
-		db.Find(&Product{}, Product{Code: "L1212", Price: 1000})
+		db.Find(&Product{}, Product{Code: "L1210", Price: 2000})
 
 		spans := mt.FinishedSpans()
 		assert.True(t, len(spans) > 1)
