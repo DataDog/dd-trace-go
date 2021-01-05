@@ -140,7 +140,7 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 		return "", nil, err
 	}
 	for _, p := range bat.profiles {
-		formFile, err := mw.CreateFormFile(fmt.Sprintf("data[%s.pprof]", p.name), "pprof-data")
+		formFile, err := mw.CreateFormFile(fmt.Sprintf("data[%s]", p.name), "pprof-data")
 		if err != nil {
 			return "", nil, err
 		}
