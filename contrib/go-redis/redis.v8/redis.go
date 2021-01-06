@@ -38,24 +38,8 @@ type params struct {
 // NewClient returns a new Client that is traced with the default tracer under
 // the service name "redis".
 func NewClient(opt *redis.Options, opts ...ClientOption) redis.UniversalClient {
-	cfg := new(clientConfig)
-	defaults(cfg)
-	for _, fn := range opts {
-		fn(cfg)
-	}
-	host, port, err := net.SplitHostPort(opt.Addr)
-	if err != nil {
-		host = opt.Addr
-		port = "6379"
-	}
-	params := &params{
-		host:   host,
-		port:   port,
-		db:     strconv.Itoa(opt.DB),
-		config: cfg,
-	}
 	client := redis.NewClient(opt)
-	client.AddHook(&datadogHook{params: params})
+	WrapClient(client, opts...)
 	return client
 }
 
