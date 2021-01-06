@@ -84,6 +84,61 @@ func TestClient(t *testing.T) {
 	assert.Equal("3", span.Tag("redis.args_length"))
 }
 
+func TestWrapClient(t *testing.T) {
+	simpleClientOpts := &redis.UniversalOptions{Addrs: []string{"127.0.0.1:6379"}}
+	simpleClient := redis.NewUniversalClient(simpleClientOpts)
+
+	failoverClientOpts := &redis.UniversalOptions{
+		MasterName: "leader.redis.host",
+		Addrs:      []string{"127.0.0.1:6379"}}
+	failoverClient := redis.NewUniversalClient(failoverClientOpts)
+
+	clusterClientOpts := &redis.UniversalOptions{Addrs: []string{
+		"127.0.0.1:6379",
+		"127.0.0.2:6379",
+	}}
+	clusterClient := redis.NewUniversalClient(clusterClientOpts)
+
+	testCases := []struct {
+		name   string
+		client redis.UniversalClient
+	}{
+		{
+			name:   "SimpleClient",
+			client: simpleClient,
+		},
+		{
+			name:   "FailoverClient",
+			client: failoverClient,
+		},
+		{
+			name:   "ClusterClient",
+			client: clusterClient,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			WrapClient(tc.client, WithServiceName("my-redis"))
+			tc.client.Set(ctx, "test_key", "test_value", 0)
+
+			spans := mt.FinishedSpans()
+			assert.Len(spans, 1)
+
+			span := spans[0]
+			assert.Equal("redis.command", span.OperationName())
+			assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
+			assert.Equal("my-redis", span.Tag(ext.ServiceName))
+			assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
+			assert.Equal("3", span.Tag("redis.args_length"))
+		})
+	}
+}
+
 func TestPipeline(t *testing.T) {
 	ctx := context.Background()
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}

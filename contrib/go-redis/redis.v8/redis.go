@@ -59,6 +59,42 @@ func NewClient(opt *redis.Options, opts ...ClientOption) redis.UniversalClient {
 	return client
 }
 
+type clientOptions interface {
+	Options() *redis.Options
+}
+
+// WrapClient adds a hook to the given client that traces with the default tracer under
+// the service name "redis".
+// Instances of Client and FailOverClient will have host, port and db tags added to traces.
+func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+
+	hookParams := &params{
+		config: cfg,
+	}
+
+	// Extract host and db options if we can.
+	// The Simple and Failover Clients contain the options we want to extract
+	// but the Cluster Client does not
+	if clientOptions, ok := client.(clientOptions); ok {
+		opt := clientOptions.Options()
+		host, port, err := net.SplitHostPort(opt.Addr)
+		if err != nil {
+			host = opt.Addr
+			port = "6379"
+		}
+		hookParams.host = host
+		hookParams.port = port
+		hookParams.db = strconv.Itoa(opt.DB)
+	}
+
+	client.AddHook(&datadogHook{params: hookParams})
+}
+
 func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
 	raw := cmd.String()
 	parts := strings.Split(raw, " ")
