@@ -204,6 +204,23 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal("false", span.Meta["some.other.bool"])
 }
 
+func TestSpanSetTagError(t *testing.T) {
+	t.Run("with-stack", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer := newTracer(withTransport(newDefaultTransport()))
+		span := tracer.StartSpan("pylons.request").(*span)
+		span.SetTag(ext.Error, errors.New("test error"))
+		assert.Contains(span.Meta, ext.ErrorStack)
+	})
+	t.Run("without-stack", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer := newTracer(withTransport(newDefaultTransport()), WithDebugStack(false))
+		span := tracer.StartSpan("pylons.request").(*span)
+		span.SetTag(ext.Error, errors.New("test error"))
+		assert.NotContains(span.Meta, ext.ErrorStack)
+	})
+}
+
 func TestSpanSetDatadogTags(t *testing.T) {
 	assert := assert.New(t)
 
