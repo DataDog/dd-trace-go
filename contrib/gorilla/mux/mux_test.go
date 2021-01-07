@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package mux
 
@@ -197,6 +197,40 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func TestIgnoreRequestOption(t *testing.T) {
+	tests := []struct {
+		url       string
+		spanCount int
+	}{
+		{
+			url:       "/skip",
+			spanCount: 0,
+		},
+		{
+			url:       "/200",
+			spanCount: 1,
+		},
+	}
+	mux := NewRouter(WithIgnoreRequest(func(req *http.Request) bool {
+		return req.URL.Path == "/skip"
+	}))
+	mux.Handle("/skip", okHandler()).Host("localhost")
+	mux.Handle("/200", okHandler()).Host("localhost")
+
+	for _, test := range tests {
+		t.Run(test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, test.spanCount, len(spans))
+		})
+	}
 }
 
 func TestResourceNamer(t *testing.T) {

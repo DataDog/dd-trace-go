@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package gorm provides helper functions for tracing the jinzhu/gorm package (https://github.com/jinzhu/gorm).
 package gorm
@@ -114,6 +114,9 @@ func after(scope *gorm.Scope, operationName string) {
 		return
 	}
 	t, ok := v.(time.Time)
+	if !ok {
+		return
+	}
 
 	opts := []ddtrace.StartSpanOption{
 		tracer.StartTime(t),

@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package mux provides tracing functions for tracing the gorilla/mux package (https://github.com/gorilla/mux).
 package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
@@ -94,6 +94,10 @@ func NewRouter(opts ...RouterOption) *Router {
 // We only need to rewrite this function to be able to trace
 // all the incoming requests to the underlying multiplexer
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if r.config.ignoreRequest(req) {
+		r.Router.ServeHTTP(w, req)
+		return
+	}
 	var (
 		match    mux.RouteMatch
 		spanopts []ddtrace.StartSpanOption
