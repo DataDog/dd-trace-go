@@ -8,6 +8,7 @@ package profiler
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"runtime/pprof"
 	"time"
@@ -31,6 +32,8 @@ const (
 	MutexProfile
 	// GoroutineProfile reports stack traces of all current goroutines
 	GoroutineProfile
+	// MetricsProfile reports top-line metrics associated with user-specified profiles
+	MetricsProfile
 )
 
 func (t ProfileType) String() string {
@@ -45,16 +48,44 @@ func (t ProfileType) String() string {
 		return "block"
 	case GoroutineProfile:
 		return "goroutine"
+	case MetricsProfile:
+		return "metrics"
 	default:
 		return "unknown"
 	}
 }
 
-// profile specifies a pprof's data (gzipped protobuf), and the types contained
-// within it.
+// Filename is the identifier used on upload.
+func (t ProfileType) Filename() string {
+	// There are subtle differences between the root and String() (see GoroutineProfile)
+	switch t {
+	case HeapProfile:
+		return "heap.pprof"
+	case CPUProfile:
+		return "cpu.pprof"
+	case MutexProfile:
+		return "mutex.pprof"
+	case BlockProfile:
+		return "block.pprof"
+	case GoroutineProfile:
+		return "goroutines.pprof"
+	case MetricsProfile:
+		return "metrics.json"
+	default:
+		return "unknown"
+	}
+}
+
+// Tag used on profile metadata
+func (t ProfileType) Tag() string {
+	return fmt.Sprintf("profile_type:%s", t)
+}
+
+// profile specifies a profiles data (gzipped protobuf, json), and the types contained within it.
 type profile struct {
-	types []string
-	data  []byte
+	// name indicates profile type and format (e.g. cpu.pprof, metrics.json)
+	name string
+	data []byte
 }
 
 // batch is a collection of profiles of different types, collected at roughly the same time. It maps
@@ -81,6 +112,8 @@ func (p *profiler) runProfile(t ProfileType) (*profile, error) {
 		return blockProfile(p.cfg)
 	case GoroutineProfile:
 		return goroutineProfile(p.cfg)
+	case MetricsProfile:
+		return p.collectMetrics()
 	default:
 		return nil, errors.New("profile type not implemented")
 	}
@@ -96,11 +129,11 @@ func heapProfile(cfg *config) (*profile, error) {
 		return nil, err
 	}
 	end := now()
-	tags := append(cfg.tags, "profile_type:heap")
+	tags := append(cfg.tags, HeapProfile.Tag())
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
-		types: []string{"alloc_objects", "alloc_space", "inuse_objects", "inuse_space"},
-		data:  buf.Bytes(),
+		name: HeapProfile.Filename(),
+		data: buf.Bytes(),
 	}, nil
 }
 
@@ -120,11 +153,11 @@ func cpuProfile(cfg *config) (*profile, error) {
 	time.Sleep(cfg.cpuDuration)
 	stopCPUProfile()
 	end := now()
-	tags := append(cfg.tags, "profile_type:cpu")
+	tags := append(cfg.tags, CPUProfile.Tag())
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
-		types: []string{"samples", "cpu"},
-		data:  buf.Bytes(),
+		name: CPUProfile.Filename(),
+		data: buf.Bytes(),
 	}, nil
 }
 
@@ -141,45 +174,60 @@ var lookupProfile = func(name string, w io.Writer) error {
 func blockProfile(cfg *config) (*profile, error) {
 	var buf bytes.Buffer
 	start := now()
-	if err := lookupProfile("block", &buf); err != nil {
+	if err := lookupProfile(BlockProfile.String(), &buf); err != nil {
 		return nil, err
 	}
 	end := now()
-	tags := append(cfg.tags, "profile_type:block")
+	tags := append(cfg.tags, BlockProfile.Tag())
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
-		types: []string{"delay"},
-		data:  buf.Bytes(),
+		name: BlockProfile.Filename(),
+		data: buf.Bytes(),
 	}, nil
 }
 
 func mutexProfile(cfg *config) (*profile, error) {
 	var buf bytes.Buffer
 	start := now()
-	if err := lookupProfile("mutex", &buf); err != nil {
+	if err := lookupProfile(MutexProfile.String(), &buf); err != nil {
 		return nil, err
 	}
 	end := now()
-	tags := append(cfg.tags, "profile_type:mutex")
+	tags := append(cfg.tags, MutexProfile.Tag())
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
-		types: []string{"contentions"},
-		data:  buf.Bytes(),
+		name: MutexProfile.Filename(),
+		data: buf.Bytes(),
 	}, nil
 }
 
 func goroutineProfile(cfg *config) (*profile, error) {
 	var buf bytes.Buffer
 	start := now()
-	if err := lookupProfile("goroutine", &buf); err != nil {
+	if err := lookupProfile(GoroutineProfile.String(), &buf); err != nil {
 		return nil, err
 	}
 	end := now()
-	tags := append(cfg.tags, "profile_type:goroutine")
+	tags := append(cfg.tags, GoroutineProfile.Tag())
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
-		types: []string{"goroutines"},
-		data:  buf.Bytes(),
+		name: GoroutineProfile.Filename(),
+		data: buf.Bytes(),
+	}, nil
+}
+
+func (p *profiler) collectMetrics() (*profile, error) {
+	var buf bytes.Buffer
+	start := now()
+	if err := p.met.report(start, &buf); err != nil {
+		return nil, err
+	}
+	end := now()
+	tags := append(p.cfg.tags, MetricsProfile.Tag())
+	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
+	return &profile{
+		name: MetricsProfile.Filename(),
+		data: buf.Bytes(),
 	}, nil
 }
 
