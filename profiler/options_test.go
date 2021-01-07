@@ -101,7 +101,7 @@ func TestOptions(t *testing.T) {
 		WithProfileTypes(HeapProfile)(&cfg)
 		_, ok := cfg.types[HeapProfile]
 		assert.True(t, ok)
-		assert.Len(t, cfg.types, 1)
+		assert.Len(t, cfg.types, 2)
 	})
 
 	t.Run("WithService", func(t *testing.T) {

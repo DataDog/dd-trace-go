@@ -24,9 +24,7 @@ func TestRunProfile(t *testing.T) {
 		p, err := unstartedProfiler()
 		prof, err := p.runProfile(HeapProfile)
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []string{
-			"alloc_objects", "alloc_space", "inuse_objects", "inuse_space",
-		}, prof.types)
+		assert.Equal(t, "heap.pprof", prof.name)
 		assert.Equal(t, []byte("my-heap-profile"), prof.data)
 	})
 
@@ -44,10 +42,8 @@ func TestRunProfile(t *testing.T) {
 		prof, err := p.runProfile(CPUProfile)
 		end := time.Now()
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []string{
-			"samples", "cpu",
-		}, prof.types)
 		assert.True(t, end.Sub(start) > 10*time.Millisecond)
+		assert.Equal(t, "cpu.pprof", prof.name)
 		assert.Equal(t, []byte("my-cpu-profile"), prof.data)
 	})
 
@@ -61,9 +57,7 @@ func TestRunProfile(t *testing.T) {
 		p, err := unstartedProfiler()
 		prof, err := p.runProfile(MutexProfile)
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []string{
-			"contentions",
-		}, prof.types)
+		assert.Equal(t, "mutex.pprof", prof.name)
 		assert.Equal(t, []byte("mutex"), prof.data)
 	})
 
@@ -77,9 +71,7 @@ func TestRunProfile(t *testing.T) {
 		p, err := unstartedProfiler()
 		prof, err := p.runProfile(BlockProfile)
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []string{
-			"delay",
-		}, prof.types)
+		assert.Equal(t, "block.pprof", prof.name)
 		assert.Equal(t, []byte("block"), prof.data)
 	})
 
@@ -93,9 +85,7 @@ func TestRunProfile(t *testing.T) {
 		p, err := unstartedProfiler()
 		prof, err := p.runProfile(GoroutineProfile)
 		require.NoError(t, err)
-		assert.ElementsMatch(t, []string{
-			"goroutines",
-		}, prof.types)
+		assert.Equal(t, "goroutines.pprof", prof.name)
 		assert.Equal(t, []byte("goroutine"), prof.data)
 	})
 }
