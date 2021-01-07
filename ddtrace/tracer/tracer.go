@@ -77,7 +77,7 @@ const (
 
 	// concurrentConnectionLimit specifies the maximum number of concurrent outgoing
 	// connections allowed.
-	concurrentConnectionLimit = 100
+	concurrentConnectionLimit = 10
 )
 
 // statsInterval is the interval at which health metrics will be sent with the
