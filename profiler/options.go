@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package profiler
 
@@ -68,7 +68,7 @@ var defaultClient = &http.Client{
 	Timeout: defaultHTTPTimeout,
 }
 
-var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
+var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
 
 type config struct {
 	apiKey string
@@ -224,6 +224,7 @@ func WithProfileTypes(types ...ProfileType) Option {
 		for k := range cfg.types {
 			delete(cfg.types, k)
 		}
+		cfg.addProfileType(MetricsProfile) // always report metrics
 		for _, t := range types {
 			cfg.addProfileType(t)
 		}

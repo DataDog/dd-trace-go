@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // +build ignore
 
@@ -16,12 +16,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 func main() {
 	var missing bool
-	copyrightText := []byte(fmt.Sprintf("// Copyright 2016-%s Datadog, Inc.", time.Now().Format("2006")))
+	copyrightText := []byte(fmt.Sprintf("// Copyright 2016 Datadog, Inc."))
 	if err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err

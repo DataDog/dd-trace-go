@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package profiler
 
@@ -14,7 +14,6 @@ import (
 	"math/rand"
 	"mime/multipart"
 	"net/http"
-	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -126,10 +125,10 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 			err = mw.WriteField(k, v)
 		}
 	}
-	writeField("format", "pprof")
-	writeField("runtime", "go")
-	writeField("recording-start", bat.start.Format(time.RFC3339))
-	writeField("recording-end", bat.end.Format(time.RFC3339))
+	writeField("version", "3")
+	writeField("family", "go")
+	writeField("start", bat.start.Format(time.RFC3339))
+	writeField("end", bat.end.Format(time.RFC3339))
 	if bat.host != "" {
 		writeField("tags[]", fmt.Sprintf("host:%s", bat.host))
 	}
@@ -137,14 +136,11 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 	for _, tag := range tags {
 		writeField("tags[]", tag)
 	}
-	for i, p := range bat.profiles {
-		writeField(fmt.Sprintf("types[%d]", i), strings.Join(p.types, ","))
-	}
 	if err != nil {
 		return "", nil, err
 	}
-	for i, p := range bat.profiles {
-		formFile, err := mw.CreateFormFile(fmt.Sprintf("data[%d]", i), "pprof-data")
+	for _, p := range bat.profiles {
+		formFile, err := mw.CreateFormFile(fmt.Sprintf("data[%s]", p.name), "pprof-data")
 		if err != nil {
 			return "", nil, err
 		}

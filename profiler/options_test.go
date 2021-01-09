@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package profiler
 
@@ -101,7 +101,7 @@ func TestOptions(t *testing.T) {
 		WithProfileTypes(HeapProfile)(&cfg)
 		_, ok := cfg.types[HeapProfile]
 		assert.True(t, ok)
-		assert.Len(t, cfg.types, 1)
+		assert.Len(t, cfg.types, 2)
 	})
 
 	t.Run("WithService", func(t *testing.T) {
