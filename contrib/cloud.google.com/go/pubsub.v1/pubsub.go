@@ -86,6 +86,7 @@ func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+	log.Debug("contrib/cloud.google.com/go/pubsub.v1: Wrapping Receive Handler: %#v", cfg)
 	return func(ctx context.Context, msg *pubsub.Message) {
 		parentSpanCtx, _ := tracer.Extract(tracer.TextMapCarrier(msg.Attributes))
 		opts := []ddtrace.StartSpanOption{

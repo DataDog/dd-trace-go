@@ -67,6 +67,7 @@ func WithCallbacks(db *gorm.DB, opts ...Option) *gorm.DB {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("gopkg.in/jinzhu/gorm.v1: Registering Callbacks: %#v", cfg)
 	return db.Set(gormConfigKey, cfg)
 }
 
