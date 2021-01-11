@@ -27,11 +27,11 @@ import (
 
 const (
 	// DefaultMutexFraction specifies the mutex profile fraction to be used with the mutex profiler.
-	// For more information or for changing this value, check runtime.SetMutexProfileFraction.
+	// For more information or for changing this value, check MutexProfileFraction
 	DefaultMutexFraction = 10
 
 	// DefaultBlockRate specifies the default block profiling rate used by the block profiler.
-	// For more information or for changing this value, check runtime.SetBlockProfileRate.
+	// For more information or for changing this value, check BlockProfileRate.
 	DefaultBlockRate = 100
 
 	// DefaultPeriod specifies the default period at which profiles will be collected.
@@ -214,6 +214,32 @@ func WithPeriod(d time.Duration) Option {
 func CPUDuration(d time.Duration) Option {
 	return func(cfg *config) {
 		cfg.cpuDuration = d
+	}
+}
+
+// MutexProfileFraction turns on mutex profiles with rate indicating the fraction
+// of mutex contention events reported in the mutex profile.
+// On average, 1/rate events are reported.
+// Setting an aggressive rate can hurt performance.
+// For more information on this value, check runtime.SetMutexProfileFraction.
+func MutexProfileFraction(rate int) Option {
+	return func(cfg *config) {
+		cfg.addProfileType(MutexProfile)
+		cfg.mutexFraction = rate
+	}
+}
+
+// BlockProfileRate turns on block profiles with the given rate.
+// The profiler samples an average of one blocking event per rate nanoseconds spent blocked.
+// For example, set rate to 1000000000 (aka int(time.Second.Nanoseconds())) to
+// record one sample per second a goroutine is blocked at a particular location.
+// A rate of 1 catches every event.
+// Setting an aggressive rate can hurt performance.
+// For more information on this value, check runtime.SetBlockProfileRate.
+func BlockProfileRate(rate int) Option {
+	return func(cfg *config) {
+		cfg.addProfileType(BlockProfile)
+		cfg.blockRate = rate
 	}
 }
 

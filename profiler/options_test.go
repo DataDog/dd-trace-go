@@ -96,6 +96,20 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, 3*time.Second, cfg.cpuDuration)
 	})
 
+	t.Run("MutexProfileFraction", func(t *testing.T) {
+		var cfg config
+		MutexProfileFraction(1)(&cfg)
+		assert.Equal(t, 1, cfg.mutexFraction)
+		assert.Contains(t, cfg.types, MutexProfile)
+	})
+
+	t.Run("BlockProfileRate", func(t *testing.T) {
+		var cfg config
+		BlockProfileRate(1)(&cfg)
+		assert.Equal(t, 1, cfg.blockRate)
+		assert.Contains(t, cfg.types, BlockProfile)
+	})
+
 	t.Run("WithProfileTypes", func(t *testing.T) {
 		var cfg config
 		WithProfileTypes(HeapProfile)(&cfg)
