@@ -172,6 +172,9 @@ func (p *profiler) enqueueUpload(bat batch) {
 			default:
 				// queue is empty; contents likely got uploaded
 			}
+
+			// p.out is guaranteed to have room for bat now
+			p.out <- bat
 		}
 	}
 }
