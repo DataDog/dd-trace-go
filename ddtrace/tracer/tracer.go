@@ -162,6 +162,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 func newTracer(opts ...StartOption) *tracer {
 	t := newUnstartedTracer(opts...)
 	c := t.config
+	log.Debug("Tracer starting. %#v", c)
 	t.config.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")
@@ -322,6 +323,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// this is a brand new trace, sample it
 		t.sample(span)
 	}
+	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
 	return span
 }
 

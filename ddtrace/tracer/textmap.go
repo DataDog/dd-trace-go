@@ -187,6 +187,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 		ctx, err := v.Extract(carrier)
 		if ctx != nil {
 			// first extractor returns
+			log.Debug("Extracted span context: %#v", ctx)
 			return ctx, nil
 		}
 		if err == ErrSpanContextNotFound {

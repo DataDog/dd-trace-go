@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	consul "github.com/hashicorp/consul/api"
 )
@@ -40,6 +41,7 @@ func WrapClient(c *consul.Client, opts ...ClientOption) *Client {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/hashicorp/consul: Wrapping Client: %#v", cfg)
 	return &Client{c, cfg, context.Background()}
 }
 

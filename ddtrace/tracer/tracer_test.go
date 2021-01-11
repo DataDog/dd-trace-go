@@ -233,7 +233,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		tp := new(testLogger)
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
+		assert.Contains(t, tp.Lines()[1], "DEBUG: Runtime metrics enabled")
 	})
 
 	t.Run("env", func(t *testing.T) {
@@ -258,7 +258,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		tp := new(testLogger)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Len(t, tp.Lines(), 0)
+		assert.Len(t, tp.Lines(), 1)
 		s := tracer.StartSpan("op").(*span)
 		_, ok := s.Meta["language"]
 		assert.False(t, ok)
