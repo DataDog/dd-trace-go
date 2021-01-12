@@ -232,7 +232,7 @@ func MutexProfileFraction(rate int) Option {
 // BlockProfileRate turns on block profiles with the given rate.
 // The profiler samples an average of one blocking event per rate nanoseconds spent blocked.
 // For example, set rate to 1000000000 (aka int(time.Second.Nanoseconds())) to
-// record one sample per second a goroutine is blocked at a particular location.
+// record one sample per second a goroutine is blocked.
 // A rate of 1 catches every event.
 // Setting an aggressive rate can hurt performance.
 // For more information on this value, check runtime.SetBlockProfileRate.
