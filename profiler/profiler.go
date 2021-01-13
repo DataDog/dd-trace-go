@@ -156,8 +156,13 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 	}
 }
 
-// enqueueUpload pushes a batch of profiles onto the queue to be uploaded. If there is no room, it will
-// evict the oldest profile to make some. Typically a batch would be one of each enabled profile.
+// enqueueUpload pushes a batch of profiles onto the queue to be uploaded. If
+// there is no room, it will evict the oldest profile to enqueue bat. Typically
+// a batch would be one of each enabled profile. This function must not be
+// called concurrently from different goroutines.
+// TODO(fg) This func could be changed to exert backpressure and stop the
+// profiling when the queue is full to avoid the profiling overhead while we
+// can't send data. Will require some discussion.
 func (p *profiler) enqueueUpload(bat batch) {
 	for {
 		select {
@@ -170,11 +175,13 @@ func (p *profiler) enqueueUpload(bat batch) {
 				p.cfg.statsd.Count("datadog.profiler.go.queue_full", 1, p.cfg.tags, 1)
 				log.Warn("Evicting one profile batch from the upload queue to make room.\n")
 			default:
-				// queue is empty; contents likely got uploaded
+				// this case should be almost impossible to trigger, it would require a
+				// full p.out to completely drain within nanoseconds or extreme
+				// scheduling decisions by the runtime.
 			}
-
-			// p.out is guaranteed to have room for bat now
-			p.out <- bat
+			// p.out is guaranteed to have room for bat now since concurrent calls to
+			// enqueueUpload are verboten by the func comment.
+			p.out <- bat // 👍
 		}
 	}
 }
