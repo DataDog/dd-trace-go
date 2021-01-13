@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -216,8 +217,7 @@ func TestB3(t *testing.T) {
 
 		assert := assert.New(t)
 		assert.Nil(err)
-
-		assert.Equal(headers[b3TraceIDHeader], strconv.FormatUint(root.TraceID, 16))
+		assert.Equal(headers[b3TraceIDHeader], fmt.Sprintf("%016x", strconv.FormatUint(root.TraceID, 16)))
 		assert.Equal(headers[b3SpanIDHeader], strconv.FormatUint(root.SpanID, 16))
 		assert.Equal(headers[b3SampledHeader], "0")
 	})
