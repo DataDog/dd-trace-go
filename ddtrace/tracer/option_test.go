@@ -251,39 +251,55 @@ func TestServiceName(t *testing.T) {
 
 //DD_TAGS applicable only
 func TestTagSeparators(t *testing.T) {
+	tags := []struct {
+		in          string
+		expected    map[string]string
+		notExpected []string
+	}{
+		{in: "env:test,aKey:aVal bKey:bVal cKey:", expected: map[string]string{
+			"env": "test", "aKey": "aVal", "bKey": "bVal", "cKey": ""}},
+		{"env:test aKey:aVal     bKey :bVal dKey: dVal cKey:", map[string]string{
+			"env": "test", "aKey": "aVal", "bKey": "", "dKey": "", "dVal": "", "cKey": ""}, []string{"bVal"}},
+		{in: "env :test, aKey : aVal bKey:bVal cKey:", expected: map[string]string{
+			"env": "", "aKey": "", "bKey": "bVal", "cKey": ""}, notExpected: []string{""}},
+		{in: "env:test,aKey:aVal,bKey:bVal,cKey:", expected: map[string]string{
+			"env": "test", "aKey": "aVal", "bKey": "bVal", "cKey": ""}, notExpected: []string{""}},
+		{in: "env:test aKey:aVal bKey:bVal cKey:", expected: map[string]string{
+			"env": "test", "aKey": "aVal", "bKey": "bVal", "cKey": ""}, notExpected: []string{""}},
+		{in: "env:keyWithA:Semicolon bKey:bVal cKey", expected: map[string]string{
+			"env": "keyWithA:Semicolon", "bKey": "bVal", "cKey": ""}, notExpected: []string{""}},
+		{in: "env:keyWith:Lots:Of:Semicolons bKey:bVal", expected: map[string]string{
+			"env": "keyWith:Lots:Of:Semicolons", "bKey": "bVal"}, notExpected: []string{"cKey", ""}},
+		{in: "env:keyWith: Lots:Of:Semicolons ", expected: map[string]string{
+			"env": "keyWith:", "Lots": "Of:Semicolons"}, notExpected: []string{"cKey", ""}},
+		{in: "env:keyWith:  , ,   Lots:Of:Semicolons ", expected: map[string]string{
+			"env": "keyWith:", "Lots": "Of:Semicolons"}, notExpected: []string{"cKey", ""}},
+		{in: "env:keyWith:  , ,   Lots:Of:Semicolons ", expected: map[string]string{
+			"env": "keyWith:", "Lots": "Of:Semicolons"}, notExpected: []string{""}},
+		{in: "a:b,c,d", expected: map[string]string{"a": "b", "c": "", "d": ""}, notExpected: []string{""}},
+		{in: "a:a;", expected: map[string]string{"a": "a;"}, notExpected: []string{}},
+		{in: "a,1", expected: map[string]string{
+			"a": "", "1": ""}, notExpected: []string{}},
+		{in: "key1 :value1  \t key2:  value2", expected: map[string]string{
+			"key1": "", "key2": "", "value2": ""}, notExpected: []string{"value1", ""}},
+		{in: "a:b:c:d", expected: map[string]string{"a": "b:c:d"}, notExpected: []string{""}},
+	}
+
 	t.Run("env-tags", func(t *testing.T) {
-		os.Setenv("DD_TAGS", "env:test,aKey:aVal bKey:bVal cKey:")
+		for _, tag := range tags {
+			os.Setenv("DD_TAGS", tag.in)
+			assert := assert.New(t)
+			c := newConfig()
+			for key, expected := range tag.expected {
+				actual, ok := c.globalTags[key]
+				assert.True(ok)
+				assert.Equal(expected, actual)
+			}
+			for _, key := range tag.notExpected {
+				assert.NotContains(c.globalTags, key)
+			}
+		}
 		defer os.Unsetenv("DD_TAGS")
-
-		assert := assert.New(t)
-		c := newConfig()
-
-		assert.Equal("test", c.globalTags["env"])
-		assert.Equal("aVal", c.globalTags["aKey"])
-		assert.Equal("bVal", c.globalTags["bKey"])
-		assert.Equal("", c.globalTags["cKey"])
-
-		dVal, ok := c.globalTags["dKey"]
-		assert.False(ok)
-		assert.Equal(nil, dVal)
-	})
-
-	t.Run("env-tags", func(t *testing.T) {
-		os.Setenv("DD_TAGS", "env:test aKey:aVal     bKey :bVal dKey: dVal cKey:")
-		defer os.Unsetenv("DD_TAGS")
-
-		assert := assert.New(t)
-		c := newConfig()
-
-		assert.Equal("test", c.globalTags["env"])
-		assert.Equal("aVal", c.globalTags["aKey"])
-		assert.Equal("", c.globalTags["bKey"])
-		assert.NotContains(c.globalTags, "bVal")
-		assert.Equal("", c.globalTags["cKey"])
-
-		fVal, ok := c.globalTags["fKey"]
-		assert.False(ok)
-		assert.Equal(nil, fVal)
 	})
 }
 
