@@ -318,8 +318,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if t.config.env != "" {
 		span.SetTag(ext.Environment, t.env)
 	}
-	if context == nil {
-		// this is a brand new trace, sample it
+	if _, ok := span.context.samplingPriority(); !ok {
+		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
 	return span
