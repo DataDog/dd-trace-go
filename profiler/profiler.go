@@ -30,6 +30,7 @@ var (
 // the WithAPIKey option, or if a hostname is not found.
 func Start(opts ...Option) error {
 	mu.Lock()
+	defer mu.Unlock()
 	if activeProfiler != nil {
 		activeProfiler.stop()
 	}
@@ -39,7 +40,6 @@ func Start(opts ...Option) error {
 	}
 	activeProfiler = p
 	activeProfiler.run()
-	mu.Unlock()
 	return nil
 }
 

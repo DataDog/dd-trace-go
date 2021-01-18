@@ -59,13 +59,19 @@ func TestStart(t *testing.T) {
 	})
 
 	t.Run("options/GoodAPIKey", func(t *testing.T) {
-		_, err := newProfiler(WithAPIKey("12345678901234567890123456789012"))
+		err := Start(WithAPIKey("12345678901234567890123456789012"))
+		defer Stop()
 		assert.Nil(t, err)
 	})
 
 	t.Run("options/BadAPIKey", func(t *testing.T) {
-		_, err := newProfiler(WithAPIKey("aaaa"))
+		err := Start(WithAPIKey("aaaa"))
 		assert.NotNil(t, err)
+		defer Stop()
+
+		// Check that mu gets unlocked, even if newProfiler() returns an error.
+		mu.Lock()
+		mu.Unlock()
 	})
 }
 
