@@ -164,6 +164,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 // profiling when the queue is full to avoid the profiling overhead while we
 // can't send data. Will require some discussion.
 func (p *profiler) enqueueUpload(bat batch) {
+	// If p.out is full, evict oldest entries until there is room.
 	for {
 		select {
 		case p.out <- bat:
@@ -179,9 +180,6 @@ func (p *profiler) enqueueUpload(bat batch) {
 				// full p.out to completely drain within nanoseconds or extreme
 				// scheduling decisions by the runtime.
 			}
-			// p.out is guaranteed to have room for bat now since concurrent calls to
-			// enqueueUpload are verboten by the func comment.
-			p.out <- bat // 👍
 		}
 	}
 }
