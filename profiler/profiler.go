@@ -56,13 +56,14 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
-	cfg        *config           // profile configuration
-	out        chan batch        // upload queue
-	uploadFunc func(batch) error // defaults to (*profiler).upload; replaced in tests
-	exit       chan struct{}     // exit signals the profiler to stop; it is closed after stopping
-	stopOnce   sync.Once         // stopOnce ensures the profiler is stopped exactly once.
-	wg         sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
-	met        *metrics          // metric collector state
+	cfg              *config           // profile configuration
+	out              chan batch        // upload queue
+	uploadFunc       func(batch) error // defaults to (*profiler).upload; replaced in tests
+	exit             chan struct{}     // exit signals the profiler to stop; it is closed after stopping
+	stopOnce         sync.Once         // stopOnce ensures the profiler is stopped exactly once.
+	wg               sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
+	met              *metrics          // metric collector state
+	oldMutexFraction int               // the old mutex profile fraction we need to restore
 }
 
 // newProfiler creates a new, unstarted profiler.
@@ -102,7 +103,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 // run runs the profiler.
 func (p *profiler) run() {
 	if _, ok := p.cfg.types[MutexProfile]; ok {
-		runtime.SetMutexProfileFraction(p.cfg.mutexFraction)
+		p.oldMutexFraction = runtime.SetMutexProfileFraction(p.cfg.mutexFraction)
 	}
 	if _, ok := p.cfg.types[BlockProfile]; ok {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
@@ -188,6 +189,7 @@ func (p *profiler) send() {
 // stop stops the profiler.
 func (p *profiler) stop() {
 	p.stopOnce.Do(func() {
+		runtime.SetMutexProfileFraction(p.oldMutexFraction)
 		close(p.exit)
 	})
 	p.wg.Wait()

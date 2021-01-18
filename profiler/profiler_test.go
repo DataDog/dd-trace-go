@@ -175,12 +175,14 @@ func TestProfilerInternal(t *testing.T) {
 func TestSetProfileFraction(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		start := runtime.SetMutexProfileFraction(-1)
+		require.NotEqual(t, DefaultMutexFraction, start)
 		defer runtime.SetMutexProfileFraction(start)
 		p, err := unstartedProfiler(WithProfileTypes(MutexProfile))
 		require.NoError(t, err)
 		p.run()
+		require.Equal(t, DefaultMutexFraction, runtime.SetMutexProfileFraction(-1))
 		p.stop()
-		assert.NotEqual(t, start, runtime.SetMutexProfileFraction(-1))
+		require.Equal(t, start, runtime.SetMutexProfileFraction(-1))
 	})
 
 	t.Run("off", func(t *testing.T) {
