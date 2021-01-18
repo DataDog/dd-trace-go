@@ -66,8 +66,8 @@ func TestStart(t *testing.T) {
 
 	t.Run("options/BadAPIKey", func(t *testing.T) {
 		err := Start(WithAPIKey("aaaa"))
-		assert.NotNil(t, err)
 		defer Stop()
+		assert.NotNil(t, err)
 
 		// Check that mu gets unlocked, even if newProfiler() returns an error.
 		mu.Lock()
