@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -82,6 +83,125 @@ func TestClient(t *testing.T) {
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
 	assert.Equal("3", span.Tag("redis.args_length"))
+}
+
+func TestWrapClient(t *testing.T) {
+	simpleClientOpts := &redis.UniversalOptions{Addrs: []string{"127.0.0.1:6379"}}
+	simpleClient := redis.NewUniversalClient(simpleClientOpts)
+
+	failoverClientOpts := &redis.UniversalOptions{
+		MasterName: "leader.redis.host",
+		Addrs: []string{
+			"127.0.0.1:6379",
+			"127.0.0.2:6379",
+		}}
+	failoverClient := redis.NewUniversalClient(failoverClientOpts)
+
+	clusterClientOpts := &redis.UniversalOptions{
+		Addrs: []string{
+			"127.0.0.1:6379",
+			"127.0.0.2:6379",
+		},
+		DialTimeout: 1}
+	clusterClient := redis.NewUniversalClient(clusterClientOpts)
+
+	testCases := []struct {
+		name   string
+		client redis.UniversalClient
+	}{
+		{
+			name:   "simple-client",
+			client: simpleClient,
+		},
+		{
+			name:   "failover-client",
+			client: failoverClient,
+		},
+		{
+			name:   "cluster-client",
+			client: clusterClient,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			WrapClient(tc.client, WithServiceName("my-redis"))
+			tc.client.Set(ctx, "test_key", "test_value", 0)
+
+			spans := mt.FinishedSpans()
+			assert.Len(spans, 1)
+
+			span := spans[0]
+			assert.Equal("redis.command", span.OperationName())
+			assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
+			assert.Equal("my-redis", span.Tag(ext.ServiceName))
+			assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
+			assert.Equal("3", span.Tag("redis.args_length"))
+		})
+	}
+}
+
+func TestAdditionalTagsFromClient(t *testing.T) {
+	t.Run("simple-client", func(t *testing.T) {
+		simpleClientOpts := &redis.UniversalOptions{Addrs: []string{"127.0.0.1:6379"}}
+		simpleClient := redis.NewUniversalClient(simpleClientOpts)
+		config := &ddtrace.StartSpanConfig{}
+		expectedTags := map[string]interface{}{
+			"out.db":   "0",
+			"out.host": "127.0.0.1",
+			"out.port": "6379",
+		}
+
+		additionalTagOptions := additionalTagOptions(simpleClient)
+		for _, t := range additionalTagOptions {
+			t(config)
+		}
+		assert.Equal(t, expectedTags, config.Tags)
+	})
+
+	t.Run("failover-client", func(t *testing.T) {
+		failoverClientOpts := &redis.UniversalOptions{
+			MasterName: "leader.redis.host",
+			Addrs: []string{
+				"127.0.0.1:6379",
+				"127.0.0.2:6379",
+			}}
+		failoverClient := redis.NewUniversalClient(failoverClientOpts)
+		config := &ddtrace.StartSpanConfig{}
+		expectedTags := map[string]interface{}{
+			"out.db": "0",
+		}
+
+		additionalTagOptions := additionalTagOptions(failoverClient)
+		for _, t := range additionalTagOptions {
+			t(config)
+		}
+		assert.Equal(t, expectedTags, config.Tags)
+	})
+
+	t.Run("cluster-client", func(t *testing.T) {
+		clusterClientOpts := &redis.UniversalOptions{
+			Addrs: []string{
+				"127.0.0.1:6379",
+				"127.0.0.2:6379",
+			},
+			DialTimeout: 1}
+		clusterClient := redis.NewUniversalClient(clusterClientOpts)
+		config := &ddtrace.StartSpanConfig{}
+		expectedTags := map[string]interface{}{
+			"addrs": "127.0.0.1:6379, 127.0.0.2:6379",
+		}
+
+		additionalTagOptions := additionalTagOptions(clusterClient)
+		for _, t := range additionalTagOptions {
+			t(config)
+		}
+		assert.Equal(t, expectedTags, config.Tags)
+	})
 }
 
 func TestPipeline(t *testing.T) {
