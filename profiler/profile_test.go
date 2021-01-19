@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"io"
+	"io/ioutil"
 	"testing"
 	"time"
 
@@ -87,5 +88,14 @@ func TestRunProfile(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "goroutines.pprof", prof.name)
 		assert.Equal(t, []byte("goroutine"), prof.data)
+	})
+
+	t.Run("goroutinewait", func(t *testing.T) {
+		p, err := unstartedProfiler()
+		prof, err := p.runProfile(GoroutineWaitProfile)
+		require.NoError(t, err)
+		require.Equal(t, "goroutineswait.pprof", prof.name)
+		require.NoError(t, ioutil.WriteFile("goroutineswait.pprof", prof.data, 0666))
+		// TODO(fg) validate the prof.data
 	})
 }
