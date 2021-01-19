@@ -162,7 +162,6 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 func newTracer(opts ...StartOption) *tracer {
 	t := newUnstartedTracer(opts...)
 	c := t.config
-	log.Debug("Tracer starting. %#v", c)
 	t.config.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")
@@ -183,7 +182,6 @@ func newTracer(opts ...StartOption) *tracer {
 		}
 		t.worker(tick)
 	}()
-
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()

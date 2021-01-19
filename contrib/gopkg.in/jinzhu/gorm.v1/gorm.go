@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"gopkg.in/jinzhu/gorm.v1"
 )
@@ -67,7 +68,7 @@ func WithCallbacks(db *gorm.DB, opts ...Option) *gorm.DB {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	log.Debug("gopkg.in/jinzhu/gorm.v1: Registering Callbacks: %#v", cfg)
+	log.Debug("contrib/gopkg.in/jinzhu/gorm.v1: Registering Callbacks: %#v", cfg)
 	return db.Set(gormConfigKey, cfg)
 }
 

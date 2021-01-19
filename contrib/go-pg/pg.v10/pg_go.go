@@ -18,7 +18,7 @@ import (
 
 // Wrap augments the given DB with tracing.
 func Wrap(db *pg.DB) {
-	log.Debug("go-pg/pg.v10: Wrapping Database")
+	log.Debug("contrib/go-pg/pg.v10: Wrapping Database")
 	db.AddQueryHook(&queryHook{})
 }
 
