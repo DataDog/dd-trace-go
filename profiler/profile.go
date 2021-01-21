@@ -15,7 +15,7 @@ import (
 	"time"
 
 	pprofile "github.com/google/pprof/profile"
-	"github.com/maruel/panicparse/v2/stack"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/panicparse/stack"
 )
 
 // ProfileType represents a type of profile that the profiler is able to run.
