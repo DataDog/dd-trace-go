@@ -25,9 +25,9 @@ const (
 	stateHeader = iota
 	stateStackFunc
 	stateStackFile
+	stateCreatedBy
 	stateCreatedByFunc
 	stateCreatedByFile
-	stateSuffix
 )
 
 // Parse parses a goroutines stack trace dump as produced by runtime.Stack().
@@ -56,7 +56,7 @@ const (
 // path       = 1*OCTET
 // line       = 1*DIGIT
 // offset     = "+0x" 1*HEXDIG
-func Parse(r io.Reader) ([]*Goroutine, error) {
+func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 	var (
 		sc      = bufio.NewScanner(r)
 		state   parserState
@@ -75,7 +75,6 @@ func Parse(r io.Reader) ([]*Goroutine, error) {
 				lineNum,
 				line,
 			)
-			fmt.Printf("%s\n", err)
 			errs.Errors = append(errs.Errors, err)
 			goroutines = goroutines[0 : len(goroutines)-1]
 			state = stateHeader
@@ -115,8 +114,8 @@ func Parse(r io.Reader) ([]*Goroutine, error) {
 				abortGoroutine("expected file:line ref")
 				continue
 			}
-			state = stateSuffix
-		case stateSuffix:
+			state = stateCreatedBy
+		case stateCreatedBy:
 			if strings.HasPrefix(line, createdByPrefix) {
 				line = line[len(createdByPrefix):]
 				state = stateCreatedByFunc
@@ -137,7 +136,9 @@ const (
 	createdByPrefix = "created by "
 )
 
-var goroutineHeader = regexp.MustCompile("^" + goroutinePrefix + `(\d+) \[(.+?)(?:, (\d+) minutes)?\]:$`)
+var goroutineHeader = regexp.MustCompile(
+	"^" + goroutinePrefix + `(\d+) \[(.+?)(?:, (\d+) minutes)?\]:$`,
+)
 
 // parseGoroutineHeader parses a goroutine header line and returns a new
 // Goroutine on success or nil on error.
@@ -148,8 +149,8 @@ var goroutineHeader = regexp.MustCompile("^" + goroutinePrefix + `(\d+) \[(.+?)(
 // Example Output:
 // &Goroutine{ID: 1, State "chan receive", Waitduration: 6883*time.Minute}
 func parseGoroutineHeader(line string) *Goroutine {
-	// optimization: bailing early if this doesn't match is 2x than running the
-	// regex right away.
+	// optimization: bailing early if this doesn't match is 2x faster than
+	// running the regex right away.
 	if !strings.HasPrefix(line, goroutinePrefix) {
 		return nil
 	}
@@ -168,13 +169,18 @@ func parseGoroutineHeader(line string) *Goroutine {
 		g   = &Goroutine{State: state}
 		err error
 	)
-	if g.ID, err = strconv.Atoi(id); err != nil {
-		return nil
-	}
 
-	if waitminutes == "" {
+	// regex currently sucks `abc minutes` into the state string if abc is
+	// non-numeric, let's not consider this a valid goroutine.
+	if strings.HasSuffix(state, " minutes") {
+		return nil
+	} else if g.ID, err = strconv.Atoi(id); err != nil {
+		// should be impossible to end up here
+		return nil
+	} else if waitminutes == "" {
 		// do nothing, goroutine isn't waiting
 	} else if min, err := strconv.Atoi(waitminutes); err != nil {
+		// should be impossible to end up here
 		return nil
 	} else {
 		g.Waitduration = time.Duration(min) * time.Minute
@@ -195,22 +201,22 @@ func parseFunc(line string, state parserState) *Frame {
 		return &Frame{Func: line}
 	}
 
-	var openParen int
+	var (
+		openIndex  int
+		closeIndex int
+	)
 	for i, r := range line {
 		switch r {
 		case '(':
-			if openParen > 0 {
-				return nil
-			}
-			openParen = i
+			openIndex = i
 		case ')':
-			if openParen == 0 {
-				return nil
-			}
-			return &Frame{Func: line[0:openParen]}
+			closeIndex = i
 		}
 	}
-	return nil
+	if openIndex >= closeIndex {
+		return nil
+	}
+	return &Frame{Func: line[0:openIndex]}
 }
 
 // parseFile parses a file line and updates f accordingly or returns false on
@@ -222,6 +228,11 @@ func parseFunc(line string, state parserState) *Frame {
 // Example Update:
 // &Frame{File: "/root/go1.15.6.linux.amd64/src/net/http/server.go", Line: 2969}
 func parseFile(line string, f *Frame) bool {
+	if len(line) == 0 || line[0] != '\t' {
+		return false
+	}
+
+	line = line[1:]
 	for i, c := range line {
 		if c == ':' {
 			if f.File != "" {
