@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package mocktracer
 
@@ -36,8 +36,8 @@ func TestTracerStartSpan(t *testing.T) {
 	startTime := time.Now()
 
 	t.Run("with-service", func(t *testing.T) {
-		var mt mocktracer
-		parent := newSpan(&mt, "http.request", &ddtrace.StartSpanConfig{Tags: parentTags})
+		mt := newMockTracer()
+		parent := newSpan(mt, "http.request", &ddtrace.StartSpanConfig{Tags: parentTags})
 		s, ok := mt.StartSpan(
 			"db.query",
 			tracer.ServiceName("my-service"),
@@ -57,8 +57,8 @@ func TestTracerStartSpan(t *testing.T) {
 	})
 
 	t.Run("inherit", func(t *testing.T) {
-		var mt mocktracer
-		parent := newSpan(&mt, "http.request", &ddtrace.StartSpanConfig{Tags: parentTags})
+		mt := newMockTracer()
+		parent := newSpan(mt, "http.request", &ddtrace.StartSpanConfig{Tags: parentTags})
 		s, ok := mt.StartSpan("db.query", tracer.ChildOf(parent.Context())).(*mockspan)
 
 		assert := assert.New(t)
@@ -73,9 +73,11 @@ func TestTracerStartSpan(t *testing.T) {
 }
 
 func TestTracerFinishedSpans(t *testing.T) {
-	var mt mocktracer
-	parent := newSpan(&mt, "http.request", &ddtrace.StartSpanConfig{})
+	mt := newMockTracer()
+	assert.Empty(t, mt.FinishedSpans())
+	parent := mt.StartSpan("http.request")
 	child := mt.StartSpan("db.query", tracer.ChildOf(parent.Context()))
+	assert.Empty(t, mt.FinishedSpans())
 	child.Finish()
 	parent.Finish()
 	found := 0
@@ -92,21 +94,45 @@ func TestTracerFinishedSpans(t *testing.T) {
 	assert.Equal(t, 2, found)
 }
 
-func TestTracerReset(t *testing.T) {
-	var mt mocktracer
-	mt.StartSpan("db.query").Finish()
+func TestTracerOpenSpans(t *testing.T) {
+	mt := newMockTracer()
+	assert.Empty(t, mt.OpenSpans())
+	parent := mt.StartSpan("http.request")
+	child := mt.StartSpan("db.query", tracer.ChildOf(parent.Context()))
 
+	assert.Len(t, mt.OpenSpans(), 2)
+	assert.Contains(t, mt.OpenSpans(), parent)
+	assert.Contains(t, mt.OpenSpans(), child)
+
+	child.Finish()
+	assert.Len(t, mt.OpenSpans(), 1)
+	assert.NotContains(t, mt.OpenSpans(), child)
+
+	parent.Finish()
+	assert.Empty(t, mt.OpenSpans())
+}
+
+func TestTracerReset(t *testing.T) {
 	assert := assert.New(t)
+	mt := newMockTracer()
+
+	span := mt.StartSpan("parent")
+	_ = mt.StartSpan("child", tracer.ChildOf(span.Context()))
+	assert.Len(mt.openSpans, 2)
+
+	span.Finish()
 	assert.Len(mt.finishedSpans, 1)
+	assert.Len(mt.openSpans, 1)
 
 	mt.Reset()
 
-	assert.Nil(mt.finishedSpans)
+	assert.Empty(mt.finishedSpans)
+	assert.Empty(mt.openSpans)
 }
 
 func TestTracerInject(t *testing.T) {
 	t.Run("errors", func(t *testing.T) {
-		var mt mocktracer
+		mt := newMockTracer()
 		assert := assert.New(t)
 
 		err := mt.Inject(&spanContext{}, 2)

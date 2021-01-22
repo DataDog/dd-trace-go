@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package internal // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 
@@ -22,7 +22,7 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 		if err != nil {
 			return
 		}
-	case "postgres":
+	case "postgres", "pgx":
 		meta, err = parsePostgresDSN(dsn)
 		if err != nil {
 			return
