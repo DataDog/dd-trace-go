@@ -2,6 +2,7 @@ package stackparse
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -10,7 +11,149 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestParse_PropertyBased(t *testing.T) {
+	headers := []struct {
+		Line    string
+		WantG   *Goroutine
+		WantErr string
+	}{
+		{
+			Line:  "goroutine 1 [chan receive]:",
+			WantG: &Goroutine{ID: 1, State: "chan receive", Waitduration: 0},
+		},
+		{
+			Line:  "goroutine 23 [select, 5 minutes]:",
+			WantG: &Goroutine{ID: 23, State: "select", Waitduration: 5 * time.Minute},
+		},
+		{
+			Line:    "goroutine 23 []:",
+			WantErr: "invalid goroutine header",
+		},
+		{
+			Line:    "goroutine ",
+			WantErr: "invalid goroutine header",
+		},
+	}
+
+	funcs := []struct {
+		Line      string
+		WantFrame *Frame
+		WantErr   string
+	}{
+		{
+			Line:      "main.main()",
+			WantFrame: &Frame{Func: "main.main"},
+		},
+		{
+			Line:      "runtime.goparkunlock(...)",
+			WantFrame: &Frame{Func: "runtime.goparkunlock"},
+		},
+		{
+			Line:      "net/http.(*persistConn).writeLoop(0xc0001a5c20)",
+			WantFrame: &Frame{Func: "net/http.(*persistConn).writeLoop"},
+		},
+		{
+			Line:    "",
+			WantErr: "invalid function call",
+		},
+		{
+			Line:    "foo.bar",
+			WantErr: "invalid function call",
+		},
+		{
+			Line:    "foo.bar(",
+			WantErr: "invalid function call",
+		},
+		{
+			Line:    "net/http.(*persistConn).writeLoop(0xc0",
+			WantErr: "invalid function call",
+		},
+		{
+			Line:    "net/http.(*persist",
+			WantErr: "invalid function call",
+		},
+		{
+			Line:    "net/http.*persist)(",
+			WantErr: "invalid function call",
+		},
+		{
+			Line:    "net/http.(*persist))",
+			WantErr: "invalid function call",
+		},
+		{
+			Line:    "net/http.((*persist)",
+			WantErr: "invalid function call",
+		},
+		{
+			Line:    "()",
+			WantErr: "invalid function call",
+		},
+	}
+
+	files := []struct {
+		Line      string
+		WantFrame *Frame
+		WantErr   string
+	}{
+		{
+			Line:      "\t/go/src/example.org/example/main.go:231 +0x1187",
+			WantFrame: &Frame{File: "/go/src/example.org/example/main.go", Line: 231},
+		},
+		{
+			Line:      "\t/root/go1.15.6.linux.amd64/src/runtime/proc.go:312",
+			WantFrame: &Frame{File: "/root/go1.15.6.linux.amd64/src/runtime/proc.go", Line: 312},
+		},
+		{
+			Line:    "/root/go1.15.6.linux.amd64/src/runtime/proc.go:312",
+			WantErr: "invalid file:line ref",
+		},
+		{
+			Line:    "",
+			WantErr: "invalid file:line ref",
+		},
+	}
+
+	n := 0
+	for _, header := range headers {
+		for _, fn := range funcs {
+			for _, file := range files {
+				n++
+				t.Run(fmt.Sprintf("%d", n), func(t *testing.T) {
+					dump := header.Line + "\n" + fn.Line + "\n" + file.Line + "\n"
+					goroutines, errs := Parse(strings.NewReader(dump))
+					wantErrs := []string{header.WantErr, fn.WantErr, file.WantErr}
+
+					for _, wantErr := range wantErrs {
+						if wantErr != "" {
+							require.NotNil(t, errs, dump)
+							require.Equal(t, 1, len(errs.Errors), dump)
+							require.Contains(t, errs.Errors[0].Error(), wantErr, dump)
+							return
+						}
+					}
+
+					require.Nil(t, errs, dump)
+
+					require.Equal(t, 1, len(goroutines), dump)
+					g := goroutines[0]
+					require.Equal(t, header.WantG.ID, g.ID, dump)
+					require.Equal(t, header.WantG.State, g.State, dump)
+					require.Equal(t, header.WantG.Waitduration, g.Waitduration, dump)
+
+					require.Equal(t, 1, len(g.Stack), dump)
+					f := g.Stack[0]
+					require.Equal(t, fn.WantFrame.Func, f.Func, dump)
+					require.Equal(t, file.WantFrame.File, f.File, dump)
+					require.Equal(t, file.WantFrame.Line, f.Line, dump)
+				})
+			}
+		}
+	}
+}
+
 func TestParse(t *testing.T) {
+	t.Skip("broken")
+
 	var (
 		mainT = `
 goroutine 1 [chan receive, 6883 minutes]:

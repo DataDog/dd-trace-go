@@ -7,6 +7,13 @@
 // input data is different than expected.
 // 4. Efficient: Try to be at least 10x faster than panicparse as long as it
 // doesn't complicate things.
+//
+// Before implementing this pkg we experimented with existing libraries such
+// panicparse, but decided to roll out our own due to complications with go
+// modules, performance (stackparse is 100x faster) and complexity (stackparse
+// is 20x less code).
+//
+// [1] https://github.com/maruel/panicparse/issues/57
 package stackparse
 
 import (
@@ -90,16 +97,24 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 	statemachine:
 		switch state {
 		case stateHeader:
-			g = parseGoroutineHeader(line)
-			if g == nil {
+			// Ignore lines that don't look like goroutine headers. This helps with
+			// leading/trailing whitespace but also in case we encountered an error
+			// during the previous goroutine and need to seek to the beginning of the
+			// next one.
+			if !strings.HasPrefix(line, goroutinePrefix) {
 				continue
 			}
+
+			g = parseGoroutineHeader(line)
 			goroutines = append(goroutines, g)
 			state = stateStackFunc
+			if g == nil {
+				abortGoroutine("invalid goroutine header")
+			}
 		case stateStackFunc, stateCreatedByFunc:
 			f = parseFunc(line, state)
 			if f == nil {
-				abortGoroutine("expected function call")
+				abortGoroutine("invalid function call")
 				continue
 			}
 			if state == stateStackFunc {
@@ -111,7 +126,7 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 			}
 		case stateStackFile, stateCreatedByFile:
 			if !parseFile(line, f) {
-				abortGoroutine("expected file:line ref")
+				abortGoroutine("invalid file:line ref")
 				continue
 			}
 			state = stateCreatedBy
@@ -149,12 +164,6 @@ var goroutineHeader = regexp.MustCompile(
 // Example Output:
 // &Goroutine{ID: 1, State "chan receive", Waitduration: 6883*time.Minute}
 func parseGoroutineHeader(line string) *Goroutine {
-	// optimization: bailing early if this doesn't match is 2x faster than
-	// running the regex right away.
-	if !strings.HasPrefix(line, goroutinePrefix) {
-		return nil
-	}
-
 	// TODO(fg) would probably be faster if we didn't use a regexp for this, but
 	// might be more hassle than its worth.
 	m := goroutineHeader.FindStringSubmatch(line)
@@ -201,19 +210,29 @@ func parseFunc(line string, state parserState) *Frame {
 		return &Frame{Func: line}
 	}
 
+	// A valid func call is supposed to have at least one matched pair of parens.
+	// Multiple matched pairs are allowed, but nesting is not.
 	var (
-		openIndex  int
-		closeIndex int
+		openIndex  = -1
+		closeIndex = -1
 	)
 	for i, r := range line {
 		switch r {
 		case '(':
+			if openIndex != -1 && closeIndex == -1 {
+				return nil
+			}
 			openIndex = i
+			closeIndex = -1
 		case ')':
+			if openIndex == -1 || closeIndex != -1 {
+				return nil
+			}
 			closeIndex = i
 		}
 	}
-	if openIndex >= closeIndex {
+
+	if openIndex == -1 || closeIndex == -1 || openIndex == 0 {
 		return nil
 	}
 	return &Frame{Func: line[0:openIndex]}
@@ -243,8 +262,15 @@ func parseFile(line string, f *Frame) bool {
 			if f.File == "" {
 				return false
 			}
+			var end int
+			if c == ' ' {
+				end = i
+			} else {
+				end = i + 1
+			}
+
 			var err error
-			f.Line, err = strconv.Atoi(line[len(f.File)+1 : i])
+			f.Line, err = strconv.Atoi(line[len(f.File)+1 : end])
 			return err == nil
 		}
 	}
