@@ -41,4 +41,3 @@ If you need to undo this for any reason, you can run:
 ```
 git update-index --no-assume-unchanged go.*
 ```
-
