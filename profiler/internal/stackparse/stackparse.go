@@ -3,20 +3,18 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2021 Datadog, Inc.
 
-// Package stackparse is an experimental replacement for pkg panicparse. The
-// goal for the parser is to be:
+// Package stackparse parses goroutines stack trace dumps as produced by
+// runtime.Stack(). The design goals are:
 //
 // 1. Safe: No panics should be thrown.
 // 2. Simple: Keep this pkg small and easy to modify.
 // 3. Forgiving: Favor producing partial results over no results, even if the
 // input data is different than expected.
-// 4. Efficient: Try to be at least 10x faster than panicparse as long as it
-// doesn't complicate things.
-//
-// Before implementing this pkg we experimented with existing libraries such
-// panicparse, but decided to roll out our own due to complications with go
-// modules, performance (stackparse is 100x faster) and complexity (stackparse
-// is 20x less code).
+// 4. Efficient: Parse several hundred MB/s.
+
+// Before implementing this pkg we experimented with panicparse, but decided to
+// roll out our own library because of gomodule issues [1], and because we
+// figured we can make a library that's 100x faster while 10x less code.
 //
 // [1] https://github.com/maruel/panicparse/issues/57
 package stackparse
