@@ -107,6 +107,7 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 				continue
 			}
 
+			line = line[len(goroutinePrefix):]
 			g = parseGoroutineHeader(line)
 			goroutines = append(goroutines, g)
 			state = stateStackFunc
@@ -159,7 +160,7 @@ const (
 )
 
 var goroutineHeader = regexp.MustCompile(
-	"^" + goroutinePrefix + `(\d+) \[(.+?)(?:, (\d+) minutes)?\]:$`,
+	`^(\d+) \[(.+?)(?:, (\d+) minutes)?\]:$`,
 )
 
 // parseGoroutineHeader parses a goroutine header line and returns a new
