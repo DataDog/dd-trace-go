@@ -278,25 +278,48 @@ func parseFile(line []byte, f *Frame) bool {
 	return false
 }
 
+// Goroutine represents a single goroutine and its stack after extracting it
+// from the runtime.Stack() text format. See [1] for more info.
+// [1] https://github.com/felixge/go-profiler-notes/blob/main/goroutine.md
 type Goroutine struct {
-	ID             int
-	State          string
-	Wait           time.Duration
+	// ID is the goroutine id (aka `goid`).
+	ID int
+	// State is the `atomicstatus` of the goroutine, or if "waiting" the
+	// `waitreason`.
+	State string
+	// Wait is the approximate duration a goroutine has been waiting or in a
+	// syscall as determined by the first gc after the wait started. Aka
+	// `waitsince`.
+	Wait time.Duration
+	// LockedToThread is true if the goroutine is locked by a thread, aka
+	// `lockedm`.
 	LockedToThread bool
-	Stack          []*Frame
-	CreatedBy      *Frame
+	// Stack is the stack trace of the goroutine.
+	Stack []*Frame
+	// CreatedBy is the frame that created this goroutine, nil for main().
+	CreatedBy *Frame
 }
 
+// Frame is a single call frame on the stack.
 type Frame struct {
+	// Func is the name of the function, including package name, e.g. "main.main"
+	// or "net/http.(*Server).Serve".
 	Func string
-	Line int
+	// File is the absolute path of source file e.g.
+	// "/go/src/example.org/example/main.go".
 	File string
+	// Line is the line number of inside of the source file that was active when
+	// the sample was taken.
+	Line int
 }
 
+// Errors contains a list of errors.
 type Errors struct {
+	// Errors is a list of errors.
 	Errors []error
 }
 
+// Error returns an error string.
 func (e *Errors) Error() string {
 	return fmt.Sprintf("stackparse: %d errors occurred", len(e.Errors))
 }
