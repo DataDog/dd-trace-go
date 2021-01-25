@@ -20,30 +20,36 @@ func TestParse_Example(t *testing.T) {
 	require.NoError(t, err)
 	goroutines, err := Parse(bytes.NewReader(data))
 	require.Nil(t, err)
-	require.Len(t, goroutines, 9)
+	require.Len(t, goroutines, 10)
 	g0 := goroutines[0]
 	require.Equal(t, 1, g0.ID)
 	require.Equal(t, "running", g0.State)
-	require.Equal(t, time.Duration(0), g0.Waitduration)
+	require.Equal(t, time.Duration(0), g0.Wait)
+	require.Equal(t, false, g0.LockedToThread)
 	require.Len(t, g0.Stack, 6)
 	require.Equal(t, "runtime/pprof.writeGoroutineStacks", g0.Stack[0].Func)
 	require.Equal(t, "/usr/local/Cellar/go/1.15.6/libexec/src/runtime/pprof/pprof.go", g0.Stack[0].File)
 	require.Equal(t, 693, g0.Stack[0].Line)
 	require.Nil(t, g0.CreatedBy)
 
-	// not checking g1..g7 - we don't want to couple too tightly to this example
+	// not checking g1..g7, they aren't very interesting
 
 	g8 := goroutines[8]
-	require.Equal(t, 41, g8.ID)
-	require.Equal(t, "IO wait", g8.State)
-	require.Equal(t, time.Minute, g8.Waitduration)
-	require.Len(t, g8.Stack, 15)
-	require.Equal(t, "internal/poll.runtime_pollWait", g8.Stack[0].Func)
-	require.Equal(t, "/usr/local/Cellar/go/1.15.6/libexec/src/runtime/netpoll.go", g8.Stack[0].File)
-	require.Equal(t, 222, g8.Stack[0].Line)
-	require.Equal(t, "net/http.(*Server).Serve", g8.CreatedBy.Func)
-	require.Equal(t, "/usr/local/Cellar/go/1.15.6/libexec/src/net/http/server.go", g8.CreatedBy.File)
-	require.Equal(t, 2969, g8.CreatedBy.Line)
+	require.Equal(t, 7, g8.ID)
+	require.Equal(t, true, g8.LockedToThread)
+
+	g9 := goroutines[9]
+	require.Equal(t, 41, g9.ID)
+	require.Equal(t, "IO wait", g9.State)
+	require.Equal(t, time.Minute, g9.Wait)
+	require.Equal(t, false, g9.LockedToThread)
+	require.Len(t, g9.Stack, 15)
+	require.Equal(t, "internal/poll.runtime_pollWait", g9.Stack[0].Func)
+	require.Equal(t, "/usr/local/Cellar/go/1.15.6/libexec/src/runtime/netpoll.go", g9.Stack[0].File)
+	require.Equal(t, 222, g9.Stack[0].Line)
+	require.Equal(t, "net/http.(*Server).Serve", g9.CreatedBy.Func)
+	require.Equal(t, "/usr/local/Cellar/go/1.15.6/libexec/src/net/http/server.go", g9.CreatedBy.File)
+	require.Equal(t, 2969, g9.CreatedBy.Line)
 }
 
 // TestParse_PropertyBased does an exhaustive property based test against all
@@ -92,7 +98,8 @@ func TestParse_PropertyBased(t *testing.T) {
 		g := goroutines[0]
 		require.Equal(t, dump.header.WantG.ID, g.ID, msg)
 		require.Equal(t, dump.header.WantG.State, g.State, msg)
-		require.Equal(t, dump.header.WantG.Waitduration, g.Waitduration, msg)
+		require.Equal(t, dump.header.WantG.Wait, g.Wait, msg)
+		require.Equal(t, dump.header.WantG.LockedToThread, g.LockedToThread, msg)
 
 		require.Equal(t, len(dump.stack), len(g.Stack), msg)
 		for i, dumpFrame := range dump.stack {
@@ -222,11 +229,19 @@ var fixtures = generator{
 	headers: []headerLine{
 		{
 			Line:  "goroutine 1 [chan receive]:",
-			WantG: &Goroutine{ID: 1, State: "chan receive", Waitduration: 0},
+			WantG: &Goroutine{ID: 1, State: "chan receive", Wait: 0},
+		},
+		{
+			Line:  "goroutine 2 [IO Wait, locked to thread]:",
+			WantG: &Goroutine{ID: 2, State: "IO Wait", Wait: 0, LockedToThread: true},
 		},
 		{
 			Line:  "goroutine 23 [select, 5 minutes]:",
-			WantG: &Goroutine{ID: 23, State: "select", Waitduration: 5 * time.Minute},
+			WantG: &Goroutine{ID: 23, State: "select", Wait: 5 * time.Minute},
+		},
+		{
+			Line:  "goroutine 42 [select, 5 minutes, locked to thread]:",
+			WantG: &Goroutine{ID: 42, State: "select", Wait: 5 * time.Minute, LockedToThread: true},
 		},
 		{
 			Line:    "goroutine 23 []:",
@@ -320,199 +335,6 @@ var fixtures = generator{
 	},
 }
 
-func TestParse(t *testing.T) {
-	t.Skip("broken")
-
-	var (
-		mainT = `
-goroutine 1 [chan receive, 6883 minutes]:
-main.main()
-	/go/src/example.org/example/main.go:231 +0x1187
-	`
-		mainG = &Goroutine{
-			ID:           1,
-			State:        "chan receive",
-			Waitduration: 6883 * time.Minute,
-			Stack: []*Frame{{
-				Func: "main.main",
-				File: "/go/src/example.org/example/main.go",
-				Line: 231,
-			}},
-			CreatedBy: nil,
-		}
-
-		garbageT = "garbage\n"
-
-		createdByT = `
-goroutine 14 [chan receive]:
-example.org/example/vendor/k8s.io/klog.(*loggingT).flushDaemon(0x3e18220)
-	/go/src/example.org/example/vendor/k8s.io/klog/klog.go:941 +0x8b
-created by example.org/example/vendor/k8s.io/klog.init.0
-	/go/src/example.org/example/vendor/k8s.io/klog/klog.go:403 +0x6c
-	`
-
-		createdByG = &Goroutine{
-			ID:           14,
-			State:        "chan receive",
-			Waitduration: 0,
-			Stack: []*Frame{{
-				Func: "example.org/example/vendor/k8s.io/klog.(*loggingT).flushDaemon",
-				File: "/go/src/example.org/example/vendor/k8s.io/klog/klog.go",
-				Line: 941,
-			}},
-			CreatedBy: &Frame{
-				Func: "example.org/example/vendor/k8s.io/klog.init.0",
-				File: "/go/src/example.org/example/vendor/k8s.io/klog/klog.go",
-				Line: 403,
-			},
-		}
-
-		badHeaderStateT = `
-goroutine 33
-example.org/example/vendor/k8s.io/klog.(*loggin
-	/go/src/example.org/example/vendor/k8s.io/klog/klog.go:941 +0x8b
-	`
-
-		badHeaderIDT = `
-goroutine abc
-example.org/example/vendor/k8s.io/klog.(*loggingT).flushDaemon(0x3e18220)
-	/go/src/example.org/example/vendor/k8s.io/klog/klog.go:941 +0x8b
-	`
-
-		badHeaderWaitMinutesT = `
-goroutine 33 [chan receive, abc minutes]:
-example.org/example/vendor/k8s.io/klog.(*loggingT).flushDaemon(0x3e18220)
-	/go/src/example.org/example/vendor/k8s.io/klog/klog.go:941 +0x8b
-	`
-
-		badFuncT = `
-goroutine 33 [chan receive]:
-example.org/example/vendor/k8s.io/klog.(*loggi
-	/go/src/example.org/example/vendor/k8s.io/klog/klog.go:941 +0x8b
-	`
-
-		badLineNumT = `
-goroutine 33 [chan receive]:
-example.org/example/vendor/k8s.io/klog.(*loggingT).flushDaemon(0x3e18220)
-	/go/src/example.org/example/vendor/k8s.io/klog/klog.go:abc +0x8b
-	`
-
-		badFilePrefixT = `
-goroutine 33 [chan receive]:
-example.org/example/vendor/k8s.io/klog.(*loggingT).flushDaemon(0x3e18220)
-/go/src/example.org/example/vendor/k8s.io/klog/klog.go:123 +0x8b
-	`
-
-		badFileColonsT = `
-goroutine 33 [chan receive]:
-example.org/example/vendor/k8s.io/klog.(*loggingT).flushDaemon(0x3e18220)
-	/go/src/example.org/example/vendor/k8s.io/klog/klog.go:12:123 +0x8b
-	`
-
-		badFileNameT = `
-goroutine 33 [chan receive]:
-example.org/example/vendor/k8s.io/klog.(*loggingT).flushDaemon(0x3e18220)
-	:123
-	`
-
-		badFileName2T = `
-goroutine 33 [chan receive]:
-example.org/example/vendor/k8s.io/klog.(*loggingT).flushDaemon(0x3e18220)
-	
-	`
-	)
-
-	t.Run("main", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(mainT))
-		require.Nil(t, err)
-		require.Equal(t, []*Goroutine{mainG}, gs)
-	})
-
-	t.Run("garbage main garbage", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(garbageT + mainT + garbageT))
-		require.Nil(t, err)
-		require.Equal(t, []*Goroutine{mainG}, gs)
-	})
-
-	t.Run("createdBy", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(createdByT))
-		require.Nil(t, err)
-		require.Equal(t, []*Goroutine{createdByG}, gs)
-	})
-
-	t.Run("main createdBy", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(mainT + createdByT))
-		require.Nil(t, err)
-		require.Equal(t, []*Goroutine{mainG, createdByG}, gs)
-	})
-
-	t.Run("badHeaderState", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(badHeaderStateT))
-		require.Nil(t, err)
-		require.Nil(t, gs)
-	})
-
-	t.Run("badHeaderID", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(badHeaderIDT))
-		require.Nil(t, err)
-		require.Nil(t, gs)
-	})
-
-	t.Run("badHeaderWaitMinutesT", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(badHeaderWaitMinutesT))
-		require.Nil(t, err)
-		require.Nil(t, gs)
-	})
-
-	t.Run("badFunc", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(badFuncT))
-		require.Equal(t, 1, len(err.Errors))
-		require.Contains(t, err.Errors[0].Error(), "expected function call")
-		require.Equal(t, []*Goroutine{}, gs)
-	})
-
-	t.Run("main badFunc createdBy", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(mainT + badFuncT + createdByT))
-		require.Equal(t, 1, len(err.Errors))
-		require.Equal(t, []*Goroutine{mainG, createdByG}, gs)
-	})
-
-	t.Run("badLineNum", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(badLineNumT))
-		require.Equal(t, 1, len(err.Errors))
-		require.Contains(t, err.Errors[0].Error(), "expected file:line ref")
-		require.Equal(t, []*Goroutine{}, gs)
-	})
-
-	t.Run("badFilePrefix", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(badFilePrefixT))
-		require.Equal(t, 1, len(err.Errors))
-		require.Contains(t, err.Errors[0].Error(), "expected file:line ref")
-		require.Equal(t, []*Goroutine{}, gs)
-	})
-
-	t.Run("badFileColons", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(badFileColonsT))
-		require.Equal(t, 1, len(err.Errors))
-		require.Contains(t, err.Errors[0].Error(), "expected file:line ref")
-		require.Equal(t, []*Goroutine{}, gs)
-	})
-
-	t.Run("badFileName", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(badFileNameT))
-		require.Equal(t, 1, len(err.Errors))
-		require.Contains(t, err.Errors[0].Error(), "expected file:line ref")
-		require.Equal(t, []*Goroutine{}, gs)
-	})
-
-	t.Run("badFileName2", func(t *testing.T) {
-		gs, err := Parse(strings.NewReader(badFileName2T))
-		require.Equal(t, 1, len(err.Errors))
-		require.Contains(t, err.Errors[0].Error(), "expected file:line ref")
-		require.Equal(t, []*Goroutine{}, gs)
-	})
-}
-
 func BenchmarkParse(b *testing.B) {
 	data, err := ioutil.ReadFile("example.txt")
 	require.NoError(b, err)
@@ -526,7 +348,7 @@ func BenchmarkParse(b *testing.B) {
 		gs, err := Parse(bytes.NewReader(data))
 		if err != nil {
 			b.Fatal(err)
-		} else if l := len(gs); l != 9 {
+		} else if l := len(gs); l != 10 {
 			b.Fatal(l)
 		}
 	}

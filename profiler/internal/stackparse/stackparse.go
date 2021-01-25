@@ -163,7 +163,7 @@ var (
 )
 
 var goroutineHeader = regexp.MustCompile(
-	`^(\d+) \[([^,]+)(?:, (\d+) minutes)?\]:$`,
+	`^(\d+) \[([^,]+)(?:, (\d+) minutes)?(, locked to thread)?\]:$`,
 )
 
 // parseGoroutineHeader parses a goroutine header line and returns a new
@@ -178,15 +178,16 @@ func parseGoroutineHeader(line []byte) *Goroutine {
 	// TODO(fg) would probably be faster if we didn't use a regexp for this, but
 	// might be more hassle than its worth.
 	m := goroutineHeader.FindSubmatch(line)
-	if len(m) != 4 {
+	if len(m) != 5 {
 		return nil
 	}
 	var (
 		id          = m[1]
 		state       = m[2]
 		waitminutes = m[3]
+		locked      = m[4]
 
-		g   = &Goroutine{State: string(state)}
+		g   = &Goroutine{State: string(state), LockedToThread: len(locked) > 0}
 		err error
 	)
 
@@ -203,7 +204,7 @@ func parseGoroutineHeader(line []byte) *Goroutine {
 		// should be impossible to end up here
 		return nil
 	} else {
-		g.Waitduration = time.Duration(min) * time.Minute
+		g.Wait = time.Duration(min) * time.Minute
 	}
 	return g
 }
@@ -289,11 +290,12 @@ func parseFile(line []byte, f *Frame) bool {
 }
 
 type Goroutine struct {
-	ID           int
-	State        string
-	Waitduration time.Duration
-	Stack        []*Frame
-	CreatedBy    *Frame
+	ID             int
+	State          string
+	Wait           time.Duration
+	LockedToThread bool
+	Stack          []*Frame
+	CreatedBy      *Frame
 }
 
 type Frame struct {
