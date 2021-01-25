@@ -328,10 +328,6 @@ func marshalGoroutineDebug2Profile(w io.Writer, goroutines []*stackparse.Gorouti
 	return nil
 }
 
-// TODO(fg) remove this, just needed for stack2pprof.go util
-var ParseGoroutineDebug2Profile = stackparse.Parse
-var MarshalGoroutineDebug2Profile = marshalGoroutineDebug2Profile
-
 func (p *profiler) collectMetrics() (*profile, error) {
 	var buf bytes.Buffer
 	start := now()
