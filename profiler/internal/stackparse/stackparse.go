@@ -54,7 +54,6 @@ const (
 // stack will have "...additional frames elided...\n" in their output, which is
 // currently treated as a parse error which means the goroutine is not included
 // in the return value.
-//
 func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 	var (
 		sc      = bufio.NewScanner(r)
