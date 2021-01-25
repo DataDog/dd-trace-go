@@ -364,7 +364,7 @@ func BenchmarkParse(b *testing.B) {
 
 func TestFuzzCorupus(t *testing.T) {
 	if os.Getenv("FUZZ_CORPUS") == "" {
-		t.Skip("set FUZZ_CORPUS=true to generate fuzz corupus")
+		t.Skip("set FUZZ_CORPUS=true to generate fuzz corpus")
 	}
 	tests := fixtures.Permutations()
 	for i := 0; i < tests; i++ {
