@@ -83,7 +83,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		hostname, err := os.Hostname()
 		if err != nil {
 			if cfg.targetURL == cfg.apiURL {
-				return nil, fmt.Errorf("could not obtain hostname: %v; try specifying it using profiler.WithHostname", err)
+				return nil, fmt.Errorf("could not obtain hostname: %v", err)
 			}
 			log.Warn("unable to look up hostname: %v", err)
 		}
