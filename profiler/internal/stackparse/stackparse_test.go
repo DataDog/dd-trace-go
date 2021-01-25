@@ -514,7 +514,7 @@ example.org/example/vendor/k8s.io/klog.(*loggingT).flushDaemon(0x3e18220)
 }
 
 func BenchmarkParse(b *testing.B) {
-	data, err := ioutil.ReadFile("paul.txt")
+	data, err := ioutil.ReadFile("example.txt")
 	require.NoError(b, err)
 
 	b.ResetTimer()
@@ -526,7 +526,7 @@ func BenchmarkParse(b *testing.B) {
 		gs, err := Parse(bytes.NewReader(data))
 		if err != nil {
 			b.Fatal(err)
-		} else if l := len(gs); l != 3762 {
+		} else if l := len(gs); l != 9 {
 			b.Fatal(l)
 		}
 	}
