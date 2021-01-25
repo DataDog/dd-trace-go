@@ -11,12 +11,215 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestParse_Example verifies parse by checking that it seems to parse a
+// real-world example correctly.
+func TestParse_Example(t *testing.T) {
+	data, err := ioutil.ReadFile("example.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	goroutines, err := Parse(bytes.NewReader(data))
+	require.Nil(t, err)
+	require.Len(t, goroutines, 9)
+	g0 := goroutines[0]
+	require.Equal(t, 1, g0.ID)
+	require.Equal(t, "running", g0.State)
+	require.Equal(t, time.Duration(0), g0.Waitduration)
+	require.Len(t, g0.Stack, 6)
+	require.Equal(t, "runtime/pprof.writeGoroutineStacks", g0.Stack[0].Func)
+	require.Equal(t, "/usr/local/Cellar/go/1.15.6/libexec/src/runtime/pprof/pprof.go", g0.Stack[0].File)
+	require.Equal(t, 693, g0.Stack[0].Line)
+	require.Nil(t, g0.CreatedBy)
+
+	// not checking g1..g7 - we don't want to couple too tightly to this example
+
+	g8 := goroutines[8]
+	require.Equal(t, 41, g8.ID)
+	require.Equal(t, "IO wait", g8.State)
+	require.Equal(t, time.Minute, g8.Waitduration)
+	require.Len(t, g8.Stack, 15)
+	require.Equal(t, "internal/poll.runtime_pollWait", g8.Stack[0].Func)
+	require.Equal(t, "/usr/local/Cellar/go/1.15.6/libexec/src/runtime/netpoll.go", g8.Stack[0].File)
+	require.Equal(t, 222, g8.Stack[0].Line)
+	require.Equal(t, "net/http.(*Server).Serve", g8.CreatedBy.Func)
+	require.Equal(t, "/usr/local/Cellar/go/1.15.6/libexec/src/net/http/server.go", g8.CreatedBy.File)
+	require.Equal(t, 2969, g8.CreatedBy.Line)
+}
+
+// TestParse_PropertyBased does an exhaustive property based test against all
+// possible permutations of the line fragements defined below, making sure
+// the parser always does the right thing and never panics.
 func TestParse_PropertyBased(t *testing.T) {
-	headers := []struct {
-		Line    string
-		WantG   *Goroutine
-		WantErr string
-	}{
+	seen := map[string]bool{}
+	tests := fixtures.Permutations()
+	for i := 0; i < tests; i++ {
+		dump := fixtures.Generate(i)
+		dumpS := dump.String()
+		msg := fmt.Sprintf("permutation %d:\n%s", i, dumpS)
+
+		require.False(t, seen[dumpS], msg)
+		seen[dumpS] = true
+
+		goroutines, err := Parse(strings.NewReader(dumpS))
+
+		wantErr := dump.header.WantErr
+		for _, f := range dump.stack {
+			if wantErr != "" {
+				break
+			} else if f.fn.WantErr != "" {
+				wantErr = f.fn.WantErr
+			} else if f.file.WantErr != "" {
+				wantErr = f.file.WantErr
+			}
+		}
+		if wantErr == "" {
+			wantErr = dump.createdBy.fn.WantErr
+		}
+		if wantErr == "" && dump.createdBy.fn.WantFrame != nil {
+			wantErr = dump.createdBy.file.WantErr
+		}
+
+		if wantErr != "" {
+			require.NotNil(t, err, msg)
+			require.Contains(t, err.Errors[0].Error(), wantErr, msg)
+			require.Equal(t, 0, len(goroutines), msg)
+			continue
+		}
+
+		require.Nil(t, err, msg)
+
+		require.Equal(t, 1, len(goroutines), msg)
+		g := goroutines[0]
+		require.Equal(t, dump.header.WantG.ID, g.ID, msg)
+		require.Equal(t, dump.header.WantG.State, g.State, msg)
+		require.Equal(t, dump.header.WantG.Waitduration, g.Waitduration, msg)
+
+		require.Equal(t, len(dump.stack), len(g.Stack), msg)
+		for i, dumpFrame := range dump.stack {
+			gFrame := g.Stack[i]
+			require.Equal(t, dumpFrame.fn.WantFrame.Func, gFrame.Func, msg)
+			require.Equal(t, dumpFrame.file.WantFrame.File, gFrame.File, msg)
+			require.Equal(t, dumpFrame.file.WantFrame.Line, gFrame.Line, msg)
+		}
+
+		if dump.createdBy.fn.WantFrame == nil {
+			require.Nil(t, g.CreatedBy, msg)
+		} else {
+			require.Equal(t, dump.createdBy.fn.WantFrame.Func, g.CreatedBy.Func, msg)
+			require.Equal(t, dump.createdBy.file.WantFrame.File, g.CreatedBy.File, msg)
+			require.Equal(t, dump.createdBy.file.WantFrame.Line, g.CreatedBy.Line, msg)
+		}
+	}
+	t.Logf("executed %d tests", tests)
+}
+
+type dump struct {
+	header    headerLine
+	stack     []frameLines
+	createdBy frameLines
+}
+
+func (d *dump) String() string {
+	s := d.header.String()
+	for _, f := range d.stack {
+		s += f.String()
+	}
+	s += d.createdBy.String()
+	return s
+}
+
+type headerLine struct {
+	Line    string
+	WantG   *Goroutine
+	WantErr string
+}
+
+func (h *headerLine) String() string {
+	return h.Line + "\n"
+}
+
+type frameLines struct {
+	fn   frameLine
+	file frameLine
+}
+
+func (f *frameLines) String() string {
+	return f.fn.Line + "\n" + f.file.Line + "\n"
+}
+
+type frameLine struct {
+	Line      string
+	WantFrame *Frame
+	WantErr   string
+}
+
+// generator generates all possible goroutine stack trace permutations based on
+// the given stack depths and line fragements.
+type generator struct {
+	minStack  int
+	maxStack  int
+	headers   []headerLine
+	funcs     []frameLine
+	files     []frameLine
+	createdBy []frameLine
+}
+
+func (g *generator) Generate(n int) *dump {
+	// keep going around in circles
+	n = n % g.Permutations()
+
+	header := n % len(g.headers)
+	n = n / len(g.headers)
+
+	cFn := n % len(g.createdBy)
+	n = n / len(g.createdBy)
+	cFile := n % len(g.files)
+	n = n / len(g.files)
+
+	var stack []frameLines
+	for d := 0; d < g.maxStack && (n > 0 || d < g.minStack); d++ {
+		fn := n % len(g.funcs)
+		n = n / len(g.funcs)
+		file := n % len(g.files)
+		n = n / len(g.files)
+		frame := frameLines{
+			fn:   g.funcs[fn],
+			file: g.files[file],
+		}
+		stack = append(stack, frame)
+	}
+
+	d := &dump{
+		header: g.headers[header],
+		stack:  stack,
+		createdBy: frameLines{
+			fn:   g.createdBy[cFn],
+			file: g.files[cFile],
+		},
+	}
+	return d
+}
+
+func (g *generator) Permutations() int {
+	p := 0
+	for d := g.minStack; d <= g.maxStack; d++ {
+		pp := 1
+		for frame := 0; frame < d; frame++ {
+			pp = pp * len(g.files) * len(g.funcs)
+		}
+		p += len(g.headers) * pp * len(g.createdBy) * len(g.files)
+	}
+	return p
+}
+
+var fixtures = generator{
+	// Testing larger stack depths greatly increases the number of permutations
+	// but is unlikely to shake out more bugs, so a depth of 1 to 2 seems like
+	// the sweet spot.
+	minStack: 1,
+	maxStack: 2,
+
+	headers: []headerLine{
 		{
 			Line:  "goroutine 1 [chan receive]:",
 			WantG: &Goroutine{ID: 1, State: "chan receive", Waitduration: 0},
@@ -33,13 +236,13 @@ func TestParse_PropertyBased(t *testing.T) {
 			Line:    "goroutine ",
 			WantErr: "invalid goroutine header",
 		},
-	}
+		{
+			Line:    "goroutine 1 [chan receive]:\n",
+			WantErr: "invalid function call",
+		},
+	},
 
-	funcs := []struct {
-		Line      string
-		WantFrame *Frame
-		WantErr   string
-	}{
+	funcs: []frameLine{
 		{
 			Line:      "main.main()",
 			WantFrame: &Frame{Func: "main.main"},
@@ -51,10 +254,6 @@ func TestParse_PropertyBased(t *testing.T) {
 		{
 			Line:      "net/http.(*persistConn).writeLoop(0xc0001a5c20)",
 			WantFrame: &Frame{Func: "net/http.(*persistConn).writeLoop"},
-		},
-		{
-			Line:    "",
-			WantErr: "invalid function call",
 		},
 		{
 			Line:    "foo.bar",
@@ -88,13 +287,9 @@ func TestParse_PropertyBased(t *testing.T) {
 			Line:    "()",
 			WantErr: "invalid function call",
 		},
-	}
+	},
 
-	files := []struct {
-		Line      string
-		WantFrame *Frame
-		WantErr   string
-	}{
+	files: []frameLine{
 		{
 			Line:      "\t/go/src/example.org/example/main.go:231 +0x1187",
 			WantFrame: &Frame{File: "/go/src/example.org/example/main.go", Line: 231},
@@ -111,44 +306,18 @@ func TestParse_PropertyBased(t *testing.T) {
 			Line:    "",
 			WantErr: "invalid file:line ref",
 		},
-	}
+	},
 
-	n := 0
-	for _, header := range headers {
-		for _, fn := range funcs {
-			for _, file := range files {
-				n++
-				t.Run(fmt.Sprintf("%d", n), func(t *testing.T) {
-					dump := header.Line + "\n" + fn.Line + "\n" + file.Line + "\n"
-					goroutines, errs := Parse(strings.NewReader(dump))
-					wantErrs := []string{header.WantErr, fn.WantErr, file.WantErr}
-
-					for _, wantErr := range wantErrs {
-						if wantErr != "" {
-							require.NotNil(t, errs, dump)
-							require.Equal(t, 1, len(errs.Errors), dump)
-							require.Contains(t, errs.Errors[0].Error(), wantErr, dump)
-							return
-						}
-					}
-
-					require.Nil(t, errs, dump)
-
-					require.Equal(t, 1, len(goroutines), dump)
-					g := goroutines[0]
-					require.Equal(t, header.WantG.ID, g.ID, dump)
-					require.Equal(t, header.WantG.State, g.State, dump)
-					require.Equal(t, header.WantG.Waitduration, g.Waitduration, dump)
-
-					require.Equal(t, 1, len(g.Stack), dump)
-					f := g.Stack[0]
-					require.Equal(t, fn.WantFrame.Func, f.Func, dump)
-					require.Equal(t, file.WantFrame.File, f.File, dump)
-					require.Equal(t, file.WantFrame.Line, f.Line, dump)
-				})
-			}
-		}
-	}
+	createdBy: []frameLine{
+		{
+			Line:      "created by net/http.(*Server).Serve",
+			WantFrame: &Frame{Func: "net/http.(*Server).Serve"},
+		},
+		{
+			Line:      "created by github.com/example.org/example/k8s.io/klog.init.0",
+			WantFrame: &Frame{Func: "github.com/example.org/example/k8s.io/klog.init.0"},
+		},
+	},
 }
 
 func TestParse(t *testing.T) {
@@ -354,9 +523,11 @@ func BenchmarkParse(b *testing.B) {
 	parsedBytes := 0
 	for i := 0; i < b.N; i++ {
 		parsedBytes += len(data)
-		_, err := Parse(bytes.NewReader(data))
+		gs, err := Parse(bytes.NewReader(data))
 		if err != nil {
 			b.Fatal(err)
+		} else if l := len(gs); l != 3762 {
+			b.Fatal(l)
 		}
 	}
 

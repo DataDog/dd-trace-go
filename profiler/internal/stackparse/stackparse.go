@@ -40,8 +40,10 @@ const (
 // Parse parses a goroutines stack trace dump as produced by runtime.Stack().
 // The parser is forgiving and will continue parsing even when encountering
 // unexpected data. When this happens it will try to discard the entire
-// goroutine that encountered the problem and return an error in addition to
-// the goroutines it was able to parse successfully.
+// goroutine that encountered the problem and continue with the next one. It
+// will also return an *Error including an error for every goroutine that
+// couldn't be parsed. If all goroutines were parsed successfully, *Errors is
+// nil.
 //
 // The parser expects the input to roughly follow the ABNF grammar below:
 //
@@ -130,13 +132,18 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 				continue
 			}
 			state = stateCreatedBy
+		// TODO(fg) rename this state? three different things might happen here
 		case stateCreatedBy:
 			if strings.HasPrefix(line, createdByPrefix) {
 				line = line[len(createdByPrefix):]
 				state = stateCreatedByFunc
 				goto statemachine
+			} else if line == "" {
+				state = stateHeader
+			} else {
+				state = stateStackFunc
+				goto statemachine
 			}
-			state = stateHeader
 		}
 	}
 
