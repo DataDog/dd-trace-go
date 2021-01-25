@@ -18,6 +18,7 @@ package stackparse
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"regexp"
@@ -70,7 +71,7 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 		sc      = bufio.NewScanner(r)
 		state   parserState
 		lineNum int
-		line    string
+		line    []byte
 
 		goroutines []*Goroutine
 		g          *Goroutine
@@ -93,7 +94,7 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 	// This for loop implements a simple line based state machine for parsing
 	// the goroutines dump.
 	for sc.Scan() {
-		line = sc.Text()
+		line = sc.Bytes()
 		lineNum++
 
 	statemachine:
@@ -103,7 +104,7 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 			// leading/trailing whitespace but also in case we encountered an error
 			// during the previous goroutine and need to seek to the beginning of the
 			// next one.
-			if !strings.HasPrefix(line, goroutinePrefix) {
+			if !bytes.HasPrefix(line, goroutinePrefix) {
 				continue
 			}
 
@@ -135,11 +136,11 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 			state = stateCreatedBy
 		// TODO(fg) rename this state? three different things might happen here
 		case stateCreatedBy:
-			if strings.HasPrefix(line, createdByPrefix) {
+			if bytes.HasPrefix(line, createdByPrefix) {
 				line = line[len(createdByPrefix):]
 				state = stateCreatedByFunc
 				goto statemachine
-			} else if line == "" {
+			} else if len(line) == 0 {
 				state = stateHeader
 			} else {
 				state = stateStackFunc
@@ -154,9 +155,9 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 	return goroutines, nil
 }
 
-const (
-	goroutinePrefix = "goroutine "
-	createdByPrefix = "created by "
+var (
+	goroutinePrefix = []byte("goroutine ")
+	createdByPrefix = []byte("created by ")
 )
 
 var goroutineHeader = regexp.MustCompile(
@@ -171,10 +172,10 @@ var goroutineHeader = regexp.MustCompile(
 //
 // Example Output:
 // &Goroutine{ID: 1, State "chan receive", Waitduration: 6883*time.Minute}
-func parseGoroutineHeader(line string) *Goroutine {
+func parseGoroutineHeader(line []byte) *Goroutine {
 	// TODO(fg) would probably be faster if we didn't use a regexp for this, but
 	// might be more hassle than its worth.
-	m := goroutineHeader.FindStringSubmatch(line)
+	m := goroutineHeader.FindSubmatch(line)
 	if len(m) != 4 {
 		return nil
 	}
@@ -183,20 +184,20 @@ func parseGoroutineHeader(line string) *Goroutine {
 		state       = m[2]
 		waitminutes = m[3]
 
-		g   = &Goroutine{State: state}
+		g   = &Goroutine{State: string(state)}
 		err error
 	)
 
 	// regex currently sucks `abc minutes` into the state string if abc is
 	// non-numeric, let's not consider this a valid goroutine.
-	if strings.HasSuffix(state, " minutes") {
+	if strings.HasSuffix(g.State, " minutes") {
 		return nil
-	} else if g.ID, err = strconv.Atoi(id); err != nil {
+	} else if g.ID, err = strconv.Atoi(string(id)); err != nil {
 		// should be impossible to end up here
 		return nil
-	} else if waitminutes == "" {
+	} else if len(waitminutes) == 0 {
 		// do nothing, goroutine isn't waiting
-	} else if min, err := strconv.Atoi(waitminutes); err != nil {
+	} else if min, err := strconv.Atoi(string(waitminutes)); err != nil {
 		// should be impossible to end up here
 		return nil
 	} else {
@@ -213,9 +214,9 @@ func parseGoroutineHeader(line string) *Goroutine {
 //
 // Example Output:
 // &Frame{Func: "runtime/pprof.writeGoroutineStacks"}
-func parseFunc(line string, state parserState) *Frame {
+func parseFunc(line []byte, state parserState) *Frame {
 	if state == stateCreatedByFunc {
-		return &Frame{Func: line}
+		return &Frame{Func: string(line)}
 	}
 
 	// A valid func call is supposed to have at least one matched pair of parens.
@@ -243,7 +244,7 @@ func parseFunc(line string, state parserState) *Frame {
 	if openIndex == -1 || closeIndex == -1 || openIndex == 0 {
 		return nil
 	}
-	return &Frame{Func: line[0:openIndex]}
+	return &Frame{Func: string(line[0:openIndex])}
 }
 
 // parseFile parses a file line and updates f accordingly or returns false on
@@ -254,7 +255,7 @@ func parseFunc(line string, state parserState) *Frame {
 //
 // Example Update:
 // &Frame{File: "/root/go1.15.6.linux.amd64/src/net/http/server.go", Line: 2969}
-func parseFile(line string, f *Frame) bool {
+func parseFile(line []byte, f *Frame) bool {
 	if len(line) == 0 || line[0] != '\t' {
 		return false
 	}
@@ -265,7 +266,7 @@ func parseFile(line string, f *Frame) bool {
 			if f.File != "" {
 				return false
 			}
-			f.File = line[0:i]
+			f.File = string(line[0:i])
 		} else if c == ' ' || i+1 == len(line) {
 			if f.File == "" {
 				return false
@@ -278,7 +279,7 @@ func parseFile(line string, f *Frame) bool {
 			}
 
 			var err error
-			f.Line, err = strconv.Atoi(line[len(f.File)+1 : end])
+			f.Line, err = strconv.Atoi(string(line[len(f.File)+1 : end]))
 			return err == nil
 		}
 	}
