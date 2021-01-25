@@ -10,6 +10,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/stackparse"
 )
 
+// usage: go run stack2json.go < example.txt
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
