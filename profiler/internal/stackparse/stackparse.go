@@ -46,26 +46,12 @@ const (
 // couldn't be parsed. If all goroutines were parsed successfully, *Errors is
 // nil.
 //
-// The parser expects the input to roughly follow the ABNF grammar below:
+// Known Issues:
+// 1. The max stack depth for runtime.Stack() is 100. Goroutines with a deeper
+// stack will have "...additional frames elided...\n" in their output, which is
+// currently treated as a parse error which means the goroutine is not included
+// in the return value.
 //
-// goroutines = goroutine *("\n" goroutine)
-// goroutine  = header stack created_by
-//
-// header     = "goroutine " id "[" state wait "]\n"
-// id         = 1*DIGIT
-// state      = 1*OCTET ; excluding []
-// wait       = *1(", " minutes " minutes")
-// minutes    = 1*DIGIT
-//
-// stack      = 1*frame
-// frame      = func file
-// func       = func_name "(" args ")\n"
-// func_name  = 1*OCTET ; excluding: ()
-// args       = 1*OCTET ; excluding: ()
-// file       = "\t" path ":" line offset "\n"
-// path       = 1*OCTET
-// line       = 1*DIGIT
-// offset     = "+0x" 1*HEXDIG
 func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 	var (
 		sc      = bufio.NewScanner(r)
