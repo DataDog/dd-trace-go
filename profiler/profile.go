@@ -10,12 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"runtime/pprof"
 	"time"
 
 	pprofile "github.com/google/pprof/profile"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/panicparse/stack"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/stackparse"
 )
 
 // ProfileType represents a type of profile that the profiler is able to run.
@@ -249,7 +248,7 @@ func goroutineWaitProfile(cfg *config) (*profile, error) {
 // by parsing the text output. See [1] for more information.
 //
 // [1] https://github.com/felixge/go-profiler-notes/blob/main/goroutine.md#goroutine-properties
-func goroutineDebug2Profile() ([]*stack.Goroutine, error) {
+func goroutineDebug2Profile() ([]*stackparse.Goroutine, error) {
 	prof := pprof.Lookup("goroutine") // TODO(fg) use lookupProfile()?
 	if prof == nil {
 		return nil, errors.New("goroutineWaitProfile: profile not found")
@@ -259,21 +258,10 @@ func goroutineDebug2Profile() ([]*stack.Goroutine, error) {
 	if err := prof.WriteTo(buf, 2); err != nil {
 		return nil, err
 	}
-	return parseGoroutineDebug2Profile(buf)
+	return stackparse.Parse(buf)
 }
 
-// TODO(fg) Should we use this 3rd party lib for parsing?
-func parseGoroutineDebug2Profile(r io.Reader) ([]*stack.Goroutine, error) {
-	// TODO(fg) ioutil.Discard?, stack.DefaultOpts()?
-	snap, suffix, err := stack.ScanSnapshot(r, ioutil.Discard, stack.DefaultOpts())
-	if err != nil && err != io.EOF {
-		return nil, err
-	}
-	_ = suffix // TODO(fg) do we need this?
-	return snap.Goroutines, nil
-}
-
-func marshalGoroutineDebug2Profile(w io.Writer, goroutines []*stack.Goroutine) error {
+func marshalGoroutineDebug2Profile(w io.Writer, goroutines []*stackparse.Goroutine) error {
 	functionID := uint64(1)
 	locationID := uint64(1)
 
@@ -288,13 +276,10 @@ func marshalGoroutineDebug2Profile(w io.Writer, goroutines []*stack.Goroutine) e
 	}
 
 	for _, g := range goroutines {
-		// TODO(fg) exclude goroutines that aren't marked as waiting?
-		//if g.SleepMax == 0 {
-		//continue
-		//}
+		// TODO(fg) exclude goroutines w/ g.Wait == 0?
 
 		sample := &pprofile.Sample{
-			Value: []int64{(time.Duration(g.SleepMax) * time.Minute).Nanoseconds()},
+			Value: []int64{g.Wait.Nanoseconds()},
 			Label: map[string][]string{
 				"state": {g.State}, // TODO(fg) split into atomicstatus/waitreason?
 			},
@@ -305,11 +290,11 @@ func marshalGoroutineDebug2Profile(w io.Writer, goroutines []*stack.Goroutine) e
 
 		// TODO(fg) the whole loop is quickly hacked together, make sure we're
 		// putting the right values in the right places.
-		for _, call := range g.Stack.Calls {
+		for _, call := range g.Stack {
 			function := &pprofile.Function{
 				ID:       functionID,
-				Name:     call.Func.Complete,
-				Filename: call.LocalSrcPath,
+				Name:     call.Func,
+				Filename: call.File,
 			}
 			p.Function = append(p.Function, function)
 			functionID++
@@ -344,7 +329,7 @@ func marshalGoroutineDebug2Profile(w io.Writer, goroutines []*stack.Goroutine) e
 }
 
 // TODO(fg) remove this, just needed for stack2pprof.go util
-var ParseGoroutineDebug2Profile = parseGoroutineDebug2Profile
+var ParseGoroutineDebug2Profile = stackparse.Parse
 var MarshalGoroutineDebug2Profile = marshalGoroutineDebug2Profile
 
 func (p *profiler) collectMetrics() (*profile, error) {
