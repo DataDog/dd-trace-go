@@ -80,7 +80,7 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 		errs           = &Errors{}
 		abortGoroutine = func(msg string) {
 			err := fmt.Errorf(
-				"%s on line %d, but got: %s",
+				"%s on line %d: %q",
 				msg,
 				lineNum,
 				line,
@@ -108,8 +108,7 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 				continue
 			}
 
-			line = line[len(goroutinePrefix):]
-			g = parseGoroutineHeader(line)
+			g = parseGoroutineHeader(line[len(goroutinePrefix):])
 			goroutines = append(goroutines, g)
 			state = stateStackFunc
 			if g == nil {
@@ -149,6 +148,9 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 		}
 	}
 
+	if err := sc.Err(); err != nil {
+		errs.Errors = append(errs.Errors, err)
+	}
 	if len(errs.Errors) > 0 {
 		return goroutines, errs
 	}
@@ -161,7 +163,7 @@ var (
 )
 
 var goroutineHeader = regexp.MustCompile(
-	`^(\d+) \[(.+?)(?:, (\d+) minutes)?\]:$`,
+	`^(\d+) \[([^,]+)(?:, (\d+) minutes)?\]:$`,
 )
 
 // parseGoroutineHeader parses a goroutine header line and returns a new

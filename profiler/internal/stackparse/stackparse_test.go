@@ -15,9 +15,7 @@ import (
 // real-world example correctly.
 func TestParse_Example(t *testing.T) {
 	data, err := ioutil.ReadFile("example.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	goroutines, err := Parse(bytes.NewReader(data))
 	require.Nil(t, err)
 	require.Len(t, goroutines, 9)
