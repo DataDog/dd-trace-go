@@ -182,6 +182,12 @@ func TestOptions(t *testing.T) {
 		assert.Contains(t, cfg.tags, "c:3")
 	})
 
+	t.Run("WithHostname", func(t *testing.T) {
+		var cfg config
+		WithHostname("abc")(&cfg)
+		assert.Contains(t, cfg.hostname, "abc")
+	})
+
 	t.Run("WithTags/override", func(t *testing.T) {
 		os.Setenv("DD_TAGS", "env1:tag1,env2:tag2")
 		defer os.Unsetenv("DD_TAGS")

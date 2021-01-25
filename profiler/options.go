@@ -325,3 +325,10 @@ func WithUDS(socketPath string) Option {
 		Timeout: defaultHTTPTimeout,
 	})
 }
+
+// WithHostname specifies the hostname to attach to a profile
+func WithHostname(hostname string) Option {
+	return func(cfg *config) {
+		cfg.hostname = hostname
+	}
+}
