@@ -257,8 +257,12 @@ func goroutineDebug2Profile() ([]*stackparse.Goroutine, error) {
 	buf := &bytes.Buffer{}
 	if err := prof.WriteTo(buf, 2); err != nil {
 		return nil, err
+		// TODO(fg) integrate info about partial errors in pprof file / metrics.
+	} else if goroutines, err := stackparse.Parse(buf); err != nil {
+		return nil, err
+	} else {
+		return goroutines, nil
 	}
-	return stackparse.Parse(buf)
 }
 
 func marshalGoroutineDebug2Profile(w io.Writer, goroutines []*stackparse.Goroutine) error {
