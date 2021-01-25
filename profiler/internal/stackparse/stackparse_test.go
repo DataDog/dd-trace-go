@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -531,4 +533,19 @@ func BenchmarkParse(b *testing.B) {
 
 	mbPerSec := float64(parsedBytes) / time.Since(start).Seconds() / 1024 / 1024
 	b.ReportMetric(mbPerSec, "MB/s")
+}
+
+func TestFuzzCorupus(t *testing.T) {
+	if os.Getenv("FUZZ_CORPUS") == "" {
+		t.Skip("set FUZZ_CORPUS=true to generate fuzz corupus")
+	}
+	tests := fixtures.Permutations()
+	for i := 0; i < tests; i++ {
+		dump := fixtures.Generate(i)
+		name := filepath.Join("corpus", fmt.Sprintf("%d.txt", i))
+		err := ioutil.WriteFile(name, []byte(dump.String()), 0666)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 }
