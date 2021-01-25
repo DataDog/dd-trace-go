@@ -11,13 +11,13 @@
 // 3. Forgiving: Favor producing partial results over no results, even if the
 // input data is different than expected.
 // 4. Efficient: Parse several hundred MB/s.
+package stackparse
 
 // Before implementing this pkg we experimented with panicparse, but decided to
 // roll out our own library because of gomodule issues [1], and because we
 // figured we can make a library that's 100x faster while 10x less code.
 //
 // [1] https://github.com/maruel/panicparse/issues/57
-package stackparse
 
 import (
 	"bufio"
