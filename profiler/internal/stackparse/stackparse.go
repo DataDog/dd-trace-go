@@ -156,10 +156,11 @@ var goroutineHeader = regexp.MustCompile(
 )
 
 // parseGoroutineHeader parses a goroutine header line and returns a new
-// Goroutine on success or nil on error.
+// Goroutine on success or nil on error. It expects the `goroutinePrefix` to
+// be trimmed from the beginning of the line.
 //
 // Example Input:
-// goroutine 1 [chan receive, 6883 minutes]:
+// 1 [chan receive, 6883 minutes]:
 //
 // Example Output:
 // &Goroutine{ID: 1, State "chan receive", Waitduration: 6883*time.Minute}
@@ -244,7 +245,7 @@ func parseFunc(line []byte, state parserState) *Frame {
 // error.
 //
 // Example Input:
-// /root/go1.15.6.linux.amd64/src/net/http/server.go:2969 +0x36c
+// \t/root/go1.15.6.linux.amd64/src/net/http/server.go:2969 +0x36c
 //
 // Example Update:
 // &Frame{File: "/root/go1.15.6.linux.amd64/src/net/http/server.go", Line: 2969}
