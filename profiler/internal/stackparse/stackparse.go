@@ -49,12 +49,6 @@ const (
 // will also return an *Error including an error for every goroutine that
 // couldn't be parsed. If all goroutines were parsed successfully, *Errors is
 // nil.
-//
-// Known Issues:
-// 1. The max stack depth for runtime.Stack() is 100. Goroutines with a deeper
-// stack will have "...additional frames elided...\n" in their output, which is
-// currently treated as a parse error which means the goroutine is not included
-// in the return value.
 func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 	var (
 		sc      = bufio.NewScanner(r)
