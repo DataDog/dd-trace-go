@@ -156,15 +156,9 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 	}
 }
 
-// enqueueUpload pushes a batch of profiles onto the queue to be uploaded. If
-// there is no room, it will evict the oldest profile to enqueue bat. Typically
-// a batch would be one of each enabled profile. This function must not be
-// called concurrently from different goroutines.
-// TODO(fg) This func could be changed to exert backpressure and stop the
-// profiling when the queue is full to avoid the profiling overhead while we
-// can't send data. Will require some discussion.
+// enqueueUpload pushes a batch of profiles onto the queue to be uploaded. If there is no room, it will
+// evict the oldest profile to make some. Typically a batch would be one of each enabled profile.
 func (p *profiler) enqueueUpload(bat batch) {
-	// If p.out is full, evict oldest entries until there is room.
 	for {
 		select {
 		case p.out <- bat:
