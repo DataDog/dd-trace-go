@@ -38,6 +38,7 @@
           "Line": 152
         }
       ],
+      "FramesElided": false,
       "CreatedBy": null
     },
     {
@@ -57,6 +58,7 @@
           "Line": 165
         }
       ],
+      "FramesElided": false,
       "CreatedBy": {
         "Func": "main.indirectShortSleepLoop2",
         "File": "/Users/felix.geisendoerfer/go/src/github.com/felixge/go-profiler-notes/examples/goroutine/main.go",
@@ -125,6 +127,7 @@
           "Line": 123
         }
       ],
+      "FramesElided": false,
       "CreatedBy": {
         "Func": "main.main",
         "File": "/Users/felix.geisendoerfer/go/src/github.com/felixge/go-profiler-notes/examples/goroutine/main.go",
@@ -148,6 +151,7 @@
           "Line": 165
         }
       ],
+      "FramesElided": false,
       "CreatedBy": {
         "Func": "main.main",
         "File": "/Users/felix.geisendoerfer/go/src/github.com/felixge/go-profiler-notes/examples/goroutine/main.go",
@@ -171,6 +175,7 @@
           "Line": 171
         }
       ],
+      "FramesElided": false,
       "CreatedBy": {
         "Func": "main.main",
         "File": "/Users/felix.geisendoerfer/go/src/github.com/felixge/go-profiler-notes/examples/goroutine/main.go",
@@ -189,6 +194,7 @@
           "Line": 177
         }
       ],
+      "FramesElided": false,
       "CreatedBy": {
         "Func": "main.main",
         "File": "/Users/felix.geisendoerfer/go/src/github.com/felixge/go-profiler-notes/examples/goroutine/main.go",
@@ -207,6 +213,7 @@
           "Line": 2340
         }
       ],
+      "FramesElided": false,
       "CreatedBy": {
         "Func": "net/http.(*Transport).dialConn",
         "File": "/usr/local/Cellar/go/1.15.6/libexec/src/net/http/transport.go",
@@ -270,6 +277,7 @@
           "Line": 2040
         }
       ],
+      "FramesElided": false,
       "CreatedBy": {
         "Func": "net/http.(*Transport).dialConn",
         "File": "/usr/local/Cellar/go/1.15.6/libexec/src/net/http/transport.go",
@@ -358,6 +366,7 @@
           "Line": 1851
         }
       ],
+      "FramesElided": false,
       "CreatedBy": {
         "Func": "net/http.(*Server).Serve",
         "File": "/usr/local/Cellar/go/1.15.6/libexec/src/net/http/server.go",

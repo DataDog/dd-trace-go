@@ -106,6 +106,11 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 		case stateStackFunc, stateCreatedByFunc:
 			f = parseFunc(line, state)
 			if f == nil {
+				if bytes.Equal(line, framesElided) {
+					g.FramesElided = true
+					state = stateCreatedBy
+					continue
+				}
 				abortGoroutine("invalid function call")
 				continue
 			}
@@ -149,6 +154,7 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 var (
 	goroutinePrefix = []byte("goroutine ")
 	createdByPrefix = []byte("created by ")
+	framesElided    = []byte("...additional frames elided...")
 )
 
 var goroutineHeader = regexp.MustCompile(
@@ -296,6 +302,10 @@ type Goroutine struct {
 	LockedToThread bool
 	// Stack is the stack trace of the goroutine.
 	Stack []*Frame
+	// FramesElided is true if the stack trace contains a message indicating that
+	// additional frames were elided. This happens when the stack depth exceeds
+	// 100.
+	FramesElided bool
 	// CreatedBy is the frame that created this goroutine, nil for main().
 	CreatedBy *Frame
 }

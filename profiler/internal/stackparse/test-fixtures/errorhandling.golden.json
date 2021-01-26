@@ -15,6 +15,7 @@
           "Line": 152
         }
       ],
+      "FramesElided": false,
       "CreatedBy": null
     },
     {
@@ -29,6 +30,7 @@
           "Line": 182
         }
       ],
+      "FramesElided": false,
       "CreatedBy": {
         "Func": "main.main",
         "File": "/example/main.go",

@@ -33,6 +33,7 @@
           "Line": 1123
         }
       ],
+      "FramesElided": false,
       "CreatedBy": {
         "Func": "testing.(*T).Run",
         "File": "/usr/local/Cellar/go/1.15.6/libexec/src/testing/testing.go",
