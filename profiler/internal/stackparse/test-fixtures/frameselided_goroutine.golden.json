@@ -1,0 +1,539 @@
+{
+  "Errors": null,
+  "Goroutines": [
+    {
+      "ID": 33,
+      "State": "running",
+      "Wait": 0,
+      "LockedToThread": false,
+      "Stack": [
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 19
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 22
+        }
+      ],
+      "FramesElided": true,
+      "CreatedBy": {
+        "Func": "main.main",
+        "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+        "Line": 12
+      }
+    },
+    {
+      "ID": 1,
+      "State": "sleep",
+      "Wait": 0,
+      "LockedToThread": false,
+      "Stack": [
+        {
+          "Func": "time.Sleep",
+          "File": "/usr/local/Cellar/go/1.15.6/libexec/src/runtime/time.go",
+          "Line": 188
+        },
+        {
+          "Func": "main.main",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/max_frames.go",
+          "Line": 13
+        }
+      ],
+      "FramesElided": false,
+      "CreatedBy": null
+    }
+  ]
+}
