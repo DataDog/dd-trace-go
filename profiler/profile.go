@@ -314,6 +314,9 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer) error {
 		p.Sample = append(p.Sample, sample)
 	}
 
+	// Put the error message in the pprof profiles as comments in case we need to
+	// debug issues at some point.
+	// TODO(fg) would be nice to also have a metric counter for this
 	if errs != nil {
 		for _, err := range errs.Errors {
 			p.Comments = append(p.Comments, "error: "+err.Error())
