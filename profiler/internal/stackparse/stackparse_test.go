@@ -333,6 +333,7 @@ func BenchmarkParse(b *testing.B) {
 	require.NoError(b, err)
 
 	b.ResetTimer()
+	b.ReportAllocs()
 
 	start := time.Now()
 	parsedBytes := 0
