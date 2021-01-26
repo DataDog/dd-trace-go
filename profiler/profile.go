@@ -230,22 +230,23 @@ func goroutineProfile(cfg *config) (*profile, error) {
 }
 
 func goroutineWaitProfile(cfg *config) (*profile, error) {
-	var buf bytes.Buffer
-	start := now()
-	if err := lookupProfile(GoroutineProfile.String(), &buf, 2); err != nil {
+	var (
+		text  = &bytes.Buffer{}
+		pprof = &bytes.Buffer{}
+		start = now()
+	)
+	if err := lookupProfile(GoroutineProfile.String(), text, 2); err != nil {
+		return nil, err
+	} else if err := goroutineDebug2ToPprof(text, pprof); err != nil {
 		return nil, err
 	}
 	end := now()
 	tags := append(cfg.tags, GoroutineWaitProfile.Tag())
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 
-	data := &bytes.Buffer{}
-	if err := goroutineDebug2ToPprof(&buf, data); err != nil {
-		return nil, err
-	}
 	return &profile{
 		name: GoroutineWaitProfile.Filename(),
-		data: data.Bytes(),
+		data: pprof.Bytes(),
 	}, nil
 }
 
