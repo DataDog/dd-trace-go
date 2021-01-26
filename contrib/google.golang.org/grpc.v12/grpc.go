@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 //go:generate protoc -I . fixtures_test.proto --go_out=plugins=grpc:.
 
@@ -63,7 +63,7 @@ func startSpanFromContext(ctx context.Context, method, service string, rate floa
 	return tracer.StartSpanFromContext(ctx, "grpc.server", opts...)
 }
 
-// UnaryClientInterceptor will add tracing to a gprc client.
+// UnaryClientInterceptor will add tracing to a grpc client.
 func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientInterceptor {
 	cfg := new(interceptorConfig)
 	defaults(cfg)

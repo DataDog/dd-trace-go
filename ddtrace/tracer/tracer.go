@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
@@ -306,6 +306,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	// add global tags
 	for k, v := range t.config.globalTags {
 		span.SetTag(k, v)
+	}
+	if context == nil || context.span == nil || context.span.Service != span.Service {
+		span.setMetric(keyTopLevel, 1)
+		// all top level spans are measured. So the measured tag is redundant.
+		delete(span.Metrics, keyMeasured)
 	}
 	if t.config.version != "" && span.Service == t.config.serviceName {
 		span.SetTag(ext.Version, t.config.version)

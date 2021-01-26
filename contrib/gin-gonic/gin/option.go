@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package gin
 
@@ -17,9 +17,16 @@ import (
 type config struct {
 	analyticsRate float64
 	resourceNamer func(c *gin.Context) string
+	serviceName   string
 }
 
-func newConfig() *config {
+func newConfig(service string) *config {
+	if service == "" {
+		service = "gin.router"
+		if svc := globalconfig.ServiceName(); svc != "" {
+			service = svc
+		}
+	}
 	rate := globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {
 		rate = 1.0
@@ -27,6 +34,7 @@ func newConfig() *config {
 	return &config{
 		analyticsRate: rate,
 		resourceNamer: defaultResourceNamer,
+		serviceName:   service,
 	}
 }
 

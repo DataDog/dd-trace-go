@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
@@ -73,4 +73,23 @@ func TestStartSpanFromContext(t *testing.T) {
 	assert.Equal("http.request", got.Name)
 	assert.Equal("gin", got.Service)
 	assert.Equal("/", got.Resource)
+}
+
+func TestStartSpanFromNilContext(t *testing.T) {
+	_, _, _, stop := startTestTracer(t)
+	defer stop()
+
+	child, ctx := StartSpanFromContext(nil, "http.request")
+	assert := assert.New(t)
+	// ensure the returned context works
+	assert.Nil(ctx.Value("not_found_key"))
+
+	internalSpan, ok := child.(*span)
+	assert.True(ok)
+	assert.Equal("http.request", internalSpan.Name)
+
+	// the returned context includes the span
+	ctxSpan, ok := SpanFromContext(ctx)
+	assert.True(ok)
+	assert.Equal(child, ctxSpan)
 }

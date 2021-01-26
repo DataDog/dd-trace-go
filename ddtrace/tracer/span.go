@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 //go:generate msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 
@@ -118,7 +118,11 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMetric(key, v)
 		return
 	}
-	// not numeric, not a string, not a bool, and not an error
+	if v, ok := value.(fmt.Stringer); ok {
+		s.setMeta(key, v.String())
+		return
+	}
+	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
 	s.setMeta(key, fmt.Sprint(value))
 }
 
@@ -200,6 +204,7 @@ func (s *span) setMeta(key, v string) {
 	if s.Meta == nil {
 		s.Meta = make(map[string]string, 1)
 	}
+	delete(s.Metrics, key)
 	switch key {
 	case ext.SpanName:
 		s.Name = v
@@ -246,6 +251,7 @@ func (s *span) setMetric(key string, v float64) {
 	if s.Metrics == nil {
 		s.Metrics = make(map[string]float64, 1)
 	}
+	delete(s.Meta, key)
 	switch key {
 	case ext.SamplingPriority:
 		// setting sampling priority per spec
@@ -375,10 +381,13 @@ func (s *span) Format(f fmt.State, c rune) {
 
 const (
 	keySamplingPriority        = "_sampling_priority_v1"
-	keySamplingPriorityRate    = "_sampling_priority_rate_v1"
+	keySamplingPriorityRate    = "_dd.agent_psr"
 	keyOrigin                  = "_dd.origin"
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
 	keyRulesSamplerLimiterRate = "_dd.limit_psr"
 	keyMeasured                = "_dd.measured"
+	// keyTopLevel is the key of top level metric indicating if a span is top level.
+	// A top level span is a local root (parent span of the local trace) or the first span of each service.
+	keyTopLevel = "_dd.top_level"
 )

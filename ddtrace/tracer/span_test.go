@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
@@ -244,7 +244,7 @@ const (
 func TestSpanSetMetric(t *testing.T) {
 	for name, tt := range map[string]func(assert *assert.Assertions, span *span){
 		"init": func(assert *assert.Assertions, span *span) {
-			assert.Equal(2, len(span.Metrics))
+			assert.Equal(3, len(span.Metrics))
 			_, ok := span.Metrics[keySamplingPriority]
 			assert.True(ok)
 			_, ok = span.Metrics[keySamplingPriorityRate]
@@ -279,7 +279,7 @@ func TestSpanSetMetric(t *testing.T) {
 		"finished": func(assert *assert.Assertions, span *span) {
 			span.Finish()
 			span.SetTag("finished.test", 1337)
-			assert.Equal(2, len(span.Metrics))
+			assert.Equal(3, len(span.Metrics))
 			_, ok := span.Metrics["finished.test"]
 			assert.False(ok)
 		},
@@ -342,6 +342,25 @@ func TestSpanErrorNil(t *testing.T) {
 	span.SetTag(ext.Error, nil)
 	assert.Equal(int32(0), span.Error)
 	assert.Equal(nMeta, len(span.Meta))
+}
+
+func TestUniqueTagKeys(t *testing.T) {
+	assert := assert.New(t)
+	span := newBasicSpan("web.request")
+
+	//check to see if setMeta correctly wipes out a metric tag
+	span.SetTag("foo.bar", 12)
+	span.SetTag("foo.bar", "val")
+
+	assert.NotContains(span.Metrics, "foo.bar")
+	assert.Equal("val", span.Meta["foo.bar"])
+
+	//check to see if setMetric correctly wipes out a meta tag
+	span.SetTag("foo.bar", "val")
+	span.SetTag("foo.bar", 12)
+
+	assert.Equal(12.0, span.Metrics["foo.bar"])
+	assert.NotContains(span.Meta, "foo.bar")
 }
 
 // Prior to a bug fix, this failed when running `go test -race`
@@ -522,6 +541,17 @@ func BenchmarkSetTagString(b *testing.B) {
 	}
 }
 
+func BenchmarkSetTagStringer(b *testing.B) {
+	span := newBasicSpan("bench.span")
+	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	value := &stringer{}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		k := string(keys[i%len(keys)])
+		span.SetTag(k, value)
+	}
+}
+
 func BenchmarkSetTagField(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := []string{ext.ServiceName, ext.ResourceName, ext.SpanType}
@@ -536,3 +566,9 @@ func BenchmarkSetTagField(b *testing.B) {
 type boomError struct{}
 
 func (e *boomError) Error() string { return "boom" }
+
+type stringer struct{}
+
+func (s *stringer) String() string {
+	return "string"
+}

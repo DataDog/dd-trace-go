@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package profiler
 
@@ -96,12 +96,26 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, 3*time.Second, cfg.cpuDuration)
 	})
 
+	t.Run("MutexProfileFraction", func(t *testing.T) {
+		var cfg config
+		MutexProfileFraction(1)(&cfg)
+		assert.Equal(t, 1, cfg.mutexFraction)
+		assert.Contains(t, cfg.types, MutexProfile)
+	})
+
+	t.Run("BlockProfileRate", func(t *testing.T) {
+		var cfg config
+		BlockProfileRate(1)(&cfg)
+		assert.Equal(t, 1, cfg.blockRate)
+		assert.Contains(t, cfg.types, BlockProfile)
+	})
+
 	t.Run("WithProfileTypes", func(t *testing.T) {
 		var cfg config
 		WithProfileTypes(HeapProfile)(&cfg)
 		_, ok := cfg.types[HeapProfile]
 		assert.True(t, ok)
-		assert.Len(t, cfg.types, 1)
+		assert.Len(t, cfg.types, 2)
 	})
 
 	t.Run("WithService", func(t *testing.T) {

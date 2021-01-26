@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
@@ -212,12 +212,17 @@ func TestTraceCountHeader(t *testing.T) {
 }
 
 type recordingRoundTripper struct {
-	reqs []*http.Request
+	reqs   []*http.Request
+	client *http.Client
+}
+
+func newRecordingRoundTripper(client *http.Client) *recordingRoundTripper {
+	return &recordingRoundTripper{client: client}
 }
 
 func (r *recordingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	r.reqs = append(r.reqs, req)
-	return defaultClient.Transport.RoundTrip(req)
+	return r.client.Transport.RoundTrip(req)
 }
 
 func TestCustomTransport(t *testing.T) {
@@ -233,7 +238,7 @@ func TestCustomTransport(t *testing.T) {
 	assert.Nil(err)
 	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
 
-	customRoundTripper := new(recordingRoundTripper)
+	customRoundTripper := newRecordingRoundTripper(defaultClient)
 	transport := newHTTPTransport(host, &http.Client{Transport: customRoundTripper})
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
@@ -253,8 +258,34 @@ func TestWithHTTPClient(t *testing.T) {
 
 	u, err := url.Parse(srv.URL)
 	assert.NoError(err)
-	rt := new(recordingRoundTripper)
+	rt := newRecordingRoundTripper(defaultClient)
 	trc := newTracer(WithAgentAddr(u.Host), WithHTTPClient(&http.Client{Transport: rt}))
+	defer trc.Stop()
+
+	p, err := encode(getTestTrace(1, 1))
+	assert.NoError(err)
+	_, err = trc.config.transport.send(p)
+	assert.NoError(err)
+	assert.Len(rt.reqs, 1)
+}
+
+func TestWithUDS(t *testing.T) {
+	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
+	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
+	assert := assert.New(t)
+	udsPath := "/tmp/com.datadoghq.dd-trace-go.tracer.test.sock"
+	unixListener, err := net.Listen("unix", udsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: mockDatadogAPIHandler{t: t}}
+	go srv.Serve(unixListener)
+	defer srv.Close()
+
+	dummyCfg := new(config)
+	WithUDS(udsPath)(dummyCfg)
+	rt := newRecordingRoundTripper(dummyCfg.httpClient)
+	trc := newTracer(WithHTTPClient(&http.Client{Transport: rt}))
 	defer trc.Stop()
 
 	p, err := encode(getTestTrace(1, 1))

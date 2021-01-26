@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package mocktracer provides a mock implementation of the tracer used in testing. It
 // allows querying spans generated at runtime, without having them actually be sent to
@@ -27,6 +27,9 @@ var _ Tracer = (*mocktracer)(nil)
 
 // Tracer exposes an interface for querying the currently running mock tracer.
 type Tracer interface {
+	// OpenSpans returns the set of started spans that have not been finished yet.
+	OpenSpans() []Span
+
 	// FinishedSpans returns the set of finished spans.
 	FinishedSpans() []Span
 
@@ -45,15 +48,22 @@ type Tracer interface {
 // to activate the mock tracer. When your test runs, use the returned
 // interface to query the tracer's state.
 func Start() Tracer {
-	var t mocktracer
-	internal.SetGlobalTracer(&t)
+	t := newMockTracer()
+	internal.SetGlobalTracer(t)
 	internal.Testing = true
-	return &t
+	return t
 }
 
 type mocktracer struct {
 	sync.RWMutex  // guards below spans
 	finishedSpans []Span
+	openSpans     map[uint64]Span
+}
+
+func newMockTracer() *mocktracer {
+	var t mocktracer
+	t.openSpans = make(map[uint64]Span)
+	return &t
 }
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
@@ -67,7 +77,23 @@ func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOp
 	for _, fn := range opts {
 		fn(&cfg)
 	}
-	return newSpan(t, operationName, &cfg)
+	span := newSpan(t, operationName, &cfg)
+
+	t.Lock()
+	t.openSpans[span.SpanID()] = span
+	t.Unlock()
+
+	return span
+}
+
+func (t *mocktracer) OpenSpans() []Span {
+	t.RLock()
+	defer t.RUnlock()
+	spans := make([]Span, 0, len(t.openSpans))
+	for _, s := range t.openSpans {
+		spans = append(spans, s)
+	}
+	return spans
 }
 
 func (t *mocktracer) FinishedSpans() []Span {
@@ -79,12 +105,16 @@ func (t *mocktracer) FinishedSpans() []Span {
 func (t *mocktracer) Reset() {
 	t.Lock()
 	defer t.Unlock()
+	for k := range t.openSpans {
+		delete(t.openSpans, k)
+	}
 	t.finishedSpans = nil
 }
 
 func (t *mocktracer) addFinishedSpan(s Span) {
 	t.Lock()
 	defer t.Unlock()
+	delete(t.openSpans, s.SpanID())
 	if t.finishedSpans == nil {
 		t.finishedSpans = make([]Span, 0, 1)
 	}

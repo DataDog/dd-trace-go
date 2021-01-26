@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package chi provides tracing functions for tracing the go-chi/chi package (https://github.com/go-chi/chi).
 package chi // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi"
@@ -67,7 +67,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			}
 			span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 
-			if status >= 500 && status < 600 {
+			if cfg.isStatusError(status) {
 				// mark 5xx server error
 				span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 			}

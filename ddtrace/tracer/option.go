@@ -1,11 +1,12 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
 import (
+	"context"
 	"math"
 	"net"
 	"net/http"
@@ -355,6 +356,18 @@ func WithHTTPClient(client *http.Client) StartOption {
 	return func(c *config) {
 		c.httpClient = client
 	}
+}
+
+// WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
+func WithUDS(socketPath string) StartOption {
+	return WithHTTPClient(&http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", socketPath)
+			},
+		},
+		Timeout: defaultHTTPTimeout,
+	})
 }
 
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled

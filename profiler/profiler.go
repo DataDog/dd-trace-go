@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package profiler
 
@@ -30,6 +30,7 @@ var (
 // the WithAPIKey option, or if a hostname is not found.
 func Start(opts ...Option) error {
 	mu.Lock()
+	defer mu.Unlock()
 	if activeProfiler != nil {
 		activeProfiler.stop()
 	}
@@ -39,7 +40,6 @@ func Start(opts ...Option) error {
 	}
 	activeProfiler = p
 	activeProfiler.run()
-	mu.Unlock()
 	return nil
 }
 
@@ -62,6 +62,7 @@ type profiler struct {
 	exit       chan struct{}     // exit signals the profiler to stop; it is closed after stopping
 	stopOnce   sync.Once         // stopOnce ensures the profiler is stopped exactly once.
 	wg         sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
+	met        *metrics          // metric collector state
 }
 
 // newProfiler creates a new, unstarted profiler.
@@ -82,7 +83,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		hostname, err := os.Hostname()
 		if err != nil {
 			if cfg.targetURL == cfg.apiURL {
-				return nil, fmt.Errorf("could not obtain hostname: %v; try specifying it using profiler.WithHostname", err)
+				return nil, fmt.Errorf("could not obtain hostname: %v", err)
 			}
 			log.Warn("unable to look up hostname: %v", err)
 		}
@@ -92,6 +93,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		cfg:  cfg,
 		out:  make(chan batch, outChannelSize),
 		exit: make(chan struct{}),
+		met:  newMetrics(),
 	}
 	p.uploadFunc = p.upload
 	return &p, nil
@@ -110,6 +112,7 @@ func (p *profiler) run() {
 		defer p.wg.Done()
 		tick := time.NewTicker(p.cfg.period)
 		defer tick.Stop()
+		p.met.reset(now()) // collect baseline metrics at profiler start
 		p.collect(tick.C)
 	}()
 	p.wg.Add(1)
@@ -126,17 +129,22 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 	for {
 		select {
 		case <-ticker:
-			now := time.Now().UTC()
+			now := now()
 			bat := batch{
 				host:  p.cfg.hostname,
 				start: now,
-				end:   now.Add(p.cfg.cpuDuration), // abstraction violation
+				// NB: while this is technically wrong in that it does not
+				// record the actual start and end timestamps for the batch,
+				// it is how the backend understands the client-side
+				// configured CPU profile duration: (start-end).
+				end: now.Add(p.cfg.cpuDuration),
 			}
 			for t := range p.cfg.types {
 				prof, err := p.runProfile(t)
 				if err != nil {
+					fmt.Printf("error: %v\n", err)
 					log.Error("Error getting %s profile: %v; skipping.\n", t, err)
-					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, fmt.Sprintf("profile_type:%v", t)), 1)
+					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
 					continue
 				}
 				bat.addProfile(prof)
@@ -162,7 +170,9 @@ func (p *profiler) enqueueUpload(bat batch) {
 				p.cfg.statsd.Count("datadog.profiler.go.queue_full", 1, p.cfg.tags, 1)
 				log.Warn("Evicting one profile batch from the upload queue to make room.\n")
 			default:
-				// queue is empty; contents likely got uploaded
+				// this case should be almost impossible to trigger, it would require a
+				// full p.out to completely drain within nanoseconds or extreme
+				// scheduling decisions by the runtime.
 			}
 		}
 	}

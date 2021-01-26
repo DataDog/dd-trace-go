@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package mux
 
@@ -21,6 +21,7 @@ type routerConfig struct {
 	finishOpts    []ddtrace.FinishOption    // span finish options to be applied
 	analyticsRate float64
 	resourceNamer func(*Router, *http.Request) string
+	ignoreRequest func(*http.Request) bool
 }
 
 // RouterOption represents an option that can be passed to NewRouter.
@@ -37,6 +38,15 @@ func defaults(cfg *routerConfig) {
 		cfg.serviceName = svc
 	}
 	cfg.resourceNamer = defaultResourceNamer
+	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
+}
+
+// WithIgnoreRequest holds the function to use for determining if the
+// incoming HTTP request tracing should be skipped.
+func WithIgnoreRequest(f func(*http.Request) bool) RouterOption {
+	return func(cfg *routerConfig) {
+		cfg.ignoreRequest = f
+	}
 }
 
 // WithServiceName sets the given service name for the router.
