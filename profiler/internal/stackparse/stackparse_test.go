@@ -22,6 +22,9 @@ import (
 
 var update = flag.Bool("update", false, "update golden files")
 
+// TestParse_GoldenFiles verifies the output of the parser for a set of input
+// files in the test-fixtures. If you want to test a new behavior or bug fix,
+// this is the best place to do it.
 func TestParse_GoldenFiles(t *testing.T) {
 	inputs, err := filepath.Glob(filepath.Join("test-fixtures", "*.txt"))
 	require.NoError(t, err)
@@ -46,8 +49,10 @@ func TestParse_GoldenFiles(t *testing.T) {
 }
 
 // TestParse_PropertyBased does an exhaustive property based test against all
-// possible permutations of the line fragements defined below, making sure
-// the parser always does the right thing and never panics.
+// possible permutations of a few interesting line fragements defined below,
+// making sure the parser always does the right thing and never panics. This
+// test is complex and shouldn't be extended unless there is a good reason for
+// doing so. It's essentially just a very agressive smoke test.
 func TestParse_PropertyBased(t *testing.T) {
 	seen := map[string]bool{}
 	tests := fixtures.Permutations()
