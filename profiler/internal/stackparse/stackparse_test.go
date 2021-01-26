@@ -329,7 +329,7 @@ var fixtures = generator{
 }
 
 func BenchmarkParse(b *testing.B) {
-	data, err := ioutil.ReadFile("example.txt")
+	data, err := ioutil.ReadFile(filepath.Join("test-fixtures", "waitsince.txt"))
 	require.NoError(b, err)
 
 	b.ResetTimer()
@@ -341,7 +341,7 @@ func BenchmarkParse(b *testing.B) {
 		gs, err := Parse(bytes.NewReader(data))
 		if err != nil {
 			b.Fatal(err)
-		} else if l := len(gs); l != 10 {
+		} else if l := len(gs); l != 9 {
 			b.Fatal(l)
 		}
 	}

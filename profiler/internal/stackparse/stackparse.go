@@ -121,7 +121,6 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 				continue
 			}
 			state = stateCreatedBy
-		// TODO(fg) rename this state? three different things might happen here
 		case stateCreatedBy:
 			if bytes.HasPrefix(line, createdByPrefix) {
 				line = line[len(createdByPrefix):]
