@@ -62,32 +62,34 @@ func TestTags(t *testing.T) {
 	for _, path := range paths {
 		providerName := strings.TrimSuffix(filepath.Base(path), ".json")
 
-		fp, err := os.Open("fixtures/appveyor.json")
-		if err != nil {
-			t.Fatal(err)
-		}
+		t.Run(providerName, func(t *testing.T) {
+			fp, err := os.Open(fmt.Sprintf("fixtures/%s.json", providerName))
+			if err != nil {
+				t.Fatal(err)
+			}
 
-		data, err := ioutil.ReadAll(fp)
-		if err != nil {
-			t.Fatal(err)
-		}
+			data, err := ioutil.ReadAll(fp)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-		var examples [][]map[string]string
-		if err := json.Unmarshal(data, &examples); err != nil {
-			t.Fatal(err)
-		}
+			var examples [][]map[string]string
+			if err := json.Unmarshal(data, &examples); err != nil {
+				t.Fatal(err)
+			}
 
-		for i, line := range examples {
-			name := fmt.Sprintf("%s/%d", providerName, i)
-			env := line[0]
-			tags := line[1]
-			t.Run(name, func(t *testing.T) {
-				reset := setEnvs(env)
-				defer reset()
+			for i, line := range examples {
+				name := fmt.Sprintf("%d", i)
+				env := line[0]
+				tags := line[1]
+				t.Run(name, func(t *testing.T) {
+					reset := setEnvs(env)
+					defer reset()
 
-				assert.Equal(t, tags, Tags(), "%v", env)
-			})
+					assert.Equal(t, tags, Tags(), "%v", env)
+				})
 
-		}
+			}
+		})
 	}
 }

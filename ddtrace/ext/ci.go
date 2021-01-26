@@ -6,6 +6,8 @@
 package ext
 
 const (
+	// CIJobURL indicates job name.
+	CIJobName = "ci.job.name"
 	// CIJobURL indicates job URL.
 	CIJobURL = "ci.job.url"
 	// CIPipelineID indicates pipeline ID.
@@ -18,6 +20,8 @@ const (
 	CIPipelineURL = "ci.pipeline.url"
 	// CIProviderName indicates provider name.
 	CIProviderName = "ci.provider.name"
+	// CIStageName indicates stage name.
+	CIStageName = "ci.stage.name"
 	// CIWorkspacePath records an absolute path to the directory where the project has been checked out.
 	CIWorkspacePath = "ci.workspace_path"
 )

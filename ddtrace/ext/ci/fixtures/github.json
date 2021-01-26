@@ -20,7 +20,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -45,7 +44,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -70,7 +68,6 @@
       "ci.workspace_path": "foo/bar",
       "git.branch": "master",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -95,7 +92,6 @@
       "ci.workspace_path": "/foo/bar~",
       "git.branch": "master",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -120,7 +116,6 @@
       "ci.workspace_path": "/foo/~/bar",
       "git.branch": "master",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -147,7 +142,6 @@
       "ci.workspace_path": "/not-my-home/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -174,7 +168,6 @@
       "ci.workspace_path": "~foo/bar",
       "git.branch": "master",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -201,7 +194,6 @@
       "ci.workspace_path": "/not-my-home",
       "git.branch": "master",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -226,7 +218,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -251,7 +242,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -276,7 +266,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "feature/one",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -300,7 +289,6 @@
       "ci.provider.name": "github",
       "ci.workspace_path": "/foo/bar",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git",
       "git.tag": "0.1.0"
     }
@@ -325,7 +313,6 @@
       "ci.provider.name": "github",
       "ci.workspace_path": "/foo/bar",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git",
       "git.tag": "0.1.0"
     }
@@ -352,7 +339,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "other",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -378,7 +364,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "other",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ],
@@ -404,7 +389,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "feature/other",
       "git.commit.sha": "ghactions-commit",
-      "git.commit_sha": "ghactions-commit",
       "git.repository_url": "https://github.com/ghactions-repo.git"
     }
   ]

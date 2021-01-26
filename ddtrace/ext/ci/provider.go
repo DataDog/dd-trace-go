@@ -18,16 +18,17 @@ import (
 type providerType = func() map[string]string
 
 var providers = map[string]providerType{
-	"APPVEYOR":         extractAppveyor,
-	"TF_BUILD":         extractAzurePipelines,
-	"BITBUCKET_COMMIT": extractBitbucket,
-	"BUILDKITE":        extractBuildkite,
-	"CIRCLECI":         extractCircleCI,
-	"GITHUB_SHA":       extractGithubActions,
-	"GITLAB_CI":        extractGitlab,
-	"JENKINS_URL":      extractJenkins,
-	"TEAMCITY_VERSION": extractTeamcity,
-	"TRAVIS":           extractTravis,
+	"APPVEYOR":           extractAppveyor,
+	"TF_BUILD":           extractAzurePipelines,
+	"BITBUCKET_COMMIT":   extractBitbucket,
+	"BUILDKITE":          extractBuildkite,
+	"CIRCLECI":           extractCircleCI,
+	"GITHUB_SHA":         extractGithubActions,
+	"GITLAB_CI":          extractGitlab,
+	"JENKINS_URL":        extractJenkins,
+	"TEAMCITY_VERSION":   extractTeamcity,
+	"TRAVIS":             extractTravis,
+	"BITRISE_BUILD_SLUG": extractBitrise,
 }
 
 // Tags extracts CI information from environment variables.
@@ -45,9 +46,6 @@ func Tags() map[string]string {
 		}
 		if tag, ok := tags[ext.GitBranch]; ok && tag != "" {
 			tags[ext.GitBranch] = normalizeRef(tag)
-		}
-		if tag, ok := tags[ext.GitCommitSHA]; ok && tag != "" {
-			tags["git.commit_sha"] = tag
 		}
 		if tag, ok := tags[ext.GitRepositoryURL]; ok && tag != "" {
 			tags[ext.GitRepositoryURL] = filterSensitiveInfo(tag)
@@ -108,23 +106,25 @@ func extractAppveyor() map[string]string {
 	tags := map[string]string{}
 	url := fmt.Sprintf("https://ci.appveyor.com/project/%s/builds/%s", os.Getenv("APPVEYOR_REPO_NAME"), os.Getenv("APPVEYOR_BUILD_ID"))
 	tags[ext.CIProviderName] = "appveyor"
-	tags[ext.GitRepositoryURL] = fmt.Sprintf("https://github.com/%s.git", os.Getenv("APPVEYOR_REPO_NAME"))
-	tags[ext.GitCommitSHA] = os.Getenv("APPVEYOR_REPO_COMMIT")
+	if os.Getenv("APPVEYOR_REPO_PROVIDER") == "github" {
+		tags[ext.GitRepositoryURL] = fmt.Sprintf("https://github.com/%s.git", os.Getenv("APPVEYOR_REPO_NAME"))
+		tags[ext.GitCommitSHA] = os.Getenv("APPVEYOR_REPO_COMMIT")
+		tags[ext.GitBranch] = firstEnv("APPVEYOR_PULL_REQUEST_HEAD_REPO_BRANCH", "APPVEYOR_REPO_BRANCH")
+		tags[ext.GitTag] = os.Getenv("APPVEYOR_REPO_TAG_NAME")
+	}
 	tags[ext.CIWorkspacePath] = os.Getenv("APPVEYOR_BUILD_FOLDER")
 	tags[ext.CIPipelineID] = os.Getenv("APPVEYOR_BUILD_ID")
 	tags[ext.CIPipelineName] = os.Getenv("APPVEYOR_REPO_NAME")
 	tags[ext.CIPipelineNumber] = os.Getenv("APPVEYOR_BUILD_NUMBER")
 	tags[ext.CIPipelineURL] = url
 	tags[ext.CIJobURL] = url
-	tags[ext.GitBranch] = firstEnv("APPVEYOR_PULL_REQUEST_HEAD_REPO_BRANCH", "APPVEYOR_REPO_BRANCH")
-	tags[ext.GitTag] = os.Getenv("APPVEYOR_REPO_TAG_NAME")
 	return tags
 }
 
 func extractAzurePipelines() map[string]string {
 	tags := map[string]string{}
-	baseURL := fmt.Sprintf("%s%s/_build/results?buildId=%s", os.Getenv("SYSTEM_TEAMFOUNDATIONSERVERURI"), os.Getenv("SYSTEM_TEAMPROJECT"), os.Getenv("BUILD_BUILDID"))
-	pipelineURL := baseURL + "&_a=summary"
+	baseURL := fmt.Sprintf("%s%s/_build/results?buildId=%s", os.Getenv("SYSTEM_TEAMFOUNDATIONSERVERURI"), os.Getenv("SYSTEM_TEAMPROJECTID"), os.Getenv("BUILD_BUILDID"))
+	pipelineURL := baseURL
 	jobURL := fmt.Sprintf("%s&view=logs&j=%s&t=%s", baseURL, os.Getenv("SYSTEM_JOBID"), os.Getenv("SYSTEM_TASKINSTANCEID"))
 	branchOrTag := firstEnv("SYSTEM_PULLREQUEST_SOURCEBRANCH", "BUILD_SOURCEBRANCH", "BUILD_SOURCEBRANCHNAME")
 	branch := ""
@@ -231,6 +231,8 @@ func extractGitlab() map[string]string {
 	tags[ext.GitCommitSHA] = os.Getenv("CI_COMMIT_SHA")
 	tags[ext.GitRepositoryURL] = os.Getenv("CI_REPOSITORY_URL")
 	tags[ext.GitTag] = os.Getenv("CI_COMMIT_TAG")
+	tags[ext.CIStageName] = os.Getenv("CI_JOB_STAGE")
+	tags[ext.CIJobName] = os.Getenv("CI_JOB_NAME")
 	tags[ext.CIJobURL] = os.Getenv("CI_JOB_URL")
 	tags[ext.CIPipelineID] = os.Getenv("CI_PIPELINE_ID")
 	tags[ext.CIPipelineName] = os.Getenv("CI_PROJECT_PATH")
@@ -244,24 +246,25 @@ func extractGitlab() map[string]string {
 func extractJenkins() map[string]string {
 	tags := map[string]string{}
 	branchOrTag := os.Getenv("GIT_BRANCH")
-	branch := ""
-	tag := ""
+	empty := []byte("")
+	name, hasName := os.LookupEnv("JOB_NAME")
+
 	if strings.Contains(branchOrTag, "tags/") {
-
-		tag = branchOrTag
+		tags[ext.GitTag] = branchOrTag
 	} else {
-		branch = branchOrTag
-
+		tags[ext.GitBranch] = branchOrTag
+		// remove branch for job name
+		removeBranch := regexp.MustCompile(fmt.Sprintf("/%s", normalizeRef(branchOrTag)))
+		name = string(removeBranch.ReplaceAll([]byte(name), empty))
 	}
-	name := os.Getenv("JOB_NAME")
-	// name = name.gsub("/#{normalizeRef(branch)}", "") unless name.nil? || branch.nil?
-	// name = name.split("/").reject { |v| v.nil? || v.include?("=") }.join("/") unless name.nil?
 
-	tags[ext.GitBranch] = branch
+	if hasName {
+		removeVars := regexp.MustCompile("/[^/]+=[^/]*")
+		name = string(removeVars.ReplaceAll([]byte(name), empty))
+	}
+
 	tags[ext.GitCommitSHA] = os.Getenv("GIT_COMMIT")
 	tags[ext.GitRepositoryURL] = os.Getenv("GIT_URL")
-	tags[ext.GitTag] = tag
-	tags[ext.CIJobURL] = os.Getenv("JOB_URL")
 	tags[ext.CIPipelineID] = os.Getenv("BUILD_TAG")
 	tags[ext.CIPipelineName] = name
 	tags[ext.CIPipelineNumber] = os.Getenv("BUILD_NUMBER")
@@ -296,5 +299,20 @@ func extractTravis() map[string]string {
 	tags[ext.CIPipelineURL] = os.Getenv("TRAVIS_BUILD_WEB_URL")
 	tags[ext.CIProviderName] = "travisci"
 	tags[ext.CIWorkspacePath] = os.Getenv("TRAVIS_BUILD_DIR")
+	return tags
+}
+
+func extractBitrise() map[string]string {
+	tags := map[string]string{}
+	tags[ext.CIProviderName] = "bitrise"
+	tags[ext.CIPipelineID] = os.Getenv("BITRISE_BUILD_SLUG")
+	tags[ext.CIPipelineName] = os.Getenv("BITRISE_APP_TITLE")
+	tags[ext.CIPipelineNumber] = os.Getenv("BITRISE_BUILD_NUMBER")
+	tags[ext.CIPipelineURL] = os.Getenv("BITRISE_BUILD_URL")
+	tags[ext.CIWorkspacePath] = os.Getenv("BITRISE_SOURCE_DIR")
+	tags[ext.GitRepositoryURL] = os.Getenv("GIT_REPOSITORY_URL")
+	tags[ext.GitCommitSHA] = firstEnv("BITRISE_GIT_COMMIT", "GIT_CLONE_COMMIT_HASH")
+	tags[ext.GitBranch] = firstEnv("BITRISEIO_GIT_BRANCH_DEST", "BITRISE_GIT_BRANCH")
+	tags[ext.GitTag] = os.Getenv("BITRISE_GIT_TAG")
 	return tags
 }

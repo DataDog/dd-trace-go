@@ -20,7 +20,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -45,7 +44,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -70,7 +68,6 @@
       "ci.workspace_path": "foo/bar",
       "git.branch": "master",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -95,7 +92,6 @@
       "ci.workspace_path": "/foo/bar~",
       "git.branch": "master",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -120,7 +116,6 @@
       "ci.workspace_path": "/foo/~/bar",
       "git.branch": "master",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -147,7 +142,6 @@
       "ci.workspace_path": "/not-my-home/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -172,7 +166,6 @@
       "ci.workspace_path": "~foo/bar",
       "git.branch": "master",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -199,7 +192,6 @@
       "ci.workspace_path": "/not-my-home",
       "git.branch": "master",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -220,11 +212,7 @@
       "ci.pipeline.number": "appveyor-pipeline-number",
       "ci.pipeline.url": "https://ci.appveyor.com/project/appveyor-repo-name/builds/appveyor-build-id",
       "ci.provider.name": "appveyor",
-      "ci.workspace_path": "/foo/bar",
-      "git.branch": "master",
-      "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
-      "git.repository_url": "https://github.com/appveyor-repo-name.git"
+      "ci.workspace_path": "/foo/bar"
     }
   ],
   [
@@ -248,7 +236,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -273,7 +260,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -298,7 +284,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "feature/one",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -324,7 +309,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "pr",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -350,7 +334,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "pr",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],
@@ -375,7 +358,6 @@
       "ci.provider.name": "appveyor",
       "ci.workspace_path": "/foo/bar",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git",
       "git.tag": "0.1.0"
     }
@@ -401,7 +383,6 @@
       "ci.provider.name": "appveyor",
       "ci.workspace_path": "/foo/bar",
       "git.commit.sha": "appveyor-repo-commit",
-      "git.commit_sha": "appveyor-repo-commit",
       "git.repository_url": "https://github.com/appveyor-repo-name.git",
       "git.tag": "0.1.0"
     }

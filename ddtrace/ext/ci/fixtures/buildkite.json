@@ -22,7 +22,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -49,7 +48,6 @@
       "ci.workspace_path": "foo/bar",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -76,7 +74,6 @@
       "ci.workspace_path": "/foo/bar~",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -103,7 +100,6 @@
       "ci.workspace_path": "/foo/~/bar",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -132,7 +128,6 @@
       "ci.workspace_path": "/not-my-home/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -161,7 +156,6 @@
       "ci.workspace_path": "~foo/bar",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -190,7 +184,6 @@
       "ci.workspace_path": "/not-my-home",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -217,7 +210,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -244,7 +236,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -271,7 +262,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -298,7 +288,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "git@hostname.com:org/repo.git"
     }
   ],
@@ -325,7 +314,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -352,7 +340,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -379,7 +366,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "feature/one",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git"
     }
   ],
@@ -405,7 +391,6 @@
       "ci.provider.name": "buildkite",
       "ci.workspace_path": "/foo/bar",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git",
       "git.tag": "0.1.0"
     }
@@ -432,7 +417,6 @@
       "ci.provider.name": "buildkite",
       "ci.workspace_path": "/foo/bar",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git",
       "git.tag": "0.1.0"
     }
@@ -459,7 +443,6 @@
       "ci.provider.name": "buildkite",
       "ci.workspace_path": "/foo/bar",
       "git.commit.sha": "buildkite-git-commit",
-      "git.commit_sha": "buildkite-git-commit",
       "git.repository_url": "http://hostname.com/repo.git",
       "git.tag": "0.1.0"
     }

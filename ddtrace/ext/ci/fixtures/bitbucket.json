@@ -19,7 +19,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -43,7 +42,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -67,7 +65,6 @@
       "ci.workspace_path": "foo/bar",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -91,7 +88,6 @@
       "ci.workspace_path": "/foo/bar~",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -115,7 +111,6 @@
       "ci.workspace_path": "/foo/~/bar",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -141,7 +136,6 @@
       "ci.workspace_path": "/not-my-home/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -165,7 +159,6 @@
       "ci.workspace_path": "~foo/bar",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -191,7 +184,6 @@
       "ci.workspace_path": "/not-my-home",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -215,7 +207,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -239,7 +230,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -263,7 +253,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -287,7 +276,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "feature/one",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -311,7 +299,6 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
@@ -335,13 +322,11 @@
       "ci.workspace_path": "/foo/bar",
       "git.branch": "master",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url"
     }
   ],
   [
     {
-      "BITBUCKET_BRANCH": "origin/master",
       "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
       "BITBUCKET_CLONE_DIR": "/foo/bar",
       "BITBUCKET_COMMIT": "bitbucket-commit",
@@ -359,14 +344,12 @@
       "ci.provider.name": "bitbucket",
       "ci.workspace_path": "/foo/bar",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url",
       "git.tag": "0.1.0"
     }
   ],
   [
     {
-      "BITBUCKET_BRANCH": "refs/heads/master",
       "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
       "BITBUCKET_CLONE_DIR": "/foo/bar",
       "BITBUCKET_COMMIT": "bitbucket-commit",
@@ -384,7 +367,6 @@
       "ci.provider.name": "bitbucket",
       "ci.workspace_path": "/foo/bar",
       "git.commit.sha": "bitbucket-commit",
-      "git.commit_sha": "bitbucket-commit",
       "git.repository_url": "bitbucket-repo-url",
       "git.tag": "0.1.0"
     }
