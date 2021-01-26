@@ -1,0 +1,39 @@
+{
+  "Errors": [
+    "invalid function call on line 6: \"main.main)(\""
+  ],
+  "Goroutines": [
+    {
+      "ID": 1,
+      "State": "running",
+      "Wait": 0,
+      "LockedToThread": false,
+      "Stack": [
+        {
+          "Func": "main.main",
+          "File": "/example/main.go",
+          "Line": 152
+        }
+      ],
+      "CreatedBy": null
+    },
+    {
+      "ID": 3,
+      "State": "running",
+      "Wait": 0,
+      "LockedToThread": false,
+      "Stack": [
+        {
+          "Func": "main.foo",
+          "File": "/example/main.go",
+          "Line": 182
+        }
+      ],
+      "CreatedBy": {
+        "Func": "main.main",
+        "File": "/example/main.go",
+        "Line": 110
+      }
+    }
+  ]
+}

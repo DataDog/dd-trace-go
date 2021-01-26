@@ -7,6 +7,8 @@ package stackparse
 
 import (
 	"bytes"
+	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -18,43 +20,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestParse_Example verifies parse by checking that it seems to parse a
-// real-world example correctly.
-func TestParse_Example(t *testing.T) {
-	data, err := ioutil.ReadFile("example.txt")
+var update = flag.Bool("update", false, "update golden files")
+
+func TestParse_GoldenFiles(t *testing.T) {
+	inputs, err := filepath.Glob(filepath.Join("test-fixtures", "*.txt"))
 	require.NoError(t, err)
-	goroutines, err := Parse(bytes.NewReader(data))
-	require.Nil(t, err)
-	require.Len(t, goroutines, 10)
-	g0 := goroutines[0]
-	require.Equal(t, 1, g0.ID)
-	require.Equal(t, "running", g0.State)
-	require.Equal(t, time.Duration(0), g0.Wait)
-	require.Equal(t, false, g0.LockedToThread)
-	require.Len(t, g0.Stack, 6)
-	require.Equal(t, "runtime/pprof.writeGoroutineStacks", g0.Stack[0].Func)
-	require.Equal(t, "/usr/local/Cellar/go/1.15.6/libexec/src/runtime/pprof/pprof.go", g0.Stack[0].File)
-	require.Equal(t, 693, g0.Stack[0].Line)
-	require.Nil(t, g0.CreatedBy)
+	for _, input := range inputs {
+		inputData, err := ioutil.ReadFile(input)
+		require.NoError(t, err)
 
-	// not checking g1..g7, they aren't very interesting
+		golden := strings.TrimSuffix(input, filepath.Ext(input)) + ".golden.json"
+		goroutines, errs := Parse(bytes.NewReader(inputData))
+		actual, err := json.MarshalIndent(struct {
+			Errors     *Errors
+			Goroutines []*Goroutine
+		}{errs, goroutines}, "", "  ")
+		require.NoError(t, err)
 
-	g8 := goroutines[8]
-	require.Equal(t, 7, g8.ID)
-	require.Equal(t, true, g8.LockedToThread)
-
-	g9 := goroutines[9]
-	require.Equal(t, 41, g9.ID)
-	require.Equal(t, "IO wait", g9.State)
-	require.Equal(t, time.Minute, g9.Wait)
-	require.Equal(t, false, g9.LockedToThread)
-	require.Len(t, g9.Stack, 15)
-	require.Equal(t, "internal/poll.runtime_pollWait", g9.Stack[0].Func)
-	require.Equal(t, "/usr/local/Cellar/go/1.15.6/libexec/src/runtime/netpoll.go", g9.Stack[0].File)
-	require.Equal(t, 222, g9.Stack[0].Line)
-	require.Equal(t, "net/http.(*Server).Serve", g9.CreatedBy.Func)
-	require.Equal(t, "/usr/local/Cellar/go/1.15.6/libexec/src/net/http/server.go", g9.CreatedBy.File)
-	require.Equal(t, 2969, g9.CreatedBy.Line)
+		if *update {
+			ioutil.WriteFile(golden, actual, 0644)
+		}
+		expected, _ := ioutil.ReadFile(golden)
+		require.True(t, bytes.Equal(actual, expected), golden)
+	}
 }
 
 // TestParse_PropertyBased does an exhaustive property based test against all

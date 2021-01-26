@@ -1,0 +1,13 @@
+goroutine 7 [running, locked to thread]:
+testing.tRunner.func1.1(0x12081c0, 0x1290cd0)
+	/usr/local/Cellar/go/1.15.6/libexec/src/testing/testing.go:1072 +0x30d
+testing.tRunner.func1(0xc000001b00)
+	/usr/local/Cellar/go/1.15.6/libexec/src/testing/testing.go:1075 +0x41a
+panic(0x12081c0, 0x1290cd0)
+	/usr/local/Cellar/go/1.15.6/libexec/src/runtime/panic.go:969 +0x1b9
+gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/stackparse.TestParse_Example(0xc000001b00)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/stackparse_test.go:21 +0x45
+testing.tRunner(0xc000001b00, 0x1263488)
+	/usr/local/Cellar/go/1.15.6/libexec/src/testing/testing.go:1123 +0xef
+created by testing.(*T).Run
+	/usr/local/Cellar/go/1.15.6/libexec/src/testing/testing.go:1168 +0x2b3

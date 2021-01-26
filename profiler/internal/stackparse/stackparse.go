@@ -22,6 +22,7 @@ package stackparse
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
@@ -321,4 +322,14 @@ type Errors struct {
 // Error returns an error string.
 func (e *Errors) Error() string {
 	return fmt.Sprintf("stackparse: %d errors occurred", len(e.Errors))
+}
+
+// MarshalJSON implements the json.Marshaler interface. It's used for the
+// golden tests.
+func (e *Errors) MarshalJSON() ([]byte, error) {
+	var errs []string
+	for _, err := range e.Errors {
+		errs = append(errs, err.Error())
+	}
+	return json.MarshalIndent(errs, "", "  ")
 }
