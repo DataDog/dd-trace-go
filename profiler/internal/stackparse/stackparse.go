@@ -207,6 +207,7 @@ func parseGoroutineHeader(line []byte) *Goroutine {
 // Example Output:
 // &Frame{Func: "runtime/pprof.writeGoroutineStacks"}
 func parseFunc(line []byte, state parserState) *Frame {
+	// createdBy func calls don't have trailing parens, just return them as-is.
 	if state == stateCreatedByFunc {
 		return &Frame{Func: string(line)}
 	}
