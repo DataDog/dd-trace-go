@@ -170,7 +170,9 @@ func (p *profiler) enqueueUpload(bat batch) {
 				p.cfg.statsd.Count("datadog.profiler.go.queue_full", 1, p.cfg.tags, 1)
 				log.Warn("Evicting one profile batch from the upload queue to make room.\n")
 			default:
-				// queue is empty; contents likely got uploaded
+				// this case should be almost impossible to trigger, it would require a
+				// full p.out to completely drain within nanoseconds or extreme
+				// scheduling decisions by the runtime.
 			}
 		}
 	}
