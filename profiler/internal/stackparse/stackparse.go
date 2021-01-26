@@ -75,7 +75,8 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 	)
 
 	// This for loop implements a simple line based state machine for parsing
-	// the goroutines dump.
+	// the goroutines dump. The state != stateHeader makes sure we handle an
+	// unexpected EOF the same way we'd handle an empty line.
 	for sc.Scan() || state != stateHeader {
 		line = sc.Bytes()
 		lineNum++
