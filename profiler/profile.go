@@ -176,18 +176,18 @@ func cpuProfile(cfg *config) (*profile, error) {
 
 // lookpupProfile looks up the profile with the given name and writes it to w. It returns
 // any errors encountered in the process. It is replaced in tests.
-var lookupProfile = func(name string, w io.Writer) error {
+var lookupProfile = func(name string, w io.Writer, debug int) error {
 	prof := pprof.Lookup(name)
 	if prof == nil {
 		return errors.New("profile not found")
 	}
-	return prof.WriteTo(w, 0)
+	return prof.WriteTo(w, debug)
 }
 
 func blockProfile(cfg *config) (*profile, error) {
 	var buf bytes.Buffer
 	start := now()
-	if err := lookupProfile(BlockProfile.String(), &buf); err != nil {
+	if err := lookupProfile(BlockProfile.String(), &buf, 0); err != nil {
 		return nil, err
 	}
 	end := now()
@@ -202,7 +202,7 @@ func blockProfile(cfg *config) (*profile, error) {
 func mutexProfile(cfg *config) (*profile, error) {
 	var buf bytes.Buffer
 	start := now()
-	if err := lookupProfile(MutexProfile.String(), &buf); err != nil {
+	if err := lookupProfile(MutexProfile.String(), &buf, 0); err != nil {
 		return nil, err
 	}
 	end := now()
@@ -217,7 +217,7 @@ func mutexProfile(cfg *config) (*profile, error) {
 func goroutineProfile(cfg *config) (*profile, error) {
 	var buf bytes.Buffer
 	start := now()
-	if err := lookupProfile(GoroutineProfile.String(), &buf); err != nil {
+	if err := lookupProfile(GoroutineProfile.String(), &buf, 0); err != nil {
 		return nil, err
 	}
 	end := now()
@@ -230,12 +230,17 @@ func goroutineProfile(cfg *config) (*profile, error) {
 }
 
 func goroutineWaitProfile(cfg *config) (*profile, error) {
-	goroutines, err := goroutineDebug2Profile()
-	if err != nil {
+	var buf bytes.Buffer
+	start := now()
+	if err := lookupProfile(GoroutineProfile.String(), &buf, 2); err != nil {
 		return nil, err
 	}
+	end := now()
+	tags := append(cfg.tags, GoroutineWaitProfile.Tag())
+	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
+
 	data := &bytes.Buffer{}
-	if err := marshalGoroutineDebug2Profile(data, goroutines); err != nil {
+	if err := goroutineDebug2ToPprof(&buf, data); err != nil {
 		return nil, err
 	}
 	return &profile{
@@ -244,28 +249,9 @@ func goroutineWaitProfile(cfg *config) (*profile, error) {
 	}, nil
 }
 
-// goroutineDebug2Profile returns the a structured goroutine debug=2 profile
-// by parsing the text output. See [1] for more information.
-//
-// [1] https://github.com/felixge/go-profiler-notes/blob/main/goroutine.md#goroutine-properties
-func goroutineDebug2Profile() ([]*stackparse.Goroutine, error) {
-	prof := pprof.Lookup("goroutine") // TODO(fg) use lookupProfile()?
-	if prof == nil {
-		return nil, errors.New("goroutineWaitProfile: profile not found")
-	}
+func goroutineDebug2ToPprof(r io.Reader, w io.Writer) error {
+	goroutines, errs := stackparse.Parse(r)
 
-	buf := &bytes.Buffer{}
-	if err := prof.WriteTo(buf, 2); err != nil {
-		return nil, err
-		// TODO(fg) integrate info about partial errors in pprof file / metrics.
-	} else if goroutines, err := stackparse.Parse(buf); err != nil {
-		return nil, err
-	} else {
-		return goroutines, nil
-	}
-}
-
-func marshalGoroutineDebug2Profile(w io.Writer, goroutines []*stackparse.Goroutine) error {
 	functionID := uint64(1)
 	locationID := uint64(1)
 
@@ -275,7 +261,7 @@ func marshalGoroutineDebug2Profile(w io.Writer, goroutines []*stackparse.Gorouti
 	p.SampleType = []*pprofile.ValueType{
 		{
 			Type: "waitduration",
-			Unit: "nanoseconds", // TODO(fg) use minutes?
+			Unit: "nanoseconds",
 		},
 	}
 
@@ -287,13 +273,20 @@ func marshalGoroutineDebug2Profile(w io.Writer, goroutines []*stackparse.Gorouti
 			Label: map[string][]string{
 				"state": {g.State}, // TODO(fg) split into atomicstatus/waitreason?
 			},
-			NumUnit:  map[string][]string{"goroutineid": {"id"}},
-			NumLabel: map[string][]int64{"goroutine": {int64(g.ID)}},
-			// TODO(fg) add g.Locked, g.CreatedBy, ...?
+			NumUnit:  map[string][]string{"goid": {"id"}},
+			NumLabel: map[string][]int64{"goid": {int64(g.ID)}},
+			// TODO(fg) add g.LockedToThread, g.CreatedBy, ...?
 		}
 
-		// TODO(fg) the whole loop is quickly hacked together, make sure we're
-		// putting the right values in the right places.
+		// Based on internal discussion, the current strategy is to use virtual
+		// frames to indicate truncated stacks, see [1] for how python/jd does it.
+		// [1] https://github.com/DataDog/dd-trace-py/blob/e933d2485b9019a7afad7127f7c0eb541341cdb7/ddtrace/profiling/exporter/pprof.pyx#L117-L121
+		if g.FramesElided {
+			g.Stack = append(g.Stack, &stackparse.Frame{
+				Func: "...additional frames elided...",
+			})
+		}
+
 		for _, call := range g.Stack {
 			function := &pprofile.Function{
 				ID:       functionID,
@@ -320,14 +313,16 @@ func marshalGoroutineDebug2Profile(w io.Writer, goroutines []*stackparse.Gorouti
 		p.Sample = append(p.Sample, sample)
 	}
 
-	if err := p.CheckValid(); err != nil {
-		// // TODO(fg) %w available in go 1.12?
-		return fmt.Errorf("marshalGoroutineDebug2Profile: %w", err)
+	if errs != nil {
+		for _, err := range errs.Errors {
+			p.Comments = append(p.Comments, "error: "+err.Error())
+		}
 	}
 
-	if err := p.Write(w); err != nil {
-		// // TODO(fg) %w available in go 1.12?
-		return fmt.Errorf("marshalGoroutineDebug2Profile: %w", err)
+	if err := p.CheckValid(); err != nil {
+		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err)
+	} else if err := p.Write(w); err != nil {
+		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err)
 	}
 	return nil
 }
