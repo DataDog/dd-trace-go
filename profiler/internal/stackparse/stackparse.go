@@ -76,7 +76,7 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 
 	// This for loop implements a simple line based state machine for parsing
 	// the goroutines dump.
-	for sc.Scan() {
+	for sc.Scan() || state != stateHeader {
 		line = sc.Bytes()
 		lineNum++
 

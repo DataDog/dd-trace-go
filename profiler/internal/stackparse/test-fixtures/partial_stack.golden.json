@@ -1,0 +1,7 @@
+{
+  "Errors": [
+    "invalid file:line ref on line 3: \"\"",
+    "invalid file:line ref on line 6: \"\""
+  ],
+  "Goroutines": []
+}
