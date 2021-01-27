@@ -278,16 +278,22 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer) (err error) {
 	}
 
 	for _, g := range goroutines {
-		// TODO(fg) exclude goroutines w/ g.Wait == 0?
-
 		sample := &pprofile.Sample{
 			Value: []int64{g.Wait.Nanoseconds()},
 			Label: map[string][]string{
-				"state": {g.State}, // TODO(fg) split into atomicstatus/waitreason?
+				"state":   {g.State}, // TODO(fg) split into atomicstatus/waitreason?
+				"lockedm": {fmt.Sprintf("%t", g.LockedToThread)},
 			},
 			NumUnit:  map[string][]string{"goid": {"id"}},
 			NumLabel: map[string][]int64{"goid": {int64(g.ID)}},
-			// TODO(fg) add g.LockedToThread, g.CreatedBy, ...?
+		}
+
+		// Treat the frame that created this goroutine as part of the stack so it
+		// shows up in the stack trace / flame graph. Hopefully this will be more
+		// useful than confusing for people.
+		if g.CreatedBy != nil {
+			// TODO(fg) should we modify the function name to include "created by"?
+			g.Stack = append(g.Stack, g.CreatedBy)
 		}
 
 		// Based on internal discussion, the current strategy is to use virtual
