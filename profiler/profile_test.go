@@ -121,7 +121,7 @@ main.main()
 		}
 
 		p, err := unstartedProfiler()
-		prof, err := p.runProfile(GoroutineWaitProfile)
+		prof, err := p.runProfile(expGoroutineWaitProfile)
 		require.NoError(t, err)
 		require.Equal(t, "goroutineswait.pprof", prof.name)
 

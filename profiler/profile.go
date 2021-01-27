@@ -35,10 +35,11 @@ const (
 	MutexProfile
 	// GoroutineProfile reports stack traces of all current goroutines
 	GoroutineProfile
-	// GoroutineWaitProfile reports stack traces and wait durations for
+	// expGoroutineWaitProfile reports stack traces and wait durations for
 	// goroutines that have been waiting or blocked by a syscall for > 1 minute
-	// since the last GC.
-	GoroutineWaitProfile
+	// since the last GC. This feature is currently experimental and only
+	// available within DD by setting the DD_PROFILING_WAIT_PROFILE env variable.
+	expGoroutineWaitProfile
 	// MetricsProfile reports top-line metrics associated with user-specified profiles
 	MetricsProfile
 )
@@ -55,7 +56,7 @@ func (t ProfileType) String() string {
 		return "block"
 	case GoroutineProfile:
 		return "goroutine"
-	case GoroutineWaitProfile:
+	case expGoroutineWaitProfile:
 		return "goroutinewait"
 	case MetricsProfile:
 		return "metrics"
@@ -78,7 +79,7 @@ func (t ProfileType) Filename() string {
 		return "block.pprof"
 	case GoroutineProfile:
 		return "goroutines.pprof"
-	case GoroutineWaitProfile:
+	case expGoroutineWaitProfile:
 		return "goroutineswait.pprof"
 	case MetricsProfile:
 		return "metrics.json"
@@ -123,7 +124,7 @@ func (p *profiler) runProfile(t ProfileType) (*profile, error) {
 		return blockProfile(p.cfg)
 	case GoroutineProfile:
 		return goroutineProfile(p.cfg)
-	case GoroutineWaitProfile:
+	case expGoroutineWaitProfile:
 		return goroutineWaitProfile(p.cfg)
 	case MetricsProfile:
 		return p.collectMetrics()
@@ -241,11 +242,11 @@ func goroutineWaitProfile(cfg *config) (*profile, error) {
 		return nil, err
 	}
 	end := now()
-	tags := append(cfg.tags, GoroutineWaitProfile.Tag())
+	tags := append(cfg.tags, expGoroutineWaitProfile.Tag())
 	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 
 	return &profile{
-		name: GoroutineWaitProfile.Filename(),
+		name: expGoroutineWaitProfile.Filename(),
 		data: pprof.Bytes(),
 	}, nil
 }
