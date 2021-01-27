@@ -37,6 +37,9 @@ const (
 	// and OpenCensus.
 	SpanName = "span.name"
 
+	// SpanKind defines the Span kind.
+	SpanKind = "span.kind"
+
 	// SpanType defines the Span type (web, db, cache).
 	SpanType = "span.type"
 

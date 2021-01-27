@@ -75,4 +75,7 @@ const (
 
 	// SpanTypeConsul marks a span as a Consul operation.
 	SpanTypeConsul = "consul"
+
+	// SpanTypeTest marks a span as a test execution.
+	SpanTypeTest = "test"
 )
