@@ -98,6 +98,36 @@ func TestDomain(t *testing.T) {
 	assert.Equal(1, len(spans))
 	assert.Equal("localhost", spans[0].Tag("mux.host"))
 }
+func TestWithHeaderTags(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	mux := NewRouter(WithServiceName("my-service"), WithHeaderTags())
+	mux.Handle("/200", okHandler()).Host("localhost")
+	r := httptest.NewRequest("GET", "http://localhost/200", nil)
+	r.Header.Set("header", "header-value")
+	r.Header.Set("x-datadog-header", "value")
+	mux.ServeHTTP(httptest.NewRecorder(), r)
+
+	spans := mt.FinishedSpans()
+	assert.Equal(spans[0].Tags()["http.headers.Header"], "header-value")
+	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
+}
+
+func TestWithQueryParameters(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	mux := NewRouter(WithServiceName("my-service"), WithQueryParameters())
+	mux.Handle("/200", okHandler()).Host("localhost")
+	r := httptest.NewRequest("GET", "http://localhost/200?token=value&id=3&name=5", nil)
+
+	mux.ServeHTTP(httptest.NewRecorder(), r)
+
+	spans := mt.FinishedSpans()
+	//note that result we'll get is a SORTED concatenated list of queries
+	assert.Equal(spans[0].Tags()["http.querystring"], "id=3&name=5&token=value")
+}
 
 func TestSpanOptions(t *testing.T) {
 	assert := assert.New(t)

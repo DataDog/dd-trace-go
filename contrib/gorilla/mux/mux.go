@@ -111,6 +111,12 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
+	if r.config.setRequestData {
+		spanopts = append(spanopts, getHeaderTags(req))
+	}
+	if r.config.setQueryParameters {
+		spanopts = append(spanopts, getQueryParameters(req))
+	}
 	resource := r.config.resourceNamer(r, req)
 	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, r.config.finishOpts, spanopts...)
 }
