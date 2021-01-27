@@ -34,10 +34,14 @@ func TestParse_GoldenFiles(t *testing.T) {
 
 		golden := strings.TrimSuffix(input, filepath.Ext(input)) + ".golden.json"
 		goroutines, errs := Parse(bytes.NewReader(inputData))
+		var errS []string
+		for _, err := range errs {
+			errS = append(errS, err.Error())
+		}
 		actual, err := json.MarshalIndent(struct {
-			Errors     *Errors
+			Errors     []string
 			Goroutines []*Goroutine
-		}{errs, goroutines}, "", "  ")
+		}{errS, goroutines}, "", "  ")
 		require.NoError(t, err)
 
 		if *update {
@@ -64,7 +68,7 @@ func TestParse_PropertyBased(t *testing.T) {
 		require.False(t, seen[dumpS], msg)
 		seen[dumpS] = true
 
-		goroutines, err := Parse(strings.NewReader(dumpS))
+		goroutines, errs := Parse(strings.NewReader(dumpS))
 
 		wantErr := dump.header.WantErr
 		for _, f := range dump.stack {
@@ -84,13 +88,13 @@ func TestParse_PropertyBased(t *testing.T) {
 		}
 
 		if wantErr != "" {
-			require.NotNil(t, err, msg)
-			require.Contains(t, err.Errors[0].Error(), wantErr, msg)
+			require.NotNil(t, errs, msg)
+			require.Contains(t, errs[0].Error(), wantErr, msg)
 			require.Equal(t, 0, len(goroutines), msg)
 			continue
 		}
 
-		require.Nil(t, err, msg)
+		require.Nil(t, errs, msg)
 
 		require.Equal(t, 1, len(goroutines), msg)
 		g := goroutines[0]

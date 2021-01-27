@@ -22,7 +22,6 @@ package stackparse
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
@@ -46,10 +45,9 @@ const (
 // The parser is forgiving and will continue parsing even when encountering
 // unexpected data. When this happens it will try to discard the entire
 // goroutine that encountered the problem and continue with the next one. It
-// will also return an *Error including an error for every goroutine that
-// couldn't be parsed. If all goroutines were parsed successfully, *Errors is
-// nil.
-func Parse(r io.Reader) ([]*Goroutine, *Errors) {
+// will also return an error for every goroutine that couldn't be parsed. If
+// all goroutines were parsed successfully, the []error slice is empty.
+func Parse(r io.Reader) ([]*Goroutine, []error) {
 	var (
 		sc      = bufio.NewScanner(r)
 		state   parserState
@@ -57,10 +55,10 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 		line    []byte
 
 		goroutines []*Goroutine
+		errs       []error
 		g          *Goroutine
 		f          *Frame
 
-		errs           = &Errors{}
 		abortGoroutine = func(msg string) {
 			err := fmt.Errorf(
 				"%s on line %d: %q",
@@ -68,7 +66,7 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 				lineNum,
 				line,
 			)
-			errs.Errors = append(errs.Errors, err)
+			errs = append(errs, err)
 			goroutines = goroutines[0 : len(goroutines)-1]
 			state = stateHeader
 		}
@@ -137,12 +135,9 @@ func Parse(r io.Reader) ([]*Goroutine, *Errors) {
 	}
 
 	if err := sc.Err(); err != nil {
-		errs.Errors = append(errs.Errors, err)
+		errs = append(errs, err)
 	}
-	if len(errs.Errors) > 0 {
-		return goroutines, errs
-	}
-	return goroutines, nil
+	return goroutines, errs
 }
 
 var (
@@ -317,25 +312,4 @@ type Frame struct {
 	// Line is the line number of inside of the source file that was active when
 	// the sample was taken.
 	Line int
-}
-
-// Errors contains a list of errors.
-type Errors struct {
-	// Errors is a list of errors.
-	Errors []error
-}
-
-// Error returns an error string.
-func (e *Errors) Error() string {
-	return fmt.Sprintf("stackparse: %d errors occurred", len(e.Errors))
-}
-
-// MarshalJSON implements the json.Marshaler interface. It's used for the
-// golden tests.
-func (e *Errors) MarshalJSON() ([]byte, error) {
-	var errs []string
-	for _, err := range e.Errors {
-		errs = append(errs, err.Error())
-	}
-	return json.MarshalIndent(errs, "", "  ")
 }
