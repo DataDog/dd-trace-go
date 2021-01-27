@@ -251,7 +251,17 @@ func goroutineWaitProfile(cfg *config) (*profile, error) {
 	}, nil
 }
 
-func goroutineDebug2ToPprof(r io.Reader, w io.Writer) error {
+func goroutineDebug2ToPprof(r io.Reader, w io.Writer) (err error) {
+	// stackparse.Parse() has been extensively tested and should not crash under
+	// any circumstances, but we really want to avoid crashing a customers
+	// applications, so this code will recover from any unexpected panics and
+	// return them as an error instead.
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+
 	goroutines, errs := stackparse.Parse(r)
 
 	functionID := uint64(1)

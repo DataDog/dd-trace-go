@@ -8,6 +8,7 @@ package profiler
 import (
 	"bytes"
 	"io"
+	"io/ioutil"
 	"testing"
 	"time"
 
@@ -144,4 +145,17 @@ main.main()
 		// Virtual frame for "frames elided" goroutine
 		require.Equal(t, 3, len(pp.Sample[2].Location))
 	})
+}
+
+func Test_goroutineDebug2ToPprof_CrashSafety(t *testing.T) {
+	err := goroutineDebug2ToPprof(panicReader{}, ioutil.Discard)
+	require.NotNil(t, err)
+	require.Equal(t, "panic: 42", err.Error())
+}
+
+// panicReader is used to create a panic inside of stackparse.Parse()
+type panicReader struct{}
+
+func (c panicReader) Read(_ []byte) (int, error) {
+	panic("42")
 }
