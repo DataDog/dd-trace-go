@@ -238,7 +238,7 @@ func goroutineWaitProfile(cfg *config) (*profile, error) {
 	)
 	if err := lookupProfile(GoroutineProfile.String(), text, 2); err != nil {
 		return nil, err
-	} else if err := goroutineDebug2ToPprof(text, pprof); err != nil {
+	} else if err := goroutineDebug2ToPprof(text, pprof, start); err != nil {
 		return nil, err
 	}
 	end := now()
@@ -251,7 +251,7 @@ func goroutineWaitProfile(cfg *config) (*profile, error) {
 	}, nil
 }
 
-func goroutineDebug2ToPprof(r io.Reader, w io.Writer) (err error) {
+func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
 	// stackparse.Parse() has been extensively tested and should not crash under
 	// any circumstances, but we really want to avoid crashing a customers
 	// applications, so this code will recover from any unexpected panics and
@@ -267,7 +267,9 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer) (err error) {
 	functionID := uint64(1)
 	locationID := uint64(1)
 
-	p := &pprofile.Profile{}
+	p := &pprofile.Profile{
+		TimeNanos: t.UnixNano(),
+	}
 	m := &pprofile.Mapping{ID: 1, HasFunctions: true}
 	p.Mapping = []*pprofile.Mapping{m}
 	p.SampleType = []*pprofile.ValueType{

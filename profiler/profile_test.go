@@ -131,6 +131,8 @@ main.main()
 
 		pp, err := pprofile.Parse(bytes.NewReader(prof.data))
 		require.NoError(t, err)
+		// timestamp
+		require.NotEqual(t, int64(0), pp.TimeNanos)
 		// 1 sample type
 		require.Equal(t, 1, len(pp.SampleType))
 		// 3 valid samples, 1 invalid sample (added as comment)
@@ -151,7 +153,7 @@ main.main()
 }
 
 func Test_goroutineDebug2ToPprof_CrashSafety(t *testing.T) {
-	err := goroutineDebug2ToPprof(panicReader{}, ioutil.Discard)
+	err := goroutineDebug2ToPprof(panicReader{}, ioutil.Discard, time.Time{})
 	require.NotNil(t, err)
 	require.Equal(t, "panic: 42", err.Error())
 }
