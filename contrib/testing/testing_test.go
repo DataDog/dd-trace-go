@@ -44,7 +44,7 @@ func TestStatus(t *testing.T) {
 	s := spans[0]
 	assert.Equal("test", s.OperationName())
 	assert.Equal("TestStatus/pass", s.Tag(ext.TestName))
-	assert.Equal("contrib/testing/testing_test.go", s.Tag(ext.TestSuite))
+	assert.Contains(s.Tag(ext.TestSuite), "contrib/testing/testing_test.go")
 	assert.Equal(ext.TestStatusPass, s.Tag(ext.TestStatus))
 	assert.Equal("1", s.Tag("k"))
 

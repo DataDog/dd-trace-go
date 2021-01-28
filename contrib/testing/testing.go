@@ -8,9 +8,7 @@ package testing // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/testing"
 
 import (
 	"context"
-	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -22,26 +20,8 @@ const (
 	testFramework = "golang.org/pkg/testing"
 )
 
-func init() {
-	initSuitePathPrefix()
-}
-
-var (
-	//suitePathPrefix contains information about path prefix
-	suitePathPrefix string
-)
-
 // FinishFunc closes a started span and attaches test status information.
 type FinishFunc func()
-
-func initSuitePathPrefix() {
-	_, fileName, _, _ := runtime.Caller(0)
-	suitePathPrefix = filepath.ToSlash(filepath.Dir(filepath.Dir(filepath.Dir(fileName)))) + "/"
-}
-
-func relativeSuitePath(path string) string {
-	return strings.TrimPrefix(filepath.ToSlash(path), suitePathPrefix)
-}
 
 // StartSpanWithFinish returns a new span with the given testing.TB interface and options. It uses
 // tracer.StartSpanFromContext function to start the span with automatically detected information.
@@ -55,7 +35,7 @@ func StartSpanWithFinish(ctx context.Context, tb testing.TB, opts ...Option) (co
 	testOpts := []tracer.StartSpanOption{
 		tracer.ResourceName(tb.Name()),
 		tracer.Tag(ext.TestName, tb.Name()),
-		tracer.Tag(ext.TestSuite, relativeSuitePath(suite)),
+		tracer.Tag(ext.TestSuite, suite),
 		tracer.Tag(ext.TestFramework, testFramework),
 	}
 
