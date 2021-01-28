@@ -198,7 +198,7 @@ jobs:
       - run:
           name: Testing
           command: |
-                INTEGRATION=1 go test -v -race `go list ./contrib/elastic/... | grep -v -e grpc.v12 -e google.golang.org/api`
+                INTEGRATION=1 go test -v -race `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api`
                 go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
                 go test -v ./contrib/google.golang.org/api/...
                 go get google.golang.org/grpc@v1.2.0
