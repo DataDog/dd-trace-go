@@ -8,7 +8,10 @@ package testing // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/testing"
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -22,10 +25,27 @@ const (
 	testFramework = "golang.org/pkg/testing"
 )
 
+func init() {
+	initSuitePathPrefix()
+}
+
 var (
+	//suitePathPrefix contains information about path prefix
+	suitePathPrefix string
+
 	// tags contains information detected from CI/CD environment variables.
 	tags map[string]string
 )
+
+func initSuitePathPrefix() {
+	_, fileName, _, _ := runtime.Caller(0)
+	suitePathPrefix = filepath.ToSlash(filepath.Dir(filepath.Dir(filepath.Dir(fileName)))) + "/"
+	fmt.Printf(suitePathPrefix)
+}
+
+func relativeSuitePath(path string) string {
+	return strings.TrimPrefix(filepath.ToSlash(path), suitePathPrefix)
+}
 
 // StartSpanFromContext returns a new span with the given testing.TB interface and options. It uses
 // tracer.StartSpanFromContext function to start the span with automatically detected information.
@@ -36,7 +56,7 @@ func StartSpanFromContext(ctx context.Context, tb testing.TB, opts ...tracer.Sta
 		tracer.ResourceName(tb.Name()),
 		tracer.Tag(ext.SpanKind, spanKind),
 		tracer.Tag(ext.TestName, tb.Name()),
-		tracer.Tag(ext.TestSuite, suite),
+		tracer.Tag(ext.TestSuite, relativeSuitePath(suite)),
 		tracer.Tag(ext.TestFramework, testFramework),
 	}
 	opts = append(opts, testOpts...)
