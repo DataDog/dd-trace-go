@@ -8,15 +8,12 @@ package testing // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/testing"
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext/ci"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -32,68 +29,57 @@ func init() {
 var (
 	//suitePathPrefix contains information about path prefix
 	suitePathPrefix string
-
-	// tags contains information detected from CI/CD environment variables.
-	tags map[string]string
 )
+
+// FinishFunc closes a started span and attaches test status information.
+type FinishFunc func()
 
 func initSuitePathPrefix() {
 	_, fileName, _, _ := runtime.Caller(0)
 	suitePathPrefix = filepath.ToSlash(filepath.Dir(filepath.Dir(filepath.Dir(fileName)))) + "/"
-	fmt.Printf(suitePathPrefix)
 }
 
 func relativeSuitePath(path string) string {
 	return strings.TrimPrefix(filepath.ToSlash(path), suitePathPrefix)
 }
 
-// StartSpanFromContext returns a new span with the given testing.TB interface and options. It uses
+// StartSpanWithFinish returns a new span with the given testing.TB interface and options. It uses
 // tracer.StartSpanFromContext function to start the span with automatically detected information.
-func StartSpanFromContext(ctx context.Context, tb testing.TB, opts ...tracer.StartSpanOption) (tracer.Span, context.Context) {
-	_, suite, _, _ := runtime.Caller(1)
+func StartSpanWithFinish(ctx context.Context, tb testing.TB, opts ...Option) (context.Context, FinishFunc) {
+	cfg := new(config)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	_, suite, _, _ := runtime.Caller(cfg.skip)
 	testOpts := []tracer.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeTest),
 		tracer.ResourceName(tb.Name()),
-		tracer.Tag(ext.SpanKind, spanKind),
 		tracer.Tag(ext.TestName, tb.Name()),
 		tracer.Tag(ext.TestSuite, relativeSuitePath(suite)),
 		tracer.Tag(ext.TestFramework, testFramework),
 	}
-	opts = append(opts, testOpts...)
 
 	switch tb.(type) {
 	case *testing.T:
-		opts = append(opts, tracer.Tag(ext.TestType, ext.TestTypeTest))
+		testOpts = append(testOpts, tracer.Tag(ext.TestType, ext.TestTypeTest))
 	case *testing.B:
-		opts = append(opts, tracer.Tag(ext.TestType, ext.TestTypeBenchmark))
+		testOpts = append(testOpts, tracer.Tag(ext.TestType, ext.TestTypeBenchmark))
 	}
 
-	// Load CI tags
-	if tags == nil {
-		tags = ci.Tags()
-	}
+	cfg.spanOpts = append(cfg.spanOpts, testOpts...)
 
-	for k, v := range tags {
-		opts = append(opts, tracer.Tag(k, v))
-	}
+	span, ctx := tracer.StartSpanFromContext(ctx, ext.SpanTypeTest, cfg.spanOpts...)
 
-	return tracer.StartSpanFromContext(ctx, ext.SpanTypeTest, opts...)
-}
-
-// Finish closes span it finds in context with information extracted from testing.TB interface.
-func Finish(ctx context.Context, tb testing.TB, opts ...ddtrace.FinishOption) {
-	span, ok := tracer.SpanFromContext(ctx)
-	if !ok {
-		return
+	// Finish closes span it finds in context with information extracted from testing.TB interface.
+	return ctx, func() {
+		span.SetTag(ext.Error, tb.Failed())
+		if tb.Failed() {
+			span.SetTag(ext.TestStatus, ext.TestStatusFail)
+		} else if tb.Skipped() {
+			span.SetTag(ext.TestStatus, ext.TestStatusSkip)
+		} else {
+			span.SetTag(ext.TestStatus, ext.TestStatusPass)
+		}
+		span.Finish(cfg.finishOpts...)
 	}
-
-	span.SetTag(ext.Error, tb.Failed())
-	if tb.Failed() {
-		span.SetTag(ext.TestStatus, ext.TestStatusFail)
-	} else if tb.Skipped() {
-		span.SetTag(ext.TestStatus, ext.TestStatusSkip)
-	} else {
-		span.SetTag(ext.TestStatus, ext.TestStatusPass)
-	}
-	span.Finish(opts...)
 }

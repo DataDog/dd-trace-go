@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func TestStatus(t *testing.T) {
@@ -19,29 +20,21 @@ func TestStatus(t *testing.T) {
 	defer mt.Stop()
 
 	t.Run("pass", func(t *testing.T) {
-		span, ctx := StartSpanFromContext(context.Background(), t)
-		defer Finish(ctx, t)
+		ctx, finish := StartSpanWithFinish(context.Background(), t, WithSkipFrames(1))
+		defer finish()
 
+		span, _ := tracer.SpanFromContext(ctx)
 		span.SetTag("k", "1")
 	})
 
 	t.Run("skip", func(t *testing.T) {
-		span, ctx := StartSpanFromContext(context.Background(), t)
-		defer Finish(ctx, t)
+		ctx, finish := StartSpanWithFinish(context.Background(), t)
+		defer finish()
 
+		span, _ := tracer.SpanFromContext(ctx)
 		span.SetTag("k", "2")
 		t.Skip("good reason")
 	})
-
-	/* FIXME find a better way to execute failing test
-	t.Run("fail", func(t *testing.T) {
-		span, ctx := StartSpanFromContext(context.Background(), t)
-		defer Finish(ctx, t)
-
-		t.Fail()
-		span.SetTag("k", "3")
-	})
-	*/
 
 	assert := assert.New(t)
 
@@ -60,12 +53,4 @@ func TestStatus(t *testing.T) {
 	assert.Equal("TestStatus/skip", s.Tag(ext.TestName))
 	assert.Equal(ext.TestStatusSkip, s.Tag(ext.TestStatus))
 	assert.Equal("2", s.Tag("k"))
-
-	/*
-		s = spans[2]
-		assert.Equal("test", s.OperationName())
-		assert.Equal("TestStatus/fail", s.Tag(ext.TestName))
-		assert.Equal(ext.TestStatusFail, s.Tag(ext.TestStatus))
-		assert.Equal("3", s.Tag("k"))
-	*/
 }
