@@ -9,8 +9,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/elastic/go-elasticsearch"
-	"github.com/elastic/go-elasticsearch/esapi"
+	elasticsearch "github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
 	elastictrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
