@@ -180,15 +180,17 @@ func parseGoroutineHeader(line []byte) *Goroutine {
 	// non-numeric, let's not consider this a valid goroutine.
 	if strings.HasSuffix(g.State, " minutes") {
 		return nil
-	} else if g.ID, err = strconv.Atoi(string(id)); err != nil {
+	}
+	if g.ID, err = strconv.Atoi(string(id)); err != nil {
 		// should be impossible to end up here
 		return nil
-	} else if len(waitminutes) == 0 {
-		// do nothing, goroutine isn't waiting
-	} else if min, err := strconv.Atoi(string(waitminutes)); err != nil {
-		// should be impossible to end up here
-		return nil
-	} else {
+	}
+	if len(waitminutes) > 0 {
+		min, err := strconv.Atoi(string(waitminutes))
+		if err != nil {
+			// should be impossible to end up here
+			return nil
+		}
 		g.Wait = time.Duration(min) * time.Minute
 	}
 	return g
