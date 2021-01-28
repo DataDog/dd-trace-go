@@ -21,12 +21,18 @@ import (
 
 const debug = false
 
+const (
+	elasticV5URL = "http://127.0.0.1:9201"
+	elasticV6URL = "http://127.0.0.1:9202"
+	elasticV7URL = "http://127.0.0.1:9203"
+)
+
 func TestMain(m *testing.M) {
-	_, ok := os.LookupEnv("INTEGRATION")
-	if !ok {
-		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
-		os.Exit(0)
-	}
+	// _, ok := os.LookupEnv("INTEGRATION")
+	// if !ok {
+	// 	fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
+	// 	os.Exit(0)
+	// }
 	os.Exit(m.Run())
 }
 
@@ -34,24 +40,24 @@ func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	span := mt.FinishedSpans()[0]
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
 	assert.Equal("PUT /twitter/tweet/?", span.Tag(ext.ResourceName))
-	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch8.url"))
-	assert.Equal("PUT", span.Tag("elasticsearch8.method"))
-	assert.Equal(`{"user": "test", "message": "hello"}`, span.Tag("elasticsearch8.body"))
+	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
+	assert.Equal("PUT", span.Tag("elasticsearch.method"))
+	assert.Equal(`{"user": "test", "message": "hello"}`, span.Tag("elasticsearch.body"))
 }
 
 func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	span := mt.FinishedSpans()[0]
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
 	assert.Equal("GET /twitter/tweet/?", span.Tag(ext.ResourceName))
-	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch8.url"))
-	assert.Equal("GET", span.Tag("elasticsearch8.method"))
+	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
+	assert.Equal("GET", span.Tag("elasticsearch.method"))
 }
 
 func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	span := mt.FinishedSpans()[0]
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
-	assert.Equal("GET /not-real-index/_all/?", span.Tag(ext.ResourceName))
-	assert.Equal("/not-real-index/_all/1", span.Tag("elasticsearch8.url"))
+	assert.Equal("GET /not-real-index/_doc/?", span.Tag(ext.ResourceName))
+	assert.Equal("/not-real-index/_doc/1", span.Tag("elasticsearch.url"))
 	assert.NotEmpty(span.Tag(ext.Error))
 	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
 }

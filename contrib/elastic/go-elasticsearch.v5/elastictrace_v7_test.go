@@ -11,55 +11,56 @@ import (
 	"strings"
 	"testing"
 
-	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
-	esapi8 "github.com/elastic/go-elasticsearch/v8/esapi"
+	elasticsearch7 "github.com/elastic/go-elasticsearch/v7"
+	esapi7 "github.com/elastic/go-elasticsearch/v7/esapi"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
-func TestClientV8(t *testing.T) {
+func TestClientV7(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	cfg := elasticsearch8.Config{
+	cfg := elasticsearch7.Config{
 		Transport: NewRoundTripper(WithServiceName("my-es-service")),
 		Addresses: []string{
-			"http://128.0.0.1:9200",
+			elasticV7URL,
 		},
 	}
-	client, err := elasticsearch8.NewClient(cfg)
+	client, err := elasticsearch7.NewClient(cfg)
 	assert.NoError(err)
 
-	_, err = esapi8.IndexRequest{
-		Index:      "twitter",
-		DocumentID: "1",
-		Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
+	_, err = esapi7.IndexRequest{
+		Index:        "twitter",
+		DocumentID:   "1",
+		DocumentType: "tweet",
+		Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
 	}.Do(context.TODO(), client)
-
 	assert.NoError(err)
 
 	mt.Reset()
-	_, err = esapi8.GetRequest{
-		Index:      "twitter",
-		DocumentID: "1",
+	_, err = esapi7.GetRequest{
+		Index:        "twitter",
+		DocumentID:   "1",
+		DocumentType: "tweet",
 	}.Do(context.TODO(), client)
 	assert.NoError(err)
 	checkGETTrace(assert, mt)
 
 	mt.Reset()
-	_, err = esapi8.GetRequest{
+	_, err = esapi7.GetRequest{
 		Index:      "not-real-index",
 		DocumentID: "1",
 	}.Do(context.TODO(), client)
-	assert.Error(err)
+	assert.NoError(err)
 	checkErrTrace(assert, mt)
 
 }
 
-func TestClientErrorCutoffV8(t *testing.T) {
+func TestClientErrorCutoffV7(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -69,43 +70,44 @@ func TestClientErrorCutoffV8(t *testing.T) {
 	}()
 	bodyCutoff = 10
 
-	cfg := elasticsearch8.Config{
+	cfg := elasticsearch7.Config{
 		Transport: NewRoundTripper(WithServiceName("my-es-service")),
 		Addresses: []string{
-			"http://128.0.0.1:9200",
+			elasticV7URL,
 		},
 	}
-	client, err := elasticsearch8.NewClient(cfg)
+	client, err := elasticsearch7.NewClient(cfg)
 	assert.NoError(err)
 
-	_, err = esapi8.GetRequest{
+	_, err = esapi7.GetRequest{
 		Index:      "not-real-index",
 		DocumentID: "1",
 	}.Do(context.TODO(), client)
-	assert.Error(err)
+	assert.NoError(err)
 
 	span := mt.FinishedSpans()[0]
 	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
 }
 
-func TestClientV8Failure(t *testing.T) {
+func TestClientV7Failure(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	cfg := elasticsearch8.Config{
+	cfg := elasticsearch7.Config{
 		Transport: NewRoundTripper(WithServiceName("my-es-service")),
 		Addresses: []string{
-			"http://128.0.0.1:29201", // inexistent service, it must fail
+			"http://127.0.0.1:9207", // inexistent service, it must fail
 		},
 	}
-	client, err := elasticsearch8.NewClient(cfg)
+	client, err := elasticsearch7.NewClient(cfg)
 	assert.NoError(err)
 
-	_, err = esapi8.IndexRequest{
-		Index:      "twitter",
-		DocumentID: "1",
-		Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
+	_, err = esapi7.IndexRequest{
+		Index:        "twitter",
+		DocumentID:   "1",
+		DocumentType: "tweet",
+		Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
 	}.Do(context.TODO(), client)
 	assert.Error(err)
 
@@ -116,7 +118,7 @@ func TestClientV8Failure(t *testing.T) {
 	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
 }
 
-func TestResourceNamerSettingsV8(t *testing.T) {
+func TestResourceNamerSettingsV7(t *testing.T) {
 	staticName := "static resource name"
 	staticNamer := func(url, method string) string {
 		return staticName
@@ -126,18 +128,19 @@ func TestResourceNamerSettingsV8(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		cfg := elasticsearch8.Config{
+		cfg := elasticsearch7.Config{
 			Transport: NewRoundTripper(),
 			Addresses: []string{
-				"http://128.0.0.1:9200",
+				elasticV7URL,
 			},
 		}
-		client, err := elasticsearch8.NewClient(cfg)
+		client, err := elasticsearch7.NewClient(cfg)
 		assert.NoError(t, err)
 
-		_, err = esapi8.GetRequest{
-			Index:      "logs_2018_05/event/_search",
-			DocumentID: "1",
+		_, err = esapi7.GetRequest{
+			Index:        "logs_2017_05/event/_search",
+			DocumentID:   "1",
+			DocumentType: "tweet",
 		}.Do(context.TODO(), client)
 
 		span := mt.FinishedSpans()[0]
@@ -148,18 +151,19 @@ func TestResourceNamerSettingsV8(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		cfg := elasticsearch8.Config{
+		cfg := elasticsearch7.Config{
 			Transport: NewRoundTripper(WithResourceNamer(staticNamer)),
 			Addresses: []string{
-				"http://128.0.0.1:9200",
+				elasticV7URL,
 			},
 		}
-		client, err := elasticsearch8.NewClient(cfg)
+		client, err := elasticsearch7.NewClient(cfg)
 		assert.NoError(t, err)
 
-		_, err = esapi8.GetRequest{
-			Index:      "logs_2018_05/event/_search",
-			DocumentID: "1",
+		_, err = esapi7.GetRequest{
+			Index:        "logs_2017_05/event/_search",
+			DocumentID:   "1",
+			DocumentType: "tweet",
 		}.Do(context.TODO(), client)
 
 		span := mt.FinishedSpans()[0]
@@ -167,22 +171,23 @@ func TestResourceNamerSettingsV8(t *testing.T) {
 	})
 }
 
-func TestAnalyticsSettingsV8(t *testing.T) {
+func TestAnalyticsSettingsV7(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
 
-		cfg := elasticsearch8.Config{
+		cfg := elasticsearch7.Config{
 			Transport: NewRoundTripper(opts...),
 			Addresses: []string{
-				"http://128.0.0.1:9200",
+				elasticV7URL,
 			},
 		}
-		client, err := elasticsearch8.NewClient(cfg)
+		client, err := elasticsearch7.NewClient(cfg)
 		assert.NoError(t, err)
 
-		_, err = esapi8.IndexRequest{
-			Index:      "twitter",
-			DocumentID: "1",
-			Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
+		_, err = esapi7.IndexRequest{
+			Index:        "twitter",
+			DocumentID:   "1",
+			DocumentType: "tweet",
+			Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
 		}.Do(context.TODO(), client)
 		assert.NoError(t, err)
 

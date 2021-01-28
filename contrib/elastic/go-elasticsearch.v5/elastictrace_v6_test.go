@@ -27,24 +27,25 @@ func TestClientV6(t *testing.T) {
 	cfg := elasticsearch6.Config{
 		Transport: NewRoundTripper(WithServiceName("my-es-service")),
 		Addresses: []string{
-			"http://126.0.0.1:9200",
+			elasticV6URL,
 		},
 	}
 	client, err := elasticsearch6.NewClient(cfg)
 	assert.NoError(err)
 
 	_, err = esapi6.IndexRequest{
-		Index:      "twitter",
-		DocumentID: "1",
-		Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
+		Index:        "twitter",
+		DocumentID:   "1",
+		DocumentType: "tweet",
+		Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
 	}.Do(context.TODO(), client)
-
 	assert.NoError(err)
 
 	mt.Reset()
 	_, err = esapi6.GetRequest{
-		Index:      "twitter",
-		DocumentID: "1",
+		Index:        "twitter",
+		DocumentID:   "1",
+		DocumentType: "tweet",
 	}.Do(context.TODO(), client)
 	assert.NoError(err)
 	checkGETTrace(assert, mt)
@@ -54,7 +55,7 @@ func TestClientV6(t *testing.T) {
 		Index:      "not-real-index",
 		DocumentID: "1",
 	}.Do(context.TODO(), client)
-	assert.Error(err)
+	assert.NoError(err)
 	checkErrTrace(assert, mt)
 
 }
@@ -72,7 +73,7 @@ func TestClientErrorCutoffV6(t *testing.T) {
 	cfg := elasticsearch6.Config{
 		Transport: NewRoundTripper(WithServiceName("my-es-service")),
 		Addresses: []string{
-			"http://126.0.0.1:9200",
+			elasticV6URL,
 		},
 	}
 	client, err := elasticsearch6.NewClient(cfg)
@@ -82,7 +83,7 @@ func TestClientErrorCutoffV6(t *testing.T) {
 		Index:      "not-real-index",
 		DocumentID: "1",
 	}.Do(context.TODO(), client)
-	assert.Error(err)
+	assert.NoError(err)
 
 	span := mt.FinishedSpans()[0]
 	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
@@ -96,16 +97,17 @@ func TestClientV6Failure(t *testing.T) {
 	cfg := elasticsearch6.Config{
 		Transport: NewRoundTripper(WithServiceName("my-es-service")),
 		Addresses: []string{
-			"http://126.0.0.1:29201", // inexistent service, it must fail
+			"http://127.0.0.1:9207", // inexistent service, it must fail
 		},
 	}
 	client, err := elasticsearch6.NewClient(cfg)
 	assert.NoError(err)
 
 	_, err = esapi6.IndexRequest{
-		Index:      "twitter",
-		DocumentID: "1",
-		Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
+		Index:        "twitter",
+		DocumentID:   "1",
+		DocumentType: "tweet",
+		Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
 	}.Do(context.TODO(), client)
 	assert.Error(err)
 
@@ -129,15 +131,16 @@ func TestResourceNamerSettingsV6(t *testing.T) {
 		cfg := elasticsearch6.Config{
 			Transport: NewRoundTripper(),
 			Addresses: []string{
-				"http://126.0.0.1:9200",
+				elasticV6URL,
 			},
 		}
 		client, err := elasticsearch6.NewClient(cfg)
 		assert.NoError(t, err)
 
 		_, err = esapi6.GetRequest{
-			Index:      "logs_2016_05/event/_search",
-			DocumentID: "1",
+			Index:        "logs_2017_05/event/_search",
+			DocumentID:   "1",
+			DocumentType: "tweet",
 		}.Do(context.TODO(), client)
 
 		span := mt.FinishedSpans()[0]
@@ -151,15 +154,16 @@ func TestResourceNamerSettingsV6(t *testing.T) {
 		cfg := elasticsearch6.Config{
 			Transport: NewRoundTripper(WithResourceNamer(staticNamer)),
 			Addresses: []string{
-				"http://126.0.0.1:9200",
+				elasticV6URL,
 			},
 		}
 		client, err := elasticsearch6.NewClient(cfg)
 		assert.NoError(t, err)
 
 		_, err = esapi6.GetRequest{
-			Index:      "logs_2016_05/event/_search",
-			DocumentID: "1",
+			Index:        "logs_2017_05/event/_search",
+			DocumentID:   "1",
+			DocumentType: "tweet",
 		}.Do(context.TODO(), client)
 
 		span := mt.FinishedSpans()[0]
@@ -173,16 +177,17 @@ func TestAnalyticsSettingsV6(t *testing.T) {
 		cfg := elasticsearch6.Config{
 			Transport: NewRoundTripper(opts...),
 			Addresses: []string{
-				"http://126.0.0.1:9200",
+				elasticV6URL,
 			},
 		}
 		client, err := elasticsearch6.NewClient(cfg)
 		assert.NoError(t, err)
 
 		_, err = esapi6.IndexRequest{
-			Index:      "twitter",
-			DocumentID: "1",
-			Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
+			Index:        "twitter",
+			DocumentID:   "1",
+			DocumentType: "tweet",
+			Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
 		}.Do(context.TODO(), client)
 		assert.NoError(t, err)
 
