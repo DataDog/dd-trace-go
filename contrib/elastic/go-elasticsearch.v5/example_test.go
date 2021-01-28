@@ -9,8 +9,8 @@ import (
 	"log"
 	"strings"
 
-	elasticsearch "github.com/elastic/go-elasticsearch/v8"
-	"github.com/elastic/go-elasticsearch/v8/esapi"
+	elasticsearch "github.com/elastic/go-elasticsearch/v7"
+	"github.com/elastic/go-elasticsearch/v7/esapi"
 	elastictrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -28,9 +28,10 @@ func Example_v7() {
 	}
 
 	_, err = esapi.IndexRequest{
-		Index:      "twitter",
-		DocumentID: "1",
-		Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
+		Index:        "twitter",
+		DocumentID:   "1",
+		DocumentType: "tweet",
+		Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
 	}.Do(context.Background(), es)
 
 	if err != nil {
@@ -44,8 +45,9 @@ func Example_v7() {
 	)
 
 	_, err = esapi.GetRequest{
-		Index:      "twitter",
-		DocumentID: "1",
+		Index:        "twitter",
+		DocumentID:   "1",
+		DocumentType: "tweet",
 	}.Do(ctx, es)
 
 	if err != nil {
