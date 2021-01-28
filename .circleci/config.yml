@@ -97,6 +97,15 @@ jobs:
       - image: elasticsearch:5
         environment:
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+      - image: elasticsearch:6
+        environment:
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+      - image: elasticsearch:7
+        environment:
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+      - image: elasticsearch:8
+        environment:
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
       - image: datadog/docker-dd-agent
         environment:
           DD_APM_ENABLED: "true"
@@ -163,6 +172,15 @@ jobs:
       - run:
           name: Wait for ElasticSearch (2)
           command: dockerize -wait http://localhost:9201 -timeout 1m
+      - run:
+          name: Wait for ElasticSearch (3)
+          command: dockerize -wait http://localhost:9202 -timeout 1m
+      - run:
+          name: Wait for ElasticSearch (4)
+          command: dockerize -wait http://localhost:9203 -timeout 1m
+      - run:
+          name: Wait for ElasticSearch (5)
+          command: dockerize -wait http://localhost:9204 -timeout 1m
 
       - run:
           name: Wait for Datadog Agent
