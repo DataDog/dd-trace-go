@@ -61,10 +61,10 @@ func TestStatus(t *testing.T) {
 	assert.Equal("2", s.Tag("k"))
 
 	/*
-	s = spans[2]
-	assert.Equal("test", s.OperationName())
-	assert.Equal("TestStatus/fail", s.Tag(ext.TestName))
-	assert.Equal(ext.TestStatusFail, s.Tag(ext.TestStatus))
-	assert.Equal("3", s.Tag("k"))
+		s = spans[2]
+		assert.Equal("test", s.OperationName())
+		assert.Equal("TestStatus/fail", s.Tag(ext.TestName))
+		assert.Equal(ext.TestStatusFail, s.Tag(ext.TestStatus))
+		assert.Equal("3", s.Tag("k"))
 	*/
 }
