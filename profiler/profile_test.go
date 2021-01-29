@@ -143,7 +143,8 @@ main.main()
 		// Labels
 		require.Equal(t, []string{"running"}, pp.Sample[0].Label["state"])
 		require.Equal(t, []string{"false"}, pp.Sample[0].Label["lockedm"])
-		require.Equal(t, []string{"3"}, pp.Sample[1].Label["goid"])
+		require.Equal(t, []int64{3}, pp.Sample[1].NumLabel["goid"])
+		require.Equal(t, []string{"id"}, pp.Sample[1].NumUnit["goid"])
 		// Virtual frame for "frames elided" goroutine
 		require.Equal(t, 3, len(pp.Sample[2].Location))
 		// Virtual frame go "created by" frame
