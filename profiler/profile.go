@@ -283,11 +283,10 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
 		sample := &pprofile.Sample{
 			Value: []int64{g.Wait.Nanoseconds()},
 			Label: map[string][]string{
+				"goid":    {fmt.Sprintf("%d", g.ID)},
 				"state":   {g.State}, // TODO(fg) split into atomicstatus/waitreason?
 				"lockedm": {fmt.Sprintf("%t", g.LockedToThread)},
 			},
-			NumUnit:  map[string][]string{"goid": {"id"}},
-			NumLabel: map[string][]int64{"goid": {int64(g.ID)}},
 		}
 
 		// Treat the frame that created this goroutine as part of the stack so it
