@@ -71,6 +71,10 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	// TODO(fg) remove this after making expGoroutineWaitProfile public.
+	if os.Getenv("DD_PROFILING_WAIT_PROFILE") != "" {
+		cfg.addProfileType(expGoroutineWaitProfile)
+	}
 	if cfg.apiKey != "" {
 		if !isAPIKeyValid(cfg.apiKey) {
 			return nil, errors.New("API key has incorrect format")

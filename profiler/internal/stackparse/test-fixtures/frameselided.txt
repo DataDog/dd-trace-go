@@ -1,0 +1,202 @@
+goroutine 1 [running]:
+runtime/pprof.writeGoroutineStacks(0x111e540, 0xc0000a0008, 0x30, 0x12b3998)
+	/usr/local/Cellar/go/1.15.6/libexec/src/runtime/pprof/pprof.go:693 +0x9f
+runtime/pprof.writeGoroutine(0x111e540, 0xc0000a0008, 0x2, 0x0, 0x0)
+	/usr/local/Cellar/go/1.15.6/libexec/src/runtime/pprof/pprof.go:682 +0x45
+runtime/pprof.(*Profile).WriteTo(0x11ae4e0, 0x111e540, 0xc0000a0008, 0x2, 0x0, 0x0)
+	/usr/local/Cellar/go/1.15.6/libexec/src/runtime/pprof/pprof.go:331 +0x3f2
+main.stackDump(0x0)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:16 +0x85
+main.stackDump(0x1)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x2)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x3)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x4)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x5)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x6)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x7)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x8)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x9)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0xa)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0xb)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0xc)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0xd)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0xe)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0xf)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x10)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x11)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x12)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x13)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x14)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x15)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x16)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x17)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x18)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x19)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x1a)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x1b)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x1c)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x1d)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x1e)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x1f)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x20)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x21)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x22)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x23)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x24)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x25)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x26)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x27)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x28)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x29)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x2a)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x2b)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x2c)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x2d)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x2e)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x2f)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x30)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x31)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x32)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x33)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x34)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x35)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x36)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x37)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x38)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x39)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x3a)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x3b)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x3c)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x3d)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x3e)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x3f)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x40)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x41)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x42)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x43)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x44)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x45)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x46)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x47)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x48)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x49)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x4a)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x4b)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x4c)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x4d)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x4e)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x4f)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x50)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x51)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x52)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x53)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x54)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x55)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x56)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x57)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x58)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x59)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x5a)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x5b)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x5c)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x5d)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x5e)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x5f)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+main.stackDump(0x60)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go:14 +0x33
+...additional frames elided...
