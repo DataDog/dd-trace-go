@@ -1,0 +1,31 @@
+goroutine 1 [running]:
+runtime/pprof.writeGoroutineStacks(0x4124060, 0xc000010018, 0x1000000000030, 0x4713e40)
+	/usr/local/Cellar/go/1.15.6/libexec/src/runtime/pprof/pprof.go:693 +0x9f
+runtime/pprof.writeGoroutine(0x4124060, 0xc000010018, 0x2, 0x0, 0x50)
+	/usr/local/Cellar/go/1.15.6/libexec/src/runtime/pprof/pprof.go:682 +0x45
+runtime/pprof.(*Profile).WriteTo(0x41b45a0, 0x4124060, 0xc000010018, 0x2, 0xffffffff, 0xc00007a058)
+	/usr/local/Cellar/go/1.15.6/libexec/src/runtime/pprof/pprof.go:331 +0x3f2
+main.main()
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/cgo.go:40 +0xbb
+
+goroutine 6 [syscall]:
+main._Cfunc_c_sleep_loop(0xf4240)
+	_cgo_gotypes.go:56 +0x45
+main.cSleepLoop(0x3b9aca00)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/cgo.go:44 +0x45
+created by main.main
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/cgo.go:36 +0x45
+
+goroutine 7 [sleep, locked to thread]:
+time.Sleep(0x3b9aca00)
+	/usr/local/Cellar/go/1.15.6/libexec/src/runtime/time.go:188 +0xbf
+main.goSleep(...)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/cgo.go:53
+main._cgoexpwrap_65ad5df3a112_goSleep(0xf4240, 0xc000001b00)
+	_cgo_gotypes.go:73 +0x34
+main._Cfunc_c_go_sleep_loop(0xf4240)
+	_cgo_gotypes.go:43 +0x45
+main.cGoSleepLoop(0x3b9aca00)
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/cgo.go:48 +0x45
+created by main.main
+	/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/cgo.go:37 +0x66
