@@ -36,3 +36,7 @@ If you need to undo this for any reason, you can run:
 ```
 git update-index --no-assume-unchanged go.*
 ```
+
+### Milestones
+
+The maintainers of this repository assign milestones to pull requests to classify them. `Triage` indicates that the PR is not ready for review or landing. Pull requests that are ready get the upcoming release version assigned.
