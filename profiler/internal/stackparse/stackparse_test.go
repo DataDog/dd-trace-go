@@ -42,6 +42,7 @@ func TestParse_GoldenFiles(t *testing.T) {
 			Errors     []string
 			Goroutines []*Goroutine
 		}{errS, goroutines}, "", "  ")
+		actual = append(actual, '\n')
 		require.NoError(t, err)
 
 		if *update {
