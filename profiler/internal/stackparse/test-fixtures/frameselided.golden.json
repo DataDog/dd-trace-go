@@ -1,0 +1,515 @@
+{
+  "Errors": null,
+  "Goroutines": [
+    {
+      "ID": 1,
+      "State": "running",
+      "Wait": 0,
+      "LockedToThread": false,
+      "Stack": [
+        {
+          "Func": "runtime/pprof.writeGoroutineStacks",
+          "File": "/usr/local/Cellar/go/1.15.6/libexec/src/runtime/pprof/pprof.go",
+          "Line": 693
+        },
+        {
+          "Func": "runtime/pprof.writeGoroutine",
+          "File": "/usr/local/Cellar/go/1.15.6/libexec/src/runtime/pprof/pprof.go",
+          "Line": 682
+        },
+        {
+          "Func": "runtime/pprof.(*Profile).WriteTo",
+          "File": "/usr/local/Cellar/go/1.15.6/libexec/src/runtime/pprof/pprof.go",
+          "Line": 331
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 16
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        },
+        {
+          "Func": "main.stackDump",
+          "File": "/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/profiler/internal/stackparse/test-fixtures/frameselided.go",
+          "Line": 14
+        }
+      ],
+      "FramesElided": true,
+      "CreatedBy": null
+    }
+  ]
+}
