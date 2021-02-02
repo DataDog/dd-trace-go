@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -306,8 +307,8 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
-	writer.Set(b3TraceIDHeader, strconv.FormatUint(ctx.traceID, 16))
-	writer.Set(b3SpanIDHeader, strconv.FormatUint(ctx.spanID, 16))
+	writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID))
+	writer.Set(b3SpanIDHeader, fmt.Sprintf("%016x", ctx.spanID))
 	if p, ok := ctx.samplingPriority(); ok {
 		if p >= ext.PriorityAutoKeep {
 			writer.Set(b3SampledHeader, "1")
