@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -183,15 +184,15 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 	first := true
 	for k, v := range s.Meta {
 		if first {
-			h.buf.WriteByte('"')
 			first = false
 		} else {
-			h.buf.WriteString(`,"`)
+			h.buf.WriteString(`,`)
 		}
-		h.buf.WriteString(k)
-		h.buf.WriteString(`":"`)
-		h.buf.WriteString(v)
-		h.buf.WriteString(`"`)
+		m, _ := json.Marshal(k)
+		h.buf.Write(m)
+		h.buf.WriteString(":")
+		m, _ = json.Marshal(v)
+		h.buf.Write(m)
 	}
 	h.buf.WriteString(`},"metrics":{`)
 	first = true
