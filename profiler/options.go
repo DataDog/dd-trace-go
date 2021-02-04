@@ -189,7 +189,9 @@ func WithAgentAddr(hostport string) Option {
 	}
 }
 
-// WithAPIKey specifies the API key to use when connecting to the Datadog API directly, skipping the agent.
+// WithAPIKey is deprecated and might be removed in future versions of this
+// package. It allows to skip the agent and talk to the Datadog API directly
+// using the provided API key.
 func WithAPIKey(key string) Option {
 	return func(cfg *config) {
 		cfg.apiKey = key
