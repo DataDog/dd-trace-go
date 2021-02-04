@@ -5,8 +5,18 @@
 
 package tracer
 
+import "runtime/debug"
+
 // Values can be injected at build time.
 var (
 	RepositoryURL string
 	CommitHash    string
 )
+
+func Stack() string {
+	return string(debug.Stack())
+}
+
+func Panic() {
+	panic("panic")
+}
