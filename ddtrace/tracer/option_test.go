@@ -251,44 +251,63 @@ func TestServiceName(t *testing.T) {
 
 //DD_TAGS applicable only
 func TestTagSeparators(t *testing.T) {
-	tags := []struct {
-		in          string
-		expected    map[string]string
-		notExpected []string
-	}{
-		{in: "env:test,aKey:aVal bKey:bVal cKey:", expected: map[string]string{
-			"env": "test", "aKey": "aVal", "bKey": "bVal", "cKey": ""}},
-		{"env:test aKey:aVal     bKey :bVal dKey: dVal cKey:", map[string]string{
-			"env": "test", "aKey": "aVal", "bKey": "", "dKey": "", "dVal": "", "cKey": ""}, []string{"bVal"}},
-		{in: "env :test, aKey : aVal bKey:bVal cKey:", expected: map[string]string{
-			"env": "", "aKey": "", "bKey": "bVal", "cKey": ""}, notExpected: []string{""}},
-		{in: "env:test,aKey:aVal,bKey:bVal,cKey:", expected: map[string]string{
-			"env": "test", "aKey": "aVal", "bKey": "bVal", "cKey": ""}, notExpected: []string{""}},
-		{in: "env:test aKey:aVal bKey:bVal cKey:", expected: map[string]string{
-			"env": "test", "aKey": "aVal", "bKey": "bVal", "cKey": ""}, notExpected: []string{""}},
-		{in: "env:keyWithA:Semicolon bKey:bVal cKey", expected: map[string]string{
-			"env": "keyWithA:Semicolon", "bKey": "bVal", "cKey": ""}, notExpected: []string{""}},
-		{in: "env:keyWith:Lots:Of:Semicolons bKey:bVal", expected: map[string]string{
-			"env": "keyWith:Lots:Of:Semicolons", "bKey": "bVal"}, notExpected: []string{"cKey", ""}},
-		{in: "env:keyWith: Lots:Of:Semicolons ", expected: map[string]string{
-			"env": "keyWith:", "Lots": "Of:Semicolons"}, notExpected: []string{"cKey", ""}},
-		{in: "env:keyWith:  , ,   Lots:Of:Semicolons ", expected: map[string]string{
-			"env": "keyWith:", "Lots": "Of:Semicolons"}, notExpected: []string{"cKey", ""}},
-		{in: "env:keyWith:  , ,   Lots:Of:Semicolons ", expected: map[string]string{
-			"env": "keyWith:", "Lots": "Of:Semicolons"}, notExpected: []string{""}},
-		{in: "a:b,c,d", expected: map[string]string{"a": "b", "c": "", "d": ""}, notExpected: []string{""}},
-		{in: "a:a;", expected: map[string]string{"a": "a;"}, notExpected: []string{}},
-		{in: "a,1", expected: map[string]string{
-			"a": "", "1": ""}, notExpected: []string{}},
-		{in: "key1 :value1  \t key2:  value2", expected: map[string]string{
-			"key1": "", "key2": "", "value2": ""}, notExpected: []string{"value1", ""}},
-		{in: "a:b:c:d", expected: map[string]string{"a": "b:c:d"}, notExpected: []string{""}},
-	}
+	assert := assert.New(t)
 
 	t.Run("env-tags", func(t *testing.T) {
-		for _, tag := range tags {
+		for _, tag := range []struct {
+			in          string
+			expected    map[string]string
+			notExpected []string
+		}{
+			{
+				in:       "env:test,aKey:aVal bKey:bVal cKey:",
+				expected: map[string]string{"env": "test", "aKey": "aVal", "bKey": "bVal", "cKey": ""}},
+			{
+				in:          "env:test aKey:aVal     bKey :bVal dKey: dVal cKey:",
+				expected:    map[string]string{"env": "test", "aKey": "aVal", "bKey": "", "dKey": "", "dVal": "", "cKey": ""},
+				notExpected: []string{"bVal"}},
+			{
+				in:       "env :test, aKey : aVal bKey:bVal cKey:",
+				expected: map[string]string{"env": "", "aKey": "", "bKey": "bVal", "cKey": ""}},
+			{
+				in:       "env:test,aKey:aVal,bKey:bVal,cKey:",
+				expected: map[string]string{"env": "test", "aKey": "aVal", "bKey": "bVal", "cKey": ""}},
+			{
+				in:       "env:test aKey:aVal bKey:bVal cKey:",
+				expected: map[string]string{"env": "test", "aKey": "aVal", "bKey": "bVal", "cKey": ""}},
+			{
+				in:       "env:keyWithA:Semicolon bKey:bVal cKey",
+				expected: map[string]string{"env": "keyWithA:Semicolon", "bKey": "bVal", "cKey": ""}},
+			{
+				in:       "env:keyWith:Lots:Of:Semicolons bKey:bVal",
+				expected: map[string]string{"env": "keyWith:Lots:Of:Semicolons", "bKey": "bVal"}},
+			{
+				in:       "env:keyWith: Lots:Of:Semicolons ",
+				expected: map[string]string{"env": "keyWith:", "Lots": "Of:Semicolons"}},
+			{
+				in:       "env:keyWith:  , ,   Lots:Of:Semicolons ",
+				expected: map[string]string{"env": "keyWith:", "Lots": "Of:Semicolons"}},
+			{
+				in:       "env:keyWith:  , ,   Lots:Of:Semicolons ",
+				expected: map[string]string{"env": "keyWith:", "Lots": "Of:Semicolons"}},
+			{
+				in:       "a:b,c,d",
+				expected: map[string]string{"a": "b", "c": "", "d": ""}},
+			{
+				in:       "a:a;",
+				expected: map[string]string{"a": "a;"}},
+			{
+				in:       "a,1",
+				expected: map[string]string{"a": "", "1": ""}},
+			{
+				in:          "key1 :value1  \t key2:  value2",
+				expected:    map[string]string{"key1": "", "key2": "", "value2": ""},
+				notExpected: []string{"value1", ""}},
+			{
+				in:       "a:b:c:d",
+				expected: map[string]string{"a": "b:c:d"}},
+		} {
 			os.Setenv("DD_TAGS", tag.in)
-			assert := assert.New(t)
 			c := newConfig()
 			for key, expected := range tag.expected {
 				actual, ok := c.globalTags[key]

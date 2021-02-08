@@ -142,20 +142,18 @@ func newConfig(opts ...StartOption) *config {
 			return r == ',' || r == ' '
 		})
 		for _, tag := range tags {
-			tag = strings.TrimSpace(tag)
 			if tag == "" {
 				continue
 			}
 			kv := strings.SplitN(tag, ":", 2)
-			k := strings.TrimSpace(kv[0])
 			switch len(kv) {
 			case 1:
-				WithGlobalTag(k, "")(c)
+				WithGlobalTag(kv[0], "")(c)
 			case 2:
-				if len(k) == 0 {
+				if len(kv[0]) == 0 {
 					continue
 				}
-				WithGlobalTag(k, strings.TrimSpace(kv[1]))(c)
+				WithGlobalTag(kv[0], strings.TrimSpace(kv[1]))(c)
 			}
 		}
 	}
