@@ -30,9 +30,12 @@ const (
 	// For more information or for changing this value, check MutexProfileFraction
 	DefaultMutexFraction = 10
 
-	// DefaultBlockRate specifies the default block profiling rate used by the block profiler.
-	// For more information or for changing this value, check BlockProfileRate.
-	DefaultBlockRate = 100
+	// DefaultBlockRate specifies the default block profiling rate used by the
+	// block profiler. For more information or for changing this value, check
+	// BlockProfileRate. The default rate is chosen to prevent high overhead
+	// based on the research from:
+	// https://github.com/felixge/go-profiler-notes/blob/main/block.md#benchmarks
+	DefaultBlockRate = 10000
 
 	// DefaultPeriod specifies the default period at which profiles will be collected.
 	DefaultPeriod = time.Minute
