@@ -138,19 +138,25 @@ func newConfig(opts ...StartOption) *config {
 		c.version = ver
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		for _, tag := range strings.Split(v, ",") {
-			tag = strings.TrimSpace(tag)
+		sep, trim := " ", ","
+		if strings.Index(v, ",") > -1 {
+			sep, trim = trim, sep
+		}
+		for _, tag := range strings.Split(v, sep) {
+			tag = strings.Trim(tag, trim)
 			if tag == "" {
 				continue
 			}
 			kv := strings.SplitN(tag, ":", 2)
-			k := strings.TrimSpace(kv[0])
-			switch len(kv) {
-			case 1:
-				WithGlobalTag(k, "")(c)
-			case 2:
-				WithGlobalTag(k, strings.TrimSpace(kv[1]))(c)
+			key := strings.Trim(kv[0], trim)
+			if key == "" {
+				continue
 			}
+			var val string
+			if len(kv) == 2 {
+				val = strings.Trim(kv[1], trim)
+			}
+			WithGlobalTag(key, val)(c)
 		}
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {

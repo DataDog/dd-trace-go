@@ -156,8 +156,12 @@ func defaultConfig() *config {
 		WithVersion(v)(&c)
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		for _, tag := range strings.Split(v, ",") {
-			tag = strings.TrimSpace(tag)
+		sep, trim := " ", ","
+		if strings.Index(v, ",") > -1 {
+			sep, trim = trim, sep
+		}
+		for _, tag := range strings.Split(v, sep) {
+			tag = strings.Trim(tag, trim)
 			if tag == "" {
 				continue
 			}

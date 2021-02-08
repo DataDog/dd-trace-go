@@ -249,6 +249,84 @@ func TestServiceName(t *testing.T) {
 	})
 }
 
+func TestTagSeparators(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("env-tags", func(t *testing.T) {
+		for ind, tag := range []struct {
+			in       string
+			expected map[string]string
+		}{
+			{
+				in: "env:test aKey:aVal bKey:bVal cKey:",
+				expected: map[string]string{
+					"env":  "test",
+					"aKey": "aVal",
+					"bKey": "bVal",
+					"cKey": ""}},
+			{
+				in: "env:test,aKey:aVal,bKey:bVal,cKey:",
+				expected: map[string]string{
+					"env":  "test",
+					"aKey": "aVal",
+					"bKey": "bVal",
+					"cKey": ""}},
+			{
+				in: "env:test,aKey:aVal bKey:bVal cKey:",
+				expected: map[string]string{
+					"env":  "test",
+					"aKey": "aVal bKey:bVal cKey:"}},
+			{
+				in: "env:test     bKey :bVal dKey: dVal cKey:",
+				expected: map[string]string{
+					"env":  "test",
+					"bKey": "",
+					"dKey": "",
+					"dVal": "",
+					"cKey": ""}},
+			{
+				in: "env :test, aKey : aVal bKey:bVal cKey:",
+				expected: map[string]string{
+					"env":  "test",
+					"aKey": "aVal bKey:bVal cKey:"}},
+			{
+				in: "env:keyWithA:Semicolon bKey:bVal cKey",
+				expected: map[string]string{
+					"env":  "keyWithA:Semicolon",
+					"bKey": "bVal",
+					"cKey": ""}},
+			{
+				in: "env:keyWith:  , ,   Lots:Of:Semicolons ",
+				expected: map[string]string{
+					"env":  "keyWith:",
+					"Lots": "Of:Semicolons"}},
+			{
+				in: "a:b,c,d",
+				expected: map[string]string{
+					"a": "b",
+					"c": "",
+					"d": ""}},
+			{
+				in: "a,1",
+				expected: map[string]string{
+					"a": "",
+					"1": ""}},
+			{
+				in:       "a:b:c:d",
+				expected: map[string]string{"a": "b:c:d"}},
+		} {
+			os.Setenv("DD_TAGS", tag.in)
+			c := newConfig()
+			for key, expected := range tag.expected {
+				actual, ok := c.globalTags[key]
+				assert.Truef(ok, "ind %v, exp %v", ind, expected)
+				assert.Equal(expected, actual)
+			}
+		}
+		defer os.Unsetenv("DD_TAGS")
+	})
+}
+
 func TestVersionConfig(t *testing.T) {
 	t.Run("WithServiceVersion", func(t *testing.T) {
 		assert := assert.New(t)
