@@ -182,7 +182,6 @@ func newTracer(opts ...StartOption) *tracer {
 		}
 		t.worker(tick)
 	}()
-
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
@@ -322,6 +321,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// this is a brand new trace, sample it
 		t.sample(span)
 	}
+	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
 	return span
 }
 

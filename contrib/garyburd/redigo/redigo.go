@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	redis "github.com/garyburd/redigo/redis"
 )
@@ -58,6 +59,7 @@ func parseOptions(options ...interface{}) ([]redis.DialOption, *dialConfig) {
 // The set of supported options must be either of type redis.DialOption or this package's DialOption.
 func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
+	log.Debug("contrib/garyburd/redigo: Dialing %s %s, %#v", network, address, cfg)
 	c, err := redis.Dial(network, address, dialOpts...)
 	if err != nil {
 		return nil, err
@@ -76,6 +78,7 @@ func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 // The returned redis.Conn is traced.
 func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
+	log.Debug("contrib/garyburd/redigo: Dialing %s, %#v", rawurl, cfg)
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		return Conn{}, err

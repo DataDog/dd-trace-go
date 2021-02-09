@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/gocql/gocql"
 )
@@ -60,6 +61,7 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 			cfg.resourceName = parts[1]
 		}
 	}
+	log.Debug("contrib/gocql/gocql: Wrapping Query: %#v", cfg)
 	tq := &Query{q, &params{config: cfg}, context.Background()}
 	return tq
 }

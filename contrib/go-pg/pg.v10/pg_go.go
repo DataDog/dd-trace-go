@@ -11,12 +11,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/go-pg/pg/v10"
 )
 
 // Wrap augments the given DB with tracing.
 func Wrap(db *pg.DB) {
+	log.Debug("contrib/go-pg/pg.v10: Wrapping Database")
 	db.AddQueryHook(&queryHook{})
 }
 
