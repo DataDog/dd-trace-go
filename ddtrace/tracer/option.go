@@ -138,23 +138,23 @@ func newConfig(opts ...StartOption) *config {
 		c.version = ver
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		sep, trim := " ", ","
+		sep := " "
 		if strings.Index(v, ",") > -1 {
-			sep, trim = trim, sep
+			sep = ","
 		}
 		for _, tag := range strings.Split(v, sep) {
-			tag = strings.Trim(tag, trim)
+			tag = strings.TrimSpace(tag)
 			if tag == "" {
 				continue
 			}
 			kv := strings.SplitN(tag, ":", 2)
-			key := strings.Trim(kv[0], trim)
+			key := strings.TrimSpace(kv[0])
 			if key == "" {
 				continue
 			}
 			var val string
 			if len(kv) == 2 {
-				val = strings.Trim(kv[1], trim)
+				val = strings.TrimSpace(kv[1])
 			}
 			WithGlobalTag(key, val)(c)
 		}

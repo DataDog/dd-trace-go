@@ -263,19 +263,22 @@ func TestTagSeparators(t *testing.T) {
 					"env":  "test",
 					"aKey": "aVal",
 					"bKey": "bVal",
-					"cKey": ""}},
+					"cKey": ""},
+			},
 			{
 				in: "env:test,aKey:aVal,bKey:bVal,cKey:",
 				expected: map[string]string{
 					"env":  "test",
 					"aKey": "aVal",
 					"bKey": "bVal",
-					"cKey": ""}},
+					"cKey": ""},
+			},
 			{
 				in: "env:test,aKey:aVal bKey:bVal cKey:",
 				expected: map[string]string{
 					"env":  "test",
-					"aKey": "aVal bKey:bVal cKey:"}},
+					"aKey": "aVal bKey:bVal cKey:"},
+			},
 			{
 				in: "env:test     bKey :bVal dKey: dVal cKey:",
 				expected: map[string]string{
@@ -283,37 +286,44 @@ func TestTagSeparators(t *testing.T) {
 					"bKey": "",
 					"dKey": "",
 					"dVal": "",
-					"cKey": ""}},
+					"cKey": ""},
+			},
 			{
 				in: "env :test, aKey : aVal bKey:bVal cKey:",
 				expected: map[string]string{
 					"env":  "test",
-					"aKey": "aVal bKey:bVal cKey:"}},
+					"aKey": "aVal bKey:bVal cKey:"},
+			},
 			{
 				in: "env:keyWithA:Semicolon bKey:bVal cKey",
 				expected: map[string]string{
 					"env":  "keyWithA:Semicolon",
 					"bKey": "bVal",
-					"cKey": ""}},
+					"cKey": ""},
+			},
 			{
 				in: "env:keyWith:  , ,   Lots:Of:Semicolons ",
 				expected: map[string]string{
 					"env":  "keyWith:",
-					"Lots": "Of:Semicolons"}},
+					"Lots": "Of:Semicolons"},
+			},
 			{
 				in: "a:b,c,d",
 				expected: map[string]string{
 					"a": "b",
 					"c": "",
-					"d": ""}},
+					"d": ""},
+			},
 			{
 				in: "a,1",
 				expected: map[string]string{
 					"a": "",
-					"1": ""}},
+					"1": ""},
+			},
 			{
 				in:       "a:b:c:d",
-				expected: map[string]string{"a": "b:c:d"}},
+				expected: map[string]string{"a": "b:c:d"},
+			},
 		} {
 			os.Setenv("DD_TAGS", tag.in)
 			c := newConfig()
