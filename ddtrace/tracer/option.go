@@ -140,6 +140,7 @@ func newConfig(opts ...StartOption) *config {
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		sep := " "
 		if strings.Index(v, ",") > -1 {
+			// falling back to comma as separator
 			sep = ","
 		}
 		for _, tag := range strings.Split(v, sep) {
