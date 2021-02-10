@@ -115,5 +115,5 @@ func TestLogFormat(t *testing.T) {
 	tp.Reset()
 	tracer.StartSpan("test", ServiceName("test-service"), ResourceName("/"), WithSpanID(12345))
 	assert.Len(tp.Lines(), 1)
-	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ DEBUG: Started Span: dd.trace_id="12345" dd.span_id="12345", Operation: test, Resource: /, Tags: map\[runtime-id:[^"]* system.pid:[^"]*\], map\[_dd.top_level:1 _sampling_priority_rate_v1:1 _sampling_priority_v1:1\]`, tp.Lines()[0])
+	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ DEBUG: Started Span: dd.trace_id="12345" dd.span_id="12345", Operation: test, Resource: /, Tags: map.*, map.*`, tp.Lines()[0])
 }
