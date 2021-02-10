@@ -1039,7 +1039,7 @@ func TestTracerReportsHostname(t *testing.T) {
 		assert.Equal(name, tracer.hostname)
 
 		_, ok = child.Meta[keyHostname]
-		assert.False(ok)
+		assert.True(ok)
 	})
 
 	t.Run("disabled", func(t *testing.T) {

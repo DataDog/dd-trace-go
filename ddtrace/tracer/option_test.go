@@ -377,3 +377,28 @@ func TestGlobalTag(t *testing.T) {
 	WithGlobalTag("k", "v")(&c)
 	assert.Contains(t, statsTags(&c), "k:v")
 }
+
+func TestWithHostname(t *testing.T) {
+	t.Run("WithHostname", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig(WithHostname("hostname"))
+		assert.Equal("hostname", c.hostname)
+	})
+
+	t.Run("env", func(t *testing.T) {
+		assert := assert.New(t)
+		os.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-env")
+		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
+		c := newConfig()
+		assert.Equal("hostname-env", c.hostname)
+	})
+
+	t.Run("env-override", func(t *testing.T) {
+		assert := assert.New(t)
+
+		os.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-env")
+		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
+		c := newConfig(WithHostname("hostname-middleware"))
+		assert.Equal("hostname-middleware", c.hostname)
+	})
+}
