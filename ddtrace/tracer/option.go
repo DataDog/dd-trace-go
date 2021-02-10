@@ -435,6 +435,7 @@ func WithHostname(name string) StartOption {
 		c.hostname = name
 	}
 }
+
 // StartSpanOption is a configuration option for StartSpan. It is aliased in order
 // to help godoc group all the functions returning it together. It is considered
 // more correct to refer to it as the type as the origin, ddtrace.StartSpanOption.
