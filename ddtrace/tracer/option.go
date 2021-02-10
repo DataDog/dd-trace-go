@@ -429,7 +429,7 @@ func WithServiceVersion(version string) StartOption {
 	}
 }
 
-// WithHostname sets the hostname for the program.
+// WithHostname allows specifying the hostname with which to mark outgoing traces.
 func WithHostname(name string) StartOption {
 	return func(c *config) {
 		c.hostname = name
