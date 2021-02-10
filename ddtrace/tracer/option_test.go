@@ -256,14 +256,14 @@ func TestTagSeparators(t *testing.T) {
 		in  string
 		out map[string]string
 	}{{
-			in: "env:test aKey:aVal bKey:bVal cKey:",
-			out: map[string]string{
-				"env":  "test",
-				"aKey": "aVal",
-				"bKey": "bVal",
-				"cKey": "",
-			},
+		in: "env:test aKey:aVal bKey:bVal cKey:",
+		out: map[string]string{
+			"env":  "test",
+			"aKey": "aVal",
+			"bKey": "bVal",
+			"cKey": "",
 		},
+	},
 		{
 			in: "env:test,aKey:aVal,bKey:bVal,cKey:",
 			out: map[string]string{
@@ -334,11 +334,12 @@ func TestTagSeparators(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			os.Setenv("DD_TAGS", tag.in)
+			defer os.Unsetenv("DD_TAGS")
 			c := newConfig()
 			for key, expected := range tag.out {
-				actual, ok := c.globalTags[key]
+				got, ok := c.globalTags[key]
 				assert.True(ok, "tag not found")
-				assert.Equal(expected, actual)
+				assert.Equal(expected, got)
 			}
 		})
 	}
