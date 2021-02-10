@@ -127,6 +127,9 @@ func newConfig(opts ...StartOption) *config {
 			log.Warn("unable to look up hostname: %v", err)
 		}
 	}
+	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
+		c.hostname = v
+	}
 	if v := os.Getenv("DD_ENV"); v != "" {
 		c.env = v
 	}

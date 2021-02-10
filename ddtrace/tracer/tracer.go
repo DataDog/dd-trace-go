@@ -265,6 +265,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		Start:        startTime,
 		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,
+		Meta: map[string]string{
+			"_dd.hostname": t.config.hostname,
+		},
 	}
 	if context != nil {
 		// this is a child span
