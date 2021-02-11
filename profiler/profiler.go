@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	pprofile "github.com/google/pprof/profile"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -56,13 +57,14 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
-	cfg        *config           // profile configuration
-	out        chan batch        // upload queue
-	uploadFunc func(batch) error // defaults to (*profiler).upload; replaced in tests
-	exit       chan struct{}     // exit signals the profiler to stop; it is closed after stopping
-	stopOnce   sync.Once         // stopOnce ensures the profiler is stopped exactly once.
-	wg         sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
-	met        *metrics          // metric collector state
+	cfg        *config                           // profile configuration
+	out        chan batch                        // upload queue
+	uploadFunc func(batch) error                 // defaults to (*profiler).upload; replaced in tests
+	exit       chan struct{}                     // exit signals the profiler to stop; it is closed after stopping
+	stopOnce   sync.Once                         // stopOnce ensures the profiler is stopped exactly once.
+	wg         sync.WaitGroup                    // wg waits for all goroutines to exit when stopping.
+	met        *metrics                          // metric collector state
+	prev       map[ProfileType]*pprofile.Profile // previous collection results for delta profiling
 }
 
 // newProfiler creates a new, unstarted profiler.
@@ -98,6 +100,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		out:  make(chan batch, outChannelSize),
 		exit: make(chan struct{}),
 		met:  newMetrics(),
+		prev: make(map[ProfileType]*pprofile.Profile),
 	}
 	p.uploadFunc = p.upload
 	return &p, nil
@@ -143,15 +146,19 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				// configured CPU profile duration: (start-end).
 				end: now.Add(p.cfg.cpuDuration),
 			}
+
+			// TODO(fg) random iteration order is bad for delta profiles.
 			for t := range p.cfg.types {
-				prof, err := p.runProfile(t)
+				profs, err := p.runProfile(t)
 				if err != nil {
 					fmt.Printf("error: %v\n", err)
 					log.Error("Error getting %s profile: %v; skipping.\n", t, err)
 					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
 					continue
 				}
-				bat.addProfile(prof)
+				for _, prof := range profs {
+					bat.addProfile(prof)
+				}
 			}
 			p.enqueueUpload(bat)
 		case <-p.exit:

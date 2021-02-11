@@ -144,12 +144,13 @@ func TestProfilerInternal(t *testing.T) {
 		}
 		defer func(old func()) { stopCPUProfile = old }(stopCPUProfile)
 		stopCPUProfile = func() { atomic.AddUint64(&stopCPU, 1) }
-		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
+		defer func(old func(_ string, w io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
 		lookupProfile = func(name string, w io.Writer, _ int) error {
 			if name == "heap" {
 				atomic.AddUint64(&writeHeap, 1)
 			}
-			return nil
+			_, err := w.Write(foldedToPprof(t, "main 5\n"))
+			return err
 		}
 
 		tick := make(chan time.Time)

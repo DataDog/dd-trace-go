@@ -7,8 +7,12 @@ package profiler
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
+	"sort"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,18 +22,56 @@ import (
 )
 
 func TestRunProfile(t *testing.T) {
-	t.Run("heap", func(t *testing.T) {
-		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-		lookupProfile = func(name string, w io.Writer, _ int) error {
-			_, err := w.Write([]byte("my-heap-profile"))
-			return err
-		}
-		p, err := unstartedProfiler()
-		prof, err := p.runProfile(HeapProfile)
-		require.NoError(t, err)
-		assert.Equal(t, "heap.pprof", prof.name)
-		assert.Equal(t, []byte("my-heap-profile"), prof.data)
-	})
+	// p0 and p1 are generic dummy profiles that produce delta when diffed.
+	var (
+		p0 = foldedToPprof(t, `
+main 3
+main;bar 2
+main;foo 5
+		`)
+		p1 = foldedToPprof(t, `
+main 4
+main;bar 2
+main;foo 8
+main;foobar 7
+		`)
+		delta = strings.TrimSpace(`
+main 1
+main;foo 3
+main;foobar 7
+	`)
+	)
+
+	// All delta-capable profile work the same, so we can test them with this
+	// generic test inside of the loop.
+	for _, profType := range []ProfileType{HeapProfile, MutexProfile, BlockProfile} {
+		t.Run(profType.String(), func(t *testing.T) {
+			returnProfs := [][]byte{p0, p1}
+			defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
+			lookupProfile = func(name string, w io.Writer, _ int) error {
+				_, err := w.Write(returnProfs[0])
+				returnProfs = returnProfs[1:]
+				return err
+			}
+			p, err := unstartedProfiler()
+
+			// first run, should produce p0 profile
+			profs, err := p.runProfile(profType)
+			require.NoError(t, err)
+			require.Equal(t, 1, len(profs))
+			assert.Equal(t, profType.Filename(), profs[0].name)
+			assert.Equal(t, p0, profs[0].data)
+
+			// second run, should produce p1 profile and delta profile
+			profs, err = p.runProfile(profType)
+			require.NoError(t, err)
+			require.Equal(t, 2, len(profs))
+			assert.Equal(t, profType.Filename(), profs[0].name)
+			assert.Equal(t, p1, profs[0].data)
+			assert.Equal(t, "delta-"+profType.Filename(), profs[1].name)
+			require.Equal(t, delta, pprofToFolded(t, profs[1].data))
+		})
+	}
 
 	t.Run("cpu", func(t *testing.T) {
 		defer func(old func(_ io.Writer) error) { startCPUProfile = old }(startCPUProfile)
@@ -42,40 +84,12 @@ func TestRunProfile(t *testing.T) {
 
 		p, err := unstartedProfiler(CPUDuration(10 * time.Millisecond))
 		start := time.Now()
-		prof, err := p.runProfile(CPUProfile)
+		profs, err := p.runProfile(CPUProfile)
 		end := time.Now()
 		require.NoError(t, err)
 		assert.True(t, end.Sub(start) > 10*time.Millisecond)
-		assert.Equal(t, "cpu.pprof", prof.name)
-		assert.Equal(t, []byte("my-cpu-profile"), prof.data)
-	})
-
-	t.Run("mutex", func(t *testing.T) {
-		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-		lookupProfile = func(name string, w io.Writer, _ int) error {
-			_, err := w.Write([]byte(name))
-			return err
-		}
-
-		p, err := unstartedProfiler()
-		prof, err := p.runProfile(MutexProfile)
-		require.NoError(t, err)
-		assert.Equal(t, "mutex.pprof", prof.name)
-		assert.Equal(t, []byte("mutex"), prof.data)
-	})
-
-	t.Run("block", func(t *testing.T) {
-		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-		lookupProfile = func(name string, w io.Writer, _ int) error {
-			_, err := w.Write([]byte(name))
-			return err
-		}
-
-		p, err := unstartedProfiler()
-		prof, err := p.runProfile(BlockProfile)
-		require.NoError(t, err)
-		assert.Equal(t, "block.pprof", prof.name)
-		assert.Equal(t, []byte("block"), prof.data)
+		assert.Equal(t, "cpu.pprof", profs[0].name)
+		assert.Equal(t, []byte("my-cpu-profile"), profs[0].data)
 	})
 
 	t.Run("goroutine", func(t *testing.T) {
@@ -86,10 +100,10 @@ func TestRunProfile(t *testing.T) {
 		}
 
 		p, err := unstartedProfiler()
-		prof, err := p.runProfile(GoroutineProfile)
+		profs, err := p.runProfile(GoroutineProfile)
 		require.NoError(t, err)
-		assert.Equal(t, "goroutines.pprof", prof.name)
-		assert.Equal(t, []byte("goroutine"), prof.data)
+		assert.Equal(t, "goroutines.pprof", profs[0].name)
+		assert.Equal(t, []byte("goroutine"), profs[0].data)
 	})
 
 	t.Run("goroutinewait", func(t *testing.T) {
@@ -122,14 +136,14 @@ main.main()
 		}
 
 		p, err := unstartedProfiler()
-		prof, err := p.runProfile(expGoroutineWaitProfile)
+		profs, err := p.runProfile(expGoroutineWaitProfile)
 		require.NoError(t, err)
-		require.Equal(t, "goroutineswait.pprof", prof.name)
+		require.Equal(t, "goroutineswait.pprof", profs[0].name)
 
 		// pro tip: enable line below to inspect the pprof output using cli tools
 		// ioutil.WriteFile(prof.name, prof.data, 0644)
 
-		pp, err := pprofile.Parse(bytes.NewReader(prof.data))
+		pp, err := pprofile.Parse(bytes.NewReader(profs[0].data))
 		require.NoError(t, err)
 		// timestamp
 		require.NotEqual(t, int64(0), pp.TimeNanos)
@@ -163,4 +177,87 @@ type panicReader struct{}
 
 func (c panicReader) Read(_ []byte) (int, error) {
 	panic("42")
+}
+
+// foldedToPprof is a test helper that converts the folded profile string
+// into a binary pprof profile.
+// See https://github.com/brendangregg/FlameGraph#2-fold-stacks
+func foldedToPprof(t *testing.T, folded string) []byte {
+	t.Helper()
+	p := &pprofile.Profile{
+		TimeNanos: now().UnixNano(),
+	}
+
+	m := &pprofile.Mapping{ID: 1, HasFunctions: true}
+	p.Mapping = []*pprofile.Mapping{m}
+	p.SampleType = []*pprofile.ValueType{
+		{
+			Type: "procrastination",
+			Unit: "nanoseconds",
+		},
+	}
+
+	folded = strings.TrimSpace(folded)
+	for _, sample := range strings.Split(folded, "\n") {
+		parts := strings.Split(sample, " ")
+		require.Equal(t, 2, len(parts))
+
+		frames := strings.Split(parts[0], ";")
+		value, err := strconv.Atoi(parts[1])
+		require.NoError(t, err)
+
+		sample := &pprofile.Sample{
+			Value: []int64{int64(value)},
+		}
+		for _, frame := range frames {
+			function := &pprofile.Function{
+				ID:   uint64(len(p.Function)) + 1,
+				Name: frame,
+			}
+			p.Function = append(p.Function, function)
+
+			location := &pprofile.Location{
+				ID:      uint64(len(p.Location)) + 1,
+				Mapping: m,
+				Line:    []pprofile.Line{{Function: function}},
+			}
+			p.Location = append(p.Location, location)
+
+			sample.Location = append(sample.Location, location)
+		}
+		p.Sample = append(p.Sample, sample)
+	}
+
+	buf := &bytes.Buffer{}
+	require.NoError(t, p.Write(buf))
+	return buf.Bytes()
+}
+
+// pprofToFolded is a test helper that converts the binary pprof profile into a
+// a folded profile string.
+// See https://github.com/brendangregg/FlameGraph#2-fold-stacks
+func pprofToFolded(t *testing.T, pprof []byte) string {
+	t.Helper()
+	prof, err := pprofile.Parse(bytes.NewReader(pprof))
+	require.NoError(t, err)
+
+	var folded []string
+	for _, sample := range prof.Sample {
+		var frames []string
+		for _, loc := range sample.Location {
+			require.Equal(t, 1, len(loc.Line))
+			frames = append(frames, loc.Line[0].Function.Name)
+		}
+		var values []string
+		for _, val := range sample.Value {
+			values = append(values, fmt.Sprintf("%d", val))
+		}
+		folded = append(folded, fmt.Sprintf(
+			"%s %s",
+			strings.Join(frames, ";"),
+			strings.Join(values, " "),
+		))
+	}
+	sort.Strings(folded)
+	return strings.Join(folded, "\n")
 }
