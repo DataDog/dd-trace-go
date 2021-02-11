@@ -144,11 +144,14 @@ func TestProfilerInternal(t *testing.T) {
 		}
 		defer func(old func()) { stopCPUProfile = old }(stopCPUProfile)
 		stopCPUProfile = func() { atomic.AddUint64(&stopCPU, 1) }
-		defer func(old func(_ io.Writer) error) { writeHeapProfile = old }(writeHeapProfile)
-		writeHeapProfile = func(_ io.Writer) error {
-			atomic.AddUint64(&writeHeap, 1)
+		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
+		lookupProfile = func(name string, w io.Writer, _ int) error {
+			if name == "heap" {
+				atomic.AddUint64(&writeHeap, 1)
+			}
 			return nil
 		}
+
 		tick := make(chan time.Time)
 		wait := make(chan struct{})
 

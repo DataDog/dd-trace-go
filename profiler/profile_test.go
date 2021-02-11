@@ -19,8 +19,8 @@ import (
 
 func TestRunProfile(t *testing.T) {
 	t.Run("heap", func(t *testing.T) {
-		defer func(old func(_ io.Writer) error) { writeHeapProfile = old }(writeHeapProfile)
-		writeHeapProfile = func(w io.Writer) error {
+		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
+		lookupProfile = func(name string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte("my-heap-profile"))
 			return err
 		}
