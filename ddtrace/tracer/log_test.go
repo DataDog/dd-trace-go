@@ -106,3 +106,14 @@ func TestLogAgentReachable(t *testing.T) {
 	assert.Len(tp.Lines(), 2)
 	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ WARN: DIAGNOSTICS Unable to reach agent: Post`, tp.Lines()[0])
 }
+
+func TestLogFormat(t *testing.T) {
+	assert := assert.New(t)
+	tp := new(testLogger)
+	tracer := newTracer(WithLogger(tp), WithRuntimeMetrics(), WithDebugMode(true))
+	defer tracer.Stop()
+	tp.Reset()
+	tracer.StartSpan("test", ServiceName("test-service"), ResourceName("/"), WithSpanID(12345))
+	assert.Len(tp.Lines(), 1)
+	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ DEBUG: Started Span: dd.trace_id="12345" dd.span_id="12345", Operation: test, Resource: /, Tags: map.*, map.*`, tp.Lines()[0])
+}

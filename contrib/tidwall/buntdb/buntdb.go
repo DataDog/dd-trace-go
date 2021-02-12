@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/tidwall/buntdb"
 )
@@ -85,6 +86,7 @@ func WrapTx(tx *buntdb.Tx, opts ...Option) *Tx {
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/tidwall/buntdb: Wrapping Transaction: %#v", cfg)
 	return &Tx{
 		Tx:  tx,
 		cfg: cfg,

@@ -249,6 +249,102 @@ func TestServiceName(t *testing.T) {
 	})
 }
 
+func TestTagSeparators(t *testing.T) {
+	assert := assert.New(t)
+
+	for _, tag := range []struct {
+		in  string
+		out map[string]string
+	}{{
+		in: "env:test aKey:aVal bKey:bVal cKey:",
+		out: map[string]string{
+			"env":  "test",
+			"aKey": "aVal",
+			"bKey": "bVal",
+			"cKey": "",
+		},
+	},
+		{
+			in: "env:test,aKey:aVal,bKey:bVal,cKey:",
+			out: map[string]string{
+				"env":  "test",
+				"aKey": "aVal",
+				"bKey": "bVal",
+				"cKey": "",
+			},
+		},
+		{
+			in: "env:test,aKey:aVal bKey:bVal cKey:",
+			out: map[string]string{
+				"env":  "test",
+				"aKey": "aVal bKey:bVal cKey:",
+			},
+		},
+		{
+			in: "env:test     bKey :bVal dKey: dVal cKey:",
+			out: map[string]string{
+				"env":  "test",
+				"bKey": "",
+				"dKey": "",
+				"dVal": "",
+				"cKey": "",
+			},
+		},
+		{
+			in: "env :test, aKey : aVal bKey:bVal cKey:",
+			out: map[string]string{
+				"env":  "test",
+				"aKey": "aVal bKey:bVal cKey:",
+			},
+		},
+		{
+			in: "env:keyWithA:Semicolon bKey:bVal cKey",
+			out: map[string]string{
+				"env":  "keyWithA:Semicolon",
+				"bKey": "bVal",
+				"cKey": "",
+			},
+		},
+		{
+			in: "env:keyWith:  , ,   Lots:Of:Semicolons ",
+			out: map[string]string{
+				"env":  "keyWith:",
+				"Lots": "Of:Semicolons",
+			},
+		},
+		{
+			in: "a:b,c,d",
+			out: map[string]string{
+				"a": "b",
+				"c": "",
+				"d": "",
+			},
+		},
+		{
+			in: "a,1",
+			out: map[string]string{
+				"a": "",
+				"1": "",
+			},
+		},
+		{
+			in:  "a:b:c:d",
+			out: map[string]string{"a": "b:c:d"},
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			os.Setenv("DD_TAGS", tag.in)
+			defer os.Unsetenv("DD_TAGS")
+			c := newConfig()
+			for key, expected := range tag.out {
+				got, ok := c.globalTags[key]
+				assert.True(ok, "tag not found")
+				assert.Equal(expected, got)
+			}
+		})
+	}
+}
+
 func TestVersionConfig(t *testing.T) {
 	t.Run("WithServiceVersion", func(t *testing.T) {
 		assert := assert.New(t)
@@ -376,4 +472,29 @@ func TestGlobalTag(t *testing.T) {
 	var c config
 	WithGlobalTag("k", "v")(&c)
 	assert.Contains(t, statsTags(&c), "k:v")
+}
+
+func TestWithHostname(t *testing.T) {
+	t.Run("WithHostname", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig(WithHostname("hostname"))
+		assert.Equal("hostname", c.hostname)
+	})
+
+	t.Run("env", func(t *testing.T) {
+		assert := assert.New(t)
+		os.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-env")
+		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
+		c := newConfig()
+		assert.Equal("hostname-env", c.hostname)
+	})
+
+	t.Run("env-override", func(t *testing.T) {
+		assert := assert.New(t)
+
+		os.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-env")
+		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
+		c := newConfig(WithHostname("hostname-middleware"))
+		assert.Equal("hostname-middleware", c.hostname)
+	})
 }
