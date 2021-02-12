@@ -1022,7 +1022,7 @@ func TestTracerFlush(t *testing.T) {
 func TestTracerReportsHostname(t *testing.T) {
 	const hostname = "hostname-test"
 
-	t.Run("DD_TRACE_REPORT_HOSTNAME/true", func(t *testing.T) {
+	t.Run("DD_TRACE_REPORT_HOSTNAME/set", func(t *testing.T) {
 		os.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
 		defer os.Unsetenv("DD_TRACE_REPORT_HOSTNAME")
 
@@ -1045,7 +1045,7 @@ func TestTracerReportsHostname(t *testing.T) {
 		assert.Equal(name, tracer.hostname)
 	})
 
-	t.Run("DD_TRACE_REPORT_HOSTNAME/false", func(t *testing.T) {
+	t.Run("DD_TRACE_REPORT_HOSTNAME/unset", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 
