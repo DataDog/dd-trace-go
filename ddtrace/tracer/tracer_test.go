@@ -1082,7 +1082,7 @@ func TestTracerReportsHostname(t *testing.T) {
 		assert.Equal(got, hostname)
 	})
 
-	t.Run("DD_TRACE_SOURCE_HOSTNAME", func(t *testing.T) {
+	t.Run("DD_TRACE_SOURCE_HOSTNAME/set", func(t *testing.T) {
 		os.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-test")
 		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
 
@@ -1104,7 +1104,8 @@ func TestTracerReportsHostname(t *testing.T) {
 		assert.True(ok)
 		assert.Equal(got, hostname)
 	})
-	t.Run("DD_TRACE_REPORT_HOSTNAME/nil", func(t *testing.T) {
+
+	t.Run("DD_TRACE_SOURCE_HOSTNAME/unset", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 
@@ -1120,7 +1121,6 @@ func TestTracerReportsHostname(t *testing.T) {
 		_, ok = child.Meta[keyHostname]
 		assert.False(ok)
 	})
-
 }
 
 func TestVersion(t *testing.T) {
