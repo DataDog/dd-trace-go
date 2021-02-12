@@ -265,6 +265,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,
 	}
+	if t.hostname != "" {
+		span.setMeta(keyHostname, t.hostname)
+	}
 	if context != nil {
 		// this is a child span
 		span.TraceID = context.traceID
@@ -289,9 +292,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if context == nil || context.span == nil {
 		// this is either a root span or it has a remote parent, we should add the PID.
 		span.setMeta(ext.Pid, t.pid)
-		if t.hostname != "" {
-			span.setMeta(keyHostname, t.hostname)
-		}
 		if _, ok := opts.Tags[ext.ServiceName]; !ok && t.config.runtimeMetrics {
 			// this is a root span in the global service; runtime metrics should
 			// be linked to it:

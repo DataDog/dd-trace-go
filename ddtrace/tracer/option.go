@@ -127,6 +127,9 @@ func newConfig(opts ...StartOption) *config {
 			log.Warn("unable to look up hostname: %v", err)
 		}
 	}
+	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
+		c.hostname = v
+	}
 	if v := os.Getenv("DD_ENV"); v != "" {
 		c.env = v
 	}
@@ -430,6 +433,13 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
 		cfg.version = version
+	}
+}
+
+// WithHostname allows specifying the hostname with which to mark outgoing traces.
+func WithHostname(name string) StartOption {
+	return func(c *config) {
+		c.hostname = name
 	}
 }
 
