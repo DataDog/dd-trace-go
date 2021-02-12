@@ -5,6 +5,11 @@
 
 package ext
 
+import (
+	"os/exec"
+	"strings"
+)
+
 const (
 	// GitBranch indicates the current git branch.
 	GitBranch = "git.branch"
@@ -15,3 +20,30 @@ const (
 	// GitTag indicates the current git tag.
 	GitTag = "git.tag"
 )
+
+// LocalGitRepositoryURL detects Git repository URL using git command.
+func LocalGitRepositoryURL() string {
+	out, err := exec.Command("git", "ls-remote", "--get-url").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.Trim(string(out), "\n")
+}
+
+// LocalGitBranch detects current Git branch using git command.
+func LocalGitBranch() string {
+	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.Trim(string(out), "\n")
+}
+
+// LocalGitCommitSHA detects SHA of a HEAD in Git repository.
+func LocalGitCommitSHA() string {
+	out, err := exec.Command("git", "rev-parse", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.Trim(string(out), "\n")
+}

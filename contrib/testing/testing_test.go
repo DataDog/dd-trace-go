@@ -47,6 +47,9 @@ func TestStatus(t *testing.T) {
 	assert.Contains(s.Tag(ext.TestSuite), "contrib/testing/testing_test.go")
 	assert.Equal(ext.TestStatusPass, s.Tag(ext.TestStatus))
 	assert.Equal("1", s.Tag("k"))
+	assert.NotEmpty(s.Tag(ext.GitRepositoryURL))
+	assert.NotEmpty(s.Tag(ext.GitBranch))
+	assert.NotEmpty(s.Tag(ext.GitCommitSHA))
 
 	s = spans[1]
 	assert.Equal("test", s.OperationName())

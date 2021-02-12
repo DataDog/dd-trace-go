@@ -37,6 +37,17 @@ func defaults(cfg *config) {
 	// Load CI tags
 	if tags == nil {
 		tags = ci.Tags()
+
+		// Guess Git metadata from a local Git repository otherwise.
+		if _, ok := tags[ext.GitRepositoryURL]; !ok {
+			tags[ext.GitRepositoryURL] = ext.LocalGitRepositoryURL()
+		}
+		if _, ok := tags[ext.GitCommitSHA]; !ok {
+			tags[ext.GitCommitSHA] = ext.LocalGitCommitSHA()
+		}
+		if _, ok := tags[ext.GitBranch]; !ok {
+			tags[ext.GitBranch] = ext.LocalGitBranch()
+		}
 	}
 
 	for k, v := range tags {
