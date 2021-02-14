@@ -9,6 +9,7 @@ package tracer
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer/erpc"
 	"os"
 	"reflect"
 	"runtime"
@@ -22,6 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/tinylib/msgp/msgp"
 	"golang.org/x/xerrors"
@@ -71,6 +73,7 @@ type span struct {
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
 	context      *spanContext `msg:"-"` // span propagation context
 	taskEnd      func()       // ends execution tracer (runtime/trace) task, if started
+	eRPCClient   *erpc.ERPC   // eRPC client used to send span updates to the kernel
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -314,6 +317,13 @@ func (s *span) finish(finishTime int64) {
 		return
 	}
 	s.context.finish()
+
+	// send eRPC call to declare the end of the span
+	if s.eRPCClient != nil {
+		if err := s.eRPCClient.HandleSpanCreationEvent(erpc.Goid(), s.ParentID, s.TraceID); err != nil {
+			log.Warn("couldn't send new span: %v", err)
+		}
+	}
 }
 
 // String returns a human readable representation of the span. Not for

@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer/erpc"
 	"os"
 	"strconv"
 	"sync"
@@ -60,6 +61,9 @@ type tracer struct {
 	// rules for applying a sampling rate to spans that match the designated service
 	// or operation name.
 	rulesSampling *rulesSampler
+
+	// eRPCClient holds the necessary attributes to communicate with kernel space
+	eRPCClient *erpc.ERPC
 }
 
 const (
@@ -148,6 +152,12 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	} else {
 		writer = newAgentTraceWriter(c, sampler)
 	}
+
+	eClient, err := erpc.NewERPCClient(c.eRPCMode)
+	if err != nil {
+		log.Warn("DIAGNOSTICS failed to start the eRPC client: %s", err)
+	}
+
 	return &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -156,6 +166,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampling:    newRulesSampler(c.samplingRules),
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
+		eRPCClient:       eClient,
 	}
 }
 
@@ -265,6 +276,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		Start:        startTime,
 		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,
+		eRPCClient:   t.eRPCClient,
 	}
 	if context != nil {
 		// this is a child span
@@ -321,6 +333,13 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if context == nil {
 		// this is a brand new trace, sample it
 		t.sample(span)
+	}
+
+	// send new span eRPC event
+	if span.eRPCClient != nil {
+		if err := span.eRPCClient.HandleSpanCreationEvent(erpc.Goid(), span.SpanID, span.TraceID); err != nil {
+			log.Warn("couldn't send new span: %v", err)
+		}
 	}
 	return span
 }

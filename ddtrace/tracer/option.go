@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer/erpc"
 	"math"
 	"net"
 	"net/http"
@@ -96,6 +97,9 @@ type config struct {
 	// noDebugStack disables the collection of debug stack traces globally. No traces reporting
 	// errors will record a stack trace when this option is set.
 	noDebugStack bool
+
+	// eRPCMode defines how the tracer should surface the active span and trace ID to kernel space
+	eRPCMode erpc.ERPCMode
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -239,6 +243,13 @@ func statsTags(c *config) []string {
 func WithLogger(logger ddtrace.Logger) StartOption {
 	return func(c *config) {
 		c.logger = logger
+	}
+}
+
+// WithERPCMode sets the eRPC mode of the tracer
+func WithERPCMode(mode erpc.ERPCMode) StartOption {
+	return func(c *config) {
+		c.eRPCMode = mode
 	}
 }
 
