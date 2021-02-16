@@ -221,7 +221,6 @@ func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 
 			// TODO(fg) do we need to modify TimeNanos here?
 			// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
-
 			profs = append(profs, &profile{
 				// TODO(fg) are those good filenames? Is there a better way to flag
 				// these profiles for the backend?
