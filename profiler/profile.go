@@ -47,7 +47,7 @@ const (
 // collector holds the implementation details of a ProfileType, see collectors
 // map below.
 type collector struct {
-	// Name is used to lookup the profile for pprof.Lookup(name) and returned by
+	// Name specifies the profile name as used with pprof.Lookup(name) and returned by
 	// ProfileType.String(). For profile types that don't use this approach, the
 	// name can be chosen arbitrarily.
 	Name string
