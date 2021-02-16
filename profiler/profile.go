@@ -139,8 +139,7 @@ func collectGenericProfile(c collector, _ *profiler) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-// collector returns the collector holding the implementation details of the
-// profile type.
+// collector returns the collector for this profileType.
 func (t ProfileType) collector() collector {
 	pt, ok := collectors[t]
 	if ok {
