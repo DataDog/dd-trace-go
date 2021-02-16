@@ -55,7 +55,7 @@ type collector struct {
 	// backend which is aware of them. Delta profiles are prefixed with "delta-"
 	// automatically.
 	Filename string
-	// Delta enables delta profiling for pprof profiles. This is useful for
+	// Delta reports whether delta profiling is enabled for this profile. This is useful for
 	// profiles that are represent samples collected over the lifetime of the
 	// process such as heap, block, mutex, etc..
 	Delta bool
