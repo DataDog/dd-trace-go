@@ -56,7 +56,7 @@ type collector struct {
 	// automatically.
 	Filename string
 	// Delta reports whether delta profiling is enabled for this profile. This is useful for
-	// profiles that are represent samples collected over the lifetime of the
+	// profiles that represent samples collected over the lifetime of the
 	// process such as heap, block, mutex, etc..
 	Delta bool
 	// Collect collects the given profile and returns the data for it. Most
