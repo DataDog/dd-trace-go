@@ -60,6 +60,9 @@ type tracer struct {
 	// rules for applying a sampling rate to spans that match the designated service
 	// or operation name.
 	rulesSampling *rulesSampler
+
+	// appTags holds tags which are associated with the entire application
+	appTags map[string]interface{}
 }
 
 const (
@@ -156,6 +159,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampling:    newRulesSampler(c.samplingRules),
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
+		appTags:          map[string]interface{}{},
 	}
 }
 
@@ -292,6 +296,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if context == nil || context.span == nil {
 		// this is either a root span or it has a remote parent, we should add the PID.
 		span.setMeta(ext.Pid, t.pid)
+		// set app tags on the root span
+		span.setMeta(keyMetadataSpan, "true")
+		for k, v := range t.appTags {
+			span.SetTag(k, v)
+		}
 		if _, ok := opts.Tags[ext.ServiceName]; !ok && t.config.runtimeMetrics {
 			// this is a root span in the global service; runtime metrics should
 			// be linked to it:

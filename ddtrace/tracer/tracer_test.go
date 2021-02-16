@@ -1356,6 +1356,44 @@ func TestTakeStackTrace(t *testing.T) {
 	})
 }
 
+func TestAppTagsSetting(t *testing.T) {
+	t.Run("WithAppTags/default", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer := newTracer()
+		tracer.appTags["tag"] = "value"
+		tracer.appTags["v"] = 1
+		internal.SetGlobalTracer(tracer)
+
+		parent := StartSpan("app-tag").(*span)
+		child := StartSpan("app-tag", ChildOf(parent.context)).(*span)
+
+		assert.Equal("value", parent.Meta["tag"])
+		assert.Equal(float64(1), parent.Metrics["v"])
+
+		assert.NotContains(child.Meta, "tag")
+		assert.NotContains(child.Metrics, "v")
+	})
+
+	t.Run("WithAppTags/override", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer := newTracer()
+		tracer.appTags["tag"] = "value"
+		tracer.appTags["v"] = 1
+		internal.SetGlobalTracer(tracer)
+
+		parent := StartSpan("app-tag").(*span)
+		parent.setMeta("tag", "no-override")
+		parent.setMetric("v", 2)
+		child := StartSpan("app-tag", ChildOf(parent.context)).(*span)
+
+		assert.Equal("no-override", parent.Meta["tag"])
+		assert.Equal(float64(2), parent.Metrics["v"])
+
+		assert.NotContains(child.Meta, "tag")
+		assert.NotContains(child.Metrics, "v")
+	})
+}
+
 // BenchmarkTracerStackFrames tests the performance of taking stack trace.
 func BenchmarkTracerStackFrames(b *testing.B) {
 	tracer, _, _, stop := startTestTracer(b, WithSampler(NewRateSampler(0)))
