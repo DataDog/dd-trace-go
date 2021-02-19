@@ -335,23 +335,23 @@ func (s *span) LogAttributes() map[string]interface{} {
 	}
 
 	if svc := globalconfig.ServiceName(); svc != "" {
-		results["dd.service"] = svc
+		results["service"] = svc
 	}
 
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
 		if tr.config.env != "" {
-			results["dd.env"] = tr.config.env
+			results["env"] = tr.config.env
 		}
 
 		if tr.config.version != "" {
-			results["dd.version"] = tr.config.version
+			results["version"] = tr.config.version
 		}
 	} else {
 		if env := os.Getenv("DD_ENV"); env != "" {
-			results["dd.env"] = env
+			results["env"] = env
 		}
 		if v := os.Getenv("DD_VERSION"); v != "" {
-			results["dd.version"] = v
+			results["version"] = v
 		}
 	}
 
