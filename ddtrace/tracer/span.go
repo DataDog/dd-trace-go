@@ -322,6 +322,42 @@ func (s *span) finish(finishTime int64) {
 	s.context.finish()
 }
 
+/**
+ * Return the attributes to track this span as a generic map.
+ * These attribute keys should be considered opaque and are subject to change.
+ * Indexing into this map is not advised, it should be used to push this data
+ * into the logger of your choice.
+ */
+func (s *span) LogAttributes() map[string]interface{} {
+	results := map[string]interface{}{
+		"dd.trace_id": s.TraceID,
+		"dd.span_id": s.SpanID,
+	}
+
+	if svc := globalconfig.ServiceName(); svc != "" {
+		results["dd.service"] = svc
+	}
+
+	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
+		if tr.config.env != "" {
+			results["dd.env"] = tr.config.env
+		}
+
+		if tr.config.version != "" {
+			results["dd.version"] = tr.config.version
+		}
+	} else {
+		if env := os.Getenv("DD_ENV"); env != "" {
+			results["dd.env"] = env
+		}
+		if v := os.Getenv("DD_VERSION"); v != "" {
+			results["dd.version"] = v
+		}
+	}
+
+	return results
+}
+
 // String returns a human readable representation of the span. Not for
 // production, just debugging.
 func (s *span) String() string {
