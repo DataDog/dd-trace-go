@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -69,7 +70,13 @@ func (p *profiler) doRequest(bat batch) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("POST", p.cfg.targetURL, body)
+	ctx := context.Background()
+	if p.cfg.uploadTimeout != 0 {
+		var cancel func()
+		ctx, cancel = context.WithTimeout(context.Background(), p.cfg.uploadTimeout)
+		defer cancel()
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", p.cfg.targetURL, body)
 	if err != nil {
 		return err
 	}

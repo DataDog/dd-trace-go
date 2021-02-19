@@ -67,7 +67,10 @@ type profiler struct {
 
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
-	cfg := defaultConfig()
+	cfg, err := defaultConfig()
+	if err != nil {
+		return nil, err
+	}
 	for _, opt := range opts {
 		opt(cfg)
 	}
