@@ -275,19 +275,18 @@ func TestLogWriterOverflow(t *testing.T) {
 		assert.Equal(io.EOF, err)
 	})
 }
-func TestJsonEncodeSpanNewLines(t *testing.T) {
+func TestJSONEncodeSpanNewLines(t *testing.T) {
 	assert := assert.New(t)
 	s := newSpan("name", "srv", "res", 2, 1, 3)
 	s.Start = 12
-	s.Meta["query"] = "Select * from \n Where value"
 	s.Meta["query\n"] = "Select * from \n Where\nvalue"
+	s.Metrics["version\n"] = 3
 
 	h := &logTraceWriter{}
-	h.resetBuffer()
 	h.encodeSpan(s)
 
 	str := h.buf.String()
-	assert.Equal(`{"traces": [{"trace_id":"1","span_id":"2","parent_id":"3","name":"name","resource":"res","error":0,"meta":{"query":"Select * from \n Where value","query\n":"Select * from \n Where\nvalue"},"metrics":{},"start":12,"duration":0,"service":"srv"}`, str)
+	assert.Equal(`{"trace_id":"1","span_id":"2","parent_id":"3","name":"name","resource":"res","error":0,"meta":{"query\n":"Select * from \n Where\nvalue"},"metrics":{"version\n":3},"start":12,"duration":0,"service":"srv"}`, str)
 	assert.NotContains(h.buf.String(), "\n")
 	assert.Contains(str, "\\n")
 }

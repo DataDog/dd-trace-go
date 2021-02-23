@@ -188,10 +188,16 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 		} else {
 			h.buf.WriteString(`,`)
 		}
-		m, _ := json.Marshal(k)
+		m, err := json.Marshal(k)
+		if err != nil {
+			log.Error("error encoding meta key: %v", err)
+		}
 		h.buf.Write(m)
 		h.buf.WriteString(":")
-		m, _ = json.Marshal(v)
+		m, err = json.Marshal(v)
+		if err != nil {
+			log.Error("error encoding meta value: %v", err)
+		}
 		h.buf.Write(m)
 	}
 	h.buf.WriteString(`},"metrics":{`)
@@ -202,13 +208,17 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 			continue
 		}
 		if first {
-			h.buf.WriteByte('"')
+			//h.buf.WriteByte('"')
 			first = false
 		} else {
-			h.buf.WriteString(`,"`)
+			h.buf.WriteString(`,`)
 		}
-		h.buf.WriteString(k)
-		h.buf.WriteString(`":`)
+		m, err := json.Marshal(k)
+		if err != nil {
+			log.Error("error encoding metrics key: %v", err)
+		}
+		h.buf.Write(m)
+		h.buf.WriteString(`:`)
 		h.buf.Write(encodeFloat(scratch[:0], v))
 	}
 	h.buf.WriteString(`},"start":`)
