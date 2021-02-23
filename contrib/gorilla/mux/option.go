@@ -20,13 +20,13 @@ import (
 )
 
 type routerConfig struct {
-	serviceName        string
-	spanOpts           []ddtrace.StartSpanOption // additional span options to be applied
-	finishOpts         []ddtrace.FinishOption    // span finish options to be applied
-	analyticsRate      float64
-	resourceNamer      func(*Router, *http.Request) string
-	ignoreRequest      func(*http.Request) bool
-	headerTags     bool
+	serviceName     string
+	spanOpts        []ddtrace.StartSpanOption // additional span options to be applied
+	finishOpts      []ddtrace.FinishOption    // span finish options to be applied
+	analyticsRate   float64
+	resourceNamer   func(*Router, *http.Request) string
+	ignoreRequest   func(*http.Request) bool
+	headerTags      bool
 	queryParamsTags bool
 }
 
