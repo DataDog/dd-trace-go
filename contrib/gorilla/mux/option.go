@@ -7,13 +7,13 @@ package mux
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"math"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -26,8 +26,8 @@ type routerConfig struct {
 	analyticsRate      float64
 	resourceNamer      func(*Router, *http.Request) string
 	ignoreRequest      func(*http.Request) bool
-	setRequestData     bool
-	setQueryParameters bool
+	headerTags     bool
+	queryParamsTags bool
 }
 
 // RouterOption represents an option that can be passed to NewRouter.
@@ -110,13 +110,16 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 	}
 }
 
-// WithHeaderTags enables setting of request header as tags on the span
+// WithHeaderTags specifies that the integration should attach HTTP request headers as
+// tags to spans.
+// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// to Datadog.
 func WithHeaderTags() RouterOption {
 	return func(cfg *routerConfig) {
-		cfg.setRequestData = true
+		cfg.headerTags = true
 	}
 }
-func getHeaderTags(req *http.Request) ddtrace.StartSpanOption {
+func headerTagsFromRequest(req *http.Request) ddtrace.StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		for k, v := range req.Header {
 			if !strings.HasPrefix(strings.ToLower(k), "x-datadog-") {
@@ -126,13 +129,15 @@ func getHeaderTags(req *http.Request) ddtrace.StartSpanOption {
 	}
 }
 
-// WithQueryParameters enables setting of request query parameters as a single tag on the span
-func WithQueryParameters() RouterOption {
+// WithQueryParams specifies that the integration should attach request query parameters as APM tags.
+// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// to Datadog.
+func WithQueryParams() RouterOption {
 	return func(cfg *routerConfig) {
-		cfg.setQueryParameters = true
+		cfg.queryParamsTags = true
 	}
 }
-func getQueryParameters(req *http.Request) ddtrace.StartSpanOption {
+func queryParamsTagsFromRequest(req *http.Request) ddtrace.StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		query, err := url.ParseQuery(req.URL.RawQuery)
 		if err != nil {

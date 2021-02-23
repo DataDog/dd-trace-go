@@ -114,18 +114,18 @@ func TestWithHeaderTags(t *testing.T) {
 	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
 }
 
-func TestWithQueryParameters(t *testing.T) {
+func TestWithQueryParams(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	mux := NewRouter(WithServiceName("my-service"), WithQueryParameters())
+	mux := NewRouter(WithServiceName("my-service"), WithQueryParams())
 	mux.Handle("/200", okHandler()).Host("localhost")
 	r := httptest.NewRequest("GET", "http://localhost/200?token=value&id=3&name=5", nil)
 
 	mux.ServeHTTP(httptest.NewRecorder(), r)
 
 	spans := mt.FinishedSpans()
-	//note that result we'll get is a SORTED concatenated list of queries
+	// note that result we'll get is a SORTED concatenated list of queries
 	assert.Equal(spans[0].Tags()["http.querystring"], "id=3&name=5&token=value")
 }
 
