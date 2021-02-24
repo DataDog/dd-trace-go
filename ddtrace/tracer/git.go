@@ -20,3 +20,12 @@ func Stack() string {
 func Panic() {
 	panic("panic")
 }
+
+var (
+	repository string
+	commitHash string
+)
+
+func ReportUnexportedGitInfo() (string, string) {
+	return repository, commitHash
+}
