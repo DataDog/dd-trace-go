@@ -174,11 +174,11 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.SpanID), 16))
 	h.buf.WriteString(`","parent_id":"`)
 	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.ParentID), 16))
-	h.buf.WriteString(`","name":"`)
-	h.buf.WriteString(s.Name)
-	h.buf.WriteString(`","resource":"`)
-	h.buf.WriteString(s.Resource)
-	h.buf.WriteString(`","error":`)
+	h.buf.WriteString(`","name":`)
+	h.marshalString(s.Name)
+	h.buf.WriteString(`,"resource":`)
+	h.marshalString(s.Resource)
+	h.buf.WriteString(`,"error":`)
 	h.buf.Write(strconv.AppendInt(scratch[:0], int64(s.Error), 10))
 	h.buf.WriteString(`,"meta":{`)
 	first := true
@@ -224,9 +224,20 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 	h.buf.Write(strconv.AppendInt(scratch[:0], s.Start, 10))
 	h.buf.WriteString(`,"duration":`)
 	h.buf.Write(strconv.AppendInt(scratch[:0], s.Duration, 10))
-	h.buf.WriteString(`,"service":"`)
-	h.buf.WriteString(s.Service)
-	h.buf.WriteString(`"}`)
+	h.buf.WriteString(`,"service":`)
+	h.marshalString(s.Service)
+	h.buf.WriteString(`}`)
+}
+
+// marshalString will sanitize strings that may hold characters
+// that would render invalid JSON.
+func (h *logTraceWriter) marshalString(str string) {
+	m, err := json.Marshal(str)
+	if err != nil {
+		log.Error("Error marshaling value %q: %v", str, err)
+	} else {
+		h.buf.Write(m)
+	}
 }
 
 type encodingError struct {
