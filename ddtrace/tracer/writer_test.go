@@ -204,6 +204,22 @@ func TestLogWriter(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(jsonPayload{[][]jsonSpan{{expected}}}, payload)
 	})
+
+	t.Run("invalid-characters", func(t *testing.T) {
+		assert := assert.New(t)
+		s := newSpan("name", "srv", "res", 2, 1, 3)
+		s.Start = 12
+		s.Meta["query\n"] = "Select * from \n Where\nvalue"
+		s.Metrics["version\n"] = 3
+
+		var w logTraceWriter
+		w.encodeSpan(s)
+
+		str := w.buf.String()
+		assert.Equal(`{"trace_id":"1","span_id":"2","parent_id":"3","name":"name","resource":"res","error":0,"meta":{"query\n":"Select * from \n Where\nvalue"},"metrics":{"version\n":3},"start":12,"duration":0,"service":"srv"}`, str)
+		assert.NotContains(w.buf.String(), "\n")
+		assert.Contains(str, "\\n")
+	})
 }
 
 func TestLogWriterOverflow(t *testing.T) {
@@ -274,21 +290,6 @@ func TestLogWriterOverflow(t *testing.T) {
 		err = d.Decode(&v)
 		assert.Equal(io.EOF, err)
 	})
-}
-func TestJSONEncodeSpanNewLines(t *testing.T) {
-	assert := assert.New(t)
-	s := newSpan("name", "srv", "res", 2, 1, 3)
-	s.Start = 12
-	s.Meta["query\n"] = "Select * from \n Where\nvalue"
-	s.Metrics["version\n"] = 3
-
-	h := &logTraceWriter{}
-	h.encodeSpan(s)
-
-	str := h.buf.String()
-	assert.Equal(`{"trace_id":"1","span_id":"2","parent_id":"3","name":"name","resource":"res","error":0,"meta":{"query\n":"Select * from \n Where\nvalue"},"metrics":{"version\n":3},"start":12,"duration":0,"service":"srv"}`, str)
-	assert.NotContains(h.buf.String(), "\n")
-	assert.Contains(str, "\\n")
 }
 
 func BenchmarkJsonEncodeSpan(b *testing.B) {
