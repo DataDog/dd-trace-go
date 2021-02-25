@@ -217,7 +217,7 @@ func TestLogWriter(t *testing.T) {
 
 		str := w.buf.String()
 		assert.Equal(`{"trace_id":"1","span_id":"2","parent_id":"3","name":"name\n","resource":"\"res\"","error":0,"meta":{"query\n":"Select * from \n Where\nvalue"},"metrics":{"version\n":3},"start":12,"duration":0,"service":"srv\t"}`, str)
-		assert.NotContains(w.buf.String(), "\n")
+		assert.NotContains(str, "\n")
 		assert.Contains(str, "\\n")
 	})
 }
