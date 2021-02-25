@@ -188,17 +188,9 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 		} else {
 			h.buf.WriteString(`,`)
 		}
-		m, err := json.Marshal(k)
-		if err != nil {
-			log.Error("Error encoding meta key %q: %v", k, err)
-		}
-		h.buf.Write(m)
+		h.marshalString(k)
 		h.buf.WriteString(":")
-		m, err = json.Marshal(v)
-		if err != nil {
-			log.Error("Error encoding meta value %q: %v", v, err)
-		}
-		h.buf.Write(m)
+		h.marshalString(v)
 	}
 	h.buf.WriteString(`},"metrics":{`)
 	first = true
@@ -212,11 +204,7 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 		} else {
 			h.buf.WriteString(`,`)
 		}
-		m, err := json.Marshal(k)
-		if err != nil {
-			log.Error("Error encoding metrics key %q: %v", k, err)
-		}
-		h.buf.Write(m)
+		h.marshalString(k)
 		h.buf.WriteString(`:`)
 		h.buf.Write(encodeFloat(scratch[:0], v))
 	}
@@ -229,8 +217,8 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 	h.buf.WriteString(`}`)
 }
 
-// marshalString will sanitize strings that may hold characters
-// that would render invalid JSON.
+// marshalString marshals the string str as JSON into the writer's buffer.
+// Should be used whenever writing non-constant string data to ensure correct sanitization.
 func (h *logTraceWriter) marshalString(str string) {
 	m, err := json.Marshal(str)
 	if err != nil {
