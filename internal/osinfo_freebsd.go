@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracer
+package internal
 
 import (
 	"os/exec"
@@ -11,14 +11,16 @@ import (
 	"strings"
 )
 
-func osName() string {
+// OSName detects name of the operating system.
+func OSName() string {
 	return runtime.GOOS
 }
 
-func osVersion() string {
-	out, err := exec.Command("sw_vers", "-productVersion").Output()
+// OSVersion detects version of the operating system.
+func OSVersion() string {
+	out, err := exec.Command("uname", "-r").Output()
 	if err != nil {
 		return unknown
 	}
-	return strings.Trim(string(out), "\n")
+	return strings.Split(string(out), "-")[0]
 }

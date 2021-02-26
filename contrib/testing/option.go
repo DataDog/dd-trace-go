@@ -10,6 +10,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext/ci"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 var (
@@ -37,6 +38,13 @@ func defaults(cfg *config) {
 	// Load CI tags
 	if tags == nil {
 		tags = ci.Tags()
+		
+		// CI App: Test configuration facets
+		tags[ext.OSName] = internal.OSName()
+		tags[ext.OSVersion] = internal.OSVersion()
+		tags[ext.OSArchitecture] = runtime.GOARCH
+		tags[ext.PlatformName] = runtime.Compiler
+		tags[ext.PlatformVersion] = runtime.Version()
 
 		// Guess Git metadata from a local Git repository otherwise.
 		if _, ok := tags[ext.GitRepositoryURL]; !ok {

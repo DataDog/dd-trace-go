@@ -13,11 +13,13 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-func osName() string {
+// OSName detects name of the operating system
+func OSName() string {
 	return runtime.GOOS
 }
 
-func osVersion() string {
+// OSVersion detects version of the operating system
+func OSVersion() string {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows NT\CurrentVersion`, registry.QUERY_VALUE)
 	if err != nil {
 		return unknown

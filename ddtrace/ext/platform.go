@@ -3,18 +3,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// +build !windows,!linux,!darwin,!freebsd
+package ext
 
-package tracer
-
-import (
-	"runtime"
+const (
+	// PlatformName indicates name of the runtime Compiler.
+	PlatformName = "platform.name"
+	// PlatformVersion indicates the Go tree's version string
+	PlatformVersion = "platform.version"
 )
-
-func osName() string {
-	return runtime.GOOS
-}
-
-func osVersion() string {
-	return unknown
-}

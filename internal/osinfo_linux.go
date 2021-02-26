@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracer
+package internal
 
 import (
 	"bufio"
@@ -11,7 +11,8 @@ import (
 	"strings"
 )
 
-func osName() string {
+// OSName detects name of the operating system.
+func OSName() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {
 		return "Linux (Unknown Distribution)"
@@ -29,7 +30,8 @@ func osName() string {
 	return name
 }
 
-func osVersion() string {
+// OSVersion detects version of the operating system.
+func OSVersion() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {
 		return unknown

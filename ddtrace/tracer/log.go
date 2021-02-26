@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -76,8 +77,8 @@ func logStartup(t *tracer) {
 
 	info := startupInfo{
 		Date:                  time.Now().Format(time.RFC3339),
-		OSName:                osName(),
-		OSVersion:             osVersion(),
+		OSName:                internal.OSName(),
+		OSVersion:             internal.OSVersion(),
 		Version:               version.Tag,
 		Lang:                  "Go",
 		LangVersion:           runtime.Version(),
