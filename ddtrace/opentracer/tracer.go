@@ -93,6 +93,5 @@ func (t *opentracer) ContextWithSpanHook(ctx context.Context, openSpan opentraci
 	if !ok {
 		return ctx
 	}
-
 	return tracer.ContextWithSpan(ctx, ddSpan.Span)
 }
