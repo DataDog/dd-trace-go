@@ -6,8 +6,8 @@
 package ext
 
 const (
-	// PlatformName indicates name of the runtime Compiler.
-	PlatformName = "platform.name"
-	// PlatformVersion indicates the Go tree's version string
-	PlatformVersion = "platform.version"
+	// RuntimeName indicates name of the runtime Compiler.
+	RuntimeName = "runtime.name"
+	// RuntimeVersion indicates the Go tree's version string
+	RuntimeVersion = "runtime.version"
 )

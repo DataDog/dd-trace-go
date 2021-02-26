@@ -42,11 +42,11 @@ func defaults(cfg *config) {
 		tags = ci.Tags()
 
 		// CI App: Test configuration facets
-		tags[ext.OSName] = internal.OSName()
+		tags[ext.OSPlatform] = internal.OSName()
 		tags[ext.OSVersion] = internal.OSVersion()
 		tags[ext.OSArchitecture] = runtime.GOARCH
-		tags[ext.PlatformName] = runtime.Compiler
-		tags[ext.PlatformVersion] = runtime.Version()
+		tags[ext.RuntimeName] = runtime.Compiler
+		tags[ext.RuntimeVersion] = runtime.Version()
 
 		// Guess Git metadata from a local Git repository otherwise.
 		if _, ok := tags[ext.GitRepositoryURL]; !ok {
