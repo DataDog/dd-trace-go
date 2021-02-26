@@ -38,7 +38,7 @@ func defaults(cfg *config) {
 	// Load CI tags
 	if tags == nil {
 		tags = ci.Tags()
-		
+
 		// CI App: Test configuration facets
 		tags[ext.OSName] = internal.OSName()
 		tags[ext.OSVersion] = internal.OSVersion()
