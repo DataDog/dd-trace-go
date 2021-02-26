@@ -11,6 +11,10 @@ import (
 	"runtime"
 )
 
+const (
+	unknown = "unknown"
+)
+
 // OSName detects name of the operating system.
 func OSName() string {
 	return runtime.GOOS

@@ -11,6 +11,10 @@ import (
 	"strings"
 )
 
+const (
+	unknown = "unknown"
+)
+
 // OSName detects name of the operating system.
 func OSName() string {
 	f, err := os.Open("/etc/os-release")
