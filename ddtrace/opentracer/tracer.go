@@ -87,6 +87,7 @@ func (t *opentracer) Extract(format interface{}, carrier interface{}) (opentraci
 	}
 }
 
+// ContextWithSpan implements opentracing.TracerContextWithSpanExtension.
 func (t *opentracer) ContextWithSpanHook(ctx context.Context, openSpan opentracing.Span) context.Context {
 	ddSpan, ok := openSpan.(*span)
 	if !ok {
