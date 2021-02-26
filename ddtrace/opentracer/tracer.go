@@ -91,7 +91,7 @@ func (t *opentracer) Extract(format interface{}, carrier interface{}) (opentraci
 func (t *opentracer) ContextWithSpanHook(ctx context.Context, openSpan opentracing.Span) context.Context {
 	ddSpan, ok := openSpan.(*span)
 	if !ok {
-		return ctx // unchanged
+		return ctx
 	}
 
 	return tracer.ContextWithSpan(ctx, ddSpan.Span)
