@@ -129,6 +129,15 @@ main.main()
 		// pro tip: enable line below to inspect the pprof output using cli tools
 		// ioutil.WriteFile(prof.name, prof.data, 0644)
 
+		requireFunctions := func(t *testing.T, s *pprofile.Sample, want []string) {
+			t.Helper()
+			var got []string
+			for _, loc := range s.Location {
+				got = append(got, loc.Line[0].Function.Name)
+			}
+			require.Equal(t, want, got)
+		}
+
 		pp, err := pprofile.Parse(bytes.NewReader(prof.data))
 		require.NoError(t, err)
 		// timestamp
@@ -146,9 +155,16 @@ main.main()
 		require.Equal(t, []int64{3}, pp.Sample[1].NumLabel["goid"])
 		require.Equal(t, []string{"id"}, pp.Sample[1].NumUnit["goid"])
 		// Virtual frame for "frames elided" goroutine
-		require.Equal(t, 3, len(pp.Sample[2].Location))
+		requireFunctions(t, pp.Sample[2], []string{
+			"main.stackDump",
+			"main.main",
+			"...additional frames elided...",
+		})
 		// Virtual frame go "created by" frame
-		require.Equal(t, 2, len(pp.Sample[1].Location))
+		requireFunctions(t, pp.Sample[1], []string{
+			"time.Sleep",
+			"main.indirectShortSleepLoop2",
+		})
 	})
 }
 
