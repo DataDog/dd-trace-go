@@ -17,30 +17,43 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
+type TraceConfig struct {
+	Writer         http.ResponseWriter
+	Req            *http.Request
+	Service        string
+	Resource       string
+	QueryParamTags bool
+	FinishOpts     []ddtrace.FinishOption
+	SpanOpts       []ddtrace.StartSpanOption
+}
+
 // TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
-func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, service, resource string,
-	finishopts []ddtrace.FinishOption, spanopts ...ddtrace.StartSpanOption) {
+func TraceAndServe(h http.Handler, cfg *TraceConfig) {
+	path := cfg.Req.URL.Path
+	if cfg.QueryParamTags {
+		path += "?" + cfg.Req.URL.RawQuery
+	}
 	opts := append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
-		tracer.ServiceName(service),
-		tracer.ResourceName(resource),
-		tracer.Tag(ext.HTTPMethod, r.Method),
-		tracer.Tag(ext.HTTPURL, r.URL.Path),
-	}, spanopts...)
-	if r.URL.Host != "" {
+		tracer.ServiceName(cfg.Service),
+		tracer.ResourceName(cfg.Resource),
+		tracer.Tag(ext.HTTPMethod, cfg.Req.Method),
+		tracer.Tag(ext.HTTPURL, path),
+	}, cfg.SpanOpts...)
+	if cfg.Req.URL.Host != "" {
 		opts = append([]ddtrace.StartSpanOption{
-			tracer.Tag("http.host", r.URL.Host),
+			tracer.Tag("http.host", cfg.Req.URL.Host),
 		}, opts...)
 	}
-	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
+	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(cfg.Req.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
-	defer span.Finish(finishopts...)
+	span, ctx := tracer.StartSpanFromContext(cfg.Req.Context(), "http.request", opts...)
+	defer span.Finish(cfg.FinishOpts...)
 
-	w = wrapResponseWriter(w, span)
+	cfg.Writer = wrapResponseWriter(cfg.Writer, span)
 
-	h.ServeHTTP(w, r.WithContext(ctx))
+	h.ServeHTTP(cfg.Writer, cfg.Req.WithContext(ctx))
 }
 
 // responseWriter is a small wrapper around an http response writer that will

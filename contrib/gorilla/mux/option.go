@@ -9,11 +9,9 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -135,15 +133,5 @@ func headerTagsFromRequest(req *http.Request) ddtrace.StartSpanOption {
 func WithQueryParams() RouterOption {
 	return func(cfg *routerConfig) {
 		cfg.queryParamsTags = true
-	}
-}
-func queryParamsTagsFromRequest(req *http.Request) ddtrace.StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		query, err := url.ParseQuery(req.URL.RawQuery)
-		if err != nil {
-			cfg.Tags[ext.Error] = err
-			return
-		}
-		cfg.Tags["http.querystring"] = query.Encode()
 	}
 }

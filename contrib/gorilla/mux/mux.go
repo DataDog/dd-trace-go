@@ -114,11 +114,16 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if r.config.headerTags {
 		spanopts = append(spanopts, headerTagsFromRequest(req))
 	}
-	if r.config.queryParamsTags {
-		spanopts = append(spanopts, queryParamsTagsFromRequest(req))
-	}
 	resource := r.config.resourceNamer(r, req)
-	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, r.config.finishOpts, spanopts...)
+	httputil.TraceAndServe(r.Router, &httputil.TraceConfig{
+		Writer:         w,
+		Req:            req,
+		Service:        r.config.serviceName,
+		Resource:       resource,
+		FinishOpts:     r.config.finishOpts,
+		SpanOpts:       spanopts,
+		QueryParamTags: r.config.queryParamsTags,
+	})
 }
 
 // defaultResourceNamer attempts to quantize the resource for an HTTP request by
