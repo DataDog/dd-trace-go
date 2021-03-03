@@ -6,7 +6,6 @@
 package mux
 
 import (
-	"fmt"
 	"math"
 	"net/http"
 	"strings"
@@ -119,9 +118,9 @@ func WithHeaderTags() RouterOption {
 }
 func headerTagsFromRequest(req *http.Request) ddtrace.StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
-		for k, v := range req.Header {
+		for k := range req.Header {
 			if !strings.HasPrefix(strings.ToLower(k), "x-datadog-") {
-				cfg.Tags[fmt.Sprintf("http.headers.%v", k)] = strings.Join(v, "")
+				cfg.Tags["http.request.headers."+k] = strings.Join(req.Header.Values(k), ",")
 			}
 		}
 	}

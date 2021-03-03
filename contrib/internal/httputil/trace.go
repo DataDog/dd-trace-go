@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
+// TraceConfig defines the configuration for request tracing.
 type TraceConfig struct {
 	Writer         http.ResponseWriter
 	Req            *http.Request
