@@ -98,6 +98,7 @@ func TestDomain(t *testing.T) {
 	assert.Equal(1, len(spans))
 	assert.Equal("localhost", spans[0].Tag("mux.host"))
 }
+
 func TestWithHeaderTags(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()

@@ -51,7 +51,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	resource := req.Method + " " + route
 	httputil.TraceAndServe(r.Router, &httputil.TraceConfig{
 		Writer:   w,
-		Req:      req,
+		Request:  req,
 		Service:  r.config.serviceName,
 		Resource: resource,
 		SpanOpts: r.config.spanOpts,

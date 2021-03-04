@@ -44,7 +44,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resource := r.Method + " " + route
 	httputil.TraceAndServe(mux.ServeMux, &httputil.TraceConfig{
 		Writer:   w,
-		Req:      r,
+		Request:  r,
 		Service:  mux.cfg.serviceName,
 		Resource: resource,
 		SpanOpts: mux.cfg.spanOpts,
@@ -62,7 +62,7 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		httputil.TraceAndServe(h, &httputil.TraceConfig{
 			Writer:     w,
-			Req:        req,
+			Request:    req,
 			Service:    service,
 			Resource:   resource,
 			FinishOpts: cfg.finishOpts,

@@ -37,7 +37,7 @@ func TestTraceAndServe(t *testing.T) {
 		}
 		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
 			Writer:   w,
-			Req:      r,
+			Request:  r,
 			Service:  "service",
 			Resource: "resource",
 		})
@@ -69,7 +69,7 @@ func TestTraceAndServe(t *testing.T) {
 		}
 		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
 			Writer:         w,
-			Req:            r,
+			Request:        r,
 			Service:        "service",
 			Resource:       "resource",
 			QueryParamTags: true,
@@ -97,7 +97,7 @@ func TestTraceAndServe(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
 				Writer:   w,
-				Req:      r,
+				Request:  r,
 				Service:  "service",
 				Resource: "resource",
 			})
@@ -155,7 +155,7 @@ func TestTraceAndServe(t *testing.T) {
 
 		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
 			Writer:   w,
-			Req:      r,
+			Request:  r,
 			Service:  "service",
 			Resource: "resource",
 		})
@@ -192,7 +192,7 @@ func TestTraceAndServe(t *testing.T) {
 
 		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
 			Writer:   w,
-			Req:      r,
+			Request:  r,
 			Service:  "service",
 			Resource: "resource",
 		})
@@ -223,7 +223,7 @@ func TestTraceAndServe(t *testing.T) {
 		w := httptest.NewRecorder()
 		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
 			Writer:   w,
-			Req:      r,
+			Request:  r,
 			Service:  "service",
 			Resource: "resource",
 		})
@@ -248,7 +248,7 @@ func TestTraceAndServeHost(t *testing.T) {
 
 		TraceAndServe(handler, &TraceConfig{
 			Writer:   httptest.NewRecorder(),
-			Req:      r,
+			Request:  r,
 			Service:  "service",
 			Resource: "resource",
 		})
@@ -266,7 +266,7 @@ func TestTraceAndServeHost(t *testing.T) {
 		assert.NoError(err)
 		TraceAndServe(handler, &TraceConfig{
 			Writer:   httptest.NewRecorder(),
-			Req:      r,
+			Request:  r,
 			Service:  "service",
 			Resource: "resource",
 		})

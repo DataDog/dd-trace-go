@@ -50,7 +50,7 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 			}
 			httputil.TraceAndServe(h, &httputil.TraceConfig{
 				Writer:     w,
-				Req:        r,
+				Request:    r,
 				Service:    cfg.serviceName,
 				Resource:   resource,
 				FinishOpts: cfg.finishOpts,
