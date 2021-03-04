@@ -111,7 +111,7 @@ func TestWithHeaderTags(t *testing.T) {
 	mux.ServeHTTP(httptest.NewRecorder(), r)
 
 	spans := mt.FinishedSpans()
-	assert.Equal(spans[0].Tags()["http.headers.Header"], "header-value")
+	assert.Equal("header-value", spans[0].Tags()["http.request.headers.Header"])
 	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
 }
 
