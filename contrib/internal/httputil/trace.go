@@ -19,11 +19,11 @@ import (
 
 // TraceConfig defines the configuration for request tracing.
 type TraceConfig struct {
-	Writer         http.ResponseWriter       // response writer
+	ResponseWriter http.ResponseWriter       // response writer
 	Request        *http.Request             // request that is traced
 	Service        string                    // service name
 	Resource       string                    // resource name
-	QueryParamTags bool                      // specifies that request query parameters should be appended to http.url tag
+	QueryParams    bool                      // specifies that request query parameters should be appended to http.url tag
 	FinishOpts     []ddtrace.FinishOption    // span finish options to be applied
 	SpanOpts       []ddtrace.StartSpanOption // additional span options to be applied
 }
@@ -31,7 +31,7 @@ type TraceConfig struct {
 // TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
 func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 	path := cfg.Request.URL.Path
-	if cfg.QueryParamTags {
+	if cfg.QueryParams {
 		path += "?" + cfg.Request.URL.RawQuery
 	}
 	opts := append([]ddtrace.StartSpanOption{
@@ -52,9 +52,9 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 	span, ctx := tracer.StartSpanFromContext(cfg.Request.Context(), "http.request", opts...)
 	defer span.Finish(cfg.FinishOpts...)
 
-	cfg.Writer = wrapResponseWriter(cfg.Writer, span)
+	cfg.ResponseWriter = wrapResponseWriter(cfg.ResponseWriter, span)
 
-	h.ServeHTTP(cfg.Writer, cfg.Request.WithContext(ctx))
+	h.ServeHTTP(cfg.ResponseWriter, cfg.Request.WithContext(ctx))
 }
 
 // responseWriter is a small wrapper around an http response writer that will

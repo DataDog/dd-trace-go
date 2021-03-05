@@ -116,13 +116,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	resource := r.config.resourceNamer(r, req)
 	httputil.TraceAndServe(r.Router, &httputil.TraceConfig{
-		Writer:         w,
+		ResponseWriter: w,
 		Request:        req,
 		Service:        r.config.serviceName,
 		Resource:       resource,
 		FinishOpts:     r.config.finishOpts,
 		SpanOpts:       spanopts,
-		QueryParamTags: r.config.queryParamsTags,
+		QueryParams:    r.config.queryParams,
 	})
 }
 

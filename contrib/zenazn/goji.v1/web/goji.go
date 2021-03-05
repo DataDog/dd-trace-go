@@ -49,12 +49,12 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 				})
 			}
 			httputil.TraceAndServe(h, &httputil.TraceConfig{
-				Writer:     w,
-				Request:    r,
-				Service:    cfg.serviceName,
-				Resource:   resource,
-				FinishOpts: cfg.finishOpts,
-				SpanOpts:   cfg.spanOpts,
+				ResponseWriter: w,
+				Request:        r,
+				Service:        cfg.serviceName,
+				Resource:       resource,
+				FinishOpts:     cfg.finishOpts,
+				SpanOpts:       cfg.spanOpts,
 			})
 		})
 	}

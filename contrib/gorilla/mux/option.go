@@ -17,14 +17,14 @@ import (
 )
 
 type routerConfig struct {
-	serviceName     string
-	spanOpts        []ddtrace.StartSpanOption // additional span options to be applied
-	finishOpts      []ddtrace.FinishOption    // span finish options to be applied
-	analyticsRate   float64
-	resourceNamer   func(*Router, *http.Request) string
-	ignoreRequest   func(*http.Request) bool
-	headerTags      bool
-	queryParamsTags bool
+	serviceName   string
+	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
+	finishOpts    []ddtrace.FinishOption    // span finish options to be applied
+	analyticsRate float64
+	resourceNamer func(*Router, *http.Request) string
+	ignoreRequest func(*http.Request) bool
+	headerTags    bool
+	queryParams   bool
 }
 
 // RouterOption represents an option that can be passed to NewRouter.
@@ -116,6 +116,7 @@ func WithHeaderTags() RouterOption {
 		cfg.headerTags = true
 	}
 }
+
 func headerTagsFromRequest(req *http.Request) ddtrace.StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		for k := range req.Header {
@@ -131,6 +132,6 @@ func headerTagsFromRequest(req *http.Request) ddtrace.StartSpanOption {
 // to Datadog.
 func WithQueryParams() RouterOption {
 	return func(cfg *routerConfig) {
-		cfg.queryParamsTags = true
+		cfg.queryParams = true
 	}
 }

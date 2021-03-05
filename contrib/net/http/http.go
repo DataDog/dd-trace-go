@@ -43,11 +43,11 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, route := mux.Handler(r)
 	resource := r.Method + " " + route
 	httputil.TraceAndServe(mux.ServeMux, &httputil.TraceConfig{
-		Writer:   w,
-		Request:  r,
-		Service:  mux.cfg.serviceName,
-		Resource: resource,
-		SpanOpts: mux.cfg.spanOpts,
+		ResponseWriter: w,
+		Request:        r,
+		Service:        mux.cfg.serviceName,
+		Resource:       resource,
+		SpanOpts:       mux.cfg.spanOpts,
 	})
 }
 
@@ -61,12 +61,12 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 	log.Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		httputil.TraceAndServe(h, &httputil.TraceConfig{
-			Writer:     w,
-			Request:    req,
-			Service:    service,
-			Resource:   resource,
-			FinishOpts: cfg.finishOpts,
-			SpanOpts:   cfg.spanOpts,
+			ResponseWriter: w,
+			Request:        req,
+			Service:        service,
+			Resource:       resource,
+			FinishOpts:     cfg.finishOpts,
+			SpanOpts:       cfg.spanOpts,
 		})
 	})
 }
