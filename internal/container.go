@@ -7,9 +7,11 @@ package internal
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"os"
 	"regexp"
+	"strings"
 )
 
 const (
@@ -17,11 +19,18 @@ const (
 	cgroupPath = "/proc/self/cgroup"
 )
 
+const (
+	uuidSource      = "[0-9a-f]{8}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{12}"
+	containerSource = "[0-9a-f]{64}"
+	taskSource      = "[0-9a-f]{32}-\\d+"
+)
+
 var (
 	// expLine matches a line in the /proc/self/cgroup file. It has a submatch for the last element (path), which contains the container ID.
 	expLine = regexp.MustCompile(`^\d+:[^:]*:(.+)$`)
+
 	// expContainerID matches contained IDs and sources. Source: https://github.com/Qard/container-info/blob/master/index.js
-	expContainerID = regexp.MustCompile(`([0-9a-f]{8}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{12}|[0-9a-f]{64})(?:.scope)?$`)
+	expContainerID = regexp.MustCompile(fmt.Sprintf(`(%s|%s|%s)(?:.scope)?$`, uuidSource, containerSource, taskSource))
 
 	// containerID is the containerID read at init from /proc/self/cgroup
 	containerID string
@@ -41,7 +50,7 @@ func parseContainerID(r io.Reader) string {
 			continue
 		}
 		if id := expContainerID.FindString(path[1]); id != "" {
-			return id
+			return strings.TrimSuffix(id, ".scope")
 		}
 	}
 	return ""
