@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"regexp"
-	"strings"
 )
 
 const (
@@ -49,8 +48,8 @@ func parseContainerID(r io.Reader) string {
 			// invalid entry, continue
 			continue
 		}
-		if id := expContainerID.FindString(path[1]); id != "" {
-			return strings.TrimSuffix(id, ".scope")
+		if parts := expContainerID.FindStringSubmatch(path[1]); len(parts) == 2 {
+			return parts[1]
 		}
 	}
 	return ""
