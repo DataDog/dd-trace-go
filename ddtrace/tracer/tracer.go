@@ -228,7 +228,7 @@ func (t *tracer) pushTrace(trace []*span) {
 	select {
 	case t.out <- trace:
 	default:
-		log.Error("payload queue full, dropping %d traces", len(trace))
+		log.Error("Payload queue full, dropping %d traces", len(trace))
 	}
 }
 

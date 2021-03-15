@@ -205,7 +205,7 @@ func (t *trace) push(sp *span) {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
 		t.spans = nil // GC
-		log.Error("trace buffer full (%d), dropping trace", traceMaxSize)
+		log.Error("Trace buffer full (%d), dropping trace", traceMaxSize)
 		if haveTracer {
 			atomic.AddInt64(&tr.tracesDropped, 1)
 		}

@@ -216,7 +216,7 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 			continue
 		}
 		if !(rate >= 0.0 && rate <= 1.0) {
-			log.Warn("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v)
+			log.Warn("At index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v)
 			continue
 		}
 		switch {
@@ -244,13 +244,13 @@ func globalSampleRate() float64 {
 	}
 	r, err := strconv.ParseFloat(v, 64)
 	if err != nil {
-		log.Warn("ignoring DD_TRACE_SAMPLE_RATE: error: %v", err)
+		log.Warn("Ignoring DD_TRACE_SAMPLE_RATE: error: %v", err)
 		return defaultRate
 	}
 	if r >= 0.0 && r <= 1.0 {
 		return r
 	}
-	log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", r)
+	log.Warn("Ignoring DD_TRACE_SAMPLE_RATE: out of range %f", r)
 	return defaultRate
 }
 
@@ -265,9 +265,9 @@ func newRateLimiter() *rateLimiter {
 	if v != "" {
 		l, err := strconv.ParseFloat(v, 64)
 		if err != nil {
-			log.Warn("using default rate limit because DD_TRACE_RATE_LIMIT is invalid: %v", err)
+			log.Warn("Using default rate limit because DD_TRACE_RATE_LIMIT is invalid: %v", err)
 		} else if l < 0.0 {
-			log.Warn("using default rate limit because DD_TRACE_RATE_LIMIT is negative: %f", l)
+			log.Warn("Using default rate limit because DD_TRACE_RATE_LIMIT is negative: %f", l)
 		} else {
 			// override the default limit
 			limit = l

@@ -159,7 +159,7 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 		case "b3":
 			list = append(list, &propagatorB3{})
 		default:
-			log.Warn("unrecognized propagator: %s\n", v)
+			log.Warn("Unrecognized propagator: %s\n", v)
 		}
 	}
 	if len(list) == 0 {
