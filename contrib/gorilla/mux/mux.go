@@ -9,6 +9,7 @@ package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 import (
 	"math"
 	"net/http"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -137,4 +138,14 @@ func defaultResourceNamer(router *Router, req *http.Request) string {
 		}
 	}
 	return req.Method + " unknown"
+}
+
+func headerTagsFromRequest(req *http.Request) ddtrace.StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		for k := range req.Header {
+			if !strings.HasPrefix(strings.ToLower(k), "x-datadog-") {
+				cfg.Tags["http.request.headers."+k] = strings.Join(req.Header.Values(k), ",")
+			}
+		}
+	}
 }
