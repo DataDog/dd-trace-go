@@ -99,6 +99,35 @@ func TestDomain(t *testing.T) {
 	assert.Equal("localhost", spans[0].Tag("mux.host"))
 }
 
+func TestWithHeaderTags(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	mux := NewRouter(WithServiceName("my-service"), WithHeaderTags())
+	mux.Handle("/200", okHandler()).Host("localhost")
+	r := httptest.NewRequest("GET", "http://localhost/200", nil)
+	r.Header.Set("header", "header-value")
+	r.Header.Set("x-datadog-header", "value")
+	mux.ServeHTTP(httptest.NewRecorder(), r)
+
+	spans := mt.FinishedSpans()
+	assert.Equal("header-value", spans[0].Tags()["http.request.headers.Header"])
+	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
+}
+
+func TestWithQueryParams(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	mux := NewRouter(WithQueryParams())
+	mux.Handle("/200", okHandler()).Host("localhost")
+	r := httptest.NewRequest("GET", "http://localhost/200?token=value&id=3&name=5", nil)
+
+	mux.ServeHTTP(httptest.NewRecorder(), r)
+
+	assert.Equal("/200?token=value&id=3&name=5", mt.FinishedSpans()[0].Tags()[ext.HTTPURL])
+}
+
 func TestSpanOptions(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
