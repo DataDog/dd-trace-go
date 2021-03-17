@@ -12,7 +12,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,6 +60,12 @@ type config struct {
 	// globalTags holds a set of tags that will be automatically applied to
 	// all spans.
 	globalTags map[string]interface{}
+
+	// httpClientCodes specifies the range of HTTP client status codes considered as errors.
+	httpClientCodes []int
+
+	// httpServerCodes specifies the range of HTTP server status codes considered as errors.
+	httpServerCodes []int
 
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
@@ -161,6 +170,20 @@ func newConfig(opts ...StartOption) *config {
 				val = strings.TrimSpace(kv[1])
 			}
 			WithGlobalTag(key, val)(c)
+		}
+	}
+	if v := os.Getenv("DD_HTTP_CLIENT_ERROR_STATUSES"); v != "" {
+		if strings.TrimSpace(v) == "" {
+			c.httpClientCodes = parseHTTPCodeRanges("400-499")
+		} else {
+			c.httpClientCodes = parseHTTPCodeRanges(v)
+		}
+	}
+	if v := os.Getenv("DD_HTTP_SERVER_ERROR_STATUSES"); v != "" {
+		if strings.TrimSpace(v) == "" {
+			c.httpServerCodes = parseHTTPCodeRanges("500-599")
+		} else {
+			c.httpServerCodes = parseHTTPCodeRanges(v)
 		}
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
@@ -555,4 +578,44 @@ func StackFrames(n, skip uint) FinishOption {
 		cfg.StackFrames = n
 		cfg.SkipStackFrames = skip
 	}
+}
+
+// parseHTTPCodeRanges parses HTTP codes range pairs and invalidates invalid formats.
+func parseHTTPCodeRanges(r string) []int {
+	codes := []int{}
+	for _, code := range strings.Split(r, ",") {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			continue
+		}
+		valid, _ := regexp.MatchString("\\d{3}(?:-\\d{3})*(?:,\\d{3}(?:-\\d{3})*)*", code)
+		if !valid {
+			log.Warn("Invalid range for %v", code)
+			continue
+		}
+		rg := strings.Split(code, "-")
+		if len(rg) == 1 {
+			val, _ := strconv.Atoi(rg[0])
+			codes = insertCode(codes, val)
+		} else {
+			if rg[0] > rg[1] {
+				rg[0], rg[1] = rg[1], rg[0]
+			}
+			min, _ := strconv.Atoi(rg[0])
+			max, _ := strconv.Atoi(rg[1])
+			for i := min; i <= max; i++ {
+				codes = insertCode(codes, i)
+			}
+		}
+	}
+	return codes
+}
+
+// insertCode inserts the HTTP code to the list of codes in numerical order and ensures no duplicates.
+func insertCode(codes []int, c int) []int {
+	i := sort.SearchInts(codes, c)
+	codes = append(codes, 0)
+	copy(codes[i+1:], codes[i:])
+	codes[i] = c
+	return codes
 }

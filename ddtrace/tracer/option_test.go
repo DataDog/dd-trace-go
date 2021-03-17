@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -161,6 +162,23 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		dVal, ok := c.globalTags["dKey"]
 		assert.False(ok)
 		assert.Equal(nil, dVal)
+	})
+
+	t.Run("env-http-status-codes", func(t *testing.T) {
+		os.Setenv("DD_HTTP_CLIENT_ERROR_STATUSES", "400-403,405-410")
+		os.Setenv("DD_HTTP_SERVER_ERROR_STATUSES", "500,501,503")
+		defer os.Unsetenv("DD_HTTP_CLIENT_ERROR_STATUSES")
+		defer os.Unsetenv("DD_HTTP_SERVER_ERROR_STATUSES")
+
+		assert := assert.New(t)
+		c := newConfig()
+		err := errors.New("test error")
+		span := newBasicSpan("web.request")
+		span.Finish(WithError(err), NoDebugStack())
+
+		assert.Equal([]int{400, 401, 402, 403, 405, 406, 407, 408, 409, 410}, c.httpClientCodes)
+		assert.Equal([]int{500, 501, 503}, c.httpServerCodes)
+		assert.Equal(int32(1), span.Error)
 	})
 }
 
