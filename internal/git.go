@@ -3,12 +3,14 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-2020 Datadog, Inc.
 
-package ddtrace
+package internal
 
-import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+// Values can be injected at build time.
+var (
+	repository string
+	commitHash string
 )
 
 func ReportUnexportedGitInfo() (string, string) {
-	return internal.ReportUnexportedGitInfo()
+	return repository, commitHash
 }
