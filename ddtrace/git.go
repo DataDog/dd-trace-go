@@ -3,24 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-2020 Datadog, Inc.
 
-package tracer
-
-import "runtime/debug"
+package ddtrace
 
 // Values can be injected at build time.
-var (
-	RepositoryURL string
-	CommitHash    string
-)
-
-func Stack() string {
-	return string(debug.Stack())
-}
-
-func Panic() {
-	panic("panic")
-}
-
 var (
 	repository string
 	commitHash string
