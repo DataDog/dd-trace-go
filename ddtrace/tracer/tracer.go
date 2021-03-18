@@ -157,13 +157,13 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		"_dd.poc.go.goroot":       runtime.GOROOT(),
 		"_dd.poc.runtime.version": runtime.Version(),
 	}
-	if repoURL := rootinternal.GitRepositoryURL(); len(repoURL) > 0 {
+	if repoURL := rootinternal.GitRepositoryURL(); repoURL != "" {
 		appTags["_dd.poc.git.repository.url"] = repoURL
 	}
-	if repoBuildPath := rootinternal.GitRepositoryBuildPath(); len(repoBuildPath) > 0 {
+	if repoBuildPath := rootinternal.GitRepositoryBuildPath(); repoBuildPath != "" {
 		appTags["_dd.poc.git.repository.build_path"] = repoBuildPath
 	}
-	if commitSha := rootinternal.GitCommitSha(); len(commitSha) > 0 {
+	if commitSha := rootinternal.GitCommitSha(); commitSha != "" {
 		appTags["_dd.poc.git.commit.sha"] = commitSha
 	}
 	return &tracer{
