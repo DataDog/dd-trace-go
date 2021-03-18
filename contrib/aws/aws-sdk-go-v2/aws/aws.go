@@ -28,8 +28,7 @@ const (
 	tagAWSRequestID = "aws.request_id"
 )
 
-// AppendMiddleware takes the API options from the aws.Config.
-// Middleware allows us to add middleware to the AWS SDK GO v2.
+// AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
 // See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
 func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
 	cfg := &config{}
@@ -54,7 +53,7 @@ func (mw *traceMiddleware) startTrace(stack *middleware.Stack) error {
 		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
 	) {
 		// Start a span with the minimum information possible.
-		// If we get a failure in the Init middleware, some context is better than none.
+		// If we get a failure in another init middleware, some context is better than none.
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
 			tracer.ServiceName(serviceName(mw.cfg, "unknown")),
@@ -141,10 +140,6 @@ func (mw *traceMiddleware) deserializeTrace(stack *middleware.Stack) error {
 func serviceName(cfg *config, serviceID string) string {
 	if cfg.serviceName != "" {
 		return cfg.serviceName
-	}
-
-	if serviceID == "" {
-		serviceID = "unknown"
 	}
 
 	return fmt.Sprintf("aws.%s", serviceID)

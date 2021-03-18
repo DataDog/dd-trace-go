@@ -7,12 +7,14 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/smithy-go/middleware"
 	"github.com/stretchr/testify/assert"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -84,6 +86,41 @@ func TestAppendMiddleware(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 		})
 	}
+}
+
+func TestAppendMiddleware_WithErrorInInit(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	awsCfg := aws.Config{
+		Region:      "eu-west-1",
+		Credentials: aws.AnonymousCredentials{},
+	}
+
+	// Add some fake middleware to simulate an error in the init stack that is after the Datadog tracing is started
+	// but before we have a chance to enrich it.
+	awsCfg.APIOptions = append(awsCfg.APIOptions, func(stack *middleware.Stack) error {
+		return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("ErrTest", func(
+			ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
+		) (
+			out middleware.InitializeOutput, metadata middleware.Metadata, err error,
+		) {
+			return out, metadata, errors.New("err test")
+		}), middleware.Before)
+	})
+
+	AppendMiddleware(&awsCfg)
+
+	sqsClient := sqs.NewFromConfig(awsCfg)
+	sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
+
+	spans := mt.FinishedSpans()
+
+	// Assert for the bare minimum because this is all we will have.
+	s := spans[0]
+	assert.Equal(t, "unknown.request", s.OperationName())
+	assert.Equal(t, "unknown.request", s.Tag(ext.ResourceName))
+	assert.Equal(t, "aws.unknown", s.Tag(ext.ServiceName))
 }
 
 func TestAppendMiddleware_WithOpts(t *testing.T) {
