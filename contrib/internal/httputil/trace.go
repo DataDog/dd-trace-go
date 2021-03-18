@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 // TraceConfig defines the configuration for request tracing.
@@ -51,6 +52,19 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 	}
 	span, ctx := tracer.StartSpanFromContext(cfg.Request.Context(), "http.request", opts...)
 	defer span.Finish(cfg.FinishOpts...)
+
+	// TOFIX:
+	// - check range/list if tag HTTPCode is a member, if so, then mark span.Error as true
+	for _, cc := range globalconfig.HTTPClientCodes() {
+		if span.Tag(ext.HTTPCode) == cc {
+			span.Finish(tracer.WithError("Client code is marked as error."))
+		}
+	}
+	for _, sc := range globalconfig.HTTPServerCodes() {
+		if span.Tag(ext.HTTPCode) == sc {
+			span.Finish(tracer.WithError("Server code is marked as error."))
+		}
+	}
 
 	cfg.ResponseWriter = wrapResponseWriter(cfg.ResponseWriter, span)
 

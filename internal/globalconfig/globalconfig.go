@@ -24,6 +24,10 @@ type config struct {
 	analyticsRate float64
 	serviceName   string
 	runtimeID     string
+
+	// specifies the range of HTTP client/server status codes considered as errors.
+	httpClientCodes []int
+	httpServerCodes []int
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -61,4 +65,32 @@ func RuntimeID() string {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 	return cfg.runtimeID
+}
+
+// HTTPClientCodes returns the http client codes identified as errors.
+func HTTPClientCodes() []int {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	return cfg.httpClientCodes
+}
+
+// SetHTTPClientCodes sets the http client codes identified as errors.
+func SetHTTPClientCodes(codes []int) {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	cfg.httpClientCodes = codes
+}
+
+// HTTPServerCodes returns the http server codes identified as errors.
+func HTTPServerCodes() []int {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	return cfg.httpServerCodes
+}
+
+// SetHTTPServerCodes sets the http server codes identified as errors.
+func SetHTTPServerCodes(codes []int) {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	cfg.httpServerCodes = codes
 }

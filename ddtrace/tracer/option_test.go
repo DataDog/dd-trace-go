@@ -163,23 +163,6 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.False(ok)
 		assert.Equal(nil, dVal)
 	})
-
-	t.Run("env-http-status-codes", func(t *testing.T) {
-		os.Setenv("DD_HTTP_CLIENT_ERROR_STATUSES", "400-403,405-410")
-		os.Setenv("DD_HTTP_SERVER_ERROR_STATUSES", "500,501,503")
-		defer os.Unsetenv("DD_HTTP_CLIENT_ERROR_STATUSES")
-		defer os.Unsetenv("DD_HTTP_SERVER_ERROR_STATUSES")
-
-		assert := assert.New(t)
-		c := newConfig()
-		err := errors.New("test error")
-		span := newBasicSpan("web.request")
-		span.Finish(WithError(err), NoDebugStack())
-
-		assert.Equal([]int{400, 401, 402, 403, 405, 406, 407, 408, 409, 410}, c.httpClientCodes)
-		assert.Equal([]int{500, 501, 503}, c.httpServerCodes)
-		assert.Equal(int32(1), span.Error)
-	})
 }
 
 func TestServiceName(t *testing.T) {
@@ -265,6 +248,40 @@ func TestServiceName(t *testing.T) {
 		assert.Equal(c.serviceName, "testService4")
 		assert.Equal("testService4", globalconfig.ServiceName())
 	})
+}
+
+func TestHTTPStatusCodes(t *testing.T) {
+	assert := assert.New(t)
+
+	for _, codes := range []struct {
+		clientIn  string
+		serverIn  string
+		clientOut []int
+		serverOut []int
+	}{
+		{
+			clientIn:  "400-403,405-410",
+			serverIn:  "500,501,503",
+			clientOut: []int{400, 401, 402, 403, 405, 406, 407, 408, 409, 410},
+			serverOut: []int{500, 501, 503},
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			os.Setenv("DD_HTTP_CLIENT_ERROR_STATUSES", codes.clientIn)
+			os.Setenv("DD_HTTP_SERVER_ERROR_STATUSES", codes.serverIn)
+			defer os.Unsetenv("DD_HTTP_CLIENT_ERROR_STATUSES")
+			defer os.Unsetenv("DD_HTTP_SERVER_ERROR_STATUSES")
+
+			err := errors.New("test error")
+			span := newBasicSpan("web.request")
+			span.Finish(WithError(err), NoDebugStack())
+			newConfig()
+
+			assert.Equal(codes.clientOut, globalconfig.HTTPClientCodes())
+			assert.Equal(codes.serverOut, globalconfig.HTTPServerCodes())
+			assert.Equal(int32(1), span.Error)
+		})
+	}
 }
 
 func TestTagSeparators(t *testing.T) {

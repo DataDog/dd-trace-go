@@ -19,14 +19,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/datadog-go/statsd"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
-
-	"github.com/DataDog/datadog-go/statsd"
 )
 
 // config holds the tracer configuration.
@@ -60,12 +59,6 @@ type config struct {
 	// globalTags holds a set of tags that will be automatically applied to
 	// all spans.
 	globalTags map[string]interface{}
-
-	// httpClientCodes specifies the range of HTTP client status codes considered as errors.
-	httpClientCodes []int
-
-	// httpServerCodes specifies the range of HTTP server status codes considered as errors.
-	httpServerCodes []int
 
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
@@ -173,18 +166,10 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	if v := os.Getenv("DD_HTTP_CLIENT_ERROR_STATUSES"); v != "" {
-		if strings.TrimSpace(v) == "" {
-			c.httpClientCodes = parseHTTPCodeRanges("400-499")
-		} else {
-			c.httpClientCodes = parseHTTPCodeRanges(v)
-		}
+		WithHTTPClientErrorStatuses(v)
 	}
 	if v := os.Getenv("DD_HTTP_SERVER_ERROR_STATUSES"); v != "" {
-		if strings.TrimSpace(v) == "" {
-			c.httpServerCodes = parseHTTPCodeRanges("500-599")
-		} else {
-			c.httpServerCodes = parseHTTPCodeRanges(v)
-		}
+		WithHTTPServerErrorStatuses(v)
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
@@ -466,6 +451,28 @@ func WithHostname(name string) StartOption {
 	}
 }
 
+// WithHTTPClientErrorStatuses specifies the range of HTTP client status codes that are marked as errors.
+func WithHTTPClientErrorStatuses(codes string) StartOption {
+	return func(_ *config) {
+		if strings.TrimSpace(codes) == "" {
+			globalconfig.SetHTTPClientCodes(parseHTTPCodeRanges("400-499"))
+		} else {
+			globalconfig.SetHTTPClientCodes(parseHTTPCodeRanges(codes))
+		}
+	}
+}
+
+// WithHTTPServerErrorStatuses specifies the range of HTTP server status codes that are marked as errors.
+func WithHTTPServerErrorStatuses(codes string) StartOption {
+	return func(_ *config) {
+		if strings.TrimSpace(codes) == "" {
+			globalconfig.SetHTTPServerCodes(parseHTTPCodeRanges("500-599"))
+		} else {
+			globalconfig.SetHTTPServerCodes(parseHTTPCodeRanges(codes))
+		}
+	}
+}
+
 // StartSpanOption is a configuration option for StartSpan. It is aliased in order
 // to help godoc group all the functions returning it together. It is considered
 // more correct to refer to it as the type as the origin, ddtrace.StartSpanOption.
@@ -580,23 +587,23 @@ func StackFrames(n, skip uint) FinishOption {
 	}
 }
 
-// parseHTTPCodeRanges parses HTTP codes range pairs and invalidates invalid formats.
+// parseHTTPCodeRanges parses range pairs and returns a valid slice of HTTP status codes.
 func parseHTTPCodeRanges(r string) []int {
+	re := regexp.MustCompile(`\\d{3}(?:-\\d{3})*(?:,\\d{3}(?:-\\d{3})*)*`)
 	codes := []int{}
 	for _, code := range strings.Split(r, ",") {
 		code = strings.TrimSpace(code)
 		if code == "" {
 			continue
 		}
-		valid, _ := regexp.MatchString("\\d{3}(?:-\\d{3})*(?:,\\d{3}(?:-\\d{3})*)*", code)
-		if !valid {
+		if !re.MatchString(code) {
 			log.Warn("Invalid range for %v", code)
 			continue
 		}
 		rg := strings.Split(code, "-")
 		if len(rg) == 1 {
 			val, _ := strconv.Atoi(rg[0])
-			codes = insertCode(codes, val)
+			codes = appendOrdered(codes, val)
 		} else {
 			if rg[0] > rg[1] {
 				rg[0], rg[1] = rg[1], rg[0]
@@ -604,18 +611,19 @@ func parseHTTPCodeRanges(r string) []int {
 			min, _ := strconv.Atoi(rg[0])
 			max, _ := strconv.Atoi(rg[1])
 			for i := min; i <= max; i++ {
-				codes = insertCode(codes, i)
+				codes = appendOrdered(codes, i)
 			}
 		}
 	}
 	return codes
 }
 
-// insertCode inserts the HTTP code to the list of codes in numerical order and ensures no duplicates.
-func insertCode(codes []int, c int) []int {
-	i := sort.SearchInts(codes, c)
-	codes = append(codes, 0)
-	copy(codes[i+1:], codes[i:])
-	codes[i] = c
-	return codes
+// appendOrdered appends n to the slice s at the necessary index such that the resulting slice is kept ordered.
+func appendOrdered(s []int, n int) []int {
+	sort.Ints(s)
+	i := sort.SearchInts(s, n)
+	s = append(s, 0)
+	copy(s[i+1:], s[i:])
+	s[i] = n
+	return s
 }
