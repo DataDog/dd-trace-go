@@ -207,7 +207,7 @@ func TestErrorHandling(t *testing.T) {
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
-	assert.Equal("500", span.Tag(ext.HTTPCode))
+	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
 }
 
