@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-pg/pg/v10"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestImplementsHook(t *testing.T) {
@@ -45,6 +46,7 @@ func TestSelect(t *testing.T) {
 	parentSpan.Finish()
 	spans := mt.FinishedSpans()
 
+	require.NoError(t, err)
 	assert.Equal(1, res.RowsAffected())
 	assert.Equal(1, res.RowsReturned())
 	assert.Equal(2, len(spans))

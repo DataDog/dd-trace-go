@@ -22,6 +22,8 @@ type routerConfig struct {
 	analyticsRate float64
 	resourceNamer func(*Router, *http.Request) string
 	ignoreRequest func(*http.Request) bool
+	headerTags    bool
+	queryParams   bool
 }
 
 // RouterOption represents an option that can be passed to NewRouter.
@@ -101,5 +103,24 @@ func WithAnalyticsRate(rate float64) RouterOption {
 func WithResourceNamer(namer func(router *Router, req *http.Request) string) RouterOption {
 	return func(cfg *routerConfig) {
 		cfg.resourceNamer = namer
+	}
+}
+
+// WithHeaderTags specifies that the integration should attach HTTP request headers as
+// tags to spans.
+// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// to Datadog.
+func WithHeaderTags() RouterOption {
+	return func(cfg *routerConfig) {
+		cfg.headerTags = true
+	}
+}
+
+// WithQueryParams specifies that the integration should attach request query parameters as APM tags.
+// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// to Datadog.
+func WithQueryParams() RouterOption {
+	return func(cfg *routerConfig) {
+		cfg.queryParams = true
 	}
 }

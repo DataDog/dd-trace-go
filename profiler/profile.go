@@ -327,7 +327,7 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
 			p.Location = append(p.Location, location)
 			locationID++
 
-			sample.Location = append([]*pprofile.Location{location}, sample.Location...)
+			sample.Location = append(sample.Location, location)
 		}
 
 		p.Sample = append(p.Sample, sample)
