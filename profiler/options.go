@@ -74,7 +74,8 @@ var defaultClient = &http.Client{
 var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
 
 type config struct {
-	apiKey string
+	apiKey              string
+	useDeprecatedAPIKey bool
 	// targetURL is the upload destination URL. It will be set by the profiler on start to either apiURL or agentURL
 	// based on the other options.
 	targetURL     string
@@ -197,12 +198,25 @@ func WithAgentAddr(hostport string) Option {
 	}
 }
 
-// WithAPIKey is deprecated and might be removed in future versions of this
-// package. It allows to skip the agent and talk to the Datadog API directly
-// using the provided API key.
+// WithAPIKey is deprecated and will be ignored unless you also use the
+// WithDeprecatedAPIKey() option which has more information on the deprecation.
 func WithAPIKey(key string) Option {
 	return func(cfg *config) {
 		cfg.apiKey = key
+	}
+}
+
+// WithDeprecatedAPIKey exists to enable the deprecated agentless upload mode.
+// It is an error to use the WithAPIKey option or set the DD_API_KEY variable
+// without enabling this option. If this is detected, the profiler will print a
+// warning to the log and use agent based uploading instead. You should not use
+// WithDeprecatedAPIKey() as the backend will start to reject profiles uploaded
+// in agentless mode in the near future. Please contact us if you find yourself
+// in a situation where you can't use agent based uploading for some reason.
+// https://www.datadoghq.com/support/
+func WithDeprecatedAPIKey() Option {
+	return func(cfg *config) {
+		cfg.useDeprecatedAPIKey = true
 	}
 }
 
