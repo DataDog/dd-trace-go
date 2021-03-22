@@ -111,7 +111,11 @@ to run the integration test locally:
 */
 
 func TestConsumerFunctional(t *testing.T) {
-	tests := []struct {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	}
+
+	for _, tt := range []struct {
 		name   string
 		action func(c *Consumer) (*kafka.Message, error)
 	}{
@@ -132,13 +136,8 @@ func TestConsumerFunctional(t *testing.T) {
 				return c.ReadMessage(3000 * time.Millisecond)
 			},
 		},
-	}
-	for _, tt := range tests {
+	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-				t.Skip("to enable integration test, set the INTEGRATION environment variable")
-			}
-
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
