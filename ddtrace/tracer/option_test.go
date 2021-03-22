@@ -250,20 +250,20 @@ func TestServiceName(t *testing.T) {
 	})
 }
 
-func TestHTTPStatusCodes(t *testing.T) {
+func TestHTTPStatusCodesParsing(t *testing.T) {
 	assert := assert.New(t)
 
 	for _, codes := range []struct {
 		clientIn  string
 		serverIn  string
-		clientOut []int
-		serverOut []int
+		clientOut string
+		serverOut string
 	}{
 		{
 			clientIn:  "400-403,405-410",
 			serverIn:  "500,501,503",
-			clientOut: []int{400, 401, 402, 403, 405, 406, 407, 408, 409, 410},
-			serverOut: []int{500, 501, 503},
+			clientOut: "{400, 401, 402, 403, 405, 406, 407, 408, 409, 410}",
+			serverOut: "{500, 501, 503}",
 		},
 	} {
 		t.Run("", func(t *testing.T) {
@@ -277,8 +277,8 @@ func TestHTTPStatusCodes(t *testing.T) {
 			span.Finish(WithError(err), NoDebugStack())
 			newConfig()
 
-			assert.Equal(codes.clientOut, globalconfig.HTTPClientCodes())
-			assert.Equal(codes.serverOut, globalconfig.HTTPServerCodes())
+			assert.Equal(codes.clientOut, globalconfig.HTTPClientCodes().String())
+			assert.Equal(codes.serverOut, globalconfig.HTTPServerCodes().String())
 			assert.Equal(int32(1), span.Error)
 		})
 	}

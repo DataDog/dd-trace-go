@@ -9,14 +9,22 @@ package globalconfig
 
 import (
 	"math"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/bitset"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/google/uuid"
 )
 
 var cfg = &config{
-	analyticsRate: math.NaN(),
-	runtimeID:     uuid.New().String(),
+	analyticsRate:   math.NaN(),
+	runtimeID:       uuid.New().String(),
+	httpClientCodes: parseHTTPCodeRanges("400-499"),
+	httpServerCodes: parseHTTPCodeRanges("500-599"),
 }
 
 type config struct {
@@ -26,8 +34,8 @@ type config struct {
 	runtimeID     string
 
 	// specifies the range of HTTP client/server status codes considered as errors.
-	httpClientCodes []int
-	httpServerCodes []int
+	httpClientCodes *bitset.BitSet
+	httpServerCodes *bitset.BitSet
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -68,29 +76,76 @@ func RuntimeID() string {
 }
 
 // HTTPClientCodes returns the http client codes identified as errors.
-func HTTPClientCodes() []int {
+func HTTPClientCodes() *bitset.BitSet {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 	return cfg.httpClientCodes
 }
 
 // SetHTTPClientCodes sets the http client codes identified as errors.
-func SetHTTPClientCodes(codes []int) {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
-	cfg.httpClientCodes = codes
+func SetHTTPClientCodes(codes string) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+	cfg.httpClientCodes = parseHTTPCodeRanges(codes)
 }
 
 // HTTPServerCodes returns the http server codes identified as errors.
-func HTTPServerCodes() []int {
+func HTTPServerCodes() *bitset.BitSet {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 	return cfg.httpServerCodes
 }
 
 // SetHTTPServerCodes sets the http server codes identified as errors.
-func SetHTTPServerCodes(codes []int) {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
-	cfg.httpServerCodes = codes
+func SetHTTPServerCodes(codes string) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+	cfg.httpServerCodes = parseHTTPCodeRanges(codes)
+}
+
+// IsHTTPClientError checks if the bitset of HTTP client codes contains a given HTTP client error code.
+func IsHTTPClientError(c int) bool {
+	return HTTPClientCodes().Contains(uint(c))
+}
+
+// IsHTTPServerError checks if the bitset of HTTP server codes contains a given HTTP server error code.
+func IsHTTPServerError(c int) bool {
+	return HTTPServerCodes().Contains(uint(c))
+}
+
+// parseHTTPCodeRanges parses range pairs and returns a bitset mapping of HTTP status codes.
+func parseHTTPCodeRanges(r string) *bitset.BitSet {
+	re := regexp.MustCompile("\\d{3}(?:-\\d{3})*(?:,\\d{3}(?:-\\d{3})*)*")
+	codes := bitset.New(0)
+	for _, code := range strings.Split(r, ",") {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			continue
+		}
+		if !re.MatchString(code) {
+			log.Warn("Invalid range for %v", code)
+			continue
+		}
+		rg := strings.Split(code, "-")
+		if len(rg) == 1 {
+			val, _ := strconv.Atoi(rg[0])
+			codes.Add(uint(val))
+		} else {
+			if rg[0] > rg[1] {
+				rg[0], rg[1] = rg[1], rg[0]
+			}
+			min, err := strconv.Atoi(rg[0])
+			if err != nil {
+				log.Warn("Invalid input.")
+			}
+			max, err := strconv.Atoi(rg[1])
+			if err != nil {
+				log.Warn("Invalid input.")
+			}
+			for i := min; i <= max; i++ {
+				codes.Add(uint(i))
+			}
+		}
+	}
+	return codes
 }
