@@ -6,6 +6,7 @@
 package kafka
 
 import (
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -109,148 +110,101 @@ to run the integration test locally:
         confluentinc/cp-kafka:5.0.0
 */
 
-func TestConsumerPoll(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("to enable integration test, set the INTEGRATION environment variable")
-	}
-
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	// first write a message to the topic
-
-	p, err := NewProducer(&kafka.ConfigMap{
-		"group.id":            testGroupID,
-		"bootstrap.servers":   "127.0.0.1:9092",
-		"go.delivery.reports": true,
-	}, WithAnalyticsRate(0.1))
-	assert.NoError(t, err)
-	delivery := make(chan kafka.Event, 1)
-	err = p.Produce(&kafka.Message{
-		TopicPartition: kafka.TopicPartition{
-			Topic:     &testTopic,
-			Partition: 0,
+func TestConsumerFunctional(t *testing.T) {
+	tests := []struct {
+		name   string
+		action func(c *Consumer) (*kafka.Message, error)
+	}{
+		{
+			name: "Poll",
+			action: func(c *Consumer) (*kafka.Message, error) {
+				switch e := c.Poll(3000).(type) {
+				case *kafka.Message:
+					return e, nil
+				default:
+					return nil, errors.New("some error")
+				}
+			},
 		},
-		Key:   []byte("key2"),
-		Value: []byte("value2"),
-	}, delivery)
-	assert.NoError(t, err)
-	msg1, _ := (<-delivery).(*kafka.Message)
-	p.Close()
-
-	// next attempt to consume the message
-
-	c, err := NewConsumer(&kafka.ConfigMap{
-		"group.id":                 testGroupID,
-		"bootstrap.servers":        "127.0.0.1:9092",
-		"socket.timeout.ms":        1000,
-		"session.timeout.ms":       1000,
-		"enable.auto.offset.store": false,
-	})
-	assert.NoError(t, err)
-
-	err = c.Assign([]kafka.TopicPartition{
-		{Topic: &testTopic, Partition: 0, Offset: msg1.TopicPartition.Offset},
-	})
-	assert.NoError(t, err)
-
-	msg2, _ := c.Poll(3000).(*kafka.Message)
-	assert.Equal(t, msg1.String(), msg2.String())
-
-	c.Close()
-
-	// now verify the spans
-	spans := mt.FinishedSpans()
-	assert.Len(t, spans, 2)
-	// they should be linked via headers
-	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
-
-	s0 := spans[0] // produce
-	assert.Equal(t, "kafka.produce", s0.OperationName())
-	assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))
-	assert.Equal(t, "Produce Topic gotest", s0.Tag(ext.ResourceName))
-	assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
-	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
-	assert.Equal(t, int32(0), s0.Tag("partition"))
-
-	s1 := spans[1] // consume
-	assert.Equal(t, "kafka.consume", s1.OperationName())
-	assert.Equal(t, "kafka", s1.Tag(ext.ServiceName))
-	assert.Equal(t, "Consume Topic gotest", s1.Tag(ext.ResourceName))
-	assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
-	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
-	assert.Equal(t, int32(0), s1.Tag("partition"))
-}
-
-func TestConsumerReadMessage(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("to enable integration test, set the INTEGRATION environment variable")
-	}
-
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	// first write a message to the topic
-
-	p, err := NewProducer(&kafka.ConfigMap{
-		"group.id":            testGroupID,
-		"bootstrap.servers":   "127.0.0.1:9092",
-		"go.delivery.reports": true,
-	}, WithAnalyticsRate(0.1))
-	assert.NoError(t, err)
-	delivery := make(chan kafka.Event, 1)
-	err = p.Produce(&kafka.Message{
-		TopicPartition: kafka.TopicPartition{
-			Topic:     &testTopic,
-			Partition: 0,
+		{
+			name: "ReadMessage",
+			action: func(c *Consumer) (*kafka.Message, error) {
+				return c.ReadMessage(3000 * time.Millisecond)
+			},
 		},
-		Key:   []byte("key2"),
-		Value: []byte("value2"),
-	}, delivery)
-	assert.NoError(t, err)
-	msg1, _ := (<-delivery).(*kafka.Message)
-	p.Close()
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+				t.Skip("to enable integration test, set the INTEGRATION environment variable")
+			}
 
-	// next attempt to consume the message
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-	c, err := NewConsumer(&kafka.ConfigMap{
-		"group.id":                 testGroupID,
-		"bootstrap.servers":        "127.0.0.1:9092",
-		"socket.timeout.ms":        1000,
-		"session.timeout.ms":       1000,
-		"enable.auto.offset.store": false,
-	})
-	assert.NoError(t, err)
+			// first write a message to the topic
 
-	err = c.Assign([]kafka.TopicPartition{
-		{Topic: &testTopic, Partition: 0, Offset: msg1.TopicPartition.Offset},
-	})
-	assert.NoError(t, err)
+			p, err := NewProducer(&kafka.ConfigMap{
+				"group.id":            testGroupID,
+				"bootstrap.servers":   "127.0.0.1:9092",
+				"go.delivery.reports": true,
+			}, WithAnalyticsRate(0.1))
+			assert.NoError(t, err)
+			delivery := make(chan kafka.Event, 1)
+			err = p.Produce(&kafka.Message{
+				TopicPartition: kafka.TopicPartition{
+					Topic:     &testTopic,
+					Partition: 0,
+				},
+				Key:   []byte("key2"),
+				Value: []byte("value2"),
+			}, delivery)
+			assert.NoError(t, err)
+			msg1, _ := (<-delivery).(*kafka.Message)
+			p.Close()
 
-	msg2, _ := c.ReadMessage(3000 * time.Millisecond)
-	assert.Equal(t, msg1.String(), msg2.String())
+			// next attempt to consume the message
 
-	c.Close()
+			c, err := NewConsumer(&kafka.ConfigMap{
+				"group.id":                 testGroupID,
+				"bootstrap.servers":        "127.0.0.1:9092",
+				"socket.timeout.ms":        1000,
+				"session.timeout.ms":       1000,
+				"enable.auto.offset.store": false,
+			})
+			assert.NoError(t, err)
 
-	// now verify the spans
-	spans := mt.FinishedSpans()
-	assert.Len(t, spans, 2)
-	// they should be linked via headers
-	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
+			err = c.Assign([]kafka.TopicPartition{
+				{Topic: &testTopic, Partition: 0, Offset: msg1.TopicPartition.Offset},
+			})
+			assert.NoError(t, err)
 
-	s0 := spans[0] // produce
-	assert.Equal(t, "kafka.produce", s0.OperationName())
-	assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))
-	assert.Equal(t, "Produce Topic gotest", s0.Tag(ext.ResourceName))
-	assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
-	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
-	assert.Equal(t, int32(0), s0.Tag("partition"))
+			msg2, err := tt.action(c)
+			assert.NoError(t, err)
+			assert.Equal(t, msg1.String(), msg2.String())
+			c.Close()
 
-	s1 := spans[1] // consume
-	assert.Equal(t, "kafka.consume", s1.OperationName())
-	assert.Equal(t, "kafka", s1.Tag(ext.ServiceName))
-	assert.Equal(t, "Consume Topic gotest", s1.Tag(ext.ResourceName))
-	assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
-	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
-	assert.Equal(t, int32(0), s1.Tag("partition"))
+			// now verify the spans
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, 2)
+			// they should be linked via headers
+			assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
+
+			s0 := spans[0] // produce
+			assert.Equal(t, "kafka.produce", s0.OperationName())
+			assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))
+			assert.Equal(t, "Produce Topic gotest", s0.Tag(ext.ResourceName))
+			assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
+			assert.Equal(t, "queue", s0.Tag(ext.SpanType))
+			assert.Equal(t, int32(0), s0.Tag("partition"))
+
+			s1 := spans[1] // consume
+			assert.Equal(t, "kafka.consume", s1.OperationName())
+			assert.Equal(t, "kafka", s1.Tag(ext.ServiceName))
+			assert.Equal(t, "Consume Topic gotest", s1.Tag(ext.ResourceName))
+			assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
+			assert.Equal(t, "queue", s1.Tag(ext.SpanType))
+			assert.Equal(t, int32(0), s1.Tag("partition"))
+		})
+	}
 }
