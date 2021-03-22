@@ -154,6 +154,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		writer = newAgentTraceWriter(c, sampler)
 	}
 	appTags := map[string]interface{}{
+		"_dd.poc.language":        "go",
 		"_dd.poc.go.goroot":       runtime.GOROOT(),
 		"_dd.poc.runtime.version": runtime.Version(),
 	}
