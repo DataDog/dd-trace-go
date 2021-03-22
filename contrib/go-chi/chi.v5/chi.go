@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package chi provides tracing functions for tracing the go-chi/chi package (https://github.com/go-chi/chi).
+// Package chi provides tracing functions for tracing the go-chi/chi/v5 package (https://github.com/go-chi/chi).
 package chi // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi.v5"
 
 import (
