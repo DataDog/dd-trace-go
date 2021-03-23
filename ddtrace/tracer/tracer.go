@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	rootinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -151,6 +153,20 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	} else {
 		writer = newAgentTraceWriter(c, sampler)
 	}
+	appTags := map[string]interface{}{
+		"_dd.poc.language":        "go",
+		"_dd.poc.go.goroot":       runtime.GOROOT(),
+		"_dd.poc.runtime.version": runtime.Version(),
+	}
+	if repoURL := rootinternal.GitRepositoryURL(); repoURL != "" {
+		appTags["_dd.poc.git.repository.url"] = repoURL
+	}
+	if repoBuildPath := rootinternal.GitRepositoryBuildPath(); repoBuildPath != "" {
+		appTags["_dd.poc.git.repository.build_path"] = repoBuildPath
+	}
+	if commitSha := rootinternal.GitCommitSha(); commitSha != "" {
+		appTags["_dd.poc.git.commit.sha"] = commitSha
+	}
 	return &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -159,7 +175,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampling:    newRulesSampler(c.samplingRules),
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
-		appTags:          map[string]interface{}{},
+		appTags:          appTags,
 	}
 }
 
@@ -299,6 +315,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// set app tags on the root span
 		span.setMeta(keyMetadataSpan, "true")
 		for k, v := range t.appTags {
+			// TODO(jb.pinalie) We should not override user defined tags with app tags.
 			span.SetTag(k, v)
 		}
 		if _, ok := opts.Tags[ext.ServiceName]; !ok && t.config.runtimeMetrics {
