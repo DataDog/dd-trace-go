@@ -68,12 +68,7 @@ jobs:
       - checkout
       - run:
           name: Testing
-          command: go test -v -race -coverprofile=coverage.txt -covermode=atomic `go list ./... | grep -v /contrib/`
-
-      - run:
-          name: Upload coverage report to Codecov
-          command: bash <(curl -s https://codecov.io/bash)
-
+          command: go test -v -race `go list ./... | grep -v /contrib/`
 
   test-contrib:
     resource_class: xlarge
