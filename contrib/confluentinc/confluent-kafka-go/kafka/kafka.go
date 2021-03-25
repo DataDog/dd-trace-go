@@ -8,6 +8,7 @@ package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/co
 
 import (
 	"math"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -131,7 +132,7 @@ func (c *Consumer) Events() chan kafka.Event {
 	return c.events
 }
 
-// Poll polls the consumer for messages or events. Message events will be
+// Poll polls the consumer for messages or events. Message will be
 // traced.
 func (c *Consumer) Poll(timeoutMS int) (event kafka.Event) {
 	if c.prev != nil {
@@ -143,6 +144,20 @@ func (c *Consumer) Poll(timeoutMS int) (event kafka.Event) {
 		c.prev = c.startSpan(msg)
 	}
 	return evt
+}
+
+// ReadMessage polls the consumer for a message. Message will be traced.
+func (c *Consumer) ReadMessage(timeout time.Duration) (*kafka.Message, error) {
+	if c.prev != nil {
+		c.prev.Finish()
+		c.prev = nil
+	}
+	msg, err := c.Consumer.ReadMessage(timeout)
+	if err != nil {
+		return nil, err
+	}
+	c.prev = c.startSpan(msg)
+	return msg, nil
 }
 
 // A Producer wraps a kafka.Producer.
