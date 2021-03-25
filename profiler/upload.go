@@ -70,12 +70,9 @@ func (p *profiler) doRequest(bat batch) error {
 	if err != nil {
 		return err
 	}
-	ctx := context.Background()
-	if p.cfg.uploadTimeout != 0 {
-		var cancel func()
-		ctx, cancel = context.WithTimeout(context.Background(), p.cfg.uploadTimeout)
-		defer cancel()
-	}
+	// uploadTimeout is guaranteed to be >= 0, see newProfiler.
+	ctx, cancel := context.WithTimeout(context.Background(), p.cfg.uploadTimeout)
+	defer cancel()
 	// TODO(fg) use NewRequestWithContext once go 1.12 support is dropped.
 	req, err := http.NewRequest("POST", p.cfg.targetURL, body)
 	if err != nil {

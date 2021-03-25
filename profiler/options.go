@@ -316,7 +316,8 @@ func WithStatsd(client StatsdClient) Option {
 
 // WithUploadTimeout specifies the timeout to use for uploading profiles. The
 // default timeout is specified by DefaultUploadTimeout or the
-// DD_PROFILING_UPLOAD_TIMEOUT env variable.
+// DD_PROFILING_UPLOAD_TIMEOUT env variable. Using a negative value or 0 will
+// cause an error when starting the profiler.
 func WithUploadTimeout(d time.Duration) Option {
 	return func(cfg *config) {
 		cfg.uploadTimeout = d
