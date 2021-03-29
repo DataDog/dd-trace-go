@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/opentracing/opentracing-go"
-	
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -35,7 +35,9 @@ func TestSpanWithContext(t *testing.T) {
 	assert.True(ok)
 	ott, ok := ot.(*opentracer)
 	assert.True(ok)
-	openTracingSpan := ott.StartSpan("test.operation")
+
+	opentracing.SetGlobalTracer(ott)
+	openTracingSpan := opentracing.StartSpan("test.operation")
 	otWithExt, ok := ot.(opentracing.TracerContextWithSpanExtension)
 	assert.True(ok)
 	ctx := otWithExt.ContextWithSpanHook(context.Background(), openTracingSpan)
