@@ -7,12 +7,13 @@ package opentracer
 
 import (
 	"context"
-	"github.com/opentracing/opentracing-go"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"testing"
 
+	"github.com/opentracing/opentracing-go"
+	
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
 )
