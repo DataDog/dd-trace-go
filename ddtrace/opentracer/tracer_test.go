@@ -36,11 +36,9 @@ func TestSpanWithContext(t *testing.T) {
 	ott, ok := ot.(*opentracer)
 	assert.True(ok)
 
+	// start span
 	opentracing.SetGlobalTracer(ott)
-	openTracingSpan := opentracing.StartSpan("test.operation")
-	otWithExt, ok := ot.(opentracing.TracerContextWithSpanExtension)
-	assert.True(ok)
-	ctx := otWithExt.ContextWithSpanHook(context.Background(), openTracingSpan)
+	openTracingSpan, ctx := opentracing.StartSpanFromContext(context.Background(), "test.operation")
 
 	// check that the span was added to the tracer context
 	spanInContext, ok := tracer.SpanFromContext(ctx)
