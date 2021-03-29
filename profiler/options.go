@@ -42,14 +42,18 @@ const (
 
 	// DefaultDuration specifies the default length of the CPU profile snapshot.
 	DefaultDuration = time.Second * 15
+
+	// DefaultUploadTimeout specifies the default timeout for uploading profiles.
+	// It can be overwritten using the DD_PROFILING_UPLOAD_TIMEOUT env variable
+	// or the WithUploadTimeout option.
+	DefaultUploadTimeout = 10 * time.Second
 )
 
 const (
-	defaultAPIURL      = "https://intake.profile.datadoghq.com/v1/input"
-	defaultAgentHost   = "localhost"
-	defaultAgentPort   = "8126"
-	defaultEnv         = "none"
-	defaultHTTPTimeout = 10 * time.Second // defines the current timeout before giving up with the send process
+	defaultAPIURL    = "https://intake.profile.datadoghq.com/v1/input"
+	defaultAgentHost = "localhost"
+	defaultAgentPort = "8126"
+	defaultEnv       = "none"
 )
 
 var defaultClient = &http.Client{
@@ -68,7 +72,6 @@ var defaultClient = &http.Client{
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	},
-	Timeout: defaultHTTPTimeout,
 }
 
 var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
@@ -88,6 +91,7 @@ type config struct {
 	types         map[ProfileType]struct{}
 	period        time.Duration
 	cpuDuration   time.Duration
+	uploadTimeout time.Duration
 	mutexFraction int
 	blockRate     int
 }
@@ -118,7 +122,7 @@ func (c *config) addProfileType(t ProfileType) {
 	c.types[t] = struct{}{}
 }
 
-func defaultConfig() *config {
+func defaultConfig() (*config, error) {
 	c := config{
 		env:           defaultEnv,
 		apiURL:        defaultAPIURL,
@@ -129,6 +133,7 @@ func defaultConfig() *config {
 		cpuDuration:   DefaultDuration,
 		blockRate:     DefaultBlockRate,
 		mutexFraction: DefaultMutexFraction,
+		uploadTimeout: DefaultUploadTimeout,
 		tags:          []string{fmt.Sprintf("pid:%d", os.Getpid())},
 	}
 	for _, t := range defaultProfileTypes {
@@ -143,6 +148,13 @@ func defaultConfig() *config {
 		agentPort = v
 	}
 	WithAgentAddr(net.JoinHostPort(agentHost, agentPort))(&c)
+	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err)
+		}
+		WithUploadTimeout(d)(&c)
+	}
 	if v := os.Getenv("DD_API_KEY"); v != "" {
 		WithAPIKey(v)(&c)
 	}
@@ -184,7 +196,7 @@ func defaultConfig() *config {
 	if v := os.Getenv("DD_PROFILING_URL"); v != "" {
 		WithURL(v)(&c)
 	}
-	return &c
+	return &c, nil
 }
 
 // An Option is used to configure the profiler's behaviour.
@@ -302,6 +314,16 @@ func WithStatsd(client StatsdClient) Option {
 	}
 }
 
+// WithUploadTimeout specifies the timeout to use for uploading profiles. The
+// default timeout is specified by DefaultUploadTimeout or the
+// DD_PROFILING_UPLOAD_TIMEOUT env variable. Using a negative value or 0 will
+// cause an error when starting the profiler.
+func WithUploadTimeout(d time.Duration) Option {
+	return func(cfg *config) {
+		cfg.uploadTimeout = d
+	}
+}
+
 // WithSite specifies the datadog site (datadoghq.com, datadoghq.eu, etc.)
 // which profiles will be sent to.
 func WithSite(site string) Option {
@@ -332,6 +354,5 @@ func WithUDS(socketPath string) Option {
 				return net.Dial("unix", socketPath)
 			},
 		},
-		Timeout: defaultHTTPTimeout,
 	})
 }

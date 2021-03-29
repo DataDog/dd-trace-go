@@ -67,7 +67,10 @@ type profiler struct {
 
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
-	cfg := defaultConfig()
+	cfg, err := defaultConfig()
+	if err != nil {
+		return nil, err
+	}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -92,6 +95,17 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			log.Warn("unable to look up hostname: %v", err)
 		}
 		cfg.hostname = hostname
+	}
+	// uploadTimeout defaults to DefaultUploadTimeout, but in theory a user might
+	// set it to 0 or a negative value. However, it's not clear what this should
+	// mean, and most meanings we could assign seem to be bad: Not having a
+	// timeout is dangerous, having a timeout that fires immediately breaks
+	// uploading, and silently defaulting to the default timeout is confusing.
+	// So let's just stay clear of all of this by not allowing such values.
+	//
+	// see similar discussion: https://github.com/golang/go/issues/39177
+	if cfg.uploadTimeout <= 0 {
+		return nil, fmt.Errorf("invalid upload timeout, must be > 0: %s", cfg.uploadTimeout)
 	}
 	p := profiler{
 		cfg:  cfg,
