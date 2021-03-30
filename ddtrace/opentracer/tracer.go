@@ -50,7 +50,9 @@ func (t *opentracer) StartSpan(operationName string, options ...opentracing.Star
 	}
 	opts := []ddtrace.StartSpanOption{tracer.StartTime(sso.StartTime)}
 	for _, ref := range sso.References {
-		if v, ok := ref.ReferencedContext.(ddtrace.SpanContext); ok && ref.Type == opentracing.ChildOfRef {
+		// opentracing.ChildOfRef and opentracing.FollowsFromRef will be represented as children
+		// Datadog tracing UI does not have a concept of Follows From references
+		if v, ok := ref.ReferencedContext.(ddtrace.SpanContext); ok  {
 			opts = append(opts, tracer.ChildOf(v))
 			break // can only have one parent
 		}
