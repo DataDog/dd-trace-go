@@ -166,7 +166,7 @@ func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 }
 
 // defaultStackLength specifies the default maximum size of a stack trace.
-const defaultStackLength = 20
+const defaultStackLength = 32
 
 // takeStacktrace takes a stack trace of maximum n entries, skipping the first skip entries.
 // If n is 0, up to 20 entries are retrieved.
