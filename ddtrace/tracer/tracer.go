@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -188,6 +189,10 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	return t
+}
+
+func (t *tracer) doSomething() {
+	fmt.Println("this does something")
 }
 
 // worker receives finished traces to be added into the payload, as well
