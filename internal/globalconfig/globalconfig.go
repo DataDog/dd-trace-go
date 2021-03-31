@@ -62,3 +62,8 @@ func RuntimeID() string {
 	defer cfg.mu.RUnlock()
 	return cfg.runtimeID
 }
+
+// New creates a new slice.
+func New() []int {
+	return []int{1, 2, 3}
+}
