@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -217,6 +218,10 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			return
 		}
 	}
+}
+
+func (t *tracer) println() {
+	fmt.Println("HEY")
 }
 
 func (t *tracer) pushTrace(trace []*span) {
