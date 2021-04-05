@@ -13,7 +13,8 @@ coverage:
         flags:
           - contrib
     patch:
-      target: 100%
+      default:
+        target: 100%
 
 flags:
   core:
