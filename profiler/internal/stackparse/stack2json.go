@@ -38,3 +38,9 @@ func run() error {
 	}
 	return errs
 }
+
+func test() error {
+	for i, e := range (1,10) {
+		fmt.Printf("Hello there, this is a test: %d", i)
+	}
+}
