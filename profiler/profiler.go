@@ -160,7 +160,6 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			for t := range p.cfg.types {
 				prof, err := p.runProfile(t)
 				if err != nil {
-					fmt.Printf("error: %v\n", err)
 					log.Error("Error getting %s profile: %v; skipping.", t, err)
 					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
 					continue
