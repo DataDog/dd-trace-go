@@ -160,8 +160,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			for t := range p.cfg.types {
 				prof, err := p.runProfile(t)
 				if err != nil {
-					fmt.Printf("error: %v\n", err)
-					log.Error("Error getting %s profile: %v; skipping.\n", t, err)
+					log.Error("Error getting %s profile: %v; skipping.", t, err)
 					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
 					continue
 				}
@@ -186,7 +185,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 			select {
 			case <-p.out:
 				p.cfg.statsd.Count("datadog.profiler.go.queue_full", 1, p.cfg.tags, 1)
-				log.Warn("Evicting one profile batch from the upload queue to make room.\n")
+				log.Warn("Evicting one profile batch from the upload queue to make room.")
 			default:
 				// this case should be almost impossible to trigger, it would require a
 				// full p.out to completely drain within nanoseconds or extreme
@@ -200,7 +199,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 func (p *profiler) send() {
 	for bat := range p.out {
 		if err := p.uploadFunc(bat); err != nil {
-			log.Error("Failed to upload profile: %v\n", err)
+			log.Error("Failed to upload profile: %v", err)
 		}
 	}
 }
