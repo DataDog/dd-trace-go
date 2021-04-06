@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -339,6 +340,10 @@ func (t *tracer) Stop() {
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return t.config.propagator.Inject(ctx, carrier)
+}
+
+func (t *tracer) test() {
+	fmt.Println("new method untested")
 }
 
 // Extract uses the configured or default TextMap Propagator.
