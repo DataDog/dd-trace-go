@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -274,4 +275,29 @@ func TestTraceAndServeHost(t *testing.T) {
 
 		assert.EqualValues(nil, span.Tag("http.host"))
 	})
+}
+
+type noopHandler struct{}
+
+func (noopHandler) ServeHTTP(_ http.ResponseWriter, _ *http.Request) {}
+
+func BenchmarkTraceAndServe(b *testing.B) {
+	handler := new(noopHandler)
+	for i := 0; i < b.N; i++ {
+		rec := httptest.NewRecorder()
+		req, err := http.NewRequest("POST", "http://localhost:8181/widgets", nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		cfg := TraceConfig{
+			ResponseWriter: rec,
+			Request:        req,
+			Service:        "service-name",
+			Resource:       "resource-name",
+			FinishOpts:     []ddtrace.FinishOption{},
+			SpanOpts:       []ddtrace.StartSpanOption{},
+			QueryParams:    false,
+		}
+		TraceAndServe(handler, &cfg)
+	}
 }
