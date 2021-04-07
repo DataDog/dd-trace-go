@@ -281,16 +281,21 @@ type noopHandler struct{}
 
 func (noopHandler) ServeHTTP(_ http.ResponseWriter, _ *http.Request) {}
 
+type noopWriter struct{}
+
+func (w noopWriter) Header() http.Header         { return nil }
+func (w noopWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (w noopWriter) WriteHeader(_ int)           {}
+
 func BenchmarkTraceAndServe(b *testing.B) {
 	handler := new(noopHandler)
+	req, err := http.NewRequest("POST", "http://localhost:8181/widgets", nil)
+	if err != nil {
+		b.Fatal(err)
+	}
 	for i := 0; i < b.N; i++ {
-		rec := httptest.NewRecorder()
-		req, err := http.NewRequest("POST", "http://localhost:8181/widgets", nil)
-		if err != nil {
-			b.Fatal(err)
-		}
 		cfg := TraceConfig{
-			ResponseWriter: rec,
+			ResponseWriter: noopWriter{},
 			Request:        req,
 			Service:        "service-name",
 			Resource:       "resource-name",
