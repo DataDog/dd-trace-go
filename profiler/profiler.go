@@ -82,6 +82,13 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		if !isAPIKeyValid(cfg.apiKey) {
 			return nil, errors.New("API key has incorrect format")
 		}
+		if cfg.agentless {
+			log.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported. You should not enable it unless somebody at Datadog instructed you to do so.")
+		} else {
+			// TODO(fg) once this has been released, make a new PR to default to agent
+			// based uploading unless agentless is explicitly configured.
+			log.Warn("The next version of this library might break your profiling integration. Please check the go documentation for profiler.WithAPIKey of the dd-trace-go version you are using for more information.")
+		}
 		cfg.targetURL = cfg.apiURL
 	} else {
 		cfg.targetURL = cfg.agentURL
