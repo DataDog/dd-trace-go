@@ -77,7 +77,8 @@ var defaultClient = &http.Client{
 var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
 
 type config struct {
-	apiKey string
+	apiKey    string
+	agentless bool
 	// targetURL is the upload destination URL. It will be set by the profiler on start to either apiURL or agentURL
 	// based on the other options.
 	targetURL     string
@@ -209,12 +210,26 @@ func WithAgentAddr(hostport string) Option {
 	}
 }
 
-// WithAPIKey is deprecated and might be removed in future versions of this
-// package. It allows to skip the agent and talk to the Datadog API directly
-// using the provided API key.
+// WithAPIKey sets a datadog API key and enables agentless uploading by
+// default. This option takes precedence over the DD_API_KEY env variable.
+// WARNING: In the next release of this library setting an API Key will no
+// longer enable agentless uploading and default to agent based uploading
+// instead. If you don't have an agent running on the default localhost:8126
+// hostport you need to set it up, or use WithAgentAddr to specify the hostport
+// you are using. See WithAgentlessUpload for more information.
 func WithAPIKey(key string) Option {
 	return func(cfg *config) {
 		cfg.apiKey = key
+	}
+}
+
+// WithAgentlessUpload is currently for internal usage only and not officially
+// supported. You should not enable it unless somebody at Datadog instructed
+// you to do so. It allows to skip the agent and talk to the Datadog API
+// directly using the provided API key.
+func WithAgentlessUpload() Option {
+	return func(cfg *config) {
+		cfg.agentless = true
 	}
 }
 
