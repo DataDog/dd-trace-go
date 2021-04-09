@@ -1,3 +1,0 @@
-goroutine 1 [running]:
-
-goroutine 2 [running]:
