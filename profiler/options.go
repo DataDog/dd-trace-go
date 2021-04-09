@@ -159,6 +159,9 @@ func defaultConfig() (*config, error) {
 	if v := os.Getenv("DD_API_KEY"); v != "" {
 		WithAPIKey(v)(&c)
 	}
+	if v := os.Getenv("DD_PROFILING_AGENTLESS"); v == "true" {
+		WithAgentlessUpload()(&c)
+	}
 	if v := os.Getenv("DD_SITE"); v != "" {
 		WithSite(v)(&c)
 	}
