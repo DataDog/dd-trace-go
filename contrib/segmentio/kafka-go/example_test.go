@@ -5,9 +5,10 @@ import (
 	"log"
 	"time"
 
-	kafka "github.com/segmentio/kafka-go"
 	kafkatrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka-go"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	kafka "github.com/segmentio/kafka-go"
 )
 
 func ExampleWriter() {

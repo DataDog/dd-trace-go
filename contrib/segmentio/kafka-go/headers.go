@@ -1,8 +1,9 @@
 package kafka
 
 import (
-	"github.com/segmentio/kafka-go"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/segmentio/kafka-go"
 )
 
 // A MessageCarrier injects and extracts traces from a sarama.ProducerMessage.

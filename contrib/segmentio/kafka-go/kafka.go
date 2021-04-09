@@ -4,11 +4,12 @@ import (
 	"context"
 	"math"
 
-	"github.com/segmentio/kafka-go"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"github.com/segmentio/kafka-go"
 )
 
 // NewReader calls kafka.NewReader and wraps the resulting Consumer.
