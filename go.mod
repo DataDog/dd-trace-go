@@ -1,4 +1,4 @@
-module gopkg.in/DataDog/dd-trace-go.v1/pd-rewards
+module github.com/shubhamguptafp/dd-trace-go
 
 go 1.12
 

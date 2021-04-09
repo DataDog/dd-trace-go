@@ -1,35 +1,62 @@
-[![CircleCI](https://circleci.com/gh/DataDog/dd-trace-go/tree/v1.svg?style=svg)](https://circleci.com/gh/DataDog/dd-trace-go/tree/v1)
-[![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace)
-[![codecov](https://codecov.io/gh/DataDog/dd-trace-go/branch/v1/graph/badge.svg?token=jGG20Xhv8i)](https://codecov.io/gh/DataDog/dd-trace-go)
+### :warning: WARNING! This branch is no longer maintained. Development is now on the [`v1` branch](https://github.com/DataDog/dd-trace-go/tree/v1). Please consider upgrading using our [migration guide](https://github.com/DataDog/dd-trace-go/blob/v1/MIGRATING.md).
 
-### Installing
+---
 
-```bash
-go get gopkg.in/DataDog/dd-trace-go.v1/...
+[![CircleCI](https://circleci.com/gh/DataDog/dd-trace-go/tree/master.svg?style=svg)](https://circleci.com/gh/DataDog/dd-trace-go/tree/master)
+[![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/github.com/DataDog/dd-trace-go/opentracing)
+
+Datadog APM client that implements an [OpenTracing](http://opentracing.io) Tracer.
+
+## Initialization
+
+To start using the Datadog Tracer with the OpenTracing API, you should first initialize the tracer with a proper `Configuration` object:
+
+```go
+import (
+	// ddtrace namespace is suggested
+	ddtrace "github.com/DataDog/dd-trace-go/opentracing"
+	opentracing "github.com/opentracing/opentracing-go"
+)
+
+func main() {
+	// create a Tracer configuration
+	config := ddtrace.NewConfiguration()
+	config.ServiceName = "api-intake"
+	config.AgentHostname = "ddagent.consul.local"
+
+	// initialize a Tracer and ensure a graceful shutdown
+	// using the `closer.Close()`
+	tracer, closer, err := ddtrace.NewTracer(config)
+	if err != nil {
+		// handle the configuration error
+	}
+	defer closer.Close()
+
+	// set the Datadog tracer as a GlobalTracer
+	opentracing.SetGlobalTracer(tracer)
+	startWebServer()
+}
 ```
 
-Requires:
+Function `NewTracer(config)` returns an `io.Closer` instance that can be used to gracefully shutdown the `tracer`. It's recommended to always call the `closer.Close()`, otherwise internal buffers are not flushed and you may lose some traces.
 
-* Go >= 1.12
-* Datadog's Trace Agent >= 5.21.1
+## Usage
 
-### Documentation
+See [Opentracing documentation](https://github.com/opentracing/opentracing-go) for some usage patterns. Legacy documentation is available in [GoDoc format](https://godoc.org/github.com/DataDog/dd-trace-go/tracer).
 
-The API is documented on [godoc](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace) as well as Datadog's [official documentation](https://docs.datadoghq.com/tracing/setup/go/). If you are migrating
-from an older version of the tracer (e.g. 0.6.x) you may also find the [migration document](https://github.com/DataDog/dd-trace-go/blob/v1/MIGRATING.md) we've put together helpful.
+## Contributing Quick Start
 
-### Contributing
+Requirements:
 
-Before considering contributions to the project, please take a moment to read our brief [contribution guidelines](https://github.com/DataDog/dd-trace-go/blob/v1/CONTRIBUTING.md).
+* Go 1.7 or later
+* Docker
 
-### Testing
+### Run the tests
 
-Tests can be run locally using the Go toolset. The grpc.v12 integration will fail (and this is normal), because it covers for deprecated methods. In the CI environment
-we vendor this version of the library inside the integration. Under normal circumstances this is not something that we want to do, because users using this integration
-might be running versions different from the vendored one, creating hard to debug conflicts.
-
-To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To get an
-idea about the versions and the set-up take a look at our [CI config](https://github.com/DataDog/dd-trace-go/blob/v1/.circleci/config.yml).
-
-The best way to run the entire test suite is using the [CircleCI CLI](https://circleci.com/docs/2.0/local-jobs/). Simply run `circleci build`
+The best way to run the tests is using the [CircleCI CLI](https://circleci.com/docs/2.0/local-jobs/). Simply run `circleci build`
 in the repository root. Note that you might have to increase the resources dedicated to Docker to around 4GB.
+
+## Further Reading
+
+Automatically traced libraries and frameworks: https://godoc.org/github.com/DataDog/dd-trace-go/tracer#pkg-subdirectories
+Sample code: https://godoc.org/github.com/DataDog/dd-trace-go/tracer#pkg-examples
