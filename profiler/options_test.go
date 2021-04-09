@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package profiler
 
@@ -15,6 +15,7 @@ import (
 
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -62,6 +63,12 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, expectedURL, cfg.agentURL)
 	})
 
+	t.Run("WithUploadTimeout", func(t *testing.T) {
+		var cfg config
+		WithUploadTimeout(5 * time.Second)(&cfg)
+		assert.Equal(t, 5*time.Second, cfg.uploadTimeout)
+	})
+
 	t.Run("WithAPIKey", func(t *testing.T) {
 		var cfg config
 		WithAPIKey(testAPIKey)(&cfg)
@@ -96,12 +103,26 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, 3*time.Second, cfg.cpuDuration)
 	})
 
+	t.Run("MutexProfileFraction", func(t *testing.T) {
+		var cfg config
+		MutexProfileFraction(1)(&cfg)
+		assert.Equal(t, 1, cfg.mutexFraction)
+		assert.Contains(t, cfg.types, MutexProfile)
+	})
+
+	t.Run("BlockProfileRate", func(t *testing.T) {
+		var cfg config
+		BlockProfileRate(1)(&cfg)
+		assert.Equal(t, 1, cfg.blockRate)
+		assert.Contains(t, cfg.types, BlockProfile)
+	})
+
 	t.Run("WithProfileTypes", func(t *testing.T) {
 		var cfg config
 		WithProfileTypes(HeapProfile)(&cfg)
 		_, ok := cfg.types[HeapProfile]
 		assert.True(t, ok)
-		assert.Len(t, cfg.types, 1)
+		assert.Len(t, cfg.types, 2)
 	})
 
 	t.Run("WithService", func(t *testing.T) {
@@ -113,7 +134,8 @@ func TestOptions(t *testing.T) {
 	t.Run("WithService/override", func(t *testing.T) {
 		os.Setenv("DD_SERVICE", "envService")
 		defer os.Unsetenv("DD_SERVICE")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		WithService("serviceName")(cfg)
 		assert.Equal(t, "serviceName", cfg.service)
 	})
@@ -127,7 +149,8 @@ func TestOptions(t *testing.T) {
 	t.Run("WithSite/override", func(t *testing.T) {
 		os.Setenv("DD_SITE", "wrong.site")
 		defer os.Unsetenv("DD_SITE")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		WithSite("datadog.eu")(cfg)
 		assert.Equal(t, "https://intake.profile.datadog.eu/v1/input", cfg.apiURL)
 	})
@@ -141,7 +164,8 @@ func TestOptions(t *testing.T) {
 	t.Run("WithEnv/override", func(t *testing.T) {
 		os.Setenv("DD_ENV", "envEnv")
 		defer os.Unsetenv("DD_ENV")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		WithEnv("envName")(cfg)
 		assert.Equal(t, "envName", cfg.env)
 	})
@@ -155,7 +179,8 @@ func TestOptions(t *testing.T) {
 	t.Run("WithVersion/override", func(t *testing.T) {
 		os.Setenv("DD_VERSION", "envVersion")
 		defer os.Unsetenv("DD_VERSION")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		WithVersion("1.2.3")(cfg)
 		assert.Contains(t, cfg.tags, "version:1.2.3")
 	})
@@ -171,7 +196,8 @@ func TestOptions(t *testing.T) {
 	t.Run("WithTags/override", func(t *testing.T) {
 		os.Setenv("DD_TAGS", "env1:tag1,env2:tag2")
 		defer os.Unsetenv("DD_TAGS")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		WithTags("a:1", "b:2", "c:3")(cfg)
 		assert.Contains(t, cfg.tags, "a:1")
 		assert.Contains(t, cfg.tags, "b:2")
@@ -185,15 +211,25 @@ func TestEnvVars(t *testing.T) {
 	t.Run("DD_AGENT_HOST", func(t *testing.T) {
 		os.Setenv("DD_AGENT_HOST", "agent_host_1")
 		defer os.Unsetenv("DD_AGENT_HOST")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		assert.Equal(t, "http://agent_host_1:8126/profiling/v1/input", cfg.agentURL)
 	})
 
 	t.Run("DD_TRACE_AGENT_PORT", func(t *testing.T) {
 		os.Setenv("DD_TRACE_AGENT_PORT", "6218")
 		defer os.Unsetenv("DD_TRACE_AGENT_PORT")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		assert.Equal(t, "http://localhost:6218/profiling/v1/input", cfg.agentURL)
+	})
+
+	t.Run("DD_PROFILING_UPLOAD_TIMEOUT", func(t *testing.T) {
+		os.Setenv("DD_PROFILING_UPLOAD_TIMEOUT", "3s")
+		defer os.Unsetenv("DD_PROFILING_UPLOAD_TIMEOUT")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		assert.Equal(t, 3*time.Second, cfg.uploadTimeout)
 	})
 
 	t.Run("DD_AGENT_HOST+DD_TRACE_AGENT_PORT", func(t *testing.T) {
@@ -201,49 +237,56 @@ func TestEnvVars(t *testing.T) {
 		defer os.Unsetenv("DD_AGENT_HOST")
 		os.Setenv("DD_TRACE_AGENT_PORT", "6218")
 		defer os.Unsetenv("DD_TRACE_AGENT_PORT")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		assert.Equal(t, "http://agent_host_1:6218/profiling/v1/input", cfg.agentURL)
 	})
 
 	t.Run("DD_API_KEY", func(t *testing.T) {
 		os.Setenv("DD_API_KEY", testAPIKey)
 		defer os.Unsetenv("DD_API_KEY")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		assert.Equal(t, testAPIKey, cfg.apiKey)
 	})
 
 	t.Run("DD_SITE", func(t *testing.T) {
 		os.Setenv("DD_SITE", "datadog.eu")
 		defer os.Unsetenv("DD_SITE")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		assert.Equal(t, "https://intake.profile.datadog.eu/v1/input", cfg.apiURL)
 	})
 
 	t.Run("DD_ENV", func(t *testing.T) {
 		os.Setenv("DD_ENV", "someEnv")
 		defer os.Unsetenv("DD_ENV")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		assert.Equal(t, "someEnv", cfg.env)
 	})
 
 	t.Run("DD_SERVICE", func(t *testing.T) {
 		os.Setenv("DD_SERVICE", "someService")
 		defer os.Unsetenv("DD_SERVICE")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		assert.Equal(t, "someService", cfg.service)
 	})
 
 	t.Run("DD_VERSION", func(t *testing.T) {
 		os.Setenv("DD_VERSION", "1.2.3")
 		defer os.Unsetenv("DD_VERSION")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		assert.Contains(t, cfg.tags, "version:1.2.3")
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
 		os.Setenv("DD_TAGS", "a:1,b:2,c:3")
 		defer os.Unsetenv("DD_TAGS")
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		assert.Contains(t, cfg.tags, "a:1")
 		assert.Contains(t, cfg.tags, "b:2")
 		assert.Contains(t, cfg.tags, "c:3")
@@ -253,7 +296,8 @@ func TestEnvVars(t *testing.T) {
 func TestDefaultConfig(t *testing.T) {
 	t.Run("base", func(t *testing.T) {
 		defaultAgentURL := "http://" + net.JoinHostPort(defaultAgentHost, defaultAgentPort) + "/profiling/v1/input"
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		assert := assert.New(t)
 		assert.Equal(defaultAPIURL, cfg.apiURL)
 		assert.Equal(defaultAgentURL, cfg.agentURL)
@@ -277,7 +321,8 @@ func TestDefaultConfig(t *testing.T) {
 func TestAddProfileType(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
-		cfg := defaultConfig()
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
 		_, ok := cfg.types[MutexProfile]
 		assert.False(ok)
 		n := len(cfg.types)

@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package gorm_test
 
@@ -19,8 +19,8 @@ func ExampleOpen() {
 	// Register augments the provided driver with tracing, enabling it to be loaded by gormtrace.Open.
 	sqltrace.Register("postgres", &pq.Driver{}, sqltrace.WithServiceName("my-service"))
 
-	// Open the registered driver, allowing all uses of the returned *gorm.DB to be traced.
-	db, err := gormtrace.Open("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
+	// Open the registered driver, allowing all uses of the returned *gorm.DB to be traced, with the specified service name.
+	db, err := gormtrace.Open("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable", gormtrace.WithServiceName("my-gorm-service"))
 	defer db.Close()
 	if err != nil {
 		log.Fatal(err)

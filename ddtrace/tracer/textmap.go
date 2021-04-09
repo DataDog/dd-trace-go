@@ -1,11 +1,12 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -187,6 +188,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 		ctx, err := v.Extract(carrier)
 		if ctx != nil {
 			// first extractor returns
+			log.Debug("Extracted span context: %#v", ctx)
 			return ctx, nil
 		}
 		if err == ErrSpanContextNotFound {
@@ -306,8 +308,8 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
-	writer.Set(b3TraceIDHeader, strconv.FormatUint(ctx.traceID, 16))
-	writer.Set(b3SpanIDHeader, strconv.FormatUint(ctx.spanID, 16))
+	writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID))
+	writer.Set(b3SpanIDHeader, fmt.Sprintf("%016x", ctx.spanID))
 	if p, ok := ctx.samplingPriority(); ok {
 		if p >= ext.PriorityAutoKeep {
 			writer.Set(b3SampledHeader, "1")

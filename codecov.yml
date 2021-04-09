@@ -1,0 +1,30 @@
+comment: false
+
+coverage:
+  status:
+    project:
+      default: false
+      core:
+        target: 80%
+        flags:
+          - core
+      contrib:
+        target: 75%
+        flags:
+          - contrib
+    patch:
+      default:
+        target: 100%
+
+flags:
+  core:
+    paths:
+      - ddtrace/*
+            - internal/*
+            - profiler/*
+  contrib:
+    paths:
+      - contrib/*
+
+github_checks:
+  annotations: false

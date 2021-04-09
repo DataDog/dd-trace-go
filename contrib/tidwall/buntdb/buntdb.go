@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package buntdb
 
@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/tidwall/buntdb"
 )
@@ -85,6 +86,7 @@ func WrapTx(tx *buntdb.Tx, opts ...Option) *Tx {
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/tidwall/buntdb: Wrapping Transaction: %#v", cfg)
 	return &Tx{
 		Tx:  tx,
 		cfg: cfg,

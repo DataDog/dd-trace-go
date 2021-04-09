@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package redis provides tracing functions for tracing the go-redis/redis package (https://github.com/go-redis/redis).
 // This package supports versions up to go-redis 6.15.
@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/go-redis/redis"
 )
@@ -64,6 +65,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/go-redis/redis: Wrapping Client: %#v", cfg)
 	opt := c.Options()
 	host, port, err := net.SplitHostPort(opt.Addr)
 	if err != nil {

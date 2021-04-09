@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package elastic provides functions to trace the gopkg.in/olivere/elastic.v{3,5} packages.
 package elastic // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/olivere/elastic"
@@ -22,6 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // NewHTTPClient returns a new http.Client which traces requests under the given service name.
@@ -31,6 +32,7 @@ func NewHTTPClient(opts ...ClientOption) *http.Client {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/olivere/elastic: Configuring HTTP Client: %#v", cfg)
 	return &http.Client{Transport: &httpTransport{config: cfg}}
 }
 

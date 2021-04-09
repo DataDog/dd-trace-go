@@ -1,0 +1,13 @@
+goroutine 1 [running]:
+main.main()
+	/example/main.go:152 +0x3d2
+
+goroutine 2 [running]:
+main.main)(
+	/example/main.go:152 +0x3d2
+
+goroutine 3 [running]:
+main.foo()
+	/example/main.go:182 +0x123
+created by main.main
+	/example/main.go:110 +0x456

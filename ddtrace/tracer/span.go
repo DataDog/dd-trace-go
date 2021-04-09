@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 //go:generate msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 
@@ -12,7 +12,6 @@ import (
 	"os"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -118,7 +117,11 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMetric(key, v)
 		return
 	}
-	// not numeric, not a string, not a bool, and not an error
+	if v, ok := value.(fmt.Stringer); ok {
+		s.setMeta(key, v.String())
+		return
+	}
+	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
 	s.setMeta(key, fmt.Sprint(value))
 }
 
@@ -143,11 +146,7 @@ func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 		s.setMeta(ext.ErrorMsg, v.Error())
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
 		if !cfg.noDebugStack {
-			if cfg.stackFrames == 0 {
-				s.setMeta(ext.ErrorStack, string(debug.Stack()))
-			} else {
-				s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
-			}
+			s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
 		}
 		switch v.(type) {
 		case xerrors.Formatter:
@@ -166,8 +165,15 @@ func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 	}
 }
 
-// takeStacktrace takes stacktrace
+// defaultStackLength specifies the default maximum size of a stack trace.
+const defaultStackLength = 32
+
+// takeStacktrace takes a stack trace of maximum n entries, skipping the first skip entries.
+// If n is 0, up to 20 entries are retrieved.
 func takeStacktrace(n, skip uint) string {
+	if n == 0 {
+		n = defaultStackLength
+	}
 	var builder strings.Builder
 	pcs := make([]uintptr, n)
 
@@ -200,6 +206,7 @@ func (s *span) setMeta(key, v string) {
 	if s.Meta == nil {
 		s.Meta = make(map[string]string, 1)
 	}
+	delete(s.Metrics, key)
 	switch key {
 	case ext.SpanName:
 		s.Name = v
@@ -246,6 +253,7 @@ func (s *span) setMetric(key string, v float64) {
 	if s.Metrics == nil {
 		s.Metrics = make(map[string]float64, 1)
 	}
+	delete(s.Meta, key)
 	switch key {
 	case ext.SamplingPriority:
 		// setting sampling priority per spec
@@ -375,7 +383,7 @@ func (s *span) Format(f fmt.State, c rune) {
 
 const (
 	keySamplingPriority        = "_sampling_priority_v1"
-	keySamplingPriorityRate    = "_sampling_priority_rate_v1"
+	keySamplingPriorityRate    = "_dd.agent_psr"
 	keyOrigin                  = "_dd.origin"
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"

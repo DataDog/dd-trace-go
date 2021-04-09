@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package http provides functions to trace the net/http package (https://golang.org/pkg/net/http).
 package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
@@ -26,6 +27,7 @@ func NewServeMux(opts ...Option) *ServeMux {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/net/http: Configuring ServeMux: %#v", cfg)
 	return &ServeMux{
 		ServeMux: http.NewServeMux(),
 		cfg:      cfg,
@@ -40,7 +42,13 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// get the resource associated to this request
 	_, route := mux.Handler(r)
 	resource := r.Method + " " + route
-	httputil.TraceAndServe(mux.ServeMux, w, r, mux.cfg.serviceName, resource, nil, mux.cfg.spanOpts...)
+	httputil.TraceAndServe(mux.ServeMux, &httputil.TraceConfig{
+		ResponseWriter: w,
+		Request:        r,
+		Service:        mux.cfg.serviceName,
+		Resource:       resource,
+		SpanOpts:       mux.cfg.spanOpts,
+	})
 }
 
 // WrapHandler wraps an http.Handler with tracing using the given service and resource.
@@ -50,7 +58,15 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		httputil.TraceAndServe(h, w, req, service, resource, cfg.finishOpts, cfg.spanOpts...)
+		httputil.TraceAndServe(h, &httputil.TraceConfig{
+			ResponseWriter: w,
+			Request:        req,
+			Service:        service,
+			Resource:       resource,
+			FinishOpts:     cfg.finishOpts,
+			SpanOpts:       cfg.spanOpts,
+		})
 	})
 }

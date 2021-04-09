@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package httputil // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
 
@@ -17,31 +17,45 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
+// TraceConfig defines the configuration for request tracing.
+type TraceConfig struct {
+	ResponseWriter http.ResponseWriter       // response writer
+	Request        *http.Request             // request that is traced
+	Service        string                    // service name
+	Resource       string                    // resource name
+	QueryParams    bool                      // specifies that request query parameters should be appended to http.url tag
+	FinishOpts     []ddtrace.FinishOption    // span finish options to be applied
+	SpanOpts       []ddtrace.StartSpanOption // additional span options to be applied
+}
+
 // TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
-func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, service, resource string,
-	finishopts []ddtrace.FinishOption, spanopts ...ddtrace.StartSpanOption) {
+func TraceAndServe(h http.Handler, cfg *TraceConfig) {
+	path := cfg.Request.URL.Path
+	if cfg.QueryParams {
+		path += "?" + cfg.Request.URL.RawQuery
+	}
 	opts := append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
-		tracer.ServiceName(service),
-		tracer.ResourceName(resource),
-		tracer.Tag(ext.HTTPMethod, r.Method),
-		tracer.Tag(ext.HTTPURL, r.URL.Path),
-		tracer.Measured(),
-	}, spanopts...)
-	if r.URL.Host != "" {
+		tracer.ServiceName(cfg.Service),
+		tracer.ResourceName(cfg.Resource),
+		tracer.Tag(ext.HTTPMethod, cfg.Request.Method),
+		tracer.Tag(ext.HTTPURL, path),
+    tracer.Measured(),
+	}, cfg.SpanOpts...)
+	if cfg.Request.URL.Host != "" {
 		opts = append([]ddtrace.StartSpanOption{
-			tracer.Tag("http.host", r.URL.Host),
+			tracer.Tag("http.host", cfg.Request.URL.Host),
 		}, opts...)
 	}
-	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
+	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(cfg.Request.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
-	defer span.Finish(finishopts...)
+	span, ctx := tracer.StartSpanFromContext(cfg.Request.Context(), "http.request", opts...)
+	defer span.Finish(cfg.FinishOpts...)
 
-	w = wrapResponseWriter(w, span)
+	cfg.ResponseWriter = wrapResponseWriter(cfg.ResponseWriter, span)
 
-	h.ServeHTTP(w, r.WithContext(ctx))
+	h.ServeHTTP(cfg.ResponseWriter, cfg.Request.WithContext(ctx))
 }
 
 // responseWriter is a small wrapper around an http response writer that will
