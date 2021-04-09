@@ -26,6 +26,7 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, servi
 		tracer.ResourceName(resource),
 		tracer.Tag(ext.HTTPMethod, r.Method),
 		tracer.Tag(ext.HTTPURL, r.URL.Path),
+		tracer.Measured(),
 	}, spanopts...)
 	if r.URL.Host != "" {
 		opts = append([]ddtrace.StartSpanOption{
