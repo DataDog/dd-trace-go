@@ -59,7 +59,7 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 	span, _ := tracer.StartSpanFromContext(ctx, "kafka.consume", opts...)
 	// reinject the span context so consumers can pick it up
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		log.Error("contrib/segmentio/kafka-go: Failed to inject span context into carrier, %v", err)
+		log.Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier, %v", err)
 	}
 	return span
 }
@@ -124,7 +124,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 	span, _ := tracer.StartSpanFromContext(ctx, "kafka.produce", opts...)
 	// inject the span context so consumers can pick it up
 	err := tracer.Inject(span.Context(), carrier)
-	log.Error("contrib/segmentio/kafka-go: Failed to inject span context into carrier, %v", err)
+	log.Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier, %v", err)
 	return span
 }
 
