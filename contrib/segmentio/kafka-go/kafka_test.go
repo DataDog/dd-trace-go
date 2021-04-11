@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var (
-	testGroupID = "kafkagotest"
+const (
+	testGroupID = "gotest"
 	testTopic   = "gotest"
 )
 
@@ -38,11 +38,12 @@ to run the integration test locally:
     docker run --rm \
         --name kafka \
         --network segementio \
-        -p 9092:9092 \
+        -p 9093:9093 \
         -e KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181 \
-        -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
-        -e KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092 \
+        -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9093 \
+        -e KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9093 \
         -e KAFKA_CREATE_TOPICS=gotest:1:1 \
+        -e KAFKA_PORT=9093 \
         -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
         wurstmeister/kafka:2.13-2.7.0
 */
@@ -53,8 +54,11 @@ func TestConsumerFunctional(t *testing.T) {
 	defer mt.Stop()
 
 	w := NewWriter(kafka.WriterConfig{
-		Brokers: []string{"127.0.0.1:9092"},
+		Brokers: []string{"127.0.0.1:9093"},
 		Topic:   testTopic,
+		Dialer: &kafka.Dialer{
+			Timeout: 30 * time.Second,
+		},
 	}, WithAnalyticsRate(0.1))
 	msg1 := []kafka.Message{
 		{
@@ -67,9 +71,12 @@ func TestConsumerFunctional(t *testing.T) {
 	w.Close()
 
 	r := NewReader(kafka.ReaderConfig{
-		Brokers:        []string{"127.0.0.1:9092"},
-		GroupID:        testGroupID,
-		Topic:          testTopic,
+		Brokers: []string{"127.0.0.1:9093"},
+		GroupID: testGroupID,
+		Topic:   testTopic,
+		Dialer: &kafka.Dialer{
+			Timeout: 30 * time.Second,
+		},
 		SessionTimeout: 30 * time.Second,
 		StartOffset:    kafka.LastOffset,
 	})

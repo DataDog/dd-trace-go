@@ -119,6 +119,16 @@ jobs:
           KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
           KAFKA_CREATE_TOPICS: gotest:1:1
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      - image: wurstmeister/zookeeper:3.4.6
+        name: apachezookeeper
+      - image: wurstmeister/kafka:2.13-2.7.0
+        environment:
+          KAFKA_ZOOKEEPER_CONNECT: apachezookeeper:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9093
+          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9093
+          KAFKA_PORT: 9093
+          KAFKA_CREATE_TOPICS: gotest:1:1
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
 
     steps:
       - checkout
