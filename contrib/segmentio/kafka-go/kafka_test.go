@@ -15,7 +15,7 @@ import (
 
 var (
 	testGroupID = "kafkagotest"
-	testTopic   = "kafkagotest"
+	testTopic   = "gotest"
 )
 
 func skipIntegrationTest(t *testing.T) {
@@ -42,7 +42,7 @@ to run the integration test locally:
         -e KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181 \
         -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
         -e KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092 \
-        -e KAFKA_CREATE_TOPICS=kafkagotest:1:1 \
+        -e KAFKA_CREATE_TOPICS=gotest:1:1 \
         -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
         wurstmeister/kafka:2.13-2.7.0
 */
@@ -71,6 +71,7 @@ func TestConsumerFunctional(t *testing.T) {
 		GroupID:        testGroupID,
 		Topic:          testTopic,
 		SessionTimeout: 30 * time.Second,
+		StartOffset:    kafka.LastOffset,
 	})
 	msg2, err := r.ReadMessage(context.Background())
 	assert.NoError(t, err, "Expected to consume message")
