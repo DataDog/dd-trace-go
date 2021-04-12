@@ -24,7 +24,7 @@ func skipIntegrationTest(t *testing.T) {
 }
 
 /*
-to run the integration test locally:
+to run the integration test locally, update the broker name to localhost:29092:
 
     docker network create segementio
 
@@ -89,4 +89,12 @@ func TestConsumerFunctional(t *testing.T) {
 	assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 	assert.Equal(t, 0, s0.Tag("partition"))
+
+	s1 := spans[1] // consume
+	assert.Equal(t, "kafka.consume", s1.OperationName())
+	assert.Equal(t, "kafka", s1.Tag(ext.ServiceName))
+	assert.Equal(t, "Consume Topic gotest", s1.Tag(ext.ResourceName))
+	assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
+	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
+	assert.Equal(t, 0, s1.Tag("partition"))
 }
