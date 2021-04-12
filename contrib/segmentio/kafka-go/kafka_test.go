@@ -53,7 +53,7 @@ func TestConsumerFunctional(t *testing.T) {
 	defer mt.Stop()
 
 	w := NewWriter(kafka.WriterConfig{
-		Brokers: []string{"localhost:29092"},
+		Brokers: []string{"kafka:9092"},
 		Topic:   testTopic,
 	}, WithAnalyticsRate(0.1))
 	msg1 := []kafka.Message{
@@ -67,7 +67,7 @@ func TestConsumerFunctional(t *testing.T) {
 	w.Close()
 
 	r := NewReader(kafka.ReaderConfig{
-		Brokers: []string{"localhost:29092"},
+		Brokers: []string{"kafka:9092"},
 		GroupID: testGroupID,
 		Topic:   testTopic,
 	})
