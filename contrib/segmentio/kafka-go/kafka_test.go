@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"testing"
-	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -30,22 +29,22 @@ to run the integration test locally:
     docker network create segementio
 
     docker run --rm \
-        --name zookeeper \
-        --network segementio \
-        -p 2181:2181 \
-        wurstmeister/zookeeper:3.4.6
+		--name zookeeper \
+		--network segementio \
+		-p 2181:2181 \
+		wurstmeister/zookeeper:3.4.6
 
     docker run --rm \
-        --name kafka \
-        --network segementio \
-        -p 9093:9093 \
-        -e KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181 \
-        -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9093 \
-        -e KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9093 \
-        -e KAFKA_CREATE_TOPICS=gotest:1:1 \
-        -e KAFKA_PORT=9093 \
-        -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
-        wurstmeister/kafka:2.13-2.7.0
+		--name kafka \
+		--network segementio \
+		-p 29092:29092 \
+		-e KAFKA_CREATE_TOPICS=gotest:1:1 \
+		-e KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181 \
+		-e KAFKA_LISTENERS=INSIDE://kafka:9092,OUTSIDE://kafka:29092 \
+		-e KAFKA_ADVERTISED_LISTENERS=INSIDE://kafka:9092,OUTSIDE://localhost:29092 \
+		-e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT \
+		-e KAFKA_INTER_BROKER_LISTENER_NAME=INSIDE \
+		wurstmeister/kafka:2.13-2.7.0
 */
 
 func TestConsumerFunctional(t *testing.T) {
@@ -54,11 +53,8 @@ func TestConsumerFunctional(t *testing.T) {
 	defer mt.Stop()
 
 	w := NewWriter(kafka.WriterConfig{
-		Brokers: []string{"127.0.0.1:9093"},
+		Brokers: []string{"localhost:29092"},
 		Topic:   testTopic,
-		Dialer: &kafka.Dialer{
-			Timeout: 30 * time.Second,
-		},
 	}, WithAnalyticsRate(0.1))
 	msg1 := []kafka.Message{
 		{
@@ -71,14 +67,9 @@ func TestConsumerFunctional(t *testing.T) {
 	w.Close()
 
 	r := NewReader(kafka.ReaderConfig{
-		Brokers: []string{"127.0.0.1:9093"},
+		Brokers: []string{"localhost:29092"},
 		GroupID: testGroupID,
 		Topic:   testTopic,
-		Dialer: &kafka.Dialer{
-			Timeout: 30 * time.Second,
-		},
-		SessionTimeout: 30 * time.Second,
-		StartOffset:    kafka.LastOffset,
 	})
 	msg2, err := r.ReadMessage(context.Background())
 	assert.NoError(t, err, "Expected to consume message")
