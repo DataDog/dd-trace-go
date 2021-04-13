@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -27,7 +28,7 @@ func TestTraceAndServe(t *testing.T) {
 
 		called := false
 		w := httptest.NewRecorder()
-		r, err := http.NewRequest("GET", "/", nil)
+		r, err := http.NewRequest("GET", "/path?token=value", nil)
 		assert.NoError(err)
 		handler := func(w http.ResponseWriter, r *http.Request) {
 			_, ok := w.(http.Hijacker)
@@ -35,7 +36,12 @@ func TestTraceAndServe(t *testing.T) {
 			http.Error(w, "some error", http.StatusServiceUnavailable)
 			called = true
 		}
-		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
+		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
+			ResponseWriter: w,
+			Request:        r,
+			Service:        "service",
+			Resource:       "resource",
+		})
 		spans := mt.FinishedSpans()
 		span := spans[0]
 
@@ -45,9 +51,35 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("service", span.Tag(ext.ServiceName))
 		assert.Equal("resource", span.Tag(ext.ResourceName))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
-		assert.Equal("/", span.Tag(ext.HTTPURL))
+		assert.Equal("/path", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
 		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
+	})
+
+	t.Run("query-params", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		called := false
+		w := httptest.NewRecorder()
+		r, err := http.NewRequest("GET", "/path?token=value&id=1", nil)
+		assert.NoError(err)
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			called = true
+		}
+		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
+			ResponseWriter: w,
+			Request:        r,
+			Service:        "service",
+			Resource:       "resource",
+			QueryParams:    true,
+		})
+		spans := mt.FinishedSpans()
+
+		assert.True(called)
+		assert.Len(spans, 1)
+		assert.Equal("/path?token=value&id=1", spans[0].Tag(ext.HTTPURL))
 	})
 
 	t.Run("Hijacker,Flusher,CloseNotifier", func(t *testing.T) {
@@ -64,7 +96,12 @@ func TestTraceAndServe(t *testing.T) {
 			called = true
 		}
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
+			TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
+				ResponseWriter: w,
+				Request:        r,
+				Service:        "service",
+				Resource:       "resource",
+			})
 		}))
 		defer srv.Close()
 
@@ -117,7 +154,12 @@ func TestTraceAndServe(t *testing.T) {
 		assert.NoError(err)
 		w := httptest.NewRecorder()
 
-		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
+		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
+			ResponseWriter: w,
+			Request:        r,
+			Service:        "service",
+			Resource:       "resource",
+		})
 
 		var p, c mocktracer.Span
 		spans := mt.FinishedSpans()
@@ -149,7 +191,12 @@ func TestTraceAndServe(t *testing.T) {
 		r = r.WithContext(tracer.ContextWithSpan(r.Context(), parent))
 		w := httptest.NewRecorder()
 
-		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
+		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
+			ResponseWriter: w,
+			Request:        r,
+			Service:        "service",
+			Resource:       "resource",
+		})
 
 		var p, c mocktracer.Span
 		spans := mt.FinishedSpans()
@@ -175,7 +222,12 @@ func TestTraceAndServe(t *testing.T) {
 		r, err := http.NewRequest("GET", "/", nil)
 		assert.NoError(err)
 		w := httptest.NewRecorder()
-		TraceAndServe(http.HandlerFunc(handler), w, r, "service", "resource", nil)
+		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
+			ResponseWriter: w,
+			Request:        r,
+			Service:        "service",
+			Resource:       "resource",
+		})
 
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
@@ -194,7 +246,13 @@ func TestTraceAndServeHost(t *testing.T) {
 
 		r, err := http.NewRequest("GET", "http://localhost/", nil)
 		assert.NoError(err)
-		TraceAndServe(handler, httptest.NewRecorder(), r, "service", "resource", nil)
+
+		TraceAndServe(handler, &TraceConfig{
+			ResponseWriter: httptest.NewRecorder(),
+			Request:        r,
+			Service:        "service",
+			Resource:       "resource",
+		})
 		span := mt.FinishedSpans()[0]
 
 		assert.EqualValues("localhost", span.Tag("http.host"))
@@ -207,9 +265,44 @@ func TestTraceAndServeHost(t *testing.T) {
 
 		r, err := http.NewRequest("GET", "/", nil)
 		assert.NoError(err)
-		TraceAndServe(handler, httptest.NewRecorder(), r, "service", "resource", nil)
+		TraceAndServe(handler, &TraceConfig{
+			ResponseWriter: httptest.NewRecorder(),
+			Request:        r,
+			Service:        "service",
+			Resource:       "resource",
+		})
 		span := mt.FinishedSpans()[0]
 
 		assert.EqualValues(nil, span.Tag("http.host"))
 	})
+}
+
+type noopHandler struct{}
+
+func (noopHandler) ServeHTTP(_ http.ResponseWriter, _ *http.Request) {}
+
+type noopWriter struct{}
+
+func (w noopWriter) Header() http.Header         { return nil }
+func (w noopWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (w noopWriter) WriteHeader(_ int)           {}
+
+func BenchmarkTraceAndServe(b *testing.B) {
+	handler := new(noopHandler)
+	req, err := http.NewRequest("POST", "http://localhost:8181/widgets", nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := 0; i < b.N; i++ {
+		cfg := TraceConfig{
+			ResponseWriter: noopWriter{},
+			Request:        req,
+			Service:        "service-name",
+			Resource:       "resource-name",
+			FinishOpts:     []ddtrace.FinishOption{},
+			SpanOpts:       []ddtrace.StartSpanOption{},
+			QueryParams:    false,
+		}
+		TraceAndServe(handler, &cfg)
+	}
 }
