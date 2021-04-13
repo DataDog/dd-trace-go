@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/segmentio/kafka-go"
@@ -45,4 +46,10 @@ func (c MessageCarrier) Set(key, val string) {
 // NewMessageCarrier creates a new MessageCarrier.
 func NewMessageCarrier(msg *kafka.Message) MessageCarrier {
 	return MessageCarrier{msg}
+}
+
+// ExtractSpanContextFromMessage retrieves the SpanContext from message header
+func ExtractSpanContextFromMessage(msg kafka.Message) (ddtrace.SpanContext, error) {
+	carrier := NewMessageCarrier(&msg)
+	return tracer.Extract(carrier)
 }

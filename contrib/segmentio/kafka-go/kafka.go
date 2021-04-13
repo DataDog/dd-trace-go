@@ -89,12 +89,6 @@ func (r *Reader) ReadMessage(ctx context.Context) (kafka.Message, error) {
 	return msg, nil
 }
 
-// ExtractSpanContextFromMessage retrieves the SpanContext from message header
-func ExtractSpanContextFromMessage(msg kafka.Message) (ddtrace.SpanContext, error) {
-	carrier := NewMessageCarrier(&msg)
-	return tracer.Extract(carrier)
-}
-
 // WrapWriter wraps a kafka.Writer so requests are traced.
 func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {
 	writer := &Writer{
