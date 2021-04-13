@@ -9,13 +9,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -28,6 +29,8 @@ const (
 	tagAWSRequestID = "aws.request_id"
 )
 
+type spanTimestampKey struct{}
+
 // AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
 // See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
 func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
@@ -39,31 +42,49 @@ func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
 	}
 
 	tm := traceMiddleware{cfg: cfg}
-	awsCfg.APIOptions = append(awsCfg.APIOptions, tm.startTrace, tm.initTrace, tm.deserializeTrace)
+	awsCfg.APIOptions = append(awsCfg.APIOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
 }
 
 type traceMiddleware struct {
 	cfg *config
 }
 
-func (mw *traceMiddleware) startTrace(stack *middleware.Stack) error {
-	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("TraceStart", func(
+func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
+	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("InitTraceMiddleware", func(
 		ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
 	) (
 		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
 	) {
-		// Start a span with the minimum information possible.
-		// If we get a failure in another init middleware, some context is better than none.
+		// Bind the timestamp to the context so that we can use it when we have enough information to start the trace.
+		ctx = context.WithValue(ctx, spanTimestampKey{}, time.Now())
+		return next.HandleInitialize(ctx, in)
+	}), middleware.Before)
+}
+
+func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
+	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("StartTraceMiddleware", func(
+		ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
+	) (
+		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
+	) {
+		operation := awsmiddleware.GetOperationName(ctx)
+		serviceID := awsmiddleware.GetServiceID(ctx)
+
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
-			tracer.ServiceName(serviceName(mw.cfg, "unknown")),
+			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
+			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
+			tracer.Tag(tagAWSRegion, awsmiddleware.GetRegion(ctx)),
+			tracer.Tag(tagAWSOperation, awsmiddleware.GetOperationName(ctx)),
+			tracer.Tag(tagAWSService, serviceID),
+			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
 		}
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
 		}
-		span, spanctx := tracer.StartSpanFromContext(ctx, "unknown.request", opts...)
+		span, spanctx := tracer.StartSpanFromContext(ctx, fmt.Sprintf("%s.request", serviceID), opts...)
 
-		// Handle Initialize and continue through the middleware chain.
+		// Handle initialize and continue through the middleware chain.
 		out, metadata, err = next.HandleInitialize(spanctx, in)
 		if err != nil {
 			span.Finish(tracer.WithError(err))
@@ -72,37 +93,11 @@ func (mw *traceMiddleware) startTrace(stack *middleware.Stack) error {
 		}
 
 		return out, metadata, err
-	}), middleware.Before)
-}
-
-func (mw *traceMiddleware) initTrace(stack *middleware.Stack) error {
-	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("TraceInit", func(
-		ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
-	) (
-		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
-	) {
-		span, ok := tracer.SpanFromContext(ctx)
-		if !ok {
-			// If no span is found then we don't need to enrich the trace so just continue.
-			return next.HandleInitialize(ctx, in)
-		}
-
-		// As we run this middleware After other Initialize middlewares, we have access to more metadata.
-		operation := awsmiddleware.GetOperationName(ctx)
-		serviceID := awsmiddleware.GetServiceID(ctx)
-		span.SetTag(ext.ServiceName, serviceName(mw.cfg, serviceID))
-		span.SetTag(ext.SpanName, fmt.Sprintf("%s.request", serviceID))
-		span.SetTag(ext.ResourceName, fmt.Sprintf("%s.%s", serviceID, operation))
-		span.SetTag(tagAWSRegion, awsmiddleware.GetRegion(ctx))
-		span.SetTag(tagAWSOperation, awsmiddleware.GetOperationName(ctx))
-		span.SetTag(tagAWSService, serviceID)
-
-		return next.HandleInitialize(ctx, in)
 	}), middleware.After)
 }
 
-func (mw *traceMiddleware) deserializeTrace(stack *middleware.Stack) error {
-	return stack.Deserialize.Add(middleware.DeserializeMiddlewareFunc("TraceDeserialize", func(
+func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) error {
+	return stack.Deserialize.Add(middleware.DeserializeMiddlewareFunc("DeserializeTraceMiddleware", func(
 		ctx context.Context, in middleware.DeserializeInput, next middleware.DeserializeHandler,
 	) (
 		out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
@@ -120,7 +115,7 @@ func (mw *traceMiddleware) deserializeTrace(stack *middleware.Stack) error {
 			span.SetTag(tagAWSAgent, req.Header.Get("User-Agent"))
 		}
 
-		// Continue through the middleware layers, eventually sending the request.
+		// Continue through the middleware chain which eventually sends the request.
 		out, metadata, err = next.HandleDeserialize(ctx, in)
 
 		// Get values out of the response.
