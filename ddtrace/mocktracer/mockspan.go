@@ -126,12 +126,6 @@ func (s *mockspan) SetTag(key string, value interface{}) {
 			s.context.setSamplingPriority(int(p))
 		}
 	}
-	if key == ext.SpanName {
-		switch p := value.(type) {
-		case string:
-			s.name = p
-		}
-	}
 	s.tags[key] = value
 }
 
