@@ -37,8 +37,9 @@ type tracer struct {
 	// out receives traces to be added to the payload.
 	out chan []*span
 
-	// flush causes the tracer to flush
-	flush chan struct{}
+	// flush receives a channel onto which it will confirm after a flush has been
+	// triggered and completed.
+	flush chan chan<- struct{}
 
 	// stop causes the tracer to shut down when closed.
 	stop chan struct{}
@@ -156,7 +157,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		traceWriter:      writer,
 		out:              make(chan []*span, payloadQueueSize),
 		stop:             make(chan struct{}),
-		flush:            make(chan struct{}),
+		flush:            make(chan chan<- struct{}),
 		rulesSampling:    newRulesSampler(c.samplingRules),
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
@@ -206,8 +207,15 @@ func newTracer(opts ...StartOption) *tracer {
 // reach the agent.
 func Flush() {
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
-		t.flush <- struct{}{}
+		t.flushSync()
 	}
+}
+
+// flushSync triggers a flush and waits for it to complete.
+func (t *tracer) flushSync() {
+	done := make(chan struct{})
+	t.flush <- done
+	<-done
 }
 
 // worker receives finished traces to be added into the payload, as well
@@ -222,9 +230,13 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
 
-		case <-t.flush:
+		case done := <-t.flush:
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 			t.traceWriter.flush()
+			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
+			// when using the agent traceWriter. However, this functionnality is used
+			// in Lambda so for that purpose this mechanism should suffice.
+			done <- struct{}{}
 
 		case <-t.stop:
 		loop:

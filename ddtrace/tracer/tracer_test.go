@@ -1333,6 +1333,80 @@ func cpspan(s *span) *span {
 	}
 }
 
+type testTraceWriter struct {
+	mu      sync.RWMutex
+	buf     []*span
+	flushed []*span
+}
+
+func newTestTraceWriter() *testTraceWriter {
+	return &testTraceWriter{
+		buf:     []*span{},
+		flushed: []*span{},
+	}
+}
+
+func (w *testTraceWriter) add(spans []*span) {
+	w.mu.Lock()
+	w.buf = append(w.buf, spans...)
+	w.mu.Unlock()
+}
+
+func (w *testTraceWriter) flush() {
+	w.mu.Lock()
+	w.flushed = append(w.flushed, w.buf...)
+	w.buf = w.buf[:0]
+	w.mu.Unlock()
+}
+
+func (w *testTraceWriter) stop() {}
+
+func (w *testTraceWriter) reset() {
+	w.mu.Lock()
+	w.flushed = w.flushed[:0]
+	w.buf = w.buf[:0]
+	w.mu.Unlock()
+}
+
+// Buffered returns the spans buffered by the writer.
+func (w *testTraceWriter) Buffered() []*span {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.buf
+}
+
+// Flushed returns the spans flushed by the writer.
+func (w *testTraceWriter) Flushed() []*span {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.flushed
+}
+
+func TestFlush(t *testing.T) {
+	tr, _, _, stop := startTestTracer(t)
+	tw := newTestTraceWriter()
+	tr.traceWriter = tw
+	defer stop()
+	tr.StartSpan("op").Finish()
+	timeout := time.After(time.Second)
+loop:
+	for {
+		select {
+		case <-timeout:
+			t.Fatal("timed out waiting for trace to be added to writer")
+		default:
+			if len(tw.Buffered()) > 0 {
+				// trace got buffered
+				break loop
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	assert.Len(t, tw.Flushed(), 0)
+	tr.flushSync()
+	assert.Len(t, tw.Flushed(), 1)
+}
+
 func TestTakeStackTrace(t *testing.T) {
 	t.Run("n=12", func(t *testing.T) {
 		val := takeStacktrace(12, 0)
