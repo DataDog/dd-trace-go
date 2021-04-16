@@ -102,7 +102,9 @@ func (s *span) SetTag(key string, value interface{}) {
 	}
 	switch key {
 	case ext.Error:
-		s.setTagError(value, &errorConfig{})
+		s.setTagError(value, errorConfig{
+			noDebugStack: s.noDebugStack,
+		})
 		return
 	}
 	if v, ok := value.(bool); ok {
@@ -127,7 +129,7 @@ func (s *span) SetTag(key string, value interface{}) {
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
 // This method is not safe for concurrent use.
-func (s *span) setTagError(value interface{}, cfg *errorConfig) {
+func (s *span) setTagError(value interface{}, cfg errorConfig) {
 	if s.finished {
 		return
 	}
@@ -280,7 +282,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		}
 		if cfg.Error != nil {
 			s.Lock()
-			s.setTagError(cfg.Error, &errorConfig{
+			s.setTagError(cfg.Error, errorConfig{
 				noDebugStack: cfg.NoDebugStack,
 				stackFrames:  cfg.StackFrames,
 				stackSkip:    cfg.SkipStackFrames,
