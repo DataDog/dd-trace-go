@@ -67,6 +67,11 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	return res, err
 }
 
+// Unwrap returns the original http.RoundTripper.
+func (rt *roundTripper) Unwrap() http.RoundTripper {
+	return rt.base
+}
+
 // WrapRoundTripper returns a new RoundTripper which traces all requests sent
 // over the transport.
 func WrapRoundTripper(rt http.RoundTripper, opts ...RoundTripperOption) http.RoundTripper {
