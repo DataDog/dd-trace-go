@@ -20,6 +20,8 @@
 package opentracer
 
 import (
+	"context"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -83,4 +85,15 @@ func (t *opentracer) Extract(format interface{}, carrier interface{}) (opentraci
 	default:
 		return nil, opentracing.ErrUnsupportedFormat
 	}
+}
+
+var _ opentracing.TracerContextWithSpanExtension = (*opentracer)(nil)
+
+// ContextWithSpan implements opentracing.TracerContextWithSpanExtension.
+func (t *opentracer) ContextWithSpanHook(ctx context.Context, openSpan opentracing.Span) context.Context {
+	ddSpan, ok := openSpan.(*span)
+	if !ok {
+		return ctx
+	}
+	return tracer.ContextWithSpan(ctx, ddSpan.Span)
 }

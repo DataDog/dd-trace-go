@@ -6,11 +6,14 @@
 package opentracer
 
 import (
+	"context"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
+	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,4 +25,15 @@ func TestStart(t *testing.T) {
 	ott, ok := ot.(*opentracer)
 	assert.True(ok)
 	assert.Equal(ott.Tracer, dd)
+}
+
+func TestSpanWithContext(t *testing.T) {
+	assert := assert.New(t)
+	ot, ok := New().(*opentracer)
+	assert.True(ok)
+	opentracing.SetGlobalTracer(ot)
+	want, ctx := opentracing.StartSpanFromContext(context.Background(), "test.operation")
+	got, ok := tracer.SpanFromContext(ctx)
+	assert.True(ok)
+	assert.Equal(got, want.(*span).Span)
 }
