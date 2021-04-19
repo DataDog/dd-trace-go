@@ -59,13 +59,16 @@ func TestStart(t *testing.T) {
 	})
 
 	t.Run("options/GoodAPIKey", func(t *testing.T) {
-		err := Start(WithAPIKey("12345678901234567890123456789012"))
+		err := Start(
+			WithAPIKey("12345678901234567890123456789012"),
+			WithAgentlessUpload(),
+		)
 		defer Stop()
 		assert.Nil(t, err)
 	})
 
 	t.Run("options/BadAPIKey", func(t *testing.T) {
-		err := Start(WithAPIKey("aaaa"))
+		err := Start(WithAPIKey("aaaa"), WithAgentlessUpload())
 		defer Stop()
 		assert.NotNil(t, err)
 
