@@ -37,7 +37,6 @@ func New(opts ...tracer.StartOption) opentracing.Tracer {
 }
 
 var _ opentracing.Tracer = (*opentracer)(nil)
-var _ opentracing.TracerContextWithSpanExtension = (*opentracer)(nil)
 
 // opentracer implements opentracing.Tracer on top of ddtrace.Tracer.
 type opentracer struct{ ddtrace.Tracer }
@@ -87,6 +86,8 @@ func (t *opentracer) Extract(format interface{}, carrier interface{}) (opentraci
 		return nil, opentracing.ErrUnsupportedFormat
 	}
 }
+
+var _ opentracing.TracerContextWithSpanExtension = (*opentracer)(nil)
 
 // ContextWithSpan implements opentracing.TracerContextWithSpanExtension.
 func (t *opentracer) ContextWithSpanHook(ctx context.Context, openSpan opentracing.Span) context.Context {
