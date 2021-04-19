@@ -78,19 +78,25 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if os.Getenv("DD_PROFILING_WAIT_PROFILE") != "" {
 		cfg.addProfileType(expGoroutineWaitProfile)
 	}
-	if cfg.apiKey != "" {
+	// Agentless upload is disabled by default as of v1.30.0, but
+	// WithAgentlessUpload can be used to enable it for testing and debugging.
+	if cfg.agentless {
 		if !isAPIKeyValid(cfg.apiKey) {
-			return nil, errors.New("API key has incorrect format")
+			return nil, errors.New("profiler.WithAgentlessUpload requires a valid API key. Use profiler.WithAPIKey or the DD_API_KEY env variable to set it.")
 		}
-		if cfg.agentless {
-			log.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported. You should not enable it unless somebody at Datadog instructed you to do so.")
-		} else {
-			// TODO(fg) once this has been released, make a new PR to default to agent
-			// based uploading unless agentless is explicitly configured.
-			log.Warn("The next version of this library might break your profiling integration. Please check the go documentation for profiler.WithAPIKey of the dd-trace-go version you are using for more information.")
-		}
+		// Always warn people against using this mode for now. All customers should
+		// use agent based uploading at this point.
+		log.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported. You should not enable it unless somebody at Datadog instructed you to do so.")
 		cfg.targetURL = cfg.apiURL
 	} else {
+		// Historically people could use an API Key to enable agentless uploading.
+		// As of v1.30.0 customers the default behavior is to use agent based
+		// uploading regardless of the presence of an API key. So if we see an API
+		// key configured, we warn the customers that this is probably a
+		// misconfiguration.
+		if cfg.apiKey != "" {
+			log.Warn("You are currently setting profiler.WithAPIKey or the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please see the profiler.WithAPIKey go docs and verify that your integration is still working. If you can't remove DD_API_KEY from your environment, you can use WithAPIKey(\"\") to silence this warning.")
+		}
 		cfg.targetURL = cfg.agentURL
 	}
 	if cfg.hostname == "" {

@@ -213,13 +213,13 @@ func WithAgentAddr(hostport string) Option {
 	}
 }
 
-// WithAPIKey sets a datadog API key and enables agentless uploading by
-// default. This option takes precedence over the DD_API_KEY env variable.
-// WARNING: In the next release of this library setting an API Key will no
-// longer enable agentless uploading and default to agent based uploading
-// instead. If you don't have an agent running on the default localhost:8126
-// hostport you need to set it up, or use WithAgentAddr to specify the hostport
-// you are using. See WithAgentlessUpload for more information.
+// WithAPIKey sets the Datadog API Key and takes precedence over the DD_API_KEY
+// env variable. Historically this option was used to enable agentless
+// uploading, but as of dd-trace-go v1.30.0 the behavior has changed to always
+// default to agent based uploading which doesn't require an API key. So if you
+// currently don't have an agent running on the default localhost:8126 hostport
+// you need to set it up, or use WithAgentAddr to specify the hostport location
+// of the agent. See WithAgentlessUpload for more information.
 func WithAPIKey(key string) Option {
 	return func(cfg *config) {
 		cfg.apiKey = key
