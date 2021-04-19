@@ -86,7 +86,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		}
 		// Always warn people against using this mode for now. All customers should
 		// use agent based uploading at this point.
-		log.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported. You should not enable it unless somebody at Datadog instructed you to do so.")
+		log.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported.")
 		cfg.targetURL = cfg.apiURL
 	} else {
 		// Historically people could use an API Key to enable agentless uploading.
