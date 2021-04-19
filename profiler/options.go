@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -159,7 +160,7 @@ func defaultConfig() (*config, error) {
 	if v := os.Getenv("DD_API_KEY"); v != "" {
 		WithAPIKey(v)(&c)
 	}
-	if v := os.Getenv("DD_PROFILING_AGENTLESS"); v == "true" {
+	if internal.BoolEnv("DD_PROFILING_AGENTLESS", false) {
 		WithAgentlessUpload()(&c)
 	}
 	if v := os.Getenv("DD_SITE"); v != "" {
