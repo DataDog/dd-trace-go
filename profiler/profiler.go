@@ -82,7 +82,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	// WithAgentlessUpload can be used to enable it for testing and debugging.
 	if cfg.agentless {
 		if !isAPIKeyValid(cfg.apiKey) {
-			return nil, errors.New("profiler.WithAgentlessUpload requires a valid API key. Use profiler.WithAPIKey or the DD_API_KEY env variable to set it.")
+			return nil, errors.New("profiler.WithAgentlessUpload requires a valid API key. Use profiler.WithAPIKey or the DD_API_KEY env variable to set it")
 		}
 		// Always warn people against using this mode for now. All customers should
 		// use agent based uploading at this point.
