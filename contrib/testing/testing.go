@@ -46,7 +46,7 @@ func StartSpanWithFinish(ctx context.Context, tb testing.TB, opts ...Option) (co
 		testOpts = append(testOpts, tracer.Tag(ext.TestType, ext.TestTypeBenchmark))
 	}
 
-	cfg.spanOpts = append(cfg.spanOpts, testOpts...)
+	cfg.spanOpts = append(testOpts, cfg.spanOpts...)
 
 	span, ctx := tracer.StartSpanFromContext(ctx, ext.SpanTypeTest, cfg.spanOpts...)
 
