@@ -67,7 +67,10 @@ type profiler struct {
 
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
-	cfg := defaultConfig()
+	cfg, err := defaultConfig()
+	if err != nil {
+		return nil, err
+	}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -92,6 +95,17 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			log.Warn("unable to look up hostname: %v", err)
 		}
 		cfg.hostname = hostname
+	}
+	// uploadTimeout defaults to DefaultUploadTimeout, but in theory a user might
+	// set it to 0 or a negative value. However, it's not clear what this should
+	// mean, and most meanings we could assign seem to be bad: Not having a
+	// timeout is dangerous, having a timeout that fires immediately breaks
+	// uploading, and silently defaulting to the default timeout is confusing.
+	// So let's just stay clear of all of this by not allowing such values.
+	//
+	// see similar discussion: https://github.com/golang/go/issues/39177
+	if cfg.uploadTimeout <= 0 {
+		return nil, fmt.Errorf("invalid upload timeout, must be > 0: %s", cfg.uploadTimeout)
 	}
 	p := profiler{
 		cfg:  cfg,
@@ -146,8 +160,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			for t := range p.cfg.types {
 				prof, err := p.runProfile(t)
 				if err != nil {
-					fmt.Printf("error: %v\n", err)
-					log.Error("Error getting %s profile: %v; skipping.\n", t, err)
+					log.Error("Error getting %s profile: %v; skipping.", t, err)
 					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
 					continue
 				}
@@ -172,7 +185,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 			select {
 			case <-p.out:
 				p.cfg.statsd.Count("datadog.profiler.go.queue_full", 1, p.cfg.tags, 1)
-				log.Warn("Evicting one profile batch from the upload queue to make room.\n")
+				log.Warn("Evicting one profile batch from the upload queue to make room.")
 			default:
 				// this case should be almost impossible to trigger, it would require a
 				// full p.out to completely drain within nanoseconds or extreme
@@ -186,7 +199,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 func (p *profiler) send() {
 	for bat := range p.out {
 		if err := p.uploadFunc(bat); err != nil {
-			log.Error("Failed to upload profile: %v\n", err)
+			log.Error("Failed to upload profile: %v", err)
 		}
 	}
 }
