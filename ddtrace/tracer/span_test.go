@@ -204,6 +204,22 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal("false", span.Meta["some.other.bool"])
 }
 
+func TestSpanSetTagError(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("off", func(t *testing.T) {
+		span := newBasicSpan("web.request")
+		span.setTagError(errors.New("error value with no trace"), errorConfig{noDebugStack: true})
+		assert.Empty(span.Meta[ext.ErrorStack])
+	})
+
+	t.Run("on", func(t *testing.T) {
+		span := newBasicSpan("web.request")
+		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
+		assert.NotEmpty(span.Meta[ext.ErrorStack])
+	})
+}
+
 func TestSpanSetDatadogTags(t *testing.T) {
 	assert := assert.New(t)
 
