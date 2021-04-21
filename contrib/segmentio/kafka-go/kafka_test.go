@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	testGroupID = "gotest"
-	testTopic   = "gotest"
+	testGroupID = "gosegtest"
+	testTopic   = "gosegtest"
 )
 
 func skipIntegrationTest(t *testing.T) {
@@ -53,7 +53,7 @@ func TestConsumerFunctional(t *testing.T) {
 	defer mt.Stop()
 
 	w := NewWriter(kafka.WriterConfig{
-		Brokers: []string{"kafka:9092"},
+		Brokers: []string{"localhost:9092"},
 		Topic:   testTopic,
 	}, WithAnalyticsRate(0.1))
 	msg1 := []kafka.Message{
@@ -67,7 +67,7 @@ func TestConsumerFunctional(t *testing.T) {
 	w.Close()
 
 	r := NewReader(kafka.ReaderConfig{
-		Brokers: []string{"kafka:9092"},
+		Brokers: []string{"localhost:9092"},
 		GroupID: testGroupID,
 		Topic:   testTopic,
 	})
@@ -85,7 +85,7 @@ func TestConsumerFunctional(t *testing.T) {
 	s0 := spans[0] // produce
 	assert.Equal(t, "kafka.produce", s0.OperationName())
 	assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))
-	assert.Equal(t, "Produce Topic gotest", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "Produce Topic "+testTopic, s0.Tag(ext.ResourceName))
 	assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 	assert.Equal(t, 0, s0.Tag("partition"))
@@ -93,7 +93,7 @@ func TestConsumerFunctional(t *testing.T) {
 	s1 := spans[1] // consume
 	assert.Equal(t, "kafka.consume", s1.OperationName())
 	assert.Equal(t, "kafka", s1.Tag(ext.ServiceName))
-	assert.Equal(t, "Consume Topic gotest", s1.Tag(ext.ResourceName))
+	assert.Equal(t, "Consume Topic "+testTopic, s1.Tag(ext.ResourceName))
 	assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 	assert.Equal(t, 0, s1.Tag("partition"))
