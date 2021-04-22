@@ -58,14 +58,31 @@ func TestStart(t *testing.T) {
 		mu.Unlock()
 	})
 
-	t.Run("options/GoodAPIKey", func(t *testing.T) {
-		_, err := newProfiler(WithAPIKey("12345678901234567890123456789012"))
+	t.Run("options/GoodAPIKey/Agent", func(t *testing.T) {
+		err := Start(WithAPIKey("12345678901234567890123456789012"))
+		defer Stop()
 		assert.Nil(t, err)
+		assert.Equal(t, activeProfiler.cfg.agentURL, activeProfiler.cfg.targetURL)
+	})
+
+	t.Run("options/GoodAPIKey/Agentless", func(t *testing.T) {
+		err := Start(
+			WithAPIKey("12345678901234567890123456789012"),
+			WithAgentlessUpload(),
+		)
+		defer Stop()
+		assert.Nil(t, err)
+		assert.Equal(t, activeProfiler.cfg.apiURL, activeProfiler.cfg.targetURL)
 	})
 
 	t.Run("options/BadAPIKey", func(t *testing.T) {
-		_, err := newProfiler(WithAPIKey("aaaa"))
+		err := Start(WithAPIKey("aaaa"), WithAgentlessUpload())
+		defer Stop()
 		assert.NotNil(t, err)
+
+		// Check that mu gets unlocked, even if newProfiler() returns an error.
+		mu.Lock()
+		mu.Unlock()
 	})
 }
 

@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // Middleware returns middleware that will trace incoming requests.
@@ -26,6 +27,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("gofiber/fiber.v2: Middleware: %#v", cfg)
 	return func(c *fiber.Ctx) error {
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),

@@ -41,3 +41,7 @@ If you need to undo this for any reason, you can run:
 ```
 git update-index --no-assume-unchanged go.*
 ```
+
+### Milestones
+
+The maintainers of this repository assign milestones to pull requests to classify them. `Triage` indicates that it is yet to be decided which version the change will go into. Pull requests that are ready get the upcoming release version assigned.

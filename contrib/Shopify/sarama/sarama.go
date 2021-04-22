@@ -36,6 +36,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/Shopify/sarama: Wrapping Partition Consumer: %#v", cfg)
 	wrapped := &partitionConsumer{
 		PartitionConsumer: pc,
 		messages:          make(chan *sarama.ConsumerMessage),
@@ -143,6 +144,7 @@ func WrapSyncProducer(saramaConfig *sarama.Config, producer sarama.SyncProducer,
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/Shopify/sarama: Wrapping Sync Producer: %#v", cfg)
 	if saramaConfig == nil {
 		saramaConfig = sarama.NewConfig()
 	}
@@ -186,6 +188,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/Shopify/sarama: Wrapping Async Producer: %#v", cfg)
 	if saramaConfig == nil {
 		saramaConfig = sarama.NewConfig()
 		saramaConfig.Version = sarama.V0_11_0_0
@@ -200,6 +203,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	}
 	go func() {
 		spans := make(map[uint64]ddtrace.Span)
+		defer close(wrapped.input)
 		defer close(wrapped.successes)
 		defer close(wrapped.errors)
 		for {

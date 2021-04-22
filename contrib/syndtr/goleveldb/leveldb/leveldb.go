@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/iterator"
@@ -47,9 +48,11 @@ func OpenFile(path string, o *opt.Options, opts ...Option) (*DB, error) {
 
 // WrapDB wraps a leveldb.DB so that queries are traced.
 func WrapDB(db *leveldb.DB, opts ...Option) *DB {
+	cfg := newConfig(opts...)
+	log.Debug("contrib/syndtr/goleveldb/leveldb: Wrapping DB: %#v", cfg)
 	return &DB{
 		DB:  db,
-		cfg: newConfig(opts...),
+		cfg: cfg,
 	}
 }
 

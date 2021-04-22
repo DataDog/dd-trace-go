@@ -453,15 +453,22 @@ func TestTracerSpanGlobalTags(t *testing.T) {
 
 func TestTracerNoDebugStack(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(WithDebugStack(false))
-	s := tracer.StartSpan("web.request").(*span)
-	err := errors.New("test error")
-	s.Finish(WithError(err))
 
-	assert.Equal(int32(1), s.Error)
-	assert.Equal("test error", s.Meta[ext.ErrorMsg])
-	assert.Equal("*errors.errorString", s.Meta[ext.ErrorType])
-	assert.Empty(s.Meta[ext.ErrorStack])
+	t.Run("Finish", func(t *testing.T) {
+		tracer := newTracer(WithDebugStack(false))
+		s := tracer.StartSpan("web.request").(*span)
+		err := errors.New("test error")
+		s.Finish(WithError(err))
+		assert.Empty(s.Meta[ext.ErrorStack])
+	})
+
+	t.Run("SetTag", func(t *testing.T) {
+		tracer := newTracer(WithDebugStack(false))
+		s := tracer.StartSpan("web.request").(*span)
+		err := errors.New("error value with no trace")
+		s.SetTag(ext.Error, err)
+		assert.Empty(s.Meta[ext.ErrorStack])
+	})
 }
 
 func TestNewSpan(t *testing.T) {
@@ -1020,7 +1027,9 @@ func TestTracerFlush(t *testing.T) {
 }
 
 func TestTracerReportsHostname(t *testing.T) {
-	t.Run("enabled", func(t *testing.T) {
+	const hostname = "hostname-test"
+
+	t.Run("DD_TRACE_REPORT_HOSTNAME/set", func(t *testing.T) {
 		os.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
 		defer os.Unsetenv("DD_TRACE_REPORT_HOSTNAME")
 
@@ -1038,11 +1047,72 @@ func TestTracerReportsHostname(t *testing.T) {
 		assert.True(ok)
 		assert.Equal(name, tracer.hostname)
 
+		name, ok = child.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(name, tracer.hostname)
+	})
+
+	t.Run("DD_TRACE_REPORT_HOSTNAME/unset", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
+
+		assert := assert.New(t)
+
+		_, ok := root.Meta[keyHostname]
+		assert.False(ok)
 		_, ok = child.Meta[keyHostname]
 		assert.False(ok)
 	})
 
-	t.Run("disabled", func(t *testing.T) {
+	t.Run("WithHostname", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithHostname(hostname))
+		defer stop()
+
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
+
+		assert := assert.New(t)
+
+		got, ok := root.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(got, hostname)
+
+		got, ok = child.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(got, hostname)
+	})
+
+	t.Run("DD_TRACE_SOURCE_HOSTNAME/set", func(t *testing.T) {
+		os.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-test")
+		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
+
+		assert := assert.New(t)
+
+		got, ok := root.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(got, hostname)
+
+		got, ok = child.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(got, hostname)
+	})
+
+	t.Run("DD_TRACE_SOURCE_HOSTNAME/unset", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 
@@ -1261,6 +1331,80 @@ func cpspan(s *span) *span {
 		ParentID: s.ParentID,
 		Error:    s.Error,
 	}
+}
+
+type testTraceWriter struct {
+	mu      sync.RWMutex
+	buf     []*span
+	flushed []*span
+}
+
+func newTestTraceWriter() *testTraceWriter {
+	return &testTraceWriter{
+		buf:     []*span{},
+		flushed: []*span{},
+	}
+}
+
+func (w *testTraceWriter) add(spans []*span) {
+	w.mu.Lock()
+	w.buf = append(w.buf, spans...)
+	w.mu.Unlock()
+}
+
+func (w *testTraceWriter) flush() {
+	w.mu.Lock()
+	w.flushed = append(w.flushed, w.buf...)
+	w.buf = w.buf[:0]
+	w.mu.Unlock()
+}
+
+func (w *testTraceWriter) stop() {}
+
+func (w *testTraceWriter) reset() {
+	w.mu.Lock()
+	w.flushed = w.flushed[:0]
+	w.buf = w.buf[:0]
+	w.mu.Unlock()
+}
+
+// Buffered returns the spans buffered by the writer.
+func (w *testTraceWriter) Buffered() []*span {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.buf
+}
+
+// Flushed returns the spans flushed by the writer.
+func (w *testTraceWriter) Flushed() []*span {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.flushed
+}
+
+func TestFlush(t *testing.T) {
+	tr, _, _, stop := startTestTracer(t)
+	tw := newTestTraceWriter()
+	tr.traceWriter = tw
+	defer stop()
+	tr.StartSpan("op").Finish()
+	timeout := time.After(time.Second)
+loop:
+	for {
+		select {
+		case <-timeout:
+			t.Fatal("timed out waiting for trace to be added to writer")
+		default:
+			if len(tw.Buffered()) > 0 {
+				// trace got buffered
+				break loop
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	assert.Len(t, tw.Flushed(), 0)
+	tr.flushSync()
+	assert.Len(t, tw.Flushed(), 1)
 }
 
 func TestTakeStackTrace(t *testing.T) {

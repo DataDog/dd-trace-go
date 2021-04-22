@@ -12,7 +12,6 @@ import (
 	"os"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -103,7 +102,9 @@ func (s *span) SetTag(key string, value interface{}) {
 	}
 	switch key {
 	case ext.Error:
-		s.setTagError(value, &errorConfig{})
+		s.setTagError(value, errorConfig{
+			noDebugStack: s.noDebugStack,
+		})
 		return
 	}
 	if v, ok := value.(bool); ok {
@@ -128,7 +129,7 @@ func (s *span) SetTag(key string, value interface{}) {
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
 // This method is not safe for concurrent use.
-func (s *span) setTagError(value interface{}, cfg *errorConfig) {
+func (s *span) setTagError(value interface{}, cfg errorConfig) {
 	if s.finished {
 		return
 	}
@@ -147,11 +148,7 @@ func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 		s.setMeta(ext.ErrorMsg, v.Error())
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
 		if !cfg.noDebugStack {
-			if cfg.stackFrames == 0 {
-				s.setMeta(ext.ErrorStack, string(debug.Stack()))
-			} else {
-				s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
-			}
+			s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
 		}
 		switch v.(type) {
 		case xerrors.Formatter:
@@ -170,8 +167,15 @@ func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 	}
 }
 
-// takeStacktrace takes stacktrace
+// defaultStackLength specifies the default maximum size of a stack trace.
+const defaultStackLength = 32
+
+// takeStacktrace takes a stack trace of maximum n entries, skipping the first skip entries.
+// If n is 0, up to 20 entries are retrieved.
 func takeStacktrace(n, skip uint) string {
+	if n == 0 {
+		n = defaultStackLength
+	}
 	var builder strings.Builder
 	pcs := make([]uintptr, n)
 
@@ -278,7 +282,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		}
 		if cfg.Error != nil {
 			s.Lock()
-			s.setTagError(cfg.Error, &errorConfig{
+			s.setTagError(cfg.Error, errorConfig{
 				noDebugStack: cfg.NoDebugStack,
 				stackFrames:  cfg.StackFrames,
 				stackSkip:    cfg.SkipStackFrames,

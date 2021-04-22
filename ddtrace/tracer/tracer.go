@@ -37,6 +37,10 @@ type tracer struct {
 	// out receives traces to be added to the payload.
 	out chan []*span
 
+	// flush receives a channel onto which it will confirm after a flush has been
+	// triggered and completed.
+	flush chan chan<- struct{}
+
 	// stop causes the tracer to shut down when closed.
 	stop chan struct{}
 
@@ -153,6 +157,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		traceWriter:      writer,
 		out:              make(chan []*span, payloadQueueSize),
 		stop:             make(chan struct{}),
+		flush:            make(chan chan<- struct{}),
 		rulesSampling:    newRulesSampler(c.samplingRules),
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
@@ -182,13 +187,35 @@ func newTracer(opts ...StartOption) *tracer {
 		}
 		t.worker(tick)
 	}()
-
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
 		t.reportHealthMetrics(statsInterval)
 	}()
 	return t
+}
+
+// Flush flushes any buffered traces. Flush is in effect only if a tracer
+// is started. Users do not have to call Flush in order to ensure that
+// traces reach Datadog. It is a convenience method dedicated to a specific
+// use case described below.
+//
+// Flush is of use in Lambda environments, where starting and stopping
+// the tracer on each invokation may create too much latency. In this
+// scenario, a tracer may be started and stopped by the parent process
+// whereas the invokation can make use of Flush to ensure any created spans
+// reach the agent.
+func Flush() {
+	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+		t.flushSync()
+	}
+}
+
+// flushSync triggers a flush and waits for it to complete.
+func (t *tracer) flushSync() {
+	done := make(chan struct{})
+	t.flush <- done
+	<-done
 }
 
 // worker receives finished traces to be added into the payload, as well
@@ -202,6 +229,14 @@ func (t *tracer) worker(tick <-chan time.Time) {
 		case <-tick:
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
+
+		case done := <-t.flush:
+			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
+			t.traceWriter.flush()
+			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
+			// when using the agent traceWriter. However, this functionnality is used
+			// in Lambda so for that purpose this mechanism should suffice.
+			done <- struct{}{}
 
 		case <-t.stop:
 		loop:
@@ -266,6 +301,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,
 	}
+	if t.hostname != "" {
+		span.setMeta(keyHostname, t.hostname)
+	}
 	if context != nil {
 		// this is a child span
 		span.TraceID = context.traceID
@@ -290,9 +328,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if context == nil || context.span == nil {
 		// this is either a root span or it has a remote parent, we should add the PID.
 		span.setMeta(ext.Pid, t.pid)
-		if t.hostname != "" {
-			span.setMeta(keyHostname, t.hostname)
-		}
 		if _, ok := opts.Tags[ext.ServiceName]; !ok && t.config.runtimeMetrics {
 			// this is a root span in the global service; runtime metrics should
 			// be linked to it:
@@ -322,6 +357,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// this is a brand new trace, sample it
 		t.sample(span)
 	}
+	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
 	return span
 }
 

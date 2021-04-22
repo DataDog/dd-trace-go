@@ -3,8 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package chi provides tracing functions for tracing the go-chi/chi package (https://github.com/go-chi/chi).
-package chi // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi"
+// Package chi provides tracing functions for tracing the go-chi/chi/v5 package (https://github.com/go-chi/chi).
+package chi // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi.v5"
 
 import (
 	"fmt"
@@ -17,8 +17,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 // Middleware returns middleware that will trace incoming requests.
@@ -28,7 +28,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	log.Debug("contrib/go-chi/chi: Configuring Middleware: %#v", cfg)
+	log.Debug("contrib/go-chi/chi.v5: Configuring Middleware: %#v", cfg)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			opts := []ddtrace.StartSpanOption{
