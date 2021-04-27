@@ -17,7 +17,7 @@ import (
 func ExampleEcho() {
 	mux := muxtrace.NewRouter()
 
-	var upgrader = websocketTrace.Wrap(websocket.Upgrader{})
+	var upgrader = websocketTrace.WrapUpgrader(websocket.Upgrader{})
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		c, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
