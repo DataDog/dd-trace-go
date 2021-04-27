@@ -199,19 +199,19 @@ jobs:
       - run:
           name: Testing outlier gRPC v1.2
           command: |
+                # This hacky approach is necessary because running the tests regularly
+                # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
                 go mod vendor
 
+                # Checkout grpc-go@v1.2.0
                 cd vendor/google.golang.org && rm -rf grpc
                 git clone git@github.com:grpc/grpc-go grpc && cd grpc
-                git fetch origin && git checkout v1.2.0
+                git fetch origin && git checkout v1.2.0 && cd ../..
 
-                cd ../..
-
+                # Checkout sketches-go@v1.0.0
                 cd vendor/github.com/DataDog && rm -rf sketches-go
                 git clone git@github.com:DataDog/sketches-go && cd sketches-go
-                git fetch origin && git checkout v1.0.0
-
-                cd ../..
+                git fetch origin && git checkout v1.0.0 && cd ../..
 
                 go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
 
