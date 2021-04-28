@@ -93,10 +93,10 @@ func TestTracerCleanStop(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
-			Start(withTransport(transport))
+			Start(withTransport(transport), WithLambdaMode(true))
 			time.Sleep(time.Millisecond)
-			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
-			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
 		}
 	}()
 
@@ -471,6 +471,11 @@ func TestTracerNoDebugStack(t *testing.T) {
 	})
 }
 
+// newDefaultTransport return a default transport for this tracing client
+func newDefaultTransport() transport {
+	return newHTTPTransport(defaultAddress, defaultClient)
+}
+
 func TestNewSpan(t *testing.T) {
 	assert := assert.New(t)
 
@@ -627,9 +632,9 @@ func TestTracerEdgeSampler(t *testing.T) {
 	count := payloadQueueSize / 3
 
 	for i := 0; i < count; i++ {
-		span0 := tracer0.newRootSpan("pylons.request", "pylons", "/")
+		span0 := tracer0.StartSpan("pylons.request", SpanType("test"), ServiceName("pylons"), ResourceName("/"))
 		span0.Finish()
-		span1 := tracer1.newRootSpan("pylons.request", "pylons", "/")
+		span1 := tracer1.StartSpan("pylons.request", SpanType("test"), ServiceName("pylons"), ResourceName("/"))
 		span1.Finish()
 	}
 
@@ -1045,11 +1050,11 @@ func TestTracerReportsHostname(t *testing.T) {
 
 		name, ok := root.Meta[keyHostname]
 		assert.True(ok)
-		assert.Equal(name, tracer.hostname)
+		assert.Equal(name, tracer.config.hostname)
 
 		name, ok = child.Meta[keyHostname]
 		assert.True(ok)
-		assert.Equal(name, tracer.hostname)
+		assert.Equal(name, tracer.config.hostname)
 	})
 
 	t.Run("DD_TRACE_REPORT_HOSTNAME/unset", func(t *testing.T) {
@@ -1243,6 +1248,7 @@ func startTestTracer(t interface {
 type dummyTransport struct {
 	sync.RWMutex
 	traces spanLists
+	stats  []*statsPayload
 }
 
 func newDummyTransport() *dummyTransport {
@@ -1253,6 +1259,19 @@ func (t *dummyTransport) Len() int {
 	t.RLock()
 	defer t.RUnlock()
 	return len(t.traces)
+}
+
+func (t *dummyTransport) sendStats(p *statsPayload) error {
+	t.Lock()
+	t.stats = append(t.stats, p)
+	t.Unlock()
+	return nil
+}
+
+func (t *dummyTransport) Stats() []*statsPayload {
+	t.RLock()
+	defer t.RUnlock()
+	return t.stats
 }
 
 func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {

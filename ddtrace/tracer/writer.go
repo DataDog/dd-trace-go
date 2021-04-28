@@ -60,7 +60,7 @@ func newAgentTraceWriter(c *config, s *prioritySampler) *agentTraceWriter {
 func (h *agentTraceWriter) add(trace []*span) {
 	if err := h.payload.push(trace); err != nil {
 		h.config.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
-		log.Error("error encoding msgpack: %v", err)
+		log.Error("Error encoding msgpack: %v", err)
 	}
 	if h.payload.size() > payloadSizeLimit {
 		h.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
