@@ -9,79 +9,47 @@ package websocket // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/web
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// Upgrader is the wrapper type of a traced upgrader.
-type Upgrader struct {
-	websocket.Upgrader
-}
-
-// WrapUpgrader wraps the upgrader traced with the global tracer.
-func WrapUpgrader(u websocket.Upgrader) Upgrader {
-	return Upgrader{Upgrader: u}
-}
-
-// Upgrade traces the actual Upgrade() method using the global tracer as span
-// websocket.connection, which finishes when the returned connection is closed,
-// or in case of an error.
-func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header) (conn *Conn, err error) {
-	span, ctx := tracer.StartSpanFromContext(r.Context(), "websocket.connection")
-	defer func() {
-		// Finish the span when an error occurred.
-		// Otherwise, finish it in the (*Conn).Close() method.
-		if err != nil {
-			span.Finish(tracer.WithError(err))
-		}
-	}()
-
-	tracee, err := u.Upgrader.Upgrade(w, r.WithContext(ctx), responseHeader)
-	if err != nil {
-		return nil, err
-	}
-	return wrapConn(ctx, tracee), nil
-}
-
-// Conn is the wrapper type of a traced connection.
+// Conn is the wrapper type of a websocket connection.
 type Conn struct {
 	*websocket.Conn
 	ctx context.Context
 }
 
-func wrapConn(ctx context.Context, conn *websocket.Conn) *Conn {
+const (
+	messageTypeTag   = "websocket.message_type"
+	messageLengthTag = "websocket.message_length"
+)
+
+// WrapConn wraps the websocket connection to trace its methods using the global
+// tracer.
+func WrapConn(ctx context.Context, conn *websocket.Conn) *Conn {
 	return &Conn{
 		Conn: conn,
 		ctx:  ctx,
 	}
 }
 
-// Close wraps the actual connection Close() method and finishes the
-// websocket.connection span started by Upgrade().
-func (c *Conn) Close() (err error) {
-	if span, ok := tracer.SpanFromContext(c.ctx); ok {
-		defer func() {
-			span.Finish(tracer.WithError(err))
-		}()
-	}
-	return c.Conn.Close()
-}
-
-// ReadMessage traces the actual ReadMessage() method using the global tracer
-// as span websocket.read_message.
+// ReadMessage is a helper method for getting a reader using NextReader and
+// reading from that reader to a buffer.
 func (c *Conn) ReadMessage() (messageType int, p []byte, err error) {
-	span, _ := tracer.StartSpanFromContext(c.ctx, "websocket.read_message", messageTypeTag(messageType))
+	span, _ := tracer.StartSpanFromContext(c.ctx, "websocket.read_message")
 	defer func() {
 		span.Finish(tracer.WithError(err))
 	}()
 	return c.Conn.ReadMessage()
 }
 
-// ReadJSON traces the actual ReadJSON() method using the global tracer
-// as span websocket.read_json.
+// ReadJSON reads the next JSON-encoded message from the connection and stores
+// it in the value pointed to by v.
+//
+// See the documentation for the encoding/json Unmarshal function for details
+// about the conversion of JSON to a Go value.
 func (c *Conn) ReadJSON(v interface{}) (err error) {
 	span, _ := tracer.StartSpanFromContext(c.ctx, "websocket.read_json")
 	defer func() {
@@ -90,19 +58,20 @@ func (c *Conn) ReadJSON(v interface{}) (err error) {
 	return c.Conn.ReadJSON(v)
 }
 
-// WriteMessage traces the actual WriteMessage() method using the global tracer
-// as span websocket.write_message.
+// WriteMessage is a helper method for getting a writer using NextWriter,
+// writing the message and closing the writer.
 func (c *Conn) WriteMessage(messageType int, data []byte) (err error) {
-	span, _ := tracer.StartSpanFromContext(c.ctx, "websocket.write_message",
-		messageTypeTag(messageType), messageLengthTag(len(data)))
+	span, _ := tracer.StartSpanFromContext(c.ctx,
+		"websocket.write_message",
+		tracer.Tag(messageTypeTag, messageTypeTag),
+		tracer.Tag(messageLengthTag, len(data)))
 	defer func() {
 		span.Finish(tracer.WithError(err))
 	}()
 	return c.Conn.WriteMessage(messageType, data)
 }
 
-// WritePreparedMessage traces the actual WritePreparedMessage() method using
-// the global tracer as span websocket.write_prepared_message.
+// WritePreparedMessage writes prepared message into connection.
 func (c *Conn) WritePreparedMessage(pm *websocket.PreparedMessage) (err error) {
 	span, _ := tracer.StartSpanFromContext(c.ctx, "websocket.write_prepared_message")
 	defer func() {
@@ -111,19 +80,23 @@ func (c *Conn) WritePreparedMessage(pm *websocket.PreparedMessage) (err error) {
 	return c.Conn.WritePreparedMessage(pm)
 }
 
-// WriteControl traces the actual WriteControl() method using the global tracer
-// as span websocket.write_control.
+// WriteControl writes a control message with the given deadline. The allowed
+// message types are CloseMessage, PingMessage and PongMessage.
 func (c *Conn) WriteControl(messageType int, data []byte, deadline time.Time) (err error) {
-	span, _ := tracer.StartSpanFromContext(c.ctx, "websocket.write_control",
-		messageTypeTag(messageType), messageLengthTag(len(data)))
+	span, _ := tracer.StartSpanFromContext(c.ctx,
+		"websocket.write_control",
+		tracer.Tag(messageTypeTag, messageTypeTag),
+		tracer.Tag(messageLengthTag, len(data)))
 	defer func() {
 		span.Finish(tracer.WithError(err))
 	}()
 	return c.Conn.WriteControl(messageType, data, deadline)
 }
 
-// WriteJSON traces the actual WriteJSON() method using the global tracer
-// as span websocket.write_json.
+// WriteJSON writes the JSON encoding of v as a message.
+//
+// See the documentation for encoding/json Marshal for details about the
+// conversion of Go values to JSON.
 func (c *Conn) WriteJSON(v interface{}) (err error) {
 	span, _ := tracer.StartSpanFromContext(c.ctx, "websocket.write_json")
 	defer func() {
@@ -132,12 +105,4 @@ func (c *Conn) WriteJSON(v interface{}) (err error) {
 		}()
 	}()
 	return c.Conn.WriteJSON(v)
-}
-
-func messageTypeTag(messageType int) tracer.StartSpanOption {
-	return tracer.Tag("websocket.message_type", messageType)
-}
-
-func messageLengthTag(l int) tracer.StartSpanOption {
-	return tracer.Tag("websocket.message_length", l)
 }

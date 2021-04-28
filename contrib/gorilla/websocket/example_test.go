@@ -14,10 +14,12 @@ import (
 	websocketTrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/websocket"
 )
 
-func ExampleEcho() {
+// This example illustrates the usage of WrapConn to trace the websockets
+// read and write operations.
+func ExampleWrapConn() {
 	mux := muxtrace.NewRouter()
 
-	var upgrader = websocketTrace.WrapUpgrader(websocket.Upgrader{})
+	upgrader := websocket.Upgrader{}
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		c, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -25,17 +27,16 @@ func ExampleEcho() {
 			return
 		}
 		defer c.Close()
-
-		// Websocket serve loop
+		tracedConn := websocketTrace.WrapConn(r.Context(), c)
 		for {
-			mt, message, err := c.ReadMessage()
+			mt, message, err := tracedConn.ReadMessage()
 			if err != nil {
 				log.Println("read:", err)
 				break
 			}
-			log.Printf("recv: %s", message)
+			log.Printf("Received message: %s\n", message)
 
-			err = c.WriteMessage(mt, message)
+			err = tracedConn.WriteMessage(mt, message)
 			if err != nil {
 				log.Println("write:", err)
 				break
