@@ -19,7 +19,7 @@ import (
 func ExampleWrapConn() {
 	mux := muxtrace.NewRouter()
 
-	upgrader := websocket.Upgrader{}
+	var upgrader websocket.Upgrader
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		oconn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
