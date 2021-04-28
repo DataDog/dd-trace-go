@@ -21,22 +21,22 @@ func ExampleWrapConn() {
 
 	upgrader := websocket.Upgrader{}
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		oconn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Print("upgrade:", err)
 			return
 		}
-		defer conn.Close()
-		tracedConn := websocketTrace.WrapConn(r.Context(), conn)
+		defer oconn.Close()
+		conn := websocketTrace.WrapConn(r.Context(), oconn)
 		for {
-			mt, message, err := tracedConn.ReadMessage()
+			mt, message, err := conn.ReadMessage()
 			if err != nil {
 				log.Println("read:", err)
 				break
 			}
 			log.Printf("Received message: %s\n", message)
 
-			err = tracedConn.WriteMessage(mt, message)
+			err = conn.WriteMessage(mt, message)
 			if err != nil {
 				log.Println("write:", err)
 				break
