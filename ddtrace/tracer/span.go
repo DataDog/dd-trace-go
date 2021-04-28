@@ -377,11 +377,8 @@ func newAggregableSpan(s *span, cfg *config) *aggregableSpan {
 		Resource:   s.Resource,
 		Service:    s.Service,
 		Type:       s.Type,
-		Hostname:   cfg.hostname,
 		Synthetics: strings.HasPrefix(s.Meta[keyOrigin], "synthetics"),
-		Env:        cfg.env,
 		StatusCode: statusCode,
-		Version:    cfg.version,
 	}
 	return &aggregableSpan{
 		key:      key,

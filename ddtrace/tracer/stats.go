@@ -193,13 +193,10 @@ func (c *concentrator) flush(timenow time.Time) statsPayload {
 // of stats are grouped inside a bucket.
 type aggregation struct {
 	Name       string
-	Env        string
 	Type       string
 	Resource   string
 	Service    string
-	Hostname   string
 	StatusCode uint32
-	Version    string
 	Synthetics bool
 }
 

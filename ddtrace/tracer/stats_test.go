@@ -36,7 +36,6 @@ func TestAlignTs(t *testing.T) {
 func TestConcentrator(t *testing.T) {
 	key1 := aggregation{
 		Name: "http.request",
-		Env:  "prod",
 	}
 	ss1 := &aggregableSpan{
 		key:      key1,
@@ -45,7 +44,6 @@ func TestConcentrator(t *testing.T) {
 	}
 	key2 := aggregation{
 		Name: "sql.query",
-		Env:  "staging",
 	}
 	ss2 := &aggregableSpan{
 		key:      key2,
