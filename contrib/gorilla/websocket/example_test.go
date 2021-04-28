@@ -21,13 +21,13 @@ func ExampleWrapConn() {
 
 	upgrader := websocket.Upgrader{}
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		c, err := upgrader.Upgrade(w, r, nil)
+		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Print("upgrade:", err)
 			return
 		}
-		defer c.Close()
-		tracedConn := websocketTrace.WrapConn(r.Context(), c)
+		defer conn.Close()
+		tracedConn := websocketTrace.WrapConn(r.Context(), conn)
 		for {
 			mt, message, err := tracedConn.ReadMessage()
 			if err != nil {
