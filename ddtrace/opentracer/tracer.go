@@ -20,6 +20,8 @@
 package opentracer
 
 import (
+	"context"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -47,7 +49,9 @@ func (t *opentracer) StartSpan(operationName string, options ...opentracing.Star
 	}
 	opts := []ddtrace.StartSpanOption{tracer.StartTime(sso.StartTime)}
 	for _, ref := range sso.References {
-		if v, ok := ref.ReferencedContext.(ddtrace.SpanContext); ok && ref.Type == opentracing.ChildOfRef {
+		if v, ok := ref.ReferencedContext.(ddtrace.SpanContext); ok {
+			// opentracing.ChildOfRef and opentracing.FollowsFromRef will both be represented as
+			// children because Datadog APM does not have a concept of FollowsFrom references.
 			opts = append(opts, tracer.ChildOf(v))
 			break // can only have one parent
 		}
@@ -83,4 +87,15 @@ func (t *opentracer) Extract(format interface{}, carrier interface{}) (opentraci
 	default:
 		return nil, opentracing.ErrUnsupportedFormat
 	}
+}
+
+var _ opentracing.TracerContextWithSpanExtension = (*opentracer)(nil)
+
+// ContextWithSpan implements opentracing.TracerContextWithSpanExtension.
+func (t *opentracer) ContextWithSpanHook(ctx context.Context, openSpan opentracing.Span) context.Context {
+	ddSpan, ok := openSpan.(*span)
+	if !ok {
+		return ctx
+	}
+	return tracer.ContextWithSpan(ctx, ddSpan.Span)
 }

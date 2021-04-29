@@ -13,8 +13,8 @@ import (
 	"runtime/pprof"
 	"time"
 
+	"github.com/DataDog/gostackparse"
 	pprofile "github.com/google/pprof/profile"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/stackparse"
 )
 
 // ProfileType represents a type of profile that the profiler is able to run.
@@ -260,8 +260,8 @@ var lookupProfile = func(name string, w io.Writer, debug int) error {
 }
 
 func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
-	// stackparse.Parse() has been extensively tested and should not crash under
-	// any circumstances, but we really want to avoid crashing a customers
+	// gostackparse.Parse() has been extensively tested and should not crash
+	// under any circumstances, but we really want to avoid crashing a customers
 	// applications, so this code will recover from any unexpected panics and
 	// return them as an error instead.
 	defer func() {
@@ -270,7 +270,7 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
 		}
 	}()
 
-	goroutines, errs := stackparse.Parse(r)
+	goroutines, errs := gostackparse.Parse(r)
 
 	functionID := uint64(1)
 	locationID := uint64(1)
@@ -310,7 +310,7 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
 		// frames to indicate truncated stacks, see [1] for how python/jd does it.
 		// [1] https://github.com/DataDog/dd-trace-py/blob/e933d2485b9019a7afad7127f7c0eb541341cdb7/ddtrace/profiling/exporter/pprof.pyx#L117-L121
 		if g.FramesElided {
-			g.Stack = append(g.Stack, &stackparse.Frame{
+			g.Stack = append(g.Stack, &gostackparse.Frame{
 				Func: "...additional frames elided...",
 			})
 		}
@@ -335,7 +335,7 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
 			p.Location = append(p.Location, location)
 			locationID++
 
-			sample.Location = append([]*pprofile.Location{location}, sample.Location...)
+			sample.Location = append(sample.Location, location)
 		}
 
 		p.Sample = append(p.Sample, sample)

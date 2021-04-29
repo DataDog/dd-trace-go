@@ -69,7 +69,10 @@ type profiler struct {
 
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
-	cfg := defaultConfig()
+	cfg, err := defaultConfig()
+	if err != nil {
+		return nil, err
+	}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -77,12 +80,25 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if os.Getenv("DD_PROFILING_WAIT_PROFILE") != "" {
 		cfg.addProfileType(expGoroutineWaitProfile)
 	}
-	if cfg.apiKey != "" {
+	// Agentless upload is disabled by default as of v1.30.0, but
+	// WithAgentlessUpload can be used to enable it for testing and debugging.
+	if cfg.agentless {
 		if !isAPIKeyValid(cfg.apiKey) {
-			return nil, errors.New("API key has incorrect format")
+			return nil, errors.New("profiler.WithAgentlessUpload requires a valid API key. Use profiler.WithAPIKey or the DD_API_KEY env variable to set it")
 		}
+		// Always warn people against using this mode for now. All customers should
+		// use agent based uploading at this point.
+		log.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported.")
 		cfg.targetURL = cfg.apiURL
 	} else {
+		// Historically people could use an API Key to enable agentless uploading.
+		// As of v1.30.0 customers the default behavior is to use agent based
+		// uploading regardless of the presence of an API key. So if we see an API
+		// key configured, we warn the customers that this is probably a
+		// misconfiguration.
+		if cfg.apiKey != "" {
+			log.Warn("You are currently setting profiler.WithAPIKey or the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please see the profiler.WithAPIKey go docs and verify that your integration is still working. If you can't remove DD_API_KEY from your environment, you can use WithAPIKey(\"\") to silence this warning.")
+		}
 		cfg.targetURL = cfg.agentURL
 	}
 	if cfg.hostname == "" {
@@ -94,6 +110,17 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			log.Warn("unable to look up hostname: %v", err)
 		}
 		cfg.hostname = hostname
+	}
+	// uploadTimeout defaults to DefaultUploadTimeout, but in theory a user might
+	// set it to 0 or a negative value. However, it's not clear what this should
+	// mean, and most meanings we could assign seem to be bad: Not having a
+	// timeout is dangerous, having a timeout that fires immediately breaks
+	// uploading, and silently defaulting to the default timeout is confusing.
+	// So let's just stay clear of all of this by not allowing such values.
+	//
+	// see similar discussion: https://github.com/golang/go/issues/39177
+	if cfg.uploadTimeout <= 0 {
+		return nil, fmt.Errorf("invalid upload timeout, must be > 0: %s", cfg.uploadTimeout)
 	}
 	p := profiler{
 		cfg:  cfg,
@@ -151,8 +178,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			for t := range p.cfg.types {
 				profs, err := p.runProfile(t)
 				if err != nil {
-					fmt.Printf("error: %v\n", err)
-					log.Error("Error getting %s profile: %v; skipping.\n", t, err)
+					log.Error("Error getting %s profile: %v; skipping.", t, err)
 					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
 					continue
 				}
@@ -179,7 +205,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 			select {
 			case <-p.out:
 				p.cfg.statsd.Count("datadog.profiler.go.queue_full", 1, p.cfg.tags, 1)
-				log.Warn("Evicting one profile batch from the upload queue to make room.\n")
+				log.Warn("Evicting one profile batch from the upload queue to make room.")
 			default:
 				// this case should be almost impossible to trigger, it would require a
 				// full p.out to completely drain within nanoseconds or extreme
@@ -193,7 +219,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 func (p *profiler) send() {
 	for bat := range p.out {
 		if err := p.uploadFunc(bat); err != nil {
-			log.Error("Failed to upload profile: %v\n", err)
+			log.Error("Failed to upload profile: %v", err)
 		}
 	}
 }

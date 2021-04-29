@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -42,14 +43,18 @@ const (
 
 	// DefaultDuration specifies the default length of the CPU profile snapshot.
 	DefaultDuration = time.Second * 15
+
+	// DefaultUploadTimeout specifies the default timeout for uploading profiles.
+	// It can be overwritten using the DD_PROFILING_UPLOAD_TIMEOUT env variable
+	// or the WithUploadTimeout option.
+	DefaultUploadTimeout = 10 * time.Second
 )
 
 const (
-	defaultAPIURL      = "https://intake.profile.datadoghq.com/v1/input"
-	defaultAgentHost   = "localhost"
-	defaultAgentPort   = "8126"
-	defaultEnv         = "none"
-	defaultHTTPTimeout = 10 * time.Second // defines the current timeout before giving up with the send process
+	defaultAPIURL    = "https://intake.profile.datadoghq.com/v1/input"
+	defaultAgentHost = "localhost"
+	defaultAgentPort = "8126"
+	defaultEnv       = "none"
 )
 
 var defaultClient = &http.Client{
@@ -68,13 +73,13 @@ var defaultClient = &http.Client{
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	},
-	Timeout: defaultHTTPTimeout,
 }
 
 var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
 
 type config struct {
-	apiKey string
+	apiKey    string
+	agentless bool
 	// targetURL is the upload destination URL. It will be set by the profiler on start to either apiURL or agentURL
 	// based on the other options.
 	targetURL     string
@@ -88,6 +93,7 @@ type config struct {
 	types         map[ProfileType]struct{}
 	period        time.Duration
 	cpuDuration   time.Duration
+	uploadTimeout time.Duration
 	mutexFraction int
 	blockRate     int
 }
@@ -118,7 +124,7 @@ func (c *config) addProfileType(t ProfileType) {
 	c.types[t] = struct{}{}
 }
 
-func defaultConfig() *config {
+func defaultConfig() (*config, error) {
 	c := config{
 		env:           defaultEnv,
 		apiURL:        defaultAPIURL,
@@ -129,6 +135,7 @@ func defaultConfig() *config {
 		cpuDuration:   DefaultDuration,
 		blockRate:     DefaultBlockRate,
 		mutexFraction: DefaultMutexFraction,
+		uploadTimeout: DefaultUploadTimeout,
 		tags:          []string{fmt.Sprintf("pid:%d", os.Getpid())},
 	}
 	for _, t := range defaultProfileTypes {
@@ -143,8 +150,18 @@ func defaultConfig() *config {
 		agentPort = v
 	}
 	WithAgentAddr(net.JoinHostPort(agentHost, agentPort))(&c)
+	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err)
+		}
+		WithUploadTimeout(d)(&c)
+	}
 	if v := os.Getenv("DD_API_KEY"); v != "" {
 		WithAPIKey(v)(&c)
+	}
+	if internal.BoolEnv("DD_PROFILING_AGENTLESS", false) {
+		WithAgentlessUpload()(&c)
 	}
 	if v := os.Getenv("DD_SITE"); v != "" {
 		WithSite(v)(&c)
@@ -184,7 +201,7 @@ func defaultConfig() *config {
 	if v := os.Getenv("DD_PROFILING_URL"); v != "" {
 		WithURL(v)(&c)
 	}
-	return &c
+	return &c, nil
 }
 
 // An Option is used to configure the profiler's behaviour.
@@ -197,12 +214,26 @@ func WithAgentAddr(hostport string) Option {
 	}
 }
 
-// WithAPIKey is deprecated and might be removed in future versions of this
-// package. It allows to skip the agent and talk to the Datadog API directly
-// using the provided API key.
+// WithAPIKey sets the Datadog API Key and takes precedence over the DD_API_KEY
+// env variable. Historically this option was used to enable agentless
+// uploading, but as of dd-trace-go v1.30.0 the behavior has changed to always
+// default to agent based uploading which doesn't require an API key. So if you
+// currently don't have an agent running on the default localhost:8126 hostport
+// you need to set it up, or use WithAgentAddr to specify the hostport location
+// of the agent. See WithAgentlessUpload for more information.
 func WithAPIKey(key string) Option {
 	return func(cfg *config) {
 		cfg.apiKey = key
+	}
+}
+
+// WithAgentlessUpload is currently for internal usage only and not officially
+// supported. You should not enable it unless somebody at Datadog instructed
+// you to do so. It allows to skip the agent and talk to the Datadog API
+// directly using the provided API key.
+func WithAgentlessUpload() Option {
+	return func(cfg *config) {
+		cfg.agentless = true
 	}
 }
 
@@ -302,6 +333,16 @@ func WithStatsd(client StatsdClient) Option {
 	}
 }
 
+// WithUploadTimeout specifies the timeout to use for uploading profiles. The
+// default timeout is specified by DefaultUploadTimeout or the
+// DD_PROFILING_UPLOAD_TIMEOUT env variable. Using a negative value or 0 will
+// cause an error when starting the profiler.
+func WithUploadTimeout(d time.Duration) Option {
+	return func(cfg *config) {
+		cfg.uploadTimeout = d
+	}
+}
+
 // WithSite specifies the datadog site (datadoghq.com, datadoghq.eu, etc.)
 // which profiles will be sent to.
 func WithSite(site string) Option {
@@ -332,6 +373,5 @@ func WithUDS(socketPath string) Option {
 				return net.Dial("unix", socketPath)
 			},
 		},
-		Timeout: defaultHTTPTimeout,
 	})
 }

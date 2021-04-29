@@ -1,5 +1,0 @@
-goroutine 1 [running]:
-main.main()
-
-goroutine 2 [running]:
-main.main()

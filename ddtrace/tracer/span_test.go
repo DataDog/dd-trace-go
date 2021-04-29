@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -97,6 +98,58 @@ func TestSpanFinishTwice(t *testing.T) {
 	span.Finish()
 	assert.Equal(previousDuration, span.Duration)
 	tracer.awaitPayload(t, 1)
+}
+
+func TestShouldDrop(t *testing.T) {
+	for _, tt := range []struct {
+		prio   int
+		errors int64
+		rate   float64
+		want   bool
+	}{
+		{1, 0, 0, false},
+		{2, 1, 0, false},
+		{0, 1, 0, false},
+		{0, 0, 1, false},
+		{0, 0, 0.5, false},
+		{0, 0, 0.00001, true},
+		{0, 0, 0, true},
+	} {
+		t.Run("", func(t *testing.T) {
+			s := newSpan("", "", "", 1, 1, 0)
+			s.SetTag(ext.SamplingPriority, tt.prio)
+			s.SetTag(ext.EventSampleRate, tt.rate)
+			atomic.StoreInt64(&s.context.errors, tt.errors)
+			assert.Equal(t, shouldDrop(s), tt.want)
+		})
+	}
+
+	t.Run("none", func(t *testing.T) {
+		s := newSpan("", "", "", 1, 1, 0)
+		assert.Equal(t, shouldDrop(s), true)
+	})
+}
+
+func TestShouldComputeStats(t *testing.T) {
+	for _, tt := range []struct {
+		metrics map[string]float64
+		want    bool
+	}{
+		{map[string]float64{keyMeasured: 2}, false},
+		{map[string]float64{keyMeasured: 1}, true},
+		{map[string]float64{keyMeasured: 0}, false},
+		{map[string]float64{keyTopLevel: 0}, false},
+		{map[string]float64{keyTopLevel: 1}, true},
+		{map[string]float64{keyTopLevel: 2}, false},
+		{map[string]float64{keyTopLevel: 2, keyMeasured: 1}, true},
+		{map[string]float64{keyTopLevel: 1, keyMeasured: 2}, true},
+		{map[string]float64{keyTopLevel: 2, keyMeasured: 2}, false},
+		{map[string]float64{}, false},
+	} {
+		t.Run("", func(t *testing.T) {
+			assert.Equal(t, shouldComputeStats(&span{Metrics: tt.metrics}), tt.want)
+		})
+	}
 }
 
 func TestSpanFinishWithTime(t *testing.T) {
@@ -202,6 +255,22 @@ func TestSpanSetTag(t *testing.T) {
 
 	span.SetTag("some.other.bool", false)
 	assert.Equal("false", span.Meta["some.other.bool"])
+}
+
+func TestSpanSetTagError(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("off", func(t *testing.T) {
+		span := newBasicSpan("web.request")
+		span.setTagError(errors.New("error value with no trace"), errorConfig{noDebugStack: true})
+		assert.Empty(span.Meta[ext.ErrorStack])
+	})
+
+	t.Run("on", func(t *testing.T) {
+		span := newBasicSpan("web.request")
+		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
+		assert.NotEmpty(span.Meta[ext.ErrorStack])
+	})
 }
 
 func TestSpanSetDatadogTags(t *testing.T) {

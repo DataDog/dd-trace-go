@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -69,10 +70,15 @@ func (p *profiler) doRequest(bat batch) error {
 	if err != nil {
 		return err
 	}
+	// uploadTimeout is guaranteed to be >= 0, see newProfiler.
+	ctx, cancel := context.WithTimeout(context.Background(), p.cfg.uploadTimeout)
+	defer cancel()
+	// TODO(fg) use NewRequestWithContext once go 1.12 support is dropped.
 	req, err := http.NewRequest("POST", p.cfg.targetURL, body)
 	if err != nil {
 		return err
 	}
+	req = req.WithContext(ctx)
 	if p.cfg.apiKey != "" {
 		req.Header.Set("DD-API-KEY", p.cfg.apiKey)
 	}
