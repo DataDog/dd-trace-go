@@ -11,8 +11,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/gorilla/websocket"
 )
 
 // Conn is the wrapper type of a websocket connection.

@@ -13,10 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"github.com/stretchr/testify/require"
 	websockettrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/websocket"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+
+	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWrapConn(t *testing.T) {

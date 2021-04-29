@@ -32,14 +32,14 @@ func ExampleWrapConn() {
 			mt, message, err := conn.ReadMessage()
 			if err != nil {
 				log.Println("read:", err)
-				break
+				continue
 			}
 			log.Printf("Received message: %s\n", message)
 
 			err = conn.WriteMessage(mt, message)
 			if err != nil {
 				log.Println("write:", err)
-				break
+				continue
 			}
 		}
 	})
