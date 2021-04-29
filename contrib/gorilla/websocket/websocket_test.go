@@ -128,13 +128,35 @@ func TestWrapConn(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
-			runClientServer(t, tc.client, tc.server)
+			runClientServerTest(t, tc.client, tc.server)
 			tc.assert(mt)
 		})
 	}
 }
 
-func runClientServer(t *testing.T, client, server func(conn *websockettrace.Conn)) {
+func TestRunClientServerTest(t *testing.T) {
+	var serverRan, clientRan bool
+	runClientServerTest(t,
+		func(conn *websockettrace.Conn) {
+			require.NoError(t, conn.WriteJSON("hello from client"))
+			var s string
+			require.NoError(t, conn.ReadJSON(&s))
+			require.Equal(t, "hello from server", s)
+			clientRan = true
+		},
+		func(conn *websockettrace.Conn) {
+			require.NoError(t, conn.WriteJSON("hello from server"))
+			var s string
+			require.NoError(t, conn.ReadJSON(&s))
+			require.Equal(t, "hello from client", s)
+			serverRan = true
+		},
+	)
+	require.True(t, clientRan)
+	require.True(t, serverRan)
+}
+
+func runClientServerTest(t *testing.T, client, server func(conn *websockettrace.Conn)) {
 	// Create an HTTP server handling websocket connections served by function
 	// `server`.
 	upgrader := websocket.Upgrader{}
