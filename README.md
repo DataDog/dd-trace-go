@@ -4,9 +4,21 @@
 
 ### Installing
 
+This module contains many packages, but most users should probably install the 3 packages below:
+
 ```bash
 go get gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+go get gopkg.in/DataDog/dd-trace-go.v1/ddtrace/opentracer
+go get gopkg.in/DataDog/dd-trace-go.v1/profiler
 ```
+
+Additionally there are many [contrib](./contrib) packages that can be installed as needed like this:
+
+```
+go get gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux
+```
+
+If you installed more packages than you intended, you can use `go mod tidy` to remove any unused packages.
 
 Requires:
 
