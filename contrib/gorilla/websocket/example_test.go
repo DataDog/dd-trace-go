@@ -23,7 +23,8 @@ func ExampleWrapConn() {
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		oconn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			log.Print("upgrade:", err)
+			log.Printf("Error on upgrade: %v\n", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		defer oconn.Close()
@@ -31,13 +32,12 @@ func ExampleWrapConn() {
 		for {
 			mt, message, err := conn.ReadMessage()
 			if err != nil {
-				log.Printf("Error reading message: %v", err)
+				log.Printf("Error reading message: %v\n", err)
 				continue
 			}
 			log.Printf("Received message: %s\n", message)
 
-			err = conn.WriteMessage(mt, message)
-			if err != nil {
+			if err := conn.WriteMessage(mt, message); err != nil {
 				log.Printf("Error writing message: %v\n", err)
 				continue
 			}

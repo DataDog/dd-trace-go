@@ -23,8 +23,8 @@ type Conn struct {
 }
 
 const (
-	messageTypeTag   = "websocket.message_type"
-	messageLengthTag = "websocket.message_length"
+	tagMessageType   = "websocket.message_type"
+	tagMessageLength = "websocket.message_length"
 )
 
 // WrapConn wraps the websocket connection to trace its methods using the global
@@ -64,8 +64,8 @@ func (c *Conn) ReadJSON(v interface{}) (err error) {
 func (c *Conn) WriteMessage(messageType int, data []byte) (err error) {
 	span, _ := tracer.StartSpanFromContext(c.ctx,
 		"websocket.write_message",
-		tracer.Tag(messageTypeTag, messageType),
-		tracer.Tag(messageLengthTag, len(data)))
+		tracer.Tag(tagMessageType, messageType),
+		tracer.Tag(tagMessageLength, len(data)))
 	defer func() {
 		span.Finish(tracer.WithError(err))
 	}()
@@ -86,8 +86,9 @@ func (c *Conn) WritePreparedMessage(pm *websocket.PreparedMessage) (err error) {
 func (c *Conn) WriteControl(messageType int, data []byte, deadline time.Time) (err error) {
 	span, _ := tracer.StartSpanFromContext(c.ctx,
 		"websocket.write_control",
-		tracer.Tag(messageTypeTag, messageType),
-		tracer.Tag(messageLengthTag, len(data)))
+		tracer.Tag(tagMessageType, messageType),
+		tracer.Tag(tagMessageLength, len(data)),
+	)
 	defer func() {
 		span.Finish(tracer.WithError(err))
 	}()
