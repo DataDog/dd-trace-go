@@ -6,6 +6,9 @@
 package tracer
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"sync"
@@ -28,7 +31,15 @@ var _ ddtrace.Tracer = (*tracer)(nil)
 // channels. It additionally holds two buffers which accumulates error and trace
 // queues to be processed by the payload encoder.
 type tracer struct {
-	*config
+	config *config
+
+	// features holds the capabilities of the agent and determines some
+	// of the behaviour of the tracer.
+	features *agentFeatures
+
+	// stats specifies the concentrator used to compute statistics, when client-side
+	// stats are enabled.
+	stats *concentrator
 
 	// traceWriter is responsible for sending finished traces to their
 	// destination, such as the Trace Agent or Datadog Forwarder.
@@ -59,6 +70,9 @@ type tracer struct {
 	// These integers track metrics about spans and traces as they are started,
 	// finished, and dropped
 	spansStarted, spansFinished, tracesDropped int64
+
+	// Records the number of dropped P0 traces and spans.
+	droppedP0Traces, droppedP0Spans uint64
 
 	// rulesSampling holds an instance of the rules sampler. These are user-defined
 	// rules for applying a sampling rate to spans that match the designated service
@@ -96,6 +110,9 @@ func Start(opts ...StartOption) {
 		return // mock tracer active
 	}
 	t := newTracer(opts...)
+	if t.config.HasFeature("discovery") {
+		t.loadAgentFeatures()
+	}
 	internal.SetGlobalTracer(t)
 	if t.config.logStartup {
 		logStartup(t)
@@ -152,7 +169,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	} else {
 		writer = newAgentTraceWriter(c, sampler)
 	}
-	return &tracer{
+	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
 		out:              make(chan []*span, payloadQueueSize),
@@ -161,7 +178,10 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampling:    newRulesSampler(c.samplingRules),
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
+		features:         &agentFeatures{},
+		stats:            newConcentrator(c, defaultStatsBucketSize),
 	}
+	return t
 }
 
 func newTracer(opts ...StartOption) *tracer {
@@ -192,6 +212,7 @@ func newTracer(opts ...StartOption) *tracer {
 		defer t.wg.Done()
 		t.reportHealthMetrics(statsInterval)
 	}()
+	t.stats.Start()
 	return t
 }
 
@@ -216,6 +237,78 @@ func (t *tracer) flushSync() {
 	done := make(chan struct{})
 	t.flush <- done
 	<-done
+}
+
+// agentFeatures holds information about the trace-agent's capabilities.
+type agentFeatures struct {
+	mu sync.RWMutex
+
+	// DropP0s reports whether it's ok for the tracer to not send any
+	// P0 traces to the agent.
+	DropP0s bool
+
+	// V05 reports whether it's ok to use the /v0.5/traces endpoint format.
+	V05 bool // TODO(x): Not yet implemented
+
+	// Stats reports whether the agent can receive client-computed stats on
+	// the /v0.6/stats endpoint.
+	Stats bool
+}
+
+// Load returns the current features.
+func (f *agentFeatures) Load() agentFeatures {
+	f.mu.RLock()
+	out := *f
+	f.mu.RUnlock()
+	return out
+}
+
+// Store stores the new features.
+func (f *agentFeatures) Store(newf agentFeatures) {
+	f.mu.Lock()
+	f.DropP0s = newf.DropP0s
+	f.V05 = newf.V05
+	f.Stats = newf.Stats
+	f.mu.Unlock()
+}
+
+// loadAgentFeatures queries the trace-agent for its capabilities and updates
+// the tracer's behaviour.
+func (t *tracer) loadAgentFeatures() {
+	if t.config.logToStdout {
+		// there is no agent
+		return
+	}
+	resp, err := http.Get(fmt.Sprintf("http://%s/info", t.config.agentAddr))
+	if err != nil {
+		log.Error("Loading features: %v", err)
+		return
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		// agent is older than 7.28.0, features not discoverable
+		t.features.Store(agentFeatures{})
+		return
+	}
+	defer resp.Body.Close()
+	type infoResponse struct {
+		Endpoints     []string `json:"endpoints"`
+		ClientDropP0s bool     `json:"client_drop_p0s"`
+	}
+	var info infoResponse
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		log.Error("Decoding features: %v", err)
+		return
+	}
+	f := agentFeatures{DropP0s: info.ClientDropP0s}
+	for _, endpoint := range info.Endpoints {
+		switch endpoint {
+		case "/v0.6/stats":
+			f.Stats = true
+		case "/v0.5/traces":
+			f.V05 = true
+		}
+	}
+	t.features.Store(f)
 }
 
 // worker receives finished traces to be added into the payload, as well
@@ -301,8 +394,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,
 	}
-	if t.hostname != "" {
-		span.setMeta(keyHostname, t.hostname)
+	if t.config.hostname != "" {
+		span.setMeta(keyHostname, t.config.hostname)
 	}
 	if context != nil {
 		// this is a child span
@@ -351,7 +444,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		span.SetTag(ext.Version, t.config.version)
 	}
 	if t.config.env != "" {
-		span.SetTag(ext.Environment, t.env)
+		span.SetTag(ext.Environment, t.config.env)
 	}
 	if context == nil {
 		// this is a brand new trace, sample it
@@ -367,6 +460,7 @@ func (t *tracer) Stop() {
 		close(t.stop)
 		t.config.statsd.Incr("datadog.tracer.stopped", nil, 1)
 	})
+	t.stats.Stop()
 	t.wg.Wait()
 	t.traceWriter.stop()
 	t.config.statsd.Close()
