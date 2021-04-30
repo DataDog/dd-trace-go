@@ -90,7 +90,7 @@ func (w *responseWriter) WriteHeader(status int) {
 	w.status = status
 	w.span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 
-	if globalconfig.IsHTTPServerError(status) || (status >= 500 && status < 600) {
+	if globalconfig.IsHTTPServerError(status) {
 		w.span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 	}
 }

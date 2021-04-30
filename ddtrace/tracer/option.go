@@ -449,7 +449,7 @@ func WithHostname(name string) StartOption {
 	}
 }
 
-// WithHTTPClientErrorStatuses specifies the range of HTTP client status codes that are marked as errors.
+// WithHTTPClientErrorStatuses specifies the range of HTTP client status codes in string representation (e.g. comma-separated list or ranges of codes like "400-403, 405") that are marked as errors.
 func WithHTTPClientErrorStatuses(codes string) StartOption {
 	return func(_ *config) {
 		if strings.TrimSpace(codes) != "" {
@@ -458,7 +458,7 @@ func WithHTTPClientErrorStatuses(codes string) StartOption {
 	}
 }
 
-// WithHTTPServerErrorStatuses specifies the range of HTTP server status codes that are marked as errors.
+// WithHTTPServerErrorStatuses specifies the range of HTTP server status codes in string representation (e.g. comma-separated list or ranges of codes like "500-504, 505") that are marked as errors.
 func WithHTTPServerErrorStatuses(codes string) StartOption {
 	return func(_ *config) {
 		if strings.TrimSpace(codes) != "" {

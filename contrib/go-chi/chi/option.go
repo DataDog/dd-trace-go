@@ -83,5 +83,5 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 }
 
 func isServerError(statusCode int) bool {
-	return statusCode >= 500 && statusCode < 600
+	return globalconfig.IsHTTPServerError(statusCode)
 }

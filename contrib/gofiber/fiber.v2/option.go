@@ -75,7 +75,9 @@ func WithAnalyticsRate(rate float64) Option {
 	}
 }
 
-// WithStatusCheck allow setting of a function to tell whether a status code is an error
+// WithStatusCheck is deprecated. Please use globalconfig to set client/server
+// status codes. WithStatusCheck allows setting of a function to tell whether a
+// status code is an error.
 func WithStatusCheck(fn func(statusCode int) bool) Option {
 	return func(cfg *config) {
 		cfg.isStatusError = fn
@@ -83,5 +85,5 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 }
 
 func isServerError(statusCode int) bool {
-	return statusCode >= 500 && statusCode < 600
+	return globalconfig.IsHTTPServerError(statusCode)
 }

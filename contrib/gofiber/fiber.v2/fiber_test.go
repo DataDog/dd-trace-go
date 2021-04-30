@@ -95,37 +95,61 @@ func TestTrace200(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	assertErrorRequest := func(assert *assert.Assertions, mt mocktracer.Tracer, router *fiber.App) {
+		wantErr := fmt.Sprintf("%d: %s", 500, http.StatusText(500))
+		r := httptest.NewRequest("GET", "/err", nil)
 
-	// setup
-	router := fiber.New()
-	router.Use(Middleware(WithServiceName("foobar")))
-	code := 500
-	wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
+		response, err := router.Test(r, 100)
+		assert.Equal(nil, err)
+		assert.Equal(response.StatusCode, 500)
 
-	// a handler with an error and make the requests
-	router.Get("/err", func(c *fiber.Ctx) error {
-		return c.Status(code).SendString(fmt.Sprintf("%d!", code))
-	})
-	r := httptest.NewRequest("GET", "/err", nil)
-
-	response, err := router.Test(r, 100)
-	assert.Equal(nil, err)
-	assert.Equal(response.StatusCode, 500)
-
-	// verify the errors and status are correct
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	if len(spans) < 1 {
-		t.Fatalf("no spans")
+		// verify the errors and status are correct
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		if len(spans) < 1 {
+			t.Fatalf("no spans")
+		}
+		span := spans[0]
+		assert.Equal("http.request", span.OperationName())
+		assert.Equal("foobar", span.Tag(ext.ServiceName))
+		assert.Equal("500", span.Tag(ext.HTTPCode))
+		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
 	}
-	span := spans[0]
-	assert.Equal("http.request", span.OperationName())
-	assert.Equal("foobar", span.Tag(ext.ServiceName))
-	assert.Equal("500", span.Tag(ext.HTTPCode))
-	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+
+	t.Run("not set", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := fiber.New()
+		router.Use(Middleware(WithServiceName("foobar")))
+		code := 500
+		// a handler with an error and make the requests
+		router.Get("/err", func(c *fiber.Ctx) error {
+			return c.Status(code).SendString(fmt.Sprintf("%d!", code))
+		})
+		assertErrorRequest(assert, mt, router)
+	})
+
+	t.Run("set", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := fiber.New()
+		router.Use(Middleware(
+			WithServiceName("foobar"),
+			WithStatusCheck(func(statusCode int) bool {
+				return statusCode >= 500 && statusCode < 600
+			}),
+		))
+		code := 500
+		// a handler with an error and make the requests
+		router.Get("/err", func(c *fiber.Ctx) error {
+			return c.Status(code).SendString(fmt.Sprintf("%d!", code))
+		})
+		assertErrorRequest(assert, mt, router)
+	})
 }
 
 func TestGetSpanNotInstrumented(t *testing.T) {

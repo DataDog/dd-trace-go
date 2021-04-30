@@ -59,7 +59,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		span.SetTag(ext.Error, err)
 	} else {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
-		// check for 5XX server codes
+		// check for server codes
 		if globalconfig.IsHTTPServerError(res.StatusCode) {
 			span.SetTag("http.errors", res.Status)
 			span.SetTag(ext.Error, fmt.Errorf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))

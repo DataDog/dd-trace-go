@@ -16,6 +16,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/twitchtv/twirp"
@@ -87,8 +88,8 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 		span.SetTag(ext.Error, err)
 	} else {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
-		// treat 4XX and 5XX as errors for a client
-		if res.StatusCode >= 400 {
+		// check for client errors
+		if globalconfig.IsHTTPClientError(res.StatusCode) || globalconfig.IsHTTPServerError(res.StatusCode) {
 			span.SetTag(ext.Error, true)
 			span.SetTag(ext.ErrorMsg, fmt.Sprintf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))
 		}

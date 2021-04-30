@@ -66,7 +66,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 
 		if cfg.isStatusError(status) {
-			// mark 5xx server error
+			// check for server errors
 			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 		}
 		return err
