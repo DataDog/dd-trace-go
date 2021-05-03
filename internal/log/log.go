@@ -36,12 +36,15 @@ var (
 	logger ddtrace.Logger = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
 )
 
-// UseLogger sets l as the active logger.
-func UseLogger(l ddtrace.Logger) {
+// UseLogger sets l as the active logger and returns the previously configured
+// logger.
+func UseLogger(l ddtrace.Logger) ddtrace.Logger {
 	Flush()
 	mu.Lock()
 	defer mu.Unlock()
+	old := logger
 	logger = l
+	return old
 }
 
 // SetLevel sets the given lvl for logging.
@@ -172,3 +175,22 @@ func printMsg(lvl, format string, a ...interface{}) {
 type defaultLogger struct{ l *log.Logger }
 
 func (p *defaultLogger) Log(msg string) { p.l.Print(msg) }
+
+// DiscardLogger discards every call to Log().
+type DiscardLogger struct{}
+
+// Log implements ddtrace.Logger.
+func (d DiscardLogger) Log(msg string) {}
+
+// RecordLogger appends every call to Log() to Logs.
+type RecordLogger struct {
+	m    sync.Mutex
+	Logs []string
+}
+
+// Log implements ddtrace.Logger.
+func (r *RecordLogger) Log(msg string) {
+	r.m.Lock()
+	defer r.m.Unlock()
+	r.Logs = append(r.Logs, msg)
+}
