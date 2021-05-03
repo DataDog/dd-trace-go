@@ -7,15 +7,13 @@ package profiler
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"io/ioutil"
-	"sort"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/felixge/pprofutils"
 	pprofile "github.com/google/pprof/profile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,7 +37,7 @@ main;foobar 7
 main 1
 main;foo 3
 main;foobar 7
-	`)
+	`) + "\n"
 	)
 
 	// All delta-capable profile work the same, so we can test them with this
@@ -200,53 +198,10 @@ func (c panicReader) Read(_ []byte) (int, error) {
 // See https://github.com/brendangregg/FlameGraph#2-fold-stacks
 func foldedToPprof(t *testing.T, folded string) []byte {
 	t.Helper()
-	p := &pprofile.Profile{
-		TimeNanos: now().UnixNano(),
-	}
-
-	m := &pprofile.Mapping{ID: 1, HasFunctions: true}
-	p.Mapping = []*pprofile.Mapping{m}
-	p.SampleType = []*pprofile.ValueType{
-		{
-			Type: "procrastination",
-			Unit: "nanoseconds",
-		},
-	}
-
-	folded = strings.TrimSpace(folded)
-	for _, sample := range strings.Split(folded, "\n") {
-		parts := strings.Split(sample, " ")
-		require.Equal(t, 2, len(parts))
-
-		frames := strings.Split(parts[0], ";")
-		value, err := strconv.Atoi(parts[1])
-		require.NoError(t, err)
-
-		sample := &pprofile.Sample{
-			Value: []int64{int64(value)},
-		}
-		for _, frame := range frames {
-			function := &pprofile.Function{
-				ID:   uint64(len(p.Function)) + 1,
-				Name: frame,
-			}
-			p.Function = append(p.Function, function)
-
-			location := &pprofile.Location{
-				ID:      uint64(len(p.Location)) + 1,
-				Mapping: m,
-				Line:    []pprofile.Line{{Function: function}},
-			}
-			p.Location = append(p.Location, location)
-
-			sample.Location = append(sample.Location, location)
-		}
-		p.Sample = append(p.Sample, sample)
-	}
-
-	buf := &bytes.Buffer{}
-	require.NoError(t, p.Write(buf))
-	return buf.Bytes()
+	out := &bytes.Buffer{}
+	err := pprofutils.Text2PPROF(strings.NewReader(folded), out)
+	require.NoError(t, err)
+	return out.Bytes()
 }
 
 // pprofToFolded is a test helper that converts the binary pprof profile into a
@@ -254,26 +209,8 @@ func foldedToPprof(t *testing.T, folded string) []byte {
 // See https://github.com/brendangregg/FlameGraph#2-fold-stacks
 func pprofToFolded(t *testing.T, pprof []byte) string {
 	t.Helper()
-	prof, err := pprofile.Parse(bytes.NewReader(pprof))
+	out := &bytes.Buffer{}
+	err := pprofutils.PPROF2TextConfig{}.Convert(bytes.NewReader(pprof), out)
 	require.NoError(t, err)
-
-	var folded []string
-	for _, sample := range prof.Sample {
-		var frames []string
-		for _, loc := range sample.Location {
-			require.Equal(t, 1, len(loc.Line))
-			frames = append(frames, loc.Line[0].Function.Name)
-		}
-		var values []string
-		for _, val := range sample.Value {
-			values = append(values, fmt.Sprintf("%d", val))
-		}
-		folded = append(folded, fmt.Sprintf(
-			"%s %s",
-			strings.Join(frames, ";"),
-			strings.Join(values, " "),
-		))
-	}
-	sort.Strings(folded)
-	return strings.Join(folded, "\n")
+	return out.String()
 }
