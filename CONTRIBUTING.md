@@ -42,6 +42,25 @@ If you need to undo this for any reason, you can run:
 git update-index --no-assume-unchanged go.*
 ```
 
+Additionally there are some [known issues](https://github.com/DataDog/dd-trace-go/issues/911) caused by upstream modules not following semantic versioning. This means you're prone to see errors like this during local development:
+
+```
+$ go get -v ./...
+# gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc.v12
+contrib/google.golang.org/grpc.v12/grpc.go:61:11: undefined: metadata.FromContext
+contrib/google.golang.org/grpc.v12/grpc.go:92:13: undefined: metadata.FromContext
+contrib/google.golang.org/grpc.v12/grpc.go:97:9: undefined: metadata.NewContext
+# gopkg.in/DataDog/dd-trace-go.v1/contrib/cloud.google.com/go/pubsub.v1
+contrib/cloud.google.com/go/pubsub.v1/pubsub.go:34:33: msg.OrderingKey undefined (type *"cloud.google.com/go/pubsub".Message has no field or method OrderingKey)
+contrib/cloud.google.com/go/pubsub.v1/pubsub.go:97:34: msg.OrderingKey undefined (type *"cloud.google.com/go/pubsub".Message has no field or method OrderingKey)
+```
+
+We're working on a better solution to this problem, but for the meantime you can mitigate the problem by setting this in your local environment, perhaps using [direnv](https://direnv.net/):
+
+```
+export GOFLAGS="-tags=localdev $GOFLAGS"
+```
+
 ### Milestones
 
 The maintainers of this repository assign milestones to pull requests to classify them. `Triage` indicates that it is yet to be decided which version the change will go into. Pull requests that are ready get the upcoming release version assigned.
