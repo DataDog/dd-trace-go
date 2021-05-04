@@ -217,6 +217,7 @@ func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 			if err != nil {
 				return nil, fmt.Errorf("delta prof merge: %v", err)
 			}
+			deltaProf.DurationNanos = p1.TimeNanos - p0.TimeNanos
 			deltaBuf := &bytes.Buffer{}
 			if err := deltaProf.Write(deltaBuf); err != nil {
 				return nil, fmt.Errorf("delta prof write: %v", err)
