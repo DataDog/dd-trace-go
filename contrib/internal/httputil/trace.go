@@ -40,6 +40,7 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 		tracer.ResourceName(cfg.Resource),
 		tracer.Tag(ext.HTTPMethod, cfg.Request.Method),
 		tracer.Tag(ext.HTTPURL, path),
+		tracer.Measured(),
 	}, cfg.SpanOpts...)
 	if cfg.Request.URL.Host != "" {
 		opts = append([]ddtrace.StartSpanOption{

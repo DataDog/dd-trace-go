@@ -30,6 +30,7 @@ func startSpanFromContext(
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethodName, method),
 		tracer.SpanType(ext.AppTypeRPC),
+		tracer.Measured(),
 	)
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
