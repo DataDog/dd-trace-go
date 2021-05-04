@@ -55,7 +55,7 @@ contrib/cloud.google.com/go/pubsub.v1/pubsub.go:34:33: msg.OrderingKey undefined
 contrib/cloud.google.com/go/pubsub.v1/pubsub.go:97:34: msg.OrderingKey undefined (type *"cloud.google.com/go/pubsub".Message has no field or method OrderingKey)
 ```
 
-We're working on a better solution to this problem, but for the meantime you can mitigate the problem by setting this in your local environment, perhaps using [direnv](https://direnv.net/):
+We're working on a better solution to this problem, but in the meantime you can mitigate the problem by setting this in your local environment, perhaps using [direnv](https://direnv.net/):
 
 ```
 export GOFLAGS="-tags=localdev $GOFLAGS"
