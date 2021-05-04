@@ -182,15 +182,24 @@ type DiscardLogger struct{}
 // Log implements ddtrace.Logger.
 func (d DiscardLogger) Log(msg string) {}
 
-// RecordLogger appends every call to Log() to Logs.
+// RecordLogger records every call to Log() and makes it available via Logs().
 type RecordLogger struct {
 	m    sync.Mutex
-	Logs []string
+	logs []string
 }
 
 // Log implements ddtrace.Logger.
 func (r *RecordLogger) Log(msg string) {
 	r.m.Lock()
 	defer r.m.Unlock()
-	r.Logs = append(r.Logs, msg)
+	r.logs = append(r.logs, msg)
+}
+
+// Logs returns the ordered list of logs recorded by the logger.
+func (r *RecordLogger) Logs() []string {
+	r.m.Lock()
+	defer r.m.Unlock()
+	copied := make([]string, len(r.logs))
+	copy(copied, r.logs)
+	return copied
 }

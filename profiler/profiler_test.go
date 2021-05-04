@@ -68,8 +68,8 @@ func TestStart(t *testing.T) {
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.agentURL, activeProfiler.cfg.targetURL)
-		assert.Equal(t, 1, len(rl.Logs))
-		assert.Contains(t, rl.Logs[0], "profiler.WithAPIKey")
+		assert.Equal(t, 1, len(rl.Logs()))
+		assert.Contains(t, rl.Logs()[0], "profiler.WithAPIKey")
 	})
 
 	t.Run("options/GoodAPIKey/Agentless", func(t *testing.T) {
@@ -84,8 +84,8 @@ func TestStart(t *testing.T) {
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.apiURL, activeProfiler.cfg.targetURL)
-		assert.Equal(t, 1, len(rl.Logs))
-		assert.Contains(t, rl.Logs[0], "profiler.WithAgentlessUpload")
+		assert.Equal(t, 1, len(rl.Logs()))
+		assert.Contains(t, rl.Logs()[0], "profiler.WithAgentlessUpload")
 	})
 
 	t.Run("options/BadAPIKey", func(t *testing.T) {
