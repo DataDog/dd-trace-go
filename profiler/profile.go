@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DataDog/gostackparse"
+	"github.com/felixge/pprofutils"
 	pprofile "github.com/google/pprof/profile"
 )
 
@@ -55,10 +56,11 @@ type collector struct {
 	// backend which is aware of them. Delta profiles are prefixed with "delta-"
 	// automatically.
 	Filename string
-	// Delta reports whether delta profiling is enabled for this profile. This is useful for
-	// profiles that represent samples collected over the lifetime of the
-	// process such as heap, block, mutex, etc..
-	Delta bool
+	// Delta controls if this profile should be generated as a delta profile.
+	// This is useful for profiles that represent samples collected over the
+	// lifetime of the process (i.e. heap, block, mutex). If nil, no delta
+	// profile is generated.
+	Delta *pprofutils.Delta
 	// Collect collects the given profile and returns the data for it. Most
 	// profiles will be in pprof format, i.e. gzip compressed proto buf data.
 	Collect func(collector, *profiler) ([]byte, error)
@@ -82,19 +84,20 @@ var collectors = map[ProfileType]collector{
 	HeapProfile: {
 		Name:     "heap",
 		Filename: "heap.pprof",
-		Delta:    true,
-		Collect:  collectGenericProfile,
+		// TODO config
+		Delta:   &pprofutils.Delta{},
+		Collect: collectGenericProfile,
 	},
 	MutexProfile: {
 		Name:     "mutex",
 		Filename: "mutex.pprof",
-		Delta:    true,
+		Delta:    &pprofutils.Delta{},
 		Collect:  collectGenericProfile,
 	},
 	BlockProfile: {
 		Name:     "block",
 		Filename: "block.pprof",
-		Delta:    true,
+		Delta:    &pprofutils.Delta{},
 		Collect:  collectGenericProfile,
 	},
 	// TODO(fg) enable Delta for this? could be cool to see newly created
@@ -203,14 +206,14 @@ func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 		data: data,
 	}}
 
-	if pt.Delta {
+	if pt.Delta != nil {
 		p1, err := pprofile.Parse(bytes.NewReader(data))
 		if err != nil {
 			return nil, fmt.Errorf("delta prof parse: %v", err)
 		}
 
 		if p0 := p.prev[t]; p0 != nil {
-			deltaProf, err := pprofile.Merge([]*pprofile.Profile{p0, p1})
+			deltaProf, err := pt.Delta.Convert(p0, p1)
 			if err != nil {
 				return nil, fmt.Errorf("delta prof merge: %v", err)
 			}
@@ -218,6 +221,8 @@ func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 			if err := deltaProf.Write(deltaBuf); err != nil {
 				return nil, fmt.Errorf("delta prof write: %v", err)
 			}
+
+			// TODO(fg) profiling period
 
 			// TODO(fg) do we need to modify TimeNanos here?
 			// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
@@ -231,7 +236,6 @@ func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 
 		// Keep the most recent profile in memory for future diffing. This needs to
 		// be taken into account when enforcing memory limits going forward.
-		p1.Scale(-1)
 		p.prev[t] = p1
 	}
 

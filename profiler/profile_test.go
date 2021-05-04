@@ -22,12 +22,12 @@ import (
 func TestRunProfile(t *testing.T) {
 	// p0 and p1 are generic dummy profiles that produce delta when diffed.
 	var (
-		p0 = foldedToPprof(t, `
+		p0 = textToProtobuf(t, `
 main 3
 main;bar 2
 main;foo 5
 		`)
-		p1 = foldedToPprof(t, `
+		p1 = textToProtobuf(t, `
 main 4
 main;bar 2
 main;foo 8
@@ -67,7 +67,7 @@ main;foobar 7
 			assert.Equal(t, profType.Filename(), profs[0].name)
 			assert.Equal(t, p1, profs[0].data)
 			assert.Equal(t, "delta-"+profType.Filename(), profs[1].name)
-			require.Equal(t, delta, pprofToFolded(t, profs[1].data))
+			require.Equal(t, delta, protobufToText(t, profs[1].data))
 		})
 	}
 
@@ -193,24 +193,27 @@ func (c panicReader) Read(_ []byte) (int, error) {
 	panic("42")
 }
 
-// foldedToPprof is a test helper that converts the folded profile string
-// into a binary pprof profile.
+// textToProtobuf is a test helper that converts the folded text profile string
+// into the protobuf pprof profile.
 // See https://github.com/brendangregg/FlameGraph#2-fold-stacks
-func foldedToPprof(t *testing.T, folded string) []byte {
+func textToProtobuf(t *testing.T, folded string) []byte {
 	t.Helper()
 	out := &bytes.Buffer{}
-	err := pprofutils.Text2PPROF(strings.NewReader(folded), out)
+	prof, err := pprofutils.Text{}.Convert(strings.NewReader(folded))
 	require.NoError(t, err)
+	require.NoError(t, prof.Write(out))
 	return out.Bytes()
 }
 
-// pprofToFolded is a test helper that converts the binary pprof profile into a
-// a folded profile string.
+// protobufToText is a test helper that converts the binary protobuf profile
+// into a folded profile string.
 // See https://github.com/brendangregg/FlameGraph#2-fold-stacks
-func pprofToFolded(t *testing.T, pprof []byte) string {
+func protobufToText(t *testing.T, pprofData []byte) string {
 	t.Helper()
+	prof, err := pprofile.ParseData(pprofData)
+	require.NoError(t, err)
 	out := &bytes.Buffer{}
-	err := pprofutils.PPROF2TextConfig{}.Convert(bytes.NewReader(pprof), out)
+	err = pprofutils.Protobuf{}.Convert(prof, out)
 	require.NoError(t, err)
 	return out.String()
 }

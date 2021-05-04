@@ -172,7 +172,7 @@ func TestProfilerInternal(t *testing.T) {
 			if name == "heap" {
 				atomic.AddUint64(&writeHeap, 1)
 			}
-			_, err := w.Write(foldedToPprof(t, "main 5\n"))
+			_, err := w.Write(textToProtobuf(t, "main 5\n"))
 			return err
 		}
 
