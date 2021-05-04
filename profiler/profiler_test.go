@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -59,13 +61,21 @@ func TestStart(t *testing.T) {
 	})
 
 	t.Run("options/GoodAPIKey/Agent", func(t *testing.T) {
+		rl := &log.RecordLogger{}
+		defer log.UseLogger(rl)()
+
 		err := Start(WithAPIKey("12345678901234567890123456789012"))
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.agentURL, activeProfiler.cfg.targetURL)
+		assert.Equal(t, 1, len(rl.Logs()))
+		assert.Contains(t, rl.Logs()[0], "profiler.WithAPIKey")
 	})
 
 	t.Run("options/GoodAPIKey/Agentless", func(t *testing.T) {
+		rl := &log.RecordLogger{}
+		defer log.UseLogger(rl)()
+
 		err := Start(
 			WithAPIKey("12345678901234567890123456789012"),
 			WithAgentlessUpload(),
@@ -73,6 +83,8 @@ func TestStart(t *testing.T) {
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.apiURL, activeProfiler.cfg.targetURL)
+		assert.Equal(t, 1, len(rl.Logs()))
+		assert.Contains(t, rl.Logs()[0], "profiler.WithAgentlessUpload")
 	})
 
 	t.Run("options/BadAPIKey", func(t *testing.T) {
