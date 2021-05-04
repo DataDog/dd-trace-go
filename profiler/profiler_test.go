@@ -62,8 +62,7 @@ func TestStart(t *testing.T) {
 
 	t.Run("options/GoodAPIKey/Agent", func(t *testing.T) {
 		rl := &log.RecordLogger{}
-		old := log.UseLogger(rl)
-		defer log.UseLogger(old)
+		defer log.UseLogger(rl)()
 
 		err := Start(WithAPIKey("12345678901234567890123456789012"))
 		defer Stop()
@@ -75,8 +74,7 @@ func TestStart(t *testing.T) {
 
 	t.Run("options/GoodAPIKey/Agentless", func(t *testing.T) {
 		rl := &log.RecordLogger{}
-		old := log.UseLogger(rl)
-		defer log.UseLogger(old)
+		defer log.UseLogger(rl)()
 
 		err := Start(
 			WithAPIKey("12345678901234567890123456789012"),

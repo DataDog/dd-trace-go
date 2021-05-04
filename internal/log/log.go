@@ -36,15 +36,17 @@ var (
 	logger ddtrace.Logger = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
 )
 
-// UseLogger sets l as the active logger and returns the previously configured
-// logger.
-func UseLogger(l ddtrace.Logger) ddtrace.Logger {
+// UseLogger sets l as the active logger and returns a function to restore the
+// previous logger. The return value is mostly useful when testing.
+func UseLogger(l ddtrace.Logger) (undo func()) {
 	Flush()
 	mu.Lock()
 	defer mu.Unlock()
 	old := logger
 	logger = l
-	return old
+	return func() {
+		logger = old
+	}
 }
 
 // SetLevel sets the given lvl for logging.
