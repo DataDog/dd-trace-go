@@ -43,6 +43,8 @@ const (
 	expGoroutineWaitProfile
 	// MetricsProfile reports top-line metrics associated with user-specified profiles
 	MetricsProfile
+	// Adding new profiles also needs to happen in the collectors map and
+	// profiler.enabledProfileTypes().
 )
 
 // collector holds the implementation details of a ProfileType, see collectors
@@ -67,6 +69,9 @@ type collector struct {
 	// Collect collects the given profile and returns the data for it. Most
 	// profiles will be in pprof format, i.e. gzip compressed proto buf data.
 	Collect func(collector, *profiler) ([]byte, error)
+	// ProfileType is the profile type of the collector. It gets populated
+	// automatically by ProfileType.collector().
+	ProfileType ProfileType
 }
 
 // collectors map every ProfileType to a collector implementation.
@@ -154,9 +159,10 @@ func collectGenericProfile(c collector, _ *profiler) ([]byte, error) {
 
 // collector returns the collector for this profileType.
 func (t ProfileType) collector() collector {
-	pt, ok := collectors[t]
+	c, ok := collectors[t]
 	if ok {
-		return pt
+		c.ProfileType = t
+		return c
 	}
 	return collector{
 		Name:     "unknown",
@@ -202,26 +208,23 @@ func (b *batch) addProfile(p *profile) {
 }
 
 func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
-	var (
-		pt    = t.collector()
-		start = now()
-	)
-	data, err := pt.Collect(pt, p)
+	start := now()
+	c := t.collector()
+
+	data, err := c.Collect(c, p)
 	if err != nil {
 		return nil, err
 	}
-
 	profs := []*profile{{
-		name: pt.Filename,
+		name: c.Filename,
 		data: data,
 	}}
 
-	if prof, err := p.deltaProfile(pt, t, data); err != nil {
+	if prof, err := p.deltaProfile(c, data); err != nil {
 		return nil, fmt.Errorf("delta profile error: %s", err)
 	} else if prof != nil {
 		profs = append(profs, prof)
 	}
-
 	end := now()
 	tags := append(p.cfg.tags, t.Tag())
 	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
@@ -229,29 +232,29 @@ func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 	return profs, nil
 }
 
-func (p *profiler) deltaProfile(c collector, t ProfileType, data []byte) (*profile, error) {
-	pt := c
-	if pt.Delta == nil {
+// deltaProfile if the current.
+func (p *profiler) deltaProfile(c collector, curData []byte) (*profile, error) {
+	if c.Delta == nil {
 		return nil, nil
 	}
 
-	currentProf, err := pprofile.ParseData(data)
+	curProf, err := pprofile.ParseData(curData)
 	if err != nil {
 		return nil, fmt.Errorf("delta prof parse: %v", err)
 	}
 	var deltaData []byte
-	if prevProf := p.prev[t]; prevProf == nil {
+	if prevProf := p.prev[c.ProfileType]; prevProf == nil {
 		// First time we collect t there is no previous profile.
-		deltaData = data
+		deltaData = curData
 	} else {
 		// TODO text
 		// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
-		deltaProf, err := pt.Delta.Convert(prevProf, currentProf)
+		deltaProf, err := c.Delta.Convert(prevProf, curProf)
 		if err != nil {
 			return nil, fmt.Errorf("delta prof merge: %v", err)
 		}
-		deltaProf.DurationNanos = currentProf.TimeNanos - prevProf.TimeNanos
-		deltaProf.TimeNanos = currentProf.TimeNanos
+		deltaProf.DurationNanos = curProf.TimeNanos - prevProf.TimeNanos
+		deltaProf.TimeNanos = curProf.TimeNanos
 		deltaBuf := &bytes.Buffer{}
 		if err := deltaProf.Write(deltaBuf); err != nil {
 			return nil, fmt.Errorf("delta prof write: %v", err)
@@ -260,11 +263,11 @@ func (p *profiler) deltaProfile(c collector, t ProfileType, data []byte) (*profi
 	}
 	// Keep the most recent profile in memory for future diffing. This needs to
 	// be taken into account when enforcing memory limits going forward.
-	p.prev[t] = currentProf
+	p.prev[c.ProfileType] = curProf
 	return &profile{
 		// TODO(fg) are those good filenames? Is there a better way to flag
 		// these profiles for the backend?
-		name: "delta-" + pt.Filename,
+		name: "delta-" + c.Filename,
 		data: deltaData,
 	}, nil
 }

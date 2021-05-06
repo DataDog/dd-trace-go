@@ -174,8 +174,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				end: now.Add(p.cfg.cpuDuration),
 			}
 
-			// TODO(fg) random iteration order is bad for delta profiles.
-			for t := range p.cfg.types {
+			for _, t := range p.enabledProfileTypes() {
 				profs, err := p.runProfile(t)
 				if err != nil {
 					log.Error("Error getting %s profile: %v; skipping.", t, err)
@@ -191,6 +190,30 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			return
 		}
 	}
+}
+
+// enabledProfileTypes returns the enabled profile types in a deterministic
+// order. The CPU profile always comes first because people might spot
+// interesting events in there and then try to look for the counter-part event
+// in the mutex/heap/block profile. Deterministic ordering is also important
+// for delta profiles, otherwise they'd cover varying profiling periods.
+func (p *profiler) enabledProfileTypes() []ProfileType {
+	order := []ProfileType{
+		CPUProfile,
+		HeapProfile,
+		BlockProfile,
+		MutexProfile,
+		GoroutineProfile,
+		expGoroutineWaitProfile,
+		MetricsProfile,
+	}
+	enabled := []ProfileType{}
+	for _, t := range order {
+		if _, ok := p.cfg.types[t]; ok {
+			enabled = append(enabled, t)
+		}
+	}
+	return enabled
 }
 
 // enqueueUpload pushes a batch of profiles onto the queue to be uploaded. If there is no room, it will
