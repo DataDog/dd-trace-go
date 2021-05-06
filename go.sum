@@ -122,6 +122,8 @@ github.com/fatih/color v1.9.0/go.mod h1:eQcE1qtQxscV5RaZvpXrrb8Drkc3/DdQ+uUYCNjL
 github.com/fatih/structs v1.1.0/go.mod h1:9NiDSp5zOcgEDl+j00MP/WkGVPOlPRLejGD8Ga6PJ7M=
 github.com/felixge/pprofutils v0.8.0 h1:vQYhOEfrRksoZBVMMMaf0tBYo1Y9qsJAu5n9LM4nyok=
 github.com/felixge/pprofutils v0.8.0/go.mod h1:u8Q05Eboe6mX99vDU2TlBNRyuvgNomhR6BCbKm6Nf6Y=
+github.com/felixge/pprofutils v0.9.0 h1:onbBoeFOxyAIxmJqGcelP3NP1wxXSm+pCG18a/JWetw=
+github.com/felixge/pprofutils v0.9.0/go.mod h1:f9AoxtrHKQmWpwjH9t0AcS8Tx7uqKZQLrqrfS+0LtgE=
 github.com/fortytw2/leaktest v1.3.0 h1:u8491cBMTQ8ft8aeV+adlcytMZylmA5nnwwkRZjI8vw=
 github.com/fortytw2/leaktest v1.3.0/go.mod h1:jDsjWgpAGjm2CA7WthBh/CdZYEPF31XHquHwclZch5g=
 github.com/frankban/quicktest v1.7.2 h1:2QxQoC1TS09S7fhCPsrvqYdvP1H5M1P1ih5ABm3BTYk=
