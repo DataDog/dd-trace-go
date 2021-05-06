@@ -84,8 +84,10 @@ var collectors = map[ProfileType]collector{
 	HeapProfile: {
 		Name:     "heap",
 		Filename: "heap.pprof",
-		// TODO config
-		Delta:   &pprofutils.Delta{},
+		Delta: &pprofutils.Delta{SampleTypes: []pprofutils.ValueType{
+			{Type: "alloc_objects", Unit: "count"},
+			{Type: "alloc_space", Unit: "bytes"},
+		}},
 		Collect: collectGenericProfile,
 	},
 	MutexProfile: {
@@ -207,37 +209,41 @@ func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 	}}
 
 	if pt.Delta != nil {
-		p1, err := pprofile.Parse(bytes.NewReader(data))
+		currentProf, err := pprofile.Parse(bytes.NewReader(data))
 		if err != nil {
 			return nil, fmt.Errorf("delta prof parse: %v", err)
 		}
 
-		if p0 := p.prev[t]; p0 != nil {
-			deltaProf, err := pt.Delta.Convert(p0, p1)
+		var deltaData []byte
+		if prevProf := p.prev[t]; prevProf == nil {
+			deltaData = data
+		} else {
+			deltaProf, err := pt.Delta.Convert(prevProf, currentProf)
 			if err != nil {
 				return nil, fmt.Errorf("delta prof merge: %v", err)
 			}
-			deltaProf.DurationNanos = p1.TimeNanos - p0.TimeNanos
+			deltaProf.DurationNanos = currentProf.TimeNanos - prevProf.TimeNanos
 			deltaBuf := &bytes.Buffer{}
 			if err := deltaProf.Write(deltaBuf); err != nil {
 				return nil, fmt.Errorf("delta prof write: %v", err)
 			}
+			deltaData = deltaBuf.Bytes()
 
 			// TODO(fg) profiling period
 
 			// TODO(fg) do we need to modify TimeNanos here?
 			// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
-			profs = append(profs, &profile{
-				// TODO(fg) are those good filenames? Is there a better way to flag
-				// these profiles for the backend?
-				name: "delta-" + pt.Filename,
-				data: deltaBuf.Bytes(),
-			})
 		}
+		profs = append(profs, &profile{
+			// TODO(fg) are those good filenames? Is there a better way to flag
+			// these profiles for the backend?
+			name: "delta-" + pt.Filename,
+			data: deltaData,
+		})
 
 		// Keep the most recent profile in memory for future diffing. This needs to
 		// be taken into account when enforcing memory limits going forward.
-		p.prev[t] = p1
+		p.prev[t] = currentProf
 	}
 
 	end := now()

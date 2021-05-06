@@ -20,68 +20,137 @@ import (
 )
 
 func TestRunProfile(t *testing.T) {
-	// p0 and p1 are generic dummy profiles that produce delta when diffed.
-	var (
-		p0 = textProfile{
-			Time: time.Now().Truncate(time.Minute),
-			Text: `
+	t.Run("delta", func(t *testing.T) {
+		var (
+			deltaPeriod = DefaultPeriod
+			timeA       = time.Now().Truncate(time.Minute)
+			timeB       = timeA.Add(deltaPeriod)
+		)
+
+		tests := []struct {
+			Types        []ProfileType
+			Prof1        textProfile
+			Prof2        textProfile
+			WantDelta    textProfile
+			WantDuration time.Duration
+		}{
+			// For the mutex and block profile, we derive the delta for all sample
+			// types, so we can test with a generic sample profile.
+			{
+				Types: []ProfileType{MutexProfile, BlockProfile},
+				Prof1: textProfile{
+					Time: timeA,
+					Text: `
+stuff/count
 main 3
 main;bar 2
 main;foo 5
-		`}
-		p0Data = p0.Bytes()
-		p1     = textProfile{
-			Time: p0.Time.Add(5 * time.Minute),
-			Text: `
+`,
+				},
+				Prof2: textProfile{
+					Time: timeB,
+					Text: `
+stuff/count
 main 4
 main;bar 2
 main;foo 8
 main;foobar 7
-		`}
-		p1Data = p1.Bytes()
-		delta  = strings.TrimSpace(`
+`,
+				},
+				WantDelta: textProfile{
+					Time: timeA,
+					Text: `
+stuff/count
 main 1
 main;foo 3
 main;foobar 7
-	`) + "\n"
-	)
+`,
+				},
+				WantDuration: deltaPeriod,
+			},
 
-	// All delta-capable profile work the same, so we can test them with this
-	// generic test inside of the loop.
-	for _, profType := range []ProfileType{HeapProfile, MutexProfile, BlockProfile} {
-		t.Run(profType.String(), func(t *testing.T) {
-			returnProfs := [][]byte{p0Data, p1Data}
-			defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-			lookupProfile = func(name string, w io.Writer, _ int) error {
-				_, err := w.Write(returnProfs[0])
-				returnProfs = returnProfs[1:]
-				return err
+			// For the heap profile, we must only derive deltas for the
+			// alloc_objects/count and alloc_space/bytes sample type, so we use a
+			// more realistic example and makes sure it is handled accurately.
+			{
+				Types: []ProfileType{HeapProfile},
+				Prof1: textProfile{
+					Time: timeA,
+					Text: `
+alloc_objects/count alloc_space/bytes inuse_objects/count inuse_space/bytes
+main 3 6 12 24
+main;bar 2 4 8 16
+main;foo 5 10 20 40
+`,
+				},
+				Prof2: textProfile{
+					Time: timeB,
+					Text: `
+alloc_objects/count alloc_space/bytes inuse_objects/count inuse_space/bytes
+main 4 8 16 32
+main;bar 2 4 8 16
+main;foo 8 16 32 64
+main;foobar 7 14 28 56
+`,
+				},
+				WantDelta: textProfile{
+					Time: timeA,
+					Text: `
+alloc_objects/count alloc_space/bytes inuse_objects/count inuse_space/bytes
+main 1 2 16 32
+main;bar 0 0 8 16
+main;foo 3 6 32 64
+main;foobar 7 14 28 56
+`,
+				},
+				WantDuration: deltaPeriod,
+			},
+		}
+
+		for _, test := range tests {
+			for _, profType := range test.Types {
+				t.Run(profType.String(), func(t *testing.T) {
+					prof1 := test.Prof1.Protobuf()
+					prof2 := test.Prof2.Protobuf()
+
+					returnProfs := [][]byte{prof1, prof2}
+					defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
+					lookupProfile = func(name string, w io.Writer, _ int) error {
+						_, err := w.Write(returnProfs[0])
+						returnProfs = returnProfs[1:]
+						return err
+					}
+					p, err := unstartedProfiler()
+
+					// first run, should produce the current profile twice (a bit
+					// awkward, but makes sense since we try to add delta profiles as an
+					// additional profile type to ease the transition)
+					profs, err := p.runProfile(profType)
+					require.NoError(t, err)
+					require.Equal(t, 2, len(profs))
+					require.Equal(t, profType.Filename(), profs[0].name)
+					require.Equal(t, prof1, profs[0].data)
+					require.Equal(t, "delta-"+profType.Filename(), profs[1].name)
+					require.Equal(t, prof1, profs[1].data)
+
+					// second run, should produce p1 profile and delta profile
+					profs, err = p.runProfile(profType)
+					require.NoError(t, err)
+					require.Equal(t, 2, len(profs))
+					require.Equal(t, profType.Filename(), profs[0].name)
+					require.Equal(t, prof2, profs[0].data)
+					require.Equal(t, "delta-"+profType.Filename(), profs[1].name)
+					require.Equal(t, test.WantDelta.String(), protobufToText(profs[1].data))
+
+					// check delta prof details like timestamps and duration
+					deltaProf, err := pprofile.ParseData(profs[1].data)
+					require.NoError(t, err)
+					require.Equal(t, test.Prof1.Time.UnixNano(), deltaProf.TimeNanos)
+					require.Equal(t, deltaPeriod.Nanoseconds(), deltaProf.DurationNanos)
+				})
 			}
-			p, err := unstartedProfiler()
-
-			// first run, should produce p0 profile
-			profs, err := p.runProfile(profType)
-			require.NoError(t, err)
-			require.Equal(t, 1, len(profs))
-			require.Equal(t, profType.Filename(), profs[0].name)
-			require.Equal(t, p0Data, profs[0].data)
-
-			// second run, should produce p1 profile and delta profile
-			profs, err = p.runProfile(profType)
-			require.NoError(t, err)
-			require.Equal(t, 2, len(profs))
-			require.Equal(t, profType.Filename(), profs[0].name)
-			require.Equal(t, p1Data, profs[0].data)
-			require.Equal(t, "delta-"+profType.Filename(), profs[1].name)
-			require.Equal(t, delta, protobufToText(t, profs[1].data))
-
-			// check delta prof details like timestamps and duration
-			deltaProf, err := pprofile.ParseData(profs[1].data)
-			require.NoError(t, err)
-			require.Equal(t, p0.Time.UnixNano(), deltaProf.TimeNanos)
-			require.Equal(t, p1.Time.Sub(p0.Time).Nanoseconds(), deltaProf.DurationNanos)
-		})
-	}
+		}
+	})
 
 	t.Run("cpu", func(t *testing.T) {
 		defer func(old func(_ io.Writer) error) { startCPUProfile = old }(startCPUProfile)
@@ -205,14 +274,19 @@ func (c panicReader) Read(_ []byte) (int, error) {
 	panic("42")
 }
 
+// textProfile is a test helper for converting folded text to pprof protobuf
+// profiles.
+// See https://github.com/brendangregg/FlameGraph#2-fold-stacks
 type textProfile struct {
 	Text string
 	Time time.Time
 }
 
-func (t textProfile) Bytes() []byte {
+// Protobuf converts the profile to pprof's protobuf format or panics if there
+// is an error.
+func (t textProfile) Protobuf() []byte {
 	out := &bytes.Buffer{}
-	prof, err := pprofutils.Text{}.Convert(strings.NewReader(t.Text))
+	prof, err := pprofutils.Text{}.Convert(strings.NewReader(t.String()))
 	if err != nil {
 		panic(err)
 	}
@@ -225,15 +299,22 @@ func (t textProfile) Bytes() []byte {
 	return out.Bytes()
 }
 
-// protobufToText is a test helper that converts the binary protobuf profile
-// into a folded profile string.
-// See https://github.com/brendangregg/FlameGraph#2-fold-stacks
-func protobufToText(t *testing.T, pprofData []byte) string {
-	t.Helper()
+// String returns text without leading or trailing whitespace other than a
+// trailing newline.
+func (t textProfile) String() string {
+	return strings.TrimSpace(t.Text) + "\n"
+}
+
+// protobufToText converts a protobuf pprof profile to text format or panics
+// if there is an error.
+func protobufToText(pprofData []byte) string {
 	prof, err := pprofile.ParseData(pprofData)
-	require.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 	out := &bytes.Buffer{}
-	err = pprofutils.Protobuf{}.Convert(prof, out)
-	require.NoError(t, err)
+	if err := (pprofutils.Protobuf{SampleTypes: true}).Convert(prof, out); err != nil {
+		panic(err)
+	}
 	return out.String()
 }
