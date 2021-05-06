@@ -48,13 +48,16 @@ const (
 // collector holds the implementation details of a ProfileType, see collectors
 // map below.
 type collector struct {
-	// Name specifies the profile name as used with pprof.Lookup(name) and returned by
-	// ProfileType.String(). For profile types that don't use this approach, the
-	// name can be chosen arbitrarily.
+	// Name specifies the profile name as used with pprof.Lookup(name) (in
+	// collectGenericProfile) and returned by ProfileType.String(). For profile
+	// types that don't use this approach (e.g. cpu) the name isn't used for
+	// anything.
 	Name string
 	// Filename is the filename used for uploading the profile to the datadog
 	// backend which is aware of them. Delta profiles are prefixed with "delta-"
-	// automatically.
+	// automatically. In theory this could be derrived from the Name field, but
+	// this isn't done due to idiosyncratic filename used by the
+	// GoroutineProfile.
 	Filename string
 	// Delta controls if this profile should be generated as a delta profile.
 	// This is useful for profiles that represent samples collected over the
@@ -66,7 +69,7 @@ type collector struct {
 	Collect func(collector, *profiler) ([]byte, error)
 }
 
-// collectors is a 1:1 map between ProfileType and collector implementations.
+// collectors map every ProfileType to a collector implementation.
 var collectors = map[ProfileType]collector{
 	CPUProfile: {
 		Name:     "cpu",
@@ -81,6 +84,11 @@ var collectors = map[ProfileType]collector{
 			return buf.Bytes(), nil
 		},
 	},
+	// HeapProfile is complex due to how the Go runtime exposes it. It contains 4
+	// sample types alloc_objects/count, alloc_space/bytes, inuse_objects/count,
+	// inuse_space/bytes. The first two represent allocations over the lifetime
+	// of the process, so we do delta profiling for them. The last two are
+	// snapshots of the current heap state, so we leave them as-is.
 	HeapProfile: {
 		Name:     "heap",
 		Filename: "heap.pprof",
@@ -93,24 +101,24 @@ var collectors = map[ProfileType]collector{
 	MutexProfile: {
 		Name:     "mutex",
 		Filename: "mutex.pprof",
-		Delta:    &pprofutils.Delta{},
-		Collect:  collectGenericProfile,
+		// MutexProfile in Go is lifetime of the process, so we compute delta
+		// profiles.
+		Delta:   &pprofutils.Delta{},
+		Collect: collectGenericProfile,
 	},
 	BlockProfile: {
 		Name:     "block",
 		Filename: "block.pprof",
-		Delta:    &pprofutils.Delta{},
-		Collect:  collectGenericProfile,
+		// BlockProfile in Go is lifetime of the process, so we compute delta
+		// profiles.
+		Delta:   &pprofutils.Delta{},
+		Collect: collectGenericProfile,
 	},
-	// TODO(fg) enable Delta for this? could be cool to see newly created
-	// goroutines.
 	GoroutineProfile: {
 		Name:     "goroutine",
 		Filename: "goroutines.pprof",
 		Collect:  collectGenericProfile,
 	},
-	// TODO(fg) enable Delta for this? could be cool to goroutines that
-	// recently entered waiting states.
 	expGoroutineWaitProfile: {
 		Name:     "goroutinewait",
 		Filename: "goroutineswait.pprof",
@@ -208,42 +216,10 @@ func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 		data: data,
 	}}
 
-	if pt.Delta != nil {
-		currentProf, err := pprofile.Parse(bytes.NewReader(data))
-		if err != nil {
-			return nil, fmt.Errorf("delta prof parse: %v", err)
-		}
-
-		var deltaData []byte
-		if prevProf := p.prev[t]; prevProf == nil {
-			deltaData = data
-		} else {
-			deltaProf, err := pt.Delta.Convert(prevProf, currentProf)
-			if err != nil {
-				return nil, fmt.Errorf("delta prof merge: %v", err)
-			}
-			deltaProf.DurationNanos = currentProf.TimeNanos - prevProf.TimeNanos
-			deltaBuf := &bytes.Buffer{}
-			if err := deltaProf.Write(deltaBuf); err != nil {
-				return nil, fmt.Errorf("delta prof write: %v", err)
-			}
-			deltaData = deltaBuf.Bytes()
-
-			// TODO(fg) profiling period
-
-			// TODO(fg) do we need to modify TimeNanos here?
-			// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
-		}
-		profs = append(profs, &profile{
-			// TODO(fg) are those good filenames? Is there a better way to flag
-			// these profiles for the backend?
-			name: "delta-" + pt.Filename,
-			data: deltaData,
-		})
-
-		// Keep the most recent profile in memory for future diffing. This needs to
-		// be taken into account when enforcing memory limits going forward.
-		p.prev[t] = currentProf
+	if prof, err := p.deltaProfile(pt, t, data); err != nil {
+		return nil, fmt.Errorf("delta profile error: %s", err)
+	} else if prof != nil {
+		profs = append(profs, prof)
 	}
 
 	end := now()
@@ -251,6 +227,46 @@ func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 
 	return profs, nil
+}
+
+func (p *profiler) deltaProfile(c collector, t ProfileType, data []byte) (*profile, error) {
+	pt := c
+	if pt.Delta == nil {
+		return nil, nil
+	}
+
+	currentProf, err := pprofile.ParseData(data)
+	if err != nil {
+		return nil, fmt.Errorf("delta prof parse: %v", err)
+	}
+	var deltaData []byte
+	if prevProf := p.prev[t]; prevProf == nil {
+		// First time we collect t there is no previous profile.
+		deltaData = data
+	} else {
+		// TODO text
+		// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
+		deltaProf, err := pt.Delta.Convert(prevProf, currentProf)
+		if err != nil {
+			return nil, fmt.Errorf("delta prof merge: %v", err)
+		}
+		deltaProf.DurationNanos = currentProf.TimeNanos - prevProf.TimeNanos
+		deltaProf.TimeNanos = currentProf.TimeNanos
+		deltaBuf := &bytes.Buffer{}
+		if err := deltaProf.Write(deltaBuf); err != nil {
+			return nil, fmt.Errorf("delta prof write: %v", err)
+		}
+		deltaData = deltaBuf.Bytes()
+	}
+	// Keep the most recent profile in memory for future diffing. This needs to
+	// be taken into account when enforcing memory limits going forward.
+	p.prev[t] = currentProf
+	return &profile{
+		// TODO(fg) are those good filenames? Is there a better way to flag
+		// these profiles for the backend?
+		name: "delta-" + pt.Filename,
+		data: deltaData,
+	}, nil
 }
 
 var (

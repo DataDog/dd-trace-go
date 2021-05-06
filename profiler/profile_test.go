@@ -145,7 +145,7 @@ main;foobar 7 14 28 56
 					// check delta prof details like timestamps and duration
 					deltaProf, err := pprofile.ParseData(profs[1].data)
 					require.NoError(t, err)
-					require.Equal(t, test.Prof1.Time.UnixNano(), deltaProf.TimeNanos)
+					require.Equal(t, test.Prof2.Time.UnixNano(), deltaProf.TimeNanos)
 					require.Equal(t, deltaPeriod.Nanoseconds(), deltaProf.DurationNanos)
 				})
 			}
