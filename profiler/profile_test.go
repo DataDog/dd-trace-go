@@ -305,8 +305,8 @@ func (t textProfile) String() string {
 	return strings.TrimSpace(t.Text) + "\n"
 }
 
-// protobufToText converts a protobuf pprof profile to text format or panics
-// if there is an error.
+// protobufToText is a test helper that converts a protobuf pprof profile to
+// text format or panics if there is an error.
 func protobufToText(pprofData []byte) string {
 	prof, err := pprofile.ParseData(pprofData)
 	if err != nil {
