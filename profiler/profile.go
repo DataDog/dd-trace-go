@@ -106,18 +106,14 @@ var collectors = map[ProfileType]collector{
 	MutexProfile: {
 		Name:     "mutex",
 		Filename: "mutex.pprof",
-		// MutexProfile in Go is lifetime of the process, so we compute delta
-		// profiles.
-		Delta:   &pprofutils.Delta{},
-		Collect: collectGenericProfile,
+		Delta:    &pprofutils.Delta{},
+		Collect:  collectGenericProfile,
 	},
 	BlockProfile: {
 		Name:     "block",
 		Filename: "block.pprof",
-		// BlockProfile in Go is lifetime of the process, so we compute delta
-		// profiles.
-		Delta:   &pprofutils.Delta{},
-		Collect: collectGenericProfile,
+		Delta:    &pprofutils.Delta{},
+		Collect:  collectGenericProfile,
 	},
 	GoroutineProfile: {
 		Name:     "goroutine",
@@ -210,7 +206,7 @@ func (b *batch) addProfile(p *profile) {
 func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 	start := now()
 	c := t.collector()
-
+	// Collect the original profile as-is.
 	data, err := c.Collect(c, p)
 	if err != nil {
 		return nil, err
@@ -219,54 +215,62 @@ func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 		name: c.Filename,
 		data: data,
 	}}
-
-	if prof, err := p.deltaProfile(c, data); err != nil {
+	// Compute the deltaProf (will be nil if not enabled for this profile type).
+	deltaStart := time.Now()
+	deltaProf, err := p.deltaProfile(c, data)
+	if err != nil {
 		return nil, fmt.Errorf("delta profile error: %s", err)
-	} else if prof != nil {
-		profs = append(profs, prof)
 	}
+	// Report metrics and append deltaProf if not nil.
 	end := now()
 	tags := append(p.cfg.tags, t.Tag())
+	if deltaProf != nil {
+		profs = append(profs, deltaProf)
+		p.cfg.statsd.Timing("datadog.profiler.go.delta_time", end.Sub(deltaStart), tags, 1)
+	}
 	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
-
 	return profs, nil
 }
 
 // deltaProfile if the current.
 func (p *profiler) deltaProfile(c collector, curData []byte) (*profile, error) {
+	// Not all profile types use delta profiling, return nil if this one doesn't.
 	if c.Delta == nil {
 		return nil, nil
 	}
-
 	curProf, err := pprofile.ParseData(curData)
 	if err != nil {
 		return nil, fmt.Errorf("delta prof parse: %v", err)
 	}
 	var deltaData []byte
 	if prevProf := p.prev[c.ProfileType]; prevProf == nil {
-		// First time we collect t there is no previous profile.
+		// First time deltaProfile gets called for a type, there is no prevProf. In
+		// this case we emit the current profile as a delta profile.
 		deltaData = curData
 	} else {
-		// TODO text
+		// Delta profiling is also implemented in the Go core, see commit below.
+		// Unfortunately the core implementation isn't resuable via a API, so we do
+		// our own delta calculation below.
 		// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
 		deltaProf, err := c.Delta.Convert(prevProf, curProf)
 		if err != nil {
 			return nil, fmt.Errorf("delta prof merge: %v", err)
 		}
-		deltaProf.DurationNanos = curProf.TimeNanos - prevProf.TimeNanos
+		// TimeNanos is supposed to be the time the profile was collected, see
+		// https://github.com/google/pprof/blob/master/proto/profile.proto.
 		deltaProf.TimeNanos = curProf.TimeNanos
+		// DurationNanos is the time period covered by the profile.
+		deltaProf.DurationNanos = curProf.TimeNanos - prevProf.TimeNanos
 		deltaBuf := &bytes.Buffer{}
 		if err := deltaProf.Write(deltaBuf); err != nil {
 			return nil, fmt.Errorf("delta prof write: %v", err)
 		}
 		deltaData = deltaBuf.Bytes()
 	}
-	// Keep the most recent profile in memory for future diffing. This needs to
+	// Keep the most recent profiles in memory for future diffing. This needs to
 	// be taken into account when enforcing memory limits going forward.
 	p.prev[c.ProfileType] = curProf
 	return &profile{
-		// TODO(fg) are those good filenames? Is there a better way to flag
-		// these profiles for the backend?
 		name: "delta-" + c.Filename,
 		data: deltaData,
 	}, nil
