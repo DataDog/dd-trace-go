@@ -71,7 +71,7 @@ main;foobar 7
 
 			// For the heap profile, we must only derive deltas for the
 			// alloc_objects/count and alloc_space/bytes sample type, so we use a
-			// more realistic example and makes sure it is handled accurately.
+			// more realistic example and make sure it is handled accurately.
 			{
 				Types: []ProfileType{HeapProfile},
 				Prof1: textProfile{
