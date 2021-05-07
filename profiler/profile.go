@@ -232,7 +232,9 @@ func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 	return profs, nil
 }
 
-// deltaProfile if the current.
+// deltaProfile derives the delta profile between curData and the previous
+// profile. For profile types that don't have delta profiling enabled, it
+// simply returns nil, nil.
 func (p *profiler) deltaProfile(c collector, curData []byte) (*profile, error) {
 	// Not all profile types use delta profiling, return nil if this one doesn't.
 	if c.Delta == nil {
