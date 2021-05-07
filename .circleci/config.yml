@@ -29,6 +29,14 @@ jobs:
     steps:
     - checkout
 
+    # -mod=readonly is enabled by default starting in go1.16 causing many go
+    # tools and editor integrations to report problems if the go.sum file is
+    # not up-to-date, so let's make sure it is.
+    - run:
+        name: go.sum up-to-date
+        command: |
+          go run -mod=readonly gosum.go
+
     - run:
         name: milestone
         command: |
