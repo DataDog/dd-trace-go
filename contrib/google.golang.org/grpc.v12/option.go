@@ -7,13 +7,23 @@ package grpc
 
 import (
 	"math"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"os"
+	"strconv"
 )
 
 type interceptorConfig struct {
 	serviceName   string
 	analyticsRate float64
+}
+
+// boolEnv returns the parsed boolean value of an environment variable, or
+// def otherwise.
+func boolEnv(key string, def bool) bool {
+	v, err := strconv.ParseBool(os.Getenv(key))
+	if err != nil {
+		return def
+	}
+	return v
 }
 
 // InterceptorOption represents an option that can be passed to the grpc unary
@@ -23,7 +33,7 @@ type InterceptorOption func(*interceptorConfig)
 func defaults(cfg *interceptorConfig) {
 	// cfg.serviceName default set in interceptor
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_GRPC_ANALYTICS_ENABLED", false) {
+	if boolEnv("DD_TRACE_GRPC_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = math.NaN()

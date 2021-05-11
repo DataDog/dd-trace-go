@@ -12,12 +12,12 @@ import (
 	"math"
 	"net"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc.v12/grpcutil"
+	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc.v12/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	//"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -34,11 +34,11 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 	}
 	if cfg.serviceName == "" {
 		cfg.serviceName = "grpc.server"
-		if svc := globalconfig.ServiceName(); svc != "" {
-			cfg.serviceName = svc
-		}
+		//		if svc := globalconfig.ServiceName(); svc != "" {
+		//			cfg.serviceName = svc
+		//		}
 	}
-	log.Debug("contrib/google.golang.org/grpc.v12: Configuring UnaryServerInterceptor: %#v", cfg)
+	//log.Debug("contrib/google.golang.org/grpc.v12: Configuring UnaryServerInterceptor: %#v", cfg)
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		span, ctx := startSpanFromContext(ctx, info.FullMethod, cfg.serviceName, cfg.analyticsRate)
 		resp, err := handler(ctx, req)
@@ -75,7 +75,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 	if cfg.serviceName == "" {
 		cfg.serviceName = "grpc.client"
 	}
-	log.Debug("contrib/google.golang.org/grpc.v12: Configuring UnaryClientInterceptor: %#v", cfg)
+	//log.Debug("contrib/google.golang.org/grpc.v12: Configuring UnaryClientInterceptor: %#v", cfg)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		var (
 			span ddtrace.Span
