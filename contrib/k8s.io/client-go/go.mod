@@ -10,7 +10,7 @@ require (
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
 	golang.org/x/term v0.0.0-20210220032956-6a3ed077a48d // indirect
 	google.golang.org/appengine v1.6.5 // indirect
-	gopkg.in/DataDog/dd-trace-go.v1 v1.32.0-alpha.9
+	gopkg.in/DataDog/dd-trace-go.v1 v1.32.0-alpha.13
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/apimachinery v0.17.0
 	k8s.io/client-go v0.17.0
