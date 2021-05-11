@@ -194,25 +194,25 @@ jobs:
       - run:
           name: Testing module contrib/cloud.google.com/go/pubsub.v1
           command: |
-                cd ./contrib/cloud.google.com/go/pubsub.v1
+				cd ./contrib/cloud.google.com/go/pubsub.v1
                 go test -v ./...
 
       - run:
           name: Testing module contrib/google.golang.org/api
           command: |
-                cd ./contrib/google.golang.org/api
+				cd ./contrib/google.golang.org/api
                 go test -v ./...
 
       - run:
           name: Testing module contrib/google.golang.org/grpc
           command: |
-                cd ./contrib/google.golang.org/grpc
+				cd ./contrib/google.golang.org/grpc
                 go test -v ./...
 
       - run:
           name: Testing module contrib/google.golang.org/grpc.v12
           command: |
-                cd ./contrib/google.golang.org/grpc.v12
+				cd ./contrib/google.golang.org/grpc.v12
                 # This hacky approach is necessary because running the tests regularly
                 # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
                 go mod vendor
@@ -227,12 +227,12 @@ jobs:
                 git clone git@github.com:DataDog/sketches-go && cd sketches-go
                 git fetch origin && git checkout v1.0.0 && cd ../..
 
-                go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+                go test -mod=vendor -v ./...
 
       - run:
           name: Testing module contrib/k8s.io/client-go
           command: |
-                cd ./contrib/k8s.io/client-go
+				cd ./contrib/k8s.io/client-go
                 go test -v ./...
 
       - run:
