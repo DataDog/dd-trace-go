@@ -233,7 +233,7 @@ jobs:
           name: Testing module contrib/k8s.io/client-go
           command: |
                 cd ./contrib/k8s.io/client-go
-                go test -v ./...
+                GO111MODULE=on go test -v ./...
 
       - run:
           name: Upload coverage report to Codecov
