@@ -7,6 +7,8 @@ package pg
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -17,6 +19,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	_, ok := os.LookupEnv("INTEGRATION")
+	if !ok {
+		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
 
 func TestImplementsHook(t *testing.T) {
 	var _ pg.QueryHook = (*queryHook)(nil)
