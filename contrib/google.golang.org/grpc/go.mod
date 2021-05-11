@@ -1,4 +1,4 @@
-module gopkg.in/dd-trace-go.v1/contrib/google.golang.org/grpc
+module gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc
 
 go 1.16
 
@@ -11,5 +11,5 @@ require (
 	golang.org/x/net v0.0.0-20210510120150-4163338589ed
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba // indirect
 	google.golang.org/grpc v1.37.0
-	gopkg.in/DataDog/dd-trace-go.v1 v1.31.0
+	gopkg.in/DataDog/dd-trace-go.v1 v1.32.0-alpha.5
 )
