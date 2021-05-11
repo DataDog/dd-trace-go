@@ -1,6 +1,6 @@
-module gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/client-go
+module github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go
 
-go 1.14
+go 1.12
 
 require (
 	github.com/gogo/protobuf v1.3.2 // indirect

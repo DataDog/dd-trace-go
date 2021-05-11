@@ -1,6 +1,6 @@
-module gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc.v12
+module github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc.v12
 
-go 1.16
+go 1.12
 
 require (
 	github.com/golang/protobuf v1.4.3

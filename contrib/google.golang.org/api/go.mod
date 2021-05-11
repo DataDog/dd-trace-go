@@ -1,6 +1,6 @@
-module gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api
+module github.com/DataDog/dd-trace-go/contrib/google.golang.org/api
 
-go 1.16
+go 1.12
 
 require (
 	github.com/stretchr/testify v1.7.0
