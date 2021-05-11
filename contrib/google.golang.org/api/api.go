@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package api provides functions to trace the google.golang.org/api package.
-package api // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api"
+package api
 
 //go:generate go run make_endpoints.go
 
