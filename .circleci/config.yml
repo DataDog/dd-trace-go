@@ -233,7 +233,7 @@ jobs:
           name: Testing module contrib/k8s.io/client-go
           command: |
                 cd ./contrib/k8s.io/client-go
-				go version
+                go version
                 cat go.mod
                 GO111MODULE=on go test -mod=readonly -v ./...
 
