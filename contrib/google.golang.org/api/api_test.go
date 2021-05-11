@@ -17,7 +17,7 @@ import (
 	urlshortener "google.golang.org/api/urlshortener/v1"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	//"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -129,17 +129,17 @@ func TestAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, nil)
 	})
 
-	t.Run("global", func(t *testing.T) {
-		t.Skip("global flag disabled")
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.4)
-	})
+	//	t.Run("global", func(t *testing.T) {
+	//		t.Skip("global flag disabled")
+	//		mt := mocktracer.Start()
+	//		defer mt.Stop()
+	//
+	//		rate := globalconfig.AnalyticsRate()
+	//		defer globalconfig.SetAnalyticsRate(rate)
+	//		globalconfig.SetAnalyticsRate(0.4)
+	//
+	//		assertRate(t, mt, 0.4)
+	//	})
 
 	t.Run("enabled", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -155,14 +155,14 @@ func TestAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, nil, WithAnalytics(false))
 	})
 
-	t.Run("override", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
-	})
+	//	t.Run("override", func(t *testing.T) {
+	//		mt := mocktracer.Start()
+	//		defer mt.Stop()
+	//
+	//		rate := globalconfig.AnalyticsRate()
+	//		defer globalconfig.SetAnalyticsRate(rate)
+	//		globalconfig.SetAnalyticsRate(0.4)
+	//
+	//		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	//	})
 }
