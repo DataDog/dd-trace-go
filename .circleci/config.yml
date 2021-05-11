@@ -85,6 +85,10 @@ jobs:
   test-modules:
     resource_class: xlarge
     working_directory: /home/circleci/dd-trace-go.v1
+    docker:
+      - image: circleci/golang:1.14
+        environment:
+          GOPATH: "/home/circleci/go"
 
     steps:
       - checkout
@@ -255,3 +259,4 @@ workflows:
       - lint
       - test-core
       - test-contrib
+      - test-modules
