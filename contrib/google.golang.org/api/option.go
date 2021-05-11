@@ -8,8 +8,8 @@ package api
 import (
 	"context"
 	"math"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"os"
+	"strconv"
 )
 
 type config struct {
@@ -19,9 +19,19 @@ type config struct {
 	scopes        []string
 }
 
+// BoolEnv returns the parsed boolean value of an environment variable, or
+// def otherwise.
+func boolEnv(key string, def bool) bool {
+	v, err := strconv.ParseBool(os.Getenv(key))
+	if err != nil {
+		return def
+	}
+	return v
+}
+
 func newConfig(options ...Option) *config {
 	rate := math.NaN()
-	if internal.BoolEnv("DD_TRACE_GOOGLE_API_ANALYTICS_ENABLED", false) {
+	if boolEnv("DD_TRACE_GOOGLE_API_ANALYTICS_ENABLED", false) {
 		rate = 1.0
 	}
 	cfg := &config{

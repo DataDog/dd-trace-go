@@ -197,31 +197,36 @@ jobs:
           name: Testing module contrib/cloud.google.com/go/pubsub.v1
           command: |
                 cd ./contrib/cloud.google.com/go/pubsub.v1
-                INTEGRATION=1 go test -v -race ./...
+                INTEGRATION=1 go test -v -race -coverprofile=coverage.pubsub.v1.txt -covermode=atomic ./...
+                bash <(curl -s https://codecov.io/bash) -f coverage.pubsub.v1.txt
 
       - run:
           name: Testing module contrib/google.golang.org/api
           command: |
                 cd ./contrib/google.golang.org/api
-                INTEGRATION=1 go test -v -race ./...
+                INTEGRATION=1 go test -v -race -coverprofile=coverage.google.golang.org.api.txt -covermode=atomic ./...
+                bash <(curl -s https://codecov.io/bash) -f coverage.google.golang.org.api.txt
 
       - run:
           name: Testing module contrib/google.golang.org/grpc
           command: |
                 cd ./contrib/google.golang.org/grpc
-                INTEGRATION=1 go test -v -race ./...
+                INTEGRATION=1 go test -v -race -coverprofile=coverage.google.golang.org.grpc.txt -covermode=atomic ./...
+                bash <(curl -s https://codecov.io/bash) -f coverage.google.golang.org.grpc.txt
 
       - run:
           name: Testing module contrib/google.golang.org/grpc.v12
           command: |
                 cd ./contrib/google.golang.org/grpc.v12
-                INTEGRATION=1 go test -v -race ./...
+                INTEGRATION=1 go test -v -race -coverprofile=coverage.google.golang.org.grpc.v12.txt -covermode=atomic ./...
+                bash <(curl -s https://codecov.io/bash) -f coverage.google.golang.org.grpc.v12.txt
 
       - run:
           name: Testing module contrib/k8s.io/client-go
           command: |
                 cd ./contrib/k8s.io/client-go
-                INTEGRATION=1 go test -v -race ./...
+                INTEGRATION=1 go test -v -race -coverprofile=coverage.k8s.io.client-go.txt -covermode=atomic ./...
+                bash <(curl -s https://codecov.io/bash) -f coverage.k8s.io.client-go.txt
 
       - run:
           name: Upload coverage report to Codecov

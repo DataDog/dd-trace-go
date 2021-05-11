@@ -16,7 +16,6 @@ import (
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"golang.org/x/oauth2/google"
 )
@@ -29,7 +28,7 @@ var apiEndpoints *internal.Tree
 // APIs with all requests traced automatically.
 func NewClient(options ...Option) (*http.Client, error) {
 	cfg := newConfig(options...)
-	log.Debug("contrib/google.golang.org/api: Creating Client: %#v", cfg)
+	//log.Debug("contrib/google.golang.org/api: Creating Client: %#v", cfg)
 	client, err := google.DefaultClient(cfg.ctx, cfg.scopes...)
 	if err != nil {
 		return nil, err
@@ -42,7 +41,7 @@ func NewClient(options ...Option) (*http.Client, error) {
 // Google APIs and traces all requests.
 func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.RoundTripper {
 	cfg := newConfig(options...)
-	log.Debug("contrib/google.golang.org/api: Wrapping RoundTripper: %#v", cfg)
+	//log.Debug("contrib/google.golang.org/api: Wrapping RoundTripper: %#v", cfg)
 	rtOpts := []httptrace.RoundTripperOption{
 		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
 			e, ok := apiEndpoints.Get(req.URL.Hostname(), req.Method, req.URL.Path)
