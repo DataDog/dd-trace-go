@@ -151,13 +151,6 @@ jobs:
           - /tmp/librdkafka-v1.3.0
 
       - run:
-          name: Enforce some dependencies
-          command: |
-            go get k8s.io/client-go@v0.17.0
-            go get k8s.io/apimachinery@v0.17.0
-            go get cloud.google.com/go/pubsub@v1.6.1
-
-      - run:
           name: Wait for MySQL
           command: dockerize -wait tcp://localhost:3306 -timeout 1m
 
@@ -199,14 +192,27 @@ jobs:
                 INTEGRATION=1 go test -v -race -coverprofile=coverage.txt -covermode=atomic `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api`
 
       - run:
-          name: Testing outlier google.golang.org/api
+          name: Testing module contrib/cloud.google.com/go/pubsub.v1
           command: |
-                go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
-                go test -v ./contrib/google.golang.org/api/...
+				cd ./contrib/cloud.google.com/go/pubsub.v1
+                go test -v ./...
 
       - run:
-          name: Testing outlier gRPC v1.2
+          name: Testing module contrib/google.golang.org/api
           command: |
+				cd ./contrib/google.golang.org/api
+                go test -v ./...
+
+      - run:
+          name: Testing module contrib/google.golang.org/grpc
+          command: |
+				cd ./contrib/google.golang.org/grpc
+                go test -v ./...
+
+      - run:
+          name: Testing module contrib/google.golang.org/grpc.v12
+          command: |
+				cd ./contrib/google.golang.org/grpc.v12
                 # This hacky approach is necessary because running the tests regularly
                 # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
                 go mod vendor
@@ -222,6 +228,12 @@ jobs:
                 git fetch origin && git checkout v1.0.0 && cd ../..
 
                 go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+
+      - run:
+          name: Testing module contrib/k8s.io/client-go
+          command: |
+				cd ./contrib/k8s.io/client-go
+                go test -v ./...
 
       - run:
           name: Upload coverage report to Codecov
