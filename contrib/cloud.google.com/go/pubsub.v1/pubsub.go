@@ -13,7 +13,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	//"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"cloud.google.com/go/pubsub"
 )
@@ -37,7 +38,7 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message) *Publish
 		msg.Attributes = make(map[string]string)
 	}
 	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
-		log.Debug("contrib/cloud.google.com/go/pubsub.v1/: failed injecting tracing attributes: %v", err)
+		//log.Debug("contrib/cloud.google.com/go/pubsub.v1/: failed injecting tracing attributes: %v", err)
 	}
 	span.SetTag("num_attributes", len(msg.Attributes))
 	return &PublishResult{
@@ -86,7 +87,7 @@ func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	log.Debug("contrib/cloud.google.com/go/pubsub.v1: Wrapping Receive Handler: %#v", cfg)
+	//log.Debug("contrib/cloud.google.com/go/pubsub.v1: Wrapping Receive Handler: %#v", cfg)
 	return func(ctx context.Context, msg *pubsub.Message) {
 		parentSpanCtx, _ := tracer.Extract(tracer.TextMapCarrier(msg.Attributes))
 		opts := []ddtrace.StartSpanOption{
