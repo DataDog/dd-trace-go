@@ -233,6 +233,7 @@ jobs:
           name: Testing module contrib/k8s.io/client-go
           command: |
                 cd ./contrib/k8s.io/client-go
+                cat go.mod 
                 GO111MODULE=on go test -v ./...
 
       - run:
