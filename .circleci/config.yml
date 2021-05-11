@@ -82,61 +82,6 @@ jobs:
           name: Upload coverage report to Codecov
           command: bash <(curl -s https://codecov.io/bash)
 
-  test-modules:
-    resource_class: xlarge
-    working_directory: /home/circleci/dd-trace-go.v1
-    docker:
-      - image: circleci/golang:1.16
-        environment:
-          GOPATH: "/home/circleci/go"
-
-    steps:
-      - checkout
-      - run:
-          name: Testing module contrib/cloud.google.com/go/pubsub.v1
-          command: |
-                cd ./contrib/cloud.google.com/go/pubsub.v1
-                go test -v ./...
-
-      - run:
-          name: Testing module contrib/google.golang.org/api
-          command: |
-                cd ./contrib/google.golang.org/api
-                go test -v ./...
-
-      - run:
-          name: Testing module contrib/google.golang.org/grpc
-          command: |
-                cd ./contrib/google.golang.org/grpc
-                go test -v ./...
-
-      - run:
-          name: Testing module contrib/google.golang.org/grpc.v12
-          command: |
-                cd ./contrib/google.golang.org/grpc.v12
-                # This hacky approach is necessary because running the tests regularly
-                # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
-                go mod vendor
-
-                # Checkout grpc-go@v1.2.0
-                cd vendor/google.golang.org && rm -rf grpc
-                git clone git@github.com:grpc/grpc-go grpc && cd grpc
-                git fetch origin && git checkout v1.2.0 && cd ../..
-
-                # Checkout sketches-go@v1.0.0
-                cd vendor/github.com/DataDog && rm -rf sketches-go
-                git clone git@github.com:DataDog/sketches-go && cd sketches-go
-                git fetch origin && git checkout v1.0.0 && cd ../..
-
-                go test -mod=vendor -v ./...
-
-      - run:
-          name: Testing module contrib/k8s.io/client-go
-          command: |
-                cd ./contrib/k8s.io/client-go
-                go version
-                cat go.mod
-                GO111MODULE=on go test -mod=readonly -v ./...
 
   test-contrib:
     resource_class: xlarge
@@ -247,6 +192,50 @@ jobs:
                 INTEGRATION=1 go test -v -race -coverprofile=coverage.txt -covermode=atomic `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api`
 
       - run:
+          name: Testing module contrib/cloud.google.com/go/pubsub.v1
+          command: |
+                cd ./contrib/cloud.google.com/go/pubsub.v1
+                go test -v ./...
+
+      - run:
+          name: Testing module contrib/google.golang.org/api
+          command: |
+                cd ./contrib/google.golang.org/api
+                go test -v ./...
+
+      - run:
+          name: Testing module contrib/google.golang.org/grpc
+          command: |
+                cd ./contrib/google.golang.org/grpc
+                go test -v ./...
+
+      - run:
+          name: Testing module contrib/google.golang.org/grpc.v12
+          command: |
+                cd ./contrib/google.golang.org/grpc.v12
+                # This hacky approach is necessary because running the tests regularly
+                # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
+                go mod vendor
+
+                # Checkout grpc-go@v1.2.0
+                cd vendor/google.golang.org && rm -rf grpc
+                git clone git@github.com:grpc/grpc-go grpc && cd grpc
+                git fetch origin && git checkout v1.2.0 && cd ../..
+
+                # Checkout sketches-go@v1.0.0
+                cd vendor/github.com/DataDog && rm -rf sketches-go
+                git clone git@github.com:DataDog/sketches-go && cd sketches-go
+                git fetch origin && git checkout v1.0.0 && cd ../..
+
+                go test -mod=vendor -v ./...
+
+      - run:
+          name: Testing module contrib/k8s.io/client-go
+          command: |
+                cd ./contrib/k8s.io/client-go
+                go test -v ./...
+
+      - run:
           name: Upload coverage report to Codecov
           command: bash <(curl -s https://codecov.io/bash)
 
@@ -259,4 +248,3 @@ workflows:
       - lint
       - test-core
       - test-contrib
-      - test-modules

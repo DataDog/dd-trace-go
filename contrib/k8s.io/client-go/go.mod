@@ -4,7 +4,7 @@ go 1.14
 
 require (
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/googleapis/gnostic v0.4.1 // indirect
+	github.com/googleapis/gnostic v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.10 // indirect
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
