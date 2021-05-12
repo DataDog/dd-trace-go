@@ -14,7 +14,6 @@ import (
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -50,7 +49,7 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTr
 		req.Header.Set("Audit-Id", kubeAuditID)
 		span.SetTag("kubernetes.audit_id", kubeAuditID)
 	}))
-	log.Debug("contrib/k8s.io/client-go/kubernetes: Wrapping RoundTripper.")
+	//log.Debug("contrib/k8s.io/client-go/kubernetes: Wrapping RoundTripper.")
 	return httptrace.WrapRoundTripper(rt, opts...)
 }
 
