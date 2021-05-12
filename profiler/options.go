@@ -96,6 +96,7 @@ type config struct {
 	uploadTimeout time.Duration
 	mutexFraction int
 	blockRate     int
+	outputDir     string
 }
 
 func urlForSite(site string) (string, error) {
@@ -200,6 +201,10 @@ func defaultConfig() (*config, error) {
 	// not for public use
 	if v := os.Getenv("DD_PROFILING_URL"); v != "" {
 		WithURL(v)(&c)
+	}
+	// not for public use
+	if v := os.Getenv("DD_PROFILING_OUTPUT_DIR"); v != "" {
+		withOutputDir(v)(&c)
 	}
 	return &c, nil
 }
@@ -374,4 +379,13 @@ func WithUDS(socketPath string) Option {
 			},
 		},
 	})
+}
+
+// withOutputDir writes a copy of all uploaded profiles to the given
+// directory. This is intended for local development or debugging uploading
+// issues. The directory will keep growing, no cleanup is performed.
+func withOutputDir(dir string) Option {
+	return func(cfg *config) {
+		cfg.outputDir = dir
+	}
 }

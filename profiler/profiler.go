@@ -8,7 +8,9 @@ package profiler
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -211,10 +213,35 @@ func (p *profiler) enqueueUpload(bat batch) {
 // send takes profiles from the output queue and uploads them.
 func (p *profiler) send() {
 	for bat := range p.out {
+		if err := p.outputDir(bat); err != nil {
+			log.Error("Failed to output profile to dir: %v", err)
+		}
 		if err := p.uploadFunc(bat); err != nil {
 			log.Error("Failed to upload profile: %v", err)
 		}
 	}
+}
+
+func (p *profiler) outputDir(bat batch) error {
+	if p.cfg.outputDir == "" {
+		return nil
+	}
+	// Basic ISO 8601 Format in UTC as the name for the directories.
+	dir := bat.end.UTC().Format("20060102T150405Z")
+	dirPath := filepath.Join(p.cfg.outputDir, dir)
+	// 0755 is what mkdir does, should be reasonable for the use cases here.
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		return err
+	}
+
+	for _, prof := range bat.profiles {
+		filePath := filepath.Join(dirPath, prof.name)
+		// 0644 is what touch does, should be reasonable for the use cases here.
+		if err := ioutil.WriteFile(filePath, prof.data, 0644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // stop stops the profiler.
