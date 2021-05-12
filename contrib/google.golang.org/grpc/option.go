@@ -7,9 +7,8 @@ package grpc
 
 import (
 	"math"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"os"
+	"strconv"
 
 	"google.golang.org/grpc/codes"
 )
@@ -35,9 +34,9 @@ func (cfg *config) serverServiceName() string {
 	if cfg.serviceName != "" {
 		return cfg.serviceName
 	}
-	if svc := globalconfig.ServiceName(); svc != "" {
-		return svc
-	}
+	//	if svc := globalconfig.ServiceName(); svc != "" {
+	//		return svc
+	//	}
 	return "grpc.server"
 }
 
@@ -46,6 +45,16 @@ func (cfg *config) clientServiceName() string {
 		return "grpc.client"
 	}
 	return cfg.serviceName
+}
+
+// BoolEnv returns the parsed boolean value of an environment variable, or
+// def otherwise.
+func boolEnv(key string, def bool) bool {
+	v, err := strconv.ParseBool(os.Getenv(key))
+	if err != nil {
+		return def
+	}
+	return v
 }
 
 // InterceptorOption represents an option that can be passed to the grpc unary
@@ -59,7 +68,7 @@ func defaults(cfg *config) {
 	cfg.traceStreamMessages = true
 	cfg.nonErrorCodes = map[codes.Code]bool{codes.Canceled: true}
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_GRPC_ANALYTICS_ENABLED", false) {
+	if boolEnv("DD_TRACE_GRPC_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = math.NaN()

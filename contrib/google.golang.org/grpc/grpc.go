@@ -11,7 +11,7 @@ package grpc
 import (
 	"io"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc/grpcutil"
+	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"

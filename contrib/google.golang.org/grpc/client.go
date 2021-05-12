@@ -8,11 +8,12 @@ package grpc
 import (
 	"net"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc/grpcutil"
+	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	//"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -71,7 +72,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	log.Debug("contrib/google.golang.org/grpc: Configuring StreamClientInterceptor: %#v", cfg)
+	//log.Debug("contrib/google.golang.org/grpc: Configuring StreamClientInterceptor: %#v", cfg)
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 		var methodKind string
 		if desc != nil {
@@ -137,7 +138,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	log.Debug("contrib/google.golang.org/grpc: Configuring UnaryClientInterceptor: %#v", cfg)
+	//log.Debug("contrib/google.golang.org/grpc: Configuring UnaryClientInterceptor: %#v", cfg)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		span, err := doClientRequest(ctx, cfg, method, methodKindUnary, opts,
 			func(ctx context.Context, opts []grpc.CallOption) error {

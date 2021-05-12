@@ -8,7 +8,8 @@ package grpc
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	//"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
@@ -78,7 +79,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 	if cfg.serviceName == "" {
 		cfg.serviceName = "grpc.server"
 	}
-	log.Debug("contrib/google.golang.org/grpc: Configuring StreamServerInterceptor: %#v", cfg)
+	//log.Debug("contrib/google.golang.org/grpc: Configuring StreamServerInterceptor: %#v", cfg)
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		ctx := ss.Context()
 		// if we've enabled call tracing, create a span
@@ -123,7 +124,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	log.Debug("contrib/google.golang.org/grpc: Configuring UnaryServerInterceptor: %#v", cfg)
+	//log.Debug("contrib/google.golang.org/grpc: Configuring UnaryServerInterceptor: %#v", cfg)
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if _, ok := cfg.ignoredMethods[info.FullMethod]; ok {
 			return handler(ctx, req)
