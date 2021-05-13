@@ -31,7 +31,6 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message) *Publish
 		tracer.ResourceName(t.String()),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag("message_size", len(msg.Data)),
-		tracer.Tag("ordering_key", msg.OrderingKey),
 	)
 	if msg.Attributes == nil {
 		msg.Attributes = make(map[string]string)
@@ -94,7 +93,6 @@ func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.
 			tracer.SpanType(ext.SpanTypeMessageConsumer),
 			tracer.Tag("message_size", len(msg.Data)),
 			tracer.Tag("num_attributes", len(msg.Attributes)),
-			tracer.Tag("ordering_key", msg.OrderingKey),
 			tracer.Tag("message_id", msg.ID),
 			tracer.Tag("publish_time", msg.PublishTime.String()),
 			tracer.ChildOf(parentSpanCtx),

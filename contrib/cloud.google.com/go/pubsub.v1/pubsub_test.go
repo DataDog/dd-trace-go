@@ -28,7 +28,7 @@ func TestPropagation(t *testing.T) {
 
 	// Publisher
 	span, pctx := tracer.StartSpanFromContext(ctx, "propagation-test", tracer.WithSpanID(42)) // set the root trace ID
-	srvID, err := Publish(pctx, topic, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"}).Get(pctx)
+	srvID, err := Publish(pctx, topic, &pubsub.Message{Data: []byte("hello")}).Get(pctx)
 	assert.NoError(err)
 	span.Finish()
 
@@ -65,7 +65,6 @@ func TestPropagation(t *testing.T) {
 	assert.Equal(map[string]interface{}{
 		"message_size":   5,
 		"num_attributes": 2, // 2 tracing attributes
-		"ordering_key":   "xxx",
 		ext.ResourceName: "projects/project/topics/topic",
 		ext.SpanType:     ext.SpanTypeMessageProducer,
 		"server_id":      srvID,
@@ -78,7 +77,6 @@ func TestPropagation(t *testing.T) {
 	assert.Equal(map[string]interface{}{
 		"message_size":   5,
 		"num_attributes": 2,
-		"ordering_key":   "xxx",
 		ext.ResourceName: "projects/project/subscriptions/subscription",
 		ext.SpanType:     ext.SpanTypeMessageConsumer,
 		"message_id":     msgID,
@@ -115,7 +113,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 
 	// Publisher
 	// no parent span
-	srvID, err := Publish(ctx, topic, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"}).Get(ctx)
+	srvID, err := Publish(ctx, topic, &pubsub.Message{Data: []byte("hello")}).Get(ctx)
 	assert.NoError(err)
 
 	// Subscriber
@@ -151,7 +149,6 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	assert.Equal(map[string]interface{}{
 		"message_size":   5,
 		"num_attributes": 2,
-		"ordering_key":   "xxx",
 		ext.ResourceName: "projects/project/topics/topic",
 		ext.SpanType:     ext.SpanTypeMessageProducer,
 		"server_id":      srvID,
@@ -163,7 +160,6 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	assert.Equal(map[string]interface{}{
 		"message_size":   5,
 		"num_attributes": 2,
-		"ordering_key":   "xxx",
 		ext.ResourceName: "projects/project/subscriptions/subscription",
 		ext.SpanType:     ext.SpanTypeMessageConsumer,
 		"message_id":     msgID,
@@ -178,7 +174,7 @@ func TestPropagationNoPubsliherSpan(t *testing.T) {
 
 	// Publisher
 	// no tracing on publisher side
-	_, err := topic.Publish(ctx, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"}).Get(ctx)
+	_, err := topic.Publish(ctx, &pubsub.Message{Data: []byte("hello")}).Get(ctx)
 	assert.NoError(err)
 
 	// Subscriber
@@ -213,7 +209,6 @@ func TestPropagationNoPubsliherSpan(t *testing.T) {
 	assert.Equal(map[string]interface{}{
 		"message_size":   5,
 		"num_attributes": 0, // no attributes, since no publish middleware sent them
-		"ordering_key":   "xxx",
 		ext.ResourceName: "projects/project/subscriptions/subscription",
 		ext.SpanType:     ext.SpanTypeMessageConsumer,
 		"message_id":     msgID,
@@ -234,7 +229,6 @@ func setup(t *testing.T) (context.Context, *pubsub.Topic, *pubsub.Subscription, 
 	_, err = client.CreateTopic(ctx, "topic")
 	assert.NoError(err)
 	topic := client.Topic("topic")
-	topic.EnableMessageOrdering = true
 	_, err = client.CreateSubscription(ctx, "subscription", pubsub.SubscriptionConfig{
 		Topic: topic,
 	})
