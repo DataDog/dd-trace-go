@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
@@ -180,9 +180,9 @@ func TestRateSampler(t *testing.T) {
 func TestRateSamplerSetting(t *testing.T) {
 	assert := assert.New(t)
 	rs := NewRateSampler(1)
-	assert.Equal(float64(1), rs.Rate())
+	assert.Equal(1.0, rs.Rate())
 	rs.SetRate(0.5)
-	assert.Equal(float64(0.5), rs.Rate())
+	assert.Equal(0.5, rs.Rate())
 }
 
 func TestRuleEnvVars(t *testing.T) {
@@ -303,7 +303,7 @@ func TestRulesSampler(t *testing.T) {
 				result := rs.apply(span)
 				assert.True(result)
 				assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
-				assert.Equal(0.5, span.Metrics["_dd.limit_psr"])
+				assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
 			})
 		}
 	})
@@ -352,7 +352,7 @@ func TestRulesSampler(t *testing.T) {
 					assert.True(result)
 					assert.Equal(rate, span.Metrics["_dd.rule_psr"])
 					if rate > 0.0 {
-						assert.Equal(0.5, span.Metrics["_dd.limit_psr"])
+						assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
 					}
 				})
 			}
@@ -404,7 +404,6 @@ func TestRulesSamplerInternals(t *testing.T) {
 		rs := newRulesSampler(nil)
 		// set samplingLimiter to specific state
 		rs.limiter.prevTime = now.Add(-1 * time.Second)
-		rs.limiter.prevRate = 1.0
 		rs.limiter.allowed = 1
 		rs.limiter.seen = 1
 
@@ -421,9 +420,8 @@ func TestRulesSamplerInternals(t *testing.T) {
 		// force sampling limiter to 1.0 spans/sec
 		rs.limiter.limiter = rate.NewLimiter(rate.Limit(1.0), 1)
 		rs.limiter.prevTime = now.Add(-1 * time.Second)
-		rs.limiter.prevRate = 1.0
-		rs.limiter.allowed = 1
-		rs.limiter.seen = 1
+		rs.limiter.allowed = 2
+		rs.limiter.seen = 2
 		// first span kept, second dropped
 		span := makeSpanAt("http.request", "test-service", now)
 		rs.applyRate(span, 1.0, now)
@@ -442,7 +440,8 @@ func TestSamplingLimiter(t *testing.T) {
 	t.Run("resets-every-second", func(t *testing.T) {
 		assert := assert.New(t)
 		sl := newRateLimiter()
-		sl.prevRate = 0.99
+		sl.prevSeen = 100
+		sl.prevAllowed = 99
 		sl.allowed = 42
 		sl.seen = 100
 		// exact point it should reset
@@ -450,16 +449,18 @@ func TestSamplingLimiter(t *testing.T) {
 
 		sampled, _ := sl.allowOne(now)
 		assert.True(sampled)
-		assert.Equal(0.42, sl.prevRate)
+		assert.Equal(42.0, sl.prevAllowed)
+		assert.Equal(100.0, sl.prevSeen)
 		assert.Equal(now, sl.prevTime)
-		assert.Equal(1, sl.seen)
-		assert.Equal(1, sl.allowed)
+		assert.Equal(1.0, sl.seen)
+		assert.Equal(1.0, sl.allowed)
 	})
 
 	t.Run("averages-rates", func(t *testing.T) {
 		assert := assert.New(t)
 		sl := newRateLimiter()
-		sl.prevRate = 0.42
+		sl.prevSeen = 100
+		sl.prevAllowed = 42
 		sl.allowed = 41
 		sl.seen = 99
 		// this event occurs within the current period
@@ -469,15 +470,16 @@ func TestSamplingLimiter(t *testing.T) {
 		assert.True(sampled)
 		assert.Equal(0.42, rate)
 		assert.Equal(now, sl.prevTime)
-		assert.Equal(100, sl.seen)
-		assert.Equal(42, sl.allowed)
+		assert.Equal(100.0, sl.seen)
+		assert.Equal(42.0, sl.allowed)
 
 	})
 
 	t.Run("discards-rate", func(t *testing.T) {
 		assert := assert.New(t)
 		sl := newRateLimiter()
-		sl.prevRate = 0.42
+		sl.prevSeen = 100
+		sl.prevAllowed = 42
 		sl.allowed = 42
 		sl.seen = 100
 		// exact point it should discard previous rate
@@ -485,10 +487,11 @@ func TestSamplingLimiter(t *testing.T) {
 
 		sampled, _ := sl.allowOne(now)
 		assert.True(sampled)
-		assert.Equal(0.0, sl.prevRate)
+		assert.Equal(0.0, sl.prevSeen)
+		assert.Equal(0.0, sl.prevAllowed)
 		assert.Equal(now, sl.prevTime)
-		assert.Equal(1, sl.seen)
-		assert.Equal(1, sl.allowed)
+		assert.Equal(1.0, sl.seen)
+		assert.Equal(1.0, sl.allowed)
 	})
 }
 
@@ -498,7 +501,6 @@ func BenchmarkRulesSampler(b *testing.B) {
 	benchmarkStartSpan := func(b *testing.B, t *tracer) {
 		internal.SetGlobalTracer(t)
 		defer func() {
-			close(t.stop)
 			internal.SetGlobalTracer(&internal.NoopTracer{})
 		}()
 		t.prioritySampling.readRatesJSON(ioutil.NopCloser(strings.NewReader(
@@ -527,8 +529,8 @@ func BenchmarkRulesSampler(b *testing.B) {
 				spans[j].Finish()
 			}
 			d := 0
-			for len(t.payloadChan) > 0 {
-				<-t.payloadChan
+			for len(t.out) > 0 {
+				<-t.out
 				d++
 			}
 		}

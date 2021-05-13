@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package sarama_test
 
@@ -15,6 +15,7 @@ import (
 
 func Example_asyncProducer() {
 	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0 // minimum version that supports headers which are required for tracing
 
 	producer, err := sarama.NewAsyncProducer([]string{"localhost:9092"}, cfg)
 	if err != nil {

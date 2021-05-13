@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package redis provides tracing functions for tracing the go-redis/redis package (https://github.com/go-redis/redis).
 // This package supports versions up to go-redis 6.15.
@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/go-redis/redis"
 )
@@ -64,6 +65,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/go-redis/redis: Wrapping Client: %#v", cfg)
 	opt := c.Options()
 	host, port, err := net.SplitHostPort(opt.Addr)
 	if err != nil {
@@ -84,6 +86,21 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 // Pipeline creates a Pipeline from a Client
 func (c *Client) Pipeline() redis.Pipeliner {
 	return &Pipeliner{c.Client.Pipeline(), c.params, c.Client.Context()}
+}
+
+// Pipelined executes a function parameter to build a Pipeline and then immediately executes it.
+func (c *Client) Pipelined(fn func(redis.Pipeliner) error) ([]redis.Cmder, error) {
+	return c.Pipeline().Pipelined(fn)
+}
+
+// TxPipelined executes a function parameter to build a Transactional Pipeline and then immediately executes it.
+func (c *Client) TxPipelined(fn func(redis.Pipeliner) error) ([]redis.Cmder, error) {
+	return c.TxPipeline().Pipelined(fn)
+}
+
+// TxPipeline acts like Pipeline, but wraps queued commands with MULTI/EXEC.
+func (c *Client) TxPipeline() redis.Pipeliner {
+	return &Pipeliner{c.Client.TxPipeline(), c.params, c.Client.Context()}
 }
 
 // ExecWithContext calls Pipeline.Exec(). It ensures that the resulting Redis calls
@@ -131,6 +148,15 @@ func commandsToString(cmds []redis.Cmder) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// Pipelined executes a function parameter to build a Pipeline and then immediately executes the built pipeline.
+func (c *Pipeliner) Pipelined(fn func(redis.Pipeliner) error) ([]redis.Cmder, error) {
+	if err := fn(c); err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	return c.Exec()
 }
 
 // WithContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.

@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package redigo provides functions to trace the garyburd/redigo package (https://github.com/garyburd/redigo).
 package redigo
@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	redis "github.com/garyburd/redigo/redis"
 )
@@ -58,6 +59,7 @@ func parseOptions(options ...interface{}) ([]redis.DialOption, *dialConfig) {
 // The set of supported options must be either of type redis.DialOption or this package's DialOption.
 func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
+	log.Debug("contrib/garyburd/redigo: Dialing %s %s, %#v", network, address, cfg)
 	c, err := redis.Dial(network, address, dialOpts...)
 	if err != nil {
 		return nil, err
@@ -76,6 +78,7 @@ func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 // The returned redis.Conn is traced.
 func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
+	log.Debug("contrib/garyburd/redigo: Dialing %s, %#v", rawurl, cfg)
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		return Conn{}, err
@@ -116,13 +119,11 @@ func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 // When passed a context.Context as the final argument, Do will ensure that any span created
 // inherits from this context. The rest of the arguments are passed through to the Redis server unchanged.
 func (tc Conn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
-	var (
-		ctx context.Context
-		ok  bool
-	)
+	ctx := context.Background()
+
 	if n := len(args); n > 0 {
-		ctx, ok = args[n-1].(context.Context)
-		if ok {
+		if argCtx, ok := args[n-1].(context.Context); ok {
+			ctx = argCtx
 			args = args[:n-1]
 		}
 	}

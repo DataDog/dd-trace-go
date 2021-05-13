@@ -1,9 +1,9 @@
 version: 2
 
-plain-go113: &plain-go113
+plain-go114: &plain-go114
   working_directory: /home/circleci/dd-trace-go.v1
   docker:
-    - image: circleci/golang:1.13
+    - image: circleci/golang:1.14
       environment:
         GOPATH: "/home/circleci/go"
 
@@ -24,10 +24,18 @@ jobs:
           go build ./ddtrace/... ./profiler/...
 
   metadata:
-    <<: *plain-go113
+    <<: *plain-go114
 
     steps:
     - checkout
+
+    # -mod=readonly is enabled by default starting in go1.16 causing many go
+    # tools and editor integrations to report problems if the go.sum file is
+    # not up-to-date, so let's make sure it is.
+    - run:
+        name: go.sum up-to-date
+        command: |
+          go run -mod=readonly gosum.go
 
     - run:
         name: milestone
@@ -40,7 +48,7 @@ jobs:
           go run checkcopyright.go
 
   lint:
-    <<: *plain-go113
+    <<: *plain-go114
 
     steps:
     - checkout
@@ -62,19 +70,24 @@ jobs:
 
   test-core:
     resource_class: xlarge
-    <<: *plain-go113
+    <<: *plain-go114
 
     steps:
       - checkout
       - run:
           name: Testing
-          command: go test -v -race `go list ./... | grep -v /contrib/`
+          command: go test -v -race -coverprofile=coverage.txt -covermode=atomic `go list ./... | grep -v /contrib/`
+
+      - run:
+          name: Upload coverage report to Codecov
+          command: bash <(curl -s https://codecov.io/bash)
+
 
   test-contrib:
     resource_class: xlarge
     working_directory: /home/circleci/dd-trace-go.v1
     docker:
-      - image: circleci/golang:1.13
+      - image: circleci/golang:1.14
         environment:
           GOPATH: "/home/circleci/go"
       - image: cassandra:3.7
@@ -142,6 +155,7 @@ jobs:
           command: |
             go get k8s.io/client-go@v0.17.0
             go get k8s.io/apimachinery@v0.17.0
+            go get cloud.google.com/go/pubsub@v1.6.1
 
       - run:
           name: Wait for MySQL
@@ -180,13 +194,38 @@ jobs:
           command: dockerize -wait http://localhost:8500 -timeout 1m
 
       - run:
-          name: Testing
+          name: Testing integrations
           command: |
-                INTEGRATION=1 go test -v -race `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api`
+                INTEGRATION=1 go test -v -race -coverprofile=coverage.txt -covermode=atomic `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api`
+
+      - run:
+          name: Testing outlier google.golang.org/api
+          command: |
                 go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
                 go test -v ./contrib/google.golang.org/api/...
-                go get google.golang.org/grpc@v1.2.0
-                go test -v ./contrib/google.golang.org/grpc.v12/...
+
+      - run:
+          name: Testing outlier gRPC v1.2
+          command: |
+                # This hacky approach is necessary because running the tests regularly
+                # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
+                go mod vendor
+
+                # Checkout grpc-go@v1.2.0
+                cd vendor/google.golang.org && rm -rf grpc
+                git clone git@github.com:grpc/grpc-go grpc && cd grpc
+                git fetch origin && git checkout v1.2.0 && cd ../..
+
+                # Checkout sketches-go@v1.0.0
+                cd vendor/github.com/DataDog && rm -rf sketches-go
+                git clone git@github.com:DataDog/sketches-go && cd sketches-go
+                git fetch origin && git checkout v1.0.0 && cd ../..
+
+                go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+
+      - run:
+          name: Upload coverage report to Codecov
+          command: bash <(curl -s https://codecov.io/bash)
 
 workflows:
   version: 2

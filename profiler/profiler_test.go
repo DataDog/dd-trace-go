@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package profiler
 
@@ -10,11 +10,12 @@ import (
 	"net"
 	"os"
 	"runtime"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,6 +57,43 @@ func TestStart(t *testing.T) {
 		mu.Lock()
 		require.NotNil(t, activeProfiler)
 		assert.NotEmpty(t, activeProfiler.cfg.hostname)
+		mu.Unlock()
+	})
+
+	t.Run("options/GoodAPIKey/Agent", func(t *testing.T) {
+		rl := &log.RecordLogger{}
+		defer log.UseLogger(rl)()
+
+		err := Start(WithAPIKey("12345678901234567890123456789012"))
+		defer Stop()
+		assert.Nil(t, err)
+		assert.Equal(t, activeProfiler.cfg.agentURL, activeProfiler.cfg.targetURL)
+		assert.Equal(t, 1, len(rl.Logs()))
+		assert.Contains(t, rl.Logs()[0], "profiler.WithAPIKey")
+	})
+
+	t.Run("options/GoodAPIKey/Agentless", func(t *testing.T) {
+		rl := &log.RecordLogger{}
+		defer log.UseLogger(rl)()
+
+		err := Start(
+			WithAPIKey("12345678901234567890123456789012"),
+			WithAgentlessUpload(),
+		)
+		defer Stop()
+		assert.Nil(t, err)
+		assert.Equal(t, activeProfiler.cfg.apiURL, activeProfiler.cfg.targetURL)
+		assert.Equal(t, 1, len(rl.Logs()))
+		assert.Contains(t, rl.Logs()[0], "profiler.WithAgentlessUpload")
+	})
+
+	t.Run("options/BadAPIKey", func(t *testing.T) {
+		err := Start(WithAPIKey("aaaa"), WithAgentlessUpload())
+		defer Stop()
+		assert.NotNil(t, err)
+
+		// Check that mu gets unlocked, even if newProfiler() returns an error.
+		mu.Lock()
 		mu.Unlock()
 	})
 }
@@ -156,14 +194,7 @@ func TestProfilerInternal(t *testing.T) {
 		assert.EqualValues(1, startCPU)
 		assert.EqualValues(1, stopCPU)
 
-		assert.Equal(2, len(bat.profiles))
-		firstTypes := []string{
-			bat.profiles[0].types[0],
-			bat.profiles[1].types[0],
-		}
-		sort.Strings(firstTypes)
-		assert.Equal("alloc_objects", firstTypes[0])
-		assert.Equal("samples", firstTypes[1])
+		assert.Equal(3, len(bat.profiles))
 
 		p.exit <- struct{}{}
 		<-wait
@@ -217,13 +248,6 @@ func TestProfilerPassthrough(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Equal(2, len(bat.profiles))
-	firstTypes := []string{
-		bat.profiles[0].types[0],
-		bat.profiles[1].types[0],
-	}
-	sort.Strings(firstTypes)
-	assert.Equal("alloc_objects", firstTypes[0])
-	assert.Equal("samples", firstTypes[1])
 	assert.NotEmpty(bat.profiles[0].data)
 	assert.NotEmpty(bat.profiles[1].data)
 }

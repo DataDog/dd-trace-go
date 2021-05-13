@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package graphql provides functions to trace the graph-gophers/graphql-go package (https://github.com/graph-gophers/graphql-go).
 //
@@ -16,12 +16,14 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/graph-gophers/graphql-go/errors"
-	"github.com/graph-gophers/graphql-go/introspection"
-	"github.com/graph-gophers/graphql-go/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"github.com/graph-gophers/graphql-go/errors"
+	"github.com/graph-gophers/graphql-go/introspection"
+	"github.com/graph-gophers/graphql-go/trace"
 )
 
 const (
@@ -68,6 +70,9 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 
 // TraceField traces a GraphQL field access.
 func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, fieldName string, trivial bool, args map[string]interface{}) (context.Context, trace.TraceFieldFinishFunc) {
+	if t.cfg.omitTrivial && trivial {
+		return ctx, func(queryError *errors.QueryError) {}
+	}
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlField, fieldName),
@@ -96,6 +101,7 @@ func NewTracer(opts ...Option) trace.Tracer {
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/graph-gophers/graphql-go: Configuring Graphql Tracer: %#v", cfg)
 	return &Tracer{
 		cfg: cfg,
 	}

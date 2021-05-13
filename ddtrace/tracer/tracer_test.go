@@ -1,12 +1,13 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -51,7 +52,7 @@ loop:
 		case <-timeout:
 			tst.Fatalf("timed out waiting for payload to contain %d", n)
 		default:
-			if t.payload.itemCount() == n {
+			if t.traceWriter.(*agentTraceWriter).payload.itemCount() == n {
 				break loop
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -59,7 +60,7 @@ loop:
 	}
 }
 
-// TestTracerFrenetic does frenetic testing in a scenario where the tracer is started
+// TestTracerCleanStop does frenetic testing in a scenario where the tracer is started
 // and stopped in parallel with spans being created.
 func TestTracerCleanStop(t *testing.T) {
 	if testing.Short() {
@@ -92,10 +93,10 @@ func TestTracerCleanStop(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
-			Start(withTransport(transport))
+			Start(withTransport(transport), WithLambdaMode(true))
 			time.Sleep(time.Millisecond)
-			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
-			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
 		}
 	}()
 
@@ -211,10 +212,19 @@ func TestTracerStartSpan(t *testing.T) {
 		assert.Equal(t, "/home/user", span.Resource)
 	})
 
-	t.Run("measured", func(t *testing.T) {
+	t.Run("measured_top_level", func(t *testing.T) {
 		tracer := newTracer()
 		span := tracer.StartSpan("/home/user", Measured()).(*span)
-		assert.Equal(t, 1.0, span.Metrics[keyMeasured])
+		_, ok := span.Metrics[keyMeasured]
+		assert.False(t, ok)
+		assert.Equal(t, 1.0, span.Metrics[keyTopLevel])
+	})
+
+	t.Run("measured_non_top_level", func(t *testing.T) {
+		tracer := newTracer()
+		parent := tracer.StartSpan("/home/user").(*span)
+		child := tracer.StartSpan("home/user", Measured(), ChildOf(parent.context)).(*span)
+		assert.Equal(t, 1.0, child.Metrics[keyMeasured])
 	})
 }
 
@@ -276,7 +286,6 @@ func TestTracerStartSpanOptions(t *testing.T) {
 		ResourceName("test.resource"),
 		StartTime(now),
 		WithSpanID(420),
-		Measured(),
 	}
 	span := tracer.StartSpan("web.request", opts...).(*span)
 	assert := assert.New(t)
@@ -286,7 +295,7 @@ func TestTracerStartSpanOptions(t *testing.T) {
 	assert.Equal(now.UnixNano(), span.Start)
 	assert.Equal(uint64(420), span.SpanID)
 	assert.Equal(uint64(420), span.TraceID)
-	assert.Equal(1.0, span.Metrics[keyMeasured])
+	assert.Equal(1.0, span.Metrics[keyTopLevel])
 }
 
 func TestTracerStartChildSpan(t *testing.T) {
@@ -440,6 +449,31 @@ func TestTracerSpanGlobalTags(t *testing.T) {
 	assert.Equal("value", s.Meta["key"])
 	child := tracer.StartSpan("db.query", ChildOf(s.Context())).(*span)
 	assert.Equal("value", child.Meta["key"])
+}
+
+func TestTracerNoDebugStack(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("Finish", func(t *testing.T) {
+		tracer := newTracer(WithDebugStack(false))
+		s := tracer.StartSpan("web.request").(*span)
+		err := errors.New("test error")
+		s.Finish(WithError(err))
+		assert.Empty(s.Meta[ext.ErrorStack])
+	})
+
+	t.Run("SetTag", func(t *testing.T) {
+		tracer := newTracer(WithDebugStack(false))
+		s := tracer.StartSpan("web.request").(*span)
+		err := errors.New("error value with no trace")
+		s.SetTag(ext.Error, err)
+		assert.Empty(s.Meta[ext.ErrorStack])
+	})
+}
+
+// newDefaultTransport return a default transport for this tracing client
+func newDefaultTransport() transport {
+	return newHTTPTransport(defaultAddress, defaultClient)
 }
 
 func TestNewSpan(t *testing.T) {
@@ -598,13 +632,13 @@ func TestTracerEdgeSampler(t *testing.T) {
 	count := payloadQueueSize / 3
 
 	for i := 0; i < count; i++ {
-		span0 := tracer0.newRootSpan("pylons.request", "pylons", "/")
+		span0 := tracer0.StartSpan("pylons.request", SpanType("test"), ServiceName("pylons"), ResourceName("/"))
 		span0.Finish()
-		span1 := tracer1.newRootSpan("pylons.request", "pylons", "/")
+		span1 := tracer1.StartSpan("pylons.request", SpanType("test"), ServiceName("pylons"), ResourceName("/"))
 		span1.Finish()
 	}
 
-	assert.Equal(tracer0.payload.itemCount(), 0)
+	assert.Equal(tracer0.traceWriter.(*agentTraceWriter).payload.itemCount(), 0)
 	tracer1.awaitPayload(t, count)
 }
 
@@ -915,11 +949,11 @@ func TestPushPayload(t *testing.T) {
 	s.Meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
 
 	// half payload size reached
-	tracer.pushPayload([]*span{s})
+	tracer.pushTrace([]*span{s})
 	tracer.awaitPayload(t, 1)
 
 	// payload size exceeded
-	tracer.pushPayload([]*span{s})
+	tracer.pushTrace([]*span{s})
 	flush(2)
 }
 
@@ -943,18 +977,18 @@ func TestPushTrace(t *testing.T) {
 	}
 	tracer.pushTrace(trace)
 
-	assert.Len(tracer.payloadChan, 1)
+	assert.Len(tracer.out, 1)
 
-	t0 := <-tracer.payloadChan
+	t0 := <-tracer.out
 	assert.Equal(trace, t0)
 
 	many := payloadQueueSize + 2
 	for i := 0; i < many; i++ {
 		tracer.pushTrace(make([]*span, i))
 	}
-	assert.Len(tracer.payloadChan, payloadQueueSize)
+	assert.Len(tracer.out, payloadQueueSize)
 	log.Flush()
-	assert.True(len(tp.Lines()) >= 2)
+	assert.True(len(tp.Lines()) >= 1)
 }
 
 func TestTracerFlush(t *testing.T) {
@@ -998,7 +1032,9 @@ func TestTracerFlush(t *testing.T) {
 }
 
 func TestTracerReportsHostname(t *testing.T) {
-	t.Run("enabled", func(t *testing.T) {
+	const hostname = "hostname-test"
+
+	t.Run("DD_TRACE_REPORT_HOSTNAME/set", func(t *testing.T) {
 		os.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
 		defer os.Unsetenv("DD_TRACE_REPORT_HOSTNAME")
 
@@ -1014,13 +1050,74 @@ func TestTracerReportsHostname(t *testing.T) {
 
 		name, ok := root.Meta[keyHostname]
 		assert.True(ok)
-		assert.Equal(name, tracer.hostname)
+		assert.Equal(name, tracer.config.hostname)
 
+		name, ok = child.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(name, tracer.config.hostname)
+	})
+
+	t.Run("DD_TRACE_REPORT_HOSTNAME/unset", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
+
+		assert := assert.New(t)
+
+		_, ok := root.Meta[keyHostname]
+		assert.False(ok)
 		_, ok = child.Meta[keyHostname]
 		assert.False(ok)
 	})
 
-	t.Run("disabled", func(t *testing.T) {
+	t.Run("WithHostname", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithHostname(hostname))
+		defer stop()
+
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
+
+		assert := assert.New(t)
+
+		got, ok := root.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(got, hostname)
+
+		got, ok = child.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(got, hostname)
+	})
+
+	t.Run("DD_TRACE_SOURCE_HOSTNAME/set", func(t *testing.T) {
+		os.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-test")
+		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
+
+		assert := assert.New(t)
+
+		got, ok := root.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(got, hostname)
+
+		got, ok = child.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(got, hostname)
+	})
+
+	t.Run("DD_TRACE_SOURCE_HOSTNAME/unset", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 
@@ -1151,6 +1248,7 @@ func startTestTracer(t interface {
 type dummyTransport struct {
 	sync.RWMutex
 	traces spanLists
+	stats  []*statsPayload
 }
 
 func newDummyTransport() *dummyTransport {
@@ -1161,6 +1259,19 @@ func (t *dummyTransport) Len() int {
 	t.RLock()
 	defer t.RUnlock()
 	return len(t.traces)
+}
+
+func (t *dummyTransport) sendStats(p *statsPayload) error {
+	t.Lock()
+	t.stats = append(t.stats, p)
+	t.Unlock()
+	return nil
+}
+
+func (t *dummyTransport) Stats() []*statsPayload {
+	t.RLock()
+	defer t.RUnlock()
+	return t.stats
 }
 
 func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
@@ -1239,6 +1350,80 @@ func cpspan(s *span) *span {
 		ParentID: s.ParentID,
 		Error:    s.Error,
 	}
+}
+
+type testTraceWriter struct {
+	mu      sync.RWMutex
+	buf     []*span
+	flushed []*span
+}
+
+func newTestTraceWriter() *testTraceWriter {
+	return &testTraceWriter{
+		buf:     []*span{},
+		flushed: []*span{},
+	}
+}
+
+func (w *testTraceWriter) add(spans []*span) {
+	w.mu.Lock()
+	w.buf = append(w.buf, spans...)
+	w.mu.Unlock()
+}
+
+func (w *testTraceWriter) flush() {
+	w.mu.Lock()
+	w.flushed = append(w.flushed, w.buf...)
+	w.buf = w.buf[:0]
+	w.mu.Unlock()
+}
+
+func (w *testTraceWriter) stop() {}
+
+func (w *testTraceWriter) reset() {
+	w.mu.Lock()
+	w.flushed = w.flushed[:0]
+	w.buf = w.buf[:0]
+	w.mu.Unlock()
+}
+
+// Buffered returns the spans buffered by the writer.
+func (w *testTraceWriter) Buffered() []*span {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.buf
+}
+
+// Flushed returns the spans flushed by the writer.
+func (w *testTraceWriter) Flushed() []*span {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.flushed
+}
+
+func TestFlush(t *testing.T) {
+	tr, _, _, stop := startTestTracer(t)
+	tw := newTestTraceWriter()
+	tr.traceWriter = tw
+	defer stop()
+	tr.StartSpan("op").Finish()
+	timeout := time.After(time.Second)
+loop:
+	for {
+		select {
+		case <-timeout:
+			t.Fatal("timed out waiting for trace to be added to writer")
+		default:
+			if len(tw.Buffered()) > 0 {
+				// trace got buffered
+				break loop
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	assert.Len(t, tw.Flushed(), 0)
+	tr.flushSync()
+	assert.Len(t, tw.Flushed(), 1)
 }
 
 func TestTakeStackTrace(t *testing.T) {

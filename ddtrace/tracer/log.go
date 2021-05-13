@@ -1,11 +1,12 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -45,16 +46,20 @@ type startupInfo struct {
 	ApplicationVersion    string            `json:"dd_version"`              // Version of the user's application
 	Architecture          string            `json:"architecture"`            // Architecture of host machine
 	GlobalService         string            `json:"global_service"`          // Global service string. If not-nil should be same as Service. (#614)
+	LambdaMode            string            `json:"lambda_mode"`             // Whether or not the client has enabled lambda mode
+	AgentFeatures         agentFeatures     `json:"agent_features"`          // Lists the capabilities of the agent.
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
 // If the endpoint is not reachable, checkEndpoint returns an error
 // explaining why.
 func checkEndpoint(endpoint string) error {
-	req, err := http.NewRequest("POST", endpoint, nil)
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader([]byte{0x90}))
 	if err != nil {
 		return fmt.Errorf("cannot create http request: %v", err)
 	}
+	req.Header.Set(traceCountHeader, "0")
+	req.Header.Set("Content-Type", "application/msgpack")
 	_, err = defaultClient.Do(req)
 	if err != nil {
 		return err
@@ -66,7 +71,7 @@ func checkEndpoint(endpoint string) error {
 // JSON format.
 func logStartup(t *tracer) {
 	tags := make(map[string]string)
-	for k, v := range t.globalTags {
+	for k, v := range t.config.globalTags {
 		tags[k] = fmt.Sprintf("%v", v)
 	}
 
@@ -79,7 +84,7 @@ func logStartup(t *tracer) {
 		LangVersion:           runtime.Version(),
 		Env:                   t.config.env,
 		Service:               t.config.serviceName,
-		AgentURL:              t.transport.endpoint(),
+		AgentURL:              t.config.transport.endpoint(),
 		Debug:                 t.config.debug,
 		AnalyticsEnabled:      !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:            fmt.Sprintf("%f", t.rulesSampling.globalRate),
@@ -90,13 +95,17 @@ func logStartup(t *tracer) {
 		ApplicationVersion:    t.config.version,
 		Architecture:          runtime.GOARCH,
 		GlobalService:         globalconfig.ServiceName(),
+		LambdaMode:            fmt.Sprintf("%t", t.config.logToStdout),
+		AgentFeatures:         t.features.Load(),
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
 	}
-	if err := checkEndpoint(t.transport.endpoint()); err != nil {
-		info.AgentError = fmt.Sprintf("%s", err)
-		log.Warn("DIAGNOSTICS Unable to reach agent: %s", err)
+	if !t.config.logToStdout {
+		if err := checkEndpoint(t.config.transport.endpoint()); err != nil {
+			info.AgentError = fmt.Sprintf("%s", err)
+			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err)
+		}
 	}
 	bs, err := json.Marshal(info)
 	if err != nil {

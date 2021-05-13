@@ -1,11 +1,12 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
 import (
+	"context"
 	"math"
 	"net"
 	"net/http"
@@ -29,6 +30,13 @@ import (
 type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
+
+	// featureFlags specifies any enabled feature flags.
+	featureFlags map[string]struct{}
+
+	// logToStdout reports whether we should log all traces to the standard
+	// output instead of using the agent. This is used in Lambda environments.
+	logToStdout bool
 
 	// logStartup, when true, causes various startup info to be written
 	// when the tracer starts.
@@ -89,6 +97,16 @@ type config struct {
 	// tickChan specifies a channel which will receive the time every time the tracer must flush.
 	// It defaults to time.Ticker; replaced in tests.
 	tickChan <-chan time.Time
+
+	// noDebugStack disables the collection of debug stack traces globally. No traces reporting
+	// errors will record a stack trace when this option is set.
+	noDebugStack bool
+}
+
+// HasFeature reports whether feature f is enabled.
+func (c *config) HasFeature(f string) bool {
+	_, ok := c.featureFlags[strings.TrimSpace(f)]
+	return ok
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -119,8 +137,16 @@ func newConfig(opts ...StartOption) *config {
 			log.Warn("unable to look up hostname: %v", err)
 		}
 	}
+	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
+		c.hostname = v
+	}
 	if v := os.Getenv("DD_ENV"); v != "" {
 		c.env = v
+	}
+	if v := os.Getenv("DD_TRACE_FEATURES"); v != "" {
+		WithFeatureFlags(strings.FieldsFunc(v, func(r rune) bool {
+			return r == ',' || r == ' '
+		})...)(c)
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
 		c.serviceName = v
@@ -130,20 +156,32 @@ func newConfig(opts ...StartOption) *config {
 		c.version = ver
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		for _, tag := range strings.Split(v, ",") {
+		sep := " "
+		if strings.Index(v, ",") > -1 {
+			// falling back to comma as separator
+			sep = ","
+		}
+		for _, tag := range strings.Split(v, sep) {
 			tag = strings.TrimSpace(tag)
 			if tag == "" {
 				continue
 			}
 			kv := strings.SplitN(tag, ":", 2)
-			k := strings.TrimSpace(kv[0])
-			switch len(kv) {
-			case 1:
-				WithGlobalTag(k, "")(c)
-			case 2:
-				WithGlobalTag(k, strings.TrimSpace(kv[1]))(c)
+			key := strings.TrimSpace(kv[0])
+			if key == "" {
+				continue
 			}
+			var val string
+			if len(kv) == 2 {
+				val = strings.TrimSpace(kv[1])
+			}
+			WithGlobalTag(key, val)(c)
 		}
+	}
+	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
+		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
+		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
+		c.logToStdout = true
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
@@ -177,7 +215,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	if c.transport == nil {
-		c.transport = newTransport(c.agentAddr, c.httpClient)
+		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
 	if c.propagator == nil {
 		c.propagator = NewPropagator(nil)
@@ -223,6 +261,21 @@ func statsTags(c *config) []string {
 	return tags
 }
 
+// WithFeatureFlags specifies a set of feature flags to enable. Please take into account
+// that most, if not all features flags are considered to be experimental and result in
+// unexpected bugs.
+func WithFeatureFlags(feats ...string) StartOption {
+	return func(c *config) {
+		if c.featureFlags == nil {
+			c.featureFlags = make(map[string]struct{}, len(feats))
+		}
+		for _, f := range feats {
+			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
+		}
+		log.Info("FEATURES enabled: %v", feats)
+	}
+}
+
 // WithLogger sets logger as the tracer's error printer.
 func WithLogger(logger ddtrace.Logger) StartOption {
 	return func(c *config) {
@@ -241,10 +294,26 @@ func WithPrioritySampling() StartOption {
 	}
 }
 
+// WithDebugStack can be used to globally enable or disable the collection of stack traces when
+// spans finish with errors. It is enabled by default. This is a global version of the NoDebugStack
+// FinishOption.
+func WithDebugStack(enabled bool) StartOption {
+	return func(c *config) {
+		c.noDebugStack = !enabled
+	}
+}
+
 // WithDebugMode enables debug mode on the tracer, resulting in more verbose logging.
 func WithDebugMode(enabled bool) StartOption {
 	return func(c *config) {
 		c.debug = enabled
+	}
+}
+
+// WithLambdaMode enables lambda mode on the tracer, for use with AWS Lambda.
+func WithLambdaMode(enabled bool) StartOption {
+	return func(c *config) {
+		c.logToStdout = enabled
 	}
 }
 
@@ -329,6 +398,18 @@ func WithHTTPClient(client *http.Client) StartOption {
 	}
 }
 
+// WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
+func WithUDS(socketPath string) StartOption {
+	return WithHTTPClient(&http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", socketPath)
+			},
+		},
+		Timeout: defaultHTTPTimeout,
+	})
+}
+
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
 // for integrations.
 func WithAnalytics(on bool) StartOption {
@@ -382,6 +463,13 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
 		cfg.version = version
+	}
+}
+
+// WithHostname allows specifying the hostname with which to mark outgoing traces.
+func WithHostname(name string) StartOption {
+	return func(c *config) {
+		c.hostname = name
 	}
 }
 

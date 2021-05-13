@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package http
 
@@ -55,14 +55,21 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	res, err = rt.base.RoundTrip(req.WithContext(ctx))
 	if err != nil {
 		span.SetTag("http.errors", err.Error())
+		span.SetTag(ext.Error, err)
 	} else {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
 		// treat 5XX as errors
 		if res.StatusCode/100 == 5 {
 			span.SetTag("http.errors", res.Status)
+			span.SetTag(ext.Error, fmt.Errorf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))
 		}
 	}
 	return res, err
+}
+
+// Unwrap returns the original http.RoundTripper.
+func (rt *roundTripper) Unwrap() http.RoundTripper {
+	return rt.base
 }
 
 // WrapRoundTripper returns a new RoundTripper which traces all requests sent

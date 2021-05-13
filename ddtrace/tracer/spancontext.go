@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
@@ -23,9 +23,10 @@ var _ ddtrace.SpanContext = (*spanContext)(nil)
 type spanContext struct {
 	// the below group should propagate only locally
 
-	trace *trace // reference to the trace that this span belongs too
-	span  *span  // reference to the span that hosts this context
-	drop  bool   // when true, the span will not be sent to the agent
+	trace  *trace // reference to the trace that this span belongs too
+	span   *span  // reference to the span that hosts this context
+	drop   bool   // when true, the span will not be sent to the agent
+	errors int64  // number of spans with errors in this trace
 
 	// the below group should propagate cross-process
 
@@ -53,6 +54,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		context.trace = parent.trace
 		context.drop = parent.drop
 		context.origin = parent.origin
+		context.errors = parent.errors
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
 			return true

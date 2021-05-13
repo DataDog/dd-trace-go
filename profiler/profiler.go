@@ -1,13 +1,16 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package profiler
 
 import (
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -29,6 +32,7 @@ var (
 // the WithAPIKey option, or if a hostname is not found.
 func Start(opts ...Option) error {
 	mu.Lock()
+	defer mu.Unlock()
 	if activeProfiler != nil {
 		activeProfiler.stop()
 	}
@@ -38,7 +42,6 @@ func Start(opts ...Option) error {
 	}
 	activeProfiler = p
 	activeProfiler.run()
-	mu.Unlock()
 	return nil
 }
 
@@ -61,33 +64,69 @@ type profiler struct {
 	exit       chan struct{}     // exit signals the profiler to stop; it is closed after stopping
 	stopOnce   sync.Once         // stopOnce ensures the profiler is stopped exactly once.
 	wg         sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
+	met        *metrics          // metric collector state
 }
 
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
-	cfg := defaultConfig()
+	cfg, err := defaultConfig()
+	if err != nil {
+		return nil, err
+	}
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	if cfg.apiKey != "" {
+	// TODO(fg) remove this after making expGoroutineWaitProfile public.
+	if os.Getenv("DD_PROFILING_WAIT_PROFILE") != "" {
+		cfg.addProfileType(expGoroutineWaitProfile)
+	}
+	// Agentless upload is disabled by default as of v1.30.0, but
+	// WithAgentlessUpload can be used to enable it for testing and debugging.
+	if cfg.agentless {
+		if !isAPIKeyValid(cfg.apiKey) {
+			return nil, errors.New("profiler.WithAgentlessUpload requires a valid API key. Use profiler.WithAPIKey or the DD_API_KEY env variable to set it")
+		}
+		// Always warn people against using this mode for now. All customers should
+		// use agent based uploading at this point.
+		log.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported.")
 		cfg.targetURL = cfg.apiURL
 	} else {
+		// Historically people could use an API Key to enable agentless uploading.
+		// As of v1.30.0 customers the default behavior is to use agent based
+		// uploading regardless of the presence of an API key. So if we see an API
+		// key configured, we warn the customers that this is probably a
+		// misconfiguration.
+		if cfg.apiKey != "" {
+			log.Warn("You are currently setting profiler.WithAPIKey or the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please see the profiler.WithAPIKey go docs and verify that your integration is still working. If you can't remove DD_API_KEY from your environment, you can use WithAPIKey(\"\") to silence this warning.")
+		}
 		cfg.targetURL = cfg.agentURL
 	}
 	if cfg.hostname == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
 			if cfg.targetURL == cfg.apiURL {
-				return nil, fmt.Errorf("could not obtain hostname: %v; try specifying it using profiler.WithHostname", err)
+				return nil, fmt.Errorf("could not obtain hostname: %v", err)
 			}
 			log.Warn("unable to look up hostname: %v", err)
 		}
 		cfg.hostname = hostname
 	}
+	// uploadTimeout defaults to DefaultUploadTimeout, but in theory a user might
+	// set it to 0 or a negative value. However, it's not clear what this should
+	// mean, and most meanings we could assign seem to be bad: Not having a
+	// timeout is dangerous, having a timeout that fires immediately breaks
+	// uploading, and silently defaulting to the default timeout is confusing.
+	// So let's just stay clear of all of this by not allowing such values.
+	//
+	// see similar discussion: https://github.com/golang/go/issues/39177
+	if cfg.uploadTimeout <= 0 {
+		return nil, fmt.Errorf("invalid upload timeout, must be > 0: %s", cfg.uploadTimeout)
+	}
 	p := profiler{
 		cfg:  cfg,
 		out:  make(chan batch, outChannelSize),
 		exit: make(chan struct{}),
+		met:  newMetrics(),
 	}
 	p.uploadFunc = p.upload
 	return &p, nil
@@ -106,6 +145,7 @@ func (p *profiler) run() {
 		defer p.wg.Done()
 		tick := time.NewTicker(p.cfg.period)
 		defer tick.Stop()
+		p.met.reset(now()) // collect baseline metrics at profiler start
 		p.collect(tick.C)
 	}()
 	p.wg.Add(1)
@@ -122,17 +162,21 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 	for {
 		select {
 		case <-ticker:
-			now := time.Now().UTC()
+			now := now()
 			bat := batch{
 				host:  p.cfg.hostname,
 				start: now,
-				end:   now.Add(p.cfg.cpuDuration), // abstraction violation
+				// NB: while this is technically wrong in that it does not
+				// record the actual start and end timestamps for the batch,
+				// it is how the backend understands the client-side
+				// configured CPU profile duration: (start-end).
+				end: now.Add(p.cfg.cpuDuration),
 			}
 			for t := range p.cfg.types {
 				prof, err := p.runProfile(t)
 				if err != nil {
-					log.Error("Error getting %s profile: %v; skipping.\n", t, err)
-					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, fmt.Sprintf("profile_type:%v", t)), 1)
+					log.Error("Error getting %s profile: %v; skipping.", t, err)
+					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
 					continue
 				}
 				bat.addProfile(prof)
@@ -156,9 +200,11 @@ func (p *profiler) enqueueUpload(bat batch) {
 			select {
 			case <-p.out:
 				p.cfg.statsd.Count("datadog.profiler.go.queue_full", 1, p.cfg.tags, 1)
-				log.Warn("Evicting one profile batch from the upload queue to make room.\n")
+				log.Warn("Evicting one profile batch from the upload queue to make room.")
 			default:
-				// queue is empty; contents likely got uploaded
+				// this case should be almost impossible to trigger, it would require a
+				// full p.out to completely drain within nanoseconds or extreme
+				// scheduling decisions by the runtime.
 			}
 		}
 	}
@@ -167,10 +213,35 @@ func (p *profiler) enqueueUpload(bat batch) {
 // send takes profiles from the output queue and uploads them.
 func (p *profiler) send() {
 	for bat := range p.out {
+		if err := p.outputDir(bat); err != nil {
+			log.Error("Failed to output profile to dir: %v", err)
+		}
 		if err := p.uploadFunc(bat); err != nil {
-			log.Error("Failed to upload profile: %v\n", err)
+			log.Error("Failed to upload profile: %v", err)
 		}
 	}
+}
+
+func (p *profiler) outputDir(bat batch) error {
+	if p.cfg.outputDir == "" {
+		return nil
+	}
+	// Basic ISO 8601 Format in UTC as the name for the directories.
+	dir := bat.end.UTC().Format("20060102T150405Z")
+	dirPath := filepath.Join(p.cfg.outputDir, dir)
+	// 0755 is what mkdir does, should be reasonable for the use cases here.
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		return err
+	}
+
+	for _, prof := range bat.profiles {
+		filePath := filepath.Join(dirPath, prof.name)
+		// 0644 is what touch does, should be reasonable for the use cases here.
+		if err := ioutil.WriteFile(filePath, prof.data, 0644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // stop stops the profiler.

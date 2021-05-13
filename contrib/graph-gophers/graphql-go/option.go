@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package graphql
 
@@ -15,6 +15,7 @@ import (
 type config struct {
 	serviceName   string
 	analyticsRate float64
+	omitTrivial   bool
 }
 
 // Option represents an option that can be used customize the Tracer.
@@ -60,5 +61,12 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithOmitTrivial enables omission of graphql fields marked as trivial.
+func WithOmitTrivial() Option {
+	return func(cfg *config) {
+		cfg.omitTrivial = true
 	}
 }

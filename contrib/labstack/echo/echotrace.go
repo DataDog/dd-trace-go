@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package echo provides functions to trace the labstack/echo package (https://github.com/labstack/echo).
 package echo
@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/labstack/echo"
 )
@@ -25,6 +26,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		for _, fn := range opts {
 			fn(cfg)
 		}
+		log.Debug("contrib/labstack/echo: Configuring Middleware: %#v", cfg)
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()

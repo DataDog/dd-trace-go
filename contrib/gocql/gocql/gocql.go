@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package gocql provides functions to trace the gocql/gocql package (https://github.com/gocql/gocql).
 package gocql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gocql/gocql"
@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/gocql/gocql"
 )
@@ -60,6 +61,7 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 			cfg.resourceName = parts[1]
 		}
 	}
+	log.Debug("contrib/gocql/gocql: Wrapping Query: %#v", cfg)
 	tq := &Query{q, &params{config: cfg}, context.Background()}
 	return tq
 }

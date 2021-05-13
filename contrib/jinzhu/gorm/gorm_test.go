@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package gorm
 
@@ -301,5 +301,91 @@ func TestContext(t *testing.T) {
 	t.Run("without", func(t *testing.T) {
 		ctx := ContextFromDB(db)
 		assert.Equal(t, context.Background(), ctx)
+	})
+}
+
+func TestCustomTags(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	sqltrace.Register("postgres", &pq.Driver{})
+	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+		WithCustomTag("custom_tag", func(scope *gorm.Scope) interface{} {
+			return scope.SQLVars[3]
+		}),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	db.AutoMigrate(&Product{})
+
+	parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
+		tracer.ServiceName("fake-http-server"),
+		tracer.SpanType(ext.SpanTypeWeb),
+	)
+
+	db = WithContext(ctx, db)
+	db.Create(&Product{Code: "L1212", Price: 1000})
+
+	parentSpan.Finish()
+
+	spans := mt.FinishedSpans()
+	assert.True(len(spans) >= 3)
+
+	// We deterministically expect the span to be the third last,
+	// followed by the underlying postgres DB trace and the above http.request span.
+	span := spans[len(spans)-3]
+	assert.Equal("gorm.create", span.OperationName())
+	assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
+	assert.Equal("L1212", span.Tag("custom_tag"))
+	assert.Equal(
+		`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
+		span.Tag(ext.ResourceName))
+}
+
+func TestError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	assertErrCheck := func(t *testing.T, mt mocktracer.Tracer, errExist bool, opts ...Option) {
+		sqltrace.Register("postgres", &pq.Driver{})
+		db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable", opts...)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+		db.AutoMigrate(&Product{})
+
+		db = WithContext(context.Background(), db)
+		db.Find(&Product{}, Product{Code: "L1210", Price: 2000})
+
+		spans := mt.FinishedSpans()
+		assert.True(t, len(spans) > 1)
+
+		// Get last span (gorm.db)
+		s := spans[len(spans)-1]
+		assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertErrCheck(t, mt, true)
+	})
+
+	t.Run("errcheck", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		errFn := func(err error) bool {
+			if err == gorm.ErrRecordNotFound {
+				return false
+			}
+			return true
+		}
+		assertErrCheck(t, mt, false, WithErrorCheck(errFn))
 	})
 }

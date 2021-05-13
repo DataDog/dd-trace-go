@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package chi provides tracing functions for tracing the go-chi/chi package (https://github.com/go-chi/chi).
 package chi // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi"
@@ -12,12 +12,13 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 )
 
 // Middleware returns middleware that will trace incoming requests.
@@ -27,6 +28,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/go-chi/chi: Configuring Middleware: %#v", cfg)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			opts := []ddtrace.StartSpanOption{
@@ -61,9 +63,13 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			// set the status code
 			status := ww.Status()
+			// 0 status means one has not yet been sent in which case net/http library will write StatusOK
+			if ww.Status() == 0 {
+				status = http.StatusOK
+			}
 			span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 
-			if status >= 500 && status < 600 {
+			if cfg.isStatusError(status) {
 				// mark 5xx server error
 				span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 			}

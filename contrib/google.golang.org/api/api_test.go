@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package api
 
@@ -69,9 +69,7 @@ func TestCivicInfo(t *testing.T) {
 		Transport: WrapRoundTripper(badRequestTransport),
 	})
 	assert.NoError(t, err)
-	svc.Representatives.
-		RepresentativeInfoByAddress(&civicinfo.RepresentativeInfoRequest{}).
-		Do()
+	svc.Representatives.RepresentativeInfoByAddress().Do()
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
@@ -79,8 +77,8 @@ func TestCivicInfo(t *testing.T) {
 	s0 := spans[0]
 	assert.Equal(t, "http.request", s0.OperationName())
 	assert.Equal(t, "http", s0.Tag(ext.SpanType))
-	assert.Equal(t, "google.civicinfo", s0.Tag(ext.ServiceName))
-	assert.Equal(t, "civicinfo.representatives.representativeInfoByAddress", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "google", s0.Tag(ext.ServiceName))
+	assert.Equal(t, "GET civicinfo.googleapis.com", s0.Tag(ext.ResourceName))
 	assert.Equal(t, "400", s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, "/civicinfo/v2/representatives", s0.Tag(ext.HTTPURL))

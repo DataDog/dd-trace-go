@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package chi
 
@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -39,76 +40,134 @@ func TestChildSpan(t *testing.T) {
 }
 
 func TestTrace200(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	assertDoRequest := func(assert *assert.Assertions, mt mocktracer.Tracer, router *chi.Mux) {
+		r := httptest.NewRequest("GET", "/user/123", nil)
+		w := httptest.NewRecorder()
 
-	router := chi.NewRouter()
-	router.Use(Middleware(WithServiceName("foobar")))
-	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
-		span, ok := tracer.SpanFromContext(r.Context())
-		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
-		id := chi.URLParam(r, "id")
-		w.Write([]byte(id))
+		// do and verify the request
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		assert.Equal(response.StatusCode, 200)
+
+		// verify traces look good
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		if len(spans) < 1 {
+			t.Fatalf("no spans")
+		}
+		span := spans[0]
+		assert.Equal("http.request", span.OperationName())
+		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+		assert.Equal("foobar", span.Tag(ext.ServiceName))
+		assert.Equal("GET /user/{id}", span.Tag(ext.ResourceName))
+		assert.Equal("200", span.Tag(ext.HTTPCode))
+		assert.Equal("GET", span.Tag(ext.HTTPMethod))
+		assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	}
+
+	t.Run("response written", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := chi.NewRouter()
+		router.Use(Middleware(WithServiceName("foobar")))
+		router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+			span, ok := tracer.SpanFromContext(r.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+			id := chi.URLParam(r, "id")
+			_, err := w.Write([]byte(id))
+			assert.NoError(err)
+		})
+		assertDoRequest(assert, mt, router)
 	})
 
-	r := httptest.NewRequest("GET", "/user/123", nil)
-	w := httptest.NewRecorder()
+	t.Run("no response written", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	// do and verify the request
-	router.ServeHTTP(w, r)
-	response := w.Result()
-	assert.Equal(response.StatusCode, 200)
-
-	// verify traces look good
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	if len(spans) < 1 {
-		t.Fatalf("no spans")
-	}
-	span := spans[0]
-	assert.Equal("http.request", span.OperationName())
-	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
-	assert.Equal("foobar", span.Tag(ext.ServiceName))
-	assert.Equal("GET /user/{id}", span.Tag(ext.ResourceName))
-	assert.Equal("200", span.Tag(ext.HTTPCode))
-	assert.Equal("GET", span.Tag(ext.HTTPMethod))
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+		router := chi.NewRouter()
+		router.Use(Middleware(WithServiceName("foobar")))
+		router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+			span, ok := tracer.SpanFromContext(r.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+		})
+		assertDoRequest(assert, mt, router)
+	})
 }
 
 func TestError(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	assertSpan := func(assert *assert.Assertions, spans []mocktracer.Span, code int) {
+		assert.Len(spans, 1)
+		if len(spans) < 1 {
+			t.Fatalf("no spans")
+		}
+		span := spans[0]
+		assert.Equal("http.request", span.OperationName())
+		assert.Equal("foobar", span.Tag(ext.ServiceName))
 
-	// setup
-	router := chi.NewRouter()
-	router.Use(Middleware(WithServiceName("foobar")))
-	code := 500
-	wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
+		assert.Equal(strconv.Itoa(code), span.Tag(ext.HTTPCode))
 
-	// a handler with an error and make the requests
-	router.Get("/err", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, fmt.Sprintf("%d!", code), code)
-	})
-	r := httptest.NewRequest("GET", "/err", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, r)
-	response := w.Result()
-	assert.Equal(response.StatusCode, 500)
-
-	// verify the errors and status are correct
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	if len(spans) < 1 {
-		t.Fatalf("no spans")
+		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
+		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
 	}
-	span := spans[0]
-	assert.Equal("http.request", span.OperationName())
-	assert.Equal("foobar", span.Tag(ext.ServiceName))
-	assert.Equal("500", span.Tag(ext.HTTPCode))
-	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		// setup
+		router := chi.NewRouter()
+		router.Use(Middleware(WithServiceName("foobar")))
+		code := 500
+
+		// a handler with an error and make the requests
+		router.Get("/err", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, fmt.Sprintf("%d!", code), code)
+		})
+		r := httptest.NewRequest("GET", "/err", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		assert.Equal(response.StatusCode, code)
+
+		// verify the errors and status are correct
+		spans := mt.FinishedSpans()
+		assertSpan(assert, spans, code)
+	})
+
+	t.Run("custom", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		// setup
+		router := chi.NewRouter()
+		router.Use(Middleware(
+			WithServiceName("foobar"),
+			WithStatusCheck(func(statusCode int) bool {
+				return statusCode >= 400
+			}),
+		))
+		code := 404
+		// a handler with an error and make the requests
+		router.Get("/err", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, fmt.Sprintf("%d!", code), code)
+		})
+		r := httptest.NewRequest("GET", "/err", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		assert.Equal(response.StatusCode, code)
+
+		// verify the errors and status are correct
+		spans := mt.FinishedSpans()
+		assertSpan(assert, spans, code)
+	})
 }
 
 func TestGetSpanNotInstrumented(t *testing.T) {

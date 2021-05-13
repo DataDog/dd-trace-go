@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package twirp
 
@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
@@ -197,6 +198,41 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.Error).(error).Error())
+	})
+
+	t.Run("chained", func(t *testing.T) {
+		defer mt.Reset()
+		assert := assert.New(t)
+
+		otherHooks := &twirp.ServerHooks{
+			RequestReceived: func(ctx context.Context) (context.Context, error) {
+				_, ctx = tracer.StartSpanFromContext(ctx, "other.span.name")
+				return ctx, nil
+			},
+			ResponseSent: func(ctx context.Context) {
+				span, ok := tracer.SpanFromContext(ctx)
+				if !ok {
+					return
+				}
+				span.Finish()
+			},
+		}
+		mockServer(twirp.ChainHooks(hooks, otherHooks), assert, twirp.InternalError("something bad or unexpected happened"))
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 2)
+		span := spans[0]
+		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+		assert.Equal("twirp-test", span.Tag(ext.ServiceName))
+		assert.Equal("twirp.Example", span.OperationName())
+		assert.Equal("twirp.test", span.Tag("twirp.package"))
+		assert.Equal("Example", span.Tag("twirp.service"))
+		assert.Equal("Method", span.Tag("twirp.method"))
+		assert.Equal("500", span.Tag(ext.HTTPCode))
+		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.Error).(error).Error())
+
+		span = spans[1]
+		assert.Equal("other.span.name", span.OperationName())
 	})
 }
 

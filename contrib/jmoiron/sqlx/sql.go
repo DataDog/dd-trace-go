@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package sqlx provides functions to trace the jmoiron/sqlx package (https://github.com/jmoiron/sqlx).
 // To enable tracing, first use one of the "Register*" functions to register the sql driver that
@@ -20,8 +20,8 @@ import (
 
 // Open opens a new (traced) connection to the database using the given driver and source.
 // Note that the driver must formerly be registered using database/sql integration's Register.
-func Open(driverName, dataSourceName string) (*sqlx.DB, error) {
-	db, err := sqltraced.Open(driverName, dataSourceName)
+func Open(driverName, dataSourceName string, opts ...sqltraced.Option) (*sqlx.DB, error) {
+	db, err := sqltraced.Open(driverName, dataSourceName, opts...)
 	if err != nil {
 		return nil, err
 	}
