@@ -215,6 +215,16 @@ func (n *nilStringer) String() string {
 	return n.s
 }
 
+type panicStringer struct {
+	s string
+}
+
+// String causes unrelated panic, which SetTag should not handle.
+func (p *panicStringer) String() string {
+	panic("This should not be handled.")
+	return ""
+}
+
 func TestSpanSetTag(t *testing.T) {
 	assert := assert.New(t)
 
@@ -272,6 +282,10 @@ func TestSpanSetTag(t *testing.T) {
 
 	span.SetTag("nilStringer", (*nilStringer)(nil))
 	assert.Equal("<nil>", span.Meta["nilStringer"])
+
+	assert.Panics(func() {
+		span.SetTag("panicStringer", &panicStringer{})
+	})
 }
 
 func TestSpanSetTagError(t *testing.T) {
