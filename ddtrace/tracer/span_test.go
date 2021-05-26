@@ -219,7 +219,7 @@ type panicStringer struct {
 	s string
 }
 
-// String causes unrelated panic, which SetTag should not handle.
+// String causes panic which SetTag should not handle.
 func (p *panicStringer) String() string {
 	panic("This should not be handled.")
 	return ""
