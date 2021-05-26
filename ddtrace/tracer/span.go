@@ -121,17 +121,20 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMetric(key, v)
 		return
 	}
-	defer func() {
-		e := recover()
-		if e != nil {
-			if v := reflect.ValueOf(value); v.Kind() == reflect.Ptr && v.IsNil() {
-				s.setMeta(key, "<nil>")
-				return
-			}
-			panic(e)
-		}
-	}()
 	if v, ok := value.(fmt.Stringer); ok {
+		// If .String() panics due to a nil receiver, we want to catch this
+		// and replace the string value with "<nil>", just as Sprintf does.
+		// Other panics should not be handled.
+		defer func() {
+			e := recover()
+			if e != nil {
+				if v := reflect.ValueOf(value); v.Kind() == reflect.Ptr && v.IsNil() {
+					s.setMeta(key, "<nil>")
+					return
+				}
+				panic(e)
+			}
+		}()
 		s.setMeta(key, v.String())
 		return
 	}
