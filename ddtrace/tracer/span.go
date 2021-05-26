@@ -122,8 +122,7 @@ func (s *span) SetTag(key string, value interface{}) {
 		return
 	}
 	defer func() {
-		e := recover()
-		if e != nil {
+		if e := recover(); e != nil {
 			if v := reflect.ValueOf(value); v.Kind() == reflect.Ptr && v.IsNil() {
 				s.setMeta(key, "<nil>")
 				return
