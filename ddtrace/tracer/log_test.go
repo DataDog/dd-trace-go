@@ -25,7 +25,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Reset()
 		logStartup(tracer)
 		assert.Len(tp.Lines(), 2)
-		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":null,"sampling_rules_error":"","tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false"}`, tp.Lines()[1])
+		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":null,"sampling_rules_error":"","tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","agent_features":{"DropP0s":false,"V05":false,"Stats":false}}`, tp.Lines()[1])
 	})
 
 	t.Run("configured", func(t *testing.T) {
@@ -53,7 +53,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Reset()
 		logStartup(tracer)
 		assert.Len(tp.Lines(), 2)
-		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sampling_rules":\[{"service":"mysql","name":"","sample_rate":0\.75}\],"sampling_rules_error":"","tags":{"runtime-id":"[^"]*","tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"health_metrics_enabled":true,"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service","lambda_mode":"false"}`, tp.Lines()[1])
+		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sampling_rules":\[{"service":"mysql","name":"","sample_rate":0\.75}\],"sampling_rules_error":"","tags":{"runtime-id":"[^"]*","tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"health_metrics_enabled":true,"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service","lambda_mode":"false","agent_features":{"DropP0s":false,"V05":false,"Stats":false}}`, tp.Lines()[1])
 	})
 
 	t.Run("errors", func(t *testing.T) {
@@ -67,7 +67,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Reset()
 		logStartup(tracer)
 		assert.Len(tp.Lines(), 2)
-		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":\[{"service":"some.service","name":"","sample_rate":0\.234}\],"sampling_rules_error":"found errors:\\n\\tat index 1: rate not provided","tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false"}`, tp.Lines()[1])
+		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":\[{"service":"some.service","name":"","sample_rate":0\.234}\],"sampling_rules_error":"found errors:\\n\\tat index 1: rate not provided","tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","agent_features":{"DropP0s":false,"V05":false,"Stats":false}}`, tp.Lines()[1])
 	})
 
 	t.Run("lambda", func(t *testing.T) {
@@ -79,7 +79,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Reset()
 		logStartup(tracer)
 		assert.Len(tp.Lines(), 1)
-		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":null,"sampling_rules_error":"","tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"true"}`, tp.Lines()[0])
+		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":null,"sampling_rules_error":"","tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"true","agent_features":{"DropP0s":false,"V05":false,"Stats":false}}`, tp.Lines()[0])
 	})
 }
 
@@ -104,5 +104,16 @@ func TestLogAgentReachable(t *testing.T) {
 	tp.Reset()
 	logStartup(tracer)
 	assert.Len(tp.Lines(), 2)
-	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ WARN: DIAGNOSTICS Unable to reach agent: Post`, tp.Lines()[0])
+	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ WARN: DIAGNOSTICS Unable to reach agent intake: Post`, tp.Lines()[0])
+}
+
+func TestLogFormat(t *testing.T) {
+	assert := assert.New(t)
+	tp := new(testLogger)
+	tracer := newTracer(WithLogger(tp), WithRuntimeMetrics(), WithDebugMode(true))
+	defer tracer.Stop()
+	tp.Reset()
+	tracer.StartSpan("test", ServiceName("test-service"), ResourceName("/"), WithSpanID(12345))
+	assert.Len(tp.Lines(), 1)
+	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ DEBUG: Started Span: dd.trace_id="12345" dd.span_id="12345", Operation: test, Resource: /, Tags: map.*, map.*`, tp.Lines()[0])
 }

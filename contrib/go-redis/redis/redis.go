@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/go-redis/redis"
 )
@@ -64,6 +65,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/go-redis/redis: Wrapping Client: %#v", cfg)
 	opt := c.Options()
 	host, port, err := net.SplitHostPort(opt.Addr)
 	if err != nil {

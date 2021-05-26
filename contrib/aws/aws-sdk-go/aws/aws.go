@@ -10,12 +10,13 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/aws/session"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"github.com/aws/aws-sdk-go/aws/request"
+	"github.com/aws/aws-sdk-go/aws/session"
 )
 
 const (
@@ -36,6 +37,7 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/aws/aws-sdk-go/aws: Wrapping Session: %#v", cfg)
 	h := &handlers{cfg: cfg}
 	s = s.Copy()
 	s.Handlers.Send.PushFrontNamed(request.NamedHandler{

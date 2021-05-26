@@ -31,7 +31,11 @@ type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
 
-	// lambda, when true, enables the lambda trace writer
+	// featureFlags specifies any enabled feature flags.
+	featureFlags map[string]struct{}
+
+	// logToStdout reports whether we should log all traces to the standard
+	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
 
 	// logStartup, when true, causes various startup info to be written
@@ -99,6 +103,12 @@ type config struct {
 	noDebugStack bool
 }
 
+// HasFeature reports whether feature f is enabled.
+func (c *config) HasFeature(f string) bool {
+	_, ok := c.featureFlags[strings.TrimSpace(f)]
+	return ok
+}
+
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
@@ -127,8 +137,16 @@ func newConfig(opts ...StartOption) *config {
 			log.Warn("unable to look up hostname: %v", err)
 		}
 	}
+	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
+		c.hostname = v
+	}
 	if v := os.Getenv("DD_ENV"); v != "" {
 		c.env = v
+	}
+	if v := os.Getenv("DD_TRACE_FEATURES"); v != "" {
+		WithFeatureFlags(strings.FieldsFunc(v, func(r rune) bool {
+			return r == ',' || r == ' '
+		})...)(c)
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
 		c.serviceName = v
@@ -138,19 +156,26 @@ func newConfig(opts ...StartOption) *config {
 		c.version = ver
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		for _, tag := range strings.Split(v, ",") {
+		sep := " "
+		if strings.Index(v, ",") > -1 {
+			// falling back to comma as separator
+			sep = ","
+		}
+		for _, tag := range strings.Split(v, sep) {
 			tag = strings.TrimSpace(tag)
 			if tag == "" {
 				continue
 			}
 			kv := strings.SplitN(tag, ":", 2)
-			k := strings.TrimSpace(kv[0])
-			switch len(kv) {
-			case 1:
-				WithGlobalTag(k, "")(c)
-			case 2:
-				WithGlobalTag(k, strings.TrimSpace(kv[1]))(c)
+			key := strings.TrimSpace(kv[0])
+			if key == "" {
+				continue
 			}
+			var val string
+			if len(kv) == 2 {
+				val = strings.TrimSpace(kv[1])
+			}
+			WithGlobalTag(key, val)(c)
 		}
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
@@ -190,7 +215,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	if c.transport == nil {
-		c.transport = newTransport(c.agentAddr, c.httpClient)
+		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
 	if c.propagator == nil {
 		c.propagator = NewPropagator(nil)
@@ -234,6 +259,21 @@ func statsTags(c *config) []string {
 		}
 	}
 	return tags
+}
+
+// WithFeatureFlags specifies a set of feature flags to enable. Please take into account
+// that most, if not all features flags are considered to be experimental and result in
+// unexpected bugs.
+func WithFeatureFlags(feats ...string) StartOption {
+	return func(c *config) {
+		if c.featureFlags == nil {
+			c.featureFlags = make(map[string]struct{}, len(feats))
+		}
+		for _, f := range feats {
+			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
+		}
+		log.Info("FEATURES enabled: %v", feats)
+	}
 }
 
 // WithLogger sets logger as the tracer's error printer.
@@ -423,6 +463,13 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
 		cfg.version = version
+	}
+}
+
+// WithHostname allows specifying the hostname with which to mark outgoing traces.
+func WithHostname(name string) StartOption {
+	return func(c *config) {
+		c.hostname = name
 	}
 }
 

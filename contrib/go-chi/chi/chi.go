@@ -12,12 +12,13 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 )
 
 // Middleware returns middleware that will trace incoming requests.
@@ -27,6 +28,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/go-chi/chi: Configuring Middleware: %#v", cfg)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			opts := []ddtrace.StartSpanOption{

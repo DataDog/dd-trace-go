@@ -146,6 +146,16 @@ func (tc *tracedConn) CheckNamedValue(value *driver.NamedValue) error {
 	return driver.ErrSkip
 }
 
+var _ driver.SessionResetter = (*tracedConn)(nil)
+
+// ResetSession implements driver.SessionResetter
+func (tc *tracedConn) ResetSession(ctx context.Context) error {
+	if resetter, ok := tc.Conn.(driver.SessionResetter); ok {
+		return resetter.ResetSession(ctx)
+	}
+	return driver.ErrSkip
+}
+
 // traceParams stores all information related to tracing the driver.Conn
 type traceParams struct {
 	cfg        *config
