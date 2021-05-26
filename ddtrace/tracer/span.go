@@ -121,7 +121,6 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMetric(key, v)
 		return
 	}
-
 	if v, ok := value.(fmt.Stringer); ok {
 		// If .String() panics due to a nil receiver, we want to catch this
 		// and replace the string value with "<nil>", just as Sprintf does.
