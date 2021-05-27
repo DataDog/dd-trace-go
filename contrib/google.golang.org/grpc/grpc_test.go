@@ -341,8 +341,6 @@ func TestSpanTree(t *testing.T) {
 			resp, err := stream.Recv()
 			assert.Nil(err)
 			assert.Equal(resp.Message, "passed")
-			// root span -> client stream Ping span -> send message ping -> child ping
-			// TODO
 			err = stream.CloseSend()
 			assert.NoError(err)
 			cancel()
@@ -356,11 +354,9 @@ func TestSpanTree(t *testing.T) {
 
 		assert.Empty(mt.OpenSpans())
 		spans := mt.FinishedSpans()
-		//l := len(spans)
 		assert.Len(spans, 7)
 
 		// Ping spans
-
 		rootSpan := spans[6]
 		clientStreamSpan := spans[5]
 		clientStreamSendMsgSpan := spans[4]
