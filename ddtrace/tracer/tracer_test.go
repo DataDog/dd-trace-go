@@ -93,10 +93,10 @@ func TestTracerCleanStop(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
-			Start(withTransport(transport), WithLambdaMode(true))
+			Start(withTransport(transport))
 			time.Sleep(time.Millisecond)
-			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
-			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
 		}
 	}()
 
