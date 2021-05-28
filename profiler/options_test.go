@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -341,4 +342,36 @@ func TestAddProfileType(t *testing.T) {
 		_, ok := cfg.types[MutexProfile]
 		assert.True(ok)
 	})
+}
+
+func TestWith_outputDir(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Use env to enable this like a user would.
+	os.Setenv("DD_PROFILING_OUTPUT_DIR", tmpDir)
+	defer os.Unsetenv("DD_PROFILING_OUTPUT_DIR")
+
+	p, err := unstartedProfiler()
+	require.NoError(t, err)
+	bat := batch{
+		end: time.Now(),
+		profiles: []*profile{
+			{name: "foo.pprof", data: []byte("foo")},
+			{name: "bar.pprof", data: []byte("bar")},
+		},
+	}
+	require.NoError(t, p.outputDir(bat))
+	files, err := filepath.Glob(filepath.Join(tmpDir, "*", "*.pprof"))
+	require.NoError(t, err)
+
+	fileData := map[string]string{}
+	for _, file := range files {
+		data, err := ioutil.ReadFile(file)
+		require.NoError(t, err)
+		fileData[filepath.Base(file)] = string(data)
+	}
+	want := map[string]string{"foo.pprof": "foo", "bar.pprof": "bar"}
+	require.Equal(t, want, fileData)
 }
