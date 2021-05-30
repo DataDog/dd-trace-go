@@ -121,5 +121,8 @@ func after(db *gorm.DB, operationName string, cfg *config) {
 	}
 
 	span, _ := tracer.StartSpanFromContext(ctx, operationName, opts...)
-	span.Finish(tracer.WithError(db.Error))
+	defer span.Finish()
+	if cfg.errCheck(db.Error) {
+		span.SetTag(ext.Error, db.Error)
+	}
 }
