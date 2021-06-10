@@ -39,6 +39,10 @@ func NewServeMux(opts ...Option) *ServeMux {
 // We only need to rewrite this function to be able to trace
 // all the incoming requests to the underlying multiplexer
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if mux.cfg.ignoreRequest(r) {
+		mux.ServeMux.ServeHTTP(w, r)
+		return
+	}
 	// get the resource associated to this request
 	_, route := mux.Handler(r)
 	resource := r.Method + " " + route
