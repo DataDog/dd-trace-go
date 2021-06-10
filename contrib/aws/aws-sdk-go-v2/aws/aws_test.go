@@ -29,13 +29,11 @@ func TestAppendMiddleware(t *testing.T) {
 		{
 			name:               "test mocked sqs failure request",
 			responseStatus:     400,
-			responseBody:       []byte(`{}`),
 			expectedStatusCode: 400,
 		},
 		{
 			name:               "test mocked sqs success request",
 			responseStatus:     200,
-			responseBody:       []byte(`{}`),
 			expectedStatusCode: 200,
 		},
 	}
@@ -44,11 +42,7 @@ func TestAppendMiddleware(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := httptest.NewServer(http.HandlerFunc(
-				func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(tt.expectedStatusCode)
-					w.Write(tt.responseBody)
-				}))
+			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
@@ -80,10 +74,48 @@ func TestAppendMiddleware(t *testing.T) {
 			assert.Equal(t, "SQS.ListQueues", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			if tt.expectedStatusCode == 200 {
+				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
+			}
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 		})
 	}
+}
+
+func TestAppendMiddleware_WithNoTracer(t *testing.T) {
+	server := mockAWS(200)
+	defer server.Close()
+
+	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+		return aws.Endpoint{
+			PartitionID:   "aws",
+			URL:           server.URL,
+			SigningRegion: "eu-west-1",
+		}, nil
+	})
+
+	awsCfg := aws.Config{
+		Region:           "eu-west-1",
+		Credentials:      aws.AnonymousCredentials{},
+		EndpointResolver: resolver,
+	}
+
+	AppendMiddleware(&awsCfg)
+
+	sqsClient := sqs.NewFromConfig(awsCfg)
+	_, err := sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
+	assert.NoError(t, err)
+
+}
+
+func mockAWS(statusCode int) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Amz-RequestId", "test_req")
+			w.WriteHeader(statusCode)
+			w.Write([]byte(`{}`))
+		}))
 }
 
 func TestAppendMiddleware_WithOpts(t *testing.T) {
@@ -106,6 +138,12 @@ func TestAppendMiddleware_WithOpts(t *testing.T) {
 			expectedRate:        1.0,
 		},
 		{
+			name:                "with disabled",
+			opts:                []Option{WithAnalytics(false)},
+			expectedServiceName: "aws.SQS",
+			expectedRate:        nil,
+		},
+		{
 			name:                "with service name",
 			opts:                []Option{WithServiceName("TestName")},
 			expectedServiceName: "TestName",
@@ -117,17 +155,19 @@ func TestAppendMiddleware_WithOpts(t *testing.T) {
 			expectedServiceName: "aws.SQS",
 			expectedRate:        0.23,
 		},
+		{
+			name:                "with rate outside boundary",
+			opts:                []Option{WithAnalyticsRate(1.5)},
+			expectedServiceName: "aws.SQS",
+			expectedRate:        nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			server := httptest.NewServer(http.HandlerFunc(
-				func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(200)
-					w.Write([]byte(`{}`))
-				}))
+			server := mockAWS(200)
 			defer server.Close()
 
 			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {

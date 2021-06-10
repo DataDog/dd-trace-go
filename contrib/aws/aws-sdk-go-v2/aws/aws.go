@@ -98,11 +98,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 	) (
 		out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
 	) {
-		span, ok := tracer.SpanFromContext(ctx)
-		if !ok {
-			// If no span is found then we don't need to enrich the trace so just continue.
-			return next.HandleDeserialize(ctx, in)
-		}
+		span, _ := tracer.SpanFromContext(ctx)
 
 		// Get values out of the request.
 		if req, ok := in.Request.(*smithyhttp.Request); ok {
@@ -125,7 +121,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		}
 
 		return out, metadata, err
-	}), middleware.After)
+	}), middleware.Before)
 }
 
 func serviceName(cfg *config, serviceID string) string {
