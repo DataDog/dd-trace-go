@@ -424,6 +424,18 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	assert.EqualValues(2., *child.context.trace.priority)
 }
 
+func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
+	assert := assert.New(t)
+	tracer := newTracer()
+	root := newBasicSpan("web.request")
+	spanCtx := &spanContext{
+		traceID: root.context.TraceID(),
+		spanID:  root.context.SpanID(),
+	}
+	child := tracer.StartSpan("db.query", ChildOf(spanCtx)).(*span)
+	assert.EqualValues(1, child.Metrics[keySamplingPriority])
+}
+
 func TestTracerBaggageImmutability(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer()
