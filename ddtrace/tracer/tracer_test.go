@@ -88,15 +88,17 @@ func TestTracerCleanStop(t *testing.T) {
 			}
 		}()
 	}
-
+	resetLogWriter := setLogWriter(io.Discard)
+	defer resetLogWriter()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
-			Start(withTransport(transport))
+			// Lambda mode is used to avoid the startup cost associated with agent discovery.
+			Start(withTransport(transport), WithLambdaMode(true))
 			time.Sleep(time.Millisecond)
-			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
-			Start(withTransport(transport), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
 		}
 	}()
 
