@@ -89,7 +89,7 @@ func TestTracerCleanStop(t *testing.T) {
 		}()
 	}
 
-	resetLogWriter := setLogWriter(io.Discard)
+	resetLogWriter := setLogWriter(ioutil.Discard)
 	defer resetLogWriter()
 	wg.Add(1)
 	go func() {
@@ -422,18 +422,6 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	assert.EqualValues(2, child.Metrics[keySamplingPriority])
 	assert.EqualValues(2., *root.context.trace.priority)
 	assert.EqualValues(2., *child.context.trace.priority)
-}
-
-func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
-	assert := assert.New(t)
-	tracer := newTracer()
-	root := newBasicSpan("web.request")
-	spanCtx := &spanContext{
-		traceID: root.context.TraceID(),
-		spanID:  root.context.SpanID(),
-	}
-	child := tracer.StartSpan("db.query", ChildOf(spanCtx)).(*span)
-	assert.EqualValues(1, child.Metrics[keySamplingPriority])
 }
 
 func TestTracerBaggageImmutability(t *testing.T) {
