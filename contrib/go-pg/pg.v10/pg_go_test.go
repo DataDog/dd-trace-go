@@ -43,7 +43,7 @@ func TestSelect(t *testing.T) {
 		Database: "postgres",
 	})
 
-	Wrap(conn)
+	Wrap(conn, WithServiceName("go-pg"))
 
 	parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 		tracer.ServiceName("fake-http-server"),
@@ -65,4 +65,5 @@ func TestSelect(t *testing.T) {
 	assert.Equal(1, n)
 	assert.Equal("go-pg", spans[0].OperationName())
 	assert.Equal("http.request", spans[1].OperationName())
+	assert.Equal("go-pg", span.Tag(ext.ServiceName))
 }
