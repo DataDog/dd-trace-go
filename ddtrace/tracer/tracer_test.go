@@ -89,8 +89,7 @@ func TestTracerCleanStop(t *testing.T) {
 		}()
 	}
 
-	resetLogWriter := setLogWriter(ioutil.Discard)
-	defer resetLogWriter()
+	defer setLogWriter(ioutil.Discard)()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

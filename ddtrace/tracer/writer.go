@@ -104,6 +104,7 @@ func (h *agentTraceWriter) flush() {
 	h.payload = newPayload()
 }
 
+// logWriter specifies the output target of the logTraceWriter; replaced in tests.
 var logWriter io.Writer = os.Stdout
 
 // setLogWriter sets the io.Writer that any new logTraceWriter will write to and returns a function
