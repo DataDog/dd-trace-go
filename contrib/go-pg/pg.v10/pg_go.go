@@ -17,21 +17,18 @@ import (
 )
 
 // Wrap augments the given DB with tracing.
-func Wrap(db *pg.DB, opts ...ClientOption) {
-	cfg := new(clientConfig)
+func Wrap(db *pg.DB, opts ...Option) {
+	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	h := &queryHook{
-		cfg: cfg,
-	}
 	log.Debug("contrib/go-pg/pg.v10: Wrapping Database")
-	db.AddQueryHook(h)
+	db.AddQueryHook(&queryHook{cfg: cfg})
 }
 
 type queryHook struct {
-	cfg *clientConfig
+	cfg *config
 }
 
 // BeforeQuery implements pg.QueryHook.

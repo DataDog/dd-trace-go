@@ -11,15 +11,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
-type clientConfig struct {
+type config struct {
 	serviceName   string
 	analyticsRate float64
 }
 
-// ClientOption represents an option that can be used to create or wrap a client.
-type ClientOption func(*clientConfig)
+// Option represents an option that can be used to create or wrap a client.
+type Option func(*config)
 
-func defaults(cfg *clientConfig) {
+func defaults(cfg *config) {
 	cfg.serviceName = "gopg.db"
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GOPG_ANALYTICS_ENABLED", false) {
@@ -30,15 +30,15 @@ func defaults(cfg *clientConfig) {
 }
 
 // WithServiceName sets the given service name for the client.
-func WithServiceName(name string) ClientOption {
-	return func(cfg *clientConfig) {
+func WithServiceName(name string) Option {
+	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) ClientOption {
-	return func(cfg *clientConfig) {
+func WithAnalytics(on bool) Option {
+	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
 		} else {
@@ -49,8 +49,8 @@ func WithAnalytics(on bool) ClientOption {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) ClientOption {
-	return func(cfg *clientConfig) {
+func WithAnalyticsRate(rate float64) Option {
+	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
 		} else {
