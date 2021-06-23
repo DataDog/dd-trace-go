@@ -170,7 +170,7 @@ main.main()
 		})
 	})
 
-	t.Run("goroutineswait DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES", func(t *testing.T) {
+	t.Run("goroutineswaitLimit", func(t *testing.T) {
 		// spawGoroutines spawns n goroutines and then returns a func to stop them.
 		spawnGoroutines := func(n int) func() {
 			launched := make(chan struct{})
