@@ -156,7 +156,8 @@ jobs:
             go get k8s.io/client-go@v0.17.0
             go get k8s.io/apimachinery@v0.17.0
             go get cloud.google.com/go/pubsub@v1.6.1
-            go get github.com/hashicorp/consul/api@v1.8.1 // Temporarily enforce this version. 1.9.0 is incompatible with go < 1.16
+            # Temporarily enforce this version. 1.9.0 is incompatible with go < 1.16
+            go get github.com/hashicorp/consul/api@v1.8.1
 
       - run:
           name: Wait for MySQL
