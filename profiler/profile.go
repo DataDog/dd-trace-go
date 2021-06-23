@@ -233,7 +233,7 @@ func goroutineProfile(cfg *config) (*profile, error) {
 
 func goroutineWaitProfile(cfg *config) (*profile, error) {
 	if n := runtime.NumGoroutine(); n > cfg.maxGoroutinesWait {
-		return nil, fmt.Errorf("%d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, cfg.maxGoroutinesWait)
+		return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, cfg.maxGoroutinesWait)
 	}
 
 	var (

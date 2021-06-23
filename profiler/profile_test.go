@@ -209,7 +209,7 @@ main.main()
 		require.NoError(t, err)
 		_, err = p.runProfile(expGoroutineWaitProfile)
 		var errRoutines, errLimit int
-		msg := "%d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d"
+		msg := "skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d"
 		fmt.Sscanf(err.Error(), msg, &errRoutines, &errLimit)
 		require.GreaterOrEqual(t, errRoutines, goroutines)
 		require.Equal(t, limit, errLimit)
