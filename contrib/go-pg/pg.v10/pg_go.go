@@ -7,6 +7,7 @@ package pg
 
 import (
 	"context"
+	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -42,6 +43,9 @@ func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(string(query)),
 		tracer.ServiceName(h.cfg.serviceName),
+	}
+	if !math.IsNaN(h.cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))
 	}
 	_, ctx = tracer.StartSpanFromContext(ctx, "go-pg", opts...)
 	return ctx, qe.Err
