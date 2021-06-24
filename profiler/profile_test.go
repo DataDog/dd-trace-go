@@ -177,17 +177,17 @@ main.main()
 		// https://github.com/DataDog/dd-trace-go/pull/942#discussion_r656924335
 		spawnGoroutines := func(n int) func() {
 			executing := make(chan struct{})
-			stopped := make(chan struct{})
+			stopping := make(chan struct{})
 			for i := 0; i < n; i++ {
 				go func() {
 					executing <- struct{}{}
-					stopped <- struct{}{}
+					stopping <- struct{}{}
 				}()
 				<-executing
 			}
 			return func() {
 				for i := 0; i < n; i++ {
-					<-stopped
+					<-stopping
 				}
 			}
 		}
