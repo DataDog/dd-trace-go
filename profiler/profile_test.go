@@ -171,16 +171,19 @@ main.main()
 	})
 
 	t.Run("goroutineswaitLimit", func(t *testing.T) {
-		// spawGoroutines spawns n goroutines and then returns a func to stop them.
+		// spawGoroutines spawns n goroutines, waits for them to start executing,
+		// and then returns a func to stop them. For more details about `executing`
+		// see:
+		// https://github.com/DataDog/dd-trace-go/pull/942#discussion_r656924335
 		spawnGoroutines := func(n int) func() {
-			launched := make(chan struct{})
+			executing := make(chan struct{})
 			stopped := make(chan struct{})
 			for i := 0; i < n; i++ {
 				go func() {
-					launched <- struct{}{}
+					executing <- struct{}{}
 					stopped <- struct{}{}
 				}()
-				<-launched
+				<-executing
 			}
 			return func() {
 				for i := 0; i < n; i++ {
