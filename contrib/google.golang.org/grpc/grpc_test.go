@@ -18,7 +18,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
 	context "golang.org/x/net/context"
@@ -569,17 +568,17 @@ func TestAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, nil)
 	})
 
-	t.Run("global", func(t *testing.T) {
-		t.Skip("global flag disabled")
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.4)
-	})
+	//	t.Run("global", func(t *testing.T) {
+	//		t.Skip("global flag disabled")
+	//		mt := mocktracer.Start()
+	//		defer mt.Stop()
+	//
+	//		rate := globalconfig.AnalyticsRate()
+	//		defer globalconfig.SetAnalyticsRate(rate)
+	//		globalconfig.SetAnalyticsRate(0.4)
+	//
+	//		assertRate(t, mt, 0.4)
+	//	})
 
 	t.Run("enabled", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -595,16 +594,16 @@ func TestAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, nil, WithAnalytics(false))
 	})
 
-	t.Run("override", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
-	})
+	//	t.Run("override", func(t *testing.T) {
+	//		mt := mocktracer.Start()
+	//		defer mt.Stop()
+	//
+	//		rate := globalconfig.AnalyticsRate()
+	//		defer globalconfig.SetAnalyticsRate(rate)
+	//		globalconfig.SetAnalyticsRate(0.4)
+	//
+	//		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	//	})
 }
 
 func TestIgnoredMethods(t *testing.T) {

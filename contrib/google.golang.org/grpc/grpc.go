@@ -6,12 +6,12 @@
 //go:generate protoc -I . fixtures_test.proto --go_out=plugins=grpc:.
 
 // Package grpc provides functions to trace the google.golang.org/grpc package v1.2.
-package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
+package grpc
 
 import (
 	"io"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
+	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
