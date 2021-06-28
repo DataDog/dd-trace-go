@@ -74,9 +74,12 @@ jobs:
 
     steps:
       - checkout
+      - run: mkdir -p $TEST_RESULTS
       - run:
           name: Testing
-          command: go test -v -race -coverprofile=coverage.txt -covermode=atomic `go list ./... | grep -v /contrib/`
+          command: |
+            PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
 
       - run:
           name: Upload coverage report to Codecov
