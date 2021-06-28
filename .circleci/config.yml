@@ -6,6 +6,8 @@ plain-go114: &plain-go114
     - image: circleci/golang:1.14
       environment:
         GOPATH: "/home/circleci/go"
+  environment: # environment variables for the build itself
+    TEST_RESULTS: /tmp/test-results # path to where test results will be saved
 
 jobs:
   go1.12-build:
@@ -80,6 +82,13 @@ jobs:
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+
+      - store_artifacts: # upload test summary for display in Artifacts
+          path: /tmp/test-results
+          destination: raw-test-output
+
+      - store_test_results: # upload test results for display in Test Summary
+          path: /tmp/test-results
 
       - run:
           name: Upload coverage report to Codecov
