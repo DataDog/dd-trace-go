@@ -60,6 +60,14 @@ loop:
 	}
 }
 
+// setLogWriter sets the io.Writer that any new logTraceWriter will write to and returns a function
+// which will return the io.Writer to its original value.
+func setLogWriter(w io.Writer) func() {
+	tmp := logWriter
+	logWriter = w
+	return func() { logWriter = tmp }
+}
+
 // TestTracerCleanStop does frenetic testing in a scenario where the tracer is started
 // and stopped in parallel with spans being created.
 func TestTracerCleanStop(t *testing.T) {
