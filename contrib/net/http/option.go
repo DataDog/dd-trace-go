@@ -21,6 +21,7 @@ type config struct {
 	analyticsRate float64
 	spanOpts      []ddtrace.StartSpanOption
 	finishOpts    []ddtrace.FinishOption
+	ignoreRequest func(*http.Request) bool
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -42,6 +43,15 @@ func defaults(cfg *config) {
 	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
+}
+
+// WithIgnoreRequest holds the function to use for determining if the
+// incoming HTTP request tracing should be skipped.
+func WithIgnoreRequest(f func(*http.Request) bool) MuxOption {
+	return func(cfg *config) {
+		cfg.ignoreRequest = f
 	}
 }
 
