@@ -43,7 +43,6 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		opts = append(opts, cfg.spanOpts...)
 		span, _ := tracer.StartSpanFromContext(c.Context(), "http.request", opts...)
 
-		fmt.Printf("Starting Span\n")
 		defer span.Finish()
 
 		resourceName := c.Path()
