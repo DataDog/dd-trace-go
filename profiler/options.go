@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -82,21 +83,22 @@ type config struct {
 	agentless bool
 	// targetURL is the upload destination URL. It will be set by the profiler on start to either apiURL or agentURL
 	// based on the other options.
-	targetURL     string
-	apiURL        string // apiURL is the Datadog intake API URL
-	agentURL      string // agentURL is the Datadog agent profiling URL
-	service, env  string
-	hostname      string
-	statsd        StatsdClient
-	httpClient    *http.Client
-	tags          []string
-	types         map[ProfileType]struct{}
-	period        time.Duration
-	cpuDuration   time.Duration
-	uploadTimeout time.Duration
-	mutexFraction int
-	blockRate     int
-	outputDir     string
+	targetURL         string
+	apiURL            string // apiURL is the Datadog intake API URL
+	agentURL          string // agentURL is the Datadog agent profiling URL
+	service, env      string
+	hostname          string
+	statsd            StatsdClient
+	httpClient        *http.Client
+	tags              []string
+	types             map[ProfileType]struct{}
+	period            time.Duration
+	cpuDuration       time.Duration
+	uploadTimeout     time.Duration
+	maxGoroutinesWait int
+	mutexFraction     int
+	blockRate         int
+	outputDir         string
 }
 
 func urlForSite(site string) (string, error) {
@@ -127,17 +129,18 @@ func (c *config) addProfileType(t ProfileType) {
 
 func defaultConfig() (*config, error) {
 	c := config{
-		env:           defaultEnv,
-		apiURL:        defaultAPIURL,
-		service:       filepath.Base(os.Args[0]),
-		statsd:        &statsd.NoOpClient{},
-		httpClient:    defaultClient,
-		period:        DefaultPeriod,
-		cpuDuration:   DefaultDuration,
-		blockRate:     DefaultBlockRate,
-		mutexFraction: DefaultMutexFraction,
-		uploadTimeout: DefaultUploadTimeout,
-		tags:          []string{fmt.Sprintf("pid:%d", os.Getpid())},
+		env:               defaultEnv,
+		apiURL:            defaultAPIURL,
+		service:           filepath.Base(os.Args[0]),
+		statsd:            &statsd.NoOpClient{},
+		httpClient:        defaultClient,
+		period:            DefaultPeriod,
+		cpuDuration:       DefaultDuration,
+		blockRate:         DefaultBlockRate,
+		mutexFraction:     DefaultMutexFraction,
+		uploadTimeout:     DefaultUploadTimeout,
+		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
+		tags:              []string{fmt.Sprintf("pid:%d", os.Getpid())},
 	}
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
@@ -205,6 +208,13 @@ func defaultConfig() (*config, error) {
 	// not for public use
 	if v := os.Getenv("DD_PROFILING_OUTPUT_DIR"); v != "" {
 		withOutputDir(v)(&c)
+	}
+	if v := os.Getenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
+		}
+		c.maxGoroutinesWait = n
 	}
 	return &c, nil
 }
