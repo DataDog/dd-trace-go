@@ -23,8 +23,13 @@ import (
 
 type clientStream struct {
 	grpc.ClientStream
+	ctx    context.Context
 	cfg    *config
 	method string
+}
+
+func (cs *clientStream) Context() context.Context {
+	return cs.ctx
 }
 
 func (cs *clientStream) RecvMsg(m interface{}) (err error) {
@@ -86,7 +91,11 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 		}
 		var stream grpc.ClientStream
 		if cfg.traceStreamCalls {
-			span, err := doClientRequest(ctx, cfg, method, methodKind, opts,
+			var (
+				span tracer.Span
+				err  error
+			)
+			span, ctx, err = doClientRequest(ctx, cfg, method, methodKind, opts,
 				func(ctx context.Context, opts []grpc.CallOption) error {
 					var err error
 					stream, err = streamer(ctx, desc, cc, method, opts...)
@@ -125,6 +134,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 			ClientStream: stream,
 			cfg:          cfg,
 			method:       method,
+			ctx:          ctx,
 		}, nil
 	}
 }
@@ -139,7 +149,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 	}
 	log.Debug("contrib/google.golang.org/grpc: Configuring UnaryClientInterceptor: %#v", cfg)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		span, err := doClientRequest(ctx, cfg, method, methodKindUnary, opts,
+		span, _, err := doClientRequest(ctx, cfg, method, methodKindUnary, opts,
 			func(ctx context.Context, opts []grpc.CallOption) error {
 				return invoker(ctx, method, req, reply, cc, opts...)
 			})
@@ -153,7 +163,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 func doClientRequest(
 	ctx context.Context, cfg *config, method string, methodKind string, opts []grpc.CallOption,
 	handler func(ctx context.Context, opts []grpc.CallOption) error,
-) (ddtrace.Span, error) {
+) (ddtrace.Span, context.Context, error) {
 	// inject the trace id into the metadata
 	span, ctx := startSpanFromContext(
 		ctx,
@@ -165,17 +175,17 @@ func doClientRequest(
 	if methodKind != "" {
 		span.SetTag(tagMethodKind, methodKind)
 	}
-	ctx = injectSpanIntoContext(ctx)
 
 	// fill in the peer so we can add it to the tags
 	var p peer.Peer
 	opts = append(opts, grpc.Peer(&p))
 
-	err := handler(ctx, opts)
+	handlerCtx := injectSpanIntoContext(ctx)
+	err := handler(handlerCtx, opts)
 
 	setSpanTargetFromPeer(span, p)
 
-	return span, err
+	return span, ctx, err
 }
 
 // setSpanTargetFromPeer sets the target tags in a span based on the gRPC peer.
