@@ -262,48 +262,117 @@ func TestStreaming(t *testing.T) {
 	})
 }
 
-func TestChild(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+func TestSpanTree(t *testing.T) {
+	assertSpan := func(t *testing.T, span, parent mocktracer.Span, operationName, resourceName string) {
+		require.NotNil(t, span)
+		assert.Nil(t, span.Tag(ext.Error))
+		assert.Equal(t, operationName, span.OperationName())
+		assert.Equal(t, "grpc", span.Tag(ext.ServiceName))
+		assert.Equal(t, span.Tag(ext.ResourceName), resourceName)
+		assert.True(t, span.FinishTime().Sub(span.StartTime()) > 0)
 
-	rig, err := newRig(false)
-	if err != nil {
-		t.Fatalf("error setting up rig: %s", err)
-	}
-	defer rig.Close()
-
-	client := rig.client
-	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "child"})
-	assert.Nil(err)
-	assert.Equal(resp.Message, "child")
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 2)
-
-	var serverSpan, clientSpan mocktracer.Span
-
-	for _, s := range spans {
-		// order of traces in buffer is not garanteed
-		switch s.OperationName() {
-		case "grpc.server":
-			serverSpan = s
-		case "child":
-			clientSpan = s
+		if parent == nil {
+			return
 		}
+		assert.Equal(t, parent.SpanID(), span.ParentID(), "unexpected parent id")
 	}
 
-	assert.NotNil(clientSpan)
-	assert.Nil(clientSpan.Tag(ext.Error))
-	assert.Equal(clientSpan.Tag(ext.ServiceName), "grpc")
-	assert.Equal(clientSpan.Tag(ext.ResourceName), "child")
-	assert.True(clientSpan.FinishTime().Sub(clientSpan.StartTime()) > 0)
+	t.Run("unary", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	assert.NotNil(serverSpan)
-	assert.Nil(serverSpan.Tag(ext.Error))
-	assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
-	assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
-	assert.True(serverSpan.FinishTime().Sub(serverSpan.StartTime()) > 0)
+		rig, err := newRig(true)
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		defer rig.Close()
+
+		{
+			// Unary Ping rpc leading to trace:
+			//   root span -> client Ping span -> server Ping span -> child span
+			rootSpan, ctx := tracer.StartSpanFromContext(context.Background(), "root")
+			client := rig.client
+			resp, err := client.Ping(ctx, &FixtureRequest{Name: "child"})
+			assert.NoError(err)
+			assert.Equal("child", resp.Message)
+			rootSpan.Finish()
+		}
+
+		assert.Empty(mt.OpenSpans())
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 4)
+
+		rootSpan := spans[3]
+		clientPingSpan := spans[2]
+		serverPingSpan := spans[1]
+		serverPingChildSpan := spans[0]
+
+		assert.Zero(0, rootSpan.ParentID())
+		assertSpan(t, serverPingChildSpan, serverPingSpan, "child", "child")
+		assertSpan(t, serverPingSpan, clientPingSpan, "grpc.server", "/grpc.Fixture/Ping")
+		assertSpan(t, clientPingSpan, rootSpan, "grpc.client", "/grpc.Fixture/Ping")
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRig(true)
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		defer rig.Close()
+		client := rig.client
+
+		{
+			rootSpan, ctx := tracer.StartSpanFromContext(context.Background(), "root")
+
+			// Streaming RPC leading to trace:
+			// root -> client stream -> client send message -> server stream
+			//  -> server receive message -> server send message
+			//  -> client receive message
+			ctx, cancel := context.WithCancel(ctx)
+			stream, err := client.StreamPing(ctx)
+			assert.NoError(err)
+			err = stream.SendMsg(&FixtureRequest{Name: "break"})
+			assert.NoError(err)
+			resp, err := stream.Recv()
+			assert.Nil(err)
+			assert.Equal(resp.Message, "passed")
+			err = stream.CloseSend()
+			assert.NoError(err)
+			cancel()
+
+			// Wait until the client stream tracer goroutine gets awoken by the context
+			// cancellation and finishes its span
+			waitForSpans(mt, 6, time.Second)
+
+			rootSpan.Finish()
+		}
+
+		assert.Empty(mt.OpenSpans())
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 7)
+
+		// Ping spans
+		rootSpan := spans[6]
+		clientStreamSpan := spans[5]
+		clientStreamSendMsgSpan := spans[4]
+		serverStreamSpan := spans[3]
+		serverStreamRecvMsgSpan := spans[2]
+		serverStreamSendMsgSpan := spans[1]
+		clientStreamRecvMsgSpan := spans[0]
+
+		assert.Zero(rootSpan.ParentID())
+		assertSpan(t, clientStreamSpan, rootSpan, "grpc.client", "/grpc.Fixture/StreamPing")
+		assertSpan(t, clientStreamSendMsgSpan, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+		assertSpan(t, serverStreamSpan, clientStreamSpan, "grpc.server", "/grpc.Fixture/StreamPing")
+		assertSpan(t, serverStreamRecvMsgSpan, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+		assertSpan(t, serverStreamSendMsgSpan, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+		assertSpan(t, clientStreamRecvMsgSpan, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+	})
 }
 
 func TestPass(t *testing.T) {
@@ -411,26 +480,30 @@ func TestStreamSendsErrorCode(t *testing.T) {
 	assert.Equal(t, gotLastSpanCode, wantCode, "last span should contain error code")
 }
 
-// fixtureServer a dummy implemenation of our grpc fixtureServer.
+// fixtureServer a dummy implementation of our grpc fixtureServer.
 type fixtureServer struct {
 	lastRequestMetadata atomic.Value
 }
 
-func (s *fixtureServer) StreamPing(srv Fixture_StreamPingServer) error {
+func (s *fixtureServer) StreamPing(stream Fixture_StreamPingServer) (err error) {
 	for {
-		msg, err := srv.Recv()
+		msg, err := stream.Recv()
 		if err != nil {
 			return err
 		}
 
-		reply, err := s.Ping(srv.Context(), msg)
+		reply, err := s.Ping(stream.Context(), msg)
 		if err != nil {
 			return err
 		}
 
-		err = srv.Send(reply)
+		err = stream.Send(reply)
 		if err != nil {
 			return err
+		}
+
+		if msg.Name == "break" {
+			return nil
 		}
 	}
 }

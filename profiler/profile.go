@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 	"runtime/pprof"
 	"time"
 
@@ -231,6 +232,10 @@ func goroutineProfile(cfg *config) (*profile, error) {
 }
 
 func goroutineWaitProfile(cfg *config) (*profile, error) {
+	if n := runtime.NumGoroutine(); n > cfg.maxGoroutinesWait {
+		return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, cfg.maxGoroutinesWait)
+	}
+
 	var (
 		text  = &bytes.Buffer{}
 		pprof = &bytes.Buffer{}

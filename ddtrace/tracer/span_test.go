@@ -204,6 +204,27 @@ func TestSpanFinishWithErrorStackFrames(t *testing.T) {
 	assert.Equal(strings.Count(span.Meta[ext.ErrorStack], "\n\t"), 2)
 }
 
+// nilStringer is used to test nil detection when setting tags.
+type nilStringer struct {
+	s string
+}
+
+// String incorrectly assumes than n will not be nil in order
+// to ensure SetTag identifies nils.
+func (n *nilStringer) String() string {
+	return n.s
+}
+
+type panicStringer struct {
+	s string
+}
+
+// String causes panic which SetTag should not handle.
+func (p *panicStringer) String() string {
+	panic("This should not be handled.")
+	return ""
+}
+
 func TestSpanSetTag(t *testing.T) {
 	assert := assert.New(t)
 
@@ -255,6 +276,16 @@ func TestSpanSetTag(t *testing.T) {
 
 	span.SetTag("some.other.bool", false)
 	assert.Equal("false", span.Meta["some.other.bool"])
+
+	span.SetTag("time", (*time.Time)(nil))
+	assert.Equal("<nil>", span.Meta["time"])
+
+	span.SetTag("nilStringer", (*nilStringer)(nil))
+	assert.Equal("<nil>", span.Meta["nilStringer"])
+
+	assert.Panics(func() {
+		span.SetTag("panicStringer", &panicStringer{})
+	})
 }
 
 func TestSpanSetTagError(t *testing.T) {
