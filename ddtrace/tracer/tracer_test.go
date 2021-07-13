@@ -236,6 +236,16 @@ func TestTracerStartSpan(t *testing.T) {
 		child := tracer.StartSpan("home/user", Measured(), ChildOf(parent.context)).(*span)
 		assert.Equal(t, 1.0, child.Metrics[keyMeasured])
 	})
+
+	t.Run("sampling_priority", func(t *testing.T) {
+		tracer := newTracer()
+		tracer.config.serviceName = "test_service"
+		tracer.rulesSampling.rules = append(tracer.rulesSampling.rules, SamplingRule{exactService: "test_service", exactName: "web.request", Rate: 1})
+		span := tracer.StartSpan("web.request").(*span)
+		assert.Equal(t, float64(ext.PriorityAutoKeep), span.Metrics[keySamplingPriority])
+		priority, _ := span.context.samplingPriority()
+		assert.Equal(t, 1, priority)
+	})
 }
 
 func TestTracerRuntimeMetrics(t *testing.T) {
