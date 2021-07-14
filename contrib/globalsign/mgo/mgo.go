@@ -22,13 +22,19 @@ import (
 // for tracing.
 func Dial(url string, opts ...DialOption) (*Session, error) {
 	session, err := mgo.Dial(url)
-	info, _ := session.BuildInfo()
+	if err != nil {
+		return nil, err
+	}
+	version := "unknown"
+	if info, err := session.BuildInfo(); err == nil {
+		version = info.Version
+	}
 	s := &Session{
 		Session: session,
 		cfg:     newConfig(),
 		tags: map[string]string{
 			"hosts":       strings.Join(session.LiveServers(), ", "),
-			"mgo_version": info.Version,
+			"mgo_version": version,
 		},
 	}
 	for _, fn := range opts {

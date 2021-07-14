@@ -387,6 +387,10 @@ func TestCollection_Bulk(t *testing.T) {
 	assert.Equal("mongodb.query", spans[0].OperationName())
 }
 
+func TestBadDial(t *testing.T) {
+	assert.NotPanics(t, func() { Dial("this_is_not_valid?foo&bar") })
+}
+
 func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...DialOption) {
 		assert := assert.New(t)
