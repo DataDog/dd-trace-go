@@ -121,6 +121,7 @@ func Start(opts ...StartOption) {
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
+	log.Debug("Datadog Tracer is stopping...")
 	internal.SetGlobalTracer(&internal.NoopTracer{})
 	log.Flush()
 }
