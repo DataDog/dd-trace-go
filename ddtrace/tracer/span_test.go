@@ -304,6 +304,20 @@ func TestSpanSetTagError(t *testing.T) {
 	})
 }
 
+func TestSpanSetTags(t *testing.T) {
+	assert := assert.New(t)
+
+	span := newBasicSpan("test")
+	tags := map[string]string{
+		"component":          "tracer",
+		"git.repository_url": "https://github.com/DataDog/dd-trace-go.git",
+	}
+	span.SetTags(tags)
+	for key, value := range tags {
+		assert.Equal(value, span.Meta[key])
+	}
+}
+
 func TestSpanSetDatadogTags(t *testing.T) {
 	assert := assert.New(t)
 
