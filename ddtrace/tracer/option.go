@@ -178,6 +178,12 @@ func newConfig(opts ...StartOption) *config {
 			WithGlobalTag(key, val)(c)
 		}
 	}
+	if v := os.Getenv("DD_HTTP_CLIENT_ERROR_STATUSES"); v != "" {
+		WithHTTPClientErrorStatuses(v)(c)
+	}
+	if v := os.Getenv("DD_HTTP_SERVER_ERROR_STATUSES"); v != "" {
+		WithHTTPServerErrorStatuses(v)(c)
+	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
@@ -470,6 +476,24 @@ func WithServiceVersion(version string) StartOption {
 func WithHostname(name string) StartOption {
 	return func(c *config) {
 		c.hostname = name
+	}
+}
+
+// WithHTTPClientErrorStatuses specifies the range of HTTP client status codes in string representation (e.g. comma-separated list or ranges of codes like "400-403, 405") that are marked as errors.
+func WithHTTPClientErrorStatuses(codes string) StartOption {
+	return func(_ *config) {
+		if strings.TrimSpace(codes) != "" {
+			globalconfig.SetHTTPClientCodes(codes)
+		}
+	}
+}
+
+// WithHTTPServerErrorStatuses specifies the range of HTTP server status codes in string representation (e.g. comma-separated list or ranges of codes like "500-504, 505") that are marked as errors.
+func WithHTTPServerErrorStatuses(codes string) StartOption {
+	return func(_ *config) {
+		if strings.TrimSpace(codes) != "" {
+			globalconfig.SetHTTPServerCodes(codes)
+		}
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 
 	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/tinylib/msgp/msgp"
@@ -166,7 +167,7 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 		return nil, err
 	}
 	p.waitClose()
-	if code := response.StatusCode; code >= 400 {
+	if code := response.StatusCode; globalconfig.IsHTTPClientError(code) || globalconfig.IsHTTPServerError(code) {
 		// error, check the body for context information and
 		// return a nice error.
 		msg := make([]byte, 1000)

@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/gin-gonic/gin"
@@ -55,7 +56,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 		status := c.Writer.Status()
 		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
-		if status >= 500 && status < 600 {
+		if globalconfig.IsHTTPServerError(status) {
 			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 		}
 

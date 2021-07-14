@@ -22,6 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -80,7 +81,9 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if err != nil {
 			snip = http.StatusText(res.StatusCode)
 		}
-		span.SetTag(ext.Error, errors.New(snip))
+		if globalconfig.IsHTTPClientError(res.StatusCode) {
+			span.SetTag(ext.Error, errors.New(snip))
+		}
 		res.Body = rc
 	}
 	if res != nil {

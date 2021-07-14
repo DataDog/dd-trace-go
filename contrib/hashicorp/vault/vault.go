@@ -23,6 +23,7 @@ import (
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/helper/consts"
@@ -66,7 +67,8 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 				return
 			}
 			s.SetTag(ext.HTTPCode, res.StatusCode)
-			if res.StatusCode >= 400 {
+			// check for client errors
+			if globalconfig.IsHTTPClientError(res.StatusCode) {
 				s.SetTag(ext.Error, true)
 				s.SetTag(ext.ErrorMsg, fmt.Sprintf("%d: %s", res.StatusCode, http.StatusText(res.StatusCode)))
 			}
