@@ -511,11 +511,18 @@ func Measured() StartSpanOption {
 }
 
 // WithSpanID sets the SpanID on the started span, instead of using a random number.
-// If there is no parent Span (eg from ChildOf), then the TraceID will also be set to the
-// value given here.
+// If there is no parent Span (eg from ChildOf)
 func WithSpanID(id uint64) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.SpanID = id
+	}
+}
+
+// WithTraceID sets the TraceID on the started span, instead of using a random number.
+// If there is no parent Span (eg from ChildOf)
+func WithTraceID(id uint64) StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		cfg.TraceID = id
 	}
 }
 

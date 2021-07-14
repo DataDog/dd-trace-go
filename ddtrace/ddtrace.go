@@ -120,8 +120,12 @@ type StartSpanConfig struct {
 	Tags map[string]interface{}
 
 	// Force-set the SpanID, rather than use a random number. If no Parent SpanContext is present,
-	// then this will also set the TraceID to the same value.
+	// then this will also set the TraceID to the same value (if there is some no TraceID in config).
 	SpanID uint64
+
+	// Force-set the TraceID, rather than use a random number. If no Parent SpanContext is present,
+	// then this will also set from the SpanID to the same value.
+	TraceID uint64
 }
 
 // Logger implementations are able to log given messages that the tracer might output.

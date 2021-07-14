@@ -379,17 +379,21 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			context = ctx
 		}
 	}
-	id := opts.SpanID
-	if id == 0 {
-		id = random.Uint64()
+	spanID := opts.SpanID
+	if spanID == 0 {
+		spanID = random.Uint64()
+	}
+	traceID := opts.TraceID
+	if traceID == 0 {
+		traceID = spanID
 	}
 	// span defaults
 	span := &span{
 		Name:         operationName,
 		Service:      t.config.serviceName,
 		Resource:     operationName,
-		SpanID:       id,
-		TraceID:      id,
+		SpanID:       spanID,
+		TraceID:      traceID,
 		Start:        startTime,
 		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,
