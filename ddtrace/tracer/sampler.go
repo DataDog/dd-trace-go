@@ -292,7 +292,6 @@ func (rs *rulesSampler) apply(span *span) bool {
 	var matched bool
 	rate := rs.globalRate
 	for _, rule := range rs.rules {
-		fmt.Println("try match", rule.exactService, rule.exactName, span.Service, span.Name)
 		if rule.match(span) {
 			matched = true
 			rate = rule.Rate

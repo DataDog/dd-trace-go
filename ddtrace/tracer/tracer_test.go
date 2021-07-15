@@ -239,7 +239,7 @@ func TestTracerStartSpan(t *testing.T) {
 }
 
 func TestP0Dropping(t *testing.T) {
-	t.Run("p0 are kept by default", func(t *testing.T) {
+	t.Run("sampled", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 		tracer.prioritySampling.defaultRate = 0
@@ -252,7 +252,7 @@ func TestP0Dropping(t *testing.T) {
 		assert.True(t, span.context.trace.kept)
 	})
 
-	t.Run("p0 are dropped when DropP0s flag is on", func(t *testing.T) {
+	t.Run("dropped", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 		tracer.features.DropP0s = true
@@ -266,7 +266,7 @@ func TestP0Dropping(t *testing.T) {
 		assert.False(t, span.context.trace.kept)
 	})
 
-	t.Run("p0 are kept if at least one span should be kept", func(t *testing.T) {
+	t.Run("events_sampled", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 		tracer.features.DropP0s = true
