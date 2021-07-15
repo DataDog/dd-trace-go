@@ -416,7 +416,7 @@ func shouldKeep(s *span) bool {
 	if v, ok := s.Metrics[ext.EventSampleRate]; ok {
 		return sampledByRate(s.TraceID, v)
 	}
-	return true
+	return false
 }
 
 // shouldComputeStats mentions whether this span needs to have stats computed for.
