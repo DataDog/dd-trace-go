@@ -257,12 +257,19 @@ func (t *trace) finishedOne(s *span) {
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 	}()
-	if !t.kept {
+	tr, ok := internal.GetGlobalTracer().(*tracer)
+	if !ok {
 		return
 	}
-	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
-		// we have a tracer that can receive completed traces.
-		tr.pushTrace(t.spans)
-		atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
+	// we have a tracer that can receive completed traces.
+	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
+	if !t.kept {
+		if !s.context.drop {
+			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
+			atomic.AddUint64(&tr.droppedP0Traces, 1)
+		}
+		return
 	}
+	// we assume that sampler.Sample returns the same for all spans of a trace.
+	tr.pushTrace(t.spans)
 }

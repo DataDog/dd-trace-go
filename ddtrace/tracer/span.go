@@ -360,13 +360,6 @@ func (s *span) finish(finishTime int64) {
 		if feats.DropP0s {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
-			if keep {
-				// ...and this span can be dropped
-				atomic.AddUint64(&t.droppedP0Spans, 1)
-				if s == s.context.trace.root {
-					atomic.AddUint64(&t.droppedP0Traces, 1)
-				}
-			}
 		}
 	}
 	if s.context.drop {
