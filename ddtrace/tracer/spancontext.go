@@ -254,7 +254,7 @@ func (t *trace) finishedOne(s *span, keep bool) {
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 	}()
-	if !keep {
+	if !t.keep {
 		return
 	}
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
