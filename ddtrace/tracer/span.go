@@ -373,7 +373,11 @@ func (s *span) finish(finishTime int64) {
 		// client sampling enabled. This will lead to inexact APM metrics but reduces performance impact.
 		keep = false
 	}
-	s.context.finish(keep)
+	if keep {
+		// a single kept span keeps the whole trace.
+		s.context.trace.keep()
+	}
+	s.context.finish()
 }
 
 // newAggregableSpan creates a new summary for the span s, within an application

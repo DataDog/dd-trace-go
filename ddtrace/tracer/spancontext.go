@@ -25,7 +25,7 @@ type spanContext struct {
 
 	trace  *trace // reference to the trace that this span belongs too
 	span   *span  // reference to the span that hosts this context
-	drop   bool   // when true, the span will not be sent to the agent, even when not computing stats in the tracer.
+	drop   bool   // reports whether this span was dropped by the rate sampler
 	errors int64  // number of spans with errors in this trace
 
 	// the below group should propagate cross-process
@@ -126,7 +126,7 @@ func (c *spanContext) baggageItem(key string) string {
 }
 
 // finish marks this span as finished in the trace.
-func (c *spanContext) finish(keep bool) { c.trace.finishedOne(c.span, keep) }
+func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
 // trace contains shared context information about a trace, such as sampling
 // priority, the root reference and a buffer of the spans which are part of the
@@ -138,7 +138,7 @@ type trace struct {
 	full     bool         // signifies that the span buffer is full
 	priority *float64     // sampling priority
 	locked   bool         // specifies if the sampling priority can be altered
-	keep bool             // keep indicates whether to send the trace to the agent or no.
+	kept     bool         // kept indicates whether to send the trace to the agent or no.
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
@@ -178,6 +178,12 @@ func (t *trace) setSamplingPriority(p float64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.setSamplingPriorityLocked(p)
+}
+
+func (t *trace) keep() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.kept = true
 }
 
 func (t *trace) setSamplingPriorityLocked(p float64) {
@@ -226,7 +232,7 @@ func (t *trace) push(sp *span) {
 // finishedOne aknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span.
-func (t *trace) finishedOne(s *span, keep bool) {
+func (t *trace) finishedOne(s *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.full {
@@ -235,9 +241,6 @@ func (t *trace) finishedOne(s *span, keep bool) {
 		// be accurate and would trigger a pre-mature flush, exposing us
 		// to a race condition where spans can be modified while flushing.
 		return
-	}
-	if keep {
-		t.keep = true
 	}
 	t.finished++
 	if s == t.root && t.priority != nil {
@@ -254,7 +257,7 @@ func (t *trace) finishedOne(s *span, keep bool) {
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 	}()
-	if !t.keep {
+	if !t.kept {
 		return
 	}
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {

@@ -236,15 +236,49 @@ func TestTracerStartSpan(t *testing.T) {
 		child := tracer.StartSpan("home/user", Measured(), ChildOf(parent.context)).(*span)
 		assert.Equal(t, 1.0, child.Metrics[keyMeasured])
 	})
+}
 
-	t.Run("sampling_priority", func(t *testing.T) {
-		tracer := newTracer()
+func TestP0Dropping(t *testing.T) {
+	t.Run("p0 are kept by default", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
-		tracer.rulesSampling.rules = append(tracer.rulesSampling.rules, SamplingRule{exactService: "test_service", exactName: "web.request", Rate: 1})
-		span := tracer.StartSpan("web.request").(*span)
-		assert.Equal(t, float64(ext.PriorityAutoKeep), span.Metrics[keySamplingPriority])
-		priority, _ := span.context.samplingPriority()
-		assert.Equal(t, 1, priority)
+		span := tracer.StartSpan("name_1").(*span)
+		child := tracer.StartSpan("name_2", ChildOf(span.context))
+		child.Finish()
+		span.Finish()
+		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
+		assert.True(t, span.context.trace.kept)
+	})
+
+	t.Run("p0 are dropped when DropP0s flag is on", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		tracer.features.DropP0s = true
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		span := tracer.StartSpan("name_1").(*span)
+		child := tracer.StartSpan("name_2", ChildOf(span.context))
+		child.Finish()
+		span.Finish()
+		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
+		assert.False(t, span.context.trace.kept)
+	})
+
+	t.Run("p0 are kept if at least one span should be kept", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		tracer.features.DropP0s = true
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		span := tracer.StartSpan("name_1").(*span)
+		child := tracer.StartSpan("name_2", ChildOf(span.context))
+		child.SetTag(ext.EventSampleRate, 1)
+		child.Finish()
+		span.Finish()
+		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
+		assert.True(t, span.context.trace.kept)
 	})
 }
 
