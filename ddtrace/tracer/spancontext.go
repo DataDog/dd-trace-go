@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -277,11 +278,11 @@ func (t *trace) finishedOne(s *span) {
 	// we have a tracer that can receive completed traces.
 	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
 	sd := samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision)))
-	if sd == decisionNone {
-		atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
-		atomic.AddUint64(&tr.droppedP0Traces, 1)
-	}
 	if sd != decisionKeep {
+		if t.priority != nil && *(t.priority) == ext.PriorityAutoReject {
+			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
+			atomic.AddUint64(&tr.droppedP0Traces, 1)
+		}
 		return
 	}
 	tr.pushTrace(t.spans)
