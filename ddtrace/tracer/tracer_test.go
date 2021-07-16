@@ -249,7 +249,7 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		assert.Equal(t, decisionForceKeep, span.context.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
 	t.Run("dropped", func(t *testing.T) {
@@ -263,7 +263,7 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		assert.Equal(t, decisionDefaultDrop, span.context.trace.samplingDecision)
+		assert.Equal(t, decisionNone, span.context.trace.samplingDecision)
 	})
 
 	t.Run("events_sampled", func(t *testing.T) {
@@ -278,7 +278,7 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		assert.Equal(t, decisionForceKeep, span.context.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
 	t.Run("client_dropped", func(t *testing.T) {
@@ -294,7 +294,7 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		assert.Equal(t, decisionForceDrop, span.context.trace.samplingDecision)
+		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
 	})
 }
 

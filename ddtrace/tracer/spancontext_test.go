@@ -319,7 +319,7 @@ func TestSpanContextParent(t *testing.T) {
 			hasBaggage: 1,
 			trace: &trace{
 				spans:            []*span{newBasicSpan("abc")},
-				samplingDecision: decisionForceKeep,
+				samplingDecision: decisionKeep,
 			},
 		},
 		"origin": &spanContext{

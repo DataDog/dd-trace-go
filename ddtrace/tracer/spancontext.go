@@ -127,16 +127,16 @@ func (c *spanContext) baggageItem(key string) string {
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
 // samplingDecision is the decision to send a trace to the agent or not.
-type samplingDecision int
+type samplingDecision int64
 
 const (
-	// decisionDefaultDrop is the default state of a trace.
-	// If no other decision is made about the trace, the trace won't be sent to the agent.
-	decisionDefaultDrop samplingDecision = iota
-	// decisionForceDrop prevents the trace from being sent to the agent.
-	decisionForceDrop
-	// decisionForceKeep ensures the trace will be sent to the agent.
-	decisionForceKeep
+	// decisionNone is the default state of a trace.
+	// If no decision is made about the trace, the trace won't be sent to the agent.
+	decisionNone samplingDecision = iota
+	// decisionDrop prevents the trace from being sent to the agent.
+	decisionDrop
+	// decisionKeep ensures the trace will be sent to the agent.
+	decisionKeep
 )
 
 // trace contains shared context information about a trace, such as sampling
@@ -192,19 +192,11 @@ func (t *trace) setSamplingPriority(p float64) {
 }
 
 func (t *trace) keep() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.samplingDecision == decisionDefaultDrop {
-		t.samplingDecision = decisionForceKeep
-	}
+	atomic.CompareAndSwapInt64((*int64)(&t.samplingDecision), int64(decisionNone), int64(decisionKeep))
 }
 
 func (t *trace) drop() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.samplingDecision == decisionDefaultDrop {
-		t.samplingDecision = decisionForceDrop
-	}
+	atomic.CompareAndSwapInt64((*int64)(&t.samplingDecision), int64(decisionNone), int64(decisionDrop))
 }
 
 func (t *trace) setSamplingPriorityLocked(p float64) {
@@ -284,11 +276,12 @@ func (t *trace) finishedOne(s *span) {
 	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
-	if t.samplingDecision == decisionDefaultDrop {
+	sd := samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision)))
+	if sd == decisionNone {
 		atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
 		atomic.AddUint64(&tr.droppedP0Traces, 1)
 	}
-	if t.samplingDecision != decisionForceKeep {
+	if sd != decisionKeep {
 		return
 	}
 	tr.pushTrace(t.spans)
