@@ -362,10 +362,6 @@ func (s *span) finish(finishTime int64) {
 			keep = shouldKeep(s)
 		}
 	}
-	if s.context.drop {
-		// client sampling enabled. This will lead to inexact APM metrics but reduces performance impact.
-		keep = false
-	}
 	if keep {
 		// a single kept span keeps the whole trace.
 		s.context.trace.keep()

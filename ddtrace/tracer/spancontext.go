@@ -25,7 +25,6 @@ type spanContext struct {
 
 	trace  *trace // reference to the trace that this span belongs too
 	span   *span  // reference to the span that hosts this context
-	drop   bool   // reports whether this span was dropped by the rate sampler
 	errors int64  // number of spans with errors in this trace
 
 	// the below group should propagate cross-process
@@ -52,7 +51,6 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	}
 	if parent != nil {
 		context.trace = parent.trace
-		context.drop = parent.drop
 		context.origin = parent.origin
 		context.errors = parent.errors
 		parent.ForeachBaggageItem(func(k, v string) bool {
@@ -128,17 +126,30 @@ func (c *spanContext) baggageItem(key string) string {
 // finish marks this span as finished in the trace.
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
+// samplingDecision is the decision to send a trace to the agent or not.
+type samplingDecision int
+
+const (
+	// decisionDefaultDrop is the default state of a trace.
+	// If no other decision is made about the trace, the trace won't be sent to the agent.
+	decisionDefaultDrop samplingDecision = iota
+	// decisionForceDrop prevents the trace from being sent to the agent.
+	decisionForceDrop
+	// decisionForceKeep ensures the trace will be sent to the agent.
+	decisionForceKeep
+)
+
 // trace contains shared context information about a trace, such as sampling
 // priority, the root reference and a buffer of the spans which are part of the
 // trace, if these exist.
 type trace struct {
-	mu       sync.RWMutex // guards below fields
-	spans    []*span      // all the spans that are part of this trace
-	finished int          // the number of finished spans
-	full     bool         // signifies that the span buffer is full
-	priority *float64     // sampling priority
-	locked   bool         // specifies if the sampling priority can be altered
-	kept     bool         // kept indicates whether to send the trace to the agent or no.
+	mu               sync.RWMutex     // guards below fields
+	spans            []*span          // all the spans that are part of this trace
+	finished         int              // the number of finished spans
+	full             bool             // signifies that the span buffer is full
+	priority         *float64         // sampling priority
+	locked           bool             // specifies if the sampling priority can be altered
+	samplingDecision samplingDecision // samplingDecision indicates whether to send the trace to the agent.
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
@@ -183,7 +194,17 @@ func (t *trace) setSamplingPriority(p float64) {
 func (t *trace) keep() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.kept = true
+	if t.samplingDecision == decisionDefaultDrop {
+		t.samplingDecision = decisionForceKeep
+	}
+}
+
+func (t *trace) drop() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.samplingDecision == decisionDefaultDrop {
+		t.samplingDecision = decisionForceDrop
+	}
 }
 
 func (t *trace) setSamplingPriorityLocked(p float64) {
@@ -263,13 +284,12 @@ func (t *trace) finishedOne(s *span) {
 	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
-	if !t.kept {
-		if !s.context.drop {
-			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
-			atomic.AddUint64(&tr.droppedP0Traces, 1)
-		}
+	if t.samplingDecision == decisionDefaultDrop {
+		atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
+		atomic.AddUint64(&tr.droppedP0Traces, 1)
+	}
+	if t.samplingDecision != decisionForceKeep {
 		return
 	}
-	// we assume that sampler.Sample returns the same for all spans of a trace.
 	tr.pushTrace(t.spans)
 }

@@ -304,17 +304,22 @@ func TestSpanContextParent(t *testing.T) {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace:      newTrace(),
-			drop:       true,
 		},
-		"nil-trace": &spanContext{
-			drop: true,
-		},
+		"nil-trace": &spanContext{},
 		"priority": &spanContext{
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace: &trace{
 				spans:    []*span{newBasicSpan("abc")},
 				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
+			},
+		},
+		"sampling_decision": &spanContext{
+			baggage:    map[string]string{"A": "A", "B": "B"},
+			hasBaggage: 1,
+			trace: &trace{
+				spans:            []*span{newBasicSpan("abc")},
+				samplingDecision: decisionForceKeep,
 			},
 		},
 		"origin": &spanContext{
@@ -334,8 +339,8 @@ func TestSpanContextParent(t *testing.T) {
 			assert.Contains(ctx.trace.spans, s)
 			if parentCtx.trace != nil {
 				assert.Equal(ctx.trace.priority, parentCtx.trace.priority)
+				assert.Equal(ctx.trace.samplingDecision, parentCtx.trace.samplingDecision)
 			}
-			assert.Equal(parentCtx.drop, ctx.drop)
 			assert.Equal(parentCtx.baggage, ctx.baggage)
 			assert.Equal(parentCtx.origin, ctx.origin)
 		})
