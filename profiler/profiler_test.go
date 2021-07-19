@@ -155,18 +155,23 @@ func TestStartStopIdempotency(t *testing.T) {
 // TestStopLatency tries to make sure that calling Stop() doesn't hang, i.e.
 // that ongoing profiling or upload operations are immediately canceled.
 func TestStopLatency(t *testing.T) {
-	Start(
+	p, err := newProfiler(
 		WithURL("http://invalid.invalid/"),
 		WithPeriod(1000*time.Millisecond),
 		CPUDuration(500*time.Millisecond),
 	)
-	uploadFunc := activeProfiler.uploadFunc
+	require.NoError(t, err)
 	uploadStart := make(chan struct{}, 1)
-	activeProfiler.uploadFunc = func(b batch) error {
-		activeProfiler.uploadFunc = uploadFunc
-		uploadStart <- struct{}{}
+	uploadFunc := p.uploadFunc
+	p.uploadFunc = func(b batch) error {
+		select {
+		case uploadStart <- struct{}{}:
+		default:
+			// uploadFunc may be called more than once, don't leak this goroutine
+		}
 		return uploadFunc(b)
 	}
+	p.run()
 
 	<-uploadStart
 	// Wait for uploadFunc(b) to run. A bit racy, but worst case is the test
@@ -175,7 +180,7 @@ func TestStopLatency(t *testing.T) {
 
 	stopped := make(chan struct{}, 1)
 	go func() {
-		Stop()
+		p.stop()
 		stopped <- struct{}{}
 	}()
 
