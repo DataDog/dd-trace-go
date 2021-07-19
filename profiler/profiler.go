@@ -45,7 +45,8 @@ func Start(opts ...Option) error {
 	return nil
 }
 
-// Stop stops the profiler.
+// Stop cancels any ongoing profiling or upload operations and returns after
+// everything has been stopped.
 func Stop() {
 	mu.Lock()
 	if activeProfiler != nil {
