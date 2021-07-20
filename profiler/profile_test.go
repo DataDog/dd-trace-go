@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"runtime/trace"
 	"strconv"
 	"strings"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	pprofile "github.com/google/pprof/profile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func TestRunProfile(t *testing.T) {
@@ -175,6 +177,40 @@ main;bar 0 0 8 16
 		assert.Equal(t, []byte("my-cpu-profile"), profs[0].data)
 	})
 
+	t.Run("cpuCodeHotspots", func(t *testing.T) {
+		tracer.Start(tracer.WithCodeHotspots(true))
+		defer trace.Stop()
+
+		wantSpanTime := 90 * time.Millisecond
+		go func() {
+			time.Sleep(10 * time.Millisecond)
+			span := tracer.StartSpan("myOp")
+			defer span.Finish()
+			finished := time.After(wantSpanTime)
+			for {
+				select {
+				case <-finished:
+					return
+				default:
+				}
+			}
+		}()
+
+		p, err := unstartedProfiler(CPUDuration(100 * time.Millisecond))
+		prof, err := p.runProfile(CPUProfile)
+		require.NoError(t, err)
+		assert.Equal(t, "cpu.pprof", prof[0].name)
+		parsed, err := pprofile.Parse(bytes.NewReader(prof[0].data))
+		require.NoError(t, err)
+		var spanTime time.Duration
+		for _, s := range parsed.Sample {
+			if _, ok := s.Label["dd.span_id"]; ok {
+				spanTime += time.Duration(s.Value[1])
+			}
+		}
+		assert.GreaterOrEqual(t, spanTime, wantSpanTime/2)
+	})
+
 	t.Run("goroutine", func(t *testing.T) {
 		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
 		lookupProfile = func(name string, w io.Writer, _ int) error {
@@ -183,6 +219,7 @@ main;bar 0 0 8 16
 		}
 
 		p, err := unstartedProfiler()
+		require.NoError(t, err)
 		profs, err := p.runProfile(GoroutineProfile)
 		require.NoError(t, err)
 		assert.Equal(t, "goroutines.pprof", profs[0].name)

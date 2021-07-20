@@ -6,10 +6,12 @@
 package tracer
 
 import (
+	gocontext "context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"runtime/pprof"
 	"strconv"
 	"sync"
 	"time"
@@ -383,6 +385,12 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if id == 0 {
 		id = random.Uint64()
 	}
+	if t.config.codeHotspots {
+		labels := pprof.Labels("dd.span_id", fmt.Sprintf("%d", id))
+		ctx := pprof.WithLabels(gocontext.Background(), labels)
+		pprof.SetGoroutineLabels(ctx)
+	}
+
 	// span defaults
 	span := &span{
 		Name:         operationName,
