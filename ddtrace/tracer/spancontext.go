@@ -177,8 +177,7 @@ func newTrace() *trace {
 	return &trace{spans: make([]*span, 0, traceStartSize)}
 }
 
-// returns the sampling priority of the trace. Not thread safe.
-func (t *trace) samplingPriorityUnsafe() (p int, ok bool) {
+func (t *trace) samplingPriorityLocked() (p int, ok bool) {
 	if t.priority == nil {
 		return 0, false
 	}
@@ -188,7 +187,7 @@ func (t *trace) samplingPriorityUnsafe() (p int, ok bool) {
 func (t *trace) samplingPriority() (p int, ok bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return t.samplingPriorityUnsafe()
+	return t.samplingPriorityLocked()
 }
 
 func (t *trace) setSamplingPriority(p float64) {
@@ -284,7 +283,7 @@ func (t *trace) finishedOne(s *span) {
 	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
 	sd := samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision)))
 	if sd != decisionKeep {
-		if p, ok := t.samplingPriorityUnsafe(); ok && p == ext.PriorityAutoReject {
+		if p, ok := t.samplingPriorityLocked(); ok && p == ext.PriorityAutoReject {
 			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
 			atomic.AddUint64(&tr.droppedP0Traces, 1)
 		}
