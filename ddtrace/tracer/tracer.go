@@ -386,7 +386,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		id = random.Uint64()
 	}
 	if t.config.codeHotspots {
-		labels := pprof.Labels("dd.span_id", fmt.Sprintf("%d", id))
+		labels := pprof.Labels("span id", fmt.Sprintf("%d", id))
 		ctx := pprof.WithLabels(gocontext.Background(), labels)
 		pprof.SetGoroutineLabels(ctx)
 	}
