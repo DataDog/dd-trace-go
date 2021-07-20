@@ -44,6 +44,8 @@ func newConfig(opts ...Option) *config {
 }
 
 // WithContext sets the config context to ctx.
+// Deprecated: This is deprecated in favor of passing the context
+// via the message headers
 func WithContext(ctx context.Context) Option {
 	return func(cfg *config) {
 		cfg.ctx = ctx

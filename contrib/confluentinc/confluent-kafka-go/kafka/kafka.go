@@ -205,7 +205,12 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 	if !math.IsNaN(p.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.cfg.analyticsRate))
 	}
+	//if there's a span context in the headers, use that as the parent
 	carrier := NewMessageCarrier(msg)
+	if spanctx, err := tracer.Extract(carrier); err == nil {
+		opts = append(opts, tracer.ChildOf(spanctx))
+	}
+
 	span, _ := tracer.StartSpanFromContext(p.cfg.ctx, "kafka.produce", opts...)
 	// inject the span context so consumers can pick it up
 	tracer.Inject(span.Context(), carrier)
