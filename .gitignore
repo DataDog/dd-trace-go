@@ -16,7 +16,7 @@ dd-trace-go.iml
 /contrib/google.golang.org/grpc.v12/vendor/
 
 # Because of the way Version Selection [1] works with modules,
-# if we commit integrations dependencies into go.mod, they 
+# if we commit integrations dependencies into go.mod, they
 # might force importers of the package to unexpectedly update
 # the shared dependency to a higer version than expected,
 # potentially introducing unwanted bugs.
@@ -24,3 +24,4 @@ dd-trace-go.iml
 # [1] https://github.com/golang/go/wiki/Modules#version-selection
 #
 /go.mod
+/.vscode
