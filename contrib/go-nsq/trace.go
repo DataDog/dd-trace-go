@@ -1,11 +1,9 @@
 package nsq
 
 import (
-	"math"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -32,9 +30,9 @@ func (this *traceHelper) trace(start time.Time, spType spanType, opType string, 
 		tracer.StartTime(start),
 	}
 
-	if !math.IsNaN(this.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, this.cfg.analyticsRate))
-	}
+	// if !math.IsNaN(this.cfg.analyticsRate) {
+	// 	opts = append(opts, tracer.Tag(ext.EventSampleRate, this.cfg.analyticsRate))
+	// }
 
 	span, ctx := tracer.StartSpanFromContext(this.cfg.ctx, opType, opts...)
 	this.cfg.ctx = ctx

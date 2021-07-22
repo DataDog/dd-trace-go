@@ -11,15 +11,18 @@ type Producer struct {
 	*traceHelper
 }
 
-func NewProducer(addr string, config *Config) (*Producer, error) {
-	producer, err := nsq.NewProducer(addr, config.Config)
+func NewProducer(addr string, config *nsq.Config, opts ...Option) (*Producer, error) {
+	producer, err := nsq.NewProducer(addr, config)
 	if err != nil {
 		return nil, err
 	}
 
+	cfg := NewConfig(opts...)
+	cfg.Config = config
+
 	return &Producer{
 		Producer:    producer,
-		traceHelper: newTraceHelper(config),
+		traceHelper: newTraceHelper(cfg),
 	}, nil
 }
 

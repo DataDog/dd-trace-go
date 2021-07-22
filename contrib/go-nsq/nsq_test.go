@@ -4,18 +4,17 @@ import (
 	"context"
 	"log"
 	"net"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/nsqio/go-nsq"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var (
-	lookupdHttpAddr = "127.0.0.1:4161"
-	nsqdTcpAddr     = "127.0.0.1:4150"
-	nsqdHttpAddr    = "127.0.0.1:4151"
+	lookupdHTTPAddr = "127.0.0.1:4161"
+	nsqdTCPAddr     = "127.0.0.1:4150"
+	nsqdHTTPAddr    = "127.0.0.1:4151"
 	topic           = "nsq_ddtrace_test"
 	channel         = "nsq_ddtrace_test_consumer"
 	msgBody         = []byte(`{"service":"nsq_ddtrace"}`)
@@ -33,15 +32,15 @@ func (this *ConsumerHandler) HandleMessage(msg *nsq.Message) error {
 }
 
 func TestProducer(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	// mt := mocktracer.Start()
+	// defer mt.Stop()
 
-	// tracer.Start(tracer.WithAgentAddr("10.200.7.21:9529"))
-	// defer tracer.Stop()
+	tracer.Start(tracer.WithAgentAddr("10.200.7.21:9529"))
+	defer tracer.Stop()
 
-	config := NewConfig(WithService("producer_with_trace_test"), WithResource("nsq_producer"), WithContext(context.Background()))
+	config := nsq.NewConfig()
 	config.LocalAddr, _ = net.ResolveTCPAddr("tcp", "127.0.0.1:0")
-	producer, err := NewProducer(nsqdTcpAddr, config)
+	producer, err := NewProducer(nsqdTCPAddr, config, WithService("producer_with_trace_test"), WithContext(context.Background()))
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
@@ -90,15 +89,15 @@ func TestProducer(t *testing.T) {
 }
 
 func TestConsumer(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	// mt := mocktracer.Start()
+	// defer mt.Stop()
 
-	// tracer.Start(tracer.WithAgentAddr("10.200.7.21:9529"))
-	// defer tracer.Stop()
+	tracer.Start(tracer.WithAgentAddr("10.200.7.21:9529"))
+	defer tracer.Stop()
 
-	config := NewConfig(WithService("consumer_with_trace_test"), WithResource("nsq_consumer"), WithContext(context.Background()))
+	config := nsq.NewConfig()
 	config.LocalAddr, _ = net.ResolveTCPAddr("tcp", "127.0.0.1:0")
-	consumer, err := NewConsumer(topic, channel, config)
+	consumer, err := NewConsumer(topic, channel, config, WithService("consumer_with_trace_test"), WithContext(context.Background()))
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
@@ -114,17 +113,17 @@ func TestConsumer(t *testing.T) {
 
 	consumer.AddHandler(&ConsumerHandler{})
 
-	if err = consumer.ConnectToNSQD(nsqdTcpAddr); err != nil {
+	if err = consumer.ConnectToNSQD(nsqdTCPAddr); err != nil {
 		log.Fatalln(err.Error())
 	}
-	if err = consumer.DisconnectFromNSQD(nsqdTcpAddr); err != nil {
+	if err = consumer.DisconnectFromNSQD(nsqdTCPAddr); err != nil {
 		log.Fatalln(err.Error())
 	}
 
-	if err = consumer.ConnectToNSQLookupd(lookupdHttpAddr); err != nil {
+	if err = consumer.ConnectToNSQLookupd(lookupdHTTPAddr); err != nil {
 		log.Fatalln(err.Error())
 	}
-	// if err = consumer.DisconnectFromNSQLookupd(lookupdHttpAddr); err != nil {
+	// if err = consumer.DisconnectFromNSQLookupd(lookupdHTTPAddr); err != nil {
 	// 	log.Fatalln(err.Error())
 	// }
 
@@ -132,7 +131,7 @@ func TestConsumer(t *testing.T) {
 	<-consumer.StopChan
 }
 
-func init() {
-	log.SetOutput(os.Stdout)
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-}
+// func init() {
+// 	log.SetOutput(os.Stdout)
+// 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+// }
