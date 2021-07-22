@@ -344,6 +344,7 @@ func (s *span) finish(finishTime int64) {
 	}
 	s.finished = true
 
+	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have an active tracer
 		feats := t.features.Load()
@@ -358,19 +359,12 @@ func (s *span) finish(finishTime int64) {
 		}
 		if feats.DropP0s {
 			// the agent supports dropping p0's in the client
-			if shouldDrop(s) {
-				// ...and this span can be dropped
-				atomic.AddUint64(&t.droppedP0Spans, 1)
-				if s == s.context.trace.root {
-					atomic.AddUint64(&t.droppedP0Traces, 1)
-				}
-				return
-			}
+			keep = shouldKeep(s)
 		}
 	}
-	if s.context.drop {
-		// not sampled by local sampler
-		return
+	if keep {
+		// a single kept span keeps the whole trace.
+		s.context.trace.keep()
 	}
 	s.context.finish()
 }
@@ -401,20 +395,21 @@ func newAggregableSpan(s *span, cfg *config) *aggregableSpan {
 	}
 }
 
-// shouldDrop reports whether it's fine to drop the span s.
-func shouldDrop(s *span) bool {
+// shouldKeep reports whether the trace should be kept.
+// a single span being kept implies the whole trace being kept.
+func shouldKeep(s *span) bool {
 	if p, ok := s.context.samplingPriority(); ok && p > 0 {
 		// positive sampling priorities stay
-		return false
+		return true
 	}
 	if atomic.LoadInt64(&s.context.errors) > 0 {
 		// traces with any span containing an error get kept
-		return false
+		return true
 	}
 	if v, ok := s.Metrics[ext.EventSampleRate]; ok {
-		return !sampledByRate(s.TraceID, v)
+		return sampledByRate(s.TraceID, v)
 	}
-	return true
+	return false
 }
 
 // shouldComputeStats mentions whether this span needs to have stats computed for.
