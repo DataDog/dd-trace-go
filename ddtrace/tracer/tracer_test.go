@@ -60,6 +60,14 @@ loop:
 	}
 }
 
+// setLogWriter sets the io.Writer that any new logTraceWriter will write to and returns a function
+// which will return the io.Writer to its original value.
+func setLogWriter(w io.Writer) func() {
+	tmp := logWriter
+	logWriter = w
+	return func() { logWriter = tmp }
+}
+
 // TestTracerCleanStop does frenetic testing in a scenario where the tracer is started
 // and stopped in parallel with spans being created.
 func TestTracerCleanStop(t *testing.T) {
@@ -89,10 +97,12 @@ func TestTracerCleanStop(t *testing.T) {
 		}()
 	}
 
+	defer setLogWriter(ioutil.Discard)()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
+			// Lambda mode is used to avoid the startup cost associated with agent discovery.
 			Start(withTransport(transport), WithLambdaMode(true))
 			time.Sleep(time.Millisecond)
 			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
@@ -225,6 +235,66 @@ func TestTracerStartSpan(t *testing.T) {
 		parent := tracer.StartSpan("/home/user").(*span)
 		child := tracer.StartSpan("home/user", Measured(), ChildOf(parent.context)).(*span)
 		assert.Equal(t, 1.0, child.Metrics[keyMeasured])
+	})
+}
+
+func TestSamplingDecision(t *testing.T) {
+	t.Run("sampled", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		span := tracer.StartSpan("name_1").(*span)
+		child := tracer.StartSpan("name_2", ChildOf(span.context))
+		child.Finish()
+		span.Finish()
+		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
+		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
+	})
+
+	t.Run("dropped", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		tracer.features.DropP0s = true
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		span := tracer.StartSpan("name_1").(*span)
+		child := tracer.StartSpan("name_2", ChildOf(span.context))
+		child.Finish()
+		span.Finish()
+		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
+		assert.Equal(t, decisionNone, span.context.trace.samplingDecision)
+	})
+
+	t.Run("events_sampled", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		tracer.features.DropP0s = true
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		span := tracer.StartSpan("name_1").(*span)
+		child := tracer.StartSpan("name_2", ChildOf(span.context))
+		child.SetTag(ext.EventSampleRate, 1)
+		child.Finish()
+		span.Finish()
+		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
+		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
+	})
+
+	t.Run("client_dropped", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		tracer.features.DropP0s = true
+		tracer.config.sampler = NewRateSampler(0)
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		span := tracer.StartSpan("name_1").(*span)
+		child := tracer.StartSpan("name_2", ChildOf(span.context))
+		child.SetTag(ext.EventSampleRate, 1)
+		child.Finish()
+		span.Finish()
+		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
+		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
 	})
 }
 
