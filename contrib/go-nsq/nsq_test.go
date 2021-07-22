@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/nsqio/go-nsq"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 var (
@@ -32,11 +32,11 @@ func (this *ConsumerHandler) HandleMessage(msg *nsq.Message) error {
 }
 
 func TestProducer(t *testing.T) {
-	// mt := mocktracer.Start()
-	// defer mt.Stop()
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
-	tracer.Start(tracer.WithAgentAddr("10.200.7.21:9529"))
-	defer tracer.Stop()
+	// tracer.Start(tracer.WithAgentAddr("10.200.7.21:9529"))
+	// defer tracer.Stop()
 
 	config := nsq.NewConfig()
 	config.LocalAddr, _ = net.ResolveTCPAddr("tcp", "127.0.0.1:0")
@@ -89,11 +89,11 @@ func TestProducer(t *testing.T) {
 }
 
 func TestConsumer(t *testing.T) {
-	// mt := mocktracer.Start()
-	// defer mt.Stop()
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
-	tracer.Start(tracer.WithAgentAddr("10.200.7.21:9529"))
-	defer tracer.Stop()
+	// tracer.Start(tracer.WithAgentAddr("10.200.7.21:9529"))
+	// defer tracer.Stop()
 
 	config := nsq.NewConfig()
 	config.LocalAddr, _ = net.ResolveTCPAddr("tcp", "127.0.0.1:0")
@@ -130,8 +130,3 @@ func TestConsumer(t *testing.T) {
 	consumer.Stop()
 	<-consumer.StopChan
 }
-
-// func init() {
-// 	log.SetOutput(os.Stdout)
-// 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-// }
