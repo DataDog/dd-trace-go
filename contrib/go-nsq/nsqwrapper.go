@@ -6,6 +6,7 @@ import (
 	"github.com/nsqio/go-nsq"
 )
 
+// nsq Producer interface wrapper
 type TraceableProducer interface {
 	Ping() error
 	Publish(topic string, body []byte) error
@@ -17,6 +18,7 @@ type TraceableProducer interface {
 	Stop()
 }
 
+// nsq consumer interface wrapper
 type TraceableConsumer interface {
 	Stats() *nsq.ConsumerStats
 	SetBehaviorDelegate(cb interface{})

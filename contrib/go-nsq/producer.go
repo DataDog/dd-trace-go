@@ -4,13 +4,16 @@ import (
 	"time"
 
 	"github.com/nsqio/go-nsq"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
+// wrap up nsq.Producer
 type Producer struct {
 	*nsq.Producer
 	*traceHelper
 }
 
+// nsq.NewProducer wrapper function
 func NewProducer(addr string, config *nsq.Config, opts ...Option) (*Producer, error) {
 	producer, err := nsq.NewProducer(addr, config)
 	if err != nil {
@@ -26,64 +29,72 @@ func NewProducer(addr string, config *nsq.Config, opts ...Option) (*Producer, er
 	}, nil
 }
 
+// nsq.Producer.Ping wrapper function
 func (prod *Producer) Ping() error {
 	start := time.Now()
 	err := prod.Producer.Ping()
-	prod.traceHelper.trace(start, spanTypeProducer, "Ping", err)
+	prod.traceHelper.trace(start, ext.SpanTypeMessageProducer, "Ping", err)
 
 	return err
 }
 
+// nsq.Producer.Publish wrapper function
 func (prod *Producer) Publish(topic string, body []byte) error {
 	start := time.Now()
 	err := prod.Producer.Publish(topic, body)
-	prod.traceHelper.trace(start, spanTypeProducer, "Publish", err)
+	prod.traceHelper.trace(start, ext.SpanTypeMessageProducer, "Publish", err)
 
 	return err
 }
 
+// nsq.Producer.MultiPublish wrapper function
 func (prod *Producer) MultiPublish(topic string, body [][]byte) error {
 	start := time.Now()
 	err := prod.Producer.MultiPublish(topic, body)
-	prod.traceHelper.trace(start, spanTypeProducer, "MultiPublish", err)
+	prod.traceHelper.trace(start, ext.SpanTypeMessageProducer, "MultiPublish", err)
 
 	return err
 }
 
+// nsq.Producer.PublishAsync wrapper function
 func (prod *Producer) PublishAsync(topic string, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	start := time.Now()
 	err := prod.Producer.PublishAsync(topic, body, doneChan, args...)
-	prod.traceHelper.trace(start, spanTypeProducer, "PublishAsync", err)
+	prod.traceHelper.trace(start, ext.SpanTypeMessageProducer, "PublishAsync", err)
 
 	return err
 }
 
+// nsq.Producer.MultiPublishAsync wrapper function
 func (prod *Producer) MultiPublishAsync(topic string, body [][]byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	start := time.Now()
 	err := prod.Producer.MultiPublishAsync(topic, body, doneChan, args...)
-	prod.traceHelper.trace(start, spanTypeProducer, "MultiPublishAsync", err)
+	prod.traceHelper.trace(start, ext.SpanTypeMessageProducer, "MultiPublishAsync", err)
 
 	return err
 }
 
+// nsq.Producer.DeferredPublish wrapper function
 func (prod *Producer) DeferredPublish(topic string, delay time.Duration, body []byte) error {
 	start := time.Now()
 	err := prod.Producer.DeferredPublish(topic, delay, body)
-	prod.traceHelper.trace(start, spanTypeProducer, "DeferredPublish", err)
+	prod.traceHelper.trace(start, ext.SpanTypeMessageProducer, "DeferredPublish", err)
 
 	return err
 }
 
+// nsq.Producer.DeferredPublishAsync wrapper function
 func (prod *Producer) DeferredPublishAsync(topic string, delay time.Duration, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	start := time.Now()
 	err := prod.Producer.DeferredPublishAsync(topic, delay, body, doneChan, args...)
-	prod.traceHelper.trace(start, spanTypeProducer, "DeferredPublishAsync", err)
+	prod.traceHelper.trace(start, ext.SpanTypeMessageProducer, "DeferredPublishAsync", err)
 
 	return err
 }
 
+// nsq.Producer.Stop wrapper function
 func (prod *Producer) Stop() {
 	start := time.Now()
 	prod.Producer.Stop()
-	prod.traceHelper.trace(start, spanTypeProducer, "Stop", nil)
+	prod.traceHelper.trace(start, ext.SpanTypeMessageProducer, "Stop", nil)
 }
