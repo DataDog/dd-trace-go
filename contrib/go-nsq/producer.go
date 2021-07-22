@@ -26,64 +26,64 @@ func NewProducer(addr string, config *nsq.Config, opts ...Option) (*Producer, er
 	}, nil
 }
 
-func (this *Producer) Ping() error {
+func (prod *Producer) Ping() error {
 	start := time.Now()
-	err := this.Producer.Ping()
-	this.traceHelper.trace(start, spanTypeProducer, "Ping", err)
+	err := prod.Producer.Ping()
+	prod.traceHelper.trace(start, spanTypeProducer, "Ping", err)
 
 	return err
 }
 
-func (this *Producer) Publish(topic string, body []byte) error {
+func (prod *Producer) Publish(topic string, body []byte) error {
 	start := time.Now()
-	err := this.Producer.Publish(topic, body)
-	this.traceHelper.trace(start, spanTypeProducer, "Publish", err)
+	err := prod.Producer.Publish(topic, body)
+	prod.traceHelper.trace(start, spanTypeProducer, "Publish", err)
 
 	return err
 }
 
-func (this *Producer) MultiPublish(topic string, body [][]byte) error {
+func (prod *Producer) MultiPublish(topic string, body [][]byte) error {
 	start := time.Now()
-	err := this.Producer.MultiPublish(topic, body)
-	this.traceHelper.trace(start, spanTypeProducer, "MultiPublish", err)
+	err := prod.Producer.MultiPublish(topic, body)
+	prod.traceHelper.trace(start, spanTypeProducer, "MultiPublish", err)
 
 	return err
 }
 
-func (this *Producer) PublishAsync(topic string, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
+func (prod *Producer) PublishAsync(topic string, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	start := time.Now()
-	err := this.Producer.PublishAsync(topic, body, doneChan, args...)
-	this.traceHelper.trace(start, spanTypeProducer, "PublishAsync", err)
+	err := prod.Producer.PublishAsync(topic, body, doneChan, args...)
+	prod.traceHelper.trace(start, spanTypeProducer, "PublishAsync", err)
 
 	return err
 }
 
-func (this *Producer) MultiPublishAsync(topic string, body [][]byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
+func (prod *Producer) MultiPublishAsync(topic string, body [][]byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	start := time.Now()
-	err := this.Producer.MultiPublishAsync(topic, body, doneChan, args...)
-	this.traceHelper.trace(start, spanTypeProducer, "MultiPublishAsync", err)
+	err := prod.Producer.MultiPublishAsync(topic, body, doneChan, args...)
+	prod.traceHelper.trace(start, spanTypeProducer, "MultiPublishAsync", err)
 
 	return err
 }
 
-func (this *Producer) DeferredPublish(topic string, delay time.Duration, body []byte) error {
+func (prod *Producer) DeferredPublish(topic string, delay time.Duration, body []byte) error {
 	start := time.Now()
-	err := this.Producer.DeferredPublish(topic, delay, body)
-	this.traceHelper.trace(start, spanTypeProducer, "DeferredPublish", err)
+	err := prod.Producer.DeferredPublish(topic, delay, body)
+	prod.traceHelper.trace(start, spanTypeProducer, "DeferredPublish", err)
 
 	return err
 }
 
-func (this *Producer) DeferredPublishAsync(topic string, delay time.Duration, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
+func (prod *Producer) DeferredPublishAsync(topic string, delay time.Duration, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	start := time.Now()
-	err := this.Producer.DeferredPublishAsync(topic, delay, body, doneChan, args...)
-	this.traceHelper.trace(start, spanTypeProducer, "DeferredPublishAsync", err)
+	err := prod.Producer.DeferredPublishAsync(topic, delay, body, doneChan, args...)
+	prod.traceHelper.trace(start, spanTypeProducer, "DeferredPublishAsync", err)
 
 	return err
 }
 
-func (this *Producer) Stop() {
+func (prod *Producer) Stop() {
 	start := time.Now()
-	this.Producer.Stop()
-	this.traceHelper.trace(start, spanTypeProducer, "Stop", nil)
+	prod.Producer.Stop()
+	prod.traceHelper.trace(start, spanTypeProducer, "Stop", nil)
 }

@@ -19,25 +19,25 @@ func newTraceHelper(conf *Config) *traceHelper {
 	}
 }
 
-func (this *traceHelper) SetMetaTag(key string, value interface{}) {
-	this.meta[key] = value
+func (th *traceHelper) SetMetaTag(key string, value interface{}) {
+	th.meta[key] = value
 }
 
-func (this *traceHelper) trace(start time.Time, spType spanType, opType string, err error) {
+func (th *traceHelper) trace(start time.Time, spType spanType, opType string, err error) {
 	opts := []ddtrace.StartSpanOption{
-		tracer.ServiceName(this.cfg.service),
+		tracer.ServiceName(th.cfg.service),
 		tracer.SpanType(string(spType)),
 		tracer.StartTime(start),
 	}
 
-	// if !math.IsNaN(this.cfg.analyticsRate) {
-	// 	opts = append(opts, tracer.Tag(ext.EventSampleRate, this.cfg.analyticsRate))
+	// if !math.IsNaN(th.cfg.analyticsRate) {
+	// 	opts = append(opts, tracer.Tag(ext.EventSampleRate, th.cfg.analyticsRate))
 	// }
 
-	span, ctx := tracer.StartSpanFromContext(this.cfg.ctx, opType, opts...)
-	this.cfg.ctx = ctx
+	span, ctx := tracer.StartSpanFromContext(th.cfg.ctx, opType, opts...)
+	th.cfg.ctx = ctx
 
-	for k, v := range this.meta {
+	for k, v := range th.meta {
 		span.SetTag(k, v)
 	}
 
