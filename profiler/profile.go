@@ -44,16 +44,17 @@ const (
 	expGoroutineWaitProfile
 	// MetricsProfile reports top-line metrics associated with user-specified profiles
 	MetricsProfile
-	// Adding new profiles also needs to happen in the collectors map and
+	// Adding new profiles also needs to happen in the profileTypes map and
 	// profiler.enabledProfileTypes().
 )
 
-// collector holds the implementation details of a ProfileType, see collectors
-// map below.
-type collector struct {
+// profileType holds the implementation details of a ProfileType.
+type profileType struct {
+	// Type gets populated automatically by ProfileType.lookup().
+	Type ProfileType
 	// Name specifies the profile name as used with pprof.Lookup(name) (in
 	// collectGenericProfile) and returned by ProfileType.String(). For profile
-	// types that don't use this approach (e.g. cpu) the name isn't used for
+	// types that don't use this approach (e.g. CPU) the name isn't used for
 	// anything.
 	Name string
 	// Filename is the filename used for uploading the profile to the datadog
@@ -69,18 +70,15 @@ type collector struct {
 	Delta *pprofutils.Delta
 	// Collect collects the given profile and returns the data for it. Most
 	// profiles will be in pprof format, i.e. gzip compressed proto buf data.
-	Collect func(collector, *profiler) ([]byte, error)
-	// ProfileType is the profile type of the collector. It gets populated
-	// automatically by ProfileType.collector().
-	ProfileType ProfileType
+	Collect func(profileType, *profiler) ([]byte, error)
 }
 
-// collectors map every ProfileType to a collector implementation.
-var collectors = map[ProfileType]collector{
+// profileTypes maps every ProfileType to its implementation.
+var profileTypes = map[ProfileType]profileType{
 	CPUProfile: {
 		Name:     "cpu",
 		Filename: "cpu.pprof",
-		Collect: func(_ collector, p *profiler) ([]byte, error) {
+		Collect: func(_ profileType, p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
 			if err := startCPUProfile(&buf); err != nil {
 				return nil, err
@@ -124,7 +122,7 @@ var collectors = map[ProfileType]collector{
 	expGoroutineWaitProfile: {
 		Name:     "goroutinewait",
 		Filename: "goroutineswait.pprof",
-		Collect: func(c collector, p *profiler) ([]byte, error) {
+		Collect: func(t profileType, p *profiler) ([]byte, error) {
 			if n := runtime.NumGoroutine(); n > p.cfg.maxGoroutinesWait {
 				return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
 			}
@@ -134,7 +132,7 @@ var collectors = map[ProfileType]collector{
 				text  = &bytes.Buffer{}
 				pprof = &bytes.Buffer{}
 			)
-			if err := lookupProfile(c.Name, text, 2); err != nil {
+			if err := lookupProfile(t.Name, text, 2); err != nil {
 				return nil, err
 			}
 			err := goroutineDebug2ToPprof(text, pprof, now)
@@ -144,7 +142,7 @@ var collectors = map[ProfileType]collector{
 	MetricsProfile: {
 		Name:     "metrics",
 		Filename: "metrics.json",
-		Collect: func(_ collector, p *profiler) ([]byte, error) {
+		Collect: func(_ profileType, p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
 			err := p.met.report(now(), &buf)
 			return buf.Bytes(), err
@@ -152,23 +150,23 @@ var collectors = map[ProfileType]collector{
 	},
 }
 
-func collectGenericProfile(c collector, _ *profiler) ([]byte, error) {
+func collectGenericProfile(t profileType, _ *profiler) ([]byte, error) {
 	var buf bytes.Buffer
-	err := lookupProfile(c.Name, &buf, 0)
+	err := lookupProfile(t.Name, &buf, 0)
 	return buf.Bytes(), err
 }
 
-// collector returns the collector for this profileType.
-func (t ProfileType) collector() collector {
-	c, ok := collectors[t]
+// lookup returns t's profileType implementation.
+func (t ProfileType) lookup() profileType {
+	c, ok := profileTypes[t]
 	if ok {
-		c.ProfileType = t
+		c.Type = t
 		return c
 	}
-	return collector{
+	return profileType{
 		Name:     "unknown",
 		Filename: "unknown",
-		Collect: func(_ collector, _ *profiler) ([]byte, error) {
+		Collect: func(_ profileType, _ *profiler) ([]byte, error) {
 			return nil, errors.New("profile type not implemented")
 		},
 	}
@@ -176,12 +174,12 @@ func (t ProfileType) collector() collector {
 
 // String returns the name of the profile.
 func (t ProfileType) String() string {
-	return t.collector().Name
+	return t.lookup().Name
 }
 
 // Filename is the identifier used on upload.
 func (t ProfileType) Filename() string {
-	return t.collector().Filename
+	return t.lookup().Filename
 }
 
 // Tag used on profile metadata
@@ -208,27 +206,29 @@ func (b *batch) addProfile(p *profile) {
 	b.profiles = append(b.profiles, p)
 }
 
-func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
+func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	start := now()
-	c := t.collector()
+	t := pt.lookup()
 	// Collect the original profile as-is.
-	data, err := c.Collect(c, p)
+	data, err := t.Collect(t, p)
 	if err != nil {
 		return nil, err
 	}
 	profs := []*profile{{
-		name: c.Filename,
+		name: t.Filename,
 		data: data,
 	}}
 	// Compute the deltaProf (will be nil if not enabled for this profile type).
 	deltaStart := time.Now()
-	deltaProf, err := p.deltaProfile(c, data)
+	deltaProf, err := p.deltaProfile(t, data)
 	if err != nil {
 		return nil, fmt.Errorf("delta profile error: %s", err)
 	}
 	// Report metrics and append deltaProf if not nil.
 	end := now()
-	tags := append(p.cfg.tags, t.Tag())
+	tags := append(p.cfg.tags, pt.Tag())
+	// TODO(fg) stop uploading non-delta profiles in the next version of
+	// dd-trace-go after delta profiles are released.
 	if deltaProf != nil {
 		profs = append(profs, deltaProf)
 		p.cfg.statsd.Timing("datadog.profiler.go.delta_time", end.Sub(deltaStart), tags, 1)
@@ -240,9 +240,9 @@ func (p *profiler) runProfile(t ProfileType) ([]*profile, error) {
 // deltaProfile derives the delta profile between curData and the previous
 // profile. For profile types that don't have delta profiling enabled, it
 // simply returns nil, nil.
-func (p *profiler) deltaProfile(c collector, curData []byte) (*profile, error) {
+func (p *profiler) deltaProfile(t profileType, curData []byte) (*profile, error) {
 	// Not all profile types use delta profiling, return nil if this one doesn't.
-	if c.Delta == nil {
+	if t.Delta == nil {
 		return nil, nil
 	}
 	curProf, err := pprofile.ParseData(curData)
@@ -250,7 +250,7 @@ func (p *profiler) deltaProfile(c collector, curData []byte) (*profile, error) {
 		return nil, fmt.Errorf("delta prof parse: %v", err)
 	}
 	var deltaData []byte
-	if prevProf := p.prev[c.ProfileType]; prevProf == nil {
+	if prevProf := p.prev[t.Type]; prevProf == nil {
 		// First time deltaProfile gets called for a type, there is no prevProf. In
 		// this case we emit the current profile as a delta profile.
 		deltaData = curData
@@ -259,7 +259,7 @@ func (p *profiler) deltaProfile(c collector, curData []byte) (*profile, error) {
 		// Unfortunately the core implementation isn't resuable via a API, so we do
 		// our own delta calculation below.
 		// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
-		deltaProf, err := c.Delta.Convert(prevProf, curProf)
+		deltaProf, err := t.Delta.Convert(prevProf, curProf)
 		if err != nil {
 			return nil, fmt.Errorf("delta prof merge: %v", err)
 		}
@@ -276,9 +276,9 @@ func (p *profiler) deltaProfile(c collector, curData []byte) (*profile, error) {
 	}
 	// Keep the most recent profiles in memory for future diffing. This needs to
 	// be taken into account when enforcing memory limits going forward.
-	p.prev[c.ProfileType] = curProf
+	p.prev[t.Type] = curProf
 	return &profile{
-		name: "delta-" + c.Filename,
+		name: "delta-" + t.Filename,
 		data: deltaData,
 	}, nil
 }
