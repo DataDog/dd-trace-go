@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 	"runtime/pprof"
 	"time"
 
@@ -84,7 +85,7 @@ var collectors = map[ProfileType]collector{
 			if err := startCPUProfile(&buf); err != nil {
 				return nil, err
 			}
-			time.Sleep(p.cfg.cpuDuration)
+			p.interruptibleSleep(p.cfg.cpuDuration)
 			stopCPUProfile()
 			return buf.Bytes(), nil
 		},
@@ -123,7 +124,11 @@ var collectors = map[ProfileType]collector{
 	expGoroutineWaitProfile: {
 		Name:     "goroutinewait",
 		Filename: "goroutineswait.pprof",
-		Collect: func(c collector, _ *profiler) ([]byte, error) {
+		Collect: func(c collector, p *profiler) ([]byte, error) {
+			if n := runtime.NumGoroutine(); n > p.cfg.maxGoroutinesWait {
+				return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
+			}
+
 			var (
 				now   = now()
 				text  = &bytes.Buffer{}

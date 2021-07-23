@@ -104,6 +104,9 @@ func (h *agentTraceWriter) flush() {
 	h.payload = newPayload()
 }
 
+// logWriter specifies the output target of the logTraceWriter; replaced in tests.
+var logWriter io.Writer = os.Stdout
+
 // logTraceWriter encodes traces into a format understood by the Datadog Forwarder
 // (https://github.com/DataDog/datadog-serverless-functions/tree/master/aws/logs_monitoring)
 // and writes them to os.Stdout. This is used to send traces from an AWS Lambda environment.
@@ -117,7 +120,7 @@ type logTraceWriter struct {
 func newLogTraceWriter(c *config) *logTraceWriter {
 	w := &logTraceWriter{
 		config: c,
-		w:      os.Stdout,
+		w:      logWriter,
 	}
 	w.resetBuffer()
 	return w

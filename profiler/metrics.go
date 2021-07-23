@@ -104,13 +104,14 @@ func maxPauseNs(stats *runtime.MemStats, periodStart time.Time) (max uint64) {
 	// stats.PauseNs is a circular buffer of recent GC pause times in nanoseconds.
 	// The most recent pause is indexed by (stats.NumGC+255)%256
 
-	for i := stats.NumGC + 255; i >= stats.NumGC; i-- {
+	for i := 0; i < 256; i++ {
+		offset := (int(stats.NumGC) + 255 - i) % 256
 		// Stop searching if we find a PauseEnd outside the period
-		if time.Unix(0, int64(stats.PauseEnd[i%256])).Before(periodStart) {
+		if time.Unix(0, int64(stats.PauseEnd[offset])).Before(periodStart) {
 			break
 		}
-		if stats.PauseNs[i%256] > max {
-			max = stats.PauseNs[i%256]
+		if stats.PauseNs[offset] > max {
+			max = stats.PauseNs[offset]
 		}
 	}
 	return max
