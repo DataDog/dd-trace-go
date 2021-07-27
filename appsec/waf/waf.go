@@ -12,7 +12,7 @@ import (
 
 func NewOperationEventListener() dyngo.EventListener {
 	subscriptions := []string{
-		"http.user_agent",
+		"server.request.query",
 		"server.request.headers.no_cookies",
 	}
 	wafRule, err := waf.NewRule(staticWAFRule)
@@ -20,14 +20,9 @@ func NewOperationEventListener() dyngo.EventListener {
 		panic(err)
 	}
 	return dyngo.OnStartEventListener(func(op *dyngo.Operation, args httpinstr.HandlerOperationArgs) {
+		// For this handler operation lifetime, create a WAF context and set of the data seen during it
 		wafCtx := waf.NewAdditiveContext(wafRule)
 		set := types.DataSet{}
-		if len(args.Headers) > 0 {
-			set["server.request.headers.no_cookies"] = args.Headers
-		}
-		set["server.request.query"] = args.URL.Query()
-		runWAF(wafCtx, set)
-
 		op.OnFinish(func(op *dyngo.Operation, _ httpinstr.HandlerOperationRes) {
 			wafCtx.Close()
 		})
@@ -47,17 +42,24 @@ func runWAF(wafCtx types.Rule, set types.DataSet) {
 }
 
 func subscribe(op *dyngo.Operation, subscriptions []string, wafCtx types.Rule, set types.DataSet) {
+	run := func(addr string, v interface{}) {
+		set[addr] = v
+		runWAF(wafCtx, set)
+	}
 	for _, addr := range subscriptions {
+		addr := addr
 		switch addr {
 		case "http.user_agent":
-			op.OnData(func(op *dyngo.Operation, q httpinstr.UserAgent) {
-				set[addr] = q
-				runWAF(wafCtx, set)
+			op.OnData(func(_ *dyngo.Operation, data httpinstr.UserAgent) {
+				run(addr, data)
 			})
 		case "server.request.headers.no_cookies":
-			op.OnData(func(op *dyngo.Operation, h httpinstr.Header) {
-				set[addr] = h
-				runWAF(wafCtx, set)
+			op.OnData(func(_ *dyngo.Operation, data httpinstr.Header) {
+				run(addr, data)
+			})
+		case "server.request.query":
+			op.OnData(func(_ *dyngo.Operation, data httpinstr.QueryValues) {
+				run(addr, data)
 			})
 		}
 	}

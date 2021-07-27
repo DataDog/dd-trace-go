@@ -60,7 +60,7 @@ func (e *eventManager) emitFinishEvent(op *Operation, results interface{}) {
 }
 
 func (e *eventManager) OnData(l OnDataEventListenerFunc) {
-	e.onFinish.add(reflect.TypeOf(l).In(1), l)
+	e.onData.add(reflect.TypeOf(l).In(1), l)
 }
 
 func (e *eventManager) emitDataEvent(op *Operation, data interface{}) {

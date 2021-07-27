@@ -7,9 +7,12 @@
 package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/dyngo"
+	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/appsec/instrumentation/http"
+	_ "gopkg.in/DataDog/dd-trace-go.v1/appsec/protection/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -39,6 +42,14 @@ func NewServeMux(opts ...Option) *ServeMux {
 // We only need to rewrite this function to be able to trace
 // all the incoming requests to the underlying multiplexer
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	op := dyngo.StartOperation(
+		httpinstr.HandlerOperationArgs{
+			Headers:   httpinstr.Header(r.Header),
+			UserAgent: httpinstr.UserAgent(r.UserAgent()),
+			URL:       r.URL,
+		},
+	)
+	defer op.Finish(httpinstr.HandlerOperationRes{})
 	if mux.cfg.ignoreRequest(r) {
 		mux.ServeMux.ServeHTTP(w, r)
 		return
@@ -64,6 +75,14 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 	}
 	log.Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		op := dyngo.StartOperation(func() httpinstr.HandlerOperationArgs {
+			return httpinstr.HandlerOperationArgs{
+				Headers:   httpinstr.Header(req.Header),
+				UserAgent: httpinstr.UserAgent(req.UserAgent()),
+				URL:       req.URL,
+			}
+		})
+		defer op.Finish(httpinstr.HandlerOperationRes{})
 		httputil.TraceAndServe(h, &httputil.TraceConfig{
 			ResponseWriter: w,
 			Request:        req,
