@@ -1,10 +1,33 @@
 package dyngo
 
-type InstrumentationDescriptor struct {
-}
+type (
+	InstrumentationDescriptor struct {
+		Title           string
+		Instrumentation Instrumentation
+	}
 
-func Register(InstrumentationDescriptor) {
+	Instrumentation interface{ isInstrumentation() }
 
+	OperationInstrumentation struct {
+		EventListener EventListener
+	}
+
+	FunctionInstrumentation struct {
+		Symbol   string
+		Prologue interface{}
+	}
+)
+
+func (OperationInstrumentation) isInstrumentation() {}
+func (FunctionInstrumentation) isInstrumentation()  {}
+
+func Register(descriptors ...InstrumentationDescriptor) {
+	for _, d := range descriptors {
+		switch actual := d.Instrumentation.(type) {
+		case OperationInstrumentation:
+			root.Register(actual.EventListener)
+		}
+	}
 }
 
 type (
@@ -25,6 +48,8 @@ func WithParent(parent *Operation) Option {
 	})
 }
 
+var root = newOperation()
+
 type Operation struct {
 	parent *Operation
 	eventManager
@@ -40,6 +65,9 @@ func newOperation(opts ...Option) *Operation {
 
 func StartOperation(args interface{}, opts ...Option) *Operation {
 	o := newOperation(opts...)
+	if o.parent == nil {
+		o.parent = root
+	}
 	forEachParentOperation(o, func(op *Operation) {
 		op.emitStartEvent(o, args)
 	})
@@ -54,6 +82,17 @@ func (o *Operation) Finish(results interface{}) {
 	defer o.disable()
 	forEachOperation(o, func(op *Operation) {
 		op.emitFinishEvent(o, results)
+	})
+}
+
+func (o *Operation) EmitData(data interface{}) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if o.disabled {
+		return
+	}
+	forEachOperation(o, func(op *Operation) {
+		op.emitDataEvent(o, data)
 	})
 }
 

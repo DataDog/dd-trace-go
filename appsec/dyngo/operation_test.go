@@ -2,13 +2,15 @@ package dyngo_test
 
 import (
 	"errors"
-	"github.com/DataDog/dd-trace-go/appsec/internal/dyngo"
-	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/dyngo"
+
+	"github.com/stretchr/testify/require"
 )
 
 // Dumy struct to mimic real-life operation stacks.
@@ -48,7 +50,7 @@ func TestUsage(t *testing.T) {
 	t.Run("Operation stacking", func(t *testing.T) {
 		// Dummy waf looking for the string `attack` in HTTPHandlerArgs
 		wafListener := func(called *int, blocked *bool) dyngo.EventListener {
-			return dyngo.OnStart(func(_ *dyngo.Operation, args HTTPHandlerArgs) {
+			return dyngo.OnStartEventListener(func(_ *dyngo.Operation, args HTTPHandlerArgs) {
 				*called++
 
 				if strings.Contains(args.URL.RawQuery, "attack") {
@@ -68,7 +70,7 @@ func TestUsage(t *testing.T) {
 
 		// HTTP body reads listener appending the read results to a buffer
 		rawBodyListener := func(called *int, buf *[]byte) dyngo.EventListener {
-			return dyngo.OnStart(func(op *dyngo.Operation, args HTTPHandlerArgs) {
+			return dyngo.OnStartEventListener(func(op *dyngo.Operation, args HTTPHandlerArgs) {
 				op.OnFinish(func(_ *dyngo.Operation, res BodyReadRes) {
 					*called++
 					*buf = append(*buf, res.Buf...)
@@ -80,7 +82,7 @@ func TestUsage(t *testing.T) {
 		}
 
 		jsonBodyValueListener := func(called *int, value *interface{}) dyngo.EventListener {
-			return dyngo.OnStart(func(op *dyngo.Operation, args HTTPHandlerArgs) {
+			return dyngo.OnStartEventListener(func(op *dyngo.Operation, args HTTPHandlerArgs) {
 				didBodyRead := false
 				op.OnFinish(func(op *dyngo.Operation, res JSONParserResults) {
 					*called++

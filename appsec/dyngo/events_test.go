@@ -2,11 +2,13 @@ package dyngo_test
 
 import (
 	"fmt"
-	"github.com/DataDog/dd-trace-go/appsec/internal/dyngo"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"testing"
 	"unsafe"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/dyngo"
+
+	"github.com/stretchr/testify/require"
 )
 
 type (

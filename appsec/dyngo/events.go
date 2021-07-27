@@ -47,6 +47,26 @@ func (e *eventManager) OnStart(l OnStartEventListenerFunc) {
 	e.onStart.add(reflect.TypeOf(l).In(1), l)
 }
 
+func (e *eventManager) emitStartEvent(op *Operation, args interface{}) {
+	e.emitEvent(op, &e.onStart, args)
+}
+
+func (e *eventManager) OnFinish(l OnFinishEventListenerFunc) {
+	e.onFinish.add(reflect.TypeOf(l).In(1), l)
+}
+
+func (e *eventManager) emitFinishEvent(op *Operation, results interface{}) {
+	e.emitEvent(op, &e.onFinish, results)
+}
+
+func (e *eventManager) OnData(l OnDataEventListenerFunc) {
+	e.onFinish.add(reflect.TypeOf(l).In(1), l)
+}
+
+func (e *eventManager) emitDataEvent(op *Operation, data interface{}) {
+	e.emitEvent(op, &e.onData, data)
+}
+
 func (e *eventManager) emitEvent(op *Operation, r *eventRegister, args interface{}) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -58,18 +78,6 @@ func (e *eventManager) emitEvent(op *Operation, r *eventRegister, args interface
 	r.forEachListener(argsT, func(l interface{}) {
 		reflect.ValueOf(l).Call(argv)
 	})
-}
-
-func (e *eventManager) emitStartEvent(op *Operation, args interface{}) {
-	e.emitEvent(op, &e.onStart, args)
-}
-
-func (e *eventManager) OnFinish(l OnFinishEventListenerFunc) {
-	e.onFinish.add(reflect.TypeOf(l).In(1), l)
-}
-
-func (e *eventManager) emitFinishEvent(op *Operation, results interface{}) {
-	e.emitEvent(op, &e.onFinish, results)
 }
 
 type (
@@ -84,12 +92,10 @@ type (
 		registerTo(*Operation)
 	}
 
-	onStartEventListener struct {
-		l interface{}
-	}
-	onFinishEventListener struct {
-		l interface{}
-	}
+	eventListener         struct{ l interface{} }
+	onStartEventListener  eventListener
+	onDataEventListener   eventListener
+	onFinishEventListener eventListener
 )
 
 func (o *Operation) Register(l ...EventListener) {
@@ -98,8 +104,11 @@ func (o *Operation) Register(l ...EventListener) {
 	}
 }
 
-func OnStart(l OnStartEventListenerFunc) EventListener  { return onStartEventListener{l} }
-func (l onStartEventListener) registerTo(op *Operation) { op.OnStart(l.l) }
+func OnStartEventListener(l OnStartEventListenerFunc) EventListener { return onStartEventListener{l} }
+func (l onStartEventListener) registerTo(op *Operation)             { op.OnStart(l.l) }
 
-func OnFinish(l OnFinishEventListenerFunc) EventListener { return onFinishEventListener{l} }
-func (l onFinishEventListener) registerTo(op *Operation) { op.OnFinish(l.l) }
+func OnDataEventListener(l OnDataEventListenerFunc) EventListener { return onDataEventListener{l} }
+func (l onDataEventListener) registerTo(op *Operation)            { op.OnData(l.l) }
+
+func OnFinishEventListener(l OnFinishEventListenerFunc) EventListener { return onFinishEventListener{l} }
+func (l onFinishEventListener) registerTo(op *Operation)              { op.OnFinish(l.l) }
