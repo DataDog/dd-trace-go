@@ -44,9 +44,9 @@ func NewServeMux(opts ...Option) *ServeMux {
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	op := dyngo.StartOperation(
 		httpinstr.HandlerOperationArgs{
-			Headers:   httpinstr.Header(r.Header),
-			UserAgent: httpinstr.UserAgent(r.UserAgent()),
-			URL:       r.URL,
+			Headers:     httpinstr.Header(r.Header),
+			UserAgent:   httpinstr.UserAgent(r.UserAgent()),
+			QueryValues: httpinstr.QueryValues(r.URL.Query()),
 		},
 	)
 	defer op.Finish(httpinstr.HandlerOperationRes{})
@@ -77,9 +77,9 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		op := dyngo.StartOperation(func() httpinstr.HandlerOperationArgs {
 			return httpinstr.HandlerOperationArgs{
-				Headers:   httpinstr.Header(req.Header),
-				UserAgent: httpinstr.UserAgent(req.UserAgent()),
-				URL:       req.URL,
+				Headers:     httpinstr.Header(req.Header),
+				UserAgent:   httpinstr.UserAgent(req.UserAgent()),
+				QueryValues: httpinstr.QueryValues(req.URL.Query()),
 			}
 		})
 		defer op.Finish(httpinstr.HandlerOperationRes{})
