@@ -1,12 +1,13 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -59,7 +60,7 @@ func newAgentTraceWriter(c *config, s *prioritySampler) *agentTraceWriter {
 func (h *agentTraceWriter) add(trace []*span) {
 	if err := h.payload.push(trace); err != nil {
 		h.config.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
-		log.Error("error encoding msgpack: %v", err)
+		log.Error("Error encoding msgpack: %v", err)
 	}
 	if h.payload.size() > payloadSizeLimit {
 		h.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
@@ -103,6 +104,9 @@ func (h *agentTraceWriter) flush() {
 	h.payload = newPayload()
 }
 
+// logWriter specifies the output target of the logTraceWriter; replaced in tests.
+var logWriter io.Writer = os.Stdout
+
 // logTraceWriter encodes traces into a format understood by the Datadog Forwarder
 // (https://github.com/DataDog/datadog-serverless-functions/tree/master/aws/logs_monitoring)
 // and writes them to os.Stdout. This is used to send traces from an AWS Lambda environment.
@@ -116,7 +120,7 @@ type logTraceWriter struct {
 func newLogTraceWriter(c *config) *logTraceWriter {
 	w := &logTraceWriter{
 		config: c,
-		w:      os.Stdout,
+		w:      logWriter,
 	}
 	w.resetBuffer()
 	return w
@@ -173,25 +177,23 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.SpanID), 16))
 	h.buf.WriteString(`","parent_id":"`)
 	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.ParentID), 16))
-	h.buf.WriteString(`","name":"`)
-	h.buf.WriteString(s.Name)
-	h.buf.WriteString(`","resource":"`)
-	h.buf.WriteString(s.Resource)
-	h.buf.WriteString(`","error":`)
+	h.buf.WriteString(`","name":`)
+	h.marshalString(s.Name)
+	h.buf.WriteString(`,"resource":`)
+	h.marshalString(s.Resource)
+	h.buf.WriteString(`,"error":`)
 	h.buf.Write(strconv.AppendInt(scratch[:0], int64(s.Error), 10))
 	h.buf.WriteString(`,"meta":{`)
 	first := true
 	for k, v := range s.Meta {
 		if first {
-			h.buf.WriteByte('"')
 			first = false
 		} else {
-			h.buf.WriteString(`,"`)
+			h.buf.WriteString(`,`)
 		}
-		h.buf.WriteString(k)
-		h.buf.WriteString(`":"`)
-		h.buf.WriteString(v)
-		h.buf.WriteString(`"`)
+		h.marshalString(k)
+		h.buf.WriteString(":")
+		h.marshalString(v)
 	}
 	h.buf.WriteString(`},"metrics":{`)
 	first = true
@@ -201,22 +203,32 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 			continue
 		}
 		if first {
-			h.buf.WriteByte('"')
 			first = false
 		} else {
-			h.buf.WriteString(`,"`)
+			h.buf.WriteString(`,`)
 		}
-		h.buf.WriteString(k)
-		h.buf.WriteString(`":`)
+		h.marshalString(k)
+		h.buf.WriteString(`:`)
 		h.buf.Write(encodeFloat(scratch[:0], v))
 	}
 	h.buf.WriteString(`},"start":`)
 	h.buf.Write(strconv.AppendInt(scratch[:0], s.Start, 10))
 	h.buf.WriteString(`,"duration":`)
 	h.buf.Write(strconv.AppendInt(scratch[:0], s.Duration, 10))
-	h.buf.WriteString(`,"service":"`)
-	h.buf.WriteString(s.Service)
-	h.buf.WriteString(`"}`)
+	h.buf.WriteString(`,"service":`)
+	h.marshalString(s.Service)
+	h.buf.WriteString(`}`)
+}
+
+// marshalString marshals the string str as JSON into the writer's buffer.
+// Should be used whenever writing non-constant string data to ensure correct sanitization.
+func (h *logTraceWriter) marshalString(str string) {
+	m, err := json.Marshal(str)
+	if err != nil {
+		log.Error("Error marshaling value %q: %v", str, err)
+	} else {
+		h.buf.Write(m)
+	}
 }
 
 type encodingError struct {

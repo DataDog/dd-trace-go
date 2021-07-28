@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package profiler
 
@@ -14,10 +14,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -27,26 +29,33 @@ import (
 
 const (
 	// DefaultMutexFraction specifies the mutex profile fraction to be used with the mutex profiler.
-	// For more information or for changing this value, check runtime.SetMutexProfileFraction.
+	// For more information or for changing this value, check MutexProfileFraction
 	DefaultMutexFraction = 10
 
-	// DefaultBlockRate specifies the default block profiling rate used by the block profiler.
-	// For more information or for changing this value, check runtime.SetBlockProfileRate.
-	DefaultBlockRate = 100
+	// DefaultBlockRate specifies the default block profiling rate used by the
+	// block profiler. For more information or for changing this value, check
+	// BlockProfileRate. The default rate is chosen to prevent high overhead
+	// based on the research from:
+	// https://github.com/felixge/go-profiler-notes/blob/main/block.md#benchmarks
+	DefaultBlockRate = 10000
 
 	// DefaultPeriod specifies the default period at which profiles will be collected.
 	DefaultPeriod = time.Minute
 
 	// DefaultDuration specifies the default length of the CPU profile snapshot.
 	DefaultDuration = time.Second * 15
+
+	// DefaultUploadTimeout specifies the default timeout for uploading profiles.
+	// It can be overwritten using the DD_PROFILING_UPLOAD_TIMEOUT env variable
+	// or the WithUploadTimeout option.
+	DefaultUploadTimeout = 10 * time.Second
 )
 
 const (
-	defaultAPIURL      = "https://intake.profile.datadoghq.com/v1/input"
-	defaultAgentHost   = "localhost"
-	defaultAgentPort   = "8126"
-	defaultEnv         = "none"
-	defaultHTTPTimeout = 10 * time.Second // defines the current timeout before giving up with the send process
+	defaultAPIURL    = "https://intake.profile.datadoghq.com/v1/input"
+	defaultAgentHost = "localhost"
+	defaultAgentPort = "8126"
+	defaultEnv       = "none"
 )
 
 var defaultClient = &http.Client{
@@ -65,28 +74,31 @@ var defaultClient = &http.Client{
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	},
-	Timeout: defaultHTTPTimeout,
 }
 
-var defaultProfileTypes = []ProfileType{CPUProfile, HeapProfile}
+var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
 
 type config struct {
-	apiKey string
+	apiKey    string
+	agentless bool
 	// targetURL is the upload destination URL. It will be set by the profiler on start to either apiURL or agentURL
 	// based on the other options.
-	targetURL     string
-	apiURL        string // apiURL is the Datadog intake API URL
-	agentURL      string // agentURL is the Datadog agent profiling URL
-	service, env  string
-	hostname      string
-	statsd        StatsdClient
-	httpClient    *http.Client
-	tags          []string
-	types         map[ProfileType]struct{}
-	period        time.Duration
-	cpuDuration   time.Duration
-	mutexFraction int
-	blockRate     int
+	targetURL         string
+	apiURL            string // apiURL is the Datadog intake API URL
+	agentURL          string // agentURL is the Datadog agent profiling URL
+	service, env      string
+	hostname          string
+	statsd            StatsdClient
+	httpClient        *http.Client
+	tags              []string
+	types             map[ProfileType]struct{}
+	period            time.Duration
+	cpuDuration       time.Duration
+	uploadTimeout     time.Duration
+	maxGoroutinesWait int
+	mutexFraction     int
+	blockRate         int
+	outputDir         string
 }
 
 func urlForSite(site string) (string, error) {
@@ -115,18 +127,20 @@ func (c *config) addProfileType(t ProfileType) {
 	c.types[t] = struct{}{}
 }
 
-func defaultConfig() *config {
+func defaultConfig() (*config, error) {
 	c := config{
-		env:           defaultEnv,
-		apiURL:        defaultAPIURL,
-		service:       filepath.Base(os.Args[0]),
-		statsd:        &statsd.NoOpClient{},
-		httpClient:    defaultClient,
-		period:        DefaultPeriod,
-		cpuDuration:   DefaultDuration,
-		blockRate:     DefaultBlockRate,
-		mutexFraction: DefaultMutexFraction,
-		tags:          []string{fmt.Sprintf("pid:%d", os.Getpid())},
+		env:               defaultEnv,
+		apiURL:            defaultAPIURL,
+		service:           filepath.Base(os.Args[0]),
+		statsd:            &statsd.NoOpClient{},
+		httpClient:        defaultClient,
+		period:            DefaultPeriod,
+		cpuDuration:       DefaultDuration,
+		blockRate:         DefaultBlockRate,
+		mutexFraction:     DefaultMutexFraction,
+		uploadTimeout:     DefaultUploadTimeout,
+		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
+		tags:              []string{fmt.Sprintf("pid:%d", os.Getpid())},
 	}
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
@@ -140,8 +154,18 @@ func defaultConfig() *config {
 		agentPort = v
 	}
 	WithAgentAddr(net.JoinHostPort(agentHost, agentPort))(&c)
+	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err)
+		}
+		WithUploadTimeout(d)(&c)
+	}
 	if v := os.Getenv("DD_API_KEY"); v != "" {
 		WithAPIKey(v)(&c)
+	}
+	if internal.BoolEnv("DD_PROFILING_AGENTLESS", false) {
+		WithAgentlessUpload()(&c)
 	}
 	if v := os.Getenv("DD_SITE"); v != "" {
 		WithSite(v)(&c)
@@ -156,7 +180,12 @@ func defaultConfig() *config {
 		WithVersion(v)(&c)
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		for _, tag := range strings.Split(v, ",") {
+		sep := " "
+		if strings.Index(v, ",") > -1 {
+			// falling back to comma as separator
+			sep = ","
+		}
+		for _, tag := range strings.Split(v, sep) {
 			tag = strings.TrimSpace(tag)
 			if tag == "" {
 				continue
@@ -176,7 +205,18 @@ func defaultConfig() *config {
 	if v := os.Getenv("DD_PROFILING_URL"); v != "" {
 		WithURL(v)(&c)
 	}
-	return &c
+	// not for public use
+	if v := os.Getenv("DD_PROFILING_OUTPUT_DIR"); v != "" {
+		withOutputDir(v)(&c)
+	}
+	if v := os.Getenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
+		}
+		c.maxGoroutinesWait = n
+	}
+	return &c, nil
 }
 
 // An Option is used to configure the profiler's behaviour.
@@ -189,10 +229,26 @@ func WithAgentAddr(hostport string) Option {
 	}
 }
 
-// WithAPIKey specifies the API key to use when connecting to the Datadog API directly, skipping the agent.
+// WithAPIKey sets the Datadog API Key and takes precedence over the DD_API_KEY
+// env variable. Historically this option was used to enable agentless
+// uploading, but as of dd-trace-go v1.30.0 the behavior has changed to always
+// default to agent based uploading which doesn't require an API key. So if you
+// currently don't have an agent running on the default localhost:8126 hostport
+// you need to set it up, or use WithAgentAddr to specify the hostport location
+// of the agent. See WithAgentlessUpload for more information.
 func WithAPIKey(key string) Option {
 	return func(cfg *config) {
 		cfg.apiKey = key
+	}
+}
+
+// WithAgentlessUpload is currently for internal usage only and not officially
+// supported. You should not enable it unless somebody at Datadog instructed
+// you to do so. It allows to skip the agent and talk to the Datadog API
+// directly using the provided API key.
+func WithAgentlessUpload() Option {
+	return func(cfg *config) {
+		cfg.agentless = true
 	}
 }
 
@@ -217,6 +273,32 @@ func CPUDuration(d time.Duration) Option {
 	}
 }
 
+// MutexProfileFraction turns on mutex profiles with rate indicating the fraction
+// of mutex contention events reported in the mutex profile.
+// On average, 1/rate events are reported.
+// Setting an aggressive rate can hurt performance.
+// For more information on this value, check runtime.SetMutexProfileFraction.
+func MutexProfileFraction(rate int) Option {
+	return func(cfg *config) {
+		cfg.addProfileType(MutexProfile)
+		cfg.mutexFraction = rate
+	}
+}
+
+// BlockProfileRate turns on block profiles with the given rate.
+// The profiler samples an average of one blocking event per rate nanoseconds spent blocked.
+// For example, set rate to 1000000000 (aka int(time.Second.Nanoseconds())) to
+// record one sample per second a goroutine is blocked.
+// A rate of 1 catches every event.
+// Setting an aggressive rate can hurt performance.
+// For more information on this value, check runtime.SetBlockProfileRate.
+func BlockProfileRate(rate int) Option {
+	return func(cfg *config) {
+		cfg.addProfileType(BlockProfile)
+		cfg.blockRate = rate
+	}
+}
+
 // WithProfileTypes specifies the profile types to be collected by the profiler.
 func WithProfileTypes(types ...ProfileType) Option {
 	return func(cfg *config) {
@@ -224,6 +306,7 @@ func WithProfileTypes(types ...ProfileType) Option {
 		for k := range cfg.types {
 			delete(cfg.types, k)
 		}
+		cfg.addProfileType(MetricsProfile) // always report metrics
 		for _, t := range types {
 			cfg.addProfileType(t)
 		}
@@ -265,6 +348,16 @@ func WithStatsd(client StatsdClient) Option {
 	}
 }
 
+// WithUploadTimeout specifies the timeout to use for uploading profiles. The
+// default timeout is specified by DefaultUploadTimeout or the
+// DD_PROFILING_UPLOAD_TIMEOUT env variable. Using a negative value or 0 will
+// cause an error when starting the profiler.
+func WithUploadTimeout(d time.Duration) Option {
+	return func(cfg *config) {
+		cfg.uploadTimeout = d
+	}
+}
+
 // WithSite specifies the datadog site (datadoghq.com, datadoghq.eu, etc.)
 // which profiles will be sent to.
 func WithSite(site string) Option {
@@ -295,6 +388,14 @@ func WithUDS(socketPath string) Option {
 				return net.Dial("unix", socketPath)
 			},
 		},
-		Timeout: defaultHTTPTimeout,
 	})
+}
+
+// withOutputDir writes a copy of all uploaded profiles to the given
+// directory. This is intended for local development or debugging uploading
+// issues. The directory will keep growing, no cleanup is performed.
+func withOutputDir(dir string) Option {
+	return func(cfg *config) {
+		cfg.outputDir = dir
+	}
 }

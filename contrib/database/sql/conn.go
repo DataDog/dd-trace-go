@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package sql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 
@@ -142,6 +142,16 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 func (tc *tracedConn) CheckNamedValue(value *driver.NamedValue) error {
 	if checker, ok := tc.Conn.(driver.NamedValueChecker); ok {
 		return checker.CheckNamedValue(value)
+	}
+	return driver.ErrSkip
+}
+
+var _ driver.SessionResetter = (*tracedConn)(nil)
+
+// ResetSession implements driver.SessionResetter
+func (tc *tracedConn) ResetSession(ctx context.Context) error {
+	if resetter, ok := tc.Conn.(driver.SessionResetter); ok {
+		return resetter.ResetSession(ctx)
 	}
 	return driver.ErrSkip
 }

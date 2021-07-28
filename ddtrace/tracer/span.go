@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 //go:generate msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 
@@ -12,16 +12,17 @@ import (
 	"os"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/tinylib/msgp/msgp"
 	"golang.org/x/xerrors"
@@ -103,7 +104,9 @@ func (s *span) SetTag(key string, value interface{}) {
 	}
 	switch key {
 	case ext.Error:
-		s.setTagError(value, &errorConfig{})
+		s.setTagError(value, errorConfig{
+			noDebugStack: s.noDebugStack,
+		})
 		return
 	}
 	if v, ok := value.(bool); ok {
@@ -118,36 +121,59 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMetric(key, v)
 		return
 	}
-	// not numeric, not a string, not a bool, and not an error
+	if v, ok := value.(fmt.Stringer); ok {
+		defer func() {
+			if e := recover(); e != nil {
+				if v := reflect.ValueOf(value); v.Kind() == reflect.Ptr && v.IsNil() {
+					// If .String() panics due to a nil receiver, we want to catch this
+					// and replace the string value with "<nil>", just as Sprintf does.
+					// Other panics should not be handled.
+					s.setMeta(key, "<nil>")
+					return
+				}
+				panic(e)
+			}
+		}()
+		s.setMeta(key, v.String())
+		return
+	}
+	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
 	s.setMeta(key, fmt.Sprint(value))
 }
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
 // This method is not safe for concurrent use.
-func (s *span) setTagError(value interface{}, cfg *errorConfig) {
+func (s *span) setTagError(value interface{}, cfg errorConfig) {
+	setError := func(yes bool) {
+		if yes {
+			if s.Error == 0 {
+				// new error
+				atomic.AddInt64(&s.context.errors, 1)
+			}
+			s.Error = 1
+		} else {
+			if s.Error > 0 {
+				// flip from active to inactive
+				atomic.AddInt64(&s.context.errors, -1)
+			}
+			s.Error = 0
+		}
+	}
 	if s.finished {
 		return
 	}
 	switch v := value.(type) {
 	case bool:
 		// bool value as per Opentracing spec.
-		if !v {
-			s.Error = 0
-		} else {
-			s.Error = 1
-		}
+		setError(v)
 	case error:
 		// if anyone sets an error value as the tag, be nice here
 		// and provide all the benefits.
-		s.Error = 1
+		setError(true)
 		s.setMeta(ext.ErrorMsg, v.Error())
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
 		if !cfg.noDebugStack {
-			if cfg.stackFrames == 0 {
-				s.setMeta(ext.ErrorStack, string(debug.Stack()))
-			} else {
-				s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
-			}
+			s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
 		}
 		switch v.(type) {
 		case xerrors.Formatter:
@@ -158,16 +184,23 @@ func (s *span) setTagError(value interface{}, cfg *errorConfig) {
 		}
 	case nil:
 		// no error
-		s.Error = 0
+		setError(false)
 	default:
 		// in all other cases, let's assume that setting this tag
 		// is the result of an error.
-		s.Error = 1
+		setError(true)
 	}
 }
 
-// takeStacktrace takes stacktrace
+// defaultStackLength specifies the default maximum size of a stack trace.
+const defaultStackLength = 32
+
+// takeStacktrace takes a stack trace of maximum n entries, skipping the first skip entries.
+// If n is 0, up to 20 entries are retrieved.
 func takeStacktrace(n, skip uint) string {
+	if n == 0 {
+		n = defaultStackLength
+	}
 	var builder strings.Builder
 	pcs := make([]uintptr, n)
 
@@ -200,6 +233,7 @@ func (s *span) setMeta(key, v string) {
 	if s.Meta == nil {
 		s.Meta = make(map[string]string, 1)
 	}
+	delete(s.Metrics, key)
 	switch key {
 	case ext.SpanName:
 		s.Name = v
@@ -246,6 +280,7 @@ func (s *span) setMetric(key string, v float64) {
 	if s.Metrics == nil {
 		s.Metrics = make(map[string]float64, 1)
 	}
+	delete(s.Meta, key)
 	switch key {
 	case ext.SamplingPriority:
 		// setting sampling priority per spec
@@ -272,7 +307,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		}
 		if cfg.Error != nil {
 			s.Lock()
-			s.setTagError(cfg.Error, &errorConfig{
+			s.setTagError(cfg.Error, errorConfig{
 				noDebugStack: cfg.NoDebugStack,
 				stackFrames:  cfg.StackFrames,
 				stackSkip:    cfg.SkipStackFrames,
@@ -309,11 +344,84 @@ func (s *span) finish(finishTime int64) {
 	}
 	s.finished = true
 
-	if s.context.drop {
-		// not sampled by local sampler
-		return
+	keep := true
+	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+		// we have an active tracer
+		feats := t.features.Load()
+		if feats.Stats && shouldComputeStats(s) {
+			// the agent supports computed stats
+			select {
+			case t.stats.In <- newAggregableSpan(s, t.config):
+				// ok
+			default:
+				log.Error("Stats channel full, disregarding span.")
+			}
+		}
+		if feats.DropP0s {
+			// the agent supports dropping p0's in the client
+			keep = shouldKeep(s)
+		}
+	}
+	if keep {
+		// a single kept span keeps the whole trace.
+		s.context.trace.keep()
 	}
 	s.context.finish()
+}
+
+// newAggregableSpan creates a new summary for the span s, within an application
+// version version.
+func newAggregableSpan(s *span, cfg *config) *aggregableSpan {
+	var statusCode uint32
+	if sc, ok := s.Meta["http.status_code"]; ok && sc != "" {
+		if c, err := strconv.Atoi(sc); err == nil {
+			statusCode = uint32(c)
+		}
+	}
+	key := aggregation{
+		Name:       s.Name,
+		Resource:   s.Resource,
+		Service:    s.Service,
+		Type:       s.Type,
+		Synthetics: strings.HasPrefix(s.Meta[keyOrigin], "synthetics"),
+		StatusCode: statusCode,
+	}
+	return &aggregableSpan{
+		key:      key,
+		Start:    s.Start,
+		Duration: s.Duration,
+		TopLevel: s.Metrics[keyTopLevel] == 1,
+		Error:    s.Error,
+	}
+}
+
+// shouldKeep reports whether the trace should be kept.
+// a single span being kept implies the whole trace being kept.
+func shouldKeep(s *span) bool {
+	if p, ok := s.context.samplingPriority(); ok && p > 0 {
+		// positive sampling priorities stay
+		return true
+	}
+	if atomic.LoadInt64(&s.context.errors) > 0 {
+		// traces with any span containing an error get kept
+		return true
+	}
+	if v, ok := s.Metrics[ext.EventSampleRate]; ok {
+		return sampledByRate(s.TraceID, v)
+	}
+	return false
+}
+
+// shouldComputeStats mentions whether this span needs to have stats computed for.
+// Warning: callers must guard!
+func shouldComputeStats(s *span) bool {
+	if v, ok := s.Metrics[keyMeasured]; ok && v == 1 {
+		return true
+	}
+	if v, ok := s.Metrics[keyTopLevel]; ok && v == 1 {
+		return true
+	}
+	return false
 }
 
 // String returns a human readable representation of the span. Not for
@@ -375,7 +483,7 @@ func (s *span) Format(f fmt.State, c rune) {
 
 const (
 	keySamplingPriority        = "_sampling_priority_v1"
-	keySamplingPriorityRate    = "_sampling_priority_rate_v1"
+	keySamplingPriorityRate    = "_dd.agent_psr"
 	keyOrigin                  = "_dd.origin"
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"

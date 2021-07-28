@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package http
 
@@ -21,6 +21,7 @@ type config struct {
 	analyticsRate float64
 	spanOpts      []ddtrace.StartSpanOption
 	finishOpts    []ddtrace.FinishOption
+	ignoreRequest func(*http.Request) bool
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -42,6 +43,15 @@ func defaults(cfg *config) {
 	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
+}
+
+// WithIgnoreRequest holds the function to use for determining if the
+// incoming HTTP request tracing should be skipped.
+func WithIgnoreRequest(f func(*http.Request) bool) MuxOption {
+	return func(cfg *config) {
+		cfg.ignoreRequest = f
 	}
 }
 

@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package http
 
@@ -65,6 +65,11 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		}
 	}
 	return res, err
+}
+
+// Unwrap returns the original http.RoundTripper.
+func (rt *roundTripper) Unwrap() http.RoundTripper {
+	return rt.base
 }
 
 // WrapRoundTripper returns a new RoundTripper which traces all requests sent

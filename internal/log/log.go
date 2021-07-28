@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package log provides logging utilities for the tracer.
 package log
@@ -36,12 +36,17 @@ var (
 	logger ddtrace.Logger = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
 )
 
-// UseLogger sets l as the active logger.
-func UseLogger(l ddtrace.Logger) {
+// UseLogger sets l as the active logger and returns a function to restore the
+// previous logger. The return value is mostly useful when testing.
+func UseLogger(l ddtrace.Logger) (undo func()) {
 	Flush()
 	mu.Lock()
 	defer mu.Unlock()
+	old := logger
 	logger = l
+	return func() {
+		logger = old
+	}
 }
 
 // SetLevel sets the given lvl for logging.
@@ -172,3 +177,31 @@ func printMsg(lvl, format string, a ...interface{}) {
 type defaultLogger struct{ l *log.Logger }
 
 func (p *defaultLogger) Log(msg string) { p.l.Print(msg) }
+
+// DiscardLogger discards every call to Log().
+type DiscardLogger struct{}
+
+// Log implements ddtrace.Logger.
+func (d DiscardLogger) Log(msg string) {}
+
+// RecordLogger records every call to Log() and makes it available via Logs().
+type RecordLogger struct {
+	m    sync.Mutex
+	logs []string
+}
+
+// Log implements ddtrace.Logger.
+func (r *RecordLogger) Log(msg string) {
+	r.m.Lock()
+	defer r.m.Unlock()
+	r.logs = append(r.logs, msg)
+}
+
+// Logs returns the ordered list of logs recorded by the logger.
+func (r *RecordLogger) Logs() []string {
+	r.m.Lock()
+	defer r.m.Unlock()
+	copied := make([]string, len(r.logs))
+	copy(copied, r.logs)
+	return copied
+}

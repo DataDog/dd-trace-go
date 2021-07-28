@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package redigo provides functions to trace the gomodule/redigo package (https://github.com/gomodule/redigo).
 package redigo
@@ -16,10 +16,12 @@ import (
 	"strconv"
 	"time"
 
-	redis "github.com/gomodule/redigo/redis"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	redis "github.com/gomodule/redigo/redis"
 )
 
 // Conn is an implementation of the redis.Conn interface that supports tracing
@@ -72,6 +74,7 @@ func wrapConn(c redis.Conn, p *params) redis.Conn {
 // The set of supported options must be either of type redis.DialOption or this package's DialOption.
 func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
+	log.Debug("contrib/gomodule/redigo: Dialing %s %s, %#v", network, address, cfg)
 	c, err := redis.Dial(network, address, dialOpts...)
 	if err != nil {
 		return nil, err
@@ -90,6 +93,7 @@ func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 // The returned redis.Conn is traced.
 func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
+	log.Debug("contrib/gomodule/redigo: Dialing %s, %#v", rawurl, cfg)
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		return Conn{}, err

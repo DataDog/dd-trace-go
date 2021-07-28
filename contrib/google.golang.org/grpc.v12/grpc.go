@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 //go:generate protoc -I . fixtures_test.proto --go_out=plugins=grpc:.
 
@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -37,6 +38,7 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 			cfg.serviceName = svc
 		}
 	}
+	log.Debug("contrib/google.golang.org/grpc.v12: Configuring UnaryServerInterceptor: %#v", cfg)
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		span, ctx := startSpanFromContext(ctx, info.FullMethod, cfg.serviceName, cfg.analyticsRate)
 		resp, err := handler(ctx, req)
@@ -63,7 +65,7 @@ func startSpanFromContext(ctx context.Context, method, service string, rate floa
 	return tracer.StartSpanFromContext(ctx, "grpc.server", opts...)
 }
 
-// UnaryClientInterceptor will add tracing to a gprc client.
+// UnaryClientInterceptor will add tracing to a grpc client.
 func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientInterceptor {
 	cfg := new(interceptorConfig)
 	defaults(cfg)
@@ -73,6 +75,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 	if cfg.serviceName == "" {
 		cfg.serviceName = "grpc.client"
 	}
+	log.Debug("contrib/google.golang.org/grpc.v12: Configuring UnaryClientInterceptor: %#v", cfg)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		var (
 			span ddtrace.Span

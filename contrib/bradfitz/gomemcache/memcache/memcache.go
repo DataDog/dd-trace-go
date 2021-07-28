@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package memcache provides functions to trace the bradfitz/gomemcache package (https://github.com/bradfitz/gomemcache).
 //
@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // WrapClient wraps a memcache.Client so that all requests are traced using the
@@ -29,6 +30,7 @@ func WrapClient(client *memcache.Client, opts ...ClientOption) *Client {
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/bradfitz/gomemcache/memcache: Wrapping Client: %#v", cfg)
 	return &Client{
 		Client:  client,
 		cfg:     cfg,

@@ -1,19 +1,21 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package kafka provides functions to trace the confluentinc/confluent-kafka-go package (https://github.com/confluentinc/confluent-kafka-go).
 package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka"
 
 import (
 	"math"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
-	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 // NewConsumer calls kafka.NewConsumer and wraps the resulting Consumer.
@@ -48,6 +50,7 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 		Consumer: c,
 		cfg:      newConfig(opts...),
 	}
+	log.Debug("contrib/confluentinc/confluent-kafka-go/kafka: Wrapping Consumer: %#v", wrapped.cfg)
 	wrapped.events = wrapped.traceEventsChannel(c.Events())
 	return wrapped
 }
@@ -129,7 +132,7 @@ func (c *Consumer) Events() chan kafka.Event {
 	return c.events
 }
 
-// Poll polls the consumer for messages or events. Message events will be
+// Poll polls the consumer for messages or events. Message will be
 // traced.
 func (c *Consumer) Poll(timeoutMS int) (event kafka.Event) {
 	if c.prev != nil {
@@ -141,6 +144,20 @@ func (c *Consumer) Poll(timeoutMS int) (event kafka.Event) {
 		c.prev = c.startSpan(msg)
 	}
 	return evt
+}
+
+// ReadMessage polls the consumer for a message. Message will be traced.
+func (c *Consumer) ReadMessage(timeout time.Duration) (*kafka.Message, error) {
+	if c.prev != nil {
+		c.prev.Finish()
+		c.prev = nil
+	}
+	msg, err := c.Consumer.ReadMessage(timeout)
+	if err != nil {
+		return nil, err
+	}
+	c.prev = c.startSpan(msg)
+	return msg, nil
 }
 
 // A Producer wraps a kafka.Producer.
@@ -156,6 +173,7 @@ func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
 		Producer: p,
 		cfg:      newConfig(opts...),
 	}
+	log.Debug("contrib/confluentinc/confluent-kafka-go/kafka: Wrapping Producer: %#v", wrapped.cfg)
 	wrapped.produceChannel = wrapped.traceProduceChannel(p.ProduceChannel())
 	return wrapped
 }
@@ -187,7 +205,12 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 	if !math.IsNaN(p.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.cfg.analyticsRate))
 	}
+	//if there's a span context in the headers, use that as the parent
 	carrier := NewMessageCarrier(msg)
+	if spanctx, err := tracer.Extract(carrier); err == nil {
+		opts = append(opts, tracer.ChildOf(spanctx))
+	}
+
 	span, _ := tracer.StartSpanFromContext(p.cfg.ctx, "kafka.produce", opts...)
 	// inject the span context so consumers can pick it up
 	tracer.Inject(span.Context(), carrier)

@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package mongo provides functions to trace the mongodb/mongo-go-driver package (https://github.com/mongodb/mongo-go-driver).
 // It support v0.2.0 of github.com/mongodb/mongo-go-driver
@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/event"
@@ -93,6 +94,7 @@ func NewMonitor(opts ...Option) *event.CommandMonitor {
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	log.Debug("contrib/go.mongodb.org/mongo-driver/mongo: Creating Monitor: %#v", cfg)
 	m := &monitor{
 		spans: make(map[spanKey]ddtrace.Span),
 		cfg:   cfg,

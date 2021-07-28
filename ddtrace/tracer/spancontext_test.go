@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
@@ -305,17 +305,22 @@ func TestSpanContextParent(t *testing.T) {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace:      newTrace(),
-			drop:       true,
 		},
-		"nil-trace": &spanContext{
-			drop: true,
-		},
+		"nil-trace": &spanContext{},
 		"priority": &spanContext{
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace: &trace{
 				spans:    []*span{newBasicSpan("abc")},
 				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
+			},
+		},
+		"sampling_decision": &spanContext{
+			baggage:    map[string]string{"A": "A", "B": "B"},
+			hasBaggage: 1,
+			trace: &trace{
+				spans:            []*span{newBasicSpan("abc")},
+				samplingDecision: decisionKeep,
 			},
 		},
 		"origin": &spanContext{
@@ -335,8 +340,8 @@ func TestSpanContextParent(t *testing.T) {
 			assert.Contains(ctx.trace.spans, s)
 			if parentCtx.trace != nil {
 				assert.Equal(ctx.trace.priority, parentCtx.trace.priority)
+				assert.Equal(ctx.trace.samplingDecision, parentCtx.trace.samplingDecision)
 			}
-			assert.Equal(parentCtx.drop, ctx.drop)
 			assert.Equal(parentCtx.baggage, ctx.baggage)
 			assert.Equal(parentCtx.origin, ctx.origin)
 		})

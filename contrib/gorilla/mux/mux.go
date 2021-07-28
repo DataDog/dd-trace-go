@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package mux provides tracing functions for tracing the gorilla/mux package (https://github.com/gorilla/mux).
 package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
@@ -9,11 +9,13 @@ package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 import (
 	"math"
 	"net/http"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/gorilla/mux"
 )
@@ -83,6 +85,7 @@ func NewRouter(opts ...RouterOption) *Router {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
+	log.Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
 	return &Router{
 		Router: mux.NewRouter(),
 		config: cfg,
@@ -94,6 +97,10 @@ func NewRouter(opts ...RouterOption) *Router {
 // We only need to rewrite this function to be able to trace
 // all the incoming requests to the underlying multiplexer
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if r.config.ignoreRequest(req) {
+		r.Router.ServeHTTP(w, req)
+		return
+	}
 	var (
 		match    mux.RouteMatch
 		spanopts []ddtrace.StartSpanOption
@@ -105,8 +112,19 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
+	if r.config.headerTags {
+		spanopts = append(spanopts, headerTagsFromRequest(req))
+	}
 	resource := r.config.resourceNamer(r, req)
-	httputil.TraceAndServe(r.Router, w, req, r.config.serviceName, resource, r.config.finishOpts, spanopts...)
+	httputil.TraceAndServe(r.Router, &httputil.TraceConfig{
+		ResponseWriter: w,
+		Request:        req,
+		Service:        r.config.serviceName,
+		Resource:       resource,
+		FinishOpts:     r.config.finishOpts,
+		SpanOpts:       spanopts,
+		QueryParams:    r.config.queryParams,
+	})
 }
 
 // defaultResourceNamer attempts to quantize the resource for an HTTP request by
@@ -120,4 +138,14 @@ func defaultResourceNamer(router *Router, req *http.Request) string {
 		}
 	}
 	return req.Method + " unknown"
+}
+
+func headerTagsFromRequest(req *http.Request) ddtrace.StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		for k := range req.Header {
+			if !strings.HasPrefix(strings.ToLower(k), "x-datadog-") {
+				cfg.Tags["http.request.headers."+k] = strings.Join(req.Header.Values(k), ",")
+			}
+		}
+	}
 }
