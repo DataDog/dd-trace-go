@@ -11,6 +11,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/jinzhu/gorm"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type config struct {
@@ -25,7 +26,11 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = "gorm.db"
+	if svc := globalconfig.ServiceName(); svc != "" {
+		cfg.serviceName = svc + ".db"
+	} else {
+		cfg.serviceName = "gorm.db"
+	}
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GORM_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0

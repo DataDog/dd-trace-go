@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type config struct {
@@ -32,6 +33,9 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = math.NaN()
+	}
+	if svc := globalconfig.ServiceName(); svc != "" {
+		cfg.serviceName = svc + ".db"
 	}
 }
 
