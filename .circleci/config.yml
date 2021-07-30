@@ -63,7 +63,7 @@ jobs:
     - run:
         name: goimports
         command: |
-          if [ "$(goimports -e -l -local gopkg.in/DataDog/dd-trace-go.v1 ddtrace/tracer/ | wc -l)" -gt 0 ]; then
+          if [ "$(goimports -e -l -local gopkg.in/DataDog/dd-trace-go.v1 . | wc -l)" -gt 0 ]; then
             exit 1
           fi
 
