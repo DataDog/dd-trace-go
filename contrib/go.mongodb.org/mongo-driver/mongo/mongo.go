@@ -52,7 +52,7 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, "mongodb.query", opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, ext.DBStatement, opts...)
 	key := spanKey{
 		ConnectionID: evt.ConnectionID,
 		RequestID:    evt.RequestID,
