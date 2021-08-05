@@ -164,6 +164,7 @@ func (t ProfileType) lookup() profileType {
 		return c
 	}
 	return profileType{
+		Type:     t,
 		Name:     "unknown",
 		Filename: "unknown",
 		Collect: func(_ profileType, _ *profiler) ([]byte, error) {
