@@ -369,9 +369,16 @@ func (s *span) finish(finishTime int64) {
 	s.context.finish()
 }
 
+func normalizeSpan(s *span) {
+	if s.Duration < 0 {
+		s.Duration = 0
+	}
+}
+
 // newAggregableSpan creates a new summary for the span s, within an application
 // version version.
 func newAggregableSpan(s *span, cfg *config) *aggregableSpan {
+	normalizeSpan(s)
 	var statusCode uint32
 	if sc, ok := s.Meta["http.status_code"]; ok && sc != "" {
 		if c, err := strconv.Atoi(sc); err == nil {

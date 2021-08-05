@@ -619,6 +619,20 @@ func TestSpanLog(t *testing.T) {
 	})
 }
 
+func TestNormalizeSpan(t *testing.T) {
+	t.Run("negativeduration", func(t *testing.T) {
+		actual := span{
+			Service:  "testservice",
+			Duration: -1,
+		}
+		normalizeSpan(&actual)
+		expected := span{
+			Service: "testservice",
+		}
+		assert.Equal(t, expected, actual)
+	})
+}
+
 func BenchmarkSetTagMetric(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
