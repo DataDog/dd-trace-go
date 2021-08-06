@@ -3,9 +3,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package version
+// +build ignore
 
-// Tag specifies the current release tag. It needs to be manually
-// updated. A test checks that the value of Tag never points to a
-// git tag that is older than HEAD.
-const Tag = "v1.32.0"
+// This tool is used to valdiate that the go.sum file is up-to-date, see
+// .circleci.
+package main
+
+func main() {
+	// intentionally left blank
+}

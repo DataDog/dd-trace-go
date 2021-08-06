@@ -10,7 +10,6 @@ package redis
 import (
 	"bytes"
 	"context"
-
 	"math"
 	"net"
 	"strconv"
@@ -20,7 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/go-redis/redis/v7"
 )
 
 type datadogHook struct {
@@ -35,7 +34,7 @@ type params struct {
 
 // NewClient returns a new Client that is traced with the default tracer under
 // the service name "redis".
-func NewClient(opt *redis.Options, opts ...ClientOption) redis.UniversalClient {
+func NewClient(opt *redis.Options, opts ...ClientOption) *redis.Client {
 	client := redis.NewClient(opt)
 	WrapClient(client, opts...)
 	return client
@@ -100,16 +99,16 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 
 func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
 	raw := cmd.String()
-	length := strings.Count(raw, " ")
+	parts := strings.Split(raw, " ")
+	length := len(parts) - 1
 	p := ddh.params
-	opts := make([]ddtrace.StartSpanOption, 0, 5+len(ddh.additionalTags)+1) // 5 options below + for additionalTags + for analyticsRate
-	opts = append(opts,
+	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
-		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
+		tracer.ResourceName(parts[0]),
 		tracer.Tag("redis.raw_command", raw),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
-	)
+	}
 	opts = append(opts, ddh.additionalTags...)
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
@@ -132,18 +131,18 @@ func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error
 
 func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
 	raw := commandsToString(cmds)
-	length := strings.Count(raw, " ")
+	parts := strings.Split(raw, " ")
+	length := len(parts) - 1
 	p := ddh.params
-	opts := make([]ddtrace.StartSpanOption, 0, 7+len(ddh.additionalTags)+1) // 7 options below + for additionalTags + for analyticsRate
-	opts = append(opts,
+	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
-		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
+		tracer.ResourceName(parts[0]),
 		tracer.Tag("redis.raw_command", raw),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 		tracer.Tag(ext.ResourceName, raw),
 		tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
-	)
+	}
 	opts = append(opts, ddh.additionalTags...)
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))

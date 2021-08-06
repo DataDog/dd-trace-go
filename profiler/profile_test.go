@@ -7,8 +7,11 @@ package profiler
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -165,6 +168,54 @@ main.main()
 			"time.Sleep",
 			"main.indirectShortSleepLoop2",
 		})
+	})
+
+	t.Run("goroutineswaitLimit", func(t *testing.T) {
+		// spawGoroutines spawns n goroutines, waits for them to start executing,
+		// and then returns a func to stop them. For more details about `executing`
+		// see:
+		// https://github.com/DataDog/dd-trace-go/pull/942#discussion_r656924335
+		spawnGoroutines := func(n int) func() {
+			executing := make(chan struct{})
+			stopping := make(chan struct{})
+			for i := 0; i < n; i++ {
+				go func() {
+					executing <- struct{}{}
+					stopping <- struct{}{}
+				}()
+				<-executing
+			}
+			return func() {
+				for i := 0; i < n; i++ {
+					<-stopping
+				}
+			}
+		}
+
+		goroutines := 100
+		limit := 10
+
+		stop := spawnGoroutines(goroutines)
+		defer stop()
+		envVar := "DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"
+		oldVal := os.Getenv(envVar)
+		os.Setenv(envVar, strconv.Itoa(limit))
+		defer os.Setenv(envVar, oldVal)
+
+		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
+		lookupProfile = func(_ string, w io.Writer, _ int) error {
+			_, err := w.Write([]byte(""))
+			return err
+		}
+
+		p, err := unstartedProfiler()
+		require.NoError(t, err)
+		_, err = p.runProfile(expGoroutineWaitProfile)
+		var errRoutines, errLimit int
+		msg := "skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d"
+		fmt.Sscanf(err.Error(), msg, &errRoutines, &errLimit)
+		require.GreaterOrEqual(t, errRoutines, goroutines)
+		require.Equal(t, limit, errLimit)
 	})
 }
 

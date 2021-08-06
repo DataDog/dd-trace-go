@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -99,6 +100,58 @@ func TestSpanFinishTwice(t *testing.T) {
 	tracer.awaitPayload(t, 1)
 }
 
+func TestShouldDrop(t *testing.T) {
+	for _, tt := range []struct {
+		prio   int
+		errors int64
+		rate   float64
+		want   bool
+	}{
+		{1, 0, 0, true},
+		{2, 1, 0, true},
+		{0, 1, 0, true},
+		{0, 0, 1, true},
+		{0, 0, 0.5, true},
+		{0, 0, 0.00001, false},
+		{0, 0, 0, false},
+	} {
+		t.Run("", func(t *testing.T) {
+			s := newSpan("", "", "", 1, 1, 0)
+			s.SetTag(ext.SamplingPriority, tt.prio)
+			s.SetTag(ext.EventSampleRate, tt.rate)
+			atomic.StoreInt64(&s.context.errors, tt.errors)
+			assert.Equal(t, shouldKeep(s), tt.want)
+		})
+	}
+
+	t.Run("none", func(t *testing.T) {
+		s := newSpan("", "", "", 1, 1, 0)
+		assert.Equal(t, shouldKeep(s), false)
+	})
+}
+
+func TestShouldComputeStats(t *testing.T) {
+	for _, tt := range []struct {
+		metrics map[string]float64
+		want    bool
+	}{
+		{map[string]float64{keyMeasured: 2}, false},
+		{map[string]float64{keyMeasured: 1}, true},
+		{map[string]float64{keyMeasured: 0}, false},
+		{map[string]float64{keyTopLevel: 0}, false},
+		{map[string]float64{keyTopLevel: 1}, true},
+		{map[string]float64{keyTopLevel: 2}, false},
+		{map[string]float64{keyTopLevel: 2, keyMeasured: 1}, true},
+		{map[string]float64{keyTopLevel: 1, keyMeasured: 2}, true},
+		{map[string]float64{keyTopLevel: 2, keyMeasured: 2}, false},
+		{map[string]float64{}, false},
+	} {
+		t.Run("", func(t *testing.T) {
+			assert.Equal(t, shouldComputeStats(&span{Metrics: tt.metrics}), tt.want)
+		})
+	}
+}
+
 func TestSpanFinishWithTime(t *testing.T) {
 	assert := assert.New(t)
 
@@ -149,6 +202,27 @@ func TestSpanFinishWithErrorStackFrames(t *testing.T) {
 	assert.Contains(span.Meta[ext.ErrorStack], "tracer.TestSpanFinishWithErrorStackFrames")
 	assert.Contains(span.Meta[ext.ErrorStack], "tracer.(*span).Finish")
 	assert.Equal(strings.Count(span.Meta[ext.ErrorStack], "\n\t"), 2)
+}
+
+// nilStringer is used to test nil detection when setting tags.
+type nilStringer struct {
+	s string
+}
+
+// String incorrectly assumes than n will not be nil in order
+// to ensure SetTag identifies nils.
+func (n *nilStringer) String() string {
+	return n.s
+}
+
+type panicStringer struct {
+	s string
+}
+
+// String causes panic which SetTag should not handle.
+func (p *panicStringer) String() string {
+	panic("This should not be handled.")
+	return ""
 }
 
 func TestSpanSetTag(t *testing.T) {
@@ -202,6 +276,32 @@ func TestSpanSetTag(t *testing.T) {
 
 	span.SetTag("some.other.bool", false)
 	assert.Equal("false", span.Meta["some.other.bool"])
+
+	span.SetTag("time", (*time.Time)(nil))
+	assert.Equal("<nil>", span.Meta["time"])
+
+	span.SetTag("nilStringer", (*nilStringer)(nil))
+	assert.Equal("<nil>", span.Meta["nilStringer"])
+
+	assert.Panics(func() {
+		span.SetTag("panicStringer", &panicStringer{})
+	})
+}
+
+func TestSpanSetTagError(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("off", func(t *testing.T) {
+		span := newBasicSpan("web.request")
+		span.setTagError(errors.New("error value with no trace"), errorConfig{noDebugStack: true})
+		assert.Empty(span.Meta[ext.ErrorStack])
+	})
+
+	t.Run("on", func(t *testing.T) {
+		span := newBasicSpan("web.request")
+		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
+		assert.NotEmpty(span.Meta[ext.ErrorStack])
+	})
 }
 
 func TestSpanSetDatadogTags(t *testing.T) {

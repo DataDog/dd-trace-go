@@ -29,6 +29,14 @@ jobs:
     steps:
     - checkout
 
+    # -mod=readonly is enabled by default starting in go1.16 causing many go
+    # tools and editor integrations to report problems if the go.sum file is
+    # not up-to-date, so let's make sure it is.
+    - run:
+        name: go.sum up-to-date
+        command: |
+          go run -mod=readonly gosum.go
+
     - run:
         name: milestone
         command: |
@@ -62,16 +70,43 @@ jobs:
 
   test-core:
     resource_class: xlarge
+    environment: # environment variables for the build itself
+      TEST_RESULTS: /tmp/test-results # path to where test results will be saved
     <<: *plain-go114
 
     steps:
       - checkout
+      - run: mkdir -p $TEST_RESULTS
+      - restore_cache: # restores saved cache if no changes are detected since last run
+          keys:
+            - go-mod-v4-{{ checksum "go.sum" }}
       - run:
           name: Testing
-          command: go test -v -race `go list ./... | grep -v /contrib/`
+          command: |
+            PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+
+      - save_cache:
+          key: go-mod-v4-{{ checksum "go.sum" }}
+          paths:
+            - "/go/pkg/mod"
+
+      - store_artifacts: # upload test summary for display in Artifacts
+          path: /tmp/test-results
+          destination: raw-test-output
+
+      - store_test_results: # upload test results for display in Test Summary
+          path: /tmp/test-results
+
+      - run:
+          name: Upload coverage report to Codecov
+          command: bash <(curl -s https://codecov.io/bash)
+
 
   test-contrib:
     resource_class: xlarge
+    environment: # environment variables for the build itself
+      TEST_RESULTS: /tmp/test-results # path to where test results will be saved
     working_directory: /home/circleci/dd-trace-go.v1
     docker:
       - image: circleci/golang:1.14
@@ -117,6 +152,10 @@ jobs:
 
     steps:
       - checkout
+      - run: mkdir -p $TEST_RESULTS
+      - restore_cache: # restores saved cache if no changes are detected since last run
+          keys:
+            - go-mod-v4-{{ checksum "go.sum" }}
 
       - restore_cache:
           keys:
@@ -143,6 +182,8 @@ jobs:
             go get k8s.io/client-go@v0.17.0
             go get k8s.io/apimachinery@v0.17.0
             go get cloud.google.com/go/pubsub@v1.6.1
+            # Temporarily enforce this version. 1.9.0 is incompatible with go < 1.16
+            go get github.com/hashicorp/consul/api@v1.8.1
 
       - run:
           name: Wait for MySQL
@@ -181,13 +222,51 @@ jobs:
           command: dockerize -wait http://localhost:8500 -timeout 1m
 
       - run:
-          name: Testing
+          name: Testing integrations
           command: |
-                INTEGRATION=1 go test -v -race `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api`
+            PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+
+      - save_cache:
+          key: go-mod-v4-{{ checksum "go.sum" }}
+          paths:
+            - "/go/pkg/mod"
+
+      - store_artifacts: # upload test summary for display in Artifacts
+          path: /tmp/test-results
+          destination: raw-test-output
+
+      - store_test_results: # upload test results for display in Test Summary
+          path: /tmp/test-results
+
+      - run:
+          name: Testing outlier google.golang.org/api
+          command: |
                 go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
                 go test -v ./contrib/google.golang.org/api/...
-                go get google.golang.org/grpc@v1.2.0
-                go test -v ./contrib/google.golang.org/grpc.v12/...
+
+      - run:
+          name: Testing outlier gRPC v1.2
+          command: |
+                # This hacky approach is necessary because running the tests regularly
+                # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
+                go mod vendor
+
+                # Checkout grpc-go@v1.2.0
+                cd vendor/google.golang.org && rm -rf grpc
+                git clone git@github.com:grpc/grpc-go grpc && cd grpc
+                git fetch origin && git checkout v1.2.0 && cd ../..
+
+                # Checkout sketches-go@v1.0.0
+                cd vendor/github.com/DataDog && rm -rf sketches-go
+                git clone git@github.com:DataDog/sketches-go && cd sketches-go
+                git fetch origin && git checkout v1.0.0 && cd ../..
+
+                go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+
+      - run:
+          name: Upload coverage report to Codecov
+          command: bash <(curl -s https://codecov.io/bash)
 
 workflows:
   version: 2

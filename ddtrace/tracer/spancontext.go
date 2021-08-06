@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -23,9 +24,9 @@ var _ ddtrace.SpanContext = (*spanContext)(nil)
 type spanContext struct {
 	// the below group should propagate only locally
 
-	trace *trace // reference to the trace that this span belongs too
-	span  *span  // reference to the span that hosts this context
-	drop  bool   // when true, the span will not be sent to the agent
+	trace  *trace // reference to the trace that this span belongs too
+	span   *span  // reference to the span that hosts this context
+	errors int64  // number of spans with errors in this trace
 
 	// the below group should propagate cross-process
 
@@ -51,8 +52,8 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	}
 	if parent != nil {
 		context.trace = parent.trace
-		context.drop = parent.drop
 		context.origin = parent.origin
+		context.errors = parent.errors
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
 			return true
@@ -126,16 +127,30 @@ func (c *spanContext) baggageItem(key string) string {
 // finish marks this span as finished in the trace.
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
+// samplingDecision is the decision to send a trace to the agent or not.
+type samplingDecision int64
+
+const (
+	// decisionNone is the default state of a trace.
+	// If no decision is made about the trace, the trace won't be sent to the agent.
+	decisionNone samplingDecision = iota
+	// decisionDrop prevents the trace from being sent to the agent.
+	decisionDrop
+	// decisionKeep ensures the trace will be sent to the agent.
+	decisionKeep
+)
+
 // trace contains shared context information about a trace, such as sampling
 // priority, the root reference and a buffer of the spans which are part of the
 // trace, if these exist.
 type trace struct {
-	mu       sync.RWMutex // guards below fields
-	spans    []*span      // all the spans that are part of this trace
-	finished int          // the number of finished spans
-	full     bool         // signifies that the span buffer is full
-	priority *float64     // sampling priority
-	locked   bool         // specifies if the sampling priority can be altered
+	mu               sync.RWMutex     // guards below fields
+	spans            []*span          // all the spans that are part of this trace
+	finished         int              // the number of finished spans
+	full             bool             // signifies that the span buffer is full
+	priority         *float64         // sampling priority
+	locked           bool             // specifies if the sampling priority can be altered
+	samplingDecision samplingDecision // samplingDecision indicates whether to send the trace to the agent.
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
@@ -162,19 +177,31 @@ func newTrace() *trace {
 	return &trace{spans: make([]*span, 0, traceStartSize)}
 }
 
-func (t *trace) samplingPriority() (p int, ok bool) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+func (t *trace) samplingPriorityLocked() (p int, ok bool) {
 	if t.priority == nil {
 		return 0, false
 	}
 	return int(*t.priority), true
 }
 
+func (t *trace) samplingPriority() (p int, ok bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.samplingPriorityLocked()
+}
+
 func (t *trace) setSamplingPriority(p float64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.setSamplingPriorityLocked(p)
+}
+
+func (t *trace) keep() {
+	atomic.CompareAndSwapInt64((*int64)(&t.samplingDecision), int64(decisionNone), int64(decisionKeep))
+}
+
+func (t *trace) drop() {
+	atomic.CompareAndSwapInt64((*int64)(&t.samplingDecision), int64(decisionNone), int64(decisionDrop))
 }
 
 func (t *trace) setSamplingPriorityLocked(p float64) {
@@ -244,11 +271,23 @@ func (t *trace) finishedOne(s *span) {
 	if len(t.spans) != t.finished {
 		return
 	}
-	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
-		// we have a tracer that can receive completed traces.
-		tr.pushTrace(t.spans)
-		atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
+	defer func() {
+		t.spans = nil
+		t.finished = 0 // important, because a buffer can be used for several flushes
+	}()
+	tr, ok := internal.GetGlobalTracer().(*tracer)
+	if !ok {
+		return
 	}
-	t.spans = nil
-	t.finished = 0 // important, because a buffer can be used for several flushes
+	// we have a tracer that can receive completed traces.
+	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
+	sd := samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision)))
+	if sd != decisionKeep {
+		if p, ok := t.samplingPriorityLocked(); ok && p == ext.PriorityAutoReject {
+			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
+			atomic.AddUint64(&tr.droppedP0Traces, 1)
+		}
+		return
+	}
+	tr.pushTrace(t.spans)
 }
