@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+// DatadogMiddleware returns middleware that will trace incoming requests.
 type DatadogMiddleware struct {
 	cfg *config
 }
@@ -48,6 +49,7 @@ func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 	}
 }
 
+// Middleware create the negroni middleware that will trace incoming requests
 func Middleware(opts ...Option) *DatadogMiddleware {
 	cfg := new(config)
 	defaults(cfg)
