@@ -118,6 +118,33 @@ func TestCollection_UpdateId(t *testing.T) {
 	assert.Equal("mongodb.query", spans[3].OperationName())
 }
 
+func TestIssue874(t *testing.T) {
+	// regression test for DataDog/dd-trace-go#873
+	assert := assert.New(t)
+
+	entity := bson.D{
+		bson.DocElem{
+			Name: "entity",
+			Value: bson.DocElem{
+				Name:  "index",
+				Value: 0}}}
+
+	insert := func(collection *Collection) {
+		collection.Insert(entity)
+		var r bson.D
+		collection.Find(entity).All(&r)
+		collection.Find(entity).Apply(mgo.Change{Update: entity}, &r)
+		collection.Find(entity).Count()
+		collection.Find(entity).Distinct("index", &r)
+		collection.Find(entity).Explain(&r)
+		collection.Find(entity).One(&r)
+		collection.UpdateId(r.Map()["_id"], entity)
+	}
+
+	spans := testMongoCollectionCommand(assert, insert)
+	assert.Equal(9, len(spans))
+}
+
 func TestCollection_Upsert(t *testing.T) {
 	assert := assert.New(t)
 
@@ -358,6 +385,10 @@ func TestCollection_Bulk(t *testing.T) {
 	spans := testMongoCollectionCommand(assert, insert)
 	assert.Equal(2, len(spans))
 	assert.Equal("mongodb.query", spans[0].OperationName())
+}
+
+func TestBadDial(t *testing.T) {
+	assert.NotPanics(t, func() { Dial("this_is_not_valid?foo&bar") })
 }
 
 func TestAnalyticsSettings(t *testing.T) {

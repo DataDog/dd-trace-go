@@ -21,6 +21,11 @@ the official [Go language](https://github.com/golang/go/pulls).
 A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.
 It will help tremendously in avoiding comments and speeding up the PR process.
 
+
+### Integrations
+
+Please view our contrib [README.md](contrib/README.md) for information on new integrations.
+
 ### Go Modules
 
 This repository currently takes an [idiosyncratic approach](https://github.com/DataDog/dd-trace-go/issues/810) to using Go modules which means that you should not commit modified versions of the `go.mod` or `go.sum` files.

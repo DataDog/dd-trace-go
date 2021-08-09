@@ -10,11 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 	"runtime/pprof"
 	"time"
 
+	"github.com/DataDog/gostackparse"
 	pprofile "github.com/google/pprof/profile"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/stackparse"
 )
 
 // ProfileType represents a type of profile that the profiler is able to run.
@@ -117,7 +118,7 @@ func (p *profiler) runProfile(t ProfileType) (*profile, error) {
 	case HeapProfile:
 		return heapProfile(p.cfg)
 	case CPUProfile:
-		return cpuProfile(p.cfg)
+		return p.cpuProfile()
 	case MutexProfile:
 		return mutexProfile(p.cfg)
 	case BlockProfile:
@@ -158,17 +159,17 @@ var (
 	stopCPUProfile = pprof.StopCPUProfile
 )
 
-func cpuProfile(cfg *config) (*profile, error) {
+func (p *profiler) cpuProfile() (*profile, error) {
 	var buf bytes.Buffer
 	start := now()
 	if err := startCPUProfile(&buf); err != nil {
 		return nil, err
 	}
-	time.Sleep(cfg.cpuDuration)
+	p.interruptibleSleep(p.cfg.cpuDuration)
 	stopCPUProfile()
 	end := now()
-	tags := append(cfg.tags, CPUProfile.Tag())
-	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
+	tags := append(p.cfg.tags, CPUProfile.Tag())
+	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
 		name: CPUProfile.Filename(),
 		data: buf.Bytes(),
@@ -231,6 +232,10 @@ func goroutineProfile(cfg *config) (*profile, error) {
 }
 
 func goroutineWaitProfile(cfg *config) (*profile, error) {
+	if n := runtime.NumGoroutine(); n > cfg.maxGoroutinesWait {
+		return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, cfg.maxGoroutinesWait)
+	}
+
 	var (
 		text  = &bytes.Buffer{}
 		pprof = &bytes.Buffer{}
@@ -252,8 +257,8 @@ func goroutineWaitProfile(cfg *config) (*profile, error) {
 }
 
 func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
-	// stackparse.Parse() has been extensively tested and should not crash under
-	// any circumstances, but we really want to avoid crashing a customers
+	// gostackparse.Parse() has been extensively tested and should not crash
+	// under any circumstances, but we really want to avoid crashing a customers
 	// applications, so this code will recover from any unexpected panics and
 	// return them as an error instead.
 	defer func() {
@@ -262,7 +267,7 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
 		}
 	}()
 
-	goroutines, errs := stackparse.Parse(r)
+	goroutines, errs := gostackparse.Parse(r)
 
 	functionID := uint64(1)
 	locationID := uint64(1)
@@ -302,7 +307,7 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
 		// frames to indicate truncated stacks, see [1] for how python/jd does it.
 		// [1] https://github.com/DataDog/dd-trace-py/blob/e933d2485b9019a7afad7127f7c0eb541341cdb7/ddtrace/profiling/exporter/pprof.pyx#L117-L121
 		if g.FramesElided {
-			g.Stack = append(g.Stack, &stackparse.Frame{
+			g.Stack = append(g.Stack, &gostackparse.Frame{
 				Func: "...additional frames elided...",
 			})
 		}

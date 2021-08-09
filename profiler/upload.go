@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -29,12 +30,18 @@ func (p *profiler) upload(bat batch) error {
 	statsd := p.cfg.statsd
 	var err error
 	for i := 0; i < maxRetries; i++ {
+		select {
+		case <-p.exit:
+			return nil
+		default:
+		}
+
 		err = p.doRequest(bat)
 		if rerr, ok := err.(*retriableError); ok {
 			statsd.Count("datadog.profiler.go.upload_retry", 1, nil, 1)
 			wait := time.Duration(rand.Int63n(p.cfg.period.Nanoseconds()))
 			log.Error("Uploading profile failed: %v. Trying again in %s...", rerr, wait)
-			time.Sleep(wait)
+			p.interruptibleSleep(time.Second)
 			continue
 		}
 		if err != nil {
@@ -69,10 +76,23 @@ func (p *profiler) doRequest(bat batch) error {
 	if err != nil {
 		return err
 	}
+	funcExit := make(chan struct{})
+	defer close(funcExit)
+	// uploadTimeout is guaranteed to be >= 0, see newProfiler.
+	ctx, cancel := context.WithTimeout(context.Background(), p.cfg.uploadTimeout)
+	go func() {
+		select {
+		case <-p.exit:
+		case <-funcExit:
+		}
+		cancel()
+	}()
+	// TODO(fg) use NewRequestWithContext once go 1.12 support is dropped.
 	req, err := http.NewRequest("POST", p.cfg.targetURL, body)
 	if err != nil {
 		return err
 	}
+	req = req.WithContext(ctx)
 	if p.cfg.apiKey != "" {
 		req.Header.Set("DD-API-KEY", p.cfg.apiKey)
 	}
