@@ -500,12 +500,10 @@ func TestWithHostname(t *testing.T) {
 }
 
 func TestWithLogStartup(t *testing.T) {
-	var c config
-	defaultValue := c.logStartup
-
-	// invert the default
-	WithLogStartup(!defaultValue)(&c)
-
-	// and assert that WithLogStartup changed the config value
-	assert.NotEqual(t, defaultValue, c.logStartup)
+	c := newConfig()
+	assert.True(t, c.logStartup)
+	WithLogStartup(false)(c)
+	assert.False(t, c.logStartup)
+	WithLogStartup(true)(c)
+	assert.True(t, c.logStartup)
 }
