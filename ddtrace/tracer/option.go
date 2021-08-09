@@ -446,7 +446,7 @@ func WithHostname(name string) StartOption {
 // WithLogStartup allows control over whether to print the startup log or not
 func WithLogStartup(enabled bool) StartOption {
 	return func(c *config) {
-		c.logStartup = logStartup
+		c.logStartup = enabled
 	}
 }
 
