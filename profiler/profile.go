@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 	"runtime/pprof"
 	"time"
 
@@ -117,7 +118,7 @@ func (p *profiler) runProfile(t ProfileType) (*profile, error) {
 	case HeapProfile:
 		return heapProfile(p.cfg)
 	case CPUProfile:
-		return cpuProfile(p.cfg)
+		return p.cpuProfile()
 	case MutexProfile:
 		return mutexProfile(p.cfg)
 	case BlockProfile:
@@ -158,17 +159,17 @@ var (
 	stopCPUProfile = pprof.StopCPUProfile
 )
 
-func cpuProfile(cfg *config) (*profile, error) {
+func (p *profiler) cpuProfile() (*profile, error) {
 	var buf bytes.Buffer
 	start := now()
 	if err := startCPUProfile(&buf); err != nil {
 		return nil, err
 	}
-	time.Sleep(cfg.cpuDuration)
+	p.interruptibleSleep(p.cfg.cpuDuration)
 	stopCPUProfile()
 	end := now()
-	tags := append(cfg.tags, CPUProfile.Tag())
-	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
+	tags := append(p.cfg.tags, CPUProfile.Tag())
+	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return &profile{
 		name: CPUProfile.Filename(),
 		data: buf.Bytes(),
@@ -231,6 +232,10 @@ func goroutineProfile(cfg *config) (*profile, error) {
 }
 
 func goroutineWaitProfile(cfg *config) (*profile, error) {
+	if n := runtime.NumGoroutine(); n > cfg.maxGoroutinesWait {
+		return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, cfg.maxGoroutinesWait)
+	}
+
 	var (
 		text  = &bytes.Buffer{}
 		pprof = &bytes.Buffer{}

@@ -45,7 +45,8 @@ func Start(opts ...Option) error {
 	return nil
 }
 
-// Stop stops the profiler.
+// Stop cancels any ongoing profiling or upload operations and returns after
+// everything has been stopped.
 func Stop() {
 	mu.Lock()
 	if activeProfiler != nil {
@@ -212,12 +213,17 @@ func (p *profiler) enqueueUpload(bat batch) {
 
 // send takes profiles from the output queue and uploads them.
 func (p *profiler) send() {
-	for bat := range p.out {
-		if err := p.outputDir(bat); err != nil {
-			log.Error("Failed to output profile to dir: %v", err)
-		}
-		if err := p.uploadFunc(bat); err != nil {
-			log.Error("Failed to upload profile: %v", err)
+	for {
+		select {
+		case <-p.exit:
+			return
+		case bat := <-p.out:
+			if err := p.outputDir(bat); err != nil {
+				log.Error("Failed to output profile to dir: %v", err)
+			}
+			if err := p.uploadFunc(bat); err != nil {
+				log.Error("Failed to upload profile: %v", err)
+			}
 		}
 	}
 }
@@ -242,6 +248,15 @@ func (p *profiler) outputDir(bat batch) error {
 		}
 	}
 	return nil
+}
+
+// interruptibleSleep sleeps for the given duration or until interrupted by the
+// p.exit channel being closed.
+func (p *profiler) interruptibleSleep(d time.Duration) {
+	select {
+	case <-p.exit:
+	case <-time.After(d):
+	}
 }
 
 // stop stops the profiler.
