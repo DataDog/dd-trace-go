@@ -31,7 +31,11 @@ type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
 
-	// lambda, when true, enables the lambda trace writer
+	// featureFlags specifies any enabled feature flags.
+	featureFlags map[string]struct{}
+
+	// logToStdout reports whether we should log all traces to the standard
+	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
 
 	// logStartup, when true, causes various startup info to be written
@@ -99,6 +103,12 @@ type config struct {
 	noDebugStack bool
 }
 
+// HasFeature reports whether feature f is enabled.
+func (c *config) HasFeature(f string) bool {
+	_, ok := c.featureFlags[strings.TrimSpace(f)]
+	return ok
+}
+
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
@@ -132,6 +142,11 @@ func newConfig(opts ...StartOption) *config {
 	}
 	if v := os.Getenv("DD_ENV"); v != "" {
 		c.env = v
+	}
+	if v := os.Getenv("DD_TRACE_FEATURES"); v != "" {
+		WithFeatureFlags(strings.FieldsFunc(v, func(r rune) bool {
+			return r == ',' || r == ' '
+		})...)(c)
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
 		c.serviceName = v
@@ -200,7 +215,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	if c.transport == nil {
-		c.transport = newTransport(c.agentAddr, c.httpClient)
+		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
 	if c.propagator == nil {
 		c.propagator = NewPropagator(nil)
@@ -244,6 +259,21 @@ func statsTags(c *config) []string {
 		}
 	}
 	return tags
+}
+
+// WithFeatureFlags specifies a set of feature flags to enable. Please take into account
+// that most, if not all features flags are considered to be experimental and result in
+// unexpected bugs.
+func WithFeatureFlags(feats ...string) StartOption {
+	return func(c *config) {
+		if c.featureFlags == nil {
+			c.featureFlags = make(map[string]struct{}, len(feats))
+		}
+		for _, f := range feats {
+			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
+		}
+		log.Info("FEATURES enabled: %v", feats)
+	}
 }
 
 // WithLogger sets logger as the tracer's error printer.

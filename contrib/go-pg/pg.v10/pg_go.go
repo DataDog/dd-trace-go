@@ -7,6 +7,7 @@ package pg
 
 import (
 	"context"
+	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -17,12 +18,19 @@ import (
 )
 
 // Wrap augments the given DB with tracing.
-func Wrap(db *pg.DB) {
+func Wrap(db *pg.DB, opts ...Option) {
+	cfg := new(config)
+	defaults(cfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
 	log.Debug("contrib/go-pg/pg.v10: Wrapping Database")
-	db.AddQueryHook(&queryHook{})
+	db.AddQueryHook(&queryHook{cfg: cfg})
 }
 
-type queryHook struct{}
+type queryHook struct {
+	cfg *config
+}
 
 // BeforeQuery implements pg.QueryHook.
 func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context.Context, error) {
@@ -34,6 +42,10 @@ func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(string(query)),
+		tracer.ServiceName(h.cfg.serviceName),
+	}
+	if !math.IsNaN(h.cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))
 	}
 	_, ctx = tracer.StartSpanFromContext(ctx, "go-pg", opts...)
 	return ctx, qe.Err
