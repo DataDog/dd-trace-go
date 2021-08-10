@@ -24,11 +24,8 @@ import (
 // payload implements io.Reader and can be used with the decoder directly. To create
 // a new payload use the newPayload method.
 //
-// payload is not safe for concurrent use.
-//
-// This structure basically allows us to push traces into the payload one at a time
-// in order to always have knowledge of the payload size, but also making it possible
-// for the agent to decode it as an array.
+// payload is not safe for concurrent use, is meant to be used only once and eventually
+// dismissed.
 type payload struct {
 	// header specifies the first few bytes in the msgpack stream
 	// indicating the type of array (fixarray, array16 or array32)
@@ -119,6 +116,15 @@ func (p *payload) updateHeader() {
 		p.header[3] = msgpackArray32
 		p.off = 3
 	}
+}
+
+// Close implements io.Closer
+func (p *payload) Close() error {
+	// Once the payload has been read, clear the buffer for garbage collection to avoid
+	// a memory leak when references to this object may still be kept by faulty transport
+	// implementations or the standard library. See dd-trace-go#976
+	p.buf = bytes.Buffer{}
+	return nil
 }
 
 // Read implements io.Reader. It reads from the msgpack-encoded stream.

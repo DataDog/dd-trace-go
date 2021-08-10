@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -139,7 +138,7 @@ func (t *httpTransport) sendStats(p *statsPayload) error {
 }
 
 func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
-	req, err := http.NewRequest("POST", t.traceURL, ioutil.NopCloser(p))
+	req, err := http.NewRequest("POST", t.traceURL, p)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %v", err)
 	}
