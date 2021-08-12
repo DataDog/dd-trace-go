@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/felixge/pprofutils"
 	pprofile "github.com/google/pprof/profile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 )
 
 func TestRunProfile(t *testing.T) {
@@ -64,9 +64,9 @@ main;foobar 7
 					Time: timeA,
 					Text: `
 stuff/count
-main 1
-main;foo 3
 main;foobar 7
+main;foo 3
+main 1
 `,
 				},
 				WantDuration: deltaPeriod,
@@ -100,10 +100,10 @@ main;foobar 7 14 28 56
 					Time: timeA,
 					Text: `
 alloc_objects/count alloc_space/bytes inuse_objects/count inuse_space/bytes
+main;foobar 7 14 28 56
+main;foo 3 6 32 64
 main 1 2 16 32
 main;bar 0 0 8 16
-main;foo 3 6 32 64
-main;foobar 7 14 28 56
 `,
 				},
 				WantDuration: deltaPeriod,
