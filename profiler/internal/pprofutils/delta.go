@@ -26,7 +26,7 @@ type Delta struct {
 	SampleTypes []ValueType
 }
 
-// Delta computes the delta between all values b-a and returns them as a new
+// Convert computes the delta between all values b-a and returns them as a new
 // profile. Samples that end up with a delta of 0 are dropped. WARNING: Profile
 // a will be mutated by this function. You should pass a copy if that's
 // undesirable.
@@ -53,7 +53,7 @@ func (d Delta) Convert(a, b *profile.Profile) (*profile.Profile, error) {
 		}
 	}
 	if found != len(d.SampleTypes) {
-		return nil, errors.New("One or more sample type(s) was not found in the profile.")
+		return nil, errors.New("one or more sample type(s) was not found in the profile")
 	}
 
 	a.ScaleN(ratios)
