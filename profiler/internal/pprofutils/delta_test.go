@@ -88,7 +88,7 @@ main;foo;bar 0 6
 			var is = is.New(t)
 			deltaConfig := Delta{SampleTypes: []ValueType{{Type: "foo", Unit: "count"}}}
 			_, err := deltaConfig.Convert(profA, profB)
-			is.Equal("One or more sample type(s) was not found in the profile.", err.Error())
+			is.Equal("one or more sample type(s) was not found in the profile", err.Error())
 		})
 	})
 }
