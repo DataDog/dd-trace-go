@@ -9,18 +9,19 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
 func main() {
 	var missing bool
-	copyrightText := []byte(fmt.Sprintf("// Copyright 2016 Datadog, Inc."))
+	// copyrightRegexp matches years or year ranges like "2016", "2016-2019",
+	// "2016,2018-2020" in the copyright header.
+	copyrightRegexp := regexp.MustCompile(`// Copyright [0-9]{4}[0-9,\-]* Datadog, Inc.`)
 	if err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -39,7 +40,7 @@ func main() {
 		if err != nil && err != io.EOF {
 			return err
 		}
-		if !bytes.Contains(snip, copyrightText) {
+		if !copyrightRegexp.Match(snip) {
 			// report missing header
 			missing = true
 			log.Printf("Copyright header missing in %q.\n", path)
