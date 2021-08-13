@@ -6,7 +6,6 @@ require (
 	github.com/DataDog/datadog-go v4.4.0+incompatible
 	github.com/DataDog/gostackparse v0.5.0
 	github.com/DataDog/sketches-go v1.0.0
-	github.com/felixge/pprofutils v1.0.0
 	github.com/google/pprof v0.0.0-20210423192551-a2663126120b
 	github.com/tinylib/msgp v1.1.2
 )
