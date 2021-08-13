@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2021 Datadog, Inc.
 
-// pprofutils is a fork of github.com/felixge/pprofutils, see README.
+// Package pprofutils is a fork of github.com/felixge/pprofutils, see README.
 package pprofutils
 
 // ValueType describes the type and unit of a value.
