@@ -165,7 +165,6 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	if err != nil {
 		return nil, err
 	}
-	p.waitClose()
 	if code := response.StatusCode; code >= 400 {
 		// error, check the body for context information and
 		// return a nice error.
