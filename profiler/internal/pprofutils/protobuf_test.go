@@ -38,7 +38,7 @@ runtime.mcall;runtime.park_m;runtime.schedule;runtime.findrunnable;runtime.check
 		require.Equal(t, out.String(), want)
 	})
 
-	t.Run("different lines per function", func(t *testing.T) {
+	t.Run("differentLinesPerFunction", func(t *testing.T) {
 		data, err := ioutil.ReadFile(filepath.Join("test-fixtures", "pprof.lines.pb.gz"))
 		require.NoError(t, err)
 

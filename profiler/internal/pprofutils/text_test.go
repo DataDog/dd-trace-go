@@ -27,7 +27,7 @@ main;foo;bar 3
 		require.Equal(t, textIn+"\n", textOut.String())
 	})
 
-	t.Run("header with one sample type", func(t *testing.T) {
+	t.Run("headerWithOneSampleType", func(t *testing.T) {
 		textIn := strings.TrimSpace(`
 samples/count
 main;foo 5
@@ -41,7 +41,7 @@ main;foo;bar 3
 		require.Equal(t, textIn+"\n", textOut.String())
 	})
 
-	t.Run("header with multiple sample types", func(t *testing.T) {
+	t.Run("headerWithMultipleSampleTypes", func(t *testing.T) {
 		textIn := strings.TrimSpace(`
 samples/count duration/nanoseconds
 main;foo 5 50000000

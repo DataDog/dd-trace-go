@@ -41,7 +41,7 @@ main;foobar 1
 `)+"\n")
 	})
 
-	t.Run("sample types", func(t *testing.T) {
+	t.Run("sampleTypes", func(t *testing.T) {
 		profA, err := Text{}.Convert(strings.NewReader(strings.TrimSpace(`
 x/count y/count
 main;foo 5 10
@@ -60,7 +60,7 @@ main;foobar 5 10
 `)))
 		require.NoError(t, err)
 
-		t.Run("happy path", func(t *testing.T) {
+		t.Run("happyPath", func(t *testing.T) {
 			var deltaText bytes.Buffer
 
 			deltaConfig := Delta{SampleTypes: []ValueType{{Type: "x", Unit: "count"}}}
@@ -76,7 +76,7 @@ main;foo;bar 0 6
 `)+"\n")
 		})
 
-		t.Run("unknown sample type", func(t *testing.T) {
+		t.Run("unknownSampleType", func(t *testing.T) {
 			deltaConfig := Delta{SampleTypes: []ValueType{{Type: "foo", Unit: "count"}}}
 			_, err := deltaConfig.Convert(profA, profB)
 			require.Equal(t, "one or more sample type(s) was not found in the profile", err.Error())
