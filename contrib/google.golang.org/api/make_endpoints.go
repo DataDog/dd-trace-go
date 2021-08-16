@@ -21,6 +21,7 @@ import (
 	"text/template"
 
 	"github.com/yosida95/uritemplate"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api/internal"
 )
 
