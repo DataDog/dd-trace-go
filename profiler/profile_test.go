@@ -369,3 +369,22 @@ func protobufToText(pprofData []byte) string {
 	}
 	return out.String()
 }
+
+// TestProfileTypeSoundness fails if somebody tries to add a new profile type
+// without modifying all the right places in the code base.
+func TestProfileTypeSoundness(t *testing.T) {
+	t.Run("profileTypesMap", func(t *testing.T) {
+		require.Equal(t, int(profileTypeCount), len(profileTypes))
+	})
+
+	t.Run("enabledProfileTypes", func(t *testing.T) {
+		var allProfileTypes []ProfileType
+		for pt := ProfileType(0); pt < profileTypeCount; pt++ {
+			allProfileTypes = append(allProfileTypes, pt)
+		}
+		p, err := unstartedProfiler(WithProfileTypes(allProfileTypes...))
+		require.NoError(t, err)
+		types := p.enabledProfileTypes()
+		require.Equal(t, int(profileTypeCount), len(types))
+	})
+}

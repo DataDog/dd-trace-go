@@ -44,8 +44,10 @@ const (
 	expGoroutineWaitProfile
 	// MetricsProfile reports top-line metrics associated with user-specified profiles
 	MetricsProfile
-	// Adding new profiles also needs to happen in the profileTypes map and
+	// profileTypeCount marks the end of the list of profile types. Any new
+	// profile type should be added above as well as in the profileTypes map and
 	// profiler.enabledProfileTypes().
+	profileTypeCount
 )
 
 // profileType holds the implementation details of a ProfileType.
