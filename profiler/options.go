@@ -302,7 +302,6 @@ func BlockProfileRate(rate int) Option {
 // WithProfileTypes specifies the profile types to be collected by the profiler.
 func WithProfileTypes(types ...ProfileType) Option {
 	return func(cfg *config) {
-
 		// reset the types and only use what the user has specified
 		for k := range cfg.types {
 			delete(cfg.types, k)
