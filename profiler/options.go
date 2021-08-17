@@ -309,9 +309,6 @@ func WithProfileTypes(types ...ProfileType) Option {
 		}
 		cfg.addProfileType(MetricsProfile) // always report metrics
 		for _, t := range types {
-			if _, ok := profileTypes[t]; !ok {
-				panic(fmt.Sprintf("unknown profile type: %s", t))
-			}
 			cfg.addProfileType(t)
 		}
 	}
