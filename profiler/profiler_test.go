@@ -210,11 +210,15 @@ func TestProfilerInternal(t *testing.T) {
 		}
 		defer func(old func()) { stopCPUProfile = old }(stopCPUProfile)
 		stopCPUProfile = func() { atomic.AddUint64(&stopCPU, 1) }
-		defer func(old func(_ io.Writer) error) { writeHeapProfile = old }(writeHeapProfile)
-		writeHeapProfile = func(_ io.Writer) error {
-			atomic.AddUint64(&writeHeap, 1)
-			return nil
+		defer func(old func(_ string, w io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
+		lookupProfile = func(name string, w io.Writer, _ int) error {
+			if name == "heap" {
+				atomic.AddUint64(&writeHeap, 1)
+			}
+			_, err := w.Write(textProfile{Text: "main 5\n"}.Protobuf())
+			return err
 		}
+
 		tick := make(chan time.Time)
 		wait := make(chan struct{})
 
@@ -237,7 +241,8 @@ func TestProfilerInternal(t *testing.T) {
 		assert.EqualValues(1, startCPU)
 		assert.EqualValues(1, stopCPU)
 
-		assert.Equal(3, len(bat.profiles))
+		// should contain cpu.pprof, metrics.json, heap.pprof, delta-heap.pprof
+		assert.Equal(4, len(bat.profiles))
 
 		p.exit <- struct{}{}
 		<-wait
@@ -290,9 +295,11 @@ func TestProfilerPassthrough(t *testing.T) {
 	}
 
 	assert := assert.New(t)
-	assert.Equal(2, len(bat.profiles))
+	// should contain cpu.pprof, heap.pprof, delta-heap.pprof
+	assert.Equal(3, len(bat.profiles))
 	assert.NotEmpty(bat.profiles[0].data)
 	assert.NotEmpty(bat.profiles[1].data)
+	assert.NotEmpty(bat.profiles[2].data)
 }
 
 func unstartedProfiler(opts ...Option) (*profiler, error) {
