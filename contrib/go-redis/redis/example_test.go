@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis"
+
 	redistrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-redis/redis"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"

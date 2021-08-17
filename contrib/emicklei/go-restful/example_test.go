@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"github.com/emicklei/go-restful"
+
 	restfultrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/emicklei/go-restful"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
