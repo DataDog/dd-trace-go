@@ -370,9 +370,9 @@ func protobufToText(pprofData []byte) string {
 	return out.String()
 }
 
-// Test_enabledProfileTypes fails if somebody tries to add a new profile type
+// TestProfileTypeSoundness fails if somebody tries to add a new profile type
 // without adding it to enabledProfileTypes as well.
-func Test_enabledProfileTypes(t *testing.T) {
+func TestProfileTypeSoundness(t *testing.T) {
 	t.Run("enabledProfileTypes", func(t *testing.T) {
 		var allProfileTypes []ProfileType
 		for pt := range profileTypes {
@@ -382,5 +382,10 @@ func Test_enabledProfileTypes(t *testing.T) {
 		require.NoError(t, err)
 		types := p.enabledProfileTypes()
 		require.Equal(t, len(allProfileTypes), len(types))
+	})
+
+	t.Run("profileTypes", func(t *testing.T) {
+		_, err := unstartedProfiler(WithProfileTypes(ProfileType(-1)))
+		require.EqualError(t, err, "unknown profile type: -1")
 	})
 }

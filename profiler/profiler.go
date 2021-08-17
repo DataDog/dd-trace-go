@@ -125,6 +125,12 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if cfg.uploadTimeout <= 0 {
 		return nil, fmt.Errorf("invalid upload timeout, must be > 0: %s", cfg.uploadTimeout)
 	}
+	for pt := range cfg.types {
+		if _, ok := profileTypes[pt]; !ok {
+			return nil, fmt.Errorf("unknown profile type: %d", pt)
+		}
+	}
+
 	p := profiler{
 		cfg:  cfg,
 		out:  make(chan batch, outChannelSize),
