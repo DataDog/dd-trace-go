@@ -19,6 +19,7 @@ import (
 	pprofile "github.com/google/pprof/profile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 )
 

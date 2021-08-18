@@ -16,6 +16,7 @@ import (
 
 	"github.com/DataDog/gostackparse"
 	pprofile "github.com/google/pprof/profile"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 )
 
