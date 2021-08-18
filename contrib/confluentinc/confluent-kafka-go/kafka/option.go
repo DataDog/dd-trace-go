@@ -36,6 +36,7 @@ func newConfig(opts ...Option) *config {
 	}
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.consumerServiceName = svc
+		cfg.producerServiceName = svc
 	}
 	for _, opt := range opts {
 		opt(cfg)
