@@ -163,6 +163,16 @@ func TestSpanFinishWithTime(t *testing.T) {
 	assert.Equal(duration, span.Duration)
 }
 
+func TestSpanFinishWithNegativeDuration(t *testing.T) {
+	assert := assert.New(t)
+	startTime := time.Now()
+	finishTime := startTime.Add(-10 * time.Second)
+	span := newBasicSpan("web.request")
+	span.Start = startTime.UnixNano()
+	span.Finish(FinishTime(finishTime))
+	assert.Equal(int64(0), span.Duration)
+}
+
 func TestSpanFinishWithError(t *testing.T) {
 	assert := assert.New(t)
 
@@ -616,20 +626,6 @@ func TestSpanLog(t *testing.T) {
 		stop()
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d"`, span.TraceID, span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
-	})
-}
-
-func TestNormalizeSpan(t *testing.T) {
-	t.Run("negativeduration", func(t *testing.T) {
-		actual := span{
-			Service:  "testservice",
-			Duration: -1,
-		}
-		normalizeSpan(&actual)
-		expected := span{
-			Service: "testservice",
-		}
-		assert.Equal(t, expected, actual)
 	})
 }
 
