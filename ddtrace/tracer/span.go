@@ -372,9 +372,6 @@ func (s *span) finish(finishTime int64) {
 	s.context.finish()
 }
 
-func normalizeSpan(s *span) {
-}
-
 // newAggregableSpan creates a new summary for the span s, within an application
 // version version.
 func newAggregableSpan(s *span, cfg *config) *aggregableSpan {
