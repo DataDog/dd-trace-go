@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	"github.com/urfave/negroni"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
