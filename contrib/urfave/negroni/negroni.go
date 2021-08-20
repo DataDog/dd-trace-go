@@ -50,7 +50,8 @@ func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 	responseWriter := w.(negroni.ResponseWriter)
 	status := responseWriter.Status()
 	span.SetTag(ext.HTTPCode, strconv.Itoa(status))
-	if status >= 500 && status < 600 {
+	if m.cfg.isStatusError(status) {
+		// mark 5xx server error
 		span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 	}
 }
