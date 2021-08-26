@@ -15,6 +15,7 @@ import (
 	books "google.golang.org/api/books/v1"
 	civicinfo "google.golang.org/api/civicinfo/v2"
 	urlshortener "google.golang.org/api/urlshortener/v1"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"

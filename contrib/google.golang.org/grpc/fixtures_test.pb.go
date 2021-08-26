@@ -18,12 +18,15 @@ It has these top-level messages:
 */
 package grpc
 
-import proto "github.com/golang/protobuf/proto"
-import fmt "fmt"
-import math "math"
-
 import (
+	fmt "fmt"
+
+	proto "github.com/golang/protobuf/proto"
+
+	math "math"
+
 	context "golang.org/x/net/context"
+
 	grpc1 "google.golang.org/grpc"
 )
 
