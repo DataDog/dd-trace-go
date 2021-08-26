@@ -16,6 +16,7 @@ import (
 	"time"
 
 	pprofile "github.com/google/pprof/profile"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
