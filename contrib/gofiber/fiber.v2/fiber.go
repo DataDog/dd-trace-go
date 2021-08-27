@@ -45,7 +45,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 
 		defer span.Finish()
 
-		// reference to link resulting spans to request
+		// pass the span through the request UserContext 
 		c.SetUserContext(ctx)
 
 		resourceName := c.Path()
