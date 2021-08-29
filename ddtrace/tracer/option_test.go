@@ -128,6 +128,22 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal(env, c.env)
 	})
 
+	t.Run("trace_enabled", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			tracer := newTracer()
+			c := tracer.config
+			assert.True(t, c.traceEnabled)
+		})
+
+		t.Run("override", func(t *testing.T) {
+			os.Setenv("DD_TRACE_ENABLED", "false")
+			defer os.Unsetenv("DD_TRACE_ENABLED")
+			tracer := newTracer()
+			c := tracer.config
+			assert.False(t, c.traceEnabled)
+		})
+	})
+
 	t.Run("other", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer := newTracer(
@@ -496,5 +512,29 @@ func TestWithHostname(t *testing.T) {
 		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
 		c := newConfig(WithHostname("hostname-middleware"))
 		assert.Equal("hostname-middleware", c.hostname)
+	})
+}
+
+func TestWithTraceEnabled(t *testing.T) {
+	t.Run("WithTraceEnabled", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig(WithTraceEnabled(false))
+		assert.False(c.traceEnabled)
+	})
+
+	t.Run("env", func(t *testing.T) {
+		assert := assert.New(t)
+		os.Setenv("DD_TRACE_ENABLED", "false")
+		defer os.Unsetenv("DD_TRACE_ENABLED")
+		c := newConfig()
+		assert.False(c.traceEnabled)
+	})
+
+	t.Run("env-override", func(t *testing.T) {
+		assert := assert.New(t)
+		os.Setenv("DD_TRACE_ENABLED", "false")
+		defer os.Unsetenv("DD_TRACE_ENABLED")
+		c := newConfig(WithTraceEnabled(true))
+		assert.True(c.traceEnabled)
 	})
 }

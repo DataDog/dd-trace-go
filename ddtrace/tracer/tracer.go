@@ -113,6 +113,11 @@ func Start(opts ...StartOption) {
 	if t.config.HasFeature("discovery") {
 		t.loadAgentFeatures()
 	}
+
+	if !t.config.traceEnabled {
+		return
+	}
+
 	internal.SetGlobalTracer(t)
 	if t.config.logStartup {
 		logStartup(t)
