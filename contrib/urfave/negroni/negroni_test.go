@@ -171,6 +171,7 @@ func TestError(t *testing.T) {
 			WithStatusCheck(func(statusCode int) bool {
 				return statusCode >= 400
 			}),
+			WithSpanOptions(tracer.Tag("foo", "bar")),
 		))
 		code := 404
 		// a handler with an error and make the requests
@@ -300,5 +301,109 @@ func TestAnalyticsSettings(t *testing.T) {
 		globalconfig.SetAnalyticsRate(0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	})
+}
+
+func TestServiceName(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
+			span, ok := tracer.SpanFromContext(r.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "negroni.router")
+			w.WriteHeader(200)
+		})
+
+		router := negroni.New()
+		router.Use(Middleware())
+
+		router.UseHandler(mux)
+
+		r := httptest.NewRequest("GET", "/user", nil)
+		w := httptest.NewRecorder()
+
+		// do and verify the request
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		assert.Equal(response.StatusCode, 200)
+
+		// verify traces look good
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assert.Equal("negroni.router", span.Tag(ext.ServiceName))
+	})
+
+	t.Run("global", func(t *testing.T) {
+		globalconfig.SetServiceName("global-service")
+		defer globalconfig.SetServiceName("")
+
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
+			span, ok := tracer.SpanFromContext(r.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "global-service")
+			w.WriteHeader(200)
+		})
+
+		router := negroni.New()
+		router.Use(Middleware())
+
+		router.UseHandler(mux)
+
+		r := httptest.NewRequest("GET", "/user", nil)
+		w := httptest.NewRecorder()
+
+		// do and verify the request
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		assert.Equal(response.StatusCode, 200)
+
+		// verify traces look good
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assert.Equal("global-service", span.Tag(ext.ServiceName))
+	})
+
+	t.Run("custom", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
+			span, ok := tracer.SpanFromContext(r.Context())
+			assert.True(ok)
+			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "my-service")
+			w.WriteHeader(200)
+		})
+
+		router := negroni.New()
+		router.Use(Middleware(WithServiceName("my-service")))
+
+		router.UseHandler(mux)
+
+		r := httptest.NewRequest("GET", "/user", nil)
+		w := httptest.NewRecorder()
+
+		// do and verify the request
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		assert.Equal(response.StatusCode, 200)
+
+		// verify traces look good
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assert.Equal("my-service", span.Tag(ext.ServiceName))
 	})
 }
