@@ -3,7 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build ignore
 // +build ignore
 
 // This tool validates that the PR at the given URL has a milestone set.

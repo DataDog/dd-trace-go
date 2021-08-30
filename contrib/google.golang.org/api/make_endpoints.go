@@ -3,7 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build ignore
 // +build ignore
 
 // This program generates a tree of endpoints for span tagging based on the
