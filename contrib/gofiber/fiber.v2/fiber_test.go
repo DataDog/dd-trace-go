@@ -94,7 +94,7 @@ func TestTrace200(t *testing.T) {
 	})
 }
 
-func TestError(t *testing.T) {
+func TestStatusError(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -128,32 +128,34 @@ func TestError(t *testing.T) {
 	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
 }
 
-func TestUserContext(t *testing.T) {
+func TestCustomError(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	// setup
 	router := fiber.New()
 	router.Use(Middleware(WithServiceName("foobar")))
 
-	router.Get("/", func(c *fiber.Ctx) error {
-		// check if not default empty context
-		assert.NotEmpty(c.UserContext())
-		span, _ := tracer.StartSpanFromContext(c.UserContext(), "http.request")
-		defer span.Finish()
-		return c.SendString("test")
+	router.Get("/err", func(c *fiber.Ctx) error {
+		c.SendStatus(400)
+		return fiber.ErrBadRequest
 	})
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest("GET", "/err", nil)
 
-	router.Test(r, 100)
+	response, err := router.Test(r, 100)
+	assert.Equal(nil, err)
+	assert.Equal(response.StatusCode, 400)
 
-	// verify both middleware span and router span finished
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 2)
-	if len(spans) < 2 {
+	assert.Len(spans, 1)
+	if len(spans) < 1 {
 		t.Fatalf("no spans")
 	}
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal("foobar", span.Tag(ext.ServiceName))
+	assert.Equal("400", span.Tag(ext.HTTPCode))
+	assert.Equal(fiber.ErrBadRequest, span.Tag(ext.Error).(*fiber.Error))
 }
 
 func TestGetSpanNotInstrumented(t *testing.T) {
