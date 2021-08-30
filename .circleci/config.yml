@@ -61,6 +61,16 @@ jobs:
           fi
 
     - run:
+        name: goimports
+        command: |
+          go install golang.org/x/tools/cmd/goimports
+          if [ "$(~/go/bin/goimports -e -l -local gopkg.in/DataDog/dd-trace-go.v1 . | wc -l)" -gt 0 ]; then
+            echo "Run 'goimports -w -local gopkg.in/DataDog/dd-trace-go.v1 .' to format code."
+            ~/go/bin/goimports -d -local gopkg.in/DataDog/dd-trace-go.v1 .
+            exit 1
+          fi
+
+    - run:
         name: lint
         command: |
           go get -u golang.org/x/lint/golint
