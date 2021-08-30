@@ -180,10 +180,8 @@ func TestUserContext(t *testing.T) {
 
 	// verify both middleware span and router span finished
 	spans := mt.FinishedSpans()
+	assert.Len(spans, 2)
 	assert.Equal(spans[1].SpanID(), spans[0].ParentID())
-	if len(spans) < 2 {
-		t.Fatalf("no spans")
-	}
 }
 
 func TestGetSpanNotInstrumented(t *testing.T) {
