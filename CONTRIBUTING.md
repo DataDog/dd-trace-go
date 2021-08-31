@@ -16,6 +16,16 @@ Fixes #113
 Please apply the same logic for Pull Requests and Issues: start with the package name, followed by a colon and a description of the change, just like
 the official [Go language](https://github.com/golang/go/pulls).
 
+All new code is expected to be covered by tests.
+
+#### PR Checks
+
+We expect all PR checks to pass before we merge a PR. When opening a PR, the metadata check will fail until a repo maintainer assigns the PR a milestone. The other checks can be investigated by following the `Details` links to CircleCI and CodeCov for unit/integration tests and code coverage checks.
+
+![Screen Shot 2021-08-31 at 10 35 37 AM](https://user-images.githubusercontent.com/1819836/131533266-7c87305d-37df-4bd5-a9ea-6fb8e51e4b50.png)
+
+Please feel free to comment on a PR if there is any difficulty or confusion about any of the checks.
+
 ### Style guidelines
 
 A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.
