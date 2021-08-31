@@ -31,7 +31,7 @@ func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 		tracer.ServiceName(m.cfg.serviceName),
 		tracer.Tag(ext.HTTPMethod, r.Method),
 		tracer.Tag(ext.HTTPURL, r.URL.Path),
-		tracer.Tag(ext.ResourceName, fmt.Sprintf("%s %s", r.Method, r.URL.Path)),
+		tracer.Tag(ext.ResourceName, m.cfg.resourceNamer(r)),
 		tracer.Measured(),
 	}
 	if !math.IsNaN(m.cfg.analyticsRate) {
@@ -48,12 +48,15 @@ func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 
 	next(w, r)
 
-	responseWriter := w.(negroni.ResponseWriter)
-	status := responseWriter.Status()
-	span.SetTag(ext.HTTPCode, strconv.Itoa(status))
-	if m.cfg.isStatusError(status) {
-		// mark 5xx server error
-		span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
+	// check if the responseWriter is of type negroni.ResponseWriter
+	responseWriter, ok := w.(negroni.ResponseWriter)
+	if ok {
+		status := responseWriter.Status()
+		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
+		if m.cfg.isStatusError(status) {
+			// mark 5xx server error
+			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
+		}
 	}
 }
 

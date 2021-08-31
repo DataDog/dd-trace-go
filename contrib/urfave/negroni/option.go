@@ -8,6 +8,7 @@ package negroni
 
 import (
 	"math"
+	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -19,6 +20,7 @@ type config struct {
 	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
 	analyticsRate float64
 	isStatusError func(statusCode int) bool
+	resourceNamer func(r *http.Request) string
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -35,6 +37,7 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.isStatusError = isServerError
+	cfg.resourceNamer = defaultResourceNamer
 }
 
 // WithServiceName sets the given service name for the router.
@@ -85,4 +88,16 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 
 func isServerError(statusCode int) bool {
 	return statusCode >= 500 && statusCode < 600
+}
+
+// WithResourceNamer specifies a function which will be used to obtain a resource name for a given
+// negroni request, using the request's context.
+func WithResourceNamer(namer func(r *http.Request) string) Option {
+	return func(cfg *config) {
+		cfg.resourceNamer = namer
+	}
+}
+
+func defaultResourceNamer(r *http.Request) string {
+	return ""
 }
