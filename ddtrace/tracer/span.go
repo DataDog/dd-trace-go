@@ -342,6 +342,9 @@ func (s *span) finish(finishTime int64) {
 	if s.Duration == 0 {
 		s.Duration = finishTime - s.Start
 	}
+	if s.Duration < 0 {
+		s.Duration = 0
+	}
 	s.finished = true
 
 	keep := true
