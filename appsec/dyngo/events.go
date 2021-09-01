@@ -13,26 +13,40 @@ type (
 		mu       sync.RWMutex
 	}
 
-	eventListenerMap map[reflect.Type][]interface{}
-	eventRegister    struct {
+	// eventListenerMap is the map of event listeners. The list of listeners are indexed by the operation argument or
+	// result type the event listener expects. The map key type is a struct of the fully-qualified type name (type
+	// package path and name) to uniquely identify the argument/result type instead of using the interface type
+	// reflect.Type that can possibly lead to panics if the actual value isn't hashable as required by map keys.
+	eventListenerMap    map[eventListenerMapKey][]interface{}
+	eventListenerMapKey struct {
+		pkgPath, name string
+	}
+	eventRegister struct {
 		mu        sync.RWMutex
 		listeners eventListenerMap
 	}
 )
 
-func (r *eventRegister) add(typ reflect.Type, l interface{}) {
+func makeMapKey(typ reflect.Type) eventListenerMapKey {
+	return eventListenerMapKey{
+		pkgPath: typ.PkgPath(),
+		name:    typ.Name(),
+	}
+}
+
+func (r *eventRegister) add(k eventListenerMapKey, l interface{}) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.listeners == nil {
 		r.listeners = make(eventListenerMap)
 	}
-	r.listeners[typ] = append(r.listeners[typ], l)
+	r.listeners[k] = append(r.listeners[k], l)
 }
 
 func (r *eventRegister) forEachListener(typ reflect.Type, f func(l interface{})) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	for _, l := range r.listeners[typ] {
+	for _, l := range r.listeners[makeMapKey(typ)] {
 		f(l)
 	}
 }
@@ -44,7 +58,7 @@ func (r *eventRegister) clear() {
 }
 
 func (e *eventManager) OnStart(l OnStartEventListenerFunc) {
-	e.onStart.add(reflect.TypeOf(l).In(1), l)
+	e.onStart.add(makeMapKey(reflect.TypeOf(l).In(1)), l)
 }
 
 func (e *eventManager) emitStartEvent(op *Operation, args interface{}) {
@@ -52,7 +66,7 @@ func (e *eventManager) emitStartEvent(op *Operation, args interface{}) {
 }
 
 func (e *eventManager) OnFinish(l OnFinishEventListenerFunc) {
-	e.onFinish.add(reflect.TypeOf(l).In(1), l)
+	e.onFinish.add(makeMapKey(reflect.TypeOf(l).In(1)), l)
 }
 
 func (e *eventManager) emitFinishEvent(op *Operation, results interface{}) {
@@ -60,7 +74,7 @@ func (e *eventManager) emitFinishEvent(op *Operation, results interface{}) {
 }
 
 func (e *eventManager) OnData(l OnDataEventListenerFunc) {
-	e.onData.add(reflect.TypeOf(l).In(1), l)
+	e.onData.add(makeMapKey(reflect.TypeOf(l).In(1)), l)
 }
 
 func (e *eventManager) emitDataEvent(op *Operation, data interface{}) {

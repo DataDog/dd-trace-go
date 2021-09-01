@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Dumy struct to mimic real-life operation stacks.
+// Dummy struct to mimic real-life operation stacks.
 type (
 	HTTPHandlerArgs struct {
 		URL     *url.URL
@@ -71,6 +71,7 @@ func TestUsage(t *testing.T) {
 		// HTTP body reads listener appending the read results to a buffer
 		rawBodyListener := func(called *int, buf *[]byte) dyngo.EventListener {
 			return dyngo.OnStartEventListener(func(op *dyngo.Operation, args HTTPHandlerArgs) {
+
 				op.OnFinish(func(_ *dyngo.Operation, res BodyReadRes) {
 					*called++
 					*buf = append(*buf, res.Buf...)
@@ -242,7 +243,7 @@ func TestUsage(t *testing.T) {
 						operation(op, BodyReadArg{}, BodyReadRes{Buf: []byte("bo")}, nil)
 						operation(op, BodyReadArg{}, BodyReadRes{Buf: []byte("dy"), Err: io.EOF}, nil)
 					})
-					operation(op, SQLQueryArg{}, SQLQueryArg{}, nil)
+					operation(op, SQLQueryArg{}, SQLQueryResult{}, nil)
 				},
 			)
 
