@@ -498,3 +498,12 @@ func TestWithHostname(t *testing.T) {
 		assert.Equal("hostname-middleware", c.hostname)
 	})
 }
+
+func TestWithLogStartup(t *testing.T) {
+	c := newConfig()
+	assert.True(t, c.logStartup)
+	WithLogStartup(false)(c)
+	assert.False(t, c.logStartup)
+	WithLogStartup(true)(c)
+	assert.True(t, c.logStartup)
+}
