@@ -12,11 +12,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"google.golang.org/protobuf/proto"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/DataDog/sketches-go/ddsketch"
+	"google.golang.org/protobuf/proto"
 )
 
 // aggregableSpan holds necessary information about a span that can be used to
