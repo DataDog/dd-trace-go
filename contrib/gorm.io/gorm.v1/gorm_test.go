@@ -370,14 +370,12 @@ func TestError(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
 		assertErrCheck(t, mt, true)
 	})
 
 	t.Run("errcheck", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
 		errFn := func(err error) bool {
 			return err != gorm.ErrRecordNotFound
 		}
