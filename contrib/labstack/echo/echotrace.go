@@ -58,7 +58,6 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			// serve the request to the next middleware
 			err := next(c)
 			if err != nil {
-				finishOpts = append(finishOpts, tracer.WithError(err))
 				// invokes the registered HTTP error handler
 				c.Error(err)
 
@@ -67,12 +66,12 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				switch err := err.(type) {
 				case *echo.HTTPError:
 					if err.Code >= 500 {
-						span.SetTag(ext.Error, err)
+						finishOpts = append(finishOpts, tracer.WithError(err))
 					}
 					span.SetTag(ext.HTTPCode, strconv.Itoa(err.Code))
 				default:
 					// Any non-HTTPError errors appear as 5xx errors.
-					span.SetTag(ext.Error, err)
+					finishOpts = append(finishOpts, tracer.WithError(err))
 					span.SetTag(ext.HTTPCode, "500")
 				}
 			} else {

@@ -219,6 +219,66 @@ func TestErrorHandling(t *testing.T) {
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
+func TestStatusError(t *testing.T) {
+	for _, tt := range []struct {
+		err     error
+		code    string
+		handler func(c echo.Context) error
+	}{
+		{
+			err:  errors.New("oh no"),
+			code: "500",
+			handler: func(c echo.Context) error {
+				return errors.New("oh no")
+			},
+		},
+		{
+			err:  echo.NewHTTPError(http.StatusInternalServerError, "my error message"),
+			code: "500",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
+			},
+		},
+		{
+			err:  nil,
+			code: "400",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
+			},
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			router := echo.New()
+			router.Use(Middleware(WithServiceName("foobar")))
+			router.GET("/err", tt.handler)
+			r := httptest.NewRequest("GET", "/err", nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Len(spans, 1)
+			span := spans[0]
+			assert.Equal("http.request", span.OperationName())
+			assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+			assert.Equal("foobar", span.Tag(ext.ServiceName))
+			assert.Contains(span.Tag(ext.ResourceName), "/err")
+			assert.Equal(tt.code, span.Tag(ext.HTTPCode))
+			assert.Equal("GET", span.Tag(ext.HTTPMethod))
+			err := span.Tag(ext.Error)
+			if tt.err != nil {
+				assert.NotNil(err)
+				assert.Equal(tt.err.Error(), err.(error).Error())
+			} else {
+				assert.Nil(err)
+			}
+		})
+	}
+}
+
 func TestGetSpanNotInstrumented(t *testing.T) {
 	assert := assert.New(t)
 	router := echo.New()
