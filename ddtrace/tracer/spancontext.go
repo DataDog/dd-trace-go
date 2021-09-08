@@ -165,9 +165,9 @@ var (
 	// over and over. Could be fine-tuned at runtime.
 	traceStartSize = 10
 	// traceMaxSize is the maximum number of spans we keep in memory.
-	// This is to avoid memory leaks, if above that value, spans are randomly
-	// dropped and ignore, resulting in corrupted tracing data, but ensuring
-	// original program continues to work as expected.
+	// This is to avoid memory leaks, more spans than this are added to a
+	// single trace, then the trace is dropped. Adding additional spans 
+	// does nothing.
 	traceMaxSize = int(1e5)
 )
 
