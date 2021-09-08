@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	pprofile "github.com/google/pprof/profile"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	pprofile "github.com/google/pprof/profile"
 )
 
 // outChannelSize specifies the size of the profile output channel.
