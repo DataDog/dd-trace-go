@@ -8,6 +8,7 @@ package echo
 
 import (
 	"math"
+	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -75,8 +76,23 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				finishOpts = append(finishOpts, tracer.WithError(err))
 				// invokes the registered HTTP error handler
 				c.Error(err)
-			}
 
+				// It is impossible to determine what the final status code of a request is in echo.
+				// This is the best we can do.
+				switch err := err.(type) {
+				case *echo.HTTPError:
+					if err.Code >= 500 {
+						span.SetTag(ext.Error, err)
+					}
+					span.SetTag(ext.HTTPCode, strconv.Itoa(err.Code))
+				default:
+					// Any non-HTTPError errors appear as 5xx errors.
+					span.SetTag(ext.Error, err)
+					span.SetTag(ext.HTTPCode, "500")
+				}
+			} else {
+				span.SetTag(ext.HTTPCode, "200")
+			}
 			return err
 		}
 	}
