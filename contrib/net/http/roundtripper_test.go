@@ -308,3 +308,25 @@ func TestResourceNamer(t *testing.T) {
 		assert.Equal(t, "GET /hello/world", spans[0].Tag(ext.ResourceName))
 	})
 }
+
+func TestSpanOptions(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("")) }))
+	defer s.Close()
+
+	const (
+		tagKey   = "foo"
+		tagValue = "bar"
+	)
+	var (
+		mt     = mocktracer.Start()
+		rt     = WrapRoundTripper(http.DefaultTransport, RTWithSpanOptions(tracer.Tag(tagKey, tagValue)))
+		client = &http.Client{Transport: rt}
+	)
+	defer mt.Stop()
+
+	client.Get(s.URL)
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+	assert.Equal(t, tagValue, spans[0].Tag(tagKey))
+}
