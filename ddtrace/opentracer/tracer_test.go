@@ -7,6 +7,7 @@ package opentracer
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -36,4 +37,21 @@ func TestSpanWithContext(t *testing.T) {
 	got, ok := tracer.SpanFromContext(ctx)
 	assert.True(ok)
 	assert.Equal(got, want.(*span).Span)
+}
+
+func TestTranslateError(t *testing.T) {
+	for name, tt := range map[string]struct {
+		in, out error
+	}{
+		"nil":                     {in: nil, out: nil},
+		"unrecognized":            {in: errors.New("unrecognized"), out: errors.New("unrecognized")},
+		"ErrSpanContextNotFound":  {in: tracer.ErrSpanContextNotFound, out: opentracing.ErrSpanContextNotFound},
+		"ErrInvalidCarrier":       {in: tracer.ErrInvalidCarrier, out: opentracing.ErrInvalidCarrier},
+		"ErrInvalidSpanContext":   {in: tracer.ErrInvalidSpanContext, out: opentracing.ErrInvalidSpanContext},
+		"ErrSpanContextCorrupted": {in: tracer.ErrSpanContextCorrupted, out: opentracing.ErrSpanContextCorrupted},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tt.out, translateError(tt.in))
+		})
+	}
 }

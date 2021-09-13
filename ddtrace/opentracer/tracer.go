@@ -73,7 +73,7 @@ func (t *opentracer) Inject(ctx opentracing.SpanContext, format interface{}, car
 	}
 	switch format {
 	case opentracing.TextMap, opentracing.HTTPHeaders:
-		return t.Tracer.Inject(sctx, carrier)
+		return translateError(t.Tracer.Inject(sctx, carrier))
 	default:
 		return opentracing.ErrUnsupportedFormat
 	}
@@ -83,7 +83,8 @@ func (t *opentracer) Inject(ctx opentracing.SpanContext, format interface{}, car
 func (t *opentracer) Extract(format interface{}, carrier interface{}) (opentracing.SpanContext, error) {
 	switch format {
 	case opentracing.TextMap, opentracing.HTTPHeaders:
-		return t.Tracer.Extract(carrier)
+		sctx, err := t.Tracer.Extract(carrier)
+		return sctx, translateError(err)
 	default:
 		return nil, opentracing.ErrUnsupportedFormat
 	}
@@ -98,4 +99,19 @@ func (t *opentracer) ContextWithSpanHook(ctx context.Context, openSpan opentraci
 		return ctx
 	}
 	return tracer.ContextWithSpan(ctx, ddSpan.Span)
+}
+
+func translateError(err error) error {
+	switch err {
+	case tracer.ErrSpanContextNotFound:
+		return opentracing.ErrSpanContextNotFound
+	case tracer.ErrInvalidCarrier:
+		return opentracing.ErrInvalidCarrier
+	case tracer.ErrInvalidSpanContext:
+		return opentracing.ErrInvalidSpanContext
+	case tracer.ErrSpanContextCorrupted:
+		return opentracing.ErrSpanContextCorrupted
+	default:
+		return err
+	}
 }
