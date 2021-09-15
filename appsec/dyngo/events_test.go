@@ -2,11 +2,9 @@ package dyngo_test
 
 import (
 	"fmt"
+	"github.com/DataDog/dd-trace-go/appsec/dyngo"
 	"reflect"
 	"testing"
-	"unsafe"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/dyngo"
 
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +27,7 @@ func TestOperationEvents(t *testing.T) {
 			op.Finish(testOp1Res{})
 		})
 
-		require.NotPanics(t, func() {
+		require.Panics(t, func() {
 			op := dyngo.StartOperation(nil)
 			op.Finish(nil)
 		})
@@ -103,13 +101,6 @@ func TestOperationEvents(t *testing.T) {
 		op2.Finish(testOp2Res{})
 		// No longer called
 		require.Equal(t, 3, called)
-	})
-}
-
-func TestGoAssumptions(t *testing.T) {
-	// Interface values have the same size
-	t.Run("reflect.Type interface value size", func(t *testing.T) {
-		require.Equal(t, unsafe.Sizeof(reflect.Type(nil)), unsafe.Sizeof(interface{}(nil)))
 	})
 }
 
@@ -203,6 +194,36 @@ func BenchmarkGoAssumptions(b *testing.B) {
 					k = reflect.TypeOf(testS4{})
 				}
 				_ = m[k]
+			}
+		})
+
+		b.Run("custom type struct keys", func(b *testing.B) {
+			type typeDesc struct {
+				pkgPath, name string
+			}
+			m := map[typeDesc]int{}
+			for i := 0; i < 5; i++ {
+				typ := getType(i)
+				m[typeDesc{typ.PkgPath(), typ.Name()}] = i
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				var k reflect.Type
+				switch n % 5 {
+				case 0:
+					k = reflect.TypeOf(testS0{})
+				case 1:
+					k = reflect.TypeOf(testS1{})
+				case 2:
+					k = reflect.TypeOf(testS2{})
+				case 3:
+					k = reflect.TypeOf(testS3{})
+				case 4:
+					k = reflect.TypeOf(testS4{})
+				}
+				_ = m[typeDesc{k.PkgPath(), k.Name()}]
 			}
 		})
 	})

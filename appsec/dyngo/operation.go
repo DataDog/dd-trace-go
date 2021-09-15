@@ -21,13 +21,18 @@ type (
 func (OperationInstrumentation) isInstrumentation() {}
 func (FunctionInstrumentation) isInstrumentation()  {}
 
-func Register(descriptors ...InstrumentationDescriptor) {
-	for _, d := range descriptors {
-		switch actual := d.Instrumentation.(type) {
+func Register(descriptors ...InstrumentationDescriptor) (ids []EventListenerID) {
+	for _, desc := range descriptors {
+		switch actual := desc.Instrumentation.(type) {
 		case OperationInstrumentation:
-			root.Register(actual.EventListener)
+			ids = append(ids, root.Register(actual.EventListener)...)
 		}
 	}
+	return ids
+}
+
+func Unregister(ids []EventListenerID) {
+	root.Unregister(ids)
 }
 
 type (

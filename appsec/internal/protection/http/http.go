@@ -1,25 +1,30 @@
 package http
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/dyngo"
-	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/appsec/instrumentation/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/waf"
+	"github.com/DataDog/dd-trace-go/appsec/dyngo"
+	httpinstr "github.com/DataDog/dd-trace-go/appsec/instrumentation/http"
+	"github.com/DataDog/dd-trace-go/appsec/internal/protection/waf"
 )
 
-func init() {
-	dyngo.Register(
+func Register() (ids []dyngo.EventListenerID) {
+	return dyngo.Register(
 		dyngo.InstrumentationDescriptor{
 			Title: "HTTP WAF Data Listener",
 			Instrumentation: dyngo.OperationInstrumentation{
 				EventListener: waf.NewOperationEventListener(),
 			},
 		},
-
 		dyngo.InstrumentationDescriptor{
 			Title: "HTTP Data Emitter",
 			Instrumentation: dyngo.OperationInstrumentation{
 				EventListener: dyngo.OnStartEventListener(func(op *dyngo.Operation, args httpinstr.HandlerOperationArgs) {
-					httpinstr.EmitData(op, args)
+					if len(args.Headers) > 0 {
+						op.EmitData(args.Headers)
+					}
+					op.EmitData(args.UserAgent)
+					if len(args.QueryValues) > 0 {
+						op.EmitData(args.QueryValues)
+					}
 				}),
 			},
 		},

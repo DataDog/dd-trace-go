@@ -2,13 +2,12 @@ package dyngo_test
 
 import (
 	"errors"
+	"github.com/DataDog/dd-trace-go/appsec/dyngo"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/dyngo"
 
 	"github.com/stretchr/testify/require"
 )
@@ -68,7 +67,7 @@ func TestUsage(t *testing.T) {
 			})
 		}
 
-		// HTTP body reads listener appending the read results to a buffer
+		// HTTP body read listener appending the read results to a buffer
 		rawBodyListener := func(called *int, buf *[]byte) dyngo.EventListener {
 			return dyngo.OnStartEventListener(func(op *dyngo.Operation, args HTTPHandlerArgs) {
 
@@ -260,6 +259,56 @@ func TestUsage(t *testing.T) {
 			require.Nil(t, JSONBodyParserValue)
 		})
 	})
+}
+
+type (
+	MyOperationArgs struct{}
+	MyOperationData struct{}
+	MyOperationRes  struct{}
+)
+
+func TestRegisterUnregister(t *testing.T) {
+	var onStartCalled, onDataCalled, onFinishCalled int
+
+	ids := dyngo.Register(
+		dyngo.InstrumentationDescriptor{
+			Instrumentation: dyngo.OperationInstrumentation{
+				EventListener: dyngo.OnStartEventListener(func(*dyngo.Operation, MyOperationArgs) {
+					onStartCalled++
+				}),
+			},
+		},
+		dyngo.InstrumentationDescriptor{
+			Instrumentation: dyngo.OperationInstrumentation{
+				EventListener: dyngo.OnStartEventListener(func(*dyngo.Operation, MyOperationArgs) {
+					onDataCalled++
+				}),
+			},
+		},
+		dyngo.InstrumentationDescriptor{
+			Instrumentation: dyngo.OperationInstrumentation{
+				EventListener: dyngo.OnFinishEventListener(func(*dyngo.Operation, MyOperationRes) {
+					onFinishCalled++
+				}),
+			},
+		},
+	)
+
+	operation(nil, MyOperationArgs{}, MyOperationRes{}, func(op *dyngo.Operation) {
+		op.EmitData(MyOperationData{})
+	})
+	require.Equal(t, 1, onStartCalled)
+	require.Equal(t, 1, onDataCalled)
+	require.Equal(t, 1, onFinishCalled)
+
+	dyngo.Unregister(ids)
+	operation(nil, MyOperationArgs{}, MyOperationRes{}, func(op *dyngo.Operation) {
+		op.EmitData(MyOperationData{})
+	})
+	require.Equal(t, 1, onStartCalled)
+	require.Equal(t, 1, onDataCalled)
+	require.Equal(t, 1, onFinishCalled)
+
 }
 
 func operation(parent *dyngo.Operation, args, res interface{}, child func(*dyngo.Operation)) {
