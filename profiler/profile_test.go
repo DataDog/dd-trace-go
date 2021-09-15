@@ -14,6 +14,7 @@ import (
 	"runtime/trace"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -191,7 +192,9 @@ main;bar 0 0 8 16
 		p, err := unstartedProfiler(CPUDuration(profileDuration))
 		require.NoError(t, err)
 
-		finished := make(chan struct{})
+		stopCh := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(1)
 		go func() {
 			spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier{
 				tracer.DefaultTraceIDHeader:  []string{"12345"},
@@ -214,13 +217,14 @@ main;bar 0 0 8 16
 				defer child1.Finish()
 
 				go func() {
+					defer wg.Done()
 					child2 := tracer.StartSpan("child2", tracer.ChildOf(child1.Context()))
 					defer child2.Finish()
 					child2SpanID = child2.Context().SpanID()
 
 					for {
 						select {
-						case <-finished:
+						case <-stopCh:
 							done <- struct{}{}
 							return
 						default:
@@ -234,11 +238,14 @@ main;bar 0 0 8 16
 		}()
 
 		prof, err := p.runProfile(CPUProfile)
-		close(finished)
 		require.NoError(t, err)
+		close(stopCh)
+		wg.Wait()
+
 		assert.Equal(t, "cpu.pprof", prof[0].name)
 		parsed, err := pprofile.Parse(bytes.NewReader(prof[0].data))
 		require.NoError(t, err)
+
 		var spanTime time.Duration
 		for _, s := range parsed.Sample {
 			if v, ok := s.Label["span id"]; ok && len(v) == 1 {
