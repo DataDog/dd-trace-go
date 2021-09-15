@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,6 +19,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"github.com/DataDog/dd-trace-go/appsec"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)
@@ -78,6 +81,7 @@ type tracer struct {
 	// rules for applying a sampling rate to spans that match the designated service
 	// or operation name.
 	rulesSampling *rulesSampler
+	appsec        *appsec.Agent
 }
 
 const (
@@ -117,10 +121,14 @@ func Start(opts ...StartOption) {
 	if t.config.logStartup {
 		logStartup(t)
 	}
+	startAppSec(t)
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
+	if appsec := internal.GetGlobalTracer().(*tracer).appsec; appsec != nil {
+		appsec.Stop(true)
+	}
 	internal.SetGlobalTracer(&internal.NoopTracer{})
 	log.Flush()
 }
@@ -497,4 +505,42 @@ func (t *tracer) sample(span *span) {
 		return
 	}
 	t.prioritySampling.apply(span)
+}
+
+// Start AppSec when DD_APPSEC_ENABLED is true.
+func startAppSec(t *tracer) {
+	if appsecEnabled := os.Getenv("DD_APPSEC_ENABLED"); appsecEnabled == "" {
+		return
+	} else if enabled, err := strconv.ParseBool(appsecEnabled); err != nil {
+		log.Error("appsec: could not parse DD_APPSEC_ENABLED value `%s` as a boolean value", appsecEnabled)
+		return
+	} else if !enabled {
+		return
+	}
+
+	appsecAgent, err := appsec.NewAgent(
+		t.config.httpClient,
+		appsecLogger{},
+		&appsec.Config{
+			AgentURL: fmt.Sprintf("http://%s/", t.config.agentAddr),
+			Service: appsec.ServiceConfig{
+				Name: t.config.serviceName,
+			},
+		},
+	)
+	if err != nil {
+		log.Error("could not start appsec: %v", err)
+	}
+	appsecAgent.Start(context.Background())
+	t.appsec = appsecAgent
+}
+
+type appsecLogger struct{}
+
+func (appsecLogger) Warn(fmt string, v ...interface{}) {
+	log.Warn(fmt, v...)
+}
+
+func (appsecLogger) Error(fmt string, v ...interface{}) {
+	log.Error(fmt, v...)
 }
