@@ -15,6 +15,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/DataDog/dd-trace-go/appsec/dyngo"
+	httpinstr "github.com/DataDog/dd-trace-go/appsec/instrumentation/http"
+	appsectypes "github.com/DataDog/dd-trace-go/appsec/types"
 )
 
 // TraceConfig defines the configuration for request tracing.
@@ -53,6 +57,34 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 	defer span.Finish(cfg.FinishOpts...)
 
 	cfg.ResponseWriter = wrapResponseWriter(cfg.ResponseWriter, span)
+
+	op := dyngo.StartOperation(
+		httpinstr.HandlerOperationArgs{
+			IsTLS:       cfg.Request.TLS != nil,
+			Method:      httpinstr.Method(cfg.Request.Method),
+			Host:        httpinstr.Host(cfg.Request.Host),
+			RequestURI:  httpinstr.RequestURI(cfg.Request.RequestURI),
+			RemoteAddr:  httpinstr.RemoteAddr(cfg.Request.RemoteAddr),
+			Headers:     httpinstr.Header(cfg.Request.Header),
+			UserAgent:   httpinstr.UserAgent(cfg.Request.UserAgent()),
+			QueryValues: httpinstr.QueryValues(cfg.Request.URL.Query()),
+		},
+	)
+	op.OnData(func(_ *dyngo.Operation, e *appsectypes.SecurityEvent) {
+		// Keep this trace due to the security event
+		span.SetTag(ext.SamplingPriority, ext.ManualKeep)
+		// Add context to the event
+		spanCtx := span.Context()
+		// Add the APM context to the event
+		e.AddContext(appsectypes.SpanContext{
+			TraceID: spanCtx.TraceID(),
+			SpanID:  spanCtx.SpanID(),
+		})
+	})
+	defer func() {
+		// TODO: get the status code out of the wrapped response write
+		op.Finish(httpinstr.HandlerOperationRes{})
+	}()
 
 	h.ServeHTTP(cfg.ResponseWriter, cfg.Request.WithContext(ctx))
 }
