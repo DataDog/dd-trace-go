@@ -460,7 +460,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if span.context.trace != nil && span.context.trace.root != nil {
 		localRootSpan := span.context.trace.root
 		if t.config.profilerHotspots {
-			// TODO(fg) should we
+			// TODO(fg) should we add "span id" above if this branch doesn't get hit?
 			labels = append(labels, "local root span id", fmt.Sprintf("%d", localRootSpan.SpanID))
 		}
 		if t.config.profilerEndpoints {

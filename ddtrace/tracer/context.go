@@ -38,6 +38,8 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 // StartSpanFromContext returns a new span with the given operation name and options. If a span
 // is found in the context, it will be used as the parent of the resulting span. If the ChildOf
 // option is passed, the span from context will take precedence over it as the parent span.
+// TODO(fg) maybe I need to hook into this to get ctx to properly reset prof
+// labels after a span finishes.
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context) {
 	if ctx == nil {
 		// default to context.Background() to avoid panics on Go >= 1.15
