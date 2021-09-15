@@ -180,23 +180,53 @@ main;bar 0 0 8 16
 	t.Run("cpuCodeHotspots", func(t *testing.T) {
 		tracer.Start(tracer.WithCodeHotspots(true))
 		defer trace.Stop()
-
 		wantSpanTime := 90 * time.Millisecond
+
+		var rootSpanID uint64
+		p, err := unstartedProfiler(CPUDuration(time.Duration(float64(wantSpanTime) * 1.1)))
 		go func() {
+			spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier{
+				tracer.DefaultTraceIDHeader:  []string{"12345"},
+				tracer.DefaultParentIDHeader: []string{"9876"},
+			})
+			require.NoError(t, err)
+
 			time.Sleep(10 * time.Millisecond)
-			span := tracer.StartSpan("myOp")
-			defer span.Finish()
-			finished := time.After(wantSpanTime)
-			for {
-				select {
-				case <-finished:
-					return
-				default:
-				}
-			}
+			rootSpan := tracer.StartSpan("myRoot", tracer.ChildOf(spanctx))
+			defer rootSpan.Finish()
+			rootSpanID = rootSpan.Context().SpanID()
+			fmt.Printf("root span id: %d\n", rootSpanID)
+			fmt.Printf("root trace id: %d\n", rootSpan.Context().TraceID())
+
+			done := make(chan struct{})
+			go func() {
+				child1 := tracer.StartSpan("child1", tracer.ChildOf(rootSpan.Context()))
+				defer child1.Finish()
+
+				go func() {
+					child2 := tracer.StartSpan("child2", tracer.ChildOf(child1.Context()))
+					defer child2.Finish()
+
+					fmt.Printf("child2 span id: %d\n", child2.Context().SpanID())
+					fmt.Printf("child2 trace id: %d\n", child2.Context().TraceID())
+
+					finished := time.After(wantSpanTime)
+					for {
+						select {
+						case <-finished:
+							done <- struct{}{}
+							return
+						default:
+							// spin
+						}
+					}
+				}()
+
+			}()
+			<-done
 		}()
 
-		p, err := unstartedProfiler(CPUDuration(100 * time.Millisecond))
+		require.NoError(t, err)
 		prof, err := p.runProfile(CPUProfile)
 		require.NoError(t, err)
 		assert.Equal(t, "cpu.pprof", prof[0].name)
@@ -204,7 +234,8 @@ main;bar 0 0 8 16
 		require.NoError(t, err)
 		var spanTime time.Duration
 		for _, s := range parsed.Sample {
-			if _, ok := s.Label["span id"]; ok {
+			if v, ok := s.Label["span id"]; ok {
+				fmt.Printf("%#v\n", v)
 				spanTime += time.Duration(s.Value[1])
 			}
 		}

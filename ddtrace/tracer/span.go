@@ -319,6 +319,8 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		s.taskEnd()
 	}
 	s.finish(t)
+
+	// TODO(fg) deal with removing goroutine labels as needed.
 }
 
 // SetOperationName sets or changes the operation name.

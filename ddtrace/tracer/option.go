@@ -102,7 +102,8 @@ type config struct {
 	// errors will record a stack trace when this option is set.
 	noDebugStack bool
 
-	codeHotspots bool
+	profilerHotspots  bool
+	profilerEndpoints bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -482,9 +483,25 @@ func WithLogStartup(enabled bool) StartOption {
 	}
 }
 
-func WithCodeHotspots(enabled bool) StartOption {
+// WithProfilerCodeHotspots enables the code hotspots integration between
+// tracing and profiling. This is done by automatically attaching goroutine
+// labels called "span id" and "local root span id" when new spans are created.
+// You should not use these label names in your own code.
+// TODO(fg) finalize name, decide if one option for both features is enough.
+func WithProfilerCodeHotspots(enabled bool) StartOption {
 	return func(c *config) {
-		c.codeHotspots = enabled
+		c.profilerHotspots = enabled
+	}
+}
+
+// WithProfilerEndpoints enables the endpoints integration between tracing and
+// profiling. This is done by automatically attaching a goroutine label called
+// "trace endpoint" holding the resource name of the top-level service span.
+// You should not use this label name in your own code.
+// TODO(fg) finalize name, decide if one option for both features is enough.
+func WithProfilerEndpoints(enabled bool) StartOption {
+	return func(c *config) {
+		c.profilerEndpoints = enabled
 	}
 }
 

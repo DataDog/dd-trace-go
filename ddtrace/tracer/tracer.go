@@ -385,11 +385,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if id == 0 {
 		id = random.Uint64()
 	}
-	if t.config.codeHotspots {
-		labels := pprof.Labels("span id", fmt.Sprintf("%d", id))
-		ctx := pprof.WithLabels(gocontext.Background(), labels)
-		pprof.SetGoroutineLabels(ctx)
-	}
 
 	// span defaults
 	span := &span{
@@ -457,6 +452,26 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if _, ok := span.context.samplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
+	}
+	var labels []string
+	if t.config.profilerHotspots {
+		labels = append(labels, "span id", fmt.Sprintf("%d", span.SpanID))
+	}
+	if span.context.trace != nil && span.context.trace.root != nil {
+		localRootSpan := span.context.trace.root
+		if t.config.profilerHotspots {
+			// TODO(fg) should we
+			labels = append(labels, "local root span id", fmt.Sprintf("%d", localRootSpan.SpanID))
+		}
+		if t.config.profilerEndpoints {
+			// TODO(fg) this MUST NOT contain personally identifiable information, is
+			// it safe to assume that this guarantee will be met here?
+			labels = append(labels, "trace endpoint", localRootSpan.Resource)
+		}
+		if len(labels) > 0 {
+			ctx := pprof.WithLabels(gocontext.Background(), pprof.Labels(labels...))
+			pprof.SetGoroutineLabels(ctx)
+		}
 	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
 	return span
