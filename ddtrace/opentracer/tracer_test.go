@@ -7,7 +7,6 @@ package opentracer
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -39,19 +38,70 @@ func TestSpanWithContext(t *testing.T) {
 	assert.Equal(got, want.(*span).Span)
 }
 
-func TestTranslateError(t *testing.T) {
+func TestInjectError(t *testing.T) {
+	ot := New()
+
 	for name, tt := range map[string]struct {
-		in, out error
+		spanContext opentracing.SpanContext
+		format      interface{}
+		carrier     interface{}
+		want        error
 	}{
-		"nil":                     {in: nil, out: nil},
-		"unrecognized":            {in: errors.New("unrecognized"), out: errors.New("unrecognized")},
-		"ErrSpanContextNotFound":  {in: tracer.ErrSpanContextNotFound, out: opentracing.ErrSpanContextNotFound},
-		"ErrInvalidCarrier":       {in: tracer.ErrInvalidCarrier, out: opentracing.ErrInvalidCarrier},
-		"ErrInvalidSpanContext":   {in: tracer.ErrInvalidSpanContext, out: opentracing.ErrInvalidSpanContext},
-		"ErrSpanContextCorrupted": {in: tracer.ErrSpanContextCorrupted, out: opentracing.ErrSpanContextCorrupted},
+		"ErrInvalidCarrier": {
+			spanContext: ot.StartSpan("test.operation").Context(),
+			format:      opentracing.TextMap,
+			carrier:     "invalid-carrier",
+			want:        opentracing.ErrInvalidCarrier,
+		},
+		"ErrUnsupportedFormat": {
+			format: "unsupported-format",
+			want:   opentracing.ErrUnsupportedFormat,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tt.out, translateError(tt.in))
+			got := ot.Inject(tt.spanContext, tt.format, tt.carrier)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestExtractError(t *testing.T) {
+	ot := New()
+
+	for name, tt := range map[string]struct {
+		format  interface{}
+		carrier interface{}
+		want    error
+	}{
+		"ErrSpanContextNotFound": {
+			format:  opentracing.TextMap,
+			carrier: opentracing.TextMapCarrier(nil),
+			want:    opentracing.ErrSpanContextNotFound,
+		},
+		"ErrInvalidCarrier": {
+			format:  opentracing.TextMap,
+			carrier: "invalid-carrier",
+			want:    opentracing.ErrInvalidCarrier,
+		},
+		"ErrSpanContextCorrupted": {
+			format: opentracing.TextMap,
+			carrier: opentracing.TextMapCarrier(
+				map[string]string{
+					tracer.DefaultTraceIDHeader:  "-1",
+					tracer.DefaultParentIDHeader: "-1",
+					tracer.DefaultPriorityHeader: "not-a-number",
+				},
+			),
+			want: opentracing.ErrSpanContextCorrupted,
+		},
+		"ErrUnsupportedFormat": {
+			format: "unsupported-format",
+			want:   opentracing.ErrUnsupportedFormat,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, got := ot.Extract(tt.format, tt.carrier)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
