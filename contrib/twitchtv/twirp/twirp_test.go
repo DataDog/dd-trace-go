@@ -292,6 +292,48 @@ func TestAnalyticsSettings(t *testing.T) {
 	})
 }
 
+func TestServiceNameSettings(t *testing.T) {
+	assertServiceName := func(t *testing.T, mt mocktracer.Tracer, serviceName string, opts ...Option) {
+		hooks := NewServerHooks(opts...)
+		assert := assert.New(t)
+		mockServer(hooks, assert, nil)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		s := spans[0]
+		assert.Equal(serviceName, s.Tag(ext.ServiceName))
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertServiceName(t, mt, "twirp-server")
+	})
+
+	t.Run("global", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		svc := globalconfig.ServiceName()
+		defer globalconfig.SetServiceName(svc)
+		globalconfig.SetServiceName("service.global")
+
+		assertServiceName(t, mt, "service.global")
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		svc := globalconfig.ServiceName()
+		defer globalconfig.SetServiceName(svc)
+		globalconfig.SetServiceName("service.global")
+
+		assertServiceName(t, mt, "service.local", WithServiceName("service.local"))
+	})
+}
+
 type notifyListener struct {
 	net.Listener
 	ch chan<- struct{}
