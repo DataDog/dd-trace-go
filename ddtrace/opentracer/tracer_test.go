@@ -47,6 +47,12 @@ func TestInjectError(t *testing.T) {
 		carrier     interface{}
 		want        error
 	}{
+		"ErrInvalidSpanContext": {
+			spanContext: internal.NoopSpanContext{},
+			format:      opentracing.TextMap,
+			carrier:     opentracing.TextMapCarrier(map[string]string{}),
+			want:        opentracing.ErrInvalidSpanContext,
+		},
 		"ErrInvalidCarrier": {
 			spanContext: ot.StartSpan("test.operation").Context(),
 			format:      opentracing.TextMap,
