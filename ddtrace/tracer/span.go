@@ -8,10 +8,12 @@
 package tracer
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"reflect"
 	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -68,10 +70,11 @@ type span struct {
 	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
 
-	noDebugStack bool         `msg:"-"` // disables debug stack traces
-	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
-	context      *spanContext `msg:"-"` // span propagation context
-	taskEnd      func()       // ends execution tracer (runtime/trace) task, if started
+	noDebugStack bool            `msg:"-"` // disables debug stack traces
+	finished     bool            `msg:"-"` // true if the span has been submitted to a tracer.
+	context      *spanContext    `msg:"-"` // span propagation context
+	ctx          context.Context `msg:"-"` // nil unless goroutine labels were applied
+	taskEnd      func()          // ends execution tracer (runtime/trace) task, if started
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -320,7 +323,9 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	}
 	s.finish(t)
 
-	// TODO(fg) deal with removing goroutine labels as needed.
+	if s.ctx != nil {
+		pprof.SetGoroutineLabels(s.ctx)
+	}
 }
 
 // SetOperationName sets or changes the operation name.

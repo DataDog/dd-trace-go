@@ -13,7 +13,10 @@
 // with by accessing the subdirectories of this package: https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace#pkg-subdirectories.
 package ddtrace // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
 // and propagating spans. The official implementation if exposed as functions
@@ -122,6 +125,9 @@ type StartSpanConfig struct {
 	// Force-set the SpanID, rather than use a random number. If no Parent SpanContext is present,
 	// then this will also set the TraceID to the same value.
 	SpanID uint64
+
+	// Context holds the request-scoped context associated with this span.
+	Context context.Context
 }
 
 // Logger implementations are able to log given messages that the tracer might output.
