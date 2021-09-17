@@ -526,7 +526,9 @@ func startAppSec(t *tracer) {
 			Version:  version.Tag,
 			AgentURL: fmt.Sprintf("http://%s/", t.config.agentAddr),
 			Service: appsec.ServiceConfig{
-				Name: t.config.serviceName,
+				Name:        t.config.serviceName,
+				Version:     t.config.version,
+				Environment: t.config.env,
 			},
 		},
 	)
