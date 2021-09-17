@@ -3,13 +3,14 @@ package appsec
 import (
 	"context"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/appsec/internal/intake/api"
-	appsectypes "github.com/DataDog/dd-trace-go/appsec/types"
-	"github.com/stretchr/testify/mock"
 	"sync"
+	"testing"
 	"time"
 
-	"testing"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
+	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
+
+	"github.com/stretchr/testify/mock"
 )
 
 type IntakeClientMock struct {

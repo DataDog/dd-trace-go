@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/appsec/internal/protection/waf"
-	appsectypes "github.com/DataDog/dd-trace-go/appsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf"
+	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
 
 	"github.com/google/uuid"
 )

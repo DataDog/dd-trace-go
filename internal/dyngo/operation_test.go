@@ -2,12 +2,13 @@ package dyngo_test
 
 import (
 	"errors"
-	"github.com/DataDog/dd-trace-go/appsec/dyngo"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 
 	"github.com/stretchr/testify/require"
 )

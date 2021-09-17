@@ -1,6 +1,8 @@
 package types
 
-import httpinstr "github.com/DataDog/dd-trace-go/appsec/instrumentation/http"
+import (
+	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/instrumentation/http"
+)
 
 type (
 	SecurityEvent struct {

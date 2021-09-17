@@ -12,7 +12,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 
-	"github.com/DataDog/dd-trace-go/appsec/internal/intake/api"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
 )
 
 type Client struct {

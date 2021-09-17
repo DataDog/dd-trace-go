@@ -1,9 +1,9 @@
 package http
 
 import (
-	"github.com/DataDog/dd-trace-go/appsec/dyngo"
-	httpinstr "github.com/DataDog/dd-trace-go/appsec/instrumentation/http"
-	"github.com/DataDog/dd-trace-go/appsec/internal/protection/waf"
+	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/instrumentation/http"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 )
 
 func Register() (ids []dyngo.EventListenerID) {

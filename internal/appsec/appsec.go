@@ -3,7 +3,6 @@ package appsec
 import (
 	"context"
 	"fmt"
-	httpprotection "github.com/DataDog/dd-trace-go/appsec/internal/protection/http"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,10 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/appsec/internal/intake"
-	"github.com/DataDog/dd-trace-go/appsec/internal/intake/api"
-	appsectypes "github.com/DataDog/dd-trace-go/appsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
+	httpprotection "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/http"
+	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 )
 
 type (
@@ -25,6 +25,7 @@ type (
 		Hostname          string
 		MaxBatchLen       int
 		MaxBatchStaleTime time.Duration
+		Version           string
 	}
 
 	ServiceConfig struct {
@@ -122,7 +123,7 @@ func (a *Agent) run(ctx context.Context) {
 			appsectypes.TracerContext{
 				Runtime:        "go",
 				RuntimeVersion: runtime.Version(),
-				Version:        version,
+				Version:        a.cfg.Version,
 			},
 			appsectypes.HostContext{
 				Hostname: a.cfg.Hostname,

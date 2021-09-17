@@ -1,11 +1,11 @@
 package waf
 
 import (
-	"github.com/DataDog/dd-trace-go/appsec/dyngo"
 	"time"
 
-	httpinstr "github.com/DataDog/dd-trace-go/appsec/instrumentation/http"
-	appsectypes "github.com/DataDog/dd-trace-go/appsec/types"
+	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/instrumentation/http"
+	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 
 	"github.com/sqreen/go-libsqreen/waf"
 	"github.com/sqreen/go-libsqreen/waf/types"

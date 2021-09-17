@@ -1,4 +1,4 @@
-package _test_test
+package waf_test
 
 import (
 	"io/ioutil"

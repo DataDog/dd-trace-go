@@ -18,9 +18,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"github.com/DataDog/dd-trace-go/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)
@@ -523,6 +523,7 @@ func startAppSec(t *tracer) {
 		t.config.httpClient,
 		appsecLogger{},
 		&appsec.Config{
+			Version:  version.Tag,
 			AgentURL: fmt.Sprintf("http://%s/", t.config.agentAddr),
 			Service: appsec.ServiceConfig{
 				Name: t.config.serviceName,
