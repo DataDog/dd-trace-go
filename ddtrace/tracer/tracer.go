@@ -116,11 +116,11 @@ func Start(opts ...StartOption) {
 	if t.config.HasFeature("discovery") {
 		t.loadAgentFeatures()
 	}
+	startAppSec(t)
 	internal.SetGlobalTracer(t)
 	if t.config.logStartup {
 		logStartup(t)
 	}
-	startAppSec(t)
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
