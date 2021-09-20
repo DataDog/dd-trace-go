@@ -33,10 +33,14 @@ type (
 	}
 )
 
+// Default batching configuration values.
 const (
 	defaultMaxBatchLen       = 1024
 	defaultMaxBatchStaleTime = time.Second
 )
+
+// Default timeout of intake requests.
+const defaultIntakeTimeout = 10 * time.Second
 
 type Agent struct {
 	client             *intake.Client
@@ -90,8 +94,8 @@ func NewAgent(client *http.Client, logger Logger, cfg *Config) (*Agent, error) {
 	}, nil
 }
 
-func (a *Agent) Start(ctx context.Context) {
-	a.run(ctx)
+func (a *Agent) Start() {
+	a.run()
 }
 
 func (a *Agent) Stop(gracefully bool) {
@@ -105,7 +109,7 @@ func (a *Agent) Stop(gracefully bool) {
 	a.wg.Wait()
 }
 
-func (a *Agent) run(ctx context.Context) {
+func (a *Agent) run() {
 	a.instrumentationIDs = append(a.instrumentationIDs, httpprotection.Register()...)
 	a.instrumentationIDs = append(a.instrumentationIDs, a.listenSecurityEvents()...)
 
@@ -131,7 +135,7 @@ func (a *Agent) run(ctx context.Context) {
 			},
 		}
 
-		eventBatchingLoop(ctx, a.client, a.eventChan, globalEventCtx, a.cfg)
+		eventBatchingLoop(a.client, a.eventChan, globalEventCtx, a.cfg)
 	}()
 }
 
@@ -139,43 +143,58 @@ type IntakeClient interface {
 	SendBatch(context.Context, api.EventBatch) error
 }
 
-func eventBatchingLoop(ctx context.Context, client IntakeClient, eventChan <-chan *appsectypes.SecurityEvent, globalEventCtx []appsectypes.SecurityEventContext, cfg *Config) {
+func eventBatchingLoop(client IntakeClient, eventChan <-chan *appsectypes.SecurityEvent, globalEventCtx []appsectypes.SecurityEventContext, cfg *Config) {
+	// The batch of events
 	batch := make([]*appsectypes.SecurityEvent, 0, cfg.MaxBatchLen)
+
+	// Timer initialized to a first dummy time value to initialize it and so that we can immediately
+	// use its channel field in the following select statement.
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 
+	// Helper function stopping the timer, sending the batch and resetting it.
+	sendBatch := func() {
+		if !timer.Stop() {
+			// Remove the time value from the channel in case the timer fired and so that we avoid
+			// sending the batch again in the next loop iteration due to a value in the timer
+			// channel.
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), defaultIntakeTimeout)
+		defer cancel()
+		client.SendBatch(ctx, api.FromSecurityEvents(batch, globalEventCtx))
+		batch = batch[0:0]
+	}
+
+	// Loop-select between the event channel or the stale timer (when enabled).
 	for {
 		select {
-		case <-ctx.Done():
-			// Return immediately as the context is now done so the http client cannot be used anymore
-			return
-
 		case event, ok := <-eventChan:
+			// Add the event to the batch.
+			// The event might be nil when closing the channel while it was empty.
 			if event != nil {
 				batch = append(batch, event)
 			}
 			if !ok {
-				timer.Stop()
+				// The event channel has been closed. Send the batch if it's not empty.
 				if len(batch) > 0 {
-					client.SendBatch(ctx, api.FromSecurityEvents(batch, globalEventCtx))
+					sendBatch()
 				}
 				return
 			}
-
+			// Send the batch when it's full or start the timer when this is the first value in
+			// the batch.
 			if l := len(batch); l == cfg.MaxBatchLen {
-				timer.Stop()
-				client.SendBatch(ctx, api.FromSecurityEvents(batch, globalEventCtx))
-				batch = batch[0:0]
+				sendBatch()
 			} else if l == 1 {
-				timer = time.NewTimer(cfg.MaxBatchStaleTime)
+				timer.Reset(cfg.MaxBatchStaleTime)
 			}
 
 		case <-timer.C:
-			if len(batch) == 0 {
-				continue
-			}
-			client.SendBatch(ctx, api.FromSecurityEvents(batch, globalEventCtx))
-			batch = batch[0:0]
+			sendBatch()
 		}
 	}
 }

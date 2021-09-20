@@ -47,15 +47,14 @@ func TestEventBatchingLoop(t *testing.T) {
 						}
 
 						// Start the batching goroutine
-						ctx := context.Background()
 						var wg sync.WaitGroup
 						wg.Add(1)
 						go func() {
 							defer wg.Done()
-							eventBatchingLoop(ctx, client, eventChan, nil, cfg)
+							eventBatchingLoop(client, eventChan, nil, cfg)
 						}()
 
-						client.On("SendBatch", ctx, mock.AnythingOfType("api.EventBatch")).Times(expectedNbBatches).Return(nil)
+						client.On("SendBatch", mock.Anything, mock.AnythingOfType("api.EventBatch")).Times(expectedNbBatches).Return(nil)
 						// Send enough events to generate expectedNbBatches
 						for i := 0; i < maxBatchLen*expectedNbBatches; i++ {
 							eventChan <- &appsectypes.SecurityEvent{}
@@ -87,16 +86,15 @@ func TestEventBatchingLoop(t *testing.T) {
 		}
 
 		// Start the batching goroutine
-		ctx := context.Background()
 		var wg sync.WaitGroup
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			eventBatchingLoop(ctx, client, eventChan, nil, cfg)
+			eventBatchingLoop(client, eventChan, nil, cfg)
 		}()
 
 		//
-		client.On("SendBatch", ctx, mock.AnythingOfType("api.EventBatch")).Times(2).Return(nil)
+		client.On("SendBatch", mock.Anything, mock.AnythingOfType("api.EventBatch")).Times(2).Return(nil)
 
 		// Send a few events and wait for the configured max stale time so that the batch gets sent
 		eventChan <- &appsectypes.SecurityEvent{}
@@ -125,36 +123,6 @@ func TestEventBatchingLoop(t *testing.T) {
 	})
 
 	t.Run("canceling the loop", func(t *testing.T) {
-		t.Run("by canceling the context", func(t *testing.T) {
-			t.Run("with an empty batch", func(t *testing.T) {
-				client := &IntakeClientMock{
-					SendBatchCalled: make(chan struct{}, 1),
-				}
-				eventChan := make(chan *appsectypes.SecurityEvent, 1024)
-				cfg := &Config{
-					MaxBatchLen:       1024,
-					MaxBatchStaleTime: time.Hour,
-				}
-
-				// Start the batching goroutine
-				ctx, cancel := context.WithCancel(context.Background())
-				var wg sync.WaitGroup
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					eventBatchingLoop(ctx, client, eventChan, nil, cfg)
-				}()
-
-				// No client calls should be made
-				client.AssertExpectations(t)
-
-				// Close the context to stop the loop
-				cancel()
-				// Wait() should therefore return
-				wg.Wait()
-			})
-		})
-
 		t.Run("by closing the event channel", func(t *testing.T) {
 			t.Run("with an empty batch", func(t *testing.T) {
 				client := &IntakeClientMock{}
@@ -169,7 +137,7 @@ func TestEventBatchingLoop(t *testing.T) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					eventBatchingLoop(context.Background(), client, eventChan, nil, cfg)
+					eventBatchingLoop(client, eventChan, nil, cfg)
 				}()
 
 				// No client calls should be made
@@ -192,16 +160,15 @@ func TestEventBatchingLoop(t *testing.T) {
 				}
 
 				// Start the batching goroutine
-				ctx := context.Background()
 				var wg sync.WaitGroup
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					eventBatchingLoop(ctx, client, eventChan, nil, cfg)
+					eventBatchingLoop(client, eventChan, nil, cfg)
 				}()
 
 				// Perform an event
-				client.On("SendBatch", ctx, mock.AnythingOfType("api.EventBatch")).Times(1).Return(nil)
+				client.On("SendBatch", mock.Anything, mock.AnythingOfType("api.EventBatch")).Times(1).Return(nil)
 				eventChan <- &appsectypes.SecurityEvent{}
 
 				// Close the context to stop the loop

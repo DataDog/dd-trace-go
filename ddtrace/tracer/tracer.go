@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -534,7 +533,7 @@ func startAppSec(t *tracer) {
 	if err != nil {
 		log.Error("could not start appsec: %v", err)
 	}
-	appsecAgent.Start(context.Background())
+	appsecAgent.Start()
 	t.appsec = appsecAgent
 }
 
