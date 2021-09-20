@@ -473,9 +473,10 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			if ctx == nil {
 				ctx = gocontext.Background()
 			} else {
-				span.ctx = ctx
+				span.restoreContext = ctx
 			}
-			pprof.SetGoroutineLabels(pprof.WithLabels(ctx, pprof.Labels(labels...)))
+			span.labelContext = pprof.WithLabels(ctx, pprof.Labels(labels...))
+			pprof.SetGoroutineLabels(span.labelContext)
 		}
 	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)

@@ -48,5 +48,8 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	}
 	opts = append(opts, WithContext(ctx))
 	s := StartSpan(operationName, opts...)
+	if span, ok := s.(*span); ok && span.labelContext != nil {
+		ctx = span.labelContext
+	}
 	return s, ContextWithSpan(ctx, s)
 }
