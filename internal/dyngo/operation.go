@@ -6,41 +6,6 @@
 package dyngo
 
 type (
-	InstrumentationDescriptor struct {
-		Title           string
-		Instrumentation Instrumentation
-	}
-
-	Instrumentation interface{ isInstrumentation() }
-
-	OperationInstrumentation struct {
-		EventListener EventListener
-	}
-
-	FunctionInstrumentation struct {
-		Symbol   string
-		Prologue interface{}
-	}
-)
-
-func (OperationInstrumentation) isInstrumentation() {}
-func (FunctionInstrumentation) isInstrumentation()  {}
-
-func Register(descriptors ...InstrumentationDescriptor) (ids []EventListenerID) {
-	for _, desc := range descriptors {
-		switch actual := desc.Instrumentation.(type) {
-		case OperationInstrumentation:
-			ids = append(ids, root.Register(actual.EventListener)...)
-		}
-	}
-	return ids
-}
-
-func Unregister(ids []EventListenerID) {
-	root.Unregister(ids)
-}
-
-type (
 	Option interface {
 		apply(s *Operation)
 	}

@@ -48,11 +48,11 @@ const (
 const defaultIntakeTimeout = 10 * time.Second
 
 type Agent struct {
-	client             *intake.Client
-	eventChan          chan *appsectypes.SecurityEvent
-	wg                 sync.WaitGroup
-	cfg                *Config
-	instrumentationIDs []dyngo.EventListenerID
+	client          *intake.Client
+	eventChan       chan *appsectypes.SecurityEvent
+	wg              sync.WaitGroup
+	cfg             *Config
+	unregisterInstr []dyngo.UnregisterFunc
 }
 
 type Logger interface {
@@ -104,7 +104,9 @@ func (a *Agent) Start() {
 }
 
 func (a *Agent) Stop(gracefully bool) {
-	dyngo.Unregister(a.instrumentationIDs)
+	for _, unregister := range a.unregisterInstr {
+		unregister()
+	}
 	// Stop the batching goroutine
 	close(a.eventChan)
 	// Possibly wait for the goroutine to gracefully stop
@@ -115,8 +117,7 @@ func (a *Agent) Stop(gracefully bool) {
 }
 
 func (a *Agent) run() {
-	a.instrumentationIDs = append(a.instrumentationIDs, httpprotection.Register()...)
-	a.instrumentationIDs = append(a.instrumentationIDs, a.listenSecurityEvents()...)
+	a.unregisterInstr = append(a.unregisterInstr, httpprotection.Register(), a.listenSecurityEvents())
 
 	a.wg.Add(1)
 	go func() {
@@ -204,7 +205,7 @@ func eventBatchingLoop(client IntakeClient, eventChan <-chan *appsectypes.Securi
 	}
 }
 
-func (a *Agent) listenSecurityEvents() []dyngo.EventListenerID {
+func (a *Agent) listenSecurityEvents() dyngo.UnregisterFunc {
 	return dyngo.Register(dyngo.InstrumentationDescriptor{
 		Title: "Attack Queue",
 		Instrumentation: dyngo.OperationInstrumentation{

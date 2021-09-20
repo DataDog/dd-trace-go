@@ -276,7 +276,7 @@ type (
 func TestRegisterUnregister(t *testing.T) {
 	var onStartCalled, onDataCalled, onFinishCalled int
 
-	ids := dyngo.Register(
+	unregister := dyngo.Register(
 		dyngo.InstrumentationDescriptor{
 			Instrumentation: dyngo.OperationInstrumentation{
 				EventListener: dyngo.OnStartEventListener(func(*dyngo.Operation, MyOperationArgs) {
@@ -307,7 +307,7 @@ func TestRegisterUnregister(t *testing.T) {
 	require.Equal(t, 1, onDataCalled)
 	require.Equal(t, 1, onFinishCalled)
 
-	dyngo.Unregister(ids)
+	unregister()
 	operation(nil, MyOperationArgs{}, MyOperationRes{}, func(op *dyngo.Operation) {
 		op.EmitData(MyOperationData{})
 	})

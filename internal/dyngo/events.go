@@ -40,20 +40,12 @@ type (
 	}
 )
 
-type (
-	EventListenerID interface {
-		unregisterFrom(*Operation)
-	}
-	OnStartEventListenerID  eventListenerID
-	OnFinishEventListenerID eventListenerID
-	OnDataEventListenerID   eventListenerID
-	eventListenerID         uint32
-)
+type eventListenerID uint32
 
-var currentEventListenerID eventListenerID
+var lastID eventListenerID
 
-func (id *eventListenerID) atomicIncrement() eventListenerID {
-	return eventListenerID(atomic.AddUint32((*uint32)(id), 1))
+func nextID() eventListenerID {
+	return eventListenerID(atomic.AddUint32((*uint32)(&lastID), 1))
 }
 
 func makeMapKey(typ reflect.Type) eventListenerMapKey {
@@ -69,7 +61,7 @@ func (r *eventRegister) add(k eventListenerMapKey, l interface{}) eventListenerI
 	if r.listeners == nil {
 		r.listeners = make(eventListenerMap)
 	}
-	id := currentEventListenerID.atomicIncrement()
+	id := nextID()
 	r.listeners[k] = append(r.listeners[k], eventListenerMapEntry{
 		Id:       id,
 		Callback: l,
@@ -105,24 +97,24 @@ func (r *eventRegister) clear() {
 	r.listeners = nil
 }
 
-func (e *eventManager) OnStart(l OnStartEventListenerFunc) EventListenerID {
-	return OnStartEventListenerID(e.onStart.add(makeMapKey(reflect.TypeOf(l).In(1)), l))
+func (e *eventManager) OnStart(l OnStartEventListenerFunc) UnregisterFunc {
+	return registerTo(&e.onStart, l)
 }
 
 func (e *eventManager) emitStartEvent(op *Operation, args interface{}) {
 	e.emitEvent(op, &e.onStart, args)
 }
 
-func (e *eventManager) OnFinish(l OnFinishEventListenerFunc) EventListenerID {
-	return OnFinishEventListenerID(e.onFinish.add(makeMapKey(reflect.TypeOf(l).In(1)), l))
+func (e *eventManager) OnFinish(l OnFinishEventListenerFunc) UnregisterFunc {
+	return registerTo(&e.onFinish, l)
 }
 
 func (e *eventManager) emitFinishEvent(op *Operation, results interface{}) {
 	e.emitEvent(op, &e.onFinish, results)
 }
 
-func (e *eventManager) OnData(l OnDataEventListenerFunc) EventListenerID {
-	return OnDataEventListenerID(e.onData.add(makeMapKey(reflect.TypeOf(l).In(1)), l))
+func (e *eventManager) OnData(l OnDataEventListenerFunc) UnregisterFunc {
+	return registerTo(&e.onData, l)
 }
 
 func (e *eventManager) emitDataEvent(op *Operation, data interface{}) {
@@ -143,15 +135,15 @@ func (e *eventManager) emitEvent(op *Operation, r *eventRegister, args interface
 }
 
 type (
-	// OnStartEventListenerFunc func(op Operation, args <T>)
+	// OnStartEventListenerFunc func(op *Operation, args <T>)
 	OnStartEventListenerFunc interface{}
-	// OnDataEventListenerFunc func(op Operation, data <T>)
+	// OnDataEventListenerFunc func(op *Operation, data <T>)
 	OnDataEventListenerFunc interface{}
-	// OnFinishEventListenerFunc func(op Operation, results <T>)
+	// OnFinishEventListenerFunc func(op *Operation, results <T>)
 	OnFinishEventListenerFunc interface{}
 
 	EventListener interface {
-		registerTo(*Operation) EventListenerID
+		registerTo(*Operation) UnregisterFunc
 	}
 
 	eventListener         struct{ l interface{} }
@@ -160,61 +152,44 @@ type (
 	onFinishEventListener eventListener
 )
 
-func (o *Operation) Register(l ...EventListener) (ids []EventListenerID) {
-	ids = make([]EventListenerID, 0, len(l))
-	for _, l := range l {
-		ids = append(ids, l.registerTo(o))
+type UnregisterFunc func()
+
+func (o *Operation) Register(l ...EventListener) UnregisterFunc {
+	unregisterFuncs := make([]UnregisterFunc, len(l))
+	for i, l := range l {
+		unregisterFuncs[i] = l.registerTo(o)
 	}
-	return ids
-}
-
-func (o *Operation) Unregister(ids []EventListenerID) {
-	for _, id := range ids {
-		id.unregisterFrom(o)
+	return func() {
+		for _, unregister := range unregisterFuncs {
+			unregister()
+		}
 	}
 }
 
-func (id OnStartEventListenerID) unregisterFrom(op *Operation) {
-	forEachOperation(op, func(op *Operation) {
-		if op.onStart.remove(eventListenerID(id)) {
-			return
-		}
-	})
-}
-
-func (id OnFinishEventListenerID) unregisterFrom(op *Operation) {
-	forEachOperation(op, func(op *Operation) {
-		if op.onFinish.remove(eventListenerID(id)) {
-			return
-		}
-	})
-}
-
-func (id OnDataEventListenerID) unregisterFrom(op *Operation) {
-	forEachOperation(op, func(op *Operation) {
-		if op.onData.remove(eventListenerID(id)) {
-			return
-		}
-	})
+func registerTo(register *eventRegister, l interface{}) UnregisterFunc {
+	id := register.add(makeMapKey(reflect.TypeOf(l).In(1)), l)
+	return func() {
+		register.remove(id)
+	}
 }
 
 func OnStartEventListener(l OnStartEventListenerFunc) EventListener {
 	return onStartEventListener{l}
 }
-func (l onStartEventListener) registerTo(op *Operation) EventListenerID {
+func (l onStartEventListener) registerTo(op *Operation) UnregisterFunc {
 	return op.OnStart(l.l)
 }
 
 func OnDataEventListener(l OnDataEventListenerFunc) EventListener {
 	return onDataEventListener{l}
 }
-func (l onDataEventListener) registerTo(op *Operation) EventListenerID {
+func (l onDataEventListener) registerTo(op *Operation) UnregisterFunc {
 	return op.OnData(l.l)
 }
 
 func OnFinishEventListener(l OnFinishEventListenerFunc) EventListener {
 	return onFinishEventListener{l}
 }
-func (l onFinishEventListener) registerTo(op *Operation) EventListenerID {
+func (l onFinishEventListener) registerTo(op *Operation) UnregisterFunc {
 	return op.OnFinish(l.l)
 }

@@ -11,7 +11,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 )
 
-func Register() (ids []dyngo.EventListenerID) {
+func Register() dyngo.UnregisterFunc {
 	return dyngo.Register(
 		dyngo.InstrumentationDescriptor{
 			Title: "HTTP WAF Data Listener",
