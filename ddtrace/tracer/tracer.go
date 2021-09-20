@@ -127,8 +127,7 @@ func Start(opts ...StartOption) {
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
 	if v, ok := internal.GetGlobalTracer().(*tracer); ok && v.appsec != nil {
-	    // use v.appsec
-		appsec.Stop(true)
+		v.appsec.Stop(true)
 	}
 	internal.SetGlobalTracer(&internal.NoopTracer{})
 	log.Flush()
