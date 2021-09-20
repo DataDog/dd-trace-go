@@ -494,7 +494,7 @@ func (t *tracer) sample(span *span) {
 	}
 	sampler := t.config.sampler
 	if !sampler.Sample(span) {
-		span.context.drop = true
+		span.context.trace.drop()
 		return
 	}
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {

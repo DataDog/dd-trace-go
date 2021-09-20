@@ -107,26 +107,26 @@ func TestShouldDrop(t *testing.T) {
 		rate   float64
 		want   bool
 	}{
-		{1, 0, 0, false},
-		{2, 1, 0, false},
-		{0, 1, 0, false},
-		{0, 0, 1, false},
-		{0, 0, 0.5, false},
-		{0, 0, 0.00001, true},
-		{0, 0, 0, true},
+		{1, 0, 0, true},
+		{2, 1, 0, true},
+		{0, 1, 0, true},
+		{0, 0, 1, true},
+		{0, 0, 0.5, true},
+		{0, 0, 0.00001, false},
+		{0, 0, 0, false},
 	} {
 		t.Run("", func(t *testing.T) {
 			s := newSpan("", "", "", 1, 1, 0)
 			s.SetTag(ext.SamplingPriority, tt.prio)
 			s.SetTag(ext.EventSampleRate, tt.rate)
 			atomic.StoreInt64(&s.context.errors, tt.errors)
-			assert.Equal(t, shouldDrop(s), tt.want)
+			assert.Equal(t, shouldKeep(s), tt.want)
 		})
 	}
 
 	t.Run("none", func(t *testing.T) {
 		s := newSpan("", "", "", 1, 1, 0)
-		assert.Equal(t, shouldDrop(s), true)
+		assert.Equal(t, shouldKeep(s), false)
 	})
 }
 
@@ -161,6 +161,16 @@ func TestSpanFinishWithTime(t *testing.T) {
 
 	duration := finishTime.UnixNano() - span.Start
 	assert.Equal(duration, span.Duration)
+}
+
+func TestSpanFinishWithNegativeDuration(t *testing.T) {
+	assert := assert.New(t)
+	startTime := time.Now()
+	finishTime := startTime.Add(-10 * time.Second)
+	span := newBasicSpan("web.request")
+	span.Start = startTime.UnixNano()
+	span.Finish(FinishTime(finishTime))
+	assert.Equal(int64(0), span.Duration)
 }
 
 func TestSpanFinishWithError(t *testing.T) {

@@ -14,6 +14,8 @@ import (
 	"runtime/pprof"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
+
 	"github.com/DataDog/gostackparse"
 	pprofile "github.com/google/pprof/profile"
 )
@@ -45,48 +47,139 @@ const (
 	MetricsProfile
 )
 
-func (t ProfileType) String() string {
-	switch t {
-	case HeapProfile:
-		return "heap"
-	case CPUProfile:
-		return "cpu"
-	case MutexProfile:
-		return "mutex"
-	case BlockProfile:
-		return "block"
-	case GoroutineProfile:
-		return "goroutine"
-	case expGoroutineWaitProfile:
-		return "goroutinewait"
-	case MetricsProfile:
-		return "metrics"
-	default:
-		return "unknown"
+// profileType holds the implementation details of a ProfileType.
+type profileType struct {
+	// Type gets populated automatically by ProfileType.lookup().
+	Type ProfileType
+	// Name specifies the profile name as used with pprof.Lookup(name) (in
+	// collectGenericProfile) and returned by ProfileType.String(). For profile
+	// types that don't use this approach (e.g. CPU) the name isn't used for
+	// anything.
+	Name string
+	// Filename is the filename used for uploading the profile to the datadog
+	// backend which is aware of them. Delta profiles are prefixed with "delta-"
+	// automatically. In theory this could be derrived from the Name field, but
+	// this isn't done due to idiosyncratic filename used by the
+	// GoroutineProfile.
+	Filename string
+	// Delta controls if this profile should be generated as a delta profile.
+	// This is useful for profiles that represent samples collected over the
+	// lifetime of the process (i.e. heap, block, mutex). If nil, no delta
+	// profile is generated.
+	Delta *pprofutils.Delta
+	// Collect collects the given profile and returns the data for it. Most
+	// profiles will be in pprof format, i.e. gzip compressed proto buf data.
+	Collect func(profileType, *profiler) ([]byte, error)
+}
+
+// profileTypes maps every ProfileType to its implementation.
+var profileTypes = map[ProfileType]profileType{
+	CPUProfile: {
+		Name:     "cpu",
+		Filename: "cpu.pprof",
+		Collect: func(_ profileType, p *profiler) ([]byte, error) {
+			var buf bytes.Buffer
+			if err := startCPUProfile(&buf); err != nil {
+				return nil, err
+			}
+			p.interruptibleSleep(p.cfg.cpuDuration)
+			stopCPUProfile()
+			return buf.Bytes(), nil
+		},
+	},
+	// HeapProfile is complex due to how the Go runtime exposes it. It contains 4
+	// sample types alloc_objects/count, alloc_space/bytes, inuse_objects/count,
+	// inuse_space/bytes. The first two represent allocations over the lifetime
+	// of the process, so we do delta profiling for them. The last two are
+	// snapshots of the current heap state, so we leave them as-is.
+	HeapProfile: {
+		Name:     "heap",
+		Filename: "heap.pprof",
+		Delta: &pprofutils.Delta{SampleTypes: []pprofutils.ValueType{
+			{Type: "alloc_objects", Unit: "count"},
+			{Type: "alloc_space", Unit: "bytes"},
+		}},
+		Collect: collectGenericProfile,
+	},
+	MutexProfile: {
+		Name:     "mutex",
+		Filename: "mutex.pprof",
+		Delta:    &pprofutils.Delta{},
+		Collect:  collectGenericProfile,
+	},
+	BlockProfile: {
+		Name:     "block",
+		Filename: "block.pprof",
+		Delta:    &pprofutils.Delta{},
+		Collect:  collectGenericProfile,
+	},
+	GoroutineProfile: {
+		Name:     "goroutine",
+		Filename: "goroutines.pprof",
+		Collect:  collectGenericProfile,
+	},
+	expGoroutineWaitProfile: {
+		Name:     "goroutinewait",
+		Filename: "goroutineswait.pprof",
+		Collect: func(t profileType, p *profiler) ([]byte, error) {
+			if n := runtime.NumGoroutine(); n > p.cfg.maxGoroutinesWait {
+				return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
+			}
+
+			var (
+				now   = now()
+				text  = &bytes.Buffer{}
+				pprof = &bytes.Buffer{}
+			)
+			if err := lookupProfile(t.Name, text, 2); err != nil {
+				return nil, err
+			}
+			err := goroutineDebug2ToPprof(text, pprof, now)
+			return pprof.Bytes(), err
+		},
+	},
+	MetricsProfile: {
+		Name:     "metrics",
+		Filename: "metrics.json",
+		Collect: func(_ profileType, p *profiler) ([]byte, error) {
+			var buf bytes.Buffer
+			err := p.met.report(now(), &buf)
+			return buf.Bytes(), err
+		},
+	},
+}
+
+func collectGenericProfile(t profileType, _ *profiler) ([]byte, error) {
+	var buf bytes.Buffer
+	err := lookupProfile(t.Name, &buf, 0)
+	return buf.Bytes(), err
+}
+
+// lookup returns t's profileType implementation.
+func (t ProfileType) lookup() profileType {
+	c, ok := profileTypes[t]
+	if ok {
+		c.Type = t
+		return c
 	}
+	return profileType{
+		Type:     t,
+		Name:     "unknown",
+		Filename: "unknown",
+		Collect: func(_ profileType, _ *profiler) ([]byte, error) {
+			return nil, errors.New("profile type not implemented")
+		},
+	}
+}
+
+// String returns the name of the profile.
+func (t ProfileType) String() string {
+	return t.lookup().Name
 }
 
 // Filename is the identifier used on upload.
 func (t ProfileType) Filename() string {
-	// There are subtle differences between the root and String() (see GoroutineProfile)
-	switch t {
-	case HeapProfile:
-		return "heap.pprof"
-	case CPUProfile:
-		return "cpu.pprof"
-	case MutexProfile:
-		return "mutex.pprof"
-	case BlockProfile:
-		return "block.pprof"
-	case GoroutineProfile:
-		return "goroutines.pprof"
-	case expGoroutineWaitProfile:
-		return "goroutineswait.pprof"
-	case MetricsProfile:
-		return "metrics.json"
-	default:
-		return "unknown"
-	}
+	return t.lookup().Filename
 }
 
 // Tag used on profile metadata
@@ -113,42 +206,80 @@ func (b *batch) addProfile(p *profile) {
 	b.profiles = append(b.profiles, p)
 }
 
-func (p *profiler) runProfile(t ProfileType) (*profile, error) {
-	switch t {
-	case HeapProfile:
-		return heapProfile(p.cfg)
-	case CPUProfile:
-		return cpuProfile(p.cfg)
-	case MutexProfile:
-		return mutexProfile(p.cfg)
-	case BlockProfile:
-		return blockProfile(p.cfg)
-	case GoroutineProfile:
-		return goroutineProfile(p.cfg)
-	case expGoroutineWaitProfile:
-		return goroutineWaitProfile(p.cfg)
-	case MetricsProfile:
-		return p.collectMetrics()
-	default:
-		return nil, errors.New("profile type not implemented")
-	}
-}
-
-// writeHeapProfile writes the heap profile; replaced in tests
-var writeHeapProfile = pprof.WriteHeapProfile
-
-func heapProfile(cfg *config) (*profile, error) {
-	var buf bytes.Buffer
+func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	start := now()
-	if err := writeHeapProfile(&buf); err != nil {
+	t := pt.lookup()
+	// Collect the original profile as-is.
+	data, err := t.Collect(t, p)
+	if err != nil {
 		return nil, err
 	}
+	profs := []*profile{{
+		name: t.Filename,
+		data: data,
+	}}
+	// Compute the deltaProf (will be nil if not enabled for this profile type).
+	deltaStart := time.Now()
+	deltaProf, err := p.deltaProfile(t, data)
+	if err != nil {
+		return nil, fmt.Errorf("delta profile error: %s", err)
+	}
+	// Report metrics and append deltaProf if not nil.
 	end := now()
-	tags := append(cfg.tags, HeapProfile.Tag())
-	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
+	tags := append(p.cfg.tags, pt.Tag())
+	// TODO(fg) stop uploading non-delta profiles in the next version of
+	// dd-trace-go after delta profiles are released.
+	if deltaProf != nil {
+		profs = append(profs, deltaProf)
+		p.cfg.statsd.Timing("datadog.profiler.go.delta_time", end.Sub(deltaStart), tags, 1)
+	}
+	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
+	return profs, nil
+}
+
+// deltaProfile derives the delta profile between curData and the previous
+// profile. For profile types that don't have delta profiling enabled, it
+// simply returns nil, nil.
+func (p *profiler) deltaProfile(t profileType, curData []byte) (*profile, error) {
+	// Not all profile types use delta profiling, return nil if this one doesn't.
+	if t.Delta == nil {
+		return nil, nil
+	}
+	curProf, err := pprofile.ParseData(curData)
+	if err != nil {
+		return nil, fmt.Errorf("delta prof parse: %v", err)
+	}
+	var deltaData []byte
+	if prevProf := p.prev[t.Type]; prevProf == nil {
+		// First time deltaProfile gets called for a type, there is no prevProf. In
+		// this case we emit the current profile as a delta profile.
+		deltaData = curData
+	} else {
+		// Delta profiling is also implemented in the Go core, see commit below.
+		// Unfortunately the core implementation isn't resuable via a API, so we do
+		// our own delta calculation below.
+		// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
+		deltaProf, err := t.Delta.Convert(prevProf, curProf)
+		if err != nil {
+			return nil, fmt.Errorf("delta prof merge: %v", err)
+		}
+		// TimeNanos is supposed to be the time the profile was collected, see
+		// https://github.com/google/pprof/blob/master/proto/profile.proto.
+		deltaProf.TimeNanos = curProf.TimeNanos
+		// DurationNanos is the time period covered by the profile.
+		deltaProf.DurationNanos = curProf.TimeNanos - prevProf.TimeNanos
+		deltaBuf := &bytes.Buffer{}
+		if err := deltaProf.Write(deltaBuf); err != nil {
+			return nil, fmt.Errorf("delta prof write: %v", err)
+		}
+		deltaData = deltaBuf.Bytes()
+	}
+	// Keep the most recent profiles in memory for future diffing. This needs to
+	// be taken into account when enforcing memory limits going forward.
+	p.prev[t.Type] = curProf
 	return &profile{
-		name: HeapProfile.Filename(),
-		data: buf.Bytes(),
+		name: "delta-" + t.Filename,
+		data: deltaData,
 	}, nil
 }
 
@@ -159,23 +290,6 @@ var (
 	stopCPUProfile = pprof.StopCPUProfile
 )
 
-func cpuProfile(cfg *config) (*profile, error) {
-	var buf bytes.Buffer
-	start := now()
-	if err := startCPUProfile(&buf); err != nil {
-		return nil, err
-	}
-	time.Sleep(cfg.cpuDuration)
-	stopCPUProfile()
-	end := now()
-	tags := append(cfg.tags, CPUProfile.Tag())
-	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
-	return &profile{
-		name: CPUProfile.Filename(),
-		data: buf.Bytes(),
-	}, nil
-}
-
 // lookpupProfile looks up the profile with the given name and writes it to w. It returns
 // any errors encountered in the process. It is replaced in tests.
 var lookupProfile = func(name string, w io.Writer, debug int) error {
@@ -184,76 +298,6 @@ var lookupProfile = func(name string, w io.Writer, debug int) error {
 		return errors.New("profile not found")
 	}
 	return prof.WriteTo(w, debug)
-}
-
-func blockProfile(cfg *config) (*profile, error) {
-	var buf bytes.Buffer
-	start := now()
-	if err := lookupProfile(BlockProfile.String(), &buf, 0); err != nil {
-		return nil, err
-	}
-	end := now()
-	tags := append(cfg.tags, BlockProfile.Tag())
-	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
-	return &profile{
-		name: BlockProfile.Filename(),
-		data: buf.Bytes(),
-	}, nil
-}
-
-func mutexProfile(cfg *config) (*profile, error) {
-	var buf bytes.Buffer
-	start := now()
-	if err := lookupProfile(MutexProfile.String(), &buf, 0); err != nil {
-		return nil, err
-	}
-	end := now()
-	tags := append(cfg.tags, MutexProfile.Tag())
-	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
-	return &profile{
-		name: MutexProfile.Filename(),
-		data: buf.Bytes(),
-	}, nil
-}
-
-func goroutineProfile(cfg *config) (*profile, error) {
-	var buf bytes.Buffer
-	start := now()
-	if err := lookupProfile(GoroutineProfile.String(), &buf, 0); err != nil {
-		return nil, err
-	}
-	end := now()
-	tags := append(cfg.tags, GoroutineProfile.Tag())
-	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
-	return &profile{
-		name: GoroutineProfile.Filename(),
-		data: buf.Bytes(),
-	}, nil
-}
-
-func goroutineWaitProfile(cfg *config) (*profile, error) {
-	if n := runtime.NumGoroutine(); n > cfg.maxGoroutinesWait {
-		return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, cfg.maxGoroutinesWait)
-	}
-
-	var (
-		text  = &bytes.Buffer{}
-		pprof = &bytes.Buffer{}
-		start = now()
-	)
-	if err := lookupProfile(GoroutineProfile.String(), text, 2); err != nil {
-		return nil, err
-	} else if err := goroutineDebug2ToPprof(text, pprof, start); err != nil {
-		return nil, err
-	}
-	end := now()
-	tags := append(cfg.tags, expGoroutineWaitProfile.Tag())
-	cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
-
-	return &profile{
-		name: expGoroutineWaitProfile.Filename(),
-		data: pprof.Bytes(),
-	}, nil
 }
 
 func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
@@ -351,21 +395,6 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
 		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err)
 	}
 	return nil
-}
-
-func (p *profiler) collectMetrics() (*profile, error) {
-	var buf bytes.Buffer
-	start := now()
-	if err := p.met.report(start, &buf); err != nil {
-		return nil, err
-	}
-	end := now()
-	tags := append(p.cfg.tags, MetricsProfile.Tag())
-	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
-	return &profile{
-		name: MetricsProfile.Filename(),
-		data: buf.Bytes(),
-	}, nil
 }
 
 // now returns current time in UTC.

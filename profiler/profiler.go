@@ -17,6 +17,8 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	pprofile "github.com/google/pprof/profile"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -45,7 +47,8 @@ func Start(opts ...Option) error {
 	return nil
 }
 
-// Stop stops the profiler.
+// Stop cancels any ongoing profiling or upload operations and returns after
+// everything has been stopped.
 func Stop() {
 	mu.Lock()
 	if activeProfiler != nil {
@@ -58,13 +61,14 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
-	cfg        *config           // profile configuration
-	out        chan batch        // upload queue
-	uploadFunc func(batch) error // defaults to (*profiler).upload; replaced in tests
-	exit       chan struct{}     // exit signals the profiler to stop; it is closed after stopping
-	stopOnce   sync.Once         // stopOnce ensures the profiler is stopped exactly once.
-	wg         sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
-	met        *metrics          // metric collector state
+	cfg        *config                           // profile configuration
+	out        chan batch                        // upload queue
+	uploadFunc func(batch) error                 // defaults to (*profiler).upload; replaced in tests
+	exit       chan struct{}                     // exit signals the profiler to stop; it is closed after stopping
+	stopOnce   sync.Once                         // stopOnce ensures the profiler is stopped exactly once.
+	wg         sync.WaitGroup                    // wg waits for all goroutines to exit when stopping.
+	met        *metrics                          // metric collector state
+	prev       map[ProfileType]*pprofile.Profile // previous collection results for delta profiling
 }
 
 // newProfiler creates a new, unstarted profiler.
@@ -122,11 +126,18 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if cfg.uploadTimeout <= 0 {
 		return nil, fmt.Errorf("invalid upload timeout, must be > 0: %s", cfg.uploadTimeout)
 	}
+	for pt := range cfg.types {
+		if _, ok := profileTypes[pt]; !ok {
+			return nil, fmt.Errorf("unknown profile type: %d", pt)
+		}
+	}
+
 	p := profiler{
 		cfg:  cfg,
 		out:  make(chan batch, outChannelSize),
 		exit: make(chan struct{}),
 		met:  newMetrics(),
+		prev: make(map[ProfileType]*pprofile.Profile),
 	}
 	p.uploadFunc = p.upload
 	return &p, nil
@@ -172,20 +183,47 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				// configured CPU profile duration: (start-end).
 				end: now.Add(p.cfg.cpuDuration),
 			}
-			for t := range p.cfg.types {
-				prof, err := p.runProfile(t)
+
+			for _, t := range p.enabledProfileTypes() {
+				profs, err := p.runProfile(t)
 				if err != nil {
 					log.Error("Error getting %s profile: %v; skipping.", t, err)
 					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
 					continue
 				}
-				bat.addProfile(prof)
+				for _, prof := range profs {
+					bat.addProfile(prof)
+				}
 			}
 			p.enqueueUpload(bat)
 		case <-p.exit:
 			return
 		}
 	}
+}
+
+// enabledProfileTypes returns the enabled profile types in a deterministic
+// order. The CPU profile always comes first because people might spot
+// interesting events in there and then try to look for the counter-part event
+// in the mutex/heap/block profile. Deterministic ordering is also important
+// for delta profiles, otherwise they'd cover varying profiling periods.
+func (p *profiler) enabledProfileTypes() []ProfileType {
+	order := []ProfileType{
+		CPUProfile,
+		HeapProfile,
+		BlockProfile,
+		MutexProfile,
+		GoroutineProfile,
+		expGoroutineWaitProfile,
+		MetricsProfile,
+	}
+	enabled := []ProfileType{}
+	for _, t := range order {
+		if _, ok := p.cfg.types[t]; ok {
+			enabled = append(enabled, t)
+		}
+	}
+	return enabled
 }
 
 // enqueueUpload pushes a batch of profiles onto the queue to be uploaded. If there is no room, it will
@@ -212,12 +250,17 @@ func (p *profiler) enqueueUpload(bat batch) {
 
 // send takes profiles from the output queue and uploads them.
 func (p *profiler) send() {
-	for bat := range p.out {
-		if err := p.outputDir(bat); err != nil {
-			log.Error("Failed to output profile to dir: %v", err)
-		}
-		if err := p.uploadFunc(bat); err != nil {
-			log.Error("Failed to upload profile: %v", err)
+	for {
+		select {
+		case <-p.exit:
+			return
+		case bat := <-p.out:
+			if err := p.outputDir(bat); err != nil {
+				log.Error("Failed to output profile to dir: %v", err)
+			}
+			if err := p.uploadFunc(bat); err != nil {
+				log.Error("Failed to upload profile: %v", err)
+			}
 		}
 	}
 }
@@ -242,6 +285,15 @@ func (p *profiler) outputDir(bat batch) error {
 		}
 	}
 	return nil
+}
+
+// interruptibleSleep sleeps for the given duration or until interrupted by the
+// p.exit channel being closed.
+func (p *profiler) interruptibleSleep(d time.Duration) {
+	select {
+	case <-p.exit:
+	case <-time.After(d):
+	}
 }
 
 // stop stops the profiler.
