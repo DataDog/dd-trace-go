@@ -6,8 +6,9 @@
 package http_test
 
 import (
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"net/http"
+
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )
 
 func Example() {
