@@ -7,7 +7,9 @@
 package echo
 
 import (
+	"fmt"
 	"math"
+	"net/http"
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
@@ -80,16 +82,28 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				// This is the best we can do.
 				switch err := err.(type) {
 				case *echo.HTTPError:
-					if err.Code >= 500 {
+					if cfg.isStatusError(err.Code) {
 						finishOpts = append(finishOpts, tracer.WithError(err))
 					}
 					span.SetTag(ext.HTTPCode, strconv.Itoa(err.Code))
 				default:
 					// Any non-HTTPError errors appear as 5xx errors.
-					finishOpts = append(finishOpts, tracer.WithError(err))
+					if cfg.isStatusError(500) {
+						finishOpts = append(finishOpts, tracer.WithError(err))
+					}
 					span.SetTag(ext.HTTPCode, "500")
 				}
+			} else if status := c.Response().Status; status > 0 {
+				if cfg.isStatusError(status) {
+					// mark 5xx server error
+					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status))))
+				}
+				span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 			} else {
+				if cfg.isStatusError(200) {
+					// mark 5xx server error
+					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", 200, http.StatusText(200))))
+				}
 				span.SetTag(ext.HTTPCode, "200")
 			}
 			return err
