@@ -51,6 +51,7 @@ type (
 		Buf []byte
 		Err error
 	}
+	RawBodyData []byte
 )
 
 func init() {
@@ -63,10 +64,10 @@ func init() {
 }
 
 func TestUsage(t *testing.T) {
-	t.Run("Operation stacking", func(t *testing.T) {
+	t.Run("operation stacking", func(t *testing.T) {
 		// Dummy waf looking for the string `attack` in HTTPHandlerArgs
 		wafListener := func(called *int, blocked *bool) dyngo.EventListener {
-			return dyngo.OnStartEventListener(func(_ *dyngo.Operation, args HTTPHandlerArgs) {
+			return dyngo.OnStartEventListener(func(op *dyngo.Operation, args HTTPHandlerArgs) {
 				*called++
 
 				if strings.Contains(args.URL.RawQuery, "attack") {
@@ -81,6 +82,12 @@ func TestUsage(t *testing.T) {
 						}
 					}
 				}
+
+				op.OnData(func(body RawBodyData) {
+					if strings.Contains(string(body), "attack") {
+						*blocked = true
+					}
+				})
 			})
 		}
 
@@ -88,11 +95,11 @@ func TestUsage(t *testing.T) {
 		rawBodyListener := func(called *int, buf *[]byte) dyngo.EventListener {
 			return dyngo.OnStartEventListener(func(op *dyngo.Operation, args HTTPHandlerArgs) {
 
-				op.OnFinish(func(_ *dyngo.Operation, res BodyReadRes) {
+				op.OnFinish(func(op *dyngo.Operation, res BodyReadRes) {
 					*called++
 					*buf = append(*buf, res.Buf...)
 					if res.Err == io.EOF {
-						// TODO: emit raw body data
+						op.EmitData(RawBodyData(*buf))
 					}
 				})
 			})
@@ -168,7 +175,7 @@ func TestUsage(t *testing.T) {
 			require.Equal(t, []interface{}{"a", "json", "array"}, JSONBodyParserValue)
 		})
 
-		t.Run("stack monitored and blocked by waf", func(t *testing.T) {
+		t.Run("stack monitored and blocked by waf via the http operation monitoring", func(t *testing.T) {
 			root := dyngo.StartOperation(RootArgs{})
 
 			var (
@@ -225,6 +232,62 @@ func TestUsage(t *testing.T) {
 			require.Equal(t, nil, JSONBodyParserValue)
 		})
 
+		t.Run("stack monitored and blocked by waf via the raw body monitoring", func(t *testing.T) {
+			root := dyngo.StartOperation(RootArgs{})
+
+			var (
+				WAFBlocked bool
+				WAFCalled  int
+			)
+			wafListener := wafListener(&WAFCalled, &WAFBlocked)
+
+			var (
+				RawBodyBuf    []byte
+				RawBodyCalled int
+			)
+			rawBodyListener := rawBodyListener(&RawBodyCalled, &RawBodyBuf)
+
+			var (
+				JSONBodyParserValue  interface{}
+				JSONBodyParserCalled int
+			)
+			jsonBodyValueListener := jsonBodyValueListener(&JSONBodyParserCalled, &JSONBodyParserValue)
+
+			root.Register(rawBodyListener, wafListener, jsonBodyValueListener)
+
+			// Run the monitored stack of operations
+			RawBodyBuf = nil
+			operation(
+				root,
+				HTTPHandlerArgs{
+					URL:     &url.URL{RawQuery: "?v=ok"},
+					Headers: http.Header{"header": []string{"value"}}},
+				HTTPHandlerResult{},
+				func(op *dyngo.Operation) {
+					operation(op, JSONParserArg{}, JSONParserResults{Value: "a string"}, func(op *dyngo.Operation) {
+						operation(op, BodyReadArg{}, BodyReadRes{Buf: []byte("an ")}, nil)
+						operation(op, BodyReadArg{}, BodyReadRes{Buf: []byte("att")}, nil)
+						operation(op, BodyReadArg{}, BodyReadRes{Buf: []byte("a")}, nil)
+						operation(op, BodyReadArg{}, BodyReadRes{Buf: []byte("ck"), Err: io.EOF}, nil)
+					})
+
+					operation(op, SQLQueryArg{}, SQLQueryResult{}, nil)
+				},
+			)
+
+			// WAF callback called and blocked
+			require.True(t, WAFBlocked)
+			require.Equal(t, 1, WAFCalled)
+
+			// The raw body listener has been called
+			require.Equal(t, 4, RawBodyCalled)
+			require.Equal(t, []byte("an attack"), RawBodyBuf)
+
+			// The json body value listener has been called but no value due to a parser error
+			require.Equal(t, 1, JSONBodyParserCalled)
+			require.Equal(t, "a string", JSONBodyParserValue)
+		})
+
 		t.Run("stack not monitored", func(t *testing.T) {
 			root := dyngo.StartOperation(RootArgs{})
 
@@ -275,6 +338,29 @@ func TestUsage(t *testing.T) {
 			require.Equal(t, 0, JSONBodyParserCalled)
 			require.Nil(t, JSONBodyParserValue)
 		})
+	})
+
+	t.Run("recursive operation", func(t *testing.T) {
+		root := dyngo.StartOperation(RootArgs{})
+		defer root.Finish(RootResult{})
+
+		called := 0
+		root.OnStart(func(HTTPHandlerArgs) {
+			called++
+		})
+
+		operation(root, HTTPHandlerArgs{}, HTTPHandlerResult{}, func(o *dyngo.Operation) {
+			operation(o, HTTPHandlerArgs{}, HTTPHandlerResult{}, func(o *dyngo.Operation) {
+				operation(o, HTTPHandlerArgs{}, HTTPHandlerResult{}, func(o *dyngo.Operation) {
+					operation(o, HTTPHandlerArgs{}, HTTPHandlerResult{}, func(o *dyngo.Operation) {
+						operation(o, HTTPHandlerArgs{}, HTTPHandlerResult{}, func(*dyngo.Operation) {
+						})
+					})
+				})
+			})
+		})
+
+		require.Equal(t, 5, called)
 	})
 }
 
@@ -549,8 +635,6 @@ func TestTypeSafety(t *testing.T) {
 
 	})
 }
-
-// TODO(julio): recursive operation test
 
 // TODO(julio): dispatch time benchmark
 

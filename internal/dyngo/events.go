@@ -73,14 +73,6 @@ func (r *eventRegister) remove(id eventListenerID) bool {
 	return false
 }
 
-func (r *eventRegister) forEachListener(typ reflect.Type, f func(l interface{})) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	for _, e := range r.listeners[typ] {
-		f(e.Callback)
-	}
-}
-
 func (r *eventRegister) clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -123,22 +115,31 @@ func (e *eventManager) emitDataEvent(op *Operation, data interface{}) {
 	e.emitEvent(op, &e.onData, data)
 }
 
-func (e *eventManager) emitEvent(op *Operation, r *eventRegister, args interface{}) {
+func (e *eventManager) emitEvent(op *Operation, r *eventRegister, data interface{}) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	if e.disabled {
 		return
 	}
-	argv := []reflect.Value{reflect.ValueOf(op), reflect.ValueOf(args)}
-	argsT := reflect.TypeOf(args)
-	r.forEachListener(argsT, func(l interface{}) {
-		v := reflect.ValueOf(l)
+	r.callListeners(op, data)
+}
+
+func (r *eventRegister) callListeners(op *Operation, data interface{}) {
+	dataV := reflect.ValueOf(data)
+	args := []reflect.Value{reflect.ValueOf(op), dataV}
+	dataT := dataV.Type()
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, e := range r.listeners[dataT] {
+		v := reflect.ValueOf(e.Callback)
 		if v.Type().NumIn() == 1 {
-			v.Call(argv[1:])
+			v.Call(args[1:])
 		} else {
-			v.Call(argv)
+			v.Call(args)
 		}
-	})
+	}
 }
 
 type (

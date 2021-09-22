@@ -79,7 +79,7 @@ func StartOperation(args interface{}, opts ...Option) *Operation {
 	if o.parent == nil {
 		o.parent = root
 	}
-	forEachParentOperation(o, func(op *Operation) {
+	forEachOperation(o.Parent(), func(op *Operation) {
 		op.emitStartEvent(o, args)
 	})
 	return o
@@ -145,10 +145,6 @@ func forEachOperation(op *Operation, do func(op *Operation)) {
 	for ; op != nil; op = op.Parent() {
 		do(op)
 	}
-}
-
-func forEachParentOperation(op *Operation, do func(op *Operation)) {
-	forEachOperation(op.Parent(), do)
 }
 
 func validateOperationTypes(args, res interface{}) error {
