@@ -9,6 +9,11 @@ package ext
 // In a distributed context, it should be set before any context propagation (fork, RPC calls) to be effective.
 
 const (
+	// PrioritySamplingRuleReject informs the backend that a trace should be rejected and not stored as specified by
+	// a sampling rule.
+	// This should be used by the rules sampler based on the rules configured by the user
+	PrioritySamplingRuleReject = -3
+
 	// PriorityUserReject informs the backend that a trace should be rejected and not stored.
 	// This should be used by user code overriding default priority.
 	PriorityUserReject = -1
@@ -24,4 +29,9 @@ const (
 	// PriorityUserKeep informs the backend that a trace should be kept and not stored.
 	// This should be used by user code overriding default priority.
 	PriorityUserKeep = 2
+
+	// PrioritySamplingRuleKeep informs the backend that a trace should be kept and not stored as specified by
+	// a sampling rule.
+	// This should be used by the rules sampler based on the rules configured by the user
+	PrioritySamplingRuleKeep = 3
 )
