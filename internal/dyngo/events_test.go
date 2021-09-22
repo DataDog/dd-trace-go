@@ -26,6 +26,12 @@ type (
 	testOp3Res  struct{}
 )
 
+func init() {
+	dyngo.RegisterOperation(testOp1Args{}, testOp1Res{})
+	dyngo.RegisterOperation(testOp2Args{}, testOp2Res{})
+	dyngo.RegisterOperation(testOp3Args{}, testOp3Res{})
+}
+
 func TestOperationEvents(t *testing.T) {
 	t.Run("single operation without listeners", func(t *testing.T) {
 		require.NotPanics(t, func() {

@@ -52,15 +52,15 @@ func subscribe(op *dyngo.Operation, subscriptions []string, wafCtx types.Rule, s
 		addr := addr
 		switch addr {
 		case "http.user_agent":
-			op.OnData(func(_ *dyngo.Operation, data httpinstr.UserAgent) {
+			op.OnData(func(data httpinstr.UserAgent) {
 				run(addr, data)
 			})
 		case "server.request.headers.no_cookies":
-			op.OnData(func(_ *dyngo.Operation, data httpinstr.Header) {
+			op.OnData(func(data httpinstr.Header) {
 				run(addr, data)
 			})
 		case "server.request.query":
-			op.OnData(func(_ *dyngo.Operation, data httpinstr.QueryValues) {
+			op.OnData(func(data httpinstr.QueryValues) {
 				run(addr, data)
 			})
 		}

@@ -6,6 +6,7 @@
 package dyngo
 
 import (
+	"fmt"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -28,11 +29,7 @@ type (
 	// result type the event listener expects. The map key type is a struct of the fully-qualified type name (type
 	// package path and name) to uniquely identify the argument/result type instead of using the interface type
 	// reflect.Type that can possibly lead to panics if the actual value isn't hashable as required by map keys.
-	eventListenerMap map[eventListenerMapKey][]eventListenerMapEntry
-
-	eventListenerMapKey struct {
-		pkgPath, name string
-	}
+	eventListenerMap map[reflect.Type][]eventListenerMapEntry
 
 	eventListenerMapEntry struct {
 		Id       eventListenerID
@@ -48,14 +45,7 @@ func nextID() eventListenerID {
 	return eventListenerID(atomic.AddUint32((*uint32)(&lastID), 1))
 }
 
-func makeMapKey(typ reflect.Type) eventListenerMapKey {
-	return eventListenerMapKey{
-		pkgPath: typ.PkgPath(),
-		name:    typ.Name(),
-	}
-}
-
-func (r *eventRegister) add(k eventListenerMapKey, l interface{}) eventListenerID {
+func (r *eventRegister) add(k reflect.Type, l interface{}) eventListenerID {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.listeners == nil {
@@ -86,7 +76,7 @@ func (r *eventRegister) remove(id eventListenerID) bool {
 func (r *eventRegister) forEachListener(typ reflect.Type, f func(l interface{})) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	for _, e := range r.listeners[makeMapKey(typ)] {
+	for _, e := range r.listeners[typ] {
 		f(e.Callback)
 	}
 }
@@ -98,7 +88,11 @@ func (r *eventRegister) clear() {
 }
 
 func (e *eventManager) OnStart(l OnStartEventListenerFunc) UnregisterFunc {
-	return registerTo(&e.onStart, l)
+	argType, err := validateStartEventListener(l)
+	if err != nil {
+		panic(err)
+	}
+	return registerTo(&e.onStart, argType, l)
 }
 
 func (e *eventManager) emitStartEvent(op *Operation, args interface{}) {
@@ -106,7 +100,11 @@ func (e *eventManager) emitStartEvent(op *Operation, args interface{}) {
 }
 
 func (e *eventManager) OnFinish(l OnFinishEventListenerFunc) UnregisterFunc {
-	return registerTo(&e.onFinish, l)
+	resType, err := validateFinishEventListener(l)
+	if err != nil {
+		panic(err)
+	}
+	return registerTo(&e.onFinish, resType, l)
 }
 
 func (e *eventManager) emitFinishEvent(op *Operation, results interface{}) {
@@ -114,7 +112,11 @@ func (e *eventManager) emitFinishEvent(op *Operation, results interface{}) {
 }
 
 func (e *eventManager) OnData(l OnDataEventListenerFunc) UnregisterFunc {
-	return registerTo(&e.onData, l)
+	dataType, err := validateEventListenerFunc(l)
+	if err != nil {
+		panic(err)
+	}
+	return registerTo(&e.onData, dataType, l)
 }
 
 func (e *eventManager) emitDataEvent(op *Operation, data interface{}) {
@@ -130,7 +132,12 @@ func (e *eventManager) emitEvent(op *Operation, r *eventRegister, args interface
 	argv := []reflect.Value{reflect.ValueOf(op), reflect.ValueOf(args)}
 	argsT := reflect.TypeOf(args)
 	r.forEachListener(argsT, func(l interface{}) {
-		reflect.ValueOf(l).Call(argv)
+		v := reflect.ValueOf(l)
+		if v.Type().NumIn() == 1 {
+			v.Call(argv[1:])
+		} else {
+			v.Call(argv)
+		}
 	})
 }
 
@@ -152,27 +159,6 @@ type (
 	onFinishEventListener eventListener
 )
 
-type UnregisterFunc func()
-
-func (o *Operation) Register(l ...EventListener) UnregisterFunc {
-	unregisterFuncs := make([]UnregisterFunc, len(l))
-	for i, l := range l {
-		unregisterFuncs[i] = l.registerTo(o)
-	}
-	return func() {
-		for _, unregister := range unregisterFuncs {
-			unregister()
-		}
-	}
-}
-
-func registerTo(register *eventRegister, l interface{}) UnregisterFunc {
-	id := register.add(makeMapKey(reflect.TypeOf(l).In(1)), l)
-	return func() {
-		register.remove(id)
-	}
-}
-
 func OnStartEventListener(l OnStartEventListenerFunc) EventListener {
 	return onStartEventListener{l}
 }
@@ -192,4 +178,63 @@ func OnFinishEventListener(l OnFinishEventListenerFunc) EventListener {
 }
 func (l onFinishEventListener) registerTo(op *Operation) UnregisterFunc {
 	return op.OnFinish(l.l)
+}
+
+func registerTo(register *eventRegister, keyType reflect.Type, l interface{}) UnregisterFunc {
+	id := register.add(keyType, l)
+	return func() {
+		register.remove(id)
+	}
+}
+
+func validateStartEventListener(l OnStartEventListenerFunc) (reflect.Type, error) {
+	argType, err := validateEventListenerFunc(l)
+	if err != nil {
+		return nil, err
+	}
+	if _, exists := operationRegister[argType]; !exists {
+		return nil, fmt.Errorf("cannot listen to a non registered operation argument %s", argType)
+	}
+	return argType, nil
+}
+
+func validateFinishEventListener(l OnFinishEventListenerFunc) (reflect.Type, error) {
+	resType, err := validateEventListenerFunc(l)
+	if err != nil {
+		return nil, err
+	}
+	if _, exists := operationResRegister[resType]; !exists {
+		return nil, fmt.Errorf("cannot listen to a non registered operation result %s", resType)
+	}
+	return resType, nil
+}
+
+// Validate the event listener is a function of the form `func (*Operation, T)` or `func(T)`.
+// It returns T when the function is valid. An error otherwise.
+func validateEventListenerFunc(l interface{}) (keyType reflect.Type, err error) {
+	listenerType := reflect.TypeOf(l)
+	if kind := listenerType.Kind(); kind != reflect.Func {
+		return nil, fmt.Errorf("unexpected event listener type %s instead of a function", kind.String())
+	}
+
+	operationType := reflect.TypeOf((*Operation)(nil))
+	switch listenerType.NumIn() {
+	case 1:
+		// Expecting func (T)
+		argType := listenerType.In(0)
+		if argType == operationType {
+			return nil, fmt.Errorf("unexpected type of event listener argument: the first argument should not be %s", operationType)
+		}
+		return argType, nil
+
+	case 2:
+		// Expecting func (*Operation, T)
+		if listenerType.In(0) != operationType {
+			return nil, fmt.Errorf("unexpected type of event listener argument: the first argument should be %s", operationType)
+		}
+		return listenerType.In(1), nil
+
+	default:
+		return nil, fmt.Errorf("unexpected number of event listener arguments")
+	}
 }

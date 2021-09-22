@@ -8,6 +8,8 @@ package http
 import (
 	"net/http"
 	"net/url"
+	
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 )
 
 type (
@@ -34,3 +36,7 @@ type (
 	Header      http.Header
 	QueryValues url.Values
 )
+
+func init() {
+	dyngo.RegisterOperation(HandlerOperationArgs{}, HandlerOperationRes{})
+}

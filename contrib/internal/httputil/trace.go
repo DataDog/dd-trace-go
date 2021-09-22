@@ -69,7 +69,7 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 			QueryValues: httpinstr.QueryValues(cfg.Request.URL.Query()),
 		},
 	)
-	op.OnData(func(_ *dyngo.Operation, e *appsectypes.SecurityEvent) {
+	op.OnData(func(e *appsectypes.SecurityEvent) {
 		// Keep this trace due to the security event
 		span.SetTag(ext.SamplingPriority, ext.ManualKeep)
 		// Add context to the event
@@ -81,7 +81,7 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 		})
 	})
 	defer func() {
-		// TODO: get the status code out of the wrapped response write
+		// TODO(julio): get the status code out of the wrapped response writer
 		op.Finish(httpinstr.HandlerOperationRes{})
 	}()
 
