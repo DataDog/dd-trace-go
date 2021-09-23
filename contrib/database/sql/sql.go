@@ -168,6 +168,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if math.IsNaN(cfg.analyticsRate) {
 		cfg.analyticsRate = rc.analyticsRate
 	}
+	cfg.checkSpanContext = rc.checkSpanContext
 	tc := &tracedConnector{
 		connector:  c,
 		driverName: name,

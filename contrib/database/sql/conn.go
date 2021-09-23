@@ -182,7 +182,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query stri
 		// See: https://github.com/DataDog/dd-trace-go/issues/270
 		return
 	}
-	if _, exists := tracer.SpanFromContext(ctx); !exists {
+	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.checkSpanContext && !exists {
 		return
 	}
 	name := fmt.Sprintf("%s.query", tp.driverName)

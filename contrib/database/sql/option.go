@@ -12,9 +12,10 @@ import (
 )
 
 type config struct {
-	serviceName   string
-	analyticsRate float64
-	dsn           string
+	serviceName      string
+	analyticsRate    float64
+	dsn              string
+	checkSpanContext bool
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -33,6 +34,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
+	cfg.checkSpanContext = false
 }
 
 // WithServiceName sets the given service name when registering a driver,
@@ -72,5 +74,11 @@ func WithAnalyticsRate(rate float64) Option {
 func WithDSN(name string) Option {
 	return func(cfg *config) {
 		cfg.dsn = name
+	}
+}
+
+func WithCheckSpanContext() Option {
+	return func(cfg *config) {
+		cfg.checkSpanContext = true
 	}
 }

@@ -102,7 +102,7 @@ func TestWithSpanTags(t *testing.T) {
 	}
 }
 
-func TestNoSpan(t *testing.T) {
+func TestOptionalCheckSpanContext(t *testing.T) {
 	type sqlRegister struct {
 		name   string
 		dsn    string
@@ -123,7 +123,9 @@ func TestNoSpan(t *testing.T) {
 				name:   "mysql",
 				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
 				driver: &mysql.MySQLDriver{},
-				opts:   []RegisterOption{},
+				opts: []RegisterOption{
+					WithCheckSpanContext(),
+				},
 			},
 		},
 		{
@@ -133,6 +135,7 @@ func TestNoSpan(t *testing.T) {
 				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
 				driver: &pq.Driver{},
 				opts: []RegisterOption{
+					WithCheckSpanContext(),
 					WithServiceName("postgres-test"),
 					WithAnalyticsRate(0.2),
 				},
