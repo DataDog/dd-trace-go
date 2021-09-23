@@ -77,6 +77,10 @@ func WithDSN(name string) Option {
 	}
 }
 
+// WithCheckSpanContext enables checking the provided context
+// for a parent span before creating one for the request.
+// With this enabled, no span is created for the request
+// without an existing parent span.
 func WithCheckSpanContext() Option {
 	return func(cfg *config) {
 		cfg.checkSpanContext = true
