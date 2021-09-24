@@ -8,9 +8,8 @@ package gorm
 import (
 	"math"
 
+	"github.com/jinzhu/gorm"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-
-	"gopkg.in/jinzhu/gorm.v1"
 )
 
 type config struct {
