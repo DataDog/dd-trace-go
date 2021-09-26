@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/miekg/dns"
+
 	dnstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/miekg/dns"
 )
 

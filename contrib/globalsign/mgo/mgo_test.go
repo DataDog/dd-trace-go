@@ -14,6 +14,7 @@ import (
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	"github.com/stretchr/testify/assert"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -385,6 +386,10 @@ func TestCollection_Bulk(t *testing.T) {
 	spans := testMongoCollectionCommand(assert, insert)
 	assert.Equal(2, len(spans))
 	assert.Equal("mongodb.query", spans[0].OperationName())
+}
+
+func TestBadDial(t *testing.T) {
+	assert.NotPanics(t, func() { Dial("this_is_not_valid?foo&bar") })
 }
 
 func TestAnalyticsSettings(t *testing.T) {

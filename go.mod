@@ -57,6 +57,7 @@ require (
 	github.com/tidwall/buntdb v1.2.6
 	github.com/tinylib/msgp v1.1.2
 	github.com/twitchtv/twirp v8.1.0+incompatible
+	github.com/urfave/negroni v1.0.0
 	github.com/zenazn/goji v1.0.1
 	go.mongodb.org/mongo-driver v1.7.2
 	golang.org/x/net v0.0.0-20210913180222-943fd674d43e
