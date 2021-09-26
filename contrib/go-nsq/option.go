@@ -1,54 +1,37 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2021 Datadog, Inc.
+
 package nsq
 
 import (
-	"context"
 	"math"
-
-	"github.com/nsqio/go-nsq"
 )
 
-// tracer configure
-type Config struct {
-	*nsq.Config
+// config represents a set of options for the client
+type config struct {
 	service       string
 	analyticsRate float64
-	ctx           context.Context
 }
 
-// tracer configure injector
-type Option func(cfg *Config)
+// Option represents an option that can be used to config a client
+type Option func(cfg *config)
 
-// change service name
+// WithService sets the given service name for the client
 func WithService(service string) Option {
-	return func(cfg *Config) {
+	return func(cfg *config) {
 		cfg.service = service
 	}
 }
 
 // change analytics rate
 func WithAnalyticsRate(on bool, rate float64) Option {
-	return func(cfg *Config) {
+	return func(cfg *config) {
 		if on && !math.IsNaN(rate) {
 			cfg.analyticsRate = rate
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
 	}
-}
-
-// set contexxt into config
-func WithContext(ctx context.Context) Option {
-	return func(cfg *Config) {
-		cfg.ctx = ctx
-	}
-}
-
-// create new config
-func NewConfig(opts ...Option) *Config {
-	cfg := &Config{}
-	for _, opt := range opts {
-		opt(cfg)
-	}
-
-	return cfg
 }
