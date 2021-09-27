@@ -22,7 +22,6 @@ import (
 const debug = false
 
 const (
-	elasticV5URL = "http://127.0.0.1:9201"
 	elasticV6URL = "http://127.0.0.1:9202"
 	elasticV7URL = "http://127.0.0.1:9203"
 )

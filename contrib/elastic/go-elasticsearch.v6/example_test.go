@@ -11,7 +11,8 @@ import (
 
 	elasticsearch "github.com/elastic/go-elasticsearch/v7"
 	"github.com/elastic/go-elasticsearch/v7/esapi"
-	elastictrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v5"
+
+	elastictrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
