@@ -180,6 +180,7 @@ func (consu *Consumer) AddConcurrentHandlers(handler nsq.Handler, concurrency in
 				"message_body_size": len(message.Body),
 				"message_timestamp": message.Timestamp,
 				"nsqd_addr":         message.NSQDAddress,
+				"concurrency":       concurrency,
 			}
 		)
 		consu.finishSpan(span, opName, tags, err)
