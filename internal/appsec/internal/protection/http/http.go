@@ -22,7 +22,8 @@ func Register() dyngo.UnregisterFunc {
 		dyngo.InstrumentationDescriptor{
 			Title: "HTTP Data Emitter",
 			Instrumentation: dyngo.OperationInstrumentation{
-				EventListener: dyngo.OnStartEventListener(func(op *dyngo.Operation, args httpinstr.HandlerOperationArgs) {
+				EventListener: dyngo.OnStartEventListener((*httpinstr.HandlerOperationArgs)(nil), func(op *dyngo.Operation, v interface{}) {
+					args := v.(httpinstr.HandlerOperationArgs)
 					if len(args.Headers) > 0 {
 						op.EmitData(args.Headers)
 					}

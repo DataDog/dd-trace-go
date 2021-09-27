@@ -209,7 +209,7 @@ func (a *Agent) listenSecurityEvents() dyngo.UnregisterFunc {
 	return dyngo.Register(dyngo.InstrumentationDescriptor{
 		Title: "Attack Queue",
 		Instrumentation: dyngo.OperationInstrumentation{
-			EventListener: dyngo.OnDataEventListener(func(_ *dyngo.Operation, event *appsectypes.SecurityEvent) {
+			EventListener: appsectypes.OnSecurityEventDataListener(func(_ *dyngo.Operation, event *appsectypes.SecurityEvent) {
 				select {
 				case a.eventChan <- event:
 				default:

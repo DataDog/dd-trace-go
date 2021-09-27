@@ -6,7 +6,7 @@
 package types
 
 import (
-	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/instrumentation/http"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 )
 
 type (
@@ -19,6 +19,20 @@ type (
 		isSecurityEventContext()
 	}
 )
+
+// OnSecurityEventDataListener is a helper function to create an operation data listener of *SecurityEvent values.
+func OnSecurityEventDataListener(l func(*dyngo.Operation, *SecurityEvent)) dyngo.EventListener {
+	return dyngo.OnDataEventListener((**SecurityEvent)(nil), func(op *dyngo.Operation, v interface{}) {
+		l(op, v.(*SecurityEvent))
+	})
+}
+
+// OnSecurityEventData is a helper function to listen to operation data events of *SecurityEvent values.
+func OnSecurityEventData(op *dyngo.Operation, l func(*dyngo.Operation, *SecurityEvent)) {
+	op.OnData((**SecurityEvent)(nil), func(op *dyngo.Operation, v interface{}) {
+		l(op, v.(*SecurityEvent))
+	})
+}
 
 func NewSecurityEvent(event interface{}, ctx ...SecurityEventContext) *SecurityEvent {
 	return &SecurityEvent{
@@ -49,21 +63,6 @@ type (
 		Status int
 	}
 )
-
-func WithHTTPOperationContext(args httpinstr.HandlerOperationArgs, res httpinstr.HandlerOperationRes) HTTPOperationContext {
-	return HTTPOperationContext{
-		Request: HTTPRequestContext{
-			Method:     string(args.Method),
-			Host:       string(args.Host),
-			IsTLS:      args.IsTLS,
-			RequestURI: string(args.RequestURI),
-			RemoteAddr: string(args.RemoteAddr),
-		},
-		Response: HTTPResponseContext{
-			Status: res.Status,
-		},
-	}
-}
 
 func (HTTPOperationContext) isSecurityEventContext() {}
 

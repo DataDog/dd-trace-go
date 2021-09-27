@@ -7,11 +7,12 @@ package dyngo_test
 
 import (
 	"fmt"
+	"math/rand"
 	"reflect"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
-
+	
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,6 +21,7 @@ type (
 	testOp1Res  struct{}
 
 	testOp2Args struct{}
+	testOp2Data struct{}
 	testOp2Res  struct{}
 
 	testOp3Args struct{}
@@ -27,29 +29,17 @@ type (
 )
 
 func init() {
-	dyngo.RegisterOperation(testOp1Args{}, testOp1Res{})
-	dyngo.RegisterOperation(testOp2Args{}, testOp2Res{})
-	dyngo.RegisterOperation(testOp3Args{}, testOp3Res{})
+	dyngo.RegisterOperation((*testOp1Args)(nil), (*testOp1Res)(nil))
+	dyngo.RegisterOperation((*testOp2Args)(nil), (*testOp2Res)(nil))
+	dyngo.RegisterOperation((*testOp3Args)(nil), (*testOp3Res)(nil))
 }
 
 func TestOperationEvents(t *testing.T) {
-	t.Run("single operation without listeners", func(t *testing.T) {
-		require.NotPanics(t, func() {
-			op := dyngo.StartOperation(testOp1Args{})
-			op.Finish(testOp1Res{})
-		})
-
-		require.Panics(t, func() {
-			op := dyngo.StartOperation(nil)
-			op.Finish(nil)
-		})
-	})
-
 	t.Run("start event", func(t *testing.T) {
 		op1 := dyngo.StartOperation(testOp1Args{})
 
 		var called int
-		op1.OnStart(func(op *dyngo.Operation, args testOp2Args) {
+		op1.OnStart((*testOp2Args)(nil), func(_ *dyngo.Operation, _ interface{}) {
 			called++
 		})
 
@@ -82,7 +72,7 @@ func TestOperationEvents(t *testing.T) {
 		op1 := dyngo.StartOperation(testOp1Args{})
 
 		var called int
-		op1.OnFinish(func(op *dyngo.Operation, args testOp2Res) {
+		op1.OnFinish((*testOp2Res)(nil), func(_ *dyngo.Operation, _ interface{}) {
 			called++
 		})
 
@@ -114,9 +104,142 @@ func TestOperationEvents(t *testing.T) {
 		// No longer called
 		require.Equal(t, 3, called)
 	})
+
+	t.Run("data event", func(t *testing.T) {
+		op1 := dyngo.StartOperation(testOp1Args{})
+
+		var called int
+		op1.OnData((*testOp2Data)(nil), func(op *dyngo.Operation, v interface{}) {
+			_ = v.(testOp2Data)
+			called++
+		})
+
+		op1.EmitData(testOp2Data{})
+		require.Equal(t, 1, called)
+
+		op2 := dyngo.StartOperation(testOp2Args{}, dyngo.WithParent(op1))
+		op2.EmitData(testOp2Data{})
+		op2.Finish(testOp2Res{})
+		require.Equal(t, 2, called)
+
+		op3 := dyngo.StartOperation(testOp3Args{}, dyngo.WithParent(op1))
+		op3.EmitData(testOp2Data{})
+		op3.Finish(testOp3Res{})
+		require.Equal(t, 3, called)
+
+		op2 = dyngo.StartOperation(testOp2Args{}, dyngo.WithParent(op1))
+		op3 = dyngo.StartOperation(testOp3Args{}, dyngo.WithParent(op2))
+		op3.EmitData(testOp2Data{})
+		op3.Finish(testOp3Res{})
+		op2.Finish(testOp2Res{})
+		require.Equal(t, 4, called)
+
+		// Finish the operation so that it gets disabled and its listeners removed
+		op1.Finish(testOp1Res{})
+		op1.EmitData(testOp2Data{})
+		// No new call
+		require.Equal(t, 4, called)
+	})
+
+	// TODO(julio): event dispatch through disabled operations
+}
+
+func BenchmarkEvents(b *testing.B) {
+	type (
+		benchOpArgs struct{ s []byte }
+		benchOpData struct{ s []byte }
+		benchOpRes  struct{ s []byte }
+	)
+
+	dyngo.RegisterOperation((*benchOpArgs)(nil), (*benchOpRes)(nil))
+
+	b.Run("emitting", func(b *testing.B) {
+		// Benchmark the emission of events according to the operation stack length
+		for length := 1; length <= 64; length *= 2 {
+			b.Run(fmt.Sprintf("stack=%d", length), func(b *testing.B) {
+				buf := make([]byte, 1024)
+				rand.Read(buf)
+
+				root := dyngo.StartOperation(benchOpArgs{})
+				defer root.Finish(benchOpRes{})
+
+				op := root
+				for i := 0; i < length-1; i++ {
+					op = dyngo.StartOperation(benchOpArgs{}, dyngo.WithParent(op))
+					defer op.Finish(benchOpRes{})
+				}
+
+				b.Run("start event", func(b *testing.B) {
+					unreg := root.Register(dyngo.OnStartEventListener((*benchOpArgs)(nil), func(*dyngo.Operation, interface{}) {}))
+					defer unreg()
+					b.ReportAllocs()
+					b.ResetTimer()
+					for n := 0; n < b.N; n++ {
+						dyngo.StartOperation(benchOpArgs{buf}, dyngo.WithParent(op))
+					}
+				})
+
+				b.Run("start + finish events", func(b *testing.B) {
+					unreg := root.Register(dyngo.OnFinishEventListener((*benchOpRes)(nil), func(*dyngo.Operation, interface{}) {}))
+					defer unreg()
+					b.ReportAllocs()
+					b.ResetTimer()
+					for n := 0; n < b.N; n++ {
+						leaf := dyngo.StartOperation(benchOpArgs{buf}, dyngo.WithParent(op))
+						leaf.Finish(benchOpRes{buf})
+					}
+				})
+
+				b.Run("data event", func(b *testing.B) {
+					unreg := root.Register(dyngo.OnDataEventListener((*benchOpData)(nil), func(*dyngo.Operation, interface{}) {}))
+					defer unreg()
+					b.ReportAllocs()
+					b.ResetTimer()
+					for n := 0; n < b.N; n++ {
+						op.EmitData(benchOpData{buf})
+					}
+				})
+
+			})
+		}
+	})
+
+	b.Run("registering", func(b *testing.B) {
+		op := dyngo.StartOperation(benchOpArgs{})
+		defer op.Finish(benchOpRes{})
+
+		b.Run("data event", func(b *testing.B) {
+			b.ReportAllocs()
+			for n := 0; n < b.N; n++ {
+				op.OnData((*benchOpData)(nil), func(op *dyngo.Operation, v interface{}) {})
+			}
+		})
+
+		b.Run("start event", func(b *testing.B) {
+			b.ReportAllocs()
+			for n := 0; n < b.N; n++ {
+				op.OnStart((*benchOpArgs)(nil), func(op *dyngo.Operation, v interface{}) {})
+			}
+		})
+
+		b.Run("finish event", func(b *testing.B) {
+			b.ReportAllocs()
+			for n := 0; n < b.N; n++ {
+				op.OnFinish((*benchOpRes)(nil), func(op *dyngo.Operation, v interface{}) {})
+			}
+		})
+	})
 }
 
 func BenchmarkGoAssumptions(b *testing.B) {
+	type (
+		testS0 struct{}
+		testS1 struct{}
+		testS2 struct{}
+		testS3 struct{}
+		testS4 struct{}
+	)
+
 	// Compare map lookup times according to their key type.
 	// The selected implementation assumes using reflect.TypeOf(v).Name() doesn't allocate memory
 	// and is as good as "regular" string keys, whereas the use of reflect.Type keys is slower due
@@ -240,11 +363,3 @@ func BenchmarkGoAssumptions(b *testing.B) {
 		})
 	})
 }
-
-type (
-	testS0 struct{}
-	testS1 struct{}
-	testS2 struct{}
-	testS3 struct{}
-	testS4 struct{}
-)

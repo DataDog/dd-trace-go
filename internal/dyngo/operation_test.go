@@ -21,13 +21,13 @@ import (
 // Dummy struct to mimic real-life operation stacks.
 type (
 	RootArgs        struct{}
-	RootResult      struct{}
+	RootRes         struct{}
 	HTTPHandlerArgs struct {
 		URL     *url.URL
 		Headers http.Header
 	}
-	HTTPHandlerResult struct{}
-	SQLQueryArg       struct {
+	HTTPHandlerRes struct{}
+	SQLQueryArg    struct {
 		Query string
 	}
 	SQLQueryResult struct {
@@ -55,19 +55,20 @@ type (
 )
 
 func init() {
-	dyngo.RegisterOperation(RootArgs{}, RootResult{})
-	dyngo.RegisterOperation(HTTPHandlerArgs{}, HTTPHandlerResult{})
-	dyngo.RegisterOperation(SQLQueryArg{}, SQLQueryResult{})
-	dyngo.RegisterOperation(GRPCHandlerArg{}, GRPCHandlerResult{})
-	dyngo.RegisterOperation(JSONParserArg{}, JSONParserResults{})
-	dyngo.RegisterOperation(BodyReadArg{}, BodyReadRes{})
+	dyngo.RegisterOperation((*RootArgs)(nil), (*RootRes)(nil))
+	dyngo.RegisterOperation((*HTTPHandlerArgs)(nil), (*HTTPHandlerRes)(nil))
+	dyngo.RegisterOperation((*SQLQueryArg)(nil), (*SQLQueryResult)(nil))
+	dyngo.RegisterOperation((*GRPCHandlerArg)(nil), (*GRPCHandlerResult)(nil))
+	dyngo.RegisterOperation((*JSONParserArg)(nil), (*JSONParserResults)(nil))
+	dyngo.RegisterOperation((*BodyReadArg)(nil), (*BodyReadRes)(nil))
 }
 
 func TestUsage(t *testing.T) {
 	t.Run("operation stacking", func(t *testing.T) {
 		// Dummy waf looking for the string `attack` in HTTPHandlerArgs
 		wafListener := func(called *int, blocked *bool) dyngo.EventListener {
-			return dyngo.OnStartEventListener(func(op *dyngo.Operation, args HTTPHandlerArgs) {
+			return dyngo.OnStartEventListener((*HTTPHandlerArgs)(nil), func(op *dyngo.Operation, v interface{}) {
+				args := v.(HTTPHandlerArgs)
 				*called++
 
 				if strings.Contains(args.URL.RawQuery, "attack") {
@@ -83,7 +84,8 @@ func TestUsage(t *testing.T) {
 					}
 				}
 
-				op.OnData(func(body RawBodyData) {
+				op.OnData((*RawBodyData)(nil), func(_ *dyngo.Operation, v interface{}) {
+					body := v.(RawBodyData)
 					if strings.Contains(string(body), "attack") {
 						*blocked = true
 					}
@@ -93,9 +95,9 @@ func TestUsage(t *testing.T) {
 
 		// HTTP body read listener appending the read results to a buffer
 		rawBodyListener := func(called *int, buf *[]byte) dyngo.EventListener {
-			return dyngo.OnStartEventListener(func(op *dyngo.Operation, args HTTPHandlerArgs) {
-
-				op.OnFinish(func(op *dyngo.Operation, res BodyReadRes) {
+			return dyngo.OnStartEventListener((*HTTPHandlerArgs)(nil), func(op *dyngo.Operation, _ interface{}) {
+				op.OnFinish((*BodyReadRes)(nil), func(op *dyngo.Operation, v interface{}) {
+					res := v.(BodyReadRes)
 					*called++
 					*buf = append(*buf, res.Buf...)
 					if res.Err == io.EOF {
@@ -106,16 +108,17 @@ func TestUsage(t *testing.T) {
 		}
 
 		jsonBodyValueListener := func(called *int, value *interface{}) dyngo.EventListener {
-			return dyngo.OnStartEventListener(func(op *dyngo.Operation, args HTTPHandlerArgs) {
+			return dyngo.OnStartEventListener((*HTTPHandlerArgs)(nil), func(op *dyngo.Operation, _ interface{}) {
 				didBodyRead := false
-				op.OnFinish(func(op *dyngo.Operation, res JSONParserResults) {
+				op.OnFinish((*JSONParserResults)(nil), func(op *dyngo.Operation, v interface{}) {
+					res := v.(JSONParserResults)
 					*called++
 					if !didBodyRead || res.Err != nil {
 						return
 					}
 					*value = res.Value
 				})
-				op.OnStart(func(_ *dyngo.Operation, res BodyReadArg) {
+				op.OnStart((*BodyReadArg)(nil), func(_ *dyngo.Operation, _ interface{}) {
 					didBodyRead = true
 				})
 			})
@@ -150,7 +153,7 @@ func TestUsage(t *testing.T) {
 				HTTPHandlerArgs{
 					URL:     &url.URL{RawQuery: "?v=ok"},
 					Headers: http.Header{"header": []string{"value"}}},
-				HTTPHandlerResult{},
+				HTTPHandlerRes{},
 				func(op *dyngo.Operation) {
 					operation(op, JSONParserArg{}, JSONParserResults{Value: []interface{}{"a", "json", "array"}}, func(op *dyngo.Operation) {
 						operation(op, BodyReadArg{}, BodyReadRes{Buf: []byte("my ")}, nil)
@@ -205,7 +208,7 @@ func TestUsage(t *testing.T) {
 				HTTPHandlerArgs{
 					URL:     &url.URL{RawQuery: "?v=attack"},
 					Headers: http.Header{"header": []string{"value"}}},
-				HTTPHandlerResult{},
+				HTTPHandlerRes{},
 				func(op *dyngo.Operation) {
 					operation(op, JSONParserArg{}, JSONParserResults{Value: "a string", Err: errors.New("an error")}, func(op *dyngo.Operation) {
 						operation(op, BodyReadArg{}, BodyReadRes{Buf: []byte("another ")}, nil)
@@ -262,7 +265,7 @@ func TestUsage(t *testing.T) {
 				HTTPHandlerArgs{
 					URL:     &url.URL{RawQuery: "?v=ok"},
 					Headers: http.Header{"header": []string{"value"}}},
-				HTTPHandlerResult{},
+				HTTPHandlerRes{},
 				func(op *dyngo.Operation) {
 					operation(op, JSONParserArg{}, JSONParserResults{Value: "a string"}, func(op *dyngo.Operation) {
 						operation(op, BodyReadArg{}, BodyReadRes{Buf: []byte("an ")}, nil)
@@ -342,18 +345,18 @@ func TestUsage(t *testing.T) {
 
 	t.Run("recursive operation", func(t *testing.T) {
 		root := dyngo.StartOperation(RootArgs{})
-		defer root.Finish(RootResult{})
+		defer root.Finish(RootRes{})
 
 		called := 0
-		root.OnStart(func(HTTPHandlerArgs) {
+		root.OnStart((*HTTPHandlerArgs)(nil), func(_ *dyngo.Operation, _ interface{}) {
 			called++
 		})
 
-		operation(root, HTTPHandlerArgs{}, HTTPHandlerResult{}, func(o *dyngo.Operation) {
-			operation(o, HTTPHandlerArgs{}, HTTPHandlerResult{}, func(o *dyngo.Operation) {
-				operation(o, HTTPHandlerArgs{}, HTTPHandlerResult{}, func(o *dyngo.Operation) {
-					operation(o, HTTPHandlerArgs{}, HTTPHandlerResult{}, func(o *dyngo.Operation) {
-						operation(o, HTTPHandlerArgs{}, HTTPHandlerResult{}, func(*dyngo.Operation) {
+		operation(root, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(o *dyngo.Operation) {
+			operation(o, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(o *dyngo.Operation) {
+				operation(o, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(o *dyngo.Operation) {
+					operation(o, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(o *dyngo.Operation) {
+						operation(o, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(*dyngo.Operation) {
 						})
 					})
 				})
@@ -371,7 +374,7 @@ type (
 )
 
 func init() {
-	dyngo.RegisterOperation(MyOperationArgs{}, MyOperationRes{})
+	dyngo.RegisterOperation((*MyOperationArgs)(nil), (*MyOperationRes)(nil))
 }
 
 func TestRegisterUnregister(t *testing.T) {
@@ -380,21 +383,21 @@ func TestRegisterUnregister(t *testing.T) {
 	unregister := dyngo.Register(
 		dyngo.InstrumentationDescriptor{
 			Instrumentation: dyngo.OperationInstrumentation{
-				EventListener: dyngo.OnStartEventListener(func(*dyngo.Operation, MyOperationArgs) {
+				EventListener: dyngo.OnStartEventListener((*MyOperationArgs)(nil), func(*dyngo.Operation, interface{}) {
 					onStartCalled++
 				}),
 			},
 		},
 		dyngo.InstrumentationDescriptor{
 			Instrumentation: dyngo.OperationInstrumentation{
-				EventListener: dyngo.OnStartEventListener(func(*dyngo.Operation, MyOperationArgs) {
+				EventListener: dyngo.OnStartEventListener((*MyOperationArgs)(nil), func(*dyngo.Operation, interface{}) {
 					onDataCalled++
 				}),
 			},
 		},
 		dyngo.InstrumentationDescriptor{
 			Instrumentation: dyngo.OperationInstrumentation{
-				EventListener: dyngo.OnFinishEventListener(func(*dyngo.Operation, MyOperationRes) {
+				EventListener: dyngo.OnFinishEventListener((*MyOperationRes)(nil), func(*dyngo.Operation, interface{}) {
 					onFinishCalled++
 				}),
 			},
@@ -419,6 +422,19 @@ func TestRegisterUnregister(t *testing.T) {
 }
 
 func TestTypeSafety(t *testing.T) {
+	t.Run("nil start arguments", func(t *testing.T) {
+		require.Panics(t, func() {
+			dyngo.StartOperation(nil)
+		})
+	})
+
+	t.Run("nil finish results", func(t *testing.T) {
+		require.Panics(t, func() {
+			op := dyngo.StartOperation(MyOperationArgs{})
+			op.Finish(nil)
+		})
+	})
+
 	t.Run("invalid operation types", func(t *testing.T) {
 		type (
 			myOpArg struct{}
@@ -456,14 +472,6 @@ func TestTypeSafety(t *testing.T) {
 		)
 
 		require.NotPanics(t, func() {
-			dyngo.RegisterOperation(myOp1Arg{}, myOp1Res{})
-		})
-		require.Panics(t, func() {
-			// Already registered
-			dyngo.RegisterOperation(myOp1Arg{}, myOp1Res{})
-		})
-
-		require.NotPanics(t, func() {
 			dyngo.RegisterOperation((*myOp1Arg)(nil), (*myOp1Res)(nil))
 		})
 		require.Panics(t, func() {
@@ -481,11 +489,12 @@ func TestTypeSafety(t *testing.T) {
 			myOp3Res struct{}
 		)
 
+		// Start a not yet registered operation
 		require.Panics(t, func() {
 			dyngo.StartOperation(myOp2Arg{})
 		})
 
-		dyngo.RegisterOperation(myOp2Arg{}, myOp2Res{})
+		dyngo.RegisterOperation((*myOp2Arg)(nil), (*myOp2Res)(nil))
 
 		t.Run("finishing with the expected result type", func(t *testing.T) {
 			require.NotPanics(t, func() {
@@ -514,129 +523,73 @@ func TestTypeSafety(t *testing.T) {
 			require.Panics(t, func() {
 				op := dyngo.StartOperation(myOp2Arg{})
 				defer op.Finish(myOp2Res{})
-				op.OnStart(func(myOp3Arg) {})
+				op.OnStart((*myOp3Arg)(nil), func(*dyngo.Operation, interface{}) {})
 			})
 			require.Panics(t, func() {
 				op := dyngo.StartOperation(myOp2Arg{})
 				defer op.Finish(myOp2Res{})
-				op.OnFinish(func(myOp3Res) {})
+				op.OnFinish((*myOp3Res)(nil), func(*dyngo.Operation, interface{}) {})
 			})
 			require.NotPanics(t, func() {
-				dyngo.RegisterOperation(myOp3Arg{}, myOp3Res{})
+				dyngo.RegisterOperation((*myOp3Arg)(nil), (*myOp3Res)(nil))
 				op := dyngo.StartOperation(myOp2Arg{})
 				defer op.Finish(myOp2Res{})
-				op.OnStart(func(myOp3Arg) {})
-				op.OnFinish(func(myOp3Res) {})
+				op.OnStart((*myOp3Arg)(nil), func(*dyngo.Operation, interface{}) {})
+				op.OnFinish((*myOp3Res)(nil), func(*dyngo.Operation, interface{}) {})
 			})
 		})
 	})
 
-	t.Run("event listener types", func(t *testing.T) {
+	t.Run("event listeners", func(t *testing.T) {
 		type (
 			myOp4Arg  struct{}
 			myOp4Res  struct{}
 			myOp4Data struct{}
 		)
 
-		dyngo.RegisterOperation(myOp4Arg{}, myOp4Res{})
+		dyngo.RegisterOperation((*myOp4Arg)(nil), (*myOp4Res)(nil))
 
 		op := dyngo.StartOperation(myOp4Arg{})
 		defer op.Finish(myOp4Res{})
 
-		t.Run("valid listeners", func(t *testing.T) {
+		t.Run("valid event key type", func(t *testing.T) {
 			require.NotPanics(t, func() {
-				// Start listeners with and without the operation pointer
-				op.OnStart(func(*dyngo.Operation, myOp4Arg) {})
-				op.OnStart(func(myOp4Arg) {})
-
-				// Finish listeners with and without the operation pointer
-				op.OnFinish(func(myOp4Res) {})
-				op.OnFinish(func(*dyngo.Operation, myOp4Res) {})
-
-				// Data listeners with and without the operation pointer
-				op.OnData(func(myOp4Data) {})
-				op.OnData(func(*dyngo.Operation, myOp4Data) {})
+				op.OnStart((*myOp4Arg)(nil), func(*dyngo.Operation, interface{}) {})
+				op.OnFinish((*myOp4Res)(nil), func(*dyngo.Operation, interface{}) {})
+				op.OnData((*myOp4Data)(nil), func(*dyngo.Operation, interface{}) {})
 			})
 		})
 
-		t.Run("invalid listeners", func(t *testing.T) {
-			for _, tc := range []struct {
-				name     string
-				listener interface{}
-			}{
-				{
-					name:     "nil value",
-					listener: nil,
-				},
-				{
-					name:     "not a function",
-					listener: "not a function",
-				},
-				{
-					name:     "no arguments",
-					listener: func() {},
-				},
-				{
-					name:     "missing event payload",
-					listener: func(*dyngo.Operation) {},
-				},
-			} {
-				t.Run(tc.name, func(t *testing.T) {
-					require.Panics(t, func() {
-						op.OnStart(tc.listener)
-					})
-					require.Panics(t, func() {
-						op.OnData(tc.listener)
-					})
-					require.Panics(t, func() {
-						op.OnFinish(tc.listener)
-					})
-				})
-			}
-		})
-
-		t.Run("invalid argument order", func(t *testing.T) {
+		t.Run("invalid event key type", func(t *testing.T) {
 			require.Panics(t, func() {
-				op.OnStart(func(myOp4Arg, *dyngo.Operation) {})
+				op.OnStart(nil, func(*dyngo.Operation, interface{}) {})
 			})
 			require.Panics(t, func() {
-				op.OnFinish(func(myOp4Res, *dyngo.Operation) {})
+				op.OnStart(myOp4Arg{}, func(*dyngo.Operation, interface{}) {})
 			})
 			require.Panics(t, func() {
-				op.OnFinish(func(myOp4Data, *dyngo.Operation) {})
+				op.OnStart((**myOp4Arg)(nil), func(*dyngo.Operation, interface{}) {})
+			})
+
+			require.Panics(t, func() {
+				op.OnFinish(nil, func(*dyngo.Operation, interface{}) {})
+			})
+			require.Panics(t, func() {
+				op.OnFinish(myOp4Res{}, func(*dyngo.Operation, interface{}) {})
+			})
+			require.Panics(t, func() {
+				op.OnFinish((**myOp4Res)(nil), func(*dyngo.Operation, interface{}) {})
+			})
+
+			require.Panics(t, func() {
+				op.OnData(nil, func(*dyngo.Operation, interface{}) {})
+			})
+			require.Panics(t, func() {
+				op.OnData(myOp4Data{}, func(*dyngo.Operation, interface{}) {})
 			})
 		})
-
-		t.Run("invalid operation argument type", func(t *testing.T) {
-			t.Run("not a pointer", func(t *testing.T) {
-				require.Panics(t, func() {
-					op.OnStart(func(dyngo.Operation, myOp4Arg) {})
-				})
-				require.Panics(t, func() {
-					op.OnFinish(func(dyngo.Operation, myOp4Res) {})
-				})
-				require.Panics(t, func() {
-					op.OnFinish(func(dyngo.Operation, myOp4Data) {})
-				})
-			})
-
-			t.Run("pointer to pointer", func(t *testing.T) {
-				require.Panics(t, func() {
-					op.OnStart(func(**dyngo.Operation, myOp4Arg) {})
-				})
-				require.Panics(t, func() {
-					op.OnFinish(func(**dyngo.Operation, myOp4Res) {})
-				})
-				require.Panics(t, func() {
-					op.OnFinish(func(**dyngo.Operation, myOp4Data) {})
-				})
-			})
-		})
-
 	})
 }
-
-// TODO(julio): dispatch time benchmark
 
 // TODO(julio): concurrency test
 

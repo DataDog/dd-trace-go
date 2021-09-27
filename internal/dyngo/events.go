@@ -6,6 +6,7 @@
 package dyngo
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -33,11 +34,20 @@ type (
 
 	eventListenerMapEntry struct {
 		Id       eventListenerID
-		Callback interface{}
+		Callback EventListenerFunc
 	}
 )
 
-type eventListenerID uint32
+type (
+	eventUnregister interface {
+		unregisterFrom(*Operation)
+	}
+
+	onStartEventListenerID  eventListenerID
+	onFinishEventListenerID eventListenerID
+	onDataEventListenerID   eventListenerID
+	eventListenerID         uint32
+)
 
 var lastID eventListenerID
 
@@ -45,7 +55,7 @@ func nextID() eventListenerID {
 	return eventListenerID(atomic.AddUint32((*uint32)(&lastID), 1))
 }
 
-func (r *eventRegister) add(k reflect.Type, l interface{}) eventListenerID {
+func (r *eventRegister) add(k reflect.Type, l EventListenerFunc) eventListenerID {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.listeners == nil {
@@ -59,18 +69,18 @@ func (r *eventRegister) add(k reflect.Type, l interface{}) eventListenerID {
 	return id
 }
 
-func (r *eventRegister) remove(id eventListenerID) bool {
+func (r *eventRegister) remove(id eventListenerID) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for k, listeners := range r.listeners {
 		for i, v := range listeners {
 			if v.Id == id {
 				r.listeners[k] = append(listeners[:i], listeners[i+1:]...)
-				return true
+				return
 			}
 		}
 	}
-	return false
+	return
 }
 
 func (r *eventRegister) clear() {
@@ -79,36 +89,56 @@ func (r *eventRegister) clear() {
 	r.listeners = nil
 }
 
-func (e *eventManager) OnStart(l OnStartEventListenerFunc) UnregisterFunc {
-	argType, err := validateStartEventListener(l)
+func (e *eventManager) OnStart(argsPtr interface{}, l OnStartEventListenerFunc) {
+	argsType, err := validateEventListenerKey(argsPtr)
 	if err != nil {
 		panic(err)
 	}
-	return registerTo(&e.onStart, argType, l)
+	if err := validateStartOperationArgs(argsType); err != nil {
+		panic(err)
+	}
+	e.onStart.add(argsType, l)
+}
+
+func validateStartOperationArgs(argsType reflect.Type) error {
+	if _, ok := operationRegister[argsType]; !ok {
+		return fmt.Errorf("unexpected use of an unregistered operation of argument type %s", argsType)
+	}
+	return nil
+}
+
+func validateFinishOperationRes(resType reflect.Type) error {
+	if _, ok := operationResRegister[resType]; !ok {
+		return fmt.Errorf("unexpected use of an unregistered operation of result type %s", resType)
+	}
+	return nil
 }
 
 func (e *eventManager) emitStartEvent(op *Operation, args interface{}) {
 	e.emitEvent(op, &e.onStart, args)
 }
 
-func (e *eventManager) OnFinish(l OnFinishEventListenerFunc) UnregisterFunc {
-	resType, err := validateFinishEventListener(l)
+func (e *eventManager) OnFinish(resPtr interface{}, l OnFinishEventListenerFunc) {
+	resType, err := validateEventListenerKey(resPtr)
 	if err != nil {
 		panic(err)
 	}
-	return registerTo(&e.onFinish, resType, l)
+	if err := validateFinishOperationRes(resType); err != nil {
+		panic(err)
+	}
+	e.onFinish.add(resType, l)
 }
 
 func (e *eventManager) emitFinishEvent(op *Operation, results interface{}) {
 	e.emitEvent(op, &e.onFinish, results)
 }
 
-func (e *eventManager) OnData(l OnDataEventListenerFunc) UnregisterFunc {
-	dataType, err := validateEventListenerFunc(l)
+func (e *eventManager) OnData(dataPtr interface{}, l OnDataEventListenerFunc) {
+	dataType, err := validateEventListenerKey(dataPtr)
 	if err != nil {
 		panic(err)
 	}
-	return registerTo(&e.onData, dataType, l)
+	e.onData.add(dataType, l)
 }
 
 func (e *eventManager) emitDataEvent(op *Operation, data interface{}) {
@@ -125,117 +155,100 @@ func (e *eventManager) emitEvent(op *Operation, r *eventRegister, data interface
 }
 
 func (r *eventRegister) callListeners(op *Operation, data interface{}) {
-	dataV := reflect.ValueOf(data)
-	args := []reflect.Value{reflect.ValueOf(op), dataV}
-	dataT := dataV.Type()
-
+	dataT := reflect.TypeOf(data)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
 	for _, e := range r.listeners[dataT] {
-		v := reflect.ValueOf(e.Callback)
-		if v.Type().NumIn() == 1 {
-			v.Call(args[1:])
-		} else {
-			v.Call(args)
-		}
+		e.Callback(op, data)
 	}
 }
 
 type (
-	// OnStartEventListenerFunc func(op *Operation, args <T>)
-	OnStartEventListenerFunc interface{}
-	// OnDataEventListenerFunc func(op *Operation, data <T>)
-	OnDataEventListenerFunc interface{}
-	// OnFinishEventListenerFunc func(op *Operation, results <T>)
-	OnFinishEventListenerFunc interface{}
+	// OnStartEventListenerFunc is a start event listener function.
+	OnStartEventListenerFunc EventListenerFunc
+	// OnDataEventListenerFunc is a data event listener function.
+	OnDataEventListenerFunc EventListenerFunc
+	// OnFinishEventListenerFunc is a finish event listener function.
+	OnFinishEventListenerFunc EventListenerFunc
+
+	// EventListenerFunc is an alias to the event listener function.
+	// The listener must perform the type-assertion to the expected type.
+	// Helper function closures should be used to enforce the type-safety,
+	// such as:
+	//
+	//   func (l func(*dyngo.Operation, T)) EventListenerFunc {
+	//      return func (op *dyngo.Operation, v interface{}) {
+	//         l(op, v.(T))
+	//      }
+	//   }
+	//
+	EventListenerFunc = func(op *Operation, v interface{})
 
 	EventListener interface {
-		registerTo(*Operation) UnregisterFunc
+		registerTo(*Operation) eventUnregister
 	}
 
-	eventListener         struct{ l interface{} }
+	eventListener struct {
+		key reflect.Type
+		l   EventListenerFunc
+	}
 	onStartEventListener  eventListener
 	onDataEventListener   eventListener
 	onFinishEventListener eventListener
 )
 
-func OnStartEventListener(l OnStartEventListenerFunc) EventListener {
-	return onStartEventListener{l}
-}
-func (l onStartEventListener) registerTo(op *Operation) UnregisterFunc {
-	return op.OnStart(l.l)
-}
-
-func OnDataEventListener(l OnDataEventListenerFunc) EventListener {
-	return onDataEventListener{l}
-}
-func (l onDataEventListener) registerTo(op *Operation) UnregisterFunc {
-	return op.OnData(l.l)
-}
-
-func OnFinishEventListener(l OnFinishEventListenerFunc) EventListener {
-	return onFinishEventListener{l}
-}
-func (l onFinishEventListener) registerTo(op *Operation) UnregisterFunc {
-	return op.OnFinish(l.l)
-}
-
-func registerTo(register *eventRegister, keyType reflect.Type, l interface{}) UnregisterFunc {
-	id := register.add(keyType, l)
-	return func() {
-		register.remove(id)
-	}
-}
-
-func validateStartEventListener(l OnStartEventListenerFunc) (reflect.Type, error) {
-	argType, err := validateEventListenerFunc(l)
+func OnStartEventListener(argsPtr interface{}, l OnStartEventListenerFunc) EventListener {
+	argsType, err := validateEventListenerKey(argsPtr)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	if _, exists := operationRegister[argType]; !exists {
-		return nil, fmt.Errorf("cannot listen to a non registered operation argument %s", argType)
-	}
-	return argType, nil
+	return onStartEventListener{key: argsType, l: l}
+}
+func (l onStartEventListener) registerTo(op *Operation) eventUnregister {
+	return onStartEventListenerID(op.onStart.add(l.key, l.l))
 }
 
-func validateFinishEventListener(l OnFinishEventListenerFunc) (reflect.Type, error) {
-	resType, err := validateEventListenerFunc(l)
+func (id onStartEventListenerID) unregisterFrom(op *Operation) {
+	op.onStart.remove(eventListenerID(id))
+}
+
+func OnDataEventListener(dataPtr interface{}, l OnDataEventListenerFunc) EventListener {
+	dataType, err := validateEventListenerKey(dataPtr)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	if _, exists := operationResRegister[resType]; !exists {
-		return nil, fmt.Errorf("cannot listen to a non registered operation result %s", resType)
-	}
-	return resType, nil
+	return onDataEventListener{key: dataType, l: l}
+}
+func (l onDataEventListener) registerTo(op *Operation) eventUnregister {
+	return onDataEventListenerID(op.onData.add(l.key, l.l))
 }
 
-// Validate the event listener is a function of the form `func (*Operation, T)` or `func(T)`.
-// It returns T when the function is valid. An error otherwise.
-func validateEventListenerFunc(l interface{}) (keyType reflect.Type, err error) {
-	listenerType := reflect.TypeOf(l)
-	if kind := listenerType.Kind(); kind != reflect.Func {
-		return nil, fmt.Errorf("unexpected event listener type %s instead of a function", kind.String())
+func (id onDataEventListenerID) unregisterFrom(op *Operation) {
+	op.onData.remove(eventListenerID(id))
+}
+
+func OnFinishEventListener(resPtr interface{}, l OnFinishEventListenerFunc) EventListener {
+	resType, err := validateEventListenerKey(resPtr)
+	if err != nil {
+		panic(err)
 	}
+	return onFinishEventListener{key: resType, l: l}
+}
+func (l onFinishEventListener) registerTo(op *Operation) eventUnregister {
+	return onFinishEventListenerID(op.onFinish.add(l.key, l.l))
+}
 
-	operationType := reflect.TypeOf((*Operation)(nil))
-	switch listenerType.NumIn() {
-	case 1:
-		// Expecting func (T)
-		argType := listenerType.In(0)
-		if argType == operationType {
-			return nil, fmt.Errorf("unexpected type of event listener argument: the first argument should not be %s", operationType)
-		}
-		return argType, nil
+func (id onFinishEventListenerID) unregisterFrom(op *Operation) {
+	op.onFinish.remove(eventListenerID(id))
+}
 
-	case 2:
-		// Expecting func (*Operation, T)
-		if listenerType.In(0) != operationType {
-			return nil, fmt.Errorf("unexpected type of event listener argument: the first argument should be %s", operationType)
-		}
-		return listenerType.In(1), nil
-
-	default:
-		return nil, fmt.Errorf("unexpected number of event listener arguments")
+func validateEventListenerKey(key interface{}) (keyType reflect.Type, err error) {
+	if key == nil {
+		return nil, errors.New("unexpected nil event listener key")
 	}
+	keyPtrType := reflect.TypeOf(key)
+	if kind := keyPtrType.Kind(); kind != reflect.Ptr {
+		return nil, fmt.Errorf("unexpected event listener key of type %s instead of a structure pointer", keyPtrType)
+	}
+	return keyPtrType.Elem(), nil
 }

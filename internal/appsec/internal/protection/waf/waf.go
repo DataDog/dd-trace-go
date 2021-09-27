@@ -25,7 +25,7 @@ func NewOperationEventListener() dyngo.EventListener {
 	if err != nil {
 		panic(err)
 	}
-	return dyngo.OnStartEventListener(func(op *dyngo.Operation, args httpinstr.HandlerOperationArgs) {
+	return httpinstr.OnHandlerOperationStartListener(func(op *dyngo.Operation, args httpinstr.HandlerOperationArgs) {
 		// For this handler operation lifetime, create a WAF context, the set of subscribed data seen and the list of
 		// detected attacks
 		var (
@@ -34,9 +34,11 @@ func NewOperationEventListener() dyngo.EventListener {
 			set     = types.DataSet{}
 		)
 
-		op.OnFinish(func(op *dyngo.Operation, res httpinstr.HandlerOperationRes) {
+		httpinstr.OnHandlerOperationFinish(op, func(op *dyngo.Operation, res httpinstr.HandlerOperationRes) {
 			wafCtx.Close()
-			op.EmitData(appsectypes.NewSecurityEvent(attacks, appsectypes.WithHTTPOperationContext(args, res)))
+			if len(attacks) > 0 {
+				op.EmitData(appsectypes.NewSecurityEvent(attacks, httpinstr.MakeHTTPOperationContext(args, res)))
+			}
 		})
 
 		subscribe(op, subscriptions, wafCtx, set, &attacks)
@@ -44,26 +46,25 @@ func NewOperationEventListener() dyngo.EventListener {
 }
 
 func subscribe(op *dyngo.Operation, subscriptions []string, wafCtx types.Rule, set types.DataSet, attacks *[]RawAttackMetadata) {
-	run := func(addr string, v interface{}) {
-		set[addr] = v
-		runWAF(wafCtx, set, attacks)
+	run := func(addr string) dyngo.EventListenerFunc {
+		return func(_ *dyngo.Operation, v interface{}) {
+			set[addr] = v
+			runWAF(wafCtx, set, attacks)
+		}
 	}
+	var dataPtr interface{}
 	for _, addr := range subscriptions {
-		addr := addr
 		switch addr {
 		case "http.user_agent":
-			op.OnData(func(data httpinstr.UserAgent) {
-				run(addr, data)
-			})
+			dataPtr = (*httpinstr.UserAgent)(nil)
 		case "server.request.headers.no_cookies":
-			op.OnData(func(data httpinstr.Header) {
-				run(addr, data)
-			})
+			dataPtr = (*httpinstr.Header)(nil)
 		case "server.request.query":
-			op.OnData(func(data httpinstr.QueryValues) {
-				run(addr, data)
-			})
+			dataPtr = (*httpinstr.QueryValues)(nil)
+		default:
+			continue
 		}
+		op.OnData(dataPtr, run(addr))
 	}
 }
 

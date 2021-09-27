@@ -6,7 +6,6 @@
 package dyngo
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 )
@@ -48,23 +47,20 @@ var (
 	operationResRegister = make(map[reflect.Type]struct{})
 )
 
-// RegisterOperation allows to register an operation through its argument and result types that should be used when
+// RegisterOperation registers an operation through its argument and result types that should be used when
 // starting and finishing it.
 func RegisterOperation(args, res interface{}) {
-	if args == nil {
-		panic(errors.New("unexpected nil operation arguments"))
-	}
-	if res == nil {
-		panic(errors.New("unexpected nil operation results"))
-	}
-	if err := validateOperationTypes(args, res); err != nil {
+	argsType, err := validateEventListenerKey(args)
+	if err != nil {
 		panic(err)
 	}
-	argsType := reflect.TypeOf(args)
+	resType, err := validateEventListenerKey(res)
+	if err != nil {
+		panic(err)
+	}
 	if resType, exists := operationRegister[argsType]; exists {
 		panic(fmt.Errorf("operation already registered with argument type %s and result type %s", argsType, resType))
 	}
-	resType := reflect.TypeOf(res)
 	operationRegister[argsType] = resType
 	operationResRegister[resType] = struct{}{}
 }
@@ -130,13 +126,13 @@ func (o *Operation) EmitData(data interface{}) {
 type UnregisterFunc func()
 
 func (o *Operation) Register(l ...EventListener) UnregisterFunc {
-	unregisterFuncs := make([]UnregisterFunc, len(l))
+	ids := make([]eventUnregister, len(l))
 	for i, l := range l {
-		unregisterFuncs[i] = l.registerTo(o)
+		ids[i] = l.registerTo(o)
 	}
 	return func() {
-		for _, unregister := range unregisterFuncs {
-			unregister()
+		for _, id := range ids {
+			id.unregisterFrom(o)
 		}
 	}
 }
@@ -144,27 +140,6 @@ func (o *Operation) Register(l ...EventListener) UnregisterFunc {
 func forEachOperation(op *Operation, do func(op *Operation)) {
 	for ; op != nil; op = op.Parent() {
 		do(op)
-	}
-}
-
-func validateOperationTypes(args, res interface{}) error {
-	if err := validateOperationType(args); err != nil {
-		return err
-	}
-	return validateOperationType(res)
-}
-
-func validateOperationType(v interface{}) error {
-	typ := reflect.TypeOf(v)
-	for {
-		switch typ.Kind() {
-		case reflect.Struct:
-			return nil
-		case reflect.Ptr:
-			typ = typ.Elem()
-		default:
-			return fmt.Errorf("unexpected type %T", v)
-		}
 	}
 }
 

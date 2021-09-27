@@ -57,7 +57,7 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 
 	cfg.ResponseWriter = wrapResponseWriter(cfg.ResponseWriter, span)
 
-	op := dyngo.StartOperation(
+	op := httpinstr.StartHandlerOperation(
 		httpinstr.HandlerOperationArgs{
 			IsTLS:       cfg.Request.TLS != nil,
 			Method:      httpinstr.Method(cfg.Request.Method),
@@ -69,7 +69,7 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 			QueryValues: httpinstr.QueryValues(cfg.Request.URL.Query()),
 		},
 	)
-	op.OnData(func(e *appsectypes.SecurityEvent) {
+	op.OnSecurityEventData(func(op *dyngo.Operation, e *appsectypes.SecurityEvent) {
 		// Keep this trace due to the security event
 		span.SetTag(ext.SamplingPriority, ext.ManualKeep)
 		// Add context to the event
