@@ -38,10 +38,12 @@ func NewRoundTripper(opts ...ClientOption) http.RoundTripper {
 // value obtained from an HTTP request or response body.
 var bodyCutoff = 5 * 1024
 
-// TracedRoundTripper is a traced HTTP transport that captures Elasticsearch spans.
+// roundTripper is an implementation of http.RoundTripper that captures Elasticsearch spans.
 type roundTripper struct {
 	config clientConfig
 }
+
+var _ http.RoundTripper = &roundTripper{}
 
 // RoundTrip satisfies the RoundTripper interface, wraps the sub Transport and
 // captures a span of the Elasticsearch request.
@@ -135,8 +137,8 @@ func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser,
 	}
 	if encoding == "gzip" {
 		// unpack the snippet
-		gzr, err := gzip.NewReader(bytes.NewReader(snip))
-		if err != nil {
+		gzr, err2 := gzip.NewReader(bytes.NewReader(snip))
+		if err2 != nil {
 			// snip wasn't gzip; return it as is
 			return string(snip), rc2, nil
 		}

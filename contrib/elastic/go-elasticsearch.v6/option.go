@@ -26,7 +26,6 @@ func defaults(cfg *clientConfig) {
 	cfg.serviceName = "elastic.client"
 	cfg.transport = http.DefaultTransport
 	cfg.resourceNamer = quantize
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_ELASTIC_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
@@ -35,9 +34,9 @@ func defaults(cfg *clientConfig) {
 }
 
 // WithTransport sets the given transport as an http.Transport for the client.
-func WithTransport(t *http.RoundTripper) ClientOption {
+func WithTransport(t http.RoundTripper) ClientOption {
 	return func(cfg *clientConfig) {
-		cfg.transport = *t
+		cfg.transport = t
 	}
 }
 

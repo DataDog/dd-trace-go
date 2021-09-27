@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
@@ -27,11 +28,11 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	// _, ok := os.LookupEnv("INTEGRATION")
-	// if !ok {
-	// 	fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
-	// 	os.Exit(0)
-	// }
+	_, ok := os.LookupEnv("INTEGRATION")
+	if !ok {
+		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
+		os.Exit(0)
+	}
 	os.Exit(m.Run())
 }
 

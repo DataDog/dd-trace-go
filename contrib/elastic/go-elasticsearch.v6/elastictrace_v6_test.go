@@ -14,6 +14,7 @@ import (
 	elasticsearch6 "github.com/elastic/go-elasticsearch/v6"
 	esapi6 "github.com/elastic/go-elasticsearch/v6/esapi"
 	"github.com/stretchr/testify/assert"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -38,7 +39,7 @@ func TestClientV6(t *testing.T) {
 		DocumentID:   "1",
 		DocumentType: "tweet",
 		Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
-	}.Do(context.TODO(), client)
+	}.Do(context.Background(), client)
 	assert.NoError(err)
 
 	mt.Reset()
@@ -46,7 +47,7 @@ func TestClientV6(t *testing.T) {
 		Index:        "twitter",
 		DocumentID:   "1",
 		DocumentType: "tweet",
-	}.Do(context.TODO(), client)
+	}.Do(context.Background(), client)
 	assert.NoError(err)
 	checkGETTrace(assert, mt)
 
@@ -54,7 +55,7 @@ func TestClientV6(t *testing.T) {
 	_, err = esapi6.GetRequest{
 		Index:      "not-real-index",
 		DocumentID: "1",
-	}.Do(context.TODO(), client)
+	}.Do(context.Background(), client)
 	assert.NoError(err)
 	checkErrTrace(assert, mt)
 
@@ -82,7 +83,7 @@ func TestClientErrorCutoffV6(t *testing.T) {
 	_, err = esapi6.GetRequest{
 		Index:      "not-real-index",
 		DocumentID: "1",
-	}.Do(context.TODO(), client)
+	}.Do(context.Background(), client)
 	assert.NoError(err)
 
 	span := mt.FinishedSpans()[0]
@@ -108,7 +109,7 @@ func TestClientV6Failure(t *testing.T) {
 		DocumentID:   "1",
 		DocumentType: "tweet",
 		Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
-	}.Do(context.TODO(), client)
+	}.Do(context.Background(), client)
 	assert.Error(err)
 
 	spans := mt.FinishedSpans()
@@ -141,7 +142,7 @@ func TestResourceNamerSettingsV6(t *testing.T) {
 			Index:        "logs_2017_05/event/_search",
 			DocumentID:   "1",
 			DocumentType: "tweet",
-		}.Do(context.TODO(), client)
+		}.Do(context.Background(), client)
 
 		span := mt.FinishedSpans()[0]
 		assert.Equal(t, "GET /logs_?_?/event/_search/tweet/?", span.Tag(ext.ResourceName))
@@ -164,7 +165,7 @@ func TestResourceNamerSettingsV6(t *testing.T) {
 			Index:        "logs_2017_05/event/_search",
 			DocumentID:   "1",
 			DocumentType: "tweet",
-		}.Do(context.TODO(), client)
+		}.Do(context.Background(), client)
 
 		span := mt.FinishedSpans()[0]
 		assert.Equal(t, staticName, span.Tag(ext.ResourceName))
@@ -188,7 +189,7 @@ func TestAnalyticsSettingsV6(t *testing.T) {
 			DocumentID:   "1",
 			DocumentType: "tweet",
 			Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
-		}.Do(context.TODO(), client)
+		}.Do(context.Background(), client)
 		assert.NoError(t, err)
 
 		spans := mt.FinishedSpans()
