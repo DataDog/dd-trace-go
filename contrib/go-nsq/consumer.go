@@ -7,7 +7,9 @@
 package nsq
 
 import (
-	"time"
+	"fmt"
+	"math"
+	"strings"
 
 	"github.com/nsqio/go-nsq"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -15,151 +17,201 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// wrap up nsq.Consumer
+// Consumer is a wrap-up class of nsq Consumer.
 type Consumer struct {
+	resource string
 	*nsq.Consumer
-	*traceHelper
+	cfg *clientConfig
 }
 
-// nsq.NewConsumer wrapper function
+// NewConsumer return a new nsq Consumer wrapped with tracing.
 func NewConsumer(topic string, channel string, config *nsq.Config, opts ...Option) (*Consumer, error) {
-	consumer, err := nsq.NewConsumer(topic, channel, config)
+	consu, err := nsq.NewConsumer(topic, channel, config)
 	if err != nil {
 		return nil, err
 	}
 
-	cfg := NewConfig(opts...)
-	cfg.Config = config
+	cfg := &clientConfig{}
+	defaultConfig(cfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
 
 	return &Consumer{
-		Consumer:    consumer,
-		traceHelper: newTraceHelper(cfg),
+		resource: fmt.Sprintf("%s.%s", topic, channel),
+		Consumer: consu,
+		cfg:      cfg,
 	}, nil
 }
 
-// nsq.Consumer.Stats wrapper function
-func (cons *Consumer) Stats() *nsq.ConsumerStats {
-	start := time.Now()
-	stats := cons.Consumer.Stats()
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "Stats", nil)
-
-	return stats
-}
-
-// nsq.Consumer.SetBehaviorDelegate wrapper function
-func (cons *Consumer) SetBehaviorDelegate(cb interface{}) {
-	start := time.Now()
-	cons.Consumer.SetBehaviorDelegate(cb)
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "SetBehaviorDelegate", nil)
-}
-
-// nsq.Consumer.IsStarved wrapper function
-func (cons *Consumer) IsStarved() bool {
-	start := time.Now()
-	is := cons.Consumer.IsStarved()
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "IsStarved", nil)
-
-	return is
-}
-
-// nsq.Consumer.ChangeMaxInFlight wrapper function
-func (cons *Consumer) ChangeMaxInFlight(maxInFlight int) {
-	start := time.Now()
-	cons.Consumer.ChangeMaxInFlight(maxInFlight)
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "ChangeMaxInFlight", nil)
-}
-
-// nsq.Consumer.ConnectToNSQLookupd wrapper function
-func (cons *Consumer) ConnectToNSQLookupd(addr string) error {
-	start := time.Now()
-	err := cons.Consumer.ConnectToNSQLookupd(addr)
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "ConnectToNSQLookupd", err)
+// ConnectToNSQLookupd is a nsq Consumer ConnectToNSQLookupd wrapper with tracing.
+func (consu *Consumer) ConnectToNSQLookupd(addr string) error {
+	var (
+		opName = "ConnectToNSQLookupd"
+		span   = consu.startSpan(opName)
+		err    = consu.Consumer.ConnectToNSQLookupd(addr)
+		tags   = map[string]interface{}{
+			"lookupd_addr": addr,
+		}
+	)
+	consu.finishSpan(span, opName, tags, err)
 
 	return err
 }
 
-// nsq.Consumer.ConnectToNSQLookupds wrapper function
-func (cons *Consumer) ConnectToNSQLookupds(addresses []string) error {
-	start := time.Now()
-	err := cons.Consumer.ConnectToNSQLookupds(addresses)
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "ConnectToNSQLookupds", err)
+// ConnectToNSQLookupds is a nsq Consumer ConnectToNSQLookupds wrapper with tracing.
+func (consu *Consumer) ConnectToNSQLookupds(addrs []string) error {
+	var (
+		opName = "ConnectToNSQLookupds"
+		span   = consu.startSpan(opName)
+		err    = consu.Consumer.ConnectToNSQLookupds(addrs)
+		tags   = map[string]interface{}{
+			"lookupd_addrs": strings.Join(addrs, ","),
+			"lookupd_count": len(addrs),
+		}
+	)
+	consu.finishSpan(span, opName, tags, err)
 
 	return err
 }
 
-// nsq.Consumer.ConnectToNSQDs wrapper function
-func (cons *Consumer) ConnectToNSQDs(addresses []string) error {
-	start := time.Now()
-	err := cons.Consumer.ConnectToNSQDs(addresses)
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "ConnectToNSQDs", err)
+// ConnectToNSQD is a nsq Consumer ConnectToNSQD wrapper with tracing.
+func (consu *Consumer) ConnectToNSQD(addr string) error {
+	var (
+		opName = "ConnectToNSQD"
+		span   = consu.startSpan(opName)
+		err    = consu.Consumer.ConnectToNSQD(addr)
+		tags   = map[string]interface{}{
+			"nsqd_addr": addr,
+		}
+	)
+	consu.finishSpan(span, opName, tags, err)
 
 	return err
 }
 
-// nsq.Consumer.ConnectToNSQD wrapper function
-func (cons *Consumer) ConnectToNSQD(addr string) error {
-	start := time.Now()
-	err := cons.Consumer.ConnectToNSQD(addr)
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "ConnectToNSQD", err)
+// ConnectToNSQDs is a nsq Consumer ConnectToNSQDs wrapper with tracing.
+func (consu *Consumer) ConnectToNSQDs(addrs []string) error {
+	var (
+		opName = "ConnectToNSQDs"
+		span   = consu.startSpan(opName)
+		err    = consu.Consumer.ConnectToNSQDs(addrs)
+		tags   = map[string]interface{}{
+			"nsqd_addrs": strings.Join(addrs, ","),
+			"nsqd_count": len(addrs),
+		}
+	)
+	consu.finishSpan(span, opName, tags, err)
 
 	return err
 }
 
-// nsq.Consumer.DisconnectFromNSQD wrapper function
-func (cons *Consumer) DisconnectFromNSQD(addr string) error {
-	start := time.Now()
-	err := cons.Consumer.DisconnectFromNSQD(addr)
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "DisconnectFromNSQD", err)
+// DisconnectFromNSQD is a nsq Consumer DisconnectFromNSQD wrapper with tracing.
+func (consu *Consumer) DisconnectFromNSQD(addr string) error {
+	var (
+		opName = "DisconnectFromNSQD"
+		span   = consu.startSpan(opName)
+		err    = consu.Consumer.ConnectToNSQLookupd(addr)
+		tags   = map[string]interface{}{
+			"nsqd_addr": addr,
+		}
+	)
+	consu.finishSpan(span, opName, tags, err)
 
 	return err
 }
 
-// nsq.Consumer.DisconnectFromNSQLookupd wrapper function
-func (cons *Consumer) DisconnectFromNSQLookupd(addr string) error {
-	start := time.Now()
-	err := cons.Consumer.DisconnectFromNSQLookupd(addr)
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "DisconnectFromNSQLookupd", err)
+// DisconnectFromNSQLookupd is a nsq Consumer DisconnectFromNSQLookupd wrapper with tracing.
+func (consu *Consumer) DisconnectFromNSQLookupd(addr string) error {
+	var (
+		opName = "DisconnectFromNSQLookupd"
+		span   = consu.startSpan(opName)
+		err    = consu.Consumer.DisconnectFromNSQLookupd(addr)
+		tags   = map[string]interface{}{
+			"lookupd_addr": addr,
+		}
+	)
+	consu.finishSpan(span, opName, tags, err)
 
 	return err
 }
 
-// nsq.Consumer.AddHandler wrapper function
-func (cons *Consumer) AddHandler(handler nsq.Handler) {
-	start := time.Now()
-	cons.Consumer.AddHandler(func(next nsq.Handler) nsq.Handler {
-		return nsq.HandlerFunc(func(message *nsq.Message) error {
-			opts := []ddtrace.StartSpanOption{
-				tracer.ServiceName(cons.cfg.service),
-				tracer.ResourceName("nsq.Consumer.MessageHandler"),
-				tracer.SpanType(ext.SpanTypeMessageProducer),
+// AddHandler is a nsq Consumer Addhandler wrapper with tracing operations injected into the original registered handler.
+func (consu *Consumer) AddHandler(handler nsq.Handler) {
+	consu.Consumer.AddHandler(nsq.HandlerFunc(func(message *nsq.Message) error {
+		var (
+			opName = "nsq_message_handler"
+			span   = consu.startSpan(opName)
+			err    = handler.HandleMessage(message)
+			stats  = consu.Stats()
+			tags   = map[string]interface{}{
+				"connections":       stats.Connections,
+				"message_received":  stats.MessagesReceived,
+				"message_finished":  stats.MessagesFinished,
+				"message_requeued":  stats.MessagesRequeued,
+				"starved":           consu.IsStarved(),
+				"message_attempts":  message.Attempts,
+				"message_body_size": len(message.Body),
+				"message_timestamp": message.Timestamp,
+				"nsqd_addr":         message.NSQDAddress,
 			}
+		)
+		consu.finishSpan(span, opName, tags, err)
 
-			span, ctx := tracer.StartSpanFromContext(cons.cfg.ctx, "Consumer.HandleMessage", opts...)
-			defer span.Finish(tracer.FinishTime(time.Now()))
+		return err
+	}))
+}
 
-			cons.cfg.ctx = ctx
-
-			err := next.HandleMessage(message)
-			if err != nil {
-				span.SetTag("HandleMessage.Error", err)
+// AddConcurrentHandlers is a nsq Consumer AddConcurrentHandlers wrapper with tracing operations injected into the original registered handler.
+func (consu *Consumer) AddConcurrentHandlers(handler nsq.Handler, concurrency int) {
+	consu.AddConcurrentHandlers(nsq.HandlerFunc(func(message *nsq.Message) error {
+		var (
+			opName = "nsq_message_handler"
+			span   = consu.startSpan(opName)
+			err    = handler.HandleMessage(message)
+			stats  = consu.Stats()
+			tags   = map[string]interface{}{
+				"connections":       stats.Connections,
+				"message_received":  stats.MessagesReceived,
+				"message_finished":  stats.MessagesFinished,
+				"message_requeued":  stats.MessagesRequeued,
+				"starved":           consu.IsStarved(),
+				"message_attempts":  message.Attempts,
+				"message_body_size": len(message.Body),
+				"message_timestamp": message.Timestamp,
+				"nsqd_addr":         message.NSQDAddress,
 			}
+		)
+		consu.finishSpan(span, opName, tags, err)
 
-			return err
-		})
-	}(handler))
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "AddHandler", nil)
+		return err
+	}), concurrency)
 }
 
-// nsq.Consumer.AddConcurrentHandlers wrapper function
-func (cons *Consumer) AddConcurrentHandlers(handler nsq.Handler, concurrency int) {
-	start := time.Now()
-	cons.Consumer.AddConcurrentHandlers(handler, concurrency)
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "AddConcurrentHandlers", nil)
+func (consu *Consumer) startSpan(operation string) ddtrace.Span {
+	opts := []ddtrace.StartSpanOption{
+		tracer.SpanType(ext.SpanTypeMessageConsumer),
+		tracer.ServiceName(consu.cfg.service),
+		tracer.ResourceName(consu.resource),
+	}
+	if !math.IsNaN(consu.cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, consu.cfg.analyticsRate))
+	}
+
+	span, _ := tracer.StartSpanFromContext(consu.cfg.ctx, operation, opts...)
+
+	return span
 }
 
-// nsq.Consumer.Stop wrapper function
-func (cons *Consumer) Stop() {
-	start := time.Now()
-	cons.Consumer.Stop()
-	cons.traceHelper.trace(start, ext.SpanTypeMessageConsumer, "Stop", nil)
+func (consu *Consumer) finishSpan(span ddtrace.Span, operation string, tags map[string]interface{}, err error) {
+	span.SetOperationName(operation)
+	for k, v := range tags {
+		span.SetTag(k, v)
+	}
+	span.SetTag(ext.ResourceName, consu.resource)
+	var opts []ddtrace.FinishOption
+	if err != nil {
+		opts = append(opts, tracer.WithError(err))
+	}
+	span.Finish(opts...)
 }

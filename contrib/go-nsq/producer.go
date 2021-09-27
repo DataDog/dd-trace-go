@@ -16,25 +16,20 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// Producer is a wrap-up class of nsq Producer
+// Producer is a wrap-up class of nsq Producer.
 type Producer struct {
 	*nsq.Producer
-	cfg *config
+	cfg *clientConfig
 }
 
-// NewProducer return a new nsq producer that is traced with the default tracer under the service name "nsq"
-func NewProducer(addr string, cfg *nsq.Config, opts ...Option) (*Producer, error) {
-	prodc, err := nsq.NewProducer(addr, cfg)
+// NewProducer return a new wrapped nsq Producer that is traced with the configurable client with opts.
+func NewProducer(addr string, config *nsq.Config, opts ...Option) (*Producer, error) {
+	prodc, err := nsq.NewProducer(addr, config)
 	if err != nil {
 		return nil, err
 	}
 
-	return WrapProducer(prodc, opts...), nil
-}
-
-// WrapProducer is a wrapper function for nsq Producer
-func WrapProducer(prodc *nsq.Producer, opts ...Option) *Producer {
-	cfg := &config{}
+	cfg := &clientConfig{}
 	defaultConfig(cfg)
 	for _, opt := range opts {
 		opt(cfg)
@@ -43,10 +38,10 @@ func WrapProducer(prodc *nsq.Producer, opts ...Option) *Producer {
 	return &Producer{
 		Producer: prodc,
 		cfg:      cfg,
-	}
+	}, nil
 }
 
-// Publish nsq Producer Publish wrapper
+// Publish is a nsq Producer Publish wrapper with tracing.
 func (prodc *Producer) Publish(topic string, body []byte) error {
 	var (
 		opName = "PUBLISH"
@@ -62,7 +57,7 @@ func (prodc *Producer) Publish(topic string, body []byte) error {
 	return err
 }
 
-// MultiPublish nsq Producer MultiPublish wrapper
+// MultiPublish is a nsq Producer MultiPublish wrapper with tracing.
 func (prodc *Producer) MultiPublish(topic string, body [][]byte) error {
 	var (
 		opName = "MultiPublish"
@@ -82,7 +77,7 @@ func (prodc *Producer) MultiPublish(topic string, body [][]byte) error {
 	return err
 }
 
-// PublishAsync nsq Producer PublishAsync wrapper
+// PublishAsync is a nsq Producer PublishAsync wrapper with tracing.
 func (prodc *Producer) PublishAsync(topic string, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	var (
 		opName = "PublishAsync"
@@ -99,7 +94,7 @@ func (prodc *Producer) PublishAsync(topic string, body []byte, doneChan chan *ns
 	return err
 }
 
-// MultiPublishAsync nsq Producer MultiPublishAsync wrapper
+// MultiPublishAsync is a nsq Producer MultiPublishAsync wrapper with tracing.
 func (prodc *Producer) MultiPublishAsync(topic string, body [][]byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	var (
 		opName = ""
@@ -120,7 +115,7 @@ func (prodc *Producer) MultiPublishAsync(topic string, body [][]byte, doneChan c
 	return err
 }
 
-// DeferredPublish nsq Producer DeferredPublish wrapper
+// DeferredPublish is a nsq Producer DeferredPublish wrapper with tracing.
 func (prodc *Producer) DeferredPublish(topic string, delay time.Duration, body []byte) error {
 	var (
 		opName = "DeferredPublish"
@@ -137,7 +132,7 @@ func (prodc *Producer) DeferredPublish(topic string, delay time.Duration, body [
 	return err
 }
 
-// DeferredPublishAsync nsq Producer DeferredPublishAsync wrapper
+// DeferredPublishAsync is a nsq Producer DeferredPublishAsync wrapper with tracing.
 func (prodc *Producer) DeferredPublishAsync(topic string, delay time.Duration, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	var (
 		opName = "DeferredPublishAsync"
@@ -171,11 +166,11 @@ func (prodc *Producer) startSpan(topic, operation string) ddtrace.Span {
 }
 
 func (prodc *Producer) finishSpan(span ddtrace.Span, topic, operation string, tags map[string]interface{}, err error) {
-	span.SetTag(ext.ResourceName, topic)
 	span.SetOperationName(operation)
 	for k, v := range tags {
 		span.SetTag(k, v)
 	}
+	span.SetTag(ext.ResourceName, topic)
 	var opts []ddtrace.FinishOption
 	if err != nil {
 		opts = append(opts, tracer.WithError(err))
