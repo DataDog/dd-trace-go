@@ -5,3 +5,9 @@
 // Author: CodapeWild (https://github.com/CodapeWild/)
 
 package nsq
+
+import "github.com/nsqio/go-nsq"
+
+func HandlerFuncWrapper(topic, channel string, handler nsq.HandlerFunc) nsq.HandlerFunc {
+	return nil
+}

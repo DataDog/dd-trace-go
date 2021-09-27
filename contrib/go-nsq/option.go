@@ -2,17 +2,22 @@
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2021 Datadog, Inc.
+// Author: CodapeWild (https://github.com/CodapeWild/)
 
 package nsq
 
 import (
+	"context"
 	"math"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 // config represents a set of options for the client
 type config struct {
 	service       string
 	analyticsRate float64
+	ctx           context.Context
 }
 
 // Option represents an option that can be used to config a client
@@ -25,13 +30,29 @@ func WithService(service string) Option {
 	}
 }
 
-// change analytics rate
-func WithAnalyticsRate(on bool, rate float64) Option {
+// WithAnalyticsRate enables client analytics
+func WithAnalyticsRate(rate float64) Option {
 	return func(cfg *config) {
-		if on && !math.IsNaN(rate) {
-			cfg.analyticsRate = rate
-		} else {
+		if math.IsNaN(rate) {
 			cfg.analyticsRate = math.NaN()
+		} else {
+			cfg.analyticsRate = rate
 		}
 	}
+}
+
+func WithContext(ctx context.Context) Option {
+	return func(cfg *config) {
+		cfg.ctx = ctx
+	}
+}
+
+func defaultConfig(cfg *config) {
+	cfg.service = "nsq"
+	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
+		cfg.analyticsRate = 1.0
+	} else {
+		cfg.analyticsRate = math.NaN()
+	}
+	cfg.ctx = context.Background()
 }
