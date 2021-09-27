@@ -5,3 +5,7 @@
 // Author: CodapeWild (https://github.com/CodapeWild/)
 
 package nsq
+
+func eample() {
+	// mctracer := mocktracer.Start()
+}

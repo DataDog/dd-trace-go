@@ -38,7 +38,7 @@ func NewConsumer(topic string, channel string, config *nsq.Config, opts ...Optio
 	}
 
 	return &Consumer{
-		resource: fmt.Sprintf("%s.%s", topic, channel),
+		resource: fmt.Sprintf("[topic:%s, channel:%s]", topic, channel),
 		Consumer: consu,
 		cfg:      cfg,
 	}, nil
