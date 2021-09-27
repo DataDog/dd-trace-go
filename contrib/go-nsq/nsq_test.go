@@ -8,6 +8,7 @@ package nsq
 
 import (
 	"context"
+	"encoding/base64"
 	"log"
 	"math/rand"
 	"testing"
@@ -38,7 +39,9 @@ func startProducer(t *testing.T) {
 	prodc, err = NewProducer(nsqdTcpAddr, nsq.NewConfig(), WithService(service), WithContext(context.Background()))
 	if err != nil {
 		t.Error(err)
-		t.Fail()
+		if err != nsq.ErrClosing {
+			t.Fail()
+		}
 	}
 
 	for i := 0; i < 3; i++ {
@@ -48,8 +51,8 @@ func startProducer(t *testing.T) {
 				bts := make([]byte, 100)
 				rand.Read(bts)
 				if err = prodc.Publish(topic, bts); err != nil {
-					t.Error(err)
-					t.Fail()
+					t.Log(err.Error())
+					time.Sleep(time.Second)
 				}
 				var btss [][]byte
 				for j := 0; j < 10; j++ {
@@ -57,12 +60,10 @@ func startProducer(t *testing.T) {
 					rand.Read(bts)
 				}
 				if err = prodc.MultiPublish(topic, btss); err != nil {
-					t.Error(err)
-					t.Fail()
+					t.Log(err.Error())
 				}
 				if err = prodc.DeferredPublish(topic, time.Second, bts); err != nil {
-					t.Error(err)
-					t.Fail()
+					t.Log(err.Error())
 				}
 				time.Sleep(time.Duration(rand.Intn(10)+1) * time.Second)
 			}
@@ -71,7 +72,7 @@ func startProducer(t *testing.T) {
 }
 
 func msgHandler(msg *nsq.Message) error {
-	log.Println(string(msg.Body))
+	log.Println(base64.RawStdEncoding.EncodeToString(msg.Body))
 
 	return nil
 }
@@ -82,8 +83,8 @@ func startConsumer(t *testing.T) {
 			go func(channel string) {
 				consu, err := NewConsumer(topic, channel, nsq.NewConfig(), WithService(service), WithContext(context.Background()))
 				if err != nil {
-					t.Error(err)
-					t.Fail()
+					t.Log(err.Error())
+					time.Sleep(time.Second)
 				}
 				consu.AddHandler(nsq.HandlerFunc(msgHandler))
 				consu.ConnectToNSQLookupd(lookupdHttpAddr)
@@ -100,7 +101,7 @@ func TestNSQTracing(t *testing.T) {
 	startProducer(t)
 	time.Sleep(3 * time.Second)
 	startConsumer(t)
-	time.Sleep(10 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	if prodc != nil {
 		prodc.Stop()
@@ -109,8 +110,9 @@ func TestNSQTracing(t *testing.T) {
 		consu.Stop()
 	}
 
+	t.Log("##############list spans")
 	spans := mctr.FinishedSpans()
 	for _, span := range spans {
-		t.Log(span.String())
+		log.Println(span.String())
 	}
 }
