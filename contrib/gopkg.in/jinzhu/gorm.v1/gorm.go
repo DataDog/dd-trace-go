@@ -11,13 +11,12 @@ import (
 	"math"
 	"time"
 
+	"github.com/jinzhu/gorm"
 	sqltraced "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"gopkg.in/jinzhu/gorm.v1"
 )
 
 const (

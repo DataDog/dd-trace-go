@@ -12,17 +12,16 @@ import (
 	"os"
 	"testing"
 
+	"github.com/go-sql-driver/mysql"
+	"github.com/jinzhu/gorm"
+	"github.com/lib/pq"
+	"github.com/stretchr/testify/assert"
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
-	"github.com/go-sql-driver/mysql"
-	"github.com/lib/pq"
-	"github.com/stretchr/testify/assert"
-	"gopkg.in/jinzhu/gorm.v1"
 )
 
 // tableName holds the SQL table that these tests will be run against. It must be unique cross-repo.

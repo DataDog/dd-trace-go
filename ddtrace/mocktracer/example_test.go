@@ -6,6 +6,9 @@
 package mocktracer_test
 
 import (
+	"log"
+	"testing"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
@@ -23,4 +26,14 @@ func Example() {
 	}
 
 	// Run assertions...
+}
+
+func TestSpan(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	spans := mt.FinishedSpans()
+	for _, span := range spans {
+		log.Println(span)
+	}
 }
