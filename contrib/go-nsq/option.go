@@ -4,7 +4,7 @@
 // Copyright 2021 Datadog, Inc.
 // Author: CodapeWild (https://github.com/CodapeWild/)
 
-package nsq
+package nsq // import "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/go-nsq"
 
 import (
 	"context"

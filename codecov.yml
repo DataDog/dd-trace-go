@@ -20,8 +20,8 @@ flags:
   core:
     paths:
       - ddtrace/*
-            - internal/*
-            - profiler/*
+        - internal/*
+        - profiler/*
   contrib:
     paths:
       - contrib/*
