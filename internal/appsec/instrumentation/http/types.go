@@ -14,29 +14,36 @@ import (
 )
 
 type (
-	HandlerOperationListener struct{ *dyngo.Operation }
-
+	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
 		Method      Method
 		Host        Host
 		RequestURI  RequestURI
 		RemoteAddr  RemoteAddr
-		Headers     Header
+		Headers     Headers
 		QueryValues QueryValues
 		UserAgent   UserAgent
 		IsTLS       bool
 	}
 
+	// HandlerOperationRes is the HTTP handler operation results.
 	HandlerOperationRes struct {
 		Status int
 	}
 
-	Method      string
-	Host        string
-	RequestURI  string
-	RemoteAddr  string
-	UserAgent   string
-	Header      http.Header
+	// Method of the HTTP request.
+	Method string
+	// Host of the HTTP request.
+	Host string
+	// RequestURI of the HTTP request.
+	RequestURI string
+	// RemoteAddr of the HTTP request's TCP connection.
+	RemoteAddr string
+	// UserAgent of the HTTP request.
+	UserAgent string
+	// Headers of the HTTP request.
+	Headers http.Header
+	// QueryValues of the HTTP request.
 	QueryValues url.Values
 )
 

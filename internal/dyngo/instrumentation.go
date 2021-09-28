@@ -5,41 +5,50 @@
 
 package dyngo
 
+import "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
 type (
+	// InstrumentationDescriptor is the high-level instrumentation descriptor entrypoint allowing describing what
+	// to instrument with what instrumentation technique.
 	InstrumentationDescriptor struct {
 		Title           string
 		Instrumentation Instrumentation
 	}
 
+	// Instrumentation descriptor interface of the instrumentation technique to use.
 	Instrumentation interface{ isInstrumentation() }
 
+	// OperationInstrumentation is the operation-based instrumentation descriptor. It allows instrumenting operations
+	// using their event listeners.
 	OperationInstrumentation struct {
+		// EventListener to register to the root operation in order to enable this instrumentation. The root operation
+		// is the operation entrypoint allowing to listen to every possible future events.
 		EventListener EventListener
-	}
-
-	FunctionInstrumentation struct {
-		Symbol   string
-		Prologue interface{}
 	}
 )
 
 func (OperationInstrumentation) isInstrumentation() {}
-func (FunctionInstrumentation) isInstrumentation()  {}
 
 // Register is the instrumentation entrypoint allowing to register high-level instrumentation descriptors describing
 // what to instrument.
 // Only OperationInstrumentation is supported for now.
 func Register(descriptors ...InstrumentationDescriptor) UnregisterFunc {
-	var unregisterFuncs []UnregisterFunc
+	type unregisterDesc struct {
+		title      string
+		unregister UnregisterFunc
+	}
+	var unregisterDescs []unregisterDesc
 	for _, desc := range descriptors {
 		switch actual := desc.Instrumentation.(type) {
 		case OperationInstrumentation:
-			unregisterFuncs = append(unregisterFuncs, root.Register(actual.EventListener))
+			log.Debug("appsec: registering instrumentation %s", desc.Title)
+			unregisterDescs = append(unregisterDescs, unregisterDesc{title: desc.Title, unregister: root.Register(actual.EventListener)})
 		}
 	}
 	return func() {
-		for _, unregister := range unregisterFuncs {
-			unregister()
+		for _, desc := range unregisterDescs {
+			log.Debug("appsec: unregistering instrumentation %s", desc.title)
+			desc.unregister()
 		}
 	}
 }

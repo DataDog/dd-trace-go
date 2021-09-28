@@ -19,7 +19,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// Intake API payloads.
 type (
+	// AttackEvent intake API payload.
 	AttackEvent struct {
 		EventID      string           `json:"event_id"`
 		EventType    string           `json:"event_type"`
@@ -32,11 +34,13 @@ type (
 		Context      *AttackContext   `json:"context"`
 	}
 
+	// AttackRule intake API payload.
 	AttackRule struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	}
 
+	// AttackRuleMatch intake API payload.
 	AttackRuleMatch struct {
 		Operator      string                     `json:"operator"`
 		OperatorValue string                     `json:"operator_value"`
@@ -44,11 +48,13 @@ type (
 		Highlight     []string                   `json:"highlight"`
 	}
 
+	// AttackRuleMatchParameter intake API payload.
 	AttackRuleMatchParameter struct {
 		Name  string `json:"name"`
 		Value string `json:"value"`
 	}
 
+	// AttackContext intake API payload.
 	AttackContext struct {
 		Actor   *AttackContextActor  `json:"actor,omitempty"`
 		Host    AttackContextHost    `json:"host"`
@@ -60,27 +66,32 @@ type (
 		Tracer  AttackContextTracer  `json:"tracer"`
 	}
 
+	// AttackContextActor intake API payload.
 	AttackContextActor struct {
 		ContextVersion string               `json:"context_version"`
 		IP             AttackContextActorIP `json:"ip"`
 	}
 
+	// AttackContextActorIP intake API payload.
 	AttackContextActorIP struct {
 		Address string `json:"address"`
 	}
 
+	// AttackContextHost intake API payload.
 	AttackContextHost struct {
 		ContextVersion string `json:"context_version"`
 		OsType         string `json:"os_type"`
 		Hostname       string `json:"hostname"`
 	}
 
+	// AttackContextHTTP intake API payload.
 	AttackContextHTTP struct {
 		ContextVersion string                    `json:"context_version"`
 		Request        AttackContextHTTPRequest  `json:"request"`
 		Response       AttackContextHTTPResponse `json:"response"`
 	}
 
+	// AttackContextHTTPRequest intake API payload.
 	AttackContextHTTPRequest struct {
 		Scheme     string `json:"scheme"`
 		Method     string `json:"method"`
@@ -93,10 +104,12 @@ type (
 		RemotePort int    `json:"remote_port"`
 	}
 
+	// AttackContextHTTPResponse intake API payload.
 	AttackContextHTTPResponse struct {
 		Status int `json:"status"`
 	}
 
+	// AttackContextService intake API payload.
 	AttackContextService struct {
 		ContextVersion string `json:"context_version"`
 		Name           string `json:"name"`
@@ -104,21 +117,25 @@ type (
 		Version        string `json:"version"`
 	}
 
+	// AttackContextTags intake API payload.
 	AttackContextTags struct {
 		ContextVersion string   `json:"context_version"`
 		Values         []string `json:"values"`
 	}
 
+	// AttackContextTrace intake API payload.
 	AttackContextTrace struct {
 		ContextVersion string `json:"context_version"`
 		ID             string `json:"id"`
 	}
 
+	// AttackContextSpan intake API payload.
 	AttackContextSpan struct {
 		ContextVersion string `json:"context_version"`
 		ID             string `json:"id"`
 	}
 
+	// AttackContextTracer intake API payload.
 	AttackContextTracer struct {
 		ContextVersion string `json:"context_version"`
 		RuntimeType    string `json:"runtime_type"`
@@ -127,6 +144,7 @@ type (
 	}
 )
 
+// NewAttackEvent returns a new attack event payload.
 func NewAttackEvent(attackType string, blocked bool, at time.Time, rule *AttackRule, match *AttackRuleMatch, attackCtx *AttackContext) *AttackEvent {
 	id, _ := uuid.NewUUID()
 	return &AttackEvent{
@@ -142,56 +160,65 @@ func NewAttackEvent(attackType string, blocked bool, at time.Time, rule *AttackR
 	}
 }
 
-func FromWAFAttack(t time.Time, blocked bool, md []byte, attackContext *AttackContext) ([]*AttackEvent, error) {
-	var waf waf.AttackMetadata
-	if err := json.Unmarshal(md, &waf); err != nil {
+// FromWAFAttack creates the attack event payloads from a WAF attack.
+func FromWAFAttack(t time.Time, blocked bool, md []byte, attackContext *AttackContext) (events []*AttackEvent, err error) {
+	var matches waf.AttackMetadata
+	if err := json.Unmarshal(md, &matches); err != nil {
 		return nil, err
 	}
-	rule := &AttackRule{
-		ID:   waf[0].Rule,
-		Name: waf[0].Flow,
+	// Create one security event per flow and per filter
+	for _, match := range matches {
+		rule := &AttackRule{
+			ID:   match.Rule,
+			Name: match.Flow,
+		}
+		for _, filter := range match.Filter {
+			ruleMatch := &AttackRuleMatch{
+				Operator:      filter.Operator,
+				OperatorValue: filter.OperatorValue,
+				Parameters: []AttackRuleMatchParameter{
+					{
+						Name:  filter.BindingAccessor,
+						Value: filter.ResolvedValue,
+					},
+				},
+				Highlight: []string{filter.MatchStatus},
+			}
+			events = append(events, NewAttackEvent(match.Flow, blocked, t, rule, ruleMatch, attackContext))
+		}
 	}
-	match := &AttackRuleMatch{
-		Operator:      waf[0].Filter[0].Operator,
-		OperatorValue: waf[0].Filter[0].OperatorValue,
-		Parameters: []AttackRuleMatchParameter{
-			{
-				Name:  waf[0].Filter[0].BindingAccessor,
-				Value: waf[0].Filter[0].ResolvedValue,
-			},
-		},
-		Highlight: []string{waf[0].Filter[0].MatchStatus},
-	}
-	attack := NewAttackEvent(waf[0].Flow, blocked, t, rule, match, attackContext)
-	return []*AttackEvent{attack}, nil
+	return events, nil
 }
 
 func (*AttackEvent) isEvent() {}
 
 type (
+	// EventBatch intake API payload.
 	EventBatch struct {
 		IdempotencyKey string  `json:"idempotency_key"`
 		Events         []Event `json:"events"`
 	}
+	// Event interface that batchable events must implement.
 	Event interface {
 		isEvent()
 	}
 )
 
+// FromSecurityEvents returns the event batch of the given security events. The given global event context is added
+// to each newly created AttackEvent as AttackContext.
 func FromSecurityEvents(events []*appsectypes.SecurityEvent, globalContext []appsectypes.SecurityEventContext) EventBatch {
 	id, _ := uuid.NewUUID()
 	var batch = EventBatch{
 		IdempotencyKey: id.String(),
 		Events:         make([]Event, 0, len(events)),
 	}
-
 	for _, event := range events {
 		eventContext := NewAttackContext(event.Context, globalContext)
 		switch actual := event.Event.(type) {
 		case []waf.RawAttackMetadata:
 			for _, attack := range actual {
 				attacks, _ := FromWAFAttack(attack.Time, attack.Block, attack.Metadata, eventContext)
-				// TODO: handle the previous error
+				// TODO(julio): handle the previous error
 				for _, attack := range attacks {
 					batch.Events = append(batch.Events, attack)
 				}
@@ -201,6 +228,9 @@ func FromSecurityEvents(events []*appsectypes.SecurityEvent, globalContext []app
 	return batch
 }
 
+// NewAttackContext creates and returns a new attack context from the given security event contexts. The event local
+// and global contexts are separated to avoid allocating a temporary slice merging both - the caller can keep them
+// separate without appending them for the time of the call.
 func NewAttackContext(ctx, globalCtx []appsectypes.SecurityEventContext) *AttackContext {
 	aCtx := &AttackContext{}
 	for _, ctx := range ctx {
@@ -236,6 +266,7 @@ func (c *AttackContext) applySpanContext(ctx appsectypes.SpanContext) {
 	c.Span = MakeAttackContextSpan(span)
 }
 
+// MakeAttackContextTrace create an AttackContextTrace payload.
 func MakeAttackContextTrace(traceID string) AttackContextTrace {
 	return AttackContextTrace{
 		ContextVersion: "0.1.0",
@@ -243,6 +274,7 @@ func MakeAttackContextTrace(traceID string) AttackContextTrace {
 	}
 }
 
+// MakeAttackContextSpan create an AttackContextSpan payload.
 func MakeAttackContextSpan(spanID string) AttackContextSpan {
 	return AttackContextSpan{
 		ContextVersion: "0.1.0",
@@ -270,6 +302,7 @@ func (c *AttackContext) applyHostContext(ctx appsectypes.HostContext) {
 	c.Host = MakeAttackContextHost(ctx.Hostname, ctx.OS)
 }
 
+// MakeAttackContextHost create an AttackContextHost payload.
 func MakeAttackContextHost(hostname string, os string) AttackContextHost {
 	return AttackContextHost{
 		ContextVersion: "0.1.0",
@@ -278,6 +311,7 @@ func MakeAttackContextHost(hostname string, os string) AttackContextHost {
 	}
 }
 
+// MakeAttackContextTracer create an AttackContextTracer payload.
 func MakeAttackContextTracer(version string, rt string, rtVersion string) AttackContextTracer {
 	return AttackContextTracer{
 		ContextVersion: "0.1.0",
@@ -287,6 +321,7 @@ func MakeAttackContextTracer(version string, rt string, rtVersion string) Attack
 	}
 }
 
+// MakeAttackContextTags create an AttackContextTags payload.
 func MakeAttackContextTags(tags []string) AttackContextTags {
 	return AttackContextTags{
 		ContextVersion: "0.1.0",
@@ -294,6 +329,7 @@ func MakeAttackContextTags(tags []string) AttackContextTags {
 	}
 }
 
+// MakeServiceContext create an AttackContextService payload.
 func MakeServiceContext(name string, version string, environment string) AttackContextService {
 	return AttackContextService{
 		ContextVersion: "0.1.0",
@@ -303,12 +339,14 @@ func MakeServiceContext(name string, version string, environment string) AttackC
 	}
 }
 
+// MakeAttackContextHTTPResponse create an AttackContextHTTPResponse payload.
 func MakeAttackContextHTTPResponse(res appsectypes.HTTPResponseContext) AttackContextHTTPResponse {
 	return AttackContextHTTPResponse{
 		Status: res.Status,
 	}
 }
 
+// MakeAttackContextHTTP create an AttackContextHTTP payload.
 func MakeAttackContextHTTP(req AttackContextHTTPRequest, res AttackContextHTTPResponse) AttackContextHTTP {
 	return AttackContextHTTP{
 		ContextVersion: "0.1.0",
@@ -317,6 +355,7 @@ func MakeAttackContextHTTP(req AttackContextHTTPRequest, res AttackContextHTTPRe
 	}
 }
 
+// MakeAttackContextHTTPRequest create an AttackContextHTTPRequest payload.
 func MakeAttackContextHTTPRequest(req appsectypes.HTTPRequestContext) AttackContextHTTPRequest {
 	host, portStr := splitHostPort(req.Host)
 	remoteIP, remotePortStr := splitHostPort(req.RemoteAddr)
@@ -341,6 +380,7 @@ func MakeAttackContextHTTPRequest(req appsectypes.HTTPRequestContext) AttackCont
 	}
 }
 
+// MakeAttackContextActor create an AttackContextActor payload.
 func MakeAttackContextActor(ip string) AttackContextActor {
 	return AttackContextActor{
 		ContextVersion: "0.1.0",

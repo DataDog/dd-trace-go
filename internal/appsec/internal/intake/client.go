@@ -20,16 +20,20 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
 )
 
+// Client is the HTTP client to use to communicate with the intake API via the agent API.
 type Client struct {
+	// Logger should be set to obtain debugging logs in debug level to see the HTTP requests and their responses.
 	Logger  DebugLogger
 	client  *http.Client
 	baseURL *url.URL
 }
 
+// DebugLogger interface of the debug-level logger.
 type DebugLogger interface {
 	Debug(format string, v ...interface{})
 }
 
+// NewClient returns a new intake client using the given HTTP client and base-URL.
 func NewClient(client *http.Client, baseURL string) (*Client, error) {
 	if client == nil {
 		client = &http.Client{}
@@ -44,6 +48,7 @@ func NewClient(client *http.Client, baseURL string) (*Client, error) {
 	}, nil
 }
 
+// SendBatch sends the batch.
 func (c *Client) SendBatch(ctx context.Context, b api.EventBatch) error {
 	r, err := c.newRequest("POST", "appsec/proxy/api/v2/appsecevts", b)
 	if err != nil {
@@ -154,16 +159,19 @@ type (
 	InvalidSignalError APIError
 )
 
+// Error return the error string representation.
 func (e APIError) Error() string {
 	return fmt.Sprintf("api error: response with status code %s", e.Response.Status)
 }
 
+// Error return the error string representation.
 func (e AuthTokenError) Error() string {
 	return "api error: access token is missing or invalid"
 }
 
+// Error return the error string representation.
 func (e InvalidSignalError) Error() string {
-	return "api error: one of the provided signal is invalid"
+	return "api error: one of the provided events is invalid"
 }
 
 func checkResponse(r *http.Response) error {

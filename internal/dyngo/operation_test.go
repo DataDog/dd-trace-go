@@ -378,6 +378,8 @@ func init() {
 }
 
 func TestRegisterUnregister(t *testing.T) {
+	// TODO(julio): test unregistering one event
+	// TODO(julio): test unregistering several times
 	var onStartCalled, onDataCalled, onFinishCalled int
 
 	unregister := dyngo.Register(

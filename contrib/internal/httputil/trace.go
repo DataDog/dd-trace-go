@@ -64,7 +64,7 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 			Host:        httpinstr.Host(cfg.Request.Host),
 			RequestURI:  httpinstr.RequestURI(cfg.Request.RequestURI),
 			RemoteAddr:  httpinstr.RemoteAddr(cfg.Request.RemoteAddr),
-			Headers:     httpinstr.Header(cfg.Request.Header),
+			Headers:     httpinstr.Headers(cfg.Request.Header),
 			UserAgent:   httpinstr.UserAgent(cfg.Request.UserAgent()),
 			QueryValues: httpinstr.QueryValues(cfg.Request.URL.Query()),
 		},

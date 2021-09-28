@@ -11,6 +11,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 )
 
+// Register the HTTP protections.
 func Register() dyngo.UnregisterFunc {
 	return dyngo.Register(
 		dyngo.InstrumentationDescriptor{
@@ -19,6 +20,7 @@ func Register() dyngo.UnregisterFunc {
 				EventListener: waf.NewOperationEventListener(),
 			},
 		},
+		// TODO(julio): remove this temporary hack in milestone 1
 		dyngo.InstrumentationDescriptor{
 			Title: "HTTP Data Emitter",
 			Instrumentation: dyngo.OperationInstrumentation{

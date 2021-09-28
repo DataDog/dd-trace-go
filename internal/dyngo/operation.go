@@ -11,6 +11,7 @@ import (
 )
 
 type (
+	// Option is the interface of operation options.
 	Option interface {
 		apply(s *Operation)
 	}
@@ -22,6 +23,7 @@ func (f optionFunc) apply(s *Operation) {
 	f(s)
 }
 
+// WithParent allows defining the parent operation of the one being created.
 func WithParent(parent *Operation) Option {
 	return optionFunc(func(op *Operation) {
 		op.parent = parent
@@ -30,6 +32,8 @@ func WithParent(parent *Operation) Option {
 
 var root = newOperation()
 
+// Operation structure allowing to subscribe to operation events and to navigate in the operation stack. Events
+// bubble-up the operation stack, which allows listening to future events that might happen in the operation lifetime.
 type Operation struct {
 	parent          *Operation
 	expectedResType reflect.Type
@@ -65,6 +69,7 @@ func RegisterOperation(args, res interface{}) {
 	operationResRegister[resType] = struct{}{}
 }
 
+// StartOperation starts a new operation along with its arguments and emits a start event with the operation arguments.
 func StartOperation(args interface{}, opts ...Option) *Operation {
 	expectedResType, err := getOperationRes(reflect.TypeOf(args))
 	if err != nil {
@@ -75,9 +80,9 @@ func StartOperation(args interface{}, opts ...Option) *Operation {
 	if o.parent == nil {
 		o.parent = root
 	}
-	forEachOperation(o.Parent(), func(op *Operation) {
+	for op := o.Parent(); op != nil; op = op.Parent() {
 		op.emitStartEvent(o, args)
-	})
+	}
 	return o
 }
 
@@ -89,18 +94,21 @@ func newOperation(opts ...Option) *Operation {
 	return op
 }
 
+// Parent return the parent operation. It returns nil for the root operation.
 func (o *Operation) Parent() *Operation {
 	return o.parent
 }
 
+// Finish finishes the operation along with its results and emits a finish event with the operation results.
+// The operation is then disabled and its event listeners removed.
 func (o *Operation) Finish(results interface{}) {
 	defer o.disable()
 	if err := validateExpectedRes(reflect.TypeOf(results), o.expectedResType); err != nil {
 		panic(err)
 	}
-	forEachOperation(o, func(op *Operation) {
+	for op := o; op != nil; op = op.Parent() {
 		op.emitFinishEvent(o, results)
-	})
+	}
 }
 
 func (e *eventManager) disable() {
@@ -112,19 +120,28 @@ func (e *eventManager) disable() {
 	e.onFinish.clear()
 }
 
+// EmitData allows emitting operation data usually computed in the operation lifetime. Examples include parsed values
+// like an HTTP request's JSON body, the HTTP raw body, etc. - data that is obtained by monitoring the operation
+// execution, possibly throughout several executions.
 func (o *Operation) EmitData(data interface{}) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
 	if o.disabled {
 		return
 	}
-	forEachOperation(o, func(op *Operation) {
+	for op := o; op != nil; op = op.Parent() {
 		op.emitDataEvent(o, data)
-	})
+	}
+	for op := o; op != nil; op = op.Parent() {
+		op.emitDataEvent(o, data)
+	}
 }
 
+// UnregisterFunc is a function allowing to unregister from an operation the previously registered event listeners.
 type UnregisterFunc func()
 
+// Register allows to register the given event listeners to the operation. An unregistration function is returned
+// allowing to unregister the event listeners from the operation.
 func (o *Operation) Register(l ...EventListener) UnregisterFunc {
 	ids := make([]eventUnregister, len(l))
 	for i, l := range l {
@@ -134,12 +151,6 @@ func (o *Operation) Register(l ...EventListener) UnregisterFunc {
 		for _, id := range ids {
 			id.unregisterFrom(o)
 		}
-	}
-}
-
-func forEachOperation(op *Operation, do func(op *Operation)) {
-	for ; op != nil; op = op.Parent() {
-		do(op)
 	}
 }
 

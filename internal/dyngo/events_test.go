@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
-	
+
 	"github.com/stretchr/testify/require"
 )
 

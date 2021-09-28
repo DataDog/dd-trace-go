@@ -16,6 +16,7 @@ import (
 	"github.com/sqreen/go-libsqreen/waf/types"
 )
 
+// NewOperationEventListener returns the WAF's event listener to register in order to enable it.
 func NewOperationEventListener() dyngo.EventListener {
 	subscriptions := []string{
 		"server.request.query",
@@ -58,7 +59,7 @@ func subscribe(op *dyngo.Operation, subscriptions []string, wafCtx types.Rule, s
 		case "http.user_agent":
 			dataPtr = (*httpinstr.UserAgent)(nil)
 		case "server.request.headers.no_cookies":
-			dataPtr = (*httpinstr.Header)(nil)
+			dataPtr = (*httpinstr.Headers)(nil)
 		case "server.request.query":
 			dataPtr = (*httpinstr.QueryValues)(nil)
 		default:
@@ -69,12 +70,16 @@ func subscribe(op *dyngo.Operation, subscriptions []string, wafCtx types.Rule, s
 }
 
 type (
+	// RawAttackMetadata is the raw attack metadata returned by the WAF when matching.
 	RawAttackMetadata struct {
-		Time     time.Time
-		Block    bool
+		Time time.Time
+		// Block states if the operation where this event happened should be blocked.
+		Block bool
+		// Metadata is the raw JSON representation of the AttackMetadata slice.
 		Metadata []byte
 	}
 
+	// AttackMetadata is the parsed metadata returned by the WAF.
 	AttackMetadata []struct {
 		RetCode int    `json:"ret_code"`
 		Flow    string `json:"flow"`

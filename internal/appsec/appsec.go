@@ -23,18 +23,35 @@ import (
 )
 
 type (
+	// Config is the AppSec configuration.
 	Config struct {
-		AgentURL          string
-		Service           ServiceConfig
-		Tags              []string
-		Hostname          string
-		MaxBatchLen       int
+		// AgentURL is the datadog agent URL the API client should use.
+		AgentURL string
+		// ServiceConfig is the information about the running service we currently protect.
+		Service ServiceConfig
+		// Tags is the list of tags that should be added to security events (eg. pid, os name, etc.).
+		Tags []string
+		// Hostname of the machine we run in.
+		Hostname string
+		// Version of the Go client library
+		Version string
+
+		// MaxBatchLen is the maximum batch length the event batching loop should use. The event batch is sent when
+		// this length is reached. Defaults to 1024.
+		MaxBatchLen int
+		// MaxBatchStaleTime is the maximum amount of time events are kept in the batch. This allows to send the batch
+		// after this amount of time even if the maximum batch length is not reached yet. Defaults to 1 second.
 		MaxBatchStaleTime time.Duration
-		Version           string
 	}
 
+	// ServiceConfig is the optional context about the running service.
 	ServiceConfig struct {
-		Name, Version, Environment string
+		// Name of the service.
+		Name string
+		// Version of the service.
+		Version string
+		// Environment of the service (eg. dev, staging, prod, etc.)
+		Environment string
 	}
 )
 
@@ -47,6 +64,7 @@ const (
 // Default timeout of intake requests.
 const defaultIntakeTimeout = 10 * time.Second
 
+// Agent is the AppSec agent. It allows starting and stopping it.
 type Agent struct {
 	client          *intake.Client
 	eventChan       chan *appsectypes.SecurityEvent
@@ -55,11 +73,13 @@ type Agent struct {
 	unregisterInstr []dyngo.UnregisterFunc
 }
 
+// Logger is the AppSec logging interface.
 type Logger interface {
 	Warn(string, ...interface{})
 	Error(string, ...interface{})
 }
 
+// NewAgent returns a new unstarted agent.
 func NewAgent(client *http.Client, logger Logger, cfg *Config) (*Agent, error) {
 	intakeClient, err := intake.NewClient(client, cfg.AgentURL)
 	if err != nil {
@@ -99,10 +119,12 @@ func NewAgent(client *http.Client, logger Logger, cfg *Config) (*Agent, error) {
 	}, nil
 }
 
+// Start starts the AppSec agent goroutine.
 func (a *Agent) Start() {
 	a.run()
 }
 
+// Stop stops the AppSec agent goroutine.
 func (a *Agent) Stop(gracefully bool) {
 	for _, unregister := range a.unregisterInstr {
 		unregister()
@@ -145,11 +167,11 @@ func (a *Agent) run() {
 	}()
 }
 
-type IntakeClient interface {
+type intakeClient interface {
 	SendBatch(context.Context, api.EventBatch) error
 }
 
-func eventBatchingLoop(client IntakeClient, eventChan <-chan *appsectypes.SecurityEvent, globalEventCtx []appsectypes.SecurityEventContext, cfg *Config) {
+func eventBatchingLoop(client intakeClient, eventChan <-chan *appsectypes.SecurityEvent, globalEventCtx []appsectypes.SecurityEventContext, cfg *Config) {
 	// The batch of events
 	batch := make([]*appsectypes.SecurityEvent, 0, cfg.MaxBatchLen)
 
