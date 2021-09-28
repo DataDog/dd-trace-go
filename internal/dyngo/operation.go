@@ -6,6 +6,7 @@
 package dyngo
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
