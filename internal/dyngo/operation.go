@@ -132,9 +132,6 @@ func (o *Operation) EmitData(data interface{}) {
 	for op := o; op != nil; op = op.Parent() {
 		op.emitDataEvent(o, data)
 	}
-	for op := o; op != nil; op = op.Parent() {
-		op.emitDataEvent(o, data)
-	}
 }
 
 // UnregisterFunc is a function allowing to unregister from an operation the previously registered event listeners.
