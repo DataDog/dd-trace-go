@@ -9,7 +9,7 @@ import (
 	"log"
 	"net"
 
-	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
+	grpctrace "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/google.golang.org/grpc"
 
 	"google.golang.org/grpc"
 )

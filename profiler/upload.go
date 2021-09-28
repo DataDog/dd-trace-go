@@ -16,7 +16,7 @@ import (
 	"net/http"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/internal/log"
 )
 
 // maxRetries specifies the maximum number of retries to have when an error occurs.

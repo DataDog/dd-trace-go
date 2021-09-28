@@ -8,7 +8,7 @@ package sql
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
 )

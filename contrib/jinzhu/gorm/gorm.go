@@ -11,11 +11,11 @@ import (
 	"math"
 	"time"
 
-	sqltraced "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	sqltraced "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/database/sql"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/internal/log"
 
 	"github.com/jinzhu/gorm"
 )
@@ -27,7 +27,7 @@ const (
 )
 
 // Open opens a new (traced) database connection. The used dialect must be formerly registered
-// using (gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql).Register.
+// using (gopkg.in/CodapeWild/dd-trace-go.v1/contrib/database/sql).Register.
 func Open(dialect, source string, opts ...Option) (*gorm.DB, error) {
 	sqldb, err := sqltraced.Open(dialect, source)
 	if err != nil {

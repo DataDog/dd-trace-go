@@ -11,9 +11,9 @@ import (
 
 	"github.com/go-redis/redis/v7"
 
-	redistrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-redis/redis.v7"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	redistrace "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/go-redis/redis.v7"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
 )
 
 // To start tracing Redis, simply create a new client using the library and continue

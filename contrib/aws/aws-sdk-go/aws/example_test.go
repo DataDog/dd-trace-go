@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 
-	awstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
+	awstrace "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
 )
 
 // To start tracing requests, wrap the AWS session.Session by invoking

@@ -10,7 +10,7 @@ import (
 
 	"github.com/miekg/dns"
 
-	dnstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/miekg/dns"
+	dnstrace "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/miekg/dns"
 )
 
 func Example_client() {

@@ -10,7 +10,7 @@ import (
 	"log"
 	"net/http"
 
-	vaulttrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/hashicorp/vault"
+	vaulttrace "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/hashicorp/vault"
 
 	"github.com/hashicorp/vault/api"
 )

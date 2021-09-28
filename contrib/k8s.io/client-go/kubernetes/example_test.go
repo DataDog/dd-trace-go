@@ -13,7 +13,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 	"k8s.io/client-go/rest"
 
-	kubernetestrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/client-go/kubernetes"
+	kubernetestrace "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/k8s.io/client-go/kubernetes"
 )
 
 func Example() {

@@ -10,7 +10,7 @@ package api
 import (
 	"regexp"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api/internal"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/contrib/google.golang.org/api/internal"
 )
 
 func init() {

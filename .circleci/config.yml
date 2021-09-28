@@ -16,67 +16,66 @@ jobs:
           GOPATH: "/home/circleci/go"
     working_directory: /home/circleci/dd-trace-go.v1
     steps:
-    - checkout
+      - checkout
 
-    - run:
-        name: build
-        command: |
-          go build ./ddtrace/... ./profiler/...
+      - run:
+          name: build
+          command: |
+            go build ./ddtrace/... ./profiler/...
 
   metadata:
     <<: *plain-go114
 
     steps:
-    - checkout
+      - checkout
 
-    # -mod=readonly is enabled by default starting in go1.16 causing many go
-    # tools and editor integrations to report problems if the go.sum file is
-    # not up-to-date, so let's make sure it is.
-    - run:
-        name: go.sum up-to-date
-        command: |
-          go run -mod=readonly gosum.go
+      # -mod=readonly is enabled by default starting in go1.16 causing many go
+      # tools and editor integrations to report problems if the go.sum file is
+      # not up-to-date, so let's make sure it is.
+      - run:
+          name: go.sum up-to-date
+          command: |
+            go run -mod=readonly gosum.go
 
-    - run:
-        name: milestone
-        command: |
-          go run checkmilestone.go
+      - run:
+          name: milestone
+          command: |
+            go run checkmilestone.go
 
-    - run:
-        name: copyright
-        command: |
-          go run checkcopyright.go
+      - run:
+          name: copyright
+          command: |
+            go run checkcopyright.go
 
   lint:
     <<: *plain-go114
 
     steps:
-    - checkout
+      - checkout
 
-    - run:
-        name: gofmt
-        command: |
-          if [ "$(gofmt -e -l . | wc -l)" -gt 0 ]; then
-            exit 1
-          fi
+      - run:
+          name: gofmt
+          command: |
+            if [ "$(gofmt -e -l . | wc -l)" -gt 0 ]; then
+              exit 1
+            fi
 
-    - run:
-        name: goimports
-        command: |
-          go install golang.org/x/tools/cmd/goimports
-          if [ "$(~/go/bin/goimports -e -l -local gopkg.in/DataDog/dd-trace-go.v1 . | wc -l)" -gt 0 ]; then
-            echo "Run 'goimports -w -local gopkg.in/DataDog/dd-trace-go.v1 .' to format code."
-            ~/go/bin/goimports -d -local gopkg.in/DataDog/dd-trace-go.v1 .
-            exit 1
-          fi
+      - run:
+          name: goimports
+          command: |
+            go install golang.org/x/tools/cmd/goimports
+            if [ "$(~/go/bin/goimports -e -l -local gopkg.in/CodapeWild/dd-trace-go.v1 . | wc -l)" -gt 0 ]; then
+              echo "Run 'goimports -w -local gopkg.in/CodapeWild/dd-trace-go.v1 .' to format code."
+              ~/go/bin/goimports -d -local gopkg.in/CodapeWild/dd-trace-go.v1 .
+              exit 1
+            fi
 
-    - run:
-        name: lint
-        command: |
-          go get -u golang.org/x/lint/golint
-          curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
-          ./bin/gometalinter --disable-all --vendor --deadline=60s --enable=golint ./...
-
+      - run:
+          name: lint
+          command: |
+            go get -u golang.org/x/lint/golint
+            curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
+            ./bin/gometalinter --disable-all --vendor --deadline=60s --enable=golint ./...
 
   test-core:
     resource_class: xlarge
@@ -111,7 +110,6 @@ jobs:
       - run:
           name: Upload coverage report to Codecov
           command: bash <(curl -s https://codecov.io/bash)
-
 
   test-contrib:
     resource_class: xlarge
@@ -169,7 +167,7 @@ jobs:
 
       - restore_cache:
           keys:
-          - v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
+            - v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
       - run:
           name: Install librdkafka v1.3.0
           command: |
@@ -184,7 +182,7 @@ jobs:
       - save_cache:
           key: v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
           paths:
-          - /tmp/librdkafka-v1.3.0
+            - /tmp/librdkafka-v1.3.0
 
       - run:
           name: Enforce some dependencies
@@ -252,27 +250,27 @@ jobs:
       - run:
           name: Testing outlier google.golang.org/api
           command: |
-                go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
-                go test -v ./contrib/google.golang.org/api/...
+            go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
+            go test -v ./contrib/google.golang.org/api/...
 
       - run:
           name: Testing outlier gRPC v1.2
           command: |
-                # This hacky approach is necessary because running the tests regularly
-                # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
-                go mod vendor
+            # This hacky approach is necessary because running the tests regularly
+            # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
+            go mod vendor
 
-                # Checkout grpc-go@v1.2.0
-                cd vendor/google.golang.org && rm -rf grpc
-                git clone git@github.com:grpc/grpc-go grpc && cd grpc
-                git fetch origin && git checkout v1.2.0 && cd ../..
+            # Checkout grpc-go@v1.2.0
+            cd vendor/google.golang.org && rm -rf grpc
+            git clone git@github.com:grpc/grpc-go grpc && cd grpc
+            git fetch origin && git checkout v1.2.0 && cd ../..
 
-                # Checkout sketches-go@v1.0.0
-                cd vendor/github.com/DataDog && rm -rf sketches-go
-                git clone git@github.com:DataDog/sketches-go && cd sketches-go
-                git fetch origin && git checkout v1.0.0 && cd ../..
+            # Checkout sketches-go@v1.0.0
+            cd vendor/github.com/DataDog && rm -rf sketches-go
+            git clone git@github.com:DataDog/sketches-go && cd sketches-go
+            git fetch origin && git checkout v1.0.0 && cd ../..
 
-                go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+            go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
 
       - run:
           name: Upload coverage report to Codecov
