@@ -102,7 +102,7 @@ func TestWithSpanTags(t *testing.T) {
 	}
 }
 
-func TestOptionalCheckSpanContext(t *testing.T) {
+func TestWithChildSpansOnly(t *testing.T) {
 	type sqlRegister struct {
 		name   string
 		dsn    string
