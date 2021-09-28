@@ -74,12 +74,6 @@ type Agent struct {
 	unregisterInstr []dyngo.UnregisterFunc
 }
 
-// Logger is the AppSec logging interface.
-type Logger interface {
-	Warn(string, ...interface{})
-	Error(string, ...interface{})
-}
-
 // NewAgent returns a new unstarted agent.
 func NewAgent(client *http.Client, cfg *Config) (*Agent, error) {
 	intakeClient, err := intake.NewClient(client, cfg.AgentURL)
