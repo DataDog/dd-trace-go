@@ -141,7 +141,62 @@ func TestOperationEvents(t *testing.T) {
 		require.Equal(t, 4, called)
 	})
 
-	// TODO(julio): event dispatch through disabled operations
+	t.Run("registering to a disable operation", func(t *testing.T) {
+		var calls int
+		registerTo := func(op *dyngo.Operation) {
+			op.OnStart((*testOp2Args)(nil), func(*dyngo.Operation, interface{}) {
+				calls++
+			})
+			op.OnData((*testOp2Data)(nil), func(*dyngo.Operation, interface{}) {
+				calls++
+			})
+			op.OnFinish((*testOp2Res)(nil), func(*dyngo.Operation, interface{}) {
+				calls++
+			})
+			op.Register(
+				dyngo.OnStartEventListener((*testOp2Args)(nil), func(*dyngo.Operation, interface{}) {
+					calls++
+				}),
+				dyngo.OnDataEventListener((*testOp2Data)(nil), func(*dyngo.Operation, interface{}) {
+					calls++
+				}),
+				dyngo.OnFinishEventListener((*testOp2Res)(nil), func(*dyngo.Operation, interface{}) {
+					calls++
+				}),
+			)
+		}
+
+		// Start an operation and register event listeners to it.
+		// This step allows to test the listeners are called when the operation is alive
+		op := dyngo.StartOperation(testOp1Args{})
+		registerTo(op)
+
+		// Trigger the registered events
+		op2 := dyngo.StartOperation(testOp2Args{}, dyngo.WithParent(op))
+		op2.EmitData(testOp2Data{})
+		op2.Finish(testOp2Res{})
+		// We should have 6 calls
+		require.Equal(t, 6, calls)
+
+		// Finish the operation to disable it. Its event listeners should then be removed.
+		op.Finish(testOp1Res{})
+
+		// Trigger the same events
+		op2 = dyngo.StartOperation(testOp2Args{}, dyngo.WithParent(op))
+		op2.EmitData(testOp2Data{})
+		op2.Finish(testOp2Res{})
+		// The number of calls should be unchanged
+		require.Equal(t, 6, calls)
+
+		// Register again, but it shouldn't work because the operation is finished.
+		registerTo(op)
+		// Trigger the same events
+		op2 = dyngo.StartOperation(testOp2Args{}, dyngo.WithParent(op))
+		op2.EmitData(testOp2Data{})
+		op2.Finish(testOp2Res{})
+		// The number of calls should be unchanged
+		require.Equal(t, 6, calls)
+	})
 }
 
 func BenchmarkEvents(b *testing.B) {

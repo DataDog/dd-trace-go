@@ -111,6 +111,11 @@ func (o *Operation) Parent() *Operation {
 // Finish finishes the operation along with its results and emits a finish event with the operation results.
 // The operation is then disabled and its event listeners removed.
 func (o *Operation) Finish(results interface{}) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if o.disabled {
+		return
+	}
 	defer o.disable()
 	if err := validateExpectedRes(reflect.TypeOf(results), o.expectedResType); err != nil {
 		panic(err)
@@ -125,8 +130,6 @@ func (o *Operation) emitFinishEvent(eventOp *Operation, results interface{}) {
 }
 
 func (o *Operation) disable() {
-	o.mu.Lock()
-	defer o.mu.Unlock()
 	o.disabled = true
 	o.onStart.clear()
 	o.onData.clear()
@@ -162,7 +165,12 @@ type UnregisterFunc func()
 // Register allows to register the given event listeners to the operation. An unregistration function is returned
 // allowing to unregister the event listeners from the operation.
 func (o *Operation) Register(l ...EventListener) UnregisterFunc {
-	ids := make([]eventUnregister, len(l))
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if o.disabled {
+		return func() {}
+	}
+	ids := make([]unregisterFrom, len(l))
 	for i, l := range l {
 		ids[i] = l.registerTo(o)
 	}
@@ -182,6 +190,11 @@ func (o *Operation) Register(l ...EventListener) UnregisterFunc {
 //     })
 //
 func (o *Operation) OnStart(argsPtr interface{}, l OnStartEventListenerFunc) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if o.disabled {
+		return
+	}
 	argsType, err := validateEventListenerKey(argsPtr)
 	if err != nil {
 		panic(err)
@@ -201,6 +214,11 @@ func (o *Operation) OnStart(argsPtr interface{}, l OnStartEventListenerFunc) {
 //     })
 //
 func (o *Operation) OnData(dataPtr interface{}, l OnDataEventListenerFunc) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if o.disabled {
+		return
+	}
 	dataType, err := validateEventListenerKey(dataPtr)
 	if err != nil {
 		panic(err)
@@ -217,6 +235,11 @@ func (o *Operation) OnData(dataPtr interface{}, l OnDataEventListenerFunc) {
 //     })
 //
 func (o *Operation) OnFinish(resPtr interface{}, l OnFinishEventListenerFunc) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if o.disabled {
+		return
+	}
 	resType, err := validateEventListenerKey(resPtr)
 	if err != nil {
 		panic(err)
@@ -251,7 +274,7 @@ func validateStartOperationArgs(argsType reflect.Type) error {
 
 func validateFinishOperationRes(resType reflect.Type) error {
 	if _, ok := operationResRegister[resType]; !ok {
-		return fmt.Errorf("unexpected use of an unregistered operation of result type %s", resType)
+		return fmt.Errorf("unexpected use Tof an unregistered operation of result type %s", resType)
 	}
 	return nil
 }

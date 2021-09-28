@@ -7,6 +7,7 @@ package dyngo
 
 import (
 	"reflect"
+	"sort"
 	"sync"
 	"sync/atomic"
 )
@@ -24,24 +25,29 @@ type (
 	// reflect.Type that can possibly lead to panics if the actual value isn't hashable as required by map keys.
 	eventListenerMap      map[reflect.Type][]eventListenerMapEntry
 	eventListenerMapEntry struct {
-		ID       eventListenerID
-		Callback EventListenerFunc
+		id       eventListenerID
+		callback EventListenerFunc
 	}
 	// eventListenerID is the unique ID of an event when registering it. It allows to find it back and remove it from
 	// the list of event listeners when unregistering it.
 	eventListenerID uint32
-	// onStartEventListenerID is a helper type implementing eventUnregister to unregister the ID from the correct
+	// onStartEventListenerKey is a helper type implementing unregisterFrom to unregister the ID from the correct
 	// event register, i.e. the start event register.
-	onStartEventListenerID eventListenerID
-	// onFinishEventListenerID is a helper type implementing eventUnregister to unregister the ID from the correct
+	onStartEventListenerKey eventListenerKey
+	// onFinishEventListenerKey is a helper type implementing unregisterFrom to unregister the ID from the correct
 	//	// event register, i.e. the finish event register.
-	onFinishEventListenerID eventListenerID
-	// onDataEventListenerID is a helper type implementing eventUnregister to unregister the ID from the correct
+	onFinishEventListenerKey eventListenerKey
+	// onDataEventListenerKey is a helper type implementing unregisterFrom to unregister the ID from the correct
 	//	// event register, i.e. the data event register.
-	onDataEventListenerID eventListenerID
-	// eventUnregister interface to dynamically dispatch the unregistration of the ID to the correct event register
+	onDataEventListenerKey eventListenerKey
+	// eventListenerKey allows to lookup for the event listener in the event register.
+	eventListenerKey struct {
+		key reflect.Type
+		id  eventListenerID
+	}
+	// unregisterFrom interface to dynamically dispatch the unregistration of the ID to the correct event register
 	// store of the operation.
-	eventUnregister interface {
+	unregisterFrom interface {
 		unregisterFrom(*Operation)
 	}
 )
@@ -60,27 +66,27 @@ func (r *eventRegister) add(k reflect.Type, l EventListenerFunc) eventListenerID
 	if r.listeners == nil {
 		r.listeners = make(eventListenerMap)
 	}
+	// id is computed when the lock is exclusively taken so that we know listeners are added in incremental id order.
+	// This allows to use the optimized sort.Search() function to remove the entry.
 	id := nextID()
 	r.listeners[k] = append(r.listeners[k], eventListenerMapEntry{
-		ID:       id,
-		Callback: l,
+		id:       id,
+		callback: l,
 	})
 	return id
 }
 
-func (r *eventRegister) remove(id eventListenerID) {
+func (r *eventRegister) remove(k reflect.Type, id eventListenerID) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// TODO(julio): optimize by providing the key type too
-	for k, listeners := range r.listeners {
-		for i, v := range listeners {
-			if v.ID == id {
-				r.listeners[k] = append(listeners[:i], listeners[i+1:]...)
-				return
-			}
-		}
+	listeners := r.listeners[k]
+	len := len(listeners)
+	i := sort.Search(len, func(i int) bool {
+		return listeners[i].id >= id
+	})
+	if i < len && listeners[i].id == id {
+		r.listeners[k] = append(listeners[:i], listeners[i+1:]...)
 	}
-	return
 }
 
 func (r *eventRegister) clear() {
@@ -94,7 +100,7 @@ func (r *eventRegister) callListeners(op *Operation, data interface{}) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, e := range r.listeners[dataT] {
-		e.Callback(op, data)
+		e.callback(op, data)
 	}
 }
 
@@ -123,7 +129,7 @@ type (
 	// descriptors and the operation Register method.
 	EventListener interface {
 		// registerTo dynamically dispatches the event listener registration to the proper event register.
-		registerTo(*Operation) eventUnregister
+		registerTo(*Operation) unregisterFrom
 	}
 
 	// eventListener is a structure describing an event listener.
@@ -156,12 +162,14 @@ func OnStartEventListener(argsPtr interface{}, l OnStartEventListenerFunc) Event
 	return onStartEventListener{key: argsType, l: l}
 }
 
-func (l onStartEventListener) registerTo(op *Operation) eventUnregister {
-	return onStartEventListenerID(op.onStart.add(l.key, l.l))
+func (l onStartEventListener) registerTo(op *Operation) unregisterFrom {
+	key := l.key
+	id := op.onStart.add(key, l.l)
+	return onStartEventListenerKey{key: key, id: id}
 }
 
-func (id onStartEventListenerID) unregisterFrom(op *Operation) {
-	op.onStart.remove(eventListenerID(id))
+func (k onStartEventListenerKey) unregisterFrom(op *Operation) {
+	op.onStart.remove(k.key, k.id)
 }
 
 // OnDataEventListener returns a data event listener whose type is described by the dataPtr argument which must be a nil
@@ -180,12 +188,14 @@ func OnDataEventListener(dataPtr interface{}, l OnDataEventListenerFunc) EventLi
 	return onDataEventListener{key: dataType, l: l}
 }
 
-func (l onDataEventListener) registerTo(op *Operation) eventUnregister {
-	return onDataEventListenerID(op.onData.add(l.key, l.l))
+func (l onDataEventListener) registerTo(op *Operation) unregisterFrom {
+	key := l.key
+	id := op.onData.add(l.key, l.l)
+	return onDataEventListenerKey{key: key, id: id}
 }
 
-func (id onDataEventListenerID) unregisterFrom(op *Operation) {
-	op.onData.remove(eventListenerID(id))
+func (k onDataEventListenerKey) unregisterFrom(op *Operation) {
+	op.onData.remove(k.key, k.id)
 }
 
 // OnFinishEventListener returns a finish event listener whose result type is described by the resPtr argument which
@@ -204,10 +214,12 @@ func OnFinishEventListener(resPtr interface{}, l OnFinishEventListenerFunc) Even
 	return onFinishEventListener{key: resType, l: l}
 }
 
-func (l onFinishEventListener) registerTo(op *Operation) eventUnregister {
-	return onFinishEventListenerID(op.onFinish.add(l.key, l.l))
+func (l onFinishEventListener) registerTo(op *Operation) unregisterFrom {
+	key := l.key
+	id := op.onFinish.add(key, l.l)
+	return onFinishEventListenerKey{key: key, id: id}
 }
 
-func (id onFinishEventListenerID) unregisterFrom(op *Operation) {
-	op.onFinish.remove(eventListenerID(id))
+func (k onFinishEventListenerKey) unregisterFrom(op *Operation) {
+	op.onFinish.remove(k.key, k.id)
 }

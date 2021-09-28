@@ -378,49 +378,107 @@ func init() {
 }
 
 func TestRegisterUnregister(t *testing.T) {
-	// TODO(julio): test unregistering one event
-	// TODO(julio): test unregistering several times
-	var onStartCalled, onDataCalled, onFinishCalled int
+	t.Run("single listener", func(t *testing.T) {
+		root := dyngo.StartOperation(MyOperationArgs{})
 
-	unregister := dyngo.Register(
-		dyngo.InstrumentationDescriptor{
-			Instrumentation: dyngo.OperationInstrumentation{
-				EventListener: dyngo.OnStartEventListener((*MyOperationArgs)(nil), func(*dyngo.Operation, interface{}) {
-					onStartCalled++
-				}),
-			},
-		},
-		dyngo.InstrumentationDescriptor{
-			Instrumentation: dyngo.OperationInstrumentation{
-				EventListener: dyngo.OnStartEventListener((*MyOperationArgs)(nil), func(*dyngo.Operation, interface{}) {
-					onDataCalled++
-				}),
-			},
-		},
-		dyngo.InstrumentationDescriptor{
-			Instrumentation: dyngo.OperationInstrumentation{
-				EventListener: dyngo.OnFinishEventListener((*MyOperationRes)(nil), func(*dyngo.Operation, interface{}) {
-					onFinishCalled++
-				}),
-			},
-		},
-	)
+		var called int
+		unregister := root.Register(dyngo.OnStartEventListener((*MyOperationArgs)(nil), func(*dyngo.Operation, interface{}) {
+			called++
+		}))
 
-	operation(nil, MyOperationArgs{}, MyOperationRes{}, func(op *dyngo.Operation) {
-		op.EmitData(MyOperationData{})
+		op := dyngo.StartOperation(MyOperationArgs{}, dyngo.WithParent(root))
+		require.Equal(t, 1, called)
+		op.Finish(MyOperationRes{})
+
+		unregister()
+		op = dyngo.StartOperation(MyOperationArgs{}, dyngo.WithParent(root))
+		require.Equal(t, 1, called)
+		op.Finish(MyOperationRes{})
+
+		require.NotPanics(t, func() {
+			unregister()
+		})
+		op = dyngo.StartOperation(MyOperationArgs{}, dyngo.WithParent(root))
+		require.Equal(t, 1, called)
+		op.Finish(MyOperationRes{})
 	})
-	require.Equal(t, 1, onStartCalled)
-	require.Equal(t, 1, onDataCalled)
-	require.Equal(t, 1, onFinishCalled)
 
-	unregister()
-	operation(nil, MyOperationArgs{}, MyOperationRes{}, func(op *dyngo.Operation) {
-		op.EmitData(MyOperationData{})
+	t.Run("multiple listeners", func(t *testing.T) {
+		var onStartCalled, onDataCalled, onFinishCalled int
+
+		unregister := dyngo.Register(
+			dyngo.InstrumentationDescriptor{
+				Instrumentation: dyngo.OperationInstrumentation{
+					EventListener: dyngo.OnStartEventListener((*MyOperationArgs)(nil), func(*dyngo.Operation, interface{}) {
+						onStartCalled++
+					}),
+				},
+			},
+			dyngo.InstrumentationDescriptor{
+				Instrumentation: dyngo.OperationInstrumentation{
+					EventListener: dyngo.OnStartEventListener((*MyOperationArgs)(nil), func(*dyngo.Operation, interface{}) {
+						onDataCalled++
+					}),
+				},
+			},
+			dyngo.InstrumentationDescriptor{
+				Instrumentation: dyngo.OperationInstrumentation{
+					EventListener: dyngo.OnFinishEventListener((*MyOperationRes)(nil), func(*dyngo.Operation, interface{}) {
+						onFinishCalled++
+					}),
+				},
+			},
+		)
+
+		operation(nil, MyOperationArgs{}, MyOperationRes{}, func(op *dyngo.Operation) {
+			op.EmitData(MyOperationData{})
+		})
+		require.Equal(t, 1, onStartCalled)
+		require.Equal(t, 1, onDataCalled)
+		require.Equal(t, 1, onFinishCalled)
+
+		unregister()
+		operation(nil, MyOperationArgs{}, MyOperationRes{}, func(op *dyngo.Operation) {
+			op.EmitData(MyOperationData{})
+		})
+		require.Equal(t, 1, onStartCalled)
+		require.Equal(t, 1, onDataCalled)
+		require.Equal(t, 1, onFinishCalled)
+
+		require.NotPanics(t, func() {
+			unregister()
+		})
 	})
-	require.Equal(t, 1, onStartCalled)
-	require.Equal(t, 1, onDataCalled)
-	require.Equal(t, 1, onFinishCalled)
 
+	t.Run("unregistering from a disabled operation", func(t *testing.T) {
+		root := dyngo.StartOperation(MyOperationArgs{})
+
+		var called int
+		unregister := root.Register(dyngo.OnStartEventListener((*MyOperationArgs)(nil), func(*dyngo.Operation, interface{}) {
+			called++
+		}))
+
+		// Trigger the event twice
+		op := dyngo.StartOperation(MyOperationArgs{}, dyngo.WithParent(root))
+		op.Finish(MyOperationRes{})
+		op = dyngo.StartOperation(MyOperationArgs{}, dyngo.WithParent(root))
+		op.Finish(MyOperationRes{})
+		require.Equal(t, 2, called)
+
+		// Finish the root operation where the event was registered
+		root.Finish(MyOperationRes{})
+
+		// A new start event should call the listener which should have been removed when finishing previous
+		// root operation
+		op = dyngo.StartOperation(MyOperationArgs{}, dyngo.WithParent(root))
+		op.Finish(MyOperationRes{})
+		require.Equal(t, 2, called)
+
+		// Unregistering from a disabled operation shouldn't panic
+		require.NotPanics(t, func() {
+			unregister()
+		})
+	})
 }
 
 func TestTypeSafety(t *testing.T) {
