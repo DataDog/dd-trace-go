@@ -6,8 +6,6 @@
 package dyngo
 
 import (
-	"errors"
-	"fmt"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -142,8 +140,8 @@ type (
 	onFinishEventListener eventListener
 )
 
-// OnStartEventListener returns a start event listener whose arguments type is described by the argsPtr argument which
-// must be a nil pointer to the expected arguments type. For example:
+// OnStartEventListener returns a start event listener whose argument type is described by the argsPtr argument which
+// must be a nil pointer to the expected argument type. For example:
 //
 //     // Create a finish event listener whose result type is MyOpArgs
 //     OnStartEventListener((*MyOpArgs), func(op *Operation, v interface{}) {
@@ -212,15 +210,4 @@ func (l onFinishEventListener) registerTo(op *Operation) eventUnregister {
 
 func (id onFinishEventListenerID) unregisterFrom(op *Operation) {
 	op.onFinish.remove(eventListenerID(id))
-}
-
-func validateEventListenerKey(key interface{}) (keyType reflect.Type, err error) {
-	if key == nil {
-		return nil, errors.New("unexpected nil event listener key")
-	}
-	keyPtrType := reflect.TypeOf(key)
-	if kind := keyPtrType.Kind(); kind != reflect.Ptr {
-		return nil, fmt.Errorf("unexpected event listener key of type %s instead of a structure pointer", keyPtrType)
-	}
-	return keyPtrType.Elem(), nil
 }

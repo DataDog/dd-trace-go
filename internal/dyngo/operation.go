@@ -172,6 +172,14 @@ func (o *Operation) Register(l ...EventListener) UnregisterFunc {
 	}
 }
 
+// OnStart registers the start event listener whose argument type is described by the argsPtr argument which must be a
+// nil pointer to the expected argument type. For example:
+//
+//     // Register a start event listener whose result type is MyOpArguments
+//     op.OnStart((*MyOpArguments), func(op *Operation, v interface{}) {
+//         args := v.(MyOpArguments)
+//     })
+//
 func (o *Operation) OnStart(argsPtr interface{}, l OnStartEventListenerFunc) {
 	argsType, err := validateEventListenerKey(argsPtr)
 	if err != nil {
@@ -183,6 +191,14 @@ func (o *Operation) OnStart(argsPtr interface{}, l OnStartEventListenerFunc) {
 	o.onStart.add(argsType, l)
 }
 
+// OnData registers the data event listener whose data type is described by the dataPtr argument which must be a
+// nil pointer to the expected data type. For example:
+//
+//     // Register a data event listener whose result type is MyOpData
+//     op.OnData((*MyOpData), func(op *Operation, v interface{}) {
+//         args := v.(MyOpData)
+//     })
+//
 func (o *Operation) OnData(dataPtr interface{}, l OnDataEventListenerFunc) {
 	dataType, err := validateEventListenerKey(dataPtr)
 	if err != nil {
@@ -191,6 +207,14 @@ func (o *Operation) OnData(dataPtr interface{}, l OnDataEventListenerFunc) {
 	o.onData.add(dataType, l)
 }
 
+// OnFinish registers the finish event listener whose result type is described by the resPtr argument which must be a
+// nil pointer to the expected result type. For example:
+//
+//     // Register a finish event listener whose result type is MyOpResults
+//     op.OnFinish((*MyOpResults), func(op *Operation, v interface{}) {
+//         args := v.(MyOpResults)
+//     })
+//
 func (o *Operation) OnFinish(resPtr interface{}, l OnFinishEventListenerFunc) {
 	resType, err := validateEventListenerKey(resPtr)
 	if err != nil {
@@ -229,4 +253,15 @@ func validateFinishOperationRes(resType reflect.Type) error {
 		return fmt.Errorf("unexpected use of an unregistered operation of result type %s", resType)
 	}
 	return nil
+}
+
+func validateEventListenerKey(key interface{}) (keyType reflect.Type, err error) {
+	if key == nil {
+		return nil, errors.New("unexpected nil event listener key")
+	}
+	keyPtrType := reflect.TypeOf(key)
+	if kind := keyPtrType.Kind(); kind != reflect.Ptr {
+		return nil, fmt.Errorf("unexpected event listener key of type %s instead of a structure pointer", keyPtrType)
+	}
+	return keyPtrType.Elem(), nil
 }
