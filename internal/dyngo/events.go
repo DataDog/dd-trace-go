@@ -14,14 +14,6 @@ import (
 )
 
 type (
-	// eventManager implements a thread-safe operation-event manager. Its event listeners are removed once disabled.
-	eventManager struct {
-		onStart, onData, onFinish eventRegister
-
-		disabled bool
-		mu       sync.RWMutex
-	}
-
 	// eventRegister implements a thread-safe list of event listeners.
 	eventRegister struct {
 		mu        sync.RWMutex
@@ -97,71 +89,6 @@ func (r *eventRegister) clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.listeners = nil
-}
-
-func (e *eventManager) OnStart(argsPtr interface{}, l OnStartEventListenerFunc) {
-	argsType, err := validateEventListenerKey(argsPtr)
-	if err != nil {
-		panic(err)
-	}
-	if err := validateStartOperationArgs(argsType); err != nil {
-		panic(err)
-	}
-	e.onStart.add(argsType, l)
-}
-
-func validateStartOperationArgs(argsType reflect.Type) error {
-	if _, ok := operationRegister[argsType]; !ok {
-		return fmt.Errorf("unexpected use of an unregistered operation of argument type %s", argsType)
-	}
-	return nil
-}
-
-func validateFinishOperationRes(resType reflect.Type) error {
-	if _, ok := operationResRegister[resType]; !ok {
-		return fmt.Errorf("unexpected use of an unregistered operation of result type %s", resType)
-	}
-	return nil
-}
-
-func (e *eventManager) emitStartEvent(op *Operation, args interface{}) {
-	e.emitEvent(op, &e.onStart, args)
-}
-
-func (e *eventManager) OnFinish(resPtr interface{}, l OnFinishEventListenerFunc) {
-	resType, err := validateEventListenerKey(resPtr)
-	if err != nil {
-		panic(err)
-	}
-	if err := validateFinishOperationRes(resType); err != nil {
-		panic(err)
-	}
-	e.onFinish.add(resType, l)
-}
-
-func (e *eventManager) emitFinishEvent(op *Operation, results interface{}) {
-	e.emitEvent(op, &e.onFinish, results)
-}
-
-func (e *eventManager) OnData(dataPtr interface{}, l OnDataEventListenerFunc) {
-	dataType, err := validateEventListenerKey(dataPtr)
-	if err != nil {
-		panic(err)
-	}
-	e.onData.add(dataType, l)
-}
-
-func (e *eventManager) emitDataEvent(op *Operation, data interface{}) {
-	e.emitEvent(op, &e.onData, data)
-}
-
-func (e *eventManager) emitEvent(op *Operation, r *eventRegister, data interface{}) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	if e.disabled {
-		return
-	}
-	r.callListeners(op, data)
 }
 
 func (r *eventRegister) callListeners(op *Operation, data interface{}) {

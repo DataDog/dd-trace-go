@@ -8,6 +8,7 @@ package dyngo
 import (
 	"fmt"
 	"reflect"
+	"sync"
 )
 
 type (
@@ -35,9 +36,12 @@ var root = newOperation()
 // Operation structure allowing to subscribe to operation events and to navigate in the operation stack. Events
 // bubble-up the operation stack, which allows listening to future events that might happen in the operation lifetime.
 type Operation struct {
-	parent          *Operation
-	expectedResType reflect.Type
-	eventManager
+	parent                    *Operation
+	expectedResType           reflect.Type
+	onStart, onData, onFinish eventRegister
+
+	disabled bool
+	mu       sync.RWMutex
 }
 
 // List of registered operations allowing an exhaustive type-checking of operation argument and result types,
@@ -94,6 +98,10 @@ func newOperation(opts ...Option) *Operation {
 	return op
 }
 
+func (o *Operation) emitStartEvent(eventOp *Operation, args interface{}) {
+	o.emitEvent(&o.onStart, eventOp, args)
+}
+
 // Parent return the parent operation. It returns nil for the root operation.
 func (o *Operation) Parent() *Operation {
 	return o.parent
@@ -111,27 +119,40 @@ func (o *Operation) Finish(results interface{}) {
 	}
 }
 
-func (e *eventManager) disable() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.disabled = true
-	e.onStart.clear()
-	e.onData.clear()
-	e.onFinish.clear()
+func (o *Operation) emitFinishEvent(eventOp *Operation, results interface{}) {
+	o.emitEvent(&o.onFinish, eventOp, results)
+}
+
+func (o *Operation) disable() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.disabled = true
+	o.onStart.clear()
+	o.onData.clear()
+	o.onFinish.clear()
 }
 
 // EmitData allows emitting operation data usually computed in the operation lifetime. Examples include parsed values
 // like an HTTP request's JSON body, the HTTP raw body, etc. - data that is obtained by monitoring the operation
 // execution, possibly throughout several executions.
 func (o *Operation) EmitData(data interface{}) {
+	for op := o; op != nil; op = op.Parent() {
+		op.emitDataEvent(o, data)
+	}
+}
+
+func (o *Operation) emitDataEvent(eventOp *Operation, data interface{}) {
+	o.emitEvent(&o.onData, eventOp, data)
+}
+
+// emitEvent calls the event listeners of the given event register when it is not disabled.
+func (o *Operation) emitEvent(r *eventRegister, op *Operation, v interface{}) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
 	if o.disabled {
 		return
 	}
-	for op := o; op != nil; op = op.Parent() {
-		op.emitDataEvent(o, data)
-	}
+	r.callListeners(op, v)
 }
 
 // UnregisterFunc is a function allowing to unregister from an operation the previously registered event listeners.
@@ -151,6 +172,36 @@ func (o *Operation) Register(l ...EventListener) UnregisterFunc {
 	}
 }
 
+func (o *Operation) OnStart(argsPtr interface{}, l OnStartEventListenerFunc) {
+	argsType, err := validateEventListenerKey(argsPtr)
+	if err != nil {
+		panic(err)
+	}
+	if err := validateStartOperationArgs(argsType); err != nil {
+		panic(err)
+	}
+	o.onStart.add(argsType, l)
+}
+
+func (o *Operation) OnData(dataPtr interface{}, l OnDataEventListenerFunc) {
+	dataType, err := validateEventListenerKey(dataPtr)
+	if err != nil {
+		panic(err)
+	}
+	o.onData.add(dataType, l)
+}
+
+func (o *Operation) OnFinish(resPtr interface{}, l OnFinishEventListenerFunc) {
+	resType, err := validateEventListenerKey(resPtr)
+	if err != nil {
+		panic(err)
+	}
+	if err := validateFinishOperationRes(resType); err != nil {
+		panic(err)
+	}
+	o.onFinish.add(resType, l)
+}
+
 func validateExpectedRes(res, expectedRes reflect.Type) error {
 	if res != expectedRes {
 		return fmt.Errorf("unexpected operation result: expecting type %s instead of %s", expectedRes, res)
@@ -164,4 +215,18 @@ func getOperationRes(args reflect.Type) (res reflect.Type, err error) {
 		return nil, fmt.Errorf("unexpected operation: unknow operation argument type %s", args)
 	}
 	return res, nil
+}
+
+func validateStartOperationArgs(argsType reflect.Type) error {
+	if _, ok := operationRegister[argsType]; !ok {
+		return fmt.Errorf("unexpected use of an unregistered operation of argument type %s", argsType)
+	}
+	return nil
+}
+
+func validateFinishOperationRes(resType reflect.Type) error {
+	if _, ok := operationResRegister[resType]; !ok {
+		return fmt.Errorf("unexpected use of an unregistered operation of result type %s", resType)
+	}
+	return nil
 }
