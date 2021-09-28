@@ -116,7 +116,6 @@ func Start(opts ...StartOption) {
 	if t.config.HasFeature("discovery") {
 		t.loadAgentFeatures()
 	}
-	startAppSec(t)
 	internal.SetGlobalTracer(t)
 	if t.config.logStartup {
 		logStartup(t)
@@ -125,9 +124,6 @@ func Start(opts ...StartOption) {
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
-	if v, ok := internal.GetGlobalTracer().(*tracer); ok && v.appsec != nil {
-		v.appsec.Stop(true)
-	}
 	internal.SetGlobalTracer(&internal.NoopTracer{})
 	log.Flush()
 }
@@ -220,6 +216,7 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
+	startAppSec(t)
 	return t
 }
 
@@ -471,6 +468,9 @@ func (t *tracer) Stop() {
 	t.wg.Wait()
 	t.traceWriter.stop()
 	t.config.statsd.Close()
+	if t.appsec != nil {
+		t.appsec.Stop()
+	}
 }
 
 // Inject uses the configured or default TextMap Propagator.
@@ -519,7 +519,6 @@ func startAppSec(t *tracer) {
 
 	appsecAgent, err := appsec.NewAgent(
 		t.config.httpClient,
-		appsecLogger{},
 		&appsec.Config{
 			Version:  version.Tag,
 			AgentURL: fmt.Sprintf("http://%s/", t.config.agentAddr),
@@ -535,14 +534,4 @@ func startAppSec(t *tracer) {
 	}
 	appsecAgent.Start()
 	t.appsec = appsecAgent
-}
-
-type appsecLogger struct{}
-
-func (appsecLogger) Warn(fmt string, v ...interface{}) {
-	log.Warn(fmt, v...)
-}
-
-func (appsecLogger) Error(fmt string, v ...interface{}) {
-	log.Error(fmt, v...)
 }

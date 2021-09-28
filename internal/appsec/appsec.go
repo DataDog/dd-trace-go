@@ -20,6 +20,7 @@ import (
 	httpprotection "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/http"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type (
@@ -80,7 +81,7 @@ type Logger interface {
 }
 
 // NewAgent returns a new unstarted agent.
-func NewAgent(client *http.Client, logger Logger, cfg *Config) (*Agent, error) {
+func NewAgent(client *http.Client, cfg *Config) (*Agent, error) {
 	intakeClient, err := intake.NewClient(client, cfg.AgentURL)
 	if err != nil {
 		return nil, err
@@ -89,7 +90,7 @@ func NewAgent(client *http.Client, logger Logger, cfg *Config) (*Agent, error) {
 	if cfg.Hostname == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
-			logger.Warn("unable to look up hostname: %v", err)
+			log.Warn("unable to look up hostname: %v", err)
 		} else {
 			cfg.Hostname = hostname
 		}
@@ -98,7 +99,7 @@ func NewAgent(client *http.Client, logger Logger, cfg *Config) (*Agent, error) {
 	if cfg.Service.Name == "" {
 		name, err := os.Executable()
 		if err != nil {
-			logger.Warn("unable to look up the executable name: %v", err)
+			log.Warn("unable to look up the executable name: %v", err)
 		} else {
 			cfg.Service.Name = filepath.Base(name)
 		}
@@ -125,16 +126,13 @@ func (a *Agent) Start() {
 }
 
 // Stop stops the AppSec agent goroutine.
-func (a *Agent) Stop(gracefully bool) {
+func (a *Agent) Stop() {
 	for _, unregister := range a.unregisterInstr {
 		unregister()
 	}
 	// Stop the batching goroutine
 	close(a.eventChan)
-	// Possibly wait for the goroutine to gracefully stop
-	if !gracefully {
-		return
-	}
+	// Gracefully stop by waiting for the event loop goroutine to stop
 	a.wg.Wait()
 }
 
