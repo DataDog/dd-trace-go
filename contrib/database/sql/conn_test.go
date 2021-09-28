@@ -109,10 +109,6 @@ func TestOptionalCheckSpanContext(t *testing.T) {
 		driver driver.Driver
 		opts   []RegisterOption
 	}
-	type want struct {
-		opName  string
-		ctxTags map[string]string
-	}
 	testcases := []struct {
 		name        string
 		sqlRegister sqlRegister
@@ -124,7 +120,7 @@ func TestOptionalCheckSpanContext(t *testing.T) {
 				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
 				driver: &mysql.MySQLDriver{},
 				opts: []RegisterOption{
-					WithCheckSpanContext(),
+					WithChildSpansOnly(),
 				},
 			},
 		},
@@ -135,7 +131,7 @@ func TestOptionalCheckSpanContext(t *testing.T) {
 				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
 				driver: &pq.Driver{},
 				opts: []RegisterOption{
-					WithCheckSpanContext(),
+					WithChildSpansOnly(),
 					WithServiceName("postgres-test"),
 					WithAnalyticsRate(0.2),
 				},

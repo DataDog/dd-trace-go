@@ -12,10 +12,10 @@ import (
 )
 
 type config struct {
-	serviceName      string
-	analyticsRate    float64
-	dsn              string
-	checkSpanContext bool
+	serviceName    string
+	analyticsRate  float64
+	dsn            string
+	childSpansOnly bool
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -34,7 +34,6 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
-	cfg.checkSpanContext = false
 }
 
 // WithServiceName sets the given service name when registering a driver,
@@ -77,12 +76,10 @@ func WithDSN(name string) Option {
 	}
 }
 
-// WithCheckSpanContext enables checking the provided context
-// for a parent span before creating one for the request.
-// With this enabled, no span is created for the request
-// without an existing parent span.
-func WithCheckSpanContext() Option {
+// WithChildSpansOnly causes spans to be created only when
+// there is an existing parent span in the Context.
+func WithChildSpansOnly() Option {
 	return func(cfg *config) {
-		cfg.checkSpanContext = true
+		cfg.childSpansOnly = true
 	}
 }
