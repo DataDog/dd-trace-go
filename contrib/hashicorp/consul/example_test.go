@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"log"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
 
 	consul "github.com/hashicorp/consul/api"
 )

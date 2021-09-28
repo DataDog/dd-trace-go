@@ -8,8 +8,8 @@ package fiber_test
 import (
 	"github.com/gofiber/fiber/v2"
 
-	fibertrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gofiber/fiber.v2"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	fibertrace "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/gofiber/fiber.v2"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func Example() {

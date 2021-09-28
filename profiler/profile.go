@@ -14,7 +14,7 @@ import (
 	"runtime/pprof"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/profiler/internal/pprofutils"
 
 	"github.com/DataDog/gostackparse"
 	pprofile "github.com/google/pprof/profile"

@@ -13,8 +13,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/mocktracer"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"

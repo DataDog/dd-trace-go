@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package sql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
+package sql // import "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/database/sql"
 
 import (
 	"context"
@@ -12,9 +12,9 @@ import (
 	"math"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var _ driver.Conn = (*tracedConn)(nil)

@@ -9,7 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/ext"
 )
 
 // A basic example demonstrating how to start the tracer, as well as how

@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/internal/log"
 )
 
 // This method is more precise than the go1.8 time.Now on Windows

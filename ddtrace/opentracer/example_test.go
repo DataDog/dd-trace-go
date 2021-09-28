@@ -8,8 +8,8 @@ package opentracer_test
 import (
 	opentracing "github.com/opentracing/opentracing-go"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/opentracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/opentracer"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func Example() {

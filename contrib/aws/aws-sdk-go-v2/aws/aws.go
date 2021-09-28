@@ -11,9 +11,9 @@ import (
 	"math"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"

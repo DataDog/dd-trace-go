@@ -9,7 +9,7 @@ import (
 	"math"
 
 	"github.com/jinzhu/gorm"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/internal"
 )
 
 type config struct {

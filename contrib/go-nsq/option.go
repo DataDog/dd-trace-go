@@ -10,7 +10,7 @@ import (
 	"context"
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/internal"
 )
 
 // config represents a set of options for the client.

@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package ext // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+package ext // import "gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/ext"
 
 // App types determine how to categorize a trace in the Datadog application.
 // For more fine-grained behaviour, use the SpanType* constants.

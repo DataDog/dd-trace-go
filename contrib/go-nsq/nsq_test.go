@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/nsqio/go-nsq"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 var (

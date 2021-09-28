@@ -6,7 +6,7 @@
 package mgo
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"

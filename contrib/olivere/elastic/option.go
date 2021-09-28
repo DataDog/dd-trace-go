@@ -9,7 +9,7 @@ import (
 	"math"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/internal"
 )
 
 type clientConfig struct {

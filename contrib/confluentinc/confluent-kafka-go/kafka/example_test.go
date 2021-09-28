@@ -10,8 +10,8 @@ import (
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 
-	kafkatrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	kafkatrace "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var (

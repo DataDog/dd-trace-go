@@ -8,8 +8,8 @@ package tracer
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/internal"
 )
 
 type contextKey struct{}

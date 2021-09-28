@@ -18,9 +18,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	traceinternal "gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/internal"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/internal/version"
 
 	"github.com/tinylib/msgp/msgp"
 )

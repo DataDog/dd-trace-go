@@ -12,12 +12,12 @@ import (
 	"os"
 	"testing"
 
-	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	sqltrace "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/database/sql"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/contrib/internal/sqltest"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/CodapeWild/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jinzhu/gorm"
