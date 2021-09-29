@@ -150,6 +150,15 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return internal.GetGlobalTracer().Inject(ctx, carrier)
 }
 
+// PrintSpan
+func SpanString(spn Span) string {
+	if s, ok := spn.(*span); ok {
+		return s.String()
+	}
+
+	return ""
+}
+
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
