@@ -150,7 +150,7 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return internal.GetGlobalTracer().Inject(ctx, carrier)
 }
 
-// PrintSpan
+// SpanString return a human readable representation of the span
 func SpanString(spn Span) string {
 	if s, ok := spn.(*span); ok {
 		return s.String()
