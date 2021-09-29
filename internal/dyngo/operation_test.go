@@ -368,6 +368,26 @@ func TestUsage(t *testing.T) {
 		require.Equal(t, 5, called)
 	})
 
+	t.Run("with event listener option", func(t *testing.T) {
+		type myData struct{}
+		// Create a parent operation listening for MyOperationArgs and emitting an event listened by this new child
+		// operation
+		parent := dyngo.StartOperation(RootArgs{})
+		parent.OnStart((*MyOperationArgs)(nil), func(op *dyngo.Operation, _ interface{}) {
+			op.EmitData(myData{})
+		})
+		defer parent.Finish(RootRes{})
+
+		var called int
+		listenerOpt := dyngo.WithEventListener(dyngo.OnDataEventListener((*myData)(nil), func(*dyngo.Operation, interface{}) {
+			called++
+		}))
+		op := dyngo.StartOperation(MyOperationArgs{}, listenerOpt, dyngo.WithParent(parent))
+		defer op.Finish(MyOperationRes{})
+
+		require.Equal(t, 1, called)
+	})
+
 	t.Run("concurrency", func(t *testing.T) {
 		// root is the shared operation having concurrent accesses in this test
 		root := dyngo.StartOperation(RootArgs{})

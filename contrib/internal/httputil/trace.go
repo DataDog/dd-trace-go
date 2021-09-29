@@ -68,22 +68,20 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 			UserAgent:   httpinstr.UserAgent(cfg.Request.UserAgent()),
 			QueryValues: httpinstr.QueryValues(cfg.Request.URL.Query()),
 		},
+		dyngo.WithEventListener(appsectypes.OnSecurityEventDataListener(func(op *dyngo.Operation, e *appsectypes.SecurityEvent) {
+			// Keep this trace due to the security event
+			span.SetTag(ext.SamplingPriority, ext.ManualKeep)
+			// Add context to the event
+			spanCtx := span.Context()
+			// Add the APM context to the event
+			e.AddContext(appsectypes.SpanContext{
+				TraceID: spanCtx.TraceID(),
+				SpanID:  spanCtx.SpanID(),
+			})
+		})),
 	)
-	op.OnSecurityEventData(func(op *dyngo.Operation, e *appsectypes.SecurityEvent) {
-		// Keep this trace due to the security event
-		span.SetTag(ext.SamplingPriority, ext.ManualKeep)
-		// Add context to the event
-		spanCtx := span.Context()
-		// Add the APM context to the event
-		e.AddContext(appsectypes.SpanContext{
-			TraceID: spanCtx.TraceID(),
-			SpanID:  spanCtx.SpanID(),
-		})
-	})
-	defer func() {
-		// TODO(julio): get the status code out of the wrapped response writer
-		op.Finish(httpinstr.HandlerOperationRes{})
-	}()
+	// TODO(julio): get the status code out of the wrapped response writer
+	defer op.Finish(httpinstr.HandlerOperationRes{})
 
 	h.ServeHTTP(cfg.ResponseWriter, cfg.Request.WithContext(ctx))
 }

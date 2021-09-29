@@ -32,6 +32,16 @@ func WithParent(parent *Operation) Option {
 	})
 }
 
+// WithEventListener allows to immediately register an event listener to the operation being created, before its
+// start event gets emitted. This allows to react to an event that might happen due to the start event of the
+// operation being created.
+func WithEventListener(l EventListener) Option {
+	return optionFunc(func(op *Operation) {
+		// Don't use Register() to avoid the function closure allocation it implies for its return value.
+		l.registerTo(op)
+	})
+}
+
 var root = newOperation()
 
 // Operation structure allowing to subscribe to operation events and to navigate in the operation stack. Events
