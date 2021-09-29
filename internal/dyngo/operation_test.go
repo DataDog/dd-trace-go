@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
@@ -365,6 +367,123 @@ func TestUsage(t *testing.T) {
 
 		require.Equal(t, 5, called)
 	})
+
+	t.Run("concurrency", func(t *testing.T) {
+		// root is the shared operation having concurrent accesses in this test
+		root := dyngo.StartOperation(RootArgs{})
+		defer root.Finish(RootRes{})
+
+		// Create nbGoroutines registering event listeners concurrently
+		nbGoroutines := 1000
+		// The concurrency is maximized by using start barriers to sync the goroutine launches
+		var done, started, startBarrier sync.WaitGroup
+
+		done.Add(nbGoroutines)
+		started.Add(nbGoroutines)
+		startBarrier.Add(1)
+
+		var calls uint32
+		for g := 0; g < nbGoroutines; g++ {
+			// Start a goroutine that registers its event listeners to root.
+			// This allows to test the thread-safety of the underlying list of listeners.
+			go func() {
+				started.Done()
+				startBarrier.Wait()
+				defer done.Done()
+				root.OnStart((*MyOperationArgs)(nil), func(op *dyngo.Operation, v interface{}) { atomic.AddUint32(&calls, 1) })
+				root.OnFinish((*MyOperationRes)(nil), func(op *dyngo.Operation, v interface{}) { atomic.AddUint32(&calls, 1) })
+				root.OnData((*MyOperationData)(nil), func(op *dyngo.Operation, v interface{}) { atomic.AddUint32(&calls, 1) })
+			}()
+		}
+
+		// Wait for all the goroutines to be started
+		started.Wait()
+		// Release the start barrier
+		startBarrier.Done()
+		// Wait for the goroutines to be done
+		done.Wait()
+
+		// Create nbGoroutines emitting events concurrently
+		done.Add(nbGoroutines)
+		started.Add(nbGoroutines)
+		startBarrier.Add(1)
+		for g := 0; g < nbGoroutines; g++ {
+			// Start a goroutine that emits the events with a new operation. This allows to test the thread-safety of
+			// while emitting events.
+			go func() {
+				started.Done()
+				startBarrier.Wait()
+				defer done.Done()
+				op := dyngo.StartOperation(MyOperationArgs{}, dyngo.WithParent(root))
+				defer op.Finish(MyOperationRes{})
+				op.EmitData(MyOperationData{})
+			}()
+		}
+
+		// Wait for all the goroutines to be started
+		started.Wait()
+		// Release the start barrier
+		startBarrier.Done()
+		// Wait for the goroutines to be done
+		done.Wait()
+
+		// The number of calls should be equal to the expected number of events
+		require.Equal(t, uint32(nbGoroutines*3*nbGoroutines), calls)
+	})
+
+	t.Run("concurrency", func(t *testing.T) {
+		// root is the shared operation having concurrent accesses in this test
+		root := dyngo.StartOperation(RootArgs{})
+		defer root.Finish(RootRes{})
+
+		// Create nbGoroutines registering event listeners concurrently
+		nbGoroutines := 1000
+		// The concurrency is maximized by using start barriers to sync the goroutine launches
+		var done, started, startBarrier sync.WaitGroup
+
+		done.Add(nbGoroutines)
+		started.Add(nbGoroutines)
+		startBarrier.Add(1)
+
+		var calls uint32
+		for g := 0; g < nbGoroutines; g++ {
+			// Start a goroutine that registers its event listeners to root, emits those events with a new operation, and
+			// finally unregisters them. This allows to test the thread-safety of the underlying list of listeners.
+			go func() {
+				started.Done()
+				startBarrier.Wait()
+				defer done.Done()
+
+				unregister := root.Register(
+					dyngo.OnStartEventListener((*MyOperationArgs)(nil), func(op *dyngo.Operation, v interface{}) { atomic.AddUint32(&calls, 1) }),
+				)
+				defer unregister()
+				unregister = root.Register(
+					dyngo.OnFinishEventListener((*MyOperationRes)(nil), func(op *dyngo.Operation, v interface{}) { atomic.AddUint32(&calls, 1) }),
+				)
+				defer unregister()
+				unregister = root.Register(
+					dyngo.OnDataEventListener((*MyOperationData)(nil), func(op *dyngo.Operation, v interface{}) { atomic.AddUint32(&calls, 1) }),
+				)
+				defer unregister()
+
+				// Emit events
+				op := dyngo.StartOperation(MyOperationArgs{}, dyngo.WithParent(root))
+				defer op.Finish(MyOperationRes{})
+				op.EmitData(MyOperationData{})
+			}()
+		}
+
+		// Wait for all the goroutines to be started
+		started.Wait()
+		// Release the start barrier
+		startBarrier.Done()
+		// Wait for the goroutines to be done
+		done.Wait()
+
+		// The number of calls should be equal to the expected number of events
+		require.Equal(t, uint32(nbGoroutines*3), calls)
+	})
 }
 
 type (
@@ -650,8 +769,6 @@ func TestTypeSafety(t *testing.T) {
 		})
 	})
 }
-
-// TODO(julio): concurrency test
 
 func operation(parent *dyngo.Operation, args, res interface{}, child func(*dyngo.Operation)) {
 	op := dyngo.StartOperation(args, dyngo.WithParent(parent))
