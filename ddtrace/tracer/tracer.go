@@ -153,9 +153,9 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 // SpanString return a human readable representation of the span
 func SpanString(spn Span) string {
 	if s, ok := spn.(*span); ok {
-		log.Info("convert span failed")
 		return s.String()
 	}
+	log.Info("span convert failed")
 
 	return ""
 }
