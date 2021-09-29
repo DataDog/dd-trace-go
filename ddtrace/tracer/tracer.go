@@ -80,7 +80,6 @@ type tracer struct {
 	// rules for applying a sampling rate to spans that match the designated service
 	// or operation name.
 	rulesSampling *rulesSampler
-	appsec        *appsec.Agent
 }
 
 const (
@@ -216,7 +215,16 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
-	startAppSec(t)
+	appsec.Start(&appsec.Config{
+		Client:   t.config.httpClient,
+		Version:  version.Tag,
+		AgentURL: fmt.Sprintf("http://%s/", t.config.agentAddr),
+		Service: appsec.ServiceConfig{
+			Name:        t.config.serviceName,
+			Version:     t.config.version,
+			Environment: t.config.env,
+		},
+	})
 	return t
 }
 
@@ -468,9 +476,7 @@ func (t *tracer) Stop() {
 	t.wg.Wait()
 	t.traceWriter.stop()
 	t.config.statsd.Close()
-	if t.appsec != nil {
-		t.appsec.Stop()
-	}
+	appsec.Stop()
 }
 
 // Inject uses the configured or default TextMap Propagator.
@@ -504,34 +510,4 @@ func (t *tracer) sample(span *span) {
 		return
 	}
 	t.prioritySampling.apply(span)
-}
-
-// Start AppSec when DD_APPSEC_ENABLED is true.
-func startAppSec(t *tracer) {
-	if appsecEnabled := os.Getenv("DD_APPSEC_ENABLED"); appsecEnabled == "" {
-		return
-	} else if enabled, err := strconv.ParseBool(appsecEnabled); err != nil {
-		log.Error("appsec: could not parse DD_APPSEC_ENABLED value `%s` as a boolean value", appsecEnabled)
-		return
-	} else if !enabled {
-		return
-	}
-
-	appsecAgent, err := appsec.NewAgent(
-		t.config.httpClient,
-		&appsec.Config{
-			Version:  version.Tag,
-			AgentURL: fmt.Sprintf("http://%s/", t.config.agentAddr),
-			Service: appsec.ServiceConfig{
-				Name:        t.config.serviceName,
-				Version:     t.config.version,
-				Environment: t.config.env,
-			},
-		},
-	)
-	if err != nil {
-		log.Error("could not start appsec: %v", err)
-	}
-	appsecAgent.Start()
-	t.appsec = appsecAgent
 }

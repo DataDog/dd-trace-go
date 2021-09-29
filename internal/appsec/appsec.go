@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
 
@@ -26,6 +27,8 @@ import (
 type (
 	// Config is the AppSec configuration.
 	Config struct {
+		// Client is the HTTP client to use to perform HTTP requests to the agent. This value is mandatory.
+		Client *http.Client
 		// AgentURL is the datadog agent URL the API client should use.
 		AgentURL string
 		// ServiceConfig is the information about the running service we currently protect.
@@ -65,8 +68,61 @@ const (
 // Default timeout of intake requests.
 const defaultIntakeTimeout = 10 * time.Second
 
-// Agent is the AppSec agent. It allows starting and stopping it.
-type Agent struct {
+// Start AppSec when the environment variable DD_APPSEC_ENABLED is set to true.
+func Start(cfg *Config) {
+	enabled, err := isEnabled()
+	if err != nil {
+		log.Error("appsec: %v", err)
+		return
+	}
+	if !enabled {
+		return
+	}
+
+	appsec, err := new(
+		cfg,
+	)
+	if err != nil {
+		log.Error("appsec: %v", err)
+		log.Error("appsec: disabled due to a startup error")
+		return
+	}
+	appsec.start()
+	setActiveAppSec(appsec)
+}
+
+// Stop AppSec.
+func Stop() {
+	setActiveAppSec(nil)
+}
+
+var (
+	activeAppSec *appsec
+	mu           sync.Mutex
+)
+
+func setActiveAppSec(a *appsec) {
+	mu.Lock()
+	defer mu.Unlock()
+	if activeAppSec != nil {
+		activeAppSec.stop()
+	}
+	activeAppSec = a
+}
+
+func isEnabled() (bool, error) {
+	enabledStr := os.Getenv("DD_APPSEC_ENABLED")
+	if enabledStr == "" {
+		return false, nil
+	}
+	enabled, err := strconv.ParseBool(enabledStr)
+	if err != nil {
+		return false, fmt.Errorf("could not parse DD_APPSEC_ENABLED value `%s` as a boolean value", enabledStr)
+	}
+	return enabled, nil
+}
+
+type appsec struct {
 	client          *intake.Client
 	eventChan       chan *appsectypes.SecurityEvent
 	wg              sync.WaitGroup
@@ -74,9 +130,8 @@ type Agent struct {
 	unregisterInstr []dyngo.UnregisterFunc
 }
 
-// NewAgent returns a new unstarted agent.
-func NewAgent(client *http.Client, cfg *Config) (*Agent, error) {
-	intakeClient, err := intake.NewClient(client, cfg.AgentURL)
+func new(cfg *Config) (*appsec, error) {
+	intakeClient, err := intake.NewClient(cfg.Client, cfg.AgentURL)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +162,7 @@ func NewAgent(client *http.Client, cfg *Config) (*Agent, error) {
 		cfg.MaxBatchStaleTime = defaultMaxBatchStaleTime
 	}
 
-	return &Agent{
+	return &appsec{
 		eventChan: make(chan *appsectypes.SecurityEvent, 1000),
 		client:    intakeClient,
 		cfg:       cfg,
@@ -115,12 +170,12 @@ func NewAgent(client *http.Client, cfg *Config) (*Agent, error) {
 }
 
 // Start starts the AppSec agent goroutine.
-func (a *Agent) Start() {
+func (a *appsec) start() {
 	a.run()
 }
 
 // Stop stops the AppSec agent goroutine.
-func (a *Agent) Stop() {
+func (a *appsec) stop() {
 	for _, unregister := range a.unregisterInstr {
 		unregister()
 	}
@@ -130,7 +185,7 @@ func (a *Agent) Stop() {
 	a.wg.Wait()
 }
 
-func (a *Agent) run() {
+func (a *appsec) run() {
 	a.unregisterInstr = append(a.unregisterInstr, httpprotection.Register(), a.listenSecurityEvents())
 
 	a.wg.Add(1)
@@ -219,7 +274,7 @@ func eventBatchingLoop(client intakeClient, eventChan <-chan *appsectypes.Securi
 	}
 }
 
-func (a *Agent) listenSecurityEvents() dyngo.UnregisterFunc {
+func (a *appsec) listenSecurityEvents() dyngo.UnregisterFunc {
 	return dyngo.Register(dyngo.InstrumentationDescriptor{
 		Title: "Attack Queue",
 		Instrumentation: dyngo.OperationInstrumentation{
@@ -227,7 +282,7 @@ func (a *Agent) listenSecurityEvents() dyngo.UnregisterFunc {
 				select {
 				case a.eventChan <- event:
 				default:
-					// TODO: add metrics on the nb of dropped events
+					// TODO(julio): add metrics on the nb of dropped events
 				}
 			}),
 		},
