@@ -73,8 +73,8 @@ type span struct {
 	noDebugStack   bool            `msg:"-"` // disables debug stack traces
 	finished       bool            `msg:"-"` // true if the span has been submitted to a tracer.
 	context        *spanContext    `msg:"-"` // span propagation context
-	labelContext   context.Context `msg:"-"` // context with labels applied for this span
-	restoreContext context.Context `msg:"-"` // previous context with labels to restore
+	labelContext   context.Context `msg:"-"` // context with profiler labels applied for this span
+	restoreContext context.Context `msg:"-"` // previous context with profiler labels to restore
 	taskEnd        func()          // ends execution tracer (runtime/trace) task, if started
 }
 

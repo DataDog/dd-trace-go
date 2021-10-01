@@ -457,15 +457,16 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if t.config.profilerHotspots {
 		labels = append(labels, "span id", fmt.Sprintf("%d", span.SpanID))
 	}
+	// nil checks might not be needed, but better be safe than sorry
 	if span.context.trace != nil && span.context.trace.root != nil {
 		localRootSpan := span.context.trace.root
 		if t.config.profilerHotspots {
-			// TODO(fg) should we add "span id" above if this branch doesn't get hit?
 			labels = append(labels, "local root span id", fmt.Sprintf("%d", localRootSpan.SpanID))
 		}
 		if t.config.profilerEndpoints {
-			// TODO(fg) this MUST NOT contain personally identifiable information, is
-			// it safe to assume that this guarantee will be met here?
+			// TODO(REVIEWERS) this MUST NOT contain personally identifiable
+			// information, is it safe to assume that this guarantee will be met
+			// here?
 			labels = append(labels, "trace endpoint", localRootSpan.Resource)
 		}
 		if len(labels) > 0 {

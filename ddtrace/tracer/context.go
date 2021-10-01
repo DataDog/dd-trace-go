@@ -35,9 +35,11 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 	return &internal.NoopSpan{}, false
 }
 
-// StartSpanFromContext returns a new span with the given operation name and options. If a span
-// is found in the context, it will be used as the parent of the resulting span. If the ChildOf
-// option is passed, the span from context will take precedence over it as the parent span.
+// StartSpanFromContext returns a new span with the given operation name and
+// options. If a span is found in the context, it will be used as the parent of
+// the resulting span. If the ChildOf option is passed, the span from context
+// will take precedence over it as the parent span. The WithContext is also
+// ignored.
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context) {
 	if ctx == nil {
 		// default to context.Background() to avoid panics on Go >= 1.15
@@ -48,6 +50,9 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	}
 	opts = append(opts, WithContext(ctx))
 	s := StartSpan(operationName, opts...)
+	// If profiler labels were applied for this span, use the derived ctx that
+	// includes them. Otherwise a child of this span wouldn't be able to
+	// correctly restore the labels of its parent when it finishes.
 	if span, ok := s.(*span); ok && span.labelContext != nil {
 		ctx = span.labelContext
 	}
