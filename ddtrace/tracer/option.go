@@ -485,6 +485,15 @@ func WithLogStartup(enabled bool) StartOption {
 // more correct to refer to it as the type as the origin, ddtrace.StartSpanOption.
 type StartSpanOption = ddtrace.StartSpanOption
 
+// DataPipelineOption is a configuration option for SetDataPipelineCheckpoint.
+type DataPipelineOption = ddtrace.DataPipelineOption
+
+func ChildOfPipeline(p ddtrace.DataPipeline) DataPipelineOption {
+	return func(cfg *ddtrace.DataPipelineConfig) {
+		cfg.Parent = p
+	}
+}
+
 // Tag sets the given key/value pair as a tag on the started Span.
 func Tag(k string, v interface{}) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {

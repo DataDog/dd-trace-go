@@ -13,7 +13,10 @@
 // with by accessing the subdirectories of this package: https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace#pkg-subdirectories.
 package ddtrace // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
-import "time"
+import (
+	"github.com/DataDog/sketches-go/ddsketch"
+	"time"
+)
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
 // and propagating spans. The official implementation if exposed as functions
@@ -21,6 +24,10 @@ import "time"
 type Tracer interface {
 	// StartSpan starts a span with the given operation name and options.
 	StartSpan(operationName string, opts ...StartSpanOption) Span
+
+	// SetDataPipelineCheckpoint sets a checkpoint on a data pipeline. It creates a new data pipeline
+	// if no one is active yet.
+	SetDataPipelineCheckpoint(receivingPipelineName string, opts ...DataPipelineOption) DataPipeline
 
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to
@@ -124,8 +131,28 @@ type StartSpanConfig struct {
 	SpanID uint64
 }
 
+// DataPipelineConfig holds the configuration of a data pipeline
+type DataPipelineConfig struct {
+	Parent DataPipeline
+}
+
+// DataPipelineOption is a configuration option that can be used with a Tracer's SetDataPipelineCheckpoint method
+type DataPipelineOption func(cfg *DataPipelineConfig)
+
 // Logger implementations are able to log given messages that the tracer might output.
 type Logger interface {
 	// Log prints the given message.
 	Log(msg string)
+}
+
+type PipelineLatency struct {
+	Hash uint64
+	Summary *ddsketch.DDSketch
+}
+
+// DataPipeline represents async operations linked together in a directed graph.
+type DataPipeline interface {
+	SetCheckpoint(receivingPipelineName string) DataPipeline
+	GetCallTime() time.Time
+	GetLatencies() []PipelineLatency
 }

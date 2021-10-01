@@ -7,6 +7,7 @@ package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 import (
 	"sync"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
@@ -51,6 +52,11 @@ func (NoopTracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOptio
 	return NoopSpan{}
 }
 
+// SetDataPipelineCheckpoint implements ddtrace.SetDataPipelineCheckpoint.
+func (NoopTracer) SetDataPipelineCheckpoint(receivingPipelineName string, opts ...ddtrace.DataPipelineOption) ddtrace.DataPipeline {
+	return NoopDataPipeline{}
+}
+
 // SetServiceInfo implements ddtrace.Tracer.
 func (NoopTracer) SetServiceInfo(name, app, appType string) {}
 
@@ -66,6 +72,21 @@ func (NoopTracer) Inject(context ddtrace.SpanContext, carrier interface{}) error
 func (NoopTracer) Stop() {}
 
 var _ ddtrace.Span = (*NoopSpan)(nil)
+
+// NoopDataPipeline is an implementation of ddtrace.DataPipeline that is a no-op.
+type NoopDataPipeline struct{}
+
+func (NoopDataPipeline) SetCheckpoint(receivingPipelineName string) ddtrace.DataPipeline{
+	return NoopDataPipeline{}
+}
+
+func (NoopDataPipeline) GetCallTime() time.Time {
+	return time.Time{}
+}
+
+func (NoopDataPipeline) GetLatencies() []ddtrace.PipelineLatency {
+	return nil
+}
 
 // NoopSpan is an implementation of ddtrace.Span that is a no-op.
 type NoopSpan struct{}

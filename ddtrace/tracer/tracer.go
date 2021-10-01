@@ -41,6 +41,8 @@ type tracer struct {
 	// stats are enabled.
 	stats *concentrator
 
+	pipelineStats *pipelineConcentrator
+
 	// traceWriter is responsible for sending finished traces to their
 	// destination, such as the Trace Agent or Datadog Forwarder.
 	traceWriter traceWriter
@@ -136,6 +138,11 @@ func StartSpan(operationName string, opts ...StartSpanOption) Span {
 	return internal.GetGlobalTracer().StartSpan(operationName, opts...)
 }
 
+// SetDataPipelineCheckpoint sets a data pipeline checkpoint.
+func SetDataPipelineCheckpoint(receivingPipelineName string, opts ...DataPipelineOption) ddtrace.DataPipeline {
+	return internal.GetGlobalTracer().SetDataPipelineCheckpoint(receivingPipelineName, opts...)
+}
+
 // Extract extracts a SpanContext from the carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
@@ -180,6 +187,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		pid:              strconv.Itoa(os.Getpid()),
 		features:         &agentFeatures{},
 		stats:            newConcentrator(c, defaultStatsBucketSize),
+		pipelineStats: newPipelineConcentrator(c, time.Second*10),
 	}
 	return t
 }
@@ -213,6 +221,7 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
+	t.pipelineStats.Start()
 	return t
 }
 
@@ -361,6 +370,24 @@ func (t *tracer) pushTrace(trace []*span) {
 	}
 }
 
+// DataPipeline is an alias for ddtrace.DataPipeline. It is here to allow godoc to group methods returning
+// ddtrace.DataPipeline. It is recommended and is considered more correct to refer to this type as
+// ddtrace.DataPipeline instead.
+type DataPipeline = ddtrace.DataPipeline
+
+func (t *tracer) SetDataPipelineCheckpoint(receivingPipelineName string, options ...ddtrace.DataPipelineOption) ddtrace.DataPipeline {
+	var cfg ddtrace.DataPipelineConfig
+	for _, fn := range options {
+		fn(&cfg)
+	}
+	if cfg.Parent == nil {
+		log.Info("creating new data pipeline")
+		return newDataPipeline(t.config.serviceName, t.config.env)
+	}
+	log.Info("updating existing data pipeline")
+	return cfg.Parent.SetCheckpoint(receivingPipelineName)
+}
+
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
 	var opts ddtrace.StartSpanConfig
@@ -461,6 +488,7 @@ func (t *tracer) Stop() {
 		t.config.statsd.Incr("datadog.tracer.stopped", nil, 1)
 	})
 	t.stats.Stop()
+	t.pipelineStats.Stop()
 	t.wg.Wait()
 	t.traceWriter.stop()
 	t.config.statsd.Close()
