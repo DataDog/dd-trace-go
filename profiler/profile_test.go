@@ -178,94 +178,6 @@ main;bar 0 0 8 16
 		assert.Equal(t, []byte("my-cpu-profile"), profs[0].data)
 	})
 
-	// TODO(fg) this test code is a bit ugly right now, try to make it nicer.
-	t.Run("apmIntegration", func(t *testing.T) {
-		tracer.Start(
-			tracer.WithProfilerCodeHotspots(true),
-			tracer.WithProfilerEndpoints(true),
-		)
-		defer trace.Stop()
-		profileDuration := 200 * time.Millisecond
-
-		var localRootSpanID uint64
-		var child2SpanID uint64
-		p, err := unstartedProfiler(CPUDuration(profileDuration))
-		require.NoError(t, err)
-
-		stopCh := make(chan struct{})
-		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier{
-				tracer.DefaultTraceIDHeader:  []string{"12345"},
-				tracer.DefaultParentIDHeader: []string{"9876"},
-			})
-			require.NoError(t, err)
-
-			time.Sleep(10 * time.Millisecond)
-			rootSpan := tracer.StartSpan(
-				"http.request",
-				tracer.ResourceName("GET /users/:id"),
-				tracer.ChildOf(spanctx),
-			)
-			defer rootSpan.Finish()
-			localRootSpanID = rootSpan.Context().SpanID()
-
-			done := make(chan struct{})
-			go func() {
-				child1 := tracer.StartSpan("child1", tracer.ChildOf(rootSpan.Context()))
-				defer child1.Finish()
-
-				go func() {
-					defer wg.Done()
-					child2 := tracer.StartSpan("child2", tracer.ChildOf(child1.Context()))
-					defer child2.Finish()
-					child2SpanID = child2.Context().SpanID()
-
-					for {
-						select {
-						case <-stopCh:
-							done <- struct{}{}
-							return
-						default:
-							// spin
-						}
-					}
-				}()
-
-			}()
-			<-done
-		}()
-
-		prof, err := p.runProfile(CPUProfile)
-		require.NoError(t, err)
-		close(stopCh)
-		wg.Wait()
-
-		assert.Equal(t, "cpu.pprof", prof[0].name)
-		parsed, err := pprofile.Parse(bytes.NewReader(prof[0].data))
-		require.NoError(t, err)
-
-		var spanTime time.Duration
-		for _, s := range parsed.Sample {
-			if v, ok := s.Label["span id"]; ok && len(v) == 1 {
-				if v[0] == fmt.Sprintf("%d", child2SpanID) {
-					spanTime += time.Duration(s.Value[1])
-
-					var gotLocalRootSpanID string
-					wantLocalRootSpanID := fmt.Sprintf("%d", localRootSpanID)
-					if v, ok := s.Label["local root span id"]; ok && len(v) == 1 {
-						gotLocalRootSpanID = v[0]
-					}
-					if gotLocalRootSpanID != wantLocalRootSpanID {
-						t.Errorf("got=%q want=%q local root span id", gotLocalRootSpanID, wantLocalRootSpanID)
-					}
-				}
-			}
-		}
-		assert.GreaterOrEqual(t, spanTime, profileDuration/2)
-	})
-
 	t.Run("goroutine", func(t *testing.T) {
 		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
 		lookupProfile = func(name string, w io.Writer, _ int) error {
@@ -403,6 +315,100 @@ main.main()
 		require.GreaterOrEqual(t, errRoutines, goroutines)
 		require.Equal(t, limit, errLimit)
 	})
+}
+
+func TestApmIntegration(t *testing.T) {
+	tracer.Start(
+		tracer.WithProfilerCodeHotspots(true),
+		tracer.WithProfilerEndpoints(true),
+	)
+	defer trace.Stop()
+
+	profileDuration := 200 * time.Millisecond
+
+	var localRootSpanID uint64
+	var child2SpanID uint64
+	p, err := unstartedProfiler(CPUDuration(profileDuration))
+	require.NoError(t, err)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier{
+			tracer.DefaultTraceIDHeader:  []string{"12345"},
+			tracer.DefaultParentIDHeader: []string{"9876"},
+		})
+		require.NoError(t, err)
+
+		time.Sleep(10 * time.Millisecond) // TODO(fg) why?
+
+		rootSpan := tracer.StartSpan(
+			"http.request",
+			tracer.ResourceName("GET /users/:id"),
+			tracer.ChildOf(spanctx),
+		)
+		defer rootSpan.Finish()
+		localRootSpanID = rootSpan.Context().SpanID()
+
+		done := make(chan struct{})
+		go func() {
+			child1 := tracer.StartSpan("child1", tracer.ChildOf(rootSpan.Context()))
+			defer child1.Finish()
+
+			go func() {
+				defer wg.Done()
+				child2 := tracer.StartSpan("child2", tracer.ChildOf(child1.Context()))
+				defer child2.Finish()
+				child2SpanID = child2.Context().SpanID()
+
+				cpuHogUnil(stop)
+				done <- struct{}{}
+			}()
+
+		}()
+		<-done
+	}()
+
+	prof, err := p.runProfile(CPUProfile)
+	require.NoError(t, err)
+	close(stop)
+	wg.Wait()
+
+	assert.Equal(t, "cpu.pprof", prof[0].name)
+	parsed, err := pprofile.Parse(bytes.NewReader(prof[0].data))
+	require.NoError(t, err)
+
+	var spanTime time.Duration
+	for _, s := range parsed.Sample {
+		if v, ok := s.Label["span id"]; ok && len(v) == 1 {
+			if v[0] == fmt.Sprintf("%d", child2SpanID) {
+				spanTime += time.Duration(s.Value[1])
+
+				var gotLocalRootSpanID string
+				wantLocalRootSpanID := fmt.Sprintf("%d", localRootSpanID)
+				if v, ok := s.Label["local root span id"]; ok && len(v) == 1 {
+					gotLocalRootSpanID = v[0]
+				}
+				if gotLocalRootSpanID != wantLocalRootSpanID {
+					t.Errorf("got=%q want=%q local root span id", gotLocalRootSpanID, wantLocalRootSpanID)
+				}
+			}
+		}
+	}
+	assert.GreaterOrEqual(t, spanTime, profileDuration/2)
+}
+
+func cpuHogUnil(stop chan struct{}) {
+	for i := 0; ; i++ {
+		select {
+		case <-stop:
+			return
+		default:
+			// burn cpu
+			fmt.Fprintf(io.Discard, "%d", i)
+		}
+	}
 }
 
 func Test_goroutineDebug2ToPprof_CrashSafety(t *testing.T) {

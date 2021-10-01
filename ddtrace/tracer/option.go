@@ -490,7 +490,8 @@ func WithLogStartup(enabled bool) StartOption {
 // tracing and profiling. This is done by automatically attaching goroutine
 // labels called "span id" and "local root span id" when new spans are created.
 // You should not use these label names in your own code.
-// TODO(fg) finalize name, decide if one option for both features is enough.
+// TODO(fg) finalize name, decide if one option for both features is enough,
+// and consider enabling by default.
 func WithProfilerCodeHotspots(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerHotspots = enabled
@@ -501,7 +502,8 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 // profiling. This is done by automatically attaching a goroutine label called
 // "trace endpoint" holding the resource name of the top-level service span.
 // You should not use this label name in your own code.
-// TODO(fg) finalize name, decide if one option for both features is enough.
+// TODO(fg) finalize name, decide if one option for both features is enough,
+// and consider enabling by default.
 func WithProfilerEndpoints(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerEndpoints = enabled
