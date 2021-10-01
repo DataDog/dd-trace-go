@@ -62,6 +62,7 @@ func NewOperationEventListener() dyngo.EventListener {
 	return httpinstr.OnHandlerOperationStartListener(func(op *dyngo.Operation, args httpinstr.HandlerOperationArgs) {
 		// For this handler operation lifetime, create a WAF context and the list of detected attacks
 		var (
+			// TODO(julio): make the attack slice thread-safe as soon as we listen for sub-operations
 			attacks []RawAttackMetadata
 			wafCtx  = waf.NewAdditiveContext(wafRule)
 		)

@@ -219,6 +219,7 @@ func newTracer(opts ...StartOption) *tracer {
 		Client:   t.config.httpClient,
 		Version:  version.Tag,
 		AgentURL: fmt.Sprintf("http://%s/", t.config.agentAddr),
+		Hostname: t.config.hostname,
 		Service: appsec.ServiceConfig{
 			Name:        t.config.serviceName,
 			Version:     t.config.version,

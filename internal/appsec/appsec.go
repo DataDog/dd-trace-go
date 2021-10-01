@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"sync"
@@ -79,9 +78,7 @@ func Start(cfg *Config) {
 		return
 	}
 
-	appsec, err := new(
-		cfg,
-	)
+	appsec, err := newAppSec(cfg)
 	if err != nil {
 		log.Error("appsec: %v", err)
 		log.Error("appsec: disabled due to a startup error")
@@ -130,28 +127,10 @@ type appsec struct {
 	unregisterInstr []dyngo.UnregisterFunc
 }
 
-func new(cfg *Config) (*appsec, error) {
+func newAppSec(cfg *Config) (*appsec, error) {
 	intakeClient, err := intake.NewClient(cfg.Client, cfg.AgentURL)
 	if err != nil {
 		return nil, err
-	}
-
-	if cfg.Hostname == "" {
-		hostname, err := os.Hostname()
-		if err != nil {
-			log.Warn("unable to look up hostname: %v", err)
-		} else {
-			cfg.Hostname = hostname
-		}
-	}
-
-	if cfg.Service.Name == "" {
-		name, err := os.Executable()
-		if err != nil {
-			log.Warn("unable to look up the executable name: %v", err)
-		} else {
-			cfg.Service.Name = filepath.Base(name)
-		}
 	}
 
 	if cfg.MaxBatchLen <= 0 {
