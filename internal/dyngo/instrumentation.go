@@ -41,6 +41,11 @@ func Register(descriptors ...InstrumentationDescriptor) UnregisterFunc {
 	for _, desc := range descriptors {
 		switch actual := desc.Instrumentation.(type) {
 		case OperationInstrumentation:
+			listener := actual.EventListener
+			if listener == nil {
+				log.Debug("appsec: ignoring instrumentation %s", desc.Title)
+				continue
+			}
 			log.Debug("appsec: registering instrumentation %s", desc.Title)
 			unregisterDescs = append(unregisterDescs, unregisterDesc{title: desc.Title, unregister: root.Register(actual.EventListener)})
 		}

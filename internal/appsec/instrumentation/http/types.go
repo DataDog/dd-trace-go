@@ -7,7 +7,6 @@ package http
 
 import (
 	"net/http"
-	"net/url"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
@@ -16,35 +15,18 @@ import (
 type (
 	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
-		Method      Method
-		Host        Host
-		RequestURI  RequestURI
-		RemoteAddr  RemoteAddr
-		Headers     Headers
-		QueryValues QueryValues
-		UserAgent   UserAgent
-		IsTLS       bool
+		Method     string
+		Host       string
+		RequestURI string
+		RemoteAddr string
+		Headers    http.Header
+		IsTLS      bool
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
 	HandlerOperationRes struct {
 		Status int
 	}
-
-	// Method of the HTTP request.
-	Method string
-	// Host of the HTTP request.
-	Host string
-	// RequestURI of the HTTP request.
-	RequestURI string
-	// RemoteAddr of the HTTP request's TCP connection.
-	RemoteAddr string
-	// UserAgent of the HTTP request.
-	UserAgent string
-	// Headers of the HTTP request.
-	Headers http.Header
-	// QueryValues of the HTTP request.
-	QueryValues url.Values
 )
 
 // TODO(julio): once these helpers validated, we should rely on a go-generate tool to generate those types and methods
@@ -101,11 +83,11 @@ func OnHandlerOperationFinish(op *dyngo.Operation, l func(*dyngo.Operation, Hand
 func MakeHTTPOperationContext(args HandlerOperationArgs, res HandlerOperationRes) types.HTTPOperationContext {
 	return types.HTTPOperationContext{
 		Request: types.HTTPRequestContext{
-			Method:     string(args.Method),
-			Host:       string(args.Host),
+			Method:     args.Method,
+			Host:       args.Host,
 			IsTLS:      args.IsTLS,
-			RequestURI: string(args.RequestURI),
-			RemoteAddr: string(args.RemoteAddr),
+			RequestURI: args.RequestURI,
+			RemoteAddr: args.RemoteAddr,
 		},
 		Response: types.HTTPResponseContext{
 			Status: res.Status,

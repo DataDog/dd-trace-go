@@ -59,14 +59,12 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 
 	op := httpinstr.StartHandlerOperation(
 		httpinstr.HandlerOperationArgs{
-			IsTLS:       cfg.Request.TLS != nil,
-			Method:      httpinstr.Method(cfg.Request.Method),
-			Host:        httpinstr.Host(cfg.Request.Host),
-			RequestURI:  httpinstr.RequestURI(cfg.Request.RequestURI),
-			RemoteAddr:  httpinstr.RemoteAddr(cfg.Request.RemoteAddr),
-			Headers:     httpinstr.Headers(cfg.Request.Header),
-			UserAgent:   httpinstr.UserAgent(cfg.Request.UserAgent()),
-			QueryValues: httpinstr.QueryValues(cfg.Request.URL.Query()),
+			IsTLS:      cfg.Request.TLS != nil,
+			Method:     cfg.Request.Method,
+			Host:       cfg.Request.Host,
+			RequestURI: cfg.Request.RequestURI,
+			RemoteAddr: cfg.Request.RemoteAddr,
+			Headers:    cfg.Request.Header,
 		},
 		dyngo.WithEventListener(appsectypes.OnSecurityEventDataListener(func(op *dyngo.Operation, e *appsectypes.SecurityEvent) {
 			// Keep this trace due to the security event

@@ -51,7 +51,7 @@ func TestWAF(t *testing.T) {
 	defer srv.Close()
 
 	// Send an XSS attack
-	req, err := http.NewRequest("POST", srv.URL+"/?attack=<script>alert()</script>", nil)
+	req, err := http.NewRequest("POST", srv.URL+"/../../../secret.txt", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -68,5 +68,5 @@ func TestWAF(t *testing.T) {
 
 	// Check that an XSS attack event was reported.
 	require.Equal(t, 1, nbAppSecAPIRequests)
-	require.True(t, strings.Contains(string(batch), "xss-blocking"))
+	require.True(t, strings.Contains(string(batch), "lfi-blocking"))
 }

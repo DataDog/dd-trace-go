@@ -11,63 +11,11 @@ import (
 	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/instrumentation/http"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/sqreen/go-libsqreen/waf"
 	"github.com/sqreen/go-libsqreen/waf/types"
 )
-
-// NewOperationEventListener returns the WAF's event listener to register in order to enable it.
-func NewOperationEventListener() dyngo.EventListener {
-	subscriptions := []string{
-		"server.request.query",
-		"server.request.headers.no_cookies",
-	}
-	wafRule, err := waf.NewRule(staticWAFRule)
-	if err != nil {
-		panic(err)
-	}
-	return httpinstr.OnHandlerOperationStartListener(func(op *dyngo.Operation, args httpinstr.HandlerOperationArgs) {
-		// For this handler operation lifetime, create a WAF context, the set of subscribed data seen and the list of
-		// detected attacks
-		var (
-			attacks []RawAttackMetadata
-			wafCtx  = waf.NewAdditiveContext(wafRule)
-			set     = types.DataSet{}
-		)
-
-		httpinstr.OnHandlerOperationFinish(op, func(op *dyngo.Operation, res httpinstr.HandlerOperationRes) {
-			wafCtx.Close()
-			if len(attacks) > 0 {
-				op.EmitData(appsectypes.NewSecurityEvent(attacks, httpinstr.MakeHTTPOperationContext(args, res)))
-			}
-		})
-
-		subscribe(op, subscriptions, wafCtx, set, &attacks)
-	})
-}
-
-func subscribe(op *dyngo.Operation, subscriptions []string, wafCtx types.Rule, set types.DataSet, attacks *[]RawAttackMetadata) {
-	run := func(addr string) dyngo.EventListenerFunc {
-		return func(_ *dyngo.Operation, v interface{}) {
-			set[addr] = v
-			runWAF(wafCtx, set, attacks)
-		}
-	}
-	var dataPtr interface{}
-	for _, addr := range subscriptions {
-		switch addr {
-		case "http.user_agent":
-			dataPtr = (*httpinstr.UserAgent)(nil)
-		case "server.request.headers.no_cookies":
-			dataPtr = (*httpinstr.Headers)(nil)
-		case "server.request.query":
-			dataPtr = (*httpinstr.QueryValues)(nil)
-		default:
-			continue
-		}
-		op.OnData(dataPtr, run(addr))
-	}
-}
 
 type (
 	// RawAttackMetadata is the raw attack metadata returned by the WAF when matching.
@@ -97,10 +45,51 @@ type (
 	}
 )
 
-func runWAF(wafCtx types.Rule, set types.DataSet, attacks *[]RawAttackMetadata) {
-	action, md, err := wafCtx.Run(set, 5*time.Millisecond)
+// List of rule addresses currently supported by the WAF
+const (
+	serverRequestRawURIAddr  = "server.request.uri.raw"
+	serverRequestHeadersAddr = "server.request.headers.no_cookies"
+)
+
+// NewOperationEventListener returns the WAF event listener to register in order to enable it.
+func NewOperationEventListener() dyngo.EventListener {
+	wafRule, err := waf.NewRule(staticWAFRule)
 	if err != nil {
-		panic(err)
+		log.Error("appsec: waf error: %v", err)
+		return nil
+	}
+
+	return httpinstr.OnHandlerOperationStartListener(func(op *dyngo.Operation, args httpinstr.HandlerOperationArgs) {
+		// For this handler operation lifetime, create a WAF context and the list of detected attacks
+		var (
+			attacks []RawAttackMetadata
+			wafCtx  = waf.NewAdditiveContext(wafRule)
+		)
+
+		httpinstr.OnHandlerOperationFinish(op, func(op *dyngo.Operation, res httpinstr.HandlerOperationRes) {
+			wafCtx.Close()
+			if len(attacks) > 0 {
+				op.EmitData(appsectypes.NewSecurityEvent(attacks, httpinstr.MakeHTTPOperationContext(args, res)))
+			}
+		})
+
+		// Run the WAF on the rule addresses available in the request args
+		// TODO(julio): dynamically get the required addresses from the WAF rule
+		headers := args.Headers.Clone()
+		headers.Del("Cookie")
+		values := map[string]interface{}{
+			serverRequestRawURIAddr:  args.RequestURI,
+			serverRequestHeadersAddr: headers,
+		}
+		runWAF(wafCtx, values, &attacks)
+	})
+}
+
+func runWAF(wafCtx types.Rule, values types.DataSet, attacks *[]RawAttackMetadata) {
+	action, md, err := wafCtx.Run(values, 1*time.Millisecond)
+	if err != nil {
+		log.Error("appsec: waf error: %v", err)
+		return
 	}
 	if action == types.NoAction {
 		return
