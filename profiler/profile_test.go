@@ -7,9 +7,13 @@ package profiler
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"runtime/trace"
 	"strconv"
@@ -18,11 +22,15 @@ import (
 	"testing"
 	"time"
 
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 
 	pprofile "github.com/google/pprof/profile"
+	"github.com/julienschmidt/httprouter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -317,86 +325,136 @@ main.main()
 	})
 }
 
+// TestApmIntegration tests the code hotspots and endpoint filtering feature
+// implemented using pprof labels in the tracer. The verification is done with
+// an http handler that resembles common customer patterns and burns a bunch
+// of CPU time.
 func TestApmIntegration(t *testing.T) {
+	// duration is roughly the duration for which the test runs and how much cpu
+	// time is expected to be burned by the handler we're hitting.
+	duration := 500 * time.Millisecond
+
 	tracer.Start(
 		tracer.WithProfilerCodeHotspots(true),
 		tracer.WithProfilerEndpoints(true),
 	)
 	defer trace.Stop()
 
-	profileDuration := 200 * time.Millisecond
-
-	var localRootSpanID uint64
-	var child2SpanID uint64
-	p, err := unstartedProfiler(CPUDuration(profileDuration))
+	p, err := unstartedProfiler(CPUDuration(duration))
 	require.NoError(t, err)
 
-	stop := make(chan struct{})
+	server := httptest.NewServer(apmDemoHandler())
+	defer server.Close()
+
+	var r apmDemoResponse
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier{
-			tracer.DefaultTraceIDHeader:  []string{"12345"},
-			tracer.DefaultParentIDHeader: []string{"9876"},
-		})
+		defer wg.Done()
+		url := server.URL + "/work/" + duration.String()
+		res, err := http.Post(url, "text/plain", nil)
 		require.NoError(t, err)
 
-		time.Sleep(10 * time.Millisecond) // TODO(fg) why?
-
-		rootSpan := tracer.StartSpan(
-			"http.request",
-			tracer.ResourceName("GET /users/:id"),
-			tracer.ChildOf(spanctx),
-		)
-		defer rootSpan.Finish()
-		localRootSpanID = rootSpan.Context().SpanID()
-
-		done := make(chan struct{})
-		go func() {
-			child1 := tracer.StartSpan("child1", tracer.ChildOf(rootSpan.Context()))
-			defer child1.Finish()
-
-			go func() {
-				defer wg.Done()
-				child2 := tracer.StartSpan("child2", tracer.ChildOf(child1.Context()))
-				defer child2.Finish()
-				child2SpanID = child2.Context().SpanID()
-
-				cpuHogUnil(stop)
-				done <- struct{}{}
-			}()
-
-		}()
-		<-done
+		defer res.Body.Close()
+		require.NoError(t, json.NewDecoder(res.Body).Decode(&r))
 	}()
 
 	prof, err := p.runProfile(CPUProfile)
 	require.NoError(t, err)
-	close(stop)
-	wg.Wait()
-
 	assert.Equal(t, "cpu.pprof", prof[0].name)
 	parsed, err := pprofile.Parse(bytes.NewReader(prof[0].data))
 	require.NoError(t, err)
 
-	var spanTime time.Duration
-	for _, s := range parsed.Sample {
-		if v, ok := s.Label["span id"]; ok && len(v) == 1 {
-			if v[0] == fmt.Sprintf("%d", child2SpanID) {
-				spanTime += time.Duration(s.Value[1])
+	wg.Wait()
 
-				var gotLocalRootSpanID string
-				wantLocalRootSpanID := fmt.Sprintf("%d", localRootSpanID)
-				if v, ok := s.Label["local root span id"]; ok && len(v) == 1 {
-					gotLocalRootSpanID = v[0]
-				}
-				if gotLocalRootSpanID != wantLocalRootSpanID {
-					t.Errorf("got=%q want=%q local root span id", gotLocalRootSpanID, wantLocalRootSpanID)
-				}
-			}
-		}
+	type labels struct {
+		SpanID          string
+		LocalRootSpanID string
+		TraceEndpoint   string
 	}
-	assert.GreaterOrEqual(t, spanTime, profileDuration/2)
+
+	results := map[labels]time.Duration{}
+	for _, s := range parsed.Sample {
+		var l labels
+		if v, ok := s.Label["span id"]; ok && len(v) == 1 {
+			l.SpanID = v[0]
+		}
+		if v, ok := s.Label["local root span id"]; ok && len(v) == 1 {
+			l.LocalRootSpanID = v[0]
+		}
+		if v, ok := s.Label["trace endpoint"]; ok && len(v) == 1 {
+			l.TraceEndpoint = v[0]
+		}
+		results[l] += time.Duration(s.Value[1])
+	}
+
+	wantLabels := labels{
+		SpanID:          fmt.Sprintf("%d", r.ChildSpanID),
+		LocalRootSpanID: fmt.Sprintf("%d", r.LocalRootSpanID),
+		TraceEndpoint:   "POST /work/:duration",
+	}
+	gotDuration := results[wantLabels]
+
+	// This puts us > 6 sigma beyond the stddev of gotDuration see
+	// https://dtdg.co/2YaOJoR for statistical analysis.
+	wantDuration := duration / 2
+	if gotDuration < wantDuration {
+		t.Fatalf("got=%s want>=%s results=%v", gotDuration, wantDuration, results)
+	}
+}
+
+// apmDemoHandler is a http handler that pretends to be a simple customer
+// application using code hotspots and endpoint filtering.
+func apmDemoHandler() http.Handler {
+	router := httptrace.New()
+	// We use a routing pattern here so our test can validate that potential
+	// Personal Identifiable Information (PII) values, in this case :duration,
+	// isn't beeing collected in the "trace endpoint" label.
+	router.Handle("POST", "/work/:duration", apmDemoWorkEndpoint)
+	return router
+}
+
+type apmDemoResponse struct {
+	LocalRootSpanID uint64
+	ChildSpanID     uint64
+}
+
+func apmDemoWorkEndpoint(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	localRootSpan, _ := tracer.SpanFromContext(r.Context())
+	// We run our handler in a childSpan so we can test that we still include the
+	// correct "local root span id" in the profiler labels.
+	childSpan, ctx := tracer.StartSpanFromContext(r.Context(), "apmDemoWorkEndpoint")
+	defer childSpan.Finish()
+
+	dt, err := time.ParseDuration(p.ByName("duration"))
+	if err != nil {
+		http.Error(w, "bad duration", http.StatusBadRequest)
+		return
+	}
+
+	// fakeSqlQuery pretends to execute an APM instrumented SQL query. This tests
+	// that the parent goroutine labels are correctly restored when it finishes.
+	fakeSqlQuery(ctx, "SELECT * FROM foo")
+
+	// Perform CPU intense work on another goroutine. This should still be
+	// tracked to the childSpan thanks to goroutines inheriting labels.
+	stop := make(chan struct{})
+	go cpuHogUnil(stop)
+	time.Sleep(dt)
+	close(stop)
+
+	// Tell our test case what span ids to expect in the profile
+	json.NewEncoder(w).Encode(apmDemoResponse{
+		LocalRootSpanID: localRootSpan.Context().SpanID(),
+		ChildSpanID:     childSpan.Context().SpanID(),
+	})
+}
+
+func fakeSqlQuery(ctx context.Context, sql string) {
+	span, _ := tracer.StartSpanFromContext(ctx, "pgx.query")
+	defer span.Finish()
+	span.SetTag(ext.ResourceName, sql)
+	time.Sleep(10 * time.Millisecond)
 }
 
 func cpuHogUnil(stop chan struct{}) {
