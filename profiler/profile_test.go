@@ -464,7 +464,7 @@ func cpuHogUnil(stop chan struct{}) {
 			return
 		default:
 			// burn cpu
-			fmt.Fprintf(io.Discard, "%d", i)
+			fmt.Fprintf(ioutil.Discard, "%d", i)
 		}
 	}
 }
