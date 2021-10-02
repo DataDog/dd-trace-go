@@ -324,6 +324,8 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	}
 	s.finish(t)
 
+	// Restore the labels of the parent span so any CPU samples after this point
+	// are attributed correctly.
 	if s.restoreContext != nil {
 		pprof.SetGoroutineLabels(s.restoreContext)
 	}
