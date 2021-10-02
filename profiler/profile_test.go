@@ -433,9 +433,9 @@ func apmDemoWorkEndpoint(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 		return
 	}
 
-	// fakeSqlQuery pretends to execute an APM instrumented SQL query. This tests
+	// fakeSQLQuery pretends to execute an APM instrumented SQL query. This tests
 	// that the parent goroutine labels are correctly restored when it finishes.
-	fakeSqlQuery(ctx, "SELECT * FROM foo")
+	fakeSQLQuery(ctx, "SELECT * FROM foo")
 
 	// Perform CPU intense work on another goroutine. This should still be
 	// tracked to the childSpan thanks to goroutines inheriting labels.
@@ -451,7 +451,7 @@ func apmDemoWorkEndpoint(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 	})
 }
 
-func fakeSqlQuery(ctx context.Context, sql string) {
+func fakeSQLQuery(ctx context.Context, sql string) {
 	span, _ := tracer.StartSpanFromContext(ctx, "pgx.query")
 	defer span.Finish()
 	span.SetTag(ext.ResourceName, sql)
