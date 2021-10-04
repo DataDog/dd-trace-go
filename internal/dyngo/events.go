@@ -10,6 +10,8 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type (
@@ -96,6 +98,11 @@ func (r *eventRegister) clear() {
 }
 
 func (r *eventRegister) callListeners(op *Operation, data interface{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("appsec: recovered from an unexpected panic: %+v", r)
+		}
+	}()
 	dataT := reflect.TypeOf(data)
 	r.mu.RLock()
 	defer r.mu.RUnlock()

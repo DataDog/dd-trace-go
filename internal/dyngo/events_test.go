@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -196,6 +197,67 @@ func TestOperationEvents(t *testing.T) {
 		op2.Finish(testOp2Res{})
 		// The number of calls should be unchanged
 		require.Equal(t, 6, calls)
+	})
+
+	t.Run("event listener panic", func(t *testing.T) {
+		t.Run("start", func(t *testing.T) {
+			op := dyngo.StartOperation(MyOperationArgs{})
+			defer op.Finish(MyOperationRes{})
+
+			// Panic on start
+			calls := 0
+			op.OnStart((*MyOperationArgs)(nil), func(op *dyngo.Operation, v interface{}) {
+				// Call counter to check we actually call this listener
+				calls++
+				panic(errors.New("oops"))
+			})
+			// Start the operation triggering the event: it should not panic
+			require.NotPanics(t, func() {
+				op := dyngo.StartOperation(MyOperationArgs{}, dyngo.WithParent(op))
+				require.NotNil(t, op)
+				defer op.Finish(MyOperationRes{})
+				require.Equal(t, calls, 1)
+			})
+		})
+
+		t.Run("finish", func(t *testing.T) {
+			op := dyngo.StartOperation(MyOperationArgs{})
+			defer op.Finish(MyOperationRes{})
+			// Panic on finish
+			calls := 0
+			op.OnFinish((*MyOperationRes)(nil), func(op *dyngo.Operation, v interface{}) {
+				// Call counter to check we actually call this listener
+				calls++
+				panic(errors.New("oops"))
+			})
+			// Run the operation triggering the finish event: it should not panic
+			require.NotPanics(t, func() {
+				op := dyngo.StartOperation(MyOperationArgs{}, dyngo.WithParent(op))
+				require.NotNil(t, op)
+				op.Finish(MyOperationRes{})
+				require.Equal(t, calls, 1)
+			})
+		})
+
+		t.Run("data", func(t *testing.T) {
+			op := dyngo.StartOperation(MyOperationArgs{})
+			defer op.Finish(MyOperationRes{})
+			// Panic on data
+			calls := 0
+			op.OnData((*MyOperationData)(nil), func(op *dyngo.Operation, v interface{}) {
+				// Call counter to check we actually call this listener
+				calls++
+				panic(errors.New("oops"))
+			})
+			// Run the operation triggering the finish event: it should not panic
+			require.NotPanics(t, func() {
+				op := dyngo.StartOperation(MyOperationArgs{}, dyngo.WithParent(op))
+				require.NotNil(t, op)
+				defer op.Finish(MyOperationRes{})
+				op.EmitData(MyOperationData{})
+				require.Equal(t, calls, 1)
+			})
+		})
 	})
 }
 
