@@ -66,9 +66,9 @@ func nodeHash(service, env, receivingPipelineName string) uint64 {
 }
 
 func pipelineHash(nodeHash, parentHash uint64) uint64 {
-	b := make([]byte, 8)
+	b := make([]byte, 16)
 	binary.LittleEndian.PutUint64(b, nodeHash)
-	binary.LittleEndian.PutUint64(b[4:], parentHash)
+	binary.LittleEndian.PutUint64(b[8:], parentHash)
 	return 0
 }
 

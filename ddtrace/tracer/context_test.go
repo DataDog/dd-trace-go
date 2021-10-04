@@ -94,3 +94,14 @@ func TestStartSpanFromNilContext(t *testing.T) {
 	assert.True(ok)
 	assert.Equal(child, ctxSpan)
 }
+
+func TestContextWithDataPipeline(t *testing.T) {
+	inDataPipeline := newDataPipeline("service", "env")
+	ctx := context.Background()
+	ctx = ContextWithDataPipeline(ctx, inDataPipeline)
+	pipeline, ok := DataPipelineFromContext(ctx)
+	assert.True(t, ok)
+	outDataPipeline, ok := pipeline.(*dataPipeline)
+	assert.True(t, ok)
+	assert.Equal(t, *inDataPipeline, *outDataPipeline)
+}
