@@ -5,6 +5,7 @@ import (
 	"github.com/DataDog/sketches-go/ddsketch"
 	"github.com/DataDog/sketches-go/ddsketch/mapping"
 	"github.com/DataDog/sketches-go/ddsketch/store"
+	"github.com/spaolacci/murmur3"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -59,17 +60,15 @@ func nodeHash(service, env, receivingPipelineName string) uint64 {
 	b = append(b, service...)
 	b = append(b, env...)
 	b = append(b, receivingPipelineName...)
-	// should we use an external library?
-	// I guess no because we can never change it.
-	// return murmur3.Sum64(b)
-	return 0
+	// todo[piochelepiotr] Using external library for that critical part is certainly not ideal.
+	return murmur3.Sum64(b)
 }
 
 func pipelineHash(nodeHash, parentHash uint64) uint64 {
 	b := make([]byte, 16)
 	binary.LittleEndian.PutUint64(b, nodeHash)
 	binary.LittleEndian.PutUint64(b[8:], parentHash)
-	return 0
+	return murmur3.Sum64(b)
 }
 
 func (p *dataPipeline) SetCheckpoint(receivingPipelineName string) ddtrace.DataPipeline {
