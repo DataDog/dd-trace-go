@@ -6,6 +6,7 @@
 package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"sync"
 	"time"
 
@@ -77,6 +78,7 @@ var _ ddtrace.Span = (*NoopSpan)(nil)
 type NoopDataPipeline struct{}
 
 func (NoopDataPipeline) SetCheckpoint(receivingPipelineName string) ddtrace.DataPipeline{
+	log.Info("setting checkpoint on noop data pipeline")
 	return NoopDataPipeline{}
 }
 
