@@ -382,7 +382,7 @@ func (t *tracer) SetDataPipelineCheckpoint(receivingPipelineName string, options
 	}
 	if cfg.Parent == nil {
 		log.Info("creating new data pipeline")
-		return newDataPipeline(t.config.serviceName, t.config.env)
+		return newDataPipeline(t.config.serviceName)
 	}
 	log.Info("updating existing data pipeline")
 	return cfg.Parent.SetCheckpoint(receivingPipelineName)

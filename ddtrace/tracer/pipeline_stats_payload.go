@@ -41,6 +41,7 @@ type groupedPipelineStats struct {
 	Service        string `json:"service,omitempty"`
 	ReceivingPipelineName       string `json:"receiving_pipeline_name,omitempty"`
 	PipelineHash         uint64 `json:"pipeline_hash,omitempty"`
+	ParentHash         uint64 `json:"parent_hash,omitempty"`
 
 	// These fields specify the stats for the above aggregation.
 	Summary    []byte `json:"summary,omitempty"`

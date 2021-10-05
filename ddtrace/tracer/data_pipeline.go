@@ -37,7 +37,7 @@ func newSummary() *ddsketch.DDSketch {
 	return ddsketch.NewDDSketch(sketchMapping, store.NewCollapsingLowestDenseStore(1000), store.NewCollapsingLowestDenseStore(1000))
 }
 
-func newDataPipeline(service string, env string) *dataPipeline {
+func newDataPipeline(service string) *dataPipeline {
 	summary := newSummary()
 	summary.Add(0)
 	now := time.Now()
@@ -50,15 +50,13 @@ func newDataPipeline(service string, env string) *dataPipeline {
 		},
 		callTime: now,
 		service: service,
-		env: env,
 	}
 	return p.setCheckpoint("", now)
 }
 
-func nodeHash(service, env, receivingPipelineName string) uint64 {
-	b := make([]byte, 0, len(service) + len(env) + len(receivingPipelineName))
+func nodeHash(service, receivingPipelineName string) uint64 {
+	b := make([]byte, 0, len(service) + len(receivingPipelineName))
 	b = append(b, service...)
-	b = append(b, env...)
 	b = append(b, receivingPipelineName...)
 	// todo[piochelepiotr] Using external library for that critical part is certainly not ideal.
 	return murmur3.Sum64(b)
@@ -80,7 +78,7 @@ func (p *dataPipeline) setCheckpoint(receivingPipelineName string, t time.Time) 
 	if latency < 0 {
 		latency = 0
 	}
-	hash := nodeHash(p.service, p.env, receivingPipelineName)
+	hash := nodeHash(p.service, receivingPipelineName)
 	totalLatencies := make([]ddtrace.PipelineLatency, 0, len(p.latencies))
 	for _, l := range p.latencies {
 		var summary *ddsketch.DDSketch
@@ -98,19 +96,26 @@ func (p *dataPipeline) setCheckpoint(receivingPipelineName string, t time.Time) 
 			Hash: pipelineHash(hash, l.Hash),
 		})
 	}
+	if tracer, ok := internal.GetGlobalTracer().(*tracer); ok {
+		for i, latency := range totalLatencies {
+			log.Info("send point to stats aggregator")
+			select {
+			case tracer.pipelineStats.In <- pipelineStatsPoint{
+				service: p.service,
+				receivingPipelineName: p.pipelineName,
+				parentHash: p.latencies[i].Hash,
+				pipelineHash: latency.Hash,
+				timestamp: t.UnixNano(),
+			}:
+			default:
+				log.Error("Pipeline stats channel full, disregarding stats point.")
+			}
+		}
+	}
 	d := dataPipeline{
 		latencies: totalLatencies,
 		callTime: t,
 		service: p.service,
-		env: p.env,
-	}
-	log.Info("send point to stats aggregator")
-	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
-		select {
-			case t.pipelineStats.In <- d:
-		default:
-			log.Error("Pipeline stats channel full, disregarding stats point.")
-		}
 	}
 	return &d
 }

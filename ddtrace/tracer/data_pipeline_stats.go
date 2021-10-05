@@ -13,6 +13,9 @@ import (
 type pipelineStatsPoint struct {
 	service string
 	receivingPipelineName string
+	pipelineHash uint64
+	parentHash uint64
+	timestamp int64
 	summary *ddsketch.DDSketch
 }
 
@@ -20,7 +23,7 @@ type bucket map[uint64]pipelineStatsPoint
 
 func (b bucket) Export() []groupedPipelineStats {
 	stats := make([]groupedPipelineStats, 0, len(b))
-	for h, s := range b {
+	for _, s := range b {
 		// todo[piochelepiotr] Used optimized ddsketch.
 		summary, err := proto.Marshal(s.summary.ToProto())
 		if err != nil {
@@ -31,14 +34,15 @@ func (b bucket) Export() []groupedPipelineStats {
 			Summary: summary,
 			Service: s.service,
 			ReceivingPipelineName: s.receivingPipelineName,
-			PipelineHash: h,
+			PipelineHash: s.pipelineHash,
+			ParentHash: s.parentHash,
 		})
 	}
 	return stats
 }
 
 type pipelineConcentrator struct {
-	In chan dataPipeline
+	In chan pipelineStatsPoint
 
 	mu sync.Mutex
 	buckets map[int64]bucket
@@ -53,33 +57,34 @@ type pipelineConcentrator struct {
 func newPipelineConcentrator(c *config, bucketDuration time.Duration) *pipelineConcentrator {
 	return &pipelineConcentrator{
 		buckets: make(map[int64]bucket),
-		In: make(chan dataPipeline, 10000),
+		In: make(chan pipelineStatsPoint, 10000),
 		stopped: 1,
 		bucketDuration: bucketDuration,
 		cfg: c,
 	}
 }
 
-func (c *pipelineConcentrator) add(p dataPipeline) {
-	btime := p.callTime.Truncate(c.bucketDuration).UnixNano()
+func (c *pipelineConcentrator) add(p pipelineStatsPoint) {
+	btime := alignTs(p.timestamp, c.bucketDuration.Nanoseconds())
 	b, ok := c.buckets[btime]
 	if !ok {
 		b = make(bucket)
 		c.buckets[btime] = b
 	}
 	// aggregate
-	for _, l := range p.latencies {
-		currentPoint, ok := b[l.Hash]
-		if ok {
-			if err := currentPoint.summary.MergeWith(l.Summary); err != nil {
-				log.Error("failed to merge sketches. Ignoring %v.", err)
-			}
-		} else {
-			b[l.Hash] = pipelineStatsPoint{
-				service: p.service,
-				receivingPipelineName: p.pipelineName,
-				summary: l.Summary.Copy(),
-			}
+	currentPoint, ok := b[p.pipelineHash]
+	if ok {
+		if err := currentPoint.summary.MergeWith(p.summary); err != nil {
+			log.Error("failed to merge sketches. Ignoring %v.", err)
+		}
+	} else {
+		b[p.pipelineHash] = pipelineStatsPoint{
+			service: p.service,
+			receivingPipelineName: p.receivingPipelineName,
+			parentHash: p.parentHash,
+			pipelineHash: p.parentHash,
+			summary: p.summary.Copy(),
+			timestamp: btime,
 		}
 	}
 }

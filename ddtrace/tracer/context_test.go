@@ -96,7 +96,7 @@ func TestStartSpanFromNilContext(t *testing.T) {
 }
 
 func TestContextWithDataPipeline(t *testing.T) {
-	inDataPipeline := newDataPipeline("service", "env")
+	inDataPipeline := newDataPipeline("service")
 	ctx := context.Background()
 	ctx = ContextWithDataPipeline(ctx, inDataPipeline)
 	pipeline, ok := DataPipelineFromContext(ctx)
