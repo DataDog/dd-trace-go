@@ -149,9 +149,20 @@ func (c *pipelineConcentrator) runFlusher(tick <-chan time.Time) {
 				log.Error("Error sending pipeline stats payload: %v", err)
 			}
 		case <-c.stop:
-			// todo[piochelepiotr] Flush everything here
+			c.flushAll()
 			return
 		}
+	}
+}
+
+func (c *pipelineConcentrator) flushBucket(bucketStart int64) pipelineStatsBucket {
+	bucket := c.buckets[bucketStart]
+	// todo[piochelepiotr] Re-use sketches.
+	delete(c.buckets, bucketStart)
+	return pipelineStatsBucket{
+		Start: uint64(bucketStart),
+		Duration: uint64(c.bucketDuration.Nanoseconds()),
+		Stats: bucket.Export(),
 	}
 }
 
@@ -166,20 +177,27 @@ func (c *pipelineConcentrator) flush(timenow time.Time) pipelineStatsPayload {
 		Version:  c.cfg.version,
 		Stats:    make([]pipelineStatsBucket, 0, len(c.buckets)),
 	}
-	for ts, srb := range c.buckets {
+	for ts := range c.buckets {
 		if ts > now-c.bucketDuration.Nanoseconds() {
 			// do not flush the current bucket
 			continue
 		}
 		log.Info("flushing bucket %d", ts)
 		log.Debug("Flushing bucket %d", ts)
-		sp.Stats = append(sp.Stats, pipelineStatsBucket{
-			Start: uint64(ts),
-			Duration: uint64(c.bucketDuration.Nanoseconds()),
-			Stats: srb.Export(),
-		})
-		// todo[piochelepiotr] Re-use sketches.
-		delete(c.buckets, ts)
+		sp.Stats = append(sp.Stats, c.flushBucket(ts))
+	}
+	return sp
+}
+
+func (c *pipelineConcentrator) flushAll() pipelineStatsPayload {
+	sp := pipelineStatsPayload{
+		Hostname: c.cfg.hostname,
+		Env:      c.cfg.env,
+		Version:  c.cfg.version,
+		Stats:    make([]pipelineStatsBucket, 0, len(c.buckets)),
+	}
+	for ts := range c.buckets {
+		sp.Stats = append(sp.Stats, c.flushBucket(ts))
 	}
 	return sp
 }
