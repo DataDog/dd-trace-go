@@ -22,7 +22,6 @@ type (
 	testOp1Res  struct{}
 
 	testOp2Args struct{}
-	testOp2Data struct{}
 	testOp2Res  struct{}
 
 	testOp3Args struct{}
@@ -106,49 +105,10 @@ func TestOperationEvents(t *testing.T) {
 		require.Equal(t, 3, called)
 	})
 
-	t.Run("data event", func(t *testing.T) {
-		op1 := dyngo.StartOperation(testOp1Args{})
-
-		var called int
-		op1.OnData((*testOp2Data)(nil), func(op *dyngo.Operation, v interface{}) {
-			_ = v.(testOp2Data)
-			called++
-		})
-
-		op1.EmitData(testOp2Data{})
-		require.Equal(t, 1, called)
-
-		op2 := dyngo.StartOperation(testOp2Args{}, dyngo.WithParent(op1))
-		op2.EmitData(testOp2Data{})
-		op2.Finish(testOp2Res{})
-		require.Equal(t, 2, called)
-
-		op3 := dyngo.StartOperation(testOp3Args{}, dyngo.WithParent(op1))
-		op3.EmitData(testOp2Data{})
-		op3.Finish(testOp3Res{})
-		require.Equal(t, 3, called)
-
-		op2 = dyngo.StartOperation(testOp2Args{}, dyngo.WithParent(op1))
-		op3 = dyngo.StartOperation(testOp3Args{}, dyngo.WithParent(op2))
-		op3.EmitData(testOp2Data{})
-		op3.Finish(testOp3Res{})
-		op2.Finish(testOp2Res{})
-		require.Equal(t, 4, called)
-
-		// Finish the operation so that it gets disabled and its listeners removed
-		op1.Finish(testOp1Res{})
-		op1.EmitData(testOp2Data{})
-		// No new call
-		require.Equal(t, 4, called)
-	})
-
-	t.Run("registering to a disable operation", func(t *testing.T) {
+	t.Run("registering to a disabled operation", func(t *testing.T) {
 		var calls int
 		registerTo := func(op *dyngo.Operation) {
 			op.OnStart((*testOp2Args)(nil), func(*dyngo.Operation, interface{}) {
-				calls++
-			})
-			op.OnData((*testOp2Data)(nil), func(*dyngo.Operation, interface{}) {
 				calls++
 			})
 			op.OnFinish((*testOp2Res)(nil), func(*dyngo.Operation, interface{}) {
@@ -156,9 +116,6 @@ func TestOperationEvents(t *testing.T) {
 			})
 			op.Register(
 				dyngo.OnStartEventListener((*testOp2Args)(nil), func(*dyngo.Operation, interface{}) {
-					calls++
-				}),
-				dyngo.OnDataEventListener((*testOp2Data)(nil), func(*dyngo.Operation, interface{}) {
 					calls++
 				}),
 				dyngo.OnFinishEventListener((*testOp2Res)(nil), func(*dyngo.Operation, interface{}) {
@@ -174,29 +131,26 @@ func TestOperationEvents(t *testing.T) {
 
 		// Trigger the registered events
 		op2 := dyngo.StartOperation(testOp2Args{}, dyngo.WithParent(op))
-		op2.EmitData(testOp2Data{})
 		op2.Finish(testOp2Res{})
-		// We should have 6 calls
-		require.Equal(t, 6, calls)
+		// We should have 4 calls
+		require.Equal(t, 4, calls)
 
 		// Finish the operation to disable it. Its event listeners should then be removed.
 		op.Finish(testOp1Res{})
 
 		// Trigger the same events
 		op2 = dyngo.StartOperation(testOp2Args{}, dyngo.WithParent(op))
-		op2.EmitData(testOp2Data{})
 		op2.Finish(testOp2Res{})
 		// The number of calls should be unchanged
-		require.Equal(t, 6, calls)
+		require.Equal(t, 4, calls)
 
 		// Register again, but it shouldn't work because the operation is finished.
 		registerTo(op)
 		// Trigger the same events
 		op2 = dyngo.StartOperation(testOp2Args{}, dyngo.WithParent(op))
-		op2.EmitData(testOp2Data{})
 		op2.Finish(testOp2Res{})
 		// The number of calls should be unchanged
-		require.Equal(t, 6, calls)
+		require.Equal(t, 4, calls)
 	})
 
 	t.Run("event listener panic", func(t *testing.T) {
@@ -238,33 +192,12 @@ func TestOperationEvents(t *testing.T) {
 				require.Equal(t, calls, 1)
 			})
 		})
-
-		t.Run("data", func(t *testing.T) {
-			op := dyngo.StartOperation(MyOperationArgs{})
-			defer op.Finish(MyOperationRes{})
-			// Panic on data
-			calls := 0
-			op.OnData((*MyOperationData)(nil), func(op *dyngo.Operation, v interface{}) {
-				// Call counter to check we actually call this listener
-				calls++
-				panic(errors.New("oops"))
-			})
-			// Run the operation triggering the finish event: it should not panic
-			require.NotPanics(t, func() {
-				op := dyngo.StartOperation(MyOperationArgs{}, dyngo.WithParent(op))
-				require.NotNil(t, op)
-				defer op.Finish(MyOperationRes{})
-				op.EmitData(MyOperationData{})
-				require.Equal(t, calls, 1)
-			})
-		})
 	})
 }
 
 func BenchmarkEvents(b *testing.B) {
 	type (
 		benchOpArgs struct{ s []byte }
-		benchOpData struct{ s []byte }
 		benchOpRes  struct{ s []byte }
 	)
 
@@ -306,17 +239,6 @@ func BenchmarkEvents(b *testing.B) {
 						leaf.Finish(benchOpRes{buf})
 					}
 				})
-
-				b.Run("data event", func(b *testing.B) {
-					unreg := root.Register(dyngo.OnDataEventListener((*benchOpData)(nil), func(*dyngo.Operation, interface{}) {}))
-					defer unreg()
-					b.ReportAllocs()
-					b.ResetTimer()
-					for n := 0; n < b.N; n++ {
-						op.EmitData(benchOpData{buf})
-					}
-				})
-
 			})
 		}
 	})
@@ -324,13 +246,6 @@ func BenchmarkEvents(b *testing.B) {
 	b.Run("registering", func(b *testing.B) {
 		op := dyngo.StartOperation(benchOpArgs{})
 		defer op.Finish(benchOpRes{})
-
-		b.Run("data event", func(b *testing.B) {
-			b.ReportAllocs()
-			for n := 0; n < b.N; n++ {
-				op.OnData((*benchOpData)(nil), func(op *dyngo.Operation, v interface{}) {})
-			}
-		})
 
 		b.Run("start event", func(b *testing.B) {
 			b.ReportAllocs()

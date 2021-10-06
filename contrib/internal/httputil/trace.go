@@ -16,8 +16,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/instrumentation/http"
-	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 )
 
 // TraceConfig defines the configuration for request tracing.
@@ -59,6 +57,7 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 
 	op := httpinstr.StartHandlerOperation(
 		httpinstr.HandlerOperationArgs{
+			Span:       span,
 			IsTLS:      cfg.Request.TLS != nil,
 			Method:     cfg.Request.Method,
 			Host:       cfg.Request.Host,
@@ -66,17 +65,6 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 			RemoteAddr: cfg.Request.RemoteAddr,
 			Headers:    cfg.Request.Header,
 		},
-		dyngo.WithEventListener(appsectypes.OnSecurityEventDataListener(func(op *dyngo.Operation, e *appsectypes.SecurityEvent) {
-			// Keep this trace due to the security event
-			span.SetTag(ext.SamplingPriority, ext.ManualKeep)
-			// Add context to the event
-			spanCtx := span.Context()
-			// Add the APM context to the event
-			e.AddContext(appsectypes.SpanContext{
-				TraceID: spanCtx.TraceID(),
-				SpanID:  spanCtx.SpanID(),
-			})
-		})),
 	)
 	// TODO(julio): get the status code out of the wrapped response writer
 	defer op.Finish(httpinstr.HandlerOperationRes{})

@@ -32,24 +32,14 @@ func WithParent(parent *Operation) Option {
 	})
 }
 
-// WithEventListener allows to immediately register an event listener to the operation being created, before its
-// start event gets emitted. This allows to react to an event that might happen due to the start event of the
-// operation being created.
-func WithEventListener(l EventListener) Option {
-	return optionFunc(func(op *Operation) {
-		// Don't use Register() to avoid the function closure allocation it implies for its return value.
-		l.registerTo(op)
-	})
-}
-
 var root = newOperation()
 
 // Operation structure allowing to subscribe to operation events and to navigate in the operation stack. Events
 // bubble-up the operation stack, which allows listening to future events that might happen in the operation lifetime.
 type Operation struct {
-	parent                    *Operation
-	expectedResType           reflect.Type
-	onStart, onData, onFinish eventRegister
+	parent            *Operation
+	expectedResType   reflect.Type
+	onStart, onFinish eventRegister
 
 	disabled bool
 	mu       sync.RWMutex
@@ -142,24 +132,10 @@ func (o *Operation) emitFinishEvent(eventOp *Operation, results interface{}) {
 func (o *Operation) disable() {
 	o.disabled = true
 	o.onStart.clear()
-	o.onData.clear()
 	o.onFinish.clear()
 }
 
-// EmitData allows emitting operation data usually computed in the operation lifetime. Examples include parsed values
-// like an HTTP request's JSON body, the HTTP raw body, etc. - data that is obtained by monitoring the operation
-// execution, possibly throughout several executions.
-func (o *Operation) EmitData(data interface{}) {
-	for op := o; op != nil; op = op.Parent() {
-		op.emitDataEvent(o, data)
-	}
-}
-
-func (o *Operation) emitDataEvent(eventOp *Operation, data interface{}) {
-	o.emitEvent(&o.onData, eventOp, data)
-}
-
-// emitEvent calls the event listeners of the given event register when it is not disabled.
+// emitEvent lls the event listeners of the given event register when it is not disabled.
 func (o *Operation) emitEvent(r *eventRegister, op *Operation, v interface{}) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
@@ -213,27 +189,6 @@ func (o *Operation) OnStart(argsPtr interface{}, l OnStartEventListenerFunc) {
 		panic(err)
 	}
 	o.onStart.add(argsType, l)
-}
-
-// OnData registers the data event listener whose data type is described by the dataPtr argument which must be a
-// nil pointer to the expected data type. For example:
-//
-//     // Register a data event listener whose result type is MyOpData
-//     op.OnData((*MyOpData), func(op *Operation, v interface{}) {
-//         args := v.(MyOpData)
-//     })
-//
-func (o *Operation) OnData(dataPtr interface{}, l OnDataEventListenerFunc) {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
-	if o.disabled {
-		return
-	}
-	dataType, err := validateEventListenerKey(dataPtr)
-	if err != nil {
-		panic(err)
-	}
-	o.onData.add(dataType, l)
 }
 
 // OnFinish registers the finish event listener whose result type is described by the resPtr argument which must be a

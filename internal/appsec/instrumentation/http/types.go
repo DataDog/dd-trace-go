@@ -8,6 +8,7 @@ package http
 import (
 	"net/http"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 )
@@ -21,6 +22,7 @@ type (
 		RemoteAddr string
 		Headers    http.Header
 		IsTLS      bool
+		Span       ddtrace.Span
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -44,11 +46,6 @@ type HandlerOperation struct {
 // StartHandlerOperation starts an HTTP handler operation with the given arguments.
 func StartHandlerOperation(args HandlerOperationArgs, opts ...dyngo.Option) HandlerOperation {
 	return HandlerOperation{dyngo.StartOperation(args, opts...)}
-}
-
-// OnSecurityEventData registers the given security event listener to the HTTP handler operation.
-func (o HandlerOperation) OnSecurityEventData(l func(*dyngo.Operation, *types.SecurityEvent)) {
-	types.OnSecurityEventData(o.Operation, l)
 }
 
 // Finish finishes the HTTP handler operation with the given results.

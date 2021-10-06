@@ -5,10 +5,6 @@
 
 package types
 
-import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
-)
-
 type (
 	// SecurityEvent is a generic security event payload holding an actual security event (eg. a WAF security event),
 	// along with its optional context.
@@ -23,20 +19,6 @@ type (
 		isSecurityEventContext()
 	}
 )
-
-// OnSecurityEventDataListener is a helper function to create an operation data listener of *SecurityEvent values.
-func OnSecurityEventDataListener(l func(*dyngo.Operation, *SecurityEvent)) dyngo.EventListener {
-	return dyngo.OnDataEventListener((**SecurityEvent)(nil), func(op *dyngo.Operation, v interface{}) {
-		l(op, v.(*SecurityEvent))
-	})
-}
-
-// OnSecurityEventData is a helper function to listen to operation data events of *SecurityEvent values.
-func OnSecurityEventData(op *dyngo.Operation, l func(*dyngo.Operation, *SecurityEvent)) {
-	op.OnData((**SecurityEvent)(nil), func(op *dyngo.Operation, v interface{}) {
-		l(op, v.(*SecurityEvent))
-	})
-}
 
 // NewSecurityEvent returns a new security event along with the provided context.
 func NewSecurityEvent(event interface{}, ctx ...SecurityEventContext) *SecurityEvent {

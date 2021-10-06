@@ -13,8 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf"
+	waftypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/types"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/google/uuid"
 )
@@ -162,7 +163,7 @@ func NewAttackEvent(attackType string, blocked bool, at time.Time, rule *AttackR
 
 // FromWAFAttack creates the attack event payloads from a WAF attack.
 func FromWAFAttack(t time.Time, blocked bool, md []byte, attackContext *AttackContext) (events []*AttackEvent, err error) {
-	var matches waf.AttackMetadata
+	var matches waftypes.AttackMetadata
 	if err := json.Unmarshal(md, &matches); err != nil {
 		return nil, err
 	}
@@ -215,10 +216,13 @@ func FromSecurityEvents(events []*appsectypes.SecurityEvent, globalContext []app
 	for _, event := range events {
 		eventContext := NewAttackContext(event.Context, globalContext)
 		switch actual := event.Event.(type) {
-		case []waf.RawAttackMetadata:
+		case []waftypes.RawAttackMetadata:
 			for _, attack := range actual {
-				attacks, _ := FromWAFAttack(attack.Time, attack.Block, attack.Metadata, eventContext)
-				// TODO(julio): handle the previous error
+				attacks, err := FromWAFAttack(attack.Time, attack.Block, attack.Metadata, eventContext)
+				if err != nil {
+					log.Error("appsec: could not create the security event payload out of a waf attack: %v", err)
+					continue
+				}
 				for _, attack := range attacks {
 					batch.Events = append(batch.Events, attack)
 				}
@@ -377,14 +381,6 @@ func MakeAttackContextHTTPRequest(req appsectypes.HTTPRequestContext) AttackCont
 		Path:       req.RequestURI,
 		RemoteIP:   remoteIP,
 		RemotePort: remotePort,
-	}
-}
-
-// MakeAttackContextActor create an AttackContextActor payload.
-func MakeAttackContextActor(ip string) AttackContextActor {
-	return AttackContextActor{
-		ContextVersion: "0.1.0",
-		IP:             AttackContextActorIP{Address: ip},
 	}
 }
 

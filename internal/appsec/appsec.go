@@ -165,7 +165,7 @@ func (a *appsec) stop() {
 }
 
 func (a *appsec) run() {
-	a.unregisterInstr = append(a.unregisterInstr, httpprotection.Register(), a.listenSecurityEvents())
+	a.unregisterInstr = append(a.unregisterInstr, httpprotection.Register(a))
 
 	a.wg.Add(1)
 	go func() {
@@ -253,18 +253,10 @@ func eventBatchingLoop(client intakeClient, eventChan <-chan *appsectypes.Securi
 	}
 }
 
-func (a *appsec) listenSecurityEvents() dyngo.UnregisterFunc {
-	return dyngo.Register(dyngo.InstrumentationDescriptor{
-		Title: "Attack Queue",
-		Instrumentation: dyngo.OperationInstrumentation{
-			EventListener: appsectypes.OnSecurityEventDataListener(func(_ *dyngo.Operation, event *appsectypes.SecurityEvent) {
-				select {
-				case a.eventChan <- event:
-				default:
-					// TODO(julio): add metrics on the nb of dropped events
-				}
-			}),
-		},
-	})
-
+func (a *appsec) SendEvent(event *appsectypes.SecurityEvent) {
+	select {
+	case a.eventChan <- event:
+	default:
+		// TODO(julio): add metrics on the nb of dropped events
+	}
 }
