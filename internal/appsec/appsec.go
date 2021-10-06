@@ -17,8 +17,9 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
-	httpprotection "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/http"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -120,11 +121,11 @@ func isEnabled() (bool, error) {
 }
 
 type appsec struct {
-	client          *intake.Client
-	eventChan       chan *appsectypes.SecurityEvent
-	wg              sync.WaitGroup
-	cfg             *Config
-	unregisterInstr []instrumentation.UnregisterFunc
+	client        *intake.Client
+	eventChan     chan *appsectypes.SecurityEvent
+	wg            sync.WaitGroup
+	cfg           *Config
+	unregisterWAF instrumentation.UnregisterFunc
 }
 
 func newAppSec(cfg *Config) (*appsec, error) {
@@ -155,9 +156,7 @@ func (a *appsec) start() {
 
 // Stop stops the AppSec agent goroutine.
 func (a *appsec) stop() {
-	for _, unregister := range a.unregisterInstr {
-		unregister()
-	}
+	a.unregisterWAF()
 	// Stop the batching goroutine
 	close(a.eventChan)
 	// Gracefully stop by waiting for the event loop goroutine to stop
@@ -165,7 +164,8 @@ func (a *appsec) stop() {
 }
 
 func (a *appsec) run() {
-	a.unregisterInstr = append(a.unregisterInstr, httpprotection.Register(a))
+	// Register the WAF operation event listener
+	a.unregisterWAF = dyngo.Register(waf.NewEventListener(a))
 
 	a.wg.Add(1)
 	go func() {
