@@ -106,6 +106,7 @@ func (p *dataPipeline) setCheckpoint(receivingPipelineName string, t time.Time) 
 				parentHash: p.latencies[i].Hash,
 				pipelineHash: latency.Hash,
 				timestamp: t.UnixNano(),
+				summary: latency.Summary,
 			}:
 			default:
 				log.Error("Pipeline stats channel full, disregarding stats point.")
