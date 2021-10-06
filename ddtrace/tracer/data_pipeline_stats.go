@@ -1,8 +1,10 @@
 package tracer
 
 import (
+	"fmt"
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/DataDog/sketches-go/ddsketch"
+	"github.com/DataDog/sketches-go/ddsketch/pb/sketchpb"
 	"github.com/golang/protobuf/proto"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"sync"
@@ -149,13 +151,45 @@ func (c *pipelineConcentrator) runFlusher(tick <-chan time.Time) {
 			}
 			c.statsd().Incr("datadog.tracer.pipeline_stats.flush_payloads", nil, 1)
 			c.statsd().Incr("datadog.tracer.pipeline_stats.flush_buckets", nil, float64(len(p.Stats)))
-			if err := c.cfg.transport.sendPipelineStats(&p); err != nil {
-				c.statsd().Incr("datadog.tracer.pipeline_stats.flush_errors", nil, 1)
-				log.Error("Error sending pipeline stats payload: %v", err)
-			}
+			c.send(p)
+			log.Info("sent statsd metrics")
+			// if err := c.cfg.transport.sendPipelineStats(&p); err != nil {
+		// 		c.statsd().Incr("datadog.tracer.pipeline_stats.flush_errors", nil, 1)
+		// 		log.Error("Error sending pipeline stats payload: %v", err)
+		// 	}
 		case <-c.stop:
 			c.flushAll()
 			return
+		}
+	}
+}
+
+func (c *pipelineConcentrator) send(p pipelineStatsPayload) {
+	for _, bucket := range p.Stats {
+		for _, s := range bucket.Stats {
+			var pb sketchpb.DDSketch
+			err := proto.Unmarshal(s.Summary, &pb)
+			if err != nil {
+				log.Error("failed to unmarshal sketch")
+				continue
+			}
+			sketch, err := ddsketch.FromProto(&pb)
+			if err != nil {
+				log.Error("failed to de-serialize sketch")
+				continue
+			}
+			sketch.ForEach(func(value, count float64) bool {
+				tags := []string{
+					"pipeline_name:"+s.ReceivingPipelineName,
+					"service:"+s.Service,
+					fmt.Sprintf("pipeline_hash:%d", s.PipelineHash),
+					fmt.Sprintf("parent_hash:%d", s.ParentHash),
+				}
+				for i := 0; i < int(count); i++ {
+					c.statsd().Timing("dd.pipeline.latency", time.Duration(value*float64(time.Second)), tags, 1)
+				}
+				return false
+			})
 		}
 	}
 }
