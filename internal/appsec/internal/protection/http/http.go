@@ -9,6 +9,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation"
 )
 
 type EventManager interface {
@@ -16,13 +17,6 @@ type EventManager interface {
 }
 
 // Register the HTTP protections.
-func Register(appsec EventManager) dyngo.UnregisterFunc {
-	return dyngo.Register(
-		dyngo.InstrumentationDescriptor{
-			Title: "HTTP WAF Data Listener",
-			Instrumentation: dyngo.OperationInstrumentation{
-				EventListener: waf.NewOperationEventListener(appsec),
-			},
-		},
-	)
+func Register(appsec EventManager) instrumentation.UnregisterFunc {
+	return dyngo.Register(waf.NewEventListener(appsec))
 }

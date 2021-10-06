@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/instrumentation/http"
 	waftypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/types"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation"
+	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/sqreen/go-libsqreen/waf"
@@ -25,19 +25,19 @@ type EventManager interface {
 
 // List of rule addresses currently supported by the WAF
 const (
-	serverRequestRawURIAddr  = "server.request.uri.raw"
-	serverRequestHeadersAddr = "server.request.headers.no_cookies"
+	serverRequestRawURIAddr           = "server.request.uri.raw"
+	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
 )
 
-// NewOperationEventListener returns the WAF event listener to register in order to enable it.
-func NewOperationEventListener(appsec EventManager) dyngo.EventListener {
+// NewEventListener returns the WAF event listener to register in order to enable it.
+func NewEventListener(appsec EventManager) instrumentation.EventListener {
 	wafRule, err := waf.NewRule(staticWAFRule)
 	if err != nil {
 		log.Error("appsec: waf error: %v", err)
 		return nil
 	}
 
-	return httpinstr.OnHandlerOperationStartListener(func(op *dyngo.Operation, args httpinstr.HandlerOperationArgs) {
+	return httpinstr.OnHandlerOperationStart(func(op instrumentation.Operation, args httpinstr.HandlerOperationArgs) {
 		// For this handler operation lifetime, create a WAF context and the list of detected attacks
 		var (
 			// TODO(julio): make the attack slice thread-safe once we listen for sub-operations
@@ -45,13 +45,13 @@ func NewOperationEventListener(appsec EventManager) dyngo.EventListener {
 			wafCtx  = waf.NewAdditiveContext(wafRule)
 		)
 
-		httpinstr.OnHandlerOperationFinish(op, func(op *dyngo.Operation, res httpinstr.HandlerOperationRes) {
+		op.On(httpinstr.OnHandlerOperationFinish(func(op instrumentation.Operation, res httpinstr.HandlerOperationRes) {
 			// Release the WAF context
 			wafCtx.Close()
 			// Log the attacks if any
 			if len(attacks) > 0 {
 				// Create the base security event out of the slide of attacks
-				event := appsectypes.NewSecurityEvent(attacks, httpinstr.MakeHTTPOperationContext(args, res))
+				event := appsectypes.NewSecurityEvent(attacks, makeHTTPOperationContext(args, res))
 				// Check if a span exists
 				if span := args.Span; span != nil {
 					// Add the span context to the security event if any
@@ -66,15 +66,13 @@ func NewOperationEventListener(appsec EventManager) dyngo.EventListener {
 				}
 				appsec.SendEvent(event)
 			}
-		})
+		}))
 
 		// Run the WAF on the rule addresses available in the request args
 		// TODO(julio): dynamically get the required addresses from the WAF rule
-		headers := args.Headers.Clone()
-		headers.Del("Cookie")
 		values := map[string]interface{}{
-			serverRequestRawURIAddr:  args.RequestURI,
-			serverRequestHeadersAddr: headers,
+			serverRequestRawURIAddr:           args.RequestURI,
+			serverRequestHeadersNoCookiesAddr: args.Headers,
 		}
 		runWAF(wafCtx, values, &attacks)
 	})
@@ -90,4 +88,21 @@ func runWAF(wafCtx types.Rule, values types.DataSet, attacks *[]waftypes.RawAtta
 		return
 	}
 	*attacks = append(*attacks, waftypes.RawAttackMetadata{Time: time.Now(), Block: action == types.BlockAction, Metadata: md})
+}
+
+// makeHTTPOperationContext creates an HTTP operation context from HTTP operation arguments and results.
+// This context can be added to a security event.
+func makeHTTPOperationContext(args httpinstr.HandlerOperationArgs, res httpinstr.HandlerOperationRes) appsectypes.HTTPOperationContext {
+	return appsectypes.HTTPOperationContext{
+		Request: appsectypes.HTTPRequestContext{
+			Method:     args.Method,
+			Host:       args.Host,
+			IsTLS:      args.IsTLS,
+			RequestURI: args.RequestURI,
+			RemoteAddr: args.RemoteAddr,
+		},
+		Response: appsectypes.HTTPResponseContext{
+			Status: res.Status,
+		},
+	}
 }

@@ -15,7 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/instrumentation/http"
+	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation/http"
 )
 
 // TraceConfig defines the configuration for request tracing.
@@ -55,7 +55,15 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 
 	cfg.ResponseWriter = wrapResponseWriter(cfg.ResponseWriter, span)
 
-	op := httpinstr.StartHandlerOperation(
+	// TODO(julio): disable this when appsec is disabled for now
+	headers := cfg.Request.Header
+	cookies := headers["Cookie"]
+	if len(cookies) > 0 {
+		// Clone the map of headers and remove the cookies
+		headers = headers.Clone()
+		headers.Del("Cookie")
+	}
+	op := httpinstr.StartOperation(
 		httpinstr.HandlerOperationArgs{
 			Span:       span,
 			IsTLS:      cfg.Request.TLS != nil,
@@ -64,7 +72,9 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 			RequestURI: cfg.Request.RequestURI,
 			RemoteAddr: cfg.Request.RemoteAddr,
 			Headers:    cfg.Request.Header,
+			Cookies:    cookies,
 		},
+		nil,
 	)
 	// TODO(julio): get the status code out of the wrapped response writer
 	defer op.Finish(httpinstr.HandlerOperationRes{})

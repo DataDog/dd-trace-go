@@ -19,7 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
 	httpprotection "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/http"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -124,7 +124,7 @@ type appsec struct {
 	eventChan       chan *appsectypes.SecurityEvent
 	wg              sync.WaitGroup
 	cfg             *Config
-	unregisterInstr []dyngo.UnregisterFunc
+	unregisterInstr []instrumentation.UnregisterFunc
 }
 
 func newAppSec(cfg *Config) (*appsec, error) {
@@ -220,6 +220,7 @@ func eventBatchingLoop(client intakeClient, eventChan <-chan *appsectypes.Securi
 		ctx, cancel := context.WithTimeout(context.Background(), defaultIntakeTimeout)
 		defer cancel()
 		client.SendBatch(ctx, api.FromSecurityEvents(batch, globalEventCtx))
+		// TODO(julio): add metrics about failed calls
 		batch = batch[0:0]
 	}
 
