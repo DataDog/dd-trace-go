@@ -2,6 +2,7 @@ package tracer
 
 import (
 	"encoding/binary"
+	"fmt"
 	"github.com/DataDog/sketches-go/ddsketch"
 	"github.com/DataDog/sketches-go/ddsketch/mapping"
 	"github.com/DataDog/sketches-go/ddsketch/store"
@@ -20,7 +21,6 @@ type dataPipeline struct {
 	latencies []ddtrace.PipelineLatency
 	callTime time.Time
 	service string
-	env string
 	pipelineName string
 }
 
@@ -98,11 +98,11 @@ func (p *dataPipeline) setCheckpoint(receivingPipelineName string, t time.Time) 
 	}
 	if tracer, ok := internal.GetGlobalTracer().(*tracer); ok {
 		for i, latency := range totalLatencies {
-			log.Info("send point to stats aggregator")
+			log.Info(fmt.Sprintf("send point to stats aggregator service %s %d", p.service, latency.Hash))
 			select {
 			case tracer.pipelineStats.In <- pipelineStatsPoint{
 				service: p.service,
-				receivingPipelineName: p.pipelineName,
+				receivingPipelineName: receivingPipelineName,
 				parentHash: p.latencies[i].Hash,
 				pipelineHash: latency.Hash,
 				timestamp: t.UnixNano(),
@@ -117,6 +117,7 @@ func (p *dataPipeline) setCheckpoint(receivingPipelineName string, t time.Time) 
 		latencies: totalLatencies,
 		callTime: t,
 		service: p.service,
+		pipelineName: receivingPipelineName,
 	}
 	return &d
 }

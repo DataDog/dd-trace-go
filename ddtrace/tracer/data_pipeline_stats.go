@@ -84,7 +84,7 @@ func (c *pipelineConcentrator) add(p pipelineStatsPoint) {
 			service: p.service,
 			receivingPipelineName: p.receivingPipelineName,
 			parentHash: p.parentHash,
-			pipelineHash: p.parentHash,
+			pipelineHash: p.pipelineHash,
 			summary: p.summary.Copy(),
 			timestamp: btime,
 		}
@@ -145,26 +145,28 @@ func (c *pipelineConcentrator) runFlusher(tick <-chan time.Time) {
 		select {
 		case now := <-tick:
 			p := c.flush(now)
-			if len(p.Stats) == 0 {
-				// nothing to flush
-				continue
-			}
-			c.statsd().Incr("datadog.tracer.pipeline_stats.flush_payloads", nil, 1)
-			c.statsd().Incr("datadog.tracer.pipeline_stats.flush_buckets", nil, float64(len(p.Stats)))
 			c.send(p)
-			log.Info("sent statsd metrics")
 			// if err := c.cfg.transport.sendPipelineStats(&p); err != nil {
 		// 		c.statsd().Incr("datadog.tracer.pipeline_stats.flush_errors", nil, 1)
 		// 		log.Error("Error sending pipeline stats payload: %v", err)
 		// 	}
 		case <-c.stop:
-			c.flushAll()
+			c.send(c.flushAll())
 			return
 		}
 	}
 }
 
 func (c *pipelineConcentrator) send(p pipelineStatsPayload) {
+	log.Info("sent statsd metrics")
+	if len(p.Stats) == 0 {
+		// nothing to flush
+		return
+	}
+	c.statsd().Incr("datadog.tracer.pipeline_stats.flush_payloads", nil, 1)
+	c.statsd().Incr("datadog.tracer.pipeline_stats.flush_buckets", nil, float64(len(p.Stats)))
+
+
 	for _, bucket := range p.Stats {
 		for _, s := range bucket.Stats {
 			var pb sketchpb.DDSketch
@@ -178,7 +180,10 @@ func (c *pipelineConcentrator) send(p pipelineStatsPayload) {
 				log.Error("failed to de-serialize sketch")
 				continue
 			}
+			log.Info(fmt.Sprintf("sending point for pipeline %s. hash %d, parent %d", s.ReceivingPipelineName, s.PipelineHash, s.ParentHash))
+			// todo[piochelepiotr] Flush all the sketch at once.
 			sketch.ForEach(func(value, count float64) bool {
+				log.Info(fmt.Sprintf("Flushing value %f, %f", value, count))
 				tags := []string{
 					"pipeline_name:"+s.ReceivingPipelineName,
 					"service:"+s.Service,
