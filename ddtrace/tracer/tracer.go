@@ -335,6 +335,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 		case done := <-t.flush:
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 			t.traceWriter.flush()
+			t.pipelineStats.send(t.pipelineStats.flushAll())
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
 			// when using the agent traceWriter. However, this functionnality is used
 			// in Lambda so for that purpose this mechanism should suffice.
