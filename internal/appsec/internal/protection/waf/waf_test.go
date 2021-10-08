@@ -15,6 +15,7 @@ import (
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/internal/bindings"
 
 	"github.com/stretchr/testify/require"
 )
@@ -22,6 +23,11 @@ import (
 // TestWAF is a simple validation test of the WAF protecting a net/http server. It only mockups the agent and tests that
 // the WAF is properly detecting an XSS attempt and that the corresponding security event is being sent to the agent.
 func TestWAF(t *testing.T) {
+	if _, err := bindings.Health(); err != nil {
+		t.Skip("waf disabled")
+		return
+	}
+
 	// Start the HTTP server acting as the agent
 	// Its handler counts the number of AppSec API requests and saves the latest event batch sent (only one expected).
 	var (
@@ -66,7 +72,7 @@ func TestWAF(t *testing.T) {
 	// Stop the tracer so that the AppSec events gets sent
 	tracer.Stop()
 
-	// Check that an XSS attack event was reported.
+	// Check that an LFI attack event was reported.
 	require.Equal(t, 1, nbAppSecAPIRequests)
-	require.True(t, strings.Contains(string(batch), "lfi-blocking"))
+	require.True(t, strings.Contains(string(batch), "crs-930-100"))
 }

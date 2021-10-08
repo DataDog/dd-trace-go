@@ -19,7 +19,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -81,11 +80,13 @@ func Start(cfg *Config) {
 
 	appsec, err := newAppSec(cfg)
 	if err != nil {
-		log.Error("appsec: %v", err)
-		log.Error("appsec: disabled due to a startup error")
+		log.Error("appsec: disabled due to a startup error: %v", err)
 		return
 	}
-	appsec.start()
+	if err := appsec.start(); err != nil {
+		log.Error("appsec: disabled due to a startup error: %v", err)
+		return
+	}
 	setActiveAppSec(appsec)
 }
 
@@ -149,28 +150,19 @@ func newAppSec(cfg *Config) (*appsec, error) {
 	}, nil
 }
 
-// Start starts the AppSec agent goroutine.
-func (a *appsec) start() {
-	a.run()
-}
-
-// Stop stops the AppSec agent goroutine.
-func (a *appsec) stop() {
-	a.unregisterWAF()
-	// Stop the batching goroutine
-	close(a.eventChan)
-	// Gracefully stop by waiting for the event loop goroutine to stop
-	a.wg.Wait()
-}
-
-func (a *appsec) run() {
+// Start starts the AppSec background goroutine.
+func (a *appsec) start() error {
 	// Register the WAF operation event listener
-	a.unregisterWAF = dyngo.Register(waf.NewEventListener(a))
+	unregisterWAF, err := waf.Register(a)
+	if err != nil {
+		return err
+	}
+	a.unregisterWAF = unregisterWAF
 
+	// Start the background goroutine reading the channel of security events and sending them to the backend
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-
 		globalEventCtx := []appsectypes.SecurityEventContext{
 			appsectypes.ServiceContext{
 				Name:        a.cfg.Service.Name,
@@ -188,9 +180,19 @@ func (a *appsec) run() {
 				OS:       fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
 			},
 		}
-
 		eventBatchingLoop(a.client, a.eventChan, globalEventCtx, a.cfg)
 	}()
+
+	return nil
+}
+
+// Stop stops the AppSec agent goroutine.
+func (a *appsec) stop() {
+	a.unregisterWAF()
+	// Stop the batching goroutine
+	close(a.eventChan)
+	// Gracefully stop by waiting for the event loop goroutine to stop
+	a.wg.Wait()
 }
 
 type intakeClient interface {

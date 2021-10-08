@@ -9,14 +9,13 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/internal/bindings"
 	waftypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/types"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation"
 	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"github.com/sqreen/go-libsqreen/waf"
-	"github.com/sqreen/go-libsqreen/waf/types"
 )
 
 type EventManager interface {
@@ -29,20 +28,37 @@ const (
 	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
 )
 
-// NewEventListener returns the WAF event listener to register in order to enable it.
-func NewEventListener(appsec EventManager) instrumentation.EventListener {
-	wafRule, err := waf.NewRule(staticWAFRule)
-	if err != nil {
-		log.Error("appsec: waf error: %v", err)
-		return nil
+// Register the WAF event listener.
+func Register(appsec EventManager) (instrumentation.UnregisterFunc, error) {
+	if version, err := bindings.Health(); err != nil {
+		return nil, err
+	} else {
+		log.Debug("appsec: registering waf v%s instrumentation", version.String())
 	}
+	waf, err := bindings.NewWAF([]byte(staticRecommendedRule))
+	if err != nil {
+		return nil, err
+	}
+	unregister := dyngo.Register(newWAFEventListener(waf, appsec))
+	return func() {
+		defer waf.Close()
+		unregister()
+	}, nil
+}
 
+// newWAFEventListener returns the WAF event listener to register in order to enable it.
+func newWAFEventListener(waf *bindings.WAF, appsec EventManager) instrumentation.EventListener {
 	return httpinstr.OnHandlerOperationStart(func(op instrumentation.Operation, args httpinstr.HandlerOperationArgs) {
+		wafCtx := bindings.NewWAFContext(waf)
+		if wafCtx == nil {
+			// The WAF event listener got concurrently released
+			return
+		}
+
 		// For this handler operation lifetime, create a WAF context and the list of detected attacks
 		var (
 			// TODO(julio): make the attack slice thread-safe once we listen for sub-operations
 			attacks []waftypes.RawAttackMetadata
-			wafCtx  = waf.NewAdditiveContext(wafRule)
 		)
 
 		op.On(httpinstr.OnHandlerOperationFinish(func(op instrumentation.Operation, res httpinstr.HandlerOperationRes) {
@@ -78,16 +94,16 @@ func NewEventListener(appsec EventManager) instrumentation.EventListener {
 	})
 }
 
-func runWAF(wafCtx types.Rule, values types.DataSet, attacks *[]waftypes.RawAttackMetadata) {
+func runWAF(wafCtx *bindings.WAFContext, values map[string]interface{}, attacks *[]waftypes.RawAttackMetadata) {
 	action, md, err := wafCtx.Run(values, 1*time.Millisecond)
 	if err != nil {
 		log.Error("appsec: waf error: %v", err)
 		return
 	}
-	if action == types.NoAction {
+	if action == bindings.NoAction {
 		return
 	}
-	*attacks = append(*attacks, waftypes.RawAttackMetadata{Time: time.Now(), Block: action == types.BlockAction, Metadata: md})
+	*attacks = append(*attacks, waftypes.RawAttackMetadata{Time: time.Now(), Block: action == bindings.BlockAction, Metadata: md})
 }
 
 // makeHTTPOperationContext creates an HTTP operation context from HTTP operation arguments and results.
