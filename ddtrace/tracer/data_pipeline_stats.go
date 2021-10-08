@@ -191,7 +191,9 @@ func (c *pipelineConcentrator) send(p pipelineStatsPayload) {
 					fmt.Sprintf("parent_hash:%d", s.ParentHash),
 				}
 				for i := 0; i < int(count); i++ {
+					log.Info("flush once")
 					c.statsd().Timing("dd.pipeline.latency", time.Duration(value*float64(time.Second)), tags, 1)
+					log.Info("flushed once")
 				}
 				return false
 			})
