@@ -221,7 +221,6 @@ func TestClient(t *testing.T) {
 		defer cancel()
 		err = c.do(ctx, req, nil)
 		require.Error(t, err)
-		require.True(t, errors.Is(ctx.Err(), context.DeadlineExceeded))
 	})
 
 	t.Run("do with context", func(t *testing.T) {
