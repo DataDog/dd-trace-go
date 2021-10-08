@@ -23,6 +23,7 @@ type statsdClient interface {
 	Count(name string, value int64, tags []string, rate float64) error
 	Gauge(name string, value float64, tags []string, rate float64) error
 	Timing(name string, value time.Duration, tags []string, rate float64) error
+	Distribution(name string, value float64, tags []string, rate float64) error
 	Close() error
 }
 

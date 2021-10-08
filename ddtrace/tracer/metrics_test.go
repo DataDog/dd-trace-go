@@ -22,6 +22,7 @@ const (
 	callTypeIncr
 	callTypeCount
 	callTypeTiming
+	callTypeDistribution
 )
 
 type testStatsdClient struct {
@@ -30,6 +31,7 @@ type testStatsdClient struct {
 	incrCalls   []testStatsdCall
 	countCalls  []testStatsdCall
 	timingCalls []testStatsdCall
+	distributionCalls []testStatsdCall
 	counts      map[string]int64
 	tags        []string
 	waitCh      chan struct{}
@@ -98,6 +100,15 @@ func (tg *testStatsdClient) Timing(name string, value time.Duration, tags []stri
 	})
 }
 
+func (tg *testStatsdClient) Distribution(name string, value float64, tags []string, rate float64) error {
+	return tg.addMetric(callTypeDistribution, tags, testStatsdCall{
+		name:    name,
+		floatVal: value,
+		tags:    make([]string, len(tags)),
+		rate:    rate,
+	})
+}
+
 func (tg *testStatsdClient) addMetric(ct callType, tags []string, c testStatsdCall) error {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
@@ -111,6 +122,8 @@ func (tg *testStatsdClient) addMetric(ct callType, tags []string, c testStatsdCa
 		tg.countCalls = append(tg.countCalls, c)
 	case callTypeTiming:
 		tg.timingCalls = append(tg.timingCalls, c)
+	case callTypeDistribution:
+		tg.distributionCalls = append(tg.distributionCalls, c)
 	}
 	tg.tags = tags
 	if tg.n > 0 {
@@ -167,6 +180,9 @@ func (tg *testStatsdClient) CallNames() []string {
 	for _, c := range tg.timingCalls {
 		n = append(n, c.name)
 	}
+	for _, c := range tg.distributionCalls {
+		n = append(n, c.name)
+	}
 	return n
 }
 
@@ -184,6 +200,9 @@ func (tg *testStatsdClient) CallsByName() map[string]int {
 		counts[c.name]++
 	}
 	for _, c := range tg.timingCalls {
+		counts[c.name]++
+	}
+	for _, c := range tg.distributionCalls {
 		counts[c.name]++
 	}
 	return counts
@@ -214,6 +233,7 @@ func (tg *testStatsdClient) Reset() {
 	tg.incrCalls = tg.incrCalls[:0]
 	tg.countCalls = tg.countCalls[:0]
 	tg.timingCalls = tg.timingCalls[:0]
+	tg.distributionCalls = tg.distributionCalls[:0]
 	tg.counts = make(map[string]int64)
 	tg.tags = tg.tags[:0]
 	if tg.waitCh != nil {
