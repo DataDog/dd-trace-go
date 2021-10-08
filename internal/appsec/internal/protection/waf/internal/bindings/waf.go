@@ -146,7 +146,7 @@ func (c *WAFContext) run(data *wafObject, timeout time.Duration) (action Action,
 	defer c.mu.Unlock()
 	var result C.ddwaf_result
 	defer C.ddwaf_result_free(&result)
-	C.ddwaf_run(c.context, data.ctype(), &result, C.size_t(timeout/time.Microsecond))
+	C.ddwaf_run(c.context, data.ctype(), &result, C.uint64_t(timeout/time.Microsecond))
 	return goReturnValues(&result)
 
 }
