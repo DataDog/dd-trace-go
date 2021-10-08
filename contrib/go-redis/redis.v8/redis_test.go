@@ -464,3 +464,53 @@ func TestWithContext(t *testing.T) {
 	assert.Equal(span1.SpanID(), setSpan.ParentID())
 	assert.Equal(span2.SpanID(), getSpan.ParentID())
 }
+
+func TestWithExcludeRawCommand(t *testing.T) {
+	execCommand := func(t *testing.T, mt mocktracer.Tracer, opts ...ClientOption) {
+		ctx := context.Background()
+		client := NewClient(&redis.Options{Addr: "127.0.0.1:6379"}, opts...)
+		client.Set(ctx, "test_key", "test_value", 0)
+		pipeline := client.Pipeline()
+		pipeline.Expire(ctx, "pipeline_counter", time.Hour)
+		pipeline.Exec(ctx)
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		execCommand(t, mt)
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 2)
+		for _, s := range spans {
+			assert.Equal(t, "SET test_key test_value", s.Tag("redis.raw_command"))
+		}
+	})
+
+	t.Run("with exclude true", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		execCommand(t, mt, WithExcludeRawCommand(true))
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 2)
+		for _, s := range spans {
+			assert.Equal(t, nil, s.Tag("redis.raw_command"))
+		}
+	})
+
+	t.Run("with exclude false", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		execCommand(t, mt, WithExcludeRawCommand(false))
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 2)
+		for _, s := range spans {
+			assert.Equal(t, "SET test_key test_value", s.Tag("redis.raw_command"))
+		}
+	})
+}

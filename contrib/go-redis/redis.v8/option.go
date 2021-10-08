@@ -12,8 +12,9 @@ import (
 )
 
 type clientConfig struct {
-	serviceName   string
-	analyticsRate float64
+	serviceName       string
+	analyticsRate     float64
+	excludeRawCommand bool
 }
 
 // ClientOption represents an option that can be used to create or wrap a client.
@@ -56,5 +57,13 @@ func WithAnalyticsRate(rate float64) ClientOption {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithExcludeRawCommand sets the option to exclude the raw command
+// for when the command/cache might contain sensitive data
+func WithExcludeRawCommand(exclude bool) ClientOption {
+	return func(cfg *clientConfig) {
+		cfg.excludeRawCommand = exclude
 	}
 }
