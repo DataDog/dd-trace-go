@@ -68,7 +68,7 @@ func (v *wafObject) setInvalid() {
 	*v = wafObject{}
 }
 
-func (v *wafObject) setContainer(typ C.DDWAF_OBJ_TYPE, length C.uint64_t) error {
+func (v *wafObject) setContainer(typ C.DDWAF_OBJ_TYPE, length C.size_t) error {
 	// Allocate the zero'd array.
 	var a *C.ddwaf_object
 	if length > 0 {
@@ -78,17 +78,17 @@ func (v *wafObject) setContainer(typ C.DDWAF_OBJ_TYPE, length C.uint64_t) error 
 		}
 		incNbLiveCObjects()
 		*v.arrayValuePtr() = a
-		v.setLength(length)
+		v.setLength(C.uint64_t(length))
 	}
 	v._type = typ
 	return nil
 }
 
-func (v *wafObject) setArrayContainer(length C.uint64_t) error {
+func (v *wafObject) setArrayContainer(length C.size_t) error {
 	return v.setContainer(wafArrayType, length)
 }
 
-func (v *wafObject) setMapContainer(length C.uint64_t) error {
+func (v *wafObject) setMapContainer(length C.size_t) error {
 	return v.setContainer(wafMapType, length)
 }
 

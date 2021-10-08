@@ -116,7 +116,7 @@ func (e *encoder) encodeStruct(v reflect.Value, wo *wafObject, depth int) error 
 	if capacity > e.maxMapLength {
 		capacity = e.maxMapLength
 	}
-	if err := wo.setMapContainer(C.uint64_t(capacity)); err != nil {
+	if err := wo.setMapContainer(C.size_t(capacity)); err != nil {
 		return err
 	}
 	// Encode struct fields
@@ -219,7 +219,7 @@ func (e *encoder) encodeArray(v reflect.Value, wo *wafObject, depth int) error {
 	if capacity > e.maxArrayLength {
 		capacity = e.maxArrayLength
 	}
-	if err := wo.setArrayContainer(C.uint64_t(capacity)); err != nil {
+	if err := wo.setArrayContainer(C.size_t(capacity)); err != nil {
 		return err
 	}
 	// Walk the array until we successfully added up to "cap" elements or the Go array length was reached
