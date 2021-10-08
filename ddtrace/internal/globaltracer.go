@@ -58,6 +58,10 @@ func (NoopTracer) SetDataPipelineCheckpoint(receivingPipelineName string, opts .
 	return NoopDataPipeline{}
 }
 
+func (NoopTracer) DataPipelineFromBaggage([]byte) (ddtrace.DataPipeline, error) {
+	return NoopDataPipeline{}, nil
+}
+
 // SetServiceInfo implements ddtrace.Tracer.
 func (NoopTracer) SetServiceInfo(name, app, appType string) {}
 
@@ -80,6 +84,10 @@ type NoopDataPipeline struct{}
 func (NoopDataPipeline) SetCheckpoint(receivingPipelineName string) ddtrace.DataPipeline{
 	log.Info("setting checkpoint on noop data pipeline")
 	return NoopDataPipeline{}
+}
+
+func (NoopDataPipeline) ToBaggage() ([]byte, error) {
+	return nil, nil
 }
 
 func (NoopDataPipeline) GetCallTime() time.Time {

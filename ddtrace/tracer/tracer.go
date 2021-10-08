@@ -143,6 +143,11 @@ func SetDataPipelineCheckpoint(receivingPipelineName string, opts ...DataPipelin
 	return internal.GetGlobalTracer().SetDataPipelineCheckpoint(receivingPipelineName, opts...)
 }
 
+// DataPipelineFromBaggage creates a data pipeline from data.
+func DataPipelineFromBaggage(data []byte) (ddtrace.DataPipeline, error) {
+	return internal.GetGlobalTracer().DataPipelineFromBaggage(data)
+}
+
 // Extract extracts a SpanContext from the carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
@@ -387,6 +392,10 @@ func (t *tracer) SetDataPipelineCheckpoint(receivingPipelineName string, options
 	}
 	log.Info("updating existing data pipeline")
 	return cfg.Parent.SetCheckpoint(receivingPipelineName)
+}
+
+func (t *tracer) DataPipelineFromBaggage(data []byte) (DataPipeline, error) {
+	return dataPipelineFromBaggage(data, t.config.serviceName)
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.

@@ -2,10 +2,13 @@ package tracer
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"github.com/DataDog/sketches-go/ddsketch"
 	"github.com/DataDog/sketches-go/ddsketch/mapping"
+	"github.com/DataDog/sketches-go/ddsketch/pb/sketchpb"
 	"github.com/DataDog/sketches-go/ddsketch/store"
+	"github.com/golang/protobuf/proto"
 	"github.com/spaolacci/murmur3"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -22,6 +25,61 @@ type dataPipeline struct {
 	callTime time.Time
 	service string
 	pipelineName string
+}
+
+func dataPipelineFromBaggage(data []byte, service string) (DataPipeline, error) {
+	if len(data) < 8 {
+		return nil, errors.New("data size too small")
+	}
+	pipeline := &dataPipeline{}
+	pipeline.callTime = time.Unix(0, int64(binary.LittleEndian.Uint64(data)))
+	data = data[8:]
+	for {
+		if len(data) == 0 {
+			return pipeline, nil
+		}
+		if len(data) < 12 {
+			return nil, errors.New("wrong format")
+		}
+		hash := binary.LittleEndian.Uint64(data)
+		data = data[8:]
+		size := binary.LittleEndian.Uint32(data)
+		data = data[4:]
+		if len(data) < int(size) {
+			return nil, errors.New("wrong format")
+		}
+		var pb sketchpb.DDSketch
+		err := proto.Unmarshal(data[:size], &pb)
+		if err != nil {
+			return nil, err
+		}
+		summary, err := ddsketch.FromProto(&pb)
+		if err != nil {
+			return nil, err
+		}
+		pipeline.latencies = append(pipeline.latencies, ddtrace.PipelineLatency{Hash: hash, Summary: summary})
+		data = data[size:]
+	}
+	return pipeline, nil
+}
+
+func (p *dataPipeline) ToBaggage() ([]byte, error) {
+	data := make([]byte, 8)
+	hash := make([]byte, 8)
+	size := make([]byte, 4)
+	binary.LittleEndian.PutUint64(data, uint64(p.callTime.UnixNano()))
+	for _, l := range p.latencies {
+		sketch, err := proto.Marshal(l.Summary.ToProto())
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint64(hash, l.Hash)
+		binary.LittleEndian.PutUint32(size, uint32(len(sketch)))
+		data = append(data, hash...)
+		data = append(data, size...)
+		data = append(data, sketch...)
+	}
+	return data, nil
 }
 
 func (p *dataPipeline) GetCallTime() time.Time {

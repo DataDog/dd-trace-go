@@ -39,6 +39,9 @@ type Tracer interface {
 
 	// Stop stops the tracer. Calls to Stop should be idempotent.
 	Stop()
+
+	// similar to extract but for data pipelines
+	DataPipelineFromBaggage(data []byte) (DataPipeline, error)
 }
 
 // Span represents a chunk of computation time. Spans have names, durations,
@@ -155,4 +158,5 @@ type DataPipeline interface {
 	SetCheckpoint(receivingPipelineName string) DataPipeline
 	GetCallTime() time.Time
 	GetLatencies() []PipelineLatency
+	ToBaggage() ([]byte, error)
 }
