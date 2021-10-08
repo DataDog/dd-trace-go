@@ -38,15 +38,18 @@ func dataPipelineFromBaggage(data []byte, service string) (DataPipeline, error) 
 		if len(data) == 0 {
 			return pipeline, nil
 		}
+		fmt.Printf("len of data %d\n", len(data))
 		if len(data) < 12 {
-			return nil, errors.New("wrong format")
+			return nil, errors.New("message header less than 12 bytes")
 		}
 		hash := binary.LittleEndian.Uint64(data)
+		fmt.Printf("hash %d\n", hash)
 		data = data[8:]
 		size := binary.LittleEndian.Uint32(data)
+		fmt.Printf("size %d\n", size)
 		data = data[4:]
 		if len(data) < int(size) {
-			return nil, errors.New("wrong format")
+			return nil, errors.New("message size less than size")
 		}
 		var pb sketchpb.DDSketch
 		err := proto.Unmarshal(data[:size], &pb)
