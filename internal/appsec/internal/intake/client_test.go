@@ -207,7 +207,7 @@ func TestClient(t *testing.T) {
 
 	t.Run("do with context", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-			time.Sleep(1 * time.Second)
+			time.Sleep(time.Minute)
 		}))
 		defer srv.Close()
 
