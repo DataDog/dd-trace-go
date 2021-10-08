@@ -158,7 +158,7 @@ func (e *encoder) encodeMap(v reflect.Value, wo *wafObject, depth int) error {
 	if capacity > e.maxMapLength {
 		capacity = e.maxMapLength
 	}
-	if err := wo.setMapContainer(C.uint64_t(capacity)); err != nil {
+	if err := wo.setMapContainer(C.size_t(capacity)); err != nil {
 		return err
 	}
 	// Encode map entries
