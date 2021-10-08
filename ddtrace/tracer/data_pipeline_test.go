@@ -1,12 +1,17 @@
 package tracer
 
 import (
+	"encoding/json"
 	"github.com/DataDog/sketches-go/ddsketch"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"testing"
 	"time"
 )
+
+type Item struct {
+	Details []byte `json:"details"`
+}
 
 func TestSerializeDataPipeline(t *testing.T) {
 	s1, _ := ddsketch.NewDefaultDDSketch(0.01)
@@ -29,8 +34,15 @@ func TestSerializeDataPipeline(t *testing.T) {
 	}
 	data, err := pipeline.ToBaggage()
 	assert.Nil(t, err)
+	item := Item{Details: data}
+	bytes, err := json.Marshal(&item)
+	assert.Nil(t, err)
 	tracer := tracer{config: &config{serviceName: "service"}}
-	convertedPipeline, err := tracer.DataPipelineFromBaggage(data)
+	var convertedItem Item
+	err = json.Unmarshal(bytes, &convertedItem)
+	assert.Nil(t, err)
+	convertedData := convertedItem.Details
+	convertedPipeline, err := tracer.DataPipelineFromBaggage(convertedData)
 	assert.Nil(t, err)
 	assert.Equal(t, pipeline.callTime.UnixNano(), convertedPipeline.GetCallTime().UnixNano())
 	convertedLatencies := convertedPipeline.GetLatencies()
