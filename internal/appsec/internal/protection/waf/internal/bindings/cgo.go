@@ -13,8 +13,8 @@
 package bindings
 
 // #cgo CFLAGS: -I${SRCDIR}/include
-// #cgo linux,amd64 LDFLAGS: -L${SRCDIR}/lib/linux-amd64 -l:libddwaf.a -lm -ldl -Wl,-rpath=/lib64:/usr/lib64:/usr/local/lib64:/lib:/usr/lib:/usr/local/lib
-// #cgo darwin,amd64 LDFLAGS: -L${SRCDIR}/lib/macos-amd64 -l:libddwaf.a -lstdc++
+// #cgo linux,amd64 LDFLAGS: -L${SRCDIR}/lib/linux-amd64 -lddwaf -lm -ldl -Wl,-rpath=/lib64:/usr/lib64:/usr/local/lib64:/lib:/usr/lib:/usr/local/lib
+// #cgo darwin,amd64 LDFLAGS: -L${SRCDIR}/lib/macos-amd64 -lddwaf -lstdc++
 import "C"
 
 // The following imports enforce `go mod vendor` to copy all the files we need for CGO: the WAF header file and the
