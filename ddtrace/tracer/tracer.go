@@ -155,6 +155,7 @@ func SpanString(spn Span) string {
 	if s, ok := spn.(*span); ok {
 		return s.String()
 	}
+	log.Info("span convert failed")
 
 	return ""
 }
