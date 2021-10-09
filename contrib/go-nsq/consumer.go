@@ -58,7 +58,7 @@ func NewConsumer(topic string, channel string, config *nsq.Config, opts ...Optio
 	}, nil
 }
 
-// AddHandler is a nsq Consumer Addhandler wrapper with tracing operations injected into the original registered handler.
+// AddHandler is a nsq.Consumer.Addhandler wrapper with tracing operations injected into the original registered handler.
 func (consu *Consumer) AddHandler(handler HandlerWithSpanContext) {
 	consu.Consumer.AddHandler(HandlerWithSpanContext(func(spctx ddtrace.SpanContext, message *nsq.Message) error {
 		var (
@@ -84,7 +84,7 @@ func (consu *Consumer) AddHandler(handler HandlerWithSpanContext) {
 	}))
 }
 
-// AddConcurrentHandlers is a nsq Consumer AddConcurrentHandlers wrapper with tracing operations injected into the original registered handler.
+// AddConcurrentHandlers is a nsq.Consumer.AddConcurrentHandlers wrapper with tracing operations injected into the original registered handler.
 func (consu *Consumer) AddConcurrentHandlers(handler HandlerWithSpanContext, concurrency int) {
 	consu.Consumer.AddConcurrentHandlers(HandlerWithSpanContext(func(spctx ddtrace.SpanContext, message *nsq.Message) error {
 		var (
