@@ -7,7 +7,6 @@
 package nsq // import "gopkg.in/CodapeWild/dd-trace-go.v1/contrib/go-nsq"
 
 import (
-	"context"
 	"math"
 
 	"gopkg.in/CodapeWild/dd-trace-go.v1/internal"
@@ -17,7 +16,6 @@ import (
 type clientConfig struct {
 	service       string
 	analyticsRate float64
-	ctx           context.Context
 }
 
 // Option represents an option that can be used to config a client.
@@ -41,13 +39,6 @@ func WithAnalyticsRate(rate float64) Option {
 	}
 }
 
-// WithContext sets the given context for the client.
-func WithContext(ctx context.Context) Option {
-	return func(cfg *clientConfig) {
-		cfg.ctx = ctx
-	}
-}
-
 func defaultConfig(cfg *clientConfig) {
 	cfg.service = "nsq"
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
@@ -55,5 +46,4 @@ func defaultConfig(cfg *clientConfig) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
-	cfg.ctx = context.Background()
 }

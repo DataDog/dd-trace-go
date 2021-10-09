@@ -9,7 +9,6 @@ package nsq
 import (
 	"fmt"
 	"math"
-	"strings"
 
 	"github.com/nsqio/go-nsq"
 	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace"
@@ -44,97 +43,97 @@ func NewConsumer(topic string, channel string, config *nsq.Config, opts ...Optio
 	}, nil
 }
 
-// ConnectToNSQLookupd is a nsq Consumer ConnectToNSQLookupd wrapper with tracing.
-func (consu *Consumer) ConnectToNSQLookupd(addr string) error {
-	var (
-		opName = "ConnectToNSQLookupd"
-		span   = consu.startSpan(opName)
-		err    = consu.Consumer.ConnectToNSQLookupd(addr)
-		tags   = map[string]interface{}{
-			"lookupd_addr": addr,
-		}
-	)
-	consu.finishSpan(span, opName, tags, err)
+// // ConnectToNSQLookupd is a nsq Consumer ConnectToNSQLookupd wrapper with tracing.
+// func (consu *Consumer) ConnectToNSQLookupd(addr string) error {
+// 	var (
+// 		opName = "ConnectToNSQLookupd"
+// 		span   = consu.startSpan(opName)
+// 		err    = consu.Consumer.ConnectToNSQLookupd(addr)
+// 		tags   = map[string]interface{}{
+// 			"lookupd_addr": addr,
+// 		}
+// 	)
+// 	consu.finishSpan(span, opName, tags, err)
 
-	return err
-}
+// 	return err
+// }
 
-// ConnectToNSQLookupds is a nsq Consumer ConnectToNSQLookupds wrapper with tracing.
-func (consu *Consumer) ConnectToNSQLookupds(addrs []string) error {
-	var (
-		opName = "ConnectToNSQLookupds"
-		span   = consu.startSpan(opName)
-		err    = consu.Consumer.ConnectToNSQLookupds(addrs)
-		tags   = map[string]interface{}{
-			"lookupd_addrs": strings.Join(addrs, ","),
-			"lookupd_count": len(addrs),
-		}
-	)
-	consu.finishSpan(span, opName, tags, err)
+// // ConnectToNSQLookupds is a nsq Consumer ConnectToNSQLookupds wrapper with tracing.
+// func (consu *Consumer) ConnectToNSQLookupds(addrs []string) error {
+// 	var (
+// 		opName = "ConnectToNSQLookupds"
+// 		span   = consu.startSpan(opName)
+// 		err    = consu.Consumer.ConnectToNSQLookupds(addrs)
+// 		tags   = map[string]interface{}{
+// 			"lookupd_addrs": strings.Join(addrs, ","),
+// 			"lookupd_count": len(addrs),
+// 		}
+// 	)
+// 	consu.finishSpan(span, opName, tags, err)
 
-	return err
-}
+// 	return err
+// }
 
-// ConnectToNSQD is a nsq Consumer ConnectToNSQD wrapper with tracing.
-func (consu *Consumer) ConnectToNSQD(addr string) error {
-	var (
-		opName = "ConnectToNSQD"
-		span   = consu.startSpan(opName)
-		err    = consu.Consumer.ConnectToNSQD(addr)
-		tags   = map[string]interface{}{
-			"nsqd_addr": addr,
-		}
-	)
-	consu.finishSpan(span, opName, tags, err)
+// // ConnectToNSQD is a nsq Consumer ConnectToNSQD wrapper with tracing.
+// func (consu *Consumer) ConnectToNSQD(addr string) error {
+// 	var (
+// 		opName = "ConnectToNSQD"
+// 		span   = consu.startSpan(opName)
+// 		err    = consu.Consumer.ConnectToNSQD(addr)
+// 		tags   = map[string]interface{}{
+// 			"nsqd_addr": addr,
+// 		}
+// 	)
+// 	consu.finishSpan(span, opName, tags, err)
 
-	return err
-}
+// 	return err
+// }
 
-// ConnectToNSQDs is a nsq Consumer ConnectToNSQDs wrapper with tracing.
-func (consu *Consumer) ConnectToNSQDs(addrs []string) error {
-	var (
-		opName = "ConnectToNSQDs"
-		span   = consu.startSpan(opName)
-		err    = consu.Consumer.ConnectToNSQDs(addrs)
-		tags   = map[string]interface{}{
-			"nsqd_addrs": strings.Join(addrs, ","),
-			"nsqd_count": len(addrs),
-		}
-	)
-	consu.finishSpan(span, opName, tags, err)
+// // ConnectToNSQDs is a nsq Consumer ConnectToNSQDs wrapper with tracing.
+// func (consu *Consumer) ConnectToNSQDs(addrs []string) error {
+// 	var (
+// 		opName = "ConnectToNSQDs"
+// 		span   = consu.startSpan(opName)
+// 		err    = consu.Consumer.ConnectToNSQDs(addrs)
+// 		tags   = map[string]interface{}{
+// 			"nsqd_addrs": strings.Join(addrs, ","),
+// 			"nsqd_count": len(addrs),
+// 		}
+// 	)
+// 	consu.finishSpan(span, opName, tags, err)
 
-	return err
-}
+// 	return err
+// }
 
-// DisconnectFromNSQD is a nsq Consumer DisconnectFromNSQD wrapper with tracing.
-func (consu *Consumer) DisconnectFromNSQD(addr string) error {
-	var (
-		opName = "DisconnectFromNSQD"
-		span   = consu.startSpan(opName)
-		err    = consu.Consumer.ConnectToNSQLookupd(addr)
-		tags   = map[string]interface{}{
-			"nsqd_addr": addr,
-		}
-	)
-	consu.finishSpan(span, opName, tags, err)
+// // DisconnectFromNSQD is a nsq Consumer DisconnectFromNSQD wrapper with tracing.
+// func (consu *Consumer) DisconnectFromNSQD(addr string) error {
+// 	var (
+// 		opName = "DisconnectFromNSQD"
+// 		span   = consu.startSpan(opName)
+// 		err    = consu.Consumer.ConnectToNSQLookupd(addr)
+// 		tags   = map[string]interface{}{
+// 			"nsqd_addr": addr,
+// 		}
+// 	)
+// 	consu.finishSpan(span, opName, tags, err)
 
-	return err
-}
+// 	return err
+// }
 
-// DisconnectFromNSQLookupd is a nsq Consumer DisconnectFromNSQLookupd wrapper with tracing.
-func (consu *Consumer) DisconnectFromNSQLookupd(addr string) error {
-	var (
-		opName = "DisconnectFromNSQLookupd"
-		span   = consu.startSpan(opName)
-		err    = consu.Consumer.DisconnectFromNSQLookupd(addr)
-		tags   = map[string]interface{}{
-			"lookupd_addr": addr,
-		}
-	)
-	consu.finishSpan(span, opName, tags, err)
+// // DisconnectFromNSQLookupd is a nsq Consumer DisconnectFromNSQLookupd wrapper with tracing.
+// func (consu *Consumer) DisconnectFromNSQLookupd(addr string) error {
+// 	var (
+// 		opName = "DisconnectFromNSQLookupd"
+// 		span   = consu.startSpan(opName)
+// 		err    = consu.Consumer.DisconnectFromNSQLookupd(addr)
+// 		tags   = map[string]interface{}{
+// 			"lookupd_addr": addr,
+// 		}
+// 	)
+// 	consu.finishSpan(span, opName, tags, err)
 
-	return err
-}
+// 	return err
+// }
 
 // AddHandler is a nsq Consumer Addhandler wrapper with tracing operations injected into the original registered handler.
 func (consu *Consumer) AddHandler(handler nsq.Handler) {
