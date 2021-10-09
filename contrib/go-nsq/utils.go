@@ -26,7 +26,7 @@ func putBuf(buf *bytes.Buffer) {
 	bfp.Put(buf)
 }
 
-func inject(span ddtrace.Span, body []byte) ([]byte, error) {
+func inject(span tracer.Span, body []byte) ([]byte, error) {
 	carri := make(tracer.TextMapCarrier)
 	err := tracer.Inject(span.Context(), carri)
 	if err != nil {

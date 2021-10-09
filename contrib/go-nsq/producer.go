@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/nsqio/go-nsq"
-	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace"
 	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -50,7 +49,7 @@ func (prodc *Producer) Publish(topic string, body []byte) error {
 // PublishWithContext starts span with given context and wrap the nsq.Producer.Publish
 func (prodc *Producer) PublishWithContext(ctx context.Context, topic string, body []byte) error {
 	var (
-		span, _ = prodc.startSpanFromContext(ctx, topic, "producer.Publish")
+		span, _ = prodc.startSpan(ctx, topic, "producer.Publish")
 		tags    = map[string]interface{}{
 			"body_count": 1,
 			"body_size":  len(body),
@@ -77,7 +76,7 @@ func (prodc *Producer) MultiPublish(topic string, body [][]byte) error {
 // MultiPublishWithContext starts span with given context and wrap the nsq.Producer.MultiPublish
 func (prodc *Producer) MultiPublishWithContext(ctx context.Context, topic string, body [][]byte) error {
 	var (
-		span, _ = prodc.startSpanFromContext(ctx, topic, "producer.MultiPublish")
+		span, _ = prodc.startSpan(ctx, topic, "producer.MultiPublish")
 		tags    = map[string]interface{}{
 			"body_count": len(body),
 			"body_size":  bodySize(body),
@@ -106,7 +105,7 @@ func (prodc *Producer) PublishAsync(topic string, body []byte, doneChan chan *ns
 // PublishAsyncWithContext starts span with given context and wrap the nsq.Producer.PublishAsync
 func (prodc *Producer) PublishAsyncWithContext(ctx context.Context, topic string, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	var (
-		span, _ = prodc.startSpanFromContext(ctx, topic, "producer.PublishAsync")
+		span, _ = prodc.startSpan(ctx, topic, "producer.PublishAsync")
 		tags    = map[string]interface{}{
 			"body_count": 1,
 			"body_size":  len(body),
@@ -134,7 +133,7 @@ func (prodc *Producer) MultiPublishAsync(topic string, body [][]byte, doneChan c
 // MultiPublishAsyncWithContext starts span with given context and wrap the nsq.Producer.MultiPublishAsync
 func (prodc *Producer) MultiPublishAsyncWithContext(ctx context.Context, topic string, body [][]byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	var (
-		span, _ = prodc.startSpanFromContext(ctx, topic, "producer.MultiPublishAsync")
+		span, _ = prodc.startSpan(ctx, topic, "producer.MultiPublishAsync")
 		tags    = map[string]interface{}{
 			"body_count": len(body),
 			"body_size":  bodySize(body),
@@ -164,7 +163,7 @@ func (prodc *Producer) DeferredPublish(topic string, delay time.Duration, body [
 // DeferredPublishWithContext starts span with given context and wrap the nsq.Producer.DeferredPublish
 func (prodc *Producer) DeferredPublishWithContext(ctx context.Context, topic string, delay time.Duration, body []byte) error {
 	var (
-		span, _ = prodc.startSpanFromContext(ctx, topic, "producer.DeferredPublish")
+		span, _ = prodc.startSpan(ctx, topic, "producer.DeferredPublish")
 		tags    = map[string]interface{}{
 			"body_count": 1,
 			"body_size":  len(body),
@@ -191,7 +190,7 @@ func (prodc *Producer) DeferredPublishAsync(topic string, delay time.Duration, b
 
 func (prodc *Producer) DeferredPublishAsyncWithContext(ctx context.Context, topic string, delay time.Duration, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	var (
-		span, _ = prodc.startSpanFromContext(ctx, topic, "producer.DeferredPublishAsync")
+		span, _ = prodc.startSpan(ctx, topic, "producer.DeferredPublishAsync")
 		tags    = map[string]interface{}{
 			"body_count": 1,
 			"body_size":  len(body),
@@ -212,12 +211,12 @@ func (prodc *Producer) DeferredPublishAsyncWithContext(ctx context.Context, topi
 	return err
 }
 
-func (prodc *Producer) startSpanFromContext(ctx context.Context, topic, operation string) (tracer.Span, context.Context) {
+func (prodc *Producer) startSpan(ctx context.Context, topic, operation string) (tracer.Span, context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(prodc.cfg.service),
 		tracer.ResourceName(topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
@@ -229,7 +228,7 @@ func (prodc *Producer) startSpanFromContext(ctx context.Context, topic, operatio
 	return tracer.StartSpanFromContext(ctx, operation, opts...)
 }
 
-func (prodc *Producer) finishSpan(span tracer.Span, tags map[string]interface{}, err error) {
+func (*Producer) finishSpan(span tracer.Span, tags map[string]interface{}, err error) {
 	for k, v := range tags {
 		span.SetTag(k, v)
 	}
