@@ -17,8 +17,10 @@ import (
 	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
 )
 
+// HandlerWithSpanContext is a function adapter for nsq.Consumer.AddHandler
 type HandlerWithSpanContext func(spctx ddtrace.SpanContext, message *nsq.Message) error
 
+// HandleMessage adapte func(*nsq.Message)error to func(ddtrace.SpanContext, *nsq.Message)error
 func (handler HandlerWithSpanContext) HandleMessage(message *nsq.Message) error {
 	spctx, body, err := extract(message.Body)
 	if err != nil {
