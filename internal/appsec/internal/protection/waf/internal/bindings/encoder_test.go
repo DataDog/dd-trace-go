@@ -16,13 +16,12 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestEncoder(t *testing.T) {
-	defer requireZeroNBLiveCObjects(t)
-
 	for _, tc := range []struct {
 		Name                   string
 		Data                   interface{}
@@ -38,6 +37,36 @@ func TestEncoder(t *testing.T) {
 			Name:          "unsupported type",
 			Data:          make(chan struct{}),
 			ExpectedError: errUnsupportedValue,
+		},
+		{
+			Name:                   "string",
+			Data:                   "hello, waf",
+			ExpectedWAFValueType:   wafStringType,
+			ExpectedWAFValueLength: len("hello, waf"),
+		},
+		{
+			Name:                   "string",
+			Data:                   "",
+			ExpectedWAFValueType:   wafStringType,
+			ExpectedWAFValueLength: 0,
+		},
+		{
+			Name:                   "byte slice",
+			Data:                   []byte("hello, waf"),
+			ExpectedWAFValueType:   wafStringType,
+			ExpectedWAFValueLength: len("hello, waf"),
+		},
+		{
+			Name:                   "nil byte slice",
+			Data:                   []byte(nil),
+			ExpectedWAFValueType:   wafStringType,
+			ExpectedWAFValueLength: 0,
+		},
+		{
+			Name:                   "map with empty key string",
+			Data:                   map[string]int{"": 1},
+			ExpectedWAFValueType:   wafMapType,
+			ExpectedWAFValueLength: 1,
 		},
 		{
 			Name:                   "empty struct",
@@ -499,6 +528,18 @@ func TestEncoder(t *testing.T) {
 			if tc.ExpectedWAFValueLength != 0 {
 				require.Equal(t, tc.ExpectedWAFValueLength, int(wo.nbEntries), "waf value type")
 			}
+
+			// Pass the encoded value to the WAF to make sure it doesn't return an error
+			waf, err := NewWAF(newTestRule("my.input"))
+			require.NoError(t, err)
+			defer waf.Close()
+			wafCtx := NewWAFContext(waf)
+			require.NotNil(t, wafCtx)
+			defer wafCtx.Close()
+			_, _, err = wafCtx.Run(map[string]interface{}{
+				"my.input": tc.Data,
+			}, time.Second)
+			require.NoError(t, err)
 		})
 	}
 }

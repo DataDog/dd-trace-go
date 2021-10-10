@@ -94,6 +94,9 @@ func (e *encoder) encodeValue(v reflect.Value, wo *wafObject, depth int) error {
 		if depth < 0 {
 			return errMaxDepth
 		}
+		if v.Type() == reflect.TypeOf([]byte(nil)) {
+			return e.encodeString(string(v.Bytes()), wo)
+		}
 		return e.encodeArray(v, wo, depth-1)
 
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:

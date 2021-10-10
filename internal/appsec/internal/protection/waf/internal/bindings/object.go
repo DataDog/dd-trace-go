@@ -140,8 +140,7 @@ func cstring(str string, maxLength int) (*C.char, int, error) {
 	}
 	// Copy the string up to l.
 	// The copy is required as the pointer will be stored into the C structures,
-	// so using a Go pointer is impossible (and detected by the cgo pointer checks
-	// anyway).
+	// so using a Go pointer is impossible.
 	cstr := C.CString(str[:l])
 	if cstr == nil {
 		return nil, 0, errOutOfMemory
@@ -164,13 +163,17 @@ func free(v *wafObject) {
 	case wafInvalidType:
 		return
 	case wafStringType:
-		C.free(unsafe.Pointer(v.string()))
-		decNbLiveCObjects()
+		freeString(v)
 	case wafMapType, wafArrayType:
 		freeContainer(v)
 	}
 	// Make the value invalid to make it unusable
 	v.setInvalid()
+}
+
+func freeString(v *wafObject) {
+	C.free(unsafe.Pointer(v.string()))
+	decNbLiveCObjects()
 }
 
 func freeContainer(v *wafObject) {

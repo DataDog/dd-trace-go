@@ -13,10 +13,12 @@
 package bindings
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -29,7 +31,9 @@ func TestHealth(t *testing.T) {
 	require.Equal(t, "1.0.12", version.String())
 }
 
-var testRule = []byte(`
+var testRule = newTestRule("server.request.headers.no_cookies:user-agent")
+
+var testRuleTmpl = template.Must(template.New("").Parse(`
 {
   "version": "1.0",
   "events": [
@@ -44,7 +48,7 @@ var testRule = []byte(`
           "operation": "match_regex",
           "parameters": {
             "inputs": [
-              "server.request.headers.no_cookies:user-agent"
+              "{{ .Input }}"
             ],
             "regex": "^Arachni"
           }
@@ -55,7 +59,17 @@ var testRule = []byte(`
     }
   ]
 }
-`)
+`))
+
+func newTestRule(input string) []byte {
+	var buf bytes.Buffer
+	if err := testRuleTmpl.Execute(&buf, struct {
+		Input string
+	}{input}); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
 
 func TestNewWAF(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
@@ -211,6 +225,10 @@ func TestUsage(t *testing.T) {
 func TestConcurrency(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 
+	// Start 2000 goroutines that will use the WAF 1000 times each
+	nbUsers := 2000
+	nbRun := 1000
+
 	t.Run("concurrent-waf-release", func(t *testing.T) {
 		t.Parallel()
 
@@ -253,9 +271,6 @@ func TestConcurrency(t *testing.T) {
 		// This is the reason why the following user agent are not Arachni.
 		userAgents := [...]string{"Foo", "Bar", "Datadog"}
 		length := len(userAgents)
-		// Start 2000 goroutines that will use the WAF 1000 times each
-		nbUsers := 2000
-		nbRun := 1000
 
 		var startBarrier, stopBarrier sync.WaitGroup
 		// Create a start barrier to synchronize every goroutine's launch and
@@ -315,9 +330,6 @@ func TestConcurrency(t *testing.T) {
 		// This is the reason why the following user agent are not Arachni.
 		userAgents := [...]string{"Foo", "Bar", "Datadog"}
 		length := len(userAgents)
-		// Start 2000 goroutines that will use the WAF 1000 times each
-		nbUsers := 2000
-		nbRun := 1000
 
 		var startBarrier, stopBarrier sync.WaitGroup
 		// Create a start barrier to synchronize every goroutine's launch and

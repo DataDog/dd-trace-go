@@ -52,9 +52,11 @@ type WAF struct {
 	// when there are no WAFContext using it.
 	mu sync.RWMutex
 
+	// encoder of Go values into WAF objects.
 	encoder encoder
 }
 
+// NewWAF creates a new instance of the WAF with the given JSON rule.
 func NewWAF(jsonRule []byte) (*WAF, error) {
 	var rule interface{}
 	if err := json.Unmarshal(jsonRule, &rule); err != nil {
