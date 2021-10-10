@@ -82,7 +82,7 @@ type (
 	AttackContextHost struct {
 		ContextVersion string `json:"context_version"`
 		OsType         string `json:"os_type"`
-		Hostname       string `json:"hostname"`
+		Hostname       string `json:"hostname,omitempty"`
 	}
 
 	// AttackContextHTTP intake API payload.
@@ -94,15 +94,21 @@ type (
 
 	// AttackContextHTTPRequest intake API payload.
 	AttackContextHTTPRequest struct {
-		Scheme     string `json:"scheme"`
-		Method     string `json:"method"`
-		URL        string `json:"url"`
-		Host       string `json:"host"`
-		Port       int    `json:"port"`
-		Path       string `json:"path"`
-		Resource   string `json:"resource"`
-		RemoteIP   string `json:"remote_ip"`
-		RemotePort int    `json:"remote_port"`
+		Scheme     string                             `json:"scheme"`
+		Method     string                             `json:"method"`
+		URL        string                             `json:"url"`
+		Host       string                             `json:"host"`
+		Port       int                                `json:"port"`
+		Path       string                             `json:"path"`
+		Resource   string                             `json:"resource,omitempty"`
+		RemoteIP   string                             `json:"remote_ip"`
+		RemotePort int                                `json:"remote_port"`
+		Headers    map[string]string                  `json:"headers"`
+		Parameters AttackContextHTTPRequestParameters `json:"parameters,omitempty"`
+	}
+
+	AttackContextHTTPRequestParameters struct {
+		Query map[string]string `json:"query,omitempty"`
 	}
 
 	// AttackContextHTTPResponse intake API payload.
@@ -113,9 +119,9 @@ type (
 	// AttackContextService intake API payload.
 	AttackContextService struct {
 		ContextVersion string `json:"context_version"`
-		Name           string `json:"name"`
-		Environment    string `json:"environment"`
-		Version        string `json:"version"`
+		Name           string `json:"name,omitempty"`
+		Environment    string `json:"environment,omitempty"`
+		Version        string `json:"version,omitempty"`
 	}
 
 	// AttackContextTags intake API payload.
@@ -250,8 +256,8 @@ func (c *AttackContext) applyContext(ctx appsectypes.SecurityEventContext) {
 	switch actual := ctx.(type) {
 	case appsectypes.SpanContext:
 		c.applySpanContext(actual)
-	case appsectypes.HTTPOperationContext:
-		c.applyHTTPOperationContext(actual)
+	case appsectypes.HTTPContext:
+		c.applyHTTPContext(actual)
 	case appsectypes.ServiceContext:
 		c.applyServiceContext(actual)
 	case appsectypes.TagContext:
@@ -286,7 +292,7 @@ func MakeAttackContextSpan(spanID string) AttackContextSpan {
 	}
 }
 
-func (c *AttackContext) applyHTTPOperationContext(ctx appsectypes.HTTPOperationContext) {
+func (c *AttackContext) applyHTTPContext(ctx appsectypes.HTTPContext) {
 	c.HTTP = MakeAttackContextHTTP(MakeAttackContextHTTPRequest(ctx.Request), MakeAttackContextHTTPResponse(ctx.Response))
 }
 
@@ -359,28 +365,74 @@ func MakeAttackContextHTTP(req AttackContextHTTPRequest, res AttackContextHTTPRe
 	}
 }
 
+var collectedHeaders = [...]string{
+	"host",
+	"x-forwarded-for",
+	"x-client-ip",
+	"x-real-ip",
+	"x-forwarded",
+	"x-cluster-client-ip",
+	"forwarded-for",
+	"forwarded",
+	"via",
+	"true-client-ip",
+	"content-length",
+	"content-type",
+	"content-encoding",
+	"content-language",
+	"forwarded",
+	"user-agent",
+	"accept",
+	"accept-encoding",
+	"accept-language",
+}
+
 // MakeAttackContextHTTPRequest create an AttackContextHTTPRequest payload.
 func MakeAttackContextHTTPRequest(req appsectypes.HTTPRequestContext) AttackContextHTTPRequest {
 	host, portStr := splitHostPort(req.Host)
-	remoteIP, remotePortStr := splitHostPort(req.RemoteAddr)
 	port, _ := strconv.Atoi(portStr)
+
+	remoteIP, remotePortStr := splitHostPort(req.RemoteAddr)
 	remotePort, _ := strconv.Atoi(remotePortStr)
+
 	var scheme string
 	if req.IsTLS {
 		scheme = "https"
 	} else {
 		scheme = "http"
 	}
-	url := fmt.Sprintf("%s://%s%s", scheme, req.Host, req.RequestURI)
+
+	url := fmt.Sprintf("%s://%s%s", scheme, req.Host, req.Path)
+
+	var headers map[string]string
+	if l := len(req.Headers); l > 0 {
+		headers = make(map[string]string)
+		for _, k := range collectedHeaders {
+			if v, ok := req.Headers[k]; ok {
+				headers[k] = strings.Join(v, ";")
+			}
+		}
+	}
+
+	var query map[string]string
+	if l := len(req.Query); l > 0 {
+		query = make(map[string]string, l)
+		for k, v := range req.Query {
+			query[k] = strings.Join(v, ";")
+		}
+	}
+
 	return AttackContextHTTPRequest{
 		Scheme:     scheme,
 		Method:     req.Method,
 		URL:        url,
 		Host:       host,
 		Port:       port,
-		Path:       req.RequestURI,
+		Path:       req.Path,
 		RemoteIP:   remoteIP,
 		RemotePort: remotePort,
+		Headers:    headers,
+		Parameters: AttackContextHTTPRequestParameters{Query: query},
 	}
 }
 

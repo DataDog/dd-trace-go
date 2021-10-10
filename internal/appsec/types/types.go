@@ -28,15 +28,15 @@ func NewSecurityEvent(event interface{}, ctx ...SecurityEventContext) *SecurityE
 	}
 }
 
-// AddContext allows to add extra security event contexts to an already created security event.
+// AddContext allows adding extra security event contexts to an already created security event.
 func (e *SecurityEvent) AddContext(ctx ...SecurityEventContext) {
 	e.Context = append(e.Context, ctx...)
 }
 
 type (
-	// HTTPOperationContext is the security event context describing an HTTP handler. It includes information about its
+	// HTTPContext is the security event context describing an HTTP handler. It includes information about its
 	// request and response.
-	HTTPOperationContext struct {
+	HTTPContext struct {
 		Request  HTTPRequestContext
 		Response HTTPResponseContext
 	}
@@ -48,15 +48,19 @@ type (
 		IsTLS      bool
 		RequestURI string
 		RemoteAddr string
+		Path       string
+		Headers    map[string][]string
+		Query      map[string][]string
 	}
 
 	// HTTPResponseContext is the HTTP response context of an HTTP operation context.
 	HTTPResponseContext struct {
-		Status int
+		Status  int
+		Headers map[string][]string
 	}
 )
 
-func (HTTPOperationContext) isSecurityEventContext() {}
+func (HTTPContext) isSecurityEventContext() {}
 
 // SpanContext is the APM span context. It allows to provide the span and its trace IDs where the security event
 // happened.

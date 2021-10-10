@@ -215,17 +215,22 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
-	appsec.Start(&appsec.Config{
-		Client:   t.config.httpClient,
+	if enabled := appsec.Start(&appsec.Config{
+		Client:   c.httpClient,
 		Version:  version.Tag,
-		AgentURL: fmt.Sprintf("http://%s/", t.config.agentAddr),
-		Hostname: t.config.hostname,
+		AgentURL: fmt.Sprintf("http://%s/", c.agentAddr),
+		Hostname: c.hostname,
 		Service: appsec.ServiceConfig{
-			Name:        t.config.serviceName,
-			Version:     t.config.version,
-			Environment: t.config.env,
+			Name:        c.serviceName,
+			Version:     c.version,
+			Environment: c.env,
 		},
-	})
+	}); enabled {
+		c.globalTags["_dd.appsec.enabled"] = "1"
+		c.globalTags["_dd.runtime_family"] = "go"
+	} else {
+		c.globalTags["_dd.appsec.enabled"] = "0"
+	}
 	return t
 }
 

@@ -54,32 +54,7 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 	defer span.Finish(cfg.FinishOpts...)
 
 	cfg.ResponseWriter = wrapResponseWriter(cfg.ResponseWriter, span)
-
-	// TODO(julio): disable this when appsec is disabled for now
-	headers := cfg.Request.Header
-	cookies := headers["Cookie"]
-	if len(cookies) > 0 {
-		// Clone the map of headers and remove the cookies
-		headers = headers.Clone()
-		headers.Del("Cookie")
-	}
-	op := httpinstr.StartOperation(
-		httpinstr.HandlerOperationArgs{
-			Span:       span,
-			IsTLS:      cfg.Request.TLS != nil,
-			Method:     cfg.Request.Method,
-			Host:       cfg.Request.Host,
-			RequestURI: cfg.Request.RequestURI,
-			RemoteAddr: cfg.Request.RemoteAddr,
-			Headers:    cfg.Request.Header,
-			Cookies:    cookies,
-		},
-		nil,
-	)
-	// TODO(julio): get the status code out of the wrapped response writer
-	defer op.Finish(httpinstr.HandlerOperationRes{})
-
-	h.ServeHTTP(cfg.ResponseWriter, cfg.Request.WithContext(ctx))
+	httpinstr.WrapHandler(h, span).ServeHTTP(cfg.ResponseWriter, cfg.Request.WithContext(ctx))
 }
 
 // responseWriter is a small wrapper around an http response writer that will

@@ -26,6 +26,8 @@ type EventManager interface {
 const (
 	serverRequestRawURIAddr           = "server.request.uri.raw"
 	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
+	serverRequestCookiesAddr          = "server.request.cookies"
+	serverRequestQueryAddr            = "server.request.query"
 )
 
 // Register the WAF event listener.
@@ -59,18 +61,17 @@ func newWAFEventListener(waf *bindings.WAF, appsec EventManager) instrumentation
 		}
 
 		// For this handler operation lifetime, create a WAF context and the list of detected attacks
-		var (
-			// TODO(julio): make the attack slice thread-safe once we listen for sub-operations
-			attacks []waftypes.RawAttackMetadata
-		)
+		// TODO(julio): make the attack slice thread-safe once we listen for sub-operations
+		var attacks []waftypes.RawAttackMetadata
 
 		op.On(httpinstr.OnHandlerOperationFinish(func(op instrumentation.Operation, res httpinstr.HandlerOperationRes) {
 			// Release the WAF context
 			wafCtx.Close()
 			// Log the attacks if any
 			if len(attacks) > 0 {
+				log.Debug("Detecting a WAF attack")
 				// Create the base security event out of the slide of attacks
-				event := appsectypes.NewSecurityEvent(attacks, makeHTTPOperationContext(args, res))
+				event := appsectypes.NewSecurityEvent(attacks, httpinstr.MakeHTTPContext(args, res))
 				// Check if a span exists
 				if span := args.Span; span != nil {
 					// Add the span context to the security event if any
@@ -92,6 +93,8 @@ func newWAFEventListener(waf *bindings.WAF, appsec EventManager) instrumentation
 		values := map[string]interface{}{
 			serverRequestRawURIAddr:           args.RequestURI,
 			serverRequestHeadersNoCookiesAddr: args.Headers,
+			serverRequestCookiesAddr:          args.Cookies,
+			serverRequestQueryAddr:            args.Query,
 		}
 		runWAF(wafCtx, values, &attacks)
 	})
@@ -107,21 +110,4 @@ func runWAF(wafCtx *bindings.WAFContext, values map[string]interface{}, attacks 
 		return
 	}
 	*attacks = append(*attacks, waftypes.RawAttackMetadata{Time: time.Now(), Block: action == bindings.BlockAction, Metadata: md})
-}
-
-// makeHTTPOperationContext creates an HTTP operation context from HTTP operation arguments and results.
-// This context can be added to a security event.
-func makeHTTPOperationContext(args httpinstr.HandlerOperationArgs, res httpinstr.HandlerOperationRes) appsectypes.HTTPOperationContext {
-	return appsectypes.HTTPOperationContext{
-		Request: appsectypes.HTTPRequestContext{
-			Method:     args.Method,
-			Host:       args.Host,
-			IsTLS:      args.IsTLS,
-			RequestURI: args.RequestURI,
-			RemoteAddr: args.RemoteAddr,
-		},
-		Response: appsectypes.HTTPResponseContext{
-			Status: res.Status,
-		},
-	}
 }
