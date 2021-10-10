@@ -29,13 +29,16 @@ const (
 )
 
 // Register the WAF event listener.
-func Register(appsec EventManager) (instrumentation.UnregisterFunc, error) {
+func Register(rules []byte, appsec EventManager) (instrumentation.UnregisterFunc, error) {
 	if version, err := bindings.Health(); err != nil {
 		return nil, err
 	} else {
 		log.Debug("appsec: registering waf v%s instrumentation", version.String())
 	}
-	waf, err := bindings.NewWAF([]byte(staticRecommendedRule))
+	if rules == nil {
+		rules = []byte(staticRecommendedRule)
+	}
+	waf, err := bindings.NewWAF(rules)
 	if err != nil {
 		return nil, err
 	}

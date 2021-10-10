@@ -45,6 +45,9 @@ type (
 		// MaxBatchStaleTime is the maximum amount of time events are kept in the batch. This allows to send the batch
 		// after this amount of time even if the maximum batch length is not reached yet. Defaults to 1 second.
 		MaxBatchStaleTime time.Duration
+
+		// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used.
+		rules []byte
 	}
 
 	// ServiceConfig is the optional context about the running service.
@@ -68,7 +71,7 @@ const (
 const defaultIntakeTimeout = 10 * time.Second
 
 // Start AppSec when the environment variable DD_APPSEC_ENABLED is set to true.
-func Start(cfg *Config) {
+func Start(cfg *Config) (enabled bool) {
 	enabled, err := isEnabled()
 	if err != nil {
 		log.Error("appsec: %v", err)
@@ -78,16 +81,36 @@ func Start(cfg *Config) {
 		return
 	}
 
+	filepath := os.Getenv("DD_APPSEC_RULES")
+	if filepath != "" {
+		rules, err := os.ReadFile(filepath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				log.Error("appsec: could not find the rules file in path %s.\nAppSec will not run any protections in this application. No security activities will be collected: %v", filepath, err)
+			} else {
+				logUnexpectedStartError(err)
+			}
+			return
+		}
+		cfg.rules = rules
+	}
+
 	appsec, err := newAppSec(cfg)
 	if err != nil {
-		log.Error("appsec: disabled due to a startup error: %v", err)
+		logUnexpectedStartError(err)
 		return
 	}
 	if err := appsec.start(); err != nil {
-		log.Error("appsec: disabled due to a startup error: %v", err)
+		logUnexpectedStartError(err)
 		return
 	}
 	setActiveAppSec(appsec)
+	return true
+}
+
+// Implement the AppSec log message C1
+func logUnexpectedStartError(err error) {
+	log.Error("appsec: could not start because of an unexpected error. No security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help:\n%v", err)
 }
 
 // Stop AppSec.
@@ -153,7 +176,7 @@ func newAppSec(cfg *Config) (*appsec, error) {
 // Start starts the AppSec background goroutine.
 func (a *appsec) start() error {
 	// Register the WAF operation event listener
-	unregisterWAF, err := waf.Register(a)
+	unregisterWAF, err := waf.Register(a.cfg.rules, a)
 	if err != nil {
 		return err
 	}
