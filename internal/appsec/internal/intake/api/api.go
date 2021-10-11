@@ -29,7 +29,6 @@ type (
 		EventVersion string           `json:"event_version"`
 		DetectedAt   time.Time        `json:"detected_at"`
 		Type         string           `json:"type"`
-		Blocked      bool             `json:"blocked"`
 		Rule         *AttackRule      `json:"rule"`
 		RuleMatch    *AttackRuleMatch `json:"rule_match"`
 		Context      *AttackContext   `json:"context"`
@@ -152,7 +151,7 @@ type (
 )
 
 // NewAttackEvent returns a new attack event payload.
-func NewAttackEvent(attackType string, blocked bool, at time.Time, rule *AttackRule, match *AttackRuleMatch, attackCtx *AttackContext) *AttackEvent {
+func NewAttackEvent(attackType string, at time.Time, rule *AttackRule, match *AttackRuleMatch, attackCtx *AttackContext) *AttackEvent {
 	id, _ := uuid.NewUUID()
 	return &AttackEvent{
 		EventID:      id.String(),
@@ -160,7 +159,6 @@ func NewAttackEvent(attackType string, blocked bool, at time.Time, rule *AttackR
 		EventVersion: "0.1.0",
 		DetectedAt:   at,
 		Type:         attackType,
-		Blocked:      blocked,
 		Rule:         rule,
 		RuleMatch:    match,
 		Context:      attackCtx,
@@ -168,7 +166,7 @@ func NewAttackEvent(attackType string, blocked bool, at time.Time, rule *AttackR
 }
 
 // FromWAFAttack creates the attack event payloads from a WAF attack.
-func FromWAFAttack(t time.Time, blocked bool, md []byte, attackContext *AttackContext) (events []*AttackEvent, err error) {
+func FromWAFAttack(t time.Time, md []byte, attackContext *AttackContext) (events []*AttackEvent, err error) {
 	var matches waftypes.AttackMetadata
 	if err := json.Unmarshal(md, &matches); err != nil {
 		return nil, err
@@ -191,7 +189,7 @@ func FromWAFAttack(t time.Time, blocked bool, md []byte, attackContext *AttackCo
 				},
 				Highlight: []string{filter.MatchStatus},
 			}
-			events = append(events, NewAttackEvent(match.Flow, blocked, t, rule, ruleMatch, attackContext))
+			events = append(events, NewAttackEvent(match.Flow, t, rule, ruleMatch, attackContext))
 		}
 	}
 	return events, nil
@@ -224,7 +222,7 @@ func FromSecurityEvents(events []*appsectypes.SecurityEvent, globalContext []app
 		switch actual := event.Event.(type) {
 		case []waftypes.RawAttackMetadata:
 			for _, attack := range actual {
-				attacks, err := FromWAFAttack(attack.Time, attack.Block, attack.Metadata, eventContext)
+				attacks, err := FromWAFAttack(attack.Time, attack.Metadata, eventContext)
 				if err != nil {
 					log.Error("appsec: could not create the security event payload out of a waf attack: %v", err)
 					continue
