@@ -87,12 +87,12 @@ type (
 	// AttackContextHTTP intake API payload.
 	AttackContextHTTP struct {
 		ContextVersion string                    `json:"context_version"`
-		Request        AttackContextHTTPRequest  `json:"request"`
-		Response       AttackContextHTTPResponse `json:"response"`
+		Request        attackContextHTTPRequest  `json:"request"`
+		Response       attackContextHTTPResponse `json:"response"`
 	}
 
-	// AttackContextHTTPRequest intake API payload.
-	AttackContextHTTPRequest struct {
+	// attackContextHTTPRequest intake API payload.
+	attackContextHTTPRequest struct {
 		Scheme     string                             `json:"scheme"`
 		Method     string                             `json:"method"`
 		URL        string                             `json:"url"`
@@ -110,8 +110,8 @@ type (
 		Query map[string]string `json:"query,omitempty"`
 	}
 
-	// AttackContextHTTPResponse intake API payload.
-	AttackContextHTTPResponse struct {
+	// attackContextHTTPResponse intake API payload.
+	attackContextHTTPResponse struct {
 		Status int `json:"status"`
 	}
 
@@ -291,27 +291,27 @@ func MakeAttackContextSpan(spanID string) AttackContextSpan {
 }
 
 func (c *AttackContext) applyHTTPContext(ctx appsectypes.HTTPContext) {
-	c.HTTP = MakeAttackContextHTTP(MakeAttackContextHTTPRequest(ctx.Request), MakeAttackContextHTTPResponse(ctx.Response))
+	c.HTTP = makeAttackContextHTTP(makeAttackContextHTTPRequest(ctx.Request), makeAttackContextHTTPResponse(ctx.Response))
 }
 
 func (c *AttackContext) applyServiceContext(ctx appsectypes.ServiceContext) {
-	c.Service = MakeServiceContext(ctx.Name, ctx.Version, ctx.Environment)
+	c.Service = makeServiceContext(ctx.Name, ctx.Version, ctx.Environment)
 }
 
 func (c *AttackContext) applyTagContext(ctx appsectypes.TagContext) {
-	c.Tags = MakeAttackContextTags(ctx)
+	c.Tags = makeAttackContextTags(ctx)
 }
 
 func (c *AttackContext) applyTracerContext(ctx appsectypes.TracerContext) {
-	c.Tracer = MakeAttackContextTracer(ctx.Version, ctx.Runtime, ctx.RuntimeVersion)
+	c.Tracer = makeAttackContextTracer(ctx.Version, ctx.Runtime, ctx.RuntimeVersion)
 }
 
 func (c *AttackContext) applyHostContext(ctx appsectypes.HostContext) {
-	c.Host = MakeAttackContextHost(ctx.Hostname, ctx.OS)
+	c.Host = makeAttackContextHost(ctx.Hostname, ctx.OS)
 }
 
-// MakeAttackContextHost create an AttackContextHost payload.
-func MakeAttackContextHost(hostname string, os string) AttackContextHost {
+// makeAttackContextHost create an AttackContextHost payload.
+func makeAttackContextHost(hostname string, os string) AttackContextHost {
 	return AttackContextHost{
 		ContextVersion: "0.1.0",
 		OsType:         os,
@@ -319,8 +319,8 @@ func MakeAttackContextHost(hostname string, os string) AttackContextHost {
 	}
 }
 
-// MakeAttackContextTracer create an AttackContextTracer payload.
-func MakeAttackContextTracer(version string, rt string, rtVersion string) AttackContextTracer {
+// makeAttackContextTracer create an AttackContextTracer payload.
+func makeAttackContextTracer(version string, rt string, rtVersion string) AttackContextTracer {
 	return AttackContextTracer{
 		ContextVersion: "0.1.0",
 		RuntimeType:    rt,
@@ -329,16 +329,16 @@ func MakeAttackContextTracer(version string, rt string, rtVersion string) Attack
 	}
 }
 
-// MakeAttackContextTags create an AttackContextTags payload.
-func MakeAttackContextTags(tags []string) AttackContextTags {
+// makeAttackContextTags create an AttackContextTags payload.
+func makeAttackContextTags(tags []string) AttackContextTags {
 	return AttackContextTags{
 		ContextVersion: "0.1.0",
 		Values:         tags,
 	}
 }
 
-// MakeServiceContext create an AttackContextService payload.
-func MakeServiceContext(name string, version string, environment string) AttackContextService {
+// makeServiceContext create an AttackContextService payload.
+func makeServiceContext(name string, version string, environment string) AttackContextService {
 	return AttackContextService{
 		ContextVersion: "0.1.0",
 		Name:           name,
@@ -347,15 +347,15 @@ func MakeServiceContext(name string, version string, environment string) AttackC
 	}
 }
 
-// MakeAttackContextHTTPResponse create an AttackContextHTTPResponse payload.
-func MakeAttackContextHTTPResponse(res appsectypes.HTTPResponseContext) AttackContextHTTPResponse {
-	return AttackContextHTTPResponse{
+// makeAttackContextHTTPResponse create an attackContextHTTPResponse payload.
+func makeAttackContextHTTPResponse(res appsectypes.HTTPResponseContext) attackContextHTTPResponse {
+	return attackContextHTTPResponse{
 		Status: res.Status,
 	}
 }
 
-// MakeAttackContextHTTP create an AttackContextHTTP payload.
-func MakeAttackContextHTTP(req AttackContextHTTPRequest, res AttackContextHTTPResponse) AttackContextHTTP {
+// makeAttackContextHTTP create an AttackContextHTTP payload.
+func makeAttackContextHTTP(req attackContextHTTPRequest, res attackContextHTTPResponse) AttackContextHTTP {
 	return AttackContextHTTP{
 		ContextVersion: "0.1.0",
 		Request:        req,
@@ -385,8 +385,8 @@ var collectedHeaders = [...]string{
 	"accept-language",
 }
 
-// MakeAttackContextHTTPRequest create an AttackContextHTTPRequest payload.
-func MakeAttackContextHTTPRequest(req appsectypes.HTTPRequestContext) AttackContextHTTPRequest {
+// makeAttackContextHTTPRequest create an attackContextHTTPRequest payload.
+func makeAttackContextHTTPRequest(req appsectypes.HTTPRequestContext) attackContextHTTPRequest {
 	host, portStr := splitHostPort(req.Host)
 	port, _ := strconv.Atoi(portStr)
 
@@ -420,7 +420,7 @@ func MakeAttackContextHTTPRequest(req appsectypes.HTTPRequestContext) AttackCont
 		}
 	}
 
-	return AttackContextHTTPRequest{
+	return attackContextHTTPRequest{
 		Scheme:     scheme,
 		Method:     req.Method,
 		URL:        url,
