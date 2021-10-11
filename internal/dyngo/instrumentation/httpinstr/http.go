@@ -3,7 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package http
+// Package httpinstr defines the HTTP operation that can be listened to using
+// dyngo's operation instrumentation. It serves as an abstract representation
+// of HTTP handler calls.
+package httpinstr
 
 import (
 	"net/http"
@@ -14,8 +17,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 )
 
 // Abstract HTTP handler operation definition.
@@ -118,19 +120,19 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 // TODO(julio): create a go-generate tool to generate the types, vars and methods below
 
 type Operation struct {
-	*internal.OperationImpl
+	*dyngo.OperationImpl
 }
 
-func StartOperation(args HandlerOperationArgs, parent internal.Operation) Operation {
-	return Operation{OperationImpl: internal.StartOperation(args, parent)}
+func StartOperation(args HandlerOperationArgs, parent dyngo.Operation) Operation {
+	return Operation{OperationImpl: dyngo.StartOperation(args, parent)}
 }
 func (op Operation) Finish(res HandlerOperationRes) {
 	op.OperationImpl.Finish(res)
 }
 
 type (
-	OnHandlerOperationStart  func(instrumentation.Operation, HandlerOperationArgs)
-	OnHandlerOperationFinish func(instrumentation.Operation, HandlerOperationRes)
+	OnHandlerOperationStart  func(dyngo.Operation, HandlerOperationArgs)
+	OnHandlerOperationFinish func(dyngo.Operation, HandlerOperationRes)
 )
 
 var (
@@ -139,11 +141,11 @@ var (
 )
 
 func (OnHandlerOperationStart) ListenedType() reflect.Type { return handlerOperationArgsType }
-func (f OnHandlerOperationStart) Call(op instrumentation.Operation, v interface{}) {
+func (f OnHandlerOperationStart) Call(op dyngo.Operation, v interface{}) {
 	f(op, v.(HandlerOperationArgs))
 }
 
 func (OnHandlerOperationFinish) ListenedType() reflect.Type { return handlerOperationResType }
-func (f OnHandlerOperationFinish) Call(op instrumentation.Operation, v interface{}) {
+func (f OnHandlerOperationFinish) Call(op dyngo.Operation, v interface{}) {
 	f(op, v.(HandlerOperationRes))
 }

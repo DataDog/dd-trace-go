@@ -19,7 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -149,7 +149,7 @@ type appsec struct {
 	eventChan     chan *appsectypes.SecurityEvent
 	wg            sync.WaitGroup
 	cfg           *Config
-	unregisterWAF instrumentation.UnregisterFunc
+	unregisterWAF dyngo.UnregisterFunc
 }
 
 func newAppSec(cfg *Config) (*appsec, error) {

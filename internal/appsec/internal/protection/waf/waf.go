@@ -13,8 +13,7 @@ import (
 	waftypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/types"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation"
-	httpinstr "gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation/http"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation/httpinstr"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -31,7 +30,7 @@ const (
 )
 
 // Register the WAF event listener.
-func Register(rules []byte, appsec EventManager) (instrumentation.UnregisterFunc, error) {
+func Register(rules []byte, appsec EventManager) (dyngo.UnregisterFunc, error) {
 	if version, err := bindings.Health(); err != nil {
 		return nil, err
 	} else {
@@ -52,8 +51,8 @@ func Register(rules []byte, appsec EventManager) (instrumentation.UnregisterFunc
 }
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
-func newWAFEventListener(waf *bindings.WAF, appsec EventManager) instrumentation.EventListener {
-	return httpinstr.OnHandlerOperationStart(func(op instrumentation.Operation, args httpinstr.HandlerOperationArgs) {
+func newWAFEventListener(waf *bindings.WAF, appsec EventManager) dyngo.EventListener {
+	return httpinstr.OnHandlerOperationStart(func(op dyngo.Operation, args httpinstr.HandlerOperationArgs) {
 		wafCtx := bindings.NewWAFContext(waf)
 		if wafCtx == nil {
 			// The WAF event listener got concurrently released
@@ -64,7 +63,7 @@ func newWAFEventListener(waf *bindings.WAF, appsec EventManager) instrumentation
 		// TODO(julio): make the attack slice thread-safe once we listen for sub-operations
 		var attacks []waftypes.RawAttackMetadata
 
-		op.On(httpinstr.OnHandlerOperationFinish(func(op instrumentation.Operation, res httpinstr.HandlerOperationRes) {
+		op.On(httpinstr.OnHandlerOperationFinish(func(op dyngo.Operation, res httpinstr.HandlerOperationRes) {
 			// Release the WAF context
 			wafCtx.Close()
 			// Log the attacks if any
