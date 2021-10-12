@@ -69,8 +69,13 @@ func newResponseWriter(w http.ResponseWriter, span ddtrace.Span) *responseWriter
 	return &responseWriter{w, span, 0}
 }
 
+// Status returns the status code that was monitored.
+func (w *responseWriter) Status() int {
+	return w.status
+}
+
 // Write writes the data to the connection as part of an HTTP reply.
-// We explicitely call WriteHeader with the 200 status code
+// We explicitly call WriteHeader with the 200 status code
 // in order to get it reported into the span.
 func (w *responseWriter) Write(b []byte) (int, error) {
 	if w.status == 0 {
