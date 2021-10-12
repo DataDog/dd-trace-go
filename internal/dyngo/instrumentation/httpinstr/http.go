@@ -36,7 +36,7 @@ type (
 		// Headers corresponds to the address `server.request.headers.no_cookies`
 		Headers map[string][]string
 		// Cookies corresponds to the address `server.request.cookies`
-		Cookies []string
+		Cookies map[string][]string
 		// Query corresponds to the address `server.request.query`
 		Query url.Values
 	}
@@ -74,18 +74,24 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 		return handler
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var (
-			headers = make(http.Header, len(r.Header))
-			cookies []string
-		)
+		headers := make(http.Header, len(r.Header))
 		for k, v := range r.Header {
 			k := strings.ToLower(k)
 			if k == "cookie" {
-				// Save the cookies value and do not include them in the request headers
-				cookies = v
+				// Do not include cookies in the request headers
 				continue
 			}
 			headers[k] = v
+		}
+		var cookies map[string][]string
+		if reqCookies := r.Cookies(); len(reqCookies) > 0 {
+			cookies = make(map[string][]string, len(reqCookies))
+			for _, cookie := range reqCookies {
+				if cookie == nil {
+					continue
+				}
+				cookies[cookie.Name] = append(cookies[cookie.Name], cookie.Value)
+			}
 		}
 		host := r.Host
 		headers["host"] = []string{host}
