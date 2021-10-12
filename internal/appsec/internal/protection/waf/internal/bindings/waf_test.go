@@ -48,7 +48,7 @@ var testRuleTmpl = template.Must(template.New("").Parse(`
           "operation": "match_regex",
           "parameters": {
             "inputs": [
-              "{{ .Input }}"
+             {{ range $i, $input := . }}{{ if gt $i 0 }}, {{end}}"{{ $input }}"{{ end }}
             ],
             "regex": "^Arachni"
           }
@@ -61,11 +61,20 @@ var testRuleTmpl = template.Must(template.New("").Parse(`
 }
 `))
 
-func newTestRule(input string) []byte {
+func separator(s string) func() string {
+	i := -1
+	return func() string {
+		i++
+		if i == 0 {
+			return ""
+		}
+		return s
+	}
+}
+
+func newTestRule(input ...string) []byte {
 	var buf bytes.Buffer
-	if err := testRuleTmpl.Execute(&buf, struct {
-		Input string
-	}{input}); err != nil {
+	if err := testRuleTmpl.Execute(&buf, input); err != nil {
 		panic(err)
 	}
 	return buf.Bytes()
@@ -132,18 +141,18 @@ func TestNewWAF(t *testing.T) {
 func TestUsage(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 
-	waf, err := NewWAF(testRule)
+	waf, err := NewWAF(newTestRule("my.input"))
 	require.NoError(t, err)
 	require.NotNil(t, waf)
+
+	//require.Equal(t, []string{"my.input"}, waf.Addresses())
 
 	wafCtx := NewWAFContext(waf)
 	require.NotNil(t, wafCtx)
 
 	// Not matching
 	values := map[string]interface{}{
-		"server.request.headers.no_cookies": map[string][]string{
-			"user-agent": {"go client"},
-		},
+		"my.input": "go client",
 	}
 	action, md, err := wafCtx.Run(values, time.Second)
 	require.NoError(t, err)
@@ -161,9 +170,7 @@ func TestUsage(t *testing.T) {
 
 	// Timeout
 	values = map[string]interface{}{
-		"server.request.headers.no_cookies": map[string][]string{
-			"user-agent": {"Arachni"},
-		},
+		"my.input": "Arachni",
 	}
 	action, md, err = wafCtx.Run(values, 0)
 	require.Equal(t, ErrTimeout, err)
@@ -172,9 +179,7 @@ func TestUsage(t *testing.T) {
 
 	// Not matching anymore since it already matched before
 	values = map[string]interface{}{
-		"server.request.headers.no_cookies": map[string][]string{
-			"user-agent": {"Arachni"},
-		},
+		"my.input": "Arachni",
 	}
 	action, md, err = wafCtx.Run(values, 0)
 	require.Equal(t, ErrTimeout, err)
@@ -184,9 +189,7 @@ func TestUsage(t *testing.T) {
 	// Matching
 	// Note a WAF rule can only match once. This is why we test the matching case at the end.
 	values = map[string]interface{}{
-		"server.request.headers.no_cookies": map[string][]string{
-			"user-agent": {"Arachni"},
-		},
+		"my.input": "Arachni",
 	}
 	action, md, err = wafCtx.Run(values, time.Second)
 	require.NoError(t, err)
@@ -195,9 +198,7 @@ func TestUsage(t *testing.T) {
 
 	// Not matching anymore since it already matched before
 	values = map[string]interface{}{
-		"server.request.headers.no_cookies": map[string][]string{
-			"user-agent": {"Arachni"},
-		},
+		"my.input": "Arachni",
 	}
 	action, md, err = wafCtx.Run(values, 0)
 	require.Equal(t, ErrTimeout, err)
@@ -220,6 +221,16 @@ func TestUsage(t *testing.T) {
 	waf.Close()
 	// Using the WAF instance after it was closed leads to a nil WAF context
 	require.Nil(t, NewWAFContext(waf))
+}
+
+func TestAddresses(t *testing.T) {
+	defer requireZeroNBLiveCObjects(t)
+	expectedAddresses := []string{"my.first.input", "my.second.input", "my.third.input", "my.indexed.input"}
+	addresses := []string{"my.first.input", "my.second.input", "my.third.input", "my.indexed.input:indexed"}
+	waf, err := NewWAF(newTestRule(addresses...))
+	require.NoError(t, err)
+	defer waf.Close()
+	require.Equal(t, expectedAddresses, waf.Addresses())
 }
 
 func TestConcurrency(t *testing.T) {

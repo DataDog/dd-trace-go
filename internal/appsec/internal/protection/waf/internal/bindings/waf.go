@@ -54,6 +54,8 @@ type WAF struct {
 
 	// encoder of Go values into WAF objects.
 	encoder encoder
+	// addresses the WAF rule is expecting.
+	addresses []string
 }
 
 // NewWAF creates a new instance of the WAF with the given JSON rule.
@@ -85,10 +87,42 @@ func NewWAF(jsonRule []byte) (*WAF, error) {
 	}
 	incNbLiveCObjects()
 
+	// Get the addresses the rule listens to
+	addresses, err := ruleAddresses(handle)
+	if err != nil {
+		C.ddwaf_destroy(handle)
+		decNbLiveCObjects()
+		return nil, err
+	}
+
 	return &WAF{
-		handle:  handle,
-		encoder: encoder,
+		handle:    handle,
+		encoder:   encoder,
+		addresses: addresses,
 	}, nil
+}
+
+func ruleAddresses(handle C.ddwaf_handle) ([]string, error) {
+	var nbAddresses C.uint32_t
+	caddresses := C.ddwaf_required_addresses(handle, &nbAddresses)
+	if nbAddresses == 0 {
+		return nil, ErrEmptyRuleAddresses
+	}
+	addresses := make([]string, int(nbAddresses))
+	//base := uintptr(unsafe.Pointer(caddresses))
+	for i := 0; i < len(addresses); i++ {
+		// Go pointer arithmetic equivalent to the C expression `caddresses[i]`
+		//caddress := (**C.char)(unsafe.Pointer(base + unsafe.Sizeof((*C.char)(nil))*uintptr(i)))
+		v := (*[1 << 30]*C.char)(unsafe.Pointer(caddresses))
+		addresses[i] = C.GoString(v[i])
+		//addresses[i] = C.GoString(*caddress)
+	}
+	return addresses, nil
+}
+
+// Addresses returns the list of addresses the WAF rule is expecting.
+func (waf *WAF) Addresses() []string {
+	return waf.addresses
 }
 
 // Close the WAF rule. The underlying C memory is released as soon as there are
@@ -186,6 +220,7 @@ const (
 	ErrInvalidArgument
 	ErrTimeout
 	ErrOutOfMemory
+	ErrEmptyRuleAddresses
 )
 
 func (e RunError) Error() string {
@@ -200,6 +235,8 @@ func (e RunError) Error() string {
 		return "invalid waf argument"
 	case ErrOutOfMemory:
 		return "out of memory"
+	case ErrEmptyRuleAddresses:
+		return "empty rule addresses"
 	default:
 		return fmt.Sprintf("unknown waf error %d", e)
 	}
