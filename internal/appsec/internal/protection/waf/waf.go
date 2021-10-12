@@ -108,5 +108,5 @@ func runWAF(wafCtx *bindings.WAFContext, values map[string]interface{}, attacks 
 	if action == bindings.NoAction {
 		return
 	}
-	*attacks = append(*attacks, waftypes.RawAttackMetadata{Time: time.Now(), Block: action == bindings.BlockAction, Metadata: md})
+	*attacks = append(*attacks, waftypes.RawAttackMetadata{Time: time.Now(), Metadata: md})
 }

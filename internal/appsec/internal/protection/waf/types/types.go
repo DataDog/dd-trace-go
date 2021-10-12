@@ -10,8 +10,6 @@ import "time"
 // RawAttackMetadata is the raw attack metadata returned by the WAF when matching.
 type RawAttackMetadata struct {
 	Time time.Time
-	// Block states if the operation where this event happened should be blocked.
-	Block bool
 	// Metadata is the raw JSON representation of the AttackMetadata slice.
 	Metadata []byte
 }

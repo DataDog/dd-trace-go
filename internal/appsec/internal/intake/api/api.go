@@ -13,23 +13,29 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	waftypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/types"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"github.com/google/uuid"
 )
 
 // Intake API payloads.
 type (
+	// EventBatch intake API payload.
+	EventBatch struct {
+		IdempotencyKey string         `json:"idempotency_key"`
+		Events         []*AttackEvent `json:"events"`
+	}
+
 	// AttackEvent intake API payload.
 	AttackEvent struct {
+		EventVersion string           `json:"event_version"`
 		EventID      string           `json:"event_id"`
 		EventType    string           `json:"event_type"`
-		EventVersion string           `json:"event_version"`
 		DetectedAt   time.Time        `json:"detected_at"`
 		Type         string           `json:"type"`
-		Rule         *AttackRule      `json:"rule"`
+		Rule         AttackRule       `json:"rule"`
 		RuleMatch    *AttackRuleMatch `json:"rule_match"`
 		Context      *AttackContext   `json:"context"`
 	}
@@ -56,25 +62,13 @@ type (
 
 	// AttackContext intake API payload.
 	AttackContext struct {
-		Actor   *AttackContextActor  `json:"actor,omitempty"`
-		Host    AttackContextHost    `json:"host"`
+		Host    AttackContextHost    `json:"host,omitempty"`
 		HTTP    AttackContextHTTP    `json:"http"`
 		Service AttackContextService `json:"service"`
-		Tags    AttackContextTags    `json:"tags"`
+		Tags    *AttackContextTags   `json:"tags,omitempty"`
 		Span    AttackContextSpan    `json:"span"`
 		Trace   AttackContextTrace   `json:"trace"`
 		Tracer  AttackContextTracer  `json:"tracer"`
-	}
-
-	// AttackContextActor intake API payload.
-	AttackContextActor struct {
-		ContextVersion string               `json:"context_version"`
-		IP             AttackContextActorIP `json:"ip"`
-	}
-
-	// AttackContextActorIP intake API payload.
-	AttackContextActorIP struct {
-		Address string `json:"address"`
 	}
 
 	// AttackContextHost intake API payload.
@@ -151,17 +145,20 @@ type (
 )
 
 // NewAttackEvent returns a new attack event payload.
-func NewAttackEvent(attackType string, at time.Time, rule *AttackRule, match *AttackRuleMatch, attackCtx *AttackContext) *AttackEvent {
+func NewAttackEvent(ruleID, ruleName, attackType string, at time.Time, match *AttackRuleMatch, attackCtx *AttackContext) *AttackEvent {
 	id, _ := uuid.NewUUID()
 	return &AttackEvent{
+		EventVersion: "0.1.0",
 		EventID:      id.String(),
 		EventType:    "appsec.threat.attack",
-		EventVersion: "0.1.0",
 		DetectedAt:   at,
 		Type:         attackType,
-		Rule:         rule,
-		RuleMatch:    match,
-		Context:      attackCtx,
+		Rule: AttackRule{
+			ID:   ruleID,
+			Name: ruleName,
+		},
+		RuleMatch: match,
+		Context:   attackCtx,
 	}
 }
 
@@ -173,10 +170,6 @@ func FromWAFAttack(t time.Time, md []byte, attackContext *AttackContext) (events
 	}
 	// Create one security event per flow and per filter
 	for _, match := range matches {
-		rule := &AttackRule{
-			ID:   match.Rule,
-			Name: match.Flow,
-		}
 		for _, filter := range match.Filter {
 			ruleMatch := &AttackRuleMatch{
 				Operator:      filter.Operator,
@@ -189,25 +182,11 @@ func FromWAFAttack(t time.Time, md []byte, attackContext *AttackContext) (events
 				},
 				Highlight: []string{filter.MatchStatus},
 			}
-			events = append(events, NewAttackEvent(match.Flow, t, rule, ruleMatch, attackContext))
+			events = append(events, NewAttackEvent(match.Rule, match.Flow, match.Flow, t, ruleMatch, attackContext))
 		}
 	}
 	return events, nil
 }
-
-func (*AttackEvent) isEvent() {}
-
-type (
-	// EventBatch intake API payload.
-	EventBatch struct {
-		IdempotencyKey string  `json:"idempotency_key"`
-		Events         []Event `json:"events"`
-	}
-	// Event interface that batchable events must implement.
-	Event interface {
-		isEvent()
-	}
-)
 
 // FromSecurityEvents returns the event batch of the given security events. The given global event context is added
 // to each newly created AttackEvent as AttackContext.
@@ -215,22 +194,17 @@ func FromSecurityEvents(events []*appsectypes.SecurityEvent, globalContext []app
 	id, _ := uuid.NewUUID()
 	var batch = EventBatch{
 		IdempotencyKey: id.String(),
-		Events:         make([]Event, 0, len(events)),
+		Events:         make([]*AttackEvent, 0, len(events)),
 	}
 	for _, event := range events {
 		eventContext := NewAttackContext(event.Context, globalContext)
-		switch actual := event.Event.(type) {
-		case []waftypes.RawAttackMetadata:
-			for _, attack := range actual {
-				attacks, err := FromWAFAttack(attack.Time, attack.Metadata, eventContext)
-				if err != nil {
-					log.Error("appsec: could not create the security event payload out of a waf attack: %v", err)
-					continue
-				}
-				for _, attack := range attacks {
-					batch.Events = append(batch.Events, attack)
-				}
+		for _, attack := range event.Event {
+			attacks, err := FromWAFAttack(attack.Time, attack.Metadata, eventContext)
+			if err != nil {
+				log.Error("appsec: could not create the security event payload out of a waf attack: %v", err)
+				continue
 			}
+			batch.Events = append(batch.Events, attacks...)
 		}
 	}
 	return batch
@@ -299,7 +273,7 @@ func (c *AttackContext) applyServiceContext(ctx appsectypes.ServiceContext) {
 }
 
 func (c *AttackContext) applyTagContext(ctx appsectypes.TagContext) {
-	c.Tags = makeAttackContextTags(ctx)
+	c.Tags = newAttackContextTags(ctx)
 }
 
 func (c *AttackContext) applyTracerContext(ctx appsectypes.TracerContext) {
@@ -329,16 +303,16 @@ func makeAttackContextTracer(version string, rt string, rtVersion string) Attack
 	}
 }
 
-// makeAttackContextTags create an AttackContextTags payload.
-func makeAttackContextTags(tags []string) AttackContextTags {
-	return AttackContextTags{
+// newAttackContextTags create an AttackContextTags payload.
+func newAttackContextTags(tags []string) *AttackContextTags {
+	return &AttackContextTags{
 		ContextVersion: "0.1.0",
 		Values:         tags,
 	}
 }
 
 // makeServiceContext create an AttackContextService payload.
-func makeServiceContext(name string, version string, environment string) AttackContextService {
+func makeServiceContext(name, version, environment string) AttackContextService {
 	return AttackContextService{
 		ContextVersion: "0.1.0",
 		Name:           name,
@@ -438,7 +412,7 @@ func makeAttackContextHTTPRequest(req appsectypes.HTTPRequestContext) attackCont
 // `[host]:port` into `host` and `port`. As opposed to `net.SplitHostPort()`,
 // it doesn't fail when there is no port number and returns the given address
 // as the host value.
-func splitHostPort(addr string) (host string, port string) {
+func splitHostPort(addr string) (host, port string) {
 	addr = strings.TrimSpace(addr)
 	host, port, err := net.SplitHostPort(addr)
 	if err == nil {

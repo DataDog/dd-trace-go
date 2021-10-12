@@ -5,11 +5,15 @@
 
 package types
 
+import waftypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/types"
+
 type (
 	// SecurityEvent is a generic security event payload holding an actual security event (eg. a WAF security event),
 	// along with its optional context.
 	SecurityEvent struct {
-		Event   interface{}
+		// TODO(julio): figure a better Event interface once we move to the new
+		//   v1 intake API, v2 rule format and new WAF output format
+		Event   []waftypes.RawAttackMetadata
 		Context []SecurityEventContext
 	}
 
@@ -21,7 +25,7 @@ type (
 )
 
 // NewSecurityEvent returns a new security event along with the provided context.
-func NewSecurityEvent(event interface{}, ctx ...SecurityEventContext) *SecurityEvent {
+func NewSecurityEvent(event []waftypes.RawAttackMetadata, ctx ...SecurityEventContext) *SecurityEvent {
 	return &SecurityEvent{
 		Event:   event,
 		Context: ctx,
