@@ -11,6 +11,7 @@ package appsec
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"runtime"
 	"strconv"
@@ -47,7 +48,7 @@ func Start(cfg *Config) (enabled bool) {
 
 	filepath := os.Getenv("DD_APPSEC_RULES")
 	if filepath != "" {
-		rules, err := os.ReadFile(filepath)
+		rules, err := ioutil.ReadFile(filepath)
 		if err != nil {
 			if os.IsNotExist(err) {
 				log.Error("appsec: could not find the rules file in path %s.\nAppSec will not run any protections in this application. No security activities will be collected: %v", filepath, err)
