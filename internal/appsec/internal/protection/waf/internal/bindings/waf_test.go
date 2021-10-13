@@ -3,8 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build !without_ddwaf && cgo && !windows && amd64 && (linux || darwin)
-// +build !without_ddwaf
+//go:build appsec && cgo && !windows && amd64 && (linux || darwin)
+// +build appsec
 // +build cgo
 // +build !windows
 // +build amd64

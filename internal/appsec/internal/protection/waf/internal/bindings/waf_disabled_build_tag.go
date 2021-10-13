@@ -4,9 +4,9 @@
 // Copyright 2016 Datadog, Inc.
 
 // Build when CGO is enabled but the target OS or architecture are not supported
-//go:build without_ddwaf
-// +build without_ddwaf
+//go:build !appsec
+// +build !appsec
 
 package bindings
 
-var disabledReason = "the go build tag without_ddwaf was used to disable the waf"
+var disabledReason = "the waf is disabled due to missing go build tag appsec"
