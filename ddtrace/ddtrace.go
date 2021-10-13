@@ -159,4 +159,5 @@ type DataPipeline interface {
 	GetCallTime() time.Time
 	GetLatencies() []PipelineLatency
 	ToBaggage() ([]byte, error)
+	MergeWith(receivingPipelineName string, dataPipelines ...DataPipeline) (DataPipeline, error)
 }
