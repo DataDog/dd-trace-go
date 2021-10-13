@@ -101,7 +101,7 @@ type (
 	}
 
 	AttackContextHTTPRequestParameters struct {
-		Query map[string]string `json:"query,omitempty"`
+		Query map[string][]string `json:"query,omitempty"`
 	}
 
 	// attackContextHTTPResponse intake API payload.
@@ -386,14 +386,6 @@ func makeAttackContextHTTPRequest(req appsectypes.HTTPRequestContext) attackCont
 		}
 	}
 
-	var query map[string]string
-	if l := len(req.Query); l > 0 {
-		query = make(map[string]string, l)
-		for k, v := range req.Query {
-			query[k] = strings.Join(v, ";")
-		}
-	}
-
 	return attackContextHTTPRequest{
 		Scheme:     scheme,
 		Method:     req.Method,
@@ -404,7 +396,7 @@ func makeAttackContextHTTPRequest(req appsectypes.HTTPRequestContext) attackCont
 		RemoteIP:   remoteIP,
 		RemotePort: remotePort,
 		Headers:    headers,
-		Parameters: AttackContextHTTPRequestParameters{Query: query},
+		Parameters: AttackContextHTTPRequestParameters{Query: req.Query},
 	}
 }
 
