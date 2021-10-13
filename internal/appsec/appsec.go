@@ -211,7 +211,7 @@ func eventBatchingLoop(client intakeClient, eventChan <-chan *appsectypes.Securi
 		defer cancel()
 		log.Debug("appsec: sending %d events", len(batch))
 		if err := client.SendBatch(ctx, api.FromSecurityEvents(batch, globalEventCtx)); err != nil {
-			log.Debug("appsec: could not send the event batch: %v", err)
+			log.Error("appsec: could not send the event batch: %v", err)
 		}
 		batch = batch[0:0]
 	}

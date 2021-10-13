@@ -28,7 +28,7 @@ func TestHealth(t *testing.T) {
 	version, err := Health()
 	require.NoError(t, err)
 	require.NotNil(t, version)
-	require.Equal(t, "1.0.12", version.String())
+	require.Equal(t, "1.0.13", version.String())
 }
 
 var testRule = newTestRule("server.request.headers.no_cookies:user-agent")

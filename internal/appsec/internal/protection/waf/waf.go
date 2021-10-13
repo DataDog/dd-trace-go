@@ -124,7 +124,7 @@ func newWAFEventListener(waf *bindings.WAF, addresses []string, appsec EventMana
 }
 
 func runWAF(wafCtx *bindings.WAFContext, values map[string]interface{}, attacks *[]waftypes.RawAttackMetadata) {
-	action, md, err := wafCtx.Run(values, 1*time.Millisecond)
+	action, md, err := wafCtx.Run(values, 4*time.Millisecond)
 	if err != nil {
 		log.Error("appsec: waf error: %v", err)
 		return

@@ -176,7 +176,7 @@ func FromWAFAttack(t time.Time, md []byte, attackContext *AttackContext) (events
 				OperatorValue: filter.OperatorValue,
 				Parameters: []AttackRuleMatchParameter{
 					{
-						Name:  filter.BindingAccessor,
+						Name:  filter.ManifestKey,
 						Value: filter.ResolvedValue,
 					},
 				},
