@@ -93,6 +93,37 @@ func (p *dataPipeline) GetLatencies() []ddtrace.PipelineLatency {
 	return p.latencies
 }
 
+// MergeWith merges passed data pipelines into the current one. It returns the current data pipeline.
+func (p *dataPipeline) MergeWith(receivingPipelineName string, dataPipelines ...DataPipeline) (DataPipeline, error) {
+	// todo[piochelepiotr] Check what to do with summaries that are not copied.
+	callTime := time.Now()
+	pipelines := make([]DataPipeline, 0, len(dataPipelines)+1)
+	pipelines = append(pipelines, p.SetCheckpoint(receivingPipelineName))
+	for _, d := range dataPipelines {
+		pipelines = append(pipelines, d.SetCheckpoint(receivingPipelineName))
+	}
+	latencies := make(map[uint64]*ddsketch.DDSketch)
+	for _, pipeline := range pipelines {
+		for _, l := range pipeline.GetLatencies() {
+			if current, ok := latencies[l.Hash]; ok {
+				if err := current.MergeWith(l.Summary); err != nil {
+					return nil, err
+				}
+			} else {
+				latencies[l.Hash] = l.Summary
+			}
+		}
+	}
+	merged := dataPipeline{latencies: make([]ddtrace.PipelineLatency, 0, len(latencies)), service: p.service, callTime: callTime}
+	for hash, summary := range latencies {
+		merged.latencies = append(merged.latencies, ddtrace.PipelineLatency{
+			Hash: hash,
+			Summary: summary,
+		})
+	}
+	return &merged, nil
+}
+
 func newSummary() *ddsketch.DDSketch {
 	// todo[piochelepiotr] Use paginated buffered store.
 	return ddsketch.NewDDSketch(sketchMapping, store.NewCollapsingLowestDenseStore(1000), store.NewCollapsingLowestDenseStore(1000))
