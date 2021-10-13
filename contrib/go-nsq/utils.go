@@ -26,7 +26,16 @@ func putBuf(buf *bytes.Buffer) {
 	bfp.Put(buf)
 }
 
+// inject tails the span context binary buffer after original message body.
+// spec: length of message|message body|span context
+//              4 bits    |            |
 func inject(span tracer.Span, body []byte) ([]byte, error) {
+	var (
+		bs  = len(body)
+		bsb = make([]byte, 4)
+	)
+	binary.BigEndian.PutUint32(bsb, uint32(len(body)))
+
 	carri := make(tracer.TextMapCarrier)
 	err := tracer.Inject(span.Context(), carri)
 	if err != nil {
@@ -41,13 +50,10 @@ func inject(span tracer.Span, body []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	bfl := make([]byte, 4)
-	binary.BigEndian.PutUint32(bfl, uint32(buf.Len()))
-
-	bts := make([]byte, 4+buf.Len()+len(body))
-	i := copy(bts, bfl)
-	i += copy(bts[i:], buf.Bytes())
-	copy(bts[i:], body)
+	bts := make([]byte, 4+bs+buf.Len())
+	i := copy(bts, bsb)
+	i += copy(bts[i:], body)
+	copy(bts[i:], buf.Bytes())
 
 	return bts, nil
 }
@@ -57,21 +63,21 @@ func extract(body []byte) (ddtrace.SpanContext, []byte, error) {
 		return nil, body, errors.New("length of message body is too small")
 	}
 
-	buf := getBuf()
-	defer putBuf(buf)
-
-	l := binary.BigEndian.Uint32(body[:4])
-	dec := gob.NewDecoder(bytes.NewBuffer(body[4 : 4+l]))
+	bs := int(binary.BigEndian.Uint32(body[:4]))
+	msgbody := body[4 : 4+bs]
+	if 4+bs == len(body) {
+		return nil, msgbody, nil
+	}
 
 	carri := make(tracer.TextMapCarrier)
-	err := dec.Decode(carri)
+	err := gob.NewDecoder(bytes.NewBuffer(body[4+bs:])).Decode(&carri)
 	if err != nil {
 		return nil, body, err
 	}
 
-	spctx, err := tracer.Extract(carri)
+	spnctx, err := tracer.Extract(carri)
 
-	return spctx, body[4+l:], err
+	return spnctx, msgbody, err
 }
 
 func bodySize(body [][]byte) int {
