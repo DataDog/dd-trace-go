@@ -60,7 +60,7 @@ func inject(span tracer.Span, body []byte) ([]byte, error) {
 
 func extract(body []byte) (ddtrace.SpanContext, []byte, error) {
 	if len(body) < 4 {
-		return nil, body, errors.New("length of message body is too small")
+		return nil, nil, errors.New("length of message body is too small")
 	}
 
 	bs := int(binary.BigEndian.Uint32(body[:4]))
