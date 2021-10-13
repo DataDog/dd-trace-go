@@ -85,8 +85,8 @@ func newWAFEventListener(waf *bindings.WAF, addresses []string, appsec EventMana
 			// Release the WAF context
 			wafCtx.Close()
 			// Log the attacks if any
-			if len(attacks) > 0 {
-				log.Debug("Detecting a WAF attack")
+			if l := len(attacks); l > 0 {
+				log.Debug("appsec: %d attacks detected", l)
 				// Create the base security event out of the slide of attacks
 				event := appsectypes.NewSecurityEvent(attacks, httpinstr.MakeHTTPContext(args, res))
 				// Check if a span exists
