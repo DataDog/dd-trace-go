@@ -209,8 +209,10 @@ func eventBatchingLoop(client intakeClient, eventChan <-chan *appsectypes.Securi
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), defaultIntakeTimeout)
 		defer cancel()
-		client.SendBatch(ctx, api.FromSecurityEvents(batch, globalEventCtx))
-		// TODO(julio): add metrics about failed calls
+		log.Debug("appsec: sending %d events", len(batch))
+		if err := client.SendBatch(ctx, api.FromSecurityEvents(batch, globalEventCtx)); err != nil {
+			log.Debug("appsec: could not send the event batch: %v", err)
+		}
 		batch = batch[0:0]
 	}
 
