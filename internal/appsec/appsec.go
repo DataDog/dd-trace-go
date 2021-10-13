@@ -160,7 +160,6 @@ func (a *appsec) start() error {
 				Version:     a.cfg.Service.Version,
 				Environment: a.cfg.Service.Environment,
 			},
-			appsectypes.TagContext(a.cfg.Tags),
 			appsectypes.TracerContext{
 				Runtime:        "go",
 				RuntimeVersion: runtime.Version(),
@@ -171,10 +170,25 @@ func (a *appsec) start() error {
 				OS:       fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
 			},
 		}
+		if len(a.cfg.Tags) > 0 {
+			if strTags := stringTags(a.cfg.Tags); len(strTags) > 0 {
+				globalEventCtx = append(globalEventCtx, appsectypes.TagContext(strTags))
+			}
+		}
 		eventBatchingLoop(a.client, a.eventChan, globalEventCtx, a.cfg)
 	}()
 
 	return nil
+}
+
+func stringTags(tagsMap map[string]interface{}) (tags []string) {
+	tags = make([]string, 0, len(tagsMap))
+	for tag, value := range tagsMap {
+		if str, ok := value.(string); ok {
+			tags = append(tags, fmt.Sprintf("%s:%v", tag, str))
+		}
+	}
+	return tags
 }
 
 // Stop stops the AppSec agent goroutine.

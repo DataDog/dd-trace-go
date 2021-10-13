@@ -229,6 +229,7 @@ func newTracer(opts ...StartOption) *tracer {
 			Version:     c.version,
 			Environment: c.env,
 		},
+		Tags: c.globalTags,
 	}); enabled {
 		c.globalTags["_dd.appsec.enabled"] = "1"
 		c.globalTags["_dd.runtime_family"] = "go"

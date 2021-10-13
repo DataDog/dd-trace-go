@@ -20,7 +20,7 @@ type (
 		// ServiceConfig is the information about the running service we currently protect.
 		Service ServiceConfig
 		// Tags is the list of tags that should be added to security events (eg. pid, os name, etc.).
-		Tags []string
+		Tags map[string]interface{}
 		// Hostname of the machine we run in.
 		Hostname string
 		// Version of the Go client library
