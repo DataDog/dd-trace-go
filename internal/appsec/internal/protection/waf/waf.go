@@ -6,6 +6,9 @@
 package waf
 
 import (
+	"errors"
+	"fmt"
+	"sort"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -21,21 +24,14 @@ type EventManager interface {
 	SendEvent(event *appsectypes.SecurityEvent)
 }
 
-// List of rule addresses currently supported by the WAF
-const (
-	serverRequestRawURIAddr           = "server.request.uri.raw"
-	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
-	serverRequestCookiesAddr          = "server.request.cookies"
-	serverRequestQueryAddr            = "server.request.query"
-)
-
 // Register the WAF event listener.
-func Register(rules []byte, appsec EventManager) (dyngo.UnregisterFunc, error) {
-	if version, err := bindings.Health(); err != nil {
+func Register(rules []byte, appsec EventManager) (unreg dyngo.UnregisterFunc, err error) {
+	// Check the WAF is healthy
+	if _, err := bindings.Health(); err != nil {
 		return nil, err
-	} else {
-		log.Debug("appsec: registering waf v%s instrumentation", version.String())
 	}
+
+	// Instantiate the WAF
 	if rules == nil {
 		rules = []byte(staticRecommendedRule)
 	}
@@ -43,7 +39,29 @@ func Register(rules []byte, appsec EventManager) (dyngo.UnregisterFunc, error) {
 	if err != nil {
 		return nil, err
 	}
-	unregister := dyngo.Register(newWAFEventListener(waf, appsec))
+	// Close the WAF in case of an error in what's following
+	defer func() {
+		if err != nil {
+			waf.Close()
+		}
+	}()
+
+	// Check if there are addresses in the rule
+	ruleAddresses := waf.Addresses()
+	if len(ruleAddresses) == 0 {
+		return nil, errors.New("no addresses found in the rule")
+	}
+	// Check there are supported addresses in the rule
+	addresses, notSupported := supportedAddresses(ruleAddresses)
+	if len(addresses) == 0 {
+		return nil, fmt.Errorf("the addresses present in the rule are not supported: %v", notSupported)
+	} else if len(notSupported) > 0 {
+		log.Debug("appsec: the addresses present in the rule are partially supported: supported=%v, not supported=%v", addresses, notSupported)
+	}
+
+	// Register the WAF event listener
+	unregister := dyngo.Register(newWAFEventListener(waf, addresses, appsec))
+	// Return an unregistration function that will also release the WAF instance.
 	return func() {
 		defer waf.Close()
 		unregister()
@@ -51,7 +69,7 @@ func Register(rules []byte, appsec EventManager) (dyngo.UnregisterFunc, error) {
 }
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
-func newWAFEventListener(waf *bindings.WAF, appsec EventManager) dyngo.EventListener {
+func newWAFEventListener(waf *bindings.WAF, addresses []string, appsec EventManager) dyngo.EventListener {
 	return httpinstr.OnHandlerOperationStart(func(op dyngo.Operation, args httpinstr.HandlerOperationArgs) {
 		wafCtx := bindings.NewWAFContext(waf)
 		if wafCtx == nil {
@@ -88,12 +106,18 @@ func newWAFEventListener(waf *bindings.WAF, appsec EventManager) dyngo.EventList
 		}))
 
 		// Run the WAF on the rule addresses available in the request args
-		// TODO(julio): dynamically get the required addresses from the WAF rule
-		values := map[string]interface{}{
-			serverRequestRawURIAddr:           args.RequestURI,
-			serverRequestHeadersNoCookiesAddr: args.Headers,
-			serverRequestCookiesAddr:          args.Cookies,
-			serverRequestQueryAddr:            args.Query,
+		values := make(map[string]interface{}, len(addresses))
+		for _, addr := range addresses {
+			switch addr {
+			case serverRequestRawURIAddr:
+				values[serverRequestRawURIAddr] = args.RequestURI
+			case serverRequestHeadersNoCookiesAddr:
+				values[serverRequestHeadersNoCookiesAddr] = args.Headers
+			case serverRequestCookiesAddr:
+				values[serverRequestCookiesAddr] = args.Cookies
+			case serverRequestQueryAddr:
+				values[serverRequestQueryAddr] = args.Query
+			}
 		}
 		runWAF(wafCtx, values, &attacks)
 	})
@@ -109,4 +133,41 @@ func runWAF(wafCtx *bindings.WAFContext, values map[string]interface{}, attacks 
 		return
 	}
 	*attacks = append(*attacks, waftypes.RawAttackMetadata{Time: time.Now(), Metadata: md})
+}
+
+// Rule addresses currently supported by the WAF
+const (
+	serverRequestRawURIAddr           = "server.request.uri.raw"
+	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
+	serverRequestCookiesAddr          = "server.request.cookies"
+	serverRequestQueryAddr            = "server.request.query"
+)
+
+// List of rule addresses currently supported by the WAF
+var supportedAddressesList = []string{
+	serverRequestRawURIAddr,
+	serverRequestHeadersNoCookiesAddr,
+	serverRequestCookiesAddr,
+	serverRequestQueryAddr,
+}
+
+func init() {
+	sort.Strings(supportedAddressesList)
+}
+
+// supportedAddresses returns the list of addresses we actually support from the
+// given rule addresses.
+func supportedAddresses(ruleAddresses []string) (supported, notSupported []string) {
+	// Filter the supported addresses only
+	l := len(supportedAddressesList)
+	supported = make([]string, 0, l)
+	for _, addr := range ruleAddresses {
+		if i := sort.SearchStrings(supportedAddressesList, addr); i < l && supportedAddressesList[i] == addr {
+			supported = append(supported, addr)
+		} else {
+			notSupported = append(notSupported, addr)
+		}
+	}
+	// Check the resulting situation we are in
+	return supported, notSupported
 }
