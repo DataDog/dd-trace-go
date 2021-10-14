@@ -4,8 +4,8 @@
 // Copyright 2016 Datadog, Inc.
 
 // Build when CGO is disabled
-//go:build !cgo
-// +build !cgo
+//go:build appsec && !cgo
+// +build appsec,!cgo
 
 package waf
 
