@@ -36,6 +36,14 @@ func inject(span tracer.Span, body []byte) ([]byte, error) {
 	)
 	binary.BigEndian.PutUint32(bsb, uint32(len(body)))
 
+	bts := make([]byte, 4+bs)
+	i := copy(bts, bsb)
+	i += copy(bts[i:], body)
+
+	if span.Context().TraceID() == 0 {
+		return bts, nil
+	}
+
 	carri := make(tracer.TextMapCarrier)
 	err := tracer.Inject(span.Context(), carri)
 	if err != nil {
@@ -50,14 +58,14 @@ func inject(span tracer.Span, body []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	bts := make([]byte, 4+bs+buf.Len())
-	i := copy(bts, bsb)
-	i += copy(bts[i:], body)
-	copy(bts[i:], buf.Bytes())
+	withspn := make([]byte, len(bts)+buf.Len())
+	copy(withspn, bts)
+	copy(withspn[i:], buf.Bytes())
 
-	return bts, nil
+	return withspn, nil
 }
 
+// extract parse the message body into span context (if exists), original message body.
 func extract(body []byte) (ddtrace.SpanContext, []byte, error) {
 	if len(body) < 4 {
 		return nil, nil, errors.New("length of message body is too small")
