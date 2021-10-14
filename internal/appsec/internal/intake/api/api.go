@@ -144,7 +144,7 @@ func MakeEventBatch(events []*AttackEvent) EventBatch {
 	id, _ := uuid.NewUUID()
 	return EventBatch{
 		IdempotencyKey: id.String(),
-		Events:         make([]*AttackEvent, 0, len(events)),
+		Events:         events,
 	}
 }
 
