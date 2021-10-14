@@ -4,8 +4,9 @@
 // Copyright 2016 Datadog, Inc.
 
 // Build when CGO is enabled but the target OS or architecture are not supported
-//go:build cgo && (windows || !amd64)
+//go:build cgo && appsec && (windows || !amd64)
 // +build cgo
+// +build appsec
 // +build windows !amd64
 
 package waf
