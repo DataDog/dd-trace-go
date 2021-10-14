@@ -6,18 +6,13 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-
-	waftypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/types"
-	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // Intake API payloads.
@@ -37,7 +32,7 @@ type (
 		Type         string           `json:"type"`
 		Rule         AttackRule       `json:"rule"`
 		RuleMatch    *AttackRuleMatch `json:"rule_match"`
-		Context      *AttackContext   `json:"context"`
+		Context      AttackContext    `json:"context"`
 	}
 
 	// AttackRule intake API payload.
@@ -81,12 +76,12 @@ type (
 	// AttackContextHTTP intake API payload.
 	AttackContextHTTP struct {
 		ContextVersion string                    `json:"context_version"`
-		Request        attackContextHTTPRequest  `json:"request"`
-		Response       attackContextHTTPResponse `json:"response"`
+		Request        AttackContextHTTPRequest  `json:"request"`
+		Response       AttackContextHTTPResponse `json:"response"`
 	}
 
-	// attackContextHTTPRequest intake API payload.
-	attackContextHTTPRequest struct {
+	// AttackContextHTTPRequest intake API payload.
+	AttackContextHTTPRequest struct {
 		Scheme     string                             `json:"scheme"`
 		Method     string                             `json:"method"`
 		URL        string                             `json:"url"`
@@ -104,8 +99,8 @@ type (
 		Query map[string][]string `json:"query,omitempty"`
 	}
 
-	// attackContextHTTPResponse intake API payload.
-	attackContextHTTPResponse struct {
+	// AttackContextHTTPResponse intake API payload.
+	AttackContextHTTPResponse struct {
 		Status int `json:"status"`
 	}
 
@@ -144,8 +139,17 @@ type (
 	}
 )
 
+// MakeEventBatch returns the event batch of the given security events.
+func MakeEventBatch(events []*AttackEvent) EventBatch {
+	id, _ := uuid.NewUUID()
+	return EventBatch{
+		IdempotencyKey: id.String(),
+		Events:         make([]*AttackEvent, 0, len(events)),
+	}
+}
+
 // NewAttackEvent returns a new attack event payload.
-func NewAttackEvent(ruleID, ruleName, attackType string, at time.Time, match *AttackRuleMatch, attackCtx *AttackContext) *AttackEvent {
+func NewAttackEvent(ruleID, ruleName, attackType string, at time.Time, match *AttackRuleMatch) *AttackEvent {
 	id, _ := uuid.NewUUID()
 	return &AttackEvent{
 		EventVersion: "0.1.0",
@@ -158,94 +162,7 @@ func NewAttackEvent(ruleID, ruleName, attackType string, at time.Time, match *At
 			Name: ruleName,
 		},
 		RuleMatch: match,
-		Context:   attackCtx,
 	}
-}
-
-// FromWAFAttack creates the attack event payloads from a WAF attack.
-func FromWAFAttack(t time.Time, md []byte, attackContext *AttackContext) (events []*AttackEvent, err error) {
-	var matches waftypes.AttackMetadata
-	if err := json.Unmarshal(md, &matches); err != nil {
-		return nil, err
-	}
-	// Create one security event per flow and per filter
-	for _, match := range matches {
-		for _, filter := range match.Filter {
-			ruleMatch := &AttackRuleMatch{
-				Operator:      filter.Operator,
-				OperatorValue: filter.OperatorValue,
-				Parameters: []AttackRuleMatchParameter{
-					{
-						Name:  filter.ManifestKey,
-						Value: filter.ResolvedValue,
-					},
-				},
-				Highlight: []string{filter.MatchStatus},
-			}
-			events = append(events, NewAttackEvent(match.Rule, match.Flow, match.Flow, t, ruleMatch, attackContext))
-		}
-	}
-	return events, nil
-}
-
-// FromSecurityEvents returns the event batch of the given security events. The given global event context is added
-// to each newly created AttackEvent as AttackContext.
-func FromSecurityEvents(events []*appsectypes.SecurityEvent, globalContext []appsectypes.SecurityEventContext) EventBatch {
-	id, _ := uuid.NewUUID()
-	var batch = EventBatch{
-		IdempotencyKey: id.String(),
-		Events:         make([]*AttackEvent, 0, len(events)),
-	}
-	for _, event := range events {
-		eventContext := NewAttackContext(event.Context, globalContext)
-		for _, attack := range event.Event {
-			attacks, err := FromWAFAttack(attack.Time, attack.Metadata, eventContext)
-			if err != nil {
-				log.Error("appsec: could not create the security event payload out of a waf attack: %v", err)
-				continue
-			}
-			batch.Events = append(batch.Events, attacks...)
-		}
-	}
-	return batch
-}
-
-// NewAttackContext creates and returns a new attack context from the given security event contexts. The event local
-// and global contexts are separated to avoid allocating a temporary slice merging both - the caller can keep them
-// separate without appending them for the time of the call.
-func NewAttackContext(ctx, globalCtx []appsectypes.SecurityEventContext) *AttackContext {
-	aCtx := &AttackContext{}
-	for _, ctx := range ctx {
-		aCtx.applyContext(ctx)
-	}
-	for _, ctx := range globalCtx {
-		aCtx.applyContext(ctx)
-	}
-	return aCtx
-}
-
-func (c *AttackContext) applyContext(ctx appsectypes.SecurityEventContext) {
-	switch actual := ctx.(type) {
-	case appsectypes.SpanContext:
-		c.applySpanContext(actual)
-	case appsectypes.HTTPContext:
-		c.applyHTTPContext(actual)
-	case appsectypes.ServiceContext:
-		c.applyServiceContext(actual)
-	case appsectypes.TagContext:
-		c.applyTagContext(actual)
-	case appsectypes.TracerContext:
-		c.applyTracerContext(actual)
-	case appsectypes.HostContext:
-		c.applyHostContext(actual)
-	}
-}
-
-func (c *AttackContext) applySpanContext(ctx appsectypes.SpanContext) {
-	trace := strconv.FormatUint(ctx.TraceID, 10)
-	span := strconv.FormatUint(ctx.TraceID, 10)
-	c.Trace = MakeAttackContextTrace(trace)
-	c.Span = MakeAttackContextSpan(span)
 }
 
 // MakeAttackContextTrace create an AttackContextTrace payload.
@@ -264,28 +181,8 @@ func MakeAttackContextSpan(spanID string) AttackContextSpan {
 	}
 }
 
-func (c *AttackContext) applyHTTPContext(ctx appsectypes.HTTPContext) {
-	c.HTTP = makeAttackContextHTTP(makeAttackContextHTTPRequest(ctx.Request), makeAttackContextHTTPResponse(ctx.Response))
-}
-
-func (c *AttackContext) applyServiceContext(ctx appsectypes.ServiceContext) {
-	c.Service = makeServiceContext(ctx.Name, ctx.Version, ctx.Environment)
-}
-
-func (c *AttackContext) applyTagContext(ctx appsectypes.TagContext) {
-	c.Tags = newAttackContextTags(ctx)
-}
-
-func (c *AttackContext) applyTracerContext(ctx appsectypes.TracerContext) {
-	c.Tracer = makeAttackContextTracer(ctx.Version, ctx.Runtime, ctx.RuntimeVersion)
-}
-
-func (c *AttackContext) applyHostContext(ctx appsectypes.HostContext) {
-	c.Host = makeAttackContextHost(ctx.Hostname, ctx.OS)
-}
-
-// makeAttackContextHost create an AttackContextHost payload.
-func makeAttackContextHost(hostname string, os string) AttackContextHost {
+// MakeAttackContextHost create an AttackContextHost payload.
+func MakeAttackContextHost(hostname string, os string) AttackContextHost {
 	return AttackContextHost{
 		ContextVersion: "0.1.0",
 		OsType:         os,
@@ -293,8 +190,8 @@ func makeAttackContextHost(hostname string, os string) AttackContextHost {
 	}
 }
 
-// makeAttackContextTracer create an AttackContextTracer payload.
-func makeAttackContextTracer(version string, rt string, rtVersion string) AttackContextTracer {
+// MakeAttackContextTracer create an AttackContextTracer payload.
+func MakeAttackContextTracer(version string, rt string, rtVersion string) AttackContextTracer {
 	return AttackContextTracer{
 		ContextVersion: "0.1.0",
 		RuntimeType:    rt,
@@ -303,16 +200,16 @@ func makeAttackContextTracer(version string, rt string, rtVersion string) Attack
 	}
 }
 
-// newAttackContextTags create an AttackContextTags payload.
-func newAttackContextTags(tags []string) *AttackContextTags {
+// NewAttackContextTags create an AttackContextTags payload.
+func NewAttackContextTags(tags []string) *AttackContextTags {
 	return &AttackContextTags{
 		ContextVersion: "0.1.0",
 		Values:         tags,
 	}
 }
 
-// makeServiceContext create an AttackContextService payload.
-func makeServiceContext(name, version, environment string) AttackContextService {
+// MakeServiceContext create an AttackContextService payload.
+func MakeServiceContext(name, version, environment string) AttackContextService {
 	return AttackContextService{
 		ContextVersion: "0.1.0",
 		Name:           name,
@@ -321,15 +218,8 @@ func makeServiceContext(name, version, environment string) AttackContextService 
 	}
 }
 
-// makeAttackContextHTTPResponse create an attackContextHTTPResponse payload.
-func makeAttackContextHTTPResponse(res appsectypes.HTTPResponseContext) attackContextHTTPResponse {
-	return attackContextHTTPResponse{
-		Status: res.Status,
-	}
-}
-
-// makeAttackContextHTTP create an AttackContextHTTP payload.
-func makeAttackContextHTTP(req attackContextHTTPRequest, res attackContextHTTPResponse) AttackContextHTTP {
+// MakeAttackContextHTTP create an AttackContextHTTP payload.
+func MakeAttackContextHTTP(req AttackContextHTTPRequest, res AttackContextHTTPResponse) AttackContextHTTP {
 	return AttackContextHTTP{
 		ContextVersion: "0.1.0",
 		Request:        req,
@@ -337,7 +227,32 @@ func makeAttackContextHTTP(req attackContextHTTPRequest, res attackContextHTTPRe
 	}
 }
 
-var collectedHeaders = [...]string{
+// MakeAttackContextHTTPResponse creates an attackContextHTTPResponse payload.
+func MakeAttackContextHTTPResponse(status int) AttackContextHTTPResponse {
+	return AttackContextHTTPResponse{
+		Status: status,
+	}
+}
+
+// SplitHostPort splits a network address of the form `host:port` or
+// `[host]:port` into `host` and `port`. As opposed to `net.SplitHostPort()`,
+// it doesn't fail when there is no port number and returns the given address
+// as the host value.
+func SplitHostPort(addr string) (host, port string) {
+	addr = strings.TrimSpace(addr)
+	host, port, err := net.SplitHostPort(addr)
+	if err == nil {
+		return
+	}
+	if l := len(addr); l >= 2 && addr[0] == '[' && addr[l-1] == ']' {
+		// ipv6 without port number
+		return addr[1 : l-1], ""
+	}
+	return addr, ""
+}
+
+// List of HTTP headers we collect and send.
+var collectedHTTPHeaders = [...]string{
 	"host",
 	"x-forwarded-for",
 	"x-client-ip",
@@ -359,60 +274,29 @@ var collectedHeaders = [...]string{
 	"accept-language",
 }
 
-// makeAttackContextHTTPRequest create an attackContextHTTPRequest payload.
-func makeAttackContextHTTPRequest(req appsectypes.HTTPRequestContext) attackContextHTTPRequest {
-	host, portStr := splitHostPort(req.Host)
-	port, _ := strconv.Atoi(portStr)
-
-	remoteIP, remotePortStr := splitHostPort(req.RemoteAddr)
-	remotePort, _ := strconv.Atoi(remotePortStr)
-
-	var scheme string
-	if req.IsTLS {
-		scheme = "https"
-	} else {
-		scheme = "http"
-	}
-
-	url := fmt.Sprintf("%s://%s%s", scheme, req.Host, req.Path)
-
-	var headers map[string]string
-	if l := len(req.Headers); l > 0 {
-		headers = make(map[string]string)
-		for _, k := range collectedHeaders {
-			if v, ok := req.Headers[k]; ok {
-				headers[k] = strings.Join(v, ";")
-			}
-		}
-	}
-
-	return attackContextHTTPRequest{
-		Scheme:     scheme,
-		Method:     req.Method,
-		URL:        url,
-		Host:       host,
-		Port:       port,
-		Path:       req.Path,
-		RemoteIP:   remoteIP,
-		RemotePort: remotePort,
-		Headers:    headers,
-		Parameters: AttackContextHTTPRequestParameters{Query: req.Query},
-	}
+func init() {
+	// Required by sort.SearchStrings
+	sort.Strings(collectedHTTPHeaders[:])
 }
 
-// splitHostPort splits a network address of the form `host:port` or
-// `[host]:port` into `host` and `port`. As opposed to `net.SplitHostPort()`,
-// it doesn't fail when there is no port number and returns the given address
-// as the host value.
-func splitHostPort(addr string) (host, port string) {
-	addr = strings.TrimSpace(addr)
-	host, port, err := net.SplitHostPort(addr)
-	if err == nil {
-		return
+// MakeHTTPHeaders returns the HTTP headers following the intake payload format.
+func MakeHTTPHeaders(reqHeaders map[string][]string) (headers map[string]string) {
+	if len(reqHeaders) == 0 {
+		return nil
 	}
-	if l := len(addr); l >= 2 && addr[0] == '[' && addr[l-1] == ']' {
-		// ipv6 without port number
-		return addr[1 : l-1], ""
+	headers = make(map[string]string)
+	for k, v := range reqHeaders {
+		if i := sort.SearchStrings(collectedHTTPHeaders[:], k); i < len(collectedHTTPHeaders) && collectedHTTPHeaders[i] == k {
+			headers[k] = strings.Join(v, ";")
+		}
 	}
-	return addr, ""
+	if len(headers) == 0 {
+		return nil
+	}
+	return headers
+}
+
+// MakeHTTPURL returns the HTTP URL from the given scheme, host and path.
+func MakeHTTPURL(scheme, host, path string) string {
+	return fmt.Sprintf("%s://%s%s", scheme, host, path)
 }

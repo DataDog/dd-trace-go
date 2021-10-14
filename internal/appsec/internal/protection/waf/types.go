@@ -20,6 +20,7 @@ const (
 	ErrEmptyRuleAddresses
 )
 
+// Error returns the string representation of the RunError.
 func (e RunError) Error() string {
 	switch e {
 	case ErrInternal:

@@ -116,7 +116,7 @@ func isEnabled() (bool, error) {
 
 type appsec struct {
 	client        *intake.Client
-	eventChan     chan *appsectypes.SecurityEvent
+	eventChan     chan appsectypes.SecurityEvent
 	wg            sync.WaitGroup
 	cfg           *Config
 	unregisterWAF dyngo.UnregisterFunc
@@ -137,7 +137,7 @@ func newAppSec(cfg *Config) (*appsec, error) {
 	}
 
 	return &appsec{
-		eventChan: make(chan *appsectypes.SecurityEvent, 1000),
+		eventChan: make(chan appsectypes.SecurityEvent, 1000),
 		client:    intakeClient,
 		cfg:       cfg,
 	}, nil
@@ -156,28 +156,19 @@ func (a *appsec) start() error {
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		globalEventCtx := []appsectypes.SecurityEventContext{
-			appsectypes.ServiceContext{
-				Name:        a.cfg.Service.Name,
-				Version:     a.cfg.Service.Version,
-				Environment: a.cfg.Service.Environment,
-			},
-			appsectypes.TracerContext{
-				Runtime:        "go",
-				RuntimeVersion: runtime.Version(),
-				Version:        a.cfg.Version,
-			},
-			appsectypes.HostContext{
-				Hostname: a.cfg.Hostname,
-				OS:       fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH),
-			},
-		}
-		if len(a.cfg.Tags) > 0 {
-			if strTags := stringTags(a.cfg.Tags); len(strTags) > 0 {
-				globalEventCtx = append(globalEventCtx, appsectypes.TagContext(strTags))
+
+		strTags := stringTags(a.cfg.Tags)
+		osName := fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
+		applyContext := func(event appsectypes.SecurityEvent) appsectypes.SecurityEvent {
+			if len(strTags) > 0 {
+				event = appsectypes.WithTagsContext(event, strTags)
 			}
+			event = appsectypes.WithServiceContext(event, a.cfg.Service.Name, a.cfg.Service.Version, a.cfg.Service.Environment)
+			event = appsectypes.WithTracerContext(event, "go", runtime.Version(), a.cfg.Version)
+			event = appsectypes.WithHostContext(event, a.cfg.Hostname, osName)
+			return event
 		}
-		eventBatchingLoop(a.client, a.eventChan, globalEventCtx, a.cfg)
+		eventBatchingLoop(a.client, a.eventChan, applyContext, a.cfg)
 	}()
 
 	return nil
@@ -206,9 +197,9 @@ type intakeClient interface {
 	SendBatch(context.Context, api.EventBatch) error
 }
 
-func eventBatchingLoop(client intakeClient, eventChan <-chan *appsectypes.SecurityEvent, globalEventCtx []appsectypes.SecurityEventContext, cfg *Config) {
+func eventBatchingLoop(client intakeClient, eventChan <-chan appsectypes.SecurityEvent, withGlobalContext func(event appsectypes.SecurityEvent) appsectypes.SecurityEvent, cfg *Config) {
 	// The batch of events
-	batch := make([]*appsectypes.SecurityEvent, 0, cfg.MaxBatchLen)
+	batch := make([]appsectypes.SecurityEvent, 0, cfg.MaxBatchLen)
 
 	// Timer initialized to a first dummy time value to initialize it and so that we can immediately
 	// use its channel field in the following select statement.
@@ -229,7 +220,16 @@ func eventBatchingLoop(client intakeClient, eventChan <-chan *appsectypes.Securi
 		ctx, cancel := context.WithTimeout(context.Background(), defaultIntakeTimeout)
 		defer cancel()
 		log.Debug("appsec: sending %d events", len(batch))
-		if err := client.SendBatch(ctx, api.FromSecurityEvents(batch, globalEventCtx)); err != nil {
+		intakeBatch := make([]*api.AttackEvent, 0, len(batch))
+		for _, e := range batch {
+			intakeEvents, err := withGlobalContext(e).ToIntakeEvent()
+			if err != nil {
+				log.Error("appsec: could not create intake security events: %v", err)
+				continue
+			}
+			intakeBatch = append(intakeBatch, intakeEvents...)
+		}
+		if err := client.SendBatch(ctx, api.MakeEventBatch(intakeBatch)); err != nil {
 			log.Error("appsec: could not send the event batch: %v", err)
 		}
 		batch = batch[0:0]
@@ -265,7 +265,7 @@ func eventBatchingLoop(client intakeClient, eventChan <-chan *appsectypes.Securi
 	}
 }
 
-func (a *appsec) SendEvent(event *appsectypes.SecurityEvent) {
+func (a *appsec) SendEvent(event appsectypes.SecurityEvent) {
 	select {
 	case a.eventChan <- event:
 	default:

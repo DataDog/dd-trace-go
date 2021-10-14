@@ -49,9 +49,50 @@ func TestSplitHostPort(t *testing.T) {
 		},
 	} {
 		t.Run(tc.Addr, func(t *testing.T) {
-			host, port := splitHostPort(tc.Addr)
+			host, port := SplitHostPort(tc.Addr)
 			require.Equal(t, tc.ExpectedHost, host)
 			require.Equal(t, tc.ExpectedPort, port)
+		})
+	}
+}
+
+func TestMakeHTTPHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		headers  map[string][]string
+		expected map[string]string
+	}{
+		{
+			headers:  nil,
+			expected: nil,
+		},
+		{
+			headers: map[string][]string{
+				"cookie": {"not-collected"},
+			},
+			expected: nil,
+		},
+		{
+			headers: map[string][]string{
+				"cookie":          {"not-collected"},
+				"x-forwarded-for": {"1.2.3.4,5.6.7.8"},
+			},
+			expected: map[string]string{
+				"x-forwarded-for": "1.2.3.4,5.6.7.8",
+			},
+		},
+		{
+			headers: map[string][]string{
+				"cookie":          {"not-collected"},
+				"x-forwarded-for": {"1.2.3.4,5.6.7.8", "9.10.11.12,13.14.15.16"},
+			},
+			expected: map[string]string{
+				"x-forwarded-for": "1.2.3.4,5.6.7.8;9.10.11.12,13.14.15.16",
+			},
+		},
+	} {
+		t.Run("MakeHTTPHeaders", func(t *testing.T) {
+			headers := MakeHTTPHeaders(tc.headers)
+			require.Equal(t, tc.expected, headers)
 		})
 	}
 }
