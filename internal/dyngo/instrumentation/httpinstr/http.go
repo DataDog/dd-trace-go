@@ -71,9 +71,13 @@ func MakeHTTPContext(args HandlerOperationArgs, res HandlerOperationRes) appsect
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 	if os.Getenv("DD_APPSEC_ENABLED") == "" {
+		span.SetTag("_dd.appsec.enabled", 0)
 		return handler
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		span.SetTag("_dd.appsec.enabled", 1)
+		span.SetTag("_dd.runtime_family", "go")
+
 		headers := make(http.Header, len(r.Header))
 		for k, v := range r.Header {
 			k := strings.ToLower(k)

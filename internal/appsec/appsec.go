@@ -35,8 +35,9 @@ const (
 // Default timeout of intake requests.
 const defaultIntakeTimeout = 10 * time.Second
 
-// Start AppSec when the environment variable DD_APPSEC_ENABLED is set to true.
-func Start(cfg *Config) (enabled bool) {
+// Start AppSec when enabled is enabled by both using the appsec build tag and
+// setting the environment variable DD_APPSEC_ENABLED to true.
+func Start(cfg *Config) {
 	enabled, err := isEnabled()
 	if err != nil {
 		log.Error("appsec: %v", err)
@@ -73,7 +74,6 @@ func Start(cfg *Config) (enabled bool) {
 		return
 	}
 	setActiveAppSec(appsec)
-	return true
 }
 
 // Implement the AppSec log message C1
@@ -100,6 +100,8 @@ func setActiveAppSec(a *appsec) {
 	activeAppSec = a
 }
 
+// isEnabled returns true when appsec is enabled by both using the appsec build
+// tag and having the environment variable DD_APPSEC_ENABLED set to true.
 func isEnabled() (bool, error) {
 	enabledStr := os.Getenv("DD_APPSEC_ENABLED")
 	if enabledStr == "" {

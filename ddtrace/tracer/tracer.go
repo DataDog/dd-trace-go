@@ -219,7 +219,7 @@ func newTracer(opts ...StartOption) *tracer {
 	if httpClient == nil {
 		c.httpClient = defaultClient
 	}
-	if enabled := appsec.Start(&appsec.Config{
+	appsec.Start(&appsec.Config{
 		Client:   httpClient,
 		Version:  version.Tag,
 		AgentURL: fmt.Sprintf("http://%s/", resolveAddr(c.agentAddr)),
@@ -230,12 +230,7 @@ func newTracer(opts ...StartOption) *tracer {
 			Environment: c.env,
 		},
 		Tags: c.globalTags,
-	}); enabled {
-		c.globalTags["_dd.appsec.enabled"] = "1"
-		c.globalTags["_dd.runtime_family"] = "go"
-	} else {
-		c.globalTags["_dd.appsec.enabled"] = "0"
-	}
+	})
 	return t
 }
 

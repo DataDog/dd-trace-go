@@ -8,10 +8,9 @@
 
 package appsec
 
-// Start AppSec when the environment variable DD_APPSEC_ENABLED is set to true.
-func Start(*Config) (enabled bool) {
-	return false
-}
+// Start AppSec when enabled is enabled by both using the appsec build tag and
+// setting the environment variable DD_APPSEC_ENABLED to true.
+func Start(*Config) {}
 
 // Stop AppSec.
 func Stop() {}
