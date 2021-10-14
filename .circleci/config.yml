@@ -1,4 +1,4 @@
-version: 2
+version: 2.1
 
 plain-go114: &plain-go114
   working_directory: /home/circleci/dd-trace-go.v1
