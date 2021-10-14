@@ -1,22 +1,23 @@
 package tracer
 
 import (
-	"encoding/json"
-	"github.com/DataDog/sketches-go/ddsketch"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"testing"
 	"time"
 )
 
-type Item struct {
-	Details []byte `json:"details"`
-}
-
 func TestSerializeDataPipeline(t *testing.T) {
-	s1, _ := ddsketch.NewDefaultDDSketch(0.01)
-	s1.Add(4)
-	s2, _ := ddsketch.NewDefaultDDSketch(0.01)
+	s1 := newSummary()
+	s1.Add(0.1)
+	s1.Add(0.15)
+	s1.Add(0.12)
+	s1.Add(0.11)
+	for i := 0; i < 25; i++ {
+		s1.Add(0.117)
+	}
+	s2 := newSummary()
 	s2.Add(8)
 	now := time.Now()
 	pipeline := dataPipeline{
@@ -26,25 +27,19 @@ func TestSerializeDataPipeline(t *testing.T) {
 				Hash: 1,
 				Summary: s1,
 			},
-			{
-				Hash: 2,
-				Summary: s2,
-			},
+			// {
+		// 		Hash: 2,
+		// 		Summary: s2,
+		// 	},
 		},
 	}
 	data, err := pipeline.ToBaggage()
 	assert.Nil(t, err)
-	item := Item{Details: data}
-	bytes, err := json.Marshal(&item)
-	assert.Nil(t, err)
+	fmt.Printf("len of baggage is %d\n", len(data))
 	tracer := tracer{config: &config{serviceName: "service"}}
-	var convertedItem Item
-	err = json.Unmarshal(bytes, &convertedItem)
+	convertedPipeline, err := tracer.DataPipelineFromBaggage(data)
 	assert.Nil(t, err)
-	convertedData := convertedItem.Details
-	convertedPipeline, err := tracer.DataPipelineFromBaggage(convertedData)
-	assert.Nil(t, err)
-	assert.Equal(t, pipeline.callTime.UnixNano(), convertedPipeline.GetCallTime().UnixNano())
+	assert.Equal(t, pipeline.callTime.Truncate(time.Millisecond).UnixNano(), convertedPipeline.GetCallTime().UnixNano())
 	convertedLatencies := convertedPipeline.GetLatencies()
 	assert.Equal(t, len(pipeline.latencies), len(convertedLatencies))
 	for i, l := range pipeline.latencies {

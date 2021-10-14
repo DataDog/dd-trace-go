@@ -5,7 +5,7 @@ go 1.12
 require (
 	github.com/DataDog/datadog-go v4.4.0+incompatible
 	github.com/DataDog/gostackparse v0.5.0
-	github.com/DataDog/sketches-go v1.2.0
+	github.com/DataDog/sketches-go v1.2.2-0.20211013174939-71a9c4027e4c
 	github.com/Microsoft/go-winio v0.5.0 // indirect
 	github.com/golang/protobuf v1.5.2
 	github.com/google/pprof v0.0.0-20210423192551-a2663126120b

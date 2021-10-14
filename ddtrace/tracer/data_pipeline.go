@@ -5,16 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"github.com/DataDog/sketches-go/ddsketch"
+	"github.com/DataDog/sketches-go/ddsketch/encoding"
 	"github.com/DataDog/sketches-go/ddsketch/mapping"
-	"github.com/DataDog/sketches-go/ddsketch/pb/sketchpb"
 	"github.com/DataDog/sketches-go/ddsketch/store"
-	"github.com/golang/protobuf/proto"
 	"github.com/spaolacci/murmur3"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"time"
-	// "github.com/spaolacci/murmur3"
 )
 
 // for now, use just a basic sketch
@@ -32,55 +30,51 @@ func dataPipelineFromBaggage(data []byte, service string) (DataPipeline, error) 
 		return nil, errors.New("data size too small")
 	}
 	pipeline := &dataPipeline{}
-	pipeline.callTime = time.Unix(0, int64(binary.LittleEndian.Uint64(data)))
-	data = data[8:]
+	t, err := encoding.DecodeVarint64(&data)
+	if err != nil {
+		return nil, err
+	}
+	pipeline.callTime = time.Unix(0, t*int64(time.Millisecond))
 	for {
 		if len(data) == 0 {
 			return pipeline, nil
 		}
-		fmt.Printf("len of data %d\n", len(data))
-		if len(data) < 12 {
-			return nil, errors.New("message header less than 12 bytes")
+		if len(data) < 8 {
+			return nil, errors.New("message header less than 8 bytes")
 		}
 		hash := binary.LittleEndian.Uint64(data)
-		fmt.Printf("hash %d\n", hash)
 		data = data[8:]
-		size := binary.LittleEndian.Uint32(data)
-		fmt.Printf("size %d\n", size)
-		data = data[4:]
+		size, err := encoding.DecodeUvarint64(&data)
+		if err != nil {
+			return nil, err
+		}
 		if len(data) < int(size) {
 			return nil, errors.New("message size less than size")
 		}
-		var pb sketchpb.DDSketch
-		err := proto.Unmarshal(data[:size], &pb)
+		sketch, err := ddsketch.DecodeDDSketch(data[:size], store.BufferedPaginatedStoreConstructor, sketchMapping)
 		if err != nil {
 			return nil, err
 		}
-		summary, err := ddsketch.FromProto(&pb)
-		if err != nil {
-			return nil, err
-		}
-		pipeline.latencies = append(pipeline.latencies, ddtrace.PipelineLatency{Hash: hash, Summary: summary})
+		pipeline.latencies = append(pipeline.latencies, ddtrace.PipelineLatency{Hash: hash, Summary: sketch})
 		data = data[size:]
 	}
-	return pipeline, nil
 }
 
 func (p *dataPipeline) ToBaggage() ([]byte, error) {
-	data := make([]byte, 8)
+	data := make([]byte, 0)
 	hash := make([]byte, 8)
-	size := make([]byte, 4)
-	binary.LittleEndian.PutUint64(data, uint64(p.callTime.UnixNano()))
+	encoding.EncodeVarint64(&data, p.callTime.UnixNano()/int64(time.Millisecond))
 	for _, l := range p.latencies {
-		sketch, err := proto.Marshal(l.Summary.ToProto())
-		if err != nil {
-			return nil, err
-		}
+		// todo[piochelepiotr] Put size at the end so that we don't have to allocate that sketch memory twice.
+		var sketch []byte
+		l.Summary.Encode(&sketch, true)
 		binary.LittleEndian.PutUint64(hash, l.Hash)
-		binary.LittleEndian.PutUint32(size, uint32(len(sketch)))
 		data = append(data, hash...)
-		data = append(data, size...)
+		encoding.EncodeUvarint64(&data, uint64(len(sketch)))
 		data = append(data, sketch...)
+	}
+	if tracer, ok := internal.GetGlobalTracer().(*tracer); ok {
+		tracer.config.statsd.Distribution("datadog.tracer.baggage_size", float64(len(data)), []string{fmt.Sprintf("service:%s", p.service)}, 1)
 	}
 	return data, nil
 }
@@ -126,7 +120,7 @@ func (p *dataPipeline) MergeWith(receivingPipelineName string, dataPipelines ...
 
 func newSummary() *ddsketch.DDSketch {
 	// todo[piochelepiotr] Use paginated buffered store.
-	return ddsketch.NewDDSketch(sketchMapping, store.NewCollapsingLowestDenseStore(1000), store.NewCollapsingLowestDenseStore(1000))
+	return ddsketch.NewDDSketch(sketchMapping, store.BufferedPaginatedStoreConstructor(), store.BufferedPaginatedStoreConstructor())
 }
 
 func newDataPipeline(service string) *dataPipeline {

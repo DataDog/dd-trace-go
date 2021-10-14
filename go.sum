@@ -54,6 +54,8 @@ github.com/DataDog/gostackparse v0.5.0/go.mod h1:lTfqcJKqS9KnXQGnyQMCugq3u1FP6UZ
 github.com/DataDog/sketches-go v1.0.0/go.mod h1:O+XkJHWk9w4hDwY2ZUDU31ZC9sNYlYo8DiFsxjYeo1k=
 github.com/DataDog/sketches-go v1.2.0 h1:1fyVz0zNw2WamTu5kL8ZCSIXd7ipB4I9Tm5M9LBSvIY=
 github.com/DataDog/sketches-go v1.2.0/go.mod h1:1xYmPLY1So10AwxV6MJV0J53XVH+WL9Ad1KetxVivVI=
+github.com/DataDog/sketches-go v1.2.2-0.20211013174939-71a9c4027e4c h1:UoLW1qsGYRIKVvWLftfjQG6JCypFjgJZP3WolV2QSbI=
+github.com/DataDog/sketches-go v1.2.2-0.20211013174939-71a9c4027e4c/go.mod h1:1xYmPLY1So10AwxV6MJV0J53XVH+WL9Ad1KetxVivVI=
 github.com/Microsoft/go-winio v0.5.0 h1:Elr9Wn+sGKPlkaBvwu4mTrxtmOp3F3yV9qhaHbXGjwU=
 github.com/Microsoft/go-winio v0.5.0/go.mod h1:JPGBdM1cNvN/6ISo+n8V5iA4v8pBzdOpzfwIujj1a84=
 github.com/NYTimes/gziphandler v0.0.0-20170623195520-56545f4a5d46/go.mod h1:3wb06e3pkSAbeQ52E9H9iFoQsEEwGN64994WTCIhntQ=
