@@ -10,16 +10,421 @@
 // +build amd64
 // +build linux darwin
 
-package bindings
+package waf
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestHealth(t *testing.T) {
+	version, err := Health()
+	require.NoError(t, err)
+	require.NotNil(t, version)
+	require.Equal(t, "1.0.13", version.String())
+}
+
+var testRule = newTestRule("server.request.headers.no_cookies:user-agent")
+
+var testRuleTmpl = template.Must(template.New("").Parse(`
+{
+  "version": "1.0",
+  "events": [
+    {
+      "id": "ua0-600-12x",
+      "name": "Arachni",
+      "tags": {
+        "type": "security_scanner"
+      },
+      "conditions": [
+        {
+          "operation": "match_regex",
+          "parameters": {
+            "inputs": [
+             {{ range $i, $input := . }}{{ if gt $i 0 }}, {{end}}"{{ $input }}"{{ end }}
+            ],
+            "regex": "^Arachni"
+          }
+        }
+      ],
+      "transformers": [],
+      "action": "record"
+    }
+  ]
+}
+`))
+
+func separator(s string) func() string {
+	i := -1
+	return func() string {
+		i++
+		if i == 0 {
+			return ""
+		}
+		return s
+	}
+}
+
+func newTestRule(input ...string) []byte {
+	var buf bytes.Buffer
+	if err := testRuleTmpl.Execute(&buf, input); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
+
+func TestNewWAF(t *testing.T) {
+	defer requireZeroNBLiveCObjects(t)
+	t.Run("valid-rule", func(t *testing.T) {
+		waf, err := newWAFHandle(testRule)
+		require.NoError(t, err)
+		require.NotNil(t, waf)
+		defer waf.close()
+	})
+
+	t.Run("invalid-json", func(t *testing.T) {
+		waf, err := newWAFHandle([]byte(`not json`))
+		require.Error(t, err)
+		require.Nil(t, waf)
+	})
+
+	t.Run("rule-encoding-error", func(t *testing.T) {
+		// For now, the null value cannot be encoded into a WAF object representation so it allows us to cover this
+		// case where the JSON rule cannot be encoded into a WAF object.
+		waf, err := newWAFHandle([]byte(`null`))
+		require.Error(t, err)
+		require.Nil(t, waf)
+	})
+
+	t.Run("invalid-rule", func(t *testing.T) {
+		// Test with a valid JSON but invalid rule format (field events should be an array)
+		const rule = `
+{
+  "version": "1.0",
+  "events": {
+    {
+      "id": "ua0-600-12x",
+      "name": "Arachni",
+      "tags": {
+        "type": "security_scanner"
+      },
+      "conditions": [
+        {
+          "operation": "match_regex",
+          "parameters": {
+            "inputs": [
+              "server.request.headers.no_cookies:user-agent"
+            ],
+            "regex": "^Arachni"
+          }
+        }
+      ],
+      "transformers": [],
+      "action": "record"
+    }
+  }
+}
+`
+		waf, err := newWAFHandle([]byte(rule))
+		require.Error(t, err)
+		require.Nil(t, waf)
+	})
+}
+
+func TestUsage(t *testing.T) {
+	defer requireZeroNBLiveCObjects(t)
+
+	waf, err := newWAFHandle(newTestRule("my.input"))
+	require.NoError(t, err)
+	require.NotNil(t, waf)
+
+	//require.Equal(t, []string{"my.input"}, waf.addresses())
+
+	wafCtx := newWAFContext(waf)
+	require.NotNil(t, wafCtx)
+
+	// Not matching
+	values := map[string]interface{}{
+		"my.input": "go client",
+	}
+	matches, err := wafCtx.run(values, time.Second)
+	require.NoError(t, err)
+	require.Nil(t, matches)
+
+	// Rule address not available
+	values = map[string]interface{}{
+		"server.request.uri.raw": "something",
+	}
+	matches, err = wafCtx.run(values, time.Second)
+	require.NoError(t, err)
+	require.Nil(t, matches)
+
+	// Timeout
+	values = map[string]interface{}{
+		"my.input": "Arachni",
+	}
+	matches, err = wafCtx.run(values, 0)
+	require.Equal(t, ErrTimeout, err)
+	require.Nil(t, matches)
+
+	// Not matching anymore since it already matched before
+	values = map[string]interface{}{
+		"my.input": "Arachni",
+	}
+	matches, err = wafCtx.run(values, 0)
+	require.Equal(t, ErrTimeout, err)
+	require.Nil(t, matches)
+
+	// Matching
+	// Note a WAF rule can only match once. This is why we test the matching case at the end.
+	values = map[string]interface{}{
+		"my.input": "Arachni",
+	}
+	matches, err = wafCtx.run(values, time.Second)
+	require.NoError(t, err)
+	require.NotEmpty(t, matches)
+
+	// Not matching anymore since it already matched before
+	values = map[string]interface{}{
+		"my.input": "Arachni",
+	}
+	matches, err = wafCtx.run(values, 0)
+	require.Equal(t, ErrTimeout, err)
+	require.Nil(t, matches)
+
+	// Nil values
+	matches, err = wafCtx.run(nil, time.Second)
+	require.NoError(t, err)
+	require.Nil(t, matches)
+
+	// Empty values
+	matches, err = wafCtx.run(map[string]interface{}{}, time.Second)
+	require.NoError(t, err)
+	require.Nil(t, matches)
+
+	wafCtx.close()
+	waf.close()
+	// Using the WAF instance after it was closed leads to a nil WAF context
+	require.Nil(t, newWAFContext(waf))
+}
+
+func TestAddresses(t *testing.T) {
+	defer requireZeroNBLiveCObjects(t)
+	expectedAddresses := []string{"my.first.input", "my.second.input", "my.third.input", "my.indexed.input"}
+	addresses := []string{"my.first.input", "my.second.input", "my.third.input", "my.indexed.input:indexed"}
+	waf, err := newWAFHandle(newTestRule(addresses...))
+	require.NoError(t, err)
+	defer waf.close()
+	require.Equal(t, expectedAddresses, waf.addresses())
+}
+
+func TestConcurrency(t *testing.T) {
+	defer requireZeroNBLiveCObjects(t)
+
+	// Start 2000 goroutines that will use the WAF 1000 times each
+	nbUsers := 2000
+	nbRun := 1000
+
+	t.Run("concurrent-waf-release", func(t *testing.T) {
+		t.Parallel()
+
+		waf, err := newWAFHandle(testRule)
+		require.NoError(t, err)
+
+		wafCtx := newWAFContext(waf)
+		require.NotNil(t, wafCtx)
+
+		var (
+			startBarrier sync.WaitGroup
+			called       uint32
+		)
+		startBarrier.Add(1)
+		go func() {
+			startBarrier.Wait()
+			wafCtx.close()
+			atomic.AddUint32(&called, 1)
+		}()
+
+		// The implementation currently blocks until the WAF contexts get released
+		startBarrier.Done()
+		require.Equal(t, uint32(0), atomic.LoadUint32(&called))
+		waf.close()
+		require.Equal(t, uint32(1), atomic.LoadUint32(&called))
+	})
+
+	t.Run("concurrent-waf-context-usage", func(t *testing.T) {
+		t.Parallel()
+
+		waf, err := newWAFHandle(testRule)
+		require.NoError(t, err)
+		defer waf.close()
+
+		wafCtx := newWAFContext(waf)
+		defer wafCtx.close()
+
+		// User agents that won't match the rule so that it doesn't get pruned.
+		// Said otherwise, the User-Agent rule will run as long as it doesn't match, otherwise it gets ignored.
+		// This is the reason why the following user agent are not Arachni.
+		userAgents := [...]string{"Foo", "Bar", "Datadog"}
+		length := len(userAgents)
+
+		var startBarrier, stopBarrier sync.WaitGroup
+		// Create a start barrier to synchronize every goroutine's launch and
+		// increase the chances of parallel accesses
+		startBarrier.Add(1)
+		// Create a stopBarrier to signal when all user goroutines are done.
+		stopBarrier.Add(nbUsers)
+
+		for n := 0; n < nbUsers; n++ {
+			go func() {
+				startBarrier.Wait()      // Sync the starts of the goroutines
+				defer stopBarrier.Done() // Signal we are done when returning
+
+				for c := 0; c < nbRun; c++ {
+					i := c % length
+					data := map[string]interface{}{
+						"server.request.headers.no_cookies": map[string]string{
+							"user-agent": userAgents[i],
+						},
+					}
+					matches, err := wafCtx.run(data, time.Minute)
+					if err != nil {
+						panic(err)
+						return
+					}
+					if len(matches) > 0 {
+						panic(fmt.Errorf("c=%d matches=`%v`", c, string(matches)))
+					}
+				}
+			}()
+		}
+
+		// Save the test start time to compare it to the first metrics store's
+		// that should be latter.
+		startBarrier.Done() // Unblock the user goroutines
+		stopBarrier.Wait()  // Wait for the user goroutines to be done
+
+		// Test the rule matches Arachni in the end
+		data := map[string]interface{}{
+			"server.request.headers.no_cookies": map[string]string{
+				"user-agent": "Arachni",
+			},
+		}
+		matches, err := wafCtx.run(data, time.Second)
+		require.NoError(t, err)
+		require.NotEmpty(t, matches)
+	})
+
+	t.Run("concurrent-waf-instance-usage", func(t *testing.T) {
+		t.Parallel()
+
+		waf, err := newWAFHandle(testRule)
+		require.NoError(t, err)
+		defer waf.close()
+
+		// User agents that won't match the rule so that it doesn't get pruned.
+		// Said otherwise, the User-Agent rule will run as long as it doesn't match, otherwise it gets ignored.
+		// This is the reason why the following user agent are not Arachni.
+		userAgents := [...]string{"Foo", "Bar", "Datadog"}
+		length := len(userAgents)
+
+		var startBarrier, stopBarrier sync.WaitGroup
+		// Create a start barrier to synchronize every goroutine's launch and
+		// increase the chances of parallel accesses
+		startBarrier.Add(1)
+		// Create a stopBarrier to signal when all user goroutines are done.
+		stopBarrier.Add(nbUsers)
+
+		for n := 0; n < nbUsers; n++ {
+			go func() {
+				startBarrier.Wait()      // Sync the starts of the goroutines
+				defer stopBarrier.Done() // Signal we are done when returning
+
+				wafCtx := newWAFContext(waf)
+				defer wafCtx.close()
+
+				for c := 0; c < nbRun; c++ {
+					i := c % length
+					data := map[string]interface{}{
+						"server.request.headers.no_cookies": map[string]string{
+							"user-agent": userAgents[i],
+						},
+					}
+					matches, err := wafCtx.run(data, time.Minute)
+					if err != nil {
+						panic(err)
+					}
+					if len(matches) > 0 {
+						panic(fmt.Errorf("c=%d matches=`%v`", c, string(matches)))
+					}
+				}
+
+				// Test the rule matches Arachni in the end
+				data := map[string]interface{}{
+					"server.request.headers.no_cookies": map[string]string{
+						"user-agent": "Arachni",
+					},
+				}
+				matches, err := wafCtx.run(data, time.Second)
+				require.NoError(t, err)
+				require.NotEmpty(t, matches)
+			}()
+		}
+
+		// Save the test start time to compare it to the first metrics store's
+		// that should be latter.
+		startBarrier.Done() // Unblock the user goroutines
+		stopBarrier.Wait()  // Wait for the user goroutines to be done
+	})
+}
+
+func TestRunError(t *testing.T) {
+	for _, tc := range []struct {
+		Err            error
+		ExpectedString string
+	}{
+		{
+			Err:            ErrInternal,
+			ExpectedString: "internal waf error",
+		},
+		{
+			Err:            ErrTimeout,
+			ExpectedString: "waf timeout",
+		},
+		{
+			Err:            ErrInvalidObject,
+			ExpectedString: "invalid waf object",
+		},
+		{
+			Err:            ErrInvalidArgument,
+			ExpectedString: "invalid waf argument",
+		},
+		{
+			Err:            ErrOutOfMemory,
+			ExpectedString: "out of memory",
+		},
+		{
+			Err:            RunError(33),
+			ExpectedString: "unknown waf error 33",
+		},
+	} {
+		t.Run(tc.ExpectedString, func(t *testing.T) {
+			require.Equal(t, tc.ExpectedString, tc.Err.Error())
+		})
+	}
+}
+
+func requireZeroNBLiveCObjects(t testing.TB) {
+	require.Equal(t, uint64(0), atomic.LoadUint64(&nbLiveCObjects))
+}
 
 func TestEncoder(t *testing.T) {
 	for _, tc := range []struct {
@@ -530,13 +935,13 @@ func TestEncoder(t *testing.T) {
 			}
 
 			// Pass the encoded value to the WAF to make sure it doesn't return an error
-			waf, err := NewWAF(newTestRule("my.input"))
+			waf, err := newWAFHandle(newTestRule("my.input"))
 			require.NoError(t, err)
-			defer waf.Close()
-			wafCtx := NewWAFContext(waf)
+			defer waf.close()
+			wafCtx := newWAFContext(waf)
 			require.NotNil(t, wafCtx)
-			defer wafCtx.Close()
-			_, _, err = wafCtx.Run(map[string]interface{}{
+			defer wafCtx.close()
+			_, err = wafCtx.run(map[string]interface{}{
 				"my.input": tc.Data,
 			}, time.Second)
 			require.NoError(t, err)

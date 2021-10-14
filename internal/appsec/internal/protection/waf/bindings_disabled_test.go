@@ -7,7 +7,7 @@
 //go:build !appsec || !cgo || windows || !amd64
 // +build !appsec !cgo windows !amd64
 
-package bindings
+package waf
 
 import (
 	"testing"

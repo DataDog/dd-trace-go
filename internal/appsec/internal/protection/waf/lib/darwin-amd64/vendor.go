@@ -3,6 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package linux_amd64 is required to help go tools support vendoring.
+// Package vendor is required to help go tools support vendoring.
 // DO NOT REMOVE
-package linux_amd64
+package vendor

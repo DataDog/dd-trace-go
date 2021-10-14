@@ -3,10 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Build when CGO is disabled
-//go:build !cgo
-// +build !cgo
+// Build when CGO is enabled but the target OS or architecture are not supported
+//go:build !appsec
+// +build !appsec
 
-package bindings
+package waf
 
-var disabledReason = "cgo was disabled during the compilation and should be enabled in order to compile with the waf"
+var disabledReason = "the waf is disabled due to missing go build tag appsec"

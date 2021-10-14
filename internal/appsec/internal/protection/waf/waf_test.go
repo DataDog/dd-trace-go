@@ -13,17 +13,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/internal/bindings"
-
-	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf"
 )
 
 // TestWAF is a simple validation test of the WAF protecting a net/http server. It only mockups the agent and tests that
 // the WAF is properly detecting an XSS attempt and that the corresponding security event is being sent to the agent.
 func TestWAF(t *testing.T) {
-	if _, err := bindings.Health(); err != nil {
+	if _, err := waf.Health(); err != nil {
 		t.Skip("waf disabled")
 		return
 	}

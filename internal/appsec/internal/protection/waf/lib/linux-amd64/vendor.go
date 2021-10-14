@@ -3,10 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Build when CGO is enabled but the target OS or architecture are not supported
-//go:build !appsec
-// +build !appsec
-
-package bindings
-
-var disabledReason = "the waf is disabled due to missing go build tag appsec"
+// Package vendor is required to help go tools support vendoring.
+// DO NOT REMOVE
+package vendor

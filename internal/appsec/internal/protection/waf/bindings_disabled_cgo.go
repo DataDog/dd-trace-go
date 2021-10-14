@@ -3,6 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package darwin_amd64 is required to help go tools support vendoring.
-// DO NOT REMOVE
-package darwin_amd64
+// Build when CGO is disabled
+//go:build !cgo
+// +build !cgo
+
+package waf
+
+var disabledReason = "cgo was disabled during the compilation and should be enabled in order to compile with the waf"

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/internal/bindings"
 	waftypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/types"
 	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
@@ -20,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+// EventManager interface expected by the WAF to send its events.
 type EventManager interface {
 	SendEvent(event *appsectypes.SecurityEvent)
 }
@@ -27,7 +27,7 @@ type EventManager interface {
 // Register the WAF event listener.
 func Register(rules []byte, appsec EventManager) (unreg dyngo.UnregisterFunc, err error) {
 	// Check the WAF is healthy
-	if _, err := bindings.Health(); err != nil {
+	if _, err := Health(); err != nil {
 		return nil, err
 	}
 
@@ -35,19 +35,19 @@ func Register(rules []byte, appsec EventManager) (unreg dyngo.UnregisterFunc, er
 	if rules == nil {
 		rules = []byte(staticRecommendedRule)
 	}
-	waf, err := bindings.NewWAF(rules)
+	waf, err := newWAFHandle(rules)
 	if err != nil {
 		return nil, err
 	}
 	// Close the WAF in case of an error in what's following
 	defer func() {
 		if err != nil {
-			waf.Close()
+			waf.close()
 		}
 	}()
 
 	// Check if there are addresses in the rule
-	ruleAddresses := waf.Addresses()
+	ruleAddresses := waf.addresses()
 	if len(ruleAddresses) == 0 {
 		return nil, errors.New("no addresses found in the rule")
 	}
@@ -63,27 +63,29 @@ func Register(rules []byte, appsec EventManager) (unreg dyngo.UnregisterFunc, er
 	unregister := dyngo.Register(newWAFEventListener(waf, addresses, appsec))
 	// Return an unregistration function that will also release the WAF instance.
 	return func() {
-		defer waf.Close()
+		defer waf.close()
 		unregister()
 	}, nil
 }
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
-func newWAFEventListener(waf *bindings.WAF, addresses []string, appsec EventManager) dyngo.EventListener {
+func newWAFEventListener(waf *wafHandle, addresses []string, appsec EventManager) dyngo.EventListener {
 	return httpinstr.OnHandlerOperationStart(func(op dyngo.Operation, args httpinstr.HandlerOperationArgs) {
-		wafCtx := bindings.NewWAFContext(waf)
+		wafCtx := newWAFContext(waf)
 		if wafCtx == nil {
 			// The WAF event listener got concurrently released
 			return
 		}
 
-		// For this handler operation lifetime, create a WAF context and the list of detected attacks
-		// TODO(julio): make the attack slice thread-safe once we listen for sub-operations
+		// For this handler operation lifetime, create a WAF context and the
+		// list of detected attacks
+		// TODO(julio): make the attack slice thread-safe once we listen for
+		//   sub-operations
 		var attacks []waftypes.RawAttackMetadata
 
 		op.On(httpinstr.OnHandlerOperationFinish(func(op dyngo.Operation, res httpinstr.HandlerOperationRes) {
 			// Release the WAF context
-			wafCtx.Close()
+			wafCtx.close()
 			// Log the attacks if any
 			if l := len(attacks); l > 0 {
 				log.Debug("appsec: %d attacks detected", l)
@@ -123,16 +125,16 @@ func newWAFEventListener(waf *bindings.WAF, addresses []string, appsec EventMana
 	})
 }
 
-func runWAF(wafCtx *bindings.WAFContext, values map[string]interface{}, attacks *[]waftypes.RawAttackMetadata) {
-	action, md, err := wafCtx.Run(values, 4*time.Millisecond)
+func runWAF(wafCtx *wafContext, values map[string]interface{}, attacks *[]waftypes.RawAttackMetadata) {
+	matches, err := wafCtx.run(values, 4*time.Millisecond)
 	if err != nil {
 		log.Error("appsec: waf error: %v", err)
 		return
 	}
-	if action == bindings.NoAction {
+	if len(matches) == 0 {
 		return
 	}
-	*attacks = append(*attacks, waftypes.RawAttackMetadata{Time: time.Now(), Metadata: md})
+	*attacks = append(*attacks, waftypes.RawAttackMetadata{Time: time.Now(), Metadata: matches})
 }
 
 // Rule addresses currently supported by the WAF

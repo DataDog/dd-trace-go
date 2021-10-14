@@ -8,7 +8,7 @@
 // +build cgo
 // +build windows !amd64
 
-package bindings
+package waf
 
 import (
 	"fmt"
