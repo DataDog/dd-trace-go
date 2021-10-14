@@ -148,8 +148,8 @@ func (f OnBodyReadOperationFinish) Call(op dyngo.Operation, v interface{}) {
 }
 
 type (
-	MyOperationArgs     struct{}
-	MyOperationRes      struct{}
+	MyOperationArgs     struct{ n int }
+	MyOperationRes      struct{ n int }
 	OnMyOperationStart  func(dyngo.Operation, MyOperationArgs)
 	OnMyOperationFinish func(dyngo.Operation, MyOperationRes)
 )
@@ -514,43 +514,51 @@ func TestUsage(t *testing.T) {
 
 	t.Run("concurrency", func(t *testing.T) {
 		// Create nbGoroutines registering event listeners concurrently
-		nbGoroutines := 1000
+		nbGoroutines := 2000
 		// The concurrency is maximized by using start barriers to sync the goroutine launches
-		var done, started, startBarrier sync.WaitGroup
+		var done, startBarrier sync.WaitGroup
 
 		done.Add(nbGoroutines)
-		started.Add(nbGoroutines)
-		startBarrier.Add(1)
+		startBarrier.Add(nbGoroutines + 1)
 
 		var calls uint32
 		for g := 0; g < nbGoroutines; g++ {
 			// Start a goroutine that registers its event listeners to root, emits those events with a new operation, and
 			// finally unregisters them. This allows to test the thread-safety of the underlying list of listeners.
-			go func() {
-				started.Done()
+			// To make the number of calls predictable, the event listener increases the number of calls only when it
+			// comes from the goroutine emitting the event.
+			go func(g int) {
+				startBarrier.Done()
 				startBarrier.Wait()
 				defer done.Done()
 
-				unregister := dyngo.Register(OnMyOperationStart(func(dyngo.Operation, MyOperationArgs) { atomic.AddUint32(&calls, 1) }))
+				unregister := dyngo.Register(OnMyOperationStart(func(_ dyngo.Operation, a MyOperationArgs) {
+					if a.n == g {
+						atomic.AddUint32(&calls, 1)
+					}
+				}))
 				defer unregister()
-				unregister = dyngo.Register(OnMyOperationFinish(func(dyngo.Operation, MyOperationRes) { atomic.AddUint32(&calls, 1) }))
+				unregister = dyngo.Register(OnMyOperationFinish(func(_ dyngo.Operation, r MyOperationRes) {
+					if r.n == g {
+						atomic.AddUint32(&calls, 1)
+					}
+				}))
 				defer unregister()
 
-				// Emit events
-				op := dyngo.StartOperation(MyOperationArgs{}, nil)
-				defer op.Finish(MyOperationRes{})
-			}()
+				// Emit events by passing the goroutine number g
+				op := dyngo.StartOperation(MyOperationArgs{g}, nil)
+				defer op.Finish(MyOperationRes{g})
+			}(g)
 		}
 
 		// Wait for all the goroutines to be started
-		started.Wait()
-		// Release the start barrier
 		startBarrier.Done()
+		startBarrier.Wait()
 		// Wait for the goroutines to be done
 		done.Wait()
 
 		// The number of calls should be equal to the expected number of events
-		require.Equal(t, uint32(nbGoroutines*2), atomic.LoadUint32(&calls))
+		require.Equal(t, uint32(nbGoroutines*2), calls)
 	})
 }
 
