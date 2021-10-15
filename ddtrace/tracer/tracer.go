@@ -215,12 +215,8 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
-	httpClient := c.httpClient
-	if httpClient == nil {
-		c.httpClient = defaultClient
-	}
 	appsec.Start(&appsec.Config{
-		Client:   httpClient,
+		Client:   c.client(),
 		Version:  version.Tag,
 		AgentURL: fmt.Sprintf("http://%s/", resolveAddr(c.agentAddr)),
 		Hostname: c.hostname,
