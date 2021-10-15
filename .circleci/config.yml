@@ -21,7 +21,7 @@ jobs:
     - run:
         name: build
         command: |
-          go build ./ddtrace/... ./profiler/...
+          go build ./ddtrace/... ./profiler/... ./internal/appsec
 
   metadata:
     <<: *plain-go114
@@ -80,13 +80,14 @@ jobs:
 
   test-core:
     parameters:
-      goflags:
-        description: "extra go flags to add to go commands"
-        default: ""
-        type: string
+      appsec:
+        description: "compile and enable appsec"
+        default: false
+        type: boolean
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+      DD_APPSEC_ENABLED: << parameters.appsec >>
     <<: *plain-go114
 
     steps:
@@ -99,7 +100,7 @@ jobs:
           name: Testing
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v <<parameters.goflags>> -race -coverprofile=coverage.txt -covermode=atomic
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v <<# parameters.appsec >>-tags appsec<</ parameters.appsec >> -race -coverprofile=coverage.txt -covermode=atomic
 
       - save_cache:
           key: go-mod-v4-{{ checksum "go.sum" }}
@@ -293,5 +294,5 @@ workflows:
       - test-core:
           matrix:
             parameters:
-              goflags: [ "", "-tags appsec" ]
+              appsec: [ true, false ]
       - test-contrib
