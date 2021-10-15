@@ -62,17 +62,6 @@ var testRuleTmpl = template.Must(template.New("").Parse(`
 }
 `))
 
-func separator(s string) func() string {
-	i := -1
-	return func() string {
-		i++
-		if i == 0 {
-			return ""
-		}
-		return s
-	}
-}
-
 func newTestRule(input ...string) []byte {
 	var buf bytes.Buffer
 	if err := testRuleTmpl.Execute(&buf, input); err != nil {
@@ -84,14 +73,14 @@ func newTestRule(input ...string) []byte {
 func TestNewWAF(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 	t.Run("valid-rule", func(t *testing.T) {
-		waf, err := newWAFHandle(testRule)
+		waf, err := NewHandle(testRule)
 		require.NoError(t, err)
 		require.NotNil(t, waf)
-		defer waf.close()
+		defer waf.Close()
 	})
 
 	t.Run("invalid-json", func(t *testing.T) {
-		waf, err := newWAFHandle([]byte(`not json`))
+		waf, err := NewHandle([]byte(`not json`))
 		require.Error(t, err)
 		require.Nil(t, waf)
 	})
@@ -99,7 +88,7 @@ func TestNewWAF(t *testing.T) {
 	t.Run("rule-encoding-error", func(t *testing.T) {
 		// For now, the null value cannot be encoded into a WAF object representation so it allows us to cover this
 		// case where the JSON rule cannot be encoded into a WAF object.
-		waf, err := newWAFHandle([]byte(`null`))
+		waf, err := NewHandle([]byte(`null`))
 		require.Error(t, err)
 		require.Nil(t, waf)
 	})
@@ -133,7 +122,7 @@ func TestNewWAF(t *testing.T) {
   }
 }
 `
-		waf, err := newWAFHandle([]byte(rule))
+		waf, err := NewHandle([]byte(rule))
 		require.Error(t, err)
 		require.Nil(t, waf)
 	})
@@ -142,20 +131,20 @@ func TestNewWAF(t *testing.T) {
 func TestUsage(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 
-	waf, err := newWAFHandle(newTestRule("my.input"))
+	waf, err := NewHandle(newTestRule("my.input"))
 	require.NoError(t, err)
 	require.NotNil(t, waf)
 
 	//require.Equal(t, []string{"my.input"}, waf.addresses())
 
-	wafCtx := newWAFContext(waf)
+	wafCtx := NewContext(waf)
 	require.NotNil(t, wafCtx)
 
 	// Not matching
 	values := map[string]interface{}{
 		"my.input": "go client",
 	}
-	matches, err := wafCtx.run(values, time.Second)
+	matches, err := wafCtx.Run(values, time.Second)
 	require.NoError(t, err)
 	require.Nil(t, matches)
 
@@ -163,7 +152,7 @@ func TestUsage(t *testing.T) {
 	values = map[string]interface{}{
 		"server.request.uri.raw": "something",
 	}
-	matches, err = wafCtx.run(values, time.Second)
+	matches, err = wafCtx.Run(values, time.Second)
 	require.NoError(t, err)
 	require.Nil(t, matches)
 
@@ -171,7 +160,7 @@ func TestUsage(t *testing.T) {
 	values = map[string]interface{}{
 		"my.input": "Arachni",
 	}
-	matches, err = wafCtx.run(values, 0)
+	matches, err = wafCtx.Run(values, 0)
 	require.Equal(t, ErrTimeout, err)
 	require.Nil(t, matches)
 
@@ -179,7 +168,7 @@ func TestUsage(t *testing.T) {
 	values = map[string]interface{}{
 		"my.input": "Arachni",
 	}
-	matches, err = wafCtx.run(values, 0)
+	matches, err = wafCtx.Run(values, 0)
 	require.Equal(t, ErrTimeout, err)
 	require.Nil(t, matches)
 
@@ -188,7 +177,7 @@ func TestUsage(t *testing.T) {
 	values = map[string]interface{}{
 		"my.input": "Arachni",
 	}
-	matches, err = wafCtx.run(values, time.Second)
+	matches, err = wafCtx.Run(values, time.Second)
 	require.NoError(t, err)
 	require.NotEmpty(t, matches)
 
@@ -196,34 +185,34 @@ func TestUsage(t *testing.T) {
 	values = map[string]interface{}{
 		"my.input": "Arachni",
 	}
-	matches, err = wafCtx.run(values, 0)
+	matches, err = wafCtx.Run(values, 0)
 	require.Equal(t, ErrTimeout, err)
 	require.Nil(t, matches)
 
 	// Nil values
-	matches, err = wafCtx.run(nil, time.Second)
+	matches, err = wafCtx.Run(nil, time.Second)
 	require.NoError(t, err)
 	require.Nil(t, matches)
 
 	// Empty values
-	matches, err = wafCtx.run(map[string]interface{}{}, time.Second)
+	matches, err = wafCtx.Run(map[string]interface{}{}, time.Second)
 	require.NoError(t, err)
 	require.Nil(t, matches)
 
-	wafCtx.close()
-	waf.close()
+	wafCtx.Close()
+	waf.Close()
 	// Using the WAF instance after it was closed leads to a nil WAF context
-	require.Nil(t, newWAFContext(waf))
+	require.Nil(t, NewContext(waf))
 }
 
 func TestAddresses(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 	expectedAddresses := []string{"my.first.input", "my.second.input", "my.third.input", "my.indexed.input"}
 	addresses := []string{"my.first.input", "my.second.input", "my.third.input", "my.indexed.input:indexed"}
-	waf, err := newWAFHandle(newTestRule(addresses...))
+	waf, err := NewHandle(newTestRule(addresses...))
 	require.NoError(t, err)
-	defer waf.close()
-	require.Equal(t, expectedAddresses, waf.addresses())
+	defer waf.Close()
+	require.Equal(t, expectedAddresses, waf.Addresses())
 }
 
 func TestConcurrency(t *testing.T) {
@@ -234,10 +223,10 @@ func TestConcurrency(t *testing.T) {
 	nbRun := 1000
 
 	t.Run("concurrent-waf-release", func(t *testing.T) {
-		waf, err := newWAFHandle(testRule)
+		waf, err := NewHandle(testRule)
 		require.NoError(t, err)
 
-		wafCtx := newWAFContext(waf)
+		wafCtx := NewContext(waf)
 		require.NotNil(t, wafCtx)
 
 		var (
@@ -247,24 +236,24 @@ func TestConcurrency(t *testing.T) {
 		startBarrier.Add(1)
 		go func() {
 			startBarrier.Wait()
-			wafCtx.close()
+			wafCtx.Close()
 			atomic.AddUint32(&called, 1)
 		}()
 
 		// The implementation currently blocks until the WAF contexts get released
 		startBarrier.Done()
 		require.Equal(t, uint32(0), atomic.LoadUint32(&called))
-		waf.close()
+		waf.Close()
 		require.Equal(t, uint32(1), atomic.LoadUint32(&called))
 	})
 
 	t.Run("concurrent-waf-context-usage", func(t *testing.T) {
-		waf, err := newWAFHandle(testRule)
+		waf, err := NewHandle(testRule)
 		require.NoError(t, err)
-		defer waf.close()
+		defer waf.Close()
 
-		wafCtx := newWAFContext(waf)
-		defer wafCtx.close()
+		wafCtx := NewContext(waf)
+		defer wafCtx.Close()
 
 		// User agents that won't match the rule so that it doesn't get pruned.
 		// Said otherwise, the User-Agent rule will run as long as it doesn't match, otherwise it gets ignored.
@@ -291,7 +280,7 @@ func TestConcurrency(t *testing.T) {
 							"user-agent": userAgents[i],
 						},
 					}
-					matches, err := wafCtx.run(data, time.Minute)
+					matches, err := wafCtx.Run(data, time.Minute)
 					if err != nil {
 						panic(err)
 						return
@@ -314,15 +303,15 @@ func TestConcurrency(t *testing.T) {
 				"user-agent": "Arachni",
 			},
 		}
-		matches, err := wafCtx.run(data, time.Second)
+		matches, err := wafCtx.Run(data, time.Second)
 		require.NoError(t, err)
 		require.NotEmpty(t, matches)
 	})
 
 	t.Run("concurrent-waf-instance-usage", func(t *testing.T) {
-		waf, err := newWAFHandle(testRule)
+		waf, err := NewHandle(testRule)
 		require.NoError(t, err)
-		defer waf.close()
+		defer waf.Close()
 
 		// User agents that won't match the rule so that it doesn't get pruned.
 		// Said otherwise, the User-Agent rule will run as long as it doesn't match, otherwise it gets ignored.
@@ -342,8 +331,8 @@ func TestConcurrency(t *testing.T) {
 				startBarrier.Wait()      // Sync the starts of the goroutines
 				defer stopBarrier.Done() // Signal we are done when returning
 
-				wafCtx := newWAFContext(waf)
-				defer wafCtx.close()
+				wafCtx := NewContext(waf)
+				defer wafCtx.Close()
 
 				for c := 0; c < nbRun; c++ {
 					i := c % length
@@ -352,7 +341,7 @@ func TestConcurrency(t *testing.T) {
 							"user-agent": userAgents[i],
 						},
 					}
-					matches, err := wafCtx.run(data, time.Minute)
+					matches, err := wafCtx.Run(data, time.Minute)
 					if err != nil {
 						panic(err)
 					}
@@ -367,7 +356,7 @@ func TestConcurrency(t *testing.T) {
 						"user-agent": "Arachni",
 					},
 				}
-				matches, err := wafCtx.run(data, time.Second)
+				matches, err := wafCtx.Run(data, time.Second)
 				require.NoError(t, err)
 				require.NotEmpty(t, matches)
 			}()
@@ -929,13 +918,13 @@ func TestEncoder(t *testing.T) {
 			}
 
 			// Pass the encoded value to the WAF to make sure it doesn't return an error
-			waf, err := newWAFHandle(newTestRule("my.input"))
+			waf, err := NewHandle(newTestRule("my.input"))
 			require.NoError(t, err)
-			defer waf.close()
-			wafCtx := newWAFContext(waf)
+			defer waf.Close()
+			wafCtx := NewContext(waf)
 			require.NotNil(t, wafCtx)
-			defer wafCtx.close()
-			_, err = wafCtx.run(map[string]interface{}{
+			defer wafCtx.Close()
+			_, err = wafCtx.Run(map[string]interface{}{
 				"my.input": tc.Data,
 			}, time.Second)
 			require.NoError(t, err)

@@ -3,20 +3,25 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package waf
+//go:build appsec
+// +build appsec
+
+package appsec
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/waf"
 )
 
 func TestStaticRule(t *testing.T) {
-	if _, err := Health(); err != nil {
+	if _, err := waf.Health(); err != nil {
 		t.Skip("waf disabled")
 		return
 	}
-	waf, err := newWAFHandle([]byte(staticRecommendedRule))
+	waf, err := waf.NewHandle([]byte(staticRecommendedRule))
 	require.NoError(t, err)
-	waf.close()
+	waf.Close()
 }

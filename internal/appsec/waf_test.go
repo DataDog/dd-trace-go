@@ -3,7 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package waf_test
+//go:build appsec
+// +build appsec
+
+package appsec_test
 
 import (
 	"io/ioutil"
@@ -17,7 +20,7 @@ import (
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/waf"
 )
 
 // TestWAF is a simple validation test of the WAF protecting a net/http server. It only mockups the agent and tests that

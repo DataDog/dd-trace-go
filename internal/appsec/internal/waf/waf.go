@@ -35,9 +35,9 @@ import (
 	// Do not remove the following imports which allow supporting package
 	// vendoring by properly copying all the files needed by CGO: the libddwaf
 	// header file and the static libraries.
-	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/include"
-	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/lib/darwin-amd64"
-	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/protection/waf/lib/linux-amd64"
+	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/waf/include"
+	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/waf/lib/darwin-amd64"
+	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/waf/lib/linux-amd64"
 )
 
 // Version wrapper type of the WAF version.
@@ -61,21 +61,21 @@ func Health() (Version, error) {
 	return Version(v), nil
 }
 
-// wafHandle represents an instance of the WAF for a given ruleset.
-type wafHandle struct {
+// Handle represents an instance of the WAF for a given ruleset.
+type Handle struct {
 	handle C.ddwaf_handle
 	// RWMutex used as a simple reference counter implementation allowing to
-	// safely release the WAF handle only when there are no wafContext using it.
+	// safely release the WAF handle only when there are no Context using it.
 	mu sync.RWMutex
 
 	// encoder of Go values into ddwaf objects.
 	encoder encoder
 	// addresses the WAF rule is expecting.
-	ruleAddresses []string
+	addresses []string
 }
 
-// newWAFHandle creates a new instance of the WAF with the given JSON rule.
-func newWAFHandle(jsonRule []byte) (*wafHandle, error) {
+// NewHandle creates a new instance of the WAF with the given JSON rule.
+func NewHandle(jsonRule []byte) (*Handle, error) {
 	var rule interface{}
 	if err := json.Unmarshal(jsonRule, &rule); err != nil {
 		return nil, fmt.Errorf("could not parse the WAF rule: %v", err)
@@ -111,10 +111,10 @@ func newWAFHandle(jsonRule []byte) (*wafHandle, error) {
 		return nil, err
 	}
 
-	return &wafHandle{
-		handle:        handle,
-		encoder:       encoder,
-		ruleAddresses: addresses,
+	return &Handle{
+		handle:    handle,
+		encoder:   encoder,
+		addresses: addresses,
 	}, nil
 }
 
@@ -134,16 +134,16 @@ func ruleAddresses(handle C.ddwaf_handle) ([]string, error) {
 	return addresses, nil
 }
 
-// addresses returns the list of addresses the WAF rule is expecting.
-func (waf *wafHandle) addresses() []string {
-	return waf.ruleAddresses
+// Addresses returns the list of addresses the WAF rule is expecting.
+func (waf *Handle) Addresses() []string {
+	return waf.addresses
 }
 
 // Close the WAF and release the underlying C memory as soon as there are
 // no more WAF contexts using the rule.
-func (waf *wafHandle) close() {
+func (waf *Handle) Close() {
 	// Exclusively lock the mutex to ensure there's no other concurrent
-	// wafContext using the WAF handle.
+	// Context using the WAF handle.
 	waf.mu.Lock()
 	defer waf.mu.Unlock()
 	C.ddwaf_destroy(waf.handle)
@@ -151,20 +151,23 @@ func (waf *wafHandle) close() {
 	waf.handle = nil
 }
 
-type wafContext struct {
-	waf *wafHandle
+// Context is a WAF execution context. It allows to run the WAF incrementally
+// by calling it multiple times to run its rules every time new addresses
+// become available. Each request must have its own Context.
+type Context struct {
+	waf *Handle
 
 	context C.ddwaf_context
 	// Mutex protecting the use of context which is not thread-safe.
 	mu sync.Mutex
 }
 
-// Create a new WAF context and increase the number of references to the WAF
+// NewContext a new WAF context and increase the number of references to the WAF
 // handle. A nil value is returned when the WAF handle can no longer be used
 // or the WAF context couldn't be created.
-func newWAFContext(waf *wafHandle) *wafContext {
+func NewContext(waf *Handle) *Context {
 	// Increase the WAF handle usage count by RLock'ing the mutex.
-	// It will be RUnlock'ed in the Close method when the wafContext is released.
+	// It will be RUnlock'ed in the Close method when the Context is released.
 	waf.mu.RLock()
 	if waf.handle == nil {
 		// The WAF handle got free'd by the time we got the lock
@@ -176,14 +179,14 @@ func newWAFContext(waf *wafHandle) *wafContext {
 		return nil
 	}
 	incNbLiveCObjects()
-	return &wafContext{
+	return &Context{
 		waf:     waf,
 		context: context,
 	}
 }
 
 // Run the WAF with the given Go values and timeout.
-func (c *wafContext) run(values map[string]interface{}, timeout time.Duration) (matches []byte, err error) {
+func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (matches []byte, err error) {
 	if len(values) == 0 {
 		return
 	}
@@ -195,7 +198,7 @@ func (c *wafContext) run(values map[string]interface{}, timeout time.Duration) (
 	return c.runWAF(wafValue, timeout)
 }
 
-func (c *wafContext) runWAF(data *wafObject, timeout time.Duration) (matches []byte, err error) {
+func (c *Context) runWAF(data *wafObject, timeout time.Duration) (matches []byte, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var result C.ddwaf_result
@@ -206,8 +209,8 @@ func (c *wafContext) runWAF(data *wafObject, timeout time.Duration) (matches []b
 
 // Close the WAF context by releasing its C memory and decreasing the number of
 // references to the WAF handle.
-func (c *wafContext) close() {
-	// RUnlock the WAF RWMutex to decrease the count of WAFContexts using it.
+func (c *Context) Close() {
+	// RUnlock the WAF RWMutex to decrease the count of WAF Contexts using it.
 	defer c.waf.mu.RUnlock()
 	C.ddwaf_context_destroy(c.context)
 	decNbLiveCObjects()

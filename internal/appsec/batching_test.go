@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
-	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -48,7 +47,7 @@ func TestEventBatchingLoop(t *testing.T) {
 							// Have enough room for the amount of expected batches
 							SendBatchCalled: make(chan struct{}, expectedNbBatches),
 						}
-						eventChan := make(chan appsectypes.SecurityEvent, eventChanLen)
+						eventChan := make(chan securityEvent, eventChanLen)
 						cfg := &Config{
 							MaxBatchLen:       maxBatchLen,
 							MaxBatchStaleTime: time.Hour, // Long enough so that it never triggers and we only test the batching logic
@@ -86,7 +85,7 @@ func TestEventBatchingLoop(t *testing.T) {
 		client := &IntakeClientMock{
 			SendBatchCalled: make(chan struct{}, 2),
 		}
-		eventChan := make(chan appsectypes.SecurityEvent, 1024)
+		eventChan := make(chan securityEvent, 1024)
 		maxStaleTime := time.Millisecond
 		cfg := &Config{
 			MaxBatchLen:       1024,
@@ -134,7 +133,7 @@ func TestEventBatchingLoop(t *testing.T) {
 		t.Run("by closing the event channel", func(t *testing.T) {
 			t.Run("with an empty batch", func(t *testing.T) {
 				client := &IntakeClientMock{}
-				eventChan := make(chan appsectypes.SecurityEvent, 1024)
+				eventChan := make(chan securityEvent, 1024)
 				cfg := &Config{
 					MaxBatchLen:       1024,
 					MaxBatchStaleTime: time.Hour,
@@ -161,7 +160,7 @@ func TestEventBatchingLoop(t *testing.T) {
 				client := &IntakeClientMock{
 					SendBatchCalled: make(chan struct{}, 1),
 				}
-				eventChan := make(chan appsectypes.SecurityEvent, 1024)
+				eventChan := make(chan securityEvent, 1024)
 				cfg := &Config{
 					MaxBatchLen:       1024,
 					MaxBatchStaleTime: time.Hour,
@@ -195,12 +194,12 @@ func TestEventBatchingLoop(t *testing.T) {
 
 type myEvent struct{}
 
-func (m myEvent) ToIntakeEvent() ([]*api.AttackEvent, error) {
+func (m myEvent) toIntakeEvents() ([]*api.AttackEvent, error) {
 	return []*api.AttackEvent{
 		api.NewAttackEvent("my.rule.id", "my.rule.name", "my.attack.type", time.Now(), nil),
 	}, nil
 }
 
-func applyGlobalContextNoop(e appsectypes.SecurityEvent) appsectypes.SecurityEvent {
+func applyGlobalContextNoop(e securityEvent) securityEvent {
 	return e
 }

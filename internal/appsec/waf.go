@@ -3,7 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package waf
+//go:build appsec
+// +build appsec
+
+package appsec
 
 import (
 	"encoding/json"
@@ -14,21 +17,23 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
-	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation/httpinstr"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-// EventManager interface expected by the WAF to send its events.
-type EventManager interface {
-	SendEvent(event appsectypes.SecurityEvent)
+// wafEvent is the raw attack event returned by the WAF when matching.
+type wafEvent struct {
+	time time.Time
+	// metadata is the raw JSON representation of the attackMetadata slice.
+	metadata []byte
 }
 
 // Register the WAF event listener.
-func Register(rules []byte, appsec EventManager) (unreg dyngo.UnregisterFunc, err error) {
+func registerWAF(rules []byte, appsec *appsec) (unreg dyngo.UnregisterFunc, err error) {
 	// Check the WAF is healthy
-	if _, err := Health(); err != nil {
+	if _, err := waf.Health(); err != nil {
 		return nil, err
 	}
 
@@ -36,19 +41,19 @@ func Register(rules []byte, appsec EventManager) (unreg dyngo.UnregisterFunc, er
 	if rules == nil {
 		rules = []byte(staticRecommendedRule)
 	}
-	waf, err := newWAFHandle(rules)
+	waf, err := waf.NewHandle(rules)
 	if err != nil {
 		return nil, err
 	}
 	// Close the WAF in case of an error in what's following
 	defer func() {
 		if err != nil {
-			waf.close()
+			waf.Close()
 		}
 	}()
 
 	// Check if there are addresses in the rule
-	ruleAddresses := waf.addresses()
+	ruleAddresses := waf.Addresses()
 	if len(ruleAddresses) == 0 {
 		return nil, errors.New("no addresses found in the rule")
 	}
@@ -64,45 +69,28 @@ func Register(rules []byte, appsec EventManager) (unreg dyngo.UnregisterFunc, er
 	unregister := dyngo.Register(newWAFEventListener(waf, addresses, appsec))
 	// Return an unregistration function that will also release the WAF instance.
 	return func() {
-		defer waf.close()
+		defer waf.Close()
 		unregister()
 	}, nil
 }
 
-// attackMetadata is the parsed metadata returned by the WAF.
-type attackMetadata []struct {
-	RetCode int    `json:"ret_code"`
-	Flow    string `json:"flow"`
-	Step    string `json:"step"`
-	Rule    string `json:"rule"`
-	Filter  []struct {
-		Operator        string        `json:"operator"`
-		OperatorValue   string        `json:"operator_value"`
-		BindingAccessor string        `json:"binding_accessor"`
-		ManifestKey     string        `json:"manifest_key"`
-		KeyPath         []interface{} `json:"key_path"`
-		ResolvedValue   string        `json:"resolved_value"`
-		MatchStatus     string        `json:"match_status"`
-	} `json:"filter"`
-}
-
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
-func newWAFEventListener(waf *wafHandle, addresses []string, appsec EventManager) dyngo.EventListener {
+func newWAFEventListener(handle *waf.Handle, addresses []string, appsec *appsec) dyngo.EventListener {
 	return httpinstr.OnHandlerOperationStart(func(op dyngo.Operation, args httpinstr.HandlerOperationArgs) {
 		// For this handler operation lifetime, create a WAF context and the
 		// list of detected attacks
-		wafCtx := newWAFContext(waf)
+		wafCtx := waf.NewContext(handle)
 		if wafCtx == nil {
 			// The WAF event listener got concurrently released
 			return
 		}
 		// TODO(julio): make it a thread-safe list of security events once we
 		//  listen for sub-operations
-		var baseEvent *securityEvent
+		var baseEvent *wafEvent
 
 		op.On(httpinstr.OnHandlerOperationFinish(func(op dyngo.Operation, res httpinstr.HandlerOperationRes) {
 			// Release the WAF context
-			wafCtx.close()
+			wafCtx.Close()
 			// Log the attacks if any
 			if baseEvent == nil {
 				return
@@ -110,17 +98,17 @@ func newWAFEventListener(waf *wafHandle, addresses []string, appsec EventManager
 			log.Debug("appsec: attack detected by the waf")
 
 			// Create the base security event out of the slide of attacks
-			event := appsectypes.WithHTTPContext(baseEvent, httpinstr.MakeHTTPContext(args, res))
+			event := withHTTPOperationContext(baseEvent, args, res)
 
 			// Check if a span exists
 			if span := args.Span; span != nil {
 				// Add the span context to the security event
 				spanCtx := span.Context()
-				event = appsectypes.WithSpanContext(event, spanCtx.TraceID(), spanCtx.SpanID())
+				event = withSpanContext(event, spanCtx.TraceID(), spanCtx.SpanID())
 				// Keep this span due to the security event
 				span.SetTag(ext.SamplingPriority, ext.ManualKeep)
 			}
-			appsec.SendEvent(event)
+			appsec.sendEvent(event)
 		}))
 
 		// Run the WAF on the rule addresses available in the request args
@@ -141,20 +129,13 @@ func newWAFEventListener(waf *wafHandle, addresses []string, appsec EventManager
 	})
 }
 
-// securityEvent is the raw attack event returned by the WAF when matching.
-type securityEvent struct {
-	time time.Time
-	// metadata is the raw JSON representation of the attackMetadata slice.
-	metadata []byte
-}
-
-func runWAF(wafCtx *wafContext, values map[string]interface{}) *securityEvent {
-	matches, err := wafCtx.run(values, 4*time.Millisecond)
+func runWAF(wafCtx *waf.Context, values map[string]interface{}) *wafEvent {
+	matches, err := wafCtx.Run(values, 4*time.Millisecond)
 	if err != nil {
 		log.Error("appsec: waf error: %v", err)
 		return nil
 	}
-	return &securityEvent{
+	return &wafEvent{
 		time:     time.Now(),
 		metadata: matches,
 	}
@@ -197,9 +178,9 @@ func supportedAddresses(ruleAddresses []string) (supported, notSupported []strin
 	return supported, notSupported
 }
 
-// ToIntakeEvent creates the attack event payloads from a WAF attack.
-func (e *securityEvent) ToIntakeEvent() (events []*api.AttackEvent, err error) {
-	var matches attackMetadata
+// toIntakeEvent creates the attack event payloads from a WAF attack.
+func (e *wafEvent) toIntakeEvents() (events []*api.AttackEvent, err error) {
+	var matches waf.AttackMetadata
 	if err := json.Unmarshal(e.metadata, &matches); err != nil {
 		return nil, err
 	}

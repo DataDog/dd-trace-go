@@ -16,9 +16,11 @@ import (
 
 type (
 	// Version of the WAF.
-	Version    struct{}
-	wafHandle  struct{}
-	wafContext struct{}
+	Version struct{}
+	// Handle represents an instance of the WAF for a given ruleset.
+	Handle struct{}
+	// Context is a WAF execution context.
+	Context struct{}
 )
 
 var errDisabledReason = errors.New(disabledReason)
@@ -33,12 +35,12 @@ func Health() (*Version, error) {
 	return nil, errDisabledReason
 }
 
-func newWAFHandle([]byte) (*wafHandle, error) { return nil, errDisabledReason }
-func (*wafHandle) addresses() []string        { return nil }
-func (*wafHandle) close()                     {}
+func NewHandle([]byte) (*Handle, error) { return nil, errDisabledReason }
+func (*Handle) Addresses() []string     { return nil }
+func (*Handle) Close()                  {}
 
-func newWAFContext(*wafHandle) *wafContext { return nil }
-func (*wafContext) run(map[string]interface{}, time.Duration) ([]byte, error) {
+func NewContext(*Handle) *Context { return nil }
+func (*Context) Run(map[string]interface{}, time.Duration) ([]byte, error) {
 	return nil, errDisabledReason
 }
-func (*wafContext) close() {}
+func (*Context) Close() {}

@@ -3,31 +3,33 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package types
+package appsec
 
 import (
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation/httpinstr"
 )
 
-// SecurityEvent is a generic security event payload holding an actual security event (eg. a WAF security event),
-// along with its optional context.
-type SecurityEvent interface {
-	ToIntakeEvent() ([]*api.AttackEvent, error)
+// securityEvent interface allowing to lazily serialize an event into an intake
+// api struct actually sending it. Additional context can be optionally added to
+// the security event using the following event wrappers.
+type securityEvent interface {
+	toIntakeEvents() ([]*api.AttackEvent, error)
 }
 
 type (
-	// HTTPContext is the security event context describing an HTTP handler.
+	// httpContext is the security event context describing an HTTP handler.
 	// It includes information about its request and response.
-	HTTPContext struct {
-		Request  HTTPRequestContext
-		Response HTTPResponseContext
+	httpContext struct {
+		Request  httpRequestContext
+		Response httpResponseContext
 	}
 
-	// HTTPRequestContext is the HTTP request context of an HTTP operation
+	// httpRequestContext is the HTTP request context of an HTTP operation
 	// context.
-	HTTPRequestContext struct {
+	httpRequestContext struct {
 		Method     string
 		Host       string
 		IsTLS      bool
@@ -38,30 +40,44 @@ type (
 		Query      map[string][]string
 	}
 
-	// HTTPResponseContext is the HTTP response context of an HTTP operation
+	// httpResponseContext is the HTTP response context of an HTTP operation
 	// context.
-	HTTPResponseContext struct {
+	httpResponseContext struct {
 		Status int
 	}
 )
 
 type withHTTPContext struct {
-	SecurityEvent
-	ctx HTTPContext
+	securityEvent
+	ctx httpContext
 }
 
-// WithHTTPContext adds the HTTP context to the event.
-func WithHTTPContext(event SecurityEvent, ctx HTTPContext) SecurityEvent {
+// withHTTPOperationContext adds the HTTP context to the event.
+func withHTTPOperationContext(event securityEvent, args httpinstr.HandlerOperationArgs, res httpinstr.HandlerOperationRes) securityEvent {
 	return withHTTPContext{
-		SecurityEvent: event,
-		ctx:           ctx,
+		securityEvent: event,
+		ctx: httpContext{
+			Request: httpRequestContext{
+				Method:     args.Method,
+				Host:       args.Host,
+				IsTLS:      args.IsTLS,
+				RequestURI: args.RequestURI,
+				Path:       args.Path,
+				RemoteAddr: args.RemoteAddr,
+				Headers:    args.Headers,
+				Query:      args.Query,
+			},
+			Response: httpResponseContext{
+				Status: res.Status,
+			},
+		},
 	}
 }
 
-// ToIntakeEvent converts the current event with the HTTP context into an
+// toIntakeEvent converts the current event with the HTTP context into an
 // intake security event.
-func (e withHTTPContext) ToIntakeEvent() ([]*api.AttackEvent, error) {
-	events, err := e.SecurityEvent.ToIntakeEvent()
+func (e withHTTPContext) toIntakeEvents() ([]*api.AttackEvent, error) {
+	events, err := e.securityEvent.toIntakeEvents()
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +91,8 @@ func (e withHTTPContext) ToIntakeEvent() ([]*api.AttackEvent, error) {
 }
 
 // makeAttackContextHTTPRequest create the api.AttackContextHTTPRequest payload
-// from the given HTTPRequestContext.
-func makeAttackContextHTTPRequest(req HTTPRequestContext) api.AttackContextHTTPRequest {
+// from the given httpRequestContext.
+func makeAttackContextHTTPRequest(req httpRequestContext) api.AttackContextHTTPRequest {
 	host, portStr := api.SplitHostPort(req.Host)
 	port, _ := strconv.Atoi(portStr)
 	remoteIP, remotePortStr := api.SplitHostPort(req.RemoteAddr)
@@ -103,15 +119,15 @@ func makeAttackContextHTTPRequest(req HTTPRequestContext) api.AttackContextHTTPR
 	}
 }
 
-type withSpanContext struct {
-	SecurityEvent
+type spanContext struct {
+	securityEvent
 	traceID, spanID uint64
 }
 
-// WithSpanContext adds the span context to the event.
-func WithSpanContext(event SecurityEvent, traceID, spanID uint64) SecurityEvent {
-	return withSpanContext{
-		SecurityEvent: event,
+// withSpanContext adds the span context to the event.
+func withSpanContext(event securityEvent, traceID, spanID uint64) securityEvent {
+	return spanContext{
+		securityEvent: event,
 		traceID:       traceID,
 		spanID:        spanID,
 	}
@@ -119,8 +135,8 @@ func WithSpanContext(event SecurityEvent, traceID, spanID uint64) SecurityEvent 
 
 // ToIntakeEvent converts the current event with the span context into an
 // intake security event.
-func (ctx withSpanContext) ToIntakeEvent() ([]*api.AttackEvent, error) {
-	events, err := ctx.SecurityEvent.ToIntakeEvent()
+func (ctx spanContext) toIntakeEvents() ([]*api.AttackEvent, error) {
+	events, err := ctx.securityEvent.toIntakeEvents()
 	if err != nil {
 		return nil, err
 	}
@@ -135,15 +151,15 @@ func (ctx withSpanContext) ToIntakeEvent() ([]*api.AttackEvent, error) {
 	return events, nil
 }
 
-type withServiceContext struct {
-	SecurityEvent
+type serviceContext struct {
+	securityEvent
 	name, version, environment string
 }
 
-// WithServiceContext adds the service context to the event.
-func WithServiceContext(event SecurityEvent, name, version, environment string) SecurityEvent {
-	return withServiceContext{
-		SecurityEvent: event,
+// withServiceContext adds the service context to the event.
+func withServiceContext(event securityEvent, name, version, environment string) securityEvent {
+	return serviceContext{
+		securityEvent: event,
 		name:          name,
 		version:       version,
 		environment:   environment,
@@ -152,8 +168,8 @@ func WithServiceContext(event SecurityEvent, name, version, environment string) 
 
 // ToIntakeEvent converts the current event with the service context into an
 // intake security event.
-func (ctx withServiceContext) ToIntakeEvent() ([]*api.AttackEvent, error) {
-	events, err := ctx.SecurityEvent.ToIntakeEvent()
+func (ctx serviceContext) toIntakeEvents() ([]*api.AttackEvent, error) {
+	events, err := ctx.securityEvent.toIntakeEvents()
 	if err != nil {
 		return nil, err
 	}
@@ -164,23 +180,23 @@ func (ctx withServiceContext) ToIntakeEvent() ([]*api.AttackEvent, error) {
 	return events, nil
 }
 
-type withTagsContext struct {
-	SecurityEvent
+type tagsContext struct {
+	securityEvent
 	tags []string
 }
 
-// WithTagsContext adds the tags context to the event.
-func WithTagsContext(event SecurityEvent, tags []string) SecurityEvent {
-	return withTagsContext{
-		SecurityEvent: event,
+// withTagsContext adds the tags context to the event.
+func withTagsContext(event securityEvent, tags []string) securityEvent {
+	return tagsContext{
+		securityEvent: event,
 		tags:          tags,
 	}
 }
 
 // ToIntakeEvent converts the current event with the tags context into an
 // intake security event.
-func (ctx withTagsContext) ToIntakeEvent() ([]*api.AttackEvent, error) {
-	events, err := ctx.SecurityEvent.ToIntakeEvent()
+func (ctx tagsContext) toIntakeEvents() ([]*api.AttackEvent, error) {
+	events, err := ctx.securityEvent.toIntakeEvents()
 	if err != nil {
 		return nil, err
 	}
@@ -191,15 +207,15 @@ func (ctx withTagsContext) ToIntakeEvent() ([]*api.AttackEvent, error) {
 	return events, nil
 }
 
-type withTracerContext struct {
-	SecurityEvent
+type tracerContext struct {
+	securityEvent
 	runtime, runtimeVersion, version string
 }
 
-// WithTracerContext adds the tracer context to the event.
-func WithTracerContext(event SecurityEvent, runtime, runtimeVersion, version string) SecurityEvent {
-	return withTracerContext{
-		SecurityEvent:  event,
+// withTracerContext adds the tracer context to the event.
+func withTracerContext(event securityEvent, runtime, runtimeVersion, version string) securityEvent {
+	return tracerContext{
+		securityEvent:  event,
 		runtime:        runtime,
 		runtimeVersion: runtimeVersion,
 		version:        version,
@@ -208,8 +224,8 @@ func WithTracerContext(event SecurityEvent, runtime, runtimeVersion, version str
 
 // ToIntakeEvent converts the current event with the tracer context into an
 // intake security event.
-func (ctx withTracerContext) ToIntakeEvent() ([]*api.AttackEvent, error) {
-	events, err := ctx.SecurityEvent.ToIntakeEvent()
+func (ctx tracerContext) toIntakeEvents() ([]*api.AttackEvent, error) {
+	events, err := ctx.securityEvent.toIntakeEvents()
 	if err != nil {
 		return nil, err
 	}
@@ -220,24 +236,24 @@ func (ctx withTracerContext) ToIntakeEvent() ([]*api.AttackEvent, error) {
 	return events, nil
 }
 
-// WithHostContext adds the running host context to the event.
-func WithHostContext(event SecurityEvent, hostname, osname string) SecurityEvent {
-	return withHostContext{
-		SecurityEvent: event,
+// withHostContext adds the running host context to the event.
+func withHostContext(event securityEvent, hostname, osname string) securityEvent {
+	return hostContext{
+		securityEvent: event,
 		hostname:      hostname,
 		osname:        osname,
 	}
 }
 
-type withHostContext struct {
-	SecurityEvent
+type hostContext struct {
+	securityEvent
 	hostname, osname string
 }
 
 // ToIntakeEvent converts the current event with the host context into an intake
 // security event.
-func (ctx withHostContext) ToIntakeEvent() ([]*api.AttackEvent, error) {
-	events, err := ctx.SecurityEvent.ToIntakeEvent()
+func (ctx hostContext) toIntakeEvents() ([]*api.AttackEvent, error) {
+	events, err := ctx.securityEvent.toIntakeEvents()
 	if err != nil {
 		return nil, err
 	}

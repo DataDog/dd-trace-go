@@ -16,7 +16,6 @@ import (
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	appsectypes "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 )
 
@@ -47,25 +46,6 @@ type (
 		Status int
 	}
 )
-
-// MakeHTTPContext returns the HTTP context from the HTTP handler operation arguments and results.
-func MakeHTTPContext(args HandlerOperationArgs, res HandlerOperationRes) appsectypes.HTTPContext {
-	return appsectypes.HTTPContext{
-		Request: appsectypes.HTTPRequestContext{
-			Method:     args.Method,
-			Host:       args.Host,
-			IsTLS:      args.IsTLS,
-			RequestURI: args.RequestURI,
-			Path:       args.Path,
-			RemoteAddr: args.RemoteAddr,
-			Headers:    args.Headers,
-			Query:      args.Query,
-		},
-		Response: appsectypes.HTTPResponseContext{
-			Status: res.Status,
-		},
-	}
-}
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.

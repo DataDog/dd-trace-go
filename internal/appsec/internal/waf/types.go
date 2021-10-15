@@ -39,3 +39,20 @@ func (e RunError) Error() string {
 		return fmt.Sprintf("unknown waf error %d", e)
 	}
 }
+
+// AttackMetadata is the JSON metadata returned the WAF when it matches.
+type AttackMetadata []struct {
+	RetCode int    `json:"ret_code"`
+	Flow    string `json:"flow"`
+	Step    string `json:"step"`
+	Rule    string `json:"rule"`
+	Filter  []struct {
+		Operator        string        `json:"operator"`
+		OperatorValue   string        `json:"operator_value"`
+		BindingAccessor string        `json:"binding_accessor"`
+		ManifestKey     string        `json:"manifest_key"`
+		KeyPath         []interface{} `json:"key_path"`
+		ResolvedValue   string        `json:"resolved_value"`
+		MatchStatus     string        `json:"match_status"`
+	} `json:"filter"`
+}
