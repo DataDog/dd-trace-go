@@ -514,7 +514,7 @@ func TestUsage(t *testing.T) {
 
 	t.Run("concurrency", func(t *testing.T) {
 		// Create nbGoroutines registering event listeners concurrently
-		nbGoroutines := 2000
+		nbGoroutines := 1000
 		// The concurrency is maximized by using start barriers to sync the goroutine launches
 		var done, startBarrier sync.WaitGroup
 
