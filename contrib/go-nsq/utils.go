@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"errors"
+	"log"
 	"sync"
 
 	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace"
@@ -34,7 +35,7 @@ func inject(span tracer.Span, body []byte) ([]byte, error) {
 		bs  = len(body)
 		bsb = make([]byte, 4)
 	)
-	binary.BigEndian.PutUint32(bsb, uint32(len(body)))
+	binary.BigEndian.PutUint32(bsb, uint32(bs))
 
 	bts := make([]byte, 4+bs)
 	i := copy(bts, bsb)
@@ -71,6 +72,7 @@ func extract(body []byte) (ddtrace.SpanContext, []byte, error) {
 		return nil, nil, errors.New("length of message body is too small")
 	}
 
+	log.Println(binary.BigEndian.Uint32(body[:4]))
 	bs := int(binary.BigEndian.Uint32(body[:4]))
 	msgbody := body[4 : 4+bs]
 	if 4+bs == len(body) {
