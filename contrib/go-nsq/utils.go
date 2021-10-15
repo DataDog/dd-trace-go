@@ -75,6 +75,7 @@ func extract(body []byte) (ddtrace.SpanContext, []byte, error) {
 	}
 
 	log.Println(binary.BigEndian.Uint32(body[:4]))
+	log.Println(string(body))
 	bs := int(binary.BigEndian.Uint32(body[:4]))
 	msgbody := body[4 : 4+bs]
 	if 4+bs == len(body) {
