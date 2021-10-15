@@ -564,12 +564,8 @@ func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
 	}
 }
 
-// WithContext associates the ctx with the span. This does not extract the
-// parent span from ctx, use StartSpanFromContext for this instead.
-// @TODO(REVIEWERS) We could make this private, but users could still modify
-// the StartSpanOption.Context directly which I wasn't able to make private.
-// Thoughts?
-func WithContext(ctx context.Context) StartSpanOption {
+// withContext associates the ctx with the span.
+func withContext(ctx context.Context) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.Context = ctx
 	}

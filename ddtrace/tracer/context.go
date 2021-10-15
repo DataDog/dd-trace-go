@@ -48,7 +48,7 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	if s, ok := SpanFromContext(ctx); ok {
 		opts = append(opts, ChildOf(s.Context()))
 	}
-	opts = append(opts, WithContext(ctx))
+	opts = append(opts, withContext(ctx))
 	s := StartSpan(operationName, opts...)
 	// If profiler labels were applied for this span, use the derived ctx that
 	// includes them. Otherwise a child of this span wouldn't be able to
