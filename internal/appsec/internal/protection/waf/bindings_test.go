@@ -234,8 +234,6 @@ func TestConcurrency(t *testing.T) {
 	nbRun := 1000
 
 	t.Run("concurrent-waf-release", func(t *testing.T) {
-		t.Parallel()
-
 		waf, err := newWAFHandle(testRule)
 		require.NoError(t, err)
 
@@ -261,8 +259,6 @@ func TestConcurrency(t *testing.T) {
 	})
 
 	t.Run("concurrent-waf-context-usage", func(t *testing.T) {
-		t.Parallel()
-
 		waf, err := newWAFHandle(testRule)
 		require.NoError(t, err)
 		defer waf.close()
@@ -324,8 +320,6 @@ func TestConcurrency(t *testing.T) {
 	})
 
 	t.Run("concurrent-waf-instance-usage", func(t *testing.T) {
-		t.Parallel()
-
 		waf, err := newWAFHandle(testRule)
 		require.NoError(t, err)
 		defer waf.close()
