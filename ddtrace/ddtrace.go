@@ -157,7 +157,7 @@ type PipelineLatency struct {
 type DataPipeline interface {
 	SetCheckpoint(receivingPipelineName string) DataPipeline
 	GetCallTime() time.Time
-	GetLatencies() []PipelineLatency
+	GetHash() uint64
 	ToBaggage() ([]byte, error)
 	MergeWith(receivingPipelineName string, dataPipelines ...DataPipeline) (DataPipeline, error)
 }

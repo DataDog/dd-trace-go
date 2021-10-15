@@ -88,12 +88,12 @@ func (NoopDataPipeline) ToBaggage() ([]byte, error) {
 	return nil, nil
 }
 
-func (NoopDataPipeline) GetCallTime() time.Time {
-	return time.Time{}
+func (NoopDataPipeline) GetHash() uint64 {
+	return 0
 }
 
-func (NoopDataPipeline) GetLatencies() []ddtrace.PipelineLatency {
-	return nil
+func (NoopDataPipeline) GetCallTime() time.Time {
+	return time.Time{}
 }
 
 func (NoopDataPipeline) MergeWith(receivingPipelineName string, dataPipelines ...ddtrace.DataPipeline) (ddtrace.DataPipeline, error) {

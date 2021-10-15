@@ -4,13 +4,18 @@ import (
 	"fmt"
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/DataDog/sketches-go/ddsketch"
+	"github.com/DataDog/sketches-go/ddsketch/mapping"
 	"github.com/DataDog/sketches-go/ddsketch/pb/sketchpb"
+	"github.com/DataDog/sketches-go/ddsketch/store"
 	"github.com/golang/protobuf/proto"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+var sketchMapping, _ = mapping.NewLogarithmicMapping(0.01)
 
 type pipelineStatsPoint struct {
 	service string
@@ -18,16 +23,25 @@ type pipelineStatsPoint struct {
 	pipelineHash uint64
 	parentHash uint64
 	timestamp int64
-	summary *ddsketch.DDSketch
+	latency int64
 }
 
-type bucket map[uint64]pipelineStatsPoint
+type pipelineStatsGroup struct {
+	service string
+	receivingPipelineName string
+	pipelineHash uint64
+	parentHash uint64
+	timestamp int64
+	sketch *ddsketch.DDSketch
+}
+
+type bucket map[uint64]pipelineStatsGroup
 
 func (b bucket) Export() []groupedPipelineStats {
 	stats := make([]groupedPipelineStats, 0, len(b))
 	for _, s := range b {
 		// todo[piochelepiotr] Used optimized ddsketch.
-		summary, err := proto.Marshal(s.summary.ToProto())
+		summary, err := proto.Marshal(s.sketch.ToProto())
 		if err != nil {
 			log.Error("Failed to serialize sketch with err:%v", err)
 			continue
@@ -68,26 +82,27 @@ func newPipelineConcentrator(c *config, bucketDuration time.Duration) *pipelineC
 
 func (c *pipelineConcentrator) add(p pipelineStatsPoint) {
 	btime := alignTs(p.timestamp, c.bucketDuration.Nanoseconds())
+	latency := math.Max(float64(p.latency) / float64(time.Second), 0)
 	b, ok := c.buckets[btime]
 	if !ok {
 		b = make(bucket)
 		c.buckets[btime] = b
 	}
 	// aggregate
-	currentPoint, ok := b[p.pipelineHash]
-	if ok {
-		if err := currentPoint.summary.MergeWith(p.summary); err != nil {
-			log.Error("failed to merge sketches. Ignoring %v.", err)
-		}
-	} else {
-		b[p.pipelineHash] = pipelineStatsPoint{
+	group, ok := b[p.pipelineHash]
+	if !ok {
+		group = pipelineStatsGroup{
 			service: p.service,
 			receivingPipelineName: p.receivingPipelineName,
 			parentHash: p.parentHash,
 			pipelineHash: p.pipelineHash,
-			summary: p.summary.Copy(),
+			sketch: ddsketch.NewDDSketch(sketchMapping, store.BufferedPaginatedStoreConstructor(), store.BufferedPaginatedStoreConstructor()),
 			timestamp: btime,
 		}
+		b[p.pipelineHash] = group
+	}
+	if err := group.sketch.Add(latency); err != nil {
+		log.Error("failed to merge sketches. Ignoring %v.", err)
 	}
 }
 
