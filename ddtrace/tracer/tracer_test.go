@@ -74,6 +74,12 @@ func TestTracerCleanStop(t *testing.T) {
 	if testing.Short() {
 		return
 	}
+	// Avoid CI timeouts due to AppSec slowing down this test due to its init
+	// time.
+	if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
+		os.Unsetenv("DD_APPSEC_ENABLED")
+		defer os.Setenv("DD_APPSEC_ENABLED", old)
+	}
 	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
 
