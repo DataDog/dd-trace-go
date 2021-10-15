@@ -35,7 +35,7 @@ func inject(span tracer.Span, body []byte) ([]byte, error) {
 		bs  = len(body)
 		bsb = make([]byte, 4)
 	)
-	binary.BigEndian.PutUint32(bsb, uint32(len(body)))
+	binary.BigEndian.PutUint32(bsb, uint32(bs))
 
 	bts := make([]byte, 4+bs)
 	i := copy(bts, bsb)
