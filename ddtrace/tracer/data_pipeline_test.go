@@ -19,7 +19,6 @@ func TestSerializeDataPipeline(t *testing.T) {
 	tracer := tracer{config: &config{serviceName: "service"}}
 	convertedPipeline, err := tracer.DataPipelineFromBaggage(data)
 	assert.Nil(t, err)
+	assert.Equal(t, pipeline.pipelineHash, convertedPipeline.GetHash())
 	assert.Equal(t, pipeline.callTime.Truncate(time.Millisecond).UnixNano(), convertedPipeline.GetCallTime().UnixNano())
-	hash := convertedPipeline.GetHash()
-	assert.Equal(t, pipeline.pipelineHash, hash)
 }

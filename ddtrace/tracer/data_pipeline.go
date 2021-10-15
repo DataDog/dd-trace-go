@@ -26,7 +26,7 @@ func dataPipelineFromBaggage(data []byte, service string) (DataPipeline, error) 
 		return nil, errors.New("pipeline hash smaller than 8 bytes")
 	}
 	pipeline.pipelineHash = binary.LittleEndian.Uint64(data)
-	data = data[:8]
+	data = data[8:]
 	t, err := encoding.DecodeVarint64(&data)
 	if err != nil {
 		return nil, err

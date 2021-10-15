@@ -31,7 +31,6 @@ type pipelineStatsGroup struct {
 	receivingPipelineName string
 	pipelineHash uint64
 	parentHash uint64
-	timestamp int64
 	sketch *ddsketch.DDSketch
 }
 
@@ -97,7 +96,6 @@ func (c *pipelineConcentrator) add(p pipelineStatsPoint) {
 			parentHash: p.parentHash,
 			pipelineHash: p.pipelineHash,
 			sketch: ddsketch.NewDDSketch(sketchMapping, store.BufferedPaginatedStoreConstructor(), store.BufferedPaginatedStoreConstructor()),
-			timestamp: btime,
 		}
 		b[p.pipelineHash] = group
 	}
