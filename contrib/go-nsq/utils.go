@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"log"
+	"os"
 	"sync"
 
 	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace"
@@ -39,6 +40,7 @@ func inject(span tracer.Span, body []byte) ([]byte, error) {
 
 	bts := make([]byte, 4+bs)
 	i := copy(bts, bsb)
+	log.Println(string(bts))
 	i += copy(bts[i:], body)
 
 	if span.Context().TraceID() == 0 {
@@ -97,4 +99,9 @@ func bodySize(body [][]byte) int {
 	}
 
 	return size
+}
+
+func init() {
+	log.SetFlags(log.Lshortfile | log.LstdFlags)
+	log.SetOutput(os.Stdout)
 }
