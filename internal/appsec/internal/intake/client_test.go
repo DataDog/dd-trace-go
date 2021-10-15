@@ -19,13 +19,13 @@ import (
 
 func TestClient(t *testing.T) {
 	t.Run("NewClient", func(t *testing.T) {
-		t.Run("default http client", func(t *testing.T) {
+		t.Run("default-client", func(t *testing.T) {
 			client, err := NewClient(nil, "target")
 			require.NoError(t, err)
 			require.NotNil(t, client)
 		})
 
-		t.Run("specific http client", func(t *testing.T) {
+		t.Run("given-client", func(t *testing.T) {
 			httpClient := &http.Client{
 				Timeout: 10 * time.Second,
 			}
@@ -49,56 +49,56 @@ func TestClient(t *testing.T) {
 			expectedBody string
 		}{
 			{
-				name:      "get /endpoint without body",
+				name:      "get-no-body",
 				endpoint:  "endpoint",
 				method:    http.MethodGet,
 				body:      nil,
 				wantError: false,
 			},
 			{
-				name:      "post /endpoint without body",
+				name:      "post-no-body",
 				endpoint:  "endpoint",
 				method:    http.MethodPost,
 				body:      nil,
 				wantError: false,
 			},
 			{
-				name:      "bad method",
+				name:      "bad-method",
 				endpoint:  "endpoint",
 				method:    ";",
 				body:      nil,
 				wantError: true,
 			},
 			{
-				name:      "bad endpoint",
+				name:      "bad-endpoint",
 				endpoint:  ":endpoint",
 				method:    "GET",
 				body:      nil,
 				wantError: true,
 			},
 			{
-				name:      "bad endpoint",
+				name:      "bad-endpoint",
 				endpoint:  ":endpoint",
 				method:    "GET",
 				body:      nil,
 				wantError: true,
 			},
 			{
-				name:         "post /version/endpoint with body",
+				name:         "post-body",
 				endpoint:     "version/endpoint",
 				method:       http.MethodPost,
 				body:         []string{"a", "b", "c"},
 				expectedBody: "[\"a\",\"b\",\"c\"]\n",
 			},
 			{
-				name:         "post /version/endpoint with body",
+				name:         "post-body",
 				endpoint:     "version/endpoint",
 				method:       http.MethodPost,
 				body:         "no html & éscaping <",
 				expectedBody: "\"no html & éscaping <\"\n",
 			},
 			{
-				name:      "post /endpoint with body marshaling error",
+				name:      "post-error",
 				endpoint:  "version/endpoint",
 				method:    http.MethodPost,
 				body:      jsonMarshalError{},
@@ -205,7 +205,7 @@ func TestClient(t *testing.T) {
 		}
 	})
 
-	t.Run("do with context", func(t *testing.T) {
+	t.Run("do-with-context", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 			time.Sleep(time.Minute)
 		}))
@@ -223,7 +223,7 @@ func TestClient(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("do with context", func(t *testing.T) {
+	t.Run("do-with-context", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 		defer srv.Close()
 

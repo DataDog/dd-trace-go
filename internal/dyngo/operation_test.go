@@ -208,7 +208,7 @@ func (f OnMyOperation3Finish) Call(op dyngo.Operation, v interface{}) {
 }
 
 func TestUsage(t *testing.T) {
-	t.Run("operation stacking", func(t *testing.T) {
+	t.Run("operation-stacking", func(t *testing.T) {
 		// HTTP body read listener appending the read results to a buffer
 		rawBodyListener := func(called *int, buf *[]byte) dyngo.EventListener {
 			return OnHTTPHandlerOperationStart(func(op dyngo.Operation, _ HTTPHandlerArgs) {
@@ -259,7 +259,8 @@ func TestUsage(t *testing.T) {
 			})
 		}
 
-		t.Run("stack monitored and not blocked by waf", func(t *testing.T) {
+		t.Run("operation-stacking", func(t *testing.T) {
+			// Run an operation stack that is monitored and not blocked by waf
 			root := dyngo.StartOperation(RootArgs{}, nil)
 
 			var (
@@ -315,7 +316,8 @@ func TestUsage(t *testing.T) {
 			require.Equal(t, []interface{}{"a", "json", "array"}, JSONBodyParserValue)
 		})
 
-		t.Run("stack monitored and blocked by waf via the http operation monitoring", func(t *testing.T) {
+		t.Run("operation-stacking", func(t *testing.T) {
+			// Operation stack monitored and blocked by waf via the http operation monitoring
 			root := dyngo.StartOperation(RootArgs{}, nil)
 
 			var (
@@ -374,7 +376,8 @@ func TestUsage(t *testing.T) {
 			require.Equal(t, nil, JSONBodyParserValue)
 		})
 
-		t.Run("stack not monitored", func(t *testing.T) {
+		t.Run("operation-stack", func(t *testing.T) {
+			// Operation stack not monitored
 			root := dyngo.StartOperation(RootArgs{}, nil)
 
 			var (
@@ -428,7 +431,7 @@ func TestUsage(t *testing.T) {
 		})
 	})
 
-	t.Run("recursive operation", func(t *testing.T) {
+	t.Run("recursive-operation", func(t *testing.T) {
 		root := dyngo.StartOperation(RootArgs{}, nil)
 		defer root.Finish(RootRes{})
 
@@ -563,7 +566,7 @@ func TestUsage(t *testing.T) {
 }
 
 func TestRegisterUnregister(t *testing.T) {
-	t.Run("single listener", func(t *testing.T) {
+	t.Run("single-listener", func(t *testing.T) {
 		var called int
 		unregister := dyngo.Register(OnMyOperationStart(func(dyngo.Operation, MyOperationArgs) {
 			called++
@@ -586,7 +589,7 @@ func TestRegisterUnregister(t *testing.T) {
 		op.Finish(MyOperationRes{})
 	})
 
-	t.Run("multiple listeners", func(t *testing.T) {
+	t.Run("multiple-listeners", func(t *testing.T) {
 		var onStartCalled, onFinishCalled int
 
 		unregister := dyngo.Register(
@@ -622,7 +625,7 @@ func operation(parent dyngo.Operation, args, res interface{}, child func(dyngo.O
 }
 
 func TestOperationEvents(t *testing.T) {
-	t.Run("start event", func(t *testing.T) {
+	t.Run("start-event", func(t *testing.T) {
 		op1 := dyngo.StartOperation(MyOperationArgs{}, nil)
 
 		var called int
@@ -652,7 +655,7 @@ func TestOperationEvents(t *testing.T) {
 		require.Equal(t, 2, called)
 	})
 
-	t.Run("finish event", func(t *testing.T) {
+	t.Run("finish-event", func(t *testing.T) {
 		op1 := dyngo.StartOperation(MyOperationArgs{}, nil)
 
 		var called int
@@ -694,7 +697,7 @@ func TestOperationEvents(t *testing.T) {
 		require.Equal(t, 3, called)
 	})
 
-	t.Run("registering to a disabled operation", func(t *testing.T) {
+	t.Run("disabled-operation-registration", func(t *testing.T) {
 		var calls int
 		registerTo := func(op dyngo.Operation) {
 			op.On(OnMyOperation2Start(func(dyngo.Operation, MyOperation2Args) {
@@ -734,7 +737,7 @@ func TestOperationEvents(t *testing.T) {
 		require.Equal(t, 2, calls)
 	})
 
-	t.Run("event listener panic", func(t *testing.T) {
+	t.Run("event-listener-panic", func(t *testing.T) {
 		t.Run("start", func(t *testing.T) {
 			op := dyngo.StartOperation(MyOperationArgs{}, nil)
 			defer op.Finish(MyOperationRes{})
