@@ -53,8 +53,8 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	// If profiler labels were applied for this span, use the derived ctx that
 	// includes them. Otherwise a child of this span wouldn't be able to
 	// correctly restore the labels of its parent when it finishes.
-	if span, ok := s.(*span); ok && span.labelContext != nil {
-		ctx = span.labelContext
+	if span, ok := s.(*span); ok && span.activeContext != nil {
+		ctx = span.activeContext
 	}
 	return s, ContextWithSpan(ctx, s)
 }
