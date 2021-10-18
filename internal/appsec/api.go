@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package api
+package appsec
 
 import (
 	"fmt"
@@ -17,72 +17,72 @@ import (
 
 // Intake API payloads.
 type (
-	// EventBatch intake API payload.
-	EventBatch struct {
+	// eventBatch intake API payload.
+	eventBatch struct {
 		IdempotencyKey string         `json:"idempotency_key"`
-		Events         []*AttackEvent `json:"events"`
+		Events         []*attackEvent `json:"events"`
 	}
 
-	// AttackEvent intake API payload.
-	AttackEvent struct {
+	// attackEvent intake API payload.
+	attackEvent struct {
 		EventVersion string           `json:"event_version"`
 		EventID      string           `json:"event_id"`
 		EventType    string           `json:"event_type"`
 		DetectedAt   time.Time        `json:"detected_at"`
 		Type         string           `json:"type"`
 		Blocked      bool             `json:"blocked"`
-		Rule         AttackRule       `json:"rule"`
-		RuleMatch    *AttackRuleMatch `json:"rule_match"`
-		Context      AttackContext    `json:"context"`
+		Rule         attackRule       `json:"rule"`
+		RuleMatch    *attackRuleMatch `json:"rule_match"`
+		Context      attackContext    `json:"context"`
 	}
 
-	// AttackRule intake API payload.
-	AttackRule struct {
+	// attackRule intake API payload.
+	attackRule struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	}
 
-	// AttackRuleMatch intake API payload.
-	AttackRuleMatch struct {
+	// attackRuleMatch intake API payload.
+	attackRuleMatch struct {
 		Operator      string                     `json:"operator"`
 		OperatorValue string                     `json:"operator_value"`
-		Parameters    []AttackRuleMatchParameter `json:"parameters"`
+		Parameters    []attackRuleMatchParameter `json:"parameters"`
 		Highlight     []string                   `json:"highlight"`
 	}
 
-	// AttackRuleMatchParameter intake API payload.
-	AttackRuleMatchParameter struct {
+	// attackRuleMatchParameter intake API payload.
+	attackRuleMatchParameter struct {
 		Name  string `json:"name"`
 		Value string `json:"value"`
 	}
 
-	// AttackContext intake API payload.
-	AttackContext struct {
-		Host    AttackContextHost    `json:"host,omitempty"`
-		HTTP    AttackContextHTTP    `json:"http"`
-		Service AttackContextService `json:"service"`
-		Tags    *AttackContextTags   `json:"tags,omitempty"`
-		Span    AttackContextSpan    `json:"span"`
-		Trace   AttackContextTrace   `json:"trace"`
-		Tracer  AttackContextTracer  `json:"tracer"`
+	// attackContext intake API payload.
+	attackContext struct {
+		Host    attackContextHost    `json:"host,omitempty"`
+		HTTP    attackContextHTTP    `json:"http"`
+		Service attackContextService `json:"service"`
+		Tags    *attackContextTags   `json:"tags,omitempty"`
+		Span    attackContextSpan    `json:"span"`
+		Trace   attackContextTrace   `json:"trace"`
+		Tracer  attackContextTracer  `json:"tracer"`
 	}
 
-	// AttackContextHost intake API payload.
-	AttackContextHost struct {
+	// attackContextHost intake API payload.
+	attackContextHost struct {
 		ContextVersion string `json:"context_version"`
 		OsType         string `json:"os_type"`
 		Hostname       string `json:"hostname,omitempty"`
 	}
 
-	// AttackContextHTTP intake API payload.
-	AttackContextHTTP struct {
+	// attackContextHTTP intake API payload.
+	attackContextHTTP struct {
 		ContextVersion string                    `json:"context_version"`
-		Request        AttackContextHTTPRequest  `json:"request"`
-		Response       AttackContextHTTPResponse `json:"response"`
+		Request        attackContextHTTPRequest  `json:"request"`
+		Response       attackContextHTTPResponse `json:"response"`
 	}
 
-	// AttackContextHTTPRequest intake API payload.
-	AttackContextHTTPRequest struct {
+	// attackContextHTTPRequest intake API payload.
+	attackContextHTTPRequest struct {
 		Scheme     string                             `json:"scheme"`
 		Method     string                             `json:"method"`
 		URL        string                             `json:"url"`
@@ -93,46 +93,46 @@ type (
 		RemoteIP   string                             `json:"remote_ip"`
 		RemotePort int                                `json:"remote_port"`
 		Headers    map[string]string                  `json:"headers"`
-		Parameters AttackContextHTTPRequestParameters `json:"parameters,omitempty"`
+		Parameters attackContextHTTPRequestParameters `json:"parameters,omitempty"`
 	}
 
-	AttackContextHTTPRequestParameters struct {
+	attackContextHTTPRequestParameters struct {
 		Query map[string][]string `json:"query,omitempty"`
 	}
 
-	// AttackContextHTTPResponse intake API payload.
-	AttackContextHTTPResponse struct {
+	// attackContextHTTPResponse intake API payload.
+	attackContextHTTPResponse struct {
 		Status int `json:"status"`
 	}
 
-	// AttackContextService intake API payload.
-	AttackContextService struct {
+	// attackContextService intake API payload.
+	attackContextService struct {
 		ContextVersion string `json:"context_version"`
 		Name           string `json:"name,omitempty"`
 		Environment    string `json:"environment,omitempty"`
 		Version        string `json:"version,omitempty"`
 	}
 
-	// AttackContextTags intake API payload.
-	AttackContextTags struct {
+	// attackContextTags intake API payload.
+	attackContextTags struct {
 		ContextVersion string   `json:"context_version"`
 		Values         []string `json:"values"`
 	}
 
-	// AttackContextTrace intake API payload.
-	AttackContextTrace struct {
+	// attackContextTrace intake API payload.
+	attackContextTrace struct {
 		ContextVersion string `json:"context_version"`
 		ID             string `json:"id"`
 	}
 
-	// AttackContextSpan intake API payload.
-	AttackContextSpan struct {
+	// attackContextSpan intake API payload.
+	attackContextSpan struct {
 		ContextVersion string `json:"context_version"`
 		ID             string `json:"id"`
 	}
 
-	// AttackContextTracer intake API payload.
-	AttackContextTracer struct {
+	// attackContextTracer intake API payload.
+	attackContextTracer struct {
 		ContextVersion string `json:"context_version"`
 		RuntimeType    string `json:"runtime_type"`
 		RuntimeVersion string `json:"runtime_version"`
@@ -140,25 +140,25 @@ type (
 	}
 )
 
-// MakeEventBatch returns the event batch of the given security events.
-func MakeEventBatch(events []*AttackEvent) EventBatch {
+// makeEventBatch returns the event batch of the given security events.
+func makeEventBatch(events []*attackEvent) eventBatch {
 	id, _ := uuid.NewUUID()
-	return EventBatch{
+	return eventBatch{
 		IdempotencyKey: id.String(),
 		Events:         events,
 	}
 }
 
-// NewAttackEvent returns a new attack event payload.
-func NewAttackEvent(ruleID, ruleName, attackType string, at time.Time, match *AttackRuleMatch) *AttackEvent {
+// newAttackEvent returns a new attack event payload.
+func newAttackEvent(ruleID, ruleName, attackType string, at time.Time, match *attackRuleMatch) *attackEvent {
 	id, _ := uuid.NewUUID()
-	return &AttackEvent{
+	return &attackEvent{
 		EventVersion: "0.1.0",
 		EventID:      id.String(),
 		EventType:    "appsec.threat.attack",
 		DetectedAt:   at,
 		Type:         attackType,
-		Rule: AttackRule{
+		Rule: attackRule{
 			ID:   ruleID,
 			Name: ruleName,
 		},
@@ -166,34 +166,34 @@ func NewAttackEvent(ruleID, ruleName, attackType string, at time.Time, match *At
 	}
 }
 
-// MakeAttackContextTrace create an AttackContextTrace payload.
-func MakeAttackContextTrace(traceID string) AttackContextTrace {
-	return AttackContextTrace{
+// makeAttackContextTrace create an attackContextTrace payload.
+func makeAttackContextTrace(traceID string) attackContextTrace {
+	return attackContextTrace{
 		ContextVersion: "0.1.0",
 		ID:             traceID,
 	}
 }
 
-// MakeAttackContextSpan create an AttackContextSpan payload.
-func MakeAttackContextSpan(spanID string) AttackContextSpan {
-	return AttackContextSpan{
+// MakeAttackContextSpan create an attackContextSpan payload.
+func MakeAttackContextSpan(spanID string) attackContextSpan {
+	return attackContextSpan{
 		ContextVersion: "0.1.0",
 		ID:             spanID,
 	}
 }
 
-// MakeAttackContextHost create an AttackContextHost payload.
-func MakeAttackContextHost(hostname string, os string) AttackContextHost {
-	return AttackContextHost{
+// makeAttackContextHost create an attackContextHost payload.
+func makeAttackContextHost(hostname string, os string) attackContextHost {
+	return attackContextHost{
 		ContextVersion: "0.1.0",
 		OsType:         os,
 		Hostname:       hostname,
 	}
 }
 
-// MakeAttackContextTracer create an AttackContextTracer payload.
-func MakeAttackContextTracer(version string, rt string, rtVersion string) AttackContextTracer {
-	return AttackContextTracer{
+// makeAttackContextTracer create an attackContextTracer payload.
+func makeAttackContextTracer(version string, rt string, rtVersion string) attackContextTracer {
+	return attackContextTracer{
 		ContextVersion: "0.1.0",
 		RuntimeType:    rt,
 		RuntimeVersion: rtVersion,
@@ -201,17 +201,17 @@ func MakeAttackContextTracer(version string, rt string, rtVersion string) Attack
 	}
 }
 
-// NewAttackContextTags create an AttackContextTags payload.
-func NewAttackContextTags(tags []string) *AttackContextTags {
-	return &AttackContextTags{
+// newAttackContextTags create an attackContextTags payload.
+func newAttackContextTags(tags []string) *attackContextTags {
+	return &attackContextTags{
 		ContextVersion: "0.1.0",
 		Values:         tags,
 	}
 }
 
-// MakeServiceContext create an AttackContextService payload.
-func MakeServiceContext(name, version, environment string) AttackContextService {
-	return AttackContextService{
+// makeServiceContext create an attackContextService payload.
+func makeServiceContext(name, version, environment string) attackContextService {
+	return attackContextService{
 		ContextVersion: "0.1.0",
 		Name:           name,
 		Environment:    environment,
@@ -219,27 +219,27 @@ func MakeServiceContext(name, version, environment string) AttackContextService 
 	}
 }
 
-// MakeAttackContextHTTP create an AttackContextHTTP payload.
-func MakeAttackContextHTTP(req AttackContextHTTPRequest, res AttackContextHTTPResponse) AttackContextHTTP {
-	return AttackContextHTTP{
+// makeAttackContextHTTP create an attackContextHTTP payload.
+func makeAttackContextHTTP(req attackContextHTTPRequest, res attackContextHTTPResponse) attackContextHTTP {
+	return attackContextHTTP{
 		ContextVersion: "0.1.0",
 		Request:        req,
 		Response:       res,
 	}
 }
 
-// MakeAttackContextHTTPResponse creates an attackContextHTTPResponse payload.
-func MakeAttackContextHTTPResponse(status int) AttackContextHTTPResponse {
-	return AttackContextHTTPResponse{
+// makeAttackContextHTTPResponse creates an attackContextHTTPResponse payload.
+func makeAttackContextHTTPResponse(status int) attackContextHTTPResponse {
+	return attackContextHTTPResponse{
 		Status: status,
 	}
 }
 
-// SplitHostPort splits a network address of the form `host:port` or
+// splitHostPort splits a network address of the form `host:port` or
 // `[host]:port` into `host` and `port`. As opposed to `net.SplitHostPort()`,
 // it doesn't fail when there is no port number and returns the given address
 // as the host value.
-func SplitHostPort(addr string) (host, port string) {
+func splitHostPort(addr string) (host, port string) {
 	addr = strings.TrimSpace(addr)
 	host, port, err := net.SplitHostPort(addr)
 	if err == nil {
@@ -280,8 +280,8 @@ func init() {
 	sort.Strings(collectedHTTPHeaders[:])
 }
 
-// MakeHTTPHeaders returns the HTTP headers following the intake payload format.
-func MakeHTTPHeaders(reqHeaders map[string][]string) (headers map[string]string) {
+// makeHTTPHeaders returns the HTTP headers following the intake payload format.
+func makeHTTPHeaders(reqHeaders map[string][]string) (headers map[string]string) {
 	if len(reqHeaders) == 0 {
 		return nil
 	}
@@ -297,7 +297,7 @@ func MakeHTTPHeaders(reqHeaders map[string][]string) (headers map[string]string)
 	return headers
 }
 
-// MakeHTTPURL returns the HTTP URL from the given scheme, host and path.
-func MakeHTTPURL(scheme, host, path string) string {
+// makeHTTPURL returns the HTTP URL from the given scheme, host and path.
+func makeHTTPURL(scheme, host, path string) string {
 	return fmt.Sprintf("%s://%s%s", scheme, host, path)
 }

@@ -15,8 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
-
 	"github.com/stretchr/testify/mock"
 )
 
@@ -25,7 +23,7 @@ type IntakeClientMock struct {
 	SendBatchCalled chan struct{}
 }
 
-func (i *IntakeClientMock) SendBatch(ctx context.Context, batch api.EventBatch) error {
+func (i *IntakeClientMock) sendBatch(ctx context.Context, batch eventBatch) error {
 	err := i.Called(ctx, batch).Error(0)
 	if i.SendBatchCalled != nil {
 		i.SendBatchCalled <- struct{}{}
@@ -61,7 +59,7 @@ func TestEventBatchingLoop(t *testing.T) {
 							eventBatchingLoop(client, eventChan, applyGlobalContextNoop, cfg)
 						}()
 
-						client.On("SendBatch", mock.Anything, mock.AnythingOfType("api.EventBatch")).Times(expectedNbBatches).Return(nil)
+						client.On("sendBatch", mock.Anything, mock.AnythingOfType("eventBatch")).Times(expectedNbBatches).Return(nil)
 						// Send enough events to generate expectedNbBatches
 						for i := 0; i < maxBatchLen*expectedNbBatches; i++ {
 							eventChan <- myEvent{}
@@ -101,7 +99,7 @@ func TestEventBatchingLoop(t *testing.T) {
 		}()
 
 		//
-		client.On("SendBatch", mock.Anything, mock.AnythingOfType("api.EventBatch")).Times(2).Return(nil)
+		client.On("sendBatch", mock.Anything, mock.AnythingOfType("eventBatch")).Times(2).Return(nil)
 
 		// Send a few events and wait for the configured max stale time so that the batch gets sent
 		eventChan <- myEvent{}
@@ -174,7 +172,7 @@ func TestEventBatchingLoop(t *testing.T) {
 			}()
 
 			// Perform an event
-			client.On("SendBatch", mock.Anything, mock.AnythingOfType("api.EventBatch")).Times(1).Return(nil)
+			client.On("sendBatch", mock.Anything, mock.AnythingOfType("eventBatch")).Times(1).Return(nil)
 			eventChan <- myEvent{}
 
 			// Close the context to stop the loop
@@ -192,9 +190,9 @@ func TestEventBatchingLoop(t *testing.T) {
 
 type myEvent struct{}
 
-func (m myEvent) toIntakeEvents() ([]*api.AttackEvent, error) {
-	return []*api.AttackEvent{
-		api.NewAttackEvent("my.rule.id", "my.rule.name", "my.attack.type", time.Now(), nil),
+func (m myEvent) toIntakeEvents() ([]*attackEvent, error) {
+	return []*attackEvent{
+		newAttackEvent("my.rule.id", "my.rule.name", "my.attack.type", time.Now(), nil),
 	}, nil
 }
 

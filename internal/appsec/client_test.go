@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package intake
+package appsec
 
 import (
 	"context"
@@ -18,9 +18,9 @@ import (
 )
 
 func TestClient(t *testing.T) {
-	t.Run("NewClient", func(t *testing.T) {
+	t.Run("newClient", func(t *testing.T) {
 		t.Run("default-client", func(t *testing.T) {
-			client, err := NewClient(nil, "target")
+			client, err := newClient(nil, "target")
 			require.NoError(t, err)
 			require.NotNil(t, client)
 		})
@@ -29,7 +29,7 @@ func TestClient(t *testing.T) {
 			httpClient := &http.Client{
 				Timeout: 10 * time.Second,
 			}
-			client, err := NewClient(httpClient, "target")
+			client, err := newClient(httpClient, "target")
 			require.NoError(t, err)
 			require.NotNil(t, client)
 		})
@@ -37,7 +37,7 @@ func TestClient(t *testing.T) {
 
 	t.Run("newRequest", func(t *testing.T) {
 		baseURL := "http://target/"
-		c, err := NewClient(nil, baseURL)
+		c, err := newClient(nil, baseURL)
 		require.NoError(t, err)
 
 		for _, tc := range []struct {
@@ -188,7 +188,7 @@ func TestClient(t *testing.T) {
 				}))
 				defer srv.Close()
 
-				c, err := NewClient(srv.Client(), srv.URL)
+				c, err := newClient(srv.Client(), srv.URL)
 
 				req, err := c.newRequest("GET", "endpoint", tc.reqBody)
 				require.NoError(t, err)
@@ -211,7 +211,7 @@ func TestClient(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		c, err := NewClient(srv.Client(), srv.URL)
+		c, err := newClient(srv.Client(), srv.URL)
 		require.NoError(t, err)
 
 		req, err := c.newRequest("PUT", "endpoint", nil)
@@ -227,7 +227,7 @@ func TestClient(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 		defer srv.Close()
 
-		c, err := NewClient(srv.Client(), srv.URL)
+		c, err := newClient(srv.Client(), srv.URL)
 		require.NoError(t, err)
 
 		req, err := c.newRequest("PUT", "endpoint", nil)

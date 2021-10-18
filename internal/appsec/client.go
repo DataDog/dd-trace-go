@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package intake
+package appsec
 
 import (
 	"bytes"
@@ -16,40 +16,38 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
 )
 
 // Client is the HTTP client to use to communicate with the intake API via the agent API.
-type Client struct {
+type client struct {
 	// Logger should be set to obtain debugging logs in debug level to see the HTTP requests and their responses.
-	Logger  DebugLogger
+	Logger  debugLogger
 	client  *http.Client
 	baseURL *url.URL
 }
 
-// DebugLogger interface of the debug-level logger.
-type DebugLogger interface {
+// debugLogger interface of the debug-level logger.
+type debugLogger interface {
 	Debug(format string, v ...interface{})
 }
 
-// NewClient returns a new intake client using the given HTTP client and base-URL.
-func NewClient(client *http.Client, baseURL string) (*Client, error) {
-	if client == nil {
-		client = &http.Client{}
+// newClient returns a new intake client using the given HTTP client and base-URL.
+func newClient(httpClient *http.Client, baseURL string) (*client, error) {
+	if httpClient == nil {
+		httpClient = &http.Client{}
 	}
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, err
 	}
-	return &Client{
-		client:  client,
+	return &client{
+		client:  httpClient,
 		baseURL: u,
 	}, nil
 }
 
-// SendBatch sends the batch.
-func (c *Client) SendBatch(ctx context.Context, b api.EventBatch) error {
+// sendBatch sends the batch.
+func (c *client) sendBatch(ctx context.Context, b eventBatch) error {
 	r, err := c.newRequest("POST", "appsec/proxy/api/v2/appsecevts", b)
 	if err != nil {
 		return err
@@ -57,7 +55,7 @@ func (c *Client) SendBatch(ctx context.Context, b api.EventBatch) error {
 	return c.do(ctx, r, nil)
 }
 
-func (c *Client) newRequest(method, urlStr string, reqBody interface{}) (*http.Request, error) {
+func (c *client) newRequest(method, urlStr string, reqBody interface{}) (*http.Request, error) {
 	u, err := c.baseURL.Parse(urlStr)
 	if err != nil {
 		return nil, err
@@ -85,7 +83,7 @@ func (c *Client) newRequest(method, urlStr string, reqBody interface{}) (*http.R
 	return req, nil
 }
 
-func (c *Client) do(ctx context.Context, req *http.Request, respBody interface{}) error {
+func (c *client) do(ctx context.Context, req *http.Request, respBody interface{}) error {
 	if ctx == nil {
 		return errors.New("context must be non-nil")
 	}
@@ -122,7 +120,7 @@ func (c *Client) do(ctx context.Context, req *http.Request, respBody interface{}
 	return nil
 }
 
-func (c *Client) debug(fmt string, args ...interface{}) {
+func (c *client) debug(fmt string, args ...interface{}) {
 	if c.Logger == nil {
 		return
 	}

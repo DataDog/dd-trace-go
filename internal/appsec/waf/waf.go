@@ -35,9 +35,9 @@ import (
 	// Do not remove the following imports which allow supporting package
 	// vendoring by properly copying all the files needed by CGO: the libddwaf
 	// header file and the static libraries.
-	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/waf/include"
-	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/waf/lib/darwin-amd64"
-	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/waf/lib/linux-amd64"
+	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/include"
+	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/darwin-amd64"
+	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/linux-amd64"
 )
 
 // Version wrapper type of the WAF version.

@@ -16,15 +16,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestWAF is a simple validation test of the WAF protecting a net/http server. It only mockups the agent and tests that
-// the WAF is properly detecting an XSS attempt and that the corresponding security event is being sent to the agent.
+// the WAF is properly detecting an LFI attempt and that the corresponding security event is being sent to the agent.
 func TestWAF(t *testing.T) {
 	if _, err := waf.Health(); err != nil {
 		t.Skip("waf disabled")
@@ -49,7 +49,7 @@ func TestWAF(t *testing.T) {
 
 	// Start the tracer along with the fake agent HTTP server
 	os.Setenv("DD_APPSEC_ENABLED", "true")
-	tracer.Start(tracer.WithAgentAddr(strings.TrimPrefix(agent.URL, "http://")))
+	tracer.Start(tracer.WithDebugMode(true), tracer.WithAgentAddr(strings.TrimPrefix(agent.URL, "http://")))
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
@@ -59,7 +59,7 @@ func TestWAF(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	// Send an XSS attack
+	// Send an LFI attack
 	req, err := http.NewRequest("POST", srv.URL+"/../../../secret.txt", nil)
 	if err != nil {
 		panic(err)

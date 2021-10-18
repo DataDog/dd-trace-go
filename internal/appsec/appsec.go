@@ -18,8 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -113,7 +111,7 @@ func isEnabled() (bool, error) {
 }
 
 type appsec struct {
-	client        *intake.Client
+	client        *client
 	eventChan     chan securityEvent
 	wg            sync.WaitGroup
 	cfg           *Config
@@ -121,7 +119,7 @@ type appsec struct {
 }
 
 func newAppSec(cfg *Config) (*appsec, error) {
-	intakeClient, err := intake.NewClient(cfg.Client, cfg.AgentURL)
+	intakeClient, err := newClient(cfg.Client, cfg.AgentURL)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +190,7 @@ func (a *appsec) stop() {
 }
 
 type intakeClient interface {
-	SendBatch(context.Context, api.EventBatch) error
+	sendBatch(context.Context, eventBatch) error
 }
 
 func eventBatchingLoop(client intakeClient, eventChan <-chan securityEvent, withGlobalContext func(event securityEvent) securityEvent, cfg *Config) {
@@ -217,7 +215,7 @@ func eventBatchingLoop(client intakeClient, eventChan <-chan securityEvent, with
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), defaultIntakeTimeout)
 		defer cancel()
-		intakeBatch := make([]*api.AttackEvent, 0, len(batch))
+		intakeBatch := make([]*attackEvent, 0, len(batch))
 		for _, e := range batch {
 			intakeEvents, err := withGlobalContext(e).toIntakeEvents()
 			if err != nil {
@@ -227,7 +225,7 @@ func eventBatchingLoop(client intakeClient, eventChan <-chan securityEvent, with
 			intakeBatch = append(intakeBatch, intakeEvents...)
 		}
 		log.Debug("appsec: sending %d security events", len(intakeBatch))
-		if err := client.SendBatch(ctx, api.MakeEventBatch(intakeBatch)); err != nil {
+		if err := client.sendBatch(ctx, makeEventBatch(intakeBatch)); err != nil {
 			log.Error("appsec: could not send the event batch: %v", err)
 		}
 		batch = batch[0:0]

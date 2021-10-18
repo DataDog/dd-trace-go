@@ -8,7 +8,6 @@ package appsec
 import (
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation/httpinstr"
 )
 
@@ -16,7 +15,7 @@ import (
 // api struct actually sending it. Additional context can be optionally added to
 // the security event using the following event wrappers.
 type securityEvent interface {
-	toIntakeEvents() ([]*api.AttackEvent, error)
+	toIntakeEvents() ([]*attackEvent, error)
 }
 
 type (
@@ -76,26 +75,26 @@ func withHTTPOperationContext(event securityEvent, args httpinstr.HandlerOperati
 
 // toIntakeEvent converts the current event with the HTTP context into an
 // intake security event.
-func (e withHTTPContext) toIntakeEvents() ([]*api.AttackEvent, error) {
+func (e withHTTPContext) toIntakeEvents() ([]*attackEvent, error) {
 	events, err := e.securityEvent.toIntakeEvents()
 	if err != nil {
 		return nil, err
 	}
 	reqContext := makeAttackContextHTTPRequest(e.ctx.Request)
-	resContext := api.MakeAttackContextHTTPResponse(e.ctx.Response.Status)
-	httpContext := api.MakeAttackContextHTTP(reqContext, resContext)
+	resContext := makeAttackContextHTTPResponse(e.ctx.Response.Status)
+	httpContext := makeAttackContextHTTP(reqContext, resContext)
 	for _, event := range events {
 		event.Context.HTTP = httpContext
 	}
 	return events, nil
 }
 
-// makeAttackContextHTTPRequest create the api.AttackContextHTTPRequest payload
+// makeAttackContextHTTPRequest create the api.attackContextHTTPRequest payload
 // from the given httpRequestContext.
-func makeAttackContextHTTPRequest(req httpRequestContext) api.AttackContextHTTPRequest {
-	host, portStr := api.SplitHostPort(req.Host)
+func makeAttackContextHTTPRequest(req httpRequestContext) attackContextHTTPRequest {
+	host, portStr := splitHostPort(req.Host)
 	port, _ := strconv.Atoi(portStr)
-	remoteIP, remotePortStr := api.SplitHostPort(req.RemoteAddr)
+	remoteIP, remotePortStr := splitHostPort(req.RemoteAddr)
 	remotePort, _ := strconv.Atoi(remotePortStr)
 	var scheme string
 	if req.IsTLS {
@@ -103,9 +102,9 @@ func makeAttackContextHTTPRequest(req httpRequestContext) api.AttackContextHTTPR
 	} else {
 		scheme = "http"
 	}
-	url := api.MakeHTTPURL(scheme, req.Host, req.Path)
-	headers := api.MakeHTTPHeaders(req.Headers)
-	return api.AttackContextHTTPRequest{
+	url := makeHTTPURL(scheme, req.Host, req.Path)
+	headers := makeHTTPHeaders(req.Headers)
+	return attackContextHTTPRequest{
 		Scheme:     scheme,
 		Method:     req.Method,
 		URL:        url,
@@ -115,7 +114,7 @@ func makeAttackContextHTTPRequest(req httpRequestContext) api.AttackContextHTTPR
 		RemoteIP:   remoteIP,
 		RemotePort: remotePort,
 		Headers:    headers,
-		Parameters: api.AttackContextHTTPRequestParameters{Query: req.Query},
+		Parameters: attackContextHTTPRequestParameters{Query: req.Query},
 	}
 }
 
@@ -135,15 +134,15 @@ func withSpanContext(event securityEvent, traceID, spanID uint64) securityEvent 
 
 // ToIntakeEvent converts the current event with the span context into an
 // intake security event.
-func (ctx spanContext) toIntakeEvents() ([]*api.AttackEvent, error) {
+func (ctx spanContext) toIntakeEvents() ([]*attackEvent, error) {
 	events, err := ctx.securityEvent.toIntakeEvents()
 	if err != nil {
 		return nil, err
 	}
 	traceID := strconv.FormatUint(ctx.traceID, 10)
 	spanID := strconv.FormatUint(ctx.spanID, 10)
-	traceContext := api.MakeAttackContextTrace(traceID)
-	spanContext := api.MakeAttackContextSpan(spanID)
+	traceContext := makeAttackContextTrace(traceID)
+	spanContext := MakeAttackContextSpan(spanID)
 	for _, event := range events {
 		event.Context.Trace = traceContext
 		event.Context.Span = spanContext
@@ -168,12 +167,12 @@ func withServiceContext(event securityEvent, name, version, environment string) 
 
 // ToIntakeEvent converts the current event with the service context into an
 // intake security event.
-func (ctx serviceContext) toIntakeEvents() ([]*api.AttackEvent, error) {
+func (ctx serviceContext) toIntakeEvents() ([]*attackEvent, error) {
 	events, err := ctx.securityEvent.toIntakeEvents()
 	if err != nil {
 		return nil, err
 	}
-	serviceContext := api.MakeServiceContext(ctx.name, ctx.version, ctx.environment)
+	serviceContext := makeServiceContext(ctx.name, ctx.version, ctx.environment)
 	for _, event := range events {
 		event.Context.Service = serviceContext
 	}
@@ -195,12 +194,12 @@ func withTagsContext(event securityEvent, tags []string) securityEvent {
 
 // ToIntakeEvent converts the current event with the tags context into an
 // intake security event.
-func (ctx tagsContext) toIntakeEvents() ([]*api.AttackEvent, error) {
+func (ctx tagsContext) toIntakeEvents() ([]*attackEvent, error) {
 	events, err := ctx.securityEvent.toIntakeEvents()
 	if err != nil {
 		return nil, err
 	}
-	tagsContext := api.NewAttackContextTags(ctx.tags)
+	tagsContext := newAttackContextTags(ctx.tags)
 	for _, event := range events {
 		event.Context.Tags = tagsContext
 	}
@@ -224,12 +223,12 @@ func withTracerContext(event securityEvent, runtime, runtimeVersion, version str
 
 // ToIntakeEvent converts the current event with the tracer context into an
 // intake security event.
-func (ctx tracerContext) toIntakeEvents() ([]*api.AttackEvent, error) {
+func (ctx tracerContext) toIntakeEvents() ([]*attackEvent, error) {
 	events, err := ctx.securityEvent.toIntakeEvents()
 	if err != nil {
 		return nil, err
 	}
-	tracerContext := api.MakeAttackContextTracer(ctx.version, ctx.runtime, ctx.runtimeVersion)
+	tracerContext := makeAttackContextTracer(ctx.version, ctx.runtime, ctx.runtimeVersion)
 	for _, event := range events {
 		event.Context.Tracer = tracerContext
 	}
@@ -252,12 +251,12 @@ type hostContext struct {
 
 // ToIntakeEvent converts the current event with the host context into an intake
 // security event.
-func (ctx hostContext) toIntakeEvents() ([]*api.AttackEvent, error) {
+func (ctx hostContext) toIntakeEvents() ([]*attackEvent, error) {
 	events, err := ctx.securityEvent.toIntakeEvents()
 	if err != nil {
 		return nil, err
 	}
-	hostContext := api.MakeAttackContextHost(ctx.hostname, ctx.osname)
+	hostContext := makeAttackContextHost(ctx.hostname, ctx.osname)
 	for _, event := range events {
 		event.Context.Host = hostContext
 	}

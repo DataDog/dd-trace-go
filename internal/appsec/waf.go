@@ -16,8 +16,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/intake/api"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/internal/waf"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation/httpinstr"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -182,7 +181,7 @@ func supportedAddresses(ruleAddresses []string) (supported, notSupported []strin
 }
 
 // toIntakeEvent creates the attack event payloads from a WAF attack.
-func (e *wafEvent) toIntakeEvents() (events []*api.AttackEvent, err error) {
+func (e *wafEvent) toIntakeEvents() (events []*attackEvent, err error) {
 	var matches waf.AttackMetadata
 	if err := json.Unmarshal(e.metadata, &matches); err != nil {
 		return nil, err
@@ -190,10 +189,10 @@ func (e *wafEvent) toIntakeEvents() (events []*api.AttackEvent, err error) {
 	// Create one security event per flow and per filter
 	for _, match := range matches {
 		for _, filter := range match.Filter {
-			ruleMatch := &api.AttackRuleMatch{
+			ruleMatch := &attackRuleMatch{
 				Operator:      filter.Operator,
 				OperatorValue: filter.OperatorValue,
-				Parameters: []api.AttackRuleMatchParameter{
+				Parameters: []attackRuleMatchParameter{
 					{
 						Name:  filter.ManifestKey,
 						Value: filter.ResolvedValue,
@@ -201,7 +200,7 @@ func (e *wafEvent) toIntakeEvents() (events []*api.AttackEvent, err error) {
 				},
 				Highlight: []string{filter.MatchStatus},
 			}
-			events = append(events, api.NewAttackEvent(match.Rule, match.Flow, match.Flow, e.time, ruleMatch))
+			events = append(events, newAttackEvent(match.Rule, match.Flow, match.Flow, e.time, ruleMatch))
 		}
 	}
 	return events, nil

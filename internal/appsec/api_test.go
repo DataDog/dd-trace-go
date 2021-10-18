@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package api
+package appsec
 
 import (
 	"testing"
@@ -49,7 +49,7 @@ func TestSplitHostPort(t *testing.T) {
 		},
 	} {
 		t.Run(tc.Addr, func(t *testing.T) {
-			host, port := SplitHostPort(tc.Addr)
+			host, port := splitHostPort(tc.Addr)
 			require.Equal(t, tc.ExpectedHost, host)
 			require.Equal(t, tc.ExpectedPort, port)
 		})
@@ -90,8 +90,8 @@ func TestMakeHTTPHeaders(t *testing.T) {
 			},
 		},
 	} {
-		t.Run("MakeHTTPHeaders", func(t *testing.T) {
-			headers := MakeHTTPHeaders(tc.headers)
+		t.Run("makeHTTPHeaders", func(t *testing.T) {
+			headers := makeHTTPHeaders(tc.headers)
 			require.Equal(t, tc.expected, headers)
 		})
 	}
