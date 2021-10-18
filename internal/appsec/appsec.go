@@ -217,7 +217,6 @@ func eventBatchingLoop(client intakeClient, eventChan <-chan securityEvent, with
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), defaultIntakeTimeout)
 		defer cancel()
-		log.Debug("appsec: sending %d events", len(batch))
 		intakeBatch := make([]*api.AttackEvent, 0, len(batch))
 		for _, e := range batch {
 			intakeEvents, err := withGlobalContext(e).toIntakeEvents()
@@ -227,6 +226,7 @@ func eventBatchingLoop(client intakeClient, eventChan <-chan securityEvent, with
 			}
 			intakeBatch = append(intakeBatch, intakeEvents...)
 		}
+		log.Debug("appsec: sending %d security events", len(intakeBatch))
 		if err := client.SendBatch(ctx, api.MakeEventBatch(intakeBatch)); err != nil {
 			log.Error("appsec: could not send the event batch: %v", err)
 		}
