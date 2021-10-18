@@ -311,15 +311,15 @@ func (rs *rulesSampler) apply(span *span) bool {
 func (rs *rulesSampler) applyRate(span *span, rate float64, now time.Time) {
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
-		span.SetTag(ext.SamplingPriority, ext.PriorityRuleSamplerReject)
+		span.SetTag(ext.SamplingPriority, ext.PriorityUserReject)
 		return
 	}
 
 	sampled, rate := rs.limiter.allowOne(now)
 	if sampled {
-		span.SetTag(ext.SamplingPriority, ext.PriorityRuleSamplerKeep)
+		span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
 	} else {
-		span.SetTag(ext.SamplingPriority, ext.PriorityRuleSamplerReject)
+		span.SetTag(ext.SamplingPriority, ext.PriorityUserReject)
 	}
 	span.SetTag(keyRulesSamplerLimiterRate, rate)
 }
