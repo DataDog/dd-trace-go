@@ -3,6 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build ignore
 // +build ignore
 
 // This program generates wrapper implementations of http.ResponseWriter that
@@ -73,7 +74,7 @@ func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) http.ResponseW
 		{{- range . }}
 			http.{{.}}
 		{{- end }}
-		} { mw{{ range . }}, h{{.}}{{ end }} }
+		}{mw{{ range . }}, h{{.}}{{ end }}}
 	{{- end }}
 {{- end }}
 	}

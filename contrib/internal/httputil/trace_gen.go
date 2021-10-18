@@ -40,91 +40,91 @@ func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) http.ResponseW
 			http.Pusher
 			http.CloseNotifier
 			http.Hijacker
-		} { mw, hFlusher, hPusher, hCloseNotifier, hHijacker }
+		}{mw, hFlusher, hPusher, hCloseNotifier, hHijacker}
 	case okFlusher && okPusher && okCloseNotifier:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
 			http.Pusher
 			http.CloseNotifier
-		} { mw, hFlusher, hPusher, hCloseNotifier }
+		}{mw, hFlusher, hPusher, hCloseNotifier}
 	case okFlusher && okPusher && okHijacker:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
 			http.Pusher
 			http.Hijacker
-		} { mw, hFlusher, hPusher, hHijacker }
+		}{mw, hFlusher, hPusher, hHijacker}
 	case okFlusher && okCloseNotifier && okHijacker:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
 			http.CloseNotifier
 			http.Hijacker
-		} { mw, hFlusher, hCloseNotifier, hHijacker }
+		}{mw, hFlusher, hCloseNotifier, hHijacker}
 	case okPusher && okCloseNotifier && okHijacker:
 		w = struct {
 			monitoredResponseWriter
 			http.Pusher
 			http.CloseNotifier
 			http.Hijacker
-		} { mw, hPusher, hCloseNotifier, hHijacker }
+		}{mw, hPusher, hCloseNotifier, hHijacker}
 	case okFlusher && okPusher:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
 			http.Pusher
-		} { mw, hFlusher, hPusher }
+		}{mw, hFlusher, hPusher}
 	case okFlusher && okCloseNotifier:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
 			http.CloseNotifier
-		} { mw, hFlusher, hCloseNotifier }
+		}{mw, hFlusher, hCloseNotifier}
 	case okFlusher && okHijacker:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
 			http.Hijacker
-		} { mw, hFlusher, hHijacker }
+		}{mw, hFlusher, hHijacker}
 	case okPusher && okCloseNotifier:
 		w = struct {
 			monitoredResponseWriter
 			http.Pusher
 			http.CloseNotifier
-		} { mw, hPusher, hCloseNotifier }
+		}{mw, hPusher, hCloseNotifier}
 	case okPusher && okHijacker:
 		w = struct {
 			monitoredResponseWriter
 			http.Pusher
 			http.Hijacker
-		} { mw, hPusher, hHijacker }
+		}{mw, hPusher, hHijacker}
 	case okCloseNotifier && okHijacker:
 		w = struct {
 			monitoredResponseWriter
 			http.CloseNotifier
 			http.Hijacker
-		} { mw, hCloseNotifier, hHijacker }
+		}{mw, hCloseNotifier, hHijacker}
 	case okFlusher:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
-		} { mw, hFlusher }
+		}{mw, hFlusher}
 	case okPusher:
 		w = struct {
 			monitoredResponseWriter
 			http.Pusher
-		} { mw, hPusher }
+		}{mw, hPusher}
 	case okCloseNotifier:
 		w = struct {
 			monitoredResponseWriter
 			http.CloseNotifier
-		} { mw, hCloseNotifier }
+		}{mw, hCloseNotifier}
 	case okHijacker:
 		w = struct {
 			monitoredResponseWriter
 			http.Hijacker
-		} { mw, hHijacker }
+		}{mw, hHijacker}
 	}
 
 	return w
