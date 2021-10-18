@@ -535,6 +535,13 @@ func WithSpanID(id uint64) StartSpanOption {
 	}
 }
 
+// WithTraceID sets the TraceID on the started span, instead of using trace context or a random number.
+func WithTraceID(id uint64) StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		cfg.TraceID = id
+	}
+}
+
 // ChildOf tells StartSpan to use the given span context as a parent for the
 // created span.
 func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {

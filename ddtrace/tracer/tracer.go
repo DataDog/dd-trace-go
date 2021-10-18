@@ -192,7 +192,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		pid:              strconv.Itoa(os.Getpid()),
 		features:         &agentFeatures{},
 		stats:            newConcentrator(c, defaultStatsBucketSize),
-		pipelineStats: newPipelineConcentrator(c, time.Second*10),
+		pipelineStats:    newPipelineConcentrator(c, time.Second*10),
 	}
 	return t
 }
@@ -416,17 +416,19 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			context = ctx
 		}
 	}
-	id := opts.SpanID
-	if id == 0 {
-		id = random.Uint64()
+	if opts.SpanID == 0 {
+		opts.SpanID = random.Uint64()
+	}
+	if opts.TraceID == 0 {
+		opts.TraceID = random.Uint64()
 	}
 	// span defaults
 	span := &span{
 		Name:         operationName,
 		Service:      t.config.serviceName,
 		Resource:     operationName,
-		SpanID:       id,
-		TraceID:      id,
+		SpanID:       opts.SpanID,
+		TraceID:      opts.TraceID,
 		Start:        startTime,
 		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,

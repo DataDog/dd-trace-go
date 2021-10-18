@@ -14,8 +14,9 @@
 package ddtrace // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
 import (
-	"github.com/DataDog/sketches-go/ddsketch"
 	"time"
+
+	"github.com/DataDog/sketches-go/ddsketch"
 )
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -132,6 +133,9 @@ type StartSpanConfig struct {
 	// Force-set the SpanID, rather than use a random number. If no Parent SpanContext is present,
 	// then this will also set the TraceID to the same value.
 	SpanID uint64
+
+	// Force a TraceID rather than using parent context or SpanID
+	TraceID uint64
 }
 
 // DataPipelineConfig holds the configuration of a data pipeline
@@ -149,7 +153,7 @@ type Logger interface {
 }
 
 type PipelineLatency struct {
-	Hash uint64
+	Hash    uint64
 	Summary *ddsketch.DDSketch
 }
 
