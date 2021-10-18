@@ -8,7 +8,7 @@ package appsec
 import (
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation/httpinstr"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpinstr"
 )
 
 // securityEvent interface allowing to lazily serialize an event into an intake

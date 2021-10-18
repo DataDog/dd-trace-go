@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpinstr"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/dyngo/instrumentation/httpinstr"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
