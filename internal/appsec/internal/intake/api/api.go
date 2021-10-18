@@ -30,6 +30,7 @@ type (
 		EventType    string           `json:"event_type"`
 		DetectedAt   time.Time        `json:"detected_at"`
 		Type         string           `json:"type"`
+		Blocked      bool             `json:"blocked"`
 		Rule         AttackRule       `json:"rule"`
 		RuleMatch    *AttackRuleMatch `json:"rule_match"`
 		Context      AttackContext    `json:"context"`
