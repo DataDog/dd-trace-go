@@ -135,6 +135,9 @@ func runWAF(wafCtx *waf.Context, values map[string]interface{}) *wafEvent {
 		log.Error("appsec: waf error: %v", err)
 		return nil
 	}
+	if len(matches) == 0 {
+		return nil
+	}
 	return &wafEvent{
 		time:     time.Now(),
 		metadata: matches,
