@@ -174,8 +174,8 @@ func makeAttackContextTrace(traceID string) attackContextTrace {
 	}
 }
 
-// MakeAttackContextSpan create an attackContextSpan payload.
-func MakeAttackContextSpan(spanID string) attackContextSpan {
+// makeAttackContextSpan create an attackContextSpan payload.
+func makeAttackContextSpan(spanID string) attackContextSpan {
 	return attackContextSpan{
 		ContextVersion: "0.1.0",
 		ID:             spanID,

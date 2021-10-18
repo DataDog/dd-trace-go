@@ -142,7 +142,7 @@ func (ctx spanContext) toIntakeEvents() ([]*attackEvent, error) {
 	traceID := strconv.FormatUint(ctx.traceID, 10)
 	spanID := strconv.FormatUint(ctx.spanID, 10)
 	traceContext := makeAttackContextTrace(traceID)
-	spanContext := MakeAttackContextSpan(spanID)
+	spanContext := makeAttackContextSpan(spanID)
 	for _, event := range events {
 		event.Context.Trace = traceContext
 		event.Context.Span = spanContext

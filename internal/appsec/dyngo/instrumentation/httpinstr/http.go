@@ -109,19 +109,33 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 
 // TODO(julio): create a go-generate tool to generate the types, vars and methods below
 
+// Operation type representing an HTTP operation. It must be created with
+// StartOperation() and finished with its Finish().
 type Operation struct {
 	*dyngo.OperationImpl
 }
 
+// StartOperation starts an HTTP handler operation, along with the given
+// arguments and parent operation, and emits a start event up in the
+// operation stack. When parent is nil, the operation is linked to the global
+// root operation.
 func StartOperation(args HandlerOperationArgs, parent dyngo.Operation) Operation {
 	return Operation{OperationImpl: dyngo.StartOperation(args, parent)}
 }
+
+// Finish the HTTP handler operation, along with the given results, and emits a
+// finish event up in the operation stack.
 func (op Operation) Finish(res HandlerOperationRes) {
 	op.OperationImpl.Finish(res)
 }
 
+// HTTP handler operation's start and finish event callback function types.
 type (
-	OnHandlerOperationStart  func(dyngo.Operation, HandlerOperationArgs)
+	// OnHandlerOperationStart function type, called when an HTTP handler
+	// operation starts.
+	OnHandlerOperationStart func(dyngo.Operation, HandlerOperationArgs)
+	// OnHandlerOperationFinish function type, called when an HTTP handler
+	// operation finishes.
 	OnHandlerOperationFinish func(dyngo.Operation, HandlerOperationRes)
 )
 
@@ -130,12 +144,22 @@ var (
 	handlerOperationResType  = reflect.TypeOf((*HandlerOperationRes)(nil)).Elem()
 )
 
+// ListenedType returns the type a OnHandlerOperationStart event listener
+// listens to, which is the HandlerOperationArgs type.
 func (OnHandlerOperationStart) ListenedType() reflect.Type { return handlerOperationArgsType }
+
+// Call the underlying event listener function by performing the type-assertion
+// on v whose type is the one returned by ListenedType().
 func (f OnHandlerOperationStart) Call(op dyngo.Operation, v interface{}) {
 	f(op, v.(HandlerOperationArgs))
 }
 
+// ListenedType returns the type a OnHandlerOperationFinish event listener
+// listens to, which is the HandlerOperationRes type.
 func (OnHandlerOperationFinish) ListenedType() reflect.Type { return handlerOperationResType }
+
+// Call the underlying event listener function by performing the type-assertion
+// on v whose type is the one returned by ListenedType().
 func (f OnHandlerOperationFinish) Call(op dyngo.Operation, v interface{}) {
 	f(op, v.(HandlerOperationRes))
 }
