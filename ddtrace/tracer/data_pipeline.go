@@ -112,7 +112,6 @@ func (p *dataPipeline) setCheckpoint(receivingPipelineName string, t time.Time) 
 		pipelineName: receivingPipelineName,
 	}
 	if tracer, ok := internal.GetGlobalTracer().(*tracer); ok {
-		log.Info(fmt.Sprintf("send point to stats aggregator service %s %d", p.service, child.pipelineHash))
 		select {
 		case tracer.pipelineStats.In <- pipelineStatsPoint{
 			service: p.service,

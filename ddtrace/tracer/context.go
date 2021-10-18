@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"context"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -75,13 +74,11 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 // SetDataPipelineCheckpointFromContext sets a new checkpoint on the data pipeline in the current context.
 // If there is no data pipeline in the current context, it creates a new data pipeline.
 func SetDataPipelineCheckpointFromContext(ctx context.Context, receivingPipelineName string, opts ...DataPipelineOption) (DataPipeline, context.Context) {
-	log.Info("starting data pipeline from checkpoint")
 	if ctx == nil {
 		// default to context.Background() to avoid panics on Go >= 1.15
 		ctx = context.Background()
 	}
 	if p, ok := DataPipelineFromContext(ctx); ok {
-		log.Info("pipeline is child of another one")
 		opts = append(opts, ChildOfPipeline(p))
 	}
 	p := SetDataPipelineCheckpoint(receivingPipelineName, opts...)

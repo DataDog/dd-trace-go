@@ -171,7 +171,6 @@ func (c *pipelineConcentrator) runFlusher(tick <-chan time.Time) {
 }
 
 func (c *pipelineConcentrator) send(p pipelineStatsPayload) {
-	log.Info("sent statsd metrics")
 	if len(p.Stats) == 0 {
 		// nothing to flush
 		return
@@ -193,10 +192,8 @@ func (c *pipelineConcentrator) send(p pipelineStatsPayload) {
 				log.Error("failed to de-serialize sketch")
 				continue
 			}
-			log.Info(fmt.Sprintf("sending point for pipeline %s. hash %d, parent %d", s.ReceivingPipelineName, s.PipelineHash, s.ParentHash))
 			// todo[piochelepiotr] Flush all the sketch at once.
 			sketch.ForEach(func(value, count float64) bool {
-				log.Info(fmt.Sprintf("Flushing value %f, %f", value, count))
 				tags := []string{
 					"pipeline_name:"+s.ReceivingPipelineName,
 					"service:"+s.Service,
@@ -204,9 +201,7 @@ func (c *pipelineConcentrator) send(p pipelineStatsPayload) {
 					fmt.Sprintf("parent_hash:%d", s.ParentHash),
 				}
 				for i := 0; i < int(count); i++ {
-					log.Info("flush once")
 					c.statsd().Distribution("dd.pipeline", value, tags, 1)
-					log.Info("flushed once")
 				}
 				return false
 			})
@@ -241,8 +236,6 @@ func (c *pipelineConcentrator) flush(timenow time.Time) pipelineStatsPayload {
 			// do not flush the current bucket
 			continue
 		}
-		log.Info("flushing bucket %d", ts)
-		log.Debug("Flushing bucket %d", ts)
 		sp.Stats = append(sp.Stats, c.flushBucket(ts))
 	}
 	return sp
