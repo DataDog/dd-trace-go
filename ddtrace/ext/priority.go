@@ -10,7 +10,7 @@ package ext
 
 const (
 	// PriorityRuleSamplerReject specifies that the rule sampler has decided that this trace should be rejected.
-	PriorityRuleSamplerReject = -3
+	PriorityRuleSamplerReject = -2
 
 	// PriorityUserReject informs the backend that a trace should be rejected and not stored.
 	// This should be used by user code overriding default priority.
