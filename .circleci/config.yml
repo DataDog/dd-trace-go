@@ -21,7 +21,8 @@ jobs:
     - run:
         name: build
         command: |
-          sudo apt-get install --reinstall ca-certificates
+          sudo apt-get -y update
+          sudo apt-get -y install --reinstall ca-certificates
           go build ./ddtrace/... ./profiler/...
 
   metadata:
