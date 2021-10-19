@@ -21,10 +21,11 @@ jobs:
     - run:
         name: build
         command: |
-          sudo apt-get -y update --allow-releaseinfo-change
-          sudo apt-get -y install --reinstall ca-certificates
-          sudo update-ca-certificates
-          sudo apt upgrade -y
+          sudp apt upgrade libgnutls30
+          #sudo apt-get -y update --allow-releaseinfo-change
+          #sudo apt-get -y install --reinstall ca-certificates
+          #sudo update-ca-certificates
+          #sudo apt upgrade -y
           go build ./ddtrace/... ./profiler/...
 
   metadata:
