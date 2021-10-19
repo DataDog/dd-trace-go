@@ -21,6 +21,7 @@ jobs:
     - run:
         name: build
         command: |
+          sudo update-ca-certificates --fresh
           go build ./ddtrace/... ./profiler/...
 
   metadata:
