@@ -80,10 +80,10 @@ jobs:
 
   test-core:
     parameters:
-      appsec:
-        description: "compile and enable appsec"
-        default: false
-        type: boolean
+      build_tags:
+        description: "go build tags to use to compile the tests"
+        default: ""
+        type: string
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
@@ -100,7 +100,7 @@ jobs:
           name: Testing
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v <<# parameters.appsec >>-tags appsec<</ parameters.appsec >> -race -coverprofile=coverage.txt -covermode=atomic
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -tags << parameters.build_tags >> -race -coverprofile=coverage.txt -covermode=atomic
 
       - save_cache:
           key: go-mod-v4-{{ checksum "go.sum" }}
@@ -294,5 +294,5 @@ workflows:
       - test-core:
           matrix:
             parameters:
-              appsec: [ true, false ]
+              build_tags: [ "", "appsec" ]
       - test-contrib
