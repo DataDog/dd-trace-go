@@ -99,7 +99,7 @@ jobs:
           name: Testing
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
-            DD_APPSEC_ENABLED=$(test << parameters.build_tags >> = appsec && echo -n true)
+            DD_APPSEC_ENABLED="$(test << parameters.build_tags >> = appsec && echo -n true)"
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -tags << parameters.build_tags >> -race -coverprofile=coverage.txt -covermode=atomic
 
       - save_cache:
