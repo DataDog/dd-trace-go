@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -47,10 +48,19 @@ type (
 	}
 )
 
+// enabled is true when appsec is enabled so that WrapHandler only wraps the
+// handler when appsec is enabled.
+// TODO(julio): remove this as soon as appsec becomes enabled by default
+var enabled bool
+
+func init() {
+	enabled, _ = strconv.ParseBool(os.Getenv("DD_APPSEC_ENABLED"))
+}
+
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
-	if os.Getenv("DD_APPSEC_ENABLED") == "" {
+	if !enabled {
 		span.SetTag("_dd.appsec.enabled", 0)
 		return handler
 	}
