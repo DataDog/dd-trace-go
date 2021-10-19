@@ -87,7 +87,7 @@ jobs:
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-      DD_APPSEC_ENABLED: << parameters.appsec >>
+      DD_APPSEC_ENABLED: true
     <<: *plain-go114
 
     steps:
