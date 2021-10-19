@@ -21,7 +21,7 @@ jobs:
     - run:
         name: build
         command: |
-          sudo apt-get -y update
+          sudo apt-get -y update --allow-releaseinfo-change
           sudo apt-get -y install --reinstall ca-certificates
           go build ./ddtrace/... ./profiler/...
 
