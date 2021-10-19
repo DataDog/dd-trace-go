@@ -29,8 +29,9 @@ jobs:
           # Fixes fatal: unable to access 'https://gopkg.in/yaml.v3/': server certificate verification failed. CAfile: none CRLfile: none
           # See https://github.com/DataDog/dd-trace-go/pull/1029
           sudo apt update && sudo apt install ca-certificates libgnutls30 -y
+
           go build -v -tags "<< parameters.build_tags >>" ./ddtrace/... ./profiler/... ./internal/appsec/...
-          
+
   metadata:
     <<: *plain-go114
 
