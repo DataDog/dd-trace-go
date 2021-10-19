@@ -75,8 +75,8 @@ func extract(body []byte) (ddtrace.SpanContext, []byte, error) {
 }
 
 func hasSpanContext(body []byte) bool {
-	for i := 0; i < 4; i++ {
-		if body[i] != sep[i] {
+	for i, b := range sep {
+		if body[i] != b {
 			return false
 		}
 	}
