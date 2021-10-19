@@ -105,7 +105,7 @@ func newWAFEventListener(handle *waf.Handle, addresses []string, appsec *appsec)
 				spanCtx := span.Context()
 				event = withSpanContext(event, spanCtx.TraceID(), spanCtx.SpanID())
 				// Keep this span due to the security event
-				span.SetTag(ext.SamplingPriority, ext.ManualKeep)
+				span.SetTag(ext.ManualKeep, true)
 			}
 			appsec.sendEvent(event)
 		}))
