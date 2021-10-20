@@ -17,7 +17,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)
@@ -213,6 +215,18 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
+	appsec.Start(&appsec.Config{
+		Client:   c.client(),
+		Version:  version.Tag,
+		AgentURL: fmt.Sprintf("http://%s/", resolveAddr(c.agentAddr)),
+		Hostname: c.hostname,
+		Service: appsec.ServiceConfig{
+			Name:        c.serviceName,
+			Version:     c.version,
+			Environment: c.env,
+		},
+		Tags: c.globalTags,
+	})
 	return t
 }
 
@@ -464,6 +478,7 @@ func (t *tracer) Stop() {
 	t.wg.Wait()
 	t.traceWriter.stop()
 	t.config.statsd.Close()
+	appsec.Stop()
 }
 
 // Inject uses the configured or default TextMap Propagator.

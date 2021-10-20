@@ -87,9 +87,6 @@ type httpTransport struct {
 // otherwise needing to customize the transport layer, for instance when using
 // a unix domain socket.
 func newHTTPTransport(addr string, client *http.Client) *httpTransport {
-	if client == nil {
-		client = defaultClient
-	}
 	// initialize the default EncoderPool with Encoder headers
 	defaultHeaders := map[string]string{
 		"Datadog-Meta-Lang":             "go",
