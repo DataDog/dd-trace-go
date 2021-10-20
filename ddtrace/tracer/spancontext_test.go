@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -29,6 +30,11 @@ func setupteardown(start, max int) func() {
 }
 
 func TestNewSpanContextPushError(t *testing.T) {
+	// Disable AppSec to avoid their logs
+	if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
+		os.Unsetenv("DD_APPSEC_ENABLED")
+		defer os.Setenv("DD_APPSEC_ENABLED", old)
+	}
 	defer setupteardown(2, 2)()
 
 	tp := new(testLogger)
@@ -123,6 +129,11 @@ func TestSpanTracePushOne(t *testing.T) {
 }
 
 func TestSpanTracePushNoFinish(t *testing.T) {
+	// Disable AppSec to avoid their logs
+	if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
+		os.Unsetenv("DD_APPSEC_ENABLED")
+		defer os.Setenv("DD_APPSEC_ENABLED", old)
+	}
 	defer setupteardown(2, 5)()
 
 	assert := assert.New(t)
@@ -349,6 +360,11 @@ func TestSpanContextParent(t *testing.T) {
 }
 
 func TestSpanContextPushFull(t *testing.T) {
+	// Disable AppSec to avoid their logs
+	if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
+		os.Unsetenv("DD_APPSEC_ENABLED")
+		defer os.Setenv("DD_APPSEC_ENABLED", old)
+	}
 	defer func(old int) { traceMaxSize = old }(traceMaxSize)
 	traceMaxSize = 2
 	tp := new(testLogger)

@@ -84,6 +84,11 @@ func TestStartupLog(t *testing.T) {
 }
 
 func TestLogSamplingRules(t *testing.T) {
+	// Disable AppSec to avoid their logs
+	if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
+		os.Unsetenv("DD_APPSEC_ENABLED")
+		defer os.Setenv("DD_APPSEC_ENABLED", old)
+	}
 	assert := assert.New(t)
 	tp := new(testLogger)
 	os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
