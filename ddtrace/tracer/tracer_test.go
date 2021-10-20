@@ -1019,7 +1019,7 @@ func TestWorker(t *testing.T) {
 	}
 
 	flush(-1)
-	timeout := time.After(1 * time.Second)
+	timeout := time.After(2 * time.Second)
 loop:
 	for {
 		select {
