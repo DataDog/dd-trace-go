@@ -123,7 +123,7 @@ func (consu *Consumer) startSpan(ctx context.Context, operation string) (tracer.
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, consu.cfg.analyticsRate))
 	}
 
-	return tracer.StartSpanFromContext(context.Background(), operation, opts...)
+	return tracer.StartSpanFromContext(ctx, operation, opts...)
 }
 
 func (*Consumer) finishSpan(span tracer.Span, tags map[string]interface{}, err error) {
