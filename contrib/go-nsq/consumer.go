@@ -18,7 +18,7 @@ import (
 )
 
 // HandlerWithSpanContext is a function adapter for nsq.Consumer.AddHandler
-type HandlerWithSpanContext func(spnctx ddtrace.SpanContext, message *nsq.Message) error
+type HandlerWithSpanContext func(ctx context.Context, message *nsq.Message) error
 
 // HandleMessage adapte func(*nsq.Message)error to func(ddtrace.SpanContext, *nsq.Message)error
 func (handler HandlerWithSpanContext) HandleMessage(message *nsq.Message) error {
@@ -28,7 +28,9 @@ func (handler HandlerWithSpanContext) HandleMessage(message *nsq.Message) error 
 	}
 	message.Body = body
 
-	return handler(spnctx, message)
+	_, ctx := tracer.StartSpanFromContext(context.Background(), "consumer.Handler", tracer.ChildOf(spnctx))
+
+	return handler(ctx, message)
 }
 
 // Consumer is a wrap-up class of nsq Consumer.
@@ -60,12 +62,12 @@ func NewConsumer(topic string, channel string, config *nsq.Config, opts ...Optio
 
 // AddHandler is a nsq.Consumer.Addhandler wrapper with tracing operations injected into the original registered handler.
 func (consu *Consumer) AddHandler(handler HandlerWithSpanContext) {
-	consu.Consumer.AddHandler(HandlerWithSpanContext(func(spnctx ddtrace.SpanContext, message *nsq.Message) error {
+	consu.Consumer.AddHandler(HandlerWithSpanContext(func(ctx context.Context, message *nsq.Message) error {
 		var (
-			span, _ = consu.startSpan(spnctx, "consumer.Handler")
-			err     = handler(spnctx, message)
-			stats   = consu.Stats()
-			tags    = map[string]interface{}{
+			span, ctxWithSpan = consu.startSpan(ctx, "consumer.Handler")
+			err               = handler(ctxWithSpan, message)
+			stats             = consu.Stats()
+			tags              = map[string]interface{}{
 				"connections":      stats.Connections,
 				"nsq_msg_received": stats.MessagesReceived,
 				"nsq_msg_finished": stats.MessagesFinished,
@@ -86,12 +88,12 @@ func (consu *Consumer) AddHandler(handler HandlerWithSpanContext) {
 
 // AddConcurrentHandlers is a nsq.Consumer.AddConcurrentHandlers wrapper with tracing operations injected into the original registered handler.
 func (consu *Consumer) AddConcurrentHandlers(handler HandlerWithSpanContext, concurrency int) {
-	consu.Consumer.AddConcurrentHandlers(HandlerWithSpanContext(func(spnctx ddtrace.SpanContext, message *nsq.Message) error {
+	consu.Consumer.AddConcurrentHandlers(HandlerWithSpanContext(func(ctx context.Context, message *nsq.Message) error {
 		var (
-			span, _ = consu.startSpan(spnctx, "consumer.Handler")
-			err     = handler(spnctx, message)
-			stats   = consu.Stats()
-			tags    = map[string]interface{}{
+			span, ctxWithSpan = consu.startSpan(ctx, "consumer.ConcurrentHandler")
+			err               = handler(ctxWithSpan, message)
+			stats             = consu.Stats()
+			tags              = map[string]interface{}{
 				"connections":      stats.Connections,
 				"nsq_msg_received": stats.MessagesReceived,
 				"nsq_msg_finished": stats.MessagesFinished,
@@ -111,12 +113,11 @@ func (consu *Consumer) AddConcurrentHandlers(handler HandlerWithSpanContext, con
 	}), concurrency)
 }
 
-func (consu *Consumer) startSpan(spctx ddtrace.SpanContext, operation string) (tracer.Span, context.Context) {
+func (consu *Consumer) startSpan(ctx context.Context, operation string) (tracer.Span, context.Context) {
 	opts := []ddtrace.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.ServiceName(consu.cfg.service),
 		tracer.ResourceName(consu.resource),
-		tracer.ChildOf(spctx),
+		tracer.SpanType(ext.SpanTypeMessageConsumer),
 	}
 	if !math.IsNaN(consu.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, consu.cfg.analyticsRate))
