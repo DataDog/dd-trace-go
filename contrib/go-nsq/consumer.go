@@ -116,12 +116,13 @@ func (consu *Consumer) AddConcurrentHandlers(handler HandlerWithSpanContext, con
 }
 
 func (consu *Consumer) startSpan(ctx context.Context, operation string) (tracer.Span, context.Context) {
-	spnctx := ctx.Value(activeSpnCtxKey).(ddtrace.SpanContext)
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(consu.cfg.service),
 		tracer.ResourceName(consu.resource),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.ChildOf(spnctx),
+	}
+	if spnctx, ok := ctx.Value(activeSpnCtxKey).(ddtrace.SpanContext); ok {
+		opts = append(opts, tracer.ChildOf(spnctx))
 	}
 	if !math.IsNaN(consu.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, consu.cfg.analyticsRate))
