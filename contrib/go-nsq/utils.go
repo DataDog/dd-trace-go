@@ -59,13 +59,8 @@ func extract(body []byte) (ddtrace.SpanContext, []byte, error) {
 	}
 
 	comb := bytes.Split(body[4:], sep[:])
-	if len(comb[1]) == 0 {
-		return nil, comb[0], nil
-	}
-
 	carri := make(tracer.TextMapCarrier)
-	err := gob.NewDecoder(bytes.NewBuffer(comb[1])).Decode(&carri)
-	if err != nil {
+	if err := gob.NewDecoder(bytes.NewBuffer(comb[1])).Decode(&carri); err != nil {
 		return nil, nil, err
 	}
 
