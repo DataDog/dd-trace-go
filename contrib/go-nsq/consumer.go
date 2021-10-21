@@ -17,6 +17,10 @@ import (
 	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
 )
 
+type spanContextKey struct{}
+
+var activeSpnCtxKey = spanContextKey{}
+
 // HandlerWithSpanContext is a function adapter for nsq.Consumer.AddHandler
 type HandlerWithSpanContext func(ctx context.Context, message *nsq.Message) error
 
@@ -28,9 +32,7 @@ func (handler HandlerWithSpanContext) HandleMessage(message *nsq.Message) error 
 	}
 	message.Body = body
 
-	_, ctx := tracer.StartSpanFromContext(context.Background(), "consumer.Handler", tracer.ChildOf(spnctx))
-
-	return handler(ctx, message)
+	return handler(context.WithValue(context.Background(), activeSpnCtxKey, spnctx), message)
 }
 
 // Consumer is a wrap-up class of nsq Consumer.
@@ -114,16 +116,18 @@ func (consu *Consumer) AddConcurrentHandlers(handler HandlerWithSpanContext, con
 }
 
 func (consu *Consumer) startSpan(ctx context.Context, operation string) (tracer.Span, context.Context) {
+	spnctx := ctx.Value(activeSpnCtxKey).(ddtrace.SpanContext)
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(consu.cfg.service),
 		tracer.ResourceName(consu.resource),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
+		tracer.ChildOf(spnctx),
 	}
 	if !math.IsNaN(consu.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, consu.cfg.analyticsRate))
 	}
 
-	return tracer.StartSpanFromContext(context.Background(), operation, opts...)
+	return tracer.StartSpanFromContext(ctx, operation, opts...)
 }
 
 func (*Consumer) finishSpan(span tracer.Span, tags map[string]interface{}, err error) {
