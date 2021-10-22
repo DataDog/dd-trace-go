@@ -14,7 +14,6 @@ import (
 	"io/ioutil"
 	"os"
 	"runtime"
-	"strconv"
 	"sync"
 	"time"
 
@@ -36,10 +35,11 @@ const defaultIntakeTimeout = 10 * time.Second
 func Start(cfg *Config) {
 	enabled, err := isEnabled()
 	if err != nil {
-		log.Error("appsec: %v", err)
+		logUnexpectedStartError(err)
 		return
 	}
 	if !enabled {
+		log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
 		return
 	}
 
@@ -48,16 +48,16 @@ func Start(cfg *Config) {
 		rules, err := ioutil.ReadFile(filepath)
 		if err != nil {
 			if os.IsNotExist(err) {
-				log.Error("appsec: could not find the rules file in path %s.\nAppSec will not run any protections in this application. No security activities will be collected: %v", filepath, err)
+				log.Error("appsec: could not find the rules file in path %s: %v.\nAppSec will not run any protections in this application. No security activities will be collected.", filepath, err)
 			} else {
 				logUnexpectedStartError(err)
 			}
 			return
 		}
 		cfg.rules = rules
-		log.Info("appsec: using rules from file %s", filepath)
+		log.Info("appsec: starting with the security rules from file %s", filepath)
 	} else {
-		log.Info("appsec: using the default recommended rules")
+		log.Info("appsec: staring with default recommended security rules")
 	}
 
 	appsec, err := newAppSec(cfg)
@@ -74,7 +74,7 @@ func Start(cfg *Config) {
 
 // Implement the AppSec log message C1
 func logUnexpectedStartError(err error) {
-	log.Error("appsec: could not start because of an unexpected error. No security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help:\n%v", err)
+	log.Error("appsec: could not start because of an unexpected error: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
 }
 
 // Stop AppSec.
@@ -94,20 +94,6 @@ func setActiveAppSec(a *appsec) {
 		activeAppSec.stop()
 	}
 	activeAppSec = a
-}
-
-// isEnabled returns true when appsec is enabled by both using the appsec build
-// tag and having the environment variable DD_APPSEC_ENABLED set to true.
-func isEnabled() (bool, error) {
-	enabledStr := os.Getenv("DD_APPSEC_ENABLED")
-	if enabledStr == "" {
-		return false, nil
-	}
-	enabled, err := strconv.ParseBool(enabledStr)
-	if err != nil {
-		return false, fmt.Errorf("could not parse DD_APPSEC_ENABLED value `%s` as a boolean value", enabledStr)
-	}
-	return enabled, nil
 }
 
 type appsec struct {

@@ -24,8 +24,9 @@ func TestStartupLog(t *testing.T) {
 
 		tp.Reset()
 		logStartup(tracer)
-		assert.Len(tp.Lines(), 2)
-		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":null,"sampling_rules_error":"","tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","agent_features":{"DropP0s":false,"V05":false,"Stats":false}}`, tp.Lines()[1])
+		lines := filterOutAppSecLogs(tp.Lines())
+		assert.Len(lines, 2)
+		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":null,"sampling_rules_error":"","tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","agent_features":{"DropP0s":false,"V05":false,"Stats":false}}`, lines[1])
 	})
 
 	t.Run("configured", func(t *testing.T) {
@@ -84,11 +85,6 @@ func TestStartupLog(t *testing.T) {
 }
 
 func TestLogSamplingRules(t *testing.T) {
-	// Disable AppSec to avoid their logs
-	if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
-		os.Unsetenv("DD_APPSEC_ENABLED")
-		defer os.Setenv("DD_APPSEC_ENABLED", old)
-	}
 	assert := assert.New(t)
 	tp := new(testLogger)
 	os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
@@ -96,9 +92,10 @@ func TestLogSamplingRules(t *testing.T) {
 	_, _, _, stop := startTestTracer(t, WithLogger(tp))
 	defer stop()
 
-	assert.Len(tp.Lines(), 2)
-	assert.Contains(tp.Lines()[0], "WARN: at index 4: ignoring rule {Service: Name: Rate:9.10}: rate is out of [0.0, 1.0] range")
-	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ WARN: DIAGNOSTICS Error\(s\) parsing DD_TRACE_SAMPLING_RULES: found errors:\n\tat index 1: rate not provided\n\tat index 3: rate not provided$`, tp.Lines()[1])
+	lines := filterOutAppSecLogs(tp.Lines())
+	assert.Len(lines, 2)
+	assert.Contains(lines[0], "WARN: at index 4: ignoring rule {Service: Name: Rate:9.10}: rate is out of [0.0, 1.0] range")
+	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ WARN: DIAGNOSTICS Error\(s\) parsing DD_TRACE_SAMPLING_RULES: found errors:\n\tat index 1: rate not provided\n\tat index 3: rate not provided$`, lines[1])
 }
 
 func TestLogAgentReachable(t *testing.T) {
