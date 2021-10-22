@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/nsqio/go-nsq"
 	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace"
@@ -65,24 +66,24 @@ func NewConsumer(topic string, channel string, config *nsq.Config, opts ...Optio
 // AddHandler is a nsq.Consumer.Addhandler wrapper with tracing operations injected into the original registered handler.
 func (consu *Consumer) AddHandler(handler HandlerWithSpanContext) {
 	consu.Consumer.AddHandler(HandlerWithSpanContext(func(ctx context.Context, message *nsq.Message) error {
-		var (
-			span, ctxWithSpan = consu.startSpan(ctx, "consumer.Handler")
-			err               = handler(ctxWithSpan, message)
-			stats             = consu.Stats()
-			tags              = map[string]interface{}{
-				"connections":      stats.Connections,
-				"nsq_msg_received": stats.MessagesReceived,
-				"nsq_msg_finished": stats.MessagesFinished,
-				"nsq_msg_requeued": stats.MessagesRequeued,
-				"starved":          consu.IsStarved(),
-				"msg_id":           string(message.ID[:]),
-				"msg_attempts":     message.Attempts,
-				"msg_body_size":    len(message.Body),
-				"msg_timestamp":    message.Timestamp,
-				"msg_src_nsqd":     message.NSQDAddress,
-			}
-		)
-		consu.finishSpan(span, tags, err)
+		var err error
+		span, ctxWithSpan := consu.startSpan(ctx, "consumer.Handler")
+		defer span.Finish(tracer.WithError(err))
+
+		stats := consu.Stats()
+		span.SetTag("connections", stats.Connections)
+		span.SetTag("nsq_msg_received", stats.MessagesReceived)
+		span.SetTag("nsq_msg_finished", stats.MessagesFinished)
+		span.SetTag("nsq_msg_requeued", stats.MessagesRequeued)
+		span.SetTag("starved", consu.IsStarved())
+		span.SetTag("msg_id", string(message.ID[:]))
+		span.SetTag("msg_attempts", message.Attempts)
+		span.SetTag("msg_body_size", len(message.Body))
+		span.SetTag("msg_timestamp", message.Timestamp)
+		span.SetTag("msg_src_nsqd", message.NSQDAddress)
+		span.SetTag("dequeue_timestamp", time.Now().UnixNano())
+
+		err = handler(ctxWithSpan, message)
 
 		return err
 	}))
@@ -91,25 +92,25 @@ func (consu *Consumer) AddHandler(handler HandlerWithSpanContext) {
 // AddConcurrentHandlers is a nsq.Consumer.AddConcurrentHandlers wrapper with tracing operations injected into the original registered handler.
 func (consu *Consumer) AddConcurrentHandlers(handler HandlerWithSpanContext, concurrency int) {
 	consu.Consumer.AddConcurrentHandlers(HandlerWithSpanContext(func(ctx context.Context, message *nsq.Message) error {
-		var (
-			span, ctxWithSpan = consu.startSpan(ctx, "consumer.ConcurrentHandler")
-			err               = handler(ctxWithSpan, message)
-			stats             = consu.Stats()
-			tags              = map[string]interface{}{
-				"connections":      stats.Connections,
-				"nsq_msg_received": stats.MessagesReceived,
-				"nsq_msg_finished": stats.MessagesFinished,
-				"nsq_msg_requeued": stats.MessagesRequeued,
-				"starved":          consu.IsStarved(),
-				"msg_id":           string(message.ID[:]),
-				"msg_attempts":     message.Attempts,
-				"msg_body_size":    len(message.Body),
-				"msg_timestamp":    message.Timestamp,
-				"msg_src_nsqd":     message.NSQDAddress,
-				"concurrency":      concurrency,
-			}
-		)
-		consu.finishSpan(span, tags, err)
+		var err error
+		span, ctxWithSpan := consu.startSpan(ctx, "consumer.ConcurrentHandler")
+		defer span.Finish(tracer.WithError(err))
+
+		stats := consu.Stats()
+		span.SetTag("connections", stats.Connections)
+		span.SetTag("nsq_msg_received", stats.MessagesReceived)
+		span.SetTag("nsq_msg_finished", stats.MessagesFinished)
+		span.SetTag("nsq_msg_requeued", stats.MessagesRequeued)
+		span.SetTag("starved", consu.IsStarved())
+		span.SetTag("msg_id", string(message.ID[:]))
+		span.SetTag("msg_attempts", message.Attempts)
+		span.SetTag("msg_body_size", len(message.Body))
+		span.SetTag("msg_timestamp", message.Timestamp)
+		span.SetTag("msg_src_nsqd", message.NSQDAddress)
+		span.SetTag("concurrency", concurrency)
+		span.SetTag("dequeue_timestamp", time.Now().UnixNano())
+
+		err = handler(ctxWithSpan, message)
 
 		return err
 	}), concurrency)
@@ -129,11 +130,4 @@ func (consu *Consumer) startSpan(ctx context.Context, operation string) (tracer.
 	}
 
 	return tracer.StartSpanFromContext(ctx, operation, opts...)
-}
-
-func (*Consumer) finishSpan(span tracer.Span, tags map[string]interface{}, err error) {
-	for k, v := range tags {
-		span.SetTag(k, v)
-	}
-	span.Finish(tracer.WithError(err))
 }

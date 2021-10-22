@@ -48,22 +48,21 @@ func (prodc *Producer) Publish(topic string, body []byte) error {
 
 // PublishWithContext starts span with given context and wrap the nsq.Producer.Publish
 func (prodc *Producer) PublishWithContext(ctx context.Context, topic string, body []byte) error {
-	var (
-		span, _ = prodc.startSpan(ctx, topic, "producer.Publish")
-		tags    = map[string]interface{}{
-			"body_count": 1,
-			"body_size":  len(body),
-		}
-		err error
-	)
-	defer prodc.finishSpan(span, tags, err)
+	var err error
+	span, ctx := prodc.startSpan(ctx, topic, "Publish")
+	defer span.Finish(tracer.WithError(err))
 
 	var injectedBody []byte
 	if injectedBody, err = inject(span, body); err != nil {
 		return err
 	}
 
-	err = prodc.Producer.Publish(topic, injectedBody)
+	span.SetTag("body_count", 1)
+	span.SetTag("body_size", len(body))
+
+	if err = prodc.Producer.Publish(topic, injectedBody); err == nil {
+		span.SetTag("enqueue_timestamp", time.Now().UnixNano())
+	}
 
 	return err
 }
@@ -75,15 +74,9 @@ func (prodc *Producer) MultiPublish(topic string, body [][]byte) error {
 
 // MultiPublishWithContext starts span with given context and wrap the nsq.Producer.MultiPublish
 func (prodc *Producer) MultiPublishWithContext(ctx context.Context, topic string, body [][]byte) error {
-	var (
-		span, _ = prodc.startSpan(ctx, topic, "producer.MultiPublish")
-		tags    = map[string]interface{}{
-			"body_count": len(body),
-			"body_size":  bodySize(body),
-		}
-		err error
-	)
-	defer prodc.finishSpan(span, tags, err)
+	var err error
+	span, ctx := prodc.startSpan(ctx, topic, "MultiPlulish")
+	defer span.Finish(tracer.WithError(err))
 
 	injectedBody := make([][]byte, len(body))
 	for i := range body {
@@ -92,7 +85,12 @@ func (prodc *Producer) MultiPublishWithContext(ctx context.Context, topic string
 		}
 	}
 
-	err = prodc.Producer.MultiPublish(topic, injectedBody)
+	span.SetTag("body_count", len(body))
+	span.SetTag("body_size", bodySize(body))
+
+	if err = prodc.Producer.MultiPublish(topic, injectedBody); err == nil {
+		span.SetTag("enqueue_timestamp", time.Now().UnixNano())
+	}
 
 	return err
 }
@@ -104,23 +102,22 @@ func (prodc *Producer) PublishAsync(topic string, body []byte, doneChan chan *ns
 
 // PublishAsyncWithContext starts span with given context and wrap the nsq.Producer.PublishAsync
 func (prodc *Producer) PublishAsyncWithContext(ctx context.Context, topic string, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
-	var (
-		span, _ = prodc.startSpan(ctx, topic, "producer.PublishAsync")
-		tags    = map[string]interface{}{
-			"body_count": 1,
-			"body_size":  len(body),
-			"arg_count":  len(args),
-		}
-		err error
-	)
-	defer prodc.finishSpan(span, tags, err)
+	var err error
+	span, ctx := prodc.startSpan(ctx, topic, "PublishAsync")
+	defer span.Finish(tracer.WithError(err))
 
 	var injectedBody []byte
 	if injectedBody, err = inject(span, body); err != nil {
 		return err
 	}
 
-	err = prodc.Producer.PublishAsync(topic, injectedBody, doneChan, args...)
+	span.SetTag("body_count", 1)
+	span.SetTag("body_size", len(body))
+	span.SetTag("is_done_chan_nil", doneChan == nil)
+
+	if err = prodc.Producer.PublishAsync(topic, injectedBody, doneChan, args...); err == nil {
+		span.SetTag("enqueue_timestamp", time.Now().UnixNano())
+	}
 
 	return err
 }
@@ -132,16 +129,9 @@ func (prodc *Producer) MultiPublishAsync(topic string, body [][]byte, doneChan c
 
 // MultiPublishAsyncWithContext starts span with given context and wrap the nsq.Producer.MultiPublishAsync
 func (prodc *Producer) MultiPublishAsyncWithContext(ctx context.Context, topic string, body [][]byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
-	var (
-		span, _ = prodc.startSpan(ctx, topic, "producer.MultiPublishAsync")
-		tags    = map[string]interface{}{
-			"body_count": len(body),
-			"body_size":  bodySize(body),
-			"arg_count":  len(args),
-		}
-		err error
-	)
-	defer prodc.finishSpan(span, tags, err)
+	var err error
+	span, ctx := prodc.startSpan(ctx, topic, "MultiPublishAsync")
+	defer span.Finish(tracer.WithError(err))
 
 	injectedBody := make([][]byte, len(body))
 	for i := range body {
@@ -150,7 +140,13 @@ func (prodc *Producer) MultiPublishAsyncWithContext(ctx context.Context, topic s
 		}
 	}
 
-	err = prodc.Producer.MultiPublishAsync(topic, injectedBody, doneChan, args...)
+	span.SetTag("body_count", len(body))
+	span.SetTag("body_size", bodySize(body))
+	span.SetTag("is_done_chan_nil", doneChan == nil)
+
+	if err = prodc.Producer.MultiPublishAsync(topic, injectedBody, doneChan, args...); err == nil {
+		span.SetTag("enqueue_timestamp", time.Now().UnixNano())
+	}
 
 	return err
 }
@@ -162,23 +158,22 @@ func (prodc *Producer) DeferredPublish(topic string, delay time.Duration, body [
 
 // DeferredPublishWithContext starts span with given context and wrap the nsq.Producer.DeferredPublish
 func (prodc *Producer) DeferredPublishWithContext(ctx context.Context, topic string, delay time.Duration, body []byte) error {
-	var (
-		span, _ = prodc.startSpan(ctx, topic, "producer.DeferredPublish")
-		tags    = map[string]interface{}{
-			"body_count": 1,
-			"body_size":  len(body),
-			"delay":      delay,
-		}
-		err error
-	)
-	defer prodc.finishSpan(span, tags, err)
+	var err error
+	span, ctx := prodc.startSpan(ctx, topic, "DeferredPublish")
+	defer span.Finish(tracer.WithError(err))
 
 	var injectedBody []byte
 	if injectedBody, err = inject(span, body); err != nil {
 		return err
 	}
 
-	err = prodc.Producer.DeferredPublish(topic, delay, injectedBody)
+	span.SetTag("body_count", 1)
+	span.SetTag("body_size", len(body))
+	span.SetTag("delay", delay)
+
+	if err = prodc.Producer.DeferredPublish(topic, delay, injectedBody); err == nil {
+		span.SetTag("enqueue_timestamp", time.Now().UnixNano())
+	}
 
 	return err
 }
@@ -189,24 +184,22 @@ func (prodc *Producer) DeferredPublishAsync(topic string, delay time.Duration, b
 }
 
 func (prodc *Producer) DeferredPublishAsyncWithContext(ctx context.Context, topic string, delay time.Duration, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
-	var (
-		span, _ = prodc.startSpan(ctx, topic, "producer.DeferredPublishAsync")
-		tags    = map[string]interface{}{
-			"body_count": 1,
-			"body_size":  len(body),
-			"arg_count":  len(args),
-			"delay":      delay,
-		}
-		err error
-	)
-	defer prodc.finishSpan(span, tags, err)
+	var err error
+	span, ctx := prodc.startSpan(ctx, topic, "DeferredPublish")
+	defer span.Finish(tracer.WithError(err))
 
 	var injectedBody []byte
 	if injectedBody, err = inject(span, body); err != nil {
 		return err
 	}
 
-	err = prodc.DeferredPublishAsync(topic, delay, injectedBody, doneChan, args...)
+	span.SetTag("body_count", 1)
+	span.SetTag("body_size", len(body))
+	span.SetTag("is_done_chan_nil", doneChan == nil)
+
+	if err = prodc.DeferredPublishAsync(topic, delay, injectedBody, doneChan, args...); err == nil {
+		span.SetTag("enqueue_timestamp", time.Now().UnixNano())
+	}
 
 	return err
 }
@@ -226,11 +219,4 @@ func (prodc *Producer) startSpan(ctx context.Context, topic, operation string) (
 	}
 
 	return tracer.StartSpanFromContext(ctx, operation, opts...)
-}
-
-func (*Producer) finishSpan(span tracer.Span, tags map[string]interface{}, err error) {
-	for k, v := range tags {
-		span.SetTag(k, v)
-	}
-	span.Finish(tracer.WithError(err))
 }
