@@ -57,7 +57,7 @@ func Start(cfg *Config) {
 		cfg.rules = rules
 		log.Info("appsec: starting with the security rules from file %s", filepath)
 	} else {
-		log.Info("appsec: staring with default recommended security rules")
+		log.Info("appsec: starting with default recommended security rules")
 	}
 
 	appsec, err := newAppSec(cfg)
