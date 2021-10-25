@@ -10,6 +10,13 @@ package appsec
 
 import "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
+// Status returns the AppSec status string: "enabled" when both the appsec
+// build tag is enabled and the env var DD_APPSEC_ENABLED is set to true, or
+// "disabled" otherwise.
+func Status() string {
+	return "disabled"
+}
+
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
 func Start(*Config) {

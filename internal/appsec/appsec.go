@@ -30,6 +30,16 @@ const (
 // Default timeout of intake requests.
 const defaultIntakeTimeout = 10 * time.Second
 
+// Status returns the AppSec status string: "enabled" when both the appsec
+// build tag is enabled and the env var DD_APPSEC_ENABLED is set to true, or
+// "disabled" otherwise.
+func Status() string {
+	if enabled, _ := isEnabled(); enabled {
+		return "enabled"
+	}
+	return "disabled"
+}
+
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
 func Start(cfg *Config) {
