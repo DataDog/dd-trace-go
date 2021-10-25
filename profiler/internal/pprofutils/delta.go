@@ -62,5 +62,58 @@ func (d Delta) Convert(a, b *profile.Profile) (*profile.Profile, error) {
 	if err != nil {
 		return nil, err
 	}
+	fixNegativeValues(delta)
 	return delta, delta.CheckValid()
+}
+
+func fixNegativeValues(delta *profile.Profile) {
+	samples := map[sampleKey]*profile.Sample{}
+	newSamples := make([]*profile.Sample, 0, len(delta.Sample))
+	for _, s := range delta.Sample {
+		key := makeSampleKey(s)
+		prevSample := samples[key] // last sample seen with the same stack trace
+
+		if !hasNegativeValue(s) {
+			newSamples = append(newSamples, s)
+			if prevSample != nil {
+				fixSample(s, prevSample)
+			}
+		} else if prevSample != nil && !hasNegativeValue(prevSample) {
+			fixSample(prevSample, s)
+		}
+		samples[key] = s
+	}
+	delta.Sample = newSamples
+}
+
+// fixSample adds all negative values from the neg sample to the pos sample.
+func fixSample(pos, neg *profile.Sample) {
+	for i, v := range neg.Value {
+		if v < 0 {
+			pos.Value[i] += v
+		}
+	}
+}
+
+// makeSampleKey creates a key for a sample using its program counters.
+func makeSampleKey(s *profile.Sample) (k sampleKey) {
+	for i, l := range s.Location {
+		k[i] = l.Address
+	}
+	return
+}
+
+// sampleKey holds the program counters of a stack trace. Memory/Block/Mutex
+// profiles have a max-depth of 32 right now which is unlikely to change, but
+// 256 should give enough safety margin.
+type sampleKey [256]uint64
+
+// hasNegativeValue returns true if one or more
+func hasNegativeValue(s *profile.Sample) bool {
+	for _, v := range s.Value {
+		if v < 0 {
+			return true
+		}
+	}
+	return false
 }
