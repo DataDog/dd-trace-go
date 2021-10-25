@@ -109,6 +109,14 @@ func (c *config) HasFeature(f string) bool {
 	return ok
 }
 
+// client returns the HTTP client to use.
+func (c *config) client() *http.Client {
+	if c.httpClient == nil {
+		return defaultClient
+	}
+	return c.httpClient
+}
+
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
@@ -215,7 +223,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	if c.transport == nil {
-		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
+		c.transport = newHTTPTransport(c.agentAddr, c.client())
 	}
 	if c.propagator == nil {
 		c.propagator = NewPropagator(nil)
