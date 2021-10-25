@@ -334,7 +334,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		tp := new(testLogger)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Len(t, filterOutAppSecLogs(tp.Lines()), 0)
+		assert.Len(t, removeAppSec(tp.Lines()), 0)
 		s := tracer.StartSpan("op").(*span)
 		_, ok := s.Meta["language"]
 		assert.False(t, ok)

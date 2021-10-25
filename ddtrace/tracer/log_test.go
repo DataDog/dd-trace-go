@@ -24,7 +24,7 @@ func TestStartupLog(t *testing.T) {
 
 		tp.Reset()
 		logStartup(tracer)
-		lines := filterOutAppSecLogs(tp.Lines())
+		lines := removeAppSec(tp.Lines())
 		assert.Len(lines, 2)
 		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":null,"sampling_rules_error":"","tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","agent_features":{"DropP0s":false,"V05":false,"Stats":false}}`, lines[1])
 	})
@@ -92,7 +92,7 @@ func TestLogSamplingRules(t *testing.T) {
 	_, _, _, stop := startTestTracer(t, WithLogger(tp))
 	defer stop()
 
-	lines := filterOutAppSecLogs(tp.Lines())
+	lines := removeAppSec(tp.Lines())
 	assert.Len(lines, 2)
 	assert.Contains(lines[0], "WARN: at index 4: ignoring rule {Service: Name: Rate:9.10}: rate is out of [0.0, 1.0] range")
 	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ WARN: DIAGNOSTICS Error\(s\) parsing DD_TRACE_SAMPLING_RULES: found errors:\n\tat index 1: rate not provided\n\tat index 3: rate not provided$`, lines[1])

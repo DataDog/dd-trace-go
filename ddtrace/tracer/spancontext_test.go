@@ -44,7 +44,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	child.context = newSpanContext(child, parent.context)
 
 	log.Flush()
-	assert.Contains(t, filterOutAppSecLogs(tp.Lines())[0], "ERROR: trace buffer full (2)")
+	assert.Contains(t, removeAppSec(tp.Lines())[0], "ERROR: trace buffer full (2)")
 }
 
 func TestAsyncSpanRace(t *testing.T) {
@@ -146,7 +146,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	<-time.After(time.Second / 10)
 	log.Flush()
-	assert.Len(filterOutAppSecLogs(tp.Lines()), 0)
+	assert.Len(removeAppSec(tp.Lines()), 0)
 	t.Logf("expected timeout, nothing should show up in buffer as the trace is not finished")
 }
 
@@ -364,13 +364,13 @@ func TestSpanContextPushFull(t *testing.T) {
 	assert := assert.New(t)
 	buffer.push(span1)
 	log.Flush()
-	assert.Len(filterOutAppSecLogs(tp.Lines()), 0)
+	assert.Len(removeAppSec(tp.Lines()), 0)
 	buffer.push(span2)
 	log.Flush()
-	assert.Len(filterOutAppSecLogs(tp.Lines()), 0)
+	assert.Len(removeAppSec(tp.Lines()), 0)
 	buffer.push(span3)
 	log.Flush()
-	assert.Contains(filterOutAppSecLogs(tp.Lines())[0], "ERROR: trace buffer full (2)")
+	assert.Contains(removeAppSec(tp.Lines())[0], "ERROR: trace buffer full (2)")
 }
 
 func TestSpanContextBaggage(t *testing.T) {
@@ -451,7 +451,7 @@ func BenchmarkBaggageItemEmpty(b *testing.B) {
 }
 
 // Remove the appsec logs from the given log lines
-func filterOutAppSecLogs(lines []string) []string {
+func removeAppSec(lines []string) []string {
 	res := make([]string, 0, len(lines))
 	for _, line := range lines {
 		if strings.Contains(line, "appsec:") {
