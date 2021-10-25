@@ -66,6 +66,15 @@ func (d Delta) Convert(a, b *profile.Profile) (*profile.Profile, error) {
 	return delta, delta.CheckValid()
 }
 
+// fixNegativeValues removes all samples containing negative values from the
+// given delta profile. For each negative sample it checks if a positive sample
+// with the same stack trace (program counters) exists, and if yes applies the
+// negative values from the removed sample to the matching positive sample.
+// This should provide a workaround for PROF-4239 where stack traces with the
+// same program counters sometimes end up with slightly different symbolization
+// (e.g. different file names). The root cause for this is probably a bug in
+// the Go runtime, but this hasn't been confirmed/reproduced in a standalone
+// program yet.
 func fixNegativeValues(delta *profile.Profile) {
 	samples := map[sampleKey]*profile.Sample{}
 	newSamples := make([]*profile.Sample, 0, len(delta.Sample))
