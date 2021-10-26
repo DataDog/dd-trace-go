@@ -54,6 +54,7 @@ func TestWAF(t *testing.T) {
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Content-Type", "application/json")
 		w.Write([]byte("Hello World!\n"))
 	})
 	srv := httptest.NewServer(mux)

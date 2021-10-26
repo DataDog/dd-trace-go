@@ -102,7 +102,8 @@ type (
 
 	// attackContextHTTPResponse intake API payload.
 	attackContextHTTPResponse struct {
-		Status int `json:"status"`
+		Status  int               `json:"status"`
+		Headers map[string]string `json:"headers,omitempty"`
 	}
 
 	// attackContextService intake API payload.
@@ -229,9 +230,10 @@ func makeAttackContextHTTP(req attackContextHTTPRequest, res attackContextHTTPRe
 }
 
 // makeAttackContextHTTPResponse creates an attackContextHTTPResponse payload.
-func makeAttackContextHTTPResponse(status int) attackContextHTTPResponse {
+func makeAttackContextHTTPResponse(status int, headers map[string][]string) attackContextHTTPResponse {
 	return attackContextHTTPResponse{
-		Status: status,
+		Status:  status,
+		Headers: makeHTTPHeaders(headers),
 	}
 }
 

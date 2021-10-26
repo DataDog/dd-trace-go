@@ -44,7 +44,8 @@ type (
 	// HandlerOperationRes is the HTTP handler operation results.
 	HandlerOperationRes struct {
 		// Status corresponds to the address `server.response.status`
-		Status int
+		Status  int
+		Headers map[string][]string
 	}
 )
 
@@ -68,15 +69,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 		span.SetTag("_dd.appsec.enabled", 1)
 		span.SetTag("_dd.runtime_family", "go")
 
-		headers := make(http.Header, len(r.Header))
-		for k, v := range r.Header {
-			k := strings.ToLower(k)
-			if k == "cookie" {
-				// Do not include cookies in the request headers
-				continue
-			}
-			headers[k] = v
-		}
+		headers := normalizeHeaders(r.Header)
 		var cookies map[string][]string
 		if reqCookies := r.Cookies(); len(reqCookies) > 0 {
 			cookies = make(map[string][]string, len(reqCookies))
@@ -111,10 +104,23 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 			if mw, ok := w.(interface{ Status() int }); ok {
 				status = mw.Status()
 			}
-			op.Finish(HandlerOperationRes{Status: status})
+			op.Finish(HandlerOperationRes{Status: status, Headers: normalizeHeaders(w.Header())})
 		}()
 		handler.ServeHTTP(w, r)
 	})
+}
+
+func normalizeHeaders(headers http.Header) map[string][]string {
+	normalized := make(http.Header, len(headers))
+	for k, v := range headers {
+		k := strings.ToLower(k)
+		if k == "cookie" {
+			// Do not include cookies in the request headers
+			continue
+		}
+		normalized[k] = v
+	}
+	return normalized
 }
 
 // TODO(julio): create a go-generate tool to generate the types, vars and methods below

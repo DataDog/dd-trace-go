@@ -42,7 +42,8 @@ type (
 	// httpResponseContext is the HTTP response context of an HTTP operation
 	// context.
 	httpResponseContext struct {
-		Status int
+		Status  int
+		Headers map[string][]string
 	}
 )
 
@@ -67,7 +68,8 @@ func withHTTPOperationContext(event securityEvent, args httpinstr.HandlerOperati
 				Query:      args.Query,
 			},
 			Response: httpResponseContext{
-				Status: res.Status,
+				Status:  res.Status,
+				Headers: res.Headers,
 			},
 		},
 	}
@@ -81,7 +83,7 @@ func (e withHTTPContext) toIntakeEvents() ([]*attackEvent, error) {
 		return nil, err
 	}
 	reqContext := makeAttackContextHTTPRequest(e.ctx.Request)
-	resContext := makeAttackContextHTTPResponse(e.ctx.Response.Status)
+	resContext := makeAttackContextHTTPResponse(e.ctx.Response.Status, e.ctx.Response.Headers)
 	httpContext := makeAttackContextHTTP(reqContext, resContext)
 	for _, event := range events {
 		event.Context.HTTP = httpContext
