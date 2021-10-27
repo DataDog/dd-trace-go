@@ -163,6 +163,16 @@ func TestSpanFinishWithTime(t *testing.T) {
 	assert.Equal(duration, span.Duration)
 }
 
+func TestSpanFinishWithNegativeDuration(t *testing.T) {
+	assert := assert.New(t)
+	startTime := time.Now()
+	finishTime := startTime.Add(-10 * time.Second)
+	span := newBasicSpan("web.request")
+	span.Start = startTime.UnixNano()
+	span.Finish(FinishTime(finishTime))
+	assert.Equal(int64(0), span.Duration)
+}
+
 func TestSpanFinishWithError(t *testing.T) {
 	assert := assert.New(t)
 

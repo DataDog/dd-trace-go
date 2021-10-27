@@ -74,6 +74,12 @@ func TestTracerCleanStop(t *testing.T) {
 	if testing.Short() {
 		return
 	}
+	// Avoid CI timeouts due to AppSec slowing down this test due to its init
+	// time.
+	if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
+		os.Unsetenv("DD_APPSEC_ENABLED")
+		defer os.Setenv("DD_APPSEC_ENABLED", old)
+	}
 	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
 
@@ -341,7 +347,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		tp := new(testLogger)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Len(t, tp.Lines(), 0)
+		assert.Len(t, removeAppSec(tp.Lines()), 0)
 		s := tracer.StartSpan("op").(*span)
 		_, ok := s.Meta["language"]
 		assert.False(t, ok)
@@ -1021,7 +1027,7 @@ func TestWorker(t *testing.T) {
 	}
 
 	flush(-1)
-	timeout := time.After(1 * time.Second)
+	timeout := time.After(2 * time.Second)
 loop:
 	for {
 		select {

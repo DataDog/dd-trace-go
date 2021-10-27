@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -47,6 +48,7 @@ type startupInfo struct {
 	Architecture          string            `json:"architecture"`            // Architecture of host machine
 	GlobalService         string            `json:"global_service"`          // Global service string. If not-nil should be same as Service. (#614)
 	LambdaMode            string            `json:"lambda_mode"`             // Whether or not the client has enabled lambda mode
+	AppSec                string            `json:"appsec"`                  // AppSec status string
 	AgentFeatures         agentFeatures     `json:"agent_features"`          // Lists the capabilities of the agent.
 }
 
@@ -97,6 +99,7 @@ func logStartup(t *tracer) {
 		GlobalService:         globalconfig.ServiceName(),
 		LambdaMode:            fmt.Sprintf("%t", t.config.logToStdout),
 		AgentFeatures:         t.features.Load(),
+		AppSec:                appsec.Status(),
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
