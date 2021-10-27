@@ -6,7 +6,10 @@
 package appsec
 
 import (
+	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -47,3 +50,17 @@ type (
 		Environment string
 	}
 )
+
+// isEnabled returns true when appsec is enabled when the environment variable
+// DD_APPSEC_ENABLED is set to true.
+func isEnabled() (bool, error) {
+	enabledStr := os.Getenv("DD_APPSEC_ENABLED")
+	if enabledStr == "" {
+		return false, nil
+	}
+	enabled, err := strconv.ParseBool(enabledStr)
+	if err != nil {
+		return false, fmt.Errorf("could not parse DD_APPSEC_ENABLED value `%s` as a boolean value", enabledStr)
+	}
+	return enabled, nil
+}

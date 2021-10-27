@@ -331,15 +331,10 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	})
 
 	t.Run("off", func(t *testing.T) {
-		// Disable AppSec to avoid their logs
-		if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
-			os.Unsetenv("DD_APPSEC_ENABLED")
-			defer os.Setenv("DD_APPSEC_ENABLED", old)
-		}
 		tp := new(testLogger)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Len(t, tp.Lines(), 0)
+		assert.Len(t, removeAppSec(tp.Lines()), 0)
 		s := tracer.StartSpan("op").(*span)
 		_, ok := s.Meta["language"]
 		assert.False(t, ok)
