@@ -12,12 +12,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 
 	"github.com/stretchr/testify/require"
@@ -26,6 +26,10 @@ import (
 // TestWAF is a simple validation test of the WAF protecting a net/http server. It only mockups the agent and tests that
 // the WAF is properly detecting an LFI attempt and that the corresponding security event is being sent to the agent.
 func TestWAF(t *testing.T) {
+	if appsec.Status() == "disabled" {
+		t.Skip("appsec disabled")
+		return
+	}
 	if _, err := waf.Health(); err != nil {
 		t.Skip("waf disabled")
 		return
@@ -48,7 +52,6 @@ func TestWAF(t *testing.T) {
 	}))
 
 	// Start the tracer along with the fake agent HTTP server
-	os.Setenv("DD_APPSEC_ENABLED", "true")
 	tracer.Start(tracer.WithDebugMode(true), tracer.WithAgentAddr(strings.TrimPrefix(agent.URL, "http://")))
 
 	// Start and trace an HTTP server
