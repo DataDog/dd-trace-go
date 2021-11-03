@@ -213,9 +213,9 @@ jobs:
             go get cloud.google.com/go/pubsub@v1.6.1
             # Temporarily enforce this version. 1.9.0 is incompatible with go < 1.16
             go get github.com/hashicorp/consul/api@v1.8.1
-            # github.com/hashicorp/vault/sdk >= v0.2.1 doesn't compile with go1.14
+            # github.com/hashicorp/vault/sdk > v0.2.0 doesn't compile with go1.14
             go get github.com/hashicorp/vault/sdk@v0.2.0
-            # Shopify/sarama >= v1.22 doesn't compile with go1.14
+            # Shopify/sarama > v1.22 doesn't compile with go1.14
             go get github.com/Shopify/sarama@v1.22.0
 
       - run:
