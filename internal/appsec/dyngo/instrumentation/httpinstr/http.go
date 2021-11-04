@@ -60,50 +60,17 @@ func init() {
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
+	// TODO: move these to service entry tags
 	if !enabled {
 		span.SetTag("_dd.appsec.enabled", 0)
 		return handler
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		span.SetTag("_dd.appsec.enabled", 1)
-		span.SetTag("_dd.runtime_family", "go")
+	span.SetTag("_dd.appsec.enabled", 1)
+	span.SetTag("_dd.runtime_family", "go")
 
-		headers := make(http.Header, len(r.Header))
-		for k, v := range r.Header {
-			k := strings.ToLower(k)
-			if k == "cookie" {
-				// Do not include cookies in the request headers
-				continue
-			}
-			headers[k] = v
-		}
-		var cookies map[string][]string
-		if reqCookies := r.Cookies(); len(reqCookies) > 0 {
-			cookies = make(map[string][]string, len(reqCookies))
-			for _, cookie := range reqCookies {
-				if cookie == nil {
-					continue
-				}
-				cookies[cookie.Name] = append(cookies[cookie.Name], cookie.Value)
-			}
-		}
-		host := r.Host
-		headers["host"] = []string{host}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		op := StartOperation(
-			HandlerOperationArgs{
-				Span:       span,
-				IsTLS:      r.TLS != nil,
-				Method:     r.Method,
-				Host:       r.Host,
-				Path:       r.URL.Path,
-				RequestURI: r.RequestURI,
-				RemoteAddr: r.RemoteAddr,
-				Headers:    headers,
-				Cookies:    cookies,
-				// TODO(julio): avoid actively parsing the query string and move to a lazy monitoring of this value with
-				//   the dynamic instrumentation of the Query() method.
-				Query: r.URL.Query(),
-			},
+			MakeHandlerOperationArgs(r, span),
 			nil,
 		)
 		defer func() {
@@ -115,6 +82,46 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 		}()
 		handler.ServeHTTP(w, r)
 	})
+}
+
+// MakeHandlerOperationArgs  creates the HandlerOperationArgs out of a standard
+// http.Request, including the given span.
+func MakeHandlerOperationArgs(r *http.Request, span ddtrace.Span) HandlerOperationArgs {
+	headers := make(http.Header, len(r.Header))
+	for k, v := range r.Header {
+		k := strings.ToLower(k)
+		if k == "cookie" {
+			// Do not include cookies in the request headers
+			continue
+		}
+		headers[k] = v
+	}
+	var cookies map[string][]string
+	if reqCookies := r.Cookies(); len(reqCookies) > 0 {
+		cookies = make(map[string][]string, len(reqCookies))
+		for _, cookie := range reqCookies {
+			if cookie == nil {
+				continue
+			}
+			cookies[cookie.Name] = append(cookies[cookie.Name], cookie.Value)
+		}
+	}
+	host := r.Host
+	headers["host"] = []string{host}
+	return HandlerOperationArgs{
+		Span:       span,
+		IsTLS:      r.TLS != nil,
+		Method:     r.Method,
+		Host:       r.Host,
+		Path:       r.URL.Path,
+		RequestURI: r.RequestURI,
+		RemoteAddr: r.RemoteAddr,
+		Headers:    headers,
+		Cookies:    cookies,
+		// TODO(julio): avoid actively parsing the query string and move to a lazy monitoring of this value with
+		//   the dynamic instrumentation of the Query() method.
+		Query: r.URL.Query(),
+	}
 }
 
 // TODO(julio): create a go-generate tool to generate the types, vars and methods below
