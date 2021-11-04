@@ -57,13 +57,26 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // WrapHandler wraps an http.Handler with tracing using the given service and resource.
 func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.Handler {
+	opts = append(opts, WithStaticResourceNamer(resource))
+	return WrapHandlerWithDynamicResourceName(h, service, opts...)
+}
+
+// WrapHandlerWithDynamicResourceName wraps an http.Handler with tracing using the given service and generates a
+// resource name from the inbound request.  It probably makes more API sense for this to supplant WrapHandler but
+// for backcompat we leave that one, with its static naming, alone.  Unless maybe we were to allow resource to be nil?
+func WrapHandlerWithDynamicResourceName(h http.Handler, service string, opts ...Option) http.Handler {
 	cfg := new(config)
 	defaults(cfg)
+
+	// for this case, apply a default of a dynamic namer before we (maybe) overwrite it with the Option supplied.
+	WithDynamicResourceNamer()(cfg)
+
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	log.Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
+	log.Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: (Dynamic), %#v", service, cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		resource := cfg.resourceNamer(req)
 		httputil.TraceAndServe(h, &httputil.TraceConfig{
 			ResponseWriter: w,
 			Request:        req,
