@@ -313,16 +313,12 @@ func TestSpanOptions(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("")) }))
 	defer s.Close()
 
-	const (
-		tagKey   = "foo"
-		tagValue = "bar"
-	)
-	var (
-		mt     = mocktracer.Start()
-		rt     = WrapRoundTripper(http.DefaultTransport, RTWithSpanOptions(tracer.Tag(tagKey, tagValue)))
-		client = &http.Client{Transport: rt}
-	)
+	tagKey := "foo"
+	tagValue := "bar"
+	mt := mocktracer.Start()
 	defer mt.Stop()
+	rt := WrapRoundTripper(http.DefaultTransport, RTWithSpanOptions(tracer.Tag(tagKey, tagValue)))
+	client := &http.Client{Transport: rt}
 
 	client.Get(s.URL)
 
