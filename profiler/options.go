@@ -76,7 +76,10 @@ var defaultClient = &http.Client{
 	},
 }
 
-var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
+var (
+	defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
+	allProfileTypes     = append(defaultProfileTypes, BlockProfile, MutexProfile, GoroutineProfile, expGoroutineWaitProfile)
+)
 
 type config struct {
 	apiKey    string
@@ -142,7 +145,26 @@ func defaultConfig() (*config, error) {
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
 		tags:              []string{fmt.Sprintf("pid:%d", os.Getpid())},
 	}
-	for _, t := range defaultProfileTypes {
+
+	profileTypeToAdd := defaultProfileTypes
+	if v := os.Getenv("DD_PROFILE_TYPES"); v != "" {
+		envProfileTypes := strings.Split(v, ",")
+		profileTypeToAdd = make([]ProfileType, 0, len(envProfileTypes))
+
+		for _, envProfileType := range envProfileTypes {
+			if envProfileType == "all" {
+				profileTypeToAdd = allProfileTypes
+				break
+			}
+
+			for t := range profileTypes {
+				if t.String() == envProfileType {
+					profileTypeToAdd = append(profileTypeToAdd, t)
+				}
+			}
+		}
+	}
+	for _, t := range profileTypeToAdd {
 		c.addProfileType(t)
 	}
 

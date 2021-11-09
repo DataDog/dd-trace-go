@@ -210,6 +210,30 @@ func TestOptions(t *testing.T) {
 }
 
 func TestEnvVars(t *testing.T) {
+	t.Run("DD_PROFILE_TYPES+all", func(t *testing.T) {
+		os.Setenv("DD_PROFILE_TYPES", "all")
+		defer os.Unsetenv("DD_PROFILE_TYPES")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		assert.Equal(t, map[ProfileType]struct{}{
+			HeapProfile:             struct{}{},
+			CPUProfile:              struct{}{},
+			BlockProfile:            struct{}{},
+			MutexProfile:            struct{}{},
+			GoroutineProfile:        struct{}{},
+			expGoroutineWaitProfile: struct{}{},
+			MetricsProfile:          struct{}{}},
+			cfg.types)
+	})
+
+	t.Run("DD_PROFILE_TYPES+specific", func(t *testing.T) {
+		os.Setenv("DD_PROFILE_TYPES", "block,goroutinewait")
+		defer os.Unsetenv("DD_PROFILE_TYPES")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		assert.Equal(t, map[ProfileType]struct{}{BlockProfile: struct{}{}, expGoroutineWaitProfile: struct{}{}}, cfg.types)
+	})
+
 	t.Run("DD_AGENT_HOST", func(t *testing.T) {
 		os.Setenv("DD_AGENT_HOST", "agent_host_1")
 		defer os.Unsetenv("DD_AGENT_HOST")
