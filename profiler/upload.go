@@ -114,10 +114,11 @@ func (p *profiler) doRequest(bat batch) error {
 		// 404 from the agent means we have an old agent version without profiling endpoint
 		return errOldAgent
 	}
-	if resp.StatusCode != 200 {
-		return errors.New(resp.Status)
+	if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
+		// Success!
+		return nil
 	}
-	return nil
+	return errors.New(resp.Status)
 }
 
 // encode encodes the profile as a multipart mime request.
