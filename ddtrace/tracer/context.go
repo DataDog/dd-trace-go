@@ -35,11 +35,9 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 	return &internal.NoopSpan{}, false
 }
 
-// StartSpanFromContext returns a new span with the given operation name and
-// options. If a span is found in the context, it will be used as the parent of
-// the resulting span. If the ChildOf option is passed, the span from context
-// will take precedence over it as the parent span. The WithContext is also
-// ignored.
+// StartSpanFromContext returns a new span with the given operation name and options. If a span
+// is found in the context, it will be used as the parent of the resulting span. If the ChildOf
+// option is passed, the span from context will take precedence over it as the parent span.
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context) {
 	if ctx == nil {
 		// default to context.Background() to avoid panics on Go >= 1.15
