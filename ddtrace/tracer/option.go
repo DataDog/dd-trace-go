@@ -102,8 +102,8 @@ type config struct {
 	// errors will record a stack trace when this option is set.
 	noDebugStack bool
 
-	// traceEnabled determines whether tracing is to be enabled
-	traceEnabled bool
+	// enabled reports whether tracing is enabled.
+	enabled bool
 }
 
 // HasFeature reports whether feature f is enabled.
