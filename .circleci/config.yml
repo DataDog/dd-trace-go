@@ -101,9 +101,10 @@ jobs:
     steps:
       - checkout
       - run: mkdir -p $TEST_RESULTS
+      - run: cp go.sum go.sum.orig
       - restore_cache: # restores saved cache if no changes are detected since last run
           keys:
-            - go-mod-v4-{{ checksum "go.sum" }}
+            - go-mod-v4-{{ checksum "go.sum.orig" }}
       - run:
           name: Testing
           command: |
@@ -111,7 +112,7 @@ jobs:
             env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - save_cache:
-          key: go-mod-v4-{{ checksum "go.sum" }}
+          key: go-mod-v4-{{ checksum "go.sum.orig" }}
           paths:
             - "/go/pkg/mod"
 
@@ -182,9 +183,10 @@ jobs:
     steps:
       - checkout
       - run: mkdir -p $TEST_RESULTS
+      - run: cp go.sum go.sum.orig
       - restore_cache: # restores saved cache if no changes are detected since last run
           keys:
-            - go-mod-v4-{{ checksum "go.sum" }}
+            - go-mod-v4-{{ checksum "go.sum.orig" }}
 
       - restore_cache:
           keys:
@@ -261,7 +263,7 @@ jobs:
             env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - save_cache:
-          key: go-mod-v4-{{ checksum "go.sum" }}
+          key: go-mod-v4-{{ checksum "go.sum.orig" }}
           paths:
             - "/go/pkg/mod"
 
