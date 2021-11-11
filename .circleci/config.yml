@@ -1,4 +1,4 @@
-version: 2
+version: 2.1
 
 plain-go114: &plain-go114
   working_directory: /home/circleci/dd-trace-go.v1
@@ -8,8 +8,13 @@ plain-go114: &plain-go114
         GOPATH: "/home/circleci/go"
 
 jobs:
-  go1.12-build:
+  go1_12-build:
     # Validate that the core builds with go1.12
+    parameters:
+      build_tags:
+        description: "go build tags used to compile"
+        default: ""
+        type: string
     docker:
       - image: circleci/golang:1.12
         environment:
@@ -21,7 +26,11 @@ jobs:
     - run:
         name: build
         command: |
-          go build ./ddtrace/... ./profiler/...
+          # Fixes fatal: unable to access 'https://gopkg.in/yaml.v3/': server certificate verification failed. CAfile: none CRLfile: none
+          # See https://github.com/DataDog/dd-trace-go/pull/1029
+          sudo apt update && sudo apt install ca-certificates libgnutls30 -y
+
+          go build -v -tags "<< parameters.build_tags >>" ./ddtrace/... ./profiler/... ./internal/appsec/...
 
   metadata:
     <<: *plain-go114
@@ -79,6 +88,11 @@ jobs:
 
 
   test-core:
+    parameters:
+      build_tags:
+        description: "go build tags to use to compile the tests"
+        default: ""
+        type: string
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
@@ -94,7 +108,7 @@ jobs:
           name: Testing
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+            env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - save_cache:
           key: go-mod-v4-{{ checksum "go.sum" }}
@@ -114,6 +128,11 @@ jobs:
 
 
   test-contrib:
+    parameters:
+      build_tags:
+        description: "go build tags to use to compile the tests"
+        default: ""
+        type: string
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
@@ -203,6 +222,10 @@ jobs:
             go get cloud.google.com/go/pubsub@v1.6.1
             # Temporarily enforce this version. 1.9.0 is incompatible with go < 1.16
             go get github.com/hashicorp/consul/api@v1.8.1
+            # github.com/hashicorp/vault/sdk > v0.2.0 doesn't compile with go1.14
+            go get github.com/hashicorp/vault/sdk@v0.2.0
+            # Shopify/sarama > v1.22 doesn't compile with go1.14
+            go get github.com/Shopify/sarama@v1.22.0
 
       - run:
           name: Wait for MySQL
@@ -250,7 +273,7 @@ jobs:
           name: Testing integrations
           command: |
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+            env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - save_cache:
           key: go-mod-v4-{{ checksum "go.sum" }}
@@ -297,8 +320,17 @@ workflows:
   version: 2
   build-and-test:
     jobs:
-      - go1.12-build
+      - go1_12-build:
+          matrix:
+            parameters:
+              build_tags: [ "", "appsec" ]
       - metadata
       - lint
-      - test-core
-      - test-contrib
+      - test-core:
+          matrix:
+            parameters:
+              build_tags: [ "", "appsec" ]
+      - test-contrib:
+          matrix:
+            parameters:
+              build_tags: [ "", "appsec" ]
