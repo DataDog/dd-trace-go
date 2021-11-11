@@ -129,7 +129,7 @@ jobs:
       - save_cache:
           key: go-mod-v4-core-{{ checksum "go.sum.orig" }}
           paths:
-            - "/go/pkg/mod"
+            - "/home/circleci/go"
 
       - store_artifacts: # upload test summary for display in Artifacts
           path: /tmp/test-results
@@ -312,7 +312,7 @@ jobs:
       - save_cache:
           key: go-mod-v4-contrib-{{ checksum "go.sum.orig" }}
           paths:
-            - "/go/pkg/mod"
+            - "/home/circleci/go"
 
       - run:
           name: Upload coverage report to Codecov
