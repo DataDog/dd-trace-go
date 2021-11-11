@@ -112,14 +112,12 @@ func Start(opts ...StartOption) {
 		return // mock tracer active
 	}
 	t := newTracer(opts...)
-	if t.config.HasFeature("discovery") {
-		t.loadAgentFeatures()
-	}
-
 	if !t.config.traceEnabled {
 		return
 	}
-
+	if t.config.HasFeature("discovery") {
+		t.loadAgentFeatures()
+	}
 	internal.SetGlobalTracer(t)
 	if t.config.logStartup {
 		logStartup(t)
