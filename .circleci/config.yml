@@ -104,14 +104,8 @@ jobs:
       - run: cp go.sum go.sum.orig
       - restore_cache: # restores saved cache if no changes are detected since last run
           keys:
-            - go-mod-v4-core-{{ checksum "go.sum.orig" }}
-      - run:
-          name: deps
-          command: |
-            go env GOPATH
-            go build ./ddtrace/tracer
-            go env GOPATH
-            ls -alh /home/circleci/go
+            - go-mod-v5-core-{{ checksum "go.sum.orig" }}
+
       - run:
           name: Testing
           command: |
@@ -119,7 +113,7 @@ jobs:
             env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - save_cache:
-          key: go-mod-v4-core-{{ checksum "go.sum.orig" }}
+          key: go-mod-v5-core-{{ checksum "go.sum.orig" }}
           paths:
             - "/home/circleci/go"
 
@@ -193,7 +187,7 @@ jobs:
       - run: cp go.sum go.sum.orig
       - restore_cache: # restores saved cache if no changes are detected since last run
           keys:
-            - go-mod-v4-contrib-{{ checksum "go.sum.orig" }}
+            - go-mod-v5-contrib-{{ checksum "go.sum.orig" }}
 
       - restore_cache:
           keys:
@@ -302,7 +296,7 @@ jobs:
                 go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
 
       - save_cache:
-          key: go-mod-v4-contrib-{{ checksum "go.sum.orig" }}
+          key: go-mod-v5-contrib-{{ checksum "go.sum.orig" }}
           paths:
             - "/home/circleci/go"
 
