@@ -105,26 +105,19 @@ jobs:
       - restore_cache: # restores saved cache if no changes are detected since last run
           keys:
             - go-mod-v4-core-{{ checksum "go.sum.orig" }}
-      - run: ls -alh /go
-      - run: du -ah /go
       - run:
           name: deps
           command: |
-            ls -alh /go
+            ls -alh /home/circleci/go
             go env GOPATH
             go mod tidy
             go env GOPATH
-            ls -alh /go
+            ls -alh /home/circleci/go
       - run:
           name: Testing
           command: |
-            ls -alh /go
-            du -ah /go
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
             env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
-
-      - run: ls -alh /go
-      - run: du -ah /go
 
       - save_cache:
           key: go-mod-v4-core-{{ checksum "go.sum.orig" }}
