@@ -108,8 +108,8 @@ jobs:
       - run:
           name: deps
           command: |
-            ls -alh /home/circleci/go
             go env GOPATH
+            ls -alh /home/circleci/go
             go mod tidy
             go env GOPATH
             ls -alh /home/circleci/go
