@@ -107,7 +107,7 @@ jobs:
             - go-mod-v4-core-{{ checksum "go.sum.orig" }}
       - run: ls -alh /go
       - run: du -ah /go
-	  - run:
+      - run:
           name: deps
           command: |
             ls -alh /go
