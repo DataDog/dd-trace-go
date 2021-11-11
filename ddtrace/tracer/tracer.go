@@ -112,7 +112,7 @@ func Start(opts ...StartOption) {
 		return // mock tracer active
 	}
 	t := newTracer(opts...)
-	if !t.config.traceEnabled {
+	if !t.config.enabled {
 		return
 	}
 	if t.config.HasFeature("discovery") {
