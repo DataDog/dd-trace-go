@@ -109,7 +109,7 @@ jobs:
           name: deps
           command: |
             go env GOPATH
-            go build ddtrace/tracer
+            go build ./ddtrace/tracer
             go env GOPATH
             ls -alh /home/circleci/go
       - run:
