@@ -104,7 +104,7 @@ jobs:
       - run: cp go.sum go.sum.orig
       - restore_cache: # restores saved cache if no changes are detected since last run
           keys:
-            - go-mod-v4-{{ checksum "go.sum.orig" }}
+            - go-mod-v4-core-{{ checksum "go.sum.orig" }}
       - run:
           name: Testing
           command: |
@@ -112,7 +112,7 @@ jobs:
             env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - save_cache:
-          key: go-mod-v4-{{ checksum "go.sum.orig" }}
+          key: go-mod-v4-core-{{ checksum "go.sum.orig" }}
           paths:
             - "/go/pkg/mod"
 
@@ -162,15 +162,6 @@ jobs:
       - image: elasticsearch:5
         environment:
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-      - image: elasticsearch:6.8.13
-        environment:
-          http.port: 9202-9300
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-      - image: elasticsearch:7.14.1
-        environment:
-          http.port: 9203-9300
-          discovery.type: single-node
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
       - image: datadog/docker-dd-agent
         environment:
           DD_APM_ENABLED: "true"
@@ -195,7 +186,7 @@ jobs:
       - run: cp go.sum go.sum.orig
       - restore_cache: # restores saved cache if no changes are detected since last run
           keys:
-            - go-mod-v4-{{ checksum "go.sum.orig" }}
+            - go-mod-v4-contrib-{{ checksum "go.sum.orig" }}
 
       - restore_cache:
           keys:
@@ -242,18 +233,12 @@ jobs:
           command: dockerize -wait tcp://localhost:6379 -timeout 1m
 
       - run:
-          name: Wait for ElasticSearch (2)
+          name: Wait for ElasticSearch (1)
           command: dockerize -wait http://localhost:9200 -timeout 1m
 
       - run:
-          name: Wait for ElasticSearch (5)
+          name: Wait for ElasticSearch (2)
           command: dockerize -wait http://localhost:9201 -timeout 1m
-      - run:
-          name: Wait for ElasticSearch (6)
-          command: dockerize -wait http://localhost:9202 -timeout 1m
-      - run:
-          name: Wait for ElasticSearch (7)
-          command: dockerize -wait http://localhost:9203 -timeout 1m
 
       - run:
           name: Wait for Datadog Agent
@@ -276,11 +261,6 @@ jobs:
           command: |
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
             env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
-
-      - save_cache:
-          key: go-mod-v4-{{ checksum "go.sum.orig" }}
-          paths:
-            - "/go/pkg/mod"
 
       - store_artifacts: # upload test summary for display in Artifacts
           path: /tmp/test-results
@@ -313,6 +293,11 @@ jobs:
                 git fetch origin && git checkout v1.0.0 && cd ../..
 
                 go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+
+      - save_cache:
+          key: go-mod-v4-contrib-{{ checksum "go.sum.orig" }}
+          paths:
+            - "/go/pkg/mod"
 
       - run:
           name: Upload coverage report to Codecov
