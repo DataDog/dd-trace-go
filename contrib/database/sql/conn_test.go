@@ -16,6 +16,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWithSpanTags(t *testing.T) {
@@ -97,6 +98,64 @@ func TestWithSpanTags(t *testing.T) {
 			for k, v := range tt.want.ctxTags {
 				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
+		})
+	}
+}
+
+func TestWithChildSpansOnly(t *testing.T) {
+	type sqlRegister struct {
+		name   string
+		dsn    string
+		driver driver.Driver
+		opts   []RegisterOption
+	}
+	testcases := []struct {
+		name        string
+		sqlRegister sqlRegister
+	}{
+		{
+			name: "mysql",
+			sqlRegister: sqlRegister{
+				name:   "mysql",
+				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
+				driver: &mysql.MySQLDriver{},
+				opts: []RegisterOption{
+					WithChildSpansOnly(),
+				},
+			},
+		},
+		{
+			name: "postgres",
+			sqlRegister: sqlRegister{
+				name:   "postgres",
+				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+				driver: &pq.Driver{},
+				opts: []RegisterOption{
+					WithChildSpansOnly(),
+					WithServiceName("postgres-test"),
+					WithAnalyticsRate(0.2),
+				},
+			},
+		},
+	}
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	for _, tt := range testcases {
+		t.Run(tt.name, func(t *testing.T) {
+			Register(tt.sqlRegister.name, tt.sqlRegister.driver, tt.sqlRegister.opts...)
+			db, err := Open(tt.sqlRegister.name, tt.sqlRegister.dsn)
+			require.NoError(t, err)
+			defer db.Close()
+			mt.Reset()
+
+			ctx := context.Background()
+
+			rows, err := db.QueryContext(ctx, "SELECT 1")
+			require.NoError(t, err)
+			rows.Close()
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, 0)
 		})
 	}
 }
