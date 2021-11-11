@@ -300,7 +300,7 @@ jobs:
       - save_cache:
           key: go-mod-v4-contrib-{{ checksum "go.sum.orig" }}
           paths:
-            - {{ "/go/pkg/mod"
+            - "/go/pkg/mod"
 
       - run:
           name: Upload coverage report to Codecov
