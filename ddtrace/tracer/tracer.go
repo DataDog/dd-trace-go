@@ -296,7 +296,7 @@ func (t *tracer) loadAgentFeatures() {
 		// there is no agent
 		return
 	}
-	resp, err := http.Get(fmt.Sprintf("http://%s/info", t.config.agentAddr))
+	resp, err := t.config.client().Get(fmt.Sprintf("http://%s/info", t.config.agentAddr))
 	if err != nil {
 		log.Error("Loading features: %v", err)
 		return

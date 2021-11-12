@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"io/ioutil"
 	"math"
 	"net/http"
 	"os"
@@ -187,6 +188,73 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		dVal, ok := c.globalTags["dKey"]
 		assert.False(ok)
 		assert.Equal(nil, dVal)
+	})
+}
+
+func TestDefaultHTTPClient(t *testing.T) {
+	t.Run("no-socket", func(t *testing.T) {
+		assert.Equal(t, defaultHTTPClient(), defaultClient)
+	})
+
+	t.Run("socket", func(t *testing.T) {
+		f, err := ioutil.TempFile("", "apm.socket")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(f.Name())
+		defer func(old string) { defaultSocketAPM = old }(defaultSocketAPM)
+		defaultSocketAPM = f.Name()
+		assert.NotEqual(t, defaultHTTPClient(), defaultClient)
+	})
+}
+
+func TestDefaultDogstatsdAddr(t *testing.T) {
+	t.Run("no-socket", func(t *testing.T) {
+		assert.Equal(t, defaultDogstatsdAddr(), "localhost:8125")
+	})
+
+	t.Run("env", func(t *testing.T) {
+		defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
+		os.Setenv("DD_DOGSTATSD_PORT", "8111")
+		assert.Equal(t, defaultDogstatsdAddr(), "localhost:8111")
+	})
+
+	t.Run("env+socket", func(t *testing.T) {
+		defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
+		os.Setenv("DD_DOGSTATSD_PORT", "8111")
+		assert.Equal(t, defaultDogstatsdAddr(), "localhost:8111")
+		f, err := ioutil.TempFile("", "dsd.socket")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(f.Name())
+		defer func(old string) { defaultSocketDSD = old }(defaultSocketDSD)
+		defaultSocketDSD = f.Name()
+		assert.Equal(t, defaultDogstatsdAddr(), "localhost:8111")
+	})
+
+	t.Run("socket", func(t *testing.T) {
+		defer func(old string) { os.Setenv("DD_AGENT_HOST", old) }(os.Getenv("DD_AGENT_HOST"))
+		defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
+		os.Unsetenv("DD_AGENT_HOST")
+		os.Unsetenv("DD_DOGSTATSD_PORT")
+		f, err := ioutil.TempFile("", "dsd.socket")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(f.Name())
+		defer func(old string) { defaultSocketDSD = old }(defaultSocketDSD)
+		defaultSocketDSD = f.Name()
+		assert.Equal(t, defaultDogstatsdAddr(), "unix://"+f.Name())
 	})
 }
 

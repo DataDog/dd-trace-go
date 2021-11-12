@@ -26,6 +26,16 @@ import (
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
+var (
+	// defaultSocketAPM specifies the socket path to use for connecting to the trace-agent.
+	// Replaced in tests
+	defaultSocketAPM = "/var/run/datadog/apm.socket"
+
+	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
+	// Replaced in tests
+	defaultSocketDSD = "/var/run/datadog/dsd.socket"
+)
+
 // config holds the tracer configuration.
 type config struct {
 	// debug, when true, writes details to logs.
@@ -129,14 +139,8 @@ func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
-	statsdHost, statsdPort := "localhost", "8125"
-	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
-		statsdHost = v
-	}
-	if v := os.Getenv("DD_DOGSTATSD_PORT"); v != "" {
-		statsdPort = v
-	}
-	c.dogstatsdAddr = net.JoinHostPort(statsdHost, statsdPort)
+	c.httpClient = defaultHTTPClient()
+	c.dogstatsdAddr = defaultDogstatsdAddr()
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
@@ -249,6 +253,54 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	return c
+}
+
+// defaultHTTPClient returns the default http.Client to start the tracer with.
+func defaultHTTPClient() *http.Client {
+	if _, err := os.Stat(defaultSocketAPM); err == nil {
+		// we have the UDS socket file, use it
+		return udsClient(defaultSocketAPM)
+	}
+	return defaultClient
+}
+
+// udsClient returns a new http.Client which connects using the given UDS socket path.
+func udsClient(socketPath string) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", socketPath)
+			},
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+		Timeout: defaultHTTPTimeout,
+	}
+}
+
+// defaultDogstatsdAddr returns the default connection address for Dogstatsd.
+func defaultDogstatsdAddr() string {
+	envHost, envPort := os.Getenv("DD_AGENT_HOST"), os.Getenv("DD_DOGSTATSD_PORT")
+	host, port := "localhost", "8125"
+	if v := envHost; v != "" {
+		host = v
+	}
+	if v := envPort; v != "" {
+		port = v
+	}
+	if envHost != "" || envPort != "" {
+		// the user specified his choice via env. vars.
+		return net.JoinHostPort(host, port)
+	}
+	if _, err := os.Stat(defaultSocketDSD); err == nil {
+		// we have a socket file, use it
+		return "unix://" + defaultSocketDSD
+	}
+	// no choice, nor socket file available, default to localhost:8125
+	return "localhost:8125"
 }
 
 func statsTags(c *config) []string {
@@ -413,14 +465,7 @@ func WithHTTPClient(client *http.Client) StartOption {
 
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) StartOption {
-	return WithHTTPClient(&http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		},
-		Timeout: defaultHTTPTimeout,
-	})
+	return WithHTTPClient(udsClient(socketPath))
 }
 
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
