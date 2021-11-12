@@ -101,6 +101,9 @@ type config struct {
 	// noDebugStack disables the collection of debug stack traces globally. No traces reporting
 	// errors will record a stack trace when this option is set.
 	noDebugStack bool
+
+	// enabled reports whether tracing is enabled.
+	enabled bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -194,6 +197,8 @@ func newConfig(opts ...StartOption) *config {
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
+	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
+
 	for _, fn := range opts {
 		fn(c)
 	}
@@ -478,6 +483,13 @@ func WithServiceVersion(version string) StartOption {
 func WithHostname(name string) StartOption {
 	return func(c *config) {
 		c.hostname = name
+	}
+}
+
+// WithTraceEnabled allows specifying whether tracing will be enabled
+func WithTraceEnabled(enabled bool) StartOption {
+	return func(c *config) {
+		c.enabled = enabled
 	}
 }
 

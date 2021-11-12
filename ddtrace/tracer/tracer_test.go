@@ -155,6 +155,19 @@ func TestTracerStart(t *testing.T) {
 		internal.Testing = false
 	})
 
+	t.Run("tracing_not_enabled", func(t *testing.T) {
+		os.Setenv("DD_TRACE_ENABLED", "false")
+		defer os.Unsetenv("DD_TRACE_ENABLED")
+		Start()
+		defer Stop()
+		if _, ok := internal.GetGlobalTracer().(*tracer); ok {
+			t.Fail()
+		}
+		if _, ok := internal.GetGlobalTracer().(*internal.NoopTracer); !ok {
+			t.Fail()
+		}
+	})
+
 	t.Run("deadlock/api", func(t *testing.T) {
 		Stop()
 		Stop()
