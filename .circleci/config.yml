@@ -88,6 +88,7 @@ jobs:
 
 
   test-core:
+    parallelism: 4
     parameters:
       build_tags:
         description: "go build tags to use to compile the tests"
@@ -129,6 +130,7 @@ jobs:
 
 
   test-contrib:
+    parallelism: 4
     parameters:
       build_tags:
         description: "go build tags to use to compile the tests"
