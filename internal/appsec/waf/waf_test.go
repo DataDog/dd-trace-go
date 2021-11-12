@@ -218,9 +218,9 @@ func TestAddresses(t *testing.T) {
 func TestConcurrency(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 
-	// Start 2000 goroutines that will use the WAF 1000 times each
-	nbUsers := 1000
-	nbRun := 1000
+	// Start 800 goroutines that will use the WAF 500 times each
+	nbUsers := 800
+	nbRun := 500
 
 	t.Run("concurrent-waf-release", func(t *testing.T) {
 		waf, err := NewHandle(testRule)
@@ -236,8 +236,8 @@ func TestConcurrency(t *testing.T) {
 		startBarrier.Add(1)
 		go func() {
 			startBarrier.Wait()
-			wafCtx.Close()
 			atomic.AddUint32(&called, 1)
+			wafCtx.Close()
 		}()
 
 		// The implementation currently blocks until the WAF contexts get released

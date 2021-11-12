@@ -118,6 +118,7 @@ type roundTripperConfig struct {
 	analyticsRate float64
 	serviceName   string
 	resourceNamer func(req *http.Request) string
+	spanOpts      []ddtrace.StartSpanOption
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
@@ -152,6 +153,14 @@ func WithAfter(f RoundTripperAfterFunc) RoundTripperOption {
 func RTWithResourceNamer(namer func(req *http.Request) string) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.resourceNamer = namer
+	}
+}
+
+// RTWithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
+// to spans started by the integration.
+func RTWithSpanOptions(opts ...ddtrace.StartSpanOption) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.spanOpts = append(cfg.spanOpts, opts...)
 	}
 }
 
