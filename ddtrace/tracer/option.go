@@ -274,6 +274,13 @@ func statsTags(c *config) []string {
 	return tags
 }
 
+// withNoopStats is used for testing to disable statsd client
+func withNoopStats() StartOption {
+	return func(c *config) {
+		c.statsd = &statsd.NoOpClient{}
+	}
+}
+
 // WithFeatureFlags specifies a set of feature flags to enable. Please take into account
 // that most, if not all features flags are considered to be experimental and result in
 // unexpected bugs.
