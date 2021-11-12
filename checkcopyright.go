@@ -3,6 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build ignore
 // +build ignore
 
 // This tool validates that all *.go files in the repository have the copyright text attached.
