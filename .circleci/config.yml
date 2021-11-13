@@ -1,39 +1,68 @@
 version: 2.1
 
-plain-go114: &plain-go114
+plain-go: &plain-go
   working_directory: /home/circleci/dd-trace-go.v1
   docker:
-    - image: circleci/golang:1.14
+    - image: circleci/golang:latest
       environment:
         GOPATH: "/home/circleci/go"
 
 jobs:
-  go1_12-build:
-    # Validate that the core builds with go1.12
+  test-core:
+    parallelism: 4
     parameters:
+      gover:
+        type: string
       build_tags:
-        description: "go build tags used to compile"
+        description: "go build tags to use to compile the tests"
         default: ""
         type: string
+    environment: # environment variables for the build itself
+      TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+    resource_class: xlarge
     docker:
-      - image: circleci/golang:1.12
+      - image: circleci/golang:<< parameters.gover >>
         environment:
           GOPATH: "/home/circleci/go"
     working_directory: /home/circleci/dd-trace-go.v1
     steps:
-    - checkout
+      - checkout
+      - run:
+          name: Setup
+          command: |
+            mkdir -p $TEST_RESULTS
+            cp go.sum go.sum.orig
+      - restore_cache: # restores saved cache if no changes are detected since last run
+          keys:
+            - go-mod-v5-core-<< parameters.gover >>-{{ checksum "go.sum.orig" }}
+      - run:
+          name: Tidy Modules
+          command: GO111MODULE=on go mod tidy || exit 0 # this step can fail and we don't care.
+      - run:
+          name: Testing
+          command: |
+            PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
+            export DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true)
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
-    - run:
-        name: build
-        command: |
-          # Fixes fatal: unable to access 'https://gopkg.in/yaml.v3/': server certificate verification failed. CAfile: none CRLfile: none
-          # See https://github.com/DataDog/dd-trace-go/pull/1029
-          sudo apt update && sudo apt install ca-certificates libgnutls30 -y
+      - save_cache:
+          key: go-mod-v5-core-<< parameters.gover >>-{{ checksum "go.sum.orig" }}
+          paths:
+            - "/home/circleci/go"
 
-          go build -v -tags "<< parameters.build_tags >>" ./ddtrace/... ./profiler/... ./internal/appsec/...
+      - store_artifacts: # upload test summary for display in Artifacts
+          path: /tmp/test-results
+          destination: raw-test-output
+
+      - store_test_results: # upload test results for display in Test Summary
+          path: /tmp/test-results
+
+      - run:
+          name: Upload coverage report to Codecov
+          command: bash <(curl -s https://codecov.io/bash)
 
   metadata:
-    <<: *plain-go114
+    <<: *plain-go
 
     steps:
     - checkout
@@ -57,7 +86,7 @@ jobs:
           go run checkcopyright.go
 
   lint:
-    <<: *plain-go114
+    <<: *plain-go
 
     steps:
     - checkout
@@ -86,52 +115,82 @@ jobs:
           curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
           ./bin/gometalinter --disable-all --vendor --deadline=60s --enable=golint ./...
 
-
-  test-core:
-    parallelism: 4
+  test-outliers:
     parameters:
+      gover:
+        type: string
       build_tags:
         description: "go build tags to use to compile the tests"
         default: ""
         type: string
-    resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-    <<: *plain-go114
-
+    resource_class: xlarge
+    working_directory: /home/circleci/dd-trace-go.v1
+    docker:
+      - image: circleci/golang:<< parameters.gover >>
+        environment:
+          GOPATH: "/home/circleci/go"
     steps:
       - checkout
-      - run: mkdir -p $TEST_RESULTS
       - run: cp go.sum go.sum.orig
       - restore_cache: # restores saved cache if no changes are detected since last run
           keys:
-            - go-mod-v5-core-{{ checksum "go.sum.orig" }}
+            - go-mod-v5-outliers-<< parameters.gover >>-{{ checksum "go.sum.orig" }}
+
       - run:
-          name: Testing
+          name: Enforce some dependencies
           command: |
-            PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
-            env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+            go get k8s.io/client-go@v0.17.0
+            go get k8s.io/apimachinery@v0.17.0
+            go get cloud.google.com/go/pubsub@v1.6.1
+            # Temporarily enforce this version. 1.9.0 is incompatible with go < 1.16
+            go get github.com/hashicorp/consul/api@v1.8.1
+            # github.com/hashicorp/vault/sdk > v0.2.0 doesn't compile with go1.14
+            go get github.com/hashicorp/vault/sdk@v0.2.0
+            # Shopify/sarama > v1.22 doesn't compile with go1.14
+            go get github.com/Shopify/sarama@v1.22.0
+
+      - run:
+          name: Testing outlier google.golang.org/api
+          command: |
+                go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
+                GO111MODULE=on go mod tidy || exit 0 # this step can fail and we don't care.
+                go test -v ./contrib/google.golang.org/api/...
+
+      - run:
+          name: Testing outlier gRPC v1.2
+          command: |
+                # This hacky approach is necessary because running the tests regularly
+                # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
+                go mod vendor
+
+                # Checkout grpc-go@v1.2.0
+                cd vendor/google.golang.org && rm -rf grpc
+                git clone git@github.com:grpc/grpc-go grpc && cd grpc
+                git fetch origin && git checkout v1.2.0 && cd ../..
+
+                # Checkout sketches-go@v1.0.0
+                cd vendor/github.com/DataDog && rm -rf sketches-go
+                git clone git@github.com:DataDog/sketches-go && cd sketches-go
+                git fetch origin && git checkout v1.0.0 && cd ../..
+
+                go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
 
       - save_cache:
-          key: go-mod-v5-core-{{ checksum "go.sum.orig" }}
+          key: go-mod-v5-outliers-<< parameters.gover >>-{{ checksum "go.sum.orig" }}
           paths:
             - "/home/circleci/go"
-
-      - store_artifacts: # upload test summary for display in Artifacts
-          path: /tmp/test-results
-          destination: raw-test-output
-
-      - store_test_results: # upload test results for display in Test Summary
-          path: /tmp/test-results
 
       - run:
           name: Upload coverage report to Codecov
           command: bash <(curl -s https://codecov.io/bash)
 
-
   test-contrib:
     parallelism: 4
     parameters:
+      gover:
+        type: string
       build_tags:
         description: "go build tags to use to compile the tests"
         default: ""
@@ -141,7 +200,7 @@ jobs:
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
     working_directory: /home/circleci/dd-trace-go.v1
     docker:
-      - image: circleci/golang:1.14
+      - image: circleci/golang:<< parameters.gover >>
         environment:
           GOPATH: "/home/circleci/go"
       - image: cassandra:3.7
@@ -197,7 +256,7 @@ jobs:
       - run: cp go.sum go.sum.orig
       - restore_cache: # restores saved cache if no changes are detected since last run
           keys:
-            - go-mod-v5-contrib-{{ checksum "go.sum.orig" }}
+            - go-mod-v5-contrib-<< parameters.gover >>-{{ checksum "go.sum.orig" }}
 
       - restore_cache:
           keys:
@@ -230,6 +289,10 @@ jobs:
             go get github.com/hashicorp/vault/sdk@v0.2.0
             # Shopify/sarama > v1.22 doesn't compile with go1.14
             go get github.com/Shopify/sarama@v1.22.0
+
+      - run:
+          name: Tidy Modules
+          command: GO111MODULE=on go mod tidy || exit 0 # this step can fail and we don't care.
 
       - run:
           name: Wait for MySQL
@@ -279,7 +342,8 @@ jobs:
           name: Testing integrations
           command: |
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
-            env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+            export DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true)
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - store_artifacts: # upload test summary for display in Artifacts
           path: /tmp/test-results
@@ -288,33 +352,8 @@ jobs:
       - store_test_results: # upload test results for display in Test Summary
           path: /tmp/test-results
 
-      - run:
-          name: Testing outlier google.golang.org/api
-          command: |
-                go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
-                go test -v ./contrib/google.golang.org/api/...
-
-      - run:
-          name: Testing outlier gRPC v1.2
-          command: |
-                # This hacky approach is necessary because running the tests regularly
-                # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
-                go mod vendor
-
-                # Checkout grpc-go@v1.2.0
-                cd vendor/google.golang.org && rm -rf grpc
-                git clone git@github.com:grpc/grpc-go grpc && cd grpc
-                git fetch origin && git checkout v1.2.0 && cd ../..
-
-                # Checkout sketches-go@v1.0.0
-                cd vendor/github.com/DataDog && rm -rf sketches-go
-                git clone git@github.com:DataDog/sketches-go && cd sketches-go
-                git fetch origin && git checkout v1.0.0 && cd ../..
-
-                go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
-
       - save_cache:
-          key: go-mod-v5-contrib-{{ checksum "go.sum.orig" }}
+          key: go-mod-v5-contrib-<< parameters.gover >>-{{ checksum "go.sum.orig" }}
           paths:
             - "/home/circleci/go"
 
@@ -326,17 +365,20 @@ workflows:
   version: 2
   build-and-test:
     jobs:
-      - go1_12-build:
-          matrix:
-            parameters:
-              build_tags: [ "", "appsec" ]
       - metadata
       - lint
       - test-core:
           matrix:
             parameters:
+              gover: ["1.13", "1.14", "1.15", "1.16", "1.17"]
               build_tags: [ "", "appsec" ]
       - test-contrib:
           matrix:
             parameters:
+              gover: ["1.14", "1.15", "1.16", "1.17"]
+              build_tags: [ "", "appsec" ]
+      - test-outliers:
+          matrix:
+            parameters:
+              gover: ["1.14", "1.15", "1.16", "1.17"]
               build_tags: [ "", "appsec" ]
