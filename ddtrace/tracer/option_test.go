@@ -6,17 +6,22 @@
 package tracer
 
 import (
+	"io"
 	"io/ioutil"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func withTransport(t transport) StartOption {
@@ -29,6 +34,86 @@ func withTickChan(ch <-chan time.Time) StartOption {
 	return func(c *config) {
 		c.tickChan = ch
 	}
+}
+
+// testStatsd asserts that the given statsd.Client can successfully send metrics
+// to a UDP listener located at addr.
+func testStatsd(t *testing.T, cfg *config, addr string) {
+	client := cfg.statsd
+	require.Equal(t, addr, cfg.dogstatsdAddr)
+	udpaddr, err := net.ResolveUDPAddr("udp", addr)
+	require.NoError(t, err)
+	conn, err := net.ListenUDP("udp", udpaddr)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	client.Count("name", 1, []string{"tag"}, 1)
+	require.NoError(t, client.Close())
+
+	done := make(chan struct{})
+	buf := make([]byte, 4096)
+	n := 0
+	go func() {
+		n, _ = io.ReadAtLeast(conn, buf, 1)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// OK
+	case <-time.After(1 * time.Second):
+		require.Fail(t, "No data was flushed.")
+	}
+	assert.Contains(t, string(buf[:n]), "name:1|c|#lang:go")
+}
+
+func TestAutoDetectStatsd(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8125"))
+	})
+
+	t.Run("socket", func(t *testing.T) {
+		if strings.HasPrefix(runtime.GOOS, "windows") {
+			t.Skip("Unix only")
+		}
+		if testing.Short() {
+			return
+		}
+		dir, err := ioutil.TempDir("", "socket")
+		if err != nil {
+			t.Fatal(err)
+		}
+		addr := filepath.Join(dir, "dsd.socket")
+
+		defer func(old string) { defaultSocketDSD = old }(defaultSocketDSD)
+		defaultSocketDSD = addr
+
+		uaddr, err := net.ResolveUnixAddr("unixgram", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn, err := net.ListenUnixgram("unixgram", uaddr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(5 * time.Second))
+
+		cfg := newConfig()
+		require.Equal(t, cfg.dogstatsdAddr, "unix://"+addr)
+		cfg.statsd.Count("name", 1, []string{"tag"}, 1)
+
+		buf := make([]byte, 17)
+		n, err := conn.Read(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		require.Contains(t, string(buf[:n]), "name:1|c|#lang:go")
+	})
+
+	t.Run("/info", func(t *testing.T) {
+		// TODO
+	})
 }
 
 func TestTracerOptionsDefaults(t *testing.T) {

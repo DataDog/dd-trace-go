@@ -267,7 +267,7 @@ func TestWithUDS(t *testing.T) {
 		t.Fatal(err)
 	}
 	var hits int
-	srv := &http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	srv := http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		hits++
 	})}
 	go srv.Serve(unixListener)

@@ -246,10 +246,11 @@ func newConfig(opts ...StartOption) *config {
 		// configure statsd client
 		addr := c.dogstatsdAddr
 		if addr == "" {
-			// no config defined address
+			// no config defined address; use defaults
 			addr = defaultDogstatsdAddr()
 		}
 		if agentport := c.features.StatsdPort; agentport > 0 {
+			// the agent reported a non-standard port
 			host, _, err := net.SplitHostPort(addr)
 			if err == nil {
 				// we have a valid host:port address; replace the port because
