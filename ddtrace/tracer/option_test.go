@@ -40,15 +40,15 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal("localhost:8126", c.agentAddr)
 		assert.Equal("localhost:8125", c.dogstatsdAddr)
 		assert.Nil(nil, c.httpClient)
-		assert.Equal(defaultClient, c.client())
+		assert.Equal(defaultClient, c.httpClient)
 	})
 
 	t.Run("http-client", func(t *testing.T) {
 		c := newConfig()
-		assert.Equal(t, defaultClient, c.client())
+		assert.Equal(t, defaultClient, c.httpClient)
 		client := &http.Client{}
 		WithHTTPClient(client)(c)
-		assert.Equal(t, client, c.client())
+		assert.Equal(t, client, c.httpClient)
 	})
 
 	t.Run("analytics", func(t *testing.T) {
