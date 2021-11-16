@@ -75,4 +75,7 @@ const (
 
 	// SpanTypeConsul marks a span as a Consul operation.
 	SpanTypeConsul = "consul"
+
+	// SpanTypeAerospike marks a span as an Aerospike operation
+	SpanTypeAerospike = "aerospike"
 )
