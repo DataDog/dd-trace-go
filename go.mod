@@ -1,6 +1,6 @@
 module gopkg.in/DataDog/dd-trace-go.v1
 
-go 1.12
+go 1.13
 
 require (
 	github.com/DataDog/datadog-go/v5 v5.0.1

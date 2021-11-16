@@ -21,7 +21,7 @@ If you installed more packages than you intended, you can use `go mod tidy` to r
 
 Requires:
 
-* Go >= 1.12
+* Go >= 1.13
 * Datadog's Trace Agent >= 5.21.1
 
 ### Documentation
