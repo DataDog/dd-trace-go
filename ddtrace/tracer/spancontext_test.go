@@ -33,7 +33,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	defer setupteardown(2, 2)()
 
 	tp := new(testLogger)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
 	parent.context.trace.push(newBasicSpan("test2")) // 2nd span in trace
@@ -129,7 +129,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	assert := assert.New(t)
 
 	tp := new(testLogger)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 
 	buffer := newTrace()
@@ -353,7 +353,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	defer func(old int) { traceMaxSize = old }(traceMaxSize)
 	traceMaxSize = 2
 	tp := new(testLogger)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 
 	span1 := newBasicSpan("span1")
