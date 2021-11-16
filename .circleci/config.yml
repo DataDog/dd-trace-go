@@ -188,6 +188,7 @@ jobs:
           KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
           KAFKA_CREATE_TOPICS: gotest:1:1
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      - image: aerospike:ce-5.7.0.8
 
     steps:
       - checkout
@@ -272,6 +273,10 @@ jobs:
       - run:
           name: Wait for Consul
           command: dockerize -wait http://localhost:8500 -timeout 1m
+
+      - run:
+          name: Wait for Aerospike
+          command: dockerize -wait tcp://localhost:3000 -timeout 1m
 
       - run:
           name: Testing integrations
