@@ -292,3 +292,45 @@ func TestWithUDS(t *testing.T) {
 	assert.Len(rt.reqs, 2)
 	assert.Equal(hits, 2)
 }
+
+func TestTransportStats(t *testing.T) {
+	for name, tt := range map[string]struct {
+		status int
+		body   string
+		err    string
+	}{
+		"ok": {
+			status: http.StatusOK,
+			body:   "Hello world!",
+		},
+		"bad": {
+			status: http.StatusBadRequest,
+			body:   strings.Repeat("X", 1002),
+			err:    fmt.Sprintf("%s (Status: Bad Request)", strings.Repeat("X", 1000)),
+		},
+		"badempty": {
+			status: http.StatusBadRequest,
+			body:   "",
+			err:    "Bad Request",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			ln, err := net.Listen("tcp4", ":0")
+			assert.Nil(err)
+			go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				w.Write([]byte(tt.body))
+			}))
+			defer ln.Close()
+			addr := ln.Addr().String()
+			transport := newHTTPTransport(addr, defaultClient)
+			err = transport.sendStats(&statsPayload{})
+			if tt.err != "" {
+				assert.Equal(tt.err, err.Error())
+				return
+			}
+			assert.NoError(err)
+		})
+	}
+}
