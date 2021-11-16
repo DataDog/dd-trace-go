@@ -15,22 +15,19 @@ import (
 
 func TestGroupedStatsEncoding(t *testing.T) {
 	gs := groupedStats{
-		// These fields indicate the properties under which the stats were aggregated.
 		Service:        "service",
 		Name:           "name",
 		Resource:       "resource",
 		HTTPStatusCode: 1,
 		Type:           "type",
 		DBType:         "dbtype",
-
-		// These fields specify the stats for the above aggregation.
-		Hits:         2,
-		Errors:       3,
-		Duration:     4,
-		OkSummary:    []byte("OK SUMMARY"),
-		ErrorSummary: []byte("ERROR SUMMARY"),
-		Synthetics:   true,
-		TopLevelHits: 5,
+		Hits:           2,
+		Errors:         3,
+		Duration:       4,
+		OkSummary:      []byte("OK SUMMARY"),
+		ErrorSummary:   []byte("ERROR SUMMARY"),
+		Synthetics:     true,
+		TopLevelHits:   5,
 	}
 	var bs bytes.Buffer
 	err := msgp.Encode(&bs, &gs)
@@ -45,8 +42,8 @@ func TestGroupedStatsEncoding(t *testing.T) {
 func TestStatsPayloadEncoding(t *testing.T) {
 	p := statsPayload{
 		Hostname: "hostname",
-		Env: "env",
-		Version: "version",
+		Env:      "env",
+		Version:  "version",
 		Stats: []statsBucket{
 			statsBucket{
 				Start:    0,
