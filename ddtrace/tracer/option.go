@@ -7,12 +7,15 @@ package tracer
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"math"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,10 +29,24 @@ import (
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
+var (
+	// defaultSocketAPM specifies the socket path to use for connecting to the trace-agent.
+	// Replaced in tests
+	defaultSocketAPM = "/var/run/datadog/apm.socket"
+
+	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
+	// Replaced in tests
+	defaultSocketDSD = "/var/run/datadog/dsd.socket"
+)
+
 // config holds the tracer configuration.
 type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
+
+	// features holds the capabilities of the agent and determines some
+	// of the behaviour of the tracer.
+	features agentFeatures
 
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
@@ -112,14 +129,6 @@ func (c *config) HasFeature(f string) bool {
 	return ok
 }
 
-// client returns the HTTP client to use.
-func (c *config) client() *http.Client {
-	if c.httpClient == nil {
-		return defaultClient
-	}
-	return c.httpClient
-}
-
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
@@ -129,14 +138,7 @@ func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
-	statsdHost, statsdPort := "localhost", "8125"
-	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
-		statsdHost = v
-	}
-	if v := os.Getenv("DD_DOGSTATSD_PORT"); v != "" {
-		statsdPort = v
-	}
-	c.dogstatsdAddr = net.JoinHostPort(statsdHost, statsdPort)
+	c.httpClient = defaultHTTPClient()
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
@@ -228,7 +230,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	if c.transport == nil {
-		c.transport = newHTTPTransport(c.agentAddr, c.client())
+		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
 	if c.propagator == nil {
 		c.propagator = NewPropagator(nil)
@@ -239,8 +241,29 @@ func newConfig(opts ...StartOption) *config {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
+	c.loadAgentFeatures()
 	if c.statsd == nil {
-		client, err := statsd.New(c.dogstatsdAddr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
+		// configure statsd client
+		addr := c.dogstatsdAddr
+		if addr == "" {
+			// no config defined address; use defaults
+			addr = defaultDogstatsdAddr()
+		}
+		if agentport := c.features.StatsdPort; agentport > 0 {
+			// the agent reported a non-standard port
+			host, _, err := net.SplitHostPort(addr)
+			if err == nil {
+				// we have a valid host:port address; replace the port because
+				// the agent knows better
+				if host == "" {
+					host = defaultHostname
+				}
+				addr = net.JoinHostPort(host, strconv.Itoa(agentport))
+			}
+			// not a valid TCP address, leave it as it is (could be a socket connection)
+		}
+		c.dogstatsdAddr = addr
+		client, err := statsd.New(addr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
 		if err != nil {
 			log.Warn("Runtime and health metrics disabled: %v", err)
 			c.statsd = &statsd.NoOpClient{}
@@ -249,6 +272,110 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	return c
+}
+
+// defaultHTTPClient returns the default http.Client to start the tracer with.
+func defaultHTTPClient() *http.Client {
+	if _, err := os.Stat(defaultSocketAPM); err == nil {
+		// we have the UDS socket file, use it
+		return udsClient(defaultSocketAPM)
+	}
+	return defaultClient
+}
+
+// udsClient returns a new http.Client which connects using the given UDS socket path.
+func udsClient(socketPath string) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+				return defaultDialer.DialContext(ctx, "unix", (&net.UnixAddr{
+					Name: socketPath,
+					Net:  "unix",
+				}).String())
+			},
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+		Timeout: defaultHTTPTimeout,
+	}
+}
+
+// defaultDogstatsdAddr returns the default connection address for Dogstatsd.
+func defaultDogstatsdAddr() string {
+	envHost, envPort := os.Getenv("DD_AGENT_HOST"), os.Getenv("DD_DOGSTATSD_PORT")
+	if _, err := os.Stat(defaultSocketDSD); err == nil && envHost == "" && envPort == "" {
+		// socket exists and user didn't specify otherwise via env vars
+		return "unix://" + defaultSocketDSD
+	}
+	host, port := defaultHostname, "8125"
+	if envHost != "" {
+		host = envHost
+	}
+	if envPort != "" {
+		port = envPort
+	}
+	return net.JoinHostPort(host, port)
+}
+
+// agentFeatures holds information about the trace-agent's capabilities.
+// When running WithLambdaMode, a zero-value of this struct will be used
+// as features.
+type agentFeatures struct {
+	// DropP0s reports whether it's ok for the tracer to not send any
+	// P0 traces to the agent.
+	DropP0s bool
+
+	// Stats reports whether the agent can receive client-computed stats on
+	// the /v0.6/stats endpoint.
+	Stats bool
+
+	// StatsdPort specifies the Dogstatsd port as provided by the agent.
+	// If it's the default, it will be 0, which means 8125.
+	StatsdPort int
+}
+
+// loadAgentFeatures queries the trace-agent for its capabilities and updates
+// the tracer's behaviour.
+func (c *config) loadAgentFeatures() {
+	c.features = agentFeatures{}
+	if c.logToStdout {
+		// there is no agent; all features off
+		return
+	}
+	resp, err := c.httpClient.Get(fmt.Sprintf("http://%s/info", c.agentAddr))
+	if err != nil {
+		log.Error("Loading features: %v", err)
+		return
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		// agent is older than 7.28.0, features not discoverable
+		return
+	}
+	defer resp.Body.Close()
+	type infoResponse struct {
+		Endpoints     []string `json:"endpoints"`
+		ClientDropP0s bool     `json:"client_drop_p0s"`
+		StatsdPort    int      `json:"statsd_port"`
+	}
+	var info infoResponse
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		log.Error("Decoding features: %v", err)
+		return
+	}
+	c.features.DropP0s = info.ClientDropP0s
+	c.features.StatsdPort = info.StatsdPort
+	for _, endpoint := range info.Endpoints {
+		switch endpoint {
+		case "/v0.6/stats":
+			if c.HasFeature("discovery") {
+				// client-stats computation is off by default
+				c.features.Stats = true
+			}
+		}
+	}
 }
 
 func statsTags(c *config) []string {
@@ -413,14 +540,7 @@ func WithHTTPClient(client *http.Client) StartOption {
 
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) StartOption {
-	return WithHTTPClient(&http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		},
-		Timeout: defaultHTTPTimeout,
-	})
+	return WithHTTPClient(udsClient(socketPath))
 }
 
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
