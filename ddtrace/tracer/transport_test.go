@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -261,7 +262,12 @@ func TestWithUDS(t *testing.T) {
 	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
 	assert := assert.New(t)
-	udsPath := "/tmp/com.datadoghq.dd-trace-go.tracer.test.sock"
+	dir, err := ioutil.TempDir("", "socket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	udsPath := filepath.Join(dir, "apm.socket")
+	defer os.RemoveAll(udsPath)
 	unixListener, err := net.Listen("unix", udsPath)
 	if err != nil {
 		t.Fatal(err)

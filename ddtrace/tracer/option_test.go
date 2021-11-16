@@ -11,6 +11,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -111,8 +112,89 @@ func TestAutoDetectStatsd(t *testing.T) {
 		require.Contains(t, string(buf[:n]), "name:1|c|#lang:go")
 	})
 
-	t.Run("/info", func(t *testing.T) {
-		// TODO
+	t.Run("env", func(t *testing.T) {
+		defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
+		os.Setenv("DD_DOGSTATSD_PORT", "8111")
+		testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8111"))
+	})
+
+	t.Run("agent", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Write([]byte(`{"statsd_port":0}`))
+			}))
+			defer srv.Close()
+			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+			testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8125"))
+		})
+
+		t.Run("port", func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Write([]byte(`{"statsd_port":8999}`))
+			}))
+			defer srv.Close()
+			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+			testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8999"))
+		})
+	})
+}
+
+func TestLoadAgentFeatures(t *testing.T) {
+	t.Run("zero", func(t *testing.T) {
+		t.Run("disabled", func(t *testing.T) {
+			assert.Zero(t, newConfig(WithLambdaMode(true)).features)
+		})
+
+		t.Run("unreachable", func(t *testing.T) {
+			if testing.Short() {
+				return
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			}))
+			defer srv.Close()
+			assert.Zero(t, newConfig(WithAgentAddr("127.9.9.9:8181")).features)
+		})
+
+		t.Run("StatusNotFound", func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNotFound)
+			}))
+			defer srv.Close()
+			assert.Zero(t, newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://"))).features)
+		})
+
+		t.Run("error", func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Write([]byte("Not JSON"))
+			}))
+			defer srv.Close()
+			assert.Zero(t, newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://"))).features)
+		})
+	})
+
+	t.Run("OK", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		assert.True(t, cfg.features.DropP0s)
+		assert.Equal(t, cfg.features.StatsdPort, 8999)
+		assert.False(t, cfg.features.Stats)
+	})
+
+	t.Run("OK+discovery", func(t *testing.T) {
+		defer func(old string) { os.Setenv("DD_TRACE_FEATURES", old) }(os.Getenv("DD_TRACE_FEATURES"))
+		os.Setenv("DD_TRACE_FEATURES", "discovery")
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		assert.True(t, cfg.features.DropP0s)
+		assert.True(t, cfg.features.Stats)
+		assert.Equal(t, cfg.features.StatsdPort, 8999)
 	})
 }
 
