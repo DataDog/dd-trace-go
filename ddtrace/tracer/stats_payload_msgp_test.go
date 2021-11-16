@@ -44,16 +44,9 @@ func TestGroupedStatsEncoding(t *testing.T) {
 
 func TestStatsPayloadEncoding(t *testing.T) {
 	p := statsPayload{
-		// Hostname specifies the hostname of the application.
 		Hostname: "hostname",
-
-		// Env specifies the env. of the application, as defined by the user.
 		Env: "env",
-
-		// Version specifies the application version.
 		Version: "version",
-
-		// Stats holds all stats buckets computed within this payload.
 		Stats: []statsBucket{
 			statsBucket{
 				Start:    0,
