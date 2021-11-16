@@ -109,10 +109,10 @@ func TestTracerCleanStop(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
 			// Lambda mode is used to avoid the startup cost associated with agent discovery.
-			Start(withTransport(transport), WithLambdaMode(true))
+			Start(withTransport(transport), WithLambdaMode(true), withNoopStats())
 			time.Sleep(time.Millisecond)
-			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
-			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)), withNoopStats())
+			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)), withNoopStats())
 		}
 	}()
 
