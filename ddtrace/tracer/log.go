@@ -98,7 +98,7 @@ func logStartup(t *tracer) {
 		Architecture:          runtime.GOARCH,
 		GlobalService:         globalconfig.ServiceName(),
 		LambdaMode:            fmt.Sprintf("%t", t.config.logToStdout),
-		AgentFeatures:         t.features.Load(),
+		AgentFeatures:         t.config.features,
 		AppSec:                appsec.Status(),
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
