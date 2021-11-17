@@ -50,7 +50,7 @@ type (
 
 // enabled is true when appsec is enabled so that WrapHandler only wraps the
 // handler when appsec is enabled.
-// TODO(julio): remove this as soon as appsec becomes enabled by default
+// TODO(Julio-Guerra): remove this as soon as appsec becomes enabled by default
 var enabled bool
 
 func init() {
@@ -60,7 +60,7 @@ func init() {
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
-	// TODO: move these to service entry tags
+	// TODO(Julio-Guerra): move these to service entry tags
 	if !enabled {
 		span.SetTag("_dd.appsec.enabled", 0)
 		return handler
@@ -70,7 +70,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		op := StartOperation(
-			MakeHandlerOperationArgs(r, span),
+			makeHandlerOperationArgs(r, span),
 			nil,
 		)
 		defer func() {
@@ -78,15 +78,24 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 			if mw, ok := w.(interface{ Status() int }); ok {
 				status = mw.Status()
 			}
-			op.Finish(HandlerOperationRes{Status: status})
+			op.Finish(makeHandlerOperationRes(status))
 		}()
 		handler.ServeHTTP(w, r)
 	})
 }
 
-// MakeHandlerOperationArgs  creates the HandlerOperationArgs out of a standard
-// http.Request, including the given span.
+// MakeHandlerOperationArgs creates the HandlerOperationArgs out of a standard
+// http.Request along with the given current span. It returns an empty structure
+// when appsec is disabled.
 func MakeHandlerOperationArgs(r *http.Request, span ddtrace.Span) HandlerOperationArgs {
+	if !enabled {
+		return HandlerOperationArgs{}
+	}
+	return makeHandlerOperationArgs(r, span)
+}
+
+// makeHandlerOperationArgs implements MakeHandlerOperationArgs regardless of appsec being disabled.
+func makeHandlerOperationArgs(r *http.Request, span ddtrace.Span) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
 	for k, v := range r.Header {
 		k := strings.ToLower(k)
@@ -106,8 +115,7 @@ func MakeHandlerOperationArgs(r *http.Request, span ddtrace.Span) HandlerOperati
 			cookies[cookie.Name] = append(cookies[cookie.Name], cookie.Value)
 		}
 	}
-	host := r.Host
-	headers["host"] = []string{host}
+	headers["host"] = []string{r.Host}
 	return HandlerOperationArgs{
 		Span:       span,
 		IsTLS:      r.TLS != nil,
@@ -118,13 +126,26 @@ func MakeHandlerOperationArgs(r *http.Request, span ddtrace.Span) HandlerOperati
 		RemoteAddr: r.RemoteAddr,
 		Headers:    headers,
 		Cookies:    cookies,
-		// TODO(julio): avoid actively parsing the query string and move to a lazy monitoring of this value with
+		// TODO(Julio-Guerra): avoid actively parsing the query string and move to a lazy monitoring of this value with
 		//   the dynamic instrumentation of the Query() method.
 		Query: r.URL.Query(),
 	}
 }
 
-// TODO(julio): create a go-generate tool to generate the types, vars and methods below
+// MakeHandlerOperationRes creates the HandlerOperationRes structure.
+func MakeHandlerOperationRes(status int) HandlerOperationRes {
+	if !enabled {
+		return HandlerOperationRes{}
+	}
+	return makeHandlerOperationRes(status)
+}
+
+// makeHandlerOperationRes implements MakeHandlerOperationRes regardless of appsec being disabled.
+func makeHandlerOperationRes(status int) HandlerOperationRes {
+	return HandlerOperationRes{Status: status}
+}
+
+// TODO(Julio-Guerra): create a go-generate tool to generate the types, vars and methods below
 
 // Operation type representing an HTTP operation. It must be created with
 // StartOperation() and finished with its Finish().
@@ -137,12 +158,18 @@ type Operation struct {
 // operation stack. When parent is nil, the operation is linked to the global
 // root operation.
 func StartOperation(args HandlerOperationArgs, parent dyngo.Operation) Operation {
+	if !enabled {
+		return Operation{}
+	}
 	return Operation{OperationImpl: dyngo.StartOperation(args, parent)}
 }
 
 // Finish the HTTP handler operation, along with the given results, and emits a
 // finish event up in the operation stack.
 func (op Operation) Finish(res HandlerOperationRes) {
+	if op.OperationImpl == nil {
+		return
+	}
 	op.OperationImpl.Finish(res)
 }
 

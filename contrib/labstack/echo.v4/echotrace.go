@@ -25,7 +25,6 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			request := c.Request()
@@ -51,9 +50,10 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			// pass the span through the request context
 			req := request.WithContext(ctx)
 			c.SetRequest(req)
+
 			op := httpinstr.StartOperation(httpinstr.MakeHandlerOperationArgs(req, span), nil)
 			defer func() {
-				op.Finish(httpinstr.HandlerOperationRes{Status: c.Response().Status})
+				op.Finish(httpinstr.MakeHandlerOperationRes(c.Response().Status))
 			}()
 
 			// serve the request to the next middleware
