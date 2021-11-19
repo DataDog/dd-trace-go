@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -338,6 +339,54 @@ func TestResourceNamerSettings(t *testing.T) {
 
 		router.ServeHTTP(w, r)
 	})
+}
+
+func TestIgnoreRequestSettings(t *testing.T) {
+	tests := []struct {
+		url       string
+		spanCount int
+	}{
+		{
+			url:       "/skip",
+			spanCount: 0,
+		},
+		{
+			url:       "/skipfoo",
+			spanCount: 0,
+		},
+		{
+			url:       "/OK",
+			spanCount: 1,
+		},
+	}
+
+	router := gin.New()
+	router.Use(Middleware("foobar", WithIgnoreRequest(func(c *gin.Context) bool {
+		return strings.HasPrefix(c.Request.URL.Path, "/skip")
+	})))
+
+	router.GET("/OK", func(c *gin.Context) {
+		c.Writer.Write([]byte("OK"))
+	})
+
+	router.GET("/skip", func(c *gin.Context) {
+		c.Writer.Write([]byte("Skip"))
+	})
+
+	for _, test := range tests {
+		t.Run(test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
+			w := httptest.NewRecorder()
+
+			router.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, test.spanCount, len(spans))
+		})
+	}
 }
 
 func TestServiceName(t *testing.T) {
