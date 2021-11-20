@@ -109,10 +109,10 @@ func TestTracerCleanStop(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
 			// Lambda mode is used to avoid the startup cost associated with agent discovery.
-			Start(withTransport(transport), WithLambdaMode(true))
+			Start(withTransport(transport), WithLambdaMode(true), withNoopStats())
 			time.Sleep(time.Millisecond)
-			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
-			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)))
+			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)), withNoopStats())
+			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)), withNoopStats())
 		}
 	}()
 
@@ -153,6 +153,19 @@ func TestTracerStart(t *testing.T) {
 			t.Fail()
 		}
 		internal.Testing = false
+	})
+
+	t.Run("tracing_not_enabled", func(t *testing.T) {
+		os.Setenv("DD_TRACE_ENABLED", "false")
+		defer os.Unsetenv("DD_TRACE_ENABLED")
+		Start()
+		defer Stop()
+		if _, ok := internal.GetGlobalTracer().(*tracer); ok {
+			t.Fail()
+		}
+		if _, ok := internal.GetGlobalTracer().(*internal.NoopTracer); !ok {
+			t.Fail()
+		}
 	})
 
 	t.Run("deadlock/api", func(t *testing.T) {
@@ -261,7 +274,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.features.DropP0s = true
+		tracer.config.features.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1").(*span)
@@ -275,7 +288,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("events_sampled", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.features.DropP0s = true
+		tracer.config.features.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1").(*span)
@@ -290,7 +303,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("client_dropped", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.features.DropP0s = true
+		tracer.config.features.DropP0s = true
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
