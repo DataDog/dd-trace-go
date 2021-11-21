@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package httputil // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
+package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 
 //go:generate sh -c "go run make_responsewriter.go | gofmt > trace_gen.go"
 

@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -49,7 +49,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
-	httputil.TraceAndServe(r.Router, &httputil.TraceConfig{
+	httptrace.TraceAndServe(r.Router, &httptrace.TraceConfig{
 		ResponseWriter: w,
 		Request:        req,
 		Service:        r.config.serviceName,
