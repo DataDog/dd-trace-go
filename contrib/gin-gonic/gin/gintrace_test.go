@@ -342,24 +342,6 @@ func TestResourceNamerSettings(t *testing.T) {
 }
 
 func TestIgnoreRequestSettings(t *testing.T) {
-	tests := []struct {
-		url       string
-		spanCount int
-	}{
-		{
-			url:       "/skip",
-			spanCount: 0,
-		},
-		{
-			url:       "/skipfoo",
-			spanCount: 0,
-		},
-		{
-			url:       "/OK",
-			spanCount: 1,
-		},
-	}
-
 	router := gin.New()
 	router.Use(Middleware("foobar", WithIgnoreRequest(func(c *gin.Context) bool {
 		return strings.HasPrefix(c.Request.URL.Path, "/skip")
@@ -373,19 +355,17 @@ func TestIgnoreRequestSettings(t *testing.T) {
 		c.Writer.Write([]byte("Skip"))
 	})
 
-	for _, test := range tests {
-		t.Run(test.url, func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
+	for path, shouldSkip := range map[string]bool{
+		"/OK": false,
+		"/skip": true,
+		"/skipfoo": true,
+	} {
+		mt := mocktracer.Start()
+		defer mt.Reset()
 
-			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
-			w := httptest.NewRecorder()
-
-			router.ServeHTTP(w, r)
-
-			spans := mt.FinishedSpans()
-			assert.Equal(t, test.spanCount, len(spans))
-		})
+		r := httptest.NewRequest("GET", "http://localhost"+path, nil)
+		router.ServeHTTP(httptest.NewRecorder(), r)
+		assert.Equal(t, shouldSkip, len(mt.FinishedSpans()) == 0)
 	}
 }
 

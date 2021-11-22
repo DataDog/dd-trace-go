@@ -32,7 +32,6 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		if cfg.ignoreRequest(c) {
 			return
 		}
-
 		resource := cfg.resourceNamer(c)
 		opts := []ddtrace.StartSpanOption{
 			tracer.ServiceName(cfg.serviceName),
