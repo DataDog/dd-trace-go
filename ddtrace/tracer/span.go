@@ -360,7 +360,7 @@ func (s *span) finish(finishTime int64) {
 	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have an active tracer
-		feats := t.features.Load()
+		feats := t.config.features
 		if feats.Stats && shouldComputeStats(s) {
 			// the agent supports computed stats
 			select {
