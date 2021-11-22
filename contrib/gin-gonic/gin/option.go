@@ -75,7 +75,7 @@ func WithResourceNamer(namer func(c *gin.Context) string) Option {
 	}
 }
 
-// WithIgnoreRequest holds the function to use for determining if the
+// WithIgnoreRequest specifies a function to use for determining if the
 // incoming HTTP request tracing should be skipped.
 func WithIgnoreRequest(f func(c *gin.Context) bool) Option {
 	return func(cfg *config) {
