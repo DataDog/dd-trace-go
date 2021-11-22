@@ -388,6 +388,14 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
+	t.applyProfilerLabels(span, opts)
+	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
+	return span
+}
+
+// applyProfilerLabels applies pprof labels for the profiler's code hotspots
+// and endpoint filtering feature.
+func (t *tracer) applyProfilerLabels(span *span, opts ddtrace.StartSpanConfig) {
 	var labels []string
 	if t.config.profilerHotspots {
 		labels = append(labels, "span id", fmt.Sprintf("%d", span.SpanID))
@@ -398,10 +406,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		if t.config.profilerHotspots {
 			labels = append(labels, "local root span id", fmt.Sprintf("%d", localRootSpan.SpanID))
 		}
-		if t.config.profilerEndpoints {
-			// TODO(REVIEWERS) this MUST NOT contain personally identifiable
-			// information, is it safe to assume that this guarantee will be met
-			// here?
+		// Only adding "trace endpoint" label for SpanTypeWeb to avoid leaking PII
+		// (e.g. in SQL queries).
+		if t.config.profilerEndpoints && span.Type == ext.SpanTypeWeb {
 			labels = append(labels, "trace endpoint", localRootSpan.Resource)
 		}
 	}
@@ -415,8 +422,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		span.activeContext = pprof.WithLabels(ctx, pprof.Labels(labels...))
 		pprof.SetGoroutineLabels(span.activeContext)
 	}
-	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
-	return span
 }
 
 // Stop stops the tracer.
