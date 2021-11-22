@@ -346,11 +346,11 @@ main.main()
 	})
 }
 
-// TestApmIntegration tests the code hotspots and endpoint filtering feature
+// TestAPMIntegration tests the code hotspots and endpoint filtering feature
 // implemented using pprof labels in the tracer. The verification is done with
 // an http handler that resembles common customer patterns and burns a bunch
 // of CPU time.
-func TestApmIntegration(t *testing.T) {
+func TestAPMIntegration(t *testing.T) {
 	// duration is roughly the duration for which the test runs and how much cpu
 	// time is expected to be burned by the handler we're hitting.
 	duration := 500 * time.Millisecond
