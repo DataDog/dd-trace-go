@@ -18,8 +18,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpinstr"
 )
 
-// TraceConfig defines the configuration for request tracing.
-type TraceConfig struct {
+// ServeConfig defines the configuration for request tracing.
+type ServeConfig struct {
 	ResponseWriter http.ResponseWriter       // response writer
 	Request        *http.Request             // request that is traced
 	Service        string                    // service name
@@ -30,7 +30,7 @@ type TraceConfig struct {
 }
 
 // TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
-func TraceAndServe(h http.Handler, cfg *TraceConfig) {
+func TraceAndServe(h http.Handler, cfg *ServeConfig) {
 	path := cfg.Request.URL.Path
 	if cfg.QueryParams {
 		path += "?" + cfg.Request.URL.RawQuery

@@ -49,7 +49,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
-	httptrace.TraceAndServe(r.Router, &httptrace.TraceConfig{
+	httptrace.TraceAndServe(r.Router, &httptrace.ServeConfig{
 		ResponseWriter: w,
 		Request:        req,
 		Service:        r.config.serviceName,

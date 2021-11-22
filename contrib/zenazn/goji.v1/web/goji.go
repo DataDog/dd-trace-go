@@ -48,7 +48,7 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 					log.Warn("contrib/zenazn/goji.v1/web: routes are unavailable. To enable them add the goji Router middleware before the tracer middleware.")
 				})
 			}
-			httptrace.TraceAndServe(h, &httptrace.TraceConfig{
+			httptrace.TraceAndServe(h, &httptrace.ServeConfig{
 				ResponseWriter: w,
 				Request:        r,
 				Service:        cfg.serviceName,

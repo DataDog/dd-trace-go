@@ -116,7 +116,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		spanopts = append(spanopts, headerTagsFromRequest(req))
 	}
 	resource := r.config.resourceNamer(r, req)
-	httptrace.TraceAndServe(r.Router, &httptrace.TraceConfig{
+	httptrace.TraceAndServe(r.Router, &httptrace.ServeConfig{
 		ResponseWriter: w,
 		Request:        req,
 		Service:        r.config.serviceName,
