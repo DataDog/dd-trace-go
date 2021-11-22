@@ -356,8 +356,8 @@ func TestIgnoreRequestSettings(t *testing.T) {
 	})
 
 	for path, shouldSkip := range map[string]bool{
-		"/OK": false,
-		"/skip": true,
+		"/OK":      false,
+		"/skip":    true,
 		"/skipfoo": true,
 	} {
 		mt := mocktracer.Start()
