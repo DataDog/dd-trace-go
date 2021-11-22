@@ -2,12 +2,9 @@
 name: System Tests
 
 on:
-  push:
+  pull_request:
     branches:
       - "**"
-  # pull_request:
-  #   branches:
-  #     - "**"
   workflow_dispatch: {}
   schedule:
     - cron:  '00 04 * * 2-6'
@@ -28,16 +25,15 @@ jobs:
       WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
     steps:
-      - name: Checkout
+      - name: Checkout system tests
         uses: actions/checkout@v2
         with:
           repository: 'DataDog/system-tests'
 
-      - name: echo
-        run: echo "gopkg.in/DataDog/dd-trace-go.v1@${{ github.sha }}"
-
-      - name: Get component binary
-        run: echo "gopkg.in/DataDog/dd-trace-go.v1@${{ github.sha }}" > binaries/golang-load-from-go-get
+      - name: Checkout dd-trace-fo
+        uses: actions/checkout@v2
+        with:
+          path: 'binaries/dd-trace-go'
 
       - name: Build
         run: ./build.sh
