@@ -417,10 +417,10 @@ func (t *tracer) applyProfilerLabels(span *span, opts ddtrace.StartSpanConfig) {
 		if ctx == nil {
 			ctx = gocontext.Background()
 		} else {
-			span.restoreContext = ctx
+			span.pprofCtxRestore = ctx
 		}
-		span.activeContext = pprof.WithLabels(ctx, pprof.Labels(labels...))
-		pprof.SetGoroutineLabels(span.activeContext)
+		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
+		pprof.SetGoroutineLabels(span.pprofCtxActive)
 	}
 }
 
