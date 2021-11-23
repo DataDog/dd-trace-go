@@ -356,6 +356,38 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.False(ok)
 		assert.Equal(nil, dVal)
 	})
+
+	t.Run("profiler-endpoints", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			tracer := newTracer()
+			c := tracer.config
+			assert.False(t, c.profilerEndpoints)
+		})
+
+		t.Run("override", func(t *testing.T) {
+			os.Setenv("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", "true")
+			defer os.Unsetenv("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED")
+			tracer := newTracer()
+			c := tracer.config
+			assert.True(t, c.profilerEndpoints)
+		})
+	})
+
+	t.Run("profiler-hotspots", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			tracer := newTracer()
+			c := tracer.config
+			assert.False(t, c.profilerHotspots)
+		})
+
+		t.Run("override", func(t *testing.T) {
+			os.Setenv("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", "true")
+			defer os.Unsetenv("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED")
+			tracer := newTracer()
+			c := tracer.config
+			assert.True(t, c.profilerHotspots)
+		})
+	})
 }
 
 func TestDefaultHTTPClient(t *testing.T) {
