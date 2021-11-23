@@ -122,7 +122,7 @@ type config struct {
 	// profilerHotspots specifies whether profiler Code Hotspots is enabled.
 	profilerHotspots bool
 
-	// profilerHotspots specifies whether profiler endpoint filtering is enabled.
+	// profilerEndpoints specifies whether profiler endpoint filtering is enabled.
 	profilerEndpoints bool
 
 	// enabled reports whether tracing is enabled.
