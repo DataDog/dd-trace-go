@@ -395,6 +395,10 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 // applyProfilerLabels applies pprof labels for the profiler's code hotspots
 // and endpoint filtering feature.
 func (t *tracer) applyProfilerLabels(span *span, opts ddtrace.StartSpanConfig) {
+	if !t.config.profilerHotspots && !t.config.profilerEndpoints {
+		return
+	}
+
 	var labels []string
 	if t.config.profilerHotspots {
 		labels = append(labels, "span id", fmt.Sprintf("%d", span.SpanID))
