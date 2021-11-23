@@ -119,7 +119,7 @@ type config struct {
 	// errors will record a stack trace when this option is set.
 	noDebugStack bool
 
-	// profilerHotspots specifies whether profiler code hotspots is enabled.
+	// profilerHotspots specifies whether profiler Code Hotspots is enabled.
 	profilerHotspots bool
 
 	// profilerHotspots specifies whether profiler endpoint filtering is enabled.
