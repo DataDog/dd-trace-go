@@ -206,7 +206,7 @@ func newConfig(opts ...StartOption) *config {
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
-	// TODO(fg) set these to true before going GA with this.
+	// TODO(fg): set these to true before going GA with this.
 	c.profilerEndpoints = internal.BoolEnv("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", false)
 	c.profilerHotspots = internal.BoolEnv("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", false)
 
