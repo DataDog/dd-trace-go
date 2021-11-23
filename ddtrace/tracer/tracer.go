@@ -320,7 +320,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if id == 0 {
 		id = random.Uint64()
 	}
-
 	// span defaults
 	span := &span{
 		Name:         operationName,
