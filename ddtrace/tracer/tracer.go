@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/profiler"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
@@ -401,18 +402,18 @@ func (t *tracer) applyProfilerLabels(span *span, opts ddtrace.StartSpanConfig) {
 
 	var labels []string
 	if t.config.profilerHotspots {
-		labels = append(labels, "span id", fmt.Sprintf("%d", span.SpanID))
+		labels = append(labels, profiler.SpanID, fmt.Sprintf("%d", span.SpanID))
 	}
 	// nil checks might not be needed, but better be safe than sorry
 	if span.context.trace != nil && span.context.trace.root != nil {
 		localRootSpan := span.context.trace.root
 		if t.config.profilerHotspots {
-			labels = append(labels, "local root span id", fmt.Sprintf("%d", localRootSpan.SpanID))
+			labels = append(labels, profiler.LocalRootSpanID, fmt.Sprintf("%d", localRootSpan.SpanID))
 		}
 		// Only adding "trace endpoint" label for SpanTypeWeb to avoid leaking PII
 		// (e.g. in SQL queries).
 		if t.config.profilerEndpoints && span.Type == ext.SpanTypeWeb {
-			labels = append(labels, "trace endpoint", localRootSpan.Resource)
+			labels = append(labels, profiler.TraceEndpoint, localRootSpan.Resource)
 		}
 	}
 	if len(labels) > 0 {

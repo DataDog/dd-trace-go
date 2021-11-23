@@ -15,16 +15,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"runtime/trace"
+	"runtime/pprof"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	intprof "gopkg.in/DataDog/dd-trace-go.v1/internal/profiler"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 
 	pprofile "github.com/google/pprof/profile"
@@ -351,101 +353,221 @@ main.main()
 // an http handler that resembles common customer patterns and burns a bunch
 // of CPU time.
 func TestAPMIntegration(t *testing.T) {
-	// duration is roughly the duration for which the test runs and how much cpu
-	// time is expected to be burned by the handler we're hitting.
-	duration := 500 * time.Millisecond
-
-	tracer.Start(
-		tracer.WithProfilerCodeHotspots(true),
-		tracer.WithProfilerEndpoints(true),
+	const (
+		endpoint = "POST " + apmTestWorkEndpoint
+		// cpuDuration is the amount of time the http handler of the test app
+		// should spend on cpu work.
+		cpuDuration = 100 * time.Millisecond
+		// minCPUDuration is the amount of time the profiler should be able to
+		// detect, it's much lower to avoid flaky test behavior and because we're
+		// not trying assert the quality of the profiler beyond the presence of the
+		// right labels.
+		minCPUDuration = cpuDuration / 10
 	)
-	defer trace.Stop()
 
-	p, err := unstartedProfiler(CPUDuration(duration))
-	require.NoError(t, err)
-
-	server := httptest.NewServer(apmDemoHandler())
-	defer server.Close()
-
-	var r apmDemoResponse
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		url := server.URL + "/work/" + duration.String()
-		res, err := http.Post(url, "text/plain", nil)
-		require.NoError(t, err)
-
-		defer res.Body.Close()
-		require.NoError(t, json.NewDecoder(res.Body).Decode(&r))
-	}()
-
-	prof, err := p.runProfile(CPUProfile)
-	require.NoError(t, err)
-	assert.Equal(t, "cpu.pprof", prof[0].name)
-	parsed, err := pprofile.Parse(bytes.NewReader(prof[0].data))
-	require.NoError(t, err)
-
-	wg.Wait()
-
-	type labels struct {
-		SpanID          string
-		LocalRootSpanID string
-		TraceEndpoint   string
+	assertCommon := func(t *testing.T, app *apmTestApp, res apmTestResponse) {
+		require.True(t, validSpanID(res.SpandID))
+		require.True(t, validSpanID(res.LocalRootSpanID))
+		require.Greater(t, app.CPUTime(t), minCPUDuration)
+		require.Greater(t, app.LabelsCPUTime(t, apmTestCustomLabels), minCPUDuration)
 	}
 
-	results := map[labels]time.Duration{}
-	for _, s := range parsed.Sample {
-		var l labels
-		if v, ok := s.Label["span id"]; ok && len(v) == 1 {
-			l.SpanID = v[0]
-		}
-		if v, ok := s.Label["local root span id"]; ok && len(v) == 1 {
-			l.LocalRootSpanID = v[0]
-		}
-		if v, ok := s.Label["trace endpoint"]; ok && len(v) == 1 {
-			l.TraceEndpoint = v[0]
-		}
-		results[l] += time.Duration(s.Value[1])
-	}
+	t.Run("none", func(t *testing.T) {
+		app := startAPMTestApp(t)
+		defer app.Stop(t)
 
-	wantLabels := labels{
-		SpanID:          fmt.Sprintf("%d", r.ChildSpanID),
-		LocalRootSpanID: fmt.Sprintf("%d", r.LocalRootSpanID),
-		TraceEndpoint:   "POST /work/:duration",
-	}
-	gotDuration := results[wantLabels]
+		res := app.Request(t, cpuDuration)
+		assertCommon(t, app, res)
+		require.Zero(t, app.LabelCPUTime(t, intprof.SpanID, res.SpandID))
+		require.Zero(t, app.LabelCPUTime(t, intprof.LocalRootSpanID, res.LocalRootSpanID))
+		require.Zero(t, app.LabelCPUTime(t, intprof.TraceEndpoint, endpoint))
+	})
 
-	// This puts us > 6 sigma beyond the stddev of gotDuration see
-	// https://dtdg.co/2YaOJoR for statistical analysis.
-	wantDuration := duration / 2
-	if gotDuration < wantDuration {
-		t.Fatalf("got=%s want>=%s results=%v", gotDuration, wantDuration, results)
-	}
+	t.Run("endpoint-filtering", func(t *testing.T) {
+		app := startAPMTestApp(t, tracer.WithProfilerEndpoints(true))
+		defer app.Stop(t)
+
+		res := app.Request(t, cpuDuration)
+		assertCommon(t, app, res)
+		require.Zero(t, app.LabelCPUTime(t, intprof.SpanID, res.SpandID))
+		require.Zero(t, app.LabelCPUTime(t, intprof.LocalRootSpanID, res.LocalRootSpanID))
+		require.Greater(t, app.LabelCPUTime(t, intprof.TraceEndpoint, endpoint), minCPUDuration)
+	})
+
+	t.Run("code-hotspots", func(t *testing.T) {
+		app := startAPMTestApp(t, tracer.WithProfilerCodeHotspots(true))
+		defer app.Stop(t)
+
+		res := app.Request(t, cpuDuration)
+		assertCommon(t, app, res)
+		require.Greater(t, app.LabelsCPUTime(t, map[string]string{
+			intprof.SpanID:          res.SpandID,
+			intprof.LocalRootSpanID: res.LocalRootSpanID,
+		}), minCPUDuration)
+		require.Zero(t, app.LabelCPUTime(t, intprof.TraceEndpoint, endpoint))
+	})
+
+	t.Run("all", func(t *testing.T) {
+		app := startAPMTestApp(t, tracer.WithProfilerEndpoints(true), tracer.WithProfilerCodeHotspots(true))
+		defer app.Stop(t)
+
+		res := app.Request(t, cpuDuration)
+		assertCommon(t, app, res)
+		require.Greater(t, app.LabelsCPUTime(t, map[string]string{
+			intprof.SpanID:          res.SpandID,
+			intprof.LocalRootSpanID: res.LocalRootSpanID,
+			intprof.TraceEndpoint:   endpoint,
+		}), minCPUDuration)
+	})
+
+	t.Run("none-child-of", func(t *testing.T) {
+		app := startAPMTestApp(t)
+		defer app.Stop(t)
+		app.UseWithChild(true)
+
+		res := app.Request(t, cpuDuration)
+		assertCommon(t, app, res)
+		require.Zero(t, app.LabelCPUTime(t, intprof.SpanID, res.SpandID))
+		require.Zero(t, app.LabelCPUTime(t, intprof.LocalRootSpanID, res.LocalRootSpanID))
+		require.Zero(t, app.LabelCPUTime(t, intprof.TraceEndpoint, endpoint))
+	})
+
+	t.Run("all-child-of", func(t *testing.T) {
+		app := startAPMTestApp(t, tracer.WithProfilerEndpoints(true), tracer.WithProfilerCodeHotspots(true))
+		defer app.Stop(t)
+		app.UseWithChild(true)
+
+		res := app.Request(t, cpuDuration)
+		t.Skip("ChildOf does not propagate pprof ctx labels yet : /")
+		assertCommon(t, app, res)
+		require.Greater(t, app.LabelsCPUTime(t, map[string]string{
+			intprof.SpanID:          res.SpandID,
+			intprof.LocalRootSpanID: res.LocalRootSpanID,
+			intprof.TraceEndpoint:   endpoint,
+		}), minCPUDuration)
+	})
 }
 
-// apmDemoHandler is a http handler that pretends to be a simple customer
-// application using code hotspots and endpoint filtering.
-func apmDemoHandler() http.Handler {
+// validSpanID returns true if id is a valid span id (random.Uint64()).
+func validSpanID(id string) bool {
+	val, err := strconv.ParseUint(id, 10, 64)
+	return err == nil && val > 0
+}
+
+// startAPMTestApp starts an instrumented web service and provides an interface
+// to simplify the testing of profiler Code Hotspots and Endpoint Filtering.
+func startAPMTestApp(t *testing.T, opt ...tracer.StartOption) *apmTestApp {
+	a := &apmTestApp{}
+	a.start(t, opt...)
+	return a
+}
+
+type apmTestApp struct {
+	server       *httptest.Server
+	cpuBuf       bytes.Buffer
+	cpuProf      *pprofile.Profile
+	useWithChild bool
+	stopped      bool
+}
+
+func (a *apmTestApp) start(t *testing.T, opt ...tracer.StartOption) {
+	opt = append(opt, tracer.WithLogger(log.DiscardLogger{}))
+	tracer.Start(opt...)
+
 	router := httptrace.New()
 	// We use a routing pattern here so our test can validate that potential
 	// Personal Identifiable Information (PII) values, in this case :duration,
 	// isn't beeing collected in the "trace endpoint" label.
-	router.Handle("POST", "/work/:duration", apmDemoWorkEndpoint)
-	return router
+	router.Handle("POST", apmTestWorkEndpoint, a.workHandler)
+	a.server = httptest.NewServer(router)
+	require.NoError(t, pprof.StartCPUProfile(&a.cpuBuf))
 }
 
-type apmDemoResponse struct {
-	LocalRootSpanID uint64
-	ChildSpanID     uint64
+// Stop stops the app, tracer and cpu profiler in an idempotent fashion.
+func (a *apmTestApp) Stop(t *testing.T) {
+	if a.stopped {
+		return
+	}
+	pprof.StopCPUProfile()
+	tracer.Stop()
+	a.server.Close()
+	var err error
+	a.cpuProf, err = pprofile.ParseData(a.cpuBuf.Bytes())
+	require.NoError(t, err)
+	a.stopped = true
 }
 
-func apmDemoWorkEndpoint(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	localRootSpan, _ := tracer.SpanFromContext(r.Context())
-	// We run our handler in a childSpan so we can test that we still include the
+// UseWithChild determines if the span of the CPU intense part of the work
+// handler will created via StartSpan(WithChild()) or StartSpanFromContext().
+func (a *apmTestApp) UseWithChild(enabled bool) {
+	a.useWithChild = enabled
+}
+
+func (a *apmTestApp) Request(t *testing.T, cpuTime time.Duration) (r apmTestResponse) {
+	url := a.server.URL + "/work/" + cpuTime.String()
+	res, err := http.Post(url, "text/plain", nil)
+	require.NoError(t, err)
+
+	defer res.Body.Close()
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&r))
+	return
+}
+
+// CPUTime stops the app and returns how much CPU time it spent according to
+// the CPU profiler.
+func (a *apmTestApp) CPUTime(t *testing.T) (d time.Duration) {
+	return a.LabelsCPUTime(t, nil)
+}
+
+// LabelCPUTime stops the app and returns how much CPU time it spent for the
+// given pprof label according to the CPU profiler.
+func (a *apmTestApp) LabelCPUTime(t *testing.T, label, val string) (d time.Duration) {
+	return a.LabelsCPUTime(t, map[string]string{label: val})
+}
+
+// LabelsCPUTime stops the app and returns how much CPU time it spent for the
+// given pprof labels according to the CPU profiler.
+func (a *apmTestApp) LabelsCPUTime(t *testing.T, labels map[string]string) (d time.Duration) {
+	a.Stop(t)
+sampleloop:
+	for _, s := range a.cpuProf.Sample {
+		for k, v := range labels {
+			if vals := s.Label[k]; len(vals) != 1 || vals[0] != v {
+				continue sampleloop
+			}
+		}
+		d += time.Duration(s.Value[1])
+	}
+	return d
+}
+
+type apmTestResponse struct {
+	LocalRootSpanID string
+	SpandID         string
+}
+
+const apmTestWorkEndpoint = "/work/:duration"
+
+var apmTestCustomLabels = map[string]string{"user label": "user val"}
+
+func toLabelSet(m map[string]string) pprof.LabelSet {
+	var args []string
+	for k, v := range m {
+		args = append(args, k, v)
+	}
+	return pprof.Labels(args...)
+}
+
+func (a *apmTestApp) workHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	ctx := r.Context()
+	ctx = pprof.WithLabels(ctx, toLabelSet(apmTestCustomLabels))
+	pprof.SetGoroutineLabels(ctx)
+
+	localRootSpan, _ := tracer.SpanFromContext(ctx)
+	// We run our handler in a reqSpan so we can test that we still include the
 	// correct "local root span id" in the profiler labels.
-	childSpan, ctx := tracer.StartSpanFromContext(r.Context(), "apmDemoWorkEndpoint")
-	defer childSpan.Finish()
+	reqSpan, reqSpanCtx := tracer.StartSpanFromContext(ctx, "workHandler")
+	defer reqSpan.Finish()
 
 	dt, err := time.ParseDuration(p.ByName("duration"))
 	if err != nil {
@@ -455,19 +577,26 @@ func apmDemoWorkEndpoint(w http.ResponseWriter, r *http.Request, p httprouter.Pa
 
 	// fakeSQLQuery pretends to execute an APM instrumented SQL query. This tests
 	// that the parent goroutine labels are correctly restored when it finishes.
-	fakeSQLQuery(ctx, "SELECT * FROM foo")
+	fakeSQLQuery(reqSpanCtx, "SELECT * FROM foo")
 
+	var cpuSpan ddtrace.Span
+	if a.useWithChild {
+		cpuSpan = tracer.StartSpan("cpuHog", tracer.ChildOf(reqSpan.Context()))
+	} else {
+		cpuSpan, _ = tracer.StartSpanFromContext(reqSpanCtx, "cpuHog")
+	}
 	// Perform CPU intense work on another goroutine. This should still be
 	// tracked to the childSpan thanks to goroutines inheriting labels.
 	stop := make(chan struct{})
 	go cpuHogUnil(stop)
 	time.Sleep(dt)
 	close(stop)
+	cpuSpan.Finish()
 
 	// Tell our test case what span ids to expect in the profile
-	json.NewEncoder(w).Encode(apmDemoResponse{
-		LocalRootSpanID: localRootSpan.Context().SpanID(),
-		ChildSpanID:     childSpan.Context().SpanID(),
+	json.NewEncoder(w).Encode(apmTestResponse{
+		LocalRootSpanID: fmt.Sprintf("%d", localRootSpan.Context().SpanID()),
+		SpandID:         fmt.Sprintf("%d", cpuSpan.Context().SpanID()),
 	})
 }
 

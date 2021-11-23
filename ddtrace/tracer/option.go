@@ -703,7 +703,9 @@ func WithSpanID(id uint64) StartSpanOption {
 }
 
 // ChildOf tells StartSpan to use the given span context as a parent for the
-// created span.
+// created span. Warning: Using this in combination with
+// WithProfilerCodeHotspots() or WithProfilerEndpoints() will cause custom
+// pprof labels to be dropped. Use StartSpanFromContext() to avoid this.
 func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.Parent = ctx
