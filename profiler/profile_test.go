@@ -373,7 +373,7 @@ func TestAPMIntegration(t *testing.T) {
 	}
 
 	t.Run("none", func(t *testing.T) {
-		app := startAPMTestApp(t)
+		app := apmTestAppConfig{}.Start(t)
 		defer app.Stop(t)
 
 		res := app.Request(t, cpuDuration)
@@ -384,7 +384,7 @@ func TestAPMIntegration(t *testing.T) {
 	})
 
 	t.Run("endpoint-filtering", func(t *testing.T) {
-		app := startAPMTestApp(t, tracer.WithProfilerEndpoints(true))
+		app := apmTestAppConfig{Endpoints: true}.Start(t)
 		defer app.Stop(t)
 
 		res := app.Request(t, cpuDuration)
@@ -395,7 +395,7 @@ func TestAPMIntegration(t *testing.T) {
 	})
 
 	t.Run("code-hotspots", func(t *testing.T) {
-		app := startAPMTestApp(t, tracer.WithProfilerCodeHotspots(true))
+		app := apmTestAppConfig{CodeHotspots: true}.Start(t)
 		defer app.Stop(t)
 
 		res := app.Request(t, cpuDuration)
@@ -408,7 +408,7 @@ func TestAPMIntegration(t *testing.T) {
 	})
 
 	t.Run("all", func(t *testing.T) {
-		app := startAPMTestApp(t, tracer.WithProfilerEndpoints(true), tracer.WithProfilerCodeHotspots(true))
+		app := apmTestAppConfig{CodeHotspots: true, Endpoints: true}.Start(t)
 		defer app.Stop(t)
 
 		res := app.Request(t, cpuDuration)
@@ -421,9 +421,8 @@ func TestAPMIntegration(t *testing.T) {
 	})
 
 	t.Run("none-child-of", func(t *testing.T) {
-		app := startAPMTestApp(t)
+		app := apmTestAppConfig{ChildOf: true}.Start(t)
 		defer app.Stop(t)
-		app.WithChild(true)
 
 		res := app.Request(t, cpuDuration)
 		assertCommon(t, app, res)
@@ -433,9 +432,12 @@ func TestAPMIntegration(t *testing.T) {
 	})
 
 	t.Run("all-child-of", func(t *testing.T) {
-		app := startAPMTestApp(t, tracer.WithProfilerEndpoints(true), tracer.WithProfilerCodeHotspots(true))
+		app := apmTestAppConfig{
+			CodeHotspots: true,
+			Endpoints:    true,
+			ChildOf:      true,
+		}.Start(t)
 		defer app.Stop(t)
-		app.WithChild(true)
 
 		res := app.Request(t, cpuDuration)
 		assertCommon(t, app, res)
@@ -453,26 +455,36 @@ func validSpanID(id string) bool {
 	return err == nil && val > 0
 }
 
-// startAPMTestApp starts an instrumented web service and provides an interface
-// to simplify the testing of profiler Code Hotspots and Endpoint Filtering.
-func startAPMTestApp(t *testing.T, opt ...tracer.StartOption) *apmTestApp {
-	a := &apmTestApp{}
-	a.start(t, opt...)
+type apmTestAppConfig struct {
+	// Endpoints is passed to tracer.WithProfilerEndpoints()
+	Endpoints bool
+	// CodeHotspots is passed to tracer.WithProfilerCodeHotspots()
+	CodeHotspots bool
+	// ChildOf uses tracer.ChildOf() to declare the parent of cpuSpan instead of
+	// tracer.StartSpanFromContext().
+	ChildOf bool
+}
+
+func (c apmTestAppConfig) Start(t *testing.T) *apmTestApp {
+	a := &apmTestApp{config: c}
+	a.start(t)
 	return a
 }
 
 type apmTestApp struct {
-	server    *httptest.Server
-	cpuBuf    bytes.Buffer
-	cpuProf   *pprofile.Profile
-	withChild bool
-	stopped   bool
+	server  *httptest.Server
+	cpuBuf  bytes.Buffer
+	cpuProf *pprofile.Profile
+	config  apmTestAppConfig
+	stopped bool
 }
 
-func (a *apmTestApp) start(t *testing.T, opt ...tracer.StartOption) {
-	opt = append(opt, tracer.WithLogger(log.DiscardLogger{}))
-	tracer.Start(opt...)
-
+func (a *apmTestApp) start(t *testing.T) {
+	tracer.Start(
+		tracer.WithLogger(log.DiscardLogger{}),
+		tracer.WithProfilerCodeHotspots(a.config.CodeHotspots),
+		tracer.WithProfilerEndpoints(a.config.Endpoints),
+	)
 	router := httptrace.New()
 	// We use a routing pattern here so our test can validate that potential
 	// Personal Identifiable Information (PII) values, in this case :duration,
@@ -494,12 +506,6 @@ func (a *apmTestApp) Stop(t *testing.T) {
 	a.cpuProf, err = pprofile.ParseData(a.cpuBuf.Bytes())
 	require.NoError(t, err)
 	a.stopped = true
-}
-
-// WithChild determines if the span of the CPU intense part of the work handler
-// will created via StartSpan(WithChild()) or StartSpanFromContext().
-func (a *apmTestApp) WithChild(enabled bool) {
-	a.withChild = enabled
 }
 
 func (a *apmTestApp) Request(t *testing.T, cpuTime time.Duration) (r apmTestResponse) {
@@ -579,7 +585,7 @@ func (a *apmTestApp) workHandler(w http.ResponseWriter, r *http.Request, p httpr
 	fakeSQLQuery(reqSpanCtx, "SELECT * FROM foo")
 
 	var cpuSpan ddtrace.Span
-	if a.withChild {
+	if a.config.ChildOf {
 		cpuSpan = tracer.StartSpan("cpuHog", tracer.ChildOf(reqSpan.Context()))
 	} else {
 		cpuSpan, _ = tracer.StartSpanFromContext(reqSpanCtx, "cpuHog")
