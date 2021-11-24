@@ -48,10 +48,10 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	}
 	opts = append(opts, withContext(ctx))
 	s := StartSpan(operationName, opts...)
-	// If profiler labels were applied for this span, use the derived ctx that
-	// includes them. Otherwise a child of this span wouldn't be able to
-	// correctly restore the labels of its parent when it finishes.
 	if span, ok := s.(*span); ok && span.pprofCtxActive != nil {
+		// If pprof labels were applied for this span, use the derived ctx that
+		// includes them. Otherwise a child of this span wouldn't be able to
+		// correctly restore the labels of its parent when it finishes.
 		ctx = span.pprofCtxActive
 	}
 	return s, ContextWithSpan(ctx, s)
