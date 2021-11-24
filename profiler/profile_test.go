@@ -423,7 +423,7 @@ func TestAPMIntegration(t *testing.T) {
 	t.Run("none-child-of", func(t *testing.T) {
 		app := startAPMTestApp(t)
 		defer app.Stop(t)
-		app.UseWithChild(true)
+		app.WithChild(true)
 
 		res := app.Request(t, cpuDuration)
 		assertCommon(t, app, res)
@@ -435,7 +435,7 @@ func TestAPMIntegration(t *testing.T) {
 	t.Run("all-child-of", func(t *testing.T) {
 		app := startAPMTestApp(t, tracer.WithProfilerEndpoints(true), tracer.WithProfilerCodeHotspots(true))
 		defer app.Stop(t)
-		app.UseWithChild(true)
+		app.WithChild(true)
 
 		res := app.Request(t, cpuDuration)
 		assertCommon(t, app, res)
@@ -462,11 +462,11 @@ func startAPMTestApp(t *testing.T, opt ...tracer.StartOption) *apmTestApp {
 }
 
 type apmTestApp struct {
-	server       *httptest.Server
-	cpuBuf       bytes.Buffer
-	cpuProf      *pprofile.Profile
-	useWithChild bool
-	stopped      bool
+	server    *httptest.Server
+	cpuBuf    bytes.Buffer
+	cpuProf   *pprofile.Profile
+	withChild bool
+	stopped   bool
 }
 
 func (a *apmTestApp) start(t *testing.T, opt ...tracer.StartOption) {
@@ -496,10 +496,10 @@ func (a *apmTestApp) Stop(t *testing.T) {
 	a.stopped = true
 }
 
-// UseWithChild determines if the span of the CPU intense part of the work
-// handler will created via StartSpan(WithChild()) or StartSpanFromContext().
-func (a *apmTestApp) UseWithChild(enabled bool) {
-	a.useWithChild = enabled
+// WithChild determines if the span of the CPU intense part of the work handler
+// will created via StartSpan(WithChild()) or StartSpanFromContext().
+func (a *apmTestApp) WithChild(enabled bool) {
+	a.withChild = enabled
 }
 
 func (a *apmTestApp) Request(t *testing.T, cpuTime time.Duration) (r apmTestResponse) {
@@ -579,7 +579,7 @@ func (a *apmTestApp) workHandler(w http.ResponseWriter, r *http.Request, p httpr
 	fakeSQLQuery(reqSpanCtx, "SELECT * FROM foo")
 
 	var cpuSpan ddtrace.Span
-	if a.useWithChild {
+	if a.withChild {
 		cpuSpan = tracer.StartSpan("cpuHog", tracer.ChildOf(reqSpan.Context()))
 	} else {
 		cpuSpan, _ = tracer.StartSpanFromContext(reqSpanCtx, "cpuHog")
