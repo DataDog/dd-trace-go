@@ -31,7 +31,11 @@ import (
 	"google.golang.org/grpc"
 )
 
-const httpWorkEndpoint = "/work/:duration"
+const (
+	httpWorkEndpointMethod = "POST"
+	httpWorkEndpoint       = "/work/:duration"
+	grpcWorkEndpoint       = "/testapp.TestApp/Work"
+)
 
 var customLabels = map[string]string{"user label": "user val"}
 
@@ -62,9 +66,9 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 		var wantEndpoint string
 		switch appType {
 		case GRPC:
-			wantEndpoint = "/testapp.TestApp/Work"
+			wantEndpoint = grpcWorkEndpoint
 		case HTTP:
-			wantEndpoint = "POST " + httpWorkEndpoint
+			wantEndpoint = httpWorkEndpointMethod + " " + httpWorkEndpoint
 		default:
 			panic("unreachable")
 		}
