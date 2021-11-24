@@ -319,7 +319,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			if goContext == nil {
 				// Inherit the context.Context from parent span if it was propagated
 				// using ChildOf() rather than StartSpanFromContext(), see
-				// applyProfilerLabels() below.
+				// applyPPROFLabels() below.
 				goContext = ctx.span.pprofCtxActive
 			}
 		}
