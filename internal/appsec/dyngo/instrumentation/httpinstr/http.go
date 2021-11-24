@@ -148,9 +148,6 @@ func StartOperation(args HandlerOperationArgs, parent dyngo.Operation) Operation
 // Finish the HTTP handler operation, along with the given results, and emits a
 // finish event up in the operation stack.
 func (op Operation) Finish(res HandlerOperationRes) {
-	if op.OperationImpl == nil {
-		return
-	}
 	op.OperationImpl.Finish(res)
 }
 

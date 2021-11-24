@@ -10,8 +10,8 @@ package appsec
 
 import "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
-// Enabled returns true when AppSec is up and running. It means that both the appsec build tag is enabled and the env
-// var DD_APPSEC_ENABLED is set to true.
+// Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
+// DD_APPSEC_ENABLED is set to true, and the tracer is started.
 func Enabled() bool {
 	return false
 }

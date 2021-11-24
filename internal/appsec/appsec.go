@@ -32,8 +32,8 @@ const (
 // Default timeout of intake requests.
 const defaultIntakeTimeout = 10 * time.Second
 
-// Enabled returns true when AppSec is up and running. It means that both the appsec build tag is enabled and the env
-// var DD_APPSEC_ENABLED is set to true.
+// Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
+// DD_APPSEC_ENABLED is set to true, and the tracer is started.
 func Enabled() bool {
 	return atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&activeAppSec))) != nil
 }
