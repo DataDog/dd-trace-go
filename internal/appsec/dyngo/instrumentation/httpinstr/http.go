@@ -78,7 +78,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 			if mw, ok := w.(interface{ Status() int }); ok {
 				status = mw.Status()
 			}
-			op.Finish(makeHandlerOperationRes(status))
+			op.Finish(HandlerOperationRes{Status: status})
 		}()
 		handler.ServeHTTP(w, r)
 	})
@@ -88,9 +88,6 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 // http.Request along with the given current span. It returns an empty structure
 // when appsec is disabled.
 func MakeHandlerOperationArgs(r *http.Request, span ddtrace.Span) HandlerOperationArgs {
-	if !enabled {
-		return HandlerOperationArgs{}
-	}
 	return makeHandlerOperationArgs(r, span)
 }
 
@@ -132,19 +129,6 @@ func makeHandlerOperationArgs(r *http.Request, span ddtrace.Span) HandlerOperati
 	}
 }
 
-// MakeHandlerOperationRes creates the HandlerOperationRes structure.
-func MakeHandlerOperationRes(status int) HandlerOperationRes {
-	if !enabled {
-		return HandlerOperationRes{}
-	}
-	return makeHandlerOperationRes(status)
-}
-
-// makeHandlerOperationRes implements MakeHandlerOperationRes regardless of appsec being disabled.
-func makeHandlerOperationRes(status int) HandlerOperationRes {
-	return HandlerOperationRes{Status: status}
-}
-
 // TODO(Julio-Guerra): create a go-generate tool to generate the types, vars and methods below
 
 // Operation type representing an HTTP operation. It must be created with
@@ -158,9 +142,6 @@ type Operation struct {
 // operation stack. When parent is nil, the operation is linked to the global
 // root operation.
 func StartOperation(args HandlerOperationArgs, parent dyngo.Operation) Operation {
-	if !enabled {
-		return Operation{}
-	}
 	return Operation{OperationImpl: dyngo.StartOperation(args, parent)}
 }
 

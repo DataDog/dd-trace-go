@@ -15,7 +15,9 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -30,14 +32,10 @@ const (
 // Default timeout of intake requests.
 const defaultIntakeTimeout = 10 * time.Second
 
-// Status returns the AppSec status string: "enabled" when both the appsec
-// build tag is enabled and the env var DD_APPSEC_ENABLED is set to true, or
-// "disabled" otherwise.
-func Status() string {
-	if enabled, _ := isEnabled(); enabled {
-		return "enabled"
-	}
-	return "disabled"
+// Enabled returns true when AppSec is up and running. It means that both the appsec build tag is enabled and the env
+// var DD_APPSEC_ENABLED is set to true.
+func Enabled() bool {
+	return atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&activeAppSec))) != nil
 }
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and

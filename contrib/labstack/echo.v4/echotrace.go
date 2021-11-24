@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpinstr"
 
 	"github.com/labstack/echo/v4"
@@ -51,10 +52,12 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			req := request.WithContext(ctx)
 			c.SetRequest(req)
 
-			op := httpinstr.StartOperation(httpinstr.MakeHandlerOperationArgs(req, span), nil)
-			defer func() {
-				op.Finish(httpinstr.MakeHandlerOperationRes(c.Response().Status))
-			}()
+			if appsec.Enabled() {
+				op := httpinstr.StartOperation(httpinstr.MakeHandlerOperationArgs(req, span), nil)
+				defer func() {
+					op.Finish(httpinstr.HandlerOperationRes{Status: c.Response().Status})
+				}()
+			}
 
 			// serve the request to the next middleware
 			err := next(c)

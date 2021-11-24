@@ -77,6 +77,13 @@ func logStartup(t *tracer) {
 		tags[k] = fmt.Sprintf("%v", v)
 	}
 
+	var appsecStatus string
+	if appsec.Enabled() {
+		appsecStatus = "enabled"
+	} else {
+		appsecStatus = "disabled"
+	}
+
 	info := startupInfo{
 		Date:                  time.Now().Format(time.RFC3339),
 		OSName:                osName(),
@@ -99,7 +106,7 @@ func logStartup(t *tracer) {
 		GlobalService:         globalconfig.ServiceName(),
 		LambdaMode:            fmt.Sprintf("%t", t.config.logToStdout),
 		AgentFeatures:         t.config.features,
-		AppSec:                appsec.Status(),
+		AppSec:                appsecStatus,
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
