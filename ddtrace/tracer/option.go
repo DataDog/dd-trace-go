@@ -637,9 +637,9 @@ func WithLogStartup(enabled bool) StartOption {
 }
 
 // WithProfilerCodeHotspots enables the code hotspots integration between
-// tracing and profiling. This is done by automatically attaching goroutine
-// labels called "span id" and "local root span id" when new spans are created.
-// You should not use these label names in your own code.
+// tracing and profiling. This is done by automatically attaching pprof labels
+// called "span id" and "local root span id" when new spans are created. You
+// should not use these label names in your own code.
 func WithProfilerCodeHotspots(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerHotspots = enabled
@@ -647,7 +647,7 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 }
 
 // WithProfilerEndpoints enables the endpoints integration between tracing and
-// profiling. This is done by automatically attaching a goroutine label called
+// profiling. This is done by automatically attaching a pprof label called
 // "trace endpoint" holding the resource name of the top-level service span.
 // You should not use this label name in your own code.
 func WithProfilerEndpoints(enabled bool) StartOption {
