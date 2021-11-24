@@ -438,7 +438,6 @@ func TestAPMIntegration(t *testing.T) {
 		app.UseWithChild(true)
 
 		res := app.Request(t, cpuDuration)
-		t.Skip("ChildOf does not propagate pprof ctx labels yet : /")
 		assertCommon(t, app, res)
 		require.Greater(t, app.LabelsCPUTime(t, map[string]string{
 			intprof.SpanID:          res.SpandID,

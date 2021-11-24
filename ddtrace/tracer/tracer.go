@@ -312,9 +312,16 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		startTime = opts.StartTime.UnixNano()
 	}
 	var context *spanContext
+	goContext := opts.Context
 	if opts.Parent != nil {
 		if ctx, ok := opts.Parent.(*spanContext); ok {
 			context = ctx
+			if goContext == nil {
+				// Inherit the context.Context from parent span if it was propagated
+				// using ChildOf() rather than StartSpanFromContext(), see
+				// applyProfilerLabels() below.
+				goContext = ctx.span.pprofCtxActive
+			}
 		}
 	}
 	id := opts.SpanID
@@ -388,14 +395,14 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
-	t.applyProfilerLabels(span, opts)
+	t.applyPPROFLabels(goContext, span)
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
 	return span
 }
 
-// applyProfilerLabels applies pprof labels for the profiler's code hotspots
+// applyPPROFLabels applies pprof labels for the profiler's code hotspots
 // and endpoint filtering feature.
-func (t *tracer) applyProfilerLabels(span *span, opts ddtrace.StartSpanConfig) {
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	if !t.config.profilerHotspots && !t.config.profilerEndpoints {
 		return
 	}
@@ -417,7 +424,6 @@ func (t *tracer) applyProfilerLabels(span *span, opts ddtrace.StartSpanConfig) {
 		}
 	}
 	if len(labels) > 0 {
-		ctx := opts.Context
 		if ctx == nil {
 			ctx = gocontext.Background()
 		} else {
