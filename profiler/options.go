@@ -24,7 +24,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
-	"github.com/DataDog/datadog-go/statsd"
+	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
 const (
@@ -102,6 +102,7 @@ type config struct {
 	mutexFraction     int
 	blockRate         int
 	outputDir         string
+	deltaProfiles     bool
 }
 
 func urlForSite(site string) (string, error) {
@@ -144,6 +145,7 @@ func defaultConfig() (*config, error) {
 		uploadTimeout:     DefaultUploadTimeout,
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
 		tags:              []string{fmt.Sprintf("pid:%d", os.Getpid())},
+		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
 	}
 
 	profileTypeToAdd := defaultProfileTypes
@@ -271,6 +273,16 @@ func WithAPIKey(key string) Option {
 func WithAgentlessUpload() Option {
 	return func(cfg *config) {
 		cfg.agentless = true
+	}
+}
+
+// WithDeltaProfiles specifies if delta profiles are enabled. The default value
+// is true. This option takes precedence over the DD_PROFILING_DELTA
+// environment variable that can be set to "true" or "false" as well. See
+// https://dtdg.co/go-delta-profile-docs for more information.
+func WithDeltaProfiles(enabled bool) Option {
+	return func(cfg *config) {
+		cfg.deltaProfiles = enabled
 	}
 }
 
