@@ -3,10 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package httpinstr defines the HTTP operation that can be listened to using
+// Package httpsec defines the HTTP operation that can be listened to using
 // dyngo's operation instrumentation. It serves as an abstract representation
 // of HTTP handler calls.
-package httpinstr
+package httpsec
 
 import (
 	"net/http"
@@ -48,9 +48,6 @@ type (
 	}
 )
 
-// enabled is true when appsec is enabled so that WrapHandler only wraps the
-// handler when appsec is enabled.
-// TODO(Julio-Guerra): remove this as soon as appsec becomes enabled by default
 var enabled bool
 
 func init() {

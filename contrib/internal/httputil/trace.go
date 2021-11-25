@@ -15,7 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpinstr"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 )
 
 // TraceConfig defines the configuration for request tracing.
@@ -54,7 +54,7 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 	defer span.Finish(cfg.FinishOpts...)
 
 	cfg.ResponseWriter = wrapResponseWriter(cfg.ResponseWriter, span)
-	httpinstr.WrapHandler(h, span).ServeHTTP(cfg.ResponseWriter, cfg.Request.WithContext(ctx))
+	httpsec.WrapHandler(h, span).ServeHTTP(cfg.ResponseWriter, cfg.Request.WithContext(ctx))
 }
 
 // responseWriter is a small wrapper around an http response writer that will

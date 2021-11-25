@@ -17,7 +17,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpinstr"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -75,7 +75,7 @@ func registerWAF(rules []byte, appsec *appsec) (unreg dyngo.UnregisterFunc, err 
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
 func newWAFEventListener(handle *waf.Handle, addresses []string, appsec *appsec) dyngo.EventListener {
-	return httpinstr.OnHandlerOperationStart(func(op dyngo.Operation, args httpinstr.HandlerOperationArgs) {
+	return httpsec.OnHandlerOperationStart(func(op dyngo.Operation, args httpsec.HandlerOperationArgs) {
 		// For this handler operation lifetime, create a WAF context and the
 		// list of detected attacks
 		wafCtx := waf.NewContext(handle)
@@ -87,7 +87,7 @@ func newWAFEventListener(handle *waf.Handle, addresses []string, appsec *appsec)
 		//  listen for sub-operations
 		var baseEvent *wafEvent
 
-		op.On(httpinstr.OnHandlerOperationFinish(func(op dyngo.Operation, res httpinstr.HandlerOperationRes) {
+		op.On(httpsec.OnHandlerOperationFinish(func(op dyngo.Operation, res httpsec.HandlerOperationRes) {
 			// Release the WAF context
 			wafCtx.Close()
 			// Log the attacks if any

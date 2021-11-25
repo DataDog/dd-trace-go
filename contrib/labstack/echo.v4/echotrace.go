@@ -14,7 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpinstr"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
 	"github.com/labstack/echo/v4"
 )
@@ -53,9 +53,9 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			c.SetRequest(req)
 
 			if appsec.Enabled() {
-				op := httpinstr.StartOperation(httpinstr.MakeHandlerOperationArgs(req, span), nil)
+				op := httpsec.StartOperation(httpsec.MakeHandlerOperationArgs(req, span), nil)
 				defer func() {
-					op.Finish(httpinstr.HandlerOperationRes{Status: c.Response().Status})
+					op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
 				}()
 			}
 
