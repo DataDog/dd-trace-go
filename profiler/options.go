@@ -154,7 +154,6 @@ func defaultConfig() (*config, error) {
 		tags:              []string{fmt.Sprintf("pid:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
 	}
-
 	for _, t := range envOrDefaultProfileTypes() {
 		c.addProfileType(t)
 	}
