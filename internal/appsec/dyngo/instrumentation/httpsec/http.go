@@ -11,9 +11,7 @@ package httpsec
 import (
 	"net/http"
 	"net/url"
-	"os"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -48,20 +46,10 @@ type (
 	}
 )
 
-var enabled bool
-
-func init() {
-	enabled, _ = strconv.ParseBool(os.Getenv("DD_APPSEC_ENABLED"))
-}
-
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 	// TODO(Julio-Guerra): move these to service entry tags
-	if !enabled {
-		span.SetTag("_dd.appsec.enabled", 0)
-		return handler
-	}
 	span.SetTag("_dd.appsec.enabled", 1)
 	span.SetTag("_dd.runtime_family", "go")
 

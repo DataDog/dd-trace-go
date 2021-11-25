@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 )
 
@@ -53,8 +54,12 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 	span, ctx := tracer.StartSpanFromContext(cfg.Request.Context(), "http.request", opts...)
 	defer span.Finish(cfg.FinishOpts...)
 
-	cfg.ResponseWriter = wrapResponseWriter(cfg.ResponseWriter, span)
-	httpsec.WrapHandler(h, span).ServeHTTP(cfg.ResponseWriter, cfg.Request.WithContext(ctx))
+	// Wrap the handler with the appsec instrumentation when enabled
+	if appsec.Enabled() {
+		h = httpsec.WrapHandler(h, span)
+	}
+	
+	h.ServeHTTP(wrapResponseWriter(cfg.ResponseWriter, span), cfg.Request.WithContext(ctx))
 }
 
 // responseWriter is a small wrapper around an http response writer that will
