@@ -224,14 +224,14 @@ func TestEnvVars(t *testing.T) {
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, map[ProfileType]struct{}{
-			HeapProfile:             struct{}{},
-			CPUProfile:              struct{}{},
-			BlockProfile:            struct{}{},
-			MutexProfile:            struct{}{},
-			GoroutineProfile:        struct{}{},
-			expGoroutineWaitProfile: struct{}{},
-			MetricsProfile:          struct{}{}},
-			cfg.types)
+			HeapProfile:             {},
+			CPUProfile:              {},
+			BlockProfile:            {},
+			MutexProfile:            {},
+			GoroutineProfile:        {},
+			expGoroutineWaitProfile: {},
+			MetricsProfile:          {},
+		}, cfg.types)
 	})
 
 	t.Run("DD_PROFILING_TYPES+specific", func(t *testing.T) {
@@ -239,7 +239,7 @@ func TestEnvVars(t *testing.T) {
 		defer os.Unsetenv("DD_PROFILING_TYPES")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
-		assert.Equal(t, map[ProfileType]struct{}{BlockProfile: struct{}{}, expGoroutineWaitProfile: struct{}{}}, cfg.types)
+		assert.Equal(t, map[ProfileType]struct{}{BlockProfile: {}, expGoroutineWaitProfile: {}}, cfg.types)
 	})
 
 	t.Run("DD_AGENT_HOST", func(t *testing.T) {
