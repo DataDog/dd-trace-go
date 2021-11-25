@@ -79,8 +79,10 @@ var defaultClient = &http.Client{
 var (
 	defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
 	allProfileTypes     = func() (types []ProfileType) {
-		for pt := range profileTypes {
-			types = append(types, pt)
+		for pt, pd := range profileTypes {
+			if !pd.Experimental {
+				types = append(types, pt)
+			}
 		}
 		return
 	}()

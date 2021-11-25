@@ -70,6 +70,9 @@ type profileType struct {
 	// Collect collects the given profile and returns the data for it. Most
 	// profiles will be in pprof format, i.e. gzip compressed proto buf data.
 	Collect func(profileType, *profiler) ([]byte, error)
+	// Experimental profile types are excluded from the "all" profile types value
+	// in DD_PROFILING_TYPES.
+	Experimental bool
 }
 
 // profileTypes maps every ProfileType to its implementation.
@@ -119,8 +122,9 @@ var profileTypes = map[ProfileType]profileType{
 		Collect:  collectGenericProfile,
 	},
 	expGoroutineWaitProfile: {
-		Name:     "goroutinewait",
-		Filename: "goroutineswait.pprof",
+		Name:         "goroutinewait",
+		Filename:     "goroutineswait.pprof",
+		Experimental: true,
 		Collect: func(t profileType, p *profiler) ([]byte, error) {
 			if n := runtime.NumGoroutine(); n > p.cfg.maxGoroutinesWait {
 				return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)

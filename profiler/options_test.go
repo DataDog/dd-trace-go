@@ -224,13 +224,12 @@ func TestEnvVars(t *testing.T) {
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, map[ProfileType]struct{}{
-			HeapProfile:             {},
-			CPUProfile:              {},
-			BlockProfile:            {},
-			MutexProfile:            {},
-			GoroutineProfile:        {},
-			expGoroutineWaitProfile: {},
-			MetricsProfile:          {},
+			HeapProfile:      {},
+			CPUProfile:       {},
+			BlockProfile:     {},
+			MutexProfile:     {},
+			GoroutineProfile: {},
+			MetricsProfile:   {},
 		}, cfg.types)
 	})
 
