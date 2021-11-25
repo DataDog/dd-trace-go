@@ -20,41 +20,44 @@ import (
 
 // ServeConfig defines the configuration for request tracing.
 type ServeConfig struct {
-	ResponseWriter http.ResponseWriter       // response writer
-	Request        *http.Request             // request that is traced
-	Service        string                    // service name
-	Resource       string                    // resource name
-	QueryParams    bool                      // specifies that request query parameters should be appended to http.url tag
-	FinishOpts     []ddtrace.FinishOption    // span finish options to be applied
-	SpanOpts       []ddtrace.StartSpanOption // additional span options to be applied
+	// Service set service name for tracing
+	Service string
+	// Resource set resource name for tracing
+	Resource string
+	// QueryParams specifies that request query parameters should be appended to http.url tag
+	QueryParams bool
+	// FinishOpts is applied to span finished
+	FinishOpts []ddtrace.FinishOption
+	// SpanOpts is applied to span started additionally
+	SpanOpts []ddtrace.StartSpanOption
 }
 
-// TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
-func TraceAndServe(h http.Handler, cfg *ServeConfig) {
-	path := cfg.Request.URL.Path
+// TraceAndServe will apply tracing to the given http.Handler using the passed ResponseWriter, Request and ServeConfig.
+func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
+	path := r.URL.Path
 	if cfg.QueryParams {
-		path += "?" + cfg.Request.URL.RawQuery
+		path += "?" + r.URL.RawQuery
 	}
 	opts := append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.ServiceName(cfg.Service),
 		tracer.ResourceName(cfg.Resource),
-		tracer.Tag(ext.HTTPMethod, cfg.Request.Method),
+		tracer.Tag(ext.HTTPMethod, r.Method),
 		tracer.Tag(ext.HTTPURL, path),
 	}, cfg.SpanOpts...)
-	if cfg.Request.URL.Host != "" {
+	if r.URL.Host != "" {
 		opts = append([]ddtrace.StartSpanOption{
-			tracer.Tag("http.host", cfg.Request.URL.Host),
+			tracer.Tag("http.host", r.URL.Host),
 		}, opts...)
 	}
-	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(cfg.Request.Header)); err == nil {
+	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	span, ctx := tracer.StartSpanFromContext(cfg.Request.Context(), "http.request", opts...)
+	span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
 	defer span.Finish(cfg.FinishOpts...)
 
-	cfg.ResponseWriter = wrapResponseWriter(cfg.ResponseWriter, span)
-	httpinstr.WrapHandler(h, span).ServeHTTP(cfg.ResponseWriter, cfg.Request.WithContext(ctx))
+	w = wrapResponseWriter(w, span)
+	httpinstr.WrapHandler(h, span).ServeHTTP(w, r.WithContext(ctx))
 }
 
 // responseWriter is a small wrapper around an http response writer that will
