@@ -76,17 +76,7 @@ var defaultClient = &http.Client{
 	},
 }
 
-var (
-	defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
-	allProfileTypes     = func() (types []ProfileType) {
-		for pt, pd := range profileTypes {
-			if !pd.Experimental {
-				types = append(types, pt)
-			}
-		}
-		return
-	}()
-)
+var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
 
 type config struct {
 	apiKey    string
@@ -238,12 +228,21 @@ func envOrDefaultProfileTypes() (types []ProfileType) {
 	}
 	for _, envProfileType := range strings.Split(envProfileTypes, ",") {
 		if envProfileType == "all" {
-			return allProfileTypes
+			return allProfileTypes()
 		}
 		for t := range profileTypes {
 			if t.String() == envProfileType {
 				types = append(types, t)
 			}
+		}
+	}
+	return
+}
+
+func allProfileTypes() (types []ProfileType) {
+	for pt, pd := range profileTypes {
+		if !pd.Experimental {
+			types = append(types, pt)
 		}
 	}
 	return
