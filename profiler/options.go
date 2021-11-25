@@ -78,7 +78,12 @@ var defaultClient = &http.Client{
 
 var (
 	defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
-	allProfileTypes     = append(defaultProfileTypes, BlockProfile, MutexProfile, GoroutineProfile, expGoroutineWaitProfile)
+	allProfileTypes     = func() (types []ProfileType) {
+		for pt := range profileTypes {
+			types = append(types, pt)
+		}
+		return
+	}()
 )
 
 type config struct {
