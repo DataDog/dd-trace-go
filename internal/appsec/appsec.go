@@ -15,9 +15,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -35,7 +33,9 @@ const defaultIntakeTimeout = 10 * time.Second
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
 // DD_APPSEC_ENABLED is set to true, and the tracer is started.
 func Enabled() bool {
-	return atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&activeAppSec))) != nil
+	mu.RLock()
+	defer mu.RUnlock()
+	return activeAppSec != nil
 }
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
@@ -92,7 +92,7 @@ func Stop() {
 
 var (
 	activeAppSec *appsec
-	mu           sync.Mutex
+	mu           sync.RWMutex
 )
 
 func setActiveAppSec(a *appsec) {
