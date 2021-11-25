@@ -340,7 +340,11 @@ func BlockProfileRate(rate int) Option {
 	}
 }
 
-// WithProfileTypes specifies the profile types to be collected by the profiler.
+// WithProfileTypes specifies the profile types to be collected by the
+// profiler. Defaults to the profiles selected in the DD_PROFILING_TYPES env
+// variable or CPUProfile and HeapProfile if empty. DD_PROFILING_TYPES is a
+// comma separated list of profile types. Use the value
+// "cpu,heap,mutex,block,goroutine" or "all" to enable all profile types.
 func WithProfileTypes(types ...ProfileType) Option {
 	return func(cfg *config) {
 		// reset the types and only use what the user has specified
