@@ -58,7 +58,6 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 					op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
 				}()
 			}
-
 			// serve the request to the next middleware
 			err := next(c)
 			if err != nil {
