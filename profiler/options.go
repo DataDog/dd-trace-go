@@ -149,7 +149,7 @@ func defaultConfig() (*config, error) {
 	}
 
 	profileTypeToAdd := defaultProfileTypes
-	if v := os.Getenv("DD_PROFILE_TYPES"); v != "" {
+	if v := os.Getenv("DD_PROFILING_TYPES"); v != "" {
 		envProfileTypes := strings.Split(v, ",")
 		profileTypeToAdd = make([]ProfileType, 0, len(envProfileTypes))
 

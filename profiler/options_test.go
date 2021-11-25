@@ -218,9 +218,9 @@ func TestOptions(t *testing.T) {
 }
 
 func TestEnvVars(t *testing.T) {
-	t.Run("DD_PROFILE_TYPES+all", func(t *testing.T) {
-		os.Setenv("DD_PROFILE_TYPES", "all")
-		defer os.Unsetenv("DD_PROFILE_TYPES")
+	t.Run("DD_PROFILING_TYPES+all", func(t *testing.T) {
+		os.Setenv("DD_PROFILING_TYPES", "all")
+		defer os.Unsetenv("DD_PROFILING_TYPES")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, map[ProfileType]struct{}{
@@ -234,9 +234,9 @@ func TestEnvVars(t *testing.T) {
 			cfg.types)
 	})
 
-	t.Run("DD_PROFILE_TYPES+specific", func(t *testing.T) {
-		os.Setenv("DD_PROFILE_TYPES", "block,goroutinewait")
-		defer os.Unsetenv("DD_PROFILE_TYPES")
+	t.Run("DD_PROFILING_TYPES+specific", func(t *testing.T) {
+		os.Setenv("DD_PROFILING_TYPES", "block,goroutinewait")
+		defer os.Unsetenv("DD_PROFILING_TYPES")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, map[ProfileType]struct{}{BlockProfile: struct{}{}, expGoroutineWaitProfile: struct{}{}}, cfg.types)
