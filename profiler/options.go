@@ -155,25 +155,7 @@ func defaultConfig() (*config, error) {
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
 	}
 
-	profileTypeToAdd := defaultProfileTypes
-	if v := os.Getenv("DD_PROFILING_TYPES"); v != "" {
-		envProfileTypes := strings.Split(v, ",")
-		profileTypeToAdd = make([]ProfileType, 0, len(envProfileTypes))
-
-		for _, envProfileType := range envProfileTypes {
-			if envProfileType == "all" {
-				profileTypeToAdd = allProfileTypes
-				break
-			}
-
-			for t := range profileTypes {
-				if t.String() == envProfileType {
-					profileTypeToAdd = append(profileTypeToAdd, t)
-				}
-			}
-		}
-	}
-	for _, t := range profileTypeToAdd {
+	for _, t := range envOrDefaultProfileTypes() {
 		c.addProfileType(t)
 	}
 
@@ -248,6 +230,24 @@ func defaultConfig() (*config, error) {
 		c.maxGoroutinesWait = n
 	}
 	return &c, nil
+}
+
+func envOrDefaultProfileTypes() (types []ProfileType) {
+	envProfileTypes := os.Getenv("DD_PROFILING_TYPES")
+	if envProfileTypes == "" {
+		return defaultProfileTypes
+	}
+	for _, envProfileType := range strings.Split(envProfileTypes, ",") {
+		if envProfileType == "all" {
+			return allProfileTypes
+		}
+		for t := range profileTypes {
+			if t.String() == envProfileType {
+				types = append(types, t)
+			}
+		}
+	}
+	return
 }
 
 // An Option is used to configure the profiler's behaviour.
