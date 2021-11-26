@@ -15,31 +15,30 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-// SetEventSpanTags sets the AppSec-specific span tags when a security event occurred.
-func SetEventSpanTags(span ddtrace.Span, events json.RawMessage, remoteIP string, headers map[string][]string) {
+// setEventSpanTags sets the security event span tags into the service entry span.
+func setEventSpanTags(span ddtrace.Span, events json.RawMessage) {
+	// Set the appsec event span tag
 	// eventTag is the structure to use in the `_dd.appsec.json` span tag.
 	type eventTag struct {
 		Triggers json.RawMessage `json:"triggers"`
 	}
-
 	// TODO(Julio-Guerra): avoid serializing the json in the request hot path
 	event, err := json.Marshal(eventTag{Triggers: events})
 	if err != nil {
 		log.Error("appsec: unexpected error while serializing the appsec event span tag: %v", err)
 		return
 	}
-	// TODO(Julio-Guerra): have a span method to set those tags on the service entry span
 	span.SetTag("_dd.appsec.json", string(event))
 	// Keep this span due to the security event
 	span.SetTag(ext.ManualKeep, true)
 	span.SetTag("_dd.origin", "appsec")
 	// Set the appsec.event tag needed by the appsec backend
 	span.SetTag("appsec.event", true)
-
-	setHTTPTags(span, remoteIP, headers)
 }
 
-func setHTTPTags(span ddtrace.Span, remoteIP string, headers map[string][]string) {
+// setEventSpanTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
+func setSpanTags(span ddtrace.Span, events json.RawMessage, remoteIP string, headers map[string][]string) {
+	setEventSpanTags(span, events)
 	span.SetTag("network.client.ip", remoteIP)
 	for h, v := range normalizeHTTPHeaders(headers) {
 		span.SetTag("http.request.headers."+h, v)
