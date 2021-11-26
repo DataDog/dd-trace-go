@@ -6,12 +6,13 @@
 package grpc
 
 import (
+	"fmt"
 	"math"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
-	"google.golang.org/grpc/codes"
 )
 
 // Option specifies a configuration option for the grpc package. Not all options apply
@@ -142,6 +143,21 @@ func WithIgnoredMethods(ms ...string) Option {
 	ims := make(map[string]struct{}, len(ms))
 	for _, e := range ms {
 		ims[e] = struct{}{}
+	}
+	return func(cfg *config) {
+		cfg.ignoredMethods = ims
+	}
+}
+
+// WithIgnoredService specifies service to be ignored by the server side interceptor.
+// When an incoming request's full method is in ms, no spans will be created.
+func WithIgnoredService(s grpc.ServiceDesc) Option {
+	ims := make(map[string]struct{}, len(s.Methods)+len(s.Streams))
+	for _, m := range s.Methods {
+		ims[fmt.Sprintf("/%s/%s", s.ServiceName, m.MethodName)] = struct{}{}
+	}
+	for _, st := range s.Streams {
+		ims[fmt.Sprintf("/%s/%s", s.ServiceName, st.StreamName)] = struct{}{}
 	}
 	return func(cfg *config) {
 		cfg.ignoredMethods = ims

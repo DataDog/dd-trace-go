@@ -753,6 +753,73 @@ func TestIgnoredMethods(t *testing.T) {
 	})
 }
 
+func TestIgnoredService(t *testing.T) {
+	t.Run("unary", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		for _, c := range []struct {
+			ignore grpc.ServiceDesc
+			exp    int
+		}{
+			{ignore: grpc.ServiceDesc{}, exp: 2},
+			{ignore: _Fixture_serviceDesc, exp: 1},
+		} {
+			rig, err := newRig(true, WithIgnoredService(c.ignore))
+			if err != nil {
+				t.Fatalf("error setting up rig: %s", err)
+			}
+			client := rig.client
+			resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+			assert.Nil(t, err)
+			assert.Equal(t, resp.Message, "passed")
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, c.exp)
+			rig.Close()
+			mt.Reset()
+		}
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		for _, c := range []struct {
+			ignore grpc.ServiceDesc
+			exp    int
+		}{
+			{ignore: grpc.ServiceDesc{}, exp: 7},
+			{ignore: _Fixture_serviceDesc, exp: 3},
+		} {
+			rig, err := newRig(true, WithIgnoredService(c.ignore))
+			if err != nil {
+				t.Fatalf("error setting up rig: %s", err)
+			}
+
+			ctx, done := context.WithCancel(context.Background())
+			client := rig.client
+			stream, err := client.StreamPing(ctx)
+			assert.NoError(t, err)
+
+			err = stream.Send(&FixtureRequest{Name: "pass"})
+			assert.NoError(t, err)
+
+			resp, err := stream.Recv()
+			assert.NoError(t, err)
+			assert.Equal(t, resp.Message, "passed")
+
+			assert.NoError(t, stream.CloseSend())
+			done() // close stream from client side
+			rig.Close()
+
+			waitForSpans(mt, c.exp, 5*time.Second)
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, c.exp)
+			mt.Reset()
+		}
+	})
+}
+
 func TestIgnoredMetadata(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
