@@ -236,6 +236,47 @@ func TestIgnoreRequestOption(t *testing.T) {
 	}
 }
 
+func TestWrapHandlerIgnoreRequestOption(t *testing.T) {
+	tests := []struct {
+		url       string
+		spanCount int
+	}{
+		{
+			url:       "/skip",
+			spanCount: 0,
+		},
+		{
+			url:       "/200",
+			spanCount: 1,
+		},
+	}
+
+	http.HandleFunc("/skip", handler200)
+	http.HandleFunc("/200", handler200)
+
+	wh := WrapHandler(
+		http.DefaultServeMux,
+		"",
+		"",
+		WithIgnoreRequest(func(r *http.Request) bool {
+			return r.URL.Path == "/skip"
+		}),
+	)
+
+	for _, test := range tests {
+		t.Run(test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
+			w := httptest.NewRecorder()
+			wh.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, test.spanCount, len(spans))
+		})
+	}
+}
+
 func router() http.Handler {
 	mux := NewServeMux(WithServiceName("my-service"), WithSpanOptions(tracer.Tag("foo", "bar")))
 	mux.HandleFunc("/200", handler200)
