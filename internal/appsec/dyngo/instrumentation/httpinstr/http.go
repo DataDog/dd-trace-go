@@ -9,6 +9,8 @@
 package httpinstr
 
 import (
+	"encoding/json"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,12 +26,7 @@ import (
 type (
 	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
-		Method     string
-		Host       string
-		RemoteAddr string
-		Path       string
-		IsTLS      bool
-		Span       ddtrace.Span
+		OnSecurityEvent func(event json.RawMessage)
 
 		// RequestURI corresponds to the address `server.request.uri.raw`
 		RequestURI string
@@ -89,18 +86,16 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 		}
 		host := r.Host
 		headers["host"] = []string{host}
+		var secEvent json.RawMessage
 		op := StartOperation(
 			HandlerOperationArgs{
-				Span:       span,
-				IsTLS:      r.TLS != nil,
-				Method:     r.Method,
-				Host:       r.Host,
-				Path:       r.URL.Path,
+				OnSecurityEvent: func(event json.RawMessage) {
+					secEvent = event
+				},
 				RequestURI: r.RequestURI,
-				RemoteAddr: r.RemoteAddr,
 				Headers:    headers,
 				Cookies:    cookies,
-				// TODO(julio): avoid actively parsing the query string and move to a lazy monitoring of this value with
+				// TODO(Julio-Guerra): avoid actively parsing the query string and move to a lazy monitoring of this value with
 				//   the dynamic instrumentation of the Query() method.
 				Query: r.URL.Query(),
 			},
@@ -112,12 +107,20 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 				status = mw.Status()
 			}
 			op.Finish(HandlerOperationRes{Status: status})
+
+			if secEvent != nil {
+				remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
+				if err != nil {
+					remoteIP = r.RemoteAddr
+				}
+				SetEventSpanTags(span, secEvent, remoteIP, headers)
+			}
 		}()
 		handler.ServeHTTP(w, r)
 	})
 }
 
-// TODO(julio): create a go-generate tool to generate the types, vars and methods below
+// TODO(Julio-Guerra): create a go-generate tool to generate the types, vars and methods below
 
 // Operation type representing an HTTP operation. It must be created with
 // StartOperation() and finished with its Finish().

@@ -9,13 +9,11 @@
 package appsec
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpinstr"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
@@ -83,33 +81,18 @@ func newWAFEventListener(handle *waf.Handle, addresses []string, appsec *appsec)
 			// The WAF event listener got concurrently released
 			return
 		}
-		// TODO(julio): make it a thread-safe list of security events once we
-		//  listen for sub-operations
-		var baseEvent *wafEvent
+		// TODO(Julio-Guerra): make it a thread-safe list of security events once we listen for sub-operations
+		var matches []byte
 
 		op.On(httpinstr.OnHandlerOperationFinish(func(op dyngo.Operation, res httpinstr.HandlerOperationRes) {
 			// Release the WAF context
 			wafCtx.Close()
 			// Log the attacks if any
-			if baseEvent == nil {
+			if len(matches) == 0 {
 				return
 			}
 			log.Debug("appsec: attack detected by the waf")
-
-			// Create the base security event out of the slide of attacks
-			event := withHTTPOperationContext(baseEvent, args, res)
-
-			// Check if a span exists
-			if span := args.Span; span != nil {
-				// Add the span context to the security event
-				spanCtx := span.Context()
-				event = withSpanContext(event, spanCtx.TraceID(), spanCtx.SpanID())
-				// Keep this span due to the security event
-				span.SetTag(ext.ManualKeep, true)
-				// Set the appsec.event tag needed by the appsec backend
-				span.SetTag("appsec.event", true)
-			}
-			appsec.sendEvent(event)
+			args.OnSecurityEvent(matches)
 		}))
 
 		// Run the WAF on the rule addresses available in the request args
@@ -126,23 +109,17 @@ func newWAFEventListener(handle *waf.Handle, addresses []string, appsec *appsec)
 				values[serverRequestQueryAddr] = args.Query
 			}
 		}
-		baseEvent = runWAF(wafCtx, values)
+		matches = runWAF(wafCtx, values)
 	})
 }
 
-func runWAF(wafCtx *waf.Context, values map[string]interface{}) *wafEvent {
+func runWAF(wafCtx *waf.Context, values map[string]interface{}) []byte {
 	matches, err := wafCtx.Run(values, 4*time.Millisecond)
 	if err != nil {
 		log.Error("appsec: waf error: %v", err)
 		return nil
 	}
-	if len(matches) == 0 {
-		return nil
-	}
-	return &wafEvent{
-		time:     time.Now(),
-		metadata: matches,
-	}
+	return matches
 }
 
 // Rule addresses currently supported by the WAF
@@ -180,30 +157,4 @@ func supportedAddresses(ruleAddresses []string) (supported, notSupported []strin
 	}
 	// Check the resulting situation we are in
 	return supported, notSupported
-}
-
-// toIntakeEvent creates the attack event payloads from a WAF attack.
-func (e *wafEvent) toIntakeEvents() (events []*attackEvent, err error) {
-	var matches waf.AttackMetadata
-	if err := json.Unmarshal(e.metadata, &matches); err != nil {
-		return nil, err
-	}
-	// Create one security event per flow and per filter
-	for _, match := range matches {
-		for _, filter := range match.Filter {
-			ruleMatch := &attackRuleMatch{
-				Operator:      filter.Operator,
-				OperatorValue: filter.OperatorValue,
-				Parameters: []attackRuleMatchParameter{
-					{
-						Name:  filter.ManifestKey,
-						Value: filter.ResolvedValue,
-					},
-				},
-				Highlight: []string{filter.MatchStatus},
-			}
-			events = append(events, newAttackEvent(match.Rule, match.Flow, match.Flow, e.time, ruleMatch))
-		}
-	}
-	return events, nil
 }
