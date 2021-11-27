@@ -36,6 +36,9 @@ type ServeConfig struct {
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
 // according to the specified config.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
+	if cfg == nil {
+		cfg = new(ServeConfig)
+	}
 	path := r.URL.Path
 	if cfg.QueryParams {
 		path += "?" + r.URL.RawQuery
