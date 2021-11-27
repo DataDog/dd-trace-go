@@ -18,21 +18,23 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpinstr"
 )
 
-// ServeConfig defines the configuration for request tracing.
+// ServeConfig specifies the tracing configuration when using TraceAndServe.
 type ServeConfig struct {
-	// Service set service name for tracing
+	// Service specifies the service name to use. If left blank, the global service name
+	// will be inherited.
 	Service string
-	// Resource set resource name for tracing
+	// Resource optionally specifies the resource name for this request.
 	Resource string
-	// QueryParams specifies that request query parameters should be appended to http.url tag
+	// QueryParams specifies any query parameters that be appended to the resulting "http.url" tag.
 	QueryParams bool
-	// FinishOpts is applied to span finished
+	// FinishOpts specifies any options to be used when finishing the request span.
 	FinishOpts []ddtrace.FinishOption
-	// SpanOpts is applied to span started additionally
+	// SpanOpts specifies any options to be applied to the request starting span.
 	SpanOpts []ddtrace.StartSpanOption
 }
 
-// TraceAndServe will apply tracing to the given http.Handler using the passed ResponseWriter, Request and ServeConfig.
+// TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
+// according to the specified config.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
 	path := r.URL.Path
 	if cfg.QueryParams {
