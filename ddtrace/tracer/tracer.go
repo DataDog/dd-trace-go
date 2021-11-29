@@ -183,11 +183,11 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		stats:            newConcentrator(c, defaultStatsBucketSize),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
-				TableNames:       c.features.HasFlag("table_names"),
-				ReplaceDigits:    c.features.HasFlag("quantize_sql_tables") || c.features.HasFlag("replace_sql_digits"),
-				KeepSQLAlias:     c.features.HasFlag("keep_sql_alias"),
-				DollarQuotedFunc: c.features.HasFlag("dollar_quoted_func"),
-				Cache:            c.features.HasFlag("sql_cache"),
+				TableNames:       c.agent.HasFlag("table_names"),
+				ReplaceDigits:    c.agent.HasFlag("quantize_sql_tables") || c.agent.HasFlag("replace_sql_digits"),
+				KeepSQLAlias:     c.agent.HasFlag("keep_sql_alias"),
+				DollarQuotedFunc: c.agent.HasFlag("dollar_quoted_func"),
+				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
 	}

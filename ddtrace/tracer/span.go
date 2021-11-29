@@ -351,7 +351,7 @@ func (s *span) finish(finishTime int64) {
 	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have an active tracer
-		feats := t.config.features
+		feats := t.config.agent
 		if feats.Stats && shouldComputeStats(s) {
 			// the agent supports computed stats
 			select {

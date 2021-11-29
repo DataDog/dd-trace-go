@@ -142,7 +142,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 func TestLoadAgentFeatures(t *testing.T) {
 	t.Run("zero", func(t *testing.T) {
 		t.Run("disabled", func(t *testing.T) {
-			assert.Zero(t, newConfig(WithLambdaMode(true)).features)
+			assert.Zero(t, newConfig(WithLambdaMode(true)).agent)
 		})
 
 		t.Run("unreachable", func(t *testing.T) {
@@ -153,7 +153,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 			}))
 			defer srv.Close()
-			assert.Zero(t, newConfig(WithAgentAddr("127.9.9.9:8181")).features)
+			assert.Zero(t, newConfig(WithAgentAddr("127.9.9.9:8181")).agent)
 		})
 
 		t.Run("StatusNotFound", func(t *testing.T) {
@@ -161,7 +161,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 				w.WriteHeader(http.StatusNotFound)
 			}))
 			defer srv.Close()
-			assert.Zero(t, newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://"))).features)
+			assert.Zero(t, newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://"))).agent)
 		})
 
 		t.Run("error", func(t *testing.T) {
@@ -169,7 +169,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 				w.Write([]byte("Not JSON"))
 			}))
 			defer srv.Close()
-			assert.Zero(t, newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://"))).features)
+			assert.Zero(t, newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://"))).agent)
 		})
 	})
 
@@ -179,15 +179,15 @@ func TestLoadAgentFeatures(t *testing.T) {
 		}))
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
-		assert.True(t, cfg.features.DropP0s)
-		assert.Equal(t, cfg.features.StatsdPort, 8999)
-		assert.EqualValues(t, cfg.features.featureFlags, map[string]struct{}{
+		assert.True(t, cfg.agent.DropP0s)
+		assert.Equal(t, cfg.agent.StatsdPort, 8999)
+		assert.EqualValues(t, cfg.agent.featureFlags, map[string]struct{}{
 			"a": struct{}{},
 			"b": struct{}{},
 		})
-		assert.True(t, cfg.features.Stats)
-		assert.True(t, cfg.features.HasFlag("a"))
-		assert.True(t, cfg.features.HasFlag("b"))
+		assert.True(t, cfg.agent.Stats)
+		assert.True(t, cfg.agent.HasFlag("a"))
+		assert.True(t, cfg.agent.HasFlag("b"))
 	})
 
 	t.Run("disable_stats", func(t *testing.T) {
@@ -198,9 +198,9 @@ func TestLoadAgentFeatures(t *testing.T) {
 		}))
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
-		assert.True(t, cfg.features.DropP0s)
-		assert.False(t, cfg.features.Stats)
-		assert.Equal(t, cfg.features.StatsdPort, 8999)
+		assert.True(t, cfg.agent.DropP0s)
+		assert.False(t, cfg.agent.Stats)
+		assert.Equal(t, cfg.agent.StatsdPort, 8999)
 	})
 }
 

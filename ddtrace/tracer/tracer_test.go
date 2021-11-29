@@ -293,7 +293,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.config.features.DropP0s = true
+		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1").(*span)
@@ -307,7 +307,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("events_sampled", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.config.features.DropP0s = true
+		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1").(*span)
@@ -322,7 +322,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("client_dropped", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.config.features.DropP0s = true
+		tracer.config.agent.DropP0s = true
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"

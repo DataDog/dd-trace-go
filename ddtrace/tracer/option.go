@@ -44,9 +44,9 @@ type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
 
-	// features holds the capabilities of the agent and determines some
+	// agent holds the capabilities of the agent and determines some
 	// of the behaviour of the tracer.
-	features agentFeatures
+	agent agentFeatures
 
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
@@ -249,7 +249,7 @@ func newConfig(opts ...StartOption) *config {
 			// no config defined address; use defaults
 			addr = defaultDogstatsdAddr()
 		}
-		if agentport := c.features.StatsdPort; agentport > 0 {
+		if agentport := c.agent.StatsdPort; agentport > 0 {
 			// the agent reported a non-standard port
 			host, _, err := net.SplitHostPort(addr)
 			if err == nil {
@@ -349,7 +349,7 @@ func (a *agentFeatures) HasFlag(feat string) bool {
 // loadAgentFeatures queries the trace-agent for its capabilities and updates
 // the tracer's behaviour.
 func (c *config) loadAgentFeatures() {
-	c.features = agentFeatures{}
+	c.agent = agentFeatures{}
 	if c.logToStdout {
 		// there is no agent; all features off
 		return
@@ -375,21 +375,21 @@ func (c *config) loadAgentFeatures() {
 		log.Error("Decoding features: %v", err)
 		return
 	}
-	c.features.DropP0s = info.ClientDropP0s
-	c.features.StatsdPort = info.StatsdPort
+	c.agent.DropP0s = info.ClientDropP0s
+	c.agent.StatsdPort = info.StatsdPort
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
 			// disable_stats feature flag is here temporarily to allow reverting
 			// in case of any issues.
 			if !c.HasFeature("disable_stats") {
-				c.features.Stats = true
+				c.agent.Stats = true
 			}
 		}
 	}
-	c.features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
+	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
 	for _, flag := range info.FeatureFlags {
-		c.features.featureFlags[flag] = struct{}{}
+		c.agent.featureFlags[flag] = struct{}{}
 	}
 }
 
