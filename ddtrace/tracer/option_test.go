@@ -175,25 +175,31 @@ func TestLoadAgentFeatures(t *testing.T) {
 
 	t.Run("OK", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"statsd_port":8999}`))
 		}))
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
 		assert.True(t, cfg.features.DropP0s)
 		assert.Equal(t, cfg.features.StatsdPort, 8999)
-		assert.False(t, cfg.features.Stats)
+		assert.EqualValues(t, cfg.features.featureFlags, map[string]struct{}{
+			"a": struct{}{},
+			"b": struct{}{},
+		})
+		assert.True(t, cfg.features.Stats)
+		assert.True(t, cfg.features.HasFlag("a"))
+		assert.True(t, cfg.features.HasFlag("b"))
 	})
 
-	t.Run("OK+discovery", func(t *testing.T) {
+	t.Run("disable_stats", func(t *testing.T) {
 		defer func(old string) { os.Setenv("DD_TRACE_FEATURES", old) }(os.Getenv("DD_TRACE_FEATURES"))
-		os.Setenv("DD_TRACE_FEATURES", "discovery")
+		os.Setenv("DD_TRACE_FEATURES", "disable_stats")
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
 		}))
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
 		assert.True(t, cfg.features.DropP0s)
-		assert.True(t, cfg.features.Stats)
+		assert.False(t, cfg.features.Stats)
 		assert.Equal(t, cfg.features.StatsdPort, 8999)
 	})
 }

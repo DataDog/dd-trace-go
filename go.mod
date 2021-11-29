@@ -3,6 +3,7 @@ module gopkg.in/DataDog/dd-trace-go.v1
 go 1.12
 
 require (
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211126234327-0f80d039ad3b
 	github.com/DataDog/datadog-go/v5 v5.0.1
 	github.com/DataDog/gostackparse v0.5.0
 	github.com/DataDog/sketches-go v1.0.0

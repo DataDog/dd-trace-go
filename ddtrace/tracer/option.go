@@ -335,6 +335,15 @@ type agentFeatures struct {
 	// StatsdPort specifies the Dogstatsd port as provided by the agent.
 	// If it's the default, it will be 0, which means 8125.
 	StatsdPort int
+
+	// featureFlags specifies all the feature flags reported by the trace-agent.
+	featureFlags map[string]struct{}
+}
+
+// HasFlag reports whether the agent has set the feat feature flag.
+func (a *agentFeatures) HasFlag(feat string) bool {
+	_, ok := a.featureFlags[feat]
+	return ok
 }
 
 // loadAgentFeatures queries the trace-agent for its capabilities and updates
@@ -359,6 +368,7 @@ func (c *config) loadAgentFeatures() {
 		Endpoints     []string `json:"endpoints"`
 		ClientDropP0s bool     `json:"client_drop_p0s"`
 		StatsdPort    int      `json:"statsd_port"`
+		FeatureFlags  []string `json:"feature_flags"`
 	}
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
@@ -370,11 +380,16 @@ func (c *config) loadAgentFeatures() {
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
-			if c.HasFeature("discovery") {
-				// client-stats computation is off by default
+			// disable_stats feature flag is here temporarily to allow reverting
+			// in case of any issues.
+			if !c.HasFeature("disable_stats") {
 				c.features.Stats = true
 			}
 		}
+	}
+	c.features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
+	for _, flag := range info.FeatureFlags {
+		c.features.featureFlags[flag] = struct{}{}
 	}
 }
 
