@@ -113,44 +113,64 @@ main;bar 0 0 8 16
 
 		for _, test := range tests {
 			for _, profType := range test.Types {
-				t.Run(profType.String(), func(t *testing.T) {
-					prof1 := test.Prof1.Protobuf()
-					prof2 := test.Prof2.Protobuf()
-
+				// deltaProfiler returns an unstarted profiler that is fed prof1
+				// followed by prof2 when calling runProfile().
+				deltaProfiler := func(prof1, prof2 []byte, opts ...Option) (*profiler, func()) {
 					returnProfs := [][]byte{prof1, prof2}
-					defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-					lookupProfile = func(name string, w io.Writer, _ int) error {
+					old := lookupProfile
+					lookupProfile = func(_ string, w io.Writer, _ int) error {
 						_, err := w.Write(returnProfs[0])
 						returnProfs = returnProfs[1:]
 						return err
 					}
-					p, err := unstartedProfiler()
-
-					// first run, should produce the current profile twice (a bit
-					// awkward, but makes sense since we try to add delta profiles as an
-					// additional profile type to ease the transition)
-					profs, err := p.runProfile(profType)
+					p, err := unstartedProfiler(opts...)
 					require.NoError(t, err)
-					require.Equal(t, 2, len(profs))
-					require.Equal(t, profType.Filename(), profs[0].name)
-					require.Equal(t, prof1, profs[0].data)
-					require.Equal(t, "delta-"+profType.Filename(), profs[1].name)
-					require.Equal(t, prof1, profs[1].data)
+					return p, func() { lookupProfile = old }
+				}
 
-					// second run, should produce p1 profile and delta profile
-					profs, err = p.runProfile(profType)
-					require.NoError(t, err)
-					require.Equal(t, 2, len(profs))
-					require.Equal(t, profType.Filename(), profs[0].name)
-					require.Equal(t, prof2, profs[0].data)
-					require.Equal(t, "delta-"+profType.Filename(), profs[1].name)
-					require.Equal(t, test.WantDelta.String(), protobufToText(profs[1].data))
+				t.Run(profType.String(), func(t *testing.T) {
+					t.Run("enabled", func(t *testing.T) {
+						prof1 := test.Prof1.Protobuf()
+						prof2 := test.Prof2.Protobuf()
+						p, cleanup := deltaProfiler(prof1, prof2)
+						defer cleanup()
+						// first run, should produce the current profile twice (a bit
+						// awkward, but makes sense since we try to add delta profiles as an
+						// additional profile type to ease the transition)
+						profs, err := p.runProfile(profType)
+						require.NoError(t, err)
+						require.Equal(t, 2, len(profs))
+						require.Equal(t, profType.Filename(), profs[0].name)
+						require.Equal(t, prof1, profs[0].data)
+						require.Equal(t, "delta-"+profType.Filename(), profs[1].name)
+						require.Equal(t, prof1, profs[1].data)
 
-					// check delta prof details like timestamps and duration
-					deltaProf, err := pprofile.ParseData(profs[1].data)
-					require.NoError(t, err)
-					require.Equal(t, test.Prof2.Time.UnixNano(), deltaProf.TimeNanos)
-					require.Equal(t, deltaPeriod.Nanoseconds(), deltaProf.DurationNanos)
+						// second run, should produce p1 profile and delta profile
+						profs, err = p.runProfile(profType)
+						require.NoError(t, err)
+						require.Equal(t, 2, len(profs))
+						require.Equal(t, profType.Filename(), profs[0].name)
+						require.Equal(t, prof2, profs[0].data)
+						require.Equal(t, "delta-"+profType.Filename(), profs[1].name)
+						require.Equal(t, test.WantDelta.String(), protobufToText(profs[1].data))
+
+						// check delta prof details like timestamps and duration
+						deltaProf, err := pprofile.ParseData(profs[1].data)
+						require.NoError(t, err)
+						require.Equal(t, test.Prof2.Time.UnixNano(), deltaProf.TimeNanos)
+						require.Equal(t, deltaPeriod.Nanoseconds(), deltaProf.DurationNanos)
+					})
+
+					t.Run("disabled", func(t *testing.T) {
+						prof1 := test.Prof1.Protobuf()
+						prof2 := test.Prof2.Protobuf()
+						p, cleanup := deltaProfiler(prof1, prof2, WithDeltaProfiles(false))
+						defer cleanup()
+
+						profs, err := p.runProfile(profType)
+						require.NoError(t, err)
+						require.Equal(t, 1, len(profs))
+					})
 				})
 			}
 		}
