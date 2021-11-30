@@ -1542,7 +1542,8 @@ loop:
 		}
 	}
 	assert.Len(t, tw.Flushed(), 0)
-	tr.flushSync()
+	//tr.flushSync()
+	Flush()
 	assert.Len(t, tw.Flushed(), 1)
 }
 
