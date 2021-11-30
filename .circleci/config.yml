@@ -44,8 +44,21 @@ jobs:
     - run:
         name: go.sum up-to-date
         command: |
-          go run -mod=readonly gosum.go
-
+          if ! go run -mod=readonly gosum.go; then
+            # Older go versions, e.g. go1.14 will fail the check above with
+            # the message below.
+            #
+            #   go: updates to go.sum needed, disabled by -mod=readonly
+            #
+            # Newer versions show which go.sum entries are missing. To get
+            # useful CI errors for older versions, always print an explicit
+            # diff when go.sum is not up-to-date.
+            cp go.sum go.sum.before
+            go mod tidy
+            echo "--> go.sum diff:"
+            diff go.sum.before go.sum
+            exit 1
+          fi
     - run:
         name: milestone
         command: |

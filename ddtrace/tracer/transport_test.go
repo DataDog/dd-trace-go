@@ -21,14 +21,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// integration indicates if the test suite should run integration tests.
-var integration bool
-
-func TestMain(m *testing.M) {
-	_, integration = os.LookupEnv("INTEGRATION")
-	os.Exit(m.Run())
-}
-
 // getTestSpan returns a Span with different fields set
 func getTestSpan() *span {
 	return &span{
