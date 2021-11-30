@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 var (
@@ -48,22 +49,31 @@ type NoopTracer struct{}
 
 // StartSpan implements ddtrace.Tracer.
 func (NoopTracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+	log.Info("NoopTracer starts a span")
 	return NoopSpan{}
 }
 
 // SetServiceInfo implements ddtrace.Tracer.
-func (NoopTracer) SetServiceInfo(name, app, appType string) {}
+func (NoopTracer) SetServiceInfo(_, _, _ string) {
+	log.Info("NoopTracer sets a service info, so nothing happens")
+}
 
 // Extract implements ddtrace.Tracer.
-func (NoopTracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+func (NoopTracer) Extract(_ interface{}) (ddtrace.SpanContext, error) {
+	log.Info("NoopTracer extracts a span context, so nothing happens")
 	return NoopSpanContext{}, nil
 }
 
 // Inject implements ddtrace.Tracer.
-func (NoopTracer) Inject(context ddtrace.SpanContext, carrier interface{}) error { return nil }
+func (NoopTracer) Inject(_ ddtrace.SpanContext, _ interface{}) error {
+	log.Info("NoopTracer injects a span context, so nothing happens")
+	return nil
+}
 
 // Stop implements ddtrace.Tracer.
-func (NoopTracer) Stop() {}
+func (NoopTracer) Stop() {
+	log.Info("NoopTracer stops tracing, so nothing happens")
+}
 
 var _ ddtrace.Span = (*NoopSpan)(nil)
 
@@ -71,25 +81,42 @@ var _ ddtrace.Span = (*NoopSpan)(nil)
 type NoopSpan struct{}
 
 // SetTag implements ddtrace.Span.
-func (NoopSpan) SetTag(key string, value interface{}) {}
+func (NoopSpan) SetTag(_ string, _ interface{}) {
+	log.Info("NoopSpan sets a key-value set, so nothing happens")
+}
 
 // SetOperationName implements ddtrace.Span.
-func (NoopSpan) SetOperationName(operationName string) {}
+func (NoopSpan) SetOperationName(_ string) {
+	log.Info("NoopSpan sets a operation name, so nothing happens")
+}
 
 // BaggageItem implements ddtrace.Span.
-func (NoopSpan) BaggageItem(key string) string { return "" }
+func (NoopSpan) BaggageItem(_ string) string {
+	log.Info("NoopSpan returns a baggage item, so nothing happens")
+	return ""
+}
 
 // SetBaggageItem implements ddtrace.Span.
-func (NoopSpan) SetBaggageItem(key, val string) {}
+func (NoopSpan) SetBaggageItem(_, _ string) {
+	log.Info("NoopSpan set a baggage item, so nothing happens")
+}
 
 // Finish implements ddtrace.Span.
-func (NoopSpan) Finish(opts ...ddtrace.FinishOption) {}
+func (NoopSpan) Finish(_ ...ddtrace.FinishOption) {
+	log.Info("NoopSpan finishes")
+}
 
 // Tracer implements ddtrace.Span.
-func (NoopSpan) Tracer() ddtrace.Tracer { return NoopTracer{} }
+func (NoopSpan) Tracer() ddtrace.Tracer {
+	log.Info("NoopSpan returns a NoopTracer")
+	return NoopTracer{}
+}
 
 // Context implements ddtrace.Span.
-func (NoopSpan) Context() ddtrace.SpanContext { return NoopSpanContext{} }
+func (NoopSpan) Context() ddtrace.SpanContext {
+	log.Info("NoopSpan returns a NoopSpanContext")
+	return NoopSpanContext{}
+}
 
 var _ ddtrace.SpanContext = (*NoopSpanContext)(nil)
 
