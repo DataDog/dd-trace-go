@@ -168,7 +168,19 @@ jobs:
           name: Testing outlier google.golang.org/api
           command: |
                 go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
-                GO111MODULE=on go mod tidy || exit 0 # this step can fail and we don't care.
+                # This step can fail and we don't care.
+                #
+                # This is here just to cover differences between older versions and newer versions of Go.
+                # New versions of go won't be able to run tests unless the go.mod file is updated with go
+                # mod tidy. Fortunately, new versions of go succeed at running go mod tidy.
+                # Old versions of go don't need to run go mod tidy and will pull anything required when
+                # running the tests. Coincidentally, they also fail to run go mod tidy for a reason I'm
+                # not totally clear on. I guess the dependency resolution logic has changed a bit between
+                # go versions.
+                #
+                # In short, running go mod tidy but allowing it to fail allows all versions of go we
+                # support to run the tests successfully.
+                GO111MODULE=on go mod tidy || exit 0
                 go test -v ./contrib/google.golang.org/api/...
 
       - run:
@@ -305,7 +317,19 @@ jobs:
 
       - run:
           name: Tidy Modules
-          command: GO111MODULE=on go mod tidy || exit 0 # this step can fail and we don't care.
+          # This step can fail and we don't care.
+          #
+          # This is here just to cover differences between older versions and newer versions of Go.
+          # New versions of go won't be able to run tests unless the go.mod file is updated with go
+          # mod tidy. Fortunately, new versions of go succeed at running go mod tidy.
+          # Old versions of go don't need to run go mod tidy and will pull anything required when
+          # running the tests. Coincidentally, they also fail to run go mod tidy for a reason I'm
+          # not totally clear on. I guess the dependency resolution logic has changed a bit between
+          # go versions.
+          #
+          # In short, running go mod tidy but allowing it to fail allows all versions of go we
+          # support to run the tests successfully.
+          command: GO111MODULE=on go mod tidy || exit 0
 
       - run:
           name: Wait for MySQL
