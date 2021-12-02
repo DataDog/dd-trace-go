@@ -114,7 +114,7 @@ func newAppSec(cfg *Config) *appsec {
 	}
 }
 
-// Start starts the AppSec background goroutine.
+// Start AppSec by registering its security protections according to the configured the security rules.
 func (a *appsec) start() error {
 	// Register the WAF operation event listener
 	unregisterWAF, err := registerWAF(a.cfg.rules, a)
@@ -125,7 +125,7 @@ func (a *appsec) start() error {
 	return nil
 }
 
-// Stop gracefully stops the AppSec agent goroutine.
+// Stop AppSec by unregistering the security protections.
 func (a *appsec) stop() {
 	a.unregisterWAF()
 }

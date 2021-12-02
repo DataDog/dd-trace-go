@@ -63,7 +63,7 @@ func registerWAF(rules []byte, appsec *appsec) (unreg dyngo.UnregisterFunc, err 
 	}
 
 	// Register the WAF event listener
-	unregister := dyngo.Register(newWAFEventListener(waf, addresses, appsec))
+	unregister := dyngo.Register(newWAFEventListener(waf, addresses))
 	// Return an unregistration function that will also release the WAF instance.
 	return func() {
 		defer waf.Close()
@@ -72,7 +72,7 @@ func registerWAF(rules []byte, appsec *appsec) (unreg dyngo.UnregisterFunc, err 
 }
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
-func newWAFEventListener(handle *waf.Handle, addresses []string, appsec *appsec) dyngo.EventListener {
+func newWAFEventListener(handle *waf.Handle, addresses []string) dyngo.EventListener {
 	return httpinstr.OnHandlerOperationStart(func(op dyngo.Operation, args httpinstr.HandlerOperationArgs) {
 		// For this handler operation lifetime, create a WAF context and the
 		// list of detected attacks
