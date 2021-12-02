@@ -380,9 +380,8 @@ func (c *config) loadAgentFeatures() {
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
-			// disable_stats feature flag is here temporarily to allow reverting
-			// in case of any issues.
-			if !c.HasFeature("disable_stats") {
+			if c.HasFeature("discovery") {
+				// client-stats computation is off by default
 				c.agent.Stats = true
 			}
 		}
