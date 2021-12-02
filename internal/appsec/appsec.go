@@ -70,6 +70,16 @@ func Start(cfg *Config) {
 		log.Info("appsec: starting with default recommended security rules")
 	}
 
+	cfg.wafTimeout = 4 * time.Millisecond
+	if wafTimeout := os.Getenv("DD_APPSEC_WAF_TIMEOUT"); wafTimeout != "" {
+		timeout, err := time.ParseDuration(wafTimeout)
+		if err != nil {
+			cfg.wafTimeout = timeout
+		} else {
+			log.Error("appsec: could not parse the value of DD_APPSEC_WAF_TIMEOUT %s as a duration: %v. Using default value %s.", wafTimeout, err, cfg.wafTimeout)
+		}
+	}
+
 	appsec, err := newAppSec(cfg)
 	if err != nil {
 		logUnexpectedStartError(err)
@@ -138,7 +148,7 @@ func newAppSec(cfg *Config) (*appsec, error) {
 // Start starts the AppSec background goroutine.
 func (a *appsec) start() error {
 	// Register the WAF operation event listener
-	unregisterWAF, err := registerWAF(a.cfg.rules, a)
+	unregisterWAF, err := registerWAF(a.cfg.rules, a.cfg.wafTimeout, a)
 	if err != nil {
 		return err
 	}
