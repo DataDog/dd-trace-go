@@ -356,6 +356,19 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.False(ok)
 		assert.Equal(nil, dVal)
 	})
+
+	t.Run("env-mapping", func(t *testing.T) {
+		os.Setenv("DD_SERVICE_MAPPING", "tracer.test:test2, svc:Newsvc,http.router:myRouter, noval:")
+		defer os.Unsetenv("DD_SERVICE_MAPPING")
+
+		assert := assert.New(t)
+		c := newConfig()
+
+		assert.Equal("test2", c.serviceMappings["tracer.test"])
+		assert.Equal("Newsvc", c.serviceMappings["svc"])
+		assert.Equal("myRouter", c.serviceMappings["http.router"])
+		assert.Equal("", c.serviceMappings["noval"])
+	})
 }
 
 func TestDefaultHTTPClient(t *testing.T) {

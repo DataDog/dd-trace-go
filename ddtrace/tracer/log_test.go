@@ -26,7 +26,7 @@ func TestStartupLog(t *testing.T) {
 		logStartup(tracer)
 		lines := removeAppSec(tp.Lines())
 		assert.Len(lines, 2)
-		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":null,"sampling_rules_error":"","tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":"((enabled)|(disabled))","agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0}}`, lines[1])
+		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":null,"sampling_rules_error":"","service_mappings":{},"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":"((enabled)|(disabled))","agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0}}`, lines[1])
 	})
 
 	t.Run("configured", func(t *testing.T) {
@@ -39,6 +39,7 @@ func TestStartupLog(t *testing.T) {
 			WithService("configured.service"),
 			WithAgentAddr("test.host:1234"),
 			WithEnv("configuredEnv"),
+			WithServiceMapping("initial_service", "new_service"),
 			WithGlobalTag("tag", "value"),
 			WithGlobalTag("tag2", math.NaN()),
 			WithRuntimeMetrics(),
@@ -54,7 +55,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Reset()
 		logStartup(tracer)
 		assert.Len(tp.Lines(), 2)
-		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sampling_rules":\[{"service":"mysql","name":"","sample_rate":0\.75}\],"sampling_rules_error":"","tags":{"runtime-id":"[^"]*","tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"health_metrics_enabled":true,"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service","lambda_mode":"false","appsec":"((enabled)|(disabled))","agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0}}`, tp.Lines()[1])
+		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"configuredEnv","service":"configured.service","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":true,"analytics_enabled":true,"sample_rate":"0\.123000","sampling_rules":\[{"service":"mysql","name":"","sample_rate":0\.75}\],"sampling_rules_error":"","service_mappings":{"initial_service":"new_service"},"tags":{"runtime-id":"[^"]*","tag":"value","tag2":"NaN"},"runtime_metrics_enabled":true,"health_metrics_enabled":true,"dd_version":"2.3.4","architecture":"[^"]*","global_service":"configured.service","lambda_mode":"false","appsec":"((enabled)|(disabled))","agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0}}`, tp.Lines()[1])
 	})
 
 	t.Run("errors", func(t *testing.T) {
@@ -68,7 +69,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Reset()
 		logStartup(tracer)
 		assert.Len(tp.Lines(), 2)
-		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":\[{"service":"some.service","name":"","sample_rate":0\.234}\],"sampling_rules_error":"found errors:\\n\\tat index 1: rate not provided","tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":"((enabled)|(disabled))","agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0}}`, tp.Lines()[1])
+		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":\[{"service":"some.service","name":"","sample_rate":0\.234}\],"sampling_rules_error":"found errors:\\n\\tat index 1: rate not provided","service_mappings":{},"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":"((enabled)|(disabled))","agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0}}`, tp.Lines()[1])
 	})
 
 	t.Run("lambda", func(t *testing.T) {
@@ -80,7 +81,7 @@ func TestStartupLog(t *testing.T) {
 		tp.Reset()
 		logStartup(tracer)
 		assert.Len(tp.Lines(), 1)
-		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":null,"sampling_rules_error":"","tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"true","appsec":"((enabled)|(disabled))","agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0}}`, tp.Lines()[0])
+		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+ INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test","agent_url":"http://localhost:9/v0.4/traces","agent_error":"","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sampling_rules":null,"sampling_rules_error":"","service_mappings":{},"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"true","appsec":"((enabled)|(disabled))","agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0}}`, tp.Lines()[0])
 	})
 }
 

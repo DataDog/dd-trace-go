@@ -75,6 +75,9 @@ type config struct {
 	// are sent to.
 	agentAddr string
 
+	// serviceMappings holds a set of service mappings to dynamically rename services
+	serviceMappings map[string]string
+
 	// globalTags holds a set of tags that will be automatically applied to
 	// all spans.
 	globalTags map[string]interface{}
@@ -132,6 +135,33 @@ func (c *config) HasFeature(f string) bool {
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
+// forEachStringTag runs fn on every key:val pair encountered in str.
+// str may contain multiple key:val pairs separated by either space
+// or comma (but not a mixture of both)
+func forEachStringTag(str string, fn func(key string, val string)) {
+	sep := " "
+	if strings.Index(str, ",") > -1 {
+		// falling back to comma as separator
+		sep = ","
+	}
+	for _, tag := range strings.Split(str, sep) {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		kv := strings.SplitN(tag, ":", 2)
+		key := strings.TrimSpace(kv[0])
+		if key == "" {
+			continue
+		}
+		var val string
+		if len(kv) == 2 {
+			val = strings.TrimSpace(kv[1])
+		}
+		fn(key, val)
+	}
+}
+
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
 func newConfig(opts ...StartOption) *config {
@@ -168,28 +198,11 @@ func newConfig(opts ...StartOption) *config {
 	if ver := os.Getenv("DD_VERSION"); ver != "" {
 		c.version = ver
 	}
+	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
+		forEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
+	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		sep := " "
-		if strings.Index(v, ",") > -1 {
-			// falling back to comma as separator
-			sep = ","
-		}
-		for _, tag := range strings.Split(v, sep) {
-			tag = strings.TrimSpace(tag)
-			if tag == "" {
-				continue
-			}
-			kv := strings.SplitN(tag, ":", 2)
-			key := strings.TrimSpace(kv[0])
-			if key == "" {
-				continue
-			}
-			var val string
-			if len(kv) == 2 {
-				val = strings.TrimSpace(kv[1])
-			}
-			WithGlobalTag(key, val)(c)
-		}
+		forEachStringTag(v, func(key, val string) { WithGlobalTag(key, val)(c) })
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
@@ -507,6 +520,17 @@ func WithAgentAddr(addr string) StartOption {
 func WithEnv(env string) StartOption {
 	return func(c *config) {
 		c.env = env
+	}
+}
+
+// WithServiceMapping holds a mapping of services used to dynamically rename services.
+// This option is is case sensitive and can be used multiple times.
+func WithServiceMapping(k string, v string) StartOption {
+	return func(c *config) {
+		if c.serviceMappings == nil {
+			c.serviceMappings = make(map[string]string)
+		}
+		c.serviceMappings[k] = v
 	}
 }
 

@@ -571,6 +571,44 @@ func TestTracerSpanGlobalTags(t *testing.T) {
 	assert.Equal("value", child.Meta["key"])
 }
 
+func TestTracerSpanServiceMappings(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("Service from StartOption", func(t *testing.T) {
+		tracer := newTracer(WithServiceName("initial_service"), WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request").(*span)
+		assert.Equal("new_service", s.Service)
+
+	})
+
+	t.Run("Service inherited from parent", func(t *testing.T) {
+		tracer := newTracer(WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request", ServiceName("initial_service")).(*span)
+		child := tracer.StartSpan("db.query", ChildOf(s.Context())).(*span)
+		assert.Equal("new_service", child.Service)
+
+	})
+
+	t.Run("Service from StartSpanOption", func(t *testing.T) {
+		tracer := newTracer(WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request", ServiceName("initial_service")).(*span)
+		assert.Equal("new_service", s.Service)
+
+	})
+
+	t.Run("Service from Tags", func(t *testing.T) {
+		tracer := newTracer(WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request", Tag("service.name", "initial_service")).(*span)
+		assert.Equal("new_service", s.Service)
+	})
+
+	t.Run("Service from globalTags", func(t *testing.T) {
+		tracer := newTracer(WithGlobalTag("service.name", "initial_service"), WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request").(*span)
+		assert.Equal("new_service", s.Service)
+	})
+}
+
 func TestTracerNoDebugStack(t *testing.T) {
 	assert := assert.New(t)
 
