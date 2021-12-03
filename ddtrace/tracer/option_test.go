@@ -185,21 +185,21 @@ func TestLoadAgentFeatures(t *testing.T) {
 			"a": struct{}{},
 			"b": struct{}{},
 		})
-		assert.True(t, cfg.agent.Stats)
+		assert.False(t, cfg.agent.Stats)
 		assert.True(t, cfg.agent.HasFlag("a"))
 		assert.True(t, cfg.agent.HasFlag("b"))
 	})
 
-	t.Run("disable_stats", func(t *testing.T) {
+	t.Run("discovery", func(t *testing.T) {
 		defer func(old string) { os.Setenv("DD_TRACE_FEATURES", old) }(os.Getenv("DD_TRACE_FEATURES"))
-		os.Setenv("DD_TRACE_FEATURES", "disable_stats")
+		os.Setenv("DD_TRACE_FEATURES", "discovery")
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
 		}))
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
 		assert.True(t, cfg.agent.DropP0s)
-		assert.False(t, cfg.agent.Stats)
+		assert.True(t, cfg.agent.Stats)
 		assert.Equal(t, cfg.agent.StatsdPort, 8999)
 	})
 }
