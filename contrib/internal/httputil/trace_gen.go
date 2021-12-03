@@ -8,9 +8,8 @@
 package httputil
 
 import (
-	"net/http"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"net/http"
 )
 
 // wrapResponseWriter wraps an underlying http.ResponseWriter so that it can
@@ -125,6 +124,10 @@ func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) http.ResponseW
 			monitoredResponseWriter
 			http.Hijacker
 		}{mw, hHijacker}
+	default:
+		w = struct {
+			monitoredResponseWriter
+		}{mw}
 	}
 
 	return w
