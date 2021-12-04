@@ -183,6 +183,7 @@ jobs:
       - image: elasticsearch:6.8.13
         environment:
           http.port: 9202-9300
+          discovery.type: single-node
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
       - image: elasticsearch:7.14.1
         environment:
