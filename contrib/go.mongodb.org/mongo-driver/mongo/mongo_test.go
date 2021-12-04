@@ -53,7 +53,7 @@ func Test(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := client.
+	_, err = client.
 		Database("test-database").
 		Collection("test-collection").
 		InsertOne(ctx, bson.D{{Key: "test-item", Value: "test-value"}})
