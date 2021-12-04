@@ -81,7 +81,7 @@ func (d *driverRegistry) config(name string) (*config, bool) {
 
 // unregister is used to make tests idempotent.
 func (d *driverRegistry) unregister(name string) {
-	driver = d.drivers[name]
+	driver := d.drivers[name]
 	delete(d.keys, reflect.TypeOf(driver))
 	delete(d.configs, name)
 	delete(d.drivers, name)
