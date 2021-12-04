@@ -87,7 +87,7 @@ func TestClientErrorCutoffV7(t *testing.T) {
 	}.Do(context.Background(), client)
 	assert.NoError(err)
 
-	spans = mt.FinishedSpans()
+	spans := mt.FinishedSpans()
 	spew.Dump(spans)
 
 	span := spans[0]
