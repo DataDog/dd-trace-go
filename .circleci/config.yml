@@ -156,6 +156,10 @@ jobs:
         environment:
           GOPATH: "/home/circleci/go"
       - image: cassandra:3.7
+        environment:
+#          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+          HEAP_NEWSIZE=128M
+          MAX_HEAP_SIZE=2048M
       - image: circleci/mysql:5.7
         environment:
           MYSQL_ROOT_PASSWORD: admin
