@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
 	elasticsearch7 "github.com/elastic/go-elasticsearch/v7"
 	esapi7 "github.com/elastic/go-elasticsearch/v7/esapi"
 	"github.com/stretchr/testify/assert"
@@ -86,7 +87,10 @@ func TestClientErrorCutoffV7(t *testing.T) {
 	}.Do(context.Background(), client)
 	assert.NoError(err)
 
-	span := mt.FinishedSpans()[0]
+	spans = mt.FinishedSpans()
+	spew.Dump(spans)
+
+	span := spans[0]
 	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
 }
 
