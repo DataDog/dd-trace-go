@@ -86,7 +86,7 @@ func TestClientErrorCutoffV7(t *testing.T) {
 	}.Do(context.Background(), client)
 	assert.NoError(err)
 
-	span := mt.FinishedSpans()[0]
+	span := mt.FinishedSpans()[1]
 	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
 }
 
