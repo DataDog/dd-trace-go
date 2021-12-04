@@ -53,10 +53,13 @@ func Test(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client.
+	_, err = client.
 		Database("test-database").
 		Collection("test-collection").
 		InsertOne(ctx, bson.D{{Key: "test-item", Value: "test-value"}})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	span.Finish()
 
@@ -70,7 +73,7 @@ func Test(t *testing.T) {
 	assert.Equal(t, "mongo.insert", s.Tag(ext.ResourceName))
 	assert.Equal(t, hostname, s.Tag(ext.PeerHostname))
 	assert.Equal(t, port, s.Tag(ext.PeerPort))
-	assert.Contains(t, s.Tag(ext.DBStatement), `"test-item":"test-value"`)
+	assert.Contains(t, s.Tag("mongodb.query"), `"test-item":"test-value"`)
 	assert.Equal(t, "test-database", s.Tag(ext.DBInstance))
 	assert.Equal(t, "mongo", s.Tag(ext.DBType))
 }
