@@ -9,35 +9,23 @@
 package appsec
 
 import (
-	"io/ioutil"
-	"os"
 	"sync"
-	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-// Default batching configuration values.
-const (
-	defaultMaxBatchLen       = 1024
-	defaultMaxBatchStaleTime = time.Second
-)
-
-// Status returns the AppSec status string: "enabled" when both the appsec
-// build tag is enabled and the env var DD_APPSEC_ENABLED is set to true, or
-// "disabled" otherwise.
-func Status() string {
-	if enabled, _ := isEnabled(); enabled {
-		return "enabled"
-	}
-	return "disabled"
+// Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
+// DD_APPSEC_ENABLED is set to true, and the tracer is started.
+func Enabled() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return activeAppSec != nil
 }
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
 func Start() {
-	cfg := &Config{}
 	enabled, err := isEnabled()
 	if err != nil {
 		logUnexpectedStartError(err)
@@ -48,23 +36,11 @@ func Start() {
 		return
 	}
 
-	filepath := os.Getenv("DD_APPSEC_RULES")
-	if filepath != "" {
-		rules, err := ioutil.ReadFile(filepath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				log.Error("appsec: could not find the rules file in path %s: %v.\nAppSec will not run any protections in this application. No security activities will be collected.", filepath, err)
-			} else {
-				logUnexpectedStartError(err)
-			}
-			return
-		}
-		cfg.rules = rules
-		log.Info("appsec: starting with the security rules from file %s", filepath)
-	} else {
-		log.Info("appsec: starting with default recommended security rules")
+	cfg, err := newConfig()
+	if err != nil {
+		logUnexpectedStartError(err)
+		return
 	}
-
 	appsec := newAppSec(cfg)
 	if err := appsec.start(); err != nil {
 		logUnexpectedStartError(err)
@@ -85,7 +61,7 @@ func Stop() {
 
 var (
 	activeAppSec *appsec
-	mu           sync.Mutex
+	mu           sync.RWMutex
 )
 
 func setActiveAppSec(a *appsec) {
@@ -98,17 +74,11 @@ func setActiveAppSec(a *appsec) {
 }
 
 type appsec struct {
-	cfg           *Config
+	cfg           *config
 	unregisterWAF dyngo.UnregisterFunc
 }
 
-func newAppSec(cfg *Config) *appsec {
-	if cfg.MaxBatchLen <= 0 {
-		cfg.MaxBatchLen = defaultMaxBatchLen
-	}
-	if cfg.MaxBatchStaleTime <= 0 {
-		cfg.MaxBatchStaleTime = defaultMaxBatchStaleTime
-	}
+func newAppSec(cfg *config) *appsec {
 	return &appsec{
 		cfg: cfg,
 	}
@@ -117,7 +87,7 @@ func newAppSec(cfg *Config) *appsec {
 // Start AppSec by registering its security protections according to the configured the security rules.
 func (a *appsec) start() error {
 	// Register the WAF operation event listener
-	unregisterWAF, err := registerWAF(a.cfg.rules, a)
+	unregisterWAF, err := registerWAF(a.cfg.rules, a.cfg.wafTimeout)
 	if err != nil {
 		return err
 	}

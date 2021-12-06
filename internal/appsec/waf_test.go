@@ -32,7 +32,7 @@ func TestWAF(t *testing.T) {
 	appsec.Start()
 	defer appsec.Stop()
 
-	if appsec.Status() != "enabled" {
+	if !appsec.Enabled() {
 		t.Skip("appsec disabled")
 	}
 

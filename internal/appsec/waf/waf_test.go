@@ -22,6 +22,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -237,21 +238,24 @@ func TestConcurrency(t *testing.T) {
 		require.NotNil(t, wafCtx)
 
 		var (
-			startBarrier sync.WaitGroup
-			called       uint32
+			closed uint32
+			done   sync.WaitGroup
 		)
-		startBarrier.Add(1)
+		done.Add(1)
 		go func() {
-			startBarrier.Wait()
-			atomic.AddUint32(&called, 1)
-			wafCtx.Close()
+			defer done.Done()
+			// The implementation currently blocks until the WAF contexts get released
+			waf.Close()
+			atomic.AddUint32(&closed, 1)
 		}()
 
-		// The implementation currently blocks until the WAF contexts get released
-		startBarrier.Done()
-		require.Equal(t, uint32(0), atomic.LoadUint32(&called))
-		waf.Close()
-		require.Equal(t, uint32(1), atomic.LoadUint32(&called))
+		// The WAF context is not released so waf.Close() should block and `closed` still be 0
+		assert.Equal(t, uint32(0), atomic.LoadUint32(&closed))
+		// Release the WAF context, which should unlock the previous waf.Close() call
+		wafCtx.Close()
+		// Now that the WAF context is closed, wait for the goroutine to close the WAF handle.
+		done.Wait()
+		require.Equal(t, uint32(1), atomic.LoadUint32(&closed))
 	})
 
 	t.Run("concurrent-waf-context-usage", func(t *testing.T) {

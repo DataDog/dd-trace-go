@@ -7,22 +7,20 @@ package appsec
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strconv"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-// Config is the AppSec configuration.
-type Config struct {
-	// MaxBatchLen is the maximum batch length the event batching loop should use. The event batch is sent when
-	// this length is reached. Defaults to 1024.
-	MaxBatchLen int
-	// MaxBatchStaleTime is the maximum amount of time events are kept in the batch. This allows to send the batch
-	// after this amount of time even if the maximum batch length is not reached yet. Defaults to 1 second.
-	MaxBatchStaleTime time.Duration
-
+// config is the AppSec configuration.
+type config struct {
 	// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used.
 	rules []byte
+	// Maximum WAF execution time
+	wafTimeout time.Duration
 }
 
 // isEnabled returns true when appsec is enabled when the environment variable
@@ -37,4 +35,35 @@ func isEnabled() (bool, error) {
 		return false, fmt.Errorf("could not parse DD_APPSEC_ENABLED value `%s` as a boolean value", enabledStr)
 	}
 	return enabled, nil
+}
+
+func newConfig() (*config, error) {
+	cfg := &config{}
+
+	filepath := os.Getenv("DD_APPSEC_RULES")
+	if filepath != "" {
+		rules, err := ioutil.ReadFile(filepath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				log.Error("appsec: could not find the rules file in path %s: %v.", filepath, err)
+			}
+			return nil, err
+		}
+		cfg.rules = rules
+		log.Info("appsec: starting with the security rules from file %s", filepath)
+	} else {
+		log.Info("appsec: starting with the default recommended security rules")
+	}
+
+	cfg.wafTimeout = 4 * time.Millisecond
+	if wafTimeout := os.Getenv("DD_APPSEC_WAF_TIMEOUT"); wafTimeout != "" {
+		timeout, err := time.ParseDuration(wafTimeout)
+		if err != nil {
+			cfg.wafTimeout = timeout
+		} else {
+			log.Error("appsec: could not parse the value of DD_APPSEC_WAF_TIMEOUT %s as a duration: %v. Using default value %s.", wafTimeout, err, cfg.wafTimeout)
+		}
+	}
+
+	return cfg, nil
 }
