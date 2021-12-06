@@ -48,7 +48,7 @@ type startupInfo struct {
 	Architecture          string            `json:"architecture"`            // Architecture of host machine
 	GlobalService         string            `json:"global_service"`          // Global service string. If not-nil should be same as Service. (#614)
 	LambdaMode            string            `json:"lambda_mode"`             // Whether or not the client has enabled lambda mode
-	AppSec                string            `json:"appsec"`                  // AppSec status string
+	AppSec                bool              `json:"appsec"`                  // AppSec status: true when started, false otherwise.
 	AgentFeatures         agentFeatures     `json:"agent_features"`          // Lists the capabilities of the agent.
 }
 
@@ -99,7 +99,7 @@ func logStartup(t *tracer) {
 		GlobalService:         globalconfig.ServiceName(),
 		LambdaMode:            fmt.Sprintf("%t", t.config.logToStdout),
 		AgentFeatures:         t.config.agent,
-		AppSec:                appsec.Status(),
+		AppSec:                appsec.Enabled(),
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
