@@ -36,8 +36,8 @@ func setEventSpanTags(span ddtrace.Span, events json.RawMessage) {
 	span.SetTag("appsec.event", true)
 }
 
-// setEventSpanTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
-func setSpanTags(span ddtrace.Span, events json.RawMessage, remoteIP string, headers map[string][]string) {
+// SetSecurityEventTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
+func SetSecurityEventTags(span ddtrace.Span, events json.RawMessage, remoteIP string, headers map[string][]string) {
 	setEventSpanTags(span, events)
 	span.SetTag("network.client.ip", remoteIP)
 	for h, v := range normalizeHTTPHeaders(headers) {
