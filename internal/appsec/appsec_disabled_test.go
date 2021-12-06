@@ -16,6 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStatus(t *testing.T) {
-	require.Equal(t, "disabled", appsec.Status())
+func TestEnabled(t *testing.T) {
+	require.False(t, appsec.Enabled())
 }

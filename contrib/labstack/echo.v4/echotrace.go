@@ -13,18 +13,20 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
 	"github.com/labstack/echo/v4"
 )
 
 // Middleware returns echo middleware which will trace incoming requests.
 func Middleware(opts ...Option) echo.MiddlewareFunc {
+	cfg := new(config)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		cfg := new(config)
-		defaults(cfg)
-		for _, fn := range opts {
-			fn(cfg)
-		}
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
@@ -47,8 +49,15 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			defer span.Finish()
 
 			// pass the span through the request context
-			c.SetRequest(request.WithContext(ctx))
+			req := request.WithContext(ctx)
+			c.SetRequest(req)
 
+			if appsec.Enabled() {
+				op := httpsec.StartOperation(httpsec.MakeHandlerOperationArgs(req, span), nil)
+				defer func() {
+					op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
+				}()
+			}
 			// serve the request to the next middleware
 			err := next(c)
 			if err != nil {

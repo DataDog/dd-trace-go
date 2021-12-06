@@ -3,17 +3,15 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package httpinstr defines the HTTP operation that can be listened to using
+// Package httpsec defines the HTTP operation that can be listened to using
 // dyngo's operation instrumentation. It serves as an abstract representation
 // of HTTP handler calls.
-package httpinstr
+package httpsec
 
 import (
 	"net/http"
 	"net/url"
-	"os"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -48,62 +46,16 @@ type (
 	}
 )
 
-// enabled is true when appsec is enabled so that WrapHandler only wraps the
-// handler when appsec is enabled.
-// TODO(julio): remove this as soon as appsec becomes enabled by default
-var enabled bool
-
-func init() {
-	enabled, _ = strconv.ParseBool(os.Getenv("DD_APPSEC_ENABLED"))
-}
-
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
-	if !enabled {
-		span.SetTag("_dd.appsec.enabled", 0)
-		return handler
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		span.SetTag("_dd.appsec.enabled", 1)
-		span.SetTag("_dd.runtime_family", "go")
+	// TODO(Julio-Guerra): move these to service entry tags
+	span.SetTag("_dd.appsec.enabled", 1)
+	span.SetTag("_dd.runtime_family", "go")
 
-		headers := make(http.Header, len(r.Header))
-		for k, v := range r.Header {
-			k := strings.ToLower(k)
-			if k == "cookie" {
-				// Do not include cookies in the request headers
-				continue
-			}
-			headers[k] = v
-		}
-		var cookies map[string][]string
-		if reqCookies := r.Cookies(); len(reqCookies) > 0 {
-			cookies = make(map[string][]string, len(reqCookies))
-			for _, cookie := range reqCookies {
-				if cookie == nil {
-					continue
-				}
-				cookies[cookie.Name] = append(cookies[cookie.Name], cookie.Value)
-			}
-		}
-		host := r.Host
-		headers["host"] = []string{host}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		op := StartOperation(
-			HandlerOperationArgs{
-				Span:       span,
-				IsTLS:      r.TLS != nil,
-				Method:     r.Method,
-				Host:       r.Host,
-				Path:       r.URL.Path,
-				RequestURI: r.RequestURI,
-				RemoteAddr: r.RemoteAddr,
-				Headers:    headers,
-				Cookies:    cookies,
-				// TODO(julio): avoid actively parsing the query string and move to a lazy monitoring of this value with
-				//   the dynamic instrumentation of the Query() method.
-				Query: r.URL.Query(),
-			},
+			makeHandlerOperationArgs(r, span),
 			nil,
 		)
 		defer func() {
@@ -117,7 +69,52 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 	})
 }
 
-// TODO(julio): create a go-generate tool to generate the types, vars and methods below
+// MakeHandlerOperationArgs creates the HandlerOperationArgs out of a standard
+// http.Request along with the given current span. It returns an empty structure
+// when appsec is disabled.
+func MakeHandlerOperationArgs(r *http.Request, span ddtrace.Span) HandlerOperationArgs {
+	return makeHandlerOperationArgs(r, span)
+}
+
+// makeHandlerOperationArgs implements MakeHandlerOperationArgs regardless of appsec being disabled.
+func makeHandlerOperationArgs(r *http.Request, span ddtrace.Span) HandlerOperationArgs {
+	headers := make(http.Header, len(r.Header))
+	for k, v := range r.Header {
+		k := strings.ToLower(k)
+		if k == "cookie" {
+			// Do not include cookies in the request headers
+			continue
+		}
+		headers[k] = v
+	}
+	var cookies map[string][]string
+	if reqCookies := r.Cookies(); len(reqCookies) > 0 {
+		cookies = make(map[string][]string, len(reqCookies))
+		for _, cookie := range reqCookies {
+			if cookie == nil {
+				continue
+			}
+			cookies[cookie.Name] = append(cookies[cookie.Name], cookie.Value)
+		}
+	}
+	headers["host"] = []string{r.Host}
+	return HandlerOperationArgs{
+		Span:       span,
+		IsTLS:      r.TLS != nil,
+		Method:     r.Method,
+		Host:       r.Host,
+		Path:       r.URL.Path,
+		RequestURI: r.RequestURI,
+		RemoteAddr: r.RemoteAddr,
+		Headers:    headers,
+		Cookies:    cookies,
+		// TODO(Julio-Guerra): avoid actively parsing the query string and move to a lazy monitoring of this value with
+		//   the dynamic instrumentation of the Query() method.
+		Query: r.URL.Query(),
+	}
+}
+
+// TODO(Julio-Guerra): create a go-generate tool to generate the types, vars and methods below
 
 // Operation type representing an HTTP operation. It must be created with
 // StartOperation() and finished with its Finish().
