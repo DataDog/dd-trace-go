@@ -54,7 +54,6 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 	span, ctx := tracer.StartSpanFromContext(cfg.Request.Context(), "http.request", opts...)
 	defer span.Finish(cfg.FinishOpts...)
 
-	// Wrap the handler with the appsec instrumentation when enabled
 	if appsec.Enabled() {
 		h = httpsec.WrapHandler(h, span)
 	}
