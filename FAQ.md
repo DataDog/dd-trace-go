@@ -1,4 +1,4 @@
-# Frequently Asked Questions (dd-trace-go)
+# Frequently Asked Questions (dd-trace-go) do not merge
 This document contains answers to questions frequently asked by users. Just because something is listed here doesn't mean it's beyond question, so feel free to open an issue if you want to change or improve any of these things, but this should provide useful information about *how* things are and *why* they are that way.
 
 #### Why does dd-trace-go use go modules in a non-standard way?
