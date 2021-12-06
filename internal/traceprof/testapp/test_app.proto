@@ -15,6 +15,7 @@ service TestApp {
 
 message WorkReq {
   int64 cpu_duration = 1;
+  int64 sql_duration = 2;
 }
 
 message WorkRes {

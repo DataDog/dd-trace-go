@@ -1,0 +1,15 @@
+name                              old time/op           new time/op           delta
+EndpointsAndHotspots/cpu-bound-6            102ms ± 0%            102ms ± 0%      ~     (p=0.548 n=5+5)
+EndpointsAndHotspots/io-bound-6             102ms ± 0%            102ms ± 0%      ~     (p=0.056 n=5+5)
+
+name                              old cpu-time/op       new cpu-time/op       delta
+EndpointsAndHotspots/cpu-bound-6           93.2ms ± 0%           93.2ms ± 0%      ~     (p=0.841 n=5+5)
+EndpointsAndHotspots/io-bound-6            11.7ms ± 1%           11.8ms ± 2%      ~     (p=0.548 n=5+5)
+
+name                              old pprof-alloc/op    new pprof-alloc/op    delta
+EndpointsAndHotspots/cpu-bound-6            70.6B ± 4%           135.4B ± 2%   +91.61%  (p=0.008 n=5+5)
+EndpointsAndHotspots/io-bound-6             24.9B ± 7%            57.5B ± 3%  +131.18%  (p=0.008 n=5+5)
+
+name                              old pprof-samples/op  new pprof-samples/op  delta
+EndpointsAndHotspots/cpu-bound-6             9.04 ± 0%             9.05 ± 0%      ~     (p=0.222 n=5+5)
+EndpointsAndHotspots/io-bound-6              1.13 ± 2%             1.14 ± 1%      ~     (p=0.968 n=5+5)

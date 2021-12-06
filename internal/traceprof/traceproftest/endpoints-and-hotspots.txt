@@ -1,0 +1,16 @@
+goos: linux
+goarch: amd64
+pkg: gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/traceproftest
+cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
+BenchmarkEndpointsAndHotspots/cpu-bound-6         	     708	 101660228 ns/op	  93050847 cpu-ns/op	       134.8 pprof-B/op	         9.049 pprof-samples/op
+BenchmarkEndpointsAndHotspots/cpu-bound-6         	     709	 101631930 ns/op	  93187588 cpu-ns/op	       135.7 pprof-B/op	         9.066 pprof-samples/op
+BenchmarkEndpointsAndHotspots/cpu-bound-6         	     708	 101681734 ns/op	  93079096 cpu-ns/op	       136.4 pprof-B/op	         9.042 pprof-samples/op
+BenchmarkEndpointsAndHotspots/cpu-bound-6         	     708	 101645939 ns/op	  93333333 cpu-ns/op	       132.9 pprof-B/op	         9.034 pprof-samples/op
+BenchmarkEndpointsAndHotspots/cpu-bound-6         	     708	 101698538 ns/op	  93276836 cpu-ns/op	       137.0 pprof-B/op	         9.064 pprof-samples/op
+BenchmarkEndpointsAndHotspots/io-bound-6          	     706	 101724026 ns/op	  11898017 cpu-ns/op	        57.84 pprof-B/op	         1.146 pprof-samples/op
+BenchmarkEndpointsAndHotspots/io-bound-6          	     706	 101655919 ns/op	  11954674 cpu-ns/op	        59.00 pprof-B/op	         1.152 pprof-samples/op
+BenchmarkEndpointsAndHotspots/io-bound-6          	     706	 101687867 ns/op	  11841360 cpu-ns/op	        56.86 pprof-B/op	         1.137 pprof-samples/op
+BenchmarkEndpointsAndHotspots/io-bound-6          	     706	 101689276 ns/op	  11614731 cpu-ns/op	        56.57 pprof-B/op	         1.122 pprof-samples/op
+BenchmarkEndpointsAndHotspots/io-bound-6          	     706	 101841830 ns/op	  11529745 cpu-ns/op	        57.32 pprof-B/op	         1.126 pprof-samples/op
+PASS
+ok  	gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/traceproftest	826.333s

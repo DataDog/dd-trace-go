@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -365,8 +366,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 
 		t.Run("override", func(t *testing.T) {
-			os.Setenv("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", "true")
-			defer os.Unsetenv("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED")
+			os.Setenv(traceprof.EndpointEnvVar, "true")
+			defer os.Unsetenv(traceprof.EndpointEnvVar)
 			tracer := newTracer()
 			c := tracer.config
 			assert.True(t, c.profilerEndpoints)
@@ -381,8 +382,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 
 		t.Run("override", func(t *testing.T) {
-			os.Setenv("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", "true")
-			defer os.Unsetenv("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED")
+			os.Setenv(traceprof.CodeHotspotsEnvVar, "true")
+			defer os.Unsetenv(traceprof.CodeHotspotsEnvVar)
 			tracer := newTracer()
 			c := tracer.config
 			assert.True(t, c.profilerHotspots)

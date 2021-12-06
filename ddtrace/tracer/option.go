@@ -24,6 +24,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -207,8 +208,8 @@ func newConfig(opts ...StartOption) *config {
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
 	// TODO(fg): set these to true before going GA with this.
-	c.profilerEndpoints = internal.BoolEnv("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", false)
-	c.profilerHotspots = internal.BoolEnv("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", false)
+	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, false)
+	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, false)
 
 	for _, fn := range opts {
 		fn(c)

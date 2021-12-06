@@ -7,3 +7,9 @@ const (
 	LocalRootSpanID = "local root span id"
 	TraceEndpoint   = "trace endpoint"
 )
+
+// env variables used to control cross-cutting tracer/profiling features.
+const (
+	EndpointEnvVar     = "DD_PROFILING_ENDPOINT_COLLECTION_ENABLED"
+	CodeHotspotsEnvVar = "DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED"
+)
