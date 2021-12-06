@@ -181,7 +181,7 @@ jobs:
                 # In short, running go mod tidy but allowing it to fail allows all versions of go we
                 # support to run the tests successfully.
                 GO111MODULE=on go mod tidy || exit 0
-                go test -v ./contrib/google.golang.org/api/...
+                INTEGRATION=true go test -v ./contrib/google.golang.org/api/...
 
       - run:
           name: Testing outlier gRPC v1.2
@@ -200,7 +200,7 @@ jobs:
                 git clone git@github.com:DataDog/sketches-go && cd sketches-go
                 git fetch origin && git checkout v1.0.0 && cd ../..
 
-                go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+                INTEGRATION=true go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
 
       - save_cache:
           key: go-mod-v5-outliers-<< parameters.gover >>-{{ checksum "go.sum.orig" }}
@@ -229,6 +229,8 @@ jobs:
         environment:
           GOPATH: "/home/circleci/go"
       - image: cassandra:3.7
+        environment:
+          JVM_OPTS: "-Xms750m -Xmx750m"
       - image: circleci/mysql:5.7
         environment:
           MYSQL_ROOT_PASSWORD: admin
@@ -251,6 +253,7 @@ jobs:
       - image: elasticsearch:6.8.13
         environment:
           http.port: 9202-9300
+          discovery.type: single-node
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
       - image: elasticsearch:7.14.1
         environment:
@@ -380,6 +383,7 @@ jobs:
           command: |
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
             export DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true)
+            export INTEGRATION=true
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - store_artifacts: # upload test summary for display in Artifacts

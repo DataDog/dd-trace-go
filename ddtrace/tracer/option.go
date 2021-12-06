@@ -44,9 +44,9 @@ type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
 
-	// features holds the capabilities of the agent and determines some
+	// agent holds the capabilities of the agent and determines some
 	// of the behaviour of the tracer.
-	features agentFeatures
+	agent agentFeatures
 
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
@@ -249,7 +249,7 @@ func newConfig(opts ...StartOption) *config {
 			// no config defined address; use defaults
 			addr = defaultDogstatsdAddr()
 		}
-		if agentport := c.features.StatsdPort; agentport > 0 {
+		if agentport := c.agent.StatsdPort; agentport > 0 {
 			// the agent reported a non-standard port
 			host, _, err := net.SplitHostPort(addr)
 			if err == nil {
@@ -335,12 +335,21 @@ type agentFeatures struct {
 	// StatsdPort specifies the Dogstatsd port as provided by the agent.
 	// If it's the default, it will be 0, which means 8125.
 	StatsdPort int
+
+	// featureFlags specifies all the feature flags reported by the trace-agent.
+	featureFlags map[string]struct{}
+}
+
+// HasFlag reports whether the agent has set the feat feature flag.
+func (a *agentFeatures) HasFlag(feat string) bool {
+	_, ok := a.featureFlags[feat]
+	return ok
 }
 
 // loadAgentFeatures queries the trace-agent for its capabilities and updates
 // the tracer's behaviour.
 func (c *config) loadAgentFeatures() {
-	c.features = agentFeatures{}
+	c.agent = agentFeatures{}
 	if c.logToStdout {
 		// there is no agent; all features off
 		return
@@ -359,22 +368,27 @@ func (c *config) loadAgentFeatures() {
 		Endpoints     []string `json:"endpoints"`
 		ClientDropP0s bool     `json:"client_drop_p0s"`
 		StatsdPort    int      `json:"statsd_port"`
+		FeatureFlags  []string `json:"feature_flags"`
 	}
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		log.Error("Decoding features: %v", err)
 		return
 	}
-	c.features.DropP0s = info.ClientDropP0s
-	c.features.StatsdPort = info.StatsdPort
+	c.agent.DropP0s = info.ClientDropP0s
+	c.agent.StatsdPort = info.StatsdPort
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
 			if c.HasFeature("discovery") {
 				// client-stats computation is off by default
-				c.features.Stats = true
+				c.agent.Stats = true
 			}
 		}
+	}
+	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
+	for _, flag := range info.FeatureFlags {
+		c.agent.featureFlags[flag] = struct{}{}
 	}
 }
 
