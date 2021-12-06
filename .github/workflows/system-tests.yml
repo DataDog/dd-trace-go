@@ -10,7 +10,7 @@ on:
 
 jobs:
   system-tests:
-    if: ${{ secrets.DD_API_KEY }}
+    if: ${{ secrets.DD_API_KEY }} != ""
     runs-on: ubuntu-latest
     strategy:
       matrix:
