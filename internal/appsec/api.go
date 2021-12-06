@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Intake API payloads.
+// Intake API payloads. Do not merge me
 type (
 	// eventBatch intake API payload.
 	eventBatch struct {
