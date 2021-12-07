@@ -331,7 +331,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if opts.Parent != nil {
 		if ctx, ok := opts.Parent.(*spanContext); ok {
 			context = ctx
-			if goContext == nil {
+			if goContext == nil && ctx.span != nil {
 				// Inherit the context.Context from parent span if it was propagated
 				// using ChildOf() rather than StartSpanFromContext(), see
 				// applyPPROFLabels() below.
