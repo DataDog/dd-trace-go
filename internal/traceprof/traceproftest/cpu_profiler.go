@@ -69,17 +69,18 @@ func (c *CPUProfile) Duration() (d time.Duration) {
 }
 
 // LabelTime returns the CPU time for the given pprof label in this profile.
+// The special val "*" can be used to match any label value.
 func (c *CPUProfile) LabelDuration(label, val string) (d time.Duration) {
 	return c.LabelsDuration(map[string]string{label: val})
 }
 
 // LabelsDuration returns the CPU time for the given pprof labels in this
-// profile.
+// profile. The special val "*" can be used to match any label value.
 func (c *CPUProfile) LabelsDuration(labels map[string]string) (d time.Duration) {
 sampleloop:
 	for _, s := range c.prof.Sample {
 		for k, v := range labels {
-			if vals := s.Label[k]; len(vals) != 1 || vals[0] != v {
+			if vals := s.Label[k]; len(vals) != 1 || (vals[0] != v && v != "*") {
 				continue sampleloop
 			}
 		}
