@@ -2,15 +2,20 @@ goos: linux
 goarch: amd64
 pkg: gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/traceproftest
 cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
-BenchmarkEndpointsAndHotspots/cpu-bound-6         	     708	 101660228 ns/op	  93050847 cpu-ns/op	       134.8 pprof-B/op	         9.049 pprof-samples/op
-BenchmarkEndpointsAndHotspots/cpu-bound-6         	     709	 101631930 ns/op	  93187588 cpu-ns/op	       135.7 pprof-B/op	         9.066 pprof-samples/op
-BenchmarkEndpointsAndHotspots/cpu-bound-6         	     708	 101681734 ns/op	  93079096 cpu-ns/op	       136.4 pprof-B/op	         9.042 pprof-samples/op
-BenchmarkEndpointsAndHotspots/cpu-bound-6         	     708	 101645939 ns/op	  93333333 cpu-ns/op	       132.9 pprof-B/op	         9.034 pprof-samples/op
-BenchmarkEndpointsAndHotspots/cpu-bound-6         	     708	 101698538 ns/op	  93276836 cpu-ns/op	       137.0 pprof-B/op	         9.064 pprof-samples/op
-BenchmarkEndpointsAndHotspots/io-bound-6          	     706	 101724026 ns/op	  11898017 cpu-ns/op	        57.84 pprof-B/op	         1.146 pprof-samples/op
-BenchmarkEndpointsAndHotspots/io-bound-6          	     706	 101655919 ns/op	  11954674 cpu-ns/op	        59.00 pprof-B/op	         1.152 pprof-samples/op
-BenchmarkEndpointsAndHotspots/io-bound-6          	     706	 101687867 ns/op	  11841360 cpu-ns/op	        56.86 pprof-B/op	         1.137 pprof-samples/op
-BenchmarkEndpointsAndHotspots/io-bound-6          	     706	 101689276 ns/op	  11614731 cpu-ns/op	        56.57 pprof-B/op	         1.122 pprof-samples/op
-BenchmarkEndpointsAndHotspots/io-bound-6          	     706	 101841830 ns/op	  11529745 cpu-ns/op	        57.32 pprof-B/op	         1.126 pprof-samples/op
+BenchmarkEndpointsAndHotspots/worst-case-6         	  460471	    153947 ns/op	    147545 cpu-ns/op	         0.2447 pprof-B/op	         0.007540 pprof-samples/op
+BenchmarkEndpointsAndHotspots/worst-case-6         	  463324	    156800 ns/op	    149097 cpu-ns/op	         0.2485 pprof-B/op	         0.007608 pprof-samples/op
+BenchmarkEndpointsAndHotspots/worst-case-6         	  459400	    156407 ns/op	    150653 cpu-ns/op	         0.2489 pprof-B/op	         0.007751 pprof-samples/op
+BenchmarkEndpointsAndHotspots/worst-case-6         	  457323	    153615 ns/op	    148057 cpu-ns/op	         0.2473 pprof-B/op	         0.007533 pprof-samples/op
+BenchmarkEndpointsAndHotspots/worst-case-6         	  457215	    155692 ns/op	    148573 cpu-ns/op	         0.2498 pprof-B/op	         0.007603 pprof-samples/op
+BenchmarkEndpointsAndHotspots/cpu-bound-6          	     708	 101714101 ns/op	  93573446 cpu-ns/op	       132.5 pprof-B/op	         9.076 pprof-samples/op
+BenchmarkEndpointsAndHotspots/cpu-bound-6          	     708	 101679256 ns/op	  93672316 cpu-ns/op	       132.5 pprof-B/op	         9.075 pprof-samples/op
+BenchmarkEndpointsAndHotspots/cpu-bound-6          	     708	 101690713 ns/op	  93220339 cpu-ns/op	       132.4 pprof-B/op	         9.056 pprof-samples/op
+BenchmarkEndpointsAndHotspots/cpu-bound-6          	     708	 101665913 ns/op	  93290960 cpu-ns/op	       131.8 pprof-B/op	         9.078 pprof-samples/op
+BenchmarkEndpointsAndHotspots/cpu-bound-6          	     706	 101824236 ns/op	  93130312 cpu-ns/op	       132.7 pprof-B/op	         9.023 pprof-samples/op
+BenchmarkEndpointsAndHotspots/io-bound-6           	     705	 101841288 ns/op	  11659574 cpu-ns/op	        55.30 pprof-B/op	         1.129 pprof-samples/op
+BenchmarkEndpointsAndHotspots/io-bound-6           	     706	 101762350 ns/op	  11770538 cpu-ns/op	        54.96 pprof-B/op	         1.127 pprof-samples/op
+BenchmarkEndpointsAndHotspots/io-bound-6           	     706	 101700747 ns/op	  11543909 cpu-ns/op	        53.93 pprof-B/op	         1.119 pprof-samples/op
+BenchmarkEndpointsAndHotspots/io-bound-6           	     706	 101643624 ns/op	  11501416 cpu-ns/op	        55.60 pprof-B/op	         1.118 pprof-samples/op
+BenchmarkEndpointsAndHotspots/io-bound-6           	     706	 101865298 ns/op	  11728045 cpu-ns/op	        57.75 pprof-B/op	         1.142 pprof-samples/op
 PASS
-ok  	gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/traceproftest	826.333s
+ok  	gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/traceproftest	1194.852s

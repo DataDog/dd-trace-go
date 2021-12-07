@@ -172,6 +172,13 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 		b.ReportMetric(float64(prof.Duration())/float64(b.N), "cpu-ns/op")
 	}
 
+	b.Run("worst-case", func(b *testing.B) {
+		benchCommon(b, &pb.WorkReq{
+			CpuDuration: int64(0 * time.Millisecond),
+			SqlDuration: int64(0 * time.Millisecond),
+		})
+	})
+
 	b.Run("cpu-bound", func(b *testing.B) {
 		benchCommon(b, &pb.WorkReq{
 			CpuDuration: int64(90 * time.Millisecond),
