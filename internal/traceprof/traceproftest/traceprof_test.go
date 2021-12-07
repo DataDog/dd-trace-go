@@ -160,8 +160,10 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 		if cpuTime >= 90*time.Millisecond {
 			// sanity check profile results if enough samples can be expected
 			require.Greater(b, prof.Duration(), time.Duration(0))
-			require.Greater(b, prof.LabelDuration("span id", "*"), time.Duration(0))
-			require.Greater(b, prof.LabelDuration("local root span id", "*"), time.Duration(0))
+			if config.CodeHotspots {
+				require.Greater(b, prof.LabelDuration("span id", "*"), time.Duration(0))
+				require.Greater(b, prof.LabelDuration("local root span id", "*"), time.Duration(0))
+			}
 			if config.Endpoints && appType != Direct {
 				require.Greater(b, prof.LabelDuration("trace endpoint", appType.Endpoint()), time.Duration(0))
 			}
