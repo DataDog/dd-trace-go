@@ -360,16 +360,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 	t.Run("profiler-endpoints", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
-			tracer := newTracer()
-			c := tracer.config
+			c := newConfig()
 			assert.False(t, c.profilerEndpoints)
 		})
 
 		t.Run("override", func(t *testing.T) {
 			os.Setenv(traceprof.EndpointEnvVar, "true")
 			defer os.Unsetenv(traceprof.EndpointEnvVar)
-			tracer := newTracer()
-			c := tracer.config
+			c := newConfig()
 			assert.True(t, c.profilerEndpoints)
 		})
 	})
