@@ -1,6 +1,6 @@
 set -eu
 echo "-> Starting benchmark (ETA: 90min)"
-BENCH_CMD="go test -benchtime 1s -count 5 -timeout 24h -run ^$ -bench . ."
+BENCH_CMD="go test -benchtime 60t as -count 5 -timeout 24h -run ^$ -bench . ."
 
 if ! which benchstat; then
   echo "error: needs benchstat, install via:"
