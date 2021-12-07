@@ -1,19 +1,43 @@
-name                               old time/op           new time/op           delta
-EndpointsAndHotspots/worst-case-6            153µs ± 9%            155µs ± 1%      ~     (p=0.690 n=5+5)
-EndpointsAndHotspots/cpu-bound-6             102ms ± 0%            102ms ± 0%      ~     (p=0.151 n=5+5)
-EndpointsAndHotspots/io-bound-6              102ms ± 0%            102ms ± 0%      ~     (p=1.000 n=5+5)
+name                                        old time/op           new time/op           delta
+EndpointsAndHotspots/direct/hello-world-16           6.52µs ± 1%           8.87µs ± 0%   +36.02%  (p=0.016 n=5+4)
+EndpointsAndHotspots/http/hello-world-16             83.8µs ± 0%           89.1µs ± 0%    +6.25%  (p=0.008 n=5+5)
+EndpointsAndHotspots/grpc/hello-world-16              104µs ± 0%            109µs ± 0%    +4.87%  (p=0.008 n=5+5)
+EndpointsAndHotspots/direct/cpu-bound-16              101ms ± 0%            101ms ± 0%      ~     (p=0.690 n=5+5)
+EndpointsAndHotspots/direct/io-bound-16               101ms ± 0%            101ms ± 0%      ~     (p=0.841 n=5+5)
+EndpointsAndHotspots/http/cpu-bound-16                101ms ± 0%            101ms ± 0%      ~     (p=0.841 n=5+5)
+EndpointsAndHotspots/http/io-bound-16                 101ms ± 0%            101ms ± 0%      ~     (p=0.095 n=5+5)
+EndpointsAndHotspots/grpc/cpu-bound-16                101ms ± 0%            101ms ± 0%      ~     (p=0.151 n=5+5)
+EndpointsAndHotspots/grpc/io-bound-16                 101ms ± 0%            101ms ± 0%      ~     (p=0.056 n=5+5)
 
-name                               old cpu-time/op       new cpu-time/op       delta
-EndpointsAndHotspots/worst-case-6            147µs ± 9%            149µs ± 1%      ~     (p=0.548 n=5+5)
-EndpointsAndHotspots/cpu-bound-6            93.1ms ± 0%           93.4ms ± 0%      ~     (p=0.095 n=5+5)
-EndpointsAndHotspots/io-bound-6             12.0ms ± 2%           11.6ms ± 1%    -3.33%  (p=0.008 n=5+5)
+name                                        old cpu-time/op       new cpu-time/op       delta
+EndpointsAndHotspots/direct/hello-world-16           11.1µs ± 1%           14.3µs ± 1%   +28.37%  (p=0.008 n=5+5)
+EndpointsAndHotspots/http/hello-world-16              114µs ± 1%            120µs ± 0%    +5.32%  (p=0.008 n=5+5)
+EndpointsAndHotspots/grpc/hello-world-16              176µs ± 0%            182µs ± 1%    +3.40%  (p=0.008 n=5+5)
+EndpointsAndHotspots/direct/cpu-bound-16             94.2ms ± 0%           94.3ms ± 0%      ~     (p=0.595 n=5+5)
+EndpointsAndHotspots/direct/io-bound-16              11.3ms ± 1%           11.3ms ± 3%      ~     (p=0.690 n=5+5)
+EndpointsAndHotspots/http/cpu-bound-16               95.3ms ± 0%           95.2ms ± 0%      ~     (p=0.421 n=5+5)
+EndpointsAndHotspots/http/io-bound-16                11.4ms ± 3%           11.5ms ± 2%      ~     (p=0.841 n=5+5)
+EndpointsAndHotspots/grpc/cpu-bound-16               95.1ms ± 0%           95.3ms ± 0%      ~     (p=0.548 n=5+5)
+EndpointsAndHotspots/grpc/io-bound-16                11.6ms ± 2%           11.7ms ± 2%      ~     (p=0.397 n=5+5)
 
-name                               old pprof-alloc/op    new pprof-alloc/op    delta
-EndpointsAndHotspots/worst-case-6            0.22B ± 3%            0.25B ± 1%   +13.45%  (p=0.008 n=5+5)
-EndpointsAndHotspots/cpu-bound-6             70.1B ± 2%           132.4B ± 0%   +88.96%  (p=0.008 n=5+5)
-EndpointsAndHotspots/io-bound-6              27.1B ±13%            55.5B ± 4%  +104.96%  (p=0.008 n=5+5)
+name                                        old pprof-alloc/op    new pprof-alloc/op    delta
+EndpointsAndHotspots/direct/io-bound-16               20.1B ±14%            47.5B ± 3%  +136.28%  (p=0.008 n=5+5)
+EndpointsAndHotspots/grpc/io-bound-16                 25.0B ±12%            56.5B ± 2%  +125.47%  (p=0.008 n=5+5)
+EndpointsAndHotspots/http/io-bound-16                 23.7B ± 7%            52.5B ± 4%  +121.57%  (p=0.008 n=5+5)
+EndpointsAndHotspots/grpc/cpu-bound-16                71.4B ± 5%           134.7B ± 2%   +88.59%  (p=0.008 n=5+5)
+EndpointsAndHotspots/http/cpu-bound-16                71.0B ± 2%           132.9B ± 1%   +87.17%  (p=0.008 n=5+5)
+EndpointsAndHotspots/direct/hello-world-16            0.01B ± 1%            0.02B ± 1%   +82.06%  (p=0.008 n=5+5)
+EndpointsAndHotspots/direct/cpu-bound-16              65.4B ± 2%           117.9B ± 2%   +80.39%  (p=0.008 n=5+5)
+EndpointsAndHotspots/http/hello-world-16              0.16B ± 1%            0.19B ± 1%   +17.86%  (p=0.008 n=5+5)
+EndpointsAndHotspots/grpc/hello-world-16              0.20B ± 3%            0.24B ± 1%   +15.96%  (p=0.008 n=5+5)
 
-name                               old pprof-samples/op  new pprof-samples/op  delta
-EndpointsAndHotspots/worst-case-6             0.01 ± 7%             0.01 ± 2%   -20.73%  (p=0.008 n=5+5)
-EndpointsAndHotspots/cpu-bound-6              9.04 ± 0%             9.06 ± 0%      ~     (p=0.151 n=5+5)
-EndpointsAndHotspots/io-bound-6               1.15 ± 2%             1.13 ± 1%    -2.05%  (p=0.016 n=5+5)
+name                                        old pprof-samples/op  new pprof-samples/op  delta
+EndpointsAndHotspots/direct/hello-world-16             0.00 ± 1%             0.00 ± 1%   +34.08%  (p=0.008 n=5+5)
+EndpointsAndHotspots/grpc/hello-world-16               0.01 ± 2%             0.01 ± 1%    +6.46%  (p=0.008 n=5+5)
+EndpointsAndHotspots/direct/cpu-bound-16               9.14 ± 0%             9.15 ± 0%      ~     (p=0.333 n=5+5)
+EndpointsAndHotspots/direct/io-bound-16                1.10 ± 2%             1.10 ± 1%      ~     (p=0.810 n=5+5)
+EndpointsAndHotspots/http/cpu-bound-16                 9.23 ± 0%             9.21 ± 1%      ~     (p=0.310 n=5+5)
+EndpointsAndHotspots/http/io-bound-16                  1.11 ± 1%             1.11 ± 1%      ~     (p=1.000 n=5+5)
+EndpointsAndHotspots/grpc/cpu-bound-16                 9.21 ± 0%             9.23 ± 0%      ~     (p=0.286 n=5+5)
+EndpointsAndHotspots/grpc/io-bound-16                  1.12 ± 2%             1.12 ± 1%      ~     (p=0.548 n=5+5)
+EndpointsAndHotspots/http/hello-world-16               0.01 ± 1%             0.01 ± 1%    -9.96%  (p=0.008 n=5+5)

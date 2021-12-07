@@ -1,21 +1,51 @@
 goos: linux
 goarch: amd64
 pkg: gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/traceproftest
-cpu: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz
-BenchmarkEndpointsAndHotspots/worst-case-6         	  475386	    146136 ns/op	    141338 cpu-ns/op	         0.2156 pprof-B/op	         0.009277 pprof-samples/op
-BenchmarkEndpointsAndHotspots/worst-case-6         	  477691	    147318 ns/op	    142561 cpu-ns/op	         0.2159 pprof-B/op	         0.009381 pprof-samples/op
-BenchmarkEndpointsAndHotspots/worst-case-6         	  477184	    147713 ns/op	    142293 cpu-ns/op	         0.2129 pprof-B/op	         0.009221 pprof-samples/op
-BenchmarkEndpointsAndHotspots/worst-case-6         	  487917	    167059 ns/op	    160970 cpu-ns/op	         0.2260 pprof-B/op	         0.01027 pprof-samples/op
-BenchmarkEndpointsAndHotspots/worst-case-6         	  475340	    157511 ns/op	    149135 cpu-ns/op	         0.2219 pprof-B/op	         0.009831 pprof-samples/op
-BenchmarkEndpointsAndHotspots/cpu-bound-6          	     708	 101700105 ns/op	  92853107 cpu-ns/op	        68.94 pprof-B/op	         9.047 pprof-samples/op
-BenchmarkEndpointsAndHotspots/cpu-bound-6          	     706	 101613171 ns/op	  92974504 cpu-ns/op	        68.60 pprof-B/op	         9.025 pprof-samples/op
-BenchmarkEndpointsAndHotspots/cpu-bound-6          	     708	 101690450 ns/op	  93418079 cpu-ns/op	        70.33 pprof-B/op	         9.030 pprof-samples/op
-BenchmarkEndpointsAndHotspots/cpu-bound-6          	     709	 101647249 ns/op	  93004231 cpu-ns/op	        71.80 pprof-B/op	         9.052 pprof-samples/op
-BenchmarkEndpointsAndHotspots/cpu-bound-6          	     708	 101665860 ns/op	  93206215 cpu-ns/op	        70.61 pprof-B/op	         9.032 pprof-samples/op
-BenchmarkEndpointsAndHotspots/io-bound-6           	     708	 101729827 ns/op	  12076271 cpu-ns/op	        28.89 pprof-B/op	         1.158 pprof-samples/op
-BenchmarkEndpointsAndHotspots/io-bound-6           	     706	 101737369 ns/op	  12053824 cpu-ns/op	        27.30 pprof-B/op	         1.156 pprof-samples/op
-BenchmarkEndpointsAndHotspots/io-bound-6           	     706	 101723886 ns/op	  12152975 cpu-ns/op	        27.06 pprof-B/op	         1.160 pprof-samples/op
-BenchmarkEndpointsAndHotspots/io-bound-6           	     706	 101764560 ns/op	  12110482 cpu-ns/op	        28.53 pprof-B/op	         1.149 pprof-samples/op
-BenchmarkEndpointsAndHotspots/io-bound-6           	     706	 101766551 ns/op	  11813031 cpu-ns/op	        23.63 pprof-B/op	         1.130 pprof-samples/op
+cpu: Intel(R) Xeon(R) Platinum 8275CL CPU @ 3.00GHz
+BenchmarkEndpointsAndHotspots/direct/hello-world-16             11256594              6497 ns/op             11018 cpu-ns/op             0.01159 pprof-B/op              0.0007238 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/hello-world-16             11208505              6486 ns/op             11150 cpu-ns/op             0.01156 pprof-B/op              0.0007074 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/hello-world-16             11250219              6549 ns/op             11109 cpu-ns/op             0.01159 pprof-B/op              0.0007149 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/hello-world-16             11203435              6527 ns/op             11155 cpu-ns/op             0.01162 pprof-B/op              0.0007176 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/hello-world-16             11140414              6545 ns/op             11151 cpu-ns/op             0.01167 pprof-B/op              0.0007128 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/cpu-bound-16                    711         100877675 ns/op          94360056 cpu-ns/op            64.72 pprof-B/op                 9.167 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/cpu-bound-16                    712         100897343 ns/op          94073034 cpu-ns/op            66.40 pprof-B/op                 9.125 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/cpu-bound-16                    711         100899816 ns/op          94289733 cpu-ns/op            66.37 pprof-B/op                 9.117 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/cpu-bound-16                    712         100888183 ns/op          94101124 cpu-ns/op            65.05 pprof-B/op                 9.146 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/cpu-bound-16                    711         100917866 ns/op          94416315 cpu-ns/op            64.30 pprof-B/op                 9.150 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/io-bound-16                     714         100805108 ns/op          11316527 cpu-ns/op            19.25 pprof-B/op                 1.104 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/io-bound-16                     714         100799913 ns/op          11428571 cpu-ns/op            22.93 pprof-B/op                 1.120 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/io-bound-16                     712         100829436 ns/op          11390449 cpu-ns/op            19.39 pprof-B/op                 1.100 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/io-bound-16                     712         100862539 ns/op          11235955 cpu-ns/op            18.51 pprof-B/op                 1.077 pprof-samples/op
+BenchmarkEndpointsAndHotspots/direct/io-bound-16                     712         100819921 ns/op          11278090 cpu-ns/op            20.39 pprof-B/op                 1.104 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/hello-world-16                 868000             83689 ns/op            113168 cpu-ns/op             0.1614 pprof-B/op               0.007414 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/hello-world-16                 867220             84147 ns/op            114100 cpu-ns/op             0.1611 pprof-B/op               0.007387 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/hello-world-16                 852618             83653 ns/op            114166 cpu-ns/op             0.1623 pprof-B/op               0.007490 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/hello-world-16                 858936             83999 ns/op            114723 cpu-ns/op             0.1620 pprof-B/op               0.007495 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/hello-world-16                 848918             83727 ns/op            114122 cpu-ns/op             0.1635 pprof-B/op               0.007507 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/cpu-bound-16                      710         101231853 ns/op          95338028 cpu-ns/op            72.25 pprof-B/op                 9.239 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/cpu-bound-16                      710         101213894 ns/op          95098592 cpu-ns/op            70.81 pprof-B/op                 9.230 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/cpu-bound-16                      710         101197625 ns/op          95591549 cpu-ns/op            70.53 pprof-B/op                 9.227 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/cpu-bound-16                      710         101161805 ns/op          95239437 cpu-ns/op            70.65 pprof-B/op                 9.204 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/cpu-bound-16                      710         101195462 ns/op          95056338 cpu-ns/op            70.79 pprof-B/op                 9.242 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/io-bound-16                       711         101057268 ns/op          11561181 cpu-ns/op            23.95 pprof-B/op                 1.113 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/io-bound-16                       711         101073448 ns/op          11462729 cpu-ns/op            23.63 pprof-B/op                 1.108 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/io-bound-16                       711         101079604 ns/op          11518987 cpu-ns/op            24.82 pprof-B/op                 1.113 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/io-bound-16                       711         101074874 ns/op          11139241 cpu-ns/op            21.91 pprof-B/op                 1.089 pprof-samples/op
+BenchmarkEndpointsAndHotspots/http/io-bound-16                       711         101077667 ns/op          11504923 cpu-ns/op            24.12 pprof-B/op                 1.104 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/hello-world-16                 697347            103957 ns/op            175910 cpu-ns/op             0.2030 pprof-B/op               0.008495 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/hello-world-16                 659883            103883 ns/op            175986 cpu-ns/op             0.2090 pprof-B/op               0.008632 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/hello-world-16                 676544            103462 ns/op            175657 cpu-ns/op             0.2038 pprof-B/op               0.008577 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/hello-world-16                 699482            103697 ns/op            175916 cpu-ns/op             0.1993 pprof-B/op               0.008375 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/hello-world-16                 694737            103376 ns/op            176340 cpu-ns/op             0.2029 pprof-B/op               0.008546 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/cpu-bound-16                      710         101106202 ns/op          94971831 cpu-ns/op            74.22 pprof-B/op                 9.207 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/cpu-bound-16                      710         101123968 ns/op          95126761 cpu-ns/op            70.38 pprof-B/op                 9.197 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/cpu-bound-16                      710         101183124 ns/op          95464789 cpu-ns/op            73.68 pprof-B/op                 9.221 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/cpu-bound-16                      710         101130021 ns/op          95112676 cpu-ns/op            67.98 pprof-B/op                 9.200 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/cpu-bound-16                      710         101147479 ns/op          95000000 cpu-ns/op            70.97 pprof-B/op                 9.227 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/io-bound-16                       711         101044102 ns/op          11687764 cpu-ns/op            28.13 pprof-B/op                 1.135 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/io-bound-16                       711         101070721 ns/op          11476793 cpu-ns/op            23.28 pprof-B/op                 1.094 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/io-bound-16                       711         101052402 ns/op          11687764 cpu-ns/op            25.72 pprof-B/op                 1.115 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/io-bound-16                       711         101060491 ns/op          11772152 cpu-ns/op            24.26 pprof-B/op                 1.129 pprof-samples/op
+BenchmarkEndpointsAndHotspots/grpc/io-bound-16                       711         101008512 ns/op          11336146 cpu-ns/op            23.83 pprof-B/op                 1.104 pprof-samples/op
 PASS
-ok  	gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/traceproftest	1204.270s
+ok      gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/traceproftest        3609.461s
