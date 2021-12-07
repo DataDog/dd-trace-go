@@ -59,6 +59,20 @@ const (
 	HTTP testAppType = "http"
 )
 
+// Endpoint returns the "trace endpoint" label value for this app type.
+func (a testAppType) Endpoint() string {
+	switch a {
+	case Direct:
+		return ""
+	case GRPC:
+		return GrpcWorkEndpoint
+	case HTTP:
+		return HttpWorkEndpointMethod + " " + HttpWorkEndpoint
+	default:
+		panic("unreachable")
+	}
+}
+
 func (c AppConfig) Start(t testing.TB) *App {
 	a := &App{config: c}
 	a.start(t)

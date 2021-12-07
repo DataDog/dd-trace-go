@@ -41,18 +41,6 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 	}
 
 	for _, appType := range []testAppType{Direct, HTTP, GRPC} {
-		var wantEndpoint string
-		switch appType {
-		case Direct:
-			// intentionally left blank
-		case GRPC:
-			wantEndpoint = GrpcWorkEndpoint
-		case HTTP:
-			wantEndpoint = HttpWorkEndpointMethod + " " + HttpWorkEndpoint
-		default:
-			panic("unreachable")
-		}
-
 		t.Run(string(appType), func(t *testing.T) {
 			t.Run("none", func(t *testing.T) {
 				app := AppConfig{AppType: appType}.Start(t)
@@ -63,7 +51,7 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 				prof := app.CPUProfile(t)
 				require.Zero(t, prof.LabelDuration(traceprof.SpanID, res.SpanId))
 				require.Zero(t, prof.LabelDuration(traceprof.LocalRootSpanID, res.LocalRootSpanId))
-				require.Zero(t, prof.LabelDuration(traceprof.TraceEndpoint, wantEndpoint))
+				require.Zero(t, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()))
 			})
 
 			t.Run("endpoints", func(t *testing.T) {
@@ -76,7 +64,7 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 				require.Zero(t, prof.LabelDuration(traceprof.SpanID, res.SpanId))
 				require.Zero(t, prof.LabelDuration(traceprof.LocalRootSpanID, res.LocalRootSpanId))
 				if appType != Direct {
-					require.GreaterOrEqual(t, prof.LabelDuration(traceprof.TraceEndpoint, wantEndpoint), minCPUDuration)
+					require.GreaterOrEqual(t, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()), minCPUDuration)
 				}
 			})
 
@@ -91,7 +79,7 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 					traceprof.SpanID:          res.SpanId,
 					traceprof.LocalRootSpanID: res.LocalRootSpanId,
 				}), minCPUDuration)
-				require.Zero(t, prof.LabelDuration(traceprof.TraceEndpoint, wantEndpoint))
+				require.Zero(t, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()))
 			})
 
 			t.Run("all", func(t *testing.T) {
@@ -106,7 +94,7 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 					traceprof.LocalRootSpanID: res.LocalRootSpanId,
 				}
 				if appType != Direct {
-					wantLabels[traceprof.TraceEndpoint] = wantEndpoint
+					wantLabels[traceprof.TraceEndpoint] = appType.Endpoint()
 				}
 				require.GreaterOrEqual(t, prof.LabelsDuration(wantLabels), minCPUDuration)
 			})
@@ -120,7 +108,7 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 				prof := app.CPUProfile(t)
 				require.Zero(t, prof.LabelDuration(traceprof.SpanID, res.SpanId))
 				require.Zero(t, prof.LabelDuration(traceprof.LocalRootSpanID, res.LocalRootSpanId))
-				require.Zero(t, prof.LabelDuration(traceprof.TraceEndpoint, wantEndpoint))
+				require.Zero(t, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()))
 			})
 
 			t.Run("all-child-of", func(t *testing.T) {
@@ -140,7 +128,7 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 					traceprof.LocalRootSpanID: res.LocalRootSpanId,
 				}
 				if appType != Direct {
-					wantLabels[traceprof.TraceEndpoint] = wantEndpoint
+					wantLabels[traceprof.TraceEndpoint] = appType.Endpoint()
 				}
 				require.GreaterOrEqual(t, prof.LabelsDuration(wantLabels), minCPUDuration)
 			})
@@ -175,7 +163,7 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 			require.Greater(b, prof.LabelDuration("span id", "*"), time.Duration(0))
 			require.Greater(b, prof.LabelDuration("local root span id", "*"), time.Duration(0))
 			if config.Endpoints && appType != Direct {
-				require.Greater(b, prof.LabelDuration("trace endpoint", HttpWorkEndpointMethod+" "+HttpWorkEndpoint), time.Duration(0))
+				require.Greater(b, prof.LabelDuration("trace endpoint", appType.Endpoint()), time.Duration(0))
 			}
 		}
 
