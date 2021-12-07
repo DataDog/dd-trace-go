@@ -374,16 +374,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 	t.Run("profiler-hotspots", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
-			tracer := newTracer()
-			c := tracer.config
+			c := newConfig()
 			assert.False(t, c.profilerHotspots)
 		})
 
 		t.Run("override", func(t *testing.T) {
 			os.Setenv(traceprof.CodeHotspotsEnvVar, "true")
 			defer os.Unsetenv(traceprof.CodeHotspotsEnvVar)
-			tracer := newTracer()
-			c := tracer.config
+			c := newConfig()
 			assert.True(t, c.profilerHotspots)
 		})
 	})
