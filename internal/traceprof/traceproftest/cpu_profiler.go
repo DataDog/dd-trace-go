@@ -73,8 +73,8 @@ func (c *CPUProfile) Duration() (d time.Duration) {
 	return c.LabelsDuration(nil)
 }
 
-// LabelTime returns the CPU time for the given pprof label in this profile.
-// The special val "*" can be used to match any label value.
+// LabelDuration returns the CPU time for the given pprof label in this
+// profile. The special val "*" can be used to match any label value.
 func (c *CPUProfile) LabelDuration(label, val string) (d time.Duration) {
 	return c.LabelsDuration(map[string]string{label: val})
 }

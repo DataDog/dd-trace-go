@@ -32,15 +32,19 @@ import (
 )
 
 const (
-	HttpWorkEndpointMethod = "POST"
-	HttpWorkEndpoint       = "/work/:secret"
-	GrpcWorkEndpoint       = "/testapp.TestApp/Work"
+	// HTTPWorkEndpointMethod is the http method used for the demo app.
+	HTTPWorkEndpointMethod = "POST"
+	// HTTPWorkEndpoint is the http endpoint used for the demo app.
+	HTTPWorkEndpoint = "/work/:secret"
+	// GRPCWorkEndpoint is the grpc endpoint used for the demo app.
+	GRPCWorkEndpoint = "/testapp.TestApp/Work"
 )
 
 // CustomLabels are the user-defined pprof labels to apply in the work endpoint
 // to simulate user label interacting with our own labels.
 var CustomLabels = map[string]string{"user label": "user val"}
 
+// AppConfig defines the behavior and profiling options for the demo app.
 type AppConfig struct {
 	// Endpoints is passed to tracer.WithProfilerEndpoints()
 	Endpoints bool
@@ -60,7 +64,7 @@ const (
 	Direct testAppType = "direct"
 	// GRPC executes requests via GRPC.
 	GRPC testAppType = "grpc"
-	// GRPC executes requests via HTTP.
+	// HTTP executes requests via HTTP.
 	HTTP testAppType = "http"
 )
 
@@ -70,20 +74,22 @@ func (a testAppType) Endpoint() string {
 	case Direct:
 		return ""
 	case GRPC:
-		return GrpcWorkEndpoint
+		return GRPCWorkEndpoint
 	case HTTP:
-		return HttpWorkEndpointMethod + " " + HttpWorkEndpoint
+		return HTTPWorkEndpointMethod + " " + HTTPWorkEndpoint
 	default:
 		panic("unreachable")
 	}
 }
 
+// Start starts the demo app, including tracer and profiler.
 func (c AppConfig) Start(t testing.TB) *App {
 	a := &App{config: c}
 	a.start(t)
 	return a
 }
 
+// App is an instance of the demo app.
 type App struct {
 	httpServer     *httptest.Server
 	grpcServer     *grpc.Server
@@ -121,7 +127,7 @@ func (a *App) start(t testing.TB) {
 		// We use a routing pattern here so our test can validate that potential
 		// Personal Identifiable Information (PII) values, in this case :secret,
 		// isn't beeing collected in the "trace endpoint" label.
-		router.Handle("POST", HttpWorkEndpoint, a.workHandler)
+		router.Handle("POST", HTTPWorkEndpoint, a.workHandler)
 		a.httpServer = httptest.NewServer(router)
 	default:
 		panic("unreachable")
@@ -150,6 +156,8 @@ func (a *App) Stop(t testing.TB) {
 	a.stopped = true
 }
 
+// WorkRequest sends the given req to the demo app and returns the response.
+// The config.AppType determines how the request is made.
 func (a *App) WorkRequest(t testing.TB, req *pb.WorkReq) *pb.WorkRes {
 	switch a.config.AppType {
 	case Direct:
@@ -196,6 +204,8 @@ func (a *App) workHandler(w http.ResponseWriter, r *http.Request, p httprouter.P
 	json.NewEncoder(w).Encode(res)
 }
 
+// Work implements the request handler for the demo app. It's reused regardless
+// of the config.AppType.
 func (a *App) Work(ctx context.Context, req *pb.WorkReq) (*pb.WorkRes, error) {
 	// Simulate user-defined custom labels to make sure we don't overwrite them
 	// when we apply our own labels.
