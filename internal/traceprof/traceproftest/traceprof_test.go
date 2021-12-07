@@ -40,9 +40,11 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 		require.GreaterOrEqual(t, prof.LabelsDuration(CustomLabels), minCPUDuration)
 	}
 
-	for _, appType := range []testAppType{HTTP, GRPC} {
+	for _, appType := range []testAppType{Direct, HTTP, GRPC} {
 		var wantEndpoint string
 		switch appType {
+		case Direct:
+			// intentionally left blank
 		case GRPC:
 			wantEndpoint = GrpcWorkEndpoint
 		case HTTP:
@@ -73,7 +75,9 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 				prof := app.CPUProfile(t)
 				require.Zero(t, prof.LabelDuration(traceprof.SpanID, res.SpanId))
 				require.Zero(t, prof.LabelDuration(traceprof.LocalRootSpanID, res.LocalRootSpanId))
-				require.GreaterOrEqual(t, prof.LabelDuration(traceprof.TraceEndpoint, wantEndpoint), minCPUDuration)
+				if appType != Direct {
+					require.GreaterOrEqual(t, prof.LabelDuration(traceprof.TraceEndpoint, wantEndpoint), minCPUDuration)
+				}
 			})
 
 			t.Run("code-hotspots", func(t *testing.T) {
@@ -97,11 +101,14 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 				res := app.WorkRequest(t, req)
 				assertCommon(t, app, res)
 				prof := app.CPUProfile(t)
-				require.GreaterOrEqual(t, prof.LabelsDuration(map[string]string{
+				wantLabels := map[string]string{
 					traceprof.SpanID:          res.SpanId,
 					traceprof.LocalRootSpanID: res.LocalRootSpanId,
-					traceprof.TraceEndpoint:   wantEndpoint,
-				}), minCPUDuration)
+				}
+				if appType != Direct {
+					wantLabels[traceprof.TraceEndpoint] = wantEndpoint
+				}
+				require.GreaterOrEqual(t, prof.LabelsDuration(wantLabels), minCPUDuration)
 			})
 
 			t.Run("none-child-of", func(t *testing.T) {
@@ -128,11 +135,14 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 				res := app.WorkRequest(t, req)
 				assertCommon(t, app, res)
 				prof := app.CPUProfile(t)
-				require.GreaterOrEqual(t, prof.LabelsDuration(map[string]string{
+				wantLabels := map[string]string{
 					traceprof.SpanID:          res.SpanId,
 					traceprof.LocalRootSpanID: res.LocalRootSpanId,
-					traceprof.TraceEndpoint:   wantEndpoint,
-				}), minCPUDuration)
+				}
+				if appType != Direct {
+					wantLabels[traceprof.TraceEndpoint] = wantEndpoint
+				}
+				require.GreaterOrEqual(t, prof.LabelsDuration(wantLabels), minCPUDuration)
 			})
 		})
 	}
@@ -142,11 +152,11 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 // samples, cpu time, pprof size) of profiler endpoints and code hotspots. Use
 // ./bench.sh for executing these benchmarks.
 func BenchmarkEndpointsAndHotspots(b *testing.B) {
-	benchCommon := func(b *testing.B, req *pb.WorkReq) {
+	benchCommon := func(b *testing.B, appType testAppType, req *pb.WorkReq) {
 		config := AppConfig{
 			CodeHotspots: os.Getenv("BENCH_ENDPOINTS") == "true",
 			Endpoints:    os.Getenv("BENCH_HOTSPOTS") == "true",
-			AppType:      HTTP,
+			AppType:      appType,
 		}
 		app := config.Start(b)
 		defer app.Stop(b)
@@ -172,24 +182,30 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 		b.ReportMetric(float64(prof.Duration())/float64(b.N), "cpu-ns/op")
 	}
 
-	b.Run("worst-case", func(b *testing.B) {
-		benchCommon(b, &pb.WorkReq{
-			CpuDuration: int64(0 * time.Millisecond),
-			SqlDuration: int64(0 * time.Millisecond),
-		})
-	})
+	for _, appType := range []testAppType{Direct, HTTP, GRPC} {
+		b.Run(string(appType), func(b *testing.B) {
+			b.Run("hello-world", func(b *testing.B) {
+				// Simulates a handler that does no actual work other than paying for
+				// the instrumentation overhead.
+				benchCommon(b, appType, &pb.WorkReq{
+					CpuDuration: int64(0 * time.Millisecond),
+					SqlDuration: int64(0 * time.Millisecond),
+				})
+			})
 
-	b.Run("cpu-bound", func(b *testing.B) {
-		benchCommon(b, &pb.WorkReq{
-			CpuDuration: int64(90 * time.Millisecond),
-			SqlDuration: int64(10 * time.Millisecond),
-		})
-	})
+			b.Run("cpu-bound", func(b *testing.B) {
+				benchCommon(b, appType, &pb.WorkReq{
+					CpuDuration: int64(90 * time.Millisecond),
+					SqlDuration: int64(10 * time.Millisecond),
+				})
+			})
 
-	b.Run("io-bound", func(b *testing.B) {
-		benchCommon(b, &pb.WorkReq{
-			CpuDuration: int64(10 * time.Millisecond),
-			SqlDuration: int64(90 * time.Millisecond),
+			b.Run("io-bound", func(b *testing.B) {
+				benchCommon(b, appType, &pb.WorkReq{
+					CpuDuration: int64(10 * time.Millisecond),
+					SqlDuration: int64(90 * time.Millisecond),
+				})
+			})
 		})
-	})
+	}
 }

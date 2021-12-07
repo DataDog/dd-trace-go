@@ -51,7 +51,11 @@ type AppConfig struct {
 type testAppType string
 
 const (
+	// Direct directly executes requests logic without any transport overhead.
+	Direct testAppType = "direct"
+	// GRPC executes requests via GRPC.
 	GRPC testAppType = "grpc"
+	// GRPC executes requests via HTTP.
 	HTTP testAppType = "http"
 )
 
@@ -81,6 +85,8 @@ func (a *App) start(t testing.TB) {
 	)
 
 	switch a.config.AppType {
+	case Direct:
+		// nothing to setup
 	case GRPC:
 		l, err := net.Listen("tcp", "127.0.0.1:0")
 		require.NoError(t, err)
@@ -112,6 +118,8 @@ func (a *App) Stop(t testing.TB) {
 	a.prof = a.CPUProfiler.Stop(t)
 	tracer.Stop()
 	switch a.config.AppType {
+	case Direct:
+		// nothing to tear down
 	case GRPC:
 		a.grpcServer.GracefulStop()
 		a.grpcClientConn.Close()
@@ -125,6 +133,10 @@ func (a *App) Stop(t testing.TB) {
 
 func (a *App) WorkRequest(t testing.TB, req *pb.WorkReq) *pb.WorkRes {
 	switch a.config.AppType {
+	case Direct:
+		res, err := a.Work(context.Background(), req)
+		require.NoError(t, err)
+		return res
 	case GRPC:
 		client := pb.NewTestAppClient(a.grpcClientConn)
 		res, err := client.Work(context.Background(), req)
@@ -171,11 +183,15 @@ func (a *App) Work(ctx context.Context, req *pb.WorkReq) (*pb.WorkRes, error) {
 	ctx = pprof.WithLabels(ctx, toLabelSet(CustomLabels))
 	pprof.SetGoroutineLabels(ctx)
 
-	localRootSpan, _ := tracer.SpanFromContext(ctx)
+	localRootSpan, ok := tracer.SpanFromContext(ctx)
 	// We run our handler in a reqSpan so we can test that we still include the
 	// correct "local root span id" in the profiler labels.
 	reqSpan, reqSpanCtx := tracer.StartSpanFromContext(ctx, "workHandler")
 	defer reqSpan.Finish()
+	if !ok {
+		// when app type is Direct, reqSpan is our local root span
+		localRootSpan = reqSpan
+	}
 
 	// fakeSQLQuery pretends to execute an APM instrumented SQL query. This tests
 	// that the parent goroutine labels are correctly restored when it finishes.
