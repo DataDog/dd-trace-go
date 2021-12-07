@@ -1,4 +1,3 @@
-# needs benchstat:
 set -eu
 BENCH_CMD="go test -benchtime 60s -count 5 -timeout 8h -run ^$ -bench . ."
 
