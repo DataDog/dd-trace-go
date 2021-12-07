@@ -23,49 +23,59 @@ import (
 // the CPU profiler. This is done using a small test application that simulates
 // a simple http or grpc workload.
 func TestEndpointsAndCodeHotspots(t *testing.T) {
-	// Simulate a cpu-heavy request with a short sql query. This is a best-case
-	// scenario for CPU Code Hotspots.
-	req := &pb.WorkReq{
-		CpuDuration: int64(90 * time.Millisecond),
-		SqlDuration: int64(10 * time.Millisecond),
-	}
-
 	// The amount of time the profiler should be able to detect. It's much lower
 	// than CpuDuration to avoid flaky test behavior and because we're not trying
 	// assert the quality of the profiler beyond the presence of the right
 	// labels.
 	const minCPUDuration = 10 * time.Millisecond
 
-	// assertCommon asserts invariants that apply to all tests
-	assertCommon := func(t *testing.T, app *App, res *pb.WorkRes) {
-		prof := app.CPUProfile(t)
-		require.True(t, ValidSpanID(res.SpanId))
-		require.True(t, ValidSpanID(res.LocalRootSpanId))
-		require.GreaterOrEqual(t, prof.Duration(), minCPUDuration)
-		require.GreaterOrEqual(t, prof.LabelsDuration(CustomLabels), minCPUDuration)
+	// testCommon runs the common parts of this test.
+	testCommon := func(t *testing.T, c AppConfig) (*pb.WorkRes, *CPUProfile) {
+		// Simulate a cpu-heavy request with a short sql query. This is a best-case
+		// scenario for CPU Code Hotspots.
+		req := &pb.WorkReq{
+			CpuDuration: int64(90 * time.Millisecond),
+			SqlDuration: int64(10 * time.Millisecond),
+		}
+
+		// Rerun test a few times with doubled duration until it passes to avoid
+		// flaky behavior in CI.
+		for attempt := 1; ; attempt++ {
+			app := c.Start(t)
+			defer app.Stop(t)
+
+			res := app.WorkRequest(t, req)
+			prof := app.CPUProfile(t)
+			if attempt <= 5 && (prof.Duration() < minCPUDuration || prof.LabelsDuration(CustomLabels) < minCPUDuration) {
+				req.CpuDuration *= 2
+				req.SqlDuration *= 2
+				t.Logf("attempt %d: not enough cpu samples, doubling duration", attempt)
+				continue
+			}
+			require.True(t, ValidSpanID(res.SpanId))
+			require.True(t, ValidSpanID(res.LocalRootSpanId))
+			require.GreaterOrEqual(t, prof.Duration(), minCPUDuration)
+			require.GreaterOrEqual(t, prof.LabelsDuration(CustomLabels), minCPUDuration)
+			return res, prof
+		}
 	}
 
 	for _, appType := range []testAppType{Direct, HTTP, GRPC} {
 		t.Run(string(appType), func(t *testing.T) {
 			t.Run("none", func(t *testing.T) {
-				app := AppConfig{AppType: appType}.Start(t)
-				defer app.Stop(t)
-
-				res := app.WorkRequest(t, req)
-				assertCommon(t, app, res)
-				prof := app.CPUProfile(t)
+				res, prof := testCommon(t, AppConfig{
+					AppType: appType,
+				})
 				require.Zero(t, prof.LabelDuration(traceprof.SpanID, res.SpanId))
 				require.Zero(t, prof.LabelDuration(traceprof.LocalRootSpanID, res.LocalRootSpanId))
 				require.Zero(t, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()))
 			})
 
 			t.Run("endpoints", func(t *testing.T) {
-				app := AppConfig{AppType: appType, Endpoints: true}.Start(t)
-				defer app.Stop(t)
-
-				res := app.WorkRequest(t, req)
-				assertCommon(t, app, res)
-				prof := app.CPUProfile(t)
+				res, prof := testCommon(t, AppConfig{
+					AppType:   appType,
+					Endpoints: true,
+				})
 				require.Zero(t, prof.LabelDuration(traceprof.SpanID, res.SpanId))
 				require.Zero(t, prof.LabelDuration(traceprof.LocalRootSpanID, res.LocalRootSpanId))
 				if appType != Direct {
@@ -74,12 +84,10 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 			})
 
 			t.Run("code-hotspots", func(t *testing.T) {
-				app := AppConfig{AppType: appType, CodeHotspots: true}.Start(t)
-				defer app.Stop(t)
-
-				res := app.WorkRequest(t, req)
-				assertCommon(t, app, res)
-				prof := app.CPUProfile(t)
+				res, prof := testCommon(t, AppConfig{
+					AppType:      appType,
+					CodeHotspots: true,
+				})
 				require.GreaterOrEqual(t, prof.LabelsDuration(map[string]string{
 					traceprof.SpanID:          res.SpanId,
 					traceprof.LocalRootSpanID: res.LocalRootSpanId,
@@ -88,12 +96,11 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 			})
 
 			t.Run("all", func(t *testing.T) {
-				app := AppConfig{AppType: appType, CodeHotspots: true, Endpoints: true}.Start(t)
-				defer app.Stop(t)
-
-				res := app.WorkRequest(t, req)
-				assertCommon(t, app, res)
-				prof := app.CPUProfile(t)
+				res, prof := testCommon(t, AppConfig{
+					AppType:      appType,
+					CodeHotspots: true,
+					Endpoints:    true,
+				})
 				wantLabels := map[string]string{
 					traceprof.SpanID:          res.SpanId,
 					traceprof.LocalRootSpanID: res.LocalRootSpanId,
@@ -105,29 +112,22 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 			})
 
 			t.Run("none-child-of", func(t *testing.T) {
-				app := AppConfig{AppType: appType, ChildOf: true}.Start(t)
-				defer app.Stop(t)
-
-				res := app.WorkRequest(t, req)
-				assertCommon(t, app, res)
-				prof := app.CPUProfile(t)
+				res, prof := testCommon(t, AppConfig{
+					AppType: appType,
+					ChildOf: true,
+				})
 				require.Zero(t, prof.LabelDuration(traceprof.SpanID, res.SpanId))
 				require.Zero(t, prof.LabelDuration(traceprof.LocalRootSpanID, res.LocalRootSpanId))
 				require.Zero(t, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()))
 			})
 
 			t.Run("all-child-of", func(t *testing.T) {
-				app := AppConfig{
+				res, prof := testCommon(t, AppConfig{
 					AppType:      appType,
 					CodeHotspots: true,
 					Endpoints:    true,
 					ChildOf:      true,
-				}.Start(t)
-				defer app.Stop(t)
-
-				res := app.WorkRequest(t, req)
-				assertCommon(t, app, res)
-				prof := app.CPUProfile(t)
+				})
 				wantLabels := map[string]string{
 					traceprof.SpanID:          res.SpanId,
 					traceprof.LocalRootSpanID: res.LocalRootSpanId,
