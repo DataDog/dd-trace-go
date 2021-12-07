@@ -46,7 +46,12 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 
 			res := app.WorkRequest(t, req)
 			prof := app.CPUProfile(t)
-			if attempt <= 5 && (prof.Duration() < minCPUDuration || prof.LabelsDuration(CustomLabels) < minCPUDuration) {
+
+			notEnoughSamples := (prof.Duration() < minCPUDuration) ||
+				(prof.LabelsDuration(CustomLabels) < minCPUDuration) ||
+				(c.CodeHotspots && prof.LabelDuration(traceprof.SpanID, "*") < minCPUDuration) ||
+				(c.AppType != Direct && c.Endpoints && prof.LabelDuration(traceprof.TraceEndpoint, "*") < minCPUDuration)
+			if attempt <= 5 && notEnoughSamples {
 				req.CpuDuration *= 2
 				req.SqlDuration *= 2
 				t.Logf("attempt %d: not enough cpu samples, doubling duration", attempt)
@@ -166,11 +171,11 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 			// sanity check profile results if enough samples can be expected
 			require.Greater(b, prof.Duration(), time.Duration(0))
 			if config.CodeHotspots {
-				require.Greater(b, prof.LabelDuration("span id", "*"), time.Duration(0))
-				require.Greater(b, prof.LabelDuration("local root span id", "*"), time.Duration(0))
+				require.Greater(b, prof.LabelDuration(traceprof.SpanID, "*"), time.Duration(0))
+				require.Greater(b, prof.LabelDuration(traceprof.LocalRootSpanID, "*"), time.Duration(0))
 			}
 			if config.Endpoints && appType != Direct {
-				require.Greater(b, prof.LabelDuration("trace endpoint", appType.Endpoint()), time.Duration(0))
+				require.Greater(b, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()), time.Duration(0))
 			}
 		}
 
