@@ -395,7 +395,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
-	t.applyPPROFLabels(goContext, span)
+	if t.config.profilerHotspots || t.config.profilerEndpoints {
+		t.applyPPROFLabels(goContext, span)
+	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
 	return span
 }
@@ -403,19 +405,15 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots
 // and endpoint filtering feature.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
-	if !t.config.profilerHotspots && !t.config.profilerEndpoints {
-		return
-	}
-
 	var labels []string
 	if t.config.profilerHotspots {
-		labels = append(labels, traceprof.SpanID, fmt.Sprintf("%d", span.SpanID))
+		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
 	}
 	// nil checks might not be needed, but better be safe than sorry
 	if span.context.trace != nil && span.context.trace.root != nil {
 		localRootSpan := span.context.trace.root
 		if t.config.profilerHotspots {
-			labels = append(labels, traceprof.LocalRootSpanID, fmt.Sprintf("%d", localRootSpan.SpanID))
+			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
 		}
 		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
 			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
