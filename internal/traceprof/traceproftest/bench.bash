@@ -15,4 +15,4 @@ env \
   BENCH_ENDPOINTS=true \
   $BENCH_CMD | tee endpoints-and-hotspots.txt
 
-benchstat baseline.txt endpoints-and-hotspots.txt | tee overhead.txt
+benchstat -sort delta baseline.txt endpoints-and-hotspots.txt | tee overhead.txt
