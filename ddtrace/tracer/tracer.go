@@ -18,6 +18,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)
@@ -74,6 +76,10 @@ type tracer struct {
 	// rules for applying a sampling rate to spans that match the designated service
 	// or operation name.
 	rulesSampling *rulesSampler
+
+	// obfuscator holds the obfuscator used to obfuscate resources in aggregated stats.
+	// obfuscator may be nil if disabled.
+	obfuscator *obfuscate.Obfuscator
 }
 
 const (
@@ -175,6 +181,15 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
+		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
+			SQL: obfuscate.SQLConfig{
+				TableNames:       c.agent.HasFlag("table_names"),
+				ReplaceDigits:    c.agent.HasFlag("quantize_sql_tables") || c.agent.HasFlag("replace_sql_digits"),
+				KeepSQLAlias:     c.agent.HasFlag("keep_sql_alias"),
+				DollarQuotedFunc: c.agent.HasFlag("dollar_quoted_func"),
+				Cache:            c.agent.HasFlag("sql_cache"),
+			},
+		}),
 	}
 	return t
 }

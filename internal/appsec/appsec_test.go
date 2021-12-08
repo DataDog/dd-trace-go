@@ -6,21 +6,26 @@
 //go:build appsec
 // +build appsec
 
-package appsec
+package appsec_test
 
 import (
+	"os"
+	"strconv"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestStatus(t *testing.T) {
-	enabled, err := isEnabled()
-	require.NoError(t, err)
-	status := Status()
-	if enabled {
-		require.Equal(t, "enabled", status)
-	} else {
-		require.Equal(t, "disabled", status)
-	}
+func TestEnabled(t *testing.T) {
+	enabled, _ := strconv.ParseBool(os.Getenv("DD_APPSEC_ENABLED"))
+
+	require.False(t, appsec.Enabled())
+	tracer.Start()
+	assert.Equal(t, enabled, appsec.Enabled())
+	tracer.Stop()
+	assert.False(t, appsec.Enabled())
 }
