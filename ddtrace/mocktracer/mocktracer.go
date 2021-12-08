@@ -85,6 +85,9 @@ func (t *mocktracer) StartSpanFromContext(ctx context.Context, operationName str
 	}
 	if ctx == nil {
 		ctx = context.Background()
+	} else if s, ok := tracer.SpanFromContext(ctx); ok {
+		// span in ctx overwrite ChildOf() parent if any
+		cfg.Parent = s.Context()
 	}
 	span := newSpan(t, operationName, &cfg)
 
