@@ -73,10 +73,6 @@ func checkEndpoint(endpoint string) error {
 // logStartup generates a startupInfo for a tracer and writes it to the log in
 // JSON format.
 func logStartup(t *tracer) {
-	serviceMappings := make(map[string]string)
-	for svc, newSvc := range t.config.serviceMappings {
-		serviceMappings[svc] = fmt.Sprintf("%v", newSvc)
-	}
 	tags := make(map[string]string)
 	for k, v := range t.config.globalTags {
 		tags[k] = fmt.Sprintf("%v", v)
@@ -96,7 +92,7 @@ func logStartup(t *tracer) {
 		AnalyticsEnabled:      !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:            fmt.Sprintf("%f", t.rulesSampling.globalRate),
 		SamplingRules:         t.rulesSampling.rules,
-		ServiceMappings:       serviceMappings,
+		ServiceMappings:       t.config.serviceMappings,
 		Tags:                  tags,
 		RuntimeMetricsEnabled: t.config.runtimeMetrics,
 		HealthMetricsEnabled:  t.config.runtimeMetrics,

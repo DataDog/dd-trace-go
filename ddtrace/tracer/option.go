@@ -137,7 +137,7 @@ type StartOption func(*config)
 
 // forEachStringTag runs fn on every key:val pair encountered in str.
 // str may contain multiple key:val pairs separated by either space
-// or comma (but not a mixture of both)
+// or comma (but not a mixture of both).
 func forEachStringTag(str string, fn func(key string, val string)) {
 	sep := " "
 	if strings.Index(str, ",") > -1 {
@@ -523,14 +523,14 @@ func WithEnv(env string) StartOption {
 	}
 }
 
-// WithServiceMapping holds a mapping of services used to dynamically rename services.
+// WithServiceMapping determines service "from" to be renamed to service "to".
 // This option is is case sensitive and can be used multiple times.
-func WithServiceMapping(k string, v string) StartOption {
+func WithServiceMapping(from, to string) StartOption {
 	return func(c *config) {
 		if c.serviceMappings == nil {
 			c.serviceMappings = make(map[string]string)
 		}
-		c.serviceMappings[k] = v
+		c.serviceMappings[from] = to
 	}
 }
 
