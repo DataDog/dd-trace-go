@@ -13,6 +13,7 @@
 package mocktracer
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,9 +74,17 @@ func (*mocktracer) Stop() {
 }
 
 func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+	span, _ := t.StartSpanFromContext(context.Background(), operationName, opts...)
+	return span
+}
+
+func (t *mocktracer) StartSpanFromContext(ctx context.Context, operationName string, opts ...ddtrace.StartSpanOption) (ddtrace.Span, context.Context) {
 	var cfg ddtrace.StartSpanConfig
 	for _, fn := range opts {
 		fn(&cfg)
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	span := newSpan(t, operationName, &cfg)
 
@@ -83,7 +92,7 @@ func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOp
 	t.openSpans[span.SpanID()] = span
 	t.Unlock()
 
-	return span
+	return span, tracer.ContextWithSpan(ctx, span)
 }
 
 func (t *mocktracer) OpenSpans() []Span {

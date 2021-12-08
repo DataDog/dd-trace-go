@@ -25,6 +25,12 @@ type Tracer interface {
 	// StartSpan starts a span with the given operation name and options.
 	StartSpan(operationName string, opts ...StartSpanOption) Span
 
+	// StartSpanFromContext starts a span with the given operation name and
+	// options. If a span is found in the context, it will be used as the parent
+	// of the resulting span. If the ChildOf option is passed, the span from
+	// context will take precedence over it as the parent span.
+	StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context)
+
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to
 	// maintain the original casing due to MIME header canonicalization standards.
@@ -125,9 +131,6 @@ type StartSpanConfig struct {
 	// Force-set the SpanID, rather than use a random number. If no Parent SpanContext is present,
 	// then this will also set the TraceID to the same value.
 	SpanID uint64
-
-	// Context holds the context associated with this span.
-	Context context.Context
 }
 
 // Logger implementations are able to log given messages that the tracer might output.

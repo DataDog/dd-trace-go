@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	gocontext "context"
 	"fmt"
 	"os"
@@ -314,11 +315,23 @@ func (t *tracer) pushTrace(trace []*span) {
 	}
 }
 
-// StartSpan creates, starts, and returns a new Span with the given `operationName`.
+// StartSpan implements ddtrace.Tracer.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+	span, _ := t.StartSpanFromContext(context.Background(), operationName, options...)
+	return span
+}
+
+// StartSpanFromContext implements ddtrace.Tracer.
+func (t *tracer) StartSpanFromContext(ctx gocontext.Context, operationName string, options ...ddtrace.StartSpanOption) (ddtrace.Span, gocontext.Context) {
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	} else if s, ok := SpanFromContext(ctx); ok {
+		// span in ctx overwrite ChildOf() parent if any
+		opts.Parent = s.Context()
 	}
 	var startTime int64
 	if opts.StartTime.IsZero() {
@@ -327,15 +340,16 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		startTime = opts.StartTime.UnixNano()
 	}
 	var context *spanContext
-	goContext := opts.Context
+	pprofCtx := ctx
 	if opts.Parent != nil {
-		if ctx, ok := opts.Parent.(*spanContext); ok {
-			context = ctx
-			if goContext == nil && ctx.span != nil {
-				// Inherit the context.Context from parent span if it was propagated
-				// using ChildOf() rather than StartSpanFromContext(), see
-				// applyPPROFLabels() below.
-				goContext = ctx.span.pprofCtxActive
+		if parentContext, ok := opts.Parent.(*spanContext); ok {
+			context = parentContext
+			if pprofCtx == gocontext.Background() && parentContext.span != nil && parentContext.span.pprofCtxActive != nil {
+				// Inherit the pprof labels from parent span if it was propagated using
+				// ChildOf() rather than StartSpanFromContext(). Having a separate ctx
+				// and pprofCtx is done to avoid subtle problems with callers relying
+				// on the details of the ContextWithSpan() wrapping below.
+				pprofCtx = parentContext.span.pprofCtxActive
 			}
 		}
 	}
@@ -411,10 +425,10 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		t.sample(span)
 	}
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
-		t.applyPPROFLabels(goContext, span)
+		t.applyPPROFLabels(pprofCtx, span)
 	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
-	return span
+	return span, ContextWithSpan(ctx, span)
 }
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots
