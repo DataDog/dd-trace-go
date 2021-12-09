@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"context"
 	gocontext "context"
 	"fmt"
 	"os"
@@ -317,7 +316,7 @@ func (t *tracer) pushTrace(trace []*span) {
 
 // StartSpan implements ddtrace.Tracer.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
-	span, _ := t.StartSpanFromContext(context.Background(), operationName, options...)
+	span, _ := t.StartSpanFromContext(gocontext.Background(), operationName, options...)
 	return span
 }
 
@@ -328,7 +327,7 @@ func (t *tracer) StartSpanFromContext(ctx gocontext.Context, operationName strin
 		fn(&opts)
 	}
 	if ctx == nil {
-		ctx = context.Background()
+		ctx = gocontext.Background()
 	} else if s, ok := SpanFromContext(ctx); ok {
 		// span in ctx overwrite ChildOf() parent if any
 		opts.Parent = s.Context()
