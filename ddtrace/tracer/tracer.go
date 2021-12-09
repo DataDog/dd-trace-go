@@ -431,7 +431,7 @@ func (t *tracer) StartSpanFromContext(ctx gocontext.Context, operationName strin
 }
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots
-// and endpoint filtering feature.
+// and endpoint filtering feature to span. When span finishes, any pprof labels found in ctx are restored.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
 	if t.config.profilerHotspots {
