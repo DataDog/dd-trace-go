@@ -235,7 +235,7 @@ func (a *App) Work(ctx context.Context, req *pb.WorkReq) (*pb.WorkRes, error) {
 	// Perform CPU intense work on another goroutine. This should still be
 	// tracked to the childSpan thanks to goroutines inheriting labels.
 	stop := make(chan struct{})
-	go cpuHogUnil(stop)
+	go cpuHogUntil(stop)
 	if req.CpuDuration > 0 {
 		time.Sleep(time.Duration(req.CpuDuration))
 	}
@@ -263,7 +263,7 @@ func fakeSQLQuery(ctx context.Context, sql string, d time.Duration) {
 	time.Sleep(d)
 }
 
-func cpuHogUnil(stop chan struct{}) {
+func cpuHogUntil(stop chan struct{}) {
 	for i := 0; ; i++ {
 		select {
 		case <-stop:
