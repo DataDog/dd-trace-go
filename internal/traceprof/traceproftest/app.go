@@ -226,12 +226,21 @@ func (a *App) Work(ctx context.Context, req *pb.WorkReq) (*pb.WorkRes, error) {
 	// that the parent goroutine labels are correctly restored when it finishes.
 	fakeSQLQuery(reqSpanCtx, "SELECT * FROM foo", time.Duration(req.SqlDuration))
 
-	var cpuSpan ddtrace.Span
+	// cpuSpan is the one that should show up in our profile while cpuHog is
+	// running. decoySpan is a child span that finishes before the cpuHog work
+	// begins to test that span's restore their parent span labels when
+	// finishing.
+	var cpuSpan, decoySpan ddtrace.Span
 	if a.config.ChildOf {
 		cpuSpan = tracer.StartSpan("cpuHog", tracer.ChildOf(reqSpan.Context()))
+		decoySpan = tracer.StartSpan("decoy", tracer.ChildOf(cpuSpan.Context()))
 	} else {
-		cpuSpan, _ = tracer.StartSpanFromContext(reqSpanCtx, "cpuHog")
+		var ctx context.Context
+		cpuSpan, ctx = tracer.StartSpanFromContext(reqSpanCtx, "cpuHog")
+		decoySpan, _ = tracer.StartSpanFromContext(ctx, "decoy")
 	}
+	decoySpan.Finish()
+
 	// Perform CPU intense work on another goroutine. This should still be
 	// tracked to the childSpan thanks to goroutines inheriting labels.
 	stop := make(chan struct{})

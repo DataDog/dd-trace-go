@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	gocontext "context"
 	"fmt"
 	"os"
@@ -424,15 +425,16 @@ func (t *tracer) StartSpanFromContext(ctx gocontext.Context, operationName strin
 		t.sample(span)
 	}
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
-		t.applyPPROFLabels(pprofCtx, span)
+		ctx = t.applyPPROFLabels(pprofCtx, span)
 	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
 	return span, ContextWithSpan(ctx, span)
 }
 
-// applyPPROFLabels applies pprof labels for the profiler's code hotspots
-// and endpoint filtering feature to span. When span finishes, any pprof labels found in ctx are restored.
-func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
+// applyPPROFLabels applies pprof labels for the profiler's code hotspots and
+// endpoint filtering feature to span. When span finishes, any pprof labels
+// found in ctx are restored.
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) context.Context {
 	var labels []string
 	if t.config.profilerHotspots {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
@@ -455,7 +457,9 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 		}
 		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
 		pprof.SetGoroutineLabels(span.pprofCtxActive)
+		return span.pprofCtxActive
 	}
+	return ctx
 }
 
 // spanResourcePIISafe returns true if s.Resource can be considered to not
