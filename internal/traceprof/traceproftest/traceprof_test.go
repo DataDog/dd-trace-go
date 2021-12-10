@@ -163,8 +163,9 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 
 		b.ResetTimer()
 		var (
-			wg          sync.WaitGroup
-			concurrency = runtime.GOMAXPROCS(0)
+			wg           sync.WaitGroup
+			concurrency  = runtime.GOMAXPROCS(0)
+			startCPUTime = CPURusage(b)
 		)
 		for g := 0; g < concurrency; g++ {
 			wg.Add(1)
@@ -176,11 +177,12 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 			}()
 		}
 		wg.Wait()
+		cpuTime := CPURusage(b) - startCPUTime
 		b.StopTimer()
 
 		prof := app.CPUProfile(b)
-		cpuTime := time.Duration(b.N) * time.Duration(req.CpuDuration)
-		if cpuTime >= 90*time.Millisecond {
+		expectedCPUTime := time.Duration(b.N) * time.Duration(req.CpuDuration)
+		if expectedCPUTime >= 90*time.Millisecond {
 			// sanity check profile results if enough samples can be expected
 			require.Greater(b, prof.Duration(), time.Duration(0))
 			if config.CodeHotspots {
@@ -194,7 +196,7 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 
 		b.ReportMetric(float64(prof.Samples())/float64(b.N*concurrency), "pprof-samples/op")
 		b.ReportMetric(float64(prof.Size())/float64(b.N*concurrency), "pprof-B/op")
-		b.ReportMetric(float64(prof.Duration())/float64(b.N*concurrency), "cpu-ns/op")
+		b.ReportMetric(float64(cpuTime)/float64(b.N*concurrency), "cpu-ns/op")
 	}
 
 	for _, appType := range []testAppType{Direct, HTTP, GRPC} {
