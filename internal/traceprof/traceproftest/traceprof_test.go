@@ -9,6 +9,8 @@ package traceproftest
 
 import (
 	"os"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -160,9 +162,20 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 		defer app.Stop(b)
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			app.WorkRequest(b, req)
+		var (
+			wg          sync.WaitGroup
+			concurrency = runtime.GOMAXPROCS(0)
+		)
+		for g := 0; g < concurrency; g++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := 0; i < b.N; i++ {
+					app.WorkRequest(b, req)
+				}
+			}()
 		}
+		wg.Wait()
 		b.StopTimer()
 
 		prof := app.CPUProfile(b)
@@ -179,9 +192,9 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 			}
 		}
 
-		b.ReportMetric(float64(prof.Samples())/float64(b.N), "pprof-samples/op")
-		b.ReportMetric(float64(prof.Size())/float64(b.N), "pprof-B/op")
-		b.ReportMetric(float64(prof.Duration())/float64(b.N), "cpu-ns/op")
+		b.ReportMetric(float64(prof.Samples())/float64(b.N*concurrency), "pprof-samples/op")
+		b.ReportMetric(float64(prof.Size())/float64(b.N*concurrency), "pprof-B/op")
+		b.ReportMetric(float64(prof.Duration())/float64(b.N*concurrency), "cpu-ns/op")
 	}
 
 	for _, appType := range []testAppType{Direct, HTTP, GRPC} {
