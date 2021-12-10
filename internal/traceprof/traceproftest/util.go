@@ -18,7 +18,12 @@ func ValidSpanID(id string) bool {
 	return err == nil && val > 0
 }
 
+// CPURusage returns the amount of On-CPU time for the process (sys+user) since
+// it has been started. It uses getrusage(2).
 func CPURusage(t testing.TB) time.Duration {
+	// Note: If this becomes a portability issue in the future (windows?) it's okay
+	// to implement a non-working version for those platforms. We only use this for
+	// benchmarking on linux right now.
 	var rusage syscall.Rusage
 	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &rusage); err != nil {
 		t.Fatal(err)
