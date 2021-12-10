@@ -427,6 +427,11 @@ func (t *tracer) StartSpanFromContext(ctx gocontext.Context, operationName strin
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
 		ctx = t.applyPPROFLabels(pprofCtx, span)
 	}
+	if t.config.serviceMappings != nil {
+		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
+			span.Service = newSvc
+		}
+	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
 	return span, ContextWithSpan(ctx, span)
 }
