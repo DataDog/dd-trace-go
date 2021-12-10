@@ -397,7 +397,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		defer os.Unsetenv("DD_SERVICE_MAPPING")
 
 		assert := assert.New(t)
-		c := newConfig()ddtrace/tracer/tracer.go
+		c := newConfig()
 
 		assert.Equal("test2", c.serviceMappings["tracer.test"])
 		assert.Equal("Newsvc", c.serviceMappings["svc"])
