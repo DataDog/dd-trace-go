@@ -455,11 +455,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) context.Con
 		}
 	}
 	if len(labels) > 0 {
-		if ctx == nil {
-			ctx = gocontext.Background()
-		} else {
-			span.pprofCtxRestore = ctx
-		}
+		span.pprofCtxRestore = ctx
 		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
 		pprof.SetGoroutineLabels(span.pprofCtxActive)
 		return span.pprofCtxActive
