@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -361,6 +362,34 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		dVal, ok := c.globalTags["dKey"]
 		assert.False(ok)
 		assert.Equal(nil, dVal)
+	})
+
+	t.Run("profiler-endpoints", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c := newConfig()
+			assert.False(t, c.profilerEndpoints)
+		})
+
+		t.Run("override", func(t *testing.T) {
+			os.Setenv(traceprof.EndpointEnvVar, "true")
+			defer os.Unsetenv(traceprof.EndpointEnvVar)
+			c := newConfig()
+			assert.True(t, c.profilerEndpoints)
+		})
+	})
+
+	t.Run("profiler-hotspots", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c := newConfig()
+			assert.False(t, c.profilerHotspots)
+		})
+
+		t.Run("override", func(t *testing.T) {
+			os.Setenv(traceprof.CodeHotspotsEnvVar, "true")
+			defer os.Unsetenv(traceprof.CodeHotspotsEnvVar)
+			c := newConfig()
+			assert.True(t, c.profilerHotspots)
+		})
 	})
 
 	t.Run("env-mapping", func(t *testing.T) {

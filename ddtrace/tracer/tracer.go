@@ -6,8 +6,11 @@
 package tracer
 
 import (
+	"context"
+	gocontext "context"
 	"fmt"
 	"os"
+	"runtime/pprof"
 	"strconv"
 	"sync"
 	"time"
@@ -17,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -311,11 +315,23 @@ func (t *tracer) pushTrace(trace []*span) {
 	}
 }
 
-// StartSpan creates, starts, and returns a new Span with the given `operationName`.
+// StartSpan implements ddtrace.Tracer.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+	span, _ := t.StartSpanFromContext(gocontext.Background(), operationName, options...)
+	return span
+}
+
+// StartSpanFromContext implements ddtrace.Tracer.
+func (t *tracer) StartSpanFromContext(ctx gocontext.Context, operationName string, options ...ddtrace.StartSpanOption) (ddtrace.Span, gocontext.Context) {
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
+	}
+	if ctx == nil {
+		ctx = gocontext.Background()
+	} else if s, ok := SpanFromContext(ctx); ok {
+		// span in ctx overwrite ChildOf() parent if any
+		opts.Parent = s.Context()
 	}
 	var startTime int64
 	if opts.StartTime.IsZero() {
@@ -324,9 +340,17 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		startTime = opts.StartTime.UnixNano()
 	}
 	var context *spanContext
+	pprofCtx := ctx
 	if opts.Parent != nil {
-		if ctx, ok := opts.Parent.(*spanContext); ok {
-			context = ctx
+		if parentContext, ok := opts.Parent.(*spanContext); ok {
+			context = parentContext
+			if pprofCtx == gocontext.Background() && parentContext.span != nil && parentContext.span.pprofCtxActive != nil {
+				// Inherit the pprof labels from parent span if it was propagated using
+				// ChildOf() rather than StartSpanFromContext(). Having a separate ctx
+				// and pprofCtx is done to avoid subtle problems with callers relying
+				// on the details of the ContextWithSpan() wrapping below.
+				pprofCtx = parentContext.span.pprofCtxActive
+			}
 		}
 	}
 	id := opts.SpanID
@@ -400,13 +424,50 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
+	if t.config.profilerHotspots || t.config.profilerEndpoints {
+		ctx = t.applyPPROFLabels(pprofCtx, span)
+	}
 	if t.config.serviceMappings != nil {
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
 			span.Service = newSvc
 		}
 	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
-	return span
+	return span, ContextWithSpan(ctx, span)
+}
+
+// applyPPROFLabels applies pprof labels for the profiler's code hotspots and
+// endpoint filtering feature to span. When span finishes, any pprof labels
+// found in ctx are restored.
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) context.Context {
+	var labels []string
+	if t.config.profilerHotspots {
+		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
+	}
+	// nil checks might not be needed, but better be safe than sorry
+	if span.context.trace != nil && span.context.trace.root != nil {
+		localRootSpan := span.context.trace.root
+		if t.config.profilerHotspots {
+			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
+		}
+		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
+			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
+		}
+	}
+	if len(labels) > 0 {
+		span.pprofCtxRestore = ctx
+		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
+		pprof.SetGoroutineLabels(span.pprofCtxActive)
+		return span.pprofCtxActive
+	}
+	return ctx
+}
+
+// spanResourcePIISafe returns true if s.Resource can be considered to not
+// include PII with reasonable confidence. E.g. SQL queries may contain PII,
+// but http or rpc endpoint names generally do not.
+func spanResourcePIISafe(s *span) bool {
+	return s.Type == ext.SpanTypeWeb || s.Type == ext.AppTypeRPC
 }
 
 // Stop stops the tracer.
