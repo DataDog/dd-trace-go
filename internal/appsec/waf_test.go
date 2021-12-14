@@ -26,10 +26,6 @@ import (
 // TestWAF is a simple validation test of the WAF protecting a net/http server. It only mockups the agent and tests that
 // the WAF is properly detecting an LFI attempt and that the corresponding security event is being sent to the agent.
 func TestWAF(t *testing.T) {
-	if appsec.Status() == "disabled" {
-		t.Skip("appsec disabled")
-		return
-	}
 	if _, err := waf.Health(); err != nil {
 		t.Skip("waf disabled")
 		return
@@ -53,6 +49,7 @@ func TestWAF(t *testing.T) {
 
 	// Start the tracer along with the fake agent HTTP server
 	tracer.Start(tracer.WithDebugMode(true), tracer.WithAgentAddr(strings.TrimPrefix(agent.URL, "http://")))
+	enabled := appsec.Enabled()
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
@@ -79,6 +76,10 @@ func TestWAF(t *testing.T) {
 	tracer.Stop()
 
 	// Check that an LFI attack event was reported.
-	require.Equal(t, 1, nbAppSecAPIRequests)
-	require.True(t, strings.Contains(string(batch), "crs-930-100"))
+	if enabled {
+		require.Equal(t, 1, nbAppSecAPIRequests)
+		require.True(t, strings.Contains(string(batch), "crs-930-100"))
+	} else {
+		require.Equal(t, 0, nbAppSecAPIRequests)
+	}
 }

@@ -16,6 +16,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -150,6 +151,39 @@ func TestShouldComputeStats(t *testing.T) {
 			assert.Equal(t, shouldComputeStats(&span{Metrics: tt.metrics}), tt.want)
 		})
 	}
+}
+
+func TestNewAggregableSpan(t *testing.T) {
+	t.Run("obfuscating", func(t *testing.T) {
+		o := obfuscate.NewObfuscator(obfuscate.Config{})
+		aggspan := newAggregableSpan(&span{
+			Name:     "name",
+			Resource: "SELECT * FROM table WHERE password='secret'",
+			Service:  "service",
+			Type:     "sql",
+		}, o)
+		assert.Equal(t, aggregation{
+			Name:     "name",
+			Type:     "sql",
+			Resource: "SELECT * FROM table WHERE password = ?",
+			Service:  "service",
+		}, aggspan.key)
+	})
+
+	t.Run("nil-obfuscator", func(t *testing.T) {
+		aggspan := newAggregableSpan(&span{
+			Name:     "name",
+			Resource: "SELECT * FROM table WHERE password='secret'",
+			Service:  "service",
+			Type:     "sql",
+		}, nil)
+		assert.Equal(t, aggregation{
+			Name:     "name",
+			Type:     "sql",
+			Resource: "SELECT * FROM table WHERE password='secret'",
+			Service:  "service",
+		}, aggspan.key)
+	})
 }
 
 func TestSpanFinishWithTime(t *testing.T) {

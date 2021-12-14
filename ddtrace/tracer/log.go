@@ -41,6 +41,7 @@ type startupInfo struct {
 	SampleRate            string            `json:"sample_rate"`             // The default sampling rate for the rules sampler
 	SamplingRules         []SamplingRule    `json:"sampling_rules"`          // Rules used by the rules sampler
 	SamplingRulesError    string            `json:"sampling_rules_error"`    // Any errors that occurred while parsing sampling rules
+	ServiceMappings       map[string]string `json:"service_mappings"`        // Service Mappings
 	Tags                  map[string]string `json:"tags"`                    // Global tags
 	RuntimeMetricsEnabled bool              `json:"runtime_metrics_enabled"` // Whether or not runtime metrics are enabled
 	HealthMetricsEnabled  bool              `json:"health_metrics_enabled"`  // Whether or not health metrics are enabled
@@ -48,7 +49,7 @@ type startupInfo struct {
 	Architecture          string            `json:"architecture"`            // Architecture of host machine
 	GlobalService         string            `json:"global_service"`          // Global service string. If not-nil should be same as Service. (#614)
 	LambdaMode            string            `json:"lambda_mode"`             // Whether or not the client has enabled lambda mode
-	AppSec                string            `json:"appsec"`                  // AppSec status string
+	AppSec                bool              `json:"appsec"`                  // AppSec status: true when started, false otherwise.
 	AgentFeatures         agentFeatures     `json:"agent_features"`          // Lists the capabilities of the agent.
 }
 
@@ -91,6 +92,7 @@ func logStartup(t *tracer) {
 		AnalyticsEnabled:      !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:            fmt.Sprintf("%f", t.rulesSampling.globalRate),
 		SamplingRules:         t.rulesSampling.rules,
+		ServiceMappings:       t.config.serviceMappings,
 		Tags:                  tags,
 		RuntimeMetricsEnabled: t.config.runtimeMetrics,
 		HealthMetricsEnabled:  t.config.runtimeMetrics,
@@ -98,8 +100,8 @@ func logStartup(t *tracer) {
 		Architecture:          runtime.GOARCH,
 		GlobalService:         globalconfig.ServiceName(),
 		LambdaMode:            fmt.Sprintf("%t", t.config.logToStdout),
-		AgentFeatures:         t.config.features,
-		AppSec:                appsec.Status(),
+		AgentFeatures:         t.config.agent,
+		AppSec:                appsec.Enabled(),
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)

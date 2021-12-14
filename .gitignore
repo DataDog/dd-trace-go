@@ -12,6 +12,7 @@ bin/
 *.swp
 .idea
 dd-trace-go.iml
+vendor
 
 /contrib/google.golang.org/grpc.v12/vendor/
 

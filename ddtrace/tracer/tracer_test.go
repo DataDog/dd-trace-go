@@ -293,7 +293,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.config.features.DropP0s = true
+		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1").(*span)
@@ -307,7 +307,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("events_sampled", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.config.features.DropP0s = true
+		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1").(*span)
@@ -322,7 +322,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("client_dropped", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.config.features.DropP0s = true
+		tracer.config.agent.DropP0s = true
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -569,6 +569,44 @@ func TestTracerSpanGlobalTags(t *testing.T) {
 	assert.Equal("value", s.Meta["key"])
 	child := tracer.StartSpan("db.query", ChildOf(s.Context())).(*span)
 	assert.Equal("value", child.Meta["key"])
+}
+
+func TestTracerSpanServiceMappings(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("WithServiceMapping", func(t *testing.T) {
+		tracer := newTracer(WithServiceName("initial_service"), WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request").(*span)
+		assert.Equal("new_service", s.Service)
+
+	})
+
+	t.Run("child", func(t *testing.T) {
+		tracer := newTracer(WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request", ServiceName("initial_service")).(*span)
+		child := tracer.StartSpan("db.query", ChildOf(s.Context())).(*span)
+		assert.Equal("new_service", child.Service)
+
+	})
+
+	t.Run("StartSpanOption", func(t *testing.T) {
+		tracer := newTracer(WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request", ServiceName("initial_service")).(*span)
+		assert.Equal("new_service", s.Service)
+
+	})
+
+	t.Run("tag", func(t *testing.T) {
+		tracer := newTracer(WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request", Tag("service.name", "initial_service")).(*span)
+		assert.Equal("new_service", s.Service)
+	})
+
+	t.Run("globalTags", func(t *testing.T) {
+		tracer := newTracer(WithGlobalTag("service.name", "initial_service"), WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request").(*span)
+		assert.Equal("new_service", s.Service)
+	})
 }
 
 func TestTracerNoDebugStack(t *testing.T) {
