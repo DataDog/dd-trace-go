@@ -78,9 +78,7 @@ func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) http.ResponseW
 	{{- end }}
 {{- end }}
 	default:
-		w = struct {
-			monitoredResponseWriter
-		}{mw}
+		w = mw
 	}
 
 	return w
