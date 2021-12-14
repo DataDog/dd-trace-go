@@ -1,0 +1,24 @@
+/*
+Run this generate Go code after changing things below:
+
+protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative internal/traceprof/testapp/test_app.proto
+*/
+
+syntax = "proto3";
+
+option go_package = "gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/testapp";
+package testapp;
+
+service TestApp {
+  rpc Work(WorkReq) returns (WorkRes) {}
+}
+
+message WorkReq {
+  int64 cpu_duration = 1;
+  int64 sql_duration = 2;
+}
+
+message WorkRes {
+  string span_id = 1;
+  string local_root_span_id = 2;
+}
