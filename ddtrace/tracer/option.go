@@ -217,7 +217,7 @@ func newConfig(opts ...StartOption) *config {
 		c.logToStdout = true
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
-	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
+	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", true)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
 	// TODO(fg): set these to true before going GA with this.
