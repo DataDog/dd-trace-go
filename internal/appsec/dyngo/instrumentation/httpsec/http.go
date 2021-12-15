@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -38,7 +39,7 @@ type (
 	// HandlerOperationRes is the HTTP handler operation results.
 	HandlerOperationRes struct {
 		// Status corresponds to the address `server.response.status`
-		Status int
+		Status string
 	}
 )
 
@@ -60,7 +61,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 			if mw, ok := w.(interface{ Status() int }); ok {
 				status = mw.Status()
 			}
-			events := op.Finish(HandlerOperationRes{Status: status})
+			events := op.Finish(HandlerOperationRes{Status: strconv.Itoa(status)})
 			if len(events) == 0 {
 				return
 			}
