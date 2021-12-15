@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
-	"net/url"
 	"reflect"
 	"strings"
 
@@ -33,7 +32,7 @@ type (
 		// Cookies corresponds to the address `server.request.cookies`
 		Cookies map[string][]string
 		// Query corresponds to the address `server.request.query`
-		Query url.Values
+		Query map[string][]string
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
