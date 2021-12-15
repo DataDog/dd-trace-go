@@ -119,6 +119,11 @@ jobs:
           keys:
             - go-mod-v5-core-{{ checksum "go.sum.orig" }}
       - run:
+          name: Enforce some dependencies
+          command: |
+            # last version compatible with go1.14, needed for testtraceprof
+            go get golang.org/x/net@d418f374d30933c6c7db22cf349625c295a5afaa
+      - run:
           name: Testing
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
