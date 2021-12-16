@@ -44,8 +44,21 @@ jobs:
     - run:
         name: go.sum up-to-date
         command: |
-          go run -mod=readonly gosum.go
-
+          if ! go run -mod=readonly gosum.go; then
+            # Older go versions, e.g. go1.14 will fail the check above with
+            # the message below.
+            #
+            #   go: updates to go.sum needed, disabled by -mod=readonly
+            #
+            # Newer versions show which go.sum entries are missing. To get
+            # useful CI errors for older versions, always print an explicit
+            # diff when go.sum is not up-to-date.
+            cp go.sum go.sum.before
+            go mod tidy
+            echo "--> go.sum diff:"
+            diff go.sum.before go.sum
+            exit 1
+          fi
     - run:
         name: milestone
         command: |
@@ -106,6 +119,11 @@ jobs:
           keys:
             - go-mod-v5-core-{{ checksum "go.sum.orig" }}
       - run:
+          name: Enforce some dependencies
+          command: |
+            # last version compatible with go1.14, needed for testtraceprof
+            echo 'replace golang.org/x/net => golang.org/x/net d418f374d30933c6c7db22cf349625c295a5afaa' >> go.mod
+      - run:
           name: Testing
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
@@ -143,6 +161,8 @@ jobs:
         environment:
           GOPATH: "/home/circleci/go"
       - image: cassandra:3.7
+        environment:
+          JVM_OPTS: "-Xms750m -Xmx750m"
       - image: circleci/mysql:5.7
         environment:
           MYSQL_ROOT_PASSWORD: admin
@@ -165,6 +185,7 @@ jobs:
       - image: elasticsearch:6.8.13
         environment:
           http.port: 9202-9300
+          discovery.type: single-node
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
       - image: elasticsearch:7.14.1
         environment:
@@ -277,7 +298,9 @@ jobs:
           name: Testing integrations
           command: |
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
-            env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+            export DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true)
+            export INTEGRATION=true
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - store_artifacts: # upload test summary for display in Artifacts
           path: /tmp/test-results
@@ -309,7 +332,7 @@ jobs:
                 git clone git@github.com:DataDog/sketches-go && cd sketches-go
                 git fetch origin && git checkout v1.0.0 && cd ../..
 
-                go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+                INTEGRATION=true go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
 
       - save_cache:
           key: go-mod-v5-contrib-{{ checksum "go.sum.orig" }}

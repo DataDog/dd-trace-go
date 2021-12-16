@@ -86,7 +86,7 @@ func TestClientErrorCutoffV7(t *testing.T) {
 	}.Do(context.Background(), client)
 	assert.NoError(err)
 
-	span := mt.FinishedSpans()[0]
+	span := mt.FinishedSpans()[1]
 	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
 }
 
@@ -113,8 +113,6 @@ func TestClientV7Failure(t *testing.T) {
 	assert.Error(err)
 
 	spans := mt.FinishedSpans()
-	checkPUTTrace(assert, mt)
-
 	assert.NotEmpty(spans[0].Tag(ext.Error))
 	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
 }
@@ -144,7 +142,7 @@ func TestResourceNamerSettingsV7(t *testing.T) {
 			DocumentType: "tweet",
 		}.Do(context.Background(), client)
 
-		span := mt.FinishedSpans()[0]
+		span := mt.FinishedSpans()[1]
 		assert.Equal(t, "GET /logs_?_?/event/_search/tweet/?", span.Tag(ext.ResourceName))
 	})
 
@@ -193,8 +191,8 @@ func TestAnalyticsSettingsV7(t *testing.T) {
 		assert.NoError(t, err)
 
 		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 1)
-		s := spans[0]
+		assert.Len(t, spans, 2)
+		s := spans[1]
 		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 	}
 

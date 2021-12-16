@@ -24,6 +24,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -44,9 +45,9 @@ type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
 
-	// features holds the capabilities of the agent and determines some
+	// agent holds the capabilities of the agent and determines some
 	// of the behaviour of the tracer.
-	features agentFeatures
+	agent agentFeatures
 
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
@@ -74,6 +75,9 @@ type config struct {
 	// agentAddr specifies the hostname and port of the agent where the traces
 	// are sent to.
 	agentAddr string
+
+	// serviceMappings holds a set of service mappings to dynamically rename services
+	serviceMappings map[string]string
 
 	// globalTags holds a set of tags that will be automatically applied to
 	// all spans.
@@ -119,6 +123,12 @@ type config struct {
 	// errors will record a stack trace when this option is set.
 	noDebugStack bool
 
+	// profilerHotspots specifies whether profiler Code Hotspots is enabled.
+	profilerHotspots bool
+
+	// profilerEndpoints specifies whether profiler endpoint filtering is enabled.
+	profilerEndpoints bool
+
 	// enabled reports whether tracing is enabled.
 	enabled bool
 }
@@ -131,6 +141,33 @@ func (c *config) HasFeature(f string) bool {
 
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
+
+// forEachStringTag runs fn on every key:val pair encountered in str.
+// str may contain multiple key:val pairs separated by either space
+// or comma (but not a mixture of both).
+func forEachStringTag(str string, fn func(key string, val string)) {
+	sep := " "
+	if strings.Index(str, ",") > -1 {
+		// falling back to comma as separator
+		sep = ","
+	}
+	for _, tag := range strings.Split(str, sep) {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		kv := strings.SplitN(tag, ":", 2)
+		key := strings.TrimSpace(kv[0])
+		if key == "" {
+			continue
+		}
+		var val string
+		if len(kv) == 2 {
+			val = strings.TrimSpace(kv[1])
+		}
+		fn(key, val)
+	}
+}
 
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
@@ -168,28 +205,11 @@ func newConfig(opts ...StartOption) *config {
 	if ver := os.Getenv("DD_VERSION"); ver != "" {
 		c.version = ver
 	}
+	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
+		forEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
+	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		sep := " "
-		if strings.Index(v, ",") > -1 {
-			// falling back to comma as separator
-			sep = ","
-		}
-		for _, tag := range strings.Split(v, sep) {
-			tag = strings.TrimSpace(tag)
-			if tag == "" {
-				continue
-			}
-			kv := strings.SplitN(tag, ":", 2)
-			key := strings.TrimSpace(kv[0])
-			if key == "" {
-				continue
-			}
-			var val string
-			if len(kv) == 2 {
-				val = strings.TrimSpace(kv[1])
-			}
-			WithGlobalTag(key, val)(c)
-		}
+		forEachStringTag(v, func(key, val string) { WithGlobalTag(key, val)(c) })
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
@@ -200,6 +220,9 @@ func newConfig(opts ...StartOption) *config {
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
+	// TODO(fg): set these to true before going GA with this.
+	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, false)
+	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, false)
 
 	for _, fn := range opts {
 		fn(c)
@@ -249,7 +272,7 @@ func newConfig(opts ...StartOption) *config {
 			// no config defined address; use defaults
 			addr = defaultDogstatsdAddr()
 		}
-		if agentport := c.features.StatsdPort; agentport > 0 {
+		if agentport := c.agent.StatsdPort; agentport > 0 {
 			// the agent reported a non-standard port
 			host, _, err := net.SplitHostPort(addr)
 			if err == nil {
@@ -335,12 +358,21 @@ type agentFeatures struct {
 	// StatsdPort specifies the Dogstatsd port as provided by the agent.
 	// If it's the default, it will be 0, which means 8125.
 	StatsdPort int
+
+	// featureFlags specifies all the feature flags reported by the trace-agent.
+	featureFlags map[string]struct{}
+}
+
+// HasFlag reports whether the agent has set the feat feature flag.
+func (a *agentFeatures) HasFlag(feat string) bool {
+	_, ok := a.featureFlags[feat]
+	return ok
 }
 
 // loadAgentFeatures queries the trace-agent for its capabilities and updates
 // the tracer's behaviour.
 func (c *config) loadAgentFeatures() {
-	c.features = agentFeatures{}
+	c.agent = agentFeatures{}
 	if c.logToStdout {
 		// there is no agent; all features off
 		return
@@ -359,22 +391,27 @@ func (c *config) loadAgentFeatures() {
 		Endpoints     []string `json:"endpoints"`
 		ClientDropP0s bool     `json:"client_drop_p0s"`
 		StatsdPort    int      `json:"statsd_port"`
+		FeatureFlags  []string `json:"feature_flags"`
 	}
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		log.Error("Decoding features: %v", err)
 		return
 	}
-	c.features.DropP0s = info.ClientDropP0s
-	c.features.StatsdPort = info.StatsdPort
+	c.agent.DropP0s = info.ClientDropP0s
+	c.agent.StatsdPort = info.StatsdPort
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
 			if c.HasFeature("discovery") {
 				// client-stats computation is off by default
-				c.features.Stats = true
+				c.agent.Stats = true
 			}
 		}
+	}
+	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
+	for _, flag := range info.FeatureFlags {
+		c.agent.featureFlags[flag] = struct{}{}
 	}
 }
 
@@ -510,6 +547,17 @@ func WithEnv(env string) StartOption {
 	}
 }
 
+// WithServiceMapping determines service "from" to be renamed to service "to".
+// This option is is case sensitive and can be used multiple times.
+func WithServiceMapping(from, to string) StartOption {
+	return func(c *config) {
+		if c.serviceMappings == nil {
+			c.serviceMappings = make(map[string]string)
+		}
+		c.serviceMappings[from] = to
+	}
+}
+
 // WithGlobalTag sets a key/value pair which will be set as a tag on all spans
 // created by tracer. This option may be used multiple times.
 func WithGlobalTag(k string, v interface{}) StartOption {
@@ -624,6 +672,30 @@ func WithTraceEnabled(enabled bool) StartOption {
 func WithLogStartup(enabled bool) StartOption {
 	return func(c *config) {
 		c.logStartup = enabled
+	}
+}
+
+// WithProfilerCodeHotspots enables the code hotspots integration between the
+// tracer and profiler. This is done by automatically attaching pprof labels
+// called "span id" and "local root span id" when new spans are created. You
+// should not use these label names in your own code when this is enabled. The
+// enabled value defaults to the value of the
+// DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or false.
+func WithProfilerCodeHotspots(enabled bool) StartOption {
+	return func(c *config) {
+		c.profilerHotspots = enabled
+	}
+}
+
+// WithProfilerEndpoints enables the endpoints integration between the tracer
+// and profiler. This is done by automatically attaching a pprof label called
+// "trace endpoint" holding the resource name of the top-level service span if
+// its type is http or rpc. You should not use this label name in your own code
+// when this is enabled. The enabled value defaults to the value of the
+// DD_PROFILING_ENDPOINT_COLLECTION_ENABLED env variable or false.
+func WithProfilerEndpoints(enabled bool) StartOption {
+	return func(c *config) {
+		c.profilerEndpoints = enabled
 	}
 }
 
