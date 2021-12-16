@@ -38,6 +38,8 @@ type (
 
 		// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used.
 		rules []byte
+		// Maximum WAF execution time
+		wafTimeout time.Duration
 	}
 
 	// ServiceConfig is the optional context about the running service.

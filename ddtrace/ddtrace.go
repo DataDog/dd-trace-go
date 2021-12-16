@@ -13,7 +13,10 @@
 // with by accessing the subdirectories of this package: https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace#pkg-subdirectories.
 package ddtrace // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
 // and propagating spans. The official implementation if exposed as functions
@@ -21,6 +24,12 @@ import "time"
 type Tracer interface {
 	// StartSpan starts a span with the given operation name and options.
 	StartSpan(operationName string, opts ...StartSpanOption) Span
+
+	// StartSpanFromContext starts a span with the given operation name and
+	// options. If a span is found in the context, it will be used as the parent
+	// of the resulting span. If the ChildOf option is passed, the span from
+	// context will take precedence over it as the parent span.
+	StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context)
 
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to

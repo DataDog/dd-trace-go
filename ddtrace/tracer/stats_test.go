@@ -16,7 +16,7 @@ import (
 // period.
 func waitForBuckets(c *concentrator, n int) bool {
 	for i := 0; i < 5; i++ {
-		time.Sleep(time.Millisecond)
+		time.Sleep(time.Millisecond * timeMultiplicator)
 		c.mu.Lock()
 		if len(c.buckets) == n {
 			return true
@@ -134,7 +134,7 @@ func TestConcentrator(t *testing.T) {
 				Start:    time.Now().UnixNano() - 4*500000,
 				Duration: 1,
 			}
-			time.Sleep(2 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond * timeMultiplicator)
 			c.Stop()
 			assert.NotZero(t, transport.Stats())
 		})
