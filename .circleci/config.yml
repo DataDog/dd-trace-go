@@ -122,7 +122,7 @@ jobs:
           name: Enforce some dependencies
           command: |
             # last version compatible with go1.14, needed for testtraceprof
-            go get golang.org/x/net@d418f374d30933c6c7db22cf349625c295a5afaa
+            echo 'replace golang.org/x/net => golang.org/x/net d418f374d30933c6c7db22cf349625c295a5afaa' >> go.mod
       - run:
           name: Testing
           command: |
