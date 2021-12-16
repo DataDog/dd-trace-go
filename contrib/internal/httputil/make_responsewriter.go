@@ -77,6 +77,8 @@ func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) http.ResponseW
 		}{mw{{ range . }}, h{{.}}{{ end }}}
 	{{- end }}
 {{- end }}
+	default:
+		w = mw
 	}
 
 	return w
