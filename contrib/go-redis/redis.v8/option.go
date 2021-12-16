@@ -14,6 +14,7 @@ import (
 type clientConfig struct {
 	serviceName   string
 	analyticsRate float64
+	skipRaw       bool
 }
 
 // ClientOption represents an option that can be used to create or wrap a client.
@@ -26,6 +27,15 @@ func defaults(cfg *clientConfig) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = math.NaN()
+	}
+}
+
+// WithSkipRawCommand reports whether to skip setting the "redis.raw_command" tag
+// on instrumenation spans. This may be useful if the Datadog Agent is not
+// set up to obfuscate this value and it could contain sensitive information.
+func WithSkipRawCommand(skip bool) ClientOption {
+	return func(cfg *clientConfig) {
+		cfg.skipRaw = skip
 	}
 }
 
