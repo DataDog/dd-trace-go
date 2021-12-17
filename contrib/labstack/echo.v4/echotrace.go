@@ -75,9 +75,15 @@ func withAppSec(next echo.HandlerFunc) echo.HandlerFunc {
 		if !ok {
 			return next(c)
 		}
+
 		httpsec.SetAppSecTags(span)
-		args := httpsec.MakeHandlerOperationArgs(req)
+		params := make(map[string]string)
+		for _, n := range c.ParamNames() {
+			params[n] = c.Param(n)
+		}
+		args := httpsec.MakeHandlerOperationArgs(req, params)
 		op := httpsec.StartOperation(args, nil)
+
 		defer func() {
 			events := op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
 			if len(events) > 0 {
