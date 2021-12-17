@@ -42,14 +42,21 @@ type (
 		// Status corresponds to the address `server.response.status`.
 		Status int
 	}
+
+	// AppSecParams is the extra parameters that need to be passed over to the AppSec WrapHandler (i.e params
+	// not retrievable from the http.Request, such as path parameters)
+	AppSecParams struct {
+		PathParams map[string]string
+	}
 )
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
-func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
+func WrapHandler(handler http.Handler, span ddtrace.Span, params AppSecParams) http.Handler {
 	SetAppSecTags(span)
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		args := MakeHandlerOperationArgs(r, nil)
+		args := MakeHandlerOperationArgs(r, params.PathParams)
 		op := StartOperation(
 			args,
 			nil,

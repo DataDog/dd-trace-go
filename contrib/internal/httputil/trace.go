@@ -28,6 +28,7 @@ type TraceConfig struct {
 	QueryParams    bool                      // specifies that request query parameters should be appended to http.url tag
 	FinishOpts     []ddtrace.FinishOption    // span finish options to be applied
 	SpanOpts       []ddtrace.StartSpanOption // additional span options to be applied
+	AppSecParams   httpsec.AppSecParams      // extra parameters that AppSec may need while wrapping the request handler
 }
 
 // TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
@@ -55,7 +56,7 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 	defer span.Finish(cfg.FinishOpts...)
 
 	if appsec.Enabled() {
-		h = httpsec.WrapHandler(h, span)
+		h = httpsec.WrapHandler(h, span, cfg.AppSecParams)
 	}
 	h.ServeHTTP(wrapResponseWriter(cfg.ResponseWriter, span), cfg.Request.WithContext(ctx))
 }
