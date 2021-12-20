@@ -7,7 +7,6 @@
 package echo
 
 import (
-	"encoding/json"
 	"math"
 	"net"
 	"strconv"
@@ -76,19 +75,16 @@ func withAppSec(next echo.HandlerFunc) echo.HandlerFunc {
 		if !ok {
 			return next(c)
 		}
-		var secEvent json.RawMessage
-		args := httpsec.MakeHandlerOperationArgs(req, func(event json.RawMessage) {
-			secEvent = event
-		})
+		args := httpsec.MakeHandlerOperationArgs(req)
 		op := httpsec.StartOperation(args, nil)
 		defer func() {
-			op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
-			if secEvent != nil {
+			events := op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
+			if len(events) > 0 {
 				remoteIP, _, err := net.SplitHostPort(req.RemoteAddr)
 				if err != nil {
 					remoteIP = req.RemoteAddr
 				}
-				httpsec.SetSecurityEventTags(span, secEvent, remoteIP, args.Headers)
+				httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers)
 			}
 		}()
 		return next(c)
