@@ -42,17 +42,22 @@ type Operation interface {
 	// operation.
 	Parent() Operation
 
-	// emitEvent is a private method implemented by OperationImpl.
-	// We don't want to expose it to avoid allowing users to emit events
-	// themselves.
+	// emitEvent emits the event to listeners of the given argsType and calls
+	// them with the given op and v values.
+	// emitEvent is a private method implemented by the operation struct type so
+	// that no other package can define it.
 	emitEvent(argsType reflect.Type, op Operation, v interface{})
 
 	// register the given event listeners and return the unregistration
 	// function allowing to remove the event listener from the operation.
+	// register is a private method implemented by the operation struct type so
+	// that no other package can define it.
 	register(...EventListener) UnregisterFunc
 
 	// finish the operation. This method allows to pass the operation value to
 	// use to emit the finish event.
+	// finish is a private method implemented by the operation struct type so
+	// that no other package can define it.
 	finish(op Operation, results interface{})
 }
 
@@ -78,11 +83,11 @@ func Register(listeners ...EventListener) UnregisterFunc {
 	return rootOperation.register(listeners...)
 }
 
-// OperationImpl structure allowing to subscribe to operation events and to
+// operation structure allowing to subscribe to operation events and to
 // navigate in the operation stack. Events
 // bubble-up the operation stack, which allows listening to future events that
 // might happen in the operation lifetime.
-type OperationImpl struct {
+type operation struct {
 	parent Operation
 	eventRegister
 
@@ -131,12 +136,12 @@ func StartOperation(op Operation, args interface{}) {
 	}
 }
 
-func newOperation(parent Operation) *OperationImpl {
-	return &OperationImpl{parent: parent}
+func newOperation(parent Operation) *operation {
+	return &operation{parent: parent}
 }
 
 // Parent return the parent operation. It returns nil for the root operation.
-func (o *OperationImpl) Parent() Operation {
+func (o *operation) Parent() Operation {
 	return o.parent
 }
 
@@ -147,7 +152,7 @@ func FinishOperation(op Operation, results interface{}) {
 	op.finish(op, results)
 }
 
-func (o *OperationImpl) finish(op Operation, results interface{}) {
+func (o *operation) finish(op Operation, results interface{}) {
 	// Defer the call to o.disable() first so that the RWMutex gets unlocked first
 	defer o.disable()
 	o.mu.RLock()
@@ -162,7 +167,7 @@ func (o *OperationImpl) finish(op Operation, results interface{}) {
 }
 
 // Disable the operation and remove all its event listeners.
-func (o *OperationImpl) disable() {
+func (o *operation) disable() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.disabled {
@@ -175,7 +180,7 @@ func (o *OperationImpl) disable() {
 // Register allows to register the given event listeners to the operation. An
 // unregistration function is returned allowing to unregister the event
 // listeners from the operation.
-func (o *OperationImpl) register(l ...EventListener) UnregisterFunc {
+func (o *operation) register(l ...EventListener) UnregisterFunc {
 	// eventRegisterIndex allows to lookup for the event listener in the event register.
 	type eventRegisterIndex struct {
 		key reflect.Type
@@ -211,7 +216,7 @@ func (o *OperationImpl) register(l ...EventListener) UnregisterFunc {
 //     op.On(MyOperationStart(func (op MyOperation, args MyOperationArgs) {
 //         // ...
 //     }))
-func (o *OperationImpl) On(l EventListener) {
+func (o *operation) On(l EventListener) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
 	if o.disabled {
