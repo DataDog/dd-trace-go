@@ -3,9 +3,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package httpsec defines the HTTP operation that can be listened to using
-// dyngo's operation instrumentation. It serves as an abstract representation
-// of HTTP handler calls.
+// Package httpsec defines is the HTTP instrumentation API and contract for
+// AppSec. It defines an abstract representation of HTTP handlers, along with
+// helper functions to wrap (aka. instrument) standard net/http handlers.
+// HTTP integrations must use this package to enable AppSec features for HTTP,
+// which listens to this package's operation events.
 package httpsec
 
 import (
@@ -23,8 +25,6 @@ import (
 type (
 	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
-		OnSecurityEvent func(event json.RawMessage)
-
 		// RequestURI corresponds to the address `server.request.uri.raw`
 		RequestURI string
 		// Headers corresponds to the address `server.request.headers.no_cookies`
@@ -50,10 +50,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 	span.SetTag("_dd.runtime_family", "go")
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var secEvent json.RawMessage
-		args := MakeHandlerOperationArgs(r, func(event json.RawMessage) {
-			secEvent = event
-		})
+		args := MakeHandlerOperationArgs(r)
 		op := StartOperation(
 			args,
 			nil,
@@ -63,15 +60,16 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 			if mw, ok := w.(interface{ Status() int }); ok {
 				status = mw.Status()
 			}
-			op.Finish(HandlerOperationRes{Status: status})
-
-			if secEvent != nil {
-				remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
-				if err != nil {
-					remoteIP = r.RemoteAddr
-				}
-				SetSecurityEventTags(span, secEvent, remoteIP, args.Headers)
+			events := op.Finish(HandlerOperationRes{Status: status})
+			if len(events) == 0 {
+				return
 			}
+
+			remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				remoteIP = r.RemoteAddr
+			}
+			SetSecurityEventTags(span, events, remoteIP, args.Headers)
 		}()
 		handler.ServeHTTP(w, r)
 	})
@@ -80,7 +78,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 // MakeHandlerOperationArgs creates the HandlerOperationArgs out of a standard
 // http.Request along with the given current span. It returns an empty structure
 // when appsec is disabled.
-func MakeHandlerOperationArgs(r *http.Request, onSecurityEvent func(event json.RawMessage)) HandlerOperationArgs {
+func MakeHandlerOperationArgs(r *http.Request) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
 	for k, v := range r.Header {
 		k := strings.ToLower(k)
@@ -102,10 +100,9 @@ func MakeHandlerOperationArgs(r *http.Request, onSecurityEvent func(event json.R
 	}
 	headers["host"] = []string{r.Host}
 	return HandlerOperationArgs{
-		OnSecurityEvent: onSecurityEvent,
-		RequestURI:      r.RequestURI,
-		Headers:         headers,
-		Cookies:         cookies,
+		RequestURI: r.RequestURI,
+		Headers:    headers,
+		Cookies:    cookies,
 		// TODO(Julio-Guerra): avoid actively parsing the query string and move to a lazy monitoring of this value with
 		//   the dynamic instrumentation of the Query() method.
 		Query: r.URL.Query(),
@@ -117,31 +114,39 @@ func MakeHandlerOperationArgs(r *http.Request, onSecurityEvent func(event json.R
 // Operation type representing an HTTP operation. It must be created with
 // StartOperation() and finished with its Finish().
 type Operation struct {
-	*dyngo.OperationImpl
+	dyngo.Operation
+	events json.RawMessage
 }
 
 // StartOperation starts an HTTP handler operation, along with the given
 // arguments and parent operation, and emits a start event up in the
 // operation stack. When parent is nil, the operation is linked to the global
 // root operation.
-func StartOperation(args HandlerOperationArgs, parent dyngo.Operation) Operation {
-	return Operation{OperationImpl: dyngo.StartOperation(args, parent)}
+func StartOperation(args HandlerOperationArgs, parent dyngo.Operation) *Operation {
+	op := &Operation{Operation: dyngo.NewOperation(parent)}
+	dyngo.StartOperation(op, args)
+	return op
 }
 
 // Finish the HTTP handler operation, along with the given results, and emits a
 // finish event up in the operation stack.
-func (op Operation) Finish(res HandlerOperationRes) {
-	op.OperationImpl.Finish(res)
+func (op *Operation) Finish(res HandlerOperationRes) json.RawMessage {
+	dyngo.FinishOperation(op, res)
+	return op.events
+}
+
+func (op *Operation) AddSecurityEvent(event json.RawMessage) {
+	op.events = event
 }
 
 // HTTP handler operation's start and finish event callback function types.
 type (
 	// OnHandlerOperationStart function type, called when an HTTP handler
 	// operation starts.
-	OnHandlerOperationStart func(dyngo.Operation, HandlerOperationArgs)
+	OnHandlerOperationStart func(*Operation, HandlerOperationArgs)
 	// OnHandlerOperationFinish function type, called when an HTTP handler
 	// operation finishes.
-	OnHandlerOperationFinish func(dyngo.Operation, HandlerOperationRes)
+	OnHandlerOperationFinish func(*Operation, HandlerOperationRes)
 )
 
 var (
@@ -156,7 +161,7 @@ func (OnHandlerOperationStart) ListenedType() reflect.Type { return handlerOpera
 // Call the underlying event listener function by performing the type-assertion
 // on v whose type is the one returned by ListenedType().
 func (f OnHandlerOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(HandlerOperationArgs))
+	f(op.(*Operation), v.(HandlerOperationArgs))
 }
 
 // ListenedType returns the type a OnHandlerOperationFinish event listener
@@ -166,5 +171,5 @@ func (OnHandlerOperationFinish) ListenedType() reflect.Type { return handlerOper
 // Call the underlying event listener function by performing the type-assertion
 // on v whose type is the one returned by ListenedType().
 func (f OnHandlerOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(HandlerOperationRes))
+	f(op.(*Operation), v.(HandlerOperationRes))
 }

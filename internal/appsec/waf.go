@@ -66,7 +66,7 @@ func registerWAF(rules []byte, timeout time.Duration) (unreg dyngo.UnregisterFun
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
 func newWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration) dyngo.EventListener {
-	return httpsec.OnHandlerOperationStart(func(op dyngo.Operation, args httpsec.HandlerOperationArgs) {
+	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
 		// For this handler operation lifetime, create a WAF context and the
 		// list of detected attacks
 		wafCtx := waf.NewContext(handle)
@@ -77,7 +77,7 @@ func newWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Du
 		// TODO(Julio-Guerra): make it a thread-safe list of security events once we listen for sub-operations
 		var matches []byte
 
-		op.On(httpsec.OnHandlerOperationFinish(func(op dyngo.Operation, res httpsec.HandlerOperationRes) {
+		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
 			// Release the WAF context
 			wafCtx.Close()
 			// Log the attacks if any
@@ -85,7 +85,7 @@ func newWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Du
 				return
 			}
 			log.Debug("appsec: attack detected by the waf")
-			args.OnSecurityEvent(matches)
+			op.AddSecurityEvent(matches)
 		}))
 
 		// Run the WAF on the rule addresses available in the request args
