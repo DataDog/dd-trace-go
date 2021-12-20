@@ -41,6 +41,7 @@ type startupInfo struct {
 	SampleRate            string            `json:"sample_rate"`             // The default sampling rate for the rules sampler
 	SamplingRules         []SamplingRule    `json:"sampling_rules"`          // Rules used by the rules sampler
 	SamplingRulesError    string            `json:"sampling_rules_error"`    // Any errors that occurred while parsing sampling rules
+	ServiceMappings       map[string]string `json:"service_mappings"`        // Service Mappings
 	Tags                  map[string]string `json:"tags"`                    // Global tags
 	RuntimeMetricsEnabled bool              `json:"runtime_metrics_enabled"` // Whether or not runtime metrics are enabled
 	HealthMetricsEnabled  bool              `json:"health_metrics_enabled"`  // Whether or not health metrics are enabled
@@ -91,6 +92,7 @@ func logStartup(t *tracer) {
 		AnalyticsEnabled:      !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:            fmt.Sprintf("%f", t.rulesSampling.globalRate),
 		SamplingRules:         t.rulesSampling.rules,
+		ServiceMappings:       t.config.serviceMappings,
 		Tags:                  tags,
 		RuntimeMetricsEnabled: t.config.runtimeMetrics,
 		HealthMetricsEnabled:  t.config.runtimeMetrics,

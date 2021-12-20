@@ -125,6 +125,8 @@ func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) http.ResponseW
 			monitoredResponseWriter
 			http.Hijacker
 		}{mw, hHijacker}
+	default:
+		w = mw
 	}
 
 	return w
