@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"context"
 	gocontext "context"
 	"fmt"
 	"os"
@@ -439,7 +438,7 @@ func (t *tracer) StartSpanFromContext(ctx gocontext.Context, operationName strin
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored.
-func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) context.Context {
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) gocontext.Context {
 	var labels []string
 	if t.config.profilerHotspots {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
