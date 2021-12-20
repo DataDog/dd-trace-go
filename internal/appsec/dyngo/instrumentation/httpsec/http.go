@@ -135,7 +135,12 @@ func (op *Operation) Finish(res HandlerOperationRes) json.RawMessage {
 	return op.events
 }
 
+// AddSecurityEvent adds the security event to the list of events observed
+// during the operation lifetime.
 func (op *Operation) AddSecurityEvent(event json.RawMessage) {
+	// TODO(Julio-Guerra): the current situation involves only one event per
+	//   operation. In the future, multiple events per operation will become
+	//   possible and the append operation should be made thread-safe.
 	op.events = event
 }
 
