@@ -6,7 +6,6 @@
 package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 import (
-	"context"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -50,11 +49,6 @@ type NoopTracer struct{}
 // StartSpan implements ddtrace.Tracer.
 func (NoopTracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
 	return NoopSpan{}
-}
-
-// StartSpanFromContext implements ddtrace.Tracer.
-func (NoopTracer) StartSpanFromContext(ctx context.Context, operationName string, options ...ddtrace.StartSpanOption) (ddtrace.Span, context.Context) {
-	return NoopSpan{}, context.Background()
 }
 
 // SetServiceInfo implements ddtrace.Tracer.
