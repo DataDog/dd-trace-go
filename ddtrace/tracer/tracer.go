@@ -327,6 +327,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		startTime = opts.StartTime.UnixNano()
 	}
 	var context *spanContext
+	// The default pprof context is taken from the start options and is
+	// not nil when using StartSpanFromContext()
 	pprofContext := opts.Context
 	if opts.Parent != nil {
 		if ctx, ok := opts.Parent.(*spanContext); ok {

@@ -126,7 +126,7 @@ type StartSpanConfig struct {
 	// then this will also set the TraceID to the same value.
 	SpanID uint64
 
-	// Context holds the context associated with this span.
+	// Context is the parent context where the span should be stored.
 	Context context.Context
 }
 
