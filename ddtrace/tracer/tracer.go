@@ -341,6 +341,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			}
 		}
 	}
+	if pprofContext == nil {
+		pprofContext = gocontext.Background()
+	}
 	id := opts.SpanID
 	if id == 0 {
 		id = random.Uint64()
