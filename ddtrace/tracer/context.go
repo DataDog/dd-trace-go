@@ -39,5 +39,19 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 // is found in the context, it will be used as the parent of the resulting span. If the ChildOf
 // option is passed, the span from context will take precedence over it as the parent span.
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context) {
-	return internal.GetGlobalTracer().StartSpanFromContext(ctx, operationName, opts...)
+	if ctx == nil {
+		// default to context.Background() to avoid panics on Go >= 1.15
+		ctx = context.Background()
+	} else if s, ok := SpanFromContext(ctx); ok {
+		opts = append(opts, ChildOf(s.Context()))
+	}
+	opts = append(opts, withContext(ctx))
+	s := StartSpan(operationName, opts...)
+	if span, ok := s.(*span); ok && span.pprofCtxActive != nil {
+		// If pprof labels were applied for this span, use the derived ctx that
+		// includes them. Otherwise a child of this span wouldn't be able to
+		// correctly restore the labels of its parent when it finishes.
+		ctx = span.pprofCtxActive
+	}
+	return s, ContextWithSpan(ctx, s)
 }
