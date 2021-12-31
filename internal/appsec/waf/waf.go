@@ -204,8 +204,8 @@ func (c *Context) runWAF(data *wafObject, timeout time.Duration) (matches []byte
 	var result C.ddwaf_result
 	// TODO(Julio-Guerra): avoid calling result_free when there's no result
 	defer C.ddwaf_result_free(&result)
-	C.ddwaf_run(c.context, data.ctype(), &result, C.uint64_t(timeout/time.Microsecond))
-	return goReturnValues(&result)
+	rc := C.ddwaf_run(c.context, data.ctype(), &result, C.uint64_t(timeout/time.Microsecond))
+	return goReturnValues(rc, &result)
 }
 
 // Close the WAF context by releasing its C memory and decreasing the number of
@@ -217,14 +217,17 @@ func (c *Context) Close() {
 	decNbLiveCObjects()
 }
 
-func goReturnValues(result *C.ddwaf_result) (matches []byte, err error) {
-	if rc := result.action; rc == C.DDWAF_GOOD {
-		return nil, nil
-	} else if rc < 0 {
+func goReturnValues(rc C.DDWAF_RET_CODE, result *C.ddwaf_result) (matches []byte, err error) {
+	if rc < 0 {
 		return nil, goRunError(rc)
 	}
-	matches = C.GoBytes(unsafe.Pointer(result.data), C.int(C.strlen(result.data)))
-	return matches, nil
+	if result.data != nil {
+		matches = C.GoBytes(unsafe.Pointer(result.data), C.int(C.strlen(result.data)))
+	}
+	if bool(result.timeout) {
+		err = ErrTimeout
+	}
+	return matches, err
 }
 
 func goRunError(rc C.DDWAF_RET_CODE) error {
@@ -235,8 +238,6 @@ func goRunError(rc C.DDWAF_RET_CODE) error {
 		return ErrInvalidObject
 	case C.DDWAF_ERR_INVALID_ARGUMENT:
 		return ErrInvalidArgument
-	case C.DDWAF_ERR_TIMEOUT:
-		return ErrTimeout
 	default:
 		return fmt.Errorf("unknown waf return code %d", int(rc))
 	}
