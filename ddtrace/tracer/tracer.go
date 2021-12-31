@@ -341,6 +341,16 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			}
 		}
 	}
+	if pprofContext == nil {
+		// For root span's without context, there is no pprofContext, but we need
+		// one to avoid a panic() in pprof.WithLabels(). Using context.Background()
+		// is not ideal here, as it will cause us to remove all labels from the
+		// goroutine when the span finishes. However, the alternatives of not
+		// applying labels for such spans or to leave the endpoint/hotspot labels
+		// on the goroutine after it finishes are even less appealing. We'll have
+		// to properly document this for users.
+		pprofContext = gocontext.Background()
+	}
 	id := opts.SpanID
 	if id == 0 {
 		id = random.Uint64()

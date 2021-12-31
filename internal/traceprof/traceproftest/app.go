@@ -251,6 +251,9 @@ func (a *App) Work(ctx context.Context, req *pb.WorkReq) (*pb.WorkRes, error) {
 	close(stop)
 	cpuSpan.Finish()
 
+	orphanSpan := tracer.StartSpan("orphan")
+	orphanSpan.Finish()
+
 	return &pb.WorkRes{
 		LocalRootSpanId: fmt.Sprintf("%d", localRootSpan.Context().SpanID()),
 		SpanId:          fmt.Sprintf("%d", cpuSpan.Context().SpanID()),
