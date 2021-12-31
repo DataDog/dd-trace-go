@@ -202,6 +202,7 @@ func (c *Context) runWAF(data *wafObject, timeout time.Duration) (matches []byte
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var result C.ddwaf_result
+	// TODO(Julio-Guerra): avoid calling result_free when there's no result
 	defer C.ddwaf_result_free(&result)
 	C.ddwaf_run(c.context, data.ctype(), &result, C.uint64_t(timeout/time.Microsecond))
 	return goReturnValues(&result)

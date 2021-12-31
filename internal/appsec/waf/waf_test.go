@@ -148,7 +148,7 @@ func TestUsage(t *testing.T) {
 	wafCtx := NewContext(waf)
 	require.NotNil(t, wafCtx)
 
-	// Not matching
+	// Not matching because the address value doesn't match the rule
 	values := map[string]interface{}{
 		"my.input": "go client",
 	}
@@ -156,7 +156,7 @@ func TestUsage(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, matches)
 
-	// Rule address not available
+	// Not matching because the address is not used by the rule
 	values = map[string]interface{}{
 		"server.request.uri.raw": "something",
 	}
@@ -164,15 +164,7 @@ func TestUsage(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, matches)
 
-	// Timeout
-	values = map[string]interface{}{
-		"my.input": "Arachni",
-	}
-	matches, err = wafCtx.Run(values, 0)
-	require.Equal(t, ErrTimeout, err)
-	require.Nil(t, matches)
-
-	// Not matching anymore since it already matched before
+	// Not matching due to a timeout
 	values = map[string]interface{}{
 		"my.input": "Arachni",
 	}
@@ -190,11 +182,8 @@ func TestUsage(t *testing.T) {
 	require.NotEmpty(t, matches)
 
 	// Not matching anymore since it already matched before
-	values = map[string]interface{}{
-		"my.input": "Arachni",
-	}
-	matches, err = wafCtx.Run(values, 0)
-	require.Equal(t, ErrTimeout, err)
+	matches, err = wafCtx.Run(values, time.Second)
+	require.NoError(t, err)
 	require.Nil(t, matches)
 
 	// Nil values

@@ -110,7 +110,8 @@ func runWAF(wafCtx *waf.Context, values map[string]interface{}, timeout time.Dur
 	matches, err := wafCtx.Run(values, timeout)
 	if err != nil {
 		log.Error("appsec: waf error: %v", err)
-		return nil
+		// we do not return to cover the case where we have matches and a
+		// timeout error
 	}
 	return matches
 }
