@@ -109,9 +109,12 @@ func newWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Du
 func runWAF(wafCtx *waf.Context, values map[string]interface{}, timeout time.Duration) []byte {
 	matches, err := wafCtx.Run(values, timeout)
 	if err != nil {
-		log.Error("appsec: waf error: %v", err)
-		// we do not return to cover the case where we have matches and a
-		// timeout error
+		if err == waf.ErrTimeout {
+			log.Debug("appsec: waf timeout value of %s reached", timeout)
+		} else {
+			log.Error("appsec: unexpected waf error: %v", err)
+			return nil
+		}
 	}
 	return matches
 }

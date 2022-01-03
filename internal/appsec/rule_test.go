@@ -46,12 +46,7 @@ func TestUsage(t *testing.T) {
 		//"server.response.status": "404",
 		//"server.request.headers.no_cookies": map[string]string{"user-agent": "Arachni/v1"},
 	}
-	for i := 20; i != 0; i++ {
-		matches, _ := wafCtx.Run(values, time.Second)
-		if len(matches) > 0 {
-			panic("ok")
-		}
-		//assert.NoError(t, err)
-		//assert.NotEmpty(t, matches)
-	}
+	matches, _ := wafCtx.Run(values, time.Second)
+	require.NoError(t, err)
+	require.NotEmpty(t, matches)
 }
