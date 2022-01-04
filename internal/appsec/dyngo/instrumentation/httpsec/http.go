@@ -15,7 +15,6 @@ import (
 	"net"
 	"net/http"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -58,7 +57,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 			if mw, ok := w.(interface{ Status() int }); ok {
 				status = mw.Status()
 			}
-			events := op.Finish(HandlerOperationRes{Status: strconv.Itoa(status)})
+			events := op.Finish(HandlerOperationRes{Status: status})
 			if len(events) == 0 {
 				return
 			}

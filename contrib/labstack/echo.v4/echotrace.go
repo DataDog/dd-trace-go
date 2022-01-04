@@ -79,7 +79,7 @@ func withAppSec(next echo.HandlerFunc) echo.HandlerFunc {
 		args := httpsec.MakeHandlerOperationArgs(req)
 		op := httpsec.StartOperation(args, nil)
 		defer func() {
-			events := op.Finish(httpsec.HandlerOperationRes{Status: strconv.Itoa(c.Response().Status)})
+			events := op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
 			if len(events) > 0 {
 				remoteIP, _, err := net.SplitHostPort(req.RemoteAddr)
 				if err != nil {
