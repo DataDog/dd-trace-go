@@ -254,7 +254,7 @@ func TestBatch(t *testing.T) {
 	stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
 	tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
 	tb.Query(stmt, "Lucas", 60, "Another person")
-	err = tb.WithContext(ctx).WithTimestamp(time.Now().UnixMilli()).ExecuteBatch(session)
+	err = tb.WithContext(ctx).WithTimestamp(time.Now().Unix() * 1e3).ExecuteBatch(session)
 	assert.NoError(err)
 
 	parentSpan.Finish()
