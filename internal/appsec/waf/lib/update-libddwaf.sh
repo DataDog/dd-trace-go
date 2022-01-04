@@ -8,12 +8,12 @@
 #
 
 # Update the libddwaf to the latest GitHub release version.
-# Usage: ./update-lib.sh
+# Usage: ./update-libddwaf.sh
 #
 
 set -ex
 
-bindings_dir=$(readlink -f $(dirname $0)/..)
+bindings_dir=$(readlink -f "$(dirname $0)/..")
 
 echo Looking up for the latest GitHub release
 
