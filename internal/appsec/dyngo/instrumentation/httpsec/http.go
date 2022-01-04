@@ -37,8 +37,8 @@ type (
 
 	// HandlerOperationRes is the HTTP handler operation results.
 	HandlerOperationRes struct {
-		// Status corresponds to the address `server.response.status`
-		Status string
+		// Status corresponds to the address `server.response.status`.
+		Status int
 	}
 )
 
