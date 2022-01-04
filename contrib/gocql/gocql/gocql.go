@@ -233,7 +233,7 @@ func (tb *Batch) WithTimestamp(timestamp int64) *Batch {
 	return tb
 }
 
-// Executes calls session.ExecuteBatch on the Batch, tracing the execution.
+// ExecuteBatch calls session.ExecuteBatch on the Batch, tracing the execution.
 func (tb *Batch) ExecuteBatch(session *gocql.Session) error {
 	span := tb.newChildSpan(tb.ctx)
 	err := session.ExecuteBatch(tb.Batch)
