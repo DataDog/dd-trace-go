@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -20,6 +21,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	// Profiling configuration is logged by default when starting a profile,
+	// so we want to discard it during tests to avoid flooding the terminal
+	// with logs
+	log.UseLogger(log.DiscardLogger{})
+	os.Exit(m.Run())
+}
 
 func TestStart(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
@@ -68,8 +77,10 @@ func TestStart(t *testing.T) {
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.agentURL, activeProfiler.cfg.targetURL)
-		assert.Equal(t, 1, len(rl.Logs()))
-		assert.Contains(t, rl.Logs()[0], "profiler.WithAPIKey")
+		// The package should log a warning that using an API has no
+		// effect unless uploading directly to Datadog (i.e. agentless)
+		assert.LessOrEqual(t, 1, len(rl.Logs()))
+		assert.Contains(t, strings.Join(rl.Logs(), " "), "profiler.WithAPIKey")
 	})
 
 	t.Run("options/GoodAPIKey/Agentless", func(t *testing.T) {
@@ -83,8 +94,10 @@ func TestStart(t *testing.T) {
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.apiURL, activeProfiler.cfg.targetURL)
-		assert.Equal(t, 1, len(rl.Logs()))
-		assert.Contains(t, rl.Logs()[0], "profiler.WithAgentlessUpload")
+		// The package should log a warning that agentless upload is not
+		// officially supported, so prefer not to use it
+		assert.LessOrEqual(t, 1, len(rl.Logs()))
+		assert.Contains(t, strings.Join(rl.Logs(), " "), "profiler.WithAgentlessUpload")
 	})
 
 	t.Run("options/BadAPIKey", func(t *testing.T) {

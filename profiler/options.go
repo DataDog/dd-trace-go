@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -100,6 +101,44 @@ type config struct {
 	blockRate         int
 	outputDir         string
 	deltaProfiles     bool
+	logStartup        bool
+}
+
+// logStartup records the configuration to the configured logger in JSON format
+func logStartup(c *config) {
+	info := struct {
+		Service              string   `json:"service"`
+		Env                  string   `json:"env"`
+		TargetURL            string   `json:"target_url"`
+		Agentless            bool     `json:"agentless"`
+		Tags                 []string `json:"tags"`
+		ProfilePeriod        string   `json:"profile_period"`
+		EnabledProfiles      []string `json:"enabled_profiles"`
+		CPUDuration          string   `json:"cpu_duration"`
+		BlockProfileRate     int      `json:"block_profile_rate"`
+		MutexProfileFraction int      `json:"mutex_profile_fraction"`
+		UploadTimeout        string   `json:"upload_timeout"`
+	}{
+		Service:              c.service,
+		Env:                  c.env,
+		TargetURL:            c.targetURL,
+		Agentless:            c.agentless,
+		Tags:                 c.tags,
+		ProfilePeriod:        c.period.String(),
+		CPUDuration:          c.cpuDuration.String(),
+		BlockProfileRate:     c.blockRate,
+		MutexProfileFraction: c.mutexFraction,
+		UploadTimeout:        c.uploadTimeout.String(),
+	}
+	for t := range c.types {
+		info.EnabledProfiles = append(info.EnabledProfiles, t.String())
+	}
+	b, err := json.Marshal(info)
+	if err != nil {
+		log.Error("marshaling profiler configuration: %s", err)
+		return
+	}
+	log.Info("profiler configuration: %s\n", b)
 }
 
 func urlForSite(site string) (string, error) {
@@ -143,6 +182,7 @@ func defaultConfig() (*config, error) {
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
 		tags:              []string{fmt.Sprintf("pid:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
+		logStartup:        true,
 	}
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
@@ -409,5 +449,14 @@ func WithUDS(socketPath string) Option {
 func withOutputDir(dir string) Option {
 	return func(cfg *config) {
 		cfg.outputDir = dir
+	}
+}
+
+// WithLogStartup toggles logging the configuration of the profiler to standard
+// error when profiling is started. The configuration is logged in a JSON
+// format. This option is enabled by default.
+func WithLogStartup(enabled bool) Option {
+	return func(cfg *config) {
+		cfg.logStartup = enabled
 	}
 }
