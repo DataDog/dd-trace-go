@@ -103,6 +103,9 @@ func TestChildWrapperSpan(t *testing.T) {
 	cluster := newCassandraCluster()
 	session, err := cluster.CreateSession()
 	assert.Nil(err)
+
+	// Call WithContext before WrapQuery to prove WrapQuery needs to use the query.Context()
+	// instead of context.Background()
 	q := session.Query("SELECT * from trace.person").WithContext(ctx)
 	tq := WrapQuery(q, WithServiceName("TestServiceName"))
 	iter := tq.Iter()

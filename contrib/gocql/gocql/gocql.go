@@ -37,7 +37,7 @@ type Iter struct {
 // Scanner inherits from a gocql.Scanner derived from an Iter
 type Scanner struct {
 	gocql.Scanner
-	*Iter
+	span ddtrace.Span
 }
 
 // Batch inherits from gocql.Batch, it keeps the tracer and the context.
@@ -183,18 +183,18 @@ func (tIter *Iter) Close() error {
 func (tIter *Iter) Scanner() gocql.Scanner {
 	return &Scanner{
 		Scanner: tIter.Iter.Scanner(),
-		Iter:    tIter,
+		span:    tIter.span,
 	}
 }
 
-// Err calls the wrapped Scanner.Err, releasing both Scanner and Iter resources.
+// Err calls the wrapped Scanner.Err, releasing the Scanner resources and closing the span.
 func (s *Scanner) Err() error {
-	if err := s.Iter.Close(); err != nil {
-		s.Scanner.Err()
-		return err
+	err := s.Scanner.Err()
+	if err != nil {
+		s.span.SetTag(ext.Error, err)
 	}
-
-	return s.Scanner.Err()
+	s.span.Finish()
+	return err
 }
 
 // WrapBatch wraps a gocql.Batch into a traced Batch under the given service name.
