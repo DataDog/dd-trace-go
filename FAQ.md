@@ -22,6 +22,8 @@ Integrations that are considered *clients* (http clients, grpc clients, sql clie
 
 While there are good arguments to be made that client integrations should take the same service name as everything else in the service, that's not how the library is intended to function today. As a work-around, most integrations have a `WithServiceName` `Option` that will allow you to override the default. If the integration you are using cannot be configured the way you want, please open an issue to discuss adding as option.
 
+See also: https://github.com/DataDog/dd-trace-go/pull/603
+
 #### Why are client integration spans not measured?
 This is primarily for 2 reasons:
 1. Cost - often a traced client will speak to a traced server. If both are measured, there is duplication of measurement here, and duplication of cost for no benefit. By measuring **only** the server, we get analytics without duplication. 
