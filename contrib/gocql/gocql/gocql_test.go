@@ -140,15 +140,28 @@ func TestAnalyticsSettings(t *testing.T) {
 		cluster := newCassandraCluster()
 		session, err := cluster.CreateSession()
 		assert.Nil(t, err)
+
+		// Create a query for testing Iter spans
 		q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
 		iter := WrapQuery(q, opts...).Iter()
-		err = iter.Close()
+		iter.Close() // this will error, we're inspecting the trace not the error
+
+		// Create a query for testing Scanner spans
+		q2 := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+		scanner := WrapQuery(q2, opts...).Iter().Scanner()
+		scanner.Err() // this will error, we're inspecting the trace not the error
+
+		// Create a batch query for testing Batch spans
+		b := WrapBatch(session.NewBatch(gocql.UnloggedBatch), opts...)
+		b.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+		b.ExecuteBatch(session) // this will error, we're inspecting the trace not the error
 
 		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 1)
-		s := spans[0]
-		if !math.IsNaN(rate) {
-			assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+		assert.Len(t, spans, 3)
+		for _, s := range spans {
+			if !math.IsNaN(rate) {
+				assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+			}
 		}
 	}
 
