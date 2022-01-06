@@ -461,9 +461,9 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 
 // spanResourcePIISafe returns true if s.Resource can be considered to not
 // include PII with reasonable confidence. E.g. SQL queries may contain PII,
-// but http or rpc endpoint names generally do not.
+// but http, rpc or custom (s.Type == "") span resource names generally do not.
 func spanResourcePIISafe(s *span) bool {
-	return s.Type == ext.SpanTypeWeb || s.Type == ext.AppTypeRPC
+	return s.Type == ext.SpanTypeWeb || s.Type == ext.AppTypeRPC || s.Type == ""
 }
 
 // Stop stops the tracer.
