@@ -26,6 +26,9 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
+	if svc := globalconfig.ServiceName(); svc != "" {
+		cfg.serviceName = svc
+	}
 }
 
 func (cfg *config) serverServiceName() string {

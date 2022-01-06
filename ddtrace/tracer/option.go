@@ -7,12 +7,15 @@ package tracer
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"math"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,15 +24,30 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
-	"github.com/DataDog/datadog-go/statsd"
+	"github.com/DataDog/datadog-go/v5/statsd"
+)
+
+var (
+	// defaultSocketAPM specifies the socket path to use for connecting to the trace-agent.
+	// Replaced in tests
+	defaultSocketAPM = "/var/run/datadog/apm.socket"
+
+	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
+	// Replaced in tests
+	defaultSocketDSD = "/var/run/datadog/dsd.socket"
 )
 
 // config holds the tracer configuration.
 type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
+
+	// agent holds the capabilities of the agent and determines some
+	// of the behaviour of the tracer.
+	agent agentFeatures
 
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
@@ -57,6 +75,9 @@ type config struct {
 	// agentAddr specifies the hostname and port of the agent where the traces
 	// are sent to.
 	agentAddr string
+
+	// serviceMappings holds a set of service mappings to dynamically rename services
+	serviceMappings map[string]string
 
 	// globalTags holds a set of tags that will be automatically applied to
 	// all spans.
@@ -101,6 +122,15 @@ type config struct {
 	// noDebugStack disables the collection of debug stack traces globally. No traces reporting
 	// errors will record a stack trace when this option is set.
 	noDebugStack bool
+
+	// profilerHotspots specifies whether profiler Code Hotspots is enabled.
+	profilerHotspots bool
+
+	// profilerEndpoints specifies whether profiler endpoint filtering is enabled.
+	profilerEndpoints bool
+
+	// enabled reports whether tracing is enabled.
+	enabled bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -112,20 +142,40 @@ func (c *config) HasFeature(f string) bool {
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
+// forEachStringTag runs fn on every key:val pair encountered in str.
+// str may contain multiple key:val pairs separated by either space
+// or comma (but not a mixture of both).
+func forEachStringTag(str string, fn func(key string, val string)) {
+	sep := " "
+	if strings.Index(str, ",") > -1 {
+		// falling back to comma as separator
+		sep = ","
+	}
+	for _, tag := range strings.Split(str, sep) {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		kv := strings.SplitN(tag, ":", 2)
+		key := strings.TrimSpace(kv[0])
+		if key == "" {
+			continue
+		}
+		var val string
+		if len(kv) == 2 {
+			val = strings.TrimSpace(kv[1])
+		}
+		fn(key, val)
+	}
+}
+
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
 	c.agentAddr = defaultAddress
-	statsdHost, statsdPort := "localhost", "8125"
-	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
-		statsdHost = v
-	}
-	if v := os.Getenv("DD_DOGSTATSD_PORT"); v != "" {
-		statsdPort = v
-	}
-	c.dogstatsdAddr = net.JoinHostPort(statsdHost, statsdPort)
+	c.httpClient = defaultHTTPClient()
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
@@ -155,28 +205,11 @@ func newConfig(opts ...StartOption) *config {
 	if ver := os.Getenv("DD_VERSION"); ver != "" {
 		c.version = ver
 	}
+	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
+		forEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
+	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		sep := " "
-		if strings.Index(v, ",") > -1 {
-			// falling back to comma as separator
-			sep = ","
-		}
-		for _, tag := range strings.Split(v, sep) {
-			tag = strings.TrimSpace(tag)
-			if tag == "" {
-				continue
-			}
-			kv := strings.SplitN(tag, ":", 2)
-			key := strings.TrimSpace(kv[0])
-			if key == "" {
-				continue
-			}
-			var val string
-			if len(kv) == 2 {
-				val = strings.TrimSpace(kv[1])
-			}
-			WithGlobalTag(key, val)(c)
-		}
+		forEachStringTag(v, func(key, val string) { WithGlobalTag(key, val)(c) })
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
@@ -186,6 +219,11 @@ func newConfig(opts ...StartOption) *config {
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
+	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
+	// TODO(fg): set these to true before going GA with this.
+	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, false)
+	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, false)
+
 	for _, fn := range opts {
 		fn(c)
 	}
@@ -226,8 +264,29 @@ func newConfig(opts ...StartOption) *config {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
+	c.loadAgentFeatures()
 	if c.statsd == nil {
-		client, err := statsd.New(c.dogstatsdAddr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
+		// configure statsd client
+		addr := c.dogstatsdAddr
+		if addr == "" {
+			// no config defined address; use defaults
+			addr = defaultDogstatsdAddr()
+		}
+		if agentport := c.agent.StatsdPort; agentport > 0 {
+			// the agent reported a non-standard port
+			host, _, err := net.SplitHostPort(addr)
+			if err == nil {
+				// we have a valid host:port address; replace the port because
+				// the agent knows better
+				if host == "" {
+					host = defaultHostname
+				}
+				addr = net.JoinHostPort(host, strconv.Itoa(agentport))
+			}
+			// not a valid TCP address, leave it as it is (could be a socket connection)
+		}
+		c.dogstatsdAddr = addr
+		client, err := statsd.New(addr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
 		if err != nil {
 			log.Warn("Runtime and health metrics disabled: %v", err)
 			c.statsd = &statsd.NoOpClient{}
@@ -236,6 +295,124 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	return c
+}
+
+// defaultHTTPClient returns the default http.Client to start the tracer with.
+func defaultHTTPClient() *http.Client {
+	if _, err := os.Stat(defaultSocketAPM); err == nil {
+		// we have the UDS socket file, use it
+		return udsClient(defaultSocketAPM)
+	}
+	return defaultClient
+}
+
+// udsClient returns a new http.Client which connects using the given UDS socket path.
+func udsClient(socketPath string) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+				return defaultDialer.DialContext(ctx, "unix", (&net.UnixAddr{
+					Name: socketPath,
+					Net:  "unix",
+				}).String())
+			},
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+		Timeout: defaultHTTPTimeout,
+	}
+}
+
+// defaultDogstatsdAddr returns the default connection address for Dogstatsd.
+func defaultDogstatsdAddr() string {
+	envHost, envPort := os.Getenv("DD_AGENT_HOST"), os.Getenv("DD_DOGSTATSD_PORT")
+	if _, err := os.Stat(defaultSocketDSD); err == nil && envHost == "" && envPort == "" {
+		// socket exists and user didn't specify otherwise via env vars
+		return "unix://" + defaultSocketDSD
+	}
+	host, port := defaultHostname, "8125"
+	if envHost != "" {
+		host = envHost
+	}
+	if envPort != "" {
+		port = envPort
+	}
+	return net.JoinHostPort(host, port)
+}
+
+// agentFeatures holds information about the trace-agent's capabilities.
+// When running WithLambdaMode, a zero-value of this struct will be used
+// as features.
+type agentFeatures struct {
+	// DropP0s reports whether it's ok for the tracer to not send any
+	// P0 traces to the agent.
+	DropP0s bool
+
+	// Stats reports whether the agent can receive client-computed stats on
+	// the /v0.6/stats endpoint.
+	Stats bool
+
+	// StatsdPort specifies the Dogstatsd port as provided by the agent.
+	// If it's the default, it will be 0, which means 8125.
+	StatsdPort int
+
+	// featureFlags specifies all the feature flags reported by the trace-agent.
+	featureFlags map[string]struct{}
+}
+
+// HasFlag reports whether the agent has set the feat feature flag.
+func (a *agentFeatures) HasFlag(feat string) bool {
+	_, ok := a.featureFlags[feat]
+	return ok
+}
+
+// loadAgentFeatures queries the trace-agent for its capabilities and updates
+// the tracer's behaviour.
+func (c *config) loadAgentFeatures() {
+	c.agent = agentFeatures{}
+	if c.logToStdout {
+		// there is no agent; all features off
+		return
+	}
+	resp, err := c.httpClient.Get(fmt.Sprintf("http://%s/info", c.agentAddr))
+	if err != nil {
+		log.Error("Loading features: %v", err)
+		return
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		// agent is older than 7.28.0, features not discoverable
+		return
+	}
+	defer resp.Body.Close()
+	type infoResponse struct {
+		Endpoints     []string `json:"endpoints"`
+		ClientDropP0s bool     `json:"client_drop_p0s"`
+		StatsdPort    int      `json:"statsd_port"`
+		FeatureFlags  []string `json:"feature_flags"`
+	}
+	var info infoResponse
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		log.Error("Decoding features: %v", err)
+		return
+	}
+	c.agent.DropP0s = info.ClientDropP0s
+	c.agent.StatsdPort = info.StatsdPort
+	for _, endpoint := range info.Endpoints {
+		switch endpoint {
+		case "/v0.6/stats":
+			if c.HasFeature("discovery") {
+				// client-stats computation is off by default
+				c.agent.Stats = true
+			}
+		}
+	}
+	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
+	for _, flag := range info.FeatureFlags {
+		c.agent.featureFlags[flag] = struct{}{}
+	}
 }
 
 func statsTags(c *config) []string {
@@ -259,6 +436,13 @@ func statsTags(c *config) []string {
 		}
 	}
 	return tags
+}
+
+// withNoopStats is used for testing to disable statsd client
+func withNoopStats() StartOption {
+	return func(c *config) {
+		c.statsd = &statsd.NoOpClient{}
+	}
 }
 
 // WithFeatureFlags specifies a set of feature flags to enable. Please take into account
@@ -363,6 +547,17 @@ func WithEnv(env string) StartOption {
 	}
 }
 
+// WithServiceMapping determines service "from" to be renamed to service "to".
+// This option is is case sensitive and can be used multiple times.
+func WithServiceMapping(from, to string) StartOption {
+	return func(c *config) {
+		if c.serviceMappings == nil {
+			c.serviceMappings = make(map[string]string)
+		}
+		c.serviceMappings[from] = to
+	}
+}
+
 // WithGlobalTag sets a key/value pair which will be set as a tag on all spans
 // created by tracer. This option may be used multiple times.
 func WithGlobalTag(k string, v interface{}) StartOption {
@@ -400,14 +595,7 @@ func WithHTTPClient(client *http.Client) StartOption {
 
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) StartOption {
-	return WithHTTPClient(&http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		},
-		Timeout: defaultHTTPTimeout,
-	})
+	return WithHTTPClient(udsClient(socketPath))
 }
 
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
@@ -473,10 +661,42 @@ func WithHostname(name string) StartOption {
 	}
 }
 
+// WithTraceEnabled allows specifying whether tracing will be enabled
+func WithTraceEnabled(enabled bool) StartOption {
+	return func(c *config) {
+		c.enabled = enabled
+	}
+}
+
 // WithLogStartup allows enabling or disabling the startup log.
 func WithLogStartup(enabled bool) StartOption {
 	return func(c *config) {
 		c.logStartup = enabled
+	}
+}
+
+// WithProfilerCodeHotspots enables the code hotspots integration between the
+// tracer and profiler. This is done by automatically attaching pprof labels
+// called "span id" and "local root span id" when new spans are created. You
+// should not use these label names in your own code when this is enabled. The
+// enabled value defaults to the value of the
+// DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or false.
+func WithProfilerCodeHotspots(enabled bool) StartOption {
+	return func(c *config) {
+		c.profilerHotspots = enabled
+	}
+}
+
+// WithProfilerEndpoints enables the endpoints integration between the tracer
+// and profiler. This is done by automatically attaching a pprof label called
+// "trace endpoint" holding the resource name of the top-level service span if
+// its type is "http", "rpc" or "" (default). You should not use this label
+// name in your own code when this is enabled. The enabled value defaults to
+// the value of the DD_PROFILING_ENDPOINT_COLLECTION_ENABLED env variable or
+// false.
+func WithProfilerEndpoints(enabled bool) StartOption {
+	return func(c *config) {
+		c.profilerEndpoints = enabled
 	}
 }
 
@@ -531,6 +751,13 @@ func WithSpanID(id uint64) StartSpanOption {
 func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.Parent = ctx
+	}
+}
+
+// withContext associates the ctx with the span.
+func withContext(ctx context.Context) StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		cfg.Context = ctx
 	}
 }
 

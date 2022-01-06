@@ -29,6 +29,9 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	}
 	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", service, cfg)
 	return func(c *gin.Context) {
+		if cfg.ignoreRequest(c) {
+			return
+		}
 		resource := cfg.resourceNamer(c)
 		opts := []ddtrace.StartSpanOption{
 			tracer.ServiceName(cfg.serviceName),
