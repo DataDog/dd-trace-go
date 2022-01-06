@@ -32,10 +32,20 @@ func TestMain(m *testing.M) {
 
 func TestStart(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
+		rl := &log.RecordLogger{}
+		defer log.UseLogger(rl)()
+
 		if err := Start(); err != nil {
 			t.Fatal(err)
 		}
 		defer Stop()
+
+		// Profiler configuration should be logged by default.  Check
+		// that we log some default configuration, e.g. enabled profiles
+		assert.LessOrEqual(t, 1, len(rl.Logs()))
+		startupLog := strings.Join(rl.Logs(), " ")
+		assert.Contains(t, startupLog, "cpu")
+		assert.Contains(t, startupLog, "heap")
 
 		mu.Lock()
 		require.NotNil(t, activeProfiler)
