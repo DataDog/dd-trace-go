@@ -145,7 +145,8 @@ func TestStartStopIdempotency(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				for j := 0; j < 1000; j++ {
-					Start()
+					// startup logging makes this test very slow
+					Start(WithLogStartup(false))
 				}
 			}()
 		}

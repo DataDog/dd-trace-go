@@ -23,6 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -107,6 +108,12 @@ type config struct {
 // logStartup records the configuration to the configured logger in JSON format
 func logStartup(c *config) {
 	info := struct {
+		Date                 string   `json:"date"`         // ISO 8601 date and time of start
+		OSName               string   `json:"os_name"`      // Windows, Darwin, Debian, etc.
+		OSVersion            string   `json:"os_version"`   // Version of the OS
+		Version              string   `json:"version"`      // Profiler version
+		Lang                 string   `json:"lang"`         // "Go"
+		LangVersion          string   `json:"lang_version"` // Go version, e.g. go1.13
 		Hostname             string   `json:"hostname"`
 		DeltaProfiles        bool     `json:"delta_profiles"`
 		Service              string   `json:"service"`
@@ -122,6 +129,12 @@ func logStartup(c *config) {
 		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
 		UploadTimeout        string   `json:"upload_timeout"`
 	}{
+		Date:                 time.Now().Format(time.RFC3339),
+		OSName:               osinfo.OSName(),
+		OSVersion:            osinfo.OSVersion(),
+		Version:              version.Tag,
+		Lang:                 "Go",
+		LangVersion:          runtime.Version(),
 		Hostname:             c.hostname,
 		DeltaProfiles:        c.deltaProfiles,
 		Service:              c.service,
