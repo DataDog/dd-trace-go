@@ -8,10 +8,11 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gogearbox/gearbox"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/gogearbox/gearbox"
 )
 
 func Datadog(ctx gearbox.Context) {
