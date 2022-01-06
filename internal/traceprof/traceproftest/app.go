@@ -38,6 +38,9 @@ const (
 	HTTPWorkEndpoint = "/work/:secret"
 	// GRPCWorkEndpoint is the grpc endpoint used for the demo app.
 	GRPCWorkEndpoint = "/testapp.TestApp/Work"
+	// DirectEndpoint is the name of the expected endpoint when the root span
+	// is created directly.
+	DirectEndpoint = "workHandler"
 )
 
 // CustomLabels are the user-defined pprof labels to apply in the work endpoint
@@ -72,7 +75,7 @@ const (
 func (a testAppType) Endpoint() string {
 	switch a {
 	case Direct:
-		return ""
+		return DirectEndpoint
 	case GRPC:
 		return GRPCWorkEndpoint
 	case HTTP:
@@ -215,7 +218,7 @@ func (a *App) Work(ctx context.Context, req *pb.WorkReq) (*pb.WorkRes, error) {
 	localRootSpan, ok := tracer.SpanFromContext(ctx)
 	// We run our handler in a reqSpan so we can test that we still include the
 	// correct "local root span id" in the profiler labels.
-	reqSpan, reqSpanCtx := tracer.StartSpanFromContext(ctx, "workHandler")
+	reqSpan, reqSpanCtx := tracer.StartSpanFromContext(ctx, DirectEndpoint)
 	defer reqSpan.Finish()
 	if !ok {
 		// when app type is Direct, reqSpan is our local root span
