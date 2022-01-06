@@ -3,18 +3,22 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// +build !windows,!linux,!darwin,!freebsd
-
-package tracer
+package osinfo
 
 import (
+	"os/exec"
 	"runtime"
+	"strings"
 )
 
-func osName() string {
+func OSName() string {
 	return runtime.GOOS
 }
 
-func osVersion() string {
-	return unknown
+func OSVersion() string {
+	out, err := exec.Command("uname", "-r").Output()
+	if err != nil {
+		return "unknown"
+	}
+	return strings.Split(string(out), "-")[0]
 }

@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracer
+package osinfo
 
 import (
 	"bufio"
@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-func osName() string {
+func OSName() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {
 		return "Linux (Unknown Distribution)"
@@ -29,14 +29,14 @@ func osName() string {
 	return name
 }
 
-func osVersion() string {
+func OSVersion() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {
-		return unknown
+		return "unknown"
 	}
 	defer f.Close()
 	s := bufio.NewScanner(f)
-	version := unknown
+	version := "unknown"
 	for s.Scan() {
 		parts := strings.SplitN(s.Text(), "=", 2)
 		switch parts[0] {

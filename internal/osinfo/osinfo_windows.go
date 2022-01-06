@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracer
+package osinfo
 
 import (
 	"fmt"
@@ -13,14 +13,14 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-func osName() string {
+func OSName() string {
 	return runtime.GOOS
 }
 
-func osVersion() string {
+func OSVersion() string {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows NT\CurrentVersion`, registry.QUERY_VALUE)
 	if err != nil {
-		return unknown
+		return "unknown"
 	}
 	defer k.Close()
 
@@ -34,7 +34,7 @@ func osVersion() string {
 			version.WriteString(fmt.Sprintf(".%d", min))
 		}
 	} else {
-		version.WriteString(unknown)
+		version.WriteString("unknown")
 	}
 
 	ed, _, err := k.GetStringValue("EditionID")
