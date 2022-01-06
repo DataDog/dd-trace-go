@@ -2,6 +2,8 @@
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
+
+// Package gearbox provides tracing functions for APM
 package gearbox
 
 import (
@@ -15,6 +17,7 @@ import (
 	"github.com/gogearbox/gearbox"
 )
 
+//Datadog this method should implement at a middleware layer
 func Datadog(ctx gearbox.Context) {
 
 	method := string(ctx.Context().Method())
@@ -26,7 +29,7 @@ func Datadog(ctx gearbox.Context) {
 		tracer.Measured(),
 	}
 
-	headers := mapCtxToHttpHeader(ctx)
+	headers := mapCtxToHTTPHeader(ctx)
 
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(headers)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
@@ -54,7 +57,7 @@ func Datadog(ctx gearbox.Context) {
 
 }
 
-func mapCtxToHttpHeader(ctx gearbox.Context) http.Header {
+func mapCtxToHTTPHeader(ctx gearbox.Context) http.Header {
 
 	headers := http.Header{}
 
