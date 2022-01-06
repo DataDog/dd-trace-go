@@ -1,0 +1,43 @@
+name                                       old time/op           new time/op           delta
+EndpointsAndHotspots/direct/hello-world-4           15.8µs ± 1%           20.8µs ± 1%   +31.55%  (p=0.008 n=5+5)
+EndpointsAndHotspots/grpc/hello-world-4              124µs ± 0%            133µs ± 0%    +6.96%  (p=0.008 n=5+5)
+EndpointsAndHotspots/http/hello-world-4             91.1µs ± 0%           96.8µs ± 0%    +6.21%  (p=0.008 n=5+5)
+EndpointsAndHotspots/direct/cpu-bound-4              106ms ± 0%            106ms ± 0%      ~     (p=0.690 n=5+5)
+EndpointsAndHotspots/direct/io-bound-4               109ms ± 0%            109ms ± 0%      ~     (p=0.690 n=5+5)
+EndpointsAndHotspots/http/cpu-bound-4                106ms ± 0%            106ms ± 0%      ~     (p=1.000 n=5+5)
+EndpointsAndHotspots/http/io-bound-4                 109ms ± 0%            109ms ± 0%      ~     (p=0.310 n=5+5)
+EndpointsAndHotspots/grpc/cpu-bound-4                106ms ± 0%            106ms ± 0%      ~     (p=1.000 n=5+5)
+EndpointsAndHotspots/grpc/io-bound-4                 109ms ± 0%            109ms ± 0%      ~     (p=0.151 n=5+5)
+
+name                                       old cpu-time/op       new cpu-time/op       delta
+EndpointsAndHotspots/direct/hello-world-4           15.2µs ± 1%           20.0µs ± 1%   +31.61%  (p=0.008 n=5+5)
+EndpointsAndHotspots/grpc/hello-world-4             93.7µs ± 0%          107.0µs ± 0%   +14.17%  (p=0.008 n=5+5)
+EndpointsAndHotspots/http/hello-world-4             90.0µs ± 0%           95.6µs ± 0%    +6.22%  (p=0.008 n=5+5)
+EndpointsAndHotspots/direct/cpu-bound-4             95.4ms ± 0%           95.6ms ± 0%      ~     (p=0.310 n=5+5)
+EndpointsAndHotspots/direct/io-bound-4              18.2ms ± 2%           18.3ms ± 1%      ~     (p=0.548 n=5+5)
+EndpointsAndHotspots/http/cpu-bound-4               96.0ms ± 0%           95.9ms ± 0%      ~     (p=1.000 n=5+5)
+EndpointsAndHotspots/http/io-bound-4                18.5ms ± 0%           18.7ms ± 2%      ~     (p=0.151 n=5+5)
+EndpointsAndHotspots/grpc/cpu-bound-4               95.8ms ± 1%           95.7ms ± 0%      ~     (p=1.000 n=5+5)
+EndpointsAndHotspots/grpc/io-bound-4                18.4ms ± 1%           18.6ms ± 2%      ~     (p=0.095 n=5+5)
+
+name                                       old pprof-alloc/op    new pprof-alloc/op    delta
+EndpointsAndHotspots/direct/io-bound-4               12.3B ± 2%            37.1B ± 1%  +201.89%  (p=0.008 n=5+5)
+EndpointsAndHotspots/http/io-bound-4                 14.6B ± 5%            42.2B ± 4%  +188.81%  (p=0.008 n=5+5)
+EndpointsAndHotspots/grpc/io-bound-4                 14.6B ± 4%            42.1B ± 1%  +188.74%  (p=0.008 n=5+5)
+EndpointsAndHotspots/direct/hello-world-4            0.01B ± 1%            0.03B ± 2%  +180.61%  (p=0.008 n=5+5)
+EndpointsAndHotspots/grpc/cpu-bound-4                42.5B ± 1%           101.7B ± 1%  +139.13%  (p=0.008 n=5+5)
+EndpointsAndHotspots/http/cpu-bound-4                43.2B ± 1%           102.4B ± 1%  +137.17%  (p=0.008 n=5+5)
+EndpointsAndHotspots/direct/cpu-bound-4              40.3B ± 1%            90.2B ± 1%  +123.90%  (p=0.008 n=5+5)
+EndpointsAndHotspots/grpc/hello-world-4              0.09B ± 1%            0.14B ± 1%   +51.75%  (p=0.008 n=5+5)
+EndpointsAndHotspots/http/hello-world-4              0.09B ± 0%            0.13B ± 1%   +42.46%  (p=0.008 n=5+5)
+
+name                                       old pprof-samples/op  new pprof-samples/op  delta
+EndpointsAndHotspots/direct/hello-world-4             0.00 ± 1%             0.00 ± 1%   +35.41%  (p=0.008 n=5+5)
+EndpointsAndHotspots/grpc/hello-world-4               0.00 ± 1%             0.01 ± 1%   +16.69%  (p=0.008 n=5+5)
+EndpointsAndHotspots/direct/cpu-bound-4               7.47 ± 1%             7.42 ± 1%      ~     (p=0.095 n=5+5)
+EndpointsAndHotspots/direct/io-bound-4                1.42 ± 1%             1.41 ± 1%      ~     (p=0.333 n=5+5)
+EndpointsAndHotspots/http/io-bound-4                  1.43 ± 3%             1.42 ± 2%      ~     (p=0.841 n=5+5)
+EndpointsAndHotspots/grpc/io-bound-4                  1.44 ± 2%             1.44 ± 2%      ~     (p=0.841 n=5+5)
+EndpointsAndHotspots/http/cpu-bound-4                 7.52 ± 1%             7.43 ± 1%    -1.25%  (p=0.016 n=5+5)
+EndpointsAndHotspots/grpc/cpu-bound-4                 7.54 ± 1%             7.43 ± 1%    -1.49%  (p=0.008 n=5+5)
+EndpointsAndHotspots/http/hello-world-4               0.01 ± 1%             0.00 ± 1%    -7.93%  (p=0.008 n=5+5)

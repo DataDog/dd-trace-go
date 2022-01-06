@@ -6,10 +6,10 @@
 package tracer
 
 import (
-	"encoding/json"
+	gocontext "context"
 	"fmt"
-	"net/http"
 	"os"
+	"runtime/pprof"
 	"strconv"
 	"sync"
 	"time"
@@ -17,7 +17,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)
@@ -32,10 +37,6 @@ var _ ddtrace.Tracer = (*tracer)(nil)
 // queues to be processed by the payload encoder.
 type tracer struct {
 	config *config
-
-	// features holds the capabilities of the agent and determines some
-	// of the behaviour of the tracer.
-	features *agentFeatures
 
 	// stats specifies the concentrator used to compute statistics, when client-side
 	// stats are enabled.
@@ -78,6 +79,10 @@ type tracer struct {
 	// rules for applying a sampling rate to spans that match the designated service
 	// or operation name.
 	rulesSampling *rulesSampler
+
+	// obfuscator holds the obfuscator used to obfuscate resources in aggregated stats.
+	// obfuscator may be nil if disabled.
+	obfuscator *obfuscate.Obfuscator
 }
 
 const (
@@ -110,8 +115,8 @@ func Start(opts ...StartOption) {
 		return // mock tracer active
 	}
 	t := newTracer(opts...)
-	if t.config.HasFeature("discovery") {
-		t.loadAgentFeatures()
+	if !t.config.enabled {
+		return
 	}
 	internal.SetGlobalTracer(t)
 	if t.config.logStartup {
@@ -178,8 +183,16 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampling:    newRulesSampler(c.samplingRules),
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
-		features:         &agentFeatures{},
 		stats:            newConcentrator(c, defaultStatsBucketSize),
+		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
+			SQL: obfuscate.SQLConfig{
+				TableNames:       c.agent.HasFlag("table_names"),
+				ReplaceDigits:    c.agent.HasFlag("quantize_sql_tables") || c.agent.HasFlag("replace_sql_digits"),
+				KeepSQLAlias:     c.agent.HasFlag("keep_sql_alias"),
+				DollarQuotedFunc: c.agent.HasFlag("dollar_quoted_func"),
+				Cache:            c.agent.HasFlag("sql_cache"),
+			},
+		}),
 	}
 	return t
 }
@@ -213,6 +226,18 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
+	appsec.Start(&appsec.Config{
+		Client:   c.httpClient,
+		Version:  version.Tag,
+		AgentURL: fmt.Sprintf("http://%s/", resolveAddr(c.agentAddr)),
+		Hostname: c.hostname,
+		Service: appsec.ServiceConfig{
+			Name:        c.serviceName,
+			Version:     c.version,
+			Environment: c.env,
+		},
+		Tags: c.globalTags,
+	})
 	return t
 }
 
@@ -237,78 +262,6 @@ func (t *tracer) flushSync() {
 	done := make(chan struct{})
 	t.flush <- done
 	<-done
-}
-
-// agentFeatures holds information about the trace-agent's capabilities.
-type agentFeatures struct {
-	mu sync.RWMutex
-
-	// DropP0s reports whether it's ok for the tracer to not send any
-	// P0 traces to the agent.
-	DropP0s bool
-
-	// V05 reports whether it's ok to use the /v0.5/traces endpoint format.
-	V05 bool // TODO(x): Not yet implemented
-
-	// Stats reports whether the agent can receive client-computed stats on
-	// the /v0.6/stats endpoint.
-	Stats bool
-}
-
-// Load returns the current features.
-func (f *agentFeatures) Load() agentFeatures {
-	f.mu.RLock()
-	out := *f
-	f.mu.RUnlock()
-	return out
-}
-
-// Store stores the new features.
-func (f *agentFeatures) Store(newf agentFeatures) {
-	f.mu.Lock()
-	f.DropP0s = newf.DropP0s
-	f.V05 = newf.V05
-	f.Stats = newf.Stats
-	f.mu.Unlock()
-}
-
-// loadAgentFeatures queries the trace-agent for its capabilities and updates
-// the tracer's behaviour.
-func (t *tracer) loadAgentFeatures() {
-	if t.config.logToStdout {
-		// there is no agent
-		return
-	}
-	resp, err := http.Get(fmt.Sprintf("http://%s/info", t.config.agentAddr))
-	if err != nil {
-		log.Error("Loading features: %v", err)
-		return
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		// agent is older than 7.28.0, features not discoverable
-		t.features.Store(agentFeatures{})
-		return
-	}
-	defer resp.Body.Close()
-	type infoResponse struct {
-		Endpoints     []string `json:"endpoints"`
-		ClientDropP0s bool     `json:"client_drop_p0s"`
-	}
-	var info infoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		log.Error("Decoding features: %v", err)
-		return
-	}
-	f := agentFeatures{DropP0s: info.ClientDropP0s}
-	for _, endpoint := range info.Endpoints {
-		switch endpoint {
-		case "/v0.6/stats":
-			f.Stats = true
-		case "/v0.5/traces":
-			f.V05 = true
-		}
-	}
-	t.features.Store(f)
 }
 
 // worker receives finished traces to be added into the payload, as well
@@ -374,10 +327,29 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		startTime = opts.StartTime.UnixNano()
 	}
 	var context *spanContext
+	// The default pprof context is taken from the start options and is
+	// not nil when using StartSpanFromContext()
+	pprofContext := opts.Context
 	if opts.Parent != nil {
 		if ctx, ok := opts.Parent.(*spanContext); ok {
 			context = ctx
+			if pprofContext == nil && ctx.span != nil {
+				// Inherit the context.Context from parent span if it was propagated
+				// using ChildOf() rather than StartSpanFromContext(), see
+				// applyPPROFLabels() below.
+				pprofContext = ctx.span.pprofCtxActive
+			}
 		}
+	}
+	if pprofContext == nil {
+		// For root span's without context, there is no pprofContext, but we need
+		// one to avoid a panic() in pprof.WithLabels(). Using context.Background()
+		// is not ideal here, as it will cause us to remove all labels from the
+		// goroutine when the span finishes. However, the alternatives of not
+		// applying labels for such spans or to leave the endpoint/hotspot labels
+		// on the goroutine after it finishes are even less appealing. We'll have
+		// to properly document this for users.
+		pprofContext = gocontext.Background()
 	}
 	id := opts.SpanID
 	if id == 0 {
@@ -450,8 +422,48 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
+	if t.config.profilerHotspots || t.config.profilerEndpoints {
+		t.applyPPROFLabels(pprofContext, span)
+	}
+	if t.config.serviceMappings != nil {
+		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
+			span.Service = newSvc
+		}
+	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
 	return span
+}
+
+// applyPPROFLabels applies pprof labels for the profiler's code hotspots and
+// endpoint filtering feature to span. When span finishes, any pprof labels
+// found in ctx are restored.
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
+	var labels []string
+	if t.config.profilerHotspots {
+		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
+	}
+	// nil checks might not be needed, but better be safe than sorry
+	if span.context.trace != nil && span.context.trace.root != nil {
+		localRootSpan := span.context.trace.root
+		if t.config.profilerHotspots {
+			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
+		}
+		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
+			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
+		}
+	}
+	if len(labels) > 0 {
+		span.pprofCtxRestore = ctx
+		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
+		pprof.SetGoroutineLabels(span.pprofCtxActive)
+	}
+}
+
+// spanResourcePIISafe returns true if s.Resource can be considered to not
+// include PII with reasonable confidence. E.g. SQL queries may contain PII,
+// but http, rpc or custom (s.Type == "") span resource names generally do not.
+func spanResourcePIISafe(s *span) bool {
+	return s.Type == ext.SpanTypeWeb || s.Type == ext.AppTypeRPC || s.Type == ""
 }
 
 // Stop stops the tracer.
@@ -464,6 +476,7 @@ func (t *tracer) Stop() {
 	t.wg.Wait()
 	t.traceWriter.stop()
 	t.config.statsd.Close()
+	appsec.Stop()
 }
 
 // Inject uses the configured or default TextMap Propagator.

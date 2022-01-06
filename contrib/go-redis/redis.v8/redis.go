@@ -102,14 +102,16 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 	raw := cmd.String()
 	length := strings.Count(raw, " ")
 	p := ddh.params
-	opts := make([]ddtrace.StartSpanOption, 0, 5+len(ddh.additionalTags)+1) // 5 options below + for additionalTags + for analyticsRate
+	opts := make([]ddtrace.StartSpanOption, 0, 4+1+len(ddh.additionalTags)+1) // 4 options below + redis.raw_command + ddh.additionalTags + analyticsRate
 	opts = append(opts,
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
-		tracer.Tag("redis.raw_command", raw),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 	)
+	if !p.config.skipRaw {
+		opts = append(opts, tracer.Tag("redis.raw_command", raw))
+	}
 	opts = append(opts, ddh.additionalTags...)
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
@@ -134,16 +136,17 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 	raw := commandsToString(cmds)
 	length := strings.Count(raw, " ")
 	p := ddh.params
-	opts := make([]ddtrace.StartSpanOption, 0, 7+len(ddh.additionalTags)+1) // 7 options below + for additionalTags + for analyticsRate
+	opts := make([]ddtrace.StartSpanOption, 0, 5+1+len(ddh.additionalTags)+1) // 5 options below + redis.raw_command + ddh.additionalTags + analyticsRate
 	opts = append(opts,
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
-		tracer.Tag("redis.raw_command", raw),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
-		tracer.Tag(ext.ResourceName, raw),
 		tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
 	)
+	if !p.config.skipRaw {
+		opts = append(opts, tracer.Tag("redis.raw_command", raw))
+	}
 	opts = append(opts, ddh.additionalTags...)
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))

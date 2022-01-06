@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/datadog-go/statsd"
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -207,6 +207,14 @@ func TestOptions(t *testing.T) {
 		assert.Contains(t, cfg.tags, "env1:tag1")
 		assert.Contains(t, cfg.tags, "env2:tag2")
 	})
+
+	t.Run("WithDeltaProfiles", func(t *testing.T) {
+		var cfg config
+		WithDeltaProfiles(true)(&cfg)
+		assert.Equal(t, true, cfg.deltaProfiles)
+		WithDeltaProfiles(false)(&cfg)
+		assert.Equal(t, false, cfg.deltaProfiles)
+	})
 }
 
 func TestEnvVars(t *testing.T) {
@@ -293,6 +301,14 @@ func TestEnvVars(t *testing.T) {
 		assert.Contains(t, cfg.tags, "b:2")
 		assert.Contains(t, cfg.tags, "c:3")
 	})
+
+	t.Run("DD_PROFILING_DELTA", func(t *testing.T) {
+		os.Setenv("DD_PROFILING_DELTA", "false")
+		defer os.Unsetenv("DD_PROFILING_DELTA")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		assert.Equal(t, cfg.deltaProfiles, false)
+	})
 }
 
 func TestDefaultConfig(t *testing.T) {
@@ -317,6 +333,7 @@ func TestDefaultConfig(t *testing.T) {
 		assert.Equal(DefaultMutexFraction, cfg.mutexFraction)
 		assert.Equal(DefaultBlockRate, cfg.blockRate)
 		assert.Contains(cfg.tags, "runtime-id:"+globalconfig.RuntimeID())
+		assert.Equal(true, cfg.deltaProfiles)
 	})
 }
 
