@@ -107,6 +107,8 @@ type config struct {
 // logStartup records the configuration to the configured logger in JSON format
 func logStartup(c *config) {
 	info := struct {
+		Hostname             string   `json:"hostname"`
+		DeltaProfiles        bool     `json:"delta_profiles"`
 		Service              string   `json:"service"`
 		Env                  string   `json:"env"`
 		TargetURL            string   `json:"target_url"`
@@ -117,8 +119,11 @@ func logStartup(c *config) {
 		CPUDuration          string   `json:"cpu_duration"`
 		BlockProfileRate     int      `json:"block_profile_rate"`
 		MutexProfileFraction int      `json:"mutex_profile_fraction"`
+		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
 		UploadTimeout        string   `json:"upload_timeout"`
 	}{
+		Hostname:             c.hostname,
+		DeltaProfiles:        c.deltaProfiles,
 		Service:              c.service,
 		Env:                  c.env,
 		TargetURL:            c.targetURL,
@@ -128,6 +133,7 @@ func logStartup(c *config) {
 		CPUDuration:          c.cpuDuration.String(),
 		BlockProfileRate:     c.blockRate,
 		MutexProfileFraction: c.mutexFraction,
+		MaxGoroutinesWait:    c.maxGoroutinesWait,
 		UploadTimeout:        c.uploadTimeout.String(),
 	}
 	for t := range c.types {
