@@ -8,10 +8,12 @@
 package tracer
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"reflect"
 	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -72,7 +74,11 @@ type span struct {
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
 	context      *spanContext `msg:"-"` // span propagation context
-	taskEnd      func()       // ends execution tracer (runtime/trace) task, if started
+
+	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
+	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
+
+	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -320,6 +326,12 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		s.taskEnd()
 	}
 	s.finish(t)
+
+	if s.pprofCtxRestore != nil {
+		// Restore the labels of the parent span so any CPU samples after this
+		// point are attributed correctly.
+		pprof.SetGoroutineLabels(s.pprofCtxRestore)
+	}
 }
 
 // SetOperationName sets or changes the operation name.

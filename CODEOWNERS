@@ -1,0 +1,16 @@
+# Note: Later matches take precedence
+
+# default owner
+*                         @DataDog/apm-go
+
+# tracing
+/contrib                  @DataDog/tracing-go
+/ddtrace                  @DataDog/tracing-go
+/internal                 @DataDog/tracing-go
+
+# profiling
+/profiler                 @DataDog/profiling-go
+/internal/traceprof       @DataDog/profiling-go
+
+# appsec
+/internal/appsec          @DataDog/appsec-go

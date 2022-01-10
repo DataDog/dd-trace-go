@@ -60,7 +60,7 @@ func TestMain(m *testing.M) {
 	session.Query("CREATE TABLE if not exists trace.person (name text PRIMARY KEY, age int, description text)").Exec()
 	session.Query("INSERT INTO trace.person (name, age, description) VALUES ('Cassandra', 100, 'A cruel mistress')").Exec()
 
-	m.Run()
+	os.Exit(m.Run())
 }
 
 func TestErrorWrapper(t *testing.T) {
@@ -103,9 +103,12 @@ func TestChildWrapperSpan(t *testing.T) {
 	cluster := newCassandraCluster()
 	session, err := cluster.CreateSession()
 	assert.Nil(err)
-	q := session.Query("SELECT * from trace.person")
+
+	// Call WithContext before WrapQuery to prove WrapQuery needs to use the query.Context()
+	// instead of context.Background()
+	q := session.Query("SELECT * from trace.person").WithContext(ctx)
 	tq := WrapQuery(q, WithServiceName("TestServiceName"))
-	iter := tq.WithContext(ctx).Iter()
+	iter := tq.Iter()
 	iter.Close()
 	parentSpan.Finish()
 
@@ -137,15 +140,28 @@ func TestAnalyticsSettings(t *testing.T) {
 		cluster := newCassandraCluster()
 		session, err := cluster.CreateSession()
 		assert.Nil(t, err)
+
+		// Create a query for testing Iter spans
 		q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
 		iter := WrapQuery(q, opts...).Iter()
-		err = iter.Close()
+		iter.Close() // this will error, we're inspecting the trace not the error
+
+		// Create a query for testing Scanner spans
+		q2 := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+		scanner := WrapQuery(q2, opts...).Iter().Scanner()
+		scanner.Err() // this will error, we're inspecting the trace not the error
+
+		// Create a batch query for testing Batch spans
+		b := WrapBatch(session.NewBatch(gocql.UnloggedBatch), opts...)
+		b.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+		b.ExecuteBatch(session) // this will error, we're inspecting the trace not the error
 
 		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 1)
-		s := spans[0]
-		if !math.IsNaN(rate) {
-			assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+		assert.Len(t, spans, 3)
+		for _, s := range spans {
+			if !math.IsNaN(rate) {
+				assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
+			}
 		}
 	}
 
@@ -192,4 +208,88 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func TestIterScanner(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// Parent span
+	parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "parentSpan")
+	cluster := newCassandraCluster()
+	session, err := cluster.CreateSession()
+	assert.NoError(err)
+
+	q := session.Query("SELECT * from trace.person")
+	tq := WrapQuery(q, WithServiceName("TestServiceName"))
+	iter := tq.WithContext(ctx).Iter()
+	sc := iter.Scanner()
+	for sc.Next() {
+		var t1, t2, t3 interface{}
+		sc.Scan(&t1, t2, t3)
+	}
+	sc.Err()
+
+	parentSpan.Finish()
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 2)
+
+	var childSpan, pSpan mocktracer.Span
+	if spans[0].ParentID() == spans[1].SpanID() {
+		childSpan = spans[0]
+		pSpan = spans[1]
+	} else {
+		childSpan = spans[1]
+		pSpan = spans[0]
+	}
+
+	assert.Equal(pSpan.OperationName(), "parentSpan")
+	assert.Equal(childSpan.ParentID(), pSpan.SpanID())
+	assert.Equal(childSpan.OperationName(), ext.CassandraQuery)
+	assert.Equal(childSpan.Tag(ext.ResourceName), "SELECT * from trace.person")
+	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
+}
+
+func TestBatch(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// Parent span
+	parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "parentSpan")
+	cluster := newCassandraCluster()
+	cluster.Keyspace = "trace"
+	session, err := cluster.CreateSession()
+	assert.NoError(err)
+
+	b := session.NewBatch(gocql.UnloggedBatch)
+	tb := WrapBatch(b, WithServiceName("TestServiceName"), WithResourceName("BatchInsert"))
+
+	stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
+	tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
+	tb.Query(stmt, "Lucas", 60, "Another person")
+	err = tb.WithContext(ctx).WithTimestamp(time.Now().Unix() * 1e3).ExecuteBatch(session)
+	assert.NoError(err)
+
+	parentSpan.Finish()
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 2)
+
+	var childSpan, pSpan mocktracer.Span
+	if spans[0].ParentID() == spans[1].SpanID() {
+		childSpan = spans[0]
+		pSpan = spans[1]
+	} else {
+		childSpan = spans[1]
+		pSpan = spans[0]
+	}
+
+	assert.Equal(pSpan.OperationName(), "parentSpan")
+	assert.Equal(childSpan.ParentID(), pSpan.SpanID())
+	assert.Equal(childSpan.OperationName(), ext.CassandraBatch)
+	assert.Equal(childSpan.Tag(ext.ResourceName), "BatchInsert")
+	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
 }

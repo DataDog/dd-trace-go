@@ -24,6 +24,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -122,6 +123,12 @@ type config struct {
 	// errors will record a stack trace when this option is set.
 	noDebugStack bool
 
+	// profilerHotspots specifies whether profiler Code Hotspots is enabled.
+	profilerHotspots bool
+
+	// profilerEndpoints specifies whether profiler endpoint filtering is enabled.
+	profilerEndpoints bool
+
 	// enabled reports whether tracing is enabled.
 	enabled bool
 }
@@ -213,6 +220,9 @@ func newConfig(opts ...StartOption) *config {
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
+	// TODO(fg): set these to true before going GA with this.
+	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, false)
+	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, false)
 
 	for _, fn := range opts {
 		fn(c)
@@ -665,6 +675,31 @@ func WithLogStartup(enabled bool) StartOption {
 	}
 }
 
+// WithProfilerCodeHotspots enables the code hotspots integration between the
+// tracer and profiler. This is done by automatically attaching pprof labels
+// called "span id" and "local root span id" when new spans are created. You
+// should not use these label names in your own code when this is enabled. The
+// enabled value defaults to the value of the
+// DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or false.
+func WithProfilerCodeHotspots(enabled bool) StartOption {
+	return func(c *config) {
+		c.profilerHotspots = enabled
+	}
+}
+
+// WithProfilerEndpoints enables the endpoints integration between the tracer
+// and profiler. This is done by automatically attaching a pprof label called
+// "trace endpoint" holding the resource name of the top-level service span if
+// its type is "http", "rpc" or "" (default). You should not use this label
+// name in your own code when this is enabled. The enabled value defaults to
+// the value of the DD_PROFILING_ENDPOINT_COLLECTION_ENABLED env variable or
+// false.
+func WithProfilerEndpoints(enabled bool) StartOption {
+	return func(c *config) {
+		c.profilerEndpoints = enabled
+	}
+}
+
 // StartSpanOption is a configuration option for StartSpan. It is aliased in order
 // to help godoc group all the functions returning it together. It is considered
 // more correct to refer to it as the type as the origin, ddtrace.StartSpanOption.
@@ -716,6 +751,13 @@ func WithSpanID(id uint64) StartSpanOption {
 func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.Parent = ctx
+	}
+}
+
+// withContext associates the ctx with the span.
+func withContext(ctx context.Context) StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		cfg.Context = ctx
 	}
 }
 
