@@ -9,6 +9,9 @@ const (
 	// CassandraQuery is the tag name used for cassandra queries.
 	CassandraQuery = "cassandra.query"
 
+	// CassandraBatch is the tag name used for cassandra batches.
+	CassandraBatch = "cassandra.batch"
+
 	// CassandraConsistencyLevel is the tag name to set for consitency level.
 	CassandraConsistencyLevel = "cassandra.consistency_level"
 
