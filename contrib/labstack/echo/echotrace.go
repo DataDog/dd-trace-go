@@ -38,7 +38,6 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				tracer.Tag(ext.HTTPURL, request.URL.Path),
 				tracer.Measured(),
 			}
-			finishOptions := []tracer.FinishOption{}
 
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -46,11 +45,12 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(request.Header)); err == nil {
 				opts = append(opts, tracer.ChildOf(spanctx))
 			}
+			var finishOpts []tracer.FinishOption
 			if cfg.noDebugStack {
-				finishOptions = []tracer.FinishOption{tracer.NoDebugStack()}
+				finishOpts = append(finishOpts, tracer.NoDebugStack())
 			}
 			span, ctx := tracer.StartSpanFromContext(request.Context(), "http.request", opts...)
-			defer func() { span.Finish(finishOptions...) }()
+			defer func() { span.Finish(finishOpts...) }()
 
 			// pass the span through the request context
 			c.SetRequest(request.WithContext(ctx))
@@ -58,7 +58,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			// serve the request to the next middleware
 			err := next(c)
 			if err != nil {
-				finishOptions = append(finishOptions, tracer.WithError(err))
+				finishOpts = append(finishOpts, tracer.WithError(err))
 				// invokes the registered HTTP error handler
 				c.Error(err)
 			}
