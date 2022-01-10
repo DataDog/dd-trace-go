@@ -19,6 +19,9 @@ type Pipeline struct {
 
 // Merge merges multiple pipelines
 func Merge(pipelines []Pipeline) Pipeline {
+	if len(pipelines) == 0 {
+		return Pipeline{}
+	}
 	// for now, randomly select a pipeline.
 	n := rand.Intn(len(pipelines))
 	return pipelines[n]

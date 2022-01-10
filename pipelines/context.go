@@ -25,6 +25,7 @@ func PipelineFromContext(ctx context.Context) (p Pipeline, ok bool) {
 	return Pipeline{}, false
 }
 
+// SetCheckpointOnContext sets a checkpoint on the pipeline in the context.
 func SetCheckpointOnContext(ctx context.Context, edgeName string) (Pipeline, context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -38,4 +39,22 @@ func SetCheckpointOnContext(ctx context.Context, edgeName string) (Pipeline, con
 	}
 	ctx = ContextWithPipeline(ctx, p)
 	return p, ctx
+}
+
+// MergePipelineContexts returns the first context with a pipeline that is the combination of the pipelines
+// from all the contexts.
+func MergePipelineContexts(ctxs ...context.Context) context.Context {
+	if len(ctxs) == 0 {
+		return context.Background()
+	}
+	pipelines := make([]Pipeline, 0, len(ctxs))
+	for _, ctx := range ctxs {
+		if p, ok := PipelineFromContext(ctx); ok {
+			pipelines = append(pipelines, p)
+		}
+	}
+	if len(pipelines) == 0 {
+		return ctxs[0]
+	}
+	return ContextWithPipeline(ctxs[0], Merge(pipelines))
 }
