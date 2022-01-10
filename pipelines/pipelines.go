@@ -1,8 +1,9 @@
 package pipelines
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"sync"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 var (
@@ -24,7 +25,7 @@ func getGlobalProcessor() *processor {
 
 func Start(opts ...StartOption) {
 	cfg := newConfig(opts...)
-	p := newProcessor(cfg.statsd, cfg.env, cfg.version, cfg.agentAddr, cfg.httpClient, cfg.ddSite, cfg.apiKey)
+	p := newProcessor(cfg.statsd, cfg.env, cfg.version, cfg.agentAddr, cfg.httpClient, cfg.site, cfg.apiKey)
 	p.Start()
 	setGlobalProcessor(p)
 }

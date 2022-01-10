@@ -15,7 +15,7 @@ func main() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
-	pipelines.Start(pipelines.WithService("service-a"), pipelines.WithAPIKey(os.Getenv("DD_API_KEY")), pipelines.WithDDSite(os.Getenv("DD_SITE")))
+	pipelines.Start(pipelines.WithService("service-a"), pipelines.WithAPIKey(os.Getenv("DD_API_KEY")), pipelines.WithSite(os.Getenv("DD_SITE")))
 	defer pipelines.Stop()
 
 	i := int64(0)

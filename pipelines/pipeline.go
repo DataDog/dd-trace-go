@@ -2,19 +2,19 @@ package pipelines
 
 import (
 	"encoding/binary"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"hash/fnv"
 	"math/rand"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type Pipeline struct {
 	hash     uint64
 	callTime time.Time
-	service  string
-	edgeName string
+	service string
+	edge    string
 }
 
 // Merge merges multiple pipelines
@@ -27,10 +27,10 @@ func Merge(pipelines []Pipeline) Pipeline {
 	return pipelines[n]
 }
 
-func nodeHash(service, edgeName string) uint64 {
-	b := make([]byte, 0, len(service) + len(edgeName))
+func nodeHash(service, edge string) uint64 {
+	b := make([]byte, 0, len(service) + len(edge))
 	b = append(b, service...)
-	b = append(b, edgeName...)
+	b = append(b, edge...)
 	h := fnv.New64()
 	h.Write(b)
 	return h.Sum64()
@@ -55,22 +55,22 @@ func New() Pipeline {
 	return p.setCheckpoint("", now)
 }
 
-func (p Pipeline) SetCheckpoint(edgeName string) Pipeline {
-	return p.setCheckpoint(edgeName, time.Now())
+func (p Pipeline) SetCheckpoint(edge string) Pipeline {
+	return p.setCheckpoint(edge, time.Now())
 }
 
-func (p Pipeline) setCheckpoint(edgeName string, t time.Time) Pipeline {
+func (p Pipeline) setCheckpoint(edge string, t time.Time) Pipeline {
 	child := Pipeline{
-		hash:     pipelineHash(nodeHash(p.service, edgeName), p.hash),
+		hash:     pipelineHash(nodeHash(p.service, edge), p.hash),
 		callTime: p.callTime,
 		service:  p.service,
-		edgeName: edgeName,
+		edge:     edge,
 	}
 	if processor := getGlobalProcessor(); processor != nil {
 		select {
 		case processor.in <- statsPoint{
 			service:               p.service,
-			receivingPipelineName: edgeName,
+			receivingPipelineName: edge,
 			parentHash:            p.hash,
 			hash:                  child.hash,
 			timestamp:             t.UnixNano(),

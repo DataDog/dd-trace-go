@@ -3,9 +3,11 @@ package pipelines
 import (
 	"encoding/binary"
 	"errors"
-	"github.com/DataDog/sketches-go/ddsketch/encoding"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"time"
+
+	"github.com/DataDog/sketches-go/ddsketch/encoding"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 const (

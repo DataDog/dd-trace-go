@@ -83,7 +83,7 @@ type config struct {
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsd.ClientInterface
 
-	ddSite string
+	site string
 
 	apiKey string
 }
@@ -339,10 +339,10 @@ func WithServiceVersion(version string) StartOption {
 	}
 }
 
-// WithDDSite starts the pipeline processor with a given site to send data to.
-func WithDDSite(ddSite string) StartOption {
+// WithSite starts the pipeline processor with a given site to send data to.
+func WithSite(site string) StartOption {
 	return func(c *config) {
-		c.ddSite = ddSite
+		c.site = site
 	}
 }
 

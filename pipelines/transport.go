@@ -4,15 +4,17 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-	"github.com/tinylib/msgp/msgp"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 	"net"
 	"net/http"
 	"os"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/tinylib/msgp/msgp"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 const (
