@@ -8,10 +8,12 @@
 package tracer
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"reflect"
 	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +26,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/tinylib/msgp/msgp"
 	"golang.org/x/xerrors"
 )
@@ -71,7 +74,11 @@ type span struct {
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
 	context      *spanContext `msg:"-"` // span propagation context
-	taskEnd      func()       // ends execution tracer (runtime/trace) task, if started
+
+	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
+	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
+
+	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -319,6 +326,12 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		s.taskEnd()
 	}
 	s.finish(t)
+
+	if s.pprofCtxRestore != nil {
+		// Restore the labels of the parent span so any CPU samples after this
+		// point are attributed correctly.
+		pprof.SetGoroutineLabels(s.pprofCtxRestore)
+	}
 }
 
 // SetOperationName sets or changes the operation name.
@@ -350,11 +363,11 @@ func (s *span) finish(finishTime int64) {
 	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have an active tracer
-		feats := t.config.features
+		feats := t.config.agent
 		if feats.Stats && shouldComputeStats(s) {
 			// the agent supports computed stats
 			select {
-			case t.stats.In <- newAggregableSpan(s, t.config):
+			case t.stats.In <- newAggregableSpan(s, t.obfuscator):
 				// ok
 			default:
 				log.Error("Stats channel full, disregarding span.")
@@ -374,7 +387,7 @@ func (s *span) finish(finishTime int64) {
 
 // newAggregableSpan creates a new summary for the span s, within an application
 // version version.
-func newAggregableSpan(s *span, cfg *config) *aggregableSpan {
+func newAggregableSpan(s *span, obfuscator *obfuscate.Obfuscator) *aggregableSpan {
 	var statusCode uint32
 	if sc, ok := s.Meta["http.status_code"]; ok && sc != "" {
 		if c, err := strconv.Atoi(sc); err == nil {
@@ -383,7 +396,7 @@ func newAggregableSpan(s *span, cfg *config) *aggregableSpan {
 	}
 	key := aggregation{
 		Name:       s.Name,
-		Resource:   s.Resource,
+		Resource:   obfuscatedResource(obfuscator, s.Type, s.Resource),
 		Service:    s.Service,
 		Type:       s.Type,
 		Synthetics: strings.HasPrefix(s.Meta[keyOrigin], "synthetics"),
@@ -395,6 +408,31 @@ func newAggregableSpan(s *span, cfg *config) *aggregableSpan {
 		Duration: s.Duration,
 		TopLevel: s.Metrics[keyTopLevel] == 1,
 		Error:    s.Error,
+	}
+}
+
+// textNonParsable specifies the text that will be assigned to resources for which the resource
+// can not be parsed due to an obfuscation error.
+const textNonParsable = "Non-parsable SQL query"
+
+// obfuscatedResource returns the obfuscated version of the given resource. It is
+// obfuscated using the given obfuscator for the given span type typ.
+func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
+	if o == nil {
+		return resource
+	}
+	switch typ {
+	case "sql", "cassandra":
+		oq, err := o.ObfuscateSQLString(resource)
+		if err != nil {
+			log.Error("Error obfuscating stats group resource %q: %v", resource, err)
+			return textNonParsable
+		}
+		return oq.Query
+	case "redis":
+		return o.QuantizeRedisString(resource)
+	default:
+		return resource
 	}
 }
 

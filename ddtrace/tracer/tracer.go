@@ -6,8 +6,10 @@
 package tracer
 
 import (
+	gocontext "context"
 	"fmt"
 	"os"
+	"runtime/pprof"
 	"strconv"
 	"sync"
 	"time"
@@ -17,7 +19,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
 
 var _ ddtrace.Tracer = (*tracer)(nil)
@@ -74,6 +79,10 @@ type tracer struct {
 	// rules for applying a sampling rate to spans that match the designated service
 	// or operation name.
 	rulesSampling *rulesSampler
+
+	// obfuscator holds the obfuscator used to obfuscate resources in aggregated stats.
+	// obfuscator may be nil if disabled.
+	obfuscator *obfuscate.Obfuscator
 }
 
 const (
@@ -175,6 +184,15 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
+		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
+			SQL: obfuscate.SQLConfig{
+				TableNames:       c.agent.HasFlag("table_names"),
+				ReplaceDigits:    c.agent.HasFlag("quantize_sql_tables") || c.agent.HasFlag("replace_sql_digits"),
+				KeepSQLAlias:     c.agent.HasFlag("keep_sql_alias"),
+				DollarQuotedFunc: c.agent.HasFlag("dollar_quoted_func"),
+				Cache:            c.agent.HasFlag("sql_cache"),
+			},
+		}),
 	}
 	return t
 }
@@ -309,10 +327,29 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		startTime = opts.StartTime.UnixNano()
 	}
 	var context *spanContext
+	// The default pprof context is taken from the start options and is
+	// not nil when using StartSpanFromContext()
+	pprofContext := opts.Context
 	if opts.Parent != nil {
 		if ctx, ok := opts.Parent.(*spanContext); ok {
 			context = ctx
+			if pprofContext == nil && ctx.span != nil {
+				// Inherit the context.Context from parent span if it was propagated
+				// using ChildOf() rather than StartSpanFromContext(), see
+				// applyPPROFLabels() below.
+				pprofContext = ctx.span.pprofCtxActive
+			}
 		}
+	}
+	if pprofContext == nil {
+		// For root span's without context, there is no pprofContext, but we need
+		// one to avoid a panic() in pprof.WithLabels(). Using context.Background()
+		// is not ideal here, as it will cause us to remove all labels from the
+		// goroutine when the span finishes. However, the alternatives of not
+		// applying labels for such spans or to leave the endpoint/hotspot labels
+		// on the goroutine after it finishes are even less appealing. We'll have
+		// to properly document this for users.
+		pprofContext = gocontext.Background()
 	}
 	id := opts.SpanID
 	if id == 0 {
@@ -385,8 +422,48 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
+	if t.config.profilerHotspots || t.config.profilerEndpoints {
+		t.applyPPROFLabels(pprofContext, span)
+	}
+	if t.config.serviceMappings != nil {
+		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
+			span.Service = newSvc
+		}
+	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
 	return span
+}
+
+// applyPPROFLabels applies pprof labels for the profiler's code hotspots and
+// endpoint filtering feature to span. When span finishes, any pprof labels
+// found in ctx are restored.
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
+	var labels []string
+	if t.config.profilerHotspots {
+		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
+	}
+	// nil checks might not be needed, but better be safe than sorry
+	if span.context.trace != nil && span.context.trace.root != nil {
+		localRootSpan := span.context.trace.root
+		if t.config.profilerHotspots {
+			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
+		}
+		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
+			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
+		}
+	}
+	if len(labels) > 0 {
+		span.pprofCtxRestore = ctx
+		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
+		pprof.SetGoroutineLabels(span.pprofCtxActive)
+	}
+}
+
+// spanResourcePIISafe returns true if s.Resource can be considered to not
+// include PII with reasonable confidence. E.g. SQL queries may contain PII,
+// but http, rpc or custom (s.Type == "") span resource names generally do not.
+func spanResourcePIISafe(s *span) bool {
+	return s.Type == ext.SpanTypeWeb || s.Type == ext.AppTypeRPC || s.Type == ""
 }
 
 // Stop stops the tracer.

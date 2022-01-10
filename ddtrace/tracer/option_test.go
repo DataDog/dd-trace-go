@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -142,7 +143,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 func TestLoadAgentFeatures(t *testing.T) {
 	t.Run("zero", func(t *testing.T) {
 		t.Run("disabled", func(t *testing.T) {
-			assert.Zero(t, newConfig(WithLambdaMode(true)).features)
+			assert.Zero(t, newConfig(WithLambdaMode(true)).agent)
 		})
 
 		t.Run("unreachable", func(t *testing.T) {
@@ -153,7 +154,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 			}))
 			defer srv.Close()
-			assert.Zero(t, newConfig(WithAgentAddr("127.9.9.9:8181")).features)
+			assert.Zero(t, newConfig(WithAgentAddr("127.9.9.9:8181")).agent)
 		})
 
 		t.Run("StatusNotFound", func(t *testing.T) {
@@ -161,7 +162,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 				w.WriteHeader(http.StatusNotFound)
 			}))
 			defer srv.Close()
-			assert.Zero(t, newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://"))).features)
+			assert.Zero(t, newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://"))).agent)
 		})
 
 		t.Run("error", func(t *testing.T) {
@@ -169,22 +170,28 @@ func TestLoadAgentFeatures(t *testing.T) {
 				w.Write([]byte("Not JSON"))
 			}))
 			defer srv.Close()
-			assert.Zero(t, newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://"))).features)
+			assert.Zero(t, newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://"))).agent)
 		})
 	})
 
 	t.Run("OK", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"feature_flags":["a","b"],"client_drop_p0s":true,"statsd_port":8999}`))
 		}))
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
-		assert.True(t, cfg.features.DropP0s)
-		assert.Equal(t, cfg.features.StatsdPort, 8999)
-		assert.False(t, cfg.features.Stats)
+		assert.True(t, cfg.agent.DropP0s)
+		assert.Equal(t, cfg.agent.StatsdPort, 8999)
+		assert.EqualValues(t, cfg.agent.featureFlags, map[string]struct{}{
+			"a": struct{}{},
+			"b": struct{}{},
+		})
+		assert.False(t, cfg.agent.Stats)
+		assert.True(t, cfg.agent.HasFlag("a"))
+		assert.True(t, cfg.agent.HasFlag("b"))
 	})
 
-	t.Run("OK+discovery", func(t *testing.T) {
+	t.Run("discovery", func(t *testing.T) {
 		defer func(old string) { os.Setenv("DD_TRACE_FEATURES", old) }(os.Getenv("DD_TRACE_FEATURES"))
 		os.Setenv("DD_TRACE_FEATURES", "discovery")
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -192,9 +199,9 @@ func TestLoadAgentFeatures(t *testing.T) {
 		}))
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
-		assert.True(t, cfg.features.DropP0s)
-		assert.True(t, cfg.features.Stats)
-		assert.Equal(t, cfg.features.StatsdPort, 8999)
+		assert.True(t, cfg.agent.DropP0s)
+		assert.True(t, cfg.agent.Stats)
+		assert.Equal(t, cfg.agent.StatsdPort, 8999)
 	})
 }
 
@@ -355,6 +362,47 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		dVal, ok := c.globalTags["dKey"]
 		assert.False(ok)
 		assert.Equal(nil, dVal)
+	})
+
+	t.Run("profiler-endpoints", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c := newConfig()
+			assert.False(t, c.profilerEndpoints)
+		})
+
+		t.Run("override", func(t *testing.T) {
+			os.Setenv(traceprof.EndpointEnvVar, "true")
+			defer os.Unsetenv(traceprof.EndpointEnvVar)
+			c := newConfig()
+			assert.True(t, c.profilerEndpoints)
+		})
+	})
+
+	t.Run("profiler-hotspots", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			c := newConfig()
+			assert.False(t, c.profilerHotspots)
+		})
+
+		t.Run("override", func(t *testing.T) {
+			os.Setenv(traceprof.CodeHotspotsEnvVar, "true")
+			defer os.Unsetenv(traceprof.CodeHotspotsEnvVar)
+			c := newConfig()
+			assert.True(t, c.profilerHotspots)
+		})
+	})
+
+	t.Run("env-mapping", func(t *testing.T) {
+		os.Setenv("DD_SERVICE_MAPPING", "tracer.test:test2, svc:Newsvc,http.router:myRouter, noval:")
+		defer os.Unsetenv("DD_SERVICE_MAPPING")
+
+		assert := assert.New(t)
+		c := newConfig()
+
+		assert.Equal("test2", c.serviceMappings["tracer.test"])
+		assert.Equal("Newsvc", c.serviceMappings["svc"])
+		assert.Equal("myRouter", c.serviceMappings["http.router"])
+		assert.Equal("", c.serviceMappings["noval"])
 	})
 }
 

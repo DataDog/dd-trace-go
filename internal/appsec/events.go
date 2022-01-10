@@ -8,7 +8,7 @@ package appsec
 import (
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpinstr"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 )
 
 // securityEvent interface allowing to lazily serialize an event into an intake
@@ -52,7 +52,7 @@ type withHTTPContext struct {
 }
 
 // withHTTPOperationContext adds the HTTP context to the event.
-func withHTTPOperationContext(event securityEvent, args httpinstr.HandlerOperationArgs, res httpinstr.HandlerOperationRes) securityEvent {
+func withHTTPOperationContext(event securityEvent, args httpsec.HandlerOperationArgs, res httpsec.HandlerOperationRes) securityEvent {
 	return withHTTPContext{
 		securityEvent: event,
 		ctx: httpContext{

@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 }
 
 func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
-	span := mt.FinishedSpans()[0]
+	span := mt.FinishedSpans()[1]
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
 	assert.Equal("PUT /twitter/tweet/?", span.Tag(ext.ResourceName))
 	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))

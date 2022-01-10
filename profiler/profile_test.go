@@ -186,6 +186,7 @@ main;bar 0 0 8 16
 		stopCPUProfile = func() {}
 
 		p, err := unstartedProfiler(CPUDuration(10 * time.Millisecond))
+		require.NoError(t, err)
 		start := time.Now()
 		profs, err := p.runProfile(CPUProfile)
 		end := time.Now()
@@ -203,6 +204,7 @@ main;bar 0 0 8 16
 		}
 
 		p, err := unstartedProfiler()
+		require.NoError(t, err)
 		profs, err := p.runProfile(GoroutineProfile)
 		require.NoError(t, err)
 		assert.Equal(t, "goroutines.pprof", profs[0].name)
@@ -233,12 +235,13 @@ main.main()
 `
 
 		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-		lookupProfile = func(name string, w io.Writer, _ int) error {
+		lookupProfile = func(_ string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(sample))
 			return err
 		}
 
 		p, err := unstartedProfiler()
+		require.NoError(t, err)
 		profs, err := p.runProfile(expGoroutineWaitProfile)
 		require.NoError(t, err)
 		require.Equal(t, "goroutineswait.pprof", profs[0].name)

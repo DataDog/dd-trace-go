@@ -77,6 +77,7 @@ func TestWithSpanTags(t *testing.T) {
 	for _, tt := range testcases {
 		t.Run(tt.name, func(t *testing.T) {
 			Register(tt.sqlRegister.name, tt.sqlRegister.driver, tt.sqlRegister.opts...)
+			defer unregister(tt.sqlRegister.name)
 			db, err := Open(tt.sqlRegister.name, tt.sqlRegister.dsn)
 			if err != nil {
 				log.Fatal(err)
@@ -143,6 +144,7 @@ func TestWithChildSpansOnly(t *testing.T) {
 	for _, tt := range testcases {
 		t.Run(tt.name, func(t *testing.T) {
 			Register(tt.sqlRegister.name, tt.sqlRegister.driver, tt.sqlRegister.opts...)
+			defer unregister(tt.sqlRegister.name)
 			db, err := Open(tt.sqlRegister.name, tt.sqlRegister.dsn)
 			require.NoError(t, err)
 			defer db.Close()
