@@ -34,6 +34,19 @@ type Iter struct {
 	span ddtrace.Span
 }
 
+// Scanner inherits from a gocql.Scanner derived from an Iter
+type Scanner struct {
+	gocql.Scanner
+	span ddtrace.Span
+}
+
+// Batch inherits from gocql.Batch, it keeps the tracer and the context.
+type Batch struct {
+	*gocql.Batch
+	*params
+	ctx context.Context
+}
+
 // params containes fields and metadata useful for command tracing
 type params struct {
 	config    *queryConfig
@@ -62,7 +75,7 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 		}
 	}
 	log.Debug("contrib/gocql/gocql: Wrapping Query: %#v", cfg)
-	tq := &Query{q, &params{config: cfg}, context.Background()}
+	tq := &Query{q, &params{config: cfg}, q.Context()}
 	return tq
 }
 
@@ -162,4 +175,93 @@ func (tIter *Iter) Close() error {
 	}
 	tIter.span.Finish()
 	return err
+}
+
+// Scanner returns a row Scanner which provides an interface to scan rows in a
+// manner which is similar to database/sql. The Iter should NOT be used again after
+// calling this method.
+func (tIter *Iter) Scanner() gocql.Scanner {
+	return &Scanner{
+		Scanner: tIter.Iter.Scanner(),
+		span:    tIter.span,
+	}
+}
+
+// Err calls the wrapped Scanner.Err, releasing the Scanner resources and closing the span.
+func (s *Scanner) Err() error {
+	err := s.Scanner.Err()
+	if err != nil {
+		s.span.SetTag(ext.Error, err)
+	}
+	s.span.Finish()
+	return err
+}
+
+// WrapBatch wraps a gocql.Batch into a traced Batch under the given service name.
+// Note that the returned Batch structure embeds the original gocql.Batch structure.
+// This means that any method returning the batch for chaining that is not part
+// of this package's Batch structure should be called before WrapBatch, otherwise
+// the tracing context could be lost.
+//
+// To be more specific: it is ok (and recommended) to use and chain the return value
+// of `WithContext` and `WithTimestamp` but not that of `SerialConsistency`, `Trace`,
+// `Observer`, etc.
+func WrapBatch(b *gocql.Batch, opts ...WrapOption) *Batch {
+	cfg := new(queryConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	log.Debug("contrib/gocql/gocql: Wrapping Batch: %#v", cfg)
+	tb := &Batch{b, &params{config: cfg}, b.Context()}
+	return tb
+}
+
+// WithContext adds the specified context to the traced Batch structure.
+func (tb *Batch) WithContext(ctx context.Context) *Batch {
+	tb.ctx = ctx
+	tb.Batch = tb.Batch.WithContext(ctx)
+	return tb
+}
+
+// WithTimestamp will enable the with default timestamp flag on the query like
+// DefaultTimestamp does. But also allows to define value for timestamp. It works the
+// same way as USING TIMESTAMP in the query itself, but should not break prepared
+// query optimization.
+func (tb *Batch) WithTimestamp(timestamp int64) *Batch {
+	tb.Batch = tb.Batch.WithTimestamp(timestamp)
+	return tb
+}
+
+// ExecuteBatch calls session.ExecuteBatch on the Batch, tracing the execution.
+func (tb *Batch) ExecuteBatch(session *gocql.Session) error {
+	span := tb.newChildSpan(tb.ctx)
+	err := session.ExecuteBatch(tb.Batch)
+	tb.finishSpan(span, err)
+	return err
+}
+
+// newChildSpan creates a new span from the params and the context.
+func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.Span {
+	p := tb.params
+	opts := []ddtrace.StartSpanOption{
+		tracer.SpanType(ext.SpanTypeCassandra),
+		tracer.ServiceName(p.config.serviceName),
+		tracer.ResourceName(p.config.resourceName),
+		tracer.Tag(ext.CassandraConsistencyLevel, tb.Cons.String()),
+		tracer.Tag(ext.CassandraKeyspace, tb.Keyspace()),
+	}
+	if !math.IsNaN(p.config.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
+	}
+	span, _ := tracer.StartSpanFromContext(ctx, ext.CassandraBatch, opts...)
+	return span
+}
+
+func (tb *Batch) finishSpan(span ddtrace.Span, err error) {
+	if tb.params.config.noDebugStack {
+		span.Finish(tracer.WithError(err), tracer.NoDebugStack())
+	} else {
+		span.Finish(tracer.WithError(err))
+	}
 }
