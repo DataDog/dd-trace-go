@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/DataDog/sketches-go/ddsketch/encoding"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 const (
@@ -32,6 +30,6 @@ func Decode(data []byte) (p Pipeline, err error) {
 		return p, err
 	}
 	p.callTime = time.Unix(0, t*int64(time.Millisecond))
-	p.service = globalconfig.ServiceName()
+	p.service = getService()
 	return p, nil
 }

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -18,10 +19,6 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 var (
@@ -36,9 +33,6 @@ var (
 
 // config holds the tracer configuration.
 type config struct {
-	// debug, when true, writes details to logs.
-	debug bool
-
 	// features holds the capabilities of the agent and determines some
 	// of the behaviour of the tracer.
 	features agentFeatures
@@ -51,8 +45,8 @@ type config struct {
 	// when the tracer starts.
 	logStartup bool
 
-	// serviceName specifies the name of this application.
-	serviceName string
+	// service specifies the name of this application.
+	service string
 
 	// version specifies the version of this application
 	version string
@@ -102,8 +96,7 @@ func newConfig(opts ...StartOption) *config {
 		c.env = v
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
-		c.serviceName = v
-		globalconfig.SetServiceName(v)
+		c.service = v
 	}
 	if ver := os.Getenv("DD_VERSION"); ver != "" {
 		c.version = ver
@@ -125,18 +118,14 @@ func newConfig(opts ...StartOption) *config {
 			}
 		}
 	}
-	if c.serviceName == "" {
+	if c.service == "" {
 		if v, ok := c.globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
-				c.serviceName = s
-				globalconfig.SetServiceName(s)
+				c.service = s
 			}
 		} else {
-			c.serviceName = filepath.Base(os.Args[0])
+			c.service = filepath.Base(os.Args[0])
 		}
-	}
-	if c.debug {
-		log.SetLevel(log.LevelDebug)
 	}
 	c.loadAgentFeatures()
 	if c.statsd == nil {
@@ -162,7 +151,7 @@ func newConfig(opts ...StartOption) *config {
 		c.dogstatsdAddr = addr
 		client, err := statsd.New(addr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
 		if err != nil {
-			log.Warn("Runtime and health metrics disabled: %v", err)
+			log.Printf("INFO: Runtime and health metrics disabled: %v", err)
 			c.statsd = &statsd.NoOpClient{}
 		} else {
 			c.statsd = client
@@ -240,7 +229,7 @@ func (c *config) loadAgentFeatures() {
 	}
 	resp, err := c.httpClient.Get(fmt.Sprintf("http://%s/info", c.agentAddr))
 	if err != nil {
-		log.Error("Loading features: %v", err)
+		log.Printf("ERROR: Loading features: %v", err)
 		return
 	}
 	if resp.StatusCode == http.StatusNotFound {
@@ -254,7 +243,7 @@ func (c *config) loadAgentFeatures() {
 	}
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		log.Error("Decoding features: %v", err)
+		log.Printf("ERROR: Decoding features: %v", err)
 		return
 	}
 	c.features.StatsdPort = info.StatsdPort
@@ -262,7 +251,7 @@ func (c *config) loadAgentFeatures() {
 		switch endpoint {
 		case "/v0.6/pipeline_stats":
 			c.features.PipelineStats = true
-			log.Info("Enable pipeline stats.")
+			log.Printf("INFO: Enable pipeline stats.")
 		}
 	}
 }
@@ -270,11 +259,10 @@ func (c *config) loadAgentFeatures() {
 func statsTags(c *config) []string {
 	tags := []string{
 		"lang:go",
-		"version:" + version.Tag,
 		"lang_version:" + runtime.Version(),
 	}
-	if c.serviceName != "" {
-		tags = append(tags, "service:"+c.serviceName)
+	if c.service != "" {
+		tags = append(tags, "service:"+c.service)
 	}
 	if c.env != "" {
 		tags = append(tags, "env:"+c.env)
@@ -300,8 +288,7 @@ func withNoopStats() StartOption {
 // WithService sets the default service name for the program.
 func WithService(name string) StartOption {
 	return func(c *config) {
-		c.serviceName = name
-		globalconfig.SetServiceName(c.serviceName)
+		c.service = name
 	}
 }
 

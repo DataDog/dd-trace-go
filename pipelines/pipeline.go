@@ -3,11 +3,9 @@ package pipelines
 import (
 	"encoding/binary"
 	"hash/fnv"
+	"log"
 	"math/rand"
 	"time"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type Pipeline struct {
@@ -45,12 +43,19 @@ func pipelineHash(nodeHash, parentHash uint64) uint64 {
 	return h.Sum64()
 }
 
+func getService() string {
+	if processor := getGlobalProcessor(); processor != nil && processor.service != "" {
+		return processor.service
+	}
+	return "unnamed-go-service"
+}
+
 func New() Pipeline {
 	now := time.Now()
 	p := Pipeline{
 		hash:     0,
 		callTime: now,
-		service:  globalconfig.ServiceName(),
+		service:  getService(),
 	}
 	return p.setCheckpoint("", now)
 }
@@ -77,7 +82,7 @@ func (p Pipeline) setCheckpoint(edge string, t time.Time) Pipeline {
 			latency:               t.Sub(p.callTime).Nanoseconds(),
 		}:
 		default:
-			log.Error("Processor input channel full, disregarding stats point.")
+			log.Println("Processor input channel full, disregarding stats point.")
 		}
 	}
 	return child

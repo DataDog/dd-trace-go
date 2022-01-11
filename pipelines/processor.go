@@ -1,6 +1,7 @@
 package pipelines
 
 import (
+	"log"
 	"math"
 	"net/http"
 	"sync"
@@ -12,8 +13,6 @@ import (
 	"github.com/DataDog/sketches-go/ddsketch/mapping"
 	"github.com/DataDog/sketches-go/ddsketch/store"
 	"github.com/golang/protobuf/proto"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -76,15 +75,17 @@ type processor struct {
 	statsd statsd.ClientInterface
 	env string
 	version string
+	service string
 }
 
-func newProcessor(statsd statsd.ClientInterface, env, version string, agentAddr string, httpClient *http.Client, ddSite, apiKey string) *processor {
+func newProcessor(statsd statsd.ClientInterface, env, service, version string, agentAddr string, httpClient *http.Client, ddSite, apiKey string) *processor {
 	return &processor{
 		buckets:        make(map[int64]bucket),
 		in:             make(chan statsPoint, 10000),
 		stopped:        1,
 		statsd: statsd,
 		env: env,
+		service: service,
 		version: version,
 		transport: newHTTPTransport(agentAddr, ddSite, apiKey, httpClient),
 	}
@@ -115,7 +116,7 @@ func (p *processor) add(point statsPoint) {
 		b[point.hash] = group
 	}
 	if err := group.sketch.Add(latency); err != nil {
-		log.Error("failed to merge sketches. Ignoring %v.", err)
+		log.Printf("ERROR: failed to merge sketches. Ignoring %v.", err)
 	}
 }
 
@@ -135,7 +136,7 @@ func (p *processor) runIngester() {
 func (p *processor) Start() {
 	if atomic.SwapUint64(&p.stopped, 0) == 0 {
 		// already running
-		log.Warn("(*processor).Start called more than once. This is likely a programming error.")
+		log.Print("WARN: (*processor).Start called more than once. This is likely a programming error.")
 		return
 	}
 	p.stop = make(chan struct{})
@@ -214,8 +215,7 @@ func (p *processor) sendToAgent(payload pipelineStatsPayload) {
 	p.statsd.Incr("datadog.pipelines.stats.flush_buckets", nil, float64(len(payload.Stats)))
 
 	if err := p.transport.sendPipelineStats(&payload); err != nil {
-		log.Info("failed to send point", err)
 		p.statsd.Incr("datadog.pipelines.stats.flush_errors", nil, 1)
-		log.Error("Error sending pipeline stats payload: %v", err)
+		log.Printf("ERROR: Error sending pipeline stats payload: %v", err)
 	}
 }

@@ -1,9 +1,8 @@
 package pipelines
 
 import (
+	"log"
 	"sync"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 var (
@@ -25,7 +24,7 @@ func getGlobalProcessor() *processor {
 
 func Start(opts ...StartOption) {
 	cfg := newConfig(opts...)
-	p := newProcessor(cfg.statsd, cfg.env, cfg.version, cfg.agentAddr, cfg.httpClient, cfg.site, cfg.apiKey)
+	p := newProcessor(cfg.statsd, cfg.env, cfg.service, cfg.version, cfg.agentAddr, cfg.httpClient, cfg.site, cfg.apiKey)
 	p.Start()
 	setGlobalProcessor(p)
 }
@@ -33,7 +32,7 @@ func Start(opts ...StartOption) {
 func Stop() {
 	p := getGlobalProcessor()
 	if p == nil {
-		log.Error("Stopped processor more than once.")
+		log.Print("ERROR: Stopped processor more than once.")
 	}
 	p.Stop()
 	setGlobalProcessor(nil)

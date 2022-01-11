@@ -12,9 +12,6 @@ import (
 	"time"
 
 	"github.com/tinylib/msgp/msgp"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 const (
@@ -57,12 +54,8 @@ func newHTTPTransport(addr string, ddSite string, apiKey string, client *http.Cl
 		"Datadog-Meta-Lang":             "go",
 		"Datadog-Meta-Lang-Version":     strings.TrimPrefix(runtime.Version(), "go"),
 		"Datadog-Meta-Lang-Interpreter": runtime.Compiler + "-" + runtime.GOARCH + "-" + runtime.GOOS,
-		"Datadog-Meta-Tracer-Version":   version.Tag,
 		"Content-Type":                  "application/msgpack",
 		"Content-Encoding": "gzip",
-	}
-	if cid := internal.ContainerID(); cid != "" {
-		defaultHeaders["Datadog-Container-ID"] = cid
 	}
 	if apiKey != "" {
 		defaultHeaders["DD-API-KEY"] = apiKey

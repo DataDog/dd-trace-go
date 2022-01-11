@@ -34,7 +34,7 @@ package pipelines
 // 	data, err := pipeline.ToBaggage()
 // 	assert.Nil(t, err)
 // 	fmt.Printf("len of baggage is %d\n", len(data))
-// 	tracer := tracer{config: &config{serviceName: "service"}}
+// 	tracer := tracer{config: &config{service: "service"}}
 // 	convertedPipeline, err := tracer.DataPipelineFromBaggage(data)
 // 	assert.Nil(t, err)
 // 	assert.Equal(t, pipeline.hash, convertedPipeline.GetHash())
