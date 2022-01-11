@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-func OSName() string {
+func osName() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {
 		return "Linux (Unknown Distribution)"
@@ -29,7 +29,7 @@ func OSName() string {
 	return name
 }
 
-func OSVersion() string {
+func osVersion() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {
 		return "unknown"

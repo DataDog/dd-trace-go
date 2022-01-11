@@ -12,10 +12,10 @@ import (
 	"runtime"
 )
 
-func OSName() string {
+func osName() string {
 	return runtime.GOOS
 }
 
-func OSVersion() string {
+func osVersion() string {
 	return "unknown"
 }

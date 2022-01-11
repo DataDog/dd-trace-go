@@ -11,11 +11,11 @@ import (
 	"strings"
 )
 
-func OSName() string {
+func osName() string {
 	return runtime.GOOS
 }
 
-func OSVersion() string {
+func osVersion() string {
 	out, err := exec.Command("sw_vers", "-productVersion").Output()
 	if err != nil {
 		return "unknown"
