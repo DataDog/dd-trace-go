@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/pipelines"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"sync/atomic"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/pipelines"
 )
 
 func main() {
