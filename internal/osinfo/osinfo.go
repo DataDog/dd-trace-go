@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-// osinfo provides information about the current operating system release
+// Package osinfo provides information about the current operating system release
 package osinfo
 
 // OSName returns the name of the operating system, including the distribution
