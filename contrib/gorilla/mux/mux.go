@@ -15,7 +15,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/gorilla/mux"
@@ -125,9 +124,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		FinishOpts:     r.config.finishOpts,
 		SpanOpts:       spanopts,
 		QueryParams:    r.config.queryParams,
-		AppSecParams: httpsec.AppSecParams{
-			PathParams: match.Vars,
-		},
+		PathParams:     match.Vars,
 	})
 }
 
