@@ -25,7 +25,9 @@ type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.serviceName = "fiber"
-	cfg.isStatusError = isServerError
+	cfg.isStatusError = func(c int) bool {
+		return globalconfig.HTTPServerCodes().Contains(uint(c))
+	}
 
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc
@@ -78,12 +80,8 @@ func WithAnalyticsRate(rate float64) Option {
 // WithStatusCheck is deprecated. Please use globalconfig to set client/server
 // status codes. WithStatusCheck allows setting of a function to tell whether a
 // status code is an error.
-func WithStatusCheck(fn func(statusCode int) bool) Option {
+func WithStatusCheck(b bool) Option {
 	return func(cfg *config) {
-		cfg.isStatusError = fn
+		cfg.isStatusError = nil
 	}
-}
-
-func isServerError(statusCode int) bool {
-	return globalconfig.IsHTTPServerError(statusCode)
 }

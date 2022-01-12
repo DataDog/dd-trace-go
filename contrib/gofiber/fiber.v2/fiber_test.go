@@ -139,9 +139,7 @@ func TestError(t *testing.T) {
 		router := fiber.New()
 		router.Use(Middleware(
 			WithServiceName("foobar"),
-			WithStatusCheck(func(statusCode int) bool {
-				return statusCode >= 500 && statusCode < 600
-			}),
+			WithStatusCheck(true),
 		))
 		code := 500
 		// a handler with an error and make the requests
