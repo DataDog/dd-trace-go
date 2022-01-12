@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"context"
 	gocontext "context"
 	"os"
 	"runtime/pprof"
@@ -302,23 +301,11 @@ func (t *tracer) pushTrace(trace []*span) {
 	}
 }
 
-// StartSpan implements ddtrace.Tracer.
+// StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
-	span, _ := t.StartSpanFromContext(gocontext.Background(), operationName, options...)
-	return span
-}
-
-// StartSpanFromContext implements ddtrace.Tracer.
-func (t *tracer) StartSpanFromContext(ctx gocontext.Context, operationName string, options ...ddtrace.StartSpanOption) (ddtrace.Span, gocontext.Context) {
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
-	}
-	if ctx == nil {
-		ctx = gocontext.Background()
-	} else if s, ok := SpanFromContext(ctx); ok {
-		// span in ctx overwrite ChildOf() parent if any
-		opts.Parent = s.Context()
 	}
 	var startTime int64
 	if opts.StartTime.IsZero() {
@@ -327,18 +314,29 @@ func (t *tracer) StartSpanFromContext(ctx gocontext.Context, operationName strin
 		startTime = opts.StartTime.UnixNano()
 	}
 	var context *spanContext
-	pprofCtx := ctx
+	// The default pprof context is taken from the start options and is
+	// not nil when using StartSpanFromContext()
+	pprofContext := opts.Context
 	if opts.Parent != nil {
-		if parentContext, ok := opts.Parent.(*spanContext); ok {
-			context = parentContext
-			if pprofCtx == gocontext.Background() && parentContext.span != nil && parentContext.span.pprofCtxActive != nil {
-				// Inherit the pprof labels from parent span if it was propagated using
-				// ChildOf() rather than StartSpanFromContext(). Having a separate ctx
-				// and pprofCtx is done to avoid subtle problems with callers relying
-				// on the details of the ContextWithSpan() wrapping below.
-				pprofCtx = parentContext.span.pprofCtxActive
+		if ctx, ok := opts.Parent.(*spanContext); ok {
+			context = ctx
+			if pprofContext == nil && ctx.span != nil {
+				// Inherit the context.Context from parent span if it was propagated
+				// using ChildOf() rather than StartSpanFromContext(), see
+				// applyPPROFLabels() below.
+				pprofContext = ctx.span.pprofCtxActive
 			}
 		}
+	}
+	if pprofContext == nil {
+		// For root span's without context, there is no pprofContext, but we need
+		// one to avoid a panic() in pprof.WithLabels(). Using context.Background()
+		// is not ideal here, as it will cause us to remove all labels from the
+		// goroutine when the span finishes. However, the alternatives of not
+		// applying labels for such spans or to leave the endpoint/hotspot labels
+		// on the goroutine after it finishes are even less appealing. We'll have
+		// to properly document this for users.
+		pprofContext = gocontext.Background()
 	}
 	id := opts.SpanID
 	if id == 0 {
@@ -412,7 +410,7 @@ func (t *tracer) StartSpanFromContext(ctx gocontext.Context, operationName strin
 		t.sample(span)
 	}
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
-		ctx = t.applyPPROFLabels(pprofCtx, span)
+		t.applyPPROFLabels(pprofContext, span)
 	}
 	if t.config.serviceMappings != nil {
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
@@ -420,13 +418,13 @@ func (t *tracer) StartSpanFromContext(ctx gocontext.Context, operationName strin
 		}
 	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
-	return span, ContextWithSpan(ctx, span)
+	return span
 }
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored.
-func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) context.Context {
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
 	if t.config.profilerHotspots {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
@@ -445,16 +443,14 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) context.Con
 		span.pprofCtxRestore = ctx
 		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
 		pprof.SetGoroutineLabels(span.pprofCtxActive)
-		return span.pprofCtxActive
 	}
-	return ctx
 }
 
 // spanResourcePIISafe returns true if s.Resource can be considered to not
 // include PII with reasonable confidence. E.g. SQL queries may contain PII,
-// but http or rpc endpoint names generally do not.
+// but http, rpc or custom (s.Type == "") span resource names generally do not.
 func spanResourcePIISafe(s *span) bool {
-	return s.Type == ext.SpanTypeWeb || s.Type == ext.AppTypeRPC
+	return s.Type == ext.SpanTypeWeb || s.Type == ext.AppTypeRPC || s.Type == ""
 }
 
 // Stop stops the tracer.
