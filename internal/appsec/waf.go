@@ -125,7 +125,6 @@ const (
 	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
 	serverRequestCookiesAddr          = "server.request.cookies"
 	serverRequestQueryAddr            = "server.request.query"
-
 	serverResponseStatusAddr = "server.response.status"
 )
 
