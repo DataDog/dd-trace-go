@@ -249,6 +249,8 @@ jobs:
             go get github.com/hashicorp/vault/sdk@v0.2.0
             # Shopify/sarama > v1.22 doesn't compile with go1.14
             go get github.com/Shopify/sarama@v1.22.0
+            # Temporary enforcing gorm to v1.22.4 to avoid the problems of v1.22.5
+            go get -v gorm.io/gorm@v1.22.4
 
       - run:
           name: Wait for MySQL

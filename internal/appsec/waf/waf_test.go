@@ -30,42 +30,50 @@ func TestHealth(t *testing.T) {
 	version, err := Health()
 	require.NoError(t, err)
 	require.NotNil(t, version)
-	require.Equal(t, "1.0.13", version.String())
+	require.Equal(t, "1.0.14", version.String())
 }
 
-var testRule = newTestRule("server.request.headers.no_cookies:user-agent")
+var testRule = newTestRule(ruleInput{Address: "server.request.headers.no_cookies", KeyPath: []string{"user-agent"}})
 
 var testRuleTmpl = template.Must(template.New("").Parse(`
 {
-  "version": "1.0",
-  "events": [
+  "version": "2.1",
+  "rules": [
     {
       "id": "ua0-600-12x",
       "name": "Arachni",
       "tags": {
-        "type": "security_scanner"
+        "type": "security_scanner",
+		"category": "attack_attempt"
       },
       "conditions": [
         {
-          "operation": "match_regex",
+          "operator": "match_regex",
           "parameters": {
             "inputs": [
-             {{ range $i, $input := . }}{{ if gt $i 0 }}, {{end}}"{{ $input }}"{{ end }}
+            {{ range $i, $input := . -}}
+              {{ if gt $i 0 }},{{ end }}
+                { "address": "{{ $input.Address }}"{{ if ne (len $input.KeyPath) 0 }},  "key_path": [ {{ range $i, $path := $input.KeyPath }}{{ if gt $i 0 }}, {{ end }}"{{ $path }}"{{ end }} ]{{ end }} }
+            {{- end }}
             ],
             "regex": "^Arachni"
           }
         }
       ],
-      "transformers": [],
-      "action": "record"
+      "transformers": []
     }
   ]
 }
 `))
 
-func newTestRule(input ...string) []byte {
+type ruleInput struct {
+	Address string
+	KeyPath []string
+}
+
+func newTestRule(inputs ...ruleInput) []byte {
 	var buf bytes.Buffer
-	if err := testRuleTmpl.Execute(&buf, input); err != nil {
+	if err := testRuleTmpl.Execute(&buf, inputs); err != nil {
 		panic(err)
 	}
 	return buf.Bytes()
@@ -98,8 +106,8 @@ func TestNewWAF(t *testing.T) {
 		// Test with a valid JSON but invalid rule format (field events should be an array)
 		const rule = `
 {
-  "version": "1.0",
-  "events": {
+  "version": "2.1",
+  "events": [
     {
       "id": "ua0-600-12x",
       "name": "Arachni",
@@ -110,17 +118,16 @@ func TestNewWAF(t *testing.T) {
         {
           "operation": "match_regex",
           "parameters": {
-            "inputs": [
-              "server.request.headers.no_cookies:user-agent"
-            ],
+            "inputs": {
+              { "address": "server.request.headers.no_cookies" }
+            },
             "regex": "^Arachni"
           }
         }
       ],
-      "transformers": [],
-      "action": "record"
+      "transformers": []
     }
-  }
+  ]
 }
 `
 		waf, err := NewHandle([]byte(rule))
@@ -132,11 +139,11 @@ func TestNewWAF(t *testing.T) {
 func TestUsage(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 
-	waf, err := NewHandle(newTestRule("my.input"))
+	waf, err := NewHandle(newTestRule(ruleInput{Address: "my.input"}))
 	require.NoError(t, err)
 	require.NotNil(t, waf)
 
-	//require.Equal(t, []string{"my.input"}, waf.addresses())
+	require.Equal(t, []string{"my.input"}, waf.Addresses())
 
 	wafCtx := NewContext(waf)
 	require.NotNil(t, wafCtx)
@@ -209,7 +216,7 @@ func TestUsage(t *testing.T) {
 func TestAddresses(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 	expectedAddresses := []string{"my.first.input", "my.second.input", "my.third.input", "my.indexed.input"}
-	addresses := []string{"my.first.input", "my.second.input", "my.third.input", "my.indexed.input:indexed"}
+	addresses := []ruleInput{{Address: "my.first.input"}, {Address: "my.second.input"}, {Address: "my.third.input"}, {Address: "my.indexed.input", KeyPath: []string{"indexed"}}}
 	waf, err := NewHandle(newTestRule(addresses...))
 	require.NoError(t, err)
 	defer waf.Close()
@@ -922,7 +929,7 @@ func TestEncoder(t *testing.T) {
 			}
 
 			// Pass the encoded value to the WAF to make sure it doesn't return an error
-			waf, err := NewHandle(newTestRule("my.input"))
+			waf, err := NewHandle(newTestRule(ruleInput{Address: "my.input"}))
 			require.NoError(t, err)
 			defer waf.Close()
 			wafCtx := NewContext(waf)
