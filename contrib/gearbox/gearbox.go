@@ -48,9 +48,7 @@ func Datadog(ctx gearbox.Context) {
 
 	if status == gearbox.StatusInternalServerError || status == gearbox.StatusBadRequest {
 
-		b := string(ctx.Context().Response.Body())
-		span.SetTag(ext.Error, true)
-		span.SetTag(ext.ErrorMsg, b)
+		span.SetTag(ext.Error, string(ctx.Context().Response.Body()[:5000]))
 	}
 
 	span.Finish()
