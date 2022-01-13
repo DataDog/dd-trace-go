@@ -12,43 +12,21 @@ import (
 )
 
 func TestDatadog(t *testing.T) {
-
-	t.Parallel()
-
-	t.Run("finish with error ", func(t *testing.T) {
-
-		request := &fasthttp.RequestCtx{}
-		request.URI().SetPath("/any")
-		request.Request.Header.SetMethod("post")
-		request.Response.SetStatusCode(500)
-
-		gb := &GearboxContextMock{
-			RequestCtx:  request,
-			LocalParams: make(map[string]interface{}),
-		}
-
-		Datadog(gb)
-
+	var reqctx fasthttp.RequestCtx
+	reqctx.URI().SetPath("/any")
+	reqctx.Request.Header.SetMethod("post")
+	reqctx.Response.SetStatusCode(500)
+		
+	t.Run("error", func(t *testing.T) {
+		gb := &GearboxContextMock{RequestCtx:  &reqctx}
+		Middleware(gb)
 	})
 
-	t.Run("finish without error ", func(t *testing.T) {
-
-		request := &fasthttp.RequestCtx{}
-		request.URI().SetPath("/any")
-		request.Request.Header.SetMethod("post")
-
-		gb := &GearboxContextMock{
-			RequestCtx:  request,
-			LocalParams: make(map[string]interface{}),
-			Headers:     make(map[string]string),
-		}
-
+	t.Run("ok ", func(t *testing.T) {
+		gb := &GearboxContextMock{RequestCtx:  reqctx}
 		gb.Set("X-Datadog-Trace-Id", "any-trace-id")
-
-		Datadog(gb)
-
+		Middleware(gb)
 	})
-
 }
 
 type GearboxContextMock struct {
