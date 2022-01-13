@@ -303,6 +303,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 	})
 
+	t.Run("env-agentAddr", func(t *testing.T) {
+		os.Setenv("DD_AGENT_HOST", "trace-agent")
+		defer os.Unsetenv("DD_AGENT_HOST")
+		tracer := newTracer()
+		c := tracer.config
+		assert.Equal(t, "trace-agent", c.agentAddr)
+	})
+
 	t.Run("override", func(t *testing.T) {
 		os.Setenv("DD_ENV", "dev")
 		defer os.Unsetenv("DD_ENV")

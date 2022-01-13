@@ -190,6 +190,9 @@ func newConfig(opts ...StartOption) *config {
 	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
 		c.hostname = v
 	}
+	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
+		c.agentAddr = v
+	}
 	if v := os.Getenv("DD_ENV"); v != "" {
 		c.env = v
 	}
