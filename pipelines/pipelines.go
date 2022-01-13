@@ -24,7 +24,7 @@ func getGlobalProcessor() *processor {
 
 func Start(opts ...StartOption) {
 	cfg := newConfig(opts...)
-	p := newProcessor(cfg.statsd, cfg.env, cfg.service, cfg.version, cfg.agentAddr, cfg.httpClient, cfg.site, cfg.apiKey)
+	p := newProcessor(cfg.statsd, cfg.env, cfg.service, cfg.agentAddr, cfg.httpClient, cfg.site, cfg.apiKey)
 	p.Start()
 	setGlobalProcessor(p)
 }

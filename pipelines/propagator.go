@@ -9,27 +9,33 @@ import (
 )
 
 const (
-	PropagationKey = "dd-pipeline-ctx"
+	PropagationKey = "dd-pathway-ctx"
 )
 
-func (p Pipeline) Encode() []byte {
-	data := make([]byte, 8, 14)
+func (p Pathway) Encode() []byte {
+	data := make([]byte, 8, 20)
 	binary.LittleEndian.PutUint64(data, p.hash)
-	encoding.EncodeVarint64(&data, p.callTime.UnixNano()/int64(time.Millisecond))
+	encoding.EncodeVarint64(&data, p.pathwayStart.UnixNano()/int64(time.Millisecond))
+	encoding.EncodeVarint64(&data, p.edgeStart.UnixNano()/int64(time.Millisecond))
 	return data
 }
 
-func Decode(data []byte) (p Pipeline, err error) {
+func Decode(data []byte) (p Pathway, err error) {
 	if len(data) < 8 {
-		return p, errors.New("pipeline hash smaller than 8 bytes")
+		return p, errors.New("hash smaller than 8 bytes")
 	}
 	p.hash = binary.LittleEndian.Uint64(data)
 	data = data[8:]
-	t, err := encoding.DecodeVarint64(&data)
+	pathwayStart, err := encoding.DecodeVarint64(&data)
 	if err != nil {
 		return p, err
 	}
-	p.callTime = time.Unix(0, t*int64(time.Millisecond))
+	edgeStart, err := encoding.DecodeVarint64(&data)
+	if err != nil {
+		return p, err
+	}
+	p.pathwayStart = time.Unix(0, pathwayStart*int64(time.Millisecond))
+	p.edgeStart = time.Unix(0, edgeStart*int64(time.Millisecond))
 	p.service = getService()
 	return p, nil
 }

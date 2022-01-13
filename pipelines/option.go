@@ -48,9 +48,6 @@ type config struct {
 	// service specifies the name of this application.
 	service string
 
-	// version specifies the version of this application
-	version string
-
 	// env contains the environment that this application will run under.
 	env string
 
@@ -98,9 +95,6 @@ func newConfig(opts ...StartOption) *config {
 	if v := os.Getenv("DD_SERVICE"); v != "" {
 		c.service = v
 	}
-	if ver := os.Getenv("DD_VERSION"); ver != "" {
-		c.version = ver
-	}
 	for _, fn := range opts {
 		fn(c)
 	}
@@ -108,13 +102,6 @@ func newConfig(opts ...StartOption) *config {
 		if v, ok := c.globalTags["env"]; ok {
 			if e, ok := v.(string); ok {
 				c.env = e
-			}
-		}
-	}
-	if c.version == "" {
-		if v, ok := c.globalTags["version"]; ok {
-			if ver, ok := v.(string); ok {
-				c.version = ver
 			}
 		}
 	}
@@ -315,14 +302,6 @@ func WithEnv(env string) StartOption {
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
 		cfg.dogstatsdAddr = addr
-	}
-}
-
-// WithServiceVersion specifies the version of the service that is running. This will
-// be included in spans from this service in the "version" tag.
-func WithServiceVersion(version string) StartOption {
-	return func(cfg *config) {
-		cfg.version = version
 	}
 }
 

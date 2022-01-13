@@ -24,40 +24,44 @@ var sketchMapping, _ = mapping.NewLogarithmicMapping(0.01)
 
 type statsPoint struct {
 	service string
-	receivingPipelineName string
-	hash                  uint64
+	edge    string
+	hash    uint64
 	parentHash            uint64
-	timestamp int64
-	latency int64
+	timestamp      int64
+	pathwayLatency int64
+	edgeLatency    int64
 }
 
-type pipelineStatsGroup struct {
-	service string
-	receivingPipelineName string
-	pipelineHash uint64
+type statsGroup struct {
+	service      string
+	edge       string
+	hash       uint64
 	parentHash uint64
-	sketch *ddsketch.DDSketch
+	pathwayLatency *ddsketch.DDSketch
+	edgeLatency    *ddsketch.DDSketch
 }
 
-type bucket map[uint64]pipelineStatsGroup
+type bucket map[uint64]statsGroup
 
-func (b bucket) Export() []groupedPipelineStats {
-	stats := make([]groupedPipelineStats, 0, len(b))
+func (b bucket) Export() []groupedStats {
+	stats := make([]groupedStats, 0, len(b))
 	for _, s := range b {
-		// todo[piochelepiotr] Handle error
-		sketch, _ := proto.Marshal(s.sketch.ToProto())
-		stats = append(stats, groupedPipelineStats{
-			Sketch:                sketch,
-			Service:               s.service,
-			ReceivingPipelineName: s.receivingPipelineName,
-			PipelineHash:          s.pipelineHash,
-			ParentHash:            s.parentHash,
+		// todo[piochelepiotr] Handle errors
+		pathwayLatency, _ := proto.Marshal(s.pathwayLatency.ToProto())
+		edgeLatency, _ := proto.Marshal(s.edgeLatency.ToProto())
+		stats = append(stats, groupedStats{
+			PathwayLatency: pathwayLatency,
+			EdgeLatency:    edgeLatency,
+			Service:        s.service,
+			Edge:           s.edge,
+			Hash:           s.hash,
+			ParentHash:     s.parentHash,
 		})
 	}
 	return stats
 }
 
-type pipelineConcentratorStats struct {
+type concentratorStats struct {
 	payloadsIn int64
 }
 
@@ -70,15 +74,14 @@ type processor struct {
 	negativeDurations int64
 	stopped uint64
 	stop       chan struct{}  // closing this channel triggers shutdown
-	stats pipelineConcentratorStats
+	stats     concentratorStats
 	transport *httpTransport
 	statsd statsd.ClientInterface
 	env string
-	version string
 	service string
 }
 
-func newProcessor(statsd statsd.ClientInterface, env, service, version string, agentAddr string, httpClient *http.Client, ddSite, apiKey string) *processor {
+func newProcessor(statsd statsd.ClientInterface, env, service, agentAddr string, httpClient *http.Client, ddSite, apiKey string) *processor {
 	return &processor{
 		buckets:        make(map[int64]bucket),
 		in:             make(chan statsPoint, 10000),
@@ -86,7 +89,6 @@ func newProcessor(statsd statsd.ClientInterface, env, service, version string, a
 		statsd: statsd,
 		env: env,
 		service: service,
-		version: version,
 		transport: newHTTPTransport(agentAddr, ddSite, apiKey, httpClient),
 	}
 }
@@ -97,7 +99,6 @@ func alignTs(ts, bucketSize int64) int64 { return ts - ts%bucketSize }
 
 func (p *processor) add(point statsPoint) {
 	btime := alignTs(point.timestamp, bucketDuration.Nanoseconds())
-	latency := math.Max(float64(point.latency) / float64(time.Second), 0)
 	b, ok := p.buckets[btime]
 	if !ok {
 		b = make(bucket)
@@ -106,17 +107,21 @@ func (p *processor) add(point statsPoint) {
 	// aggregate
 	group, ok := b[point.hash]
 	if !ok {
-		group = pipelineStatsGroup{
-			service: point.service,
-			receivingPipelineName: point.receivingPipelineName,
-			parentHash: point.parentHash,
-			pipelineHash: point.hash,
-			sketch: ddsketch.NewDDSketch(sketchMapping, store.BufferedPaginatedStoreConstructor(), store.BufferedPaginatedStoreConstructor()),
+		group = statsGroup{
+			service:        point.service,
+			edge:           point.edge,
+			parentHash:     point.parentHash,
+			hash:           point.hash,
+			pathwayLatency: ddsketch.NewDDSketch(sketchMapping, store.DenseStoreConstructor(), store.DenseStoreConstructor()),
+			edgeLatency:    ddsketch.NewDDSketch(sketchMapping, store.DenseStoreConstructor(), store.DenseStoreConstructor()),
 		}
 		b[point.hash] = group
 	}
-	if err := group.sketch.Add(latency); err != nil {
-		log.Printf("ERROR: failed to merge sketches. Ignoring %v.", err)
+	if err := group.pathwayLatency.Add(math.Max(float64(point.pathwayLatency) / float64(time.Second), 0)); err != nil {
+		log.Printf("ERROR: failed to add pathway latency. Ignoring %v.", err)
+	}
+	if err := group.edgeLatency.Add(math.Max(float64(point.edgeLatency) / float64(time.Second), 0)); err != nil {
+		log.Printf("ERROR: failed to add edge latency. Ignoring %v.", err)
 	}
 }
 
@@ -181,24 +186,23 @@ func (p *processor) runFlusher(tick <-chan time.Time) {
 	}
 }
 
-func (p *processor) flushBucket(bucketStart int64) pipelineStatsBucket {
+func (p *processor) flushBucket(bucketStart int64) statsBucket {
 	bucket := p.buckets[bucketStart]
 	delete(p.buckets, bucketStart)
-	return pipelineStatsBucket{
+	return statsBucket{
 		Start: uint64(bucketStart),
 		Duration: uint64(bucketDuration.Nanoseconds()),
 		Stats: bucket.Export(),
 	}
 }
 
-func (p *processor) flush(now time.Time) pipelineStatsPayload {
+func (p *processor) flush(now time.Time) statsPayload {
 	nowNano := now.UnixNano()
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	sp := pipelineStatsPayload{
+	sp := statsPayload{
 		Env:     p.env,
-		Version: p.version,
-		Stats:   make([]pipelineStatsBucket, 0, len(p.buckets)),
+		Stats:   make([]statsBucket, 0, len(p.buckets)),
 	}
 	for ts := range p.buckets {
 		if ts > nowNano-bucketDuration.Nanoseconds() {
@@ -210,12 +214,12 @@ func (p *processor) flush(now time.Time) pipelineStatsPayload {
 	return sp
 }
 
-func (p *processor) sendToAgent(payload pipelineStatsPayload) {
+func (p *processor) sendToAgent(payload statsPayload) {
 	p.statsd.Incr("datadog.pipelines.stats.flush_payloads", nil, 1)
 	p.statsd.Incr("datadog.pipelines.stats.flush_buckets", nil, float64(len(payload.Stats)))
 
 	if err := p.transport.sendPipelineStats(&payload); err != nil {
 		p.statsd.Incr("datadog.pipelines.stats.flush_errors", nil, 1)
-		log.Printf("ERROR: Error sending pipeline stats payload: %v", err)
+		log.Printf("ERROR: Error sending stats payload: %v", err)
 	}
 }

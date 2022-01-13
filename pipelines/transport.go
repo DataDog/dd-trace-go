@@ -98,14 +98,13 @@ func resolveAddr(addr string) string {
 	return fmt.Sprintf("%s:%s", host, port)
 }
 
-func (t *httpTransport) sendPipelineStats(p *pipelineStatsPayload) error {
+func (t *httpTransport) sendPipelineStats(p *statsPayload) error {
 	var buf bytes.Buffer
-	wrapper := pipelineStatsPayloadWrapper{Stats: []pipelineStatsPayload{*p}}
 	gzipWriter, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
 	if err != nil {
 		return err
 	}
-	if err := msgp.Encode(gzipWriter, &wrapper); err != nil {
+	if err := msgp.Encode(gzipWriter, p); err != nil {
 		return err
 	}
 	err = gzipWriter.Close()

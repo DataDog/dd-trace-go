@@ -27,7 +27,7 @@ package pipelines
 
 // func TestSerializeDataPipeline(t *testing.T) {
 // 	now := time.Now()
-// 	pipeline := Pipeline{
+// 	pipeline := Pathway{
 // 		callTime: now,
 // 		hash:     1,
 // 	}
