@@ -125,7 +125,7 @@ const (
 	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
 	serverRequestCookiesAddr          = "server.request.cookies"
 	serverRequestQueryAddr            = "server.request.query"
-	serverResponseStatusAddr = "server.response.status"
+	serverResponseStatusAddr          = "server.response.status"
 )
 
 // List of rule addresses currently supported by the WAF
