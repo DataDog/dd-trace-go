@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -269,4 +270,34 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func TestIgnoreRequest(t *testing.T) {
+	router := chi.NewRouter()
+	router.Use(Middleware(
+		WithIgnoreRequest(func(r *http.Request) bool {
+			return strings.HasPrefix(r.URL.Path, "/skip")
+		}),
+	))
+
+	router.Get("/ok", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+
+	router.Get("/skip", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("skip"))
+	})
+
+	for path, shouldSkip := range map[string]bool{
+		"/ok":      false,
+		"/skip":    true,
+		"/skipfoo": true,
+	} {
+		mt := mocktracer.Start()
+		defer mt.Reset()
+
+		r := httptest.NewRequest("GET", "http://localhost" + path, nil)
+		router.ServeHTTP(httptest.NewRecorder(), r)
+		assert.Equal(t, shouldSkip, len(mt.FinishedSpans()) == 0)
+	}
 }
