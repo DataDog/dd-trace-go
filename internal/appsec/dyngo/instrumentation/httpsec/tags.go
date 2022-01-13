@@ -15,6 +15,13 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+// SetAppSecTags sets the AppSec-specific span tags that are expected to be in
+// the web service entry span (span of type `web`) when AppSec is enabled.
+func SetAppSecTags(span ddtrace.Span) {
+	span.SetTag("_dd.appsec.enabled", 1)
+	span.SetTag("_dd.runtime_family", "go")
+}
+
 // setEventSpanTags sets the security event span tags into the service entry span.
 func setEventSpanTags(span ddtrace.Span, events json.RawMessage) {
 	// Set the appsec event span tag

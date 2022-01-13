@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -202,9 +203,10 @@ func (c *Context) runWAF(data *wafObject, timeout time.Duration) (matches []byte
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var result C.ddwaf_result
+	// TODO(Julio-Guerra): avoid calling result_free when there's no result
 	defer C.ddwaf_result_free(&result)
-	C.ddwaf_run(c.context, data.ctype(), &result, C.uint64_t(timeout/time.Microsecond))
-	return goReturnValues(&result)
+	rc := C.ddwaf_run(c.context, data.ctype(), &result, C.uint64_t(timeout/time.Microsecond))
+	return goReturnValues(rc, &result)
 }
 
 // Close the WAF context by releasing its C memory and decreasing the number of
@@ -216,14 +218,21 @@ func (c *Context) Close() {
 	decNbLiveCObjects()
 }
 
-func goReturnValues(result *C.ddwaf_result) (matches []byte, err error) {
-	if rc := result.action; rc == C.DDWAF_GOOD {
-		return nil, nil
-	} else if rc < 0 {
+// Translate libddwaf return values into return values suitable to a Go program.
+// Note that it is possible to have matches != nil && err != nil in case of a
+// timeout during the WAF call.
+func goReturnValues(rc C.DDWAF_RET_CODE, result *C.ddwaf_result) (matches []byte, err error) {
+	if rc < 0 {
 		return nil, goRunError(rc)
 	}
-	matches = C.GoBytes(unsafe.Pointer(result.data), C.int(C.strlen(result.data)))
-	return matches, nil
+	if result.data != nil {
+		matches = C.GoBytes(unsafe.Pointer(result.data), C.int(C.strlen(result.data)))
+	}
+	// There could have been a timeout during the call
+	if bool(result.timeout) {
+		err = ErrTimeout
+	}
+	return matches, err
 }
 
 func goRunError(rc C.DDWAF_RET_CODE) error {
@@ -234,8 +243,6 @@ func goRunError(rc C.DDWAF_RET_CODE) error {
 		return ErrInvalidObject
 	case C.DDWAF_ERR_INVALID_ARGUMENT:
 		return ErrInvalidArgument
-	case C.DDWAF_ERR_TIMEOUT:
-		return ErrTimeout
 	default:
 		return fmt.Errorf("unknown waf return code %d", int(rc))
 	}
@@ -270,11 +277,18 @@ type encoder struct {
 	maxMapLength int
 }
 
-func (e *encoder) encode(v interface{}) (*wafObject, error) {
+func (e *encoder) encode(v interface{}) (object *wafObject, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("waf panic: %v", v)
+		}
+		if err != nil && object != nil {
+			free(object)
+		}
+	}()
 	wo := &wafObject{}
-	err := e.encodeValue(reflect.ValueOf(v), wo, e.maxDepth)
+	err = e.encodeValue(reflect.ValueOf(v), wo, e.maxDepth)
 	if err != nil {
-		free(wo)
 		return nil, err
 	}
 	return wo, nil
@@ -480,13 +494,17 @@ func (e *encoder) encodeString(str string, wo *wafObject) error {
 }
 
 func (e *encoder) encodeInt64(n int64, wo *wafObject) error {
-	wo.setInt64(C.int64_t(n))
-	return nil
+	// As of libddwaf v1.0.16, it currently expects numbers as strings
+	// TODO(Julio-Guerra): clarify with libddwaf when should it be an actual
+	//   int64
+	return e.encodeString(strconv.FormatInt(n, 10), wo)
 }
 
 func (e *encoder) encodeUint64(n uint64, wo *wafObject) error {
-	wo.setUint64(C.uint64_t(n))
-	return nil
+	// As of libddwaf v1.0.16, it currently expects numbers as strings
+	// TODO(Julio-Guerra): clarify with libddwaf when should it be an actual
+	//   uint64
+	return e.encodeString(strconv.FormatUint(n, 10), wo)
 }
 
 const (

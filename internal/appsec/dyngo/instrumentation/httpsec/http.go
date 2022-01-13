@@ -37,7 +37,7 @@ type (
 
 	// HandlerOperationRes is the HTTP handler operation results.
 	HandlerOperationRes struct {
-		// Status corresponds to the address `server.response.status`
+		// Status corresponds to the address `server.response.status`.
 		Status int
 	}
 )
@@ -45,10 +45,7 @@ type (
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
-	// TODO(Julio-Guerra): move these to service entry tags
-	span.SetTag("_dd.appsec.enabled", 1)
-	span.SetTag("_dd.runtime_family", "go")
-
+	SetAppSecTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		args := MakeHandlerOperationArgs(r)
 		op := StartOperation(
