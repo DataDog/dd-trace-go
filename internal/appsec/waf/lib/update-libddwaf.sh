@@ -58,7 +58,6 @@ mkdir $libcxx_dir
 curl -L https://github.com/DataDog/libddwaf/releases/download/$version/libc++-static-x86_64-linux.tar.gz | tar -xz -C$libcxx_dir
 # 3. Combine libddwaf.a + libc++.a + libc++abi.a + libunwind.a in a single
 #  object file by using ld -r
-# TODO: appeler docker
 run_binutils x86_64-linux-gnu-ld \
    -r -o $bindings_dir/lib/linux-amd64/libddwaf.a \
    --require-defined=ddwaf_init \
