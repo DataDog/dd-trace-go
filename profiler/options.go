@@ -154,10 +154,10 @@ func logStartup(c *config) {
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
-		log.Error("marshaling profiler configuration: %s", err)
+		log.Error("Marshaling profiler configuration: %s", err)
 		return
 	}
-	log.Info("profiler configuration: %s\n", b)
+	log.Info("Profiler configuration: %s\n", b)
 }
 
 func urlForSite(site string) (string, error) {
