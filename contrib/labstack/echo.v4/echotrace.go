@@ -89,7 +89,7 @@ func withAppSec(next echo.HandlerFunc) echo.HandlerFunc {
 				if err != nil {
 					remoteIP = req.RemoteAddr
 				}
-				httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers)
+				httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Response().Writer.Header())
 			}
 		}()
 		return next(c)

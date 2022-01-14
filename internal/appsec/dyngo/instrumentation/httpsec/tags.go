@@ -44,11 +44,14 @@ func setEventSpanTags(span ddtrace.Span, events json.RawMessage) {
 }
 
 // SetSecurityEventTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
-func SetSecurityEventTags(span ddtrace.Span, events json.RawMessage, remoteIP string, headers map[string][]string) {
+func SetSecurityEventTags(span ddtrace.Span, events json.RawMessage, remoteIP string, headers, respHeaders map[string][]string) {
 	setEventSpanTags(span, events)
 	span.SetTag("network.client.ip", remoteIP)
 	for h, v := range normalizeHTTPHeaders(headers) {
 		span.SetTag("http.request.headers."+h, v)
+	}
+	for h, v := range normalizeHTTPHeaders(respHeaders) {
+		span.SetTag("http.response.headers."+h, v)
 	}
 }
 
@@ -87,6 +90,7 @@ func normalizeHTTPHeaders(headers map[string][]string) (normalized map[string]st
 	}
 	normalized = make(map[string]string)
 	for k, v := range headers {
+		k = strings.ToLower(k)
 		if i := sort.SearchStrings(collectedHTTPHeaders[:], k); i < len(collectedHTTPHeaders) && collectedHTTPHeaders[i] == k {
 			normalized[k] = strings.Join(v, ",")
 		}
