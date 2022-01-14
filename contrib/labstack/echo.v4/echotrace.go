@@ -8,6 +8,7 @@ package echo
 
 import (
 	"math"
+	"net"
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -27,6 +28,9 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		fn(cfg)
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		if appsec.Enabled() {
+			next = withAppSec(next)
+		}
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
@@ -53,15 +57,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			defer func() { span.Finish(finishOpts...) }()
 
 			// pass the span through the request context
-			req := request.WithContext(ctx)
-			c.SetRequest(req)
-
-			if appsec.Enabled() {
-				op := httpsec.StartOperation(httpsec.MakeHandlerOperationArgs(req, span), nil)
-				defer func() {
-					op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
-				}()
-			}
+			c.SetRequest(request.WithContext(ctx))
 			// serve the request to the next middleware
 			err := next(c)
 			if err != nil {
@@ -73,5 +69,29 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			span.SetTag(ext.HTTPCode, strconv.Itoa(c.Response().Status))
 			return err
 		}
+	}
+}
+
+func withAppSec(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		req := c.Request()
+		span, ok := tracer.SpanFromContext(req.Context())
+		if !ok {
+			return next(c)
+		}
+		httpsec.SetAppSecTags(span)
+		args := httpsec.MakeHandlerOperationArgs(req)
+		op := httpsec.StartOperation(args, nil)
+		defer func() {
+			events := op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
+			if len(events) > 0 {
+				remoteIP, _, err := net.SplitHostPort(req.RemoteAddr)
+				if err != nil {
+					remoteIP = req.RemoteAddr
+				}
+				httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers)
+			}
+		}()
+		return next(c)
 	}
 }

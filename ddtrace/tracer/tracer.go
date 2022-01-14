@@ -7,7 +7,6 @@ package tracer
 
 import (
 	gocontext "context"
-	"fmt"
 	"os"
 	"runtime/pprof"
 	"strconv"
@@ -20,7 +19,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
@@ -226,18 +224,7 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
-	appsec.Start(&appsec.Config{
-		Client:   c.httpClient,
-		Version:  version.Tag,
-		AgentURL: fmt.Sprintf("http://%s/", resolveAddr(c.agentAddr)),
-		Hostname: c.hostname,
-		Service: appsec.ServiceConfig{
-			Name:        c.serviceName,
-			Version:     c.version,
-			Environment: c.env,
-		},
-		Tags: c.globalTags,
-	})
+	appsec.Start()
 	return t
 }
 
