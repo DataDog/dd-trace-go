@@ -194,11 +194,11 @@ func collectNativeHeapProfile(t profileType, p *profiler) ([]byte, error) {
 	p.interruptibleSleep(p.cfg.heapDuration)
 
 	// Write to bytes
-	// trace.dumpProfile(buf)
-	// report, err := trace.Dump()
-	// if err != nil {
-	// 	logrus.Error(errors.Wrap(err, "couldn't dump hit counters"))
-	// }
+	err = trace.DumpProfile(&buf)
+	if err != nil {
+		log.Error("Couldn't dump profile")
+		return nil, err
+	}
 
 	if err := trace.Stop(); err != nil {
 		log.Error("Failure stopping the native heap profiler")
