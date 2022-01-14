@@ -77,7 +77,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 }
 
-func TestResolveAddr(t *testing.T) {
+func TestResolveAgentAdddr(t *testing.T) {
 	for _, tt := range []struct {
 		in, envHost, envPort, out string
 	}{
@@ -107,7 +107,7 @@ func TestResolveAddr(t *testing.T) {
 				os.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
 				defer os.Unsetenv("DD_TRACE_AGENT_PORT")
 			}
-			assert.Equal(t, resolveAddr(tt.in), tt.out)
+			assert.Equal(t, resolveAgentAddr(tt.in), tt.out)
 		})
 	}
 }
