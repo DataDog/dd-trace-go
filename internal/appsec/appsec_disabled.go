@@ -18,7 +18,7 @@ func Enabled() bool {
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
-func Start(*Config) {
+func Start() {
 	if enabled, err := isEnabled(); err != nil {
 		// Something went wrong while checking the DD_APPSEC_ENABLED configuration
 		log.Error("appsec: error while checking if appsec is enabled: %v", err)

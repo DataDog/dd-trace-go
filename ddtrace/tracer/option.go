@@ -690,9 +690,10 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 // WithProfilerEndpoints enables the endpoints integration between the tracer
 // and profiler. This is done by automatically attaching a pprof label called
 // "trace endpoint" holding the resource name of the top-level service span if
-// its type is http or rpc. You should not use this label name in your own code
-// when this is enabled. The enabled value defaults to the value of the
-// DD_PROFILING_ENDPOINT_COLLECTION_ENABLED env variable or false.
+// its type is "http", "rpc" or "" (default). You should not use this label
+// name in your own code when this is enabled. The enabled value defaults to
+// the value of the DD_PROFILING_ENDPOINT_COLLECTION_ENABLED env variable or
+// false.
 func WithProfilerEndpoints(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerEndpoints = enabled

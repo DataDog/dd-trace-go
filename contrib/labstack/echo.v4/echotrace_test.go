@@ -7,16 +7,20 @@ package echo
 
 import (
 	"errors"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestChildSpan(t *testing.T) {
@@ -229,4 +233,84 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	router.ServeHTTP(w, r)
 	assert.True(called)
 	assert.False(traced)
+}
+
+func TestNoDebugStack(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called, traced bool
+
+	// setup
+	router := echo.New()
+	router.Use(Middleware(NoDebugStack()))
+	wantErr := errors.New("oh no")
+
+	// a handler with an error and make the requests
+	router.GET("/err", func(c echo.Context) error {
+		_, traced = tracer.SpanFromContext(c.Request().Context())
+		called = true
+
+		err := wantErr
+		c.Error(err)
+		return err
+	})
+	r := httptest.NewRequest("GET", "/err", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	// verify the error is correct and the stacktrace is disabled
+	assert.True(called)
+	assert.True(traced)
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 1)
+
+	span := spans[0]
+	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	assert.Equal("<debug stack disabled>", span.Tag(ext.ErrorStack))
+}
+
+func TestAppSec(t *testing.T) {
+	// Start the tracer along with the fake agent HTTP server
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	appsec.Start()
+	defer appsec.Stop()
+
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	// Start and trace an HTTP server
+	e := echo.New()
+	e.Use(Middleware())
+
+	e.POST("/*tmp", func(c echo.Context) error {
+		return c.String(200, "Hello World!\n")
+	})
+	srv := httptest.NewServer(e)
+	defer srv.Close()
+
+	// Send an LFI attack
+	req, err := http.NewRequest("POST", srv.URL+"/../../../secret.txt", nil)
+	if err != nil {
+		panic(err)
+	}
+	res, err := srv.Client().Do(req)
+	require.NoError(t, err)
+
+	// Check that the handler was properly called
+	b, err := ioutil.ReadAll(res.Body)
+	require.NoError(t, err)
+	require.Equal(t, "Hello World!\n", string(b))
+
+	finished := mt.FinishedSpans()
+	require.Len(t, finished, 1)
+
+	// The request should have the LFI attack attempt event (appsec rule id crs-930-100).
+	event := finished[0].Tag("_dd.appsec.json")
+	require.NotNil(t, event)
+	require.True(t, strings.Contains(event.(string), "crs-930-100"))
 }
