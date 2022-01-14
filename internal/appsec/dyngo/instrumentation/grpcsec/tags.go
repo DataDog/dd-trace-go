@@ -16,6 +16,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+const (
+	// samplerAppSec specifies that the span was sampled by AppSec.
+	// Full sampler list can be found in ddtrace/tracer/sampler.go.
+	samplerAppSec int8 = 5
+)
+
 // SetSecurityEventTags sets the AppSec-specific span tags when a security event
 // occurred into the service entry span.
 func SetSecurityEventTags(span ddtrace.Span, events []json.RawMessage, addr net.Addr, md map[string][]string) {
@@ -53,7 +59,12 @@ func setEventSpanTags(span ddtrace.Span, events []json.RawMessage) error {
 	}
 	span.SetTag("_dd.appsec.json", string(val))
 	// Keep this span due to the security event
-	span.SetTag(ext.ManualKeep, true)
+	//
+	// This is a workaround to tell the tracer that the trace was kept by AppSec.
+	// Passing any other value than `samplerAppSec` has no effect.
+	// Customers should use `span.SetTag(ext.ManualKeep, true)` pattern
+	// to keep the trace, manually.
+	span.SetTag(ext.ManualKeep, samplerAppSec)
 	span.SetTag("_dd.origin", "appsec")
 	// Set the appsec.event tag needed by the appsec backend
 	span.SetTag("appsec.event", true)
