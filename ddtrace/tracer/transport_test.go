@@ -77,7 +77,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 }
 
-func TestResolveAgentAdddr(t *testing.T) {
+func TestResolveAgentAddr(t *testing.T) {
 	for _, tt := range []struct {
 		in, envHost, envPort, out string
 	}{
