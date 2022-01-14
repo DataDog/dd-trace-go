@@ -15,6 +15,7 @@ import (
 type config struct {
 	serviceName   string
 	analyticsRate float64
+	noDebugStack  bool
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -59,5 +60,14 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// NoDebugStack prevents stack traces from being attached to spans finishing
+// with an error. This is useful in situations where errors are frequent and
+// performance is critical.
+func NoDebugStack() Option {
+	return func(cfg *config) {
+		cfg.noDebugStack = true
 	}
 }
