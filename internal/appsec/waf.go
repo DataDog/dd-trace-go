@@ -67,19 +67,34 @@ func registerWAF(rules []byte, timeout time.Duration) (unreg dyngo.UnregisterFun
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
 func newWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration) dyngo.EventListener {
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
-		// For this handler operation lifetime, create a WAF context and the
-		// list of detected attacks
-		wafCtx := waf.NewContext(handle)
-		if wafCtx == nil {
-			// The WAF event listener got concurrently released
-			return
-		}
-		// TODO(Julio-Guerra): make it a thread-safe list of security events once we listen for sub-operations
-		var matches []byte
-
+		// At the moment, AppSec doesn't block the requests, and so we can use the fact we are in monitoring-only mode
+		// to call the WAF only once at the end of the handler operation.
 		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
-			// Release the WAF context
-			wafCtx.Close()
+			wafCtx := waf.NewContext(handle)
+			if wafCtx == nil {
+				// The WAF event listener got concurrently released
+				return
+			}
+			defer wafCtx.Close()
+
+			// Run the WAF on the rule addresses available in the request args
+			values := make(map[string]interface{}, len(addresses))
+			for _, addr := range addresses {
+				switch addr {
+				case serverRequestRawURIAddr:
+					values[serverRequestRawURIAddr] = args.RequestURI
+				case serverRequestHeadersNoCookiesAddr:
+					values[serverRequestHeadersNoCookiesAddr] = args.Headers
+				case serverRequestCookiesAddr:
+					values[serverRequestCookiesAddr] = args.Cookies
+				case serverRequestQueryAddr:
+					values[serverRequestQueryAddr] = args.Query
+				case serverResponseStatusAddr:
+					values[serverResponseStatusAddr] = res.Status
+				}
+			}
+			matches := runWAF(wafCtx, values, timeout)
+
 			// Log the attacks if any
 			if len(matches) == 0 {
 				return
@@ -88,29 +103,18 @@ func newWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Du
 			op.AddSecurityEvent(matches)
 		}))
 
-		// Run the WAF on the rule addresses available in the request args
-		values := make(map[string]interface{}, len(addresses))
-		for _, addr := range addresses {
-			switch addr {
-			case serverRequestRawURIAddr:
-				values[serverRequestRawURIAddr] = args.RequestURI
-			case serverRequestHeadersNoCookiesAddr:
-				values[serverRequestHeadersNoCookiesAddr] = args.Headers
-			case serverRequestCookiesAddr:
-				values[serverRequestCookiesAddr] = args.Cookies
-			case serverRequestQueryAddr:
-				values[serverRequestQueryAddr] = args.Query
-			}
-		}
-		matches = runWAF(wafCtx, values, timeout)
 	})
 }
 
 func runWAF(wafCtx *waf.Context, values map[string]interface{}, timeout time.Duration) []byte {
 	matches, err := wafCtx.Run(values, timeout)
 	if err != nil {
-		log.Error("appsec: waf error: %v", err)
-		return nil
+		if err == waf.ErrTimeout {
+			log.Debug("appsec: waf timeout value of %s reached", timeout)
+		} else {
+			log.Error("appsec: unexpected waf error: %v", err)
+			return nil
+		}
 	}
 	return matches
 }
@@ -121,6 +125,7 @@ const (
 	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
 	serverRequestCookiesAddr          = "server.request.cookies"
 	serverRequestQueryAddr            = "server.request.query"
+	serverResponseStatusAddr          = "server.response.status"
 )
 
 // List of rule addresses currently supported by the WAF
@@ -129,6 +134,7 @@ var supportedAddressesList = []string{
 	serverRequestHeadersNoCookiesAddr,
 	serverRequestCookiesAddr,
 	serverRequestQueryAddr,
+	serverResponseStatusAddr,
 }
 
 func init() {

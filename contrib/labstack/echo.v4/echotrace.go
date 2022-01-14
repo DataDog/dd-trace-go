@@ -75,6 +75,7 @@ func withAppSec(next echo.HandlerFunc) echo.HandlerFunc {
 		if !ok {
 			return next(c)
 		}
+		httpsec.SetAppSecTags(span)
 		args := httpsec.MakeHandlerOperationArgs(req)
 		op := httpsec.StartOperation(args, nil)
 		defer func() {
@@ -84,7 +85,7 @@ func withAppSec(next echo.HandlerFunc) echo.HandlerFunc {
 				if err != nil {
 					remoteIP = req.RemoteAddr
 				}
-				httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers)
+				httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Response().Writer.Header())
 			}
 		}()
 		return next(c)
