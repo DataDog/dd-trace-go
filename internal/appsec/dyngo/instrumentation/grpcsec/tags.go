@@ -14,19 +14,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"google.golang.org/grpc/metadata"
 )
 
 // SetSecurityEventTags sets the AppSec-specific span tags when a security event
 // occurred into the service entry span.
-func SetSecurityEventTags(span ddtrace.Span, events []json.RawMessage, addr net.Addr, md metadata.MD) {
+func SetSecurityEventTags(span ddtrace.Span, events []json.RawMessage, addr net.Addr, md map[string][]string) {
 	if err := setSecurityEventTags(span, events, addr, md); err != nil {
 		log.Error("appsec: %v", err)
 	}
 }
 
-func setSecurityEventTags(span ddtrace.Span, events []json.RawMessage, addr net.Addr, md metadata.MD) error {
+func setSecurityEventTags(span ddtrace.Span, events []json.RawMessage, addr net.Addr, md map[string][]string) error {
 	if err := setEventSpanTags(span, events); err != nil {
 		return err
 	}
