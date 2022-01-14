@@ -85,9 +85,7 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 				})
 				require.Zero(t, prof.LabelDuration(traceprof.SpanID, res.SpanId))
 				require.Zero(t, prof.LabelDuration(traceprof.LocalRootSpanID, res.LocalRootSpanId))
-				if appType != Direct {
-					require.GreaterOrEqual(t, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()), minCPUDuration)
-				}
+				require.GreaterOrEqual(t, prof.LabelDuration(traceprof.TraceEndpoint, appType.Endpoint()), minCPUDuration)
 			})
 
 			t.Run("code-hotspots", func(t *testing.T) {
@@ -112,9 +110,7 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 					traceprof.SpanID:          res.SpanId,
 					traceprof.LocalRootSpanID: res.LocalRootSpanId,
 				}
-				if appType != Direct {
-					wantLabels[traceprof.TraceEndpoint] = appType.Endpoint()
-				}
+				wantLabels[traceprof.TraceEndpoint] = appType.Endpoint()
 				require.GreaterOrEqual(t, prof.LabelsDuration(wantLabels), minCPUDuration)
 			})
 

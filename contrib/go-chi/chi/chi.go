@@ -31,6 +31,10 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	log.Debug("contrib/go-chi/chi: Configuring Middleware: %#v", cfg)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if cfg.ignoreRequest(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			opts := []ddtrace.StartSpanOption{
 				tracer.SpanType(ext.SpanTypeWeb),
 				tracer.ServiceName(cfg.serviceName),

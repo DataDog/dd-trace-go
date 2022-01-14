@@ -9,28 +9,22 @@
 package appsec
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
+	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-// wafEvent is the raw attack event returned by the WAF when matching.
-type wafEvent struct {
-	time time.Time
-	// metadata is the raw JSON representation of the attackMetadata slice.
-	metadata []byte
-}
-
 // Register the WAF event listener.
-func registerWAF(rules []byte, timeout time.Duration, appsec *appsec) (unreg dyngo.UnregisterFunc, err error) {
+func registerWAF(rules []byte, timeout time.Duration) (unreg dyngo.UnregisterFunc, err error) {
 	// Check the WAF is healthy
 	if _, err := waf.Health(); err != nil {
 		return nil, err
@@ -57,153 +51,184 @@ func registerWAF(rules []byte, timeout time.Duration, appsec *appsec) (unreg dyn
 		return nil, errors.New("no addresses found in the rule")
 	}
 	// Check there are supported addresses in the rule
-	addresses, notSupported := supportedAddresses(ruleAddresses)
-	if len(addresses) == 0 {
+	httpAddresses, grpcAddresses, notSupported := supportedAddresses(ruleAddresses)
+	if len(httpAddresses) == 0 && len(grpcAddresses) == 0 {
 		return nil, fmt.Errorf("the addresses present in the rule are not supported: %v", notSupported)
 	} else if len(notSupported) > 0 {
-		log.Debug("appsec: the addresses present in the rule are partially supported: supported=%v, not supported=%v", addresses, notSupported)
+		log.Debug("appsec: the addresses present in the rule are partially supported: not supported=%v", notSupported)
 	}
 
 	// Register the WAF event listener
-	unregister := dyngo.Register(newWAFEventListener(waf, addresses, appsec, timeout))
+	var unregisterHTTP, unregisterGRPC dyngo.UnregisterFunc
+	if len(httpAddresses) > 0 {
+		log.Debug("appsec: registering http waf listening to addresses %v", httpAddresses)
+		unregisterHTTP = dyngo.Register(newHTTPWAFEventListener(waf, httpAddresses, timeout))
+	}
+	if len(grpcAddresses) > 0 {
+		log.Debug("appsec: registering grpc waf listening to addresses %v", grpcAddresses)
+		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, timeout))
+	}
+
 	// Return an unregistration function that will also release the WAF instance.
 	return func() {
 		defer waf.Close()
-		unregister()
+		if unregisterHTTP != nil {
+			unregisterHTTP()
+		}
+		if unregisterGRPC != nil {
+			unregisterGRPC()
+		}
 	}, nil
 }
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
-func newWAFEventListener(handle *waf.Handle, addresses []string, appsec *appsec, timeout time.Duration) dyngo.EventListener {
-	return httpsec.OnHandlerOperationStart(func(op dyngo.Operation, args httpsec.HandlerOperationArgs) {
-		// For this handler operation lifetime, create a WAF context and the
-		// list of detected attacks
-		wafCtx := waf.NewContext(handle)
-		if wafCtx == nil {
-			// The WAF event listener got concurrently released
-			return
-		}
-		// TODO(julio): make it a thread-safe list of security events once we
-		//  listen for sub-operations
-		var baseEvent *wafEvent
+func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration) dyngo.EventListener {
+	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
+		// At the moment, AppSec doesn't block the requests, and so we can use the fact we are in monitoring-only mode
+		// to call the WAF only once at the end of the handler operation.
+		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
+			wafCtx := waf.NewContext(handle)
+			if wafCtx == nil {
+				// The WAF event listener got concurrently released
+				return
+			}
+			defer wafCtx.Close()
 
-		op.On(httpsec.OnHandlerOperationFinish(func(op dyngo.Operation, res httpsec.HandlerOperationRes) {
-			// Release the WAF context
-			wafCtx.Close()
+			// Run the WAF on the rule addresses available in the request args
+			values := make(map[string]interface{}, len(addresses))
+			for _, addr := range addresses {
+				switch addr {
+				case serverRequestRawURIAddr:
+					values[serverRequestRawURIAddr] = args.RequestURI
+				case serverRequestHeadersNoCookiesAddr:
+					values[serverRequestHeadersNoCookiesAddr] = args.Headers
+				case serverRequestCookiesAddr:
+					values[serverRequestCookiesAddr] = args.Cookies
+				case serverRequestQueryAddr:
+					values[serverRequestQueryAddr] = args.Query
+				case serverResponseStatusAddr:
+					values[serverResponseStatusAddr] = res.Status
+				}
+			}
+			matches := runWAF(wafCtx, values, timeout)
+
 			// Log the attacks if any
-			if baseEvent == nil {
+			if len(matches) == 0 {
 				return
 			}
 			log.Debug("appsec: attack detected by the waf")
-
-			// Create the base security event out of the slide of attacks
-			event := withHTTPOperationContext(baseEvent, args, res)
-
-			// Check if a span exists
-			if span := args.Span; span != nil {
-				// Add the span context to the security event
-				spanCtx := span.Context()
-				event = withSpanContext(event, spanCtx.TraceID(), spanCtx.SpanID())
-				// Keep this span due to the security event
-				span.SetTag(ext.ManualKeep, true)
-				// Set the appsec.event tag needed by the appsec backend
-				span.SetTag("appsec.event", true)
-			}
-			appsec.sendEvent(event)
+			op.AddSecurityEvent(matches)
 		}))
 
-		// Run the WAF on the rule addresses available in the request args
-		values := make(map[string]interface{}, len(addresses))
-		for _, addr := range addresses {
-			switch addr {
-			case serverRequestRawURIAddr:
-				values[serverRequestRawURIAddr] = args.RequestURI
-			case serverRequestHeadersNoCookiesAddr:
-				values[serverRequestHeadersNoCookiesAddr] = args.Headers
-			case serverRequestCookiesAddr:
-				values[serverRequestCookiesAddr] = args.Cookies
-			case serverRequestQueryAddr:
-				values[serverRequestQueryAddr] = args.Query
-			}
-		}
-		baseEvent = runWAF(wafCtx, values, timeout)
 	})
 }
 
-func runWAF(wafCtx *waf.Context, values map[string]interface{}, timeout time.Duration) *wafEvent {
-	matches, err := wafCtx.Run(values, timeout)
-	if err != nil {
-		log.Error("appsec: waf error: %v", err)
-		return nil
-	}
-	if len(matches) == 0 {
-		return nil
-	}
-	return &wafEvent{
-		time:     time.Now(),
-		metadata: matches,
-	}
+// newGRPCWAFEventListener returns the WAF event listener to register in order
+// to enable it.
+func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration) dyngo.EventListener {
+	return grpcsec.OnHandlerOperationStart(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationArgs) {
+		// Limit the maximum number of security events, as a streaming RPC could
+		// receive unlimited number of messages where we could find security events
+		const maxWAFEventsPerRequest = 10
+		var (
+			nbEvents uint32
+			logOnce  sync.Once
+		)
+		op.On(grpcsec.OnReceiveOperationFinish(func(_ grpcsec.ReceiveOperation, res grpcsec.ReceiveOperationRes) {
+			if atomic.LoadUint32(&nbEvents) == maxWAFEventsPerRequest {
+				logOnce.Do(func() {
+					log.Debug("appsec: ignoring the rpc message due to the maximum number of security events per grpc call reached")
+				})
+				return
+			}
+			// The current workaround of the WAF context limitations is to
+			// simply instantiate and release the WAF context for the operation
+			// lifetime so that:
+			//   1. We avoid growing the memory usage of the context every time
+			//      a grpc.server.request.message value is added to it during
+			//      the RPC lifetime.
+			//   2. We avoid the limitation of 1 event per attack type.
+			// TODO(Julio-Guerra): a future libddwaf API should solve this out.
+			wafCtx := waf.NewContext(handle)
+			if wafCtx == nil {
+				// The WAF event listener got concurrently released
+				return
+			}
+			defer wafCtx.Close()
+			// Run the WAF on the rule addresses available in the args
+			// Note that we don't check if the address is present in the rules
+			// as we only support one at the moment, so this callback cannot be
+			// set when the address is not present.
+			events := runWAF(wafCtx, map[string]interface{}{grpcServerRequestMessage: res.Message}, timeout)
+			if len(events) == 0 {
+				return
+			}
+			log.Debug("appsec: attack detected by the grpc waf")
+			atomic.AddUint32(&nbEvents, 1)
+			op.AddSecurityEvent(events)
+		}))
+	})
 }
 
-// Rule addresses currently supported by the WAF
+func runWAF(wafCtx *waf.Context, values map[string]interface{}, timeout time.Duration) []byte {
+	matches, err := wafCtx.Run(values, timeout)
+	if err != nil {
+		if err == waf.ErrTimeout {
+			log.Debug("appsec: waf timeout value of %s reached", timeout)
+		} else {
+			log.Error("appsec: unexpected waf error: %v", err)
+			return nil
+		}
+	}
+	return matches
+}
+
+// HTTP rule addresses currently supported by the WAF
 const (
 	serverRequestRawURIAddr           = "server.request.uri.raw"
 	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
 	serverRequestCookiesAddr          = "server.request.cookies"
 	serverRequestQueryAddr            = "server.request.query"
+	serverResponseStatusAddr          = "server.response.status"
 )
 
-// List of rule addresses currently supported by the WAF
-var supportedAddressesList = []string{
+// List of HTTP rule addresses currently supported by the WAF
+var httpAddresses = []string{
 	serverRequestRawURIAddr,
 	serverRequestHeadersNoCookiesAddr,
 	serverRequestCookiesAddr,
 	serverRequestQueryAddr,
+	serverResponseStatusAddr,
+}
+
+// gRPC rule addresses currently supported by the WAF
+const (
+	grpcServerRequestMessage = "grpc.server.request.message"
+)
+
+// List of gRPC rule addresses currently supported by the WAF
+var grpcAddresses = []string{
+	grpcServerRequestMessage,
 }
 
 func init() {
-	sort.Strings(supportedAddressesList)
+	// sort the address lists to avoid mistakes and use sort.SearchStrings()
+	sort.Strings(httpAddresses)
+	sort.Strings(grpcAddresses)
 }
 
 // supportedAddresses returns the list of addresses we actually support from the
 // given rule addresses.
-func supportedAddresses(ruleAddresses []string) (supported, notSupported []string) {
+func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC, notSupported []string) {
 	// Filter the supported addresses only
-	l := len(supportedAddressesList)
-	supported = make([]string, 0, l)
 	for _, addr := range ruleAddresses {
-		if i := sort.SearchStrings(supportedAddressesList, addr); i < l && supportedAddressesList[i] == addr {
-			supported = append(supported, addr)
+		if i := sort.SearchStrings(httpAddresses, addr); i < len(httpAddresses) && httpAddresses[i] == addr {
+			supportedHTTP = append(supportedHTTP, addr)
+		} else if i := sort.SearchStrings(grpcAddresses, addr); i < len(grpcAddresses) && grpcAddresses[i] == addr {
+			supportedGRPC = append(supportedGRPC, addr)
 		} else {
 			notSupported = append(notSupported, addr)
 		}
 	}
-	// Check the resulting situation we are in
-	return supported, notSupported
-}
-
-// toIntakeEvent creates the attack event payloads from a WAF attack.
-func (e *wafEvent) toIntakeEvents() (events []*attackEvent, err error) {
-	var matches waf.AttackMetadata
-	if err := json.Unmarshal(e.metadata, &matches); err != nil {
-		return nil, err
-	}
-	// Create one security event per flow and per filter
-	for _, match := range matches {
-		for _, filter := range match.Filter {
-			ruleMatch := &attackRuleMatch{
-				Operator:      filter.Operator,
-				OperatorValue: filter.OperatorValue,
-				Parameters: []attackRuleMatchParameter{
-					{
-						Name:  filter.ManifestKey,
-						Value: filter.ResolvedValue,
-					},
-				},
-				Highlight: []string{filter.MatchStatus},
-			}
-			events = append(events, newAttackEvent(match.Rule, match.Flow, match.Flow, e.time, ruleMatch))
-		}
-	}
-	return events, nil
+	return
 }
