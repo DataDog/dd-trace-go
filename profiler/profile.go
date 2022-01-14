@@ -10,13 +10,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 
 	"github.com/DataDog/gostackparse"
+	"github.com/Gui774ume/utrace/pkg/utrace"
 	pprofile "github.com/google/pprof/profile"
 )
 
@@ -27,6 +30,7 @@ const (
 	// HeapProfile reports memory allocation samples; used to monitor current
 	// and historical memory usage, and to check for memory leaks.
 	HeapProfile ProfileType = iota
+
 	// CPUProfile determines where a program spends its time while actively consuming
 	// CPU cycles (as opposed to while sleeping or waiting for I/O).
 	CPUProfile
@@ -45,6 +49,8 @@ const (
 	expGoroutineWaitProfile
 	// MetricsProfile reports top-line metrics associated with user-specified profiles
 	MetricsProfile
+
+	NativeHeapProfile
 )
 
 // profileType holds the implementation details of a ProfileType.
@@ -101,6 +107,13 @@ var profileTypes = map[ProfileType]profileType{
 		}},
 		Collect: collectGenericProfile,
 	},
+
+	NativeHeapProfile: {
+		Name:     "nativeheap",
+		Filename: "heap.pprof",
+		Collect:  collectNativeHeapProfile,
+	},
+
 	MutexProfile: {
 		Name:     "mutex",
 		Filename: "mutex.pprof",
@@ -153,6 +166,49 @@ func collectGenericProfile(t profileType, _ *profiler) ([]byte, error) {
 	var buf bytes.Buffer
 	err := lookupProfile(t.Name, &buf, 0)
 	return buf.Bytes(), err
+}
+
+func collectNativeHeapProfile(t profileType, p *profiler) ([]byte, error) {
+	// sleep ???
+	var buf bytes.Buffer
+	log.Warn("Starting the native heap profiler on pid", p.cfg.pid)
+
+	// create options
+	// if options.GenerateGraph {
+	// 	options.UTraceOptions.StackTraces = true
+	// }
+
+	// create utrace
+	regex, err := regexp.Compile("^(malloc|calloc)$")
+	if err != nil {
+		return nil, err
+	}
+	utraceOptions := utrace.Options{
+		FuncPattern: regex,
+		StackTraces: true,
+		PIDFilter:   p.cfg.pid,
+	}
+	trace := utrace.NewUTrace(utraceOptions)
+	if err := trace.Start(); err != nil {
+		log.Error("Failure starting the native heap profiler on pid", p.cfg.pid)
+		return nil, err
+	}
+
+	p.interruptibleSleep(p.cfg.cpuDuration)
+
+	// Write to bytes
+	// trace.dumpProfile(buf)
+	// report, err := trace.Dump()
+	// if err != nil {
+	// 	logrus.Error(errors.Wrap(err, "couldn't dump hit counters"))
+	// }
+
+	if err := trace.Stop(); err != nil {
+		log.Error("Failure stopping the native heap profiler")
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 // lookup returns t's profileType implementation.

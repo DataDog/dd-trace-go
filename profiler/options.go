@@ -100,6 +100,8 @@ type config struct {
 	blockRate         int
 	outputDir         string
 	deltaProfiles     bool
+	// native profiler option (hack)
+	pid int
 }
 
 func urlForSite(site string) (string, error) {
@@ -329,6 +331,13 @@ func WithProfileTypes(types ...ProfileType) Option {
 func WithService(name string) Option {
 	return func(cfg *config) {
 		cfg.service = name
+	}
+}
+
+// WithService specifies the service name to attach to a profile.
+func WithPid(pid int) Option {
+	return func(cfg *config) {
+		cfg.pid = pid
 	}
 }
 
