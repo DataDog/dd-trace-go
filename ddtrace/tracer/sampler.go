@@ -24,6 +24,36 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// samplerName specifies the name of a sampler which was
+// responsible for a certain sampling decision.
+type samplerName int8
+
+const (
+	// samplerUpstream specifies that the sampling decision was made in an upstream service
+	// and no sampling needs to be done.
+	samplerUpstream samplerName = math.MinInt8
+	// samplerUnknown specifies that the span was sampled
+	// but, the tracer was unable to identify the sampler.
+	samplerUnknown samplerName = -1
+	// samplerDefault specifies that the span was sampled without any sampler.
+	samplerDefault samplerName = 0
+	// samplerAgentRate specifies that the span was sampled
+	// with a rate calculated by the trace agent.
+	samplerAgentRate samplerName = 1
+	// samplerRemoteRate specifies that the span was sampled
+	// with a dynamically calculated remote rate.
+	samplerRemoteRate samplerName = 2
+	// samplerRuleRate specifies that the span was sampled by the RuleSampler.
+	samplerRuleRate samplerName = 3
+	// samplerManual specifies that the span was sampled manually by user.
+	samplerManual samplerName = 4
+	// samplerAppSec specifies that the span was sampled by AppSec.
+	samplerAppSec samplerName = 5
+	// samplerRemoteUserRate specifies that the span was sampled
+	// with an user specified remote rate.
+	samplerRemoteUserRate samplerName = 6
+)
+
 // Sampler is the generic interface of any sampler. It must be safe for concurrent use.
 type Sampler interface {
 	// Sample returns true if the given span should be sampled.
@@ -150,9 +180,9 @@ func (ps *prioritySampler) getRate(spn *span) float64 {
 func (ps *prioritySampler) apply(spn *span) {
 	rate := ps.getRate(spn)
 	if sampledByRate(spn.TraceID, rate) {
-		spn.SetTag(ext.SamplingPriority, ext.PriorityAutoKeep)
+		spn.setSamplingPriority(ext.PriorityAutoKeep, samplerAgentRate, rate)
 	} else {
-		spn.SetTag(ext.SamplingPriority, ext.PriorityAutoReject)
+		spn.setSamplingPriority(ext.PriorityAutoReject, samplerAgentRate, rate)
 	}
 	spn.SetTag(keySamplingPriorityRate, rate)
 }
@@ -311,15 +341,15 @@ func (rs *rulesSampler) apply(span *span) bool {
 func (rs *rulesSampler) applyRate(span *span, rate float64, now time.Time) {
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
-		span.SetTag(ext.SamplingPriority, ext.PriorityUserReject)
+		span.setSamplingPriority(ext.PriorityUserReject, samplerRuleRate, rate)
 		return
 	}
 
 	sampled, rate := rs.limiter.allowOne(now)
 	if sampled {
-		span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+		span.setSamplingPriority(ext.PriorityUserKeep, samplerRuleRate, rate)
 	} else {
-		span.SetTag(ext.SamplingPriority, ext.PriorityUserReject)
+		span.setSamplingPriority(ext.PriorityUserReject, samplerRuleRate, rate)
 	}
 	span.SetTag(keyRulesSamplerLimiterRate, rate)
 }

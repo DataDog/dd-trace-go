@@ -6,6 +6,8 @@
 package tracer
 
 import (
+	"math"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -91,11 +93,11 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
-func (c *spanContext) setSamplingPriority(p int) {
+func (c *spanContext) setSamplingPriority(service string, p int, sampler samplerName, rate float64) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	c.trace.setSamplingPriority(float64(p))
+	c.trace.setSamplingPriority(service, p, sampler, rate)
 }
 
 func (c *spanContext) samplingPriority() (p int, ok bool) {
@@ -144,13 +146,15 @@ const (
 // priority, the root reference and a buffer of the spans which are part of the
 // trace, if these exist.
 type trace struct {
-	mu               sync.RWMutex     // guards below fields
-	spans            []*span          // all the spans that are part of this trace
-	finished         int              // the number of finished spans
-	full             bool             // signifies that the span buffer is full
-	priority         *float64         // sampling priority
-	locked           bool             // specifies if the sampling priority can be altered
-	samplingDecision samplingDecision // samplingDecision indicates whether to send the trace to the agent.
+	mu               sync.RWMutex      // guards below fields
+	spans            []*span           // all the spans that are part of this trace
+	tags             map[string]string // trace level tags
+	upstreamServices string            // _dd.p.upstream_services value from the upstream service
+	finished         int               // the number of finished spans
+	full             bool              // signifies that the span buffer is full
+	priority         *float64          // sampling priority
+	locked           bool              // specifies if the sampling priority can be altered
+	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
@@ -191,10 +195,10 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-func (t *trace) setSamplingPriority(p float64) {
+func (t *trace) setSamplingPriority(service string, p int, sampler samplerName, rate float64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setSamplingPriorityLocked(p)
+	t.setSamplingPriorityLocked(service, p, sampler, rate)
 }
 
 func (t *trace) keep() {
@@ -205,7 +209,14 @@ func (t *trace) drop() {
 	atomic.CompareAndSwapInt64((*int64)(&t.samplingDecision), int64(decisionNone), int64(decisionDrop))
 }
 
-func (t *trace) setSamplingPriorityLocked(p float64) {
+func (t *trace) setTag(key, value string) {
+	if t.tags == nil {
+		t.tags = make(map[string]string, 1)
+	}
+	t.tags[key] = value
+}
+
+func (t *trace) setSamplingPriorityLocked(service string, p int, sampler samplerName, rate float64) {
 	if t.locked {
 		return
 	}
@@ -217,7 +228,16 @@ func (t *trace) setSamplingPriorityLocked(p float64) {
 	if t.priority == nil {
 		t.priority = new(float64)
 	}
-	*t.priority = p
+	*t.priority = float64(p)
+	if sampler != samplerUpstream {
+		v := t.tags[keyUpstreamServices]
+		if v != "" {
+			v += ";" + compactUpstreamServices(service, p, sampler, rate)
+		} else {
+			v = compactUpstreamServices(service, p, sampler, rate)
+		}
+		t.setTag(keyUpstreamServices, v)
+	}
 }
 
 // push pushes a new span into the trace. If the buffer is full, it returns
@@ -240,7 +260,7 @@ func (t *trace) push(sp *span) {
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
-		t.setSamplingPriorityLocked(v)
+		t.setSamplingPriorityLocked(sp.Service, int(v), samplerUpstream, math.NaN())
 	}
 	t.spans = append(t.spans, sp)
 	if haveTracer {
@@ -269,6 +289,16 @@ func (t *trace) finishedOne(s *span) {
 		t.root.setMetric(keySamplingPriority, *t.priority)
 		t.locked = true
 	}
+	if len(t.spans) > 0 && s == t.spans[0] {
+		// first span in chunk finished, lock down the tags
+		//
+		// TODO(barbayar): make sure this doesn't happen in vain when switching to
+		// the new wire format. We won't need to set the tags on the first span
+		// in the chunk there.
+		for k, v := range t.tags {
+			s.setMeta(k, v)
+		}
+	}
 	if len(t.spans) != t.finished {
 		return
 	}
@@ -291,4 +321,15 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 	tr.pushTrace(t.spans)
+}
+
+func compactUpstreamServices(service string, priority int, sampler samplerName, rate float64) string {
+	sb64 := b64Encode(service)
+	p := strconv.Itoa(priority)
+	s := strconv.Itoa(int(sampler))
+	r := ""
+	if !math.IsNaN(rate) {
+		r = strconv.FormatFloat(rate, 'f', 4, 64)
+	}
+	return sb64 + "|" + p + "|" + s + "|" + r
 }
