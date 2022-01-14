@@ -101,7 +101,8 @@ type config struct {
 	outputDir         string
 	deltaProfiles     bool
 	// native profiler option (hack)
-	pid int
+	pid               int
+	heapDuration      time.Duration
 }
 
 func urlForSite(site string) (string, error) {
@@ -334,13 +335,6 @@ func WithService(name string) Option {
 	}
 }
 
-// WithService specifies the service name to attach to a profile.
-func WithPid(pid int) Option {
-	return func(cfg *config) {
-		cfg.pid = pid
-	}
-}
-
 // WithEnv specifies the environment to which these profiles should be registered.
 func WithEnv(env string) Option {
 	return func(cfg *config) {
@@ -418,5 +412,19 @@ func WithUDS(socketPath string) Option {
 func withOutputDir(dir string) Option {
 	return func(cfg *config) {
 		cfg.outputDir = dir
+	}
+}
+
+// WithService specifies the service name to attach to a profile.
+func WithPid(pid int) Option {
+	return func(cfg *config) {
+		cfg.pid = pid
+	}
+}
+
+// WithService specifies the service name to attach to a profile.
+func WithHeapDuration(d time.Duration) Option {
+	return func(cfg *config) {
+		cfg.heapDuration = d
 	}
 }

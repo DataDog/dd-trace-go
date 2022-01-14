@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	pprofile "github.com/google/pprof/profile"
 )
@@ -215,6 +216,7 @@ func (p *profiler) enabledProfileTypes() []ProfileType {
 		GoroutineProfile,
 		expGoroutineWaitProfile,
 		MetricsProfile,
+		NativeHeapProfile,
 	}
 	enabled := []ProfileType{}
 	for _, t := range order {

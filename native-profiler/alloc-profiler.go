@@ -4,13 +4,14 @@ import (
 	"flag"
 	"log"
 	"os"
+	"os/signal"
+	"time"
 
 	"github.com/sirupsen/logrus"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
-// todo CLI options
 func main() {
 	logrus.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp:          true,
@@ -22,7 +23,8 @@ func main() {
 	flag.Parse()
 	pid := *pidPtr
 	if pid == -1 {
-		pid = os.Getpid()
+		log.Fatal("PID argument is mandatory")
+		os.Exit(1)
 	}
 
 	err := profiler.Start(
@@ -31,9 +33,15 @@ func main() {
 			profiler.NativeHeapProfile,
 		),
 		profiler.WithPid(pid),
+		profiler.WithHeapDuration(1 * time.Second),
+		profiler.WithPeriod(2 * time.Second),
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer profiler.Stop()
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, os.Kill)
+	<-sig
 }

@@ -174,11 +174,6 @@ func collectNativeHeapProfile(t profileType, p *profiler) ([]byte, error) {
 	log.Warn("Starting the native heap profiler on pid", p.cfg.pid)
 
 	// create options
-	// if options.GenerateGraph {
-	// 	options.UTraceOptions.StackTraces = true
-	// }
-
-	// create utrace
 	regex, err := regexp.Compile("^(malloc|calloc)$")
 	if err != nil {
 		return nil, err
@@ -188,13 +183,15 @@ func collectNativeHeapProfile(t profileType, p *profiler) ([]byte, error) {
 		StackTraces: true,
 		PIDFilter:   p.cfg.pid,
 	}
+
+	// create utrace
 	trace := utrace.NewUTrace(utraceOptions)
 	if err := trace.Start(); err != nil {
 		log.Error("Failure starting the native heap profiler on pid", p.cfg.pid)
 		return nil, err
 	}
 
-	p.interruptibleSleep(p.cfg.cpuDuration)
+	p.interruptibleSleep(p.cfg.heapDuration)
 
 	// Write to bytes
 	// trace.dumpProfile(buf)
