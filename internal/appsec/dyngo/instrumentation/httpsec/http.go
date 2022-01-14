@@ -30,14 +30,14 @@ type (
 		// Headers corresponds to the address `server.request.headers.no_cookies`
 		Headers map[string][]string
 		// Cookies corresponds to the address `server.request.cookies`
-		Cookies map[string][]string
+		Cookies []string
 		// Query corresponds to the address `server.request.query`
 		Query map[string][]string
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
 	HandlerOperationRes struct {
-		// Status corresponds to the address `server.response.status`
+		// Status corresponds to the address `server.response.status`.
 		Status int
 	}
 )
@@ -45,10 +45,7 @@ type (
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
-	// TODO(Julio-Guerra): move these to service entry tags
-	span.SetTag("_dd.appsec.enabled", 1)
-	span.SetTag("_dd.runtime_family", "go")
-
+	SetAppSecTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		args := MakeHandlerOperationArgs(r)
 		op := StartOperation(
@@ -69,7 +66,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 			if err != nil {
 				remoteIP = r.RemoteAddr
 			}
-			SetSecurityEventTags(span, events, remoteIP, args.Headers)
+			SetSecurityEventTags(span, events, remoteIP, args.Headers, w.Header())
 		}()
 		handler.ServeHTTP(w, r)
 	})
@@ -80,23 +77,15 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 // when appsec is disabled.
 func MakeHandlerOperationArgs(r *http.Request) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
+	var cookies []string
 	for k, v := range r.Header {
 		k := strings.ToLower(k)
 		if k == "cookie" {
 			// Do not include cookies in the request headers
+			cookies = v
 			continue
 		}
 		headers[k] = v
-	}
-	var cookies map[string][]string
-	if reqCookies := r.Cookies(); len(reqCookies) > 0 {
-		cookies = make(map[string][]string, len(reqCookies))
-		for _, cookie := range reqCookies {
-			if cookie == nil {
-				continue
-			}
-			cookies[cookie.Name] = append(cookies[cookie.Name], cookie.Value)
-		}
 	}
 	headers["host"] = []string{r.Host}
 	return HandlerOperationArgs{

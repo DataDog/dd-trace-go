@@ -48,10 +48,9 @@ typedef enum
  **/
 typedef enum
 {
-    DDWAF_ERR_INTERNAL     = -4,
-    DDWAF_ERR_INVALID_OBJECT = -3,
-    DDWAF_ERR_INVALID_ARGUMENT = -2,
-    DDWAF_ERR_TIMEOUT      = -1,
+    DDWAF_ERR_INTERNAL     = -3,
+    DDWAF_ERR_INVALID_OBJECT = -2,
+    DDWAF_ERR_INVALID_ARGUMENT = -1,
     DDWAF_GOOD             = 0,
     DDWAF_MONITOR          = 1,
     DDWAF_BLOCK            = 2
@@ -122,14 +121,14 @@ struct _ddwaf_config
  **/
 struct _ddwaf_result
 {
-    /** Run result action **/
-    DDWAF_RET_CODE action;
+    /** Whether there has been a timeout during the operation **/
+    bool timeout;
+    /** Total run time in microseconds **/
+    uint32_t perfTotalRuntime;
     /** Run result in JSON format **/
     const char* data;
     /** Performance data in JSON format **/
     const char* perfData;
-    /** Total run time in microseconds **/
-    uint32_t perfTotalRuntime;
 };
 
 /**
