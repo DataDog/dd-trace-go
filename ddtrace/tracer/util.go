@@ -28,6 +28,8 @@ func toFloat64(value interface{}) (f float64, ok bool) {
 		return i, true
 	case int:
 		return float64(i), true
+	case int8:
+		return float64(i), true
 	case int16:
 		return float64(i), true
 	case int32:
@@ -47,6 +49,8 @@ func toFloat64(value interface{}) (f float64, ok bool) {
 		if i > uint64(max) {
 			return 0, false
 		}
+		return float64(i), true
+	case samplerName:
 		return float64(i), true
 	default:
 		return 0, false
