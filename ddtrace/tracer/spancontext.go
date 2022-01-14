@@ -230,13 +230,11 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 	}
 	*t.priority = float64(p)
 	if sampler != samplerUpstream {
-		v := t.tags[keyUpstreamServices]
-		if v != "" {
-			v += ";" + compactUpstreamServices(service, p, sampler, rate)
+		if t.upstreamServices != "" {
+			t.setTag(keyUpstreamServices, t.upstreamServices+";"+compactUpstreamServices(service, p, sampler, rate))
 		} else {
-			v = compactUpstreamServices(service, p, sampler, rate)
+			t.setTag(keyUpstreamServices, compactUpstreamServices(service, p, sampler, rate))
 		}
-		t.setTag(keyUpstreamServices, v)
 	}
 }
 
