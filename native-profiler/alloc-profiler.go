@@ -18,6 +18,7 @@ func main() {
 		TimestampFormat:        "2006-01-02T15:04:05Z",
 		DisableLevelTruncation: true,
 	})
+	logrus.SetLevel(6)
 
 	pidPtr := flag.Int("pid", -1, "pid of process")
 	flag.Parse()
@@ -33,8 +34,9 @@ func main() {
 			profiler.NativeHeapProfile,
 		),
 		profiler.WithPid(pid),
-		profiler.WithHeapDuration(1 * time.Second),
-		profiler.WithPeriod(2 * time.Second),
+		profiler.WithHeapDuration(1*time.Second),
+		profiler.WithPeriod(2*time.Second),
+		profiler.WithAPIKey(os.Getenv("DD_API_KEY")),
 	)
 	if err != nil {
 		log.Fatal(err)
