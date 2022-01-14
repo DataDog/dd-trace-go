@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracer
+package osinfo
 
 import (
 	"os/exec"
@@ -16,9 +16,9 @@ func osName() string {
 }
 
 func osVersion() string {
-	out, err := exec.Command("uname", "-r").Output()
+	out, err := exec.Command("sw_vers", "-productVersion").Output()
 	if err != nil {
-		return unknown
+		return "unknown"
 	}
-	return strings.Split(string(out), "-")[0]
+	return strings.Trim(string(out), "\n")
 }

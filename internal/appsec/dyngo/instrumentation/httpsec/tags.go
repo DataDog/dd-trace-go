@@ -47,10 +47,10 @@ func setEventSpanTags(span ddtrace.Span, events json.RawMessage) {
 func SetSecurityEventTags(span ddtrace.Span, events json.RawMessage, remoteIP string, headers, respHeaders map[string][]string) {
 	setEventSpanTags(span, events)
 	span.SetTag("network.client.ip", remoteIP)
-	for h, v := range normalizeHTTPHeaders(headers) {
+	for h, v := range NormalizeHTTPHeaders(headers) {
 		span.SetTag("http.request.headers."+h, v)
 	}
-	for h, v := range normalizeHTTPHeaders(respHeaders) {
+	for h, v := range NormalizeHTTPHeaders(respHeaders) {
 		span.SetTag("http.response.headers."+h, v)
 	}
 }
@@ -83,8 +83,9 @@ func init() {
 	sort.Strings(collectedHTTPHeaders[:])
 }
 
-// normalizeHTTPHeaders returns the HTTP headers following Datadog's normalization format.
-func normalizeHTTPHeaders(headers map[string][]string) (normalized map[string]string) {
+// NormalizeHTTPHeaders returns the HTTP headers following Datadog's
+// normalization format.
+func NormalizeHTTPHeaders(headers map[string][]string) (normalized map[string]string) {
 	if len(headers) == 0 {
 		return nil
 	}
