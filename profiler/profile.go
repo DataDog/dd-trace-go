@@ -174,7 +174,7 @@ func collectNativeHeapProfile(t profileType, p *profiler) ([]byte, error) {
 	log.Warn("Starting the native heap profiler on pid", p.cfg.pid)
 
 	// create options
-	regex, err := regexp.Compile("^(malloc|calloc)$")
+	regex, err := regexp.Compile("^(malloc|calloc|realloc)$")
 	if err != nil {
 		return nil, err
 	}
