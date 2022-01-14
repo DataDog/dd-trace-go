@@ -14,7 +14,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
-	"github.com/DataDog/datadog-go/statsd"
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/DataDog/sketches-go/ddsketch"
 	"google.golang.org/protobuf/proto"
 )

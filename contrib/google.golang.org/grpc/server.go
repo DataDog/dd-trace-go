@@ -8,11 +8,12 @@ package grpc
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
-	context "golang.org/x/net/context"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -98,18 +99,19 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				span.SetTag(tagMethodKind, methodKindClientStream)
 			}
 			defer func() { finishWithError(span, err, cfg) }()
+			if appsec.Enabled() {
+				handler = appsecStreamHandlerMiddleware(span, handler)
+			}
 		}
 
 		// call the original handler with a new stream, which traces each send
 		// and recv if message tracing is enabled
-		err = handler(srv, &serverStream{
+		return handler(srv, &serverStream{
 			ServerStream: ss,
 			cfg:          cfg,
 			method:       info.FullMethod,
 			ctx:          ctx,
 		})
-
-		return err
 	}
 }
 
@@ -150,6 +152,9 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 					span.SetTag(tagRequest, s)
 				}
 			}
+		}
+		if appsec.Enabled() {
+			handler = appsecUnaryHandlerMiddleware(span, handler)
 		}
 		resp, err := handler(ctx, req)
 		finishWithError(span, err, cfg)

@@ -3,18 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// +build !windows,!linux,!darwin,!freebsd
-
-package tracer
-
-import (
-	"runtime"
-)
-
-func osName() string {
-	return runtime.GOOS
-}
-
-func osVersion() string {
-	return unknown
-}
+// Package include is required to help go tools support vendoring.
+// DO NOT REMOVE
+package include

@@ -15,6 +15,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 )
 
 // TraceConfig defines the configuration for request tracing.
@@ -52,9 +54,10 @@ func TraceAndServe(h http.Handler, cfg *TraceConfig) {
 	span, ctx := tracer.StartSpanFromContext(cfg.Request.Context(), "http.request", opts...)
 	defer span.Finish(cfg.FinishOpts...)
 
-	cfg.ResponseWriter = wrapResponseWriter(cfg.ResponseWriter, span)
-
-	h.ServeHTTP(cfg.ResponseWriter, cfg.Request.WithContext(ctx))
+	if appsec.Enabled() {
+		h = httpsec.WrapHandler(h, span)
+	}
+	h.ServeHTTP(wrapResponseWriter(cfg.ResponseWriter, span), cfg.Request.WithContext(ctx))
 }
 
 // responseWriter is a small wrapper around an http response writer that will
@@ -69,8 +72,13 @@ func newResponseWriter(w http.ResponseWriter, span ddtrace.Span) *responseWriter
 	return &responseWriter{w, span, 0}
 }
 
+// Status returns the status code that was monitored.
+func (w *responseWriter) Status() int {
+	return w.status
+}
+
 // Write writes the data to the connection as part of an HTTP reply.
-// We explicitely call WriteHeader with the 200 status code
+// We explicitly call WriteHeader with the 200 status code
 // in order to get it reported into the span.
 func (w *responseWriter) Write(b []byte) (int, error) {
 	if w.status == 0 {
