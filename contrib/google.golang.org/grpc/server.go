@@ -102,7 +102,6 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				span.SetTag(tagMethodKind, methodKindClientStream)
 			}
 			defer func() { finishWithError(span, err, cfg) }()
-
 			if appsec.Enabled() {
 				handler = appsecStreamHandlerMiddleware(span, handler)
 			}
@@ -157,7 +156,6 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 				}
 			}
 		}
-		
 		if appsec.Enabled() {
 			handler = appsecUnaryHandlerMiddleware(span, handler)
 		}
