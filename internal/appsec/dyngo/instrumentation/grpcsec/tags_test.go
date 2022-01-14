@@ -123,9 +123,8 @@ func TestSetSecurityEventTags(t *testing.T) {
 					if eventCase.expectedError {
 						require.Error(t, err)
 						return
-					} else {
-						require.NoError(t, err)
 					}
+					require.NoError(t, err)
 
 					expectedTags := map[string]interface{}{
 						"_dd.appsec.json": eventCase.expectedTag,
