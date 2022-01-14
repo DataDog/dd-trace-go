@@ -29,7 +29,7 @@ func TestAppSec(t *testing.T) {
 
 	client := rig.client
 
-	t.Run("unary rpc", func(t *testing.T) {
+	t.Run("unary", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -48,7 +48,7 @@ func TestAppSec(t *testing.T) {
 		require.True(t, strings.Contains(event.(string), "crs-941-100"))
 	})
 
-	t.Run("streaming rpc", func(t *testing.T) {
+	t.Run("stream", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
