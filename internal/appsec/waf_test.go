@@ -16,9 +16,8 @@ import (
 	"testing"
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 
 	"github.com/stretchr/testify/require"
 )
@@ -26,33 +25,16 @@ import (
 // TestWAF is a simple validation test of the WAF protecting a net/http server. It only mockups the agent and tests that
 // the WAF is properly detecting an LFI attempt and that the corresponding security event is being sent to the agent.
 func TestWAF(t *testing.T) {
-	if appsec.Status() == "disabled" {
-		t.Skip("appsec disabled")
-		return
-	}
-	if _, err := waf.Health(); err != nil {
-		t.Skip("waf disabled")
-		return
-	}
-
-	// Start the HTTP server acting as the agent
-	// Its handler counts the number of AppSec API requests and saves the latest event batch sent (only one expected).
-	var (
-		nbAppSecAPIRequests int
-		batch               []byte
-	)
-	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		if r.RequestURI == "/appsec/proxy/api/v2/appsecevts" {
-			nbAppSecAPIRequests++
-			var err error
-			batch, err = ioutil.ReadAll(r.Body)
-			require.NoError(t, err)
-		}
-	}))
-
 	// Start the tracer along with the fake agent HTTP server
-	tracer.Start(tracer.WithDebugMode(true), tracer.WithAgentAddr(strings.TrimPrefix(agent.URL, "http://")))
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	appsec.Start()
+	defer appsec.Stop()
+
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
@@ -75,10 +57,16 @@ func TestWAF(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Hello World!\n", string(b))
 
-	// Stop the tracer so that the AppSec events gets sent
-	tracer.Stop()
+	finished := mt.FinishedSpans()
+	require.Len(t, finished, 2)
 
-	// Check that an LFI attack event was reported.
-	require.Equal(t, 1, nbAppSecAPIRequests)
-	require.True(t, strings.Contains(string(batch), "crs-930-100"))
+	// Two requests were performed by the client request (due to the 301 redirection) and the two should have the LFI
+	// attack attempt event (appsec rule id crs-930-100).
+	event := finished[0].Tag("_dd.appsec.json")
+	require.NotNil(t, event)
+	require.True(t, strings.Contains(event.(string), "crs-930-100"))
+
+	event = finished[1].Tag("_dd.appsec.json")
+	require.NotNil(t, event)
+	require.True(t, strings.Contains(event.(string), "crs-930-100"))
 }

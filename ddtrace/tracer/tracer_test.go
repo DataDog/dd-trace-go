@@ -22,6 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
@@ -44,8 +45,27 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 	return t.StartSpan(name, ChildOf(parent.Context())).(*span)
 }
 
+var (
+	// timeMultiplicator specifies by how long to extend waiting times.
+	// It may be altered in some envinronment (like AppSec) where things
+	// move slower and could otherwise create flaky tests.
+	timeMultiplicator = time.Duration(1)
+
+	// integration indicates if the test suite should run integration tests.
+	integration bool
+)
+
+func TestMain(m *testing.M) {
+	if maininternal.BoolEnv("DD_APPSEC_ENABLED", false) {
+		// things are slower with AppSec; double wait times
+		timeMultiplicator = time.Duration(2)
+	}
+	_, integration = os.LookupEnv("INTEGRATION")
+	os.Exit(m.Run())
+}
+
 func (t *tracer) awaitPayload(tst *testing.T, n int) {
-	timeout := time.After(200 * time.Millisecond)
+	timeout := time.After(200 * time.Millisecond * timeMultiplicator)
 loop:
 	for {
 		select {
@@ -74,9 +94,8 @@ func TestTracerCleanStop(t *testing.T) {
 	if testing.Short() {
 		return
 	}
-	// Avoid CI timeouts due to AppSec slowing down this test due to its init
-	// time.
 	if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
+		// avoid CI timeouts due to AppSec slowing down this test
 		os.Unsetenv("DD_APPSEC_ENABLED")
 		defer os.Setenv("DD_APPSEC_ENABLED", old)
 	}
@@ -274,7 +293,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.config.features.DropP0s = true
+		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1").(*span)
@@ -288,7 +307,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("events_sampled", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.config.features.DropP0s = true
+		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1").(*span)
@@ -303,7 +322,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("client_dropped", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.config.features.DropP0s = true
+		tracer.config.agent.DropP0s = true
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -550,6 +569,44 @@ func TestTracerSpanGlobalTags(t *testing.T) {
 	assert.Equal("value", s.Meta["key"])
 	child := tracer.StartSpan("db.query", ChildOf(s.Context())).(*span)
 	assert.Equal("value", child.Meta["key"])
+}
+
+func TestTracerSpanServiceMappings(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("WithServiceMapping", func(t *testing.T) {
+		tracer := newTracer(WithServiceName("initial_service"), WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request").(*span)
+		assert.Equal("new_service", s.Service)
+
+	})
+
+	t.Run("child", func(t *testing.T) {
+		tracer := newTracer(WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request", ServiceName("initial_service")).(*span)
+		child := tracer.StartSpan("db.query", ChildOf(s.Context())).(*span)
+		assert.Equal("new_service", child.Service)
+
+	})
+
+	t.Run("StartSpanOption", func(t *testing.T) {
+		tracer := newTracer(WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request", ServiceName("initial_service")).(*span)
+		assert.Equal("new_service", s.Service)
+
+	})
+
+	t.Run("tag", func(t *testing.T) {
+		tracer := newTracer(WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request", Tag("service.name", "initial_service")).(*span)
+		assert.Equal("new_service", s.Service)
+	})
+
+	t.Run("globalTags", func(t *testing.T) {
+		tracer := newTracer(WithGlobalTag("service.name", "initial_service"), WithServiceMapping("initial_service", "new_service"))
+		s := tracer.StartSpan("web.request").(*span)
+		assert.Equal("new_service", s.Service)
+	})
 }
 
 func TestTracerNoDebugStack(t *testing.T) {
@@ -1027,7 +1084,7 @@ func TestWorker(t *testing.T) {
 	}
 
 	flush(-1)
-	timeout := time.After(2 * time.Second)
+	timeout := time.After(2 * time.Second * timeMultiplicator)
 loop:
 	for {
 		select {
@@ -1323,7 +1380,7 @@ func startTestTracer(t interface {
 			tick <- time.Now()
 			return
 		}
-		d := 200 * time.Millisecond
+		d := 200 * time.Millisecond * timeMultiplicator
 		expire := time.After(d)
 	loop:
 		for {

@@ -54,6 +54,44 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
 	})
 
+	t.Run("custom", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		called := false
+		// w is a custom struct that *exclusively* implements ResponseWriter
+		w := struct {
+			http.ResponseWriter
+		}{httptest.NewRecorder()}
+		r, err := http.NewRequest("GET", "/path?token=value", nil)
+		assert.NoError(err)
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			_, ok := w.(http.Hijacker)
+			assert.False(ok)
+			http.Error(w, "some error", http.StatusServiceUnavailable)
+			called = true
+		}
+		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
+			ResponseWriter: w,
+			Request:        r,
+			Service:        "service",
+			Resource:       "resource",
+		})
+		spans := mt.FinishedSpans()
+		span := spans[0]
+
+		assert.True(called)
+		assert.Len(spans, 1)
+		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+		assert.Equal("service", span.Tag(ext.ServiceName))
+		assert.Equal("resource", span.Tag(ext.ResourceName))
+		assert.Equal("GET", span.Tag(ext.HTTPMethod))
+		assert.Equal("/path", span.Tag(ext.HTTPURL))
+		assert.Equal("503", span.Tag(ext.HTTPCode))
+		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
+	})
+
 	t.Run("query-params", func(t *testing.T) {
 		mt := mocktracer.Start()
 		assert := assert.New(t)

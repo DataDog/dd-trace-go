@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -99,6 +101,63 @@ type config struct {
 	mutexFraction     int
 	blockRate         int
 	outputDir         string
+	deltaProfiles     bool
+	logStartup        bool
+}
+
+// logStartup records the configuration to the configured logger in JSON format
+func logStartup(c *config) {
+	info := struct {
+		Date                 string   `json:"date"`         // ISO 8601 date and time of start
+		OSName               string   `json:"os_name"`      // Windows, Darwin, Debian, etc.
+		OSVersion            string   `json:"os_version"`   // Version of the OS
+		Version              string   `json:"version"`      // Profiler version
+		Lang                 string   `json:"lang"`         // "Go"
+		LangVersion          string   `json:"lang_version"` // Go version, e.g. go1.13
+		Hostname             string   `json:"hostname"`
+		DeltaProfiles        bool     `json:"delta_profiles"`
+		Service              string   `json:"service"`
+		Env                  string   `json:"env"`
+		TargetURL            string   `json:"target_url"`
+		Agentless            bool     `json:"agentless"`
+		Tags                 []string `json:"tags"`
+		ProfilePeriod        string   `json:"profile_period"`
+		EnabledProfiles      []string `json:"enabled_profiles"`
+		CPUDuration          string   `json:"cpu_duration"`
+		BlockProfileRate     int      `json:"block_profile_rate"`
+		MutexProfileFraction int      `json:"mutex_profile_fraction"`
+		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
+		UploadTimeout        string   `json:"upload_timeout"`
+	}{
+		Date:                 time.Now().Format(time.RFC3339),
+		OSName:               osinfo.OSName(),
+		OSVersion:            osinfo.OSVersion(),
+		Version:              version.Tag,
+		Lang:                 "Go",
+		LangVersion:          runtime.Version(),
+		Hostname:             c.hostname,
+		DeltaProfiles:        c.deltaProfiles,
+		Service:              c.service,
+		Env:                  c.env,
+		TargetURL:            c.targetURL,
+		Agentless:            c.agentless,
+		Tags:                 c.tags,
+		ProfilePeriod:        c.period.String(),
+		CPUDuration:          c.cpuDuration.String(),
+		BlockProfileRate:     c.blockRate,
+		MutexProfileFraction: c.mutexFraction,
+		MaxGoroutinesWait:    c.maxGoroutinesWait,
+		UploadTimeout:        c.uploadTimeout.String(),
+	}
+	for t := range c.types {
+		info.EnabledProfiles = append(info.EnabledProfiles, t.String())
+	}
+	b, err := json.Marshal(info)
+	if err != nil {
+		log.Error("Marshaling profiler configuration: %s", err)
+		return
+	}
+	log.Info("Profiler configuration: %s\n", b)
 }
 
 func urlForSite(site string) (string, error) {
@@ -141,6 +200,8 @@ func defaultConfig() (*config, error) {
 		uploadTimeout:     DefaultUploadTimeout,
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
 		tags:              []string{fmt.Sprintf("pid:%d", os.Getpid())},
+		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
+		logStartup:        true,
 	}
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
@@ -249,6 +310,16 @@ func WithAPIKey(key string) Option {
 func WithAgentlessUpload() Option {
 	return func(cfg *config) {
 		cfg.agentless = true
+	}
+}
+
+// WithDeltaProfiles specifies if delta profiles are enabled. The default value
+// is true. This option takes precedence over the DD_PROFILING_DELTA
+// environment variable that can be set to "true" or "false" as well. See
+// https://dtdg.co/go-delta-profile-docs for more information.
+func WithDeltaProfiles(enabled bool) Option {
+	return func(cfg *config) {
+		cfg.deltaProfiles = enabled
 	}
 }
 
@@ -397,5 +468,14 @@ func WithUDS(socketPath string) Option {
 func withOutputDir(dir string) Option {
 	return func(cfg *config) {
 		cfg.outputDir = dir
+	}
+}
+
+// WithLogStartup toggles logging the configuration of the profiler to standard
+// error when profiling is started. The configuration is logged in a JSON
+// format. This option is enabled by default.
+func WithLogStartup(enabled bool) Option {
+	return func(cfg *config) {
+		cfg.logStartup = enabled
 	}
 }

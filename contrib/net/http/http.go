@@ -61,6 +61,10 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 	}
 	log.Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if cfg.ignoreRequest(req) {
+			h.ServeHTTP(w, req)
+			return
+		}
 		TraceAndServe(h, w, req, &ServeConfig{
 			Service:    service,
 			Resource:   resource,
