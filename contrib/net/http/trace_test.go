@@ -72,11 +72,9 @@ func TestTraceAndServe(t *testing.T) {
 			http.Error(w, "some error", http.StatusServiceUnavailable)
 			called = true
 		}
-		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
-			ResponseWriter: w,
-			Request:        r,
-			Service:        "service",
-			Resource:       "resource",
+		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
+			Service:  "service",
+			Resource: "resource",
 		})
 		spans := mt.FinishedSpans()
 		span := spans[0]
