@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package httputil // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
+package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 
 //go:generate sh -c "go run make_responsewriter.go | gofmt > trace_gen.go"
 
@@ -19,46 +19,56 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 )
 
-// TraceConfig defines the configuration for request tracing.
-type TraceConfig struct {
-	ResponseWriter http.ResponseWriter       // response writer
-	Request        *http.Request             // request that is traced
-	Service        string                    // service name
-	Resource       string                    // resource name
-	QueryParams    bool                      // specifies that request query parameters should be appended to http.url tag
-	PathParams     map[string]string         // specifies framework-specific path parameters
-	FinishOpts     []ddtrace.FinishOption    // span finish options to be applied
-	SpanOpts       []ddtrace.StartSpanOption // additional span options to be applied
+// ServeConfig specifies the tracing configuration when using TraceAndServe.
+type ServeConfig struct {
+	// Service specifies the service name to use. If left blank, the global service name
+	// will be inherited.
+	Service string
+	// Resource optionally specifies the resource name for this request.
+	Resource string
+	// QueryParams specifies any query parameters that be appended to the resulting "http.url" tag.
+	QueryParams bool
+	// RouteParams specifies framework-specific route parameters
+	// (e.g. for route /user/:id coming in as /user/123 we'll have {"id": "123"})
+	RouteParams map[string]string
+	// FinishOpts specifies any options to be used when finishing the request span.
+	FinishOpts []ddtrace.FinishOption
+	// SpanOpts specifies any options to be applied to the request starting span.
+	SpanOpts []ddtrace.StartSpanOption
 }
 
-// TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.
-func TraceAndServe(h http.Handler, cfg *TraceConfig) {
-	path := cfg.Request.URL.Path
+// TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
+// according to the specified config.
+func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
+	if cfg == nil {
+		cfg = new(ServeConfig)
+	}
+	path := r.URL.Path
 	if cfg.QueryParams {
-		path += "?" + cfg.Request.URL.RawQuery
+		path += "?" + r.URL.RawQuery
 	}
 	opts := append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.ServiceName(cfg.Service),
 		tracer.ResourceName(cfg.Resource),
-		tracer.Tag(ext.HTTPMethod, cfg.Request.Method),
+		tracer.Tag(ext.HTTPMethod, r.Method),
 		tracer.Tag(ext.HTTPURL, path),
 	}, cfg.SpanOpts...)
-	if cfg.Request.URL.Host != "" {
+	if r.URL.Host != "" {
 		opts = append([]ddtrace.StartSpanOption{
-			tracer.Tag("http.host", cfg.Request.URL.Host),
+			tracer.Tag("http.host", r.URL.Host),
 		}, opts...)
 	}
-	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(cfg.Request.Header)); err == nil {
+	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	span, ctx := tracer.StartSpanFromContext(cfg.Request.Context(), "http.request", opts...)
+	span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
 	defer span.Finish(cfg.FinishOpts...)
 
 	if appsec.Enabled() {
-		h = httpsec.WrapHandler(h, span, cfg.PathParams)
+		h = httpsec.WrapHandler(h, span, cfg.RouteParams)
 	}
-	h.ServeHTTP(wrapResponseWriter(cfg.ResponseWriter, span), cfg.Request.WithContext(ctx))
+	h.ServeHTTP(wrapResponseWriter(w, span), r.WithContext(ctx))
 }
 
 // responseWriter is a small wrapper around an http response writer that will

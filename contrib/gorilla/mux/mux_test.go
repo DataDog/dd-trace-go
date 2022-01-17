@@ -318,14 +318,14 @@ func TestAppSec(t *testing.T) {
 
 	// Start and trace an HTTP server with some testing routes
 	router := NewRouter()
-	router.Handle("/path0.0/{myPathParam0}/path0.1/{myPathParam1}/path0.2/{myPathParam2}/path0.3/{myPathParam3}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/path0.0/{myPathParam0}/path0.1/{myPathParam1}/path0.2/{myPathParam2}/path0.3/{myPathParam3}", func(w http.ResponseWriter, r *http.Request) {
 		_, err := w.Write([]byte("Hello World!\n"))
 		require.NoError(t, err)
-	}))
-	router.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	})
+	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_, err := w.Write([]byte("Hello World!\n"))
 		require.NoError(t, err)
-	}))
+	})
 
 	srv := httptest.NewServer(router)
 	defer srv.Close()
