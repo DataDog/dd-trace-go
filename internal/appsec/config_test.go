@@ -9,6 +9,7 @@
 package appsec
 
 import (
+	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -97,7 +98,7 @@ func TestConfig(t *testing.T) {
 		t.Run("local-file", func(t *testing.T) {
 			restoreEnv := cleanEnv()
 			defer restoreEnv()
-			file, err := os.CreateTemp("", "example-*")
+			file, err := ioutil.TempFile("", "example-*")
 			require.NoError(t, err)
 			defer func() {
 				file.Close()
