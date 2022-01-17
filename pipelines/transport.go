@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-present Datadog, Inc.
+
 package pipelines
 
 import (
@@ -99,6 +104,13 @@ func resolveAddr(addr string) string {
 }
 
 func (t *httpTransport) sendPipelineStats(p *statsPayload) error {
+	for _, bucket := range p.Stats {
+		for _, stats := range bucket.Stats {
+			fmt.Println("pathway latency", len(stats.PathwayLatency))
+			fmt.Println("edge latency", len(stats.EdgeLatency))
+		}
+
+	}
 	var buf bytes.Buffer
 	gzipWriter, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
 	if err != nil {

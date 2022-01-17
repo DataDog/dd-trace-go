@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-present Datadog, Inc.
+
 package pipelines
 
 import (
@@ -26,6 +31,7 @@ func FromContext(ctx context.Context) (p Pathway, ok bool) {
 }
 
 // SetCheckpoint sets a checkpoint on the pathway in the context.
+// if there is no pathway in the context, it creates a new one.
 func SetCheckpoint(ctx context.Context, edge string) (Pathway, context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -41,8 +47,8 @@ func SetCheckpoint(ctx context.Context, edge string) (Pathway, context.Context) 
 	return p, ctx
 }
 
-// MergeContexts returns the first context with a pathway that is the combination of the pathways
-// from all the contexts.
+// MergeContexts returns the first context which includes the pathway resulting from merging the pathways
+// contained in all contexts.
 func MergeContexts(ctxs ...context.Context) context.Context {
 	if len(ctxs) == 0 {
 		return context.Background()

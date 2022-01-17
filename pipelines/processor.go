@@ -1,6 +1,12 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-present Datadog, Inc.
+
 package pipelines
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -47,8 +53,14 @@ func (b bucket) Export() []groupedStats {
 	stats := make([]groupedStats, 0, len(b))
 	for _, s := range b {
 		// todo[piochelepiotr] Handle errors
-		pathwayLatency, _ := proto.Marshal(s.pathwayLatency.ToProto())
-		edgeLatency, _ := proto.Marshal(s.edgeLatency.ToProto())
+		pathwayLatency, err := proto.Marshal(s.pathwayLatency.ToProto())
+		if err != nil {
+			fmt.Println("error pathway")
+		}
+		edgeLatency, err := proto.Marshal(s.edgeLatency.ToProto())
+		if err != nil {
+			fmt.Println("error edge")
+		}
 		stats = append(stats, groupedStats{
 			PathwayLatency: pathwayLatency,
 			EdgeLatency:    edgeLatency,
@@ -223,3 +235,11 @@ func (p *processor) sendToAgent(payload statsPayload) {
 		log.Printf("ERROR: Error sending stats payload: %v", err)
 	}
 }
+
+func getService() string {
+	if processor := getGlobalProcessor(); processor != nil && processor.service != "" {
+		return processor.service
+	}
+	return "unnamed-go-service"
+}
+

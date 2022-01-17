@@ -48,16 +48,16 @@ func (z *groupedStats) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "ParentHash")
 				return
 			}
-		case "EdgeLatency":
-			z.EdgeLatency, err = dc.ReadBytes(z.EdgeLatency)
-			if err != nil {
-				err = msgp.WrapError(err, "EdgeLatency")
-				return
-			}
 		case "PathwayLatency":
 			z.PathwayLatency, err = dc.ReadBytes(z.PathwayLatency)
 			if err != nil {
 				err = msgp.WrapError(err, "PathwayLatency")
+				return
+			}
+		case "EdgeLatency":
+			z.EdgeLatency, err = dc.ReadBytes(z.EdgeLatency)
+			if err != nil {
+				err = msgp.WrapError(err, "EdgeLatency")
 				return
 			}
 		default:
@@ -95,7 +95,7 @@ func (z *groupedStats) EncodeMsg(en *msgp.Writer) (err error) {
 		return
 	}
 	// write "Hash"
-	err = en.Append(0xac, 0x50, 0x69, 0x70, 0x65, 0x6c, 0x69, 0x6e, 0x65, 0x48, 0x61, 0x73, 0x68)
+	err = en.Append(0xa4, 0x48, 0x61, 0x73, 0x68)
 	if err != nil {
 		return
 	}
@@ -114,6 +114,16 @@ func (z *groupedStats) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "ParentHash")
 		return
 	}
+	// write "PathwayLatency"
+	err = en.Append(0xae, 0x50, 0x61, 0x74, 0x68, 0x77, 0x61, 0x79, 0x4c, 0x61, 0x74, 0x65, 0x6e, 0x63, 0x79)
+	if err != nil {
+		return
+	}
+	err = en.WriteBytes(z.PathwayLatency)
+	if err != nil {
+		err = msgp.WrapError(err, "PathwayLatency")
+		return
+	}
 	// write "EdgeLatency"
 	err = en.Append(0xab, 0x45, 0x64, 0x67, 0x65, 0x4c, 0x61, 0x74, 0x65, 0x6e, 0x63, 0x79)
 	if err != nil {
@@ -124,22 +134,12 @@ func (z *groupedStats) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "EdgeLatency")
 		return
 	}
-	// write "PathwayLatency"
-	err = en.Append(0xaf, 0x50, 0x69, 0x70, 0x65, 0x6c, 0x69, 0x6e, 0x65, 0x4c, 0x61, 0x74, 0x65, 0x6e, 0x63, 0x79)
-	if err != nil {
-		return
-	}
-	err = en.WriteBytes(z.PathwayLatency)
-	if err != nil {
-		err = msgp.WrapError(err, "PathwayLatency")
-		return
-	}
 	return
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *groupedStats) Msgsize() (s int) {
-	s = 1 + 8 + msgp.StringPrefixSize + len(z.Service) + 5 + msgp.StringPrefixSize + len(z.Edge) + 13 + msgp.Uint64Size + 11 + msgp.Uint64Size + 12 + msgp.BytesPrefixSize + len(z.EdgeLatency) + 16 + msgp.BytesPrefixSize + len(z.PathwayLatency)
+	s = 1 + 8 + msgp.StringPrefixSize + len(z.Service) + 5 + msgp.StringPrefixSize + len(z.Edge) + 5 + msgp.Uint64Size + 11 + msgp.Uint64Size + 15 + msgp.BytesPrefixSize + len(z.PathwayLatency) + 12 + msgp.BytesPrefixSize + len(z.EdgeLatency)
 	return
 }
 
