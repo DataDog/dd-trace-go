@@ -49,15 +49,19 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(request.Header)); err == nil {
 				opts = append(opts, tracer.ChildOf(spanctx))
 			}
+			var finishOpts []tracer.FinishOption
+			if cfg.noDebugStack {
+				finishOpts = append(finishOpts, tracer.NoDebugStack())
+			}
 			span, ctx := tracer.StartSpanFromContext(request.Context(), "http.request", opts...)
-			defer span.Finish()
+			defer func() { span.Finish(finishOpts...) }()
 
 			// pass the span through the request context
 			c.SetRequest(request.WithContext(ctx))
 			// serve the request to the next middleware
 			err := next(c)
 			if err != nil {
-				span.SetTag(ext.Error, err)
+				finishOpts = append(finishOpts, tracer.WithError(err))
 				// invokes the registered HTTP error handler
 				c.Error(err)
 			}
@@ -91,7 +95,7 @@ func withAppSec(next echo.HandlerFunc) echo.HandlerFunc {
 				if err != nil {
 					remoteIP = req.RemoteAddr
 				}
-				httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers)
+				httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Response().Writer.Header())
 			}
 		}()
 		return next(c)

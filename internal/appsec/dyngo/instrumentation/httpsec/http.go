@@ -69,7 +69,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			if err != nil {
 				remoteIP = r.RemoteAddr
 			}
-			SetSecurityEventTags(span, events, remoteIP, args.Headers)
+			SetSecurityEventTags(span, events, remoteIP, args.Headers, w.Header())
 		}()
 		handler.ServeHTTP(w, r)
 	})
