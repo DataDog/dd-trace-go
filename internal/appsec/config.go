@@ -15,6 +15,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+const (
+	enabledEnvVar    = "DD_APPSEC_ENABLED"
+	rulesEnvVar      = "DD_APPSEC_RULES"
+	wafTimeoutEnvVar = "DD_APPSEC_WAF_TIMEOUT"
+)
+
+const defaultWAFTimeout = 4 * time.Millisecond
+
 // config is the AppSec configuration.
 type config struct {
 	// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used.
@@ -26,13 +34,13 @@ type config struct {
 // isEnabled returns true when appsec is enabled when the environment variable
 // DD_APPSEC_ENABLED is set to true.
 func isEnabled() (bool, error) {
-	enabledStr := os.Getenv("DD_APPSEC_ENABLED")
+	enabledStr := os.Getenv(enabledEnvVar)
 	if enabledStr == "" {
 		return false, nil
 	}
 	enabled, err := strconv.ParseBool(enabledStr)
 	if err != nil {
-		return false, fmt.Errorf("could not parse DD_APPSEC_ENABLED value `%s` as a boolean value", enabledStr)
+		return false, fmt.Errorf("could not parse %s value `%s` as a boolean value", enabledEnvVar, enabledStr)
 	}
 	return enabled, nil
 }
@@ -40,7 +48,7 @@ func isEnabled() (bool, error) {
 func newConfig() (*config, error) {
 	cfg := &config{}
 
-	filepath := os.Getenv("DD_APPSEC_RULES")
+	filepath := os.Getenv(rulesEnvVar)
 	if filepath != "" {
 		rules, err := ioutil.ReadFile(filepath)
 		if err != nil {
@@ -53,15 +61,18 @@ func newConfig() (*config, error) {
 		log.Info("appsec: starting with the security rules from file %s", filepath)
 	} else {
 		log.Info("appsec: starting with the default recommended security rules")
+		cfg.rules = []byte(staticRecommendedRule)
 	}
 
-	cfg.wafTimeout = 4 * time.Millisecond
-	if wafTimeout := os.Getenv("DD_APPSEC_WAF_TIMEOUT"); wafTimeout != "" {
+	cfg.wafTimeout = defaultWAFTimeout
+	if wafTimeout := os.Getenv(wafTimeoutEnvVar); wafTimeout != "" {
 		timeout, err := time.ParseDuration(wafTimeout)
-		if err != nil {
+		if err == nil {
 			cfg.wafTimeout = timeout
+		} else if timeout <= 0 {
+			log.Error("appsec: unexpected configuration value of %s=%s: expecting a strictly positive duration. Using default value %s.", wafTimeoutEnvVar, wafTimeout, cfg.wafTimeout)
 		} else {
-			log.Error("appsec: could not parse the value of DD_APPSEC_WAF_TIMEOUT %s as a duration: %v. Using default value %s.", wafTimeout, err, cfg.wafTimeout)
+			log.Error("appsec: could not parse the value of %s %s as a duration: %v. Using default value %s.", wafTimeoutEnvVar, wafTimeout, err, cfg.wafTimeout)
 		}
 	}
 
