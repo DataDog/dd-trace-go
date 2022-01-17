@@ -191,8 +191,8 @@ const (
 	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
 	serverRequestCookiesAddr          = "server.request.cookies"
 	serverRequestQueryAddr            = "server.request.query"
-	serverResponseStatusAddr          = "server.response.status"
 	serverRequestPathParams           = "server.request.path_params"
+	serverResponseStatusAddr          = "server.response.status"
 )
 
 // List of HTTP rule addresses currently supported by the WAF
@@ -201,8 +201,8 @@ var httpAddresses = []string{
 	serverRequestHeadersNoCookiesAddr,
 	serverRequestCookiesAddr,
 	serverRequestQueryAddr,
-	serverResponseStatusAddr,
 	serverRequestPathParams,
+	serverResponseStatusAddr,
 }
 
 // gRPC rule addresses currently supported by the WAF
