@@ -26,9 +26,9 @@ type TraceConfig struct {
 	Service        string                    // service name
 	Resource       string                    // resource name
 	QueryParams    bool                      // specifies that request query parameters should be appended to http.url tag
+	PathParams     map[string]string         // specifies framework-specific path parameters
 	FinishOpts     []ddtrace.FinishOption    // span finish options to be applied
 	SpanOpts       []ddtrace.StartSpanOption // additional span options to be applied
-	PathParams     map[string]string         // path parameters needed for AppSec checks
 }
 
 // TraceAndServe will apply tracing to the given http.Handler using the passed tracer under the given service and resource.

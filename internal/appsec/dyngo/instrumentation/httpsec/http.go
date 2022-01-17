@@ -48,7 +48,6 @@ type (
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
 	SetAppSecTags(span)
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		args := MakeHandlerOperationArgs(r, pathParams)
 		op := StartOperation(
