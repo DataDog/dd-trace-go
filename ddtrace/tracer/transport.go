@@ -101,8 +101,8 @@ func newHTTPTransport(addr string, client *http.Client) *httpTransport {
 		defaultHeaders["Datadog-Container-ID"] = cid
 	}
 	return &httpTransport{
-		traceURL: fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(addr)),
-		statsURL: fmt.Sprintf("http://%s/v0.6/stats", resolveAddr(addr)),
+		traceURL: fmt.Sprintf("http://%s/v0.4/traces", resolveAgentAddr(addr)),
+		statsURL: fmt.Sprintf("http://%s/v0.6/stats", resolveAgentAddr(addr)),
 		client:   client,
 		headers:  defaultHeaders,
 	}
@@ -183,10 +183,10 @@ func (t *httpTransport) endpoint() string {
 	return t.traceURL
 }
 
-// resolveAddr resolves the given agent address and fills in any missing host
+// resolveAgentAddr resolves the given agent address and fills in any missing host
 // and port using the defaults. Some environment variable settings will
 // take precedence over configuration.
-func resolveAddr(addr string) string {
+func resolveAgentAddr(addr string) string {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		// no port in addr
