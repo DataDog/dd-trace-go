@@ -66,11 +66,12 @@ func newConfig() (*config, error) {
 
 	cfg.wafTimeout = defaultWAFTimeout
 	if wafTimeout := os.Getenv(wafTimeoutEnvVar); wafTimeout != "" {
-		timeout, err := time.ParseDuration(wafTimeout)
-		if err == nil {
-			cfg.wafTimeout = timeout
-		} else if timeout <= 0 {
-			log.Error("appsec: unexpected configuration value of %s=%s: expecting a strictly positive duration. Using default value %s.", wafTimeoutEnvVar, wafTimeout, cfg.wafTimeout)
+		if timeout, err := time.ParseDuration(wafTimeout); err == nil {
+			if timeout <= 0 {
+				log.Error("appsec: unexpected configuration value of %s=%s: expecting a strictly positive duration. Using default value %s.", wafTimeoutEnvVar, wafTimeout, cfg.wafTimeout)
+			} else {
+				cfg.wafTimeout = timeout
+			}
 		} else {
 			log.Error("appsec: could not parse the value of %s %s as a duration: %v. Using default value %s.", wafTimeoutEnvVar, wafTimeout, err, cfg.wafTimeout)
 		}
