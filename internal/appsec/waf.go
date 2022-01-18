@@ -31,9 +31,6 @@ func registerWAF(rules []byte, timeout time.Duration) (unreg dyngo.UnregisterFun
 	}
 
 	// Instantiate the WAF
-	if rules == nil {
-		rules = []byte(staticRecommendedRule)
-	}
 	waf, err := waf.NewHandle(rules)
 	if err != nil {
 		return nil, err
