@@ -29,7 +29,8 @@ type ServeConfig struct {
 	// QueryParams specifies any query parameters that be appended to the resulting "http.url" tag.
 	QueryParams bool
 	// RouteParams specifies framework-specific route parameters (e.g. for route /user/:id coming
-	// in as /user/123 we'll have {"id": "123"}). This field is optional and monitored by appsec.
+	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
+	// by AppSec. It is only taken into account when AppSec is enabled.
 	RouteParams map[string]string
 	// FinishOpts specifies any options to be used when finishing the request span.
 	FinishOpts []ddtrace.FinishOption
