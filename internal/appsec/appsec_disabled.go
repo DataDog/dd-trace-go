@@ -33,3 +33,6 @@ func Start() {
 
 // Stop AppSec.
 func Stop() {}
+
+// Static rule stubs when disabled.
+const staticRecommendedRule = ""
