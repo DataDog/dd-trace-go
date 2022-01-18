@@ -60,7 +60,7 @@ func TestConfig(t *testing.T) {
 		t.Run("negative", func(t *testing.T) {
 			restoreEnv := cleanEnv()
 			defer restoreEnv()
-			require.NoError(t, os.Setenv(wafTimeoutEnvVar, "not a duration string"))
+			require.NoError(t, os.Setenv(wafTimeoutEnvVar, "-1s"))
 			cfg, err := newConfig()
 			require.NoError(t, err)
 			require.Equal(t, expectedDefaultConfig, cfg)
