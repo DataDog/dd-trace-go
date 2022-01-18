@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/go-chi/chi/v5"
@@ -51,6 +52,12 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			opts = append(opts, cfg.spanOpts...)
 			span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
 			defer span.Finish()
+
+			if appsec.Enabled() {
+				next = withAppsec(next, r, span)
+				// Note that the following response writer passed to the handler
+				// implements the `interface { Status() int }` expected by httpsec.
+			}
 
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
