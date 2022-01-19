@@ -122,6 +122,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		FinishOpts:  r.config.finishOpts,
 		SpanOpts:    spanopts,
 		QueryParams: r.config.queryParams,
+		RouteParams: match.Vars,
 	})
 }
 

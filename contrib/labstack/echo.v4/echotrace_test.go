@@ -272,10 +272,6 @@ func TestNoDebugStack(t *testing.T) {
 }
 
 func TestAppSec(t *testing.T) {
-	// Start the tracer along with the fake agent HTTP server
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
 	appsec.Start()
 	defer appsec.Stop()
 
@@ -287,30 +283,89 @@ func TestAppSec(t *testing.T) {
 	e := echo.New()
 	e.Use(Middleware())
 
-	e.POST("/*tmp", func(c echo.Context) error {
+	// Add some testing routes
+	e.POST("/path0.0/:myPathParam0/path0.1/:myPathParam1/path0.2/:myPathParam2/path0.3/*myPathParam3", func(c echo.Context) error {
+		return c.String(200, "Hello World!\n")
+	})
+	e.POST("/", func(c echo.Context) error {
 		return c.String(200, "Hello World!\n")
 	})
 	srv := httptest.NewServer(e)
 	defer srv.Close()
 
-	// Send an LFI attack
-	req, err := http.NewRequest("POST", srv.URL+"/../../../secret.txt", nil)
-	if err != nil {
-		panic(err)
-	}
-	res, err := srv.Client().Do(req)
-	require.NoError(t, err)
+	// Test an LFI attack via path parameters
+	t.Run("request-uri", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		// Send an LFI attack (according to appsec rule id crs-930-100)
+		req, err := http.NewRequest("POST", srv.URL+"/../../../secret.txt", nil)
+		if err != nil {
+			panic(err)
+		}
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		// Check that the server behaved as intended (no 301 but 404 directly)
+		require.Equal(t, http.StatusNotFound, res.StatusCode)
+		// The span should contain the security event
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		event := finished[0].Tag("_dd.appsec.json").(string)
+		require.NotNil(t, event)
+		require.True(t, strings.Contains(event, "crs-930-100"))
+		require.True(t, strings.Contains(event, "server.request.uri.raw"))
+	})
 
-	// Check that the handler was properly called
-	b, err := ioutil.ReadAll(res.Body)
-	require.NoError(t, err)
-	require.Equal(t, "Hello World!\n", string(b))
+	// Test a security scanner attack via path parameters
+	t.Run("path-params", func(t *testing.T) {
+		t.Run("regular", func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			// Send a security scanner attack (according to appsec rule id crs-913-120)
+			req, err := http.NewRequest("POST", srv.URL+"/path0.0/param0/path0.1/param1/path0.2/appscan_fingerprint/path0.3/param3", nil)
+			if err != nil {
+				panic(err)
+			}
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			// Check that the handler was properly called
+			b, err := ioutil.ReadAll(res.Body)
+			require.NoError(t, err)
+			require.Equal(t, "Hello World!\n", string(b))
+			require.Equal(t, http.StatusOK, res.StatusCode)
+			// The span should contain the security event
+			finished := mt.FinishedSpans()
+			require.Len(t, finished, 1)
+			event := finished[0].Tag("_dd.appsec.json").(string)
+			require.NotNil(t, event)
+			require.True(t, strings.Contains(event, "crs-913-120"))
+			require.True(t, strings.Contains(event, "myPathParam2"))
+			require.True(t, strings.Contains(event, "server.request.path_params"))
+		})
 
-	finished := mt.FinishedSpans()
-	require.Len(t, finished, 1)
-
-	// The request should have the LFI attack attempt event (appsec rule id crs-930-100).
-	event := finished[0].Tag("_dd.appsec.json")
-	require.NotNil(t, event)
-	require.True(t, strings.Contains(event.(string), "crs-930-100"))
+		t.Run("wildcard", func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			// Send a security scanner attack (according to appsec rule id crs-913-120)
+			req, err := http.NewRequest("POST", srv.URL+"/path0.0/param0/path0.1/param1/path0.2/param2/path0.3/appscan_fingerprint", nil)
+			if err != nil {
+				panic(err)
+			}
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			// Check that the handler was properly called
+			b, err := ioutil.ReadAll(res.Body)
+			require.NoError(t, err)
+			require.Equal(t, "Hello World!\n", string(b))
+			require.Equal(t, http.StatusOK, res.StatusCode)
+			// The span should contain the security event
+			finished := mt.FinishedSpans()
+			require.Len(t, finished, 1)
+			event := finished[0].Tag("_dd.appsec.json").(string)
+			require.NotNil(t, event)
+			require.True(t, strings.Contains(event, "crs-913-120"))
+			// Wildcards are not named in echo
+			require.False(t, strings.Contains(event, "myPathParam3"))
+			require.True(t, strings.Contains(event, "server.request.path_params"))
+		})
+	})
 }
