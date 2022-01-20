@@ -33,6 +33,8 @@ type (
 		Cookies []string
 		// Query corresponds to the address `server.request.query`
 		Query map[string][]string
+		// PathParams corresponds to the address `server.request.path_params`
+		PathParams map[string]string
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -44,10 +46,10 @@ type (
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
-func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
+func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
 	SetAppSecTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		args := MakeHandlerOperationArgs(r)
+		args := MakeHandlerOperationArgs(r, pathParams)
 		op := StartOperation(
 			args,
 			nil,
@@ -75,7 +77,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span) http.Handler {
 // MakeHandlerOperationArgs creates the HandlerOperationArgs out of a standard
 // http.Request along with the given current span. It returns an empty structure
 // when appsec is disabled.
-func MakeHandlerOperationArgs(r *http.Request) HandlerOperationArgs {
+func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
 	var cookies []string
 	for k, v := range r.Header {
@@ -94,7 +96,8 @@ func MakeHandlerOperationArgs(r *http.Request) HandlerOperationArgs {
 		Cookies:    cookies,
 		// TODO(Julio-Guerra): avoid actively parsing the query string and move to a lazy monitoring of this value with
 		//   the dynamic instrumentation of the Query() method.
-		Query: r.URL.Query(),
+		Query:      r.URL.Query(),
+		PathParams: pathParams,
 	}
 }
 
