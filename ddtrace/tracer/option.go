@@ -741,9 +741,12 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
+var measuredTag = Tag(keyMeasured, 1)
+
 // Measured marks this span to be measured for metrics and stats calculations.
 func Measured() StartSpanOption {
-	return Tag(keyMeasured, 1)
+	// cache a global instance of this tag: saves one alloc/call
+	return measuredTag
 }
 
 // WithSpanID sets the SpanID on the started span, instead of using a random number.
