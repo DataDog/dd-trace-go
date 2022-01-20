@@ -15,15 +15,17 @@ import (
 )
 
 func withAppsec(next http.Handler, r *http.Request, span tracer.Span) http.Handler {
+	routeCtx := chi.RouteContext(r.Context())
+	if routeCtx == nil {
+		return httpsec.WrapHandler(next, span, nil)
+	}
 	var pathParams map[string]string
-	if routeCtx := chi.RouteContext(r.Context()); routeCtx != nil {
-		keys := routeCtx.URLParams.Keys
-		values := routeCtx.URLParams.Values
-		if len(keys) > 0 && len(keys) == len(values) {
-			pathParams = make(map[string]string, len(keys))
-			for i, key := range keys {
-				pathParams[key] = values[i]
-			}
+	keys := routeCtx.URLParams.Keys
+	values := routeCtx.URLParams.Values
+	if len(keys) > 0 && len(keys) == len(values) {
+		pathParams = make(map[string]string, len(keys))
+		for i, key := range keys {
+			pathParams[key] = values[i]
 		}
 	}
 	return httpsec.WrapHandler(next, span, pathParams)
