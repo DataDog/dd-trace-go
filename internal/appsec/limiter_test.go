@@ -21,7 +21,9 @@ import (
 
 func TestLimiterUnit(t *testing.T) {
 	ticksChan := make(chan time.Time)
+	defer close(ticksChan)
 	ticker := time.Ticker{C: ticksChan}
+	defer ticker.Stop()
 	startTime := time.Now()
 
 	t.Run("no-ticks-1", func(t *testing.T) {
@@ -95,9 +97,6 @@ func TestLimiterUnit(t *testing.T) {
 		require.False(t, l.Allow(),
 			"Burst call 101 to limiter.Allow() should return False with 100 initial tokens")
 	})
-
-	ticker.Stop()
-	close(ticksChan)
 }
 
 func TestLimiter(t *testing.T) {
