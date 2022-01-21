@@ -309,6 +309,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped_stats", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
+		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.agent.DropP0s = true
 		tracer.config.agent.Stats = true
