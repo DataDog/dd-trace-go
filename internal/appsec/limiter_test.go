@@ -97,6 +97,30 @@ func TestLimiterUnit(t *testing.T) {
 		require.False(t, l.Allow(),
 			"Burst call 101 to limiter.Allow() should return False with 100 initial tokens")
 	})
+
+	t.Run("bucket-refill-short", func(t *testing.T) {
+		l := NewTokenTicker(100, 100)
+		l.start(&ticker, startTime)
+		defer l.Stop()
+
+		for i := 0; i < 1000; i++ {
+			startTime.Add(time.Millisecond)
+			ticksChan <- startTime
+			require.Equalf(t, int64(100), atomic.LoadInt64(&l.tokens), "Bucket should have exactly 100 tokens")
+		}
+	})
+
+	t.Run("bucket-refill-long", func(t *testing.T) {
+		l := NewTokenTicker(100, 100)
+		l.start(&ticker, startTime)
+		defer l.Stop()
+
+		for i := 0; i < 1000; i++ {
+			startTime = startTime.Add(3 * time.Second)
+			ticksChan <- startTime
+		}
+		require.Equalf(t, int64(100), atomic.LoadInt64(&l.tokens), "Bucket should have exactly 100 tokens")
+	})
 }
 
 func TestLimiter(t *testing.T) {
@@ -112,7 +136,7 @@ func TestLimiter(t *testing.T) {
 			stopBarrier.Add(nbUsers)
 			skipped := int64(0)
 			kept := int64(0)
-			l := NewTokenTicker(1, 100)
+			l := NewTokenTicker(0, 100)
 			l.Start()
 			defer l.Stop()
 

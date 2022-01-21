@@ -49,6 +49,9 @@ func (t *TokenTicker) updateBucket(startTime time.Time) {
 			return
 		case stamp := <-t.ticker.C:
 			ticks += stamp.Sub(prevStamp).Nanoseconds()
+			if ticks > t.maxTokens*ticksPerToken {
+				ticks = t.maxTokens * ticksPerToken
+			}
 			prevStamp = stamp
 			if ticks >= ticksPerToken {
 				for {
