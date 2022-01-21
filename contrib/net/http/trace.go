@@ -64,12 +64,18 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
-	defer span.Finish(cfg.FinishOpts...)
+	rw, ddrw := wrapResponseWriter(w, span)
+	defer func() {
+		if ddrw.status == 0 {
+			span.SetTag(ext.HTTPCode, "200")
+		}
+		span.Finish(cfg.FinishOpts...)
+	}()
 
 	if appsec.Enabled() {
 		h = httpsec.WrapHandler(h, span, cfg.RouteParams)
 	}
-	h.ServeHTTP(wrapResponseWriter(w, span), r.WithContext(ctx))
+	h.ServeHTTP(rw, r.WithContext(ctx))
 }
 
 // responseWriter is a small wrapper around an http response writer that will
