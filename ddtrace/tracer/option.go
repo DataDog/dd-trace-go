@@ -403,16 +403,21 @@ func (c *config) loadAgentFeatures() {
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
-			if c.HasFeature("discovery") {
-				// client-stats computation is off by default
-				c.agent.Stats = true
-			}
+			c.agent.Stats = true
 		}
 	}
 	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
 	for _, flag := range info.FeatureFlags {
 		c.agent.featureFlags[flag] = struct{}{}
 	}
+}
+
+func (c *config) canComputeStats() bool {
+	return c.agent.Stats && c.HasFeature("discovery")
+}
+
+func (c *config) canDropP0s() bool {
+	return c.agent.Stats && c.agent.DropP0s && c.HasFeature("discovery")
 }
 
 func statsTags(c *config) []string {
