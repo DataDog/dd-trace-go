@@ -413,8 +413,8 @@ func (c *config) loadAgentFeatures() {
 }
 
 func (c *config) canComputeStats() bool {
-	//return c.agent.Stats && c.HasFeature("discovery")
-	return false
+	return c.agent.Stats && c.HasFeature("discovery")
+	//return false
 }
 
 func (c *config) canDropP0s() bool {
