@@ -20,71 +20,84 @@ import (
 )
 
 func TestLimiterUnit(t *testing.T) {
+	ticksChan := make(chan time.Time)
+	ticker := time.Ticker{C: ticksChan}
+	startTime := time.Now()
 
-	t.Run("consecutive-allow-1", func(t *testing.T) {
+	t.Run("no-ticks-1", func(t *testing.T) {
 		l := NewTokenTicker(1, 100)
-		l.Start()
+		l.start(&ticker, startTime)
 		defer l.Stop()
+		//No ticks between the requests
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
 		require.False(t, l.Allow(), "Second call to limiter.Allow() should return False")
 	})
 
-	t.Run("consecutive-allow-2", func(t *testing.T) {
+	t.Run("no-ticks-2", func(t *testing.T) {
 		l := NewTokenTicker(100, 100)
-		l.Start()
+		l.start(&ticker, startTime)
 		defer l.Stop()
+		//No ticks between the requests
 		for i := 0; i < 10; i++ {
 			require.True(t, l.Allow(), "Call to limiter.Allow() should return True")
 		}
 	})
 
-	t.Run("11ms-sleep-gapped-allow", func(t *testing.T) {
+	t.Run("10ms-ticks", func(t *testing.T) {
 		l := NewTokenTicker(1, 100)
-		l.Start()
+		l.start(&ticker, startTime)
 		defer l.Stop()
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
-		time.Sleep(11 * time.Millisecond)
+		ticksChan <- startTime.Add(10 * time.Millisecond)
 		require.True(t, l.Allow(), "Second call to limiter.Allow() after 11ms should return True")
 	})
 
-	t.Run("9ms-sleep-gapped-allow", func(t *testing.T) {
+	t.Run("9ms-ticks", func(t *testing.T) {
 		l := NewTokenTicker(1, 100)
-		l.Start()
+		l.start(&ticker, startTime)
 		defer l.Stop()
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
-		time.Sleep(9 * time.Millisecond)
+		ticksChan <- startTime.Add(9 * time.Millisecond)
 		require.False(t, l.Allow(), "Second call to limiter.Allow() after 9ms should return False")
 	})
 
 	t.Run("1s-rate", func(t *testing.T) {
 		l := NewTokenTicker(1, 1)
-		l.Start()
+		l.start(&ticker, startTime)
 		defer l.Stop()
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True with 1s per token")
+		ticksChan <- startTime.Add(500 * time.Millisecond)
 		require.False(t, l.Allow(), "Second call to limiter.Allow() should return False with 1s per Token")
 	})
 
 	t.Run("100-requests-burst", func(t *testing.T) {
 		l := NewTokenTicker(100, 100)
-		l.Start()
+		l.start(&ticker, startTime)
 		defer l.Stop()
 		for i := 0; i < 100; i++ {
 			require.True(t, l.Allow(),
 				"Burst call %d to limiter.Allow() should return True with 100 initial tokens", i)
+			startTime = startTime.Add(50 * time.Microsecond)
+			ticksChan <- startTime
 		}
 	})
 
 	t.Run("101-requests-burst", func(t *testing.T) {
 		l := NewTokenTicker(100, 100)
-		l.Start()
+		l.start(&ticker, startTime)
 		defer l.Stop()
 		for i := 0; i < 100; i++ {
 			require.True(t, l.Allow(),
 				"Burst call %d to limiter.Allow() should return True with 100 initial tokens", i)
+			startTime = startTime.Add(50 * time.Microsecond)
+			ticksChan <- startTime
 		}
 		require.False(t, l.Allow(),
 			"Burst call 101 to limiter.Allow() should return False with 100 initial tokens")
 	})
+
+	ticker.Stop()
+	close(ticksChan)
 }
 
 func TestLimiter(t *testing.T) {
