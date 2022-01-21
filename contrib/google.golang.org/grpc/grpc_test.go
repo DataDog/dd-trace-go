@@ -528,6 +528,8 @@ func (s *fixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureR
 	return &FixtureReply{Message: "passed"}, nil
 }
 
+func (s *fixtureServer) mustEmbedUnimplementedFixtureServer() {}
+
 // ensure it's a fixtureServer
 var _ FixtureServer = &fixtureServer{}
 

@@ -11,11 +11,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
-	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 type serverStream struct {
@@ -146,10 +146,9 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			}
 		}
 		if cfg.withRequestTags {
-			var m jsonpb.Marshaler
 			if p, ok := req.(proto.Message); ok {
-				if s, err := m.MarshalToString(p); err == nil {
-					span.SetTag(tagRequest, s)
+				if b, err := protojson.Marshal(p); err == nil {
+					span.SetTag(tagRequest, string(b))
 				}
 			}
 		}

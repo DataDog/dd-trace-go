@@ -3,6 +3,7 @@ syntax = "proto3";
 option java_multiple_files = true;
 option java_package = "io.grpc.examples.testgrpc";
 option java_outer_classname = "TestGRPCProto";
+option go_package = "../grpc";
 
 package grpc;
 

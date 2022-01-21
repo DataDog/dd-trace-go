@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:generate protoc -I . fixtures_test.proto --go_out=plugins=grpc:.
+//go:generate protoc --go_out . --go-grpc_out . fixtures_test.proto
 
 // Package grpc provides functions to trace the google.golang.org/grpc package v1.2.
 package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
