@@ -37,6 +37,39 @@ func NewTokenTicker(tokens, maxTokens int64) *TokenTicker {
 	}
 }
 
+//Select loop to update the token amount in the bucket. Used in a goroutine by the rate limiter.
+func (t *TokenTicker) updateBucket(startTime time.Time) {
+	ticksPerToken := (time.Second.Nanoseconds() / t.maxTokens)
+	ticks := int64(0)
+	prevStamp := startTime
+
+	for {
+		select {
+		case <-t.stopChan:
+			return
+		case stamp := <-t.ticker.C:
+			ticks += stamp.Sub(prevStamp).Nanoseconds()
+			prevStamp = stamp
+			if ticks >= ticksPerToken {
+				for {
+					tokens := atomic.LoadInt64(&t.tokens)
+					if tokens == t.maxTokens {
+						break
+					}
+					inc := ticks / ticksPerToken
+					if tokens+inc > t.maxTokens {
+						inc -= (tokens + inc) % t.maxTokens
+					}
+					if atomic.CompareAndSwapInt64(&t.tokens, tokens, tokens+inc) {
+						ticks = ticks % ticksPerToken
+						break
+					}
+				}
+			}
+		}
+	}
+}
+
 func (t *TokenTicker) Start() {
 	if t.ticker != nil {
 		t.Stop()
@@ -44,37 +77,19 @@ func (t *TokenTicker) Start() {
 
 	t.ticker = time.NewTicker(500 * time.Microsecond)
 	//Ticker goroutine: ticks every 500ms to check whether tokens can be added to the bucket or not
-	go func(t *TokenTicker) {
-		ticksPerToken := (time.Second.Nanoseconds() / t.maxTokens)
-		ticks := int64(0)
-		prevStamp := time.Now()
+	go t.updateBucket(time.Now())
+}
 
-		for {
-			select {
-			case <-t.stopChan:
-				return
-			case stamp := <-t.ticker.C:
-				ticks += stamp.Sub(prevStamp).Nanoseconds()
-				prevStamp = stamp
-				if ticks >= ticksPerToken {
-					for {
-						tokens := atomic.LoadInt64(&t.tokens)
-						if tokens == t.maxTokens {
-							break
-						}
-						inc := ticks / ticksPerToken
-						if tokens+inc > t.maxTokens {
-							inc -= (tokens + inc) % t.maxTokens
-						}
-						if atomic.CompareAndSwapInt64(&t.tokens, tokens, tokens+inc) {
-							ticks = ticks % ticksPerToken
-							break
-						}
-					}
-				}
-			}
-		}
-	}(t)
+//Used for internal testing. Controlling the ticker means being able to test per-tick rather than per-duration,
+//which is more reliable if the app is under a lot of stress
+func (t *TokenTicker) start(ticker *time.Ticker, startTime time.Time) {
+	if t.ticker != nil {
+		t.Stop()
+	}
+
+	t.ticker = ticker
+	//Ticker goroutine: ticks every 500ms to check whether tokens can be added to the bucket or not
+	go t.updateBucket(startTime)
 }
 
 func (t *TokenTicker) Stop() {
