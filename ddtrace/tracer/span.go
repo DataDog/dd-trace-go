@@ -360,27 +360,27 @@ func (s *span) finish(finishTime int64) {
 	}
 	s.finished = true
 
-	// 	keep := true
-	// 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
-	// 		// we have an active tracer
-	// 		if t.config.canComputeStats() && shouldComputeStats(s) {
-	// 			// the agent supports computed stats
-	// 			select {
-	// 			case t.stats.In <- newAggregableSpan(s, t.obfuscator):
-	// 				// ok
-	// 			default:
-	// 				log.Error("Stats channel full, disregarding span.")
-	// 			}
-	// 		}
-	// 		if t.config.canDropP0s() {
-	// 			// the agent supports dropping p0's in the client
-	// 			keep = shouldKeep(s)
-	// 		}
-	// 	}
-	// 	if keep {
-	// a single kept span keeps the whole trace.
-	s.context.trace.keep()
-	// 	}
+	keep := true
+	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+		// we have an active tracer
+		if t.config.canComputeStats() && shouldComputeStats(s) {
+			// the agent supports computed stats
+			select {
+			case t.stats.In <- newAggregableSpan(s, t.obfuscator):
+				// ok
+			default:
+				log.Error("Stats channel full, disregarding span.")
+			}
+		}
+		if t.config.canDropP0s() {
+			// the agent supports dropping p0's in the client
+			keep = shouldKeep(s)
+		}
+	}
+	if keep {
+		// a single kept span keeps the whole trace.
+		s.context.trace.keep()
+	}
 	s.context.finish()
 }
 
