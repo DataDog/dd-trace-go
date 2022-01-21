@@ -373,7 +373,7 @@ func (s *span) finish(finishTime int64) {
 				log.Error("Stats channel full, disregarding span.")
 			}
 		}
-		if feats.DropP0s {
+		if feats.Stats && feats.DropP0s {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
 		}
