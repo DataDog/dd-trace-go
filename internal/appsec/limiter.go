@@ -26,14 +26,14 @@ type TokenTicker struct {
 	tokens    int64
 	maxTokens int64
 	ticker    *time.Ticker
-	stopChan  chan bool
+	stopChan  chan struct{}
 }
 
 func NewTokenTicker(tokens, maxTokens int64) *TokenTicker {
 	return &TokenTicker{
 		tokens:    tokens,
 		maxTokens: maxTokens,
-		stopChan:  make(chan bool),
+		stopChan:  make(chan struct{}),
 	}
 }
 
@@ -79,7 +79,7 @@ func (t *TokenTicker) Start() {
 
 func (t *TokenTicker) Stop() {
 	t.ticker.Stop()
-	t.stopChan <- true
+	close(t.stopChan)
 }
 
 func (t *TokenTicker) Allow() bool {
