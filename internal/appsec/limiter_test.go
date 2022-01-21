@@ -137,15 +137,13 @@ func TestLimiter(t *testing.T) {
 			skipped := int64(0)
 			kept := int64(0)
 			l := NewTokenTicker(0, 100)
-			l.Start()
-			defer l.Stop()
 
 			for n := 0; n < nbUsers; n++ {
 				go func(l Limiter, kept *int64, skipped *int64) {
 					startBarrier.Wait()      // Sync the starts of the goroutines
 					defer stopBarrier.Done() // Signal we are done when returning
 
-					for tStart := time.Now(); time.Since(tStart) <= 1*time.Second; {
+					for tStart := time.Now(); time.Since(tStart) < 1*time.Second; {
 						if !l.Allow() {
 							atomic.AddInt64(skipped, 1)
 						} else {
@@ -155,6 +153,8 @@ func TestLimiter(t *testing.T) {
 				}(l, &kept, &skipped)
 			}
 
+			l.Start()
+			defer l.Stop()
 			start := time.Now()
 			startBarrier.Done() // Unblock the user goroutines
 			stopBarrier.Wait()  // Wait for the user goroutines to be done
