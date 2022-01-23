@@ -124,78 +124,91 @@ func TestLimiterUnit(t *testing.T) {
 }
 
 func TestLimiter(t *testing.T) {
-	//Tests the limiter's ability to sample the traces when subjected to a continuous flow of requests
-	//Each goroutine will continuously call the WAF and the rate limiter for 1 second
-	for nbUsers := 1; nbUsers <= 1000; nbUsers *= 10 {
-		t.Run(fmt.Sprintf("continuous-requests-%d-users", nbUsers), func(t *testing.T) {
-			var startBarrier, stopBarrier sync.WaitGroup
-			// Create a start barrier to synchronize every goroutine's launch and
-			// increase the chances of parallel accesses
-			startBarrier.Add(1)
-			// Create a stopBarrier to signal when all user goroutines are done.
-			stopBarrier.Add(nbUsers)
-			skipped := int64(0)
-			kept := int64(0)
-			l := NewTokenTicker(0, 100)
+	t.Run("allow-after-stop", func(t *testing.T) {
+		l := NewTokenTicker(3, 3)
+		l.Start()
+		require.True(t, l.Allow())
+		l.Stop()
+		// The limiter keeps allowing until there's no more tokens
+		require.True(t, l.Allow())
+		require.True(t, l.Allow())
+		require.False(t, l.Allow())
+	})
 
-			for n := 0; n < nbUsers; n++ {
-				go func(l Limiter, kept *int64, skipped *int64) {
-					startBarrier.Wait()      // Sync the starts of the goroutines
-					defer stopBarrier.Done() // Signal we are done when returning
+	t.Run("concurrency", func(t *testing.T) {
+		//Tests the limiter's ability to sample the traces when subjected to a continuous flow of requests
+		//Each goroutine will continuously call the WAF and the rate limiter for 1 second
+		for nbUsers := 1; nbUsers <= 1000; nbUsers *= 10 {
+			t.Run(fmt.Sprintf("continuous-requests-%d-users", nbUsers), func(t *testing.T) {
+				var startBarrier, stopBarrier sync.WaitGroup
+				// Create a start barrier to synchronize every goroutine's launch and
+				// increase the chances of parallel accesses
+				startBarrier.Add(1)
+				// Create a stopBarrier to signal when all user goroutines are done.
+				stopBarrier.Add(nbUsers)
+				skipped := int64(0)
+				kept := int64(0)
+				l := NewTokenTicker(0, 100)
 
-					for tStart := time.Now(); time.Since(tStart) < 1*time.Second; {
+				for n := 0; n < nbUsers; n++ {
+					go func(l Limiter, kept *int64, skipped *int64) {
+						startBarrier.Wait()      // Sync the starts of the goroutines
+						defer stopBarrier.Done() // Signal we are done when returning
+
+						for tStart := time.Now(); time.Since(tStart) < 1*time.Second; {
+							if !l.Allow() {
+								atomic.AddInt64(skipped, 1)
+							} else {
+								atomic.AddInt64(kept, 1)
+							}
+						}
+					}(l, &kept, &skipped)
+				}
+
+				l.Start()
+				defer l.Stop()
+				start := time.Now()
+				startBarrier.Done() // Unblock the user goroutines
+				stopBarrier.Wait()  // Wait for the user goroutines to be done
+				duration := time.Since(start).Seconds()
+				//Limiter started with 1 token, expecting a margin of error of 1
+				maxExpectedKept := 1 + int64(math.Ceil(duration)*100)
+
+				require.LessOrEqualf(t, kept, maxExpectedKept,
+					"Expected at most %d kept tokens for a %fs duration", maxExpectedKept, duration)
+			})
+		}
+
+		//Tests the limiter's ability to sample the traces when subjected sporadic bursts of requests.
+		//The limiter starts with a bucket filled with 100 tokens to handle a potential immediate first burst
+		for burstAmount := 10; burstAmount < 100; burstAmount += 10 {
+			t.Run(fmt.Sprintf("requests-bursts-%d-iterations", burstAmount), func(t *testing.T) {
+				burstFreq := 100 * time.Millisecond
+				burstSize := 10
+				skipped := 0
+				kept := 0
+				reqCount := 0
+				l := NewTokenTicker(100, 100)
+				l.Start()
+				defer l.Stop()
+
+				for c := 0; c < burstAmount; c++ {
+					for i := 0; i < burstSize; i++ {
+						reqCount++
+						//Let's not run the WAF if we already know the limiter will ask to discard the trace
 						if !l.Allow() {
-							atomic.AddInt64(skipped, 1)
+							skipped++
 						} else {
-							atomic.AddInt64(kept, 1)
+							kept++
 						}
 					}
-				}(l, &kept, &skipped)
-			}
-
-			l.Start()
-			defer l.Stop()
-			start := time.Now()
-			startBarrier.Done() // Unblock the user goroutines
-			stopBarrier.Wait()  // Wait for the user goroutines to be done
-			duration := time.Since(start).Seconds()
-			//Limiter started with 1 token, expecting a margin of error of 1
-			maxExpectedKept := 1 + int64(math.Ceil(duration)*100)
-
-			require.LessOrEqualf(t, kept, maxExpectedKept,
-				"Expected at most %d kept tokens for a %fs duration", maxExpectedKept, duration)
-		})
-	}
-
-	//Tests the limiter's ability to sample the traces when subjected sporadic bursts of requests.
-	//The limiter starts with a bucket filled with 100 tokens to handle a potential immediate first burst
-	for burstAmount := 10; burstAmount < 100; burstAmount += 10 {
-		t.Run(fmt.Sprintf("requests-bursts-%d-iterations", burstAmount), func(t *testing.T) {
-			burstFreq := 100 * time.Millisecond
-			burstSize := 10
-			skipped := 0
-			kept := 0
-			reqCount := 0
-			l := NewTokenTicker(100, 100)
-			l.Start()
-			defer l.Stop()
-
-			for c := 0; c < burstAmount; c++ {
-				for i := 0; i < burstSize; i++ {
-					reqCount++
-					//Let's not run the WAF if we already know the limiter will ask to discard the trace
-					if !l.Allow() {
-						skipped++
-					} else {
-						kept++
-					}
+					//Sleep until next burst
+					time.Sleep(burstFreq)
 				}
-				//Sleep until next burst
-				time.Sleep(burstFreq)
-			}
-			require.Equalf(t, kept, burstAmount*burstSize, "Expected all %d burst requests to be kept", burstAmount*burstSize)
-		})
-	}
+				require.Equalf(t, kept, burstAmount*burstSize, "Expected all %d burst requests to be kept", burstAmount*burstSize)
+			})
+		}
+	})
 }
 
 func BenchmarkLimiter(b *testing.B) {
