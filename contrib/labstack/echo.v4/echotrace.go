@@ -14,7 +14,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
 	"github.com/labstack/echo/v4"
 )
@@ -27,6 +26,9 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		fn(cfg)
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		if appsec.Enabled() {
+			next = withAppSec(next)
+		}
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
@@ -45,23 +47,19 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(request.Header)); err == nil {
 				opts = append(opts, tracer.ChildOf(spanctx))
 			}
+			var finishOpts []tracer.FinishOption
+			if cfg.noDebugStack {
+				finishOpts = append(finishOpts, tracer.NoDebugStack())
+			}
 			span, ctx := tracer.StartSpanFromContext(request.Context(), "http.request", opts...)
-			defer span.Finish()
+			defer func() { span.Finish(finishOpts...) }()
 
 			// pass the span through the request context
-			req := request.WithContext(ctx)
-			c.SetRequest(req)
-
-			if appsec.Enabled() {
-				op := httpsec.StartOperation(httpsec.MakeHandlerOperationArgs(req, span), nil)
-				defer func() {
-					op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
-				}()
-			}
+			c.SetRequest(request.WithContext(ctx))
 			// serve the request to the next middleware
 			err := next(c)
 			if err != nil {
-				span.SetTag(ext.Error, err)
+				finishOpts = append(finishOpts, tracer.WithError(err))
 				// invokes the registered HTTP error handler
 				c.Error(err)
 			}

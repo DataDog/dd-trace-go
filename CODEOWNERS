@@ -14,3 +14,4 @@
 
 # appsec
 /internal/appsec          @DataDog/appsec-go
+/contrib/**/appsec.go     @DataDog/appsec-go

@@ -3,9 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build !windows && !linux && !darwin && !freebsd
 // +build !windows,!linux,!darwin,!freebsd
 
-package tracer
+package osinfo
 
 import (
 	"runtime"
@@ -16,5 +17,5 @@ func osName() string {
 }
 
 func osVersion() string {
-	return unknown
+	return "unknown"
 }

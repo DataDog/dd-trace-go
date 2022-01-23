@@ -17,11 +17,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
-)
-
-const (
-	unknown = "unknown"
 )
 
 // startupInfo contains various information about the status of the tracer on startup.
@@ -82,8 +79,8 @@ func logStartup(t *tracer) {
 
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
-		OSName:                      osName(),
-		OSVersion:                   osVersion(),
+		OSName:                      osinfo.OSName(),
+		OSVersion:                   osinfo.OSVersion(),
 		Version:                     version.Tag,
 		Lang:                        "Go",
 		LangVersion:                 runtime.Version(),
