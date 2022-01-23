@@ -14,13 +14,19 @@ import (
 
 func TestEncode(t *testing.T) {
 	now := time.Now().Local().Truncate(time.Millisecond)
+	processor := processor{
+		service: "service-1",
+	}
+	setGlobalProcessor(&processor)
+	defer setGlobalProcessor(nil)
+
 	p := Pathway{
-		hash: 234,
+		hash:         234,
 		pathwayStart: now.Add(-time.Hour),
-		edgeStart: now,
+		edgeStart:    now,
 	}
 	encoded := p.Encode()
-	p.service = "unnamed-go-service"
+	p.service = "service-1"
 	decoded, err := Decode(encoded)
 	assert.Nil(t, err)
 	assert.Equal(t, p, decoded)

@@ -19,11 +19,11 @@ import (
 // a list of edges and services, a hash of the path is computed. The hash is then resolved
 // in the Datadog backend.
 type Pathway struct {
-	hash     uint64
+	hash         uint64
 	pathwayStart time.Time
-	edgeStart time.Time
-	service string
-	edge    string
+	edgeStart    time.Time
+	service      string
+	edge         string
 }
 
 // Merge merges multiple pathways
@@ -37,7 +37,7 @@ func Merge(pathways []Pathway) Pathway {
 }
 
 func nodeHash(service, edge string) uint64 {
-	b := make([]byte, 0, len(service) + len(edge))
+	b := make([]byte, 0, len(service)+len(edge))
 	b = append(b, service...)
 	b = append(b, edge...)
 	h := fnv.New64()
@@ -61,10 +61,10 @@ func NewPathway() Pathway {
 
 func newPathway(now time.Time) Pathway {
 	p := Pathway{
-		hash:     0,
+		hash:         0,
 		pathwayStart: now,
-		edgeStart: now,
-		service:  getService(),
+		edgeStart:    now,
+		service:      getService(),
 	}
 	return p.setCheckpoint("", now)
 }

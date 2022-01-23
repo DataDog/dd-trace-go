@@ -23,7 +23,7 @@ const (
 	defaultHostname    = "localhost"
 	defaultPort        = "8126"
 	defaultAddress     = defaultHostname + ":" + defaultPort
-	defaultHTTPTimeout = 2 * time.Second         // defines the current timeout before giving up with the send process
+	defaultHTTPTimeout = 2 * time.Second // defines the current timeout before giving up with the send process
 )
 
 var defaultDialer = &net.Dialer{
@@ -48,34 +48,31 @@ var defaultClient = &http.Client{
 }
 
 type httpTransport struct {
-	url string            // the delivery URL for stats
-	client   *http.Client      // the HTTP client used in the POST
-	headers  map[string]string // the Transport headers
+	url     string            // the delivery URL for stats
+	client  *http.Client      // the HTTP client used in the POST
+	headers map[string]string // the Transport headers
 }
 
-func newHTTPTransport(addr string, ddSite string, apiKey string, client *http.Client) *httpTransport {
+func newHTTPTransport(addr string, site string, apiKey string, client *http.Client, agentLess bool) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
 	defaultHeaders := map[string]string{
 		"Datadog-Meta-Lang":             "go",
 		"Datadog-Meta-Lang-Version":     strings.TrimPrefix(runtime.Version(), "go"),
 		"Datadog-Meta-Lang-Interpreter": runtime.Compiler + "-" + runtime.GOARCH + "-" + runtime.GOOS,
 		"Content-Type":                  "application/msgpack",
-		"Content-Encoding": "gzip",
-	}
-	if apiKey != "" {
-		defaultHeaders["DD-API-KEY"] = apiKey
+		"Content-Encoding":              "gzip",
 	}
 	var url string
-	if ddSite == "" {
-		url = fmt.Sprintf("http://%s/v0.1/pipeline_stats", resolveAddr(addr))
+	if agentLess {
+		defaultHeaders["DD-API-KEY"] = apiKey
+		url = fmt.Sprintf("https://trace.agent.%s/api/v0.1/pipeline_stats", site)
 	} else {
-		url = fmt.Sprintf("https://trace.agent.%s/api/v0.1/pipeline_stats", ddSite)
+		url = fmt.Sprintf("http://%s/v0.1/pipeline_stats", resolveAddr(addr))
 	}
-	fmt.Println("url is ", url)
 	return &httpTransport{
-		url: url,
-		client:   client,
-		headers:  defaultHeaders,
+		url:     url,
+		client:  client,
+		headers: defaultHeaders,
 	}
 }
 
@@ -104,13 +101,6 @@ func resolveAddr(addr string) string {
 }
 
 func (t *httpTransport) sendPipelineStats(p *statsPayload) error {
-	for _, bucket := range p.Stats {
-		for _, stats := range bucket.Stats {
-			fmt.Println("pathway latency", len(stats.PathwayLatency))
-			fmt.Println("edge latency", len(stats.EdgeLatency))
-		}
-
-	}
 	var buf bytes.Buffer
 	gzipWriter, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
 	if err != nil {

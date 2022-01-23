@@ -14,9 +14,11 @@ import (
 )
 
 const (
+	// PropagationKey is the key to use to propagate the pathway between services.
 	PropagationKey = "dd-pathway-ctx"
 )
 
+// Encode encodes the pathway
 func (p Pathway) Encode() []byte {
 	data := make([]byte, 8, 20)
 	binary.LittleEndian.PutUint64(data, p.hash)
@@ -25,6 +27,7 @@ func (p Pathway) Encode() []byte {
 	return data
 }
 
+// Decode decodes a pathway
 func Decode(data []byte) (p Pathway, err error) {
 	if len(data) < 8 {
 		return p, errors.New("hash smaller than 8 bytes")

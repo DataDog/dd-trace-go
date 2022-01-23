@@ -6,7 +6,6 @@
 package pipelines
 
 import (
-	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -22,44 +21,45 @@ import (
 )
 
 const (
-	bucketDuration = time.Second * 10
+	bucketDuration     = time.Second * 10
+	defaultServiceName = "unnamed-go-service"
 )
-
 
 var sketchMapping, _ = mapping.NewLogarithmicMapping(0.01)
 
 type statsPoint struct {
-	service string
-	edge    string
-	hash    uint64
-	parentHash            uint64
+	service        string
+	edge           string
+	hash           uint64
+	parentHash     uint64
 	timestamp      int64
 	pathwayLatency int64
 	edgeLatency    int64
 }
 
 type statsGroup struct {
-	service      string
-	edge       string
-	hash       uint64
-	parentHash uint64
+	service        string
+	edge           string
+	hash           uint64
+	parentHash     uint64
 	pathwayLatency *ddsketch.DDSketch
 	edgeLatency    *ddsketch.DDSketch
 }
 
 type bucket map[uint64]statsGroup
 
-func (b bucket) Export() []groupedStats {
+func (b bucket) export() []groupedStats {
 	stats := make([]groupedStats, 0, len(b))
 	for _, s := range b {
-		// todo[piochelepiotr] Handle errors
 		pathwayLatency, err := proto.Marshal(s.pathwayLatency.ToProto())
 		if err != nil {
-			fmt.Println("error pathway")
+			log.Printf("ERROR: can't serialize pathway latency. Ignoring: %v", err)
+			continue
 		}
 		edgeLatency, err := proto.Marshal(s.edgeLatency.ToProto())
 		if err != nil {
-			fmt.Println("error edge")
+			log.Printf("ERROR: can't serialize edge latency. Ignoring: %v", err)
+			continue
 		}
 		stats = append(stats, groupedStats{
 			PathwayLatency: pathwayLatency,
@@ -73,35 +73,36 @@ func (b bucket) Export() []groupedStats {
 	return stats
 }
 
-type concentratorStats struct {
-	payloadsIn int64
+type processorStats struct {
+	payloadsIn      int64
+	flushedPayloads int64
+	flushedBuckets  int64
+	flushErrors     int64
 }
 
 type processor struct {
-	in chan statsPoint
-
-	mu sync.Mutex
-	buckets map[int64]bucket
-	wg         sync.WaitGroup // waits for any active goroutines
-	negativeDurations int64
-	stopped uint64
-	stop       chan struct{}  // closing this channel triggers shutdown
-	stats     concentratorStats
+	in        chan statsPoint
+	mu        sync.Mutex
+	buckets   map[int64]bucket
+	wg        sync.WaitGroup
+	stopped   uint64
+	stop      chan struct{} // closing this channel triggers shutdown
+	stats     processorStats
 	transport *httpTransport
-	statsd statsd.ClientInterface
-	env string
-	service string
+	statsd    statsd.ClientInterface
+	env       string
+	service   string
 }
 
-func newProcessor(statsd statsd.ClientInterface, env, service, agentAddr string, httpClient *http.Client, ddSite, apiKey string) *processor {
+func newProcessor(statsd statsd.ClientInterface, env, service, agentAddr string, httpClient *http.Client, site, apiKey string, agentLess bool) *processor {
 	return &processor{
-		buckets:        make(map[int64]bucket),
-		in:             make(chan statsPoint, 10000),
-		stopped:        1,
-		statsd: statsd,
-		env: env,
-		service: service,
-		transport: newHTTPTransport(agentAddr, ddSite, apiKey, httpClient),
+		buckets:   make(map[int64]bucket),
+		in:        make(chan statsPoint, 10000),
+		stopped:   1,
+		statsd:    statsd,
+		env:       env,
+		service:   service,
+		transport: newHTTPTransport(agentAddr, site, apiKey, httpClient, agentLess),
 	}
 }
 
@@ -116,7 +117,6 @@ func (p *processor) add(point statsPoint) {
 		b = make(bucket)
 		p.buckets[btime] = b
 	}
-	// aggregate
 	group, ok := b[point.hash]
 	if !ok {
 		group = statsGroup{
@@ -129,10 +129,10 @@ func (p *processor) add(point statsPoint) {
 		}
 		b[point.hash] = group
 	}
-	if err := group.pathwayLatency.Add(math.Max(float64(point.pathwayLatency) / float64(time.Second), 0)); err != nil {
+	if err := group.pathwayLatency.Add(math.Max(float64(point.pathwayLatency)/float64(time.Second), 0)); err != nil {
 		log.Printf("ERROR: failed to add pathway latency. Ignoring %v.", err)
 	}
-	if err := group.edgeLatency.Add(math.Max(float64(point.edgeLatency) / float64(time.Second), 0)); err != nil {
+	if err := group.edgeLatency.Add(math.Max(float64(point.edgeLatency)/float64(time.Second), 0)); err != nil {
 		log.Printf("ERROR: failed to add edge latency. Ignoring %v.", err)
 	}
 }
@@ -180,8 +180,11 @@ func (p *processor) Stop() {
 }
 
 func (p *processor) reportStats() {
-	for range time.NewTicker(time.Second*10).C {
-		p.statsd.Count("datadog.tracer.pipeline_stats.payloads_in", atomic.SwapInt64(&p.stats.payloadsIn, 0), nil, 1)
+	for range time.NewTicker(time.Second * 10).C {
+		p.statsd.Count("datadog.pipelines.processor.payloads_in", atomic.SwapInt64(&p.stats.payloadsIn, 0), nil, 1)
+		p.statsd.Count("datadog.pipelines.processor.flushed_payloads", atomic.SwapInt64(&p.stats.flushedPayloads, 0), nil, 1)
+		p.statsd.Count("datadog.pipelines.processor.flushed_buckets", atomic.SwapInt64(&p.stats.flushedBuckets, 0), nil, 1)
+		p.statsd.Count("datadog.pipelines.processor.flush_errors", atomic.SwapInt64(&p.stats.flushErrors, 0), nil, 1)
 	}
 }
 
@@ -191,8 +194,8 @@ func (p *processor) runFlusher(tick <-chan time.Time) {
 		case now := <-tick:
 			p.sendToAgent(p.flush(now))
 		case <-p.stop:
-			// flush everything, so add a few bucketDurations to get a good margin.
-			p.sendToAgent(p.flush(time.Now().Add(bucketDuration*10)))
+			// flush everything, so add a few bucketDurations to the current time in order to get a good margin.
+			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
 			return
 		}
 	}
@@ -202,9 +205,9 @@ func (p *processor) flushBucket(bucketStart int64) statsBucket {
 	bucket := p.buckets[bucketStart]
 	delete(p.buckets, bucketStart)
 	return statsBucket{
-		Start: uint64(bucketStart),
+		Start:    uint64(bucketStart),
 		Duration: uint64(bucketDuration.Nanoseconds()),
-		Stats: bucket.Export(),
+		Stats:    bucket.export(),
 	}
 }
 
@@ -213,8 +216,8 @@ func (p *processor) flush(now time.Time) statsPayload {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	sp := statsPayload{
-		Env:     p.env,
-		Stats:   make([]statsBucket, 0, len(p.buckets)),
+		Env:   p.env,
+		Stats: make([]statsBucket, 0, len(p.buckets)),
 	}
 	for ts := range p.buckets {
 		if ts > nowNano-bucketDuration.Nanoseconds() {
@@ -227,11 +230,10 @@ func (p *processor) flush(now time.Time) statsPayload {
 }
 
 func (p *processor) sendToAgent(payload statsPayload) {
-	p.statsd.Incr("datadog.pipelines.stats.flush_payloads", nil, 1)
-	p.statsd.Incr("datadog.pipelines.stats.flush_buckets", nil, float64(len(payload.Stats)))
-
+	atomic.AddInt64(&p.stats.flushedPayloads, 1)
+	atomic.AddInt64(&p.stats.flushedBuckets, int64(len(payload.Stats)))
 	if err := p.transport.sendPipelineStats(&payload); err != nil {
-		p.statsd.Incr("datadog.pipelines.stats.flush_errors", nil, 1)
+		atomic.AddInt64(&p.stats.flushErrors, 1)
 		log.Printf("ERROR: Error sending stats payload: %v", err)
 	}
 }
@@ -240,6 +242,5 @@ func getService() string {
 	if processor := getGlobalProcessor(); processor != nil && processor.service != "" {
 		return processor.service
 	}
-	return "unnamed-go-service"
+	return defaultServiceName
 }
-

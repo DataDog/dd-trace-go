@@ -7,8 +7,7 @@
 
 package pipelines
 
-// statsPayload specifies information about client computed stats and is encoded
-// to be sent to the agent.
+// statsPayload stores client computed stats.
 type statsPayload struct {
 	// Env specifies the env. of the application, as defined by the user.
 	Env string
@@ -29,11 +28,11 @@ type statsBucket struct {
 // groupedStats contains a set of statistics grouped under various aggregation keys.
 type groupedStats struct {
 	// These fields indicate the properties under which the stats were aggregated.
-	Service        string `json:"service,omitempty"`
-	Edge       string `json:"edge,omitempty"`
-	Hash       uint64 `json:"hash,omitempty"`
-	ParentHash uint64 `json:"parent_hash,omitempty"`
+	Service    string
+	Edge       string
+	Hash       uint64
+	ParentHash uint64
 	// These fields specify the stats for the above aggregation.
-	PathwayLatency []byte `json:"pathway_latency,omitempty"`
-	EdgeLatency    []byte `json:"edge_latency,omitempty"`
+	PathwayLatency []byte
+	EdgeLatency    []byte
 }

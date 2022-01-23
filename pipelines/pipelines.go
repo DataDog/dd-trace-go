@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	mu             sync.RWMutex
+	mu              sync.RWMutex
 	activeProcessor *processor
 )
 
@@ -27,13 +27,19 @@ func getGlobalProcessor() *processor {
 	return activeProcessor
 }
 
+// Start starts the pipeline processor that will record pipeline stats and send them to the agent.
 func Start(opts ...StartOption) {
 	cfg := newConfig(opts...)
-	p := newProcessor(cfg.statsd, cfg.env, cfg.service, cfg.agentAddr, cfg.httpClient, cfg.site, cfg.apiKey)
+	if !cfg.agentLess && !cfg.features.PipelineStats {
+		log.Print("ERROR: Agent does not support pipeline stats and pipeline stats processor launched in agent mode.")
+		return
+	}
+	p := newProcessor(cfg.statsd, cfg.env, cfg.service, cfg.agentAddr, cfg.httpClient, cfg.site, cfg.apiKey, cfg.agentLess)
 	p.Start()
 	setGlobalProcessor(p)
 }
 
+// Stop stops the pipeline processor.
 func Stop() {
 	p := getGlobalProcessor()
 	if p == nil {

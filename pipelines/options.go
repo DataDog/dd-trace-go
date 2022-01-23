@@ -36,47 +36,36 @@ type config struct {
 	// features holds the capabilities of the agent and determines some
 	// of the behaviour of the tracer.
 	features agentFeatures
-
 	// logToStdout reports whether we should log all traces to the standard
 	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
-
 	// logStartup, when true, causes various startup info to be written
 	// when the tracer starts.
 	logStartup bool
-
 	// service specifies the name of this application.
 	service string
-
 	// env contains the environment that this application will run under.
 	env string
-
 	// agentAddr specifies the hostname and port of the agent where the traces
 	// are sent to.
 	agentAddr string
-
 	// globalTags holds a set of tags that will be automatically applied to
 	// all spans.
 	globalTags map[string]interface{}
-
 	// httpClient specifies the HTTP client to be used by the agent's transport.
 	httpClient *http.Client
-
 	// hostname is automatically assigned when the DD_TRACE_REPORT_HOSTNAME is set to true,
 	// and is added as a special tag to the root span of traces.
 	hostname string
-
 	// dogstatsdAddr specifies the address to connect for sending metrics to the
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
 	dogstatsdAddr string
-
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
-	statsd statsd.ClientInterface
-
-	site string
-
-	apiKey string
+	statsd    statsd.ClientInterface
+	site      string
+	apiKey    string
+	agentLess bool
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -88,7 +77,6 @@ func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.agentAddr = defaultAddress
 	c.httpClient = defaultHTTPClient()
-
 	if v := os.Getenv("DD_ENV"); v != "" {
 		c.env = v
 	}
@@ -200,7 +188,6 @@ type agentFeatures struct {
 	// PipelineStats reports whether the agent can receive pipeline stats on
 	// the /v0.1/pipeline_stats endpoint.
 	PipelineStats bool
-
 	// StatsdPort specifies the Dogstatsd port as provided by the agent.
 	// If it's the default, it will be 0, which means 8125.
 	StatsdPort int
@@ -225,8 +212,8 @@ func (c *config) loadAgentFeatures() {
 	}
 	defer resp.Body.Close()
 	type infoResponse struct {
-		Endpoints     []string `json:"endpoints"`
-		StatsdPort    int      `json:"statsd_port"`
+		Endpoints  []string `json:"endpoints"`
+		StatsdPort int      `json:"statsd_port"`
 	}
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
@@ -236,7 +223,7 @@ func (c *config) loadAgentFeatures() {
 	c.features.StatsdPort = info.StatsdPort
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
-		case "/v0.6/pipeline_stats":
+		case "/v0.1/pipeline_stats":
 			c.features.PipelineStats = true
 			log.Printf("INFO: Enable pipeline stats.")
 		}
@@ -312,9 +299,11 @@ func WithSite(site string) StartOption {
 	}
 }
 
-// WithAPIKey starts the pipeline processor with a given API key
-func WithAPIKey(apiKey string) StartOption {
+// WithAgentLess starts the pipeline processor in a mode where stats are sent directly to the datadog backend
+// instead of going through the agent.
+func WithAgentLess(apiKey string) StartOption {
 	return func(c *config) {
 		c.apiKey = apiKey
+		c.agentLess = true
 	}
 }
