@@ -20,23 +20,21 @@ import (
 )
 
 func TestLimiterUnit(t *testing.T) {
-	ticker := TestTicker{C: make(chan time.Time)}
-	defer close(ticker.C)
 	startTime := time.Now()
 
 	t.Run("no-ticks-1", func(t *testing.T) {
-		l := NewTokenTicker(1, 100)
-		l.start(ticker.C, startTime)
-		defer l.Stop()
+		l := NewTestTicker(1, 100)
+		l.start(startTime)
+		defer l.stop()
 		// No ticks between the requests
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
 		require.False(t, l.Allow(), "Second call to limiter.Allow() should return False")
 	})
 
 	t.Run("no-ticks-2", func(t *testing.T) {
-		l := NewTokenTicker(100, 100)
-		l.start(ticker.C, startTime)
-		defer l.Stop()
+		l := NewTestTicker(100, 100)
+		l.start(startTime)
+		defer l.stop()
 		// No ticks between the requests
 		for i := 0; i < 10; i++ {
 			require.True(t, l.Allow(), "Call to limiter.Allow() should return True")
@@ -44,91 +42,91 @@ func TestLimiterUnit(t *testing.T) {
 	})
 
 	t.Run("10ms-ticks", func(t *testing.T) {
-		l := NewTokenTicker(1, 100)
-		l.start(ticker.C, startTime)
-		defer l.Stop()
+		l := NewTestTicker(1, 100)
+		l.start(startTime)
+		defer l.stop()
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
-		ticker.tick(startTime.Add(10 * time.Millisecond))
+		l.tick(startTime.Add(10 * time.Millisecond))
 		require.True(t, l.Allow(), "Second call to limiter.Allow() after 10ms should return True")
 	})
 
 	t.Run("9ms-ticks", func(t *testing.T) {
-		l := NewTokenTicker(1, 100)
-		l.start(ticker.C, startTime)
-		defer l.Stop()
+		l := NewTestTicker(1, 100)
+		l.start(startTime)
+		defer l.stop()
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
-		ticker.tick(startTime.Add(9 * time.Millisecond))
+		l.tick(startTime.Add(9 * time.Millisecond))
 		require.False(t, l.Allow(), "Second call to limiter.Allow() after 9ms should return False")
-		ticker.tick(startTime.Add(18 * time.Millisecond))
+		l.tick(startTime.Add(18 * time.Millisecond))
 		require.True(t, l.Allow(), "Third call to limiter.Allow() after 18ms should return True")
 	})
 
 	t.Run("1s-rate", func(t *testing.T) {
-		l := NewTokenTicker(1, 1)
-		l.start(ticker.C, startTime)
-		defer l.Stop()
+		l := NewTestTicker(1, 1)
+		l.start(startTime)
+		defer l.stop()
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True with 1s per token")
-		ticker.tick(startTime.Add(500 * time.Millisecond))
+		l.tick(startTime.Add(500 * time.Millisecond))
 		require.False(t, l.Allow(), "Second call to limiter.Allow() should return False with 1s per Token")
-		ticker.tick(startTime.Add(1000 * time.Millisecond))
+		l.tick(startTime.Add(1000 * time.Millisecond))
 		require.True(t, l.Allow(), "Third call to limiter.Allow() should return True with 1s per Token")
 	})
 
 	t.Run("100-requests-burst", func(t *testing.T) {
-		l := NewTokenTicker(100, 100)
-		l.start(ticker.C, startTime)
-		defer l.Stop()
+		l := NewTestTicker(100, 100)
+		l.start(startTime)
+		defer l.stop()
 		for i := 0; i < 100; i++ {
 			require.Truef(t, l.Allow(),
 				"Burst call %d to limiter.Allow() should return True with 100 initial tokens", i)
 			startTime = startTime.Add(50 * time.Microsecond)
-			ticker.tick(startTime)
+			l.tick(startTime)
 		}
 	})
 
 	t.Run("101-requests-burst", func(t *testing.T) {
-		l := NewTokenTicker(100, 100)
-		l.start(ticker.C, startTime)
-		defer l.Stop()
+		l := NewTestTicker(100, 100)
+		l.start(startTime)
+		defer l.stop()
 		for i := 0; i < 100; i++ {
 			require.Truef(t, l.Allow(),
 				"Burst call %d to limiter.Allow() should return True with 100 initial tokens", i)
 			startTime = startTime.Add(50 * time.Microsecond)
-			ticker.tick(startTime)
+			l.tick(startTime)
 		}
 		require.False(t, l.Allow(),
 			"Burst call 101 to limiter.Allow() should return False with 100 initial tokens")
 	})
 
 	t.Run("bucket-refill-short", func(t *testing.T) {
-		l := NewTokenTicker(100, 100)
-		l.start(ticker.C, startTime)
-		defer l.Stop()
+		l := NewTestTicker(100, 100)
+		l.start(startTime)
+		defer l.stop()
 
 		for i := 0; i < 1000; i++ {
 			startTime = startTime.Add(time.Millisecond)
-			ticker.tick(startTime)
-			require.Equalf(t, int64(100), atomic.LoadInt64(&l.tokens), "Bucket should have exactly 100 tokens")
+			l.tick(startTime)
+			require.Equalf(t, int64(100), atomic.LoadInt64(&l.t.tokens), "Bucket should have exactly 100 tokens")
 		}
 	})
 
 	t.Run("bucket-refill-long", func(t *testing.T) {
-		l := NewTokenTicker(100, 100)
-		l.start(ticker.C, startTime)
-		defer l.Stop()
+		l := NewTestTicker(100, 100)
+		l.start(startTime)
+		defer l.stop()
 
 		for i := 0; i < 1000; i++ {
 			startTime = startTime.Add(3 * time.Second)
-			ticker.tick(startTime)
+			l.tick(startTime)
 		}
-		require.Equalf(t, int64(100), atomic.LoadInt64(&l.tokens), "Bucket should have exactly 100 tokens")
+		require.Equalf(t, int64(100), atomic.LoadInt64(&l.t.tokens), "Bucket should have exactly 100 tokens")
 	})
 
 	t.Run("allow-after-stop", func(t *testing.T) {
-		l := NewTokenTicker(3, 3)
-		l.start(ticker.C, startTime)
+		l := NewTestTicker(3, 3)
+		l.start(startTime)
 		require.True(t, l.Allow())
-		l.Stop()
+		l.stop()
 		// The limiter keeps allowing until there's no more tokens
 		require.True(t, l.Allow())
 		require.True(t, l.Allow())
@@ -136,18 +134,18 @@ func TestLimiterUnit(t *testing.T) {
 	})
 
 	t.Run("allow-before-start", func(t *testing.T) {
-		l := NewTokenTicker(2, 100)
+		l := NewTestTicker(2, 100)
 		// The limiter keeps allowing until there's no more tokens
 		require.True(t, l.Allow())
 		require.True(t, l.Allow())
 		require.False(t, l.Allow())
-		l.start(ticker.C, startTime)
+		l.start(startTime)
 		// The limiter has used all its tokens and the bucket is not getting refilled yet
 		require.False(t, l.Allow())
-		ticker.tick(startTime.Add(10 * time.Millisecond))
+		l.tick(startTime.Add(10 * time.Millisecond))
 		// The limiter has started refilling its tokens
 		require.True(t, l.Allow())
-		l.Stop()
+		l.stop()
 	})
 }
 
@@ -155,7 +153,7 @@ func TestLimiter(t *testing.T) {
 	t.Run("concurrency", func(t *testing.T) {
 		//Tests the limiter's ability to sample the traces when subjected to a continuous flow of requests
 		//Each goroutine will continuously call the rate limiter for 1 second
-		for nbUsers := 1; nbUsers <= 1000; nbUsers *= 10 {
+		for nbUsers := 1; nbUsers <= 10; nbUsers *= 10 {
 			t.Run(fmt.Sprintf("continuous-requests-%d-users", nbUsers), func(t *testing.T) {
 				var startBarrier, stopBarrier sync.WaitGroup
 				// Create a start barrier to synchronize every goroutine's launch and
@@ -195,10 +193,6 @@ func TestLimiter(t *testing.T) {
 			})
 		}
 
-		// Tests the limiter's ability to sample the traces when subjected to sporadic bursts of requests.
-		// The limiter starts with a bucket filled with 100 tokens to handle a potential immediate first burst
-		ticker := TestTicker{C: make(chan time.Time)}
-		defer close(ticker.C)
 		burstFreq := 1000 * time.Millisecond
 		burstSize := 101
 		startTime := time.Now()
@@ -207,9 +201,9 @@ func TestLimiter(t *testing.T) {
 			t.Run(fmt.Sprintf("requests-bursts-%d-iterations", burstAmount), func(t *testing.T) {
 				skipped := 0
 				kept := 0
-				l := NewTokenTicker(100, 100)
-				l.start(ticker.C, startTime)
-				defer l.Stop()
+				l := NewTestTicker(100, 100)
+				l.start(startTime)
+				defer l.stop()
 
 				for c := 0; c < burstAmount; c++ {
 					for i := 0; i < burstSize; i++ {
@@ -221,7 +215,7 @@ func TestLimiter(t *testing.T) {
 					}
 					// Schedule next burst 1sec later
 					startTime = startTime.Add(burstFreq)
-					ticker.tick(startTime)
+					l.tick(startTime)
 				}
 
 				expectedSkipped := (burstSize - 100) * burstAmount
@@ -230,8 +224,8 @@ func TestLimiter(t *testing.T) {
 					expectedSkipped = 0
 					expectedKept = burstSize * burstAmount
 				}
-				require.Equalf(t, kept, expectedKept, "Expected at most %d burst requests to be kept", expectedKept)
-				require.Equalf(t, expectedSkipped, skipped, "Expected at least %d burst requests to be skipped", expectedSkipped)
+				require.Equalf(t, kept, expectedKept, "Expected %d burst requests to be kept", expectedKept)
+				require.Equalf(t, expectedSkipped, skipped, "Expected %d burst requests to be skipped", expectedSkipped)
 			})
 		}
 	})
@@ -277,13 +271,35 @@ func BenchmarkLimiter(b *testing.B) {
 }
 
 // TestTicker is a utility struct used to send hand-crafted ticks to the rate limiter for controlled testing
-// It also makes sure to give time to the bucket update goroutine to be scheduled by sleeping for a while after sending
-// a tick
+// It also makes sure to give time to the bucket update goroutine by using the optional sync channel
 type TestTicker struct {
-	C chan time.Time
+	C        chan time.Time
+	syncChan <-chan struct{}
+	t        *TokenTicker
+}
+
+func NewTestTicker(tokens, maxTokens int64) *TestTicker {
+	return &TestTicker{
+		C: make(chan time.Time),
+		t: NewTokenTicker(tokens, maxTokens),
+	}
+}
+
+func (t *TestTicker) start(timeStamp time.Time) {
+	t.syncChan = t.t.start(t.C, timeStamp, true)
+}
+
+func (t *TestTicker) stop() {
+	t.t.Stop()
+	close(t.C)
+	//syncChan is closed by the token ticker when sure that nothing else will be sent on it
 }
 
 func (t *TestTicker) tick(timeStamp time.Time) {
 	t.C <- timeStamp
-	time.Sleep(1 * time.Millisecond)
+	<-t.syncChan
+}
+
+func (t *TestTicker) Allow() bool {
+	return t.t.Allow()
 }

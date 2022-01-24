@@ -39,7 +39,7 @@ func NewTokenTicker(tokens, maxTokens int64) *TokenTicker {
 
 // updateBucket performs a select loop to update the token amount in the bucket.
 // Used in a goroutine by the rate limiter.
-func (t *TokenTicker) updateBucket(ticksChan <-chan time.Time, startTime time.Time) {
+func (t *TokenTicker) updateBucket(ticksChan <-chan time.Time, startTime time.Time, syncChan chan struct{}) {
 	nsPerToken := time.Second.Nanoseconds() / t.maxTokens
 	elapsedNs := int64(0)
 	prevStamp := startTime
@@ -47,6 +47,9 @@ func (t *TokenTicker) updateBucket(ticksChan <-chan time.Time, startTime time.Ti
 	for {
 		select {
 		case <-t.stopChan:
+			if syncChan != nil {
+				close(syncChan)
+			}
 			return
 		case stamp := <-ticksChan:
 			// Compute the time in nanoseconds that passed between the previous timestamp and this one
@@ -77,20 +80,33 @@ func (t *TokenTicker) updateBucket(ticksChan <-chan time.Time, startTime time.Ti
 					}
 				}
 			}
+			// Sync channel used to signify that the goroutine is done updating the bucket. Used for tests to guarantee
+			// that the goroutine ticked at least once.
+			if syncChan != nil {
+				syncChan <- struct{}{}
+			}
 		}
 	}
 }
 
 func (t *TokenTicker) Start() {
 	t.ticker = time.NewTicker(500 * time.Microsecond)
-	t.start(t.ticker.C, time.Now())
+	t.start(t.ticker.C, time.Now(), false)
 }
 
 // start() is used for internal testing. Controlling the ticker means being able to test per-tick
-// rather than per-duration, which is more reliable if the app is under a lot of stress
-func (t *TokenTicker) start(ticksChan <-chan time.Time, startTime time.Time) {
+// rather than per-duration, which is more reliable if the app is under a lot of stress.
+// sync is used to decide whether the limiter should create a channel for synchronization with the testing app after a
+// bucket update. The limiter is in charge of closing the channel in this case.
+func (t *TokenTicker) start(ticksChan <-chan time.Time, startTime time.Time, sync bool) <-chan struct{} {
 	t.stopChan = make(chan struct{})
-	go t.updateBucket(ticksChan, startTime)
+	var syncChan chan struct{}
+
+	if sync {
+		syncChan = make(chan struct{})
+	}
+	go t.updateBucket(ticksChan, startTime, syncChan)
+	return syncChan
 }
 
 func (t *TokenTicker) Stop() {
