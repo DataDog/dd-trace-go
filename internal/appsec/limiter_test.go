@@ -20,26 +20,24 @@ import (
 )
 
 func TestLimiterUnit(t *testing.T) {
-	ticksChan := make(chan time.Time)
-	defer close(ticksChan)
-	ticker := time.Ticker{C: ticksChan}
-	defer ticker.Stop()
+	ticker := TestTicker{C: make(chan time.Time)}
+	defer close(ticker.C)
 	startTime := time.Now()
 
 	t.Run("no-ticks-1", func(t *testing.T) {
 		l := NewTokenTicker(1, 100)
-		l.start(&ticker, startTime)
+		l.start(ticker.C, startTime)
 		defer l.Stop()
-		//No ticks between the requests
+		// No ticks between the requests
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
 		require.False(t, l.Allow(), "Second call to limiter.Allow() should return False")
 	})
 
 	t.Run("no-ticks-2", func(t *testing.T) {
 		l := NewTokenTicker(100, 100)
-		l.start(&ticker, startTime)
+		l.start(ticker.C, startTime)
 		defer l.Stop()
-		//No ticks between the requests
+		// No ticks between the requests
 		for i := 0; i < 10; i++ {
 			require.True(t, l.Allow(), "Call to limiter.Allow() should return True")
 		}
@@ -47,52 +45,56 @@ func TestLimiterUnit(t *testing.T) {
 
 	t.Run("10ms-ticks", func(t *testing.T) {
 		l := NewTokenTicker(1, 100)
-		l.start(&ticker, startTime)
+		l.start(ticker.C, startTime)
 		defer l.Stop()
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
-		ticksChan <- startTime.Add(10 * time.Millisecond)
-		require.True(t, l.Allow(), "Second call to limiter.Allow() after 11ms should return True")
+		ticker.tick(startTime.Add(10 * time.Millisecond))
+		require.True(t, l.Allow(), "Second call to limiter.Allow() after 10ms should return True")
 	})
 
 	t.Run("9ms-ticks", func(t *testing.T) {
 		l := NewTokenTicker(1, 100)
-		l.start(&ticker, startTime)
+		l.start(ticker.C, startTime)
 		defer l.Stop()
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
-		ticksChan <- startTime.Add(9 * time.Millisecond)
+		ticker.tick(startTime.Add(9 * time.Millisecond))
 		require.False(t, l.Allow(), "Second call to limiter.Allow() after 9ms should return False")
+		ticker.tick(startTime.Add(18 * time.Millisecond))
+		require.True(t, l.Allow(), "Third call to limiter.Allow() after 18ms should return True")
 	})
 
 	t.Run("1s-rate", func(t *testing.T) {
 		l := NewTokenTicker(1, 1)
-		l.start(&ticker, startTime)
+		l.start(ticker.C, startTime)
 		defer l.Stop()
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True with 1s per token")
-		ticksChan <- startTime.Add(500 * time.Millisecond)
+		ticker.tick(startTime.Add(500 * time.Millisecond))
 		require.False(t, l.Allow(), "Second call to limiter.Allow() should return False with 1s per Token")
+		ticker.tick(startTime.Add(1000 * time.Millisecond))
+		require.True(t, l.Allow(), "Third call to limiter.Allow() should return True with 1s per Token")
 	})
 
 	t.Run("100-requests-burst", func(t *testing.T) {
 		l := NewTokenTicker(100, 100)
-		l.start(&ticker, startTime)
+		l.start(ticker.C, startTime)
 		defer l.Stop()
 		for i := 0; i < 100; i++ {
-			require.True(t, l.Allow(),
+			require.Truef(t, l.Allow(),
 				"Burst call %d to limiter.Allow() should return True with 100 initial tokens", i)
 			startTime = startTime.Add(50 * time.Microsecond)
-			ticksChan <- startTime
+			ticker.tick(startTime)
 		}
 	})
 
 	t.Run("101-requests-burst", func(t *testing.T) {
 		l := NewTokenTicker(100, 100)
-		l.start(&ticker, startTime)
+		l.start(ticker.C, startTime)
 		defer l.Stop()
 		for i := 0; i < 100; i++ {
-			require.True(t, l.Allow(),
+			require.Truef(t, l.Allow(),
 				"Burst call %d to limiter.Allow() should return True with 100 initial tokens", i)
 			startTime = startTime.Add(50 * time.Microsecond)
-			ticksChan <- startTime
+			ticker.tick(startTime)
 		}
 		require.False(t, l.Allow(),
 			"Burst call 101 to limiter.Allow() should return False with 100 initial tokens")
@@ -100,24 +102,24 @@ func TestLimiterUnit(t *testing.T) {
 
 	t.Run("bucket-refill-short", func(t *testing.T) {
 		l := NewTokenTicker(100, 100)
-		l.start(&ticker, startTime)
+		l.start(ticker.C, startTime)
 		defer l.Stop()
 
 		for i := 0; i < 1000; i++ {
-			startTime.Add(time.Millisecond)
-			ticksChan <- startTime
+			startTime = startTime.Add(time.Millisecond)
+			ticker.tick(startTime)
 			require.Equalf(t, int64(100), atomic.LoadInt64(&l.tokens), "Bucket should have exactly 100 tokens")
 		}
 	})
 
 	t.Run("bucket-refill-long", func(t *testing.T) {
 		l := NewTokenTicker(100, 100)
-		l.start(&ticker, startTime)
+		l.start(ticker.C, startTime)
 		defer l.Stop()
 
 		for i := 0; i < 1000; i++ {
 			startTime = startTime.Add(3 * time.Second)
-			ticksChan <- startTime
+			ticker.tick(startTime)
 		}
 		require.Equalf(t, int64(100), atomic.LoadInt64(&l.tokens), "Bucket should have exactly 100 tokens")
 	})
@@ -137,7 +139,7 @@ func TestLimiter(t *testing.T) {
 
 	t.Run("concurrency", func(t *testing.T) {
 		//Tests the limiter's ability to sample the traces when subjected to a continuous flow of requests
-		//Each goroutine will continuously call the WAF and the rate limiter for 1 second
+		//Each goroutine will continuously call the rate limiter for 1 second
 		for nbUsers := 1; nbUsers <= 1000; nbUsers *= 10 {
 			t.Run(fmt.Sprintf("continuous-requests-%d-users", nbUsers), func(t *testing.T) {
 				var startBarrier, stopBarrier sync.WaitGroup
@@ -171,20 +173,19 @@ func TestLimiter(t *testing.T) {
 				startBarrier.Done() // Unblock the user goroutines
 				stopBarrier.Wait()  // Wait for the user goroutines to be done
 				duration := time.Since(start).Seconds()
-				//Limiter started with 1 token, expecting a margin of error of 1
-				maxExpectedKept := 1 + int64(math.Ceil(duration)*100)
+				maxExpectedKept := int64(math.Ceil(duration) * 100)
 
 				require.LessOrEqualf(t, kept, maxExpectedKept,
 					"Expected at most %d kept tokens for a %fs duration", maxExpectedKept, duration)
 			})
 		}
 
-		//Tests the limiter's ability to sample the traces when subjected sporadic bursts of requests.
-		//The limiter starts with a bucket filled with 100 tokens to handle a potential immediate first burst
-		for burstAmount := 10; burstAmount < 100; burstAmount += 10 {
+		// Tests the limiter's ability to sample the traces when subjected to sporadic bursts of requests.
+		// The limiter starts with a bucket filled with 100 tokens to handle a potential immediate first burst
+		for burstAmount := 1; burstAmount <= 5; burstAmount++ {
 			t.Run(fmt.Sprintf("requests-bursts-%d-iterations", burstAmount), func(t *testing.T) {
-				burstFreq := 100 * time.Millisecond
-				burstSize := 10
+				burstFreq := 1000 * time.Millisecond
+				burstSize := 101
 				skipped := 0
 				kept := 0
 				reqCount := 0
@@ -195,17 +196,24 @@ func TestLimiter(t *testing.T) {
 				for c := 0; c < burstAmount; c++ {
 					for i := 0; i < burstSize; i++ {
 						reqCount++
-						//Let's not run the WAF if we already know the limiter will ask to discard the trace
 						if !l.Allow() {
 							skipped++
 						} else {
 							kept++
 						}
 					}
-					//Sleep until next burst
+					// Sleep until next burst
 					time.Sleep(burstFreq)
 				}
-				require.Equalf(t, kept, burstAmount*burstSize, "Expected all %d burst requests to be kept", burstAmount*burstSize)
+
+				expectedSkipped := (burstSize - 100) * burstAmount
+				expectedKept := 100 * burstAmount
+				if burstSize < 100 {
+					expectedSkipped = 0
+					expectedKept = burstSize * burstAmount
+				}
+				require.LessOrEqualf(t, kept, expectedKept, "Expected at most %d burst requests to be kept", expectedKept)
+				require.LessOrEqualf(t, expectedSkipped, skipped, "Expected at least %d burst requests to be skipped", expectedSkipped)
 			})
 		}
 	})
@@ -248,4 +256,16 @@ func BenchmarkLimiter(b *testing.B) {
 			}
 		})
 	}
+}
+
+// TestTicker is a utility struct used to send hand-crafted ticks to the rate limiter for controlled testing
+// It also makes sure to give time to the bucket update goroutine to be scheduled by sleeping for a while after sending
+// a tick
+type TestTicker struct {
+	C chan time.Time
+}
+
+func (t *TestTicker) tick(timeStamp time.Time) {
+	t.C <- timeStamp
+	time.Sleep(100 * time.Microsecond)
 }

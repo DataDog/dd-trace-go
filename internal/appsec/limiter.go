@@ -17,11 +17,12 @@ type Limiter interface {
 	Allow() bool
 }
 
-//The token ticker is a thread-safe and lock-free rate limiter based on a token bucket.
-//The idea is to have a goroutine that will update  the bucket with fresh tokens at regular intervals using a time.Ticker.
-//The advantage of using a goroutine here is  that the implementation becomes easily thread-safe using a few
-//atomic operations with little overhead overall. TokenTicker.Start() *must* be called before the first call to
-//TokenTicker.Allow() and TokenTicker.Stop() *must* be called once done using.
+// TokenTicker is a thread-safe and lock-free rate limiter based on a token bucket.
+// The idea is to have a goroutine that will update  the bucket with fresh tokens at regular intervals using a time.Ticker.
+// The advantage of using a goroutine here is  that the implementation becomes easily thread-safe using a few
+// atomic operations with little overhead overall. TokenTicker.Start() *should* be called before the first call to
+// TokenTicker.Allow() and TokenTicker.Stop() *must* be called once done using. Note that calling TokenTicker.Allow()
+// before TokenTicker.Start() is valid, but it means the bucket won't be refilling until the call to TokenTicker.Start() is made
 type TokenTicker struct {
 	tokens    int64
 	maxTokens int64
@@ -37,10 +38,11 @@ func NewTokenTicker(tokens, maxTokens int64) *TokenTicker {
 	}
 }
 
-//Select loop to update the token amount in the bucket. Used in a goroutine by the rate limiter.
+// updateBucket performs a select loop to update the token amount in the bucket.
+// Used in a goroutine by the rate limiter.
 func (t *TokenTicker) updateBucket(startTime time.Time) {
-	ticksPerToken := (time.Second.Nanoseconds() / t.maxTokens)
-	ticks := int64(0)
+	nsPerToken := time.Second.Nanoseconds() / t.maxTokens
+	elapsedNs := int64(0)
 	prevStamp := startTime
 
 	for {
@@ -48,23 +50,30 @@ func (t *TokenTicker) updateBucket(startTime time.Time) {
 		case <-t.stopChan:
 			return
 		case stamp := <-t.ticker.C:
-			ticks += stamp.Sub(prevStamp).Nanoseconds()
-			if ticks > t.maxTokens*ticksPerToken {
-				ticks = t.maxTokens * ticksPerToken
+			// Compute the time in nanoseconds that passed between the previous timestamp and this one
+			// This will be used to know how many tokens can be added into the bucket depending on the limiter rate
+			elapsedNs += stamp.Sub(prevStamp).Nanoseconds()
+			if elapsedNs > t.maxTokens*nsPerToken {
+				elapsedNs = t.maxTokens * nsPerToken
 			}
 			prevStamp = stamp
-			if ticks >= ticksPerToken {
+			// Update the number of tokens in the bucket if enough nanoseconds have passed
+			if elapsedNs >= nsPerToken {
+				// Atomic spin lock to make sure we don't race for `t.tokens`
 				for {
 					tokens := atomic.LoadInt64(&t.tokens)
 					if tokens == t.maxTokens {
-						break
+						break // Bucket is already full, nothing to do
 					}
-					inc := ticks / ticksPerToken
+					inc := elapsedNs / nsPerToken
+					// Make sure not to add more tokens than we are allowed to into the bucket
 					if tokens+inc > t.maxTokens {
 						inc -= (tokens + inc) % t.maxTokens
 					}
 					if atomic.CompareAndSwapInt64(&t.tokens, tokens, tokens+inc) {
-						ticks = ticks % ticksPerToken
+						// Keep track of remaining elapsed ns that were not taken into account for this computation,
+						//so that increment computation remains precise over time
+						elapsedNs = elapsedNs % nsPerToken
 						break
 					}
 				}
@@ -74,24 +83,17 @@ func (t *TokenTicker) updateBucket(startTime time.Time) {
 }
 
 func (t *TokenTicker) Start() {
-	if t.ticker != nil {
-		t.Stop()
-	}
-
+	timeNow := time.Now()
 	t.ticker = time.NewTicker(500 * time.Microsecond)
 	//Ticker goroutine: ticks every 500ms to check whether tokens can be added to the bucket or not
-	go t.updateBucket(time.Now())
+	go t.updateBucket(timeNow)
 }
 
-//Used for internal testing. Controlling the ticker means being able to test per-tick rather than per-duration,
-//which is more reliable if the app is under a lot of stress
-func (t *TokenTicker) start(ticker *time.Ticker, startTime time.Time) {
-	if t.ticker != nil {
-		t.Stop()
-	}
-
-	t.ticker = ticker
-	//Ticker goroutine: ticks every 500ms to check whether tokens can be added to the bucket or not
+// start() is used for internal testing. Controlling the ticker means being able to test per-tick
+// rather than per-duration, which is more reliable if the app is under a lot of stress
+func (t *TokenTicker) start(ticksChan chan time.Time, startTime time.Time) {
+	t.ticker = &time.Ticker{C: ticksChan}
+	// Ticker goroutine: ticks every 500ms to check whether tokens can be added to the bucket or not
 	go t.updateBucket(startTime)
 }
 
@@ -104,11 +106,9 @@ func (t *TokenTicker) Allow() bool {
 	for {
 		tokens := atomic.LoadInt64(&t.tokens)
 		if tokens == 0 {
-			break
+			return false
 		} else if atomic.CompareAndSwapInt64(&t.tokens, tokens, tokens-1) {
 			return true
 		}
 	}
-
-	return false
 }
