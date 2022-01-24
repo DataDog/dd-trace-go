@@ -197,28 +197,31 @@ func TestLimiter(t *testing.T) {
 
 		// Tests the limiter's ability to sample the traces when subjected to sporadic bursts of requests.
 		// The limiter starts with a bucket filled with 100 tokens to handle a potential immediate first burst
-		for burstAmount := 1; burstAmount <= 5; burstAmount++ {
+		ticker := TestTicker{C: make(chan time.Time)}
+		defer close(ticker.C)
+		burstFreq := 1000 * time.Millisecond
+		burstSize := 101
+		startTime := time.Now()
+		// Simulate sporadic bursts during up to 1 minute
+		for burstAmount := 1; burstAmount <= 10; burstAmount++ {
 			t.Run(fmt.Sprintf("requests-bursts-%d-iterations", burstAmount), func(t *testing.T) {
-				burstFreq := 1000 * time.Millisecond
-				burstSize := 101
 				skipped := 0
 				kept := 0
-				reqCount := 0
 				l := NewTokenTicker(100, 100)
-				l.Start()
+				l.start(ticker.C, startTime)
 				defer l.Stop()
 
 				for c := 0; c < burstAmount; c++ {
 					for i := 0; i < burstSize; i++ {
-						reqCount++
 						if !l.Allow() {
 							skipped++
 						} else {
 							kept++
 						}
 					}
-					// Sleep until next burst
-					time.Sleep(burstFreq)
+					// Schedule next burst 1sec later
+					startTime = startTime.Add(burstFreq)
+					ticker.tick(startTime)
 				}
 
 				expectedSkipped := (burstSize - 100) * burstAmount
@@ -227,8 +230,8 @@ func TestLimiter(t *testing.T) {
 					expectedSkipped = 0
 					expectedKept = burstSize * burstAmount
 				}
-				require.LessOrEqualf(t, kept, expectedKept, "Expected at most %d burst requests to be kept", expectedKept)
-				require.LessOrEqualf(t, expectedSkipped, skipped, "Expected at least %d burst requests to be skipped", expectedSkipped)
+				require.Equalf(t, kept, expectedKept, "Expected at most %d burst requests to be kept", expectedKept)
+				require.Equalf(t, expectedSkipped, skipped, "Expected at least %d burst requests to be skipped", expectedSkipped)
 			})
 		}
 	})
@@ -282,5 +285,5 @@ type TestTicker struct {
 
 func (t *TestTicker) tick(timeStamp time.Time) {
 	t.C <- timeStamp
-	time.Sleep(100 * time.Microsecond)
+	time.Sleep(1 * time.Millisecond)
 }
