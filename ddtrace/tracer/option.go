@@ -38,6 +38,9 @@ var (
 	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
 	// Replaced in tests
 	defaultSocketDSD = "/var/run/datadog/dsd.socket"
+
+	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
+	defaultMaxTagsHeaderLen = 512
 )
 
 // config holds the tracer configuration.
@@ -256,7 +259,9 @@ func newConfig(opts ...StartOption) *config {
 		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
 	if c.propagator == nil {
-		c.propagator = NewPropagator(nil)
+		c.propagator = NewPropagator(&PropagatorConfig{
+			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
+		})
 	}
 	if c.logger != nil {
 		log.UseLogger(c.logger)
