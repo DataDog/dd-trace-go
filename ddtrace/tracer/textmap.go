@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 // HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader, allowing
@@ -301,7 +302,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			ctx.setSamplingPriority("", priority, samplerUpstream, math.NaN())
+			ctx.setSamplingPriority("", priority, samplernames.Upstream, math.NaN())
 		case originHeader:
 			ctx.origin = v
 		case traceTagsHeader:
@@ -398,7 +399,7 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			ctx.setSamplingPriority("", priority, samplerUpstream, math.NaN())
+			ctx.setSamplingPriority("", priority, samplernames.Upstream, math.NaN())
 		default:
 		}
 		return nil

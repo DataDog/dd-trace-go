@@ -26,6 +26,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/tinylib/msgp/msgp"
@@ -151,7 +152,7 @@ func (s *span) SetTag(key string, value interface{}) {
 
 // setSamplingPriority locks then span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
-func (s *span) setSamplingPriority(priority int, sampler samplerName, rate float64) {
+func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerName, rate float64) {
 	s.Lock()
 	defer s.Unlock()
 	s.setSamplingPriorityLocked(priority, sampler, rate)
@@ -159,7 +160,7 @@ func (s *span) setSamplingPriority(priority int, sampler samplerName, rate float
 
 // setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
-func (s *span) setSamplingPriorityLocked(priority int, sampler samplerName, rate float64) {
+func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName, rate float64) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -288,11 +289,11 @@ func (s *span) setTagBool(key string, v bool) {
 		}
 	case ext.ManualDrop:
 		if v {
-			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplerManual, math.NaN())
+			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplernames.Manual, math.NaN())
 		}
 	case ext.ManualKeep:
 		if v {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplerManual, math.NaN())
+			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual, math.NaN())
 		}
 	default:
 		if v {
@@ -312,13 +313,13 @@ func (s *span) setMetric(key string, v float64) {
 	delete(s.Meta, key)
 	switch key {
 	case ext.ManualKeep:
-		if v == float64(samplerAppSec) {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplerAppSec, math.NaN())
+		if v == float64(samplernames.AppSec) {
+			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec, math.NaN())
 		}
 	case ext.SamplingPriority:
 		// ext.SamplingPriority is deprecated in favor of ext.ManualKeep and ext.ManualDrop.
 		// We have it here for backward compatibility.
-		s.setSamplingPriorityLocked(int(v), samplerManual, math.NaN())
+		s.setSamplingPriorityLocked(int(v), samplernames.Manual, math.NaN())
 	default:
 		s.Metrics[key] = v
 	}

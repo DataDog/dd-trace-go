@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 // toFloat64 attempts to convert value into a float64. If the value is an integer
@@ -50,7 +52,7 @@ func toFloat64(value interface{}) (f float64, ok bool) {
 			return 0, false
 		}
 		return float64(i), true
-	case samplerName:
+	case samplernames.SamplerName:
 		return float64(i), true
 	default:
 		return 0, false

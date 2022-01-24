@@ -15,6 +15,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 func TestSetSecurityEventTags(t *testing.T) {
@@ -160,7 +161,7 @@ func (m *MockSpan) SetTag(key string, value interface{}) {
 		m.tags = make(map[string]interface{})
 	}
 	if key == ext.ManualKeep {
-		if value == samplerAppSec {
+		if value == samplernames.AppSec {
 			m.tags[ext.ManualKeep] = true
 		}
 	} else {

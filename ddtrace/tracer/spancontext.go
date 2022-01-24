@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
@@ -93,7 +94,7 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
-func (c *spanContext) setSamplingPriority(service string, p int, sampler samplerName, rate float64) {
+func (c *spanContext) setSamplingPriority(service string, p int, sampler samplernames.SamplerName, rate float64) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
@@ -195,7 +196,7 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-func (t *trace) setSamplingPriority(service string, p int, sampler samplerName, rate float64) {
+func (t *trace) setSamplingPriority(service string, p int, sampler samplernames.SamplerName, rate float64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.setSamplingPriorityLocked(service, p, sampler, rate)
@@ -216,7 +217,7 @@ func (t *trace) setTag(key, value string) {
 	t.tags[key] = value
 }
 
-func (t *trace) setSamplingPriorityLocked(service string, p int, sampler samplerName, rate float64) {
+func (t *trace) setSamplingPriorityLocked(service string, p int, sampler samplernames.SamplerName, rate float64) {
 	if t.locked {
 		return
 	}
@@ -229,7 +230,7 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 		t.priority = new(float64)
 	}
 	*t.priority = float64(p)
-	if sampler != samplerUpstream {
+	if sampler != samplernames.Upstream {
 		if t.upstreamServices != "" {
 			t.setTag(keyUpstreamServices, t.upstreamServices+";"+compactUpstreamServices(service, p, sampler, rate))
 		} else {
@@ -258,7 +259,7 @@ func (t *trace) push(sp *span) {
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
-		t.setSamplingPriorityLocked(sp.Service, int(v), samplerUpstream, math.NaN())
+		t.setSamplingPriorityLocked(sp.Service, int(v), samplernames.Upstream, math.NaN())
 	}
 	t.spans = append(t.spans, sp)
 	if haveTracer {
@@ -321,7 +322,7 @@ func (t *trace) finishedOne(s *span) {
 	tr.pushTrace(t.spans)
 }
 
-func compactUpstreamServices(service string, priority int, sampler samplerName, rate float64) string {
+func compactUpstreamServices(service string, priority int, sampler samplernames.SamplerName, rate float64) string {
 	sb64 := b64Encode(service)
 	p := strconv.Itoa(priority)
 	s := strconv.Itoa(int(sampler))
