@@ -413,11 +413,11 @@ func (c *config) loadAgentFeatures() {
 }
 
 func (c *config) canComputeStats() bool {
-	return c.agent.Stats && c.HasFeature("discovery")
+	return c.agent.Stats && c.agent.HasFlag("discovery")
 }
 
 func (c *config) canDropP0s() bool {
-	return c.agent.Stats && c.agent.DropP0s && c.HasFeature("discovery")
+	return c.agent.Stats && c.agent.DropP0s && c.agent.HasFlag("discovery")
 }
 
 func statsTags(c *config) []string {
