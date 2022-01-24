@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package httputil
+package http
 
 import (
 	"fmt"
@@ -36,11 +36,9 @@ func TestTraceAndServe(t *testing.T) {
 			http.Error(w, "some error", http.StatusServiceUnavailable)
 			called = true
 		}
-		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
-			ResponseWriter: w,
-			Request:        r,
-			Service:        "service",
-			Resource:       "resource",
+		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
+			Service:  "service",
+			Resource: "resource",
 		})
 		spans := mt.FinishedSpans()
 		span := spans[0]
@@ -74,11 +72,9 @@ func TestTraceAndServe(t *testing.T) {
 			http.Error(w, "some error", http.StatusServiceUnavailable)
 			called = true
 		}
-		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
-			ResponseWriter: w,
-			Request:        r,
-			Service:        "service",
-			Resource:       "resource",
+		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
+			Service:  "service",
+			Resource: "resource",
 		})
 		spans := mt.FinishedSpans()
 		span := spans[0]
@@ -106,12 +102,10 @@ func TestTraceAndServe(t *testing.T) {
 		handler := func(w http.ResponseWriter, r *http.Request) {
 			called = true
 		}
-		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
-			ResponseWriter: w,
-			Request:        r,
-			Service:        "service",
-			Resource:       "resource",
-			QueryParams:    true,
+		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
+			Service:     "service",
+			Resource:    "resource",
+			QueryParams: true,
 		})
 		spans := mt.FinishedSpans()
 
@@ -134,11 +128,9 @@ func TestTraceAndServe(t *testing.T) {
 			called = true
 		}
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
-				ResponseWriter: w,
-				Request:        r,
-				Service:        "service",
-				Resource:       "resource",
+			TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
+				Service:  "service",
+				Resource: "resource",
 			})
 		}))
 		defer srv.Close()
@@ -192,11 +184,9 @@ func TestTraceAndServe(t *testing.T) {
 		assert.NoError(err)
 		w := httptest.NewRecorder()
 
-		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
-			ResponseWriter: w,
-			Request:        r,
-			Service:        "service",
-			Resource:       "resource",
+		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
+			Service:  "service",
+			Resource: "resource",
 		})
 
 		var p, c mocktracer.Span
@@ -229,11 +219,9 @@ func TestTraceAndServe(t *testing.T) {
 		r = r.WithContext(tracer.ContextWithSpan(r.Context(), parent))
 		w := httptest.NewRecorder()
 
-		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
-			ResponseWriter: w,
-			Request:        r,
-			Service:        "service",
-			Resource:       "resource",
+		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
+			Service:  "service",
+			Resource: "resource",
 		})
 
 		var p, c mocktracer.Span
@@ -260,11 +248,9 @@ func TestTraceAndServe(t *testing.T) {
 		r, err := http.NewRequest("GET", "/", nil)
 		assert.NoError(err)
 		w := httptest.NewRecorder()
-		TraceAndServe(http.HandlerFunc(handler), &TraceConfig{
-			ResponseWriter: w,
-			Request:        r,
-			Service:        "service",
-			Resource:       "resource",
+		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
+			Service:  "service",
+			Resource: "resource",
 		})
 
 		spans := mt.FinishedSpans()
@@ -285,11 +271,9 @@ func TestTraceAndServeHost(t *testing.T) {
 		r, err := http.NewRequest("GET", "http://localhost/", nil)
 		assert.NoError(err)
 
-		TraceAndServe(handler, &TraceConfig{
-			ResponseWriter: httptest.NewRecorder(),
-			Request:        r,
-			Service:        "service",
-			Resource:       "resource",
+		TraceAndServe(handler, httptest.NewRecorder(), r, &ServeConfig{
+			Service:  "service",
+			Resource: "resource",
 		})
 		span := mt.FinishedSpans()[0]
 
@@ -303,11 +287,9 @@ func TestTraceAndServeHost(t *testing.T) {
 
 		r, err := http.NewRequest("GET", "/", nil)
 		assert.NoError(err)
-		TraceAndServe(handler, &TraceConfig{
-			ResponseWriter: httptest.NewRecorder(),
-			Request:        r,
-			Service:        "service",
-			Resource:       "resource",
+		TraceAndServe(handler, httptest.NewRecorder(), r, &ServeConfig{
+			Service:  "service",
+			Resource: "resource",
 		})
 		span := mt.FinishedSpans()[0]
 
@@ -332,15 +314,13 @@ func BenchmarkTraceAndServe(b *testing.B) {
 		b.Fatal(err)
 	}
 	for i := 0; i < b.N; i++ {
-		cfg := TraceConfig{
-			ResponseWriter: noopWriter{},
-			Request:        req,
-			Service:        "service-name",
-			Resource:       "resource-name",
-			FinishOpts:     []ddtrace.FinishOption{},
-			SpanOpts:       []ddtrace.StartSpanOption{},
-			QueryParams:    false,
+		cfg := ServeConfig{
+			Service:     "service-name",
+			Resource:    "resource-name",
+			FinishOpts:  []ddtrace.FinishOption{},
+			SpanOpts:    []ddtrace.StartSpanOption{},
+			QueryParams: false,
 		}
-		TraceAndServe(handler, &cfg)
+		TraceAndServe(handler, noopWriter{}, req, &cfg)
 	}
 }

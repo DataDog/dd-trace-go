@@ -31,9 +31,6 @@ func registerWAF(rules []byte, timeout time.Duration) (unreg dyngo.UnregisterFun
 	}
 
 	// Instantiate the WAF
-	if rules == nil {
-		rules = []byte(staticRecommendedRule)
-	}
 	waf, err := waf.NewHandle(rules)
 	if err != nil {
 		return nil, err
@@ -101,11 +98,21 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 				case serverRequestRawURIAddr:
 					values[serverRequestRawURIAddr] = args.RequestURI
 				case serverRequestHeadersNoCookiesAddr:
-					values[serverRequestHeadersNoCookiesAddr] = args.Headers
+					if headers := args.Headers; headers != nil {
+						values[serverRequestHeadersNoCookiesAddr] = headers
+					}
 				case serverRequestCookiesAddr:
-					values[serverRequestCookiesAddr] = args.Cookies
+					if cookies := args.Cookies; cookies != nil {
+						values[serverRequestCookiesAddr] = cookies
+					}
 				case serverRequestQueryAddr:
-					values[serverRequestQueryAddr] = args.Query
+					if query := args.Query; query != nil {
+						values[serverRequestQueryAddr] = query
+					}
+				case serverRequestPathParams:
+					if pathParams := args.PathParams; pathParams != nil {
+						values[serverRequestPathParams] = pathParams
+					}
 				case serverResponseStatusAddr:
 					values[serverResponseStatusAddr] = res.Status
 				}
@@ -125,7 +132,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 
 // newGRPCWAFEventListener returns the WAF event listener to register in order
 // to enable it.
-func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration) dyngo.EventListener {
+func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Duration) dyngo.EventListener {
 	return grpcsec.OnHandlerOperationStart(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationArgs) {
 		// Limit the maximum number of security events, as a streaming RPC could
 		// receive unlimited number of messages where we could find security events
@@ -189,6 +196,7 @@ const (
 	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
 	serverRequestCookiesAddr          = "server.request.cookies"
 	serverRequestQueryAddr            = "server.request.query"
+	serverRequestPathParams           = "server.request.path_params"
 	serverResponseStatusAddr          = "server.response.status"
 )
 
@@ -198,6 +206,7 @@ var httpAddresses = []string{
 	serverRequestHeadersNoCookiesAddr,
 	serverRequestCookiesAddr,
 	serverRequestQueryAddr,
+	serverRequestPathParams,
 	serverResponseStatusAddr,
 }
 
