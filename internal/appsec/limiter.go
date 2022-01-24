@@ -34,13 +34,12 @@ func NewTokenTicker(tokens, maxTokens int64) *TokenTicker {
 	return &TokenTicker{
 		tokens:    tokens,
 		maxTokens: maxTokens,
-		stopChan:  make(chan struct{}),
 	}
 }
 
 // updateBucket performs a select loop to update the token amount in the bucket.
 // Used in a goroutine by the rate limiter.
-func (t *TokenTicker) updateBucket(startTime time.Time) {
+func (t *TokenTicker) updateBucket(ticksChan <-chan time.Time, startTime time.Time) {
 	nsPerToken := time.Second.Nanoseconds() / t.maxTokens
 	elapsedNs := int64(0)
 	prevStamp := startTime
@@ -49,7 +48,7 @@ func (t *TokenTicker) updateBucket(startTime time.Time) {
 		select {
 		case <-t.stopChan:
 			return
-		case stamp := <-t.ticker.C:
+		case stamp := <-ticksChan:
 			// Compute the time in nanoseconds that passed between the previous timestamp and this one
 			// This will be used to know how many tokens can be added into the bucket depending on the limiter rate
 			elapsedNs += stamp.Sub(prevStamp).Nanoseconds()
@@ -72,7 +71,7 @@ func (t *TokenTicker) updateBucket(startTime time.Time) {
 					}
 					if atomic.CompareAndSwapInt64(&t.tokens, tokens, tokens+inc) {
 						// Keep track of remaining elapsed ns that were not taken into account for this computation,
-						//so that increment computation remains precise over time
+						// so that increment computation remains precise over time
 						elapsedNs = elapsedNs % nsPerToken
 						break
 					}
@@ -83,23 +82,27 @@ func (t *TokenTicker) updateBucket(startTime time.Time) {
 }
 
 func (t *TokenTicker) Start() {
-	timeNow := time.Now()
 	t.ticker = time.NewTicker(500 * time.Microsecond)
-	//Ticker goroutine: ticks every 500ms to check whether tokens can be added to the bucket or not
-	go t.updateBucket(timeNow)
+	t.start(t.ticker.C, time.Now())
 }
 
 // start() is used for internal testing. Controlling the ticker means being able to test per-tick
 // rather than per-duration, which is more reliable if the app is under a lot of stress
-func (t *TokenTicker) start(ticksChan chan time.Time, startTime time.Time) {
-	t.ticker = &time.Ticker{C: ticksChan}
-	// Ticker goroutine: ticks every 500ms to check whether tokens can be added to the bucket or not
-	go t.updateBucket(startTime)
+func (t *TokenTicker) start(ticksChan <-chan time.Time, startTime time.Time) {
+	t.stopChan = make(chan struct{})
+	go t.updateBucket(ticksChan, startTime)
 }
 
 func (t *TokenTicker) Stop() {
-	t.ticker.Stop()
-	close(t.stopChan)
+	// Stop the ticker only if it has been instantiated (not the case when testing by calling start() directly)
+	if t.ticker != nil {
+		t.ticker.Stop()
+	}
+	// Close the stop channel only if it has been created. This covers the case where Stop() is called without any prior
+	// call to Start()
+	if t.stopChan != nil {
+		close(t.stopChan)
+	}
 }
 
 func (t *TokenTicker) Allow() bool {

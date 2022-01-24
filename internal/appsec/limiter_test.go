@@ -123,12 +123,10 @@ func TestLimiterUnit(t *testing.T) {
 		}
 		require.Equalf(t, int64(100), atomic.LoadInt64(&l.tokens), "Bucket should have exactly 100 tokens")
 	})
-}
 
-func TestLimiter(t *testing.T) {
 	t.Run("allow-after-stop", func(t *testing.T) {
 		l := NewTokenTicker(3, 3)
-		l.Start()
+		l.start(ticker.C, startTime)
 		require.True(t, l.Allow())
 		l.Stop()
 		// The limiter keeps allowing until there's no more tokens
@@ -137,6 +135,23 @@ func TestLimiter(t *testing.T) {
 		require.False(t, l.Allow())
 	})
 
+	t.Run("allow-before-start", func(t *testing.T) {
+		l := NewTokenTicker(2, 100)
+		// The limiter keeps allowing until there's no more tokens
+		require.True(t, l.Allow())
+		require.True(t, l.Allow())
+		require.False(t, l.Allow())
+		l.start(ticker.C, startTime)
+		// The limiter has used all its tokens and the bucket is not getting refilled yet
+		require.False(t, l.Allow())
+		ticker.tick(startTime.Add(10 * time.Millisecond))
+		// The limiter has started refilling its tokens
+		require.True(t, l.Allow())
+		l.Stop()
+	})
+}
+
+func TestLimiter(t *testing.T) {
 	t.Run("concurrency", func(t *testing.T) {
 		//Tests the limiter's ability to sample the traces when subjected to a continuous flow of requests
 		//Each goroutine will continuously call the rate limiter for 1 second
