@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// Limiter is used to abstract the rate limiter implementation to only expose the needed function for rate limiting.
+// This is for example useful for testing, allowing us to use a modified rate limiter tuned for testing through the same
+// interface.
 type Limiter interface {
 	Allow() bool
 }
@@ -30,6 +33,7 @@ type TokenTicker struct {
 	stopChan  chan struct{}
 }
 
+// NewTokenTicker is a utility function that allocates a token ticker, initializes necessary fields and returns it
 func NewTokenTicker(tokens, maxTokens int64) *TokenTicker {
 	return &TokenTicker{
 		tokens:    tokens,
@@ -89,13 +93,15 @@ func (t *TokenTicker) updateBucket(ticksChan <-chan time.Time, startTime time.Ti
 	}
 }
 
+// Start starts the ticker and launches the goroutine responsible for updating the token bucket.
+// The ticker is set to tick at a fixed rate of 500us.
 func (t *TokenTicker) Start() {
 	timeNow := time.Now()
 	t.ticker = time.NewTicker(500 * time.Microsecond)
 	t.start(t.ticker.C, timeNow, false)
 }
 
-// start() is used for internal testing. Controlling the ticker means being able to test per-tick
+// start is used for internal testing. Controlling the ticker means being able to test per-tick
 // rather than per-duration, which is more reliable if the app is under a lot of stress.
 // sync is used to decide whether the limiter should create a channel for synchronization with the testing app after a
 // bucket update. The limiter is in charge of closing the channel in this case.
@@ -110,6 +116,7 @@ func (t *TokenTicker) start(ticksChan <-chan time.Time, startTime time.Time, syn
 	return syncChan
 }
 
+// Stop shuts down the rate limiter, taking care stopping the ticker and closing all channels
 func (t *TokenTicker) Stop() {
 	// Stop the ticker only if it has been instantiated (not the case when testing by calling start() directly)
 	if t.ticker != nil {
@@ -122,6 +129,8 @@ func (t *TokenTicker) Stop() {
 	}
 }
 
+// Allow checks and returns whether a token can be retrieved from the bucket and consumed.
+// Thread-safe.
 func (t *TokenTicker) Allow() bool {
 	for {
 		tokens := atomic.LoadInt64(&t.tokens)
