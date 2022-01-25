@@ -422,7 +422,7 @@ func (c *config) canComputeStats() bool {
 }
 
 func (c *config) canDropP0s() bool {
-	return c.agent.Stats && c.agent.DropP0s && c.HasFeature("discovery")
+	return canComputeStats() && c.agent.DropP0s
 }
 
 func statsTags(c *config) []string {
