@@ -293,10 +293,30 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
-	t.Run("dropped", func(t *testing.T) {
+	t.Run("dropped_sent", func(t *testing.T) {
+		// Even if DropP0s is enabled, spans should always be kept unless
+		// client-side stats are also enabled.
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 		tracer.config.agent.DropP0s = true
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		span := tracer.StartSpan("name_1").(*span)
+		child := tracer.StartSpan("name_2", ChildOf(span.context))
+		child.Finish()
+		span.Finish()
+		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
+		assert.Equal(t, "dGVzdF9zZXJ2aWNl|0|1|0.0000", span.context.trace.tags[keyUpstreamServices])
+		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
+	})
+
+	t.Run("dropped_stats", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		tracer.config.featureFlags = make(map[string]struct{})
+		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.agent.DropP0s = true
+		tracer.config.agent.Stats = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1").(*span)
