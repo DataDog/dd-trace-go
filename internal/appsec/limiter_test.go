@@ -36,9 +36,10 @@ func TestLimiterUnit(t *testing.T) {
 		l.start(startTime)
 		defer l.stop()
 		// No ticks between the requests
-		for i := 0; i < 10; i++ {
-			require.True(t, l.Allow(), "Call to limiter.Allow() should return True")
+		for i := 0; i < 100; i++ {
+			require.True(t, l.Allow())
 		}
+		require.False(t, l.Allow())
 	})
 
 	t.Run("10ms-ticks", func(t *testing.T) {
@@ -46,8 +47,9 @@ func TestLimiterUnit(t *testing.T) {
 		l.start(startTime)
 		defer l.stop()
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
+		require.False(t, l.Allow(), "Second call to limiter.Allow() should return false")
 		l.tick(startTime.Add(10 * time.Millisecond))
-		require.True(t, l.Allow(), "Second call to limiter.Allow() after 10ms should return True")
+		require.True(t, l.Allow(), "Third call to limiter.Allow() after 10ms should return True")
 	})
 
 	t.Run("9ms-ticks", func(t *testing.T) {
@@ -57,8 +59,8 @@ func TestLimiterUnit(t *testing.T) {
 		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
 		l.tick(startTime.Add(9 * time.Millisecond))
 		require.False(t, l.Allow(), "Second call to limiter.Allow() after 9ms should return False")
-		l.tick(startTime.Add(18 * time.Millisecond))
-		require.True(t, l.Allow(), "Third call to limiter.Allow() after 18ms should return True")
+		l.tick(startTime.Add(10 * time.Millisecond))
+		require.True(t, l.Allow(), "Third call to limiter.Allow() after 10ms should return True")
 	})
 
 	t.Run("1s-rate", func(t *testing.T) {
@@ -151,8 +153,8 @@ func TestLimiterUnit(t *testing.T) {
 
 func TestLimiter(t *testing.T) {
 	t.Run("concurrency", func(t *testing.T) {
-		//Tests the limiter's ability to sample the traces when subjected to a continuous flow of requests
-		//Each goroutine will continuously call the rate limiter for 1 second
+		// Tests the limiter's ability to sample the traces when subjected to a continuous flow of requests
+		// Each goroutine will continuously call the rate limiter for 1 second
 		for nbUsers := 1; nbUsers <= 10; nbUsers *= 10 {
 			t.Run(fmt.Sprintf("continuous-requests-%d-users", nbUsers), func(t *testing.T) {
 				var startBarrier, stopBarrier sync.WaitGroup
@@ -292,7 +294,7 @@ func (t *TestTicker) start(timeStamp time.Time) {
 func (t *TestTicker) stop() {
 	t.t.Stop()
 	close(t.C)
-	//syncChan is closed by the token ticker when sure that nothing else will be sent on it
+	// syncChan is closed by the token ticker when sure that nothing else will be sent on it
 }
 
 func (t *TestTicker) tick(timeStamp time.Time) {
