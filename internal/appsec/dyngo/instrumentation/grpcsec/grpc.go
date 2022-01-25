@@ -84,10 +84,10 @@ func (op *HandlerOperation) Finish(res HandlerOperationRes) []json.RawMessage {
 
 // AddSecurityEvent adds the security event to the list of events observed
 // during the operation lifetime.
-func (op *HandlerOperation) AddSecurityEvent(event json.RawMessage) {
+func (op *HandlerOperation) AddSecurityEvent(events []json.RawMessage) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
-	op.events = append(op.events, event)
+	op.events = append(op.events, events...)
 }
 
 // gRPC handler operation's start and finish event callback function types.
