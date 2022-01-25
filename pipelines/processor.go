@@ -82,7 +82,6 @@ type processorStats struct {
 
 type processor struct {
 	in        chan statsPoint
-	mu        sync.Mutex
 	buckets   map[int64]bucket
 	wg        sync.WaitGroup
 	stopped   uint64
@@ -137,14 +136,17 @@ func (p *processor) add(point statsPoint) {
 	}
 }
 
-func (p *processor) runIngester() {
+func (p *processor) run(tick <-chan time.Time) {
 	for {
 		select {
 		case s := <-p.in:
 			atomic.AddInt64(&p.stats.payloadsIn, 1)
 			p.add(s)
+		case now := <-tick:
+			p.sendToAgent(p.flush(now))
 		case <-p.stop:
-			// drop in flight payloads.
+			// drop in flight payloads on the input channel
+			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
 			return
 		}
 	}
@@ -158,16 +160,12 @@ func (p *processor) Start() {
 	}
 	p.stop = make(chan struct{})
 	p.wg.Add(1)
+	go p.reportStats()
 	go func() {
 		defer p.wg.Done()
 		tick := time.NewTicker(bucketDuration)
 		defer tick.Stop()
-		p.runFlusher(tick.C)
-	}()
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
-		p.runIngester()
+		p.run(tick.C)
 	}()
 }
 
@@ -188,14 +186,11 @@ func (p *processor) reportStats() {
 	}
 }
 
-func (p *processor) runFlusher(tick <-chan time.Time) {
+func (p *processor) runFlusher() {
 	for {
 		select {
-		case now := <-tick:
-			p.sendToAgent(p.flush(now))
 		case <-p.stop:
 			// flush everything, so add a few bucketDurations to the current time in order to get a good margin.
-			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
 			return
 		}
 	}
@@ -213,8 +208,6 @@ func (p *processor) flushBucket(bucketStart int64) statsBucket {
 
 func (p *processor) flush(now time.Time) statsPayload {
 	nowNano := now.UnixNano()
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	sp := statsPayload{
 		Env:   p.env,
 		Stats: make([]statsBucket, 0, len(p.buckets)),
