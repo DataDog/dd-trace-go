@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 func TestSetSecurityEventTags(t *testing.T) {
@@ -158,7 +160,13 @@ func (m *MockSpan) SetTag(key string, value interface{}) {
 	if m.tags == nil {
 		m.tags = make(map[string]interface{})
 	}
-	m.tags[key] = value
+	if key == ext.ManualKeep {
+		if value == samplernames.AppSec {
+			m.tags[ext.ManualKeep] = true
+		}
+	} else {
+		m.tags[key] = value
+	}
 }
 
 func (m *MockSpan) SetOperationName(operationName string) {
