@@ -15,6 +15,7 @@ const (
 	TargetPort = "out.port"
 
 	// SamplingPriority is the tag that marks the sampling priority of a span.
+	// Deprecated in favor of ManualKeep and ManualDrop.
 	SamplingPriority = "sampling.priority"
 
 	// SQLType sets the sql type tag.
