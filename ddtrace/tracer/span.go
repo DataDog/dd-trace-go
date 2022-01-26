@@ -390,8 +390,7 @@ func (s *span) finish(finishTime int64) {
 	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have an active tracer
-		feats := t.config.agent
-		if feats.Stats && shouldComputeStats(s) {
+		if t.config.canComputeStats() && shouldComputeStats(s) {
 			// the agent supports computed stats
 			select {
 			case t.stats.In <- newAggregableSpan(s, t.obfuscator):
@@ -400,7 +399,7 @@ func (s *span) finish(finishTime int64) {
 				log.Error("Stats channel full, disregarding span.")
 			}
 		}
-		if feats.DropP0s {
+		if t.config.canDropP0s() {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
 		}
