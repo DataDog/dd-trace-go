@@ -257,6 +257,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Len(spans, 1)
 		assert.Equal("200", spans[0].Tag(ext.HTTPCode))
 	})
+
 	t.Run("empty", func(t *testing.T) {
 		mt := mocktracer.Start()
 		assert := assert.New(t)
