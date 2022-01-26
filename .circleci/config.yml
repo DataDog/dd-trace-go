@@ -109,6 +109,7 @@ jobs:
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+      DD_APPSEC_WAF_TIMEOUT: 1s
     <<: *plain-go114
 
     steps:
@@ -155,6 +156,7 @@ jobs:
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+      DD_APPSEC_WAF_TIMEOUT: 1s
     working_directory: /home/circleci/dd-trace-go.v1
     docker:
       - image: circleci/golang:1.14

@@ -53,6 +53,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
 			defer span.Finish()
 
+			next := next // avoid modifying the value of next in the outer closure scope
 			if appsec.Enabled() {
 				next = withAppsec(next, r, span)
 				// Note that the following response writer passed to the handler
