@@ -186,7 +186,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 			"a": struct{}{},
 			"b": struct{}{},
 		})
-		assert.False(t, cfg.agent.Stats)
+		assert.True(t, cfg.agent.Stats)
 		assert.True(t, cfg.agent.HasFlag("a"))
 		assert.True(t, cfg.agent.HasFlag("b"))
 	})
