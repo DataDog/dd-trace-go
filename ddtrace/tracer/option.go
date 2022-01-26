@@ -38,6 +38,9 @@ var (
 	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
 	// Replaced in tests
 	defaultSocketDSD = "/var/run/datadog/dsd.socket"
+
+	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
+	defaultMaxTagsHeaderLen = 512
 )
 
 // config holds the tracer configuration.
@@ -174,7 +177,7 @@ func forEachStringTag(str string, fn func(key string, val string)) {
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
-	c.agentAddr = defaultAddress
+	c.agentAddr = resolveAgentAddr(defaultAddress)
 	c.httpClient = defaultHTTPClient()
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
@@ -256,7 +259,9 @@ func newConfig(opts ...StartOption) *config {
 		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
 	if c.propagator == nil {
-		c.propagator = NewPropagator(nil)
+		c.propagator = NewPropagator(&PropagatorConfig{
+			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
+		})
 	}
 	if c.logger != nil {
 		log.UseLogger(c.logger)
@@ -403,16 +408,21 @@ func (c *config) loadAgentFeatures() {
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
-			if c.HasFeature("discovery") {
-				// client-stats computation is off by default
-				c.agent.Stats = true
-			}
+			c.agent.Stats = true
 		}
 	}
 	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
 	for _, flag := range info.FeatureFlags {
 		c.agent.featureFlags[flag] = struct{}{}
 	}
+}
+
+func (c *config) canComputeStats() bool {
+	return c.agent.Stats && c.HasFeature("discovery")
+}
+
+func (c *config) canDropP0s() bool {
+	return c.canComputeStats() && c.agent.DropP0s
 }
 
 func statsTags(c *config) []string {
@@ -690,9 +700,10 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 // WithProfilerEndpoints enables the endpoints integration between the tracer
 // and profiler. This is done by automatically attaching a pprof label called
 // "trace endpoint" holding the resource name of the top-level service span if
-// its type is http or rpc. You should not use this label name in your own code
-// when this is enabled. The enabled value defaults to the value of the
-// DD_PROFILING_ENDPOINT_COLLECTION_ENABLED env variable or false.
+// its type is "http", "rpc" or "" (default). You should not use this label
+// name in your own code when this is enabled. The enabled value defaults to
+// the value of the DD_PROFILING_ENDPOINT_COLLECTION_ENABLED env variable or
+// false.
 func WithProfilerEndpoints(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerEndpoints = enabled
@@ -750,6 +761,13 @@ func WithSpanID(id uint64) StartSpanOption {
 func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.Parent = ctx
+	}
+}
+
+// withContext associates the ctx with the span.
+func withContext(ctx context.Context) StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		cfg.Context = ctx
 	}
 }
 

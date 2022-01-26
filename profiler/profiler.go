@@ -131,6 +131,9 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			return nil, fmt.Errorf("unknown profile type: %d", pt)
 		}
 	}
+	if cfg.logStartup {
+		logStartup(cfg)
+	}
 
 	p := profiler{
 		cfg:  cfg,

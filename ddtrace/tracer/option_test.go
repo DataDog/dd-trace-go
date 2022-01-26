@@ -186,7 +186,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 			"a": struct{}{},
 			"b": struct{}{},
 		})
-		assert.False(t, cfg.agent.Stats)
+		assert.True(t, cfg.agent.Stats)
 		assert.True(t, cfg.agent.HasFlag("a"))
 		assert.True(t, cfg.agent.HasFlag("b"))
 	})
@@ -301,6 +301,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
 		})
+	})
+
+	t.Run("env-agentAddr", func(t *testing.T) {
+		os.Setenv("DD_AGENT_HOST", "trace-agent")
+		defer os.Unsetenv("DD_AGENT_HOST")
+		tracer := newTracer()
+		c := tracer.config
+		assert.Equal(t, "trace-agent:8126", c.agentAddr)
 	})
 
 	t.Run("override", func(t *testing.T) {

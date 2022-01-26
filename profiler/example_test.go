@@ -14,7 +14,6 @@ import (
 // This example illustrates how to run (and later stop) the Datadog Profiler.
 func Example() {
 	err := profiler.Start(
-		profiler.WithAPIKey("123key"),
 		profiler.WithService("users-db"),
 		profiler.WithEnv("staging"),
 		profiler.WithTags("version:1.2.0"),
