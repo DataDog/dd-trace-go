@@ -42,12 +42,16 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 
 		// Rerun test a few times with doubled duration until it passes to avoid
 		// flaky behavior in CI.
+		var (
+			prof *CPUProfile
+			res  *pb.WorkRes
+		)
 		for attempt := 1; attempt <= 5; attempt++ {
 			app := c.Start(t)
 			defer app.Stop(t)
 
-			res := app.WorkRequest(t, req)
-			prof := app.CPUProfile(t)
+			res = app.WorkRequest(t, req)
+			prof = app.CPUProfile(t)
 
 			notEnoughSamples := (prof.Duration() < minCPUDuration) ||
 				(prof.LabelsDuration(CustomLabels) < minCPUDuration) ||
@@ -63,7 +67,15 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 			require.True(t, ValidSpanID(res.LocalRootSpanId))
 			return res, prof
 		}
-		t.Fatal("could not collect enough data in 5 attempts")
+		// Failed after 5 attempts, identify which condition wasn't met
+		require.GreaterOrEqual(t, prof.Duration(), minCPUDuration)
+		require.GreaterOrEqual(t, prof.LabelsDuration(CustomLabels), minCPUDuration)
+		if c.Endpoints {
+			require.GreaterOrEqual(t, prof.LabelDuration(traceprof.TraceEndpoint, c.AppType.Endpoint()), minCPUDuration)
+		}
+		if c.CodeHotspots {
+			require.GreaterOrEqual(t, prof.LabelsDuration(map[string]string{traceprof.LocalRootSpanID: res.LocalRootSpanId, traceprof.SpanID: res.SpanId}), minCPUDuration)
+		}
 		return nil, nil
 	}
 
