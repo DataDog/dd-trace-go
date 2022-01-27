@@ -146,6 +146,10 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	return &p, nil
 }
 
+type statsdGauge interface {
+	Gauge(name string, value float64, tags []string, rate float64) error
+}
+
 // run runs the profiler.
 func (p *profiler) run() {
 	if _, ok := p.cfg.types[MutexProfile]; ok {
@@ -153,6 +157,15 @@ func (p *profiler) run() {
 	}
 	if _, ok := p.cfg.types[BlockProfile]; ok {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
+	}
+	if s, ok := p.cfg.statsd.(statsdGauge); ok {
+		// If the statsd client supports gauges (e.g.
+		// github.com/datadog/datadog-go/v5/statsd) then we can send
+		// gauges reporting the current profiler configuration
+		s.Gauge("datadog.profiler.go.profile_period", p.cfg.period.Seconds(), nil, 1)
+		s.Gauge("datadog.profiler.go.cpu_duration", p.cfg.cpuDuration.Seconds(), nil, 1)
+		s.Gauge("datadog.profiler.go.block_profile_rate", float64(p.cfg.blockRate), nil, 1)
+		s.Gauge("datadog.profiler.go.mutex_profile_fraction", float64(p.cfg.mutexFraction), nil, 1)
 	}
 	p.wg.Add(1)
 	go func() {
