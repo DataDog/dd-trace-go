@@ -110,11 +110,14 @@ type PropagatorConfig struct {
 	ParentHeader string
 
 	// PriorityHeader specifies the map key that will be used to store the sampling priority.
-	// It deafults to DefaultPriorityHeader.
+	// It defaults to DefaultPriorityHeader.
 	PriorityHeader string
 
 	// MaxTagsHeaderLen specifies the maximum length of trace tags header value.
 	MaxTagsHeaderLen int
+
+	// B3 specifies if B3 headers should be added for trace propagation
+	B3 bool
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
@@ -151,28 +154,39 @@ type chainedPropagator struct {
 }
 
 // getPropagators returns a list of propagators based on the list found in the
-// given environment variable. If the list doesn't contain a value or has invalid
-// values, the default propagator will be returned.
+// given environment variable. If the list doesn't contain any valid values the
+// default propagator will be returned. Any invalid values in the list will log
+// a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 	dd := &propagator{cfg}
 	ps := os.Getenv(env)
+	defaultPs := []Propagator{dd}
+	if cfg.B3 {
+		defaultPs = append(defaultPs, &propagatorB3{})
+	}
 	if ps == "" {
-		return []Propagator{dd}
+		return defaultPs
 	}
 	var list []Propagator
+	if cfg.B3 {
+		list = append(list, &propagatorB3{})
+	}
 	for _, v := range strings.Split(ps, ",") {
 		switch strings.ToLower(v) {
 		case "datadog":
 			list = append(list, dd)
 		case "b3":
-			list = append(list, &propagatorB3{})
+			if !cfg.B3 {
+				// propagatorB3 hasn't already been added, add a new one.
+				list = append(list, &propagatorB3{})
+			}
 		default:
 			log.Warn("unrecognized propagator: %s\n", v)
 		}
 	}
 	if len(list) == 0 {
 		// return the default
-		return []Propagator{dd}
+		return defaultPs
 	}
 	return list
 }
