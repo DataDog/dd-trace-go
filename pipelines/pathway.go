@@ -13,20 +13,30 @@ import (
 	"time"
 )
 
-// Pathway represents a path points can take.
-// It is defined as nodes (services) linked together with edges.
-// To reduce the size of the propagated serialized pathway, instead of storing
-// a list of edges and services, a hash of the path is computed. The hash is then resolved
-// in the Datadog backend.
+// Pathway is used to monitor how payloads are sent across different services.
+// An example Pathway would be:
+// service A -- edge 1 --> service B -- edge 2 --> service C
+// So it's a branch of services (we also call them "nodes") connected via edges.
+// As the payload is sent around, we save the start time (start of service A),
+// and the start time of the previous service.
+// This allows us to measure the latency of each edge, as well as the latency from origin of any service.
 type Pathway struct {
-	hash         uint64
+	// hash is the hash of the current node, of the parent node, and of the edge that connects the parent node
+	// to this node.
+	hash uint64
+	// pathwayStart is the start of the first node in the Pathway
 	pathwayStart time.Time
-	edgeStart    time.Time
-	service      string
-	edge         string
+	// edgeStart is the start of the previous node.
+	edgeStart time.Time
+	// service is the service of the current node.
+	service string
+	// edge is the name of the edge connecting this node, and its parent.
+	edge string
 }
 
-// Merge merges multiple pathways
+// Merge merges multiple pathways into one.
+// The current implementation samples one resulting Pathway. A future implementation could be more clever
+// and actually merge the Pathways.
 func Merge(pathways []Pathway) Pathway {
 	if len(pathways) == 0 {
 		return Pathway{}

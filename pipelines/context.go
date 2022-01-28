@@ -13,13 +13,14 @@ type contextKey struct{}
 
 var activePathwayKey = contextKey{}
 
-// ToContext returns a copy of the given context which includes the pathway p.
-func ToContext(ctx context.Context, p Pathway) context.Context {
+// ContextWithPathway returns a copy of the given context which includes the pathway p.
+func ContextWithPathway(ctx context.Context, p Pathway) context.Context {
 	return context.WithValue(ctx, activePathwayKey, p)
 }
 
-// FromContext returns the pathway contained in the given context.
-func FromContext(ctx context.Context) (p Pathway, ok bool) {
+// PathwayFromContext returns the pathway contained in the given context, and whether a
+// pathway is found in ctx.
+func PathwayFromContext(ctx context.Context) (p Pathway, ok bool) {
 	if ctx == nil {
 		return Pathway{}, false
 	}
@@ -30,37 +31,39 @@ func FromContext(ctx context.Context) (p Pathway, ok bool) {
 	return Pathway{}, false
 }
 
-// SetCheckpoint sets a checkpoint on the pathway in the context.
-// if there is no pathway in the context, it creates a new one.
+// SetCheckpoint sets a checkpoint on the pathway found in ctx.
+// If there is no pathway in ctx, a new Pathway is returned.
 func SetCheckpoint(ctx context.Context, edge string) (Pathway, context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	p, ok := FromContext(ctx)
+	p, ok := PathwayFromContext(ctx)
 	if ok {
 		p = p.SetCheckpoint(edge)
 	} else {
 		// skip the edge if there is nothing before this node.
 		p = NewPathway()
 	}
-	ctx = ToContext(ctx, p)
+	ctx = ContextWithPathway(ctx, p)
 	return p, ctx
 }
 
 // MergeContexts returns the first context which includes the pathway resulting from merging the pathways
 // contained in all contexts.
+// This function should be used in fan-in situations. The current implementation keeps only 1 Pathway.
+// A future implementation could merge multiple Pathways together and put the resulting Pathway in the context.
 func MergeContexts(ctxs ...context.Context) context.Context {
 	if len(ctxs) == 0 {
 		return context.Background()
 	}
 	pathways := make([]Pathway, 0, len(ctxs))
 	for _, ctx := range ctxs {
-		if p, ok := FromContext(ctx); ok {
+		if p, ok := PathwayFromContext(ctx); ok {
 			pathways = append(pathways, p)
 		}
 	}
 	if len(pathways) == 0 {
 		return ctxs[0]
 	}
-	return ToContext(ctxs[0], Merge(pathways))
+	return ContextWithPathway(ctxs[0], Merge(pathways))
 }

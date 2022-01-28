@@ -44,6 +44,7 @@ func TestHTTPTransport(t *testing.T) {
 			EdgeLatency:    []byte{4, 5, 6},
 		}},
 	}}}
+
 	t.Run("agentless", func(t *testing.T) {
 		fakeTransport := fakeTransport{}
 		transport := newHTTPTransport("agent-address", "datadoghq.com", "key", &http.Client{Transport: &fakeTransport}, true)
@@ -66,6 +67,7 @@ func TestHTTPTransport(t *testing.T) {
 		assert.Nil(t, msgp.Decode(gzReader, &sentPayload))
 		assert.Equal(t, p, sentPayload)
 	})
+
 	t.Run("with_agent", func(t *testing.T) {
 		fakeTransport := fakeTransport{}
 		transport := newHTTPTransport("agent-address", "datadoghq.com", "key", &http.Client{Transport: &fakeTransport}, false)

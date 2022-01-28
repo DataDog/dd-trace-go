@@ -299,9 +299,9 @@ func WithSite(site string) StartOption {
 	}
 }
 
-// WithAgentLess starts the pipeline processor in a mode where stats are sent directly to the datadog backend
+// WithAgentless starts the pipeline processor in a mode where stats are sent directly to the datadog backend
 // instead of going through the agent.
-func WithAgentLess(apiKey string) StartOption {
+func WithAgentless(apiKey string) StartOption {
 	return func(c *config) {
 		c.apiKey = apiKey
 		c.agentLess = true
