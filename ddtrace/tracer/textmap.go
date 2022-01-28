@@ -116,7 +116,8 @@ type PropagatorConfig struct {
 	// MaxTagsHeaderLen specifies the maximum length of trace tags header value.
 	MaxTagsHeaderLen int
 
-	// B3 specifies if B3 headers should be added for trace propagation
+	// B3 specifies if B3 headers should be added for trace propagation.
+	// See https://github.com/openzipkin/b3-propagation
 	B3 bool
 }
 
