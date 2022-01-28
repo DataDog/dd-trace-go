@@ -7,7 +7,7 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// A MessageCarrier injects and extracts traces from a sarama.ProducerMessage.
+// A MessageCarrier injects and extracts traces from a kafka.Message.
 type MessageCarrier struct {
 	msg *kafka.Message
 }
@@ -43,13 +43,7 @@ func (c MessageCarrier) Set(key, val string) {
 	})
 }
 
-// NewMessageCarrier creates a new MessageCarrier.
-func NewMessageCarrier(msg *kafka.Message) MessageCarrier {
-	return MessageCarrier{msg}
-}
-
 // ExtractSpanContextFromMessage retrieves the SpanContext from message header
 func ExtractSpanContextFromMessage(msg kafka.Message) (ddtrace.SpanContext, error) {
-	carrier := NewMessageCarrier(&msg)
-	return tracer.Extract(carrier)
+	return tracer.Extract(MessageCarrier{&msg})
 }

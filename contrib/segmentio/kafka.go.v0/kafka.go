@@ -28,7 +28,7 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 		Reader: c,
 		cfg:    newConfig(opts...),
 	}
-	log.Debug("contrib/confluentinc/confluent-kafka-go/kafka: Wrapping Reader: %#v", wrapped.cfg)
+	log.Debug("contrib/confluentinc/confluent-kafka.go.v0/kafka: Wrapping Reader: %#v", wrapped.cfg)
 	return wrapped
 }
 
@@ -52,14 +52,14 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, r.cfg.analyticsRate))
 	}
 	// kafka supports headers, so try to extract a span context
-	carrier := NewMessageCarrier(msg)
+	carrier := MessageCarrier{msg}
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, "kafka.consume", opts...)
 	// reinject the span context so consumers can pick it up
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		log.Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier, %v", err)
+		log.Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier, %v", err)
 	}
 	return span
 }
@@ -95,7 +95,7 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {
 		Writer: w,
 		cfg:    newConfig(opts...),
 	}
-	log.Debug("contrib/segmentio/kafka-go: Wrapping Writer: %#v", writer.cfg)
+	log.Debug("contrib/segmentio/kafka.go.v0: Wrapping Writer: %#v", writer.cfg)
 	return writer
 }
 
@@ -114,11 +114,11 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 	if !math.IsNaN(w.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, w.cfg.analyticsRate))
 	}
-	carrier := NewMessageCarrier(msg)
+	carrier := MessageCarrier{msg}
 	span, _ := tracer.StartSpanFromContext(ctx, "kafka.produce", opts...)
 	// inject the span context so consumers can pick it up
 	err := tracer.Inject(span.Context(), carrier)
-	log.Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier, %v", err)
+	log.Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier, %v", err)
 	return span
 }
 
@@ -128,7 +128,7 @@ func finishSpan(span ddtrace.Span, partition int, offset int64, err error) {
 	span.Finish(tracer.WithError(err))
 }
 
-// WriteMessages calls kafka-go.Writer.WriteMessages and traces the requests.
+// WriteMessages calls kafka.go.v0.Writer.WriteMessages and traces the requests.
 func (w *Writer) WriteMessages(ctx context.Context, msgs ...kafka.Message) error {
 	// although there's only one call made to the SyncProducer, the messages are
 	// treated individually, so we create a span for each one
