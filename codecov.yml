@@ -14,7 +14,12 @@ coverage:
           - contrib
     patch:
       default:
-        target: 100%
+        target: 90%
+        # Only run this check for pull requests, but skip it for merged
+        # commits. This highlights patches with potential coverage problems
+        # during development, but doesn't make our v1 (release) branch look
+        # like it fails CI checks as we consider this check to be optional.
+        only_pulls: true
 
 flags:
   core:

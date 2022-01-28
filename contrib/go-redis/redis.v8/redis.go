@@ -100,15 +100,17 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 
 func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
 	raw := cmd.String()
-	parts := strings.Split(raw, " ")
-	length := len(parts) - 1
+	length := strings.Count(raw, " ")
 	p := ddh.params
-	opts := []ddtrace.StartSpanOption{
+	opts := make([]ddtrace.StartSpanOption, 0, 4+1+len(ddh.additionalTags)+1) // 4 options below + redis.raw_command + ddh.additionalTags + analyticsRate
+	opts = append(opts,
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
-		tracer.ResourceName(parts[0]),
-		tracer.Tag("redis.raw_command", raw),
+		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
+	)
+	if !p.config.skipRaw {
+		opts = append(opts, tracer.Tag("redis.raw_command", raw))
 	}
 	opts = append(opts, ddh.additionalTags...)
 	if !math.IsNaN(p.config.analyticsRate) {
@@ -132,17 +134,18 @@ func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error
 
 func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
 	raw := commandsToString(cmds)
-	parts := strings.Split(raw, " ")
-	length := len(parts) - 1
+	length := strings.Count(raw, " ")
 	p := ddh.params
-	opts := []ddtrace.StartSpanOption{
+	opts := make([]ddtrace.StartSpanOption, 0, 5+1+len(ddh.additionalTags)+1) // 5 options below + redis.raw_command + ddh.additionalTags + analyticsRate
+	opts = append(opts,
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
-		tracer.ResourceName(parts[0]),
-		tracer.Tag("redis.raw_command", raw),
+		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
-		tracer.Tag(ext.ResourceName, raw),
 		tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
+	)
+	if !p.config.skipRaw {
+		opts = append(opts, tracer.Tag("redis.raw_command", raw))
 	}
 	opts = append(opts, ddh.additionalTags...)
 	if !math.IsNaN(p.config.analyticsRate) {

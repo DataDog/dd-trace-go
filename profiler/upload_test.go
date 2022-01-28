@@ -115,6 +115,20 @@ func TestTryUploadUDS(t *testing.T) {
 	}, tags[0:2])
 }
 
+func Test202Accepted(t *testing.T) {
+	srv := startHTTPTestServer(t, 202)
+	defer srv.close()
+	p, err := unstartedProfiler(
+		WithAgentAddr(srv.address),
+		WithService("my-service"),
+		WithEnv("my-env"),
+		WithTags("tag1:1", "tag2:2"),
+	)
+	require.NoError(t, err)
+	err = p.doRequest(testBatch)
+	require.NoError(t, err)
+}
+
 func TestOldAgent(t *testing.T) {
 	srv := startHTTPTestServer(t, 404)
 	defer srv.close()

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -197,6 +198,54 @@ func TestAnalyticsSettings(t *testing.T) {
 			globalconfig.SetAnalyticsRate(0.4)
 
 			test(t, mt, 0.23, WithAnalyticsRate(0.23))
+		})
+	}
+}
+
+func TestIgnoreRequestOption(t *testing.T) {
+	tests := []struct {
+		url       string
+		spanCount int
+	}{
+		{
+			url:       "/skip",
+			spanCount: 0,
+		},
+		{
+			url:       "/200",
+			spanCount: 1,
+		},
+	}
+	ignore := func(req *http.Request) bool {
+		return req.URL.Path == "/skip"
+	}
+	mux := NewServeMux(WithIgnoreRequest(ignore))
+	mux.HandleFunc("/skip", handler200)
+	mux.HandleFunc("/200", handler200)
+
+	for _, test := range tests {
+		t.Run("servemux"+test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, test.spanCount, len(spans))
+		})
+
+		t.Run("wraphandler"+test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
+			w := httptest.NewRecorder()
+			f := http.HandlerFunc(handler200)
+			handler := WrapHandler(f, "my-service", "my-resource", WithIgnoreRequest(ignore))
+			handler.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, test.spanCount, len(spans))
 		})
 	}
 }

@@ -6,6 +6,7 @@
 package kafka
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 
@@ -206,4 +208,72 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, int32(0), s1.Tag("partition"))
 		})
 	}
+}
+
+// This tests the deprecated behavior of using cfg.context as the context passed via kafka messages
+// instead of the one passed in the message.
+func TestDeprecatedContext(t *testing.T) {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	}
+
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create the span to be passed
+	parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "test_parent_context")
+
+	c, err := NewConsumer(&kafka.ConfigMap{
+		"go.events.channel.enable": true, // required for the events channel to be turned on
+		"group.id":                 testGroupID,
+		"socket.timeout.ms":        10,
+		"session.timeout.ms":       10,
+		"enable.auto.offset.store": false,
+	}, WithContext(ctx)) // Adds the parent context containing a span
+
+	err = c.Subscribe(testTopic, nil)
+	assert.NoError(t, err)
+
+	// This span context will be ignored
+	messageSpan, _ := tracer.StartSpanFromContext(context.Background(), "test_context_from_message")
+	messageSpanContext := messageSpan.Context()
+
+	/// Produce a message with a span
+	go func() {
+		msg := &kafka.Message{
+			TopicPartition: kafka.TopicPartition{
+				Topic:     &testTopic,
+				Partition: 1,
+				Offset:    1,
+			},
+			Key:   []byte("key1"),
+			Value: []byte("value1"),
+		}
+
+		// Inject the span context in the message to be produced
+		carrier := NewMessageCarrier(msg)
+		tracer.Inject(messageSpan.Context(), carrier)
+
+		c.Consumer.Events() <- msg
+
+	}()
+
+	msg := (<-c.Events()).(*kafka.Message)
+
+	// Extract the context from the message
+	carrier := NewMessageCarrier(msg)
+	spanContext, err := tracer.Extract(carrier)
+	assert.NoError(t, err)
+
+	parentContext := parentSpan.Context()
+
+	/// The context passed is the one from the parent context
+	assert.EqualValues(t, parentContext.TraceID(), spanContext.TraceID())
+	/// The context passed is not the one passed in the message
+	assert.NotEqualValues(t, messageSpanContext.TraceID(), spanContext.TraceID())
+
+	c.Close()
+	// wait for the events channel to be closed
+	<-c.Events()
+
 }

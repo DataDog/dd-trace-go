@@ -36,6 +36,9 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if rt.cfg.serviceName != "" {
 		opts = append(opts, tracer.ServiceName(rt.cfg.serviceName))
 	}
+	if len(rt.cfg.spanOpts) > 0 {
+		opts = append(opts, rt.cfg.spanOpts...)
+	}
 	span, ctx := tracer.StartSpanFromContext(req.Context(), "http.request", opts...)
 	defer func() {
 		if rt.cfg.after != nil {
@@ -65,6 +68,11 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		}
 	}
 	return res, err
+}
+
+// Unwrap returns the original http.RoundTripper.
+func (rt *roundTripper) Unwrap() http.RoundTripper {
+	return rt.base
 }
 
 // WrapRoundTripper returns a new RoundTripper which traces all requests sent

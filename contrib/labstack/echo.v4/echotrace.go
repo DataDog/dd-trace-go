@@ -13,17 +13,21 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 
 	"github.com/labstack/echo/v4"
 )
 
 // Middleware returns echo middleware which will trace incoming requests.
 func Middleware(opts ...Option) echo.MiddlewareFunc {
+	cfg := new(config)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		cfg := new(config)
-		defaults(cfg)
-		for _, fn := range opts {
-			fn(cfg)
+		if appsec.Enabled() {
+			next = withAppSec(next)
 		}
 		return func(c echo.Context) error {
 			request := c.Request()
@@ -43,16 +47,19 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(request.Header)); err == nil {
 				opts = append(opts, tracer.ChildOf(spanctx))
 			}
+			var finishOpts []tracer.FinishOption
+			if cfg.noDebugStack {
+				finishOpts = append(finishOpts, tracer.NoDebugStack())
+			}
 			span, ctx := tracer.StartSpanFromContext(request.Context(), "http.request", opts...)
-			defer span.Finish()
+			defer func() { span.Finish(finishOpts...) }()
 
 			// pass the span through the request context
 			c.SetRequest(request.WithContext(ctx))
-
 			// serve the request to the next middleware
 			err := next(c)
 			if err != nil {
-				span.SetTag(ext.Error, err)
+				finishOpts = append(finishOpts, tracer.WithError(err))
 				// invokes the registered HTTP error handler
 				c.Error(err)
 			}

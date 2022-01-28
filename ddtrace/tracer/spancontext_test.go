@@ -7,13 +7,17 @@ package tracer
 
 import (
 	"context"
+	"math"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 func setupteardown(start, max int) func() {
@@ -31,7 +35,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	defer setupteardown(2, 2)()
 
 	tp := new(testLogger)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
 	parent.context.trace.push(newBasicSpan("test2")) // 2nd span in trace
@@ -42,7 +46,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	child.context = newSpanContext(child, parent.context)
 
 	log.Flush()
-	assert.Contains(t, tp.Lines()[0], "ERROR: trace buffer full (2)")
+	assert.Contains(t, removeAppSec(tp.Lines())[0], "ERROR: trace buffer full (2)")
 }
 
 func TestAsyncSpanRace(t *testing.T) {
@@ -66,6 +70,21 @@ func TestAsyncSpanRace(t *testing.T) {
 					for i := 0; i < 500; i++ {
 						for range root.(*span).Metrics {
 							// this range simulates iterating over the metrics map
+							// as we do when encoding msgpack upon flushing.
+						}
+					}
+					return
+				}
+			}()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				select {
+				case <-done:
+					root.Finish()
+					for i := 0; i < 500; i++ {
+						for range root.(*span).Meta {
+							// this range simulates iterating over the meta map
 							// as we do when encoding msgpack upon flushing.
 						}
 					}
@@ -127,7 +146,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	assert := assert.New(t)
 
 	tp := new(testLogger)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 
 	buffer := newTrace()
@@ -144,7 +163,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	<-time.After(time.Second / 10)
 	log.Flush()
-	assert.Len(tp.Lines(), 0)
+	assert.Len(removeAppSec(tp.Lines()), 0)
 	t.Logf("expected timeout, nothing should show up in buffer as the trace is not finished")
 }
 
@@ -304,17 +323,22 @@ func TestSpanContextParent(t *testing.T) {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace:      newTrace(),
-			drop:       true,
 		},
-		"nil-trace": &spanContext{
-			drop: true,
-		},
+		"nil-trace": &spanContext{},
 		"priority": &spanContext{
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace: &trace{
 				spans:    []*span{newBasicSpan("abc")},
 				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
+			},
+		},
+		"sampling_decision": &spanContext{
+			baggage:    map[string]string{"A": "A", "B": "B"},
+			hasBaggage: 1,
+			trace: &trace{
+				spans:            []*span{newBasicSpan("abc")},
+				samplingDecision: decisionKeep,
 			},
 		},
 		"origin": &spanContext{
@@ -334,8 +358,8 @@ func TestSpanContextParent(t *testing.T) {
 			assert.Contains(ctx.trace.spans, s)
 			if parentCtx.trace != nil {
 				assert.Equal(ctx.trace.priority, parentCtx.trace.priority)
+				assert.Equal(ctx.trace.samplingDecision, parentCtx.trace.samplingDecision)
 			}
-			assert.Equal(parentCtx.drop, ctx.drop)
 			assert.Equal(parentCtx.baggage, ctx.baggage)
 			assert.Equal(parentCtx.origin, ctx.origin)
 		})
@@ -346,7 +370,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	defer func(old int) { traceMaxSize = old }(traceMaxSize)
 	traceMaxSize = 2
 	tp := new(testLogger)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp))
+	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 
 	span1 := newBasicSpan("span1")
@@ -357,13 +381,13 @@ func TestSpanContextPushFull(t *testing.T) {
 	assert := assert.New(t)
 	buffer.push(span1)
 	log.Flush()
-	assert.Len(tp.Lines(), 0)
+	assert.Len(removeAppSec(tp.Lines()), 0)
 	buffer.push(span2)
 	log.Flush()
-	assert.Len(tp.Lines(), 0)
+	assert.Len(removeAppSec(tp.Lines()), 0)
 	buffer.push(span3)
 	log.Flush()
-	assert.Contains(tp.Lines()[0], "ERROR: trace buffer full (2)")
+	assert.Contains(removeAppSec(tp.Lines())[0], "ERROR: trace buffer full (2)")
 }
 
 func TestSpanContextBaggage(t *testing.T) {
@@ -396,6 +420,24 @@ func TestSpanContextIteratorBreak(t *testing.T) {
 	})
 
 	assert.Len(t, got, 0)
+}
+
+func TestBuildNewUpstreamServices(t *testing.T) {
+	var testCases = []struct {
+		service  string
+		priority int
+		sampler  samplernames.SamplerName
+		rate     float64
+		expected string
+	}{
+		{"service-account", 1, samplernames.AgentRate, 0.99, "c2VydmljZS1hY2NvdW50|1|1|0.9900"},
+		{"service-storage", 2, samplernames.Manual, math.NaN(), "c2VydmljZS1zdG9yYWdl|2|4|"},
+		{"service-video", 1, samplernames.RuleRate, 1, "c2VydmljZS12aWRlbw|1|3|1.0000"},
+	}
+
+	for _, tt := range testCases {
+		assert.Equal(t, tt.expected, compactUpstreamServices(tt.service, tt.priority, tt.sampler, tt.rate))
+	}
 }
 
 // testLogger implements a mock Printer.
@@ -441,4 +483,16 @@ func BenchmarkBaggageItemEmpty(b *testing.B) {
 			return true
 		})
 	}
+}
+
+// Remove the appsec logs from the given log lines
+func removeAppSec(lines []string) []string {
+	res := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.Contains(line, "appsec:") {
+			continue
+		}
+		res = append(res, line)
+	}
+	return res
 }

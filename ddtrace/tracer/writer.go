@@ -60,7 +60,7 @@ func newAgentTraceWriter(c *config, s *prioritySampler) *agentTraceWriter {
 func (h *agentTraceWriter) add(trace []*span) {
 	if err := h.payload.push(trace); err != nil {
 		h.config.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
-		log.Error("error encoding msgpack: %v", err)
+		log.Error("Error encoding msgpack: %v", err)
 	}
 	if h.payload.size() > payloadSizeLimit {
 		h.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
@@ -81,6 +81,8 @@ func (h *agentTraceWriter) flush() {
 	}
 	h.wg.Add(1)
 	h.climit <- struct{}{}
+	oldp := h.payload
+	h.payload = newPayload()
 	go func(p *payload) {
 		defer func(start time.Time) {
 			<-h.climit
@@ -100,9 +102,11 @@ func (h *agentTraceWriter) flush() {
 				h.config.statsd.Incr("datadog.tracer.decode_error", nil, 1)
 			}
 		}
-	}(h.payload)
-	h.payload = newPayload()
+	}(oldp)
 }
+
+// logWriter specifies the output target of the logTraceWriter; replaced in tests.
+var logWriter io.Writer = os.Stdout
 
 // logTraceWriter encodes traces into a format understood by the Datadog Forwarder
 // (https://github.com/DataDog/datadog-serverless-functions/tree/master/aws/logs_monitoring)
@@ -117,7 +121,7 @@ type logTraceWriter struct {
 func newLogTraceWriter(c *config) *logTraceWriter {
 	w := &logTraceWriter{
 		config: c,
-		w:      os.Stdout,
+		w:      logWriter,
 	}
 	w.resetBuffer()
 	return w
