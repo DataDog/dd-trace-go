@@ -6,11 +6,16 @@
 package sql
 
 import (
+	"context"
+	"database/sql/driver"
+	"errors"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"log"
 	"math"
 	"os"
 	"testing"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -189,4 +194,57 @@ func TestMySQLUint64(t *testing.T) {
 	assert.False(rows.Next())
 	assert.NoError(rows.Err())
 	assert.NoError(rows.Close())
+}
+
+//hangingConnector hangs on Connect until ctx is cancelled.
+type hangingConnector struct{}
+
+func (h *hangingConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	select {
+	case <-ctx.Done():
+		return &panicConn{}, errors.New("context cancelled")
+	}
+}
+
+func (h *hangingConnector) Driver() driver.Driver {
+	panic("hangingConnector: Driver() not implemented")
+}
+
+type panicConn struct{}
+
+func (p *panicConn) Prepare(query string) (driver.Stmt, error) {
+	panic("panicConn: Prepare called")
+}
+
+func (p *panicConn) Close() error {
+	panic("panicConn: Close called")
+}
+
+func (p *panicConn) Begin() (driver.Tx, error) {
+	panic("panicConn: Begin called")
+}
+
+func TestConnectCancelledCtx(t *testing.T) {
+	mockTracer := mocktracer.Start()
+	defer mockTracer.Stop()
+	assert := assert.New(t)
+	tc := tracedConnector{
+		connector:  &hangingConnector{},
+		driverName: "hangingConnector",
+		cfg:        new(config),
+	}
+	ctx, cancelFunc := context.WithCancel(context.Background())
+
+	go func() {
+		tc.Connect(ctx)
+	}()
+	time.Sleep(time.Millisecond * 100)
+	cancelFunc()
+	time.Sleep(time.Millisecond * 100)
+
+	spans := mockTracer.FinishedSpans()
+	assert.Len(spans, 1)
+	s := spans[0]
+	assert.Equal("hangingConnector.query", s.OperationName())
+	assert.Equal("Connect", s.Tag("sql.query_type"))
 }

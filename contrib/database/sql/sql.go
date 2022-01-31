@@ -151,7 +151,7 @@ func (t dsnConnector) Driver() driver.Driver {
 	return t.driver
 }
 
-// OpenDB returns connection to a DB using a the traced version of the given driver. In order for OpenDB
+// OpenDB returns connection to a DB using the traced version of the given driver. In order for OpenDB
 // to work, the driver must first be registered using Register. If this did not occur, OpenDB will panic.
 func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	name, ok := registeredDrivers.name(c.Driver())
@@ -179,7 +179,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	return sql.OpenDB(tc)
 }
 
-// Open returns connection to a DB using a the traced version of the given driver. In order for Open
+// Open returns connection to a DB using the traced version of the given driver. In order for Open
 // to work, the driver must first be registered using Register. If this did not occur, Open will
 // return an error.
 func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
