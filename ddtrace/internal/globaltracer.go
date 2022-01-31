@@ -19,12 +19,15 @@ var (
 // SetGlobalTracer sets the global tracer to t.
 func SetGlobalTracer(t ddtrace.Tracer) {
 	mu.Lock()
-	defer mu.Unlock()
+	old := globalTracer
+	globalTracer = t
+	// Unlock before potentially calling Stop, to allow any shutdown mechanism
+	// to retrieve the active tracer without causing a deadlock on mutex mu.
+	mu.Unlock()
 	if !Testing {
 		// avoid infinite loop when calling (*mocktracer.Tracer).Stop
-		globalTracer.Stop()
+		old.Stop()
 	}
-	globalTracer = t
 }
 
 // GetGlobalTracer returns the currently active tracer.

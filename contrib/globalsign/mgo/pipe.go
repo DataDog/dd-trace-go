@@ -7,6 +7,7 @@ package mgo
 
 import (
 	"github.com/globalsign/mgo"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 

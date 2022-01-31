@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
@@ -73,6 +74,37 @@ func TestStartSpanFromContext(t *testing.T) {
 	assert.Equal("http.request", got.Name)
 	assert.Equal("gin", got.Service)
 	assert.Equal("/", got.Resource)
+}
+
+func TestStartSpanFromContextRace(t *testing.T) {
+	_, _, _, stop := startTestTracer(t)
+	defer stop()
+
+	// Start 100 goroutines that create child spans with StartSpanFromContext in parallel,
+	// with a shared options slice. The child spans should get parented to the correct spans
+	const contextKey = "key"
+	const numContexts = 100
+	options := make([]StartSpanOption, 0, 3)
+	outputValues := make(chan uint64, numContexts)
+	var expectedTraceIDs []uint64
+	for i := 0; i < numContexts; i++ {
+		parent, childCtx := StartSpanFromContext(context.Background(), "parent")
+		expectedTraceIDs = append(expectedTraceIDs, parent.Context().TraceID())
+		go func() {
+			span, _ := StartSpanFromContext(childCtx, "testoperation", options...)
+			defer span.Finish()
+			outputValues <- span.Context().TraceID()
+		}()
+		parent.Finish()
+	}
+
+	// collect the outputs
+	var outputs []uint64
+	for i := 0; i < numContexts; i++ {
+		outputs = append(outputs, <-outputValues)
+	}
+	assert.Len(t, outputs, numContexts)
+	assert.ElementsMatch(t, outputs, expectedTraceIDs)
 }
 
 func TestStartSpanFromNilContext(t *testing.T) {

@@ -343,3 +343,42 @@ func TestContext(t *testing.T) {
 		assert.Equal(t, testCtx.Value(key(contextKey)), ctx.Value(key(contextKey)))
 	})
 }
+
+func TestError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	assertErrCheck := func(t *testing.T, mt mocktracer.Tracer, errExist bool, opts ...Option) {
+		sqltrace.Register("pgx", &stdlib.Driver{})
+		sqlDb, err := sqltrace.Open("pgx", pgConnString)
+		assert.Nil(t, err)
+
+		db, err := Open(postgres.New(postgres.Config{Conn: sqlDb}), &gorm.Config{}, opts...)
+		assert.Nil(t, err)
+		db.AutoMigrate(&Product{})
+		db.First(&Product{}, Product{Code: "L1210", Price: 2000})
+
+		spans := mt.FinishedSpans()
+		assert.True(t, len(spans) > 1)
+
+		// Get last span (gorm.db)
+		s := spans[len(spans)-1]
+
+		assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		assertErrCheck(t, mt, true)
+	})
+
+	t.Run("errcheck", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		errFn := func(err error) bool {
+			return err != gorm.ErrRecordNotFound
+		}
+		assertErrCheck(t, mt, false, WithErrorCheck(errFn))
+	})
+}

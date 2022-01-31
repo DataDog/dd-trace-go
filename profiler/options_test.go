@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -13,9 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/datadog-go/statsd"
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -205,6 +207,14 @@ func TestOptions(t *testing.T) {
 		assert.Contains(t, cfg.tags, "env1:tag1")
 		assert.Contains(t, cfg.tags, "env2:tag2")
 	})
+
+	t.Run("WithDeltaProfiles", func(t *testing.T) {
+		var cfg config
+		WithDeltaProfiles(true)(&cfg)
+		assert.Equal(t, true, cfg.deltaProfiles)
+		WithDeltaProfiles(false)(&cfg)
+		assert.Equal(t, false, cfg.deltaProfiles)
+	})
 }
 
 func TestEnvVars(t *testing.T) {
@@ -291,6 +301,14 @@ func TestEnvVars(t *testing.T) {
 		assert.Contains(t, cfg.tags, "b:2")
 		assert.Contains(t, cfg.tags, "c:3")
 	})
+
+	t.Run("DD_PROFILING_DELTA", func(t *testing.T) {
+		os.Setenv("DD_PROFILING_DELTA", "false")
+		defer os.Unsetenv("DD_PROFILING_DELTA")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		assert.Equal(t, cfg.deltaProfiles, false)
+	})
 }
 
 func TestDefaultConfig(t *testing.T) {
@@ -315,6 +333,7 @@ func TestDefaultConfig(t *testing.T) {
 		assert.Equal(DefaultMutexFraction, cfg.mutexFraction)
 		assert.Equal(DefaultBlockRate, cfg.blockRate)
 		assert.Contains(cfg.tags, "runtime-id:"+globalconfig.RuntimeID())
+		assert.Equal(true, cfg.deltaProfiles)
 	})
 }
 
@@ -341,4 +360,36 @@ func TestAddProfileType(t *testing.T) {
 		_, ok := cfg.types[MutexProfile]
 		assert.True(ok)
 	})
+}
+
+func TestWith_outputDir(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Use env to enable this like a user would.
+	os.Setenv("DD_PROFILING_OUTPUT_DIR", tmpDir)
+	defer os.Unsetenv("DD_PROFILING_OUTPUT_DIR")
+
+	p, err := unstartedProfiler()
+	require.NoError(t, err)
+	bat := batch{
+		end: time.Now(),
+		profiles: []*profile{
+			{name: "foo.pprof", data: []byte("foo")},
+			{name: "bar.pprof", data: []byte("bar")},
+		},
+	}
+	require.NoError(t, p.outputDir(bat))
+	files, err := filepath.Glob(filepath.Join(tmpDir, "*", "*.pprof"))
+	require.NoError(t, err)
+
+	fileData := map[string]string{}
+	for _, file := range files {
+		data, err := ioutil.ReadFile(file)
+		require.NoError(t, err)
+		fileData[filepath.Base(file)] = string(data)
+	}
+	want := map[string]string{"foo.pprof": "foo", "bar.pprof": "bar"}
+	require.Equal(t, want, fileData)
 }

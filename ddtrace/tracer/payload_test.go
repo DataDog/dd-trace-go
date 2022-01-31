@@ -33,11 +33,10 @@ func newSpanList(n int) spanList {
 // the codec.
 func TestPayloadIntegrity(t *testing.T) {
 	assert := assert.New(t)
-	p := newPayload()
 	want := new(bytes.Buffer)
 	for _, n := range []int{10, 1 << 10, 1 << 17} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
-			p.reset()
+			p := newPayload()
 			lists := make(spanLists, n)
 			for i := 0; i < n; i++ {
 				list := newSpanList(i%5 + 1)
@@ -61,10 +60,9 @@ func TestPayloadIntegrity(t *testing.T) {
 // be decoded by the codec.
 func TestPayloadDecode(t *testing.T) {
 	assert := assert.New(t)
-	p := newPayload()
 	for _, n := range []int{10, 1 << 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
-			p.reset()
+			p := newPayload()
 			for i := 0; i < n; i++ {
 				p.push(newSpanList(i%5 + 1))
 			}
@@ -82,7 +80,8 @@ func BenchmarkPayloadThroughput(b *testing.B) {
 }
 
 // benchmarkPayloadThroughput benchmarks the throughput of the payload by subsequently
-// pushing a trace containing count spans of approximately 10KB in size each.
+// pushing a trace containing count spans of approximately 10KB in size each, until the
+// payload is filled.
 func benchmarkPayloadThroughput(count int) func(*testing.B) {
 	return func(b *testing.B) {
 		p := newPayload()
@@ -94,8 +93,14 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 		}
 		b.ReportAllocs()
 		b.ResetTimer()
+		reset := func() {
+			p.header = make([]byte, 8)
+			p.off = 8
+			p.count = 0
+			p.buf.Reset()
+		}
 		for i := 0; i < b.N; i++ {
-			p.reset()
+			reset()
 			for p.size() < payloadMaxLimit {
 				p.push(trace)
 			}

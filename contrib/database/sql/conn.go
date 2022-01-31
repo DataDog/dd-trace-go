@@ -147,6 +147,16 @@ func (tc *tracedConn) CheckNamedValue(value *driver.NamedValue) error {
 	return driver.ErrSkip
 }
 
+var _ driver.SessionResetter = (*tracedConn)(nil)
+
+// ResetSession implements driver.SessionResetter
+func (tc *tracedConn) ResetSession(ctx context.Context) error {
+	if resetter, ok := tc.Conn.(driver.SessionResetter); ok {
+		return resetter.ResetSession(ctx)
+	}
+	return driver.ErrSkip
+}
+
 // traceParams stores all information related to tracing the driver.Conn
 type traceParams struct {
 	cfg        *config
@@ -171,6 +181,9 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query stri
 		// optional interface method is not implemented. There is
 		// nothing to trace here.
 		// See: https://github.com/DataDog/dd-trace-go/issues/270
+		return
+	}
+	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
 		return
 	}
 	name := fmt.Sprintf("%s.query", tp.driverName)

@@ -12,9 +12,10 @@ import (
 )
 
 type config struct {
-	serviceName   string
-	analyticsRate float64
-	dsn           string
+	serviceName    string
+	analyticsRate  float64
+	dsn            string
+	childSpansOnly bool
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -72,5 +73,13 @@ func WithAnalyticsRate(rate float64) Option {
 func WithDSN(name string) Option {
 	return func(cfg *config) {
 		cfg.dsn = name
+	}
+}
+
+// WithChildSpansOnly causes spans to be created only when
+// there is an existing parent span in the Context.
+func WithChildSpansOnly() Option {
+	return func(cfg *config) {
+		cfg.childSpansOnly = true
 	}
 }

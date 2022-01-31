@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 // HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader, allowing
@@ -90,6 +92,9 @@ const (
 // It is used with the Synthetics product and usually has the value "synthetics".
 const originHeader = "x-datadog-origin"
 
+// traceTagsHeader holds the propagated trace tags
+const traceTagsHeader = "x-datadog-tags"
+
 // PropagatorConfig defines the configuration for initializing a propagator.
 type PropagatorConfig struct {
 	// BaggagePrefix specifies the prefix that will be used to store baggage
@@ -105,8 +110,15 @@ type PropagatorConfig struct {
 	ParentHeader string
 
 	// PriorityHeader specifies the map key that will be used to store the sampling priority.
-	// It deafults to DefaultPriorityHeader.
+	// It defaults to DefaultPriorityHeader.
 	PriorityHeader string
+
+	// MaxTagsHeaderLen specifies the maximum length of trace tags header value.
+	MaxTagsHeaderLen int
+
+	// B3 specifies if B3 headers should be added for trace propagation.
+	// See https://github.com/openzipkin/b3-propagation
+	B3 bool
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
@@ -143,28 +155,39 @@ type chainedPropagator struct {
 }
 
 // getPropagators returns a list of propagators based on the list found in the
-// given environment variable. If the list doesn't contain a value or has invalid
-// values, the default propagator will be returned.
+// given environment variable. If the list doesn't contain any valid values the
+// default propagator will be returned. Any invalid values in the list will log
+// a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 	dd := &propagator{cfg}
 	ps := os.Getenv(env)
+	defaultPs := []Propagator{dd}
+	if cfg.B3 {
+		defaultPs = append(defaultPs, &propagatorB3{})
+	}
 	if ps == "" {
-		return []Propagator{dd}
+		return defaultPs
 	}
 	var list []Propagator
+	if cfg.B3 {
+		list = append(list, &propagatorB3{})
+	}
 	for _, v := range strings.Split(ps, ",") {
 		switch strings.ToLower(v) {
 		case "datadog":
 			list = append(list, dd)
 		case "b3":
-			list = append(list, &propagatorB3{})
+			if !cfg.B3 {
+				// propagatorB3 hasn't already been added, add a new one.
+				list = append(list, &propagatorB3{})
+			}
 		default:
 			log.Warn("unrecognized propagator: %s\n", v)
 		}
 	}
 	if len(list) == 0 {
 		// return the default
-		return []Propagator{dd}
+		return defaultPs
 	}
 	return list
 }
@@ -232,6 +255,35 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	for k, v := range ctx.baggage {
 		writer.Set(p.cfg.BaggagePrefix+k, v)
 	}
+	// propagate trace tags
+	var sb strings.Builder
+	if ctx.trace != nil {
+		ctx.trace.mu.RLock()
+		for k, v := range ctx.trace.tags {
+			if !strings.HasPrefix(k, "_dd.p.") {
+				continue
+			}
+			if err := isValidPropagatableTraceTag(k, v); err != nil {
+				log.Warn("won't propagate tag '%s' (err: %s)", k, err.Error())
+				continue
+			}
+			if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
+				sb.Reset()
+				log.Warn("won't propagate trace tags (err: max trace tags header len (%d) reached)", p.cfg.MaxTagsHeaderLen)
+				break
+			}
+			if sb.Len() > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(k)
+			sb.WriteByte('=')
+			sb.WriteString(v)
+		}
+		ctx.trace.mu.RUnlock()
+		if sb.Len() > 0 {
+			writer.Set(traceTagsHeader, sb.String())
+		}
+	}
 	return nil
 }
 
@@ -265,9 +317,18 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			ctx.setSamplingPriority(priority)
+			ctx.setSamplingPriority("", priority, samplernames.Upstream, math.NaN())
 		case originHeader:
 			ctx.origin = v
+		case traceTagsHeader:
+			if ctx.trace == nil {
+				ctx.trace = newTrace()
+			}
+			ctx.trace.tags, err = parsePropagatableTraceTags(v)
+			ctx.trace.upstreamServices = ctx.trace.tags[keyUpstreamServices]
+			if err != nil {
+				log.Warn("did not extract trace tags (err: %s)", err.Error())
+			}
 		default:
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
@@ -353,7 +414,7 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			ctx.setSamplingPriority(priority)
+			ctx.setSamplingPriority("", priority, samplernames.Upstream, math.NaN())
 		default:
 		}
 		return nil

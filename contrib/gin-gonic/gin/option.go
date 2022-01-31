@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -18,6 +19,7 @@ type config struct {
 	analyticsRate float64
 	resourceNamer func(c *gin.Context) string
 	serviceName   string
+	ignoreRequest func(c *gin.Context) bool
 }
 
 func newConfig(service string) *config {
@@ -35,6 +37,7 @@ func newConfig(service string) *config {
 		analyticsRate: rate,
 		resourceNamer: defaultResourceNamer,
 		serviceName:   service,
+		ignoreRequest: func(_ *gin.Context) bool { return false },
 	}
 }
 
@@ -69,6 +72,14 @@ func WithAnalyticsRate(rate float64) Option {
 func WithResourceNamer(namer func(c *gin.Context) string) Option {
 	return func(cfg *config) {
 		cfg.resourceNamer = namer
+	}
+}
+
+// WithIgnoreRequest specifies a function to use for determining if the
+// incoming HTTP request tracing should be skipped.
+func WithIgnoreRequest(f func(c *gin.Context) bool) Option {
+	return func(cfg *config) {
+		cfg.ignoreRequest = f
 	}
 }
 

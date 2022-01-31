@@ -1,4 +1,4 @@
-version: 2
+version: 2.1
 
 plain-go114: &plain-go114
   working_directory: /home/circleci/dd-trace-go.v1
@@ -8,8 +8,13 @@ plain-go114: &plain-go114
         GOPATH: "/home/circleci/go"
 
 jobs:
-  go1.12-build:
+  go1_12-build:
     # Validate that the core builds with go1.12
+    parameters:
+      build_tags:
+        description: "go build tags used to compile"
+        default: ""
+        type: string
     docker:
       - image: circleci/golang:1.12
         environment:
@@ -21,7 +26,11 @@ jobs:
     - run:
         name: build
         command: |
-          go build ./ddtrace/... ./profiler/...
+          # Fixes fatal: unable to access 'https://gopkg.in/yaml.v3/': server certificate verification failed. CAfile: none CRLfile: none
+          # See https://github.com/DataDog/dd-trace-go/pull/1029
+          sudo apt update && sudo apt install ca-certificates libgnutls30 -y
+
+          go build -v -tags "<< parameters.build_tags >>" ./ddtrace/... ./profiler/... ./internal/appsec/...
 
   metadata:
     <<: *plain-go114
@@ -29,6 +38,27 @@ jobs:
     steps:
     - checkout
 
+    # -mod=readonly is enabled by default starting in go1.16 causing many go
+    # tools and editor integrations to report problems if the go.sum file is
+    # not up-to-date, so let's make sure it is.
+    - run:
+        name: go.sum up-to-date
+        command: |
+          if ! go run -mod=readonly gosum.go; then
+            # Older go versions, e.g. go1.14 will fail the check above with
+            # the message below.
+            #
+            #   go: updates to go.sum needed, disabled by -mod=readonly
+            #
+            # Newer versions show which go.sum entries are missing. To get
+            # useful CI errors for older versions, always print an explicit
+            # diff when go.sum is not up-to-date.
+            cp go.sum go.sum.before
+            go mod tidy
+            echo "--> go.sum diff:"
+            diff go.sum.before go.sum
+            exit 1
+          fi
     - run:
         name: milestone
         command: |
@@ -53,6 +83,16 @@ jobs:
           fi
 
     - run:
+        name: goimports
+        command: |
+          go install golang.org/x/tools/cmd/goimports
+          if [ "$(~/go/bin/goimports -e -l -local gopkg.in/DataDog/dd-trace-go.v1 . | wc -l)" -gt 0 ]; then
+            echo "Run 'goimports -w -local gopkg.in/DataDog/dd-trace-go.v1 .' to format code."
+            ~/go/bin/goimports -d -local gopkg.in/DataDog/dd-trace-go.v1 .
+            exit 1
+          fi
+
+    - run:
         name: lint
         command: |
           go get -u golang.org/x/lint/golint
@@ -61,14 +101,46 @@ jobs:
 
 
   test-core:
+    parameters:
+      build_tags:
+        description: "go build tags to use to compile the tests"
+        default: ""
+        type: string
     resource_class: xlarge
+    environment: # environment variables for the build itself
+      TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+      DD_APPSEC_WAF_TIMEOUT: 1s
     <<: *plain-go114
 
     steps:
       - checkout
+      - run: mkdir -p $TEST_RESULTS
+      - run: cp go.sum go.sum.orig
+      - restore_cache: # restores saved cache if no changes are detected since last run
+          keys:
+            - go-mod-v5-core-{{ checksum "go.sum.orig" }}
+      - run:
+          name: Enforce some dependencies
+          command: |
+            # last version compatible with go1.14, needed for testtraceprof
+            echo 'replace golang.org/x/net => golang.org/x/net d418f374d30933c6c7db22cf349625c295a5afaa' >> go.mod
       - run:
           name: Testing
-          command: go test -v -race -coverprofile=coverage.txt -covermode=atomic `go list ./... | grep -v /contrib/`
+          command: |
+            PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
+            env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+
+      - save_cache:
+          key: go-mod-v5-core-{{ checksum "go.sum.orig" }}
+          paths:
+            - "/home/circleci/go"
+
+      - store_artifacts: # upload test summary for display in Artifacts
+          path: /tmp/test-results
+          destination: raw-test-output
+
+      - store_test_results: # upload test results for display in Test Summary
+          path: /tmp/test-results
 
       - run:
           name: Upload coverage report to Codecov
@@ -76,13 +148,23 @@ jobs:
 
 
   test-contrib:
+    parameters:
+      build_tags:
+        description: "go build tags to use to compile the tests"
+        default: ""
+        type: string
     resource_class: xlarge
+    environment: # environment variables for the build itself
+      TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+      DD_APPSEC_WAF_TIMEOUT: 1s
     working_directory: /home/circleci/dd-trace-go.v1
     docker:
       - image: circleci/golang:1.14
         environment:
           GOPATH: "/home/circleci/go"
       - image: cassandra:3.7
+        environment:
+          JVM_OPTS: "-Xms750m -Xmx750m"
       - image: circleci/mysql:5.7
         environment:
           MYSQL_ROOT_PASSWORD: admin
@@ -101,6 +183,16 @@ jobs:
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
       - image: elasticsearch:5
         environment:
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+      - image: elasticsearch:6.8.13
+        environment:
+          http.port: 9202-9300
+          discovery.type: single-node
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+      - image: elasticsearch:7.14.1
+        environment:
+          http.port: 9203-9300
+          discovery.type: single-node
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
       - image: datadog/docker-dd-agent
         environment:
@@ -122,6 +214,11 @@ jobs:
 
     steps:
       - checkout
+      - run: mkdir -p $TEST_RESULTS
+      - run: cp go.sum go.sum.orig
+      - restore_cache: # restores saved cache if no changes are detected since last run
+          keys:
+            - go-mod-v5-contrib-{{ checksum "go.sum.orig" }}
 
       - restore_cache:
           keys:
@@ -148,6 +245,14 @@ jobs:
             go get k8s.io/client-go@v0.17.0
             go get k8s.io/apimachinery@v0.17.0
             go get cloud.google.com/go/pubsub@v1.6.1
+            # Temporarily enforce this version. 1.9.0 is incompatible with go < 1.16
+            go get github.com/hashicorp/consul/api@v1.8.1
+            # github.com/hashicorp/vault/sdk > v0.2.0 doesn't compile with go1.14
+            go get github.com/hashicorp/vault/sdk@v0.2.0
+            # Shopify/sarama > v1.22 doesn't compile with go1.14
+            go get github.com/Shopify/sarama@v1.22.0
+            # Temporary enforcing gorm to v1.22.4 to avoid the problems of v1.22.5
+            go get -v gorm.io/gorm@v1.22.4
 
       - run:
           name: Wait for MySQL
@@ -162,12 +267,20 @@ jobs:
           command: dockerize -wait tcp://localhost:6379 -timeout 1m
 
       - run:
-          name: Wait for ElasticSearch (1)
+          name: Wait for ElasticSearch (2)
           command: dockerize -wait http://localhost:9200 -timeout 1m
 
       - run:
-          name: Wait for ElasticSearch (2)
+          name: Wait for ElasticSearch (5)
           command: dockerize -wait http://localhost:9201 -timeout 1m
+
+      - run:
+          name: Wait for ElasticSearch (6)
+          command: dockerize -wait http://localhost:9202 -timeout 1m
+
+      - run:
+          name: Wait for ElasticSearch (7)
+          command: dockerize -wait http://localhost:9203 -timeout 1m
 
       - run:
           name: Wait for Datadog Agent
@@ -186,13 +299,49 @@ jobs:
           command: dockerize -wait http://localhost:8500 -timeout 1m
 
       - run:
-          name: Testing
+          name: Testing integrations
           command: |
-                INTEGRATION=1 go test -v -race -coverprofile=coverage.txt -covermode=atomic `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api`
+            PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
+            export DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true)
+            export INTEGRATION=true
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+
+      - store_artifacts: # upload test summary for display in Artifacts
+          path: /tmp/test-results
+          destination: raw-test-output
+
+      - store_test_results: # upload test results for display in Test Summary
+          path: /tmp/test-results
+
+      - run:
+          name: Testing outlier google.golang.org/api
+          command: |
                 go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
                 go test -v ./contrib/google.golang.org/api/...
-                go get google.golang.org/grpc@v1.2.0
-                go test -v ./contrib/google.golang.org/grpc.v12/...
+
+      - run:
+          name: Testing outlier gRPC v1.2
+          command: |
+                # This hacky approach is necessary because running the tests regularly
+                # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
+                go mod vendor
+
+                # Checkout grpc-go@v1.2.0
+                cd vendor/google.golang.org && rm -rf grpc
+                git clone git@github.com:grpc/grpc-go grpc && cd grpc
+                git fetch origin && git checkout v1.2.0 && cd ../..
+
+                # Checkout sketches-go@v1.0.0
+                cd vendor/github.com/DataDog && rm -rf sketches-go
+                git clone git@github.com:DataDog/sketches-go && cd sketches-go
+                git fetch origin && git checkout v1.0.0 && cd ../..
+
+                INTEGRATION=true go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+
+      - save_cache:
+          key: go-mod-v5-contrib-{{ checksum "go.sum.orig" }}
+          paths:
+            - "/home/circleci/go"
 
       - run:
           name: Upload coverage report to Codecov
@@ -202,8 +351,17 @@ workflows:
   version: 2
   build-and-test:
     jobs:
-      - go1.12-build
+      - go1_12-build:
+          matrix:
+            parameters:
+              build_tags: [ "", "appsec" ]
       - metadata
       - lint
-      - test-core
-      - test-contrib
+      - test-core:
+          matrix:
+            parameters:
+              build_tags: [ "", "appsec" ]
+      - test-contrib:
+          matrix:
+            parameters:
+              build_tags: [ "", "appsec" ]

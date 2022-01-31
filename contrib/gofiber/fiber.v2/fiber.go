@@ -41,10 +41,12 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		}
 
 		opts = append(opts, cfg.spanOpts...)
-		span, _ := tracer.StartSpanFromContext(c.Context(), "http.request", opts...)
+		span, ctx := tracer.StartSpanFromContext(c.Context(), "http.request", opts...)
 
-		fmt.Printf("Starting Span")
 		defer span.Finish()
+
+		// pass the span through the request UserContext
+		c.SetUserContext(ctx)
 
 		resourceName := c.Path()
 		if resourceName == "" {
@@ -65,7 +67,9 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		}
 		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 
-		if cfg.isStatusError(status) {
+		if err != nil {
+			span.SetTag(ext.Error, err)
+		} else if cfg.isStatusError(status) {
 			// mark 5xx server error
 			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 		}

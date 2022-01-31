@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -14,21 +13,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
-
-// integration indicates if the test suite should run integration tests.
-var integration bool
-
-func TestMain(m *testing.M) {
-	_, integration = os.LookupEnv("INTEGRATION")
-	os.Exit(m.Run())
-}
 
 // getTestSpan returns a Span with different fields set
 func getTestSpan() *span {
@@ -62,26 +53,6 @@ func getTestTrace(traceN, size int) [][]*span {
 	return traces
 }
 
-type mockDatadogAPIHandler struct {
-	t *testing.T
-}
-
-func (m mockDatadogAPIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	assert := assert.New(m.t)
-
-	header := r.Header.Get("X-Datadog-Trace-Count")
-	assert.NotEqual("", header, "X-Datadog-Trace-Count header should be here")
-	count, err := strconv.Atoi(header)
-	assert.Nil(err, "header should be an int")
-	assert.NotEqual(0, count, "there should be a non-zero amount of traces")
-}
-
-func mockDatadogAPINewServer(t *testing.T) *httptest.Server {
-	handler := mockDatadogAPIHandler{t: t}
-	server := httptest.NewServer(handler)
-	return server
-}
-
 func TestTracesAgentIntegration(t *testing.T) {
 	if !integration {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
@@ -106,7 +77,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 }
 
-func TestResolveAddr(t *testing.T) {
+func TestResolveAgentAddr(t *testing.T) {
 	for _, tt := range []struct {
 		in, envHost, envPort, out string
 	}{
@@ -136,7 +107,7 @@ func TestResolveAddr(t *testing.T) {
 				os.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
 				defer os.Unsetenv("DD_TRACE_AGENT_PORT")
 			}
-			assert.Equal(t, resolveAddr(tt.in), tt.out)
+			assert.Equal(t, resolveAgentAddr(tt.in), tt.out)
 		})
 	}
 }
@@ -193,22 +164,27 @@ func TestTraceCountHeader(t *testing.T) {
 		{getTestTrace(100, 10)},
 	}
 
-	receiver := mockDatadogAPINewServer(t)
-	parsedURL, err := url.Parse(receiver.URL)
-	assert.NoError(err)
-	host := parsedURL.Host
-	_, port, err := net.SplitHostPort(host)
-	assert.Nil(err)
-	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.URL.Path == "/info" {
+			return
+		}
+		header := r.Header.Get("X-Datadog-Trace-Count")
+		assert.NotEqual("", header, "X-Datadog-Trace-Count header should be here")
+		count, err := strconv.Atoi(header)
+		assert.Nil(err, "header should be an int")
+		assert.NotEqual(0, count, "there should be a non-zero amount of traces")
+	}))
+	defer srv.Close()
 	for _, tc := range testCases {
-		transport := newHTTPTransport(host, defaultClient)
+		transport := newHTTPTransport(strings.TrimPrefix(srv.URL, "http://"), defaultClient)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
 		assert.NoError(err)
 	}
-
-	receiver.Close()
+	assert.Equal(hits, len(testCases))
 }
 
 type recordingRoundTripper struct {
@@ -228,32 +204,34 @@ func (r *recordingRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 func TestCustomTransport(t *testing.T) {
 	assert := assert.New(t)
 
-	receiver := mockDatadogAPINewServer(t)
-	defer receiver.Close()
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		hits++
+	}))
+	defer srv.Close()
 
-	parsedURL, err := url.Parse(receiver.URL)
-	assert.NoError(err)
-	host := parsedURL.Host
-	_, port, err := net.SplitHostPort(host)
-	assert.Nil(err)
-	assert.NotEmpty(port, "port should be given, as it's chosen randomly")
-
-	customRoundTripper := newRecordingRoundTripper(defaultClient)
-	transport := newHTTPTransport(host, &http.Client{Transport: customRoundTripper})
+	crt := newRecordingRoundTripper(defaultClient)
+	transport := newHTTPTransport(strings.TrimPrefix(srv.URL, "http://"), &http.Client{
+		Transport: crt,
+	})
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
 	_, err = transport.send(p)
 	assert.NoError(err)
 
 	// make sure our custom round tripper was used
-	assert.Len(customRoundTripper.reqs, 1)
+	assert.Len(crt.reqs, 1)
+	assert.Equal(hits, 1)
 }
 
 func TestWithHTTPClient(t *testing.T) {
 	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
 	assert := assert.New(t)
-	srv := mockDatadogAPINewServer(t)
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		hits++
+	}))
 	defer srv.Close()
 
 	u, err := url.Parse(srv.URL)
@@ -266,19 +244,30 @@ func TestWithHTTPClient(t *testing.T) {
 	assert.NoError(err)
 	_, err = trc.config.transport.send(p)
 	assert.NoError(err)
-	assert.Len(rt.reqs, 1)
+	assert.Len(rt.reqs, 2)
+	assert.Contains(rt.reqs[0].URL.Path, "/info")
+	assert.Contains(rt.reqs[1].URL.Path, "/traces")
+	assert.Equal(hits, 2)
 }
 
 func TestWithUDS(t *testing.T) {
 	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
 	assert := assert.New(t)
-	udsPath := "/tmp/com.datadoghq.dd-trace-go.tracer.test.sock"
+	dir, err := ioutil.TempDir("", "socket")
+	if err != nil {
+		t.Fatal(err)
+	}
+	udsPath := filepath.Join(dir, "apm.socket")
+	defer os.RemoveAll(udsPath)
 	unixListener, err := net.Listen("unix", udsPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &http.Server{Handler: mockDatadogAPIHandler{t: t}}
+	var hits int
+	srv := http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		hits++
+	})}
 	go srv.Serve(unixListener)
 	defer srv.Close()
 
@@ -292,39 +281,6 @@ func TestWithUDS(t *testing.T) {
 	assert.NoError(err)
 	_, err = trc.config.transport.send(p)
 	assert.NoError(err)
-	assert.Len(rt.reqs, 1)
-}
-
-// TestTransportHTTPRace defines a regression tests where the request body was being
-// read even after http.Client.Do returns. See golang/go#33244
-func TestTransportHTTPRace(t *testing.T) {
-	srv := http.Server{
-		Addr: "127.0.0.1:8889",
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			r.Body.Read(make([]byte, 4096))
-			w.WriteHeader(http.StatusRequestEntityTooLarge)
-		}),
-	}
-	done := make(chan struct{})
-	go func() {
-		srv.ListenAndServe()
-		done <- struct{}{}
-	}()
-	trans := &httpTransport{
-		traceURL: "http://127.0.0.1:8889/",
-		client:   &http.Client{},
-	}
-	p := newPayload()
-	spanList := newSpanList(50)
-	for i := 0; i < 100; i++ {
-		for j := 0; j < 100; j++ {
-			p.push(spanList)
-		}
-		trans.send(p)
-		p.reset()
-	}
-	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Millisecond)
-	defer cancelFunc()
-	srv.Shutdown(ctx)
-	<-done
+	assert.Len(rt.reqs, 2)
+	assert.Equal(hits, 2)
 }

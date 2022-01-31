@@ -80,6 +80,14 @@ func (d *driverRegistry) config(name string) (*config, bool) {
 	return config, ok
 }
 
+// unregister is used to make tests idempotent.
+func (d *driverRegistry) unregister(name string) {
+	driver := d.drivers[name]
+	delete(d.keys, reflect.TypeOf(driver))
+	delete(d.configs, name)
+	delete(d.drivers, name)
+}
+
 // Register tells the sql integration package about the driver that we will be tracing. It must
 // be called before Open, if that connection is to be traced. It uses the driverName suffixed
 // with ".db" as the default service name.
@@ -102,6 +110,13 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	}
 	log.Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
 	registeredDrivers.add(driverName, driver, cfg)
+}
+
+// unregister is used to make tests idempotent.
+func unregister(name string) {
+	if registeredDrivers.isRegistered(name) {
+		registeredDrivers.unregister(name)
+	}
 }
 
 // errNotRegistered is returned when there is an attempt to open a database connection towards a driver
@@ -171,6 +186,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if math.IsNaN(cfg.analyticsRate) {
 		cfg.analyticsRate = rc.analyticsRate
 	}
+	cfg.childSpansOnly = rc.childSpansOnly
 	tc := &tracedConnector{
 		connector:  c,
 		driverName: name,
