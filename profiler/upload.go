@@ -1,20 +1,19 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package profiler
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"math/rand"
 	"mime/multipart"
 	"net/http"
-	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -26,18 +25,6 @@ const maxRetries = 2
 var errOldAgent = errors.New("Datadog Agent is not accepting profiles. Agent-based profiling deployments " +
 	"require Datadog Agent >= 7.20")
 
-// backoffDuration calculates the backoff duration given an attempt number and max duration
-func backoffDuration(attempt int, max time.Duration) time.Duration {
-	// https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
-	if attempt == 0 {
-		return 0
-	}
-	maxPow := float64(max / 100 * time.Millisecond)
-	pow := math.Min(math.Pow(2, float64(attempt)), maxPow)
-	ns := int64(float64(100*time.Millisecond) * pow)
-	return time.Duration(rand.Int63n(ns))
-}
-
 // upload tries to upload a batch of profiles. It has retry and backoff mechanisms.
 func (p *profiler) upload(bat batch) error {
 	statsd := p.cfg.statsd
@@ -46,7 +33,7 @@ func (p *profiler) upload(bat batch) error {
 		err = p.doRequest(bat)
 		if rerr, ok := err.(*retriableError); ok {
 			statsd.Count("datadog.profiler.go.upload_retry", 1, nil, 1)
-			wait := backoffDuration(i+1, p.cfg.cpuDuration)
+			wait := time.Duration(rand.Int63n(p.cfg.period.Nanoseconds()))
 			log.Error("Uploading profile failed: %v. Trying again in %s...", rerr, wait)
 			time.Sleep(wait)
 			continue
@@ -83,10 +70,15 @@ func (p *profiler) doRequest(bat batch) error {
 	if err != nil {
 		return err
 	}
+	// uploadTimeout is guaranteed to be >= 0, see newProfiler.
+	ctx, cancel := context.WithTimeout(context.Background(), p.cfg.uploadTimeout)
+	defer cancel()
+	// TODO(fg) use NewRequestWithContext once go 1.12 support is dropped.
 	req, err := http.NewRequest("POST", p.cfg.targetURL, body)
 	if err != nil {
 		return err
 	}
+	req = req.WithContext(ctx)
 	if p.cfg.apiKey != "" {
 		req.Header.Set("DD-API-KEY", p.cfg.apiKey)
 	}
@@ -126,10 +118,10 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 			err = mw.WriteField(k, v)
 		}
 	}
-	writeField("format", "pprof")
-	writeField("runtime", "go")
-	writeField("recording-start", bat.start.Format(time.RFC3339))
-	writeField("recording-end", bat.end.Format(time.RFC3339))
+	writeField("version", "3")
+	writeField("family", "go")
+	writeField("start", bat.start.Format(time.RFC3339))
+	writeField("end", bat.end.Format(time.RFC3339))
 	if bat.host != "" {
 		writeField("tags[]", fmt.Sprintf("host:%s", bat.host))
 	}
@@ -137,14 +129,11 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 	for _, tag := range tags {
 		writeField("tags[]", tag)
 	}
-	for i, p := range bat.profiles {
-		writeField(fmt.Sprintf("types[%d]", i), strings.Join(p.types, ","))
-	}
 	if err != nil {
 		return "", nil, err
 	}
-	for i, p := range bat.profiles {
-		formFile, err := mw.CreateFormFile(fmt.Sprintf("data[%d]", i), "pprof-data")
+	for _, p := range bat.profiles {
+		formFile, err := mw.CreateFormFile(fmt.Sprintf("data[%s]", p.name), "pprof-data")
 		if err != nil {
 			return "", nil, err
 		}

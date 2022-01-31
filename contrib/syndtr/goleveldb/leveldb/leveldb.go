@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package leveldb provides functions to trace the syndtr/goleveldb package (https://github.com/syndtr/goleveldb).
 package leveldb // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/syndtr/goleveldb/leveldb"
@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/iterator"
@@ -47,9 +48,11 @@ func OpenFile(path string, o *opt.Options, opts ...Option) (*DB, error) {
 
 // WrapDB wraps a leveldb.DB so that queries are traced.
 func WrapDB(db *leveldb.DB, opts ...Option) *DB {
+	cfg := newConfig(opts...)
+	log.Debug("contrib/syndtr/goleveldb/leveldb: Wrapping DB: %#v", cfg)
 	return &DB{
 		DB:  db,
-		cfg: newConfig(opts...),
+		cfg: cfg,
 	}
 }
 

@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package gorm
 
@@ -18,6 +18,7 @@ type config struct {
 	analyticsRate float64
 	dsn           string
 	tagFns        map[string]func(scope *gorm.Scope) interface{}
+	errCheck      func(err error) bool
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -31,6 +32,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
+	cfg.errCheck = func(error) bool { return true }
 }
 
 // WithServiceName sets the given service name when registering a driver,
@@ -72,5 +74,14 @@ func WithCustomTag(tag string, tagFn func(scope *gorm.Scope) interface{}) Option
 			cfg.tagFns = make(map[string]func(scope *gorm.Scope) interface{})
 		}
 		cfg.tagFns[tag] = tagFn
+	}
+}
+
+// WithErrorCheck specifies a function fn which determines whether the passed
+// error should be marked as an error. The fn is called whenever a gorm operation
+// finishes with an error
+func WithErrorCheck(fn func(err error) bool) Option {
+	return func(cfg *config) {
+		cfg.errCheck = fn
 	}
 }

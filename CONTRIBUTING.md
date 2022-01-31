@@ -15,3 +15,28 @@ Fixes #113
 ```
 Please apply the same logic for Pull Requests and Issues: start with the package name, followed by a colon and a description of the change, just like
 the official [Go language](https://github.com/golang/go/pulls).
+
+### Style guidelines
+
+A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.
+It will help tremendously in avoiding comments and speeding up the PR process.
+
+### Go Modules
+
+This repository currently takes an [idiosyncratic approach](https://github.com/DataDog/dd-trace-go/issues/810) to using Go modules which means that you should not commit modified versions of the `go.mod` or `go.sum` files.
+
+The following git command can be used to permanently ignore modifications to these files:
+
+```
+git update-index --assume-unchanged go.*
+```
+
+If you need to undo this for any reason, you can run:
+
+```
+git update-index --no-assume-unchanged go.*
+```
+
+### Milestones
+
+The maintainers of this repository assign milestones to pull requests to classify them. `Triage` indicates that it is yet to be decided which version the change will go into. Pull requests that are ready get the upcoming release version assigned.

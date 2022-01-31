@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package pg
 
@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-pg/pg/v10"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestImplementsHook(t *testing.T) {
@@ -45,6 +46,7 @@ func TestSelect(t *testing.T) {
 	parentSpan.Finish()
 	spans := mt.FinishedSpans()
 
+	require.NoError(t, err)
 	assert.Equal(1, res.RowsAffected())
 	assert.Equal(1, res.RowsReturned())
 	assert.Equal(2, len(spans))

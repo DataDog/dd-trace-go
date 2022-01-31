@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package redis provides tracing functions for tracing the go-redis/redis package (https://github.com/go-redis/redis).
 // This package supports versions up to go-redis 6.15.
@@ -29,34 +29,73 @@ type datadogHook struct {
 
 // params holds the tracer and a set of parameters which are recorded with every trace.
 type params struct {
-	host   string
-	port   string
-	db     string
-	config *clientConfig
+	config         *clientConfig
+	additionalTags []ddtrace.StartSpanOption
 }
 
 // NewClient returns a new Client that is traced with the default tracer under
 // the service name "redis".
 func NewClient(opt *redis.Options, opts ...ClientOption) redis.UniversalClient {
+	client := redis.NewClient(opt)
+	WrapClient(client, opts...)
+	return client
+}
+
+// WrapClient adds a hook to the given client that traces with the default tracer under
+// the service name "redis".
+func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	host, port, err := net.SplitHostPort(opt.Addr)
-	if err != nil {
-		host = opt.Addr
-		port = "6379"
+
+	hookParams := &params{
+		additionalTags: additionalTagOptions(client),
+		config:         cfg,
 	}
-	params := &params{
-		host:   host,
-		port:   port,
-		db:     strconv.Itoa(opt.DB),
-		config: cfg,
+
+	client.AddHook(&datadogHook{params: hookParams})
+}
+
+type clientOptions interface {
+	Options() *redis.Options
+}
+
+type clusterOptions interface {
+	Options() *redis.ClusterOptions
+}
+
+func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOption {
+	additionalTags := []ddtrace.StartSpanOption{}
+	if clientOptions, ok := client.(clientOptions); ok {
+		opt := clientOptions.Options()
+		if opt.Addr == "FailoverClient" {
+			additionalTags = []ddtrace.StartSpanOption{
+				tracer.Tag("out.db", strconv.Itoa(opt.DB)),
+			}
+		} else {
+			host, port, err := net.SplitHostPort(opt.Addr)
+			if err != nil {
+				host = opt.Addr
+				port = "6379"
+			}
+			additionalTags = []ddtrace.StartSpanOption{
+				tracer.Tag(ext.TargetHost, host),
+				tracer.Tag(ext.TargetPort, port),
+				tracer.Tag("out.db", strconv.Itoa(opt.DB)),
+			}
+		}
+	} else if clientOptions, ok := client.(clusterOptions); ok {
+		addrs := []string{}
+		for _, addr := range clientOptions.Options().Addrs {
+			addrs = append(addrs, addr)
+		}
+		additionalTags = []ddtrace.StartSpanOption{
+			tracer.Tag("addrs", strings.Join(addrs, ", ")),
+		}
 	}
-	client := redis.NewClient(opt)
-	client.AddHook(&datadogHook{params: params})
-	return client
+	return additionalTags
 }
 
 func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
@@ -68,12 +107,10 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(parts[0]),
-		tracer.Tag(ext.TargetHost, p.host),
-		tracer.Tag(ext.TargetPort, p.port),
-		tracer.Tag("out.db", p.db),
 		tracer.Tag("redis.raw_command", raw),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 	}
+	opts = append(opts, ddh.additionalTags...)
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
@@ -102,14 +139,12 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(parts[0]),
-		tracer.Tag(ext.TargetHost, p.host),
-		tracer.Tag(ext.TargetPort, p.port),
-		tracer.Tag("out.db", p.db),
 		tracer.Tag("redis.raw_command", raw),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 		tracer.Tag(ext.ResourceName, raw),
 		tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
 	}
+	opts = append(opts, ddh.additionalTags...)
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}

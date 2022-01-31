@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
@@ -344,6 +344,25 @@ func TestSpanErrorNil(t *testing.T) {
 	assert.Equal(nMeta, len(span.Meta))
 }
 
+func TestUniqueTagKeys(t *testing.T) {
+	assert := assert.New(t)
+	span := newBasicSpan("web.request")
+
+	//check to see if setMeta correctly wipes out a metric tag
+	span.SetTag("foo.bar", 12)
+	span.SetTag("foo.bar", "val")
+
+	assert.NotContains(span.Metrics, "foo.bar")
+	assert.Equal("val", span.Meta["foo.bar"])
+
+	//check to see if setMetric correctly wipes out a meta tag
+	span.SetTag("foo.bar", "val")
+	span.SetTag("foo.bar", 12)
+
+	assert.Equal(12.0, span.Metrics["foo.bar"])
+	assert.NotContains(span.Meta, "foo.bar")
+}
+
 // Prior to a bug fix, this failed when running `go test -race`
 func TestSpanModifyWhileFlushing(t *testing.T) {
 	tracer, _, _, stop := startTestTracer(t)
@@ -522,6 +541,17 @@ func BenchmarkSetTagString(b *testing.B) {
 	}
 }
 
+func BenchmarkSetTagStringer(b *testing.B) {
+	span := newBasicSpan("bench.span")
+	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	value := &stringer{}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		k := string(keys[i%len(keys)])
+		span.SetTag(k, value)
+	}
+}
+
 func BenchmarkSetTagField(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := []string{ext.ServiceName, ext.ResourceName, ext.SpanType}
@@ -536,3 +566,9 @@ func BenchmarkSetTagField(b *testing.B) {
 type boomError struct{}
 
 func (e *boomError) Error() string { return "boom" }
+
+type stringer struct{}
+
+func (s *stringer) String() string {
+	return "string"
+}

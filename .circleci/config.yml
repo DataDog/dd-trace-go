@@ -1,9 +1,9 @@
 version: 2
 
-plain-go113: &plain-go113
+plain-go114: &plain-go114
   working_directory: /home/circleci/dd-trace-go.v1
   docker:
-    - image: circleci/golang:1.13
+    - image: circleci/golang:1.14
       environment:
         GOPATH: "/home/circleci/go"
 
@@ -24,7 +24,7 @@ jobs:
           go build ./ddtrace/... ./profiler/...
 
   metadata:
-    <<: *plain-go113
+    <<: *plain-go114
 
     steps:
     - checkout
@@ -40,7 +40,7 @@ jobs:
           go run checkcopyright.go
 
   lint:
-    <<: *plain-go113
+    <<: *plain-go114
 
     steps:
     - checkout
@@ -62,19 +62,24 @@ jobs:
 
   test-core:
     resource_class: xlarge
-    <<: *plain-go113
+    <<: *plain-go114
 
     steps:
       - checkout
       - run:
           name: Testing
-          command: go test -v -race `go list ./... | grep -v /contrib/`
+          command: go test -v -race -coverprofile=coverage.txt -covermode=atomic `go list ./... | grep -v /contrib/`
+
+      - run:
+          name: Upload coverage report to Codecov
+          command: bash <(curl -s https://codecov.io/bash)
+
 
   test-contrib:
     resource_class: xlarge
     working_directory: /home/circleci/dd-trace-go.v1
     docker:
-      - image: circleci/golang:1.13
+      - image: circleci/golang:1.14
         environment:
           GOPATH: "/home/circleci/go"
       - image: cassandra:3.7
@@ -183,11 +188,15 @@ jobs:
       - run:
           name: Testing
           command: |
-                INTEGRATION=1 go test -v -race `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api`
+                INTEGRATION=1 go test -v -race -coverprofile=coverage.txt -covermode=atomic `go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api`
                 go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
                 go test -v ./contrib/google.golang.org/api/...
                 go get google.golang.org/grpc@v1.2.0
                 go test -v ./contrib/google.golang.org/grpc.v12/...
+
+      - run:
+          name: Upload coverage report to Codecov
+          command: bash <(curl -s https://codecov.io/bash)
 
 workflows:
   version: 2

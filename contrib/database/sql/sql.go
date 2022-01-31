@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package sql provides functions to trace the database/sql package (https://golang.org/pkg/database/sql).
 // It will automatically augment operations such as connections, statements and transactions with tracing.
@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // registeredDrivers holds a registry of all drivers registered via the sqltrace package.
@@ -99,6 +100,7 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	if cfg.serviceName == "" {
 		cfg.serviceName = driverName + ".db"
 	}
+	log.Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
 	registeredDrivers.add(driverName, driver, cfg)
 }
 

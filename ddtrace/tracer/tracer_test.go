@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package tracer
 
@@ -1020,7 +1020,9 @@ func TestTracerFlush(t *testing.T) {
 }
 
 func TestTracerReportsHostname(t *testing.T) {
-	t.Run("enabled", func(t *testing.T) {
+	const hostname = "hostname-test"
+
+	t.Run("DD_TRACE_REPORT_HOSTNAME/set", func(t *testing.T) {
 		os.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
 		defer os.Unsetenv("DD_TRACE_REPORT_HOSTNAME")
 
@@ -1038,11 +1040,72 @@ func TestTracerReportsHostname(t *testing.T) {
 		assert.True(ok)
 		assert.Equal(name, tracer.hostname)
 
+		name, ok = child.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(name, tracer.hostname)
+	})
+
+	t.Run("DD_TRACE_REPORT_HOSTNAME/unset", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
+
+		assert := assert.New(t)
+
+		_, ok := root.Meta[keyHostname]
+		assert.False(ok)
 		_, ok = child.Meta[keyHostname]
 		assert.False(ok)
 	})
 
-	t.Run("disabled", func(t *testing.T) {
+	t.Run("WithHostname", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithHostname(hostname))
+		defer stop()
+
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
+
+		assert := assert.New(t)
+
+		got, ok := root.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(got, hostname)
+
+		got, ok = child.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(got, hostname)
+	})
+
+	t.Run("DD_TRACE_SOURCE_HOSTNAME/set", func(t *testing.T) {
+		os.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-test")
+		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		root := tracer.StartSpan("root").(*span)
+		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+		child.Finish()
+		root.Finish()
+
+		assert := assert.New(t)
+
+		got, ok := root.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(got, hostname)
+
+		got, ok = child.Meta[keyHostname]
+		assert.True(ok)
+		assert.Equal(got, hostname)
+	})
+
+	t.Run("DD_TRACE_SOURCE_HOSTNAME/unset", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 

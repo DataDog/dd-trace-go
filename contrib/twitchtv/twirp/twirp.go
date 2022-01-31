@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package twirp provides tracing functions for tracing clients and servers generated
 // by the twirp framework (https://github.com/twitchtv/twirp).
@@ -45,6 +45,7 @@ func WrapClient(c HTTPClient, opts ...Option) HTTPClient {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/twitchtv/twirp: Wrapping Client: %#v", cfg)
 	return &wrappedClient{c: c, cfg: cfg}
 }
 
@@ -102,6 +103,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/twitchtv/twirp: Wrapping Server: %#v", cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
@@ -133,6 +135,7 @@ func NewServerHooks(opts ...Option) *twirp.ServerHooks {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/twitchtv/twirp: Creating Server Hooks: %#v", cfg)
 	return &twirp.ServerHooks{
 		RequestReceived:  requestReceivedHook(cfg),
 		RequestRouted:    requestRoutedHook(cfg),

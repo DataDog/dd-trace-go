@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package consul
 
@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	consul "github.com/hashicorp/consul/api"
 )
@@ -40,6 +41,7 @@ func WrapClient(c *consul.Client, opts ...ClientOption) *Client {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/hashicorp/consul: Wrapping Client: %#v", cfg)
 	return &Client{c, cfg, context.Background()}
 }
 

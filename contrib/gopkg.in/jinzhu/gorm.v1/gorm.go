@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-2020 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 // Package gorm provides helper functions for tracing the jinzhu/gorm package (https://github.com/jinzhu/gorm).
 package gorm
@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"gopkg.in/jinzhu/gorm.v1"
 )
@@ -67,6 +68,7 @@ func WithCallbacks(db *gorm.DB, opts ...Option) *gorm.DB {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/gopkg.in/jinzhu/gorm.v1: Registering Callbacks: %#v", cfg)
 	return db.Set(gormConfigKey, cfg)
 }
 
@@ -131,5 +133,8 @@ func after(scope *gorm.Scope, operationName string) {
 	}
 
 	span, _ := tracer.StartSpanFromContext(ctx, operationName, opts...)
-	span.Finish(tracer.WithError(scope.DB().Error))
+	defer span.Finish()
+	if cfg.errCheck(scope.DB().Error) {
+		span.SetTag(ext.Error, scope.DB().Error)
+	}
 }
