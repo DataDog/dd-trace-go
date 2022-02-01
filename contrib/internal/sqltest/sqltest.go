@@ -50,9 +50,8 @@ func RunAll(t *testing.T, cfg *Config) {
 	defer cfg.mockTracer.Stop()
 	cfg.DB.SetMaxIdleConns(0)
 
-	// Make sure testConnect runs first to ensure a connection is established
-	t.Run("Connect", testConnect(cfg))
 	for name, test := range map[string]func(*Config) func(*testing.T){
+		"Connect":       testConnect,
 		"Ping":          testPing,
 		"Query":         testQuery,
 		"Statement":     testStatement,
