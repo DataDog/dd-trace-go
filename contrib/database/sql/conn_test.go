@@ -92,9 +92,9 @@ func TestWithSpanTags(t *testing.T) {
 			rows.Close()
 
 			spans := mt.FinishedSpans()
-			assert.Len(t, spans, 1)
+			assert.Len(t, spans, 2)
 
-			span := spans[0]
+			span := spans[1]
 			assert.Equal(t, tt.want.opName, span.OperationName())
 			for k, v := range tt.want.ctxTags {
 				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)

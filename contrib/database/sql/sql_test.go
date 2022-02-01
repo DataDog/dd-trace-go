@@ -10,7 +10,6 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"log"
 	"math"
 	"os"
@@ -19,6 +18,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
@@ -45,6 +45,7 @@ func TestMySQL(t *testing.T) {
 		log.Fatal(err)
 	}
 	defer db.Close()
+	db.SetMaxIdleConns(0)
 
 	testConfig := &sqltest.Config{
 		DB:         db,
@@ -71,6 +72,7 @@ func TestPostgres(t *testing.T) {
 		log.Fatal(err)
 	}
 	defer db.Close()
+	db.SetMaxIdleConns(0)
 
 	testConfig := &sqltest.Config{
 		DB:         db,
@@ -102,6 +104,7 @@ func TestOpenOptions(t *testing.T) {
 			log.Fatal(err)
 		}
 		defer db.Close()
+		db.SetMaxIdleConns(0)
 
 		testConfig := &sqltest.Config{
 			DB:         db,
@@ -128,6 +131,7 @@ func TestOpenOptions(t *testing.T) {
 		}
 		db := OpenDB(c)
 		defer db.Close()
+		db.SetMaxIdleConns(0)
 
 		testConfig := &sqltest.Config{
 			DB:         db,
@@ -155,6 +159,7 @@ func TestOpenOptions(t *testing.T) {
 		}
 		db := OpenDB(c, WithDSN(dsn))
 		defer db.Close()
+		db.SetMaxIdleConns(0)
 
 		testConfig := &sqltest.Config{
 			DB:         db,
