@@ -45,7 +45,6 @@ func TestMySQL(t *testing.T) {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	db.SetMaxIdleConns(0)
 
 	testConfig := &sqltest.Config{
 		DB:         db,
@@ -72,7 +71,6 @@ func TestPostgres(t *testing.T) {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	db.SetMaxIdleConns(0)
 
 	testConfig := &sqltest.Config{
 		DB:         db,
@@ -104,7 +102,6 @@ func TestOpenOptions(t *testing.T) {
 			log.Fatal(err)
 		}
 		defer db.Close()
-		db.SetMaxIdleConns(0)
 
 		testConfig := &sqltest.Config{
 			DB:         db,
@@ -131,7 +128,6 @@ func TestOpenOptions(t *testing.T) {
 		}
 		db := OpenDB(c)
 		defer db.Close()
-		db.SetMaxIdleConns(0)
 
 		testConfig := &sqltest.Config{
 			DB:         db,
@@ -159,7 +155,6 @@ func TestOpenOptions(t *testing.T) {
 		}
 		db := OpenDB(c, WithDSN(dsn))
 		defer db.Close()
-		db.SetMaxIdleConns(0)
 
 		testConfig := &sqltest.Config{
 			DB:         db,
@@ -201,32 +196,18 @@ func TestMySQLUint64(t *testing.T) {
 	assert.NoError(rows.Close())
 }
 
-//hangingConnector hangs on Connect until ctx is cancelled.
+// hangingConnector hangs on Connect until ctx is cancelled.
 type hangingConnector struct{}
 
 func (h *hangingConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	select {
 	case <-ctx.Done():
-		return &panicConn{}, errors.New("context cancelled")
+		return nil, errors.New("context cancelled")
 	}
 }
 
 func (h *hangingConnector) Driver() driver.Driver {
 	panic("hangingConnector: Driver() not implemented")
-}
-
-type panicConn struct{}
-
-func (p *panicConn) Prepare(query string) (driver.Stmt, error) {
-	panic("panicConn: Prepare called")
-}
-
-func (p *panicConn) Close() error {
-	panic("panicConn: Close called")
-}
-
-func (p *panicConn) Begin() (driver.Tx, error) {
-	panic("panicConn: Begin called")
 }
 
 func TestConnectCancelledCtx(t *testing.T) {

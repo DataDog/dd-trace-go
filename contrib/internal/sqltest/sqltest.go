@@ -48,6 +48,7 @@ func Prepare(tableName string) func() {
 func RunAll(t *testing.T, cfg *Config) {
 	cfg.mockTracer = mocktracer.Start()
 	defer cfg.mockTracer.Stop()
+	cfg.DB.SetMaxIdleConns(0)
 
 	// Make sure testConnect runs first to ensure a connection is established
 	t.Run("Connect", testConnect(cfg))

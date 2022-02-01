@@ -61,7 +61,6 @@ func TestMySQL(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	internalDB.SetMaxIdleConns(0)
 
 	testConfig := &sqltest.Config{
 		DB:         internalDB,
@@ -96,7 +95,6 @@ func TestPostgres(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	internalDB.SetMaxIdleConns(0)
 
 	testConfig := &sqltest.Config{
 		DB:         internalDB,
