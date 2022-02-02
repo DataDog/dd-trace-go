@@ -1,0 +1,13 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
+//go:build appsec
+// +build appsec
+
+package appsec
+
+// Static recommended AppSec rule VERSION
+// Source: https://github.com/DataDog/appsec-event-rules/blob/VERSION/v2/build/recommended.json
+const staticRecommendedRule =
