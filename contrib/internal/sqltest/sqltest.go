@@ -89,6 +89,8 @@ func testPing(cfg *Config) func(*testing.T) {
 		spans := cfg.mockTracer.FinishedSpans()
 		assert.Len(spans, 2)
 
+		verifyConnectSpan(spans[0], assert, cfg)
+
 		span := spans[1]
 		assert.Equal(cfg.ExpectName, span.OperationName())
 		cfg.ExpectTags["sql.query_type"] = "Ping"
@@ -109,6 +111,8 @@ func testQuery(cfg *Config) func(*testing.T) {
 
 		spans := cfg.mockTracer.FinishedSpans()
 		assert.Len(spans, 2)
+
+		verifyConnectSpan(spans[0], assert, cfg)
 
 		span := spans[1]
 		cfg.ExpectTags["sql.query_type"] = "Query"
@@ -135,6 +139,8 @@ func testStatement(cfg *Config) func(*testing.T) {
 
 		spans := cfg.mockTracer.FinishedSpans()
 		assert.Len(spans, 3)
+
+		verifyConnectSpan(spans[0], assert, cfg)
 
 		span := spans[1]
 		assert.Equal(cfg.ExpectName, span.OperationName())
@@ -168,6 +174,8 @@ func testBeginRollback(cfg *Config) func(*testing.T) {
 
 		spans := cfg.mockTracer.FinishedSpans()
 		assert.Len(spans, 2)
+
+		verifyConnectSpan(spans[0], assert, cfg)
 
 		span := spans[1]
 		assert.Equal(cfg.ExpectName, span.OperationName())
@@ -235,6 +243,14 @@ func testExec(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
+	}
+}
+
+func verifyConnectSpan(span mocktracer.Span, assert *assert.Assertions, cfg *Config) {
+	assert.Equal(cfg.ExpectName, span.OperationName())
+	cfg.ExpectTags["sql.query_type"] = "Connect"
+	for k, v := range cfg.ExpectTags {
+		assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 	}
 }
 

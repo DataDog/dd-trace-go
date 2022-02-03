@@ -94,6 +94,13 @@ func TestWithSpanTags(t *testing.T) {
 			spans := mt.FinishedSpans()
 			assert.Len(t, spans, 2)
 
+			connectSpan := spans[0]
+			assert.Equal(t, tt.want.opName, connectSpan.OperationName())
+			assert.Equal(t, "Connect", connectSpan.Tag("sql.query_type"))
+			for k, v := range tt.want.ctxTags {
+				assert.Equal(t, v, connectSpan.Tag(k), "Value mismatch on tag %s", k)
+			}
+
 			span := spans[1]
 			assert.Equal(t, tt.want.opName, span.OperationName())
 			for k, v := range tt.want.ctxTags {
