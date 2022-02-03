@@ -8,6 +8,6 @@
 
 package appsec
 
-// Static recommended AppSec rule VERSION
-// Source: https://github.com/DataDog/appsec-event-rules/blob/VERSION/v2/build/recommended.json
-const staticRecommendedRule =
+// Static recommended AppSec rule %s
+// Source: https://github.com/DataDog/appsec-event-rules/blob/%s/v2/build/recommended.json
+const staticRecommendedRule = %s

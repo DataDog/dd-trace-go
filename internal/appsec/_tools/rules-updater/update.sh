@@ -19,14 +19,10 @@ echo "================ Minifying ================"
 
 tmpDir=$(mktemp -d /tmp/rule-update-XXXXXXXXX)
 scriptDir=$PWD/$(dirname $0)
-json=rules-$1-min.json
 
 trap "rm -rf $tmpDir" EXIT
 
 DOCKER_BUILDKIT=1 docker build -o type=local,dest=$tmpDir --build-arg version=$1 --no-cache $scriptDir
 echo "================   Done    ================"
-
-cat $scriptDir/template.txt | sed "s/VERSION/$1/g" > rule.go
-cat $tmpDir/$json | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed 's/\(.*\)/"\1"/g' >> rule.go
-
+cp $tmpDir/rule.go .
 echo "Output written to $PWD/rule.go"
