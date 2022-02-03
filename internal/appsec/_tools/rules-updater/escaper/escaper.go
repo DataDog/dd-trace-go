@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"text/template"
 )
 
 //go:embed rules.json
@@ -24,5 +25,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf(ruleGoTemplate, os.Args[1], os.Args[1], strconv.Quote(jsonStr))
+	tmpl, err := template.New("rule.go").Parse(ruleGoTemplate)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Text template creation failed")
+		os.Exit(1)
+	}
+	err = tmpl.Execute(os.Stdout, struct {
+		Version string
+		Rules   string
+	}{
+		Version: os.Args[1],
+		Rules:   strconv.Quote(jsonStr),
+	})
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Text template execution failed")
+		os.Exit(1)
+	}
 }

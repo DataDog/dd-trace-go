@@ -10,8 +10,7 @@ COPY escaper/ /home/
 COPY --from=minify /home/out.json /home/rules.json
 WORKDIR /home/
 RUN go mod tidy
-RUN go build .
-RUN ./escaper ${VERSION} > rule.go
+RUN go run escaper.go ${VERSION} > rule.go
 
 FROM scratch
 ARG version=1.2.5
