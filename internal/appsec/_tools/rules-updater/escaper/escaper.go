@@ -24,6 +24,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	escaped := fmt.Sprintf("%s", strconv.Quote(jsonStr))
-	fmt.Printf(ruleGoTemplate, os.Args[1], os.Args[1], escaped)
+	fmt.Printf(ruleGoTemplate, os.Args[1], os.Args[1], strconv.Quote(jsonStr))
 }
