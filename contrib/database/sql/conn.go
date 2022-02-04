@@ -22,7 +22,8 @@ var _ driver.Conn = (*tracedConn)(nil)
 type queryType string
 
 const (
-	queryTypeQuery    queryType = "Query"
+	queryTypeConnect  queryType = "Connect"
+	queryTypeQuery              = "Query"
 	queryTypePing               = "Ping"
 	queryTypePrepare            = "Prepare"
 	queryTypeExec               = "Exec"
