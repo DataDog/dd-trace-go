@@ -9,7 +9,6 @@ ENV VERSION=$version
 COPY escaper/ /home/
 COPY --from=minify /home/out.json /home/rules.json
 WORKDIR /home/
-RUN go mod tidy
 RUN go run escaper.go ${VERSION} > rule.go
 
 FROM scratch
