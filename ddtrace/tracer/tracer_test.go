@@ -1352,25 +1352,13 @@ func TestTracerReportsHostname(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
-	t.Run("normal", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"))
-		defer stop()
+	tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"))
+	defer stop()
 
-		assert := assert.New(t)
-		sp := tracer.StartSpan("http.request").(*span)
-		v := sp.Meta[ext.Version]
-		assert.Equal("4.5.6", v)
-	})
-
-	t.Run("unset", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"), WithService("servenv"))
-		defer stop()
-
-		assert := assert.New(t)
-		sp := tracer.StartSpan("http.request", ServiceName("otherservenv")).(*span)
-		_, ok := sp.Meta[ext.Version]
-		assert.False(ok)
-	})
+	assert := assert.New(t)
+	sp := tracer.StartSpan("http.request").(*span)
+	v := sp.Meta[ext.Version]
+	assert.Equal("4.5.6", v)
 }
 
 func TestEnvironment(t *testing.T) {
