@@ -8,6 +8,7 @@ package gin // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin"
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"math"
 	"net/http"
 	"strconv"
@@ -52,6 +53,11 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 		// pass the span through the request context
 		c.Request = c.Request.WithContext(ctx)
+
+		// Use AppSec if enabled by user
+		if appsec.Enabled() {
+			useAppSec(c)
+		}
 
 		// serve the request to the next middleware
 		c.Next()
