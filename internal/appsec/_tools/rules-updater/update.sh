@@ -24,5 +24,5 @@ trap "rm -rf $tmpDir" EXIT
 
 DOCKER_BUILDKIT=1 docker build -o type=local,dest=$tmpDir --build-arg version=$1 --no-cache $scriptDir
 echo "================   Done    ================"
-cp $tmpDir/rule.go .
-echo "Output written to $PWD/rule.go"
+cp -v $tmpDir/rule.go ../../
+echo "Output written to ../../rule.go"
