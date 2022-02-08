@@ -176,7 +176,7 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
           POSTGRES_DB: postgres
-      - image: microsoft/mssql-server-linux:2017-CU4
+      - image: mcr.microsoft.com/mssql/server:2019-latest
         environment:
           SA_PASSWORD: myPassw0rd
           ACCEPT_EULA: Y
