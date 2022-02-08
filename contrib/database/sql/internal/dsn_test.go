@@ -51,6 +51,16 @@ func TestParseDSN(t *testing.T) {
 				ext.DBUser:        "dog",
 			},
 		},
+		{
+			driverName: "sqlserver",
+			dsn:        "sqlserver://bob:secret@1.2.3.4:1433?database=mydb",
+			expected: map[string]string{
+				ext.DBUser:     "bob",
+				ext.TargetHost: "1.2.3.4",
+				ext.TargetPort: "1433",
+				ext.DBName:     "mydb",
+			},
+		},
 	} {
 		m, err := ParseDSN(tt.driverName, tt.dsn)
 		assert.Equal(nil, err)
