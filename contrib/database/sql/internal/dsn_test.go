@@ -148,7 +148,7 @@ func TestParseSqlServerDSN(t *testing.T) {
 			},
 		},
 	} {
-		m, err := parseSqlServerDSN(tt.dsn)
+		m, err := parseSQLServerDSN(tt.dsn)
 		assert.Equal(nil, err)
 		assert.Equal(tt.expected, m)
 	}

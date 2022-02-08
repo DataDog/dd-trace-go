@@ -28,7 +28,7 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 			return
 		}
 	case "sqlserver":
-		meta, err = parseSqlServerDSN(dsn)
+		meta, err = parseSQLServerDSN(dsn)
 		if err != nil {
 			return
 		}
@@ -92,18 +92,18 @@ func parsePostgresDSN(dsn string) (map[string]string, error) {
 	return meta, nil
 }
 
-// parseSqlServerDSN parses a sqlserver-type dsn into a map
-func parseSqlServerDSN(dsn string) (map[string]string, error) {
+// parseSQLServerDSN parses a sqlserver-type dsn into a map
+func parseSQLServerDSN(dsn string) (map[string]string, error) {
 	var err error
 	var meta map[string]string
 	if strings.HasPrefix(dsn, "sqlserver://") {
 		// url form
-		meta, err = parseSqlServerURL(dsn)
+		meta, err = parseSQLServerURL(dsn)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		meta, err = parseSqlServerADO(dsn)
+		meta, err = parseSQLServerADO(dsn)
 		if err != nil {
 			return nil, err
 		}

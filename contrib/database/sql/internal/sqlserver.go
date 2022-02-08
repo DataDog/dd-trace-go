@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-func parseSqlServerURL(url string) (map[string]string, error) {
+func parseSQLServerURL(url string) (map[string]string, error) {
 	u, err := nurl.Parse(url)
 	if err != nil {
 		return nil, err
@@ -68,7 +68,7 @@ var keySynonyms = map[string]string{
 	"database":        "dbname",
 }
 
-func parseSqlServerADO(dsn string) (map[string]string, error) {
+func parseSQLServerADO(dsn string) (map[string]string, error) {
 	kvs := map[string]string{}
 	fields := strings.Split(dsn, ";")
 	for _, f := range fields {
