@@ -41,7 +41,7 @@ func TestMain(m *testing.M) {
 
 func TestSqlServer(t *testing.T) {
 	Register("sqlserver", &mssql.Driver{})
-	db, err := Open("sqlserver", "sqlserver://sa:myPassw0rd@127.0.0.1:1433?database=test")
+	db, err := Open("sqlserver", "sqlserver://sa:myPassw0rd@127.0.0.1:1433?database=master")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestSqlServer(t *testing.T) {
 			ext.TargetHost:      "127.0.0.1",
 			ext.TargetPort:      "1433",
 			ext.DBUser:          "sa",
-			ext.DBName:          "test",
+			ext.DBName:          "master",
 			ext.EventSampleRate: nil,
 		},
 	}

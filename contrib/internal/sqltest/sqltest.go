@@ -38,7 +38,7 @@ func Prepare(tableName string) func() {
 	}
 	postgres.Exec(queryDrop)
 	postgres.Exec(queryCreate)
-	mssql, err := sql.Open("sqlserver", "sqlserver://sa:myPassw0rd@localhost:1433?database=test")
+	mssql, err := sql.Open("sqlserver", "sqlserver://sa:myPassw0rd@localhost:1433?database=master")
 	defer mssql.Close()
 	if err != nil {
 		log.Fatal(err)
