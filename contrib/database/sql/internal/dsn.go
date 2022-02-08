@@ -27,6 +27,11 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 		if err != nil {
 			return
 		}
+	case "sqlserver":
+		meta, err = parseSqlServerDSN(dsn)
+		if err != nil {
+			return
+		}
 	default:
 		// not supported
 	}
@@ -83,6 +88,26 @@ func parsePostgresDSN(dsn string) (map[string]string, error) {
 		return nil, err
 	}
 	// remove sensitive information
+	delete(meta, "password")
+	return meta, nil
+}
+
+// parseSqlServerDSN parses a sqlserver-type dsn into a map
+func parseSqlServerDSN(dsn string) (map[string]string, error) {
+	var err error
+	var meta map[string]string
+	if strings.HasPrefix(dsn, "sqlserver://") {
+		// url form
+		meta, err = parseSqlServerURL(dsn)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		meta, err = parseSqlServerADO(dsn)
+		if err != nil {
+			return nil, err
+		}
+	}
 	delete(meta, "password")
 	return meta, nil
 }

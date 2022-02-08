@@ -38,9 +38,17 @@ func Prepare(tableName string) func() {
 	}
 	postgres.Exec(queryDrop)
 	postgres.Exec(queryCreate)
+	mssql, err := sql.Open("sqlserver", "sqlserver://sa:myPassw0rd@localhost:1433?database=test")
+	defer mssql.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	mssql.Exec(queryDrop)
+	mssql.Exec(queryCreate)
 	return func() {
 		mysql.Exec(queryDrop)
 		postgres.Exec(queryDrop)
+		mssql.Exec(queryDrop)
 	}
 }
 
@@ -101,7 +109,13 @@ func testPing(cfg *Config) func(*testing.T) {
 }
 
 func testQuery(cfg *Config) func(*testing.T) {
-	query := fmt.Sprintf("SELECT id, name FROM %s LIMIT 5", cfg.TableName)
+	var query string
+	switch cfg.DriverName {
+	case "postgres", "pgx", "mysql":
+		query = fmt.Sprintf("SELECT id, name FROM %s LIMIT 5", cfg.TableName)
+	case "sqlserver":
+		query = fmt.Sprintf("SELECT TOP 5 id, name FROM %s", cfg.TableName)
+	}
 	return func(t *testing.T) {
 		cfg.mockTracer.Reset()
 		assert := assert.New(t)
@@ -130,6 +144,8 @@ func testStatement(cfg *Config) func(*testing.T) {
 		query = fmt.Sprintf(query, cfg.TableName, "$1")
 	case "mysql":
 		query = fmt.Sprintf(query, cfg.TableName, "?")
+	case "sqlserver":
+		query = fmt.Sprintf(query, cfg.TableName, "@p1")
 	}
 	return func(t *testing.T) {
 		cfg.mockTracer.Reset()

@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
+	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
@@ -36,6 +37,32 @@ func TestMain(m *testing.M) {
 	}
 	defer sqltest.Prepare(tableName)()
 	os.Exit(m.Run())
+}
+
+func TestSqlServer(t *testing.T) {
+	Register("sqlserver", &mssql.Driver{})
+	db, err := Open("sqlserver", "sqlserver://sa:myPassw0rd@127.0.0.1:1433?database=test")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	testConfig := &sqltest.Config{
+		DB:         db,
+		DriverName: "sqlserver",
+		TableName:  tableName,
+		ExpectName: "sqlserver.query",
+		ExpectTags: map[string]interface{}{
+			ext.ServiceName:     "sqlserver.db",
+			ext.SpanType:        ext.SpanTypeSQL,
+			ext.TargetHost:      "127.0.0.1",
+			ext.TargetPort:      "1433",
+			ext.DBUser:          "sa",
+			ext.DBName:          "test",
+			ext.EventSampleRate: nil,
+		},
+	}
+	sqltest.RunAll(t, testConfig)
 }
 
 func TestMySQL(t *testing.T) {

@@ -88,6 +88,17 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 		tc.tryTrace(ctx, queryTypeExec, query, start, err)
 		return r, err
 	}
+	if ciCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
+		stmt, err := ciCtx.PrepareContext(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		if ctxStmt, ok := stmt.(driver.StmtExecContext); ok {
+			r, err := ctxStmt.ExecContext(ctx, args)
+			tc.tryTrace(ctx, queryTypeExec, query, start, err)
+			return r, err
+		}
+	}
 	dargs, err := namedValueToValue(args)
 	if err != nil {
 		return nil, err
@@ -125,6 +136,17 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 		rows, err := queryerContext.QueryContext(ctx, query, args)
 		tc.tryTrace(ctx, queryTypeQuery, query, start, err)
 		return rows, err
+	}
+	if ciCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
+		stmt, err := ciCtx.PrepareContext(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		if ctxStmt, ok := stmt.(driver.StmtQueryContext); ok {
+			rows, err := ctxStmt.QueryContext(ctx, args)
+			tc.tryTrace(ctx, queryTypeQuery, query, start, err)
+			return rows, err
+		}
 	}
 	dargs, err := namedValueToValue(args)
 	if err != nil {
