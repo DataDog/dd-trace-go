@@ -467,7 +467,6 @@ func TestServiceName(t *testing.T) {
 }
 
 func TestAppSec(t *testing.T) {
-
 	appsec.Start()
 	defer appsec.Stop()
 	if !appsec.Enabled() {

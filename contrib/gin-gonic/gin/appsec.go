@@ -19,9 +19,12 @@ func useAppSec(c *gin.Context) {
 	span, ok := tracer.SpanFromContext(req.Context())
 	if ok {
 		httpsec.SetAppSecTags(span)
-		params := make(map[string]string)
-		for _, p := range c.Params {
-			params[p.Key] = p.Value
+		var params map[string]string
+		if l := len(c.Params); l > 0 {
+			params = make(map[string]string, l)
+			for _, p := range c.Params {
+				params[p.Key] = p.Value
+			}
 		}
 		args := httpsec.MakeHandlerOperationArgs(req, params)
 		op := httpsec.StartOperation(args, nil)
