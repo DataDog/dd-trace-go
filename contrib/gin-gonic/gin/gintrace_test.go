@@ -85,7 +85,81 @@ func TestTrace200(t *testing.T) {
 	assert.Contains(span.Tag(ext.ResourceName), "GET /user/:id")
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
-	// TODO(x) would be much nicer to have "/user/:id" here
+	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+}
+
+func TestTraceDefaultResponse(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := gin.New()
+	router.Use(Middleware("foobar"))
+	router.GET("/user/:id", func(c *gin.Context) {
+		_, ok := tracer.SpanFromContext(c.Request.Context())
+		assert.True(ok)
+	})
+
+	r := httptest.NewRequest("GET", "/user/123", nil)
+	w := httptest.NewRecorder()
+
+	// do and verify the request
+	router.ServeHTTP(w, r)
+	response := w.Result()
+	assert.Equal(response.StatusCode, 200)
+
+	// verify traces look good
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 1)
+	if len(spans) < 1 {
+		t.Fatalf("no spans")
+	}
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+	assert.Equal("foobar", span.Tag(ext.ServiceName))
+	assert.Contains(span.Tag(ext.ResourceName), "GET /user/:id")
+	assert.Equal("200", span.Tag(ext.HTTPCode))
+	assert.Equal("GET", span.Tag(ext.HTTPMethod))
+	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+}
+
+func TestTraceMultipleResponses(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := gin.New()
+	router.Use(Middleware("foobar"))
+	router.GET("/user/:id", func(c *gin.Context) {
+		_, ok := tracer.SpanFromContext(c.Request.Context())
+		assert.True(ok)
+		c.Status(142)
+		c.Writer.WriteString("test")
+		c.Status(133)
+	})
+
+	r := httptest.NewRequest("GET", "/user/123", nil)
+	w := httptest.NewRecorder()
+
+	// do and verify the request
+	router.ServeHTTP(w, r)
+	response := w.Result()
+	assert.Equal(response.StatusCode, 142)
+
+	// verify traces look good
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 1)
+	if len(spans) < 1 {
+		t.Fatalf("no spans")
+	}
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+	assert.Equal("foobar", span.Tag(ext.ServiceName))
+	assert.Contains(span.Tag(ext.ResourceName), "GET /user/:id")
+	assert.Equal("133", span.Tag(ext.HTTPCode)) // Will be fixed by https://github.com/gin-gonic/gin/pull/2627 once merged and released
+	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
 }
 
