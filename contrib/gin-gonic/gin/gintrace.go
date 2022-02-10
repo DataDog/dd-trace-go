@@ -56,7 +56,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 		// Use AppSec if enabled by user
 		if appsec.Enabled() {
-			useAppSec(c)
+			useAppSec(c, span)
 		}
 
 		// serve the request to the next middleware

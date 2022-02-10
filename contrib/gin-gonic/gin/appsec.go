@@ -14,30 +14,25 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func useAppSec(c *gin.Context) {
+func useAppSec(c *gin.Context, span tracer.Span) {
 	req := c.Request
-	span, ok := tracer.SpanFromContext(req.Context())
-	if ok {
-		httpsec.SetAppSecTags(span)
-		var params map[string]string
-		if l := len(c.Params); l > 0 {
-			params = make(map[string]string, l)
-			for _, p := range c.Params {
-				params[p.Key] = p.Value
-			}
+	httpsec.SetAppSecTags(span)
+	var params map[string]string
+	if l := len(c.Params); l > 0 {
+		params = make(map[string]string, l)
+		for _, p := range c.Params {
+			params[p.Key] = p.Value
 		}
-		args := httpsec.MakeHandlerOperationArgs(req, params)
-		op := httpsec.StartOperation(args, nil)
-		defer func() {
-			events := op.Finish(httpsec.HandlerOperationRes{Status: c.Writer.Status()})
-			if len(events) > 0 {
-				remoteIP, _, err := net.SplitHostPort(req.RemoteAddr)
-				if err != nil {
-					remoteIP = req.RemoteAddr
-				}
-				httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Writer.Header())
-			}
-		}()
 	}
+	args := httpsec.MakeHandlerOperationArgs(req, params)
+	op := httpsec.StartOperation(args, nil)
 	c.Next()
+	events := op.Finish(httpsec.HandlerOperationRes{Status: c.Writer.Status()})
+	if len(events) > 0 {
+		remoteIP, _, err := net.SplitHostPort(req.RemoteAddr)
+		if err != nil {
+			remoteIP = req.RemoteAddr
+		}
+		httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Writer.Header())
+	}
 }
