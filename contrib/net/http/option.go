@@ -119,12 +119,14 @@ type roundTripperConfig struct {
 	serviceName   string
 	resourceNamer func(req *http.Request) string
 	spanOpts      []ddtrace.StartSpanOption
+	propagation   bool
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
 	return &roundTripperConfig{
 		analyticsRate: globalconfig.AnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
+		propagation:   true,
 	}
 }
 
@@ -195,5 +197,11 @@ func RTWithAnalyticsRate(rate float64) RoundTripperOption {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+func RTWithPropagation(propagation bool) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.propagation = propagation
 	}
 }
