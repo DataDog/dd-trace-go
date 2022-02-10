@@ -14,7 +14,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func useAppSec(c *gin.Context, span tracer.Span) {
+// useAppSec executes the AppSec logic related to the operation start and
+// returns the  function to be executed upon finishing the operation
+func useAppSec(c *gin.Context, span tracer.Span) func() {
 	req := c.Request
 	httpsec.SetAppSecTags(span)
 	var params map[string]string
@@ -26,13 +28,14 @@ func useAppSec(c *gin.Context, span tracer.Span) {
 	}
 	args := httpsec.MakeHandlerOperationArgs(req, params)
 	op := httpsec.StartOperation(args, nil)
-	c.Next()
-	events := op.Finish(httpsec.HandlerOperationRes{Status: c.Writer.Status()})
-	if len(events) > 0 {
-		remoteIP, _, err := net.SplitHostPort(req.RemoteAddr)
-		if err != nil {
-			remoteIP = req.RemoteAddr
+	return func() {
+		events := op.Finish(httpsec.HandlerOperationRes{Status: c.Writer.Status()})
+		if len(events) > 0 {
+			remoteIP, _, err := net.SplitHostPort(req.RemoteAddr)
+			if err != nil {
+				remoteIP = req.RemoteAddr
+			}
+			httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Writer.Header())
 		}
-		httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Writer.Header())
 	}
 }

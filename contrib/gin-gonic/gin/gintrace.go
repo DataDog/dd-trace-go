@@ -25,6 +25,7 @@ import (
 // default service name will be used.
 func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	cfg := newConfig(service)
+	appsecEnabled := appsec.Enabled()
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -55,8 +56,9 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		c.Request = c.Request.WithContext(ctx)
 
 		// Use AppSec if enabled by user
-		if appsec.Enabled() {
-			useAppSec(c, span)
+		if appsecEnabled {
+			afterMiddleware := useAppSec(c, span)
+			defer afterMiddleware()
 		}
 
 		// serve the request to the next middleware
