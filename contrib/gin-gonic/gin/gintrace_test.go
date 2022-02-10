@@ -12,7 +12,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -549,16 +548,6 @@ func TestAppSec(t *testing.T) {
 
 	r := gin.New()
 	r.Use(Middleware("appsec"))
-
-	statusCodes := []int{200, 403, 404, 500}
-	for _, code := range statusCodes {
-		strC := strconv.Itoa(code)
-		code := code
-		r.Any("/"+strC, func(c *gin.Context) {
-			c.String(code, "Hello "+strC+"\n")
-		})
-	}
-
 	r.Any("/lfi/*allPaths", func(c *gin.Context) {
 		c.String(200, "Hello World!\n")
 	})
@@ -619,32 +608,6 @@ func TestAppSec(t *testing.T) {
 		require.True(t, strings.Contains(event, "crs-913-120"))
 		require.True(t, strings.Contains(event, "myPathParam2"))
 		require.True(t, strings.Contains(event, "server.request.path_params"))
-	})
-
-	t.Run("status-code", func(t *testing.T) {
-		for _, code := range statusCodes {
-			codeStr := strconv.Itoa(code)
-			t.Run(codeStr, func(t *testing.T) {
-				mt := mocktracer.Start()
-				defer mt.Stop()
-
-				req, err := http.NewRequest("POST", srv.URL+"/"+codeStr, nil)
-				req.Header.Set("User-agent", "Arachni/v1.0")
-				if err != nil {
-					panic(err)
-				}
-				res, err := srv.Client().Do(req)
-				require.NoError(t, err)
-				require.Equal(t, code, res.StatusCode)
-
-				finished := mt.FinishedSpans()
-				require.Len(t, finished, 1)
-				tagStatusCode := finished[0].Tag("http.status_code").(string)
-				require.NotNil(t, tagStatusCode)
-				require.Equal(t, codeStr, tagStatusCode)
-
-			})
-		}
 	})
 
 	t.Run("nfd-000-001", func(t *testing.T) {
