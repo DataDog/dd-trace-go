@@ -13,7 +13,7 @@
 
 set -ex
 
-bindings_dir=$(readlink -f "$(dirname $0)/..")
+bindings_dir=$(readlink -f "$(dirname $0)/../../waf")
 
 echo Looking up for the latest GitHub release
 
