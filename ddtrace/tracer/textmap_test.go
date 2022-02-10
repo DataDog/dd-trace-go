@@ -458,6 +458,58 @@ func TestB3(t *testing.T) {
 		assert.True(ok)
 		assert.Equal(2, p)
 	})
+
+	t.Run("config", func(t *testing.T) {
+		os.Setenv("DD_PROPAGATION_STYLE_INJECT", "datadog")
+		defer os.Unsetenv("DD_PROPAGATION_STYLE_INJECT")
+
+		var tests = []struct {
+			in  []uint64
+			out map[string]string
+		}{
+			{
+				[]uint64{1412508178991881, 1842642739201064},
+				map[string]string{
+					b3TraceIDHeader: "000504ab30404b09",
+					b3SpanIDHeader:  "00068bdfb1eb0428",
+				},
+			},
+			{
+				[]uint64{9530669991610245, 9455715668862222},
+				map[string]string{
+					b3TraceIDHeader: "0021dc1807524785",
+					b3SpanIDHeader:  "002197ec5d8a250e",
+				},
+			},
+			{
+				[]uint64{1, 1},
+				map[string]string{
+					b3TraceIDHeader: "0000000000000001",
+					b3SpanIDHeader:  "0000000000000001",
+				},
+			},
+		}
+
+		for _, test := range tests {
+			t.Run("", func(t *testing.T) {
+				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{B3: true})))
+				root := tracer.StartSpan("web.request").(*span)
+				root.SetTag(ext.SamplingPriority, -1)
+				root.SetBaggageItem("item", "x")
+				ctx, ok := root.Context().(*spanContext)
+				ctx.traceID = test.in[0]
+				ctx.spanID = test.in[1]
+				headers := TextMapCarrier(map[string]string{})
+				err := tracer.Inject(ctx, headers)
+
+				assert := assert.New(t)
+				assert.True(ok)
+				assert.Nil(err)
+				assert.Equal(test.out[b3TraceIDHeader], headers[b3TraceIDHeader])
+				assert.Equal(test.out[b3SpanIDHeader], headers[b3SpanIDHeader])
+			})
+		}
+	})
 }
 
 func assertTraceTags(t *testing.T, expected, actual string) {
