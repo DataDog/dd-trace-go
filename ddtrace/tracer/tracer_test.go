@@ -1373,6 +1373,28 @@ func TestVersion(t *testing.T) {
 	})
 }
 
+func TestEnvironment(t *testing.T) {
+	t.Run("normal", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithEnv("test"))
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		v := sp.Meta[ext.Environment]
+		assert.Equal("test", v)
+	})
+
+	t.Run("unset", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		_, ok := sp.Meta[ext.Environment]
+		assert.False(ok)
+	})
+}
+
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
