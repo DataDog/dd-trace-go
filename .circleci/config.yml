@@ -210,7 +210,10 @@ jobs:
           KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
           KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092
           ALLOW_PLAINTEXT_LISTENER: yes
-          #KAFKA_CREATE_TOPICS: gosegtest:1:1,gotest:1:1
+      - image: bitnami/kafka:2
+        environment:
+          KAFKA_CFG_ZOOKEEPER_CONNECT: localhost:2181
+        command: [kafka-topics.sh, --create, --topic, gosegtext, --bootstrap-server, localhost:9092]
 
     steps:
       - checkout
@@ -297,9 +300,6 @@ jobs:
       - run:
           name: Wait for Consul
           command: dockerize -wait http://localhost:8500 -timeout 1m
-      - run:
-          name: Create gosectest kafka topic
-          command: docker run --rm -e KAFKA_CFG_ZOOKEEPER_CONNECT=localhost:2181 bitnami/kafka:2 kafka-topics.sh --create --topic gosegtest --bootstrap-server localhost:9092
 
       - run:
           name: Testing integrations
