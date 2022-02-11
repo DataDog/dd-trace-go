@@ -12,18 +12,18 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// A MessageCarrier injects and extracts traces from a kafka.Message.
-type MessageCarrier struct {
+// A messageCarrier implements TextMapReader/TextMapWriter for extracting/injecting traces on a kafka.Message
+type messageCarrier struct {
 	msg *kafka.Message
 }
 
 var _ interface {
 	tracer.TextMapReader
 	tracer.TextMapWriter
-} = (*MessageCarrier)(nil)
+} = (*messageCarrier)(nil)
 
-// ForeachKey iterates over every header.
-func (c MessageCarrier) ForeachKey(handler func(key, val string) error) error {
+// ForeachKey conforms to the TextMapReader interface.
+func (c messageCarrier) ForeachKey(handler func(key, val string) error) error {
 	for _, h := range c.msg.Headers {
 		err := handler(h.Key, string(h.Value))
 		if err != nil {
@@ -33,8 +33,8 @@ func (c MessageCarrier) ForeachKey(handler func(key, val string) error) error {
 	return nil
 }
 
-// Set sets a header.
-func (c MessageCarrier) Set(key, val string) {
+// Set implements TextMapWriter
+func (c messageCarrier) Set(key, val string) {
 	// ensure uniqueness of keys
 	for i := 0; i < len(c.msg.Headers); i++ {
 		if string(c.msg.Headers[i].Key) == key {
@@ -48,7 +48,7 @@ func (c MessageCarrier) Set(key, val string) {
 	})
 }
 
-// ExtractSpanContextFromMessage retrieves the SpanContext from message header
-func ExtractSpanContextFromMessage(msg kafka.Message) (ddtrace.SpanContext, error) {
-	return tracer.Extract(MessageCarrier{&msg})
+// ExtractSpanContext retrieves the SpanContext from a kafka.Message
+func ExtractSpanContext(msg kafka.Message) (ddtrace.SpanContext, error) {
+	return tracer.Extract(messageCarrier{&msg})
 }

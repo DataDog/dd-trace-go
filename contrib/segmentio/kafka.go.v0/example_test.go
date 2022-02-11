@@ -47,7 +47,7 @@ func ExampleReader() {
 	}
 
 	// create a child span using span id and trace id in message header
-	spanContext, err := kafkatrace.ExtractSpanContextFromMessage(msg)
+	spanContext, err := kafkatrace.ExtractSpanContext(msg)
 	if err != nil {
 		log.Fatal("Failed to extract span context from carrier", err)
 	}

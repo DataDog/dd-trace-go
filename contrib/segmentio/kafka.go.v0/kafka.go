@@ -7,14 +7,13 @@ package kafka
 
 import (
 	"context"
+	"github.com/segmentio/kafka-go"
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"github.com/segmentio/kafka-go"
 )
 
 // NewReader calls kafka.NewReader and wraps the resulting Consumer.
@@ -57,7 +56,7 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, r.cfg.analyticsRate))
 	}
 	// kafka supports headers, so try to extract a span context
-	carrier := MessageCarrier{msg}
+	carrier := messageCarrier{msg}
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
@@ -104,7 +103,7 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {
 	return writer
 }
 
-// Writer wraps a kafka.Writer.
+// Writer wraps a kafka.Writer with tracing config data
 type Writer struct {
 	*kafka.Writer
 	cfg *config
@@ -119,9 +118,8 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 	if !math.IsNaN(w.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, w.cfg.analyticsRate))
 	}
-	carrier := MessageCarrier{msg}
+	carrier := messageCarrier{msg}
 	span, _ := tracer.StartSpanFromContext(ctx, "kafka.produce", opts...)
-	// inject the span context so consumers can pick it up
 	err := tracer.Inject(span.Context(), carrier)
 	log.Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier, %v", err)
 	return span

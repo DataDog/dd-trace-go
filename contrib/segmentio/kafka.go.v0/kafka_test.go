@@ -29,27 +29,8 @@ func skipIntegrationTest(t *testing.T) {
 }
 
 /*
-to run the integration test locally, update the broker name to localhost:29092:
-
-    docker network create segementio
-
-    docker run --rm \
-		--name zookeeper \
-		--network segementio \
-		-p 2181:2181 \
-		wurstmeister/zookeeper:3.4.6
-
-    docker run --rm \
-		--name kafka \
-		--network segementio \
-		-p 29092:29092 \
-		-e KAFKA_CREATE_TOPICS=gotest:1:1 \
-		-e KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181 \
-		-e KAFKA_LISTENERS=INSIDE://kafka:9092,OUTSIDE://kafka:29092 \
-		-e KAFKA_ADVERTISED_LISTENERS=INSIDE://kafka:9092,OUTSIDE://localhost:29092 \
-		-e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT \
-		-e KAFKA_INTER_BROKER_LISTENER_NAME=INSIDE \
-		wurstmeister/kafka:2.13-2.7.0
+to run the integration test locally run:
+	docker-compose -f local_testing.yaml up
 */
 
 func TestConsumerFunctional(t *testing.T) {
