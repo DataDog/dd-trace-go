@@ -7,8 +7,9 @@ package kafka
 
 import (
 	"context"
-	"github.com/segmentio/kafka-go"
 	"math"
+
+	"github.com/segmentio/kafka-go"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
