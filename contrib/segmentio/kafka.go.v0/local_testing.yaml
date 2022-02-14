@@ -7,7 +7,7 @@ services:
     environment:
       - ALLOW_ANONYMOUS_LOGIN=yes
   kafka:
-    image: 'bitnami/kafka:latest'
+    image: 'bitnami/kafka:2'
     ports:
       - '9092:9092'
     environment:
@@ -18,3 +18,15 @@ services:
       - ALLOW_PLAINTEXT_LISTENER=yes
     depends_on:
       - zookeeper
+  create-topics:
+    image: confluentinc/cp-kafka:5.5.0
+    hostname: create-topics
+    container_name: create-topics
+    depends_on:
+      - kafka
+    command: "
+        bash -c 'sleep 5 && \
+        kafka-topics --create --zookeeper zookeeper:2181 --partitions 1 --replication-factor 1 --topic gosegtest'"
+    environment:
+      KAFKA_BROKER_ID: ignored
+      KAFKA_ZOOKEEPER_CONNECT: ignored

@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -29,7 +30,7 @@ func skipIntegrationTest(t *testing.T) {
 }
 
 /*
-to run the integration test locally run:
+to setup the integration test locally run:
 	docker-compose -f local_testing.yaml up
 */
 
@@ -38,10 +39,13 @@ func TestConsumerFunctional(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	w := NewWriter(kafka.WriterConfig{
-		Brokers: []string{"localhost:9092"},
-		Topic:   testTopic,
-	}, WithAnalyticsRate(0.1))
+	kw := &kafka.Writer{
+		Addr:         kafka.TCP("localhost:9092"),
+		Topic:        testTopic,
+		RequiredAcks: kafka.RequireOne,
+	}
+
+	w := WrapWriter(kw, WithAnalyticsRate(0.1))
 	msg1 := []kafka.Message{
 		{
 			Key:   []byte("key1"),
@@ -50,14 +54,16 @@ func TestConsumerFunctional(t *testing.T) {
 	}
 	err := w.WriteMessages(context.Background(), msg1...)
 	assert.NoError(t, err, "Expected to write message to topic")
-	w.Close()
+	err = w.Close()
+	assert.NoError(t, err)
 
+	tctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
 	r := NewReader(kafka.ReaderConfig{
 		Brokers: []string{"localhost:9092"},
 		GroupID: testGroupID,
 		Topic:   testTopic,
 	})
-	msg2, err := r.ReadMessage(context.Background())
+	msg2, err := r.ReadMessage(tctx)
 	assert.NoError(t, err, "Expected to consume message")
 	assert.Equal(t, msg1[0].Value, msg2.Value, "Values should be equal")
 	r.Close()
