@@ -76,6 +76,11 @@ type Client struct {
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED=0
 	Disabled bool
 
+	// Optional destination to record submission-related logging events
+	Logger interface {
+		Printf(msg string, args ...interface{})
+	}
+
 	// mu guards all of the following fields
 	mu sync.Mutex
 	// started is true in between when Start() returns and the next call to
@@ -92,6 +97,13 @@ type Client struct {
 	// metrics are sent
 	metrics    map[string]*metric
 	newMetrics bool
+}
+
+func (c *Client) log(msg string, args ...interface{}) {
+	if c.Logger == nil {
+		return
+	}
+	c.Logger.Printf(msg, args...)
 }
 
 // Start registers that the app has begun running with the given integrations
@@ -287,7 +299,7 @@ func (c *Client) flush() {
 		for _, r := range submissions {
 			err := c.submit(r)
 			if err != nil {
-				// TODO: log error?
+				c.log("telemetry submission failed: %s", err)
 				continue
 			}
 		}
@@ -366,7 +378,7 @@ func (c *Client) submit(r *Request) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
 		return errBadStatus(resp.StatusCode)
 	}
 	return nil

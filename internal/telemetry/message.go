@@ -35,7 +35,6 @@ type Application struct {
 // Host is identifying information about the host on which the app
 // is running
 type Host struct {
-	// TODO: Do we care about the container ID? How can we find it?
 	ContainerID string `json:"container_id,omitempty"`
 	Hostname    string `json:"hostname,omitempty"`
 	OS          string `json:"os,omitempty"`
