@@ -295,7 +295,6 @@ func (c *Client) flush() {
 			err := c.submit(r)
 			if err != nil {
 				c.log("telemetry submission failed: %s", err)
-				continue
 			}
 		}
 	}()
