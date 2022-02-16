@@ -174,7 +174,6 @@ func TestDisabledClient(t *testing.T) {
 	client.Start(nil, nil)
 	client.Gauge("foobar", 1, nil, false)
 	client.Count("bonk", 4, []string{"org:1"}, false)
-	client.Flush()
 	client.Stop()
 }
 
@@ -190,7 +189,6 @@ func TestNonStartedClient(t *testing.T) {
 	}
 	client.Gauge("foobar", 1, nil, false)
 	client.Count("bonk", 4, []string{"org:1"}, false)
-	client.Flush()
 	client.Stop()
 }
 

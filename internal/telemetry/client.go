@@ -255,15 +255,9 @@ func (c *Client) Count(name string, value float64, tags []string, common bool) {
 	c.newMetrics = true
 }
 
-// Flush sends any outstanding telemetry messages and aggregated metrics to be
-// sent to the backend. Requests are sent in the background
-func (c *Client) Flush() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.flush()
-}
-
-// actual flush implementation, should be called with c.mu locked
+// flush sends any outstanding telemetry messages and aggregated metrics to be
+// sent to the backend. Requests are sent in the background. Should be called
+// with c.mu locked
 func (c *Client) flush() {
 	submissions := make([]*Request, 0, len(c.requests)+1)
 	if c.newMetrics {
