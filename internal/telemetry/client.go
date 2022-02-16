@@ -117,7 +117,7 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 	if c.started {
 		return
 	}
-	defer func() { c.started = true }()
+	c.started = true
 
 	// XXX: Should we let metrics persist between starting and stopping?
 	c.metrics = make(map[string]*metric)
@@ -175,7 +175,7 @@ func (c *Client) Stop() {
 	if !c.started {
 		return
 	}
-	defer func() { c.started = false }()
+	c.started = false
 	c.t.Stop()
 	// close request types have no body
 	r := c.newRequest(RequestTypeAppClosing)
