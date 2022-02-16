@@ -16,10 +16,18 @@ type Request struct {
 type RequestType string
 
 const (
-	RequestTypeAppStarted      RequestType = "app-started"
-	RequestTypeAppHeartbeat    RequestType = "app-heartbeat"
+	// RequestTypeAppStarted is the first message sent by the telemetry
+	// client, containing the configuration, and integrations and
+	// dependencies loaded at startup
+	RequestTypeAppStarted RequestType = "app-started"
+	// RequestTypeAppHeartbeat is sent periodically by the client to indicate
+	// that the app is still running
+	RequestTypeAppHeartbeat RequestType = "app-heartbeat"
+	// RequestTypeGenerateMetrics contains all metrics accumulated by the
+	// client, and is sent periodically along with the heartbeat
 	RequestTypeGenerateMetrics RequestType = "generate-metrics"
-	RequestTypeAppClosing      RequestType = "app-closing"
+	// RequestTypeAppClosing is sent when the telemetry client is stopped
+	RequestTypeAppClosing RequestType = "app-closing"
 )
 
 // Application is identifying information about the app itself
@@ -53,6 +61,8 @@ type AppStarted struct {
 	Configuration []Configuration `json:"configuration"`
 }
 
+// Integration is an integration that is available within the app and applicable
+// to be traced
 type Integration struct {
 	Name        string `json:"name"`
 	Enabled     bool   `json:"enabled"`
