@@ -73,7 +73,7 @@ type Client struct {
 
 	// Determines whether telemetry should actually run.
 	// Defaults to false, but will be overridden by the environment variable
-	// DD_INSTRUMENTATION_TELEMETRY_ENABLED=0
+	// DD_INSTRUMENTATION_TELEMETRY_ENABLED is set to 0 or false
 	Disabled bool
 
 	// Optional destination to record submission-related logging events
@@ -111,7 +111,8 @@ func (c *Client) log(msg string, args ...interface{}) {
 func (c *Client) Start(integrations []Integration, configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.Disabled || os.Getenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED") == "0" {
+	enabled := os.Getenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED")
+	if c.Disabled || enabled == "0" || enabled == "false" {
 		return
 	}
 	if c.started {
