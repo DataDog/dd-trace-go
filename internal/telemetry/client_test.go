@@ -136,12 +136,12 @@ func TestMetrics(t *testing.T) {
 	}
 
 	want := []telemetry.Series{
-		{Name: "baz", Type: "count", Points: [][2]float64{{0, 4}}, Common: true},
-		{Name: "bonk", Type: "count", Points: [][2]float64{{0, 4}}, Tags: []string{"org:1"}},
-		{Name: "foobar", Type: "gauge", Points: [][2]float64{{0, 2}}},
+		{Metric: "baz", Type: "count", Points: [][2]float64{{0, 4}}, Common: true},
+		{Metric: "bonk", Type: "count", Points: [][2]float64{{0, 4}}, Tags: []string{"org:1"}},
+		{Metric: "foobar", Type: "gauge", Points: [][2]float64{{0, 2}}},
 	}
 	sort.Slice(got, func(i, j int) bool {
-		return got[i].Name < got[j].Name
+		return got[i].Metric < got[j].Metric
 	})
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("want %+v, got %+v", want, got)
@@ -260,10 +260,10 @@ func TestConcurrentClient(t *testing.T) {
 		t.Fatal("test tiemd out waiting for all messages to send")
 	}
 	want := []telemetry.Series{
-		{Name: "foobar", Type: "count", Points: [][2]float64{{0, 80}}, Tags: []string{"tag"}},
+		{Metric: "foobar", Type: "count", Points: [][2]float64{{0, 80}}, Tags: []string{"tag"}},
 	}
 	sort.Slice(got, func(i, j int) bool {
-		return got[i].Name < got[j].Name
+		return got[i].Metric < got[j].Metric
 	})
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("want %+v, got %+v", want, got)

@@ -270,7 +270,7 @@ func (c *Client) flush() {
 		}
 		for _, m := range c.metrics {
 			s := Series{
-				Name:   m.name,
+				Metric: m.name,
 				Type:   string(m.kind),
 				Tags:   m.tags,
 				Common: m.common,

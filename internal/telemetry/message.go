@@ -96,7 +96,7 @@ type Metrics struct {
 
 // Series is a sequence of observations for a single named metric
 type Series struct {
-	Name   string       `json:"name"`
+	Metric string       `json:"metric"`
 	Points [][2]float64 `json:"points"`
 	Type   string       `json:"type"`
 	Tags   []string     `json:"tags,omitempty"`
