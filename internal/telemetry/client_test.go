@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2022 Datadog, Inc.
+
 package telemetry_test
 
 import (
@@ -44,24 +49,17 @@ func TestClient(t *testing.T) {
 		client.Start(nil, nil) // test idempotence
 		// Give the submission interval time to pass so we
 		// can get a heartbeat.
+		// TODO: Could this wait time be a source of flakiness? Should
+		// it be longer?
 		time.Sleep(10 * time.Millisecond)
 		client.Stop()
 		client.Stop() // test idempotence
 	}()
 
-	// TODO: Could this wait time be a source of flakiness? Should it be
-	// longer?
-	wait := time.NewTimer(100 * time.Millisecond)
-	defer wait.Stop()
-
 	var got []telemetry.RequestType
 	for i := 0; i < 3; i++ {
-		select {
-		case <-wait.C:
-			t.Fatal("timed out waiting for server to get request")
-		case header := <-ch:
-			got = append(got, header)
-		}
+		header := <-ch
+		got = append(got, header)
 	}
 
 	want := []telemetry.RequestType{telemetry.RequestTypeAppStarted, telemetry.RequestTypeAppHeartbeat, telemetry.RequestTypeAppClosing}
@@ -129,11 +127,7 @@ func TestMetrics(t *testing.T) {
 		client.Stop()
 	}()
 
-	select {
-	case <-closed:
-	case <-time.NewTimer(100 * time.Millisecond).C:
-		t.Fatalf("timed out waiting for requests to complete")
-	}
+	<-closed
 
 	want := []telemetry.Series{
 		{Metric: "baz", Type: "count", Points: [][2]float64{{0, 4}}, Tags: []string{}, Common: true},
@@ -254,11 +248,8 @@ func TestConcurrentClient(t *testing.T) {
 		wg.Wait()
 	}()
 
-	select {
-	case <-closed:
-	case <-time.NewTimer(500 * time.Millisecond).C:
-		t.Fatal("test tiemd out waiting for all messages to send")
-	}
+	<-closed
+
 	want := []telemetry.Series{
 		{Metric: "foobar", Type: "count", Points: [][2]float64{{0, 80}}, Tags: []string{"tag"}},
 	}
