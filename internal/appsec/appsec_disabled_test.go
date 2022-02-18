@@ -3,19 +3,39 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build !appsec
-// +build !appsec
+//go:build !appsec || !cgo
+// +build !appsec !cgo
 
 package appsec_test
 
 import (
+	"os"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestEnabled(t *testing.T) {
+	enabledStr := os.Getenv("DD_APPSEC_ENABLED")
+	if enabledStr != "" {
+		defer os.Setenv("DD_APPSEC_ENABLED", enabledStr)
+	}
+	// AppSec should be always disabled
 	require.False(t, appsec.Enabled())
+	tracer.Start()
+	assert.False(t, appsec.Enabled())
+	tracer.Stop()
+	assert.False(t, appsec.Enabled())
+	os.Setenv("DD_APPSEC_ENABLED", "true")
+	require.False(t, appsec.Enabled())
+	tracer.Start()
+	assert.False(t, appsec.Enabled())
+	tracer.Stop()
+	assert.False(t, appsec.Enabled())
+
 }

@@ -3,8 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
+//go:build appsec && cgo
+// +build appsec,cgo
 
 package appsec_test
 
