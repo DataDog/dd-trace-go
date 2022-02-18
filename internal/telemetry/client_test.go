@@ -136,9 +136,9 @@ func TestMetrics(t *testing.T) {
 	}
 
 	want := []telemetry.Series{
-		{Metric: "baz", Type: "count", Points: [][2]float64{{0, 4}}, Common: true},
+		{Metric: "baz", Type: "count", Points: [][2]float64{{0, 4}}, Tags: []string{}, Common: true},
 		{Metric: "bonk", Type: "count", Points: [][2]float64{{0, 4}}, Tags: []string{"org:1"}},
-		{Metric: "foobar", Type: "gauge", Points: [][2]float64{{0, 2}}},
+		{Metric: "foobar", Type: "gauge", Points: [][2]float64{{0, 2}}, Tags: []string{}},
 	}
 	sort.Slice(got, func(i, j int) bool {
 		return got[i].Metric < got[j].Metric

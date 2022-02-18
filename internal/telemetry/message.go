@@ -4,7 +4,7 @@ package telemetry
 type Request struct {
 	APIVersion  string      `json:"api_version"`
 	RequestType RequestType `json:"request_type"`
-	TracerTime  int64       `json:"trace_time"`
+	TracerTime  int64       `json:"tracer_time"`
 	RuntimeID   string      `json:"runtime_id"`
 	SeqID       int64       `json:"seq_id"`
 	Application Application `json:"application"`
@@ -77,6 +77,7 @@ type Integration struct {
 type Dependency struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+	Type    string `json:"type"`
 }
 
 // Configuration is a library-specific configuration value
@@ -99,7 +100,7 @@ type Series struct {
 	Metric string       `json:"metric"`
 	Points [][2]float64 `json:"points"`
 	Type   string       `json:"type"`
-	Tags   []string     `json:"tags,omitempty"`
+	Tags   []string     `json:"tags"`
 	// Common distinguishes metrics which are cross-language vs.
 	// language-specific.
 	//

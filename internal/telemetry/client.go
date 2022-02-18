@@ -45,7 +45,15 @@ var (
 		Timeout: 5 * time.Second,
 	}
 	// TODO: Default telemetry URL?
+	hostname string
 )
+
+func init() {
+	h, err := os.Hostname()
+	if err == nil {
+		hostname = h
+	}
+}
 
 // Client buffers and sends telemetry messages to Datadog (possibly through an
 // agent). Client.Start should be called before any other methods.
@@ -124,8 +132,8 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 	c.metrics = make(map[string]*metric)
 
 	payload := &AppStarted{
-		Integrations:  append([]Integration(nil), integrations...),
-		Configuration: append([]Configuration(nil), configuration...),
+		Integrations:  append([]Integration{}, integrations...),
+		Configuration: append([]Configuration{}, configuration...),
 	}
 	deps, ok := debug.ReadBuildInfo()
 	if ok {
@@ -134,6 +142,10 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 				Dependency{
 					Name:    dep.Path,
 					Version: dep.Version,
+					// TODO: Neither of the types in the API
+					// docs (this or "SharedSystemLibrary")
+					// describe Go dependencies well
+					Type: "PlatformStandard",
 				},
 			)
 		}
@@ -208,7 +220,7 @@ func newmetric(name string, kind metricKind, tags []string, common bool) *metric
 	return &metric{
 		name:   name,
 		kind:   kind,
-		tags:   append([]string(nil), tags...),
+		tags:   append([]string{}, tags...),
 		common: common,
 	}
 }
@@ -339,6 +351,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 			LanguageVersion: runtime.Version(),
 		},
 		Host: Host{
+			Hostname:    hostname,
 			ContainerID: internal.ContainerID(),
 			OS:          getOSName(),
 			OSVersion:   getOSVersion(),
