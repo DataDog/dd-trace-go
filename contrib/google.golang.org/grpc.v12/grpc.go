@@ -48,7 +48,11 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 }
 
 func startSpanFromContext(ctx context.Context, method, service string, opts ...tracer.StartSpanOption) (ddtrace.Span, context.Context) {
-	opts = append(opts,
+	// copy opts in case the caller reuses the slice in parallel
+	// we will add at least 5, at most 6 items
+	optsLocal := make([]tracer.StartSpanOption, len(opts), len(opts)+6)
+	copy(optsLocal, opts)
+	optsLocal = append(optsLocal,
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethod, method),
@@ -59,9 +63,9 @@ func startSpanFromContext(ctx context.Context, method, service string, opts ...t
 	)
 	md, _ := metadata.FromContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
-		opts = append(opts, tracer.ChildOf(sctx))
+		optsLocal = append(optsLocal, tracer.ChildOf(sctx))
 	}
-	return tracer.StartSpanFromContext(ctx, "grpc.server", opts...)
+	return tracer.StartSpanFromContext(ctx, "grpc.server", optsLocal...)
 }
 
 // UnaryClientInterceptor will add tracing to a grpc client.
