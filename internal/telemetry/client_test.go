@@ -22,7 +22,11 @@ import (
 
 func TestClient(t *testing.T) {
 	ch := make(chan telemetry.RequestType)
-	var gotheartbeat int64
+	var (
+		hb           sync.WaitGroup
+		gotheartbeat int64
+	)
+	hb.Add(1) // signal that we got a heartbeat
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := r.Header.Get("DD-Telemetry-Request-Type")
 		if len(h) == 0 {
@@ -35,6 +39,7 @@ func TestClient(t *testing.T) {
 			if !atomic.CompareAndSwapInt64(&gotheartbeat, 0, 1) {
 				return
 			}
+			hb.Done()
 		}
 		ch <- telemetry.RequestType(h)
 	}))
@@ -47,11 +52,7 @@ func TestClient(t *testing.T) {
 		}
 		client.Start(nil, nil)
 		client.Start(nil, nil) // test idempotence
-		// Give the submission interval time to pass so we
-		// can get a heartbeat.
-		// TODO: Could this wait time be a source of flakiness? Should
-		// it be longer?
-		time.Sleep(10 * time.Millisecond)
+		hb.Wait()
 		client.Stop()
 		client.Stop() // test idempotence
 	}()

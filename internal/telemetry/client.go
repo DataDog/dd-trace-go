@@ -45,8 +45,6 @@ var (
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 		},
-		// XXX: Should the timeout be shorter than 5 seconds? Telemetry should
-		// not hold up the application
 		Timeout: 5 * time.Second,
 	}
 	// TODO: Default telemetry URL?
@@ -164,8 +162,12 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 	}
 	c.Service = fromEnvOrDefault("DD_SERVICE", c.Service)
 	if len(c.Service) == 0 {
-		// I think service *has* to be something?
-		c.Service = "unnamed-go-service"
+		if name := globalconfig.ServiceName(); len(name) != 0 {
+			c.Service = name
+		} else {
+			// I think service *has* to be something?
+			c.Service = "unnamed-go-service"
+		}
 	}
 	c.Env = fromEnvOrDefault("DD_ENV", c.Env)
 	c.Version = fromEnvOrDefault("DD_VERSION", c.Version)
@@ -175,7 +177,7 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 
 	r := c.newRequest(RequestTypeAppStarted)
 	r.Payload = payload
-	c.schedulesubmit(r)
+	c.scheduleSubmit(r)
 	c.flush()
 
 	if c.SubmissionInterval == 0 {
@@ -197,7 +199,7 @@ func (c *Client) Stop() {
 	c.t.Stop()
 	// close request types have no body
 	r := c.newRequest(RequestTypeAppClosing)
-	c.schedulesubmit(r)
+	c.scheduleSubmit(r)
 	c.flush()
 }
 
@@ -400,9 +402,9 @@ type errBadStatus int
 
 func (e errBadStatus) Error() string { return fmt.Sprintf("bad HTTP response status %d", e) }
 
-// schedulesubmit queues a request to be sent to the backend. Should be called
+// scheduleSubmit queues a request to be sent to the backend. Should be called
 // with c.mu locked
-func (c *Client) schedulesubmit(r *Request) {
+func (c *Client) scheduleSubmit(r *Request) {
 	c.requests = append(c.requests, r)
 }
 
@@ -413,7 +415,7 @@ func (c *Client) backgroundFlush() {
 		return
 	}
 	r := c.newRequest(RequestTypeAppHeartbeat)
-	c.schedulesubmit(r)
+	c.scheduleSubmit(r)
 	c.flush()
 	c.t.Reset(c.SubmissionInterval)
 }
