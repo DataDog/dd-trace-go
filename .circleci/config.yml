@@ -302,6 +302,10 @@ jobs:
           command: dockerize -wait http://localhost:8500 -timeout 1m
 
       - run:
+          name: Go module graph
+          command: go mod graph
+
+      - run:
           name: Testing integrations
           command: |
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
