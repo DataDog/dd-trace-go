@@ -302,7 +302,7 @@ jobs:
           command: dockerize -wait http://localhost:8500 -timeout 1m
 
       - run:
-          name: Go module graph
+          name: Go module graph (before)
           command: go mod graph
 
       - run:
@@ -312,6 +312,11 @@ jobs:
             export DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true)
             export INTEGRATION=true
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+
+      - run:
+          name: Go module graph (after)
+          command: go mod graph
+          when: always
 
       - store_artifacts: # upload test summary for display in Artifacts
           path: /tmp/test-results
