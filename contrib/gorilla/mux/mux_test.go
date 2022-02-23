@@ -403,6 +403,5 @@ func TestAppSec(t *testing.T) {
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event, "server.response.status"))
 		require.True(t, strings.Contains(event, "nfd-000-001"))
-
 	})
 }

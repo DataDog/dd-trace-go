@@ -55,12 +55,10 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			// pass the span through the request context
 			c.SetRequest(request.WithContext(ctx))
 			// serve the request to the next middleware
-
 			if appsecEnabled {
 				afterMiddleware := useAppSec(c, span)
 				defer afterMiddleware()
 			}
-
 			err := next(c)
 			if err != nil {
 				finishOpts = append(finishOpts, tracer.WithError(err))
