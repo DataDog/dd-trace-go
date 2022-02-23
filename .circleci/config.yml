@@ -261,6 +261,7 @@ jobs:
             # pin above.
             go get gorm.io/driver/mysql@v1.2.3
             go get gorm.io/driver/postgres@v1.2.3
+            go get github.com/zenazn/goji@v1.0.1
 
       - run:
           name: Wait for MySQL
