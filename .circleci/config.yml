@@ -259,6 +259,12 @@ jobs:
             # gofiber >= v2.27.0 has a transitive dependency on a newer version of
             # golang.org/x/net that requires Go >= 1.15, breaking our build
             go get github.com/gofiber/fiber/v2@v2.26.0
+            # The following gorm drivers need to be pinned, or newer versions
+            # will force an update to gorm.io/gorm, which we are also trying to
+            # pin above.
+            go get gorm.io/driver/mysql@v1.2.3
+            go get gorm.io/driver/postgres@v1.2.3
+            go get github.com/zenazn/goji@v1.0.1
 
       - run:
           name: Wait for MySQL
@@ -305,12 +311,21 @@ jobs:
           command: dockerize -wait http://localhost:8500 -timeout 1m
 
       - run:
+          name: Go module graph (before)
+          command: go mod graph
+
+      - run:
           name: Testing integrations
           command: |
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
             export DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true)
             export INTEGRATION=true
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+
+      - run:
+          name: Go module graph (after)
+          command: go mod graph
+          when: always
 
       - store_artifacts: # upload test summary for display in Artifacts
           path: /tmp/test-results

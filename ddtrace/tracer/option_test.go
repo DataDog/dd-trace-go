@@ -375,28 +375,28 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("profiler-endpoints", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c := newConfig()
-			assert.False(t, c.profilerEndpoints)
+			assert.True(t, c.profilerEndpoints)
 		})
 
 		t.Run("override", func(t *testing.T) {
-			os.Setenv(traceprof.EndpointEnvVar, "true")
+			os.Setenv(traceprof.EndpointEnvVar, "false")
 			defer os.Unsetenv(traceprof.EndpointEnvVar)
 			c := newConfig()
-			assert.True(t, c.profilerEndpoints)
+			assert.False(t, c.profilerEndpoints)
 		})
 	})
 
 	t.Run("profiler-hotspots", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c := newConfig()
-			assert.False(t, c.profilerHotspots)
+			assert.True(t, c.profilerHotspots)
 		})
 
 		t.Run("override", func(t *testing.T) {
-			os.Setenv(traceprof.CodeHotspotsEnvVar, "true")
+			os.Setenv(traceprof.CodeHotspotsEnvVar, "false")
 			defer os.Unsetenv(traceprof.CodeHotspotsEnvVar)
 			c := newConfig()
-			assert.True(t, c.profilerHotspots)
+			assert.False(t, c.profilerHotspots)
 		})
 	})
 
