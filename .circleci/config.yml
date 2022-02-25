@@ -15,6 +15,10 @@ jobs:
         description: "go build tags used to compile"
         default: ""
         type: string
+      goflags:
+        description: "extra goflags to pass to go test"
+        default: ""
+        type: string
     docker:
       - image: circleci/golang:1.12
         environment:
@@ -106,6 +110,10 @@ jobs:
         description: "go build tags to use to compile the tests"
         default: ""
         type: string
+      goflags:
+        description: "extra goflags to pass to go test"
+        default: ""
+        type: string
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
@@ -128,7 +136,7 @@ jobs:
           name: Testing
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
-            env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+            env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - save_cache:
           key: go-mod-v5-core-{{ checksum "go.sum.orig" }}
@@ -151,6 +159,10 @@ jobs:
     parameters:
       build_tags:
         description: "go build tags to use to compile the tests"
+        default: ""
+        type: string
+      goflags:
+        description: "extra goflags to pass to go test"
         default: ""
         type: string
     resource_class: xlarge
@@ -317,7 +329,7 @@ jobs:
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
             export DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true)
             export INTEGRATION=true
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - run:
           name: Go module graph (after)
@@ -383,3 +395,27 @@ workflows:
           matrix:
             parameters:
               build_tags: [ "", "appsec" ]
+  nightly:
+    triggers:
+      - schedule:
+          cron: "0 0 * * *"
+          filters:
+            branches:
+              only:
+                - v1
+    jobs:
+      - go1_12-build:
+          matrix:
+            parameters:
+              build_tags: [ "", "appsec" ]
+              goflags: [ "-race" ]
+      - test-core:
+          matrix:
+            parameters:
+              build_tags: [ "", "appsec" ]
+              goflags: [ "-race" ]
+      - test-contrib:
+          matrix:
+            parameters:
+              build_tags: [ "", "appsec" ]
+              goflags: [ "-race" ]
