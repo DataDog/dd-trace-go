@@ -45,7 +45,7 @@ const (
 	DefaultPeriod = time.Minute
 
 	// DefaultDuration specifies the default length of the CPU profile snapshot.
-	DefaultDuration = time.Second * 15
+	DefaultDuration = time.Minute
 
 	// DefaultUploadTimeout specifies the default timeout for uploading profiles.
 	// It can be overwritten using the DD_PROFILING_UPLOAD_TIMEOUT env variable
