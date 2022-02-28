@@ -20,15 +20,13 @@ import (
 
 // Middleware returns echo middleware which will trace incoming requests.
 func Middleware(opts ...Option) echo.MiddlewareFunc {
+	appsecEnabled := appsec.Enabled()
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		if appsec.Enabled() {
-			next = withAppSec(next)
-		}
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
@@ -57,6 +55,10 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			// pass the span through the request context
 			c.SetRequest(request.WithContext(ctx))
 			// serve the request to the next middleware
+			if appsecEnabled {
+				afterMiddleware := useAppSec(c, span)
+				defer afterMiddleware()
+			}
 			err := next(c)
 			if err != nil {
 				finishOpts = append(finishOpts, tracer.WithError(err))
