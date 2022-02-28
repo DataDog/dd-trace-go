@@ -13,7 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	echotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/labstack/echo.v4"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	
+
 	"github.com/labstack/echo/v4"
 )
 
