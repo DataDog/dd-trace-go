@@ -384,4 +384,24 @@ func TestAppSec(t *testing.T) {
 		require.True(t, strings.Contains(event, "myPathParam2"))
 		require.True(t, strings.Contains(event, "server.request.path_params"))
 	})
+
+	t.Run("response-status", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("POST", srv.URL+"/etc/", nil)
+		if err != nil {
+			panic(err)
+		}
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		require.Equal(t, 404, res.StatusCode)
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		event := finished[0].Tag("_dd.appsec.json").(string)
+		require.NotNil(t, event)
+		require.True(t, strings.Contains(event, "server.response.status"))
+		require.True(t, strings.Contains(event, "nfd-000-001"))
+	})
 }
