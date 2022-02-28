@@ -267,7 +267,7 @@ jobs:
           command: dockerize -wait tcp://localhost:5432 -timeout 1m
 
       - run:
-          name: Wait for SQL Server
+          name: Wait for MS SQL Server
           command: dockerize -wait tcp://localhost:1433 -timeout 1m
 
       - run:
