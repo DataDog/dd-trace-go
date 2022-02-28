@@ -214,22 +214,25 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	if err != nil {
 		return nil, err
 	}
-	profs := []*profile{{
-		name: t.Filename,
-		data: data,
-	}}
 	// Compute the deltaProf (will be nil if not enabled for this profile type).
 	deltaStart := time.Now()
 	deltaProf, err := p.deltaProfile(t, data)
 	if err != nil {
 		return nil, fmt.Errorf("delta profile error: %s", err)
 	}
-	// Report metrics and append deltaProf if not nil.
 	end := now()
 	tags := append(p.cfg.tags, pt.Tag())
-	// TODO(fg) stop uploading non-delta profiles in the next version of
-	// dd-trace-go after delta profiles are released.
-	if deltaProf != nil {
+	var profs []*profile
+	if !p.cfg.deltaProfiles || deltaProf == nil {
+		profs = append(profs, &profile{
+			name: t.Filename,
+			data: data,
+		})
+	} else {
+		// If the user has enabled delta profiles, then the delta
+		// profile is all we need for the backend and we can save
+		// significant storage and bandwidth by not including the full,
+		// non-delta profile.
 		profs = append(profs, deltaProf)
 		p.cfg.statsd.Timing("datadog.profiler.go.delta_time", end.Sub(deltaStart), tags, 1)
 	}
