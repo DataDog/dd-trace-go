@@ -128,11 +128,6 @@ jobs:
           keys:
             - go-mod-v5-core-{{ checksum "go.sum.orig" }}
       - run:
-          name: Enforce some dependencies
-          command: |
-            # last version compatible with go1.14, needed for testtraceprof
-            echo 'replace golang.org/x/net => golang.org/x/net d418f374d30933c6c7db22cf349625c295a5afaa' >> go.mod
-      - run:
           name: Testing
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
@@ -257,31 +252,6 @@ jobs:
           key: v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
           paths:
           - /tmp/librdkafka-v1.3.0
-
-      - run:
-          name: Enforce some dependencies
-          command: |
-            go get k8s.io/client-go@v0.17.0
-            go get k8s.io/apimachinery@v0.17.0
-            go get cloud.google.com/go/pubsub@v1.6.1
-            # Temporarily enforce this version. 1.9.0 is incompatible with go < 1.16
-            go get github.com/hashicorp/consul/api@v1.8.1
-            # github.com/hashicorp/vault/sdk > v0.2.0 doesn't compile with go1.14
-            go get github.com/hashicorp/vault/sdk@v0.2.0
-            # Shopify/sarama > v1.22 doesn't compile with go1.14
-            go get github.com/Shopify/sarama@v1.22.0
-            # Temporary enforcing gorm to v1.22.4 to avoid the problems of v1.22.5
-            go get -v gorm.io/gorm@v1.22.4
-            # gofiber >= v2.27.0 has a transitive dependency on a newer version of
-            # golang.org/x/net that requires Go >= 1.15, breaking our build
-            go get github.com/gofiber/fiber/v2@v2.26.0
-            # The following gorm drivers need to be pinned, or newer versions
-            # will force an update to gorm.io/gorm, which we are also trying to
-            # pin above.
-            go get gorm.io/driver/mysql@v1.2.3
-            go get gorm.io/driver/postgres@v1.2.3
-            go get gorm.io/driver/sqlserver@v1.2.1
-            go get github.com/zenazn/goji@v1.0.1
 
       - run:
           name: Wait for MySQL
