@@ -23,6 +23,8 @@ require (
 	github.com/cenkalti/backoff/v3 v3.0.0 // indirect
 	github.com/confluentinc/confluent-kafka-go v1.8.2
 	github.com/denisenkom/go-mssqldb v0.12.0
+	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
+	github.com/docker/spdystream v0.0.0-20160310174837-449fdfce4d96 // indirect
 	github.com/eapache/go-resiliency v1.2.0 // indirect
 	github.com/elastic/go-elasticsearch/v6 v6.8.10
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
@@ -38,6 +40,7 @@ require (
 	github.com/go-chi/chi v1.5.4
 	github.com/go-chi/chi/v4 v4.0.0-rc1
 	github.com/go-chi/chi/v5 v5.0.7
+	github.com/go-openapi/spec v0.0.0-20160808142527-6aced65f8501 // indirect
 	github.com/go-pg/pg/v10 v10.10.6
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v7 v7.4.1
@@ -54,6 +57,7 @@ require (
 	github.com/google/pprof v0.0.0-20210720184732-4bb14d4b1be1
 	github.com/google/uuid v1.3.0
 	github.com/googleapis/gnostic v0.5.5 // indirect
+	github.com/gophercloud/gophercloud v0.1.0 // indirect
 	github.com/gorilla/mux v1.8.0
 	github.com/graph-gophers/graphql-go v1.3.0
 	github.com/hashicorp/consul/api v1.8.1
@@ -120,11 +124,13 @@ require (
 	gorm.io/driver/postgres v1.2.3
 	gorm.io/driver/sqlserver v1.2.1
 	gorm.io/gorm v1.22.4
-	k8s.io/apimachinery v0.17.0
-	k8s.io/client-go v0.17.0
+	k8s.io/apimachinery v0.23.3
+	k8s.io/client-go v0.23.3
+	k8s.io/klog v1.0.0 // indirect
 	k8s.io/klog/v2 v2.30.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65 // indirect
 	k8s.io/utils v0.0.0-20211116205334-6203023598ed // indirect
 	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect
+	sigs.k8s.io/structured-merge-diff v0.0.0-20190525122527-15d366b2352e // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
 )
