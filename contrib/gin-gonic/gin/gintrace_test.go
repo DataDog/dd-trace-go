@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
+	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -556,7 +556,7 @@ func TestAppSec(t *testing.T) {
 		c.String(200, "Hello Params!\n")
 	})
 	r.Any("/body", func(c *gin.Context) {
-		pAppsec.MonitorParsedHTTPBody(c.Request.Context(), "$globals")
+		pappsec.MonitorParsedHTTPBody(c.Request.Context(), "$globals")
 		c.String(200, "Hello Body!\n")
 	})
 

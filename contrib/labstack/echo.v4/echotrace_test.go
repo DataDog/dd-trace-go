@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
+	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -292,7 +292,7 @@ func TestAppSec(t *testing.T) {
 		return c.String(200, "Hello World!\n")
 	})
 	e.POST("/body", func(c echo.Context) error {
-		pAppsec.MonitorParsedHTTPBody(c.Request().Context(), "$globals")
+		pappsec.MonitorParsedHTTPBody(c.Request().Context(), "$globals")
 		return c.String(200, "Hello Body!\n")
 	})
 	srv := httptest.NewServer(e)

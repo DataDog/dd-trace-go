@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
+	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -325,7 +325,7 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 	})
 	router.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
-		pAppsec.MonitorParsedHTTPBody(r.Context(), "$globals")
+		pappsec.MonitorParsedHTTPBody(r.Context(), "$globals")
 		_, err := w.Write([]byte("Hello Body!\n"))
 		require.NoError(t, err)
 	})
