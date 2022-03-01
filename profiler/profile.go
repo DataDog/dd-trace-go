@@ -223,18 +223,17 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	end := now()
 	tags := append(p.cfg.tags, pt.Tag())
 	var profs []*profile
-	if !p.cfg.deltaProfiles || deltaProf == nil {
+	if deltaProf != nil {
+		profs = append(profs, deltaProf)
+		p.cfg.statsd.Timing("datadog.profiler.go.delta_time", end.Sub(deltaStart), tags, 1)
+	} else {
+		// If the user has disabled delta profiles, or the profile type
+		// doesn't support delta profiles (like the CPU profile) then
+		// send the original profile unchanged.
 		profs = append(profs, &profile{
 			name: t.Filename,
 			data: data,
 		})
-	} else {
-		// If the user has enabled delta profiles, then the delta
-		// profile is all we need for the backend and we can save
-		// significant storage and bandwidth by not including the full,
-		// non-delta profile.
-		profs = append(profs, deltaProf)
-		p.cfg.statsd.Timing("datadog.profiler.go.delta_time", end.Sub(deltaStart), tags, 1)
 	}
 	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return profs, nil
