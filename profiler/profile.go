@@ -30,8 +30,10 @@ const (
 	// CPUProfile determines where a program spends its time while actively consuming
 	// CPU cycles (as opposed to while sleeping or waiting for I/O).
 	CPUProfile
-	// BlockProfile shows where goroutines block waiting on synchronization primitives
-	// (including timer channels). Block profile is not enabled by default.
+	// BlockProfile shows where goroutines block waiting on mutex and channel
+	// operations. The block profile is not enabled by default and may cause
+	// noticeable CPU overhead. We recommend against enabling it, see
+	// DefaultBlockRate for more information.
 	BlockProfile
 	// MutexProfile reports the lock contentions. When you think your CPU is not fully utilized due
 	// to a mutex contention, use this profile. Mutex profile is not enabled by default.
