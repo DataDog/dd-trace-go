@@ -188,6 +188,10 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
           POSTGRES_DB: postgres
+      - image: mcr.microsoft.com/mssql/server:2019-latest
+        environment:
+         SA_PASSWORD: myPassw0rd
+         ACCEPT_EULA: Y
       - image: consul:1.6.0
       - image: redis:3.2
       - image: elasticsearch:2
@@ -213,16 +217,19 @@ jobs:
           DD_API_KEY: invalid_key_but_this_is_fine
       - image: circleci/mongo:latest-ram
       - image: memcached:1.5.9
-      - image: confluentinc/cp-zookeeper:5.0.0
+      - image: bitnami/zookeeper:latest
         environment:
-          ZOOKEEPER_CLIENT_PORT: "2181"
-      - image: confluentinc/cp-kafka:5.0.0
+          ALLOW_ANONYMOUS_LOGIN: yes
+      - image: bitnami/kafka:2
         environment:
-          KAFKA_ZOOKEEPER_CONNECT: localhost:2181
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-          KAFKA_CREATE_TOPICS: gotest:1:1
-          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+          KAFKA_CFG_ZOOKEEPER_CONNECT: localhost:2181
+          KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092
+          ALLOW_PLAINTEXT_LISTENER: yes
+      - image: bitnami/kafka:2
+        environment:
+          KAFKA_CFG_ZOOKEEPER_CONNECT: localhost:2181
+        command: [kafka-topics.sh, --create, --topic, gosegtest, --bootstrap-server, localhost:9092]
 
     steps:
       - checkout
@@ -273,6 +280,7 @@ jobs:
             # pin above.
             go get gorm.io/driver/mysql@v1.2.3
             go get gorm.io/driver/postgres@v1.2.3
+            go get gorm.io/driver/sqlserver@v1.2.1
             go get github.com/zenazn/goji@v1.0.1
 
       - run:
@@ -282,6 +290,10 @@ jobs:
       - run:
           name: Wait for Postgres
           command: dockerize -wait tcp://localhost:5432 -timeout 1m
+
+      - run:
+          name: Wait for MS SQL Server
+          command: dockerize -wait tcp://localhost:1433 -timeout 1m
 
       - run:
           name: Wait for Redis
