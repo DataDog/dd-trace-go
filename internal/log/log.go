@@ -67,10 +67,7 @@ func DebugEnabled() bool {
 
 // Debug prints the given message if the level is LevelDebug.
 func Debug(fmt string, a ...interface{}) {
-	mu.RLock()
-	lvl := level
-	mu.RUnlock()
-	if lvl != LevelDebug {
+	if !DebugEnabled() {
 		return
 	}
 	printMsg("DEBUG", fmt, a...)
