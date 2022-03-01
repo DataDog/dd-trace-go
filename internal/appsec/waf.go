@@ -136,7 +136,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 // newGRPCWAFEventListener returns the WAF event listener to register in order
 // to enable it.
 func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Duration, limiter Limiter) dyngo.EventListener {
-	return grpcsec.OnHandlerOperationStart(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationArgs) {
+	return grpcsec.OnHandlerOperationStart(func(op *grpcsec.HandlerOperation, handlerArgs grpcsec.HandlerOperationArgs) {
 		// Limit the maximum number of security events, as a streaming RPC could
 		// receive unlimited number of messages where we could find security events
 		const maxWAFEventsPerRequest = 10
@@ -172,7 +172,11 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			// Note that we don't check if the address is present in the rules
 			// as we only support one at the moment, so this callback cannot be
 			// set when the address is not present.
-			event := runWAF(wafCtx, map[string]interface{}{grpcServerRequestMessage: res.Message}, timeout)
+			values := map[string]interface{}{grpcServerRequestMessage: res.Message}
+			if md := handlerArgs.Metadata; len(md) > 0 {
+				values[grpcServerRequestMetadata] = md
+			}
+			event := runWAF(wafCtx, values, timeout)
 			if len(event) == 0 {
 				return
 			}
@@ -225,12 +229,14 @@ var httpAddresses = []string{
 
 // gRPC rule addresses currently supported by the WAF
 const (
-	grpcServerRequestMessage = "grpc.server.request.message"
+	grpcServerRequestMessage  = "grpc.server.request.message"
+	grpcServerRequestMetadata = "grpc.server.request.metadata"
 )
 
 // List of gRPC rule addresses currently supported by the WAF
 var grpcAddresses = []string{
 	grpcServerRequestMessage,
+	grpcServerRequestMetadata,
 }
 
 func init() {
