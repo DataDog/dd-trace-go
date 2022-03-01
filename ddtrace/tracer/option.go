@@ -223,9 +223,8 @@ func newConfig(opts ...StartOption) *config {
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
-	// TODO(fg): set these to true before going GA with this.
-	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, false)
-	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, false)
+	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
+	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 
 	for _, fn := range opts {
 		fn(c)
@@ -690,7 +689,7 @@ func WithLogStartup(enabled bool) StartOption {
 // called "span id" and "local root span id" when new spans are created. You
 // should not use these label names in your own code when this is enabled. The
 // enabled value defaults to the value of the
-// DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or false.
+// DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or true.
 func WithProfilerCodeHotspots(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerHotspots = enabled
@@ -703,7 +702,7 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 // its type is "http", "rpc" or "" (default). You should not use this label
 // name in your own code when this is enabled. The enabled value defaults to
 // the value of the DD_PROFILING_ENDPOINT_COLLECTION_ENABLED env variable or
-// false.
+// true.
 func WithProfilerEndpoints(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerEndpoints = enabled

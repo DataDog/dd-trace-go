@@ -1,9 +1,9 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2022 Datadog, Inc.
 
-package echo
+package gin
 
 import (
 	"net"
@@ -11,26 +11,31 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 )
 
-func useAppSec(c echo.Context, span tracer.Span) func() {
-	req := c.Request()
+// useAppSec executes the AppSec logic related to the operation start and
+// returns the  function to be executed upon finishing the operation
+func useAppSec(c *gin.Context, span tracer.Span) func() {
+	req := c.Request
 	httpsec.SetAppSecTags(span)
-	params := make(map[string]string)
-	for _, n := range c.ParamNames() {
-		params[n] = c.Param(n)
+	var params map[string]string
+	if l := len(c.Params); l > 0 {
+		params = make(map[string]string, l)
+		for _, p := range c.Params {
+			params[p.Key] = p.Value
+		}
 	}
 	args := httpsec.MakeHandlerOperationArgs(req, params)
 	op := httpsec.StartOperation(args, nil)
 	return func() {
-		events := op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
+		events := op.Finish(httpsec.HandlerOperationRes{Status: c.Writer.Status()})
 		if len(events) > 0 {
 			remoteIP, _, err := net.SplitHostPort(req.RemoteAddr)
 			if err != nil {
 				remoteIP = req.RemoteAddr
 			}
-			httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Response().Writer.Header())
+			httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Writer.Header())
 		}
 	}
 }
