@@ -394,6 +394,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for k, v := range t.config.globalTags {
 		span.SetTag(k, v)
 	}
+	if t.config.serviceMappings != nil {
+		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
+			span.Service = newSvc
+		}
+	}
 	if context == nil || context.span == nil || context.span.Service != span.Service {
 		span.setMetric(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
@@ -411,11 +416,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
 		t.applyPPROFLabels(pprofContext, span)
-	}
-	if t.config.serviceMappings != nil {
-		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
-			span.Service = newSvc
-		}
 	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
 	return span
