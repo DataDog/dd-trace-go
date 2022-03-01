@@ -124,8 +124,8 @@ require (
 	gorm.io/driver/postgres v1.2.3
 	gorm.io/driver/sqlserver v1.2.1
 	gorm.io/gorm v1.22.4
-	k8s.io/apimachinery v0.23.3
-	k8s.io/client-go v0.23.3
+	k8s.io/apimachinery v0.17.0
+	k8s.io/client-go v0.17.0
 	k8s.io/klog v1.0.0 // indirect
 	k8s.io/klog/v2 v2.30.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65 // indirect
@@ -135,4 +135,4 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
 )
 
-replace golang.org/x/net => golang.org/x/net d418f374d30933c6c7db22cf349625c295a5afaa
+replace golang.org/x/net => golang.org/x/net v0.0.0-20211020060615-d418f374d309
