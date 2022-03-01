@@ -13,7 +13,7 @@
 
 set -ex
 
-bindings_dir=$(readlink -f "$(dirname $0)/..")
+bindings_dir=$(readlink -f "$(dirname $0)/../../waf")
 
 echo Looking up for the latest GitHub release
 
@@ -67,7 +67,7 @@ run_binutils x86_64-linux-gnu-ld \
    --require-defined=ddwaf_result_free \
    --require-defined=ddwaf_context_destroy \
    --require-defined=ddwaf_required_addresses \
-   $tmpdir/libddwaf-$version-linux-x86_64/lib/libddwaf.a $libcxx_dir/libc++.a $libcxx_dir/libc++abi.a $bindings_dir/lib/linux-amd64/libunwind_linux_amd64.a #$libcxx_dir/libunwind.a
+   $tmpdir/libddwaf-$version-linux-x86_64/lib/libddwaf.a $libcxx_dir/libc++.a $libcxx_dir/libc++abi.a $libcxx_dir/libunwind.a
 # 4. Strip
 run_strip x86_64-linux-gnu $bindings_dir/lib/linux-amd64/libddwaf.a
 

@@ -175,61 +175,6 @@ func TestTextMapPropagatorOrigin(t *testing.T) {
 	}
 }
 
-func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
-	src := TextMapCarrier(map[string]string{
-		DefaultPriorityHeader: "1",
-		DefaultTraceIDHeader:  "1",
-		DefaultParentIDHeader: "1",
-		traceTagsHeader:       "hello=world,_dd.p.upstream_services=abc|1|2|3;def|4|5|6",
-	})
-	tracer := newTracer()
-	ctx, err := tracer.Extract(src)
-	assert.Nil(t, err)
-	sctx, ok := ctx.(*spanContext)
-	assert.True(t, ok)
-	child := tracer.StartSpan("test", ChildOf(sctx))
-	childSpanID := child.Context().(*spanContext).spanID
-	assert.Equal(t, map[string]string{
-		"hello":                   "world",
-		"_dd.p.upstream_services": "abc|1|2|3;def|4|5|6",
-	}, sctx.trace.tags)
-	dst := map[string]string{}
-	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
-	assert.Nil(t, err)
-	assert.Len(t, dst, 4)
-	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
-	assert.Equal(t, "1", dst["x-datadog-trace-id"])
-	assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
-	assertTraceTags(t, "_dd.p.upstream_services=abc|1|2|3;def|4|5|6", dst["x-datadog-tags"])
-}
-
-func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
-	src := TextMapCarrier(map[string]string{
-		DefaultTraceIDHeader:  "1",
-		DefaultParentIDHeader: "1",
-		traceTagsHeader:       "hello=world,_dd.p.upstream_services=abc|1|2|3;def|4|5|6",
-	})
-	tracer := newTracer()
-	ctx, err := tracer.Extract(src)
-	assert.Nil(t, err)
-	sctx, ok := ctx.(*spanContext)
-	assert.True(t, ok)
-	child := tracer.StartSpan("test", ChildOf(sctx))
-	childSpanID := child.Context().(*spanContext).spanID
-	assert.Equal(t, map[string]string{
-		"hello":                   "world",
-		"_dd.p.upstream_services": "abc|1|2|3;def|4|5|6;dHJhY2VyLnRlc3Q|1|1|1.0000",
-	}, sctx.trace.tags)
-	dst := map[string]string{}
-	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
-	assert.Nil(t, err)
-	assert.Len(t, dst, 4)
-	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
-	assert.Equal(t, "1", dst["x-datadog-trace-id"])
-	assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
-	assertTraceTags(t, "_dd.p.upstream_services=abc|1|2|3;def|4|5|6;dHJhY2VyLnRlc3Q|1|1|1.0000", dst["x-datadog-tags"])
-}
-
 func TestTextMapPropagatorInvalidTraceTagsHeader(t *testing.T) {
 	src := TextMapCarrier(map[string]string{
 		DefaultTraceIDHeader:  "1",
@@ -272,22 +217,6 @@ func TestTextMapPropagatorTraceTagsTooLong(t *testing.T) {
 		"x-datadog-trace-id":          "1",
 		"x-datadog-sampling-priority": "1",
 	}, dst)
-}
-
-func TestTextMapPropagatorInvalidTraceTags(t *testing.T) {
-	tracer := newTracer()
-	child := tracer.StartSpan("test")
-	child.Context().(*spanContext).trace.setTag("_dd.p.hello1", "world")  // valid value
-	child.Context().(*spanContext).trace.setTag("_dd.p.hello2", "world,") // invalid value
-	childSpanID := child.Context().(*spanContext).spanID
-	dst := map[string]string{}
-	err := tracer.Inject(child.Context(), TextMapCarrier(dst))
-	assert.Nil(t, err)
-	assert.Len(t, dst, 4)
-	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
-	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-trace-id"])
-	assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
-	assertTraceTags(t, "_dd.p.upstream_services=dHJhY2VyLnRlc3Q|1|1|1.0000,_dd.p.hello1=world", dst["x-datadog-tags"])
 }
 
 func TestTextMapPropagatorInjectExtract(t *testing.T) {
@@ -457,6 +386,58 @@ func TestB3(t *testing.T) {
 		p, ok = sctx.samplingPriority()
 		assert.True(ok)
 		assert.Equal(2, p)
+	})
+
+	t.Run("config", func(t *testing.T) {
+		os.Setenv("DD_PROPAGATION_STYLE_INJECT", "datadog")
+		defer os.Unsetenv("DD_PROPAGATION_STYLE_INJECT")
+
+		var tests = []struct {
+			in  []uint64
+			out map[string]string
+		}{
+			{
+				[]uint64{1412508178991881, 1842642739201064},
+				map[string]string{
+					b3TraceIDHeader: "000504ab30404b09",
+					b3SpanIDHeader:  "00068bdfb1eb0428",
+				},
+			},
+			{
+				[]uint64{9530669991610245, 9455715668862222},
+				map[string]string{
+					b3TraceIDHeader: "0021dc1807524785",
+					b3SpanIDHeader:  "002197ec5d8a250e",
+				},
+			},
+			{
+				[]uint64{1, 1},
+				map[string]string{
+					b3TraceIDHeader: "0000000000000001",
+					b3SpanIDHeader:  "0000000000000001",
+				},
+			},
+		}
+
+		for _, test := range tests {
+			t.Run("", func(t *testing.T) {
+				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{B3: true})))
+				root := tracer.StartSpan("web.request").(*span)
+				root.SetTag(ext.SamplingPriority, -1)
+				root.SetBaggageItem("item", "x")
+				ctx, ok := root.Context().(*spanContext)
+				ctx.traceID = test.in[0]
+				ctx.spanID = test.in[1]
+				headers := TextMapCarrier(map[string]string{})
+				err := tracer.Inject(ctx, headers)
+
+				assert := assert.New(t)
+				assert.True(ok)
+				assert.Nil(err)
+				assert.Equal(test.out[b3TraceIDHeader], headers[b3TraceIDHeader])
+				assert.Equal(test.out[b3SpanIDHeader], headers[b3SpanIDHeader])
+			})
+		}
 	})
 }
 
