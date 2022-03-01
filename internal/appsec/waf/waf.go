@@ -83,11 +83,13 @@ func NewHandle(jsonRule []byte) (*Handle, error) {
 	}
 
 	// Create a temporary unlimited encoder for the rules
+	const intSize = 32 << (^uint(0) >> 63) // copied from recent versions of math.MaxInt
+	const maxInt = 1<<(intSize-1) - 1      // copied from recent versions of math.MaxInt
 	ruleEncoder := encoder{
-		maxDepth:        math.MaxInt,
-		maxStringLength: math.MaxInt,
-		maxArrayLength:  math.MaxInt,
-		maxMapLength:    math.MaxInt,
+		maxDepth:        maxInt,
+		maxStringLength: maxInt,
+		maxArrayLength:  maxInt,
+		maxMapLength:    maxInt,
 	}
 	wafRule, err := ruleEncoder.encode(rule)
 	if err != nil {
