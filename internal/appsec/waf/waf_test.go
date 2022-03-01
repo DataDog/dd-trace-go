@@ -23,13 +23,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/console"
-	requirejs "github.com/dop251/goja_nodejs/require"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/wasi"
 )
 
 func TestHealth(t *testing.T) {
