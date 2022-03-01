@@ -134,3 +134,5 @@ require (
 	sigs.k8s.io/structured-merge-diff v0.0.0-20190525122527-15d366b2352e // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
 )
+
+replace golang.org/x/net => golang.org/x/net d418f374d30933c6c7db22cf349625c295a5afaa
