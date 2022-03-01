@@ -82,19 +82,26 @@ func NewHandle(jsonRule []byte) (*Handle, error) {
 		return nil, fmt.Errorf("could not parse the WAF rule: %v", err)
 	}
 
+	// Create a temporary unlimited encoder for the rules
+	ruleEncoder := encoder{
+		maxDepth:        math.MaxInt,
+		maxStringLength: math.MaxInt,
+		maxArrayLength:  math.MaxInt,
+		maxMapLength:    math.MaxInt,
+	}
+	wafRule, err := ruleEncoder.encode(rule)
+	if err != nil {
+		return nil, fmt.Errorf("could not encode the JSON WAF rule into a WAF object: %v", err)
+	}
+	defer free(wafRule)
+
+	// Run-time encoder limiting the size of the encoded values
 	encoder := encoder{
 		maxDepth:        C.DDWAF_MAX_MAP_DEPTH,
 		maxStringLength: C.DDWAF_MAX_STRING_LENGTH,
 		maxArrayLength:  C.DDWAF_MAX_ARRAY_LENGTH,
 		maxMapLength:    C.DDWAF_MAX_ARRAY_LENGTH,
 	}
-
-	wafRule, err := encoder.encode(rule)
-	if err != nil {
-		return nil, fmt.Errorf("could not encode the JSON WAF rule into a WAF object: %v", err)
-	}
-	defer free(wafRule)
-
 	handle := C.ddwaf_init(wafRule.ctype(), &C.ddwaf_config{
 		maxArrayLength: C.uint64_t(encoder.maxArrayLength),
 		maxMapDepth:    C.uint64_t(encoder.maxMapLength),
