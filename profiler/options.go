@@ -41,7 +41,7 @@ const (
 	// overhead for this profile type for all workloads. We don't recommend
 	// enabling it under normal circumstances. See the link below for more
 	// information: https://github.com/DataDog/go-profiler-notes/pull/15/files
-	DefaultBlockRate = 100_000_000
+	DefaultBlockRate = 100000000
 
 	// DefaultPeriod specifies the default period at which profiles will be collected.
 	DefaultPeriod = time.Minute
