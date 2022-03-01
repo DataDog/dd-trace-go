@@ -261,6 +261,7 @@ jobs:
       - run:
           name: Enforce some dependencies
           command: |
+            mv contrib.go.mod go.mod
 #            go get k8s.io/client-go@v0.17.0
 #            go get k8s.io/apimachinery@v0.17.0
 #            go get cloud.google.com/go/pubsub@v1.6.1
@@ -282,7 +283,7 @@ jobs:
 #            go get gorm.io/driver/postgres@v1.2.3
 #            go get gorm.io/driver/sqlserver@v1.2.1
 #            go get github.com/zenazn/goji@v1.0.1
-            mv contrib.go.mod go.mod
+            
 
       - run:
           name: Wait for MySQL
