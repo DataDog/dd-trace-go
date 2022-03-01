@@ -216,24 +216,26 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	if err != nil {
 		return nil, err
 	}
-	profs := []*profile{{
-		name: t.Filename,
-		data: data,
-	}}
 	// Compute the deltaProf (will be nil if not enabled for this profile type).
 	deltaStart := time.Now()
 	deltaProf, err := p.deltaProfile(t, data)
 	if err != nil {
 		return nil, fmt.Errorf("delta profile error: %s", err)
 	}
-	// Report metrics and append deltaProf if not nil.
 	end := now()
 	tags := append(p.cfg.tags, pt.Tag())
-	// TODO(fg) stop uploading non-delta profiles in the next version of
-	// dd-trace-go after delta profiles are released.
+	var profs []*profile
 	if deltaProf != nil {
 		profs = append(profs, deltaProf)
 		p.cfg.statsd.Timing("datadog.profiler.go.delta_time", end.Sub(deltaStart), tags, 1)
+	} else {
+		// If the user has disabled delta profiles, or the profile type
+		// doesn't support delta profiles (like the CPU profile) then
+		// send the original profile unchanged.
+		profs = append(profs, &profile{
+			name: t.Filename,
+			data: data,
+		})
 	}
 	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return profs, nil
