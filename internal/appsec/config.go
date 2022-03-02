@@ -71,7 +71,13 @@ func readWAFTimeoutConfig() (timeout time.Duration) {
 	}
 	parsed, err := time.ParseDuration(value)
 	if err != nil {
-		logEnvVarParsingError(wafTimeoutEnvVar, value, err, timeout)
+		// Retry by adding the microsecond suffix us which is the default suffix
+		if retry, err2 := time.ParseDuration(value + "us"); err2 != nil {
+			logEnvVarParsingError(wafTimeoutEnvVar, value, err, timeout)
+			return
+		} else {
+			parsed = retry
+		}
 	}
 	if parsed <= 0 {
 		logUnexpectedEnvVarValue(wafTimeoutEnvVar, parsed, "expecting a strictly positive duration", timeout)
