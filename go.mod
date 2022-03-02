@@ -180,7 +180,7 @@ require (
 	gorm.io/driver/mysql v1.0.1
 	gorm.io/driver/postgres v1.0.0
 	gorm.io/driver/sqlserver v1.0.4
-	gorm.io/gorm v1.20.0
+	gorm.io/gorm v1.20.6
 	gotest.tools/v3 v3.0.2 // indirect
 	honnef.co/go/tools v0.0.1-2020.1.4 // indirect
 	k8s.io/apimachinery v0.17.0
