@@ -24,6 +24,11 @@ jobs:
         environment:
           GOPATH: "/home/circleci/go"
     working_directory: /home/circleci/dd-trace-go.v1
+    environment:
+      # Go 1.12 doesn't have the proxy turned on by default but we need it to
+      # fetch some dependencies that aren't handled by fetching directly
+      # (such as github.com/go-chi/chi/v4@v4.0.0-rc1)
+      GOPROXY: "https://proxy.golang.org"
     steps:
     - checkout
 
