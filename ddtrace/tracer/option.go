@@ -829,3 +829,42 @@ func StackFrames(n, skip uint) FinishOption {
 		cfg.SkipStackFrames = skip
 	}
 }
+
+// UserTagOption represents a function that can be provided as a parameter to SetUser.
+// This is used to normalize user tags key/value pairs.
+type UserTagOption func() (key string, val interface{})
+
+// WithUserEmailTag emits the normalized key/value UserTagOption holding user email information.
+func WithUserEmailTag(email string) UserTagOption {
+	return func() (key string, val interface{}) {
+		return "usr.email", email
+	}
+}
+
+// WithUserNameTag emits the normalized key/value UserTagOption holding user name information.
+func WithUserNameTag(name string) UserTagOption {
+	return func() (key string, val interface{}) {
+		return "usr.name", name
+	}
+}
+
+// WithUserSessionIDTag emits the normalized key/value UserTagOption holding user session id information.
+func WithUserSessionIDTag(sessionID string) UserTagOption {
+	return func() (key string, val interface{}) {
+		return "usr.session_id", sessionID
+	}
+}
+
+// WithUserRoleTag emits the normalized key/value UserTagOption holding user role information.
+func WithUserRoleTag(role string) UserTagOption {
+	return func() (key string, val interface{}) {
+		return "usr.role", role
+	}
+}
+
+// WithUserScopeTag emits the normalized key/value UserTagOption holding user scope information.
+func WithUserScopeTag(scope string) UserTagOption {
+	return func() (key string, val interface{}) {
+		return "usr.scope", scope
+	}
+}
