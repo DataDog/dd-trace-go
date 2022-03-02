@@ -56,7 +56,7 @@ require (
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/pprof v0.0.0-20210720184732-4bb14d4b1be1
 	github.com/google/uuid v1.3.0
-	github.com/googleapis/gnostic v0.5.5 // indirect
+	github.com/googleapis/gnostic v0.5.5
 	github.com/gophercloud/gophercloud v0.1.0 // indirect
 	github.com/gorilla/mux v1.8.0
 	github.com/graph-gophers/graphql-go v1.3.0

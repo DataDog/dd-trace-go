@@ -262,6 +262,7 @@ jobs:
           name: Enforce some dependencies
           command: |
             mv contrib.go.mod go.mod
+            go mod download
 #            go get k8s.io/client-go@v0.17.0
 #            go get k8s.io/apimachinery@v0.17.0
 #            go get cloud.google.com/go/pubsub@v1.6.1
