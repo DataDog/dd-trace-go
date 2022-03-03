@@ -830,41 +830,40 @@ func StackFrames(n, skip uint) FinishOption {
 	}
 }
 
-// UserTagOption represents a function that can be provided as a parameter to SetUser.
-// This is used to normalize user tags key/value pairs.
-type UserTagOption func() (key string, val interface{})
+// UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
+type UserMonitoringOption func(Span)
 
-// WithUserEmailTag emits the normalized key/value UserTagOption holding user email information.
-func WithUserEmailTag(email string) UserTagOption {
-	return func() (key string, val interface{}) {
-		return "usr.email", email
+// WithUserEmail returns the option setting the email of the authenticated user.
+func WithUserEmail(email string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.email", email)
 	}
 }
 
-// WithUserNameTag emits the normalized key/value UserTagOption holding user name information.
-func WithUserNameTag(name string) UserTagOption {
-	return func() (key string, val interface{}) {
-		return "usr.name", name
+// WithUserName returns the option setting the name of the authenticated user.
+func WithUserName(name string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.name", name)
 	}
 }
 
-// WithUserSessionIDTag emits the normalized key/value UserTagOption holding user session id information.
-func WithUserSessionIDTag(sessionID string) UserTagOption {
-	return func() (key string, val interface{}) {
-		return "usr.session_id", sessionID
+// WithUserSessionID returns the option setting the session ID of the authenticated user.
+func WithUserSessionID(sessionID string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.session_id", sessionID)
 	}
 }
 
-// WithUserRoleTag emits the normalized key/value UserTagOption holding user role information.
-func WithUserRoleTag(role string) UserTagOption {
-	return func() (key string, val interface{}) {
-		return "usr.role", role
+// WithUserRole returns the option setting the role of the authenticated user.
+func WithUserRole(role string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.role", role)
 	}
 }
 
-// WithUserScopeTag emits the normalized key/value UserTagOption holding user scope information.
-func WithUserScopeTag(scope string) UserTagOption {
-	return func() (key string, val interface{}) {
-		return "usr.scope", scope
+// WithUserScope returns the option setting the scope (authorizations) of the authenticated user
+func WithUserScope(scope string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.scope", scope)
 	}
 }

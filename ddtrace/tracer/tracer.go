@@ -153,21 +153,20 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return internal.GetGlobalTracer().Inject(ctx, carrier)
 }
 
-// SetUser tags the root span of s with the provided user id as well as the
-// optional tags provided as userTagOption parameters. This allows user identification
-// across all spans of a trace.
-func SetUser(s Span, id string, opts ...UserTagOption) {
+// SetUser associates user information to the current trace which the
+// provided span belongs to. The options can be used to tune which user
+// bit of information gets monitored.
+func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 	if s == nil {
 		return
 	}
-	if span, ok := s.(*span); ok {
-		if span.context != nil {
-			span = span.context.trace.root
-		}
-		span.SetTag("usr.id", id)
-		for _, fn := range opts {
-			span.SetTag(fn())
-		}
+	if span, ok := s.(*span); ok && span.context != nil {
+		span = span.context.trace.root
+		s = span
+	}
+	s.SetTag("usr.id", id)
+	for _, fn := range opts {
+		fn(s)
 	}
 }
 
