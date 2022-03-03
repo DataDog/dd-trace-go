@@ -27,7 +27,8 @@ func useAppSec(c *gin.Context, span tracer.Span) func() {
 		}
 	}
 	args := httpsec.MakeHandlerOperationArgs(req, params)
-	op := httpsec.StartOperation(args, nil)
+	ctx, op := httpsec.StartOperation(req.Context(), args)
+	c.Request = req.WithContext(ctx)
 	return func() {
 		events := op.Finish(httpsec.HandlerOperationRes{Status: c.Writer.Status()})
 		if len(events) > 0 {
