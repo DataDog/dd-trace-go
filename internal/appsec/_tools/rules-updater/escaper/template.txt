@@ -9,5 +9,5 @@
 package appsec
 
 // Static recommended AppSec rule {{.Version}}
-// Source: https://github.com/DataDog/appsec-event-rules/blob/{{.Version}}/v2/build/recommended.json
+// Source: https://github.com/DataDog/appsec-event-rules/blob/{{.Version}}/build/recommended.json
 const staticRecommendedRule = {{.Rules}}
