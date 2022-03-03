@@ -42,6 +42,7 @@ require (
 	github.com/elastic/go-elasticsearch/v6 v6.8.5
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
 	github.com/emicklei/go-restful v0.0.0-20170410110728-ff4f55a20633
+	github.com/envoyproxy/go-control-plane v0.9.8 // indirect
 	github.com/erikstmartin/go-testdb v0.0.0-20160219214506-8d10e4a1bae5 // indirect
 	github.com/evanphx/json-patch/v5 v5.5.0 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
@@ -78,6 +79,7 @@ require (
 	github.com/gorilla/context v1.1.1 // indirect
 	github.com/gorilla/mux v1.5.0
 	github.com/graph-gophers/graphql-go v1.3.0
+	github.com/grpc-ecosystem/grpc-gateway v1.15.2 // indirect
 	github.com/hashicorp/consul/api v1.0.0
 	github.com/hashicorp/consul/sdk v0.7.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -169,7 +171,7 @@ require (
 	google.golang.org/api v0.25.0
 	google.golang.org/appengine v1.6.6 // indirect
 	google.golang.org/genproto v0.0.0-20200726014623-da3ae01ef02d // indirect
-	google.golang.org/grpc v1.41.0
+	google.golang.org/grpc v1.32.0
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6 // indirect
 	gopkg.in/asn1-ber.v1 v1.0.0-20181015200546-f715ec2f112d // indirect
