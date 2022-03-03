@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"time"
+	"unicode"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -69,15 +70,25 @@ func readWAFTimeoutConfig() (timeout time.Duration) {
 	if value == "" {
 		return
 	}
+
+	// Check if the value contains any letter, which means the user has
+	// specified its own time duration unit(s) such as 1s200ms30ns
+	hasLetter := false
+	for _, r := range value {
+		if unicode.IsLetter(r) {
+			hasLetter = true
+			break
+		}
+	}
+	// Add the default microsecond time-duration suffix if no letter was found
+	if !hasLetter {
+		value += "us"
+	}
+
 	parsed, err := time.ParseDuration(value)
 	if err != nil {
-		// Retry by adding the microsecond suffix us which is the default suffix
-		retry, err2 := time.ParseDuration(value + "us")
-		if err2 != nil {
-			logEnvVarParsingError(wafTimeoutEnvVar, value, err, timeout)
-			return
-		}
-		parsed = retry
+		logEnvVarParsingError(wafTimeoutEnvVar, value, err, timeout)
+		return
 	}
 	if parsed <= 0 {
 		logUnexpectedEnvVarValue(wafTimeoutEnvVar, parsed, "expecting a strictly positive duration", timeout)
