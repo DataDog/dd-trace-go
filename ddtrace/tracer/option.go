@@ -134,6 +134,8 @@ type config struct {
 
 	// enabled reports whether tracing is enabled.
 	enabled bool
+
+	longRunningEnabled bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -681,6 +683,13 @@ func WithTraceEnabled(enabled bool) StartOption {
 func WithLogStartup(enabled bool) StartOption {
 	return func(c *config) {
 		c.logStartup = enabled
+	}
+}
+
+// WithLongRunningSpans allows enabling or disabling the tracking of long running spans.
+func WithLongRunningSpans(enabled bool) StartOption {
+	return func(c *config) {
+		c.longRunningEnabled = enabled
 	}
 }
 

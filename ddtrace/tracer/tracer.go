@@ -81,6 +81,10 @@ type tracer struct {
 	// obfuscator holds the obfuscator used to obfuscate resources in aggregated stats.
 	// obfuscator may be nil if disabled.
 	obfuscator *obfuscate.Obfuscator
+
+	// longrunner keeps track of any long running spans and handles heartbeats for them
+	// longrunner may be nil if disabled.
+	longrunner *longrunner
 }
 
 const (
@@ -172,6 +176,10 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	} else {
 		writer = newAgentTraceWriter(c, sampler)
 	}
+	var lr *longrunner
+	if c.longRunningEnabled {
+		lr = &longrunner{spans: make(map[*span]struct{})}
+	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -191,6 +199,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
+		longrunner: lr,
 	}
 	return t
 }
@@ -416,6 +425,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
 			span.Service = newSvc
 		}
+	}
+	if t.longrunner != nil {
+		t.longrunner.trackSpan(span)
 	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
 	return span

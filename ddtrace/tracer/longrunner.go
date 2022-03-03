@@ -1,8 +1,12 @@
 package tracer
 
 import (
+	"strconv"
 	"sync"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // option 1.
@@ -17,88 +21,126 @@ import (
 //		yes
 
 var initRunner sync.Once
-var lr *longrunner
 
 // Any span living longer than heartbeatStart will have heartbeats sent
-const heartbeatStart = 15 * time.Second //todo: what should this value be
+const heartbeatStart = 5 * time.Minute //todo: what should this value be
 
 type longrunner struct {
-	insmu   sync.Mutex
-	inspans []*span
-
-	smu   sync.Mutex
-	spans []*span
+	mu    sync.Mutex
+	spans map[*span]struct{} //todo: sync map might be better (or worse since this is likely to be more write than read heavy)
 }
 
-func trackSpan(s *span) {
+func (lr *longrunner) trackSpan(s *span) {
 	initRunner.Do(func() {
-		lr = &longrunner{spans: []*span{}}
+		lr = &longrunner{spans: make(map[*span]struct{})}
 		//todo: should this time be configurable?
 		// longer timer means less cpu usage but more memory
-		timer := time.NewTimer(1 * time.Second)
+		ticker := time.NewTicker(heartbeatStart)
 		go func() {
 			for {
 				//todo: stop
-				<-timer.C
+				<-ticker.C
 				lr.work()
 			}
 		}()
 	})
-	lr.insmu.Lock()
-	defer lr.insmu.Unlock()
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
 
-	lr.spans = append(lr.spans, s)
+	lr.spans[s] = struct{}{}
+}
+
+func (lr *longrunner) stopTracking(s *span) {
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+
+	delete(lr.spans, s)
 }
 
 func (lr *longrunner) work() {
-	//todo: if work is single-threaded this mutex may be unnecessary
-	lr.smu.Lock()
-	var newIn []*span
-	func() {
-		lr.insmu.Lock()
-		defer lr.insmu.Unlock()
-		newIn = make([]*span, len(lr.inspans))
-		copy(newIn, lr.inspans)
-		lr.inspans = []*span{}
-	}()
-	defer lr.smu.Unlock()
+	//todo: don't hold the lock this long
+	log.Info("starting work loop")
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
 
-	//todo: is it faster to do this and walk everything?
-	// Probably depends on how long the average span lives for
-	// if the vast majority of spans are short lived (read: < work flush rate)
-	// then we can save a lot of memory / allocations by just dropping those spans
-	//lr.spans = append(lr.spans, newIn...)
-	for _, s := range newIn {
-		s.RLock() //todo: is it safe to just read `s.finished`
-		//If a new span is already finished it's not long-running, ignore it
-		if !s.finished {
-			lr.spans = append(lr.spans, s)
+	for s := range lr.spans {
+		s.Lock()
+		if s.finished { //todo OR span is too old
+			delete(lr.spans, s)
 		}
-		s.RUnlock()
-	}
 
-	i := 0
-	for _, s := range lr.spans {
-		s.RLock()
-		if !s.finished { //todo: also expire really old spans
-			lr.spans[i] = s
-			i++
-			if s.Start+heartbeatStart.Nanoseconds() > time.Now().UnixNano() {
-				//oh, just send heartbeats every time `work` runs. This gets more complicated
-				// if we want to disconnect the frequency of heartbeats with the frequency of cache flushes
-				// (could have a second routine that is responsible just for evicting things perhaps)
+		duration := time.Duration(now() - s.Start)
+		log.Info("checking %s with dur %s now %s and start+beatdelay %s", s.Name, duration, now(), (s.Start + heartbeatStart.Nanoseconds()))
 
-				//do we bucket these together to be sent asynchronously and as a group?
-				//TODO: send/schedule the heartbeat
+		if now() > s.Start+heartbeatStart.Nanoseconds() {
+			//TODO: if we want to disconnect the frequency of heartbeats with the frequency of cache flushes
+
+			meta := make(map[string]string, len(s.Meta))
+			for k, v := range s.Meta {
+				meta[k] = v
+			}
+			metrics := make(map[string]float64, len(s.Metrics))
+			for k, v := range s.Metrics {
+				metrics[k] = v
+			}
+
+			heartBeatSpan := span{
+				Name:            s.Name,
+				Service:         s.Service,
+				Resource:        s.Resource,
+				Type:            s.Type,
+				Start:           s.Start,
+				Duration:        now() - s.Start,
+				Meta:            meta,
+				Metrics:         metrics,
+				SpanID:          s.SpanID,
+				TraceID:         s.TraceID,
+				ParentID:        s.ParentID,
+				Error:           s.Error,
+				noDebugStack:    s.noDebugStack,
+				finished:        s.finished,
+				context:         s.context,
+				pprofCtxActive:  s.pprofCtxActive,
+				pprofCtxRestore: s.pprofCtxRestore,
+			}
+
+			//need to pull and send finished spans from within this trace (removing the ones we send)
+			var childrenOfHeartbeat []*span
+			func() {
+				t := s.context.trace
+				t.mu.Lock()
+				defer t.mu.Unlock()
+
+				var unfinishedSpans []*span
+				for i, childSpan := range t.spans {
+					// childSpan.RLock() //CANT DO THIS since our own already locked span is in this list
+					if childSpan.finished {
+						childrenOfHeartbeat = append(childrenOfHeartbeat, childSpan)
+						t.spans[i] = nil
+						t.finished--
+					} else {
+						unfinishedSpans = append(unfinishedSpans, childSpan)
+					}
+				}
+				t.spans = unfinishedSpans
+			}()
+
+			var correlationId string
+			if cid, ok := s.Meta["correlation-id"]; ok {
+				correlationId = cid
+			} else {
+				correlationId = strconv.FormatUint(s.SpanID, 10)
+				s.setMeta("correlation-id", correlationId)
+			}
+
+			heartBeatSpan.setMeta("correlation-id", correlationId)
+			s.SpanID = random.Uint64()
+
+			log.Info("sending heartbeat for long running span %s with %d children", s.Name, len(childrenOfHeartbeat))
+			if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+				t.pushTrace(append(childrenOfHeartbeat, &heartBeatSpan))
 			}
 		}
-
-		s.RUnlock()
+		s.Unlock()
 	}
-	//truncate slice
-	for j := i; j < len(lr.spans); j++ {
-		lr.spans[j] = nil
-	}
-	lr.spans = lr.spans[:i]
-
 }
