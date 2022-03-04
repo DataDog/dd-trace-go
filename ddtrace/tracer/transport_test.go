@@ -112,6 +112,71 @@ func TestResolveAgentAddr(t *testing.T) {
 	}
 }
 
+func TestGetAgentURL(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert.Equal(t, "http://localhost:8126", getAgentURL(defaultAddress))
+	})
+
+	t.Run("http", func(t *testing.T) {
+		os.Setenv("DD_TRACE_AGENT_URL", "http://custom:1234")
+		defer os.Unsetenv("DD_TRACE_AGENT_URL")
+
+		assert.Equal(t, "http://custom:1234", getAgentURL(defaultAddress))
+	})
+
+	t.Run("https", func(t *testing.T) {
+		os.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+		defer os.Unsetenv("DD_TRACE_AGENT_URL")
+
+		assert.Equal(t, "https://custom:1234", getAgentURL(defaultAddress))
+	})
+
+	t.Run("unix", func(t *testing.T) {
+		os.Setenv("DD_TRACE_AGENT_URL", "unix://custom:1234")
+		defer os.Unsetenv("DD_TRACE_AGENT_URL")
+
+		assert.Equal(t, "unix://custom:1234", getAgentURL(defaultAddress))
+	})
+
+	t.Run("protocol", func(t *testing.T) {
+		os.Setenv("DD_TRACE_AGENT_URL", "bad://custom:1234")
+		defer os.Unsetenv("DD_TRACE_AGENT_URL")
+
+		assert.Equal(t, "http://localhost:8126", getAgentURL(defaultAddress))
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		os.Setenv("DD_TRACE_AGENT_URL", "http://localhost%+o:8126")
+		defer os.Unsetenv("DD_TRACE_AGENT_URL")
+
+		assert.Equal(t, "http://localhost:8126", getAgentURL(defaultAddress))
+	})
+
+	t.Run("DD_AGENT_*", func(t *testing.T) {
+		os.Setenv("DD_AGENT_HOST", "customhost")
+		defer os.Unsetenv("DD_AGENT_HOST")
+		os.Setenv("DD_TRACE_AGENT_PORT", "3333")
+		defer os.Unsetenv("DD_TRACE_AGENT_PORT")
+
+		assert.Equal(t, "http://customhost:3333", getAgentURL(defaultAddress))
+	})
+
+	t.Run("agentAddr", func(t *testing.T) {
+		assert.Equal(t, "http://customhost:5555", getAgentURL("customhost:5555"))
+	})
+
+	t.Run("override", func(t *testing.T) {
+		os.Setenv("DD_AGENT_HOST", "localhost")
+		defer os.Unsetenv("DD_AGENT_HOST")
+		os.Setenv("DD_TRACE_AGENT_PORT", "3333")
+		defer os.Unsetenv("DD_TRACE_AGENT_PORT")
+		os.Setenv("DD_TRACE_AGENT_URL", "http://custom:1234")
+		defer os.Unsetenv("DD_TRACE_AGENT_URL")
+
+		assert.Equal(t, "http://custom:1234", getAgentURL("localhost:4444"))
+	})
+}
+
 func TestTransportResponse(t *testing.T) {
 	for name, tt := range map[string]struct {
 		status int

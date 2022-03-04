@@ -333,3 +333,49 @@ func unstartedProfiler(opts ...Option) (*profiler, error) {
 	p.uploadFunc = func(_ batch) error { return nil }
 	return p, nil
 }
+
+func TestGetAgentURLFromEnv(t *testing.T) {
+	t.Run("http", func(t *testing.T) {
+		os.Setenv("DD_TRACE_AGENT_URL", "http://custom:1234")
+		defer os.Unsetenv("DD_TRACE_AGENT_URL")
+
+		v, ok := getAgentURLFromEnv()
+		assert.Equal(t, true, ok)
+		assert.Equal(t, "http://custom:1234", v)
+	})
+
+	t.Run("https", func(t *testing.T) {
+		os.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+		defer os.Unsetenv("DD_TRACE_AGENT_URL")
+
+		v, ok := getAgentURLFromEnv()
+		assert.Equal(t, true, ok)
+		assert.Equal(t, "https://custom:1234", v)
+	})
+
+	t.Run("unix", func(t *testing.T) {
+		os.Setenv("DD_TRACE_AGENT_URL", "unix://custom:1234")
+		defer os.Unsetenv("DD_TRACE_AGENT_URL")
+
+		v, ok := getAgentURLFromEnv()
+		assert.Equal(t, true, ok)
+		assert.Equal(t, "unix://custom:1234", v)
+	})
+
+	t.Run("protocol", func(t *testing.T) {
+		os.Setenv("DD_TRACE_AGENT_URL", "bad://custom:1234")
+		defer os.Unsetenv("DD_TRACE_AGENT_URL")
+
+		v, ok := getAgentURLFromEnv()
+		assert.Equal(t, false, ok)
+		assert.Equal(t, "", v)
+	})
+	t.Run("invalid", func(t *testing.T) {
+		os.Setenv("DD_TRACE_AGENT_URL", "http://localhost%+o:8126")
+		defer os.Unsetenv("DD_TRACE_AGENT_URL")
+
+		v, ok := getAgentURLFromEnv()
+		assert.Equal(t, false, ok)
+		assert.Equal(t, "", v)
+	})
+}

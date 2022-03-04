@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 
 	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/tinylib/msgp/msgp"
@@ -100,9 +102,10 @@ func newHTTPTransport(addr string, client *http.Client) *httpTransport {
 	if cid := internal.ContainerID(); cid != "" {
 		defaultHeaders["Datadog-Container-ID"] = cid
 	}
+	agentURL := getAgentURL(addr)
 	return &httpTransport{
-		traceURL: fmt.Sprintf("http://%s/v0.4/traces", resolveAgentAddr(addr)),
-		statsURL: fmt.Sprintf("http://%s/v0.6/stats", resolveAgentAddr(addr)),
+		traceURL: fmt.Sprintf("%s/v0.4/traces", agentURL),
+		statsURL: fmt.Sprintf("%s/v0.6/stats", agentURL),
 		client:   client,
 		headers:  defaultHeaders,
 	}
@@ -181,6 +184,24 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 
 func (t *httpTransport) endpoint() string {
 	return t.traceURL
+}
+
+// getAgentURL determines the trace agent URL. The value held by environment variable
+// DD_TRACE_AGENT_URL takes precedence over other configuration options.
+func getAgentURL(addr string) string {
+	if agentURL := os.Getenv("DD_TRACE_AGENT_URL"); agentURL != "" {
+		u, err := url.Parse(agentURL)
+		if err != nil {
+			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %v", err)
+			return fmt.Sprintf("http://%s", resolveAgentAddr(addr))
+		}
+		if u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "unix" {
+			log.Warn("Unsupported protocol '%s' in Agent URL '%s'. Must be one of: http, https, unix", u.Scheme, agentURL)
+			return fmt.Sprintf("http://%s", resolveAgentAddr(addr))
+		}
+		return agentURL
+	}
+	return fmt.Sprintf("http://%s", resolveAgentAddr(addr))
 }
 
 // resolveAgentAddr resolves the given agent address and fills in any missing host
