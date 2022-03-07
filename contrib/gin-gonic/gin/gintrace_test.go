@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -554,6 +555,10 @@ func TestAppSec(t *testing.T) {
 	r.Any("/path0.0/:myPathParam0/path0.1/:myPathParam1/path0.2/:myPathParam2/path0.3/*param3", func(c *gin.Context) {
 		c.String(200, "Hello Params!\n")
 	})
+	r.Any("/body", func(c *gin.Context) {
+		pappsec.MonitorParsedHTTPBody(c.Request.Context(), "$globals")
+		c.String(200, "Hello Body!\n")
+	})
 
 	srv := httptest.NewServer(r)
 	defer srv.Close()
@@ -629,5 +634,30 @@ func TestAppSec(t *testing.T) {
 		require.True(t, strings.Contains(event, "server.response.status"))
 		require.True(t, strings.Contains(event, "nfd-000-001"))
 
+	})
+
+	// Test a PHP injection attack via request parsed body
+	t.Run("SDK-body", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("POST", srv.URL+"/body", nil)
+		if err != nil {
+			panic(err)
+		}
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+
+		// Check that the handler was properly called
+		b, err := ioutil.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, "Hello Body!\n", string(b))
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		event := finished[0].Tag("_dd.appsec.json")
+		require.NotNil(t, event)
+		require.True(t, strings.Contains(event.(string), "crs-933-130"))
 	})
 }
