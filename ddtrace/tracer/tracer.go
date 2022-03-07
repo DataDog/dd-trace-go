@@ -178,7 +178,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	}
 	var lr *longrunner
 	if c.longRunningEnabled {
-		lr = &longrunner{spans: make(map[*span]struct{})}
+		lr = startLongrunner()
 	}
 	t := &tracer{
 		config:           c,
