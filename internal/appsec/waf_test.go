@@ -67,14 +67,14 @@ func TestWAF(t *testing.T) {
 		require.Len(t, finished, 2)
 
 		// Two requests were performed by the client request (due to the 301 redirection) and the two should have the LFI
-		// attack attempt event (appsec rule id crs-930-100).
+		// attack attempt event (appsec rule id crs-930-110).
 		event := finished[0].Tag("_dd.appsec.json")
 		require.NotNil(t, event)
-		require.True(t, strings.Contains(event.(string), "crs-930-100"))
+		require.Contains(t, event, "crs-930-110")
 
 		event = finished[1].Tag("_dd.appsec.json")
 		require.NotNil(t, event)
-		require.True(t, strings.Contains(event.(string), "crs-930-100"))
+		require.Contains(t, event, "crs-930-110")
 	})
 
 	// Test a PHP injection attack via request parsed body

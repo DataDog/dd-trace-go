@@ -15,14 +15,18 @@ set -ex
 
 bindings_dir=$(readlink -f "$(dirname $0)/../../waf")
 
-echo Looking up for the latest GitHub release
-
-latest_release=$(curl -s https://api.github.com/repos/DataDog/libddwaf/releases/latest)
-version=$(jq -r '.tag_name') << EOF
+version=""
+if [ $# -eq 1 ]; then
+    version=$1
+else
+    echo Looking up for the latest GitHub release
+    latest_release=$(curl -s https://api.github.com/repos/DataDog/libddwaf/releases/latest)
+    version=$(jq -r '.tag_name') << EOF
 $latest_release
 EOF
+fi
 
-echo Found libddwaf v$version
+echo Updating to libddwaf v$version
 
 tmpdir=$(mktemp -d /tmp/libddwaf-XXXXXXXX)
 echo Using $tmpdir
