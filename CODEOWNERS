@@ -13,5 +13,6 @@
 /internal/traceprof       @DataDog/profiling-go
 
 # appsec
+/appsec                   @DataDog/appsec-go
 /internal/appsec          @DataDog/appsec-go
 /contrib/**/appsec.go     @DataDog/appsec-go
