@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -74,7 +75,7 @@ func readWAFTimeoutConfig() (timeout time.Duration) {
 	// Check if the value ends with a letter, which means the user has
 	// specified its own time duration unit(s) such as 1s200ms.
 	// Otherwise, default to microseconds.
-	if lastRune := []rune(value[len(value)-1:])[0]; !unicode.IsLetter(lastRune) {
+	if lastRune, _ := utf8.DecodeLastRuneInString(value); !unicode.IsLetter(lastRune) {
 		value += "us" // Add the default microsecond time-duration suffix
 	}
 
