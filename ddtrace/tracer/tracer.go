@@ -153,6 +153,23 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return internal.GetGlobalTracer().Inject(ctx, carrier)
 }
 
+// SetUser associates user information to the current trace which the
+// provided span belongs to. The options can be used to tune which user
+// bit of information gets monitored.
+func SetUser(s Span, id string, opts ...UserMonitoringOption) {
+	if s == nil {
+		return
+	}
+	if span, ok := s.(*span); ok && span.context != nil {
+		span = span.context.trace.root
+		s = span
+	}
+	s.SetTag("usr.id", id)
+	for _, fn := range opts {
+		fn(s)
+	}
+}
+
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
