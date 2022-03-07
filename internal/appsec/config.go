@@ -71,18 +71,11 @@ func readWAFTimeoutConfig() (timeout time.Duration) {
 		return
 	}
 
-	// Check if the value contains any letter, which means the user has
-	// specified its own time duration unit(s) such as 1s200ms30ns
-	hasLetter := false
-	for _, r := range value {
-		if unicode.IsLetter(r) {
-			hasLetter = true
-			break
-		}
-	}
-	// Add the default microsecond time-duration suffix if no letter was found
-	if !hasLetter {
-		value += "us"
+	// Check if the value ends with a letter, which means the user has
+	// specified its own time duration unit(s) such as 1s200ms.
+	// Otherwise, default to microseconds.
+	if lastRune := []rune(value[len(value)-1:])[0]; !unicode.IsLetter(lastRune) {
+		value += "us" // Add the default microsecond time-duration suffix
 	}
 
 	parsed, err := time.ParseDuration(value)
