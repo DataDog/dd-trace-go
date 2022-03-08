@@ -50,6 +50,23 @@ func TestConfig(t *testing.T) {
 			)
 		})
 
+		t.Run("parsable-default-microsecond", func(t *testing.T) {
+			restoreEnv := cleanEnv()
+			defer restoreEnv()
+			require.NoError(t, os.Setenv(wafTimeoutEnvVar, "1"))
+			cfg, err := newConfig()
+			require.NoError(t, err)
+			require.Equal(
+				t,
+				&config{
+					rules:          []byte(staticRecommendedRule),
+					wafTimeout:     1 * time.Microsecond,
+					traceRateLimit: defaultTraceRate,
+				},
+				cfg,
+			)
+		})
+
 		t.Run("not-parsable", func(t *testing.T) {
 			restoreEnv := cleanEnv()
 			defer restoreEnv()
