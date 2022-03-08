@@ -51,6 +51,16 @@ func TestParseDSN(t *testing.T) {
 				ext.DBUser:        "dog",
 			},
 		},
+		{
+			driverName: "sqlserver",
+			dsn:        "sqlserver://bob:secret@1.2.3.4:1433?database=mydb",
+			expected: map[string]string{
+				ext.DBUser:     "bob",
+				ext.TargetHost: "1.2.3.4",
+				ext.TargetPort: "1433",
+				ext.DBName:     "mydb",
+			},
+		},
 	} {
 		m, err := ParseDSN(tt.driverName, tt.dsn)
 		assert.Equal(nil, err)
@@ -100,6 +110,55 @@ func TestParsePostgresDSN(t *testing.T) {
 		},
 	} {
 		m, err := parsePostgresDSN(tt.dsn)
+		assert.Equal(nil, err)
+		assert.Equal(tt.expected, m)
+	}
+}
+
+func TestParseSqlServerDSN(t *testing.T) {
+	assert := assert.New(t)
+
+	for _, tt := range []struct {
+		dsn      string
+		expected map[string]string
+	}{
+		{
+			dsn: "sqlserver://bob:secret@1.2.3.4:1433?database=mydb",
+			expected: map[string]string{
+				"user":   "bob",
+				"host":   "1.2.3.4",
+				"port":   "1433",
+				"dbname": "mydb",
+			},
+		},
+		{
+			dsn: "sqlserver://alice:secret@localhost/SQLExpress?database=mydb",
+			expected: map[string]string{
+				"user":         "alice",
+				"host":         "localhost",
+				"dbname":       "mydb",
+				"instanceName": "SQLExpress",
+			},
+		},
+		{
+			dsn: "server=1.2.3.4,1433;User Id=dog;Password=secret;Database=mydb;",
+			expected: map[string]string{
+				"user":   "dog",
+				"port":   "1433",
+				"host":   "1.2.3.4",
+				"dbname": "mydb",
+			},
+		},
+		{
+			dsn: "ADDRESS=1.2.3.4;UID=cat;PASSWORD=secret;INITIAL CATALOG=mydb;",
+			expected: map[string]string{
+				"user":   "cat",
+				"host":   "1.2.3.4",
+				"dbname": "mydb",
+			},
+		},
+	} {
+		m, err := parseSQLServerDSN(tt.dsn)
 		assert.Equal(nil, err)
 		assert.Equal(tt.expected, m)
 	}
