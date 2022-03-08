@@ -109,7 +109,7 @@ require (
 	github.com/jackc/pgx/v4 v4.14.0
 	github.com/jinzhu/gorm v1.9.1
 	github.com/jinzhu/now v1.1.3 // indirect
-	github.com/jmoiron/sqlx v1.3.0
+	github.com/jmoiron/sqlx v1.2.0
 	github.com/jstemmer/go-junit-report v0.9.1 // indirect
 	github.com/julienschmidt/httprouter v1.1.0
 	github.com/klauspost/crc32 v1.2.0 // indirect
