@@ -48,11 +48,15 @@ func finishWithError(span ddtrace.Span, err error, cfg *config) {
 		err = nil
 	}
 	span.SetTag(tagCode, errcode.String())
-	finishOptions := []tracer.FinishOption{
-		tracer.WithError(err),
-	}
-	if cfg.noDebugStack {
-		finishOptions = append(finishOptions, tracer.NoDebugStack())
+
+	// only allocate finishOptions if needed, and allocate the exact right size
+	var finishOptions []tracer.FinishOption
+	if err != nil {
+		if cfg.noDebugStack {
+			finishOptions = []tracer.FinishOption{tracer.WithError(err), tracer.NoDebugStack()}
+		} else {
+			finishOptions = []tracer.FinishOption{tracer.WithError(err)}
+		}
 	}
 	span.Finish(finishOptions...)
 }

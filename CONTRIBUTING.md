@@ -40,15 +40,9 @@ Please view our contrib [README.md](contrib/README.md) for information on new in
 
 ### Go Modules
 
-This repository currently takes an [idiosyncratic approach](https://github.com/DataDog/dd-trace-go/issues/810) to using Go modules which means that you should not commit modified versions of the `go.mod` or `go.sum` files.
+When adding a new dependency, especially for `contrib/` packages, prefer the minimum secure versions of any modules rather than the latest versions. This is to avoid forcing upgrades on downstream users for modules such as `google.golang.org/grpc` which often introduce breaking changes within major versions.
 
-The following git command can be used to permanently ignore modifications to these files:
-
-```
-git update-index --assume-unchanged go.*
-```
-
-If you need to undo this for any reason, you can run:
+This repository used to omit many dependencies from the `go.mod` file due to concerns around version compatibility [(ref)](https://github.com/DataDog/dd-trace-go/issues/810). As such, you may have configured git to ignore changes to `go.mod` and `go.sum`. To undo this, run
 
 ```
 git update-index --no-assume-unchanged go.*

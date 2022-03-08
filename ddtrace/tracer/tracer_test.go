@@ -1373,6 +1373,28 @@ func TestVersion(t *testing.T) {
 	})
 }
 
+func TestEnvironment(t *testing.T) {
+	t.Run("normal", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithEnv("test"))
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		v := sp.Meta[ext.Environment]
+		assert.Equal("test", v)
+	})
+
+	t.Run("unset", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		_, ok := sp.Meta[ext.Environment]
+		assert.False(ok)
+	})
+}
+
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
@@ -1669,6 +1691,47 @@ func TestTakeStackTrace(t *testing.T) {
 
 	t.Run("invalid", func(t *testing.T) {
 		assert.Empty(t, takeStacktrace(100, 115))
+	})
+}
+
+func TestUserMonitoring(t *testing.T) {
+	const id = "john.doe#12345"
+	const name = "John Doe"
+	const email = "john.doe@hostname.com"
+	const scope = "read:message, write:files"
+	const role = "admin"
+	const sessionID = "session#12345"
+	expected := []struct{ key, value string }{
+		{key: "usr.id", value: id},
+		{key: "usr.name", value: name},
+		{key: "usr.email", value: email},
+		{key: "usr.scope", value: scope},
+		{key: "usr.role", value: role},
+		{key: "usr.session_id", value: sessionID},
+	}
+	tr := newTracer()
+	defer tr.Stop()
+
+	t.Run("root", func(t *testing.T) {
+		s := tr.newRootSpan("root", "test", "test")
+		SetUser(s, id, WithUserEmail(email), WithUserName(name), WithUserScope(scope),
+			WithUserRole(role), WithUserSessionID(sessionID))
+		s.Finish()
+		for _, pair := range expected {
+			assert.Equal(t, pair.value, s.Meta[pair.key])
+		}
+	})
+
+	t.Run("nested", func(t *testing.T) {
+		root := tr.newRootSpan("root", "test", "test")
+		child := tr.newChildSpan("child", root)
+		SetUser(child, id, WithUserEmail(email), WithUserName(name), WithUserScope(scope),
+			WithUserRole(role), WithUserSessionID(sessionID))
+		child.Finish()
+		root.Finish()
+		for _, pair := range expected {
+			assert.Equal(t, pair.value, root.Meta[pair.key])
+		}
 	})
 }
 
