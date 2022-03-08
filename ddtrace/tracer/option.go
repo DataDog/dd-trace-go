@@ -135,7 +135,12 @@ type config struct {
 	// enabled reports whether tracing is enabled.
 	enabled bool
 
+	// longRunningEnabled specifies if long-running span tracking is enabled.
 	longRunningEnabled bool
+
+	// longRunningHeartbeatInterval is the interval in nanoseconds to use between heartbeats for long-running spans.
+	// It defaults to 5 minutes.
+	longRunningHeartbeatInterval int64
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -227,6 +232,8 @@ func newConfig(opts ...StartOption) *config {
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
+	c.longRunningEnabled = internal.BoolEnv("DD_LONGRUNNING_ENABLED", false)
+	c.longRunningHeartbeatInterval = internal.Int64Env("DD_LONGRUNNING_FLUSH_INTERVAL", int64(5*time.Minute))
 
 	for _, fn := range opts {
 		fn(c)

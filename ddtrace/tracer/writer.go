@@ -58,7 +58,7 @@ func newAgentTraceWriter(c *config, s *prioritySampler) *agentTraceWriter {
 }
 
 func (h *agentTraceWriter) add(trace []*span) {
-	log.Info("adding span %s with start %s", trace[0].Name, trace[0].Start)
+	log.Info("adding span %s with start %d", trace[0].Name, trace[0].Start)
 	if err := h.payload.push(trace); err != nil {
 		h.config.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
 		log.Error("Error encoding msgpack: %v", err)

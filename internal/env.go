@@ -29,3 +29,13 @@ func IntEnv(key string, def int) int {
 	}
 	return v
 }
+
+// Int64Env returns the parsed int value of an environment variable, or
+// def otherwise.
+func Int64Env(key string, def int64) int64 {
+	v, err := strconv.ParseInt(os.Getenv(key), 10, 64)
+	if err != nil {
+		return def
+	}
+	return v
+}

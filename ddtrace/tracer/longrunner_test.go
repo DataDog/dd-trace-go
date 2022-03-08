@@ -10,7 +10,7 @@ import (
 func BenchmarkLR(b *testing.B) {
 	internal.SetGlobalTracer(&internal.NoopTracer{})
 	heartbeatInterval = 10 * time.Millisecond
-	lr := startLongrunner()
+	lr := startLongrunner(int64(heartbeatInterval))
 	wg := sync.WaitGroup{}
 	for i := 0; i < b.N; i++ {
 		for i := 0; i < 100; i++ {
@@ -44,7 +44,7 @@ func BenchmarkLR(b *testing.B) {
 func BenchmarkLRWork(b *testing.B) {
 	internal.SetGlobalTracer(&internal.NoopTracer{})
 	heartbeatInterval = 1 * time.Hour //Large time so we can call work manually
-	lr := startLongrunner()
+	lr := startLongrunner(int64(heartbeatInterval))
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		lr.spans = map[*span]int{}

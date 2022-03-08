@@ -7,8 +7,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
-// Any span living longer than heartbeatInterval will have heartbeats sent
-var heartbeatInterval = 5 * time.Minute //todo: should this time be configurable?
+// Any span living longer than heartbeatInterval will have heartbeats sent every interval
+var heartbeatInterval time.Duration
 
 //TODO: is there a better performing design than this?
 type longrunner struct {
@@ -17,7 +17,8 @@ type longrunner struct {
 }
 
 // startLongrunner creates a long-running span tracker
-func startLongrunner() *longrunner {
+func startLongrunner(hbInterval int64) *longrunner {
+	heartbeatInterval = time.Duration(hbInterval)
 	lr := longrunner{
 		mu:    sync.Mutex{},
 		spans: map[*span]int{},
