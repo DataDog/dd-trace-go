@@ -34,12 +34,14 @@ const (
 	// For more information or for changing this value, check MutexProfileFraction
 	DefaultMutexFraction = 10
 
-	// DefaultBlockRate specifies the default block profiling rate used by the
-	// block profiler. For more information or for changing this value, check
-	// BlockProfileRate. The default rate is chosen to prevent high overhead
-	// based on the research from:
-	// https://github.com/felixge/go-profiler-notes/blob/main/block.md#benchmarks
-	DefaultBlockRate = 10000
+	// DefaultBlockRate specifies the default block profiling rate (in ns) used
+	// by the block profiler. For more information or for changing this value,
+	// check BlockProfileRate(). The default value of 100ms is somewhat
+	// arbitrary. There is no provably safe value that will guarantee low
+	// overhead for this profile type for all workloads. We don't recommend
+	// enabling it under normal circumstances. See the link below for more
+	// information: https://github.com/DataDog/go-profiler-notes/pull/15/files
+	DefaultBlockRate = 100000000
 
 	// DefaultPeriod specifies the default period at which profiles will be collected.
 	DefaultPeriod = time.Minute
@@ -356,13 +358,10 @@ func MutexProfileFraction(rate int) Option {
 	}
 }
 
-// BlockProfileRate turns on block profiles with the given rate.
-// The profiler samples an average of one blocking event per rate nanoseconds spent blocked.
-// For example, set rate to 1000000000 (aka int(time.Second.Nanoseconds())) to
-// record one sample per second a goroutine is blocked.
-// A rate of 1 catches every event.
-// Setting an aggressive rate can hurt performance.
-// For more information on this value, check runtime.SetBlockProfileRate.
+// BlockProfileRate turns on block profiles with the given rate. We do not
+// recommend enabling this profile type, see DefaultBlockRate for more
+// information. The rate is given in nanoseconds and a block event with a given
+// duration has a min(duration/rate, 1) chance of getting sampled.
 func BlockProfileRate(rate int) Option {
 	return func(cfg *config) {
 		cfg.addProfileType(BlockProfile)
