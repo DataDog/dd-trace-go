@@ -505,6 +505,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
 	if t.config.profilerHotspots {
+		// allocate the max-length slice to avoid growing it later
+		labels = make([]string, 0, 6)
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
 	}
 	// nil checks might not be needed, but better be safe than sorry
