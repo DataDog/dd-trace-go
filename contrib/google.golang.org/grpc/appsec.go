@@ -23,7 +23,8 @@ import (
 func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
 	httpsec.SetAppSecTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{}, nil)
+		md, _ := metadata.FromIncomingContext(ctx)
+		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			if len(events) == 0 {
@@ -40,7 +41,8 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
 	httpsec.SetAppSecTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{}, nil)
+		md, _ := metadata.FromIncomingContext(stream.Context())
+		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			if len(events) == 0 {
