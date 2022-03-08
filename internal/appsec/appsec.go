@@ -76,6 +76,7 @@ func setActiveAppSec(a *appsec) {
 type appsec struct {
 	cfg           *config
 	unregisterWAF dyngo.UnregisterFunc
+	limiter       *TokenTicker
 }
 
 func newAppSec(cfg *config) *appsec {
@@ -87,7 +88,9 @@ func newAppSec(cfg *config) *appsec {
 // Start AppSec by registering its security protections according to the configured the security rules.
 func (a *appsec) start() error {
 	// Register the WAF operation event listener
-	unregisterWAF, err := registerWAF(a.cfg.rules, a.cfg.wafTimeout)
+	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
+	a.limiter.Start()
+	unregisterWAF, err := registerWAF(a.cfg.rules, a.cfg.wafTimeout, a.limiter)
 	if err != nil {
 		return err
 	}
@@ -98,4 +101,5 @@ func (a *appsec) start() error {
 // Stop AppSec by unregistering the security protections.
 func (a *appsec) stop() {
 	a.unregisterWAF()
+	a.limiter.Stop()
 }

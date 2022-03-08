@@ -38,6 +38,9 @@ var (
 	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
 	// Replaced in tests
 	defaultSocketDSD = "/var/run/datadog/dsd.socket"
+
+	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
+	defaultMaxTagsHeaderLen = 512
 )
 
 // config holds the tracer configuration.
@@ -220,9 +223,8 @@ func newConfig(opts ...StartOption) *config {
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
-	// TODO(fg): set these to true before going GA with this.
-	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, false)
-	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, false)
+	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
+	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 
 	for _, fn := range opts {
 		fn(c)
@@ -256,7 +258,9 @@ func newConfig(opts ...StartOption) *config {
 		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
 	if c.propagator == nil {
-		c.propagator = NewPropagator(nil)
+		c.propagator = NewPropagator(&PropagatorConfig{
+			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
+		})
 	}
 	if c.logger != nil {
 		log.UseLogger(c.logger)
@@ -403,16 +407,21 @@ func (c *config) loadAgentFeatures() {
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
-			if c.HasFeature("discovery") {
-				// client-stats computation is off by default
-				c.agent.Stats = true
-			}
+			c.agent.Stats = true
 		}
 	}
 	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
 	for _, flag := range info.FeatureFlags {
 		c.agent.featureFlags[flag] = struct{}{}
 	}
+}
+
+func (c *config) canComputeStats() bool {
+	return c.agent.Stats && c.HasFeature("discovery")
+}
+
+func (c *config) canDropP0s() bool {
+	return c.canComputeStats() && c.agent.DropP0s
 }
 
 func statsTags(c *config) []string {
@@ -680,7 +689,7 @@ func WithLogStartup(enabled bool) StartOption {
 // called "span id" and "local root span id" when new spans are created. You
 // should not use these label names in your own code when this is enabled. The
 // enabled value defaults to the value of the
-// DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or false.
+// DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or true.
 func WithProfilerCodeHotspots(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerHotspots = enabled
@@ -693,7 +702,7 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 // its type is "http", "rpc" or "" (default). You should not use this label
 // name in your own code when this is enabled. The enabled value defaults to
 // the value of the DD_PROFILING_ENDPOINT_COLLECTION_ENABLED env variable or
-// false.
+// true.
 func WithProfilerEndpoints(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerEndpoints = enabled
@@ -732,9 +741,12 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
+var measuredTag = Tag(keyMeasured, 1)
+
 // Measured marks this span to be measured for metrics and stats calculations.
 func Measured() StartSpanOption {
-	return Tag(keyMeasured, 1)
+	// cache a global instance of this tag: saves one alloc/call
+	return measuredTag
 }
 
 // WithSpanID sets the SpanID on the started span, instead of using a random number.
@@ -818,5 +830,43 @@ func StackFrames(n, skip uint) FinishOption {
 	return func(cfg *ddtrace.FinishConfig) {
 		cfg.StackFrames = n
 		cfg.SkipStackFrames = skip
+	}
+}
+
+// UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
+type UserMonitoringOption func(Span)
+
+// WithUserEmail returns the option setting the email of the authenticated user.
+func WithUserEmail(email string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.email", email)
+	}
+}
+
+// WithUserName returns the option setting the name of the authenticated user.
+func WithUserName(name string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.name", name)
+	}
+}
+
+// WithUserSessionID returns the option setting the session ID of the authenticated user.
+func WithUserSessionID(sessionID string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.session_id", sessionID)
+	}
+}
+
+// WithUserRole returns the option setting the role of the authenticated user.
+func WithUserRole(role string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.role", role)
+	}
+}
+
+// WithUserScope returns the option setting the scope (authorizations) of the authenticated user
+func WithUserScope(scope string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.scope", scope)
 	}
 }
