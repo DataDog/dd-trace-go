@@ -60,6 +60,7 @@ func TestLog(t *testing.T) {
 			tp.Reset()
 			defer func(old Level) { level = old }(level)
 			SetLevel(LevelDebug)
+			assert.True(t, DebugEnabled())
 
 			Debug("message %d", 3)
 			assert.Equal(t, msg("DEBUG", "message 3"), tp.Lines()[0])
@@ -67,6 +68,7 @@ func TestLog(t *testing.T) {
 
 		t.Run("off", func(t *testing.T) {
 			tp.Reset()
+			assert.False(t, DebugEnabled())
 			Debug("message %d", 2)
 			assert.Len(t, tp.Lines(), 0)
 		})
