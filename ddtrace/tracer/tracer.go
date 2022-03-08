@@ -422,10 +422,10 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		delete(span.Metrics, keyMeasured)
 	}
 	if t.config.version != "" && span.Service == t.config.serviceName {
-		span.SetTag(ext.Version, t.config.version)
+		span.setMeta(ext.Version, t.config.version)
 	}
 	if t.config.env != "" {
-		span.SetTag(ext.Environment, t.config.env)
+		span.setMeta(ext.Environment, t.config.env)
 	}
 	if _, ok := span.context.samplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
@@ -434,7 +434,16 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
 		t.applyPPROFLabels(pprofContext, span)
 	}
-	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
+	if t.config.serviceMappings != nil {
+		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
+			span.Service = newSvc
+		}
+	}
+	if log.DebugEnabled() {
+		// avoid allocating the ...interface{} argument if debug logging is disabled
+		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
+			span, span.Name, span.Resource, span.Meta, span.Metrics)
+	}
 	return span
 }
 
