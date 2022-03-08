@@ -82,6 +82,10 @@ func registerWAF(rules []byte, timeout time.Duration, limiter Limiter) (unreg dy
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
 func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration, limiter Limiter) dyngo.EventListener {
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
+		var body interface{}
+		op.On(httpsec.OnSDKBodyOperationStart(func(op *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
+			body = args.Body
+		}))
 		// At the moment, AppSec doesn't block the requests, and so we can use the fact we are in monitoring-only mode
 		// to call the WAF only once at the end of the handler operation.
 		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
@@ -113,6 +117,10 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 				case serverRequestPathParams:
 					if pathParams := args.PathParams; pathParams != nil {
 						values[serverRequestPathParams] = pathParams
+					}
+				case serverRequestBody:
+					if body != nil {
+						values[serverRequestBody] = body
 					}
 				case serverResponseStatusAddr:
 					values[serverResponseStatusAddr] = res.Status
@@ -210,6 +218,7 @@ const (
 	serverRequestCookiesAddr          = "server.request.cookies"
 	serverRequestQueryAddr            = "server.request.query"
 	serverRequestPathParams           = "server.request.path_params"
+	serverRequestBody                 = "server.request.body"
 	serverResponseStatusAddr          = "server.response.status"
 )
 
@@ -220,6 +229,7 @@ var httpAddresses = []string{
 	serverRequestCookiesAddr,
 	serverRequestQueryAddr,
 	serverRequestPathParams,
+	serverRequestBody,
 	serverResponseStatusAddr,
 }
 

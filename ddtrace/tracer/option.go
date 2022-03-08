@@ -741,9 +741,12 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
+var measuredTag = Tag(keyMeasured, 1)
+
 // Measured marks this span to be measured for metrics and stats calculations.
 func Measured() StartSpanOption {
-	return Tag(keyMeasured, 1)
+	// cache a global instance of this tag: saves one alloc/call
+	return measuredTag
 }
 
 // WithSpanID sets the SpanID on the started span, instead of using a random number.
@@ -827,5 +830,43 @@ func StackFrames(n, skip uint) FinishOption {
 	return func(cfg *ddtrace.FinishConfig) {
 		cfg.StackFrames = n
 		cfg.SkipStackFrames = skip
+	}
+}
+
+// UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
+type UserMonitoringOption func(Span)
+
+// WithUserEmail returns the option setting the email of the authenticated user.
+func WithUserEmail(email string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.email", email)
+	}
+}
+
+// WithUserName returns the option setting the name of the authenticated user.
+func WithUserName(name string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.name", name)
+	}
+}
+
+// WithUserSessionID returns the option setting the session ID of the authenticated user.
+func WithUserSessionID(sessionID string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.session_id", sessionID)
+	}
+}
+
+// WithUserRole returns the option setting the role of the authenticated user.
+func WithUserRole(role string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.role", role)
+	}
+}
+
+// WithUserScope returns the option setting the scope (authorizations) of the authenticated user
+func WithUserScope(scope string) UserMonitoringOption {
+	return func(s Span) {
+		s.SetTag("usr.scope", scope)
 	}
 }

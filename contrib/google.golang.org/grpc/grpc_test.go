@@ -270,7 +270,7 @@ func TestSpanTree(t *testing.T) {
 		assert.Equal(t, operationName, span.OperationName())
 		assert.Equal(t, "grpc", span.Tag(ext.ServiceName))
 		assert.Equal(t, span.Tag(ext.ResourceName), resourceName)
-		assert.True(t, span.FinishTime().Sub(span.StartTime()) > 0)
+		assert.True(t, span.FinishTime().Sub(span.StartTime()) >= 0)
 
 		if parent == nil {
 			return
@@ -406,7 +406,7 @@ func TestPass(t *testing.T) {
 	assert.Equal(s.Tag(ext.SpanType), ext.AppTypeRPC)
 	assert.NotContains(s.Tags(), tagRequest)
 	assert.NotContains(s.Tags(), tagMetadataPrefix+"test-key")
-	assert.True(s.FinishTime().Sub(s.StartTime()) > 0)
+	assert.True(s.FinishTime().Sub(s.StartTime()) >= 0)
 }
 
 func TestPreservesMetadata(t *testing.T) {

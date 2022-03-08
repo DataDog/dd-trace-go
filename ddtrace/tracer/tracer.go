@@ -153,6 +153,23 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return internal.GetGlobalTracer().Inject(ctx, carrier)
 }
 
+// SetUser associates user information to the current trace which the
+// provided span belongs to. The options can be used to tune which user
+// bit of information gets monitored.
+func SetUser(s Span, id string, opts ...UserMonitoringOption) {
+	if s == nil {
+		return
+	}
+	if span, ok := s.(*span); ok && span.context != nil {
+		span = span.context.trace.root
+		s = span
+	}
+	s.SetTag("usr.id", id)
+	for _, fn := range opts {
+		fn(s)
+	}
+}
+
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
@@ -417,7 +434,16 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
 		t.applyPPROFLabels(pprofContext, span)
 	}
-	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
+	if t.config.serviceMappings != nil {
+		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
+			span.Service = newSvc
+		}
+	}
+	if log.DebugEnabled() {
+		// avoid allocating the ...interface{} argument if debug logging is disabled
+		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
+			span, span.Name, span.Resource, span.Meta, span.Metrics)
+	}
 	return span
 }
 
