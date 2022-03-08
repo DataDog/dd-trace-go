@@ -451,6 +451,10 @@ func TestTracerStartChildSpan(t *testing.T) {
 		assert.Equal(root.TraceID, child.TraceID)
 		assert.Equal(uint64(69), child.SpanID)
 		assert.Equal("child-service", child.Service)
+
+		// the root and child are both marked as "top level"
+		assert.Equal(1.0, root.Metrics[keyTopLevel])
+		assert.Equal(1.0, child.Metrics[keyTopLevel])
 	})
 
 	t.Run("inherit-service", func(t *testing.T) {
@@ -460,6 +464,9 @@ func TestTracerStartChildSpan(t *testing.T) {
 		child := tracer.StartSpan("db.query", ChildOf(root.Context())).(*span)
 
 		assert.Equal("root-service", child.Service)
+		// the root is marked as "top level", but the child is not
+		assert.Equal(1.0, root.Metrics[keyTopLevel])
+		assert.NotContains(child.Metrics, keyTopLevel)
 	})
 }
 
