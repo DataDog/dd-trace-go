@@ -260,8 +260,9 @@ func TestOverrideResourceName(t *testing.T) {
 
 		prof := cp.Stop(t)
 		if prof.LabelDuration(traceprof.TraceEndpoint, "testoverride.new") > 0 {
-			break
+			return
 		}
 		duration *= 2
 	}
+	t.Fatal("did not observe desired endpoint labels after max duration")
 }
