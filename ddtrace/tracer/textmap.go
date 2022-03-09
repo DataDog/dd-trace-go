@@ -110,11 +110,15 @@ type PropagatorConfig struct {
 	ParentHeader string
 
 	// PriorityHeader specifies the map key that will be used to store the sampling priority.
-	// It deafults to DefaultPriorityHeader.
+	// It defaults to DefaultPriorityHeader.
 	PriorityHeader string
 
 	// MaxTagsHeaderLen specifies the maximum length of trace tags header value.
 	MaxTagsHeaderLen int
+
+	// B3 specifies if B3 headers should be added for trace propagation.
+	// See https://github.com/openzipkin/b3-propagation
+	B3 bool
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
@@ -151,28 +155,39 @@ type chainedPropagator struct {
 }
 
 // getPropagators returns a list of propagators based on the list found in the
-// given environment variable. If the list doesn't contain a value or has invalid
-// values, the default propagator will be returned.
+// given environment variable. If the list doesn't contain any valid values the
+// default propagator will be returned. Any invalid values in the list will log
+// a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 	dd := &propagator{cfg}
 	ps := os.Getenv(env)
+	defaultPs := []Propagator{dd}
+	if cfg.B3 {
+		defaultPs = append(defaultPs, &propagatorB3{})
+	}
 	if ps == "" {
-		return []Propagator{dd}
+		return defaultPs
 	}
 	var list []Propagator
+	if cfg.B3 {
+		list = append(list, &propagatorB3{})
+	}
 	for _, v := range strings.Split(ps, ",") {
 		switch strings.ToLower(v) {
 		case "datadog":
 			list = append(list, dd)
 		case "b3":
-			list = append(list, &propagatorB3{})
+			if !cfg.B3 {
+				// propagatorB3 hasn't already been added, add a new one.
+				list = append(list, &propagatorB3{})
+			}
 		default:
 			log.Warn("unrecognized propagator: %s\n", v)
 		}
 	}
 	if len(list) == 0 {
 		// return the default
-		return []Propagator{dd}
+		return defaultPs
 	}
 	return list
 }
@@ -239,35 +254,6 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	// propagate OpenTracing baggage
 	for k, v := range ctx.baggage {
 		writer.Set(p.cfg.BaggagePrefix+k, v)
-	}
-	// propagate trace tags
-	var sb strings.Builder
-	if ctx.trace != nil {
-		ctx.trace.mu.RLock()
-		for k, v := range ctx.trace.tags {
-			if !strings.HasPrefix(k, "_dd.p.") {
-				continue
-			}
-			if err := isValidPropagatableTraceTag(k, v); err != nil {
-				log.Warn("won't propagate tag '%s' (err: %s)", k, err.Error())
-				continue
-			}
-			if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
-				sb.Reset()
-				log.Warn("won't propagate trace tags (err: max trace tags header len (%d) reached)", p.cfg.MaxTagsHeaderLen)
-				break
-			}
-			if sb.Len() > 0 {
-				sb.WriteByte(',')
-			}
-			sb.WriteString(k)
-			sb.WriteByte('=')
-			sb.WriteString(v)
-		}
-		ctx.trace.mu.RUnlock()
-		if sb.Len() > 0 {
-			writer.Set(traceTagsHeader, sb.String())
-		}
 	}
 	return nil
 }

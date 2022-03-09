@@ -102,11 +102,13 @@ func parsePropagatableTraceTags(s string) (map[string]string, error) {
 	for i, ch := range s {
 		switch ch {
 		case '=':
-			if !searchingKey || i-start == 0 {
-				return nil, fmt.Errorf("invalid format")
+			if searchingKey {
+				if i-start == 0 {
+					return nil, fmt.Errorf("invalid format")
+				}
+				key = s[start:i]
+				searchingKey, start = false, i+1
 			}
-			key = s[start:i]
-			searchingKey, start = false, i+1
 		case ',':
 			if searchingKey || i-start == 0 {
 				return nil, fmt.Errorf("invalid format")

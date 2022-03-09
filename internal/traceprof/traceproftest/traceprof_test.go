@@ -42,18 +42,22 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 
 		// Rerun test a few times with doubled duration until it passes to avoid
 		// flaky behavior in CI.
-		for attempt := 1; ; attempt++ {
+		var (
+			prof *CPUProfile
+			res  *pb.WorkRes
+		)
+		for attempt := 1; attempt <= 5; attempt++ {
 			app := c.Start(t)
 			defer app.Stop(t)
 
-			res := app.WorkRequest(t, req)
-			prof := app.CPUProfile(t)
+			res = app.WorkRequest(t, req)
+			prof = app.CPUProfile(t)
 
 			notEnoughSamples := (prof.Duration() < minCPUDuration) ||
 				(prof.LabelsDuration(CustomLabels) < minCPUDuration) ||
-				(c.CodeHotspots && prof.LabelDuration(traceprof.SpanID, "*") < minCPUDuration) ||
-				(c.AppType != Direct && c.Endpoints && prof.LabelDuration(traceprof.TraceEndpoint, "*") < minCPUDuration)
-			if attempt <= 5 && notEnoughSamples {
+				(c.CodeHotspots && prof.LabelsDuration(map[string]string{traceprof.LocalRootSpanID: res.LocalRootSpanId, traceprof.SpanID: res.SpanId}) < minCPUDuration) ||
+				(c.Endpoints && prof.LabelDuration(traceprof.TraceEndpoint, c.AppType.Endpoint()) < minCPUDuration)
+			if notEnoughSamples {
 				req.CpuDuration *= 2
 				req.SqlDuration *= 2
 				t.Logf("attempt %d: not enough cpu samples, doubling duration", attempt)
@@ -61,10 +65,18 @@ func TestEndpointsAndCodeHotspots(t *testing.T) {
 			}
 			require.True(t, ValidSpanID(res.SpanId))
 			require.True(t, ValidSpanID(res.LocalRootSpanId))
-			require.GreaterOrEqual(t, prof.Duration(), minCPUDuration)
-			require.GreaterOrEqual(t, prof.LabelsDuration(CustomLabels), minCPUDuration)
 			return res, prof
 		}
+		// Failed after 5 attempts, identify which condition wasn't met
+		require.GreaterOrEqual(t, prof.Duration(), minCPUDuration)
+		require.GreaterOrEqual(t, prof.LabelsDuration(CustomLabels), minCPUDuration)
+		if c.Endpoints {
+			require.GreaterOrEqual(t, prof.LabelDuration(traceprof.TraceEndpoint, c.AppType.Endpoint()), minCPUDuration)
+		}
+		if c.CodeHotspots {
+			require.GreaterOrEqual(t, prof.LabelsDuration(map[string]string{traceprof.LocalRootSpanID: res.LocalRootSpanId, traceprof.SpanID: res.SpanId}), minCPUDuration)
+		}
+		return nil, nil
 	}
 
 	for _, appType := range []testAppType{Direct, HTTP, GRPC} {

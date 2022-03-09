@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
@@ -83,6 +84,32 @@ func TestPostgres(t *testing.T) {
 			ext.TargetPort:  "5432",
 			"db.user":       "postgres",
 			"db.name":       "postgres",
+		},
+	}
+	sqltest.RunAll(t, testConfig)
+}
+
+func TestSqlServer(t *testing.T) {
+	sqltrace.Register("sqlserver", &mssql.Driver{})
+	db, err := Open("sqlserver", "sqlserver://sa:myPassw0rd@127.0.0.1:1433?database=master")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	testConfig := &sqltest.Config{
+		DB:         db.DB(),
+		DriverName: "sqlserver",
+		TableName:  tableName,
+		ExpectName: "sqlserver.query",
+		ExpectTags: map[string]interface{}{
+			ext.ServiceName:     "sqlserver.db",
+			ext.SpanType:        ext.SpanTypeSQL,
+			ext.TargetHost:      "127.0.0.1",
+			ext.TargetPort:      "1433",
+			ext.DBUser:          "sa",
+			ext.DBName:          "master",
+			ext.EventSampleRate: nil,
 		},
 	}
 	sqltest.RunAll(t, testConfig)
