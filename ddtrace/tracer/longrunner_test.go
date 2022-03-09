@@ -1,11 +1,58 @@
 package tracer
 
 import (
+	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestWorkRemovesFinishedSpans(t *testing.T) {
+	lr := longrunner{
+		mu: sync.Mutex{},
+		spans: map[*span]int{
+			&span{
+				RWMutex:  sync.RWMutex{},
+				Start:    1,
+				finished: true,
+			}: 1,
+		},
+	}
+
+	lr.work(1)
+
+	assert.Empty(t, lr.spans)
+}
+
+func TestWorkAlreadyFinishedSpansInTraceAreRemoved(t *testing.T) {
+	heartbeatInterval = 1
+	finishedS := &span{
+		RWMutex:  sync.RWMutex{},
+		Start:    1,
+		finished: true,
+	}
+	s := &span{
+		RWMutex: sync.RWMutex{},
+		Start:   1,
+	}
+	s.context = newSpanContext(s, nil)
+	s.context.trace.push(finishedS)
+	s.context.trace.finishedOne(finishedS)
+	lr := longrunner{
+		mu: sync.Mutex{},
+		spans: map[*span]int{
+			s: 1,
+		},
+	}
+
+	lr.work(3)
+
+	assert.NotEmpty(t, lr.spans)
+	assert.Equal(t, lr.spans[s], 2)
+	assert.Equal(t, s.context.trace.finished, 0)
+	assert.Len(t, s.context.trace.spans, 1)
+}
 
 func BenchmarkLR(b *testing.B) {
 	internal.SetGlobalTracer(&internal.NoopTracer{})
@@ -63,6 +110,6 @@ func BenchmarkLRWork(b *testing.B) {
 			spans = append(spans, s)
 		}
 		b.StartTimer()
-		lr.work()
+		lr.work(now())
 	}
 }

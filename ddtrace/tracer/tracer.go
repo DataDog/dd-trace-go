@@ -426,7 +426,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			span.Service = newSvc
 		}
 	}
-	if t.longrunner != nil {
+	//todo: write a test for me
+	sp, ok := span.context.samplingPriority()
+	if t.longrunner != nil && (span.context.trace.samplingDecision == decisionKeep || (ok && sp > 0)) {
 		t.longrunner.trackSpan(span)
 	}
 	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
@@ -476,6 +478,9 @@ func (t *tracer) Stop() {
 	t.traceWriter.stop()
 	t.config.statsd.Close()
 	appsec.Stop()
+	if t.longrunner != nil {
+		t.longrunner.stop()
+	}
 }
 
 // Inject uses the configured or default TextMap Propagator.

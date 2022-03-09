@@ -290,10 +290,16 @@ func (s *span) setTagBool(key string, v bool) {
 	case ext.ManualDrop:
 		if v {
 			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplernames.Manual, math.NaN())
+			if t, ok := internal.GetGlobalTracer().(*tracer); ok && t.longrunner != nil {
+				t.longrunner.stopTracking(s)
+			}
 		}
 	case ext.ManualKeep:
 		if v {
 			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual, math.NaN())
+			if t, ok := internal.GetGlobalTracer().(*tracer); ok && t.longrunner != nil {
+				t.longrunner.trackSpan(s)
+			}
 		}
 	default:
 		if v {
@@ -315,6 +321,9 @@ func (s *span) setMetric(key string, v float64) {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
 			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec, math.NaN())
+		}
+		if t, ok := internal.GetGlobalTracer().(*tracer); ok && t.longrunner != nil {
+			t.longrunner.trackSpan(s)
 		}
 	case ext.SamplingPriority:
 		// ext.SamplingPriority is deprecated in favor of ext.ManualKeep and ext.ManualDrop.

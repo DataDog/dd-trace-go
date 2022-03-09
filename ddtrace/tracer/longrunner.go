@@ -12,6 +12,7 @@ var heartbeatInterval time.Duration
 
 //TODO: is there a better performing design than this?
 type longrunner struct {
+	done  chan struct{}
 	mu    sync.Mutex
 	spans map[*span]int
 }
@@ -27,12 +28,19 @@ func startLongrunner(hbInterval int64) *longrunner {
 	ticker := time.NewTicker(heartbeatInterval)
 	go func() {
 		for {
-			//todo: gracefully stop when the tracer is stopped
-			<-ticker.C
-			lr.work()
+			select {
+			case <-ticker.C:
+				lr.work(now())
+			case <-lr.done:
+				return
+			}
 		}
 	}()
 	return &lr
+}
+
+func (lr *longrunner) stop() {
+	lr.done <- struct{}{}
 }
 
 func (lr *longrunner) trackSpan(s *span) {
@@ -49,7 +57,7 @@ func (lr *longrunner) stopTracking(s *span) {
 	delete(lr.spans, s)
 }
 
-func (lr *longrunner) work() {
+func (lr *longrunner) work(now int64) {
 	//todo: don't hold the lock this long
 	lr.mu.Lock()
 	defer lr.mu.Unlock()
@@ -60,7 +68,7 @@ func (lr *longrunner) work() {
 			delete(lr.spans, s)
 		}
 
-		if now() > s.Start+heartbeatInterval.Nanoseconds() {
+		if now > s.Start+heartbeatInterval.Nanoseconds() {
 			meta := make(map[string]string, len(s.Meta))
 			for k, v := range s.Meta {
 				meta[k] = v
@@ -76,7 +84,7 @@ func (lr *longrunner) work() {
 				Resource:        s.Resource,
 				Type:            s.Type,
 				Start:           s.Start,
-				Duration:        now() - s.Start,
+				Duration:        now - s.Start,
 				Meta:            meta,
 				Metrics:         metrics,
 				SpanID:          s.SpanID,
@@ -113,6 +121,7 @@ func (lr *longrunner) work() {
 			heartBeatSpan.setMetric("_dd.partial_version", float64(partialVersion))
 			lr.spans[s]++
 
+			//TODO: find a good way to test this
 			if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 				t.pushTrace(append(childrenOfHeartbeat, &heartBeatSpan))
 			}
