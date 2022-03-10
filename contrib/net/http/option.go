@@ -22,6 +22,7 @@ type config struct {
 	spanOpts      []ddtrace.StartSpanOption
 	finishOpts    []ddtrace.FinishOption
 	ignoreRequest func(*http.Request) bool
+	resourceNamer func(*http.Request) string
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -45,6 +46,9 @@ func defaults(cfg *config) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
+
+	// not sure this is the right thing for a default, but it's only used in the dynamic name case
+	cfg.resourceNamer = func(_ *http.Request) string { return cfg.serviceName }
 }
 
 // WithIgnoreRequest holds the function to use for determining if the
@@ -92,6 +96,13 @@ func WithAnalyticsRate(rate float64) MuxOption {
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
 	return func(cfg *config) {
 		cfg.spanOpts = append(cfg.spanOpts, opts...)
+	}
+}
+
+// WithResourceNamer populates the name of a resource based on a custom function.
+func WithResourceNamer(namer func(req *http.Request) string) Option {
+	return func(cfg *config) {
+		cfg.resourceNamer = namer
 	}
 }
 

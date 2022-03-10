@@ -56,14 +56,17 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // WrapHandler wraps an http.Handler with tracing using the given service and resource.
+// If the WithResourceNamer option is provided as part of opts, it will take precedence over the resource argument.
 func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.Handler {
 	cfg := new(config)
 	defaults(cfg)
+
 	for _, fn := range opts {
 		fn(cfg)
 	}
 	log.Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		resource := cfg.resourceNamer(req)
 		httputil.TraceAndServe(h, &httputil.TraceConfig{
 			ResponseWriter: w,
 			Request:        req,
