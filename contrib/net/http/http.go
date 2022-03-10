@@ -60,6 +60,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.Handler {
 	cfg := new(config)
 	defaults(cfg)
+
 	for _, fn := range opts {
 		fn(cfg)
 	}
