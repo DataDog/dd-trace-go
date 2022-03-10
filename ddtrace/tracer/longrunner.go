@@ -12,8 +12,11 @@ var heartbeatInterval time.Duration
 
 //TODO: is there a better performing design than this?
 type longrunner struct {
-	done  chan struct{}
-	mu    sync.Mutex
+	// done chan stops the longrunning goroutine
+	done chan struct{}
+	// mu protects the lower fields
+	mu sync.Mutex
+	// spans is a map of tracked spans to their "partial_version"
 	spans map[*span]int
 }
 
@@ -21,6 +24,7 @@ type longrunner struct {
 func startLongrunner(hbInterval int64) *longrunner {
 	heartbeatInterval = time.Duration(hbInterval)
 	lr := longrunner{
+		done:  make(chan struct{}),
 		mu:    sync.Mutex{},
 		spans: map[*span]int{},
 	}
@@ -46,8 +50,9 @@ func (lr *longrunner) stop() {
 func (lr *longrunner) trackSpan(s *span) {
 	lr.mu.Lock()
 	defer lr.mu.Unlock()
-
-	lr.spans[s] = 1
+	if _, found := lr.spans[s]; !found {
+		lr.spans[s] = 1
+	}
 }
 
 func (lr *longrunner) stopTracking(s *span) {

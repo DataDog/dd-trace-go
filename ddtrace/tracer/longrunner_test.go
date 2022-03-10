@@ -25,6 +25,20 @@ func TestWorkRemovesFinishedSpans(t *testing.T) {
 	assert.Empty(t, lr.spans)
 }
 
+func TestTrackSpanNoOverwrite(t *testing.T) {
+	s := &span{}
+	lr := longrunner{
+		mu: sync.Mutex{},
+		spans: map[*span]int{
+			s: 3,
+		},
+	}
+
+	lr.trackSpan(s)
+
+	assert.Equal(t, 3, lr.spans[s])
+}
+
 func TestWorkAlreadyFinishedSpansInTraceAreRemoved(t *testing.T) {
 	heartbeatInterval = 1
 	finishedS := &span{
