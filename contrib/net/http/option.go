@@ -99,21 +99,6 @@ func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
 	}
 }
 
-// WithDynamicResourceNamer automatically populates the name of a resource from the Method and URL.Path of the
-// inbound request.
-func WithDynamicResourceNamer() Option {
-	return WithResourceNamer(func(req *http.Request) string {
-		return req.Method + " " + req.URL.Path
-	})
-}
-
-// WithStaticResourceNamer populates the name of a resource with a static string.
-func WithStaticResourceNamer(name string) Option {
-	return WithResourceNamer(func(req *http.Request) string {
-		return name
-	})
-}
-
 // WithResourceNamer populates the name of a resource based on a custom function.
 func WithResourceNamer(namer func(req *http.Request) string) Option {
 	return func(cfg *config) {
