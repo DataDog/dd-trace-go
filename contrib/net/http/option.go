@@ -46,9 +46,7 @@ func defaults(cfg *config) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
-
-	// not sure this is the right thing for a default, but it's only used in the dynamic name case
-	cfg.resourceNamer = func(_ *http.Request) string { return cfg.serviceName }
+	cfg.resourceNamer = func(_ *http.Request) string { return nil }
 }
 
 // WithIgnoreRequest holds the function to use for determining if the

@@ -65,7 +65,9 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 	}
 	log.Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		resource := cfg.resourceNamer(req)
+		if dynamicResource := cfg.resourceNamer(req); dynamicResource != nil {
+		    resource = dynamicResource
+		}
 		httputil.TraceAndServe(h, &httputil.TraceConfig{
 			ResponseWriter: w,
 			Request:        req,
