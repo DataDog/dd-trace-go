@@ -43,6 +43,17 @@
 // "name" and "service" fields are optional.
 //    export DD_TRACE_SAMPLING_RULES='[{"name": "web.request", "sample_rate": 1.0}]'
 //
+// To create spans, use the functions StartSpan and StartSpanFromContext. Both accept
+// StartSpanOptions that can be used to configure the span. A span that is started
+// with no parent will begin a new trace. See the function documentation for details
+// on specific usage. Each trace has a hard limit of 100,000 spans, after which the
+// trace will be dropped and give a diagnostic log message. In practice users should
+// not approach this limit as traces of this size are not useful and impossible to
+// visualize.
+//
+// See the contrib package ( https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib )
+// for integrating datadog with various libraries, frameworks and clients.
+//
 // All spans created by the tracer contain a context hereby referred to as the span
 // context. Note that this is different from Go's context. The span context is used
 // to package essential information from a span, which is needed when creating child

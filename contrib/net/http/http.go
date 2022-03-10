@@ -9,7 +9,6 @@ package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 import (
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -46,12 +45,10 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// get the resource associated to this request
 	_, route := mux.Handler(r)
 	resource := r.Method + " " + route
-	httputil.TraceAndServe(mux.ServeMux, &httputil.TraceConfig{
-		ResponseWriter: w,
-		Request:        r,
-		Service:        mux.cfg.serviceName,
-		Resource:       resource,
-		SpanOpts:       mux.cfg.spanOpts,
+	TraceAndServe(mux.ServeMux, w, r, &ServeConfig{
+		Service:  mux.cfg.serviceName,
+		Resource: resource,
+		SpanOpts: mux.cfg.spanOpts,
 	})
 }
 
@@ -66,16 +63,18 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 	}
 	log.Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if dynamicResource := cfg.resourceNamer(req); dynamicResource != nil {
-		    resource = dynamicResource
+		if cfg.ignoreRequest(req) {
+			h.ServeHTTP(w, req)
+			return
 		}
-		httputil.TraceAndServe(h, &httputil.TraceConfig{
-			ResponseWriter: w,
-			Request:        req,
-			Service:        service,
-			Resource:       resource,
-			FinishOpts:     cfg.finishOpts,
-			SpanOpts:       cfg.spanOpts,
+    if dynamicResource := cfg.resourceNamer(req); dynamicResource != nil {
+		  resource = dynamicResource
+		}
+		TraceAndServe(h, w, req, &ServeConfig{
+			Service:    service,
+			Resource:   resource,
+			FinishOpts: cfg.finishOpts,
+			SpanOpts:   cfg.spanOpts,
 		})
 	})
 }

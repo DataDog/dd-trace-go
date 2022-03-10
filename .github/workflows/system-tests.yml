@@ -1,0 +1,61 @@
+name: System Tests
+
+on:
+  push:
+    branches:
+      - v1
+    tags:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+  workflow_dispatch: {}
+  schedule:
+    - cron:  '00 04 * * 2-6'
+
+jobs:
+  system-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - library: golang
+            weblog-variant: net-http
+          - library: golang
+            weblog-variant: gorilla
+          - library: golang
+            weblog-variant: echo
+          - library: golang
+            weblog-variant: chi
+      fail-fast: false
+    env:
+      TEST_LIBRARY: golang
+      WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+    steps:
+      - name: Checkout system tests
+        uses: actions/checkout@v2
+        with:
+          repository: 'DataDog/system-tests'
+
+      - name: Checkout dd-trace-go
+        uses: actions/checkout@v2
+        with:
+          path: 'binaries/dd-trace-go'
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Run
+        run: ./run.sh
+
+      - name: Compress artifact
+        if: ${{ always() }}
+        run: tar -czvf artifact.tar.gz $(ls | grep logs)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        if: ${{ always() }}
+        with:
+          name: logs_${{ matrix.weblog-variant }}
+          path: artifact.tar.gz

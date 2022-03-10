@@ -16,6 +16,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -152,6 +153,39 @@ func TestShouldComputeStats(t *testing.T) {
 	}
 }
 
+func TestNewAggregableSpan(t *testing.T) {
+	t.Run("obfuscating", func(t *testing.T) {
+		o := obfuscate.NewObfuscator(obfuscate.Config{})
+		aggspan := newAggregableSpan(&span{
+			Name:     "name",
+			Resource: "SELECT * FROM table WHERE password='secret'",
+			Service:  "service",
+			Type:     "sql",
+		}, o)
+		assert.Equal(t, aggregation{
+			Name:     "name",
+			Type:     "sql",
+			Resource: "SELECT * FROM table WHERE password = ?",
+			Service:  "service",
+		}, aggspan.key)
+	})
+
+	t.Run("nil-obfuscator", func(t *testing.T) {
+		aggspan := newAggregableSpan(&span{
+			Name:     "name",
+			Resource: "SELECT * FROM table WHERE password='secret'",
+			Service:  "service",
+			Type:     "sql",
+		}, nil)
+		assert.Equal(t, aggregation{
+			Name:     "name",
+			Type:     "sql",
+			Resource: "SELECT * FROM table WHERE password='secret'",
+			Service:  "service",
+		}, aggspan.key)
+	})
+}
+
 func TestSpanFinishWithTime(t *testing.T) {
 	assert := assert.New(t)
 
@@ -161,6 +195,16 @@ func TestSpanFinishWithTime(t *testing.T) {
 
 	duration := finishTime.UnixNano() - span.Start
 	assert.Equal(duration, span.Duration)
+}
+
+func TestSpanFinishWithNegativeDuration(t *testing.T) {
+	assert := assert.New(t)
+	startTime := time.Now()
+	finishTime := startTime.Add(-10 * time.Second)
+	span := newBasicSpan("web.request")
+	span.Start = startTime.UnixNano()
+	span.Finish(FinishTime(finishTime))
+	assert.Equal(int64(0), span.Duration)
 }
 
 func TestSpanFinishWithError(t *testing.T) {
@@ -412,7 +456,9 @@ func TestSpanError(t *testing.T) {
 	span.Finish()
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(0), span.Error)
-	assert.Equal(nMeta, len(span.Meta))
+	// '+1' is `_dd.p.upstream_services`,
+	// because we add it into Meta of the first span, when root is finished.
+	assert.Equal(nMeta+1, len(span.Meta))
 	assert.Equal("", span.Meta["error.msg"])
 	assert.Equal("", span.Meta["error.type"])
 	assert.Equal("", span.Meta["error.stack"])

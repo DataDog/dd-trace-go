@@ -19,20 +19,23 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v4/stdlib"
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	mysqlgorm "gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
 )
 
 // tableName holds the SQL table that these tests will be run against. It must be unique cross-repo.
 const (
-	tableName       = "testgorm"
-	pgConnString    = "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
-	mysqlConnString = "test:test@tcp(127.0.0.1:3306)/test"
+	tableName           = "testgorm"
+	pgConnString        = "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
+	sqlServerConnString = "sqlserver://sa:myPassw0rd@127.0.0.1:1433?database=master"
+	mysqlConnString     = "test:test@tcp(127.0.0.1:3306)/test"
 )
 
 func TestMain(m *testing.M) {
@@ -108,6 +111,40 @@ func TestPostgres(t *testing.T) {
 			ext.TargetPort:  "5432",
 			ext.DBUser:      "postgres",
 			ext.DBName:      "postgres",
+		},
+	}
+	sqltest.RunAll(t, testConfig)
+}
+
+func TestSQLServer(t *testing.T) {
+	sqltrace.Register("sqlserver", &mssql.Driver{})
+	sqlDb, err := sqltrace.Open("sqlserver", sqlServerConnString)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db, err := Open(sqlserver.New(sqlserver.Config{Conn: sqlDb}), &gorm.Config{})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	internalDB, err := db.DB()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	testConfig := &sqltest.Config{
+		DB:         internalDB,
+		DriverName: "sqlserver",
+		TableName:  tableName,
+		ExpectName: "sqlserver.query",
+		ExpectTags: map[string]interface{}{
+			ext.ServiceName: "sqlserver.db",
+			ext.SpanType:    ext.SpanTypeSQL,
+			ext.TargetHost:  "127.0.0.1",
+			ext.TargetPort:  "1433",
+			ext.DBUser:      "sa",
+			ext.DBName:      "master",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
@@ -341,5 +378,44 @@ func TestContext(t *testing.T) {
 		db := db.WithContext(testCtx)
 		ctx := db.Statement.Context
 		assert.Equal(t, testCtx.Value(key(contextKey)), ctx.Value(key(contextKey)))
+	})
+}
+
+func TestError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	assertErrCheck := func(t *testing.T, mt mocktracer.Tracer, errExist bool, opts ...Option) {
+		sqltrace.Register("pgx", &stdlib.Driver{})
+		sqlDb, err := sqltrace.Open("pgx", pgConnString)
+		assert.Nil(t, err)
+
+		db, err := Open(postgres.New(postgres.Config{Conn: sqlDb}), &gorm.Config{}, opts...)
+		assert.Nil(t, err)
+		db.AutoMigrate(&Product{})
+		db.First(&Product{}, Product{Code: "L1210", Price: 2000})
+
+		spans := mt.FinishedSpans()
+		assert.True(t, len(spans) > 1)
+
+		// Get last span (gorm.db)
+		s := spans[len(spans)-1]
+
+		assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		assertErrCheck(t, mt, true)
+	})
+
+	t.Run("errcheck", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		errFn := func(err error) bool {
+			return err != gorm.ErrRecordNotFound
+		}
+		assertErrCheck(t, mt, false, WithErrorCheck(errFn))
 	})
 }

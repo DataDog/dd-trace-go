@@ -14,9 +14,10 @@ import (
 	"runtime/pprof"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
+
 	"github.com/DataDog/gostackparse"
 	pprofile "github.com/google/pprof/profile"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 )
 
 // ProfileType represents a type of profile that the profiler is able to run.
@@ -29,8 +30,10 @@ const (
 	// CPUProfile determines where a program spends its time while actively consuming
 	// CPU cycles (as opposed to while sleeping or waiting for I/O).
 	CPUProfile
-	// BlockProfile shows where goroutines block waiting on synchronization primitives
-	// (including timer channels). Block profile is not enabled by default.
+	// BlockProfile shows where goroutines block waiting on mutex and channel
+	// operations. The block profile is not enabled by default and may cause
+	// noticeable CPU overhead. We recommend against enabling it, see
+	// DefaultBlockRate for more information.
 	BlockProfile
 	// MutexProfile reports the lock contentions. When you think your CPU is not fully utilized due
 	// to a mutex contention, use this profile. Mutex profile is not enabled by default.
@@ -213,35 +216,36 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	if err != nil {
 		return nil, err
 	}
-	profs := []*profile{{
-		name: t.Filename,
-		data: data,
-	}}
 	// Compute the deltaProf (will be nil if not enabled for this profile type).
 	deltaStart := time.Now()
 	deltaProf, err := p.deltaProfile(t, data)
 	if err != nil {
 		return nil, fmt.Errorf("delta profile error: %s", err)
 	}
-	// Report metrics and append deltaProf if not nil.
 	end := now()
 	tags := append(p.cfg.tags, pt.Tag())
-	// TODO(fg) stop uploading non-delta profiles in the next version of
-	// dd-trace-go after delta profiles are released.
+	var profs []*profile
 	if deltaProf != nil {
 		profs = append(profs, deltaProf)
 		p.cfg.statsd.Timing("datadog.profiler.go.delta_time", end.Sub(deltaStart), tags, 1)
+	} else {
+		// If the user has disabled delta profiles, or the profile type
+		// doesn't support delta profiles (like the CPU profile) then
+		// send the original profile unchanged.
+		profs = append(profs, &profile{
+			name: t.Filename,
+			data: data,
+		})
 	}
 	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
 	return profs, nil
 }
 
 // deltaProfile derives the delta profile between curData and the previous
-// profile. For profile types that don't have delta profiling enabled, it
-// simply returns nil, nil.
+// profile. For profile types that don't have delta profiling enabled, or
+// WithDeltaProfiles(false), it simply returns nil, nil.
 func (p *profiler) deltaProfile(t profileType, curData []byte) (*profile, error) {
-	// Not all profile types use delta profiling, return nil if this one doesn't.
-	if t.Delta == nil {
+	if !p.cfg.deltaProfiles || t.Delta == nil {
 		return nil, nil
 	}
 	curProf, err := pprofile.ParseData(curData)

@@ -10,7 +10,7 @@ package ext
 
 const (
 	// PriorityUserReject informs the backend that a trace should be rejected and not stored.
-	// This should be used by user code overriding default priority.
+	// This should be used by user code or configuration overriding default priority
 	PriorityUserReject = -1
 
 	// PriorityAutoReject informs the backend that a trace should be rejected and not stored.
@@ -22,6 +22,6 @@ const (
 	PriorityAutoKeep = 1
 
 	// PriorityUserKeep informs the backend that a trace should be kept and not stored.
-	// This should be used by user code overriding default priority.
+	// This should be used by user code or configuration overriding default priority
 	PriorityUserKeep = 2
 )

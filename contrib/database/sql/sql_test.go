@@ -6,15 +6,21 @@
 package sql
 
 import (
+	"context"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"log"
 	"math"
 	"os"
 	"testing"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
+	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
@@ -31,6 +37,32 @@ func TestMain(m *testing.M) {
 	}
 	defer sqltest.Prepare(tableName)()
 	os.Exit(m.Run())
+}
+
+func TestSqlServer(t *testing.T) {
+	Register("sqlserver", &mssql.Driver{})
+	db, err := Open("sqlserver", "sqlserver://sa:myPassw0rd@127.0.0.1:1433?database=master")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	testConfig := &sqltest.Config{
+		DB:         db,
+		DriverName: "sqlserver",
+		TableName:  tableName,
+		ExpectName: "sqlserver.query",
+		ExpectTags: map[string]interface{}{
+			ext.ServiceName:     "sqlserver.db",
+			ext.SpanType:        ext.SpanTypeSQL,
+			ext.TargetHost:      "127.0.0.1",
+			ext.TargetPort:      "1433",
+			ext.DBUser:          "sa",
+			ext.DBName:          "master",
+			ext.EventSampleRate: nil,
+		},
+	}
+	sqltest.RunAll(t, testConfig)
 }
 
 func TestMySQL(t *testing.T) {
@@ -189,4 +221,43 @@ func TestMySQLUint64(t *testing.T) {
 	assert.False(rows.Next())
 	assert.NoError(rows.Err())
 	assert.NoError(rows.Close())
+}
+
+// hangingConnector hangs on Connect until ctx is cancelled.
+type hangingConnector struct{}
+
+func (h *hangingConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	select {
+	case <-ctx.Done():
+		return nil, errors.New("context cancelled")
+	}
+}
+
+func (h *hangingConnector) Driver() driver.Driver {
+	panic("hangingConnector: Driver() not implemented")
+}
+
+func TestConnectCancelledCtx(t *testing.T) {
+	mockTracer := mocktracer.Start()
+	defer mockTracer.Stop()
+	assert := assert.New(t)
+	tc := tracedConnector{
+		connector:  &hangingConnector{},
+		driverName: "hangingConnector",
+		cfg:        new(config),
+	}
+	ctx, cancelFunc := context.WithCancel(context.Background())
+
+	go func() {
+		tc.Connect(ctx)
+	}()
+	time.Sleep(time.Millisecond * 100)
+	cancelFunc()
+	time.Sleep(time.Millisecond * 100)
+
+	spans := mockTracer.FinishedSpans()
+	assert.Len(spans, 1)
+	s := spans[0]
+	assert.Equal("hangingConnector.query", s.OperationName())
+	assert.Equal("Connect", s.Tag("sql.query_type"))
 }

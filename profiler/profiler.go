@@ -15,9 +15,10 @@ import (
 	"sync"
 	"time"
 
-	pprofile "github.com/google/pprof/profile"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	pprofile "github.com/google/pprof/profile"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -129,6 +130,9 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		if _, ok := profileTypes[pt]; !ok {
 			return nil, fmt.Errorf("unknown profile type: %d", pt)
 		}
+	}
+	if cfg.logStartup {
+		logStartup(cfg)
 	}
 
 	p := profiler{
