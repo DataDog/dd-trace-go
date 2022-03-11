@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"github.com/DataDog/datadog-go/statsd"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"sync"
@@ -8,70 +9,83 @@ import (
 	"time"
 )
 
-func TestWorkRemovesFinishedSpans(t *testing.T) {
-	lr := longrunner{
-		mu: sync.Mutex{},
-		spans: map[*span]int{
-			&span{
-				RWMutex:  sync.RWMutex{},
-				Start:    1,
-				finished: true,
-			}: 1,
-		},
-	}
+func TestLongrunner(t *testing.T) {
+	t.Run("WorkRemovesFinishedSpans", func(t *testing.T) {
+		lr := longrunner{
+			mu: sync.Mutex{},
+			spans: map[*span]int{
+				&span{
+					RWMutex:  sync.RWMutex{},
+					Start:    1,
+					finished: true,
+				}: 1,
+			},
+		}
 
-	lr.work(1)
+		lr.work(1)
 
-	assert.Empty(t, lr.spans)
-}
+		assert.Empty(t, lr.spans)
+	})
 
-func TestTrackSpanNoOverwrite(t *testing.T) {
-	s := &span{}
-	lr := longrunner{
-		mu: sync.Mutex{},
-		spans: map[*span]int{
-			s: 3,
-		},
-	}
+	t.Run("TrackSpanNoOverwrite", func(t *testing.T) {
+		s := &span{}
+		lr := longrunner{
+			mu: sync.Mutex{},
+			spans: map[*span]int{
+				s: 3,
+			},
+		}
 
-	lr.trackSpan(s)
+		lr.trackSpan(s)
 
-	assert.Equal(t, 3, lr.spans[s])
-}
+		assert.Equal(t, 3, lr.spans[s])
+	})
 
-func TestWorkAlreadyFinishedSpansInTraceAreRemoved(t *testing.T) {
-	heartbeatInterval = 1
-	finishedS := &span{
-		RWMutex:  sync.RWMutex{},
-		Start:    1,
-		finished: true,
-	}
-	s := &span{
-		RWMutex: sync.RWMutex{},
-		Start:   1,
-	}
-	s.context = newSpanContext(s, nil)
-	s.context.trace.push(finishedS)
-	s.context.trace.finishedOne(finishedS)
-	lr := longrunner{
-		mu: sync.Mutex{},
-		spans: map[*span]int{
-			s: 1,
-		},
-	}
+	t.Run("Work", func(t *testing.T) {
+		heartbeatInterval = 1
+		finishedS := &span{
+			RWMutex:  sync.RWMutex{},
+			Start:    1,
+			finished: true,
+		}
+		s := &span{
+			RWMutex: sync.RWMutex{},
+			Start:   1,
+		}
+		s.context = newSpanContext(s, nil)
+		s.context.trace.push(finishedS)
+		s.context.trace.finishedOne(finishedS)
+		ts := testStatsdClient{}
+		lr := longrunner{
+			statsd: &ts,
+			mu:     sync.Mutex{},
+			spans: map[*span]int{
+				s: 1,
+			},
+		}
 
-	lr.work(3)
+		lr.work(3)
 
-	assert.NotEmpty(t, lr.spans)
-	assert.Equal(t, lr.spans[s], 2)
-	assert.Equal(t, s.context.trace.finished, 0)
-	assert.Len(t, s.context.trace.spans, 1)
+		assert.NotEmpty(t, lr.spans)
+		assert.Equal(t, lr.spans[s], 2)
+		assert.Equal(t, s.context.trace.finished, 0, "Already finished span should have been removed")
+		assert.Len(t, s.context.trace.spans, 1)
+		stats := ts.IncrCalls()
+		assert.Len(t, stats, 1)
+		assert.Equal(t, "datadog.tracer.longrunning.flushed", stats[0].name)
+	})
+
+	t.Run("StopMultipleCallsOk", func(t *testing.T) {
+		lr := startLongrunner(500, &statsd.NoOpClient{})
+		lr.stop()
+		lr.stop()
+	})
 }
 
 func BenchmarkLR(b *testing.B) {
 	internal.SetGlobalTracer(&internal.NoopTracer{})
 	heartbeatInterval = 10 * time.Millisecond
-	lr := startLongrunner(int64(heartbeatInterval))
+	lr := startLongrunner(int64(heartbeatInterval), &statsd.NoOpClient{})
 	wg := sync.WaitGroup{}
 	for i := 0; i < b.N; i++ {
 		for i := 0; i < 100; i++ {
@@ -105,7 +119,7 @@ func BenchmarkLR(b *testing.B) {
 func BenchmarkLRWork(b *testing.B) {
 	internal.SetGlobalTracer(&internal.NoopTracer{})
 	heartbeatInterval = 1 * time.Hour //Large time so we can call work manually
-	lr := startLongrunner(int64(heartbeatInterval))
+	lr := startLongrunner(int64(heartbeatInterval), &statsd.NoOpClient{})
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		lr.spans = map[*span]int{}

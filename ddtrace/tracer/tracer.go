@@ -178,7 +178,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	}
 	var lr *longrunner
 	if c.longRunningEnabled {
-		lr = startLongrunner(c.longRunningHeartbeatInterval)
+		lr = startLongrunner(c.longRunningHeartbeatInterval, c.statsd)
 	}
 	t := &tracer{
 		config:           c,

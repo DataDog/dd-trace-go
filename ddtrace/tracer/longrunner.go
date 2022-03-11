@@ -12,6 +12,7 @@ var heartbeatInterval time.Duration
 
 //TODO: is there a better performing design than this?
 type longrunner struct {
+	statsd statsdClient
 	// stopFunc is a fire exactly once method to ensure we don't try to stop more than once
 	stopFunc sync.Once
 	// done chan stops the long-running "work" goroutine
@@ -23,9 +24,10 @@ type longrunner struct {
 }
 
 // startLongrunner creates a long-running span tracker
-func startLongrunner(hbInterval int64) *longrunner {
+func startLongrunner(hbInterval int64, sd statsdClient) *longrunner {
 	heartbeatInterval = time.Duration(hbInterval)
 	lr := longrunner{
+		statsd:   sd,
 		stopFunc: sync.Once{},
 		done:     make(chan struct{}),
 		mu:       sync.Mutex{},
@@ -130,6 +132,8 @@ func (lr *longrunner) work(now int64) {
 
 			heartBeatSpan.setMetric("_dd.partial_version", float64(partialVersion))
 			lr.spans[s]++
+
+			lr.statsd.Incr("datadog.tracer.longrunning.flushed", nil, 1)
 
 			//TODO: find a good way to test this
 			if t, ok := internal.GetGlobalTracer().(*tracer); ok {
