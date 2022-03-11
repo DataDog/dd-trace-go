@@ -12,7 +12,9 @@ var heartbeatInterval time.Duration
 
 //TODO: is there a better performing design than this?
 type longrunner struct {
-	// done chan stops the longrunning goroutine
+	// stopFunc is a fire exactly once method to ensure we don't try to stop more than once
+	stopFunc sync.Once
+	// done chan stops the long-running "work" goroutine
 	done chan struct{}
 	// mu protects the lower fields
 	mu sync.Mutex
@@ -24,9 +26,10 @@ type longrunner struct {
 func startLongrunner(hbInterval int64) *longrunner {
 	heartbeatInterval = time.Duration(hbInterval)
 	lr := longrunner{
-		done:  make(chan struct{}),
-		mu:    sync.Mutex{},
-		spans: map[*span]int{},
+		stopFunc: sync.Once{},
+		done:     make(chan struct{}),
+		mu:       sync.Mutex{},
+		spans:    map[*span]int{},
 	}
 
 	ticker := time.NewTicker(heartbeatInterval)
@@ -44,7 +47,9 @@ func startLongrunner(hbInterval int64) *longrunner {
 }
 
 func (lr *longrunner) stop() {
-	lr.done <- struct{}{}
+	lr.stopFunc.Do(func() {
+		lr.done <- struct{}{}
+	})
 }
 
 func (lr *longrunner) trackSpan(s *span) {
