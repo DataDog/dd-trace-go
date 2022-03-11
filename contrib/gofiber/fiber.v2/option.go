@@ -8,6 +8,8 @@ package fiber
 import (
 	"math"
 
+	"github.com/gofiber/fiber/v2"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -18,6 +20,7 @@ type config struct {
 	isStatusError func(statusCode int) bool
 	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
 	analyticsRate float64
+	resourceNamer func(*fiber.Ctx) string
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -26,6 +29,7 @@ type Option func(*config)
 func defaults(cfg *config) {
 	cfg.serviceName = "fiber"
 	cfg.isStatusError = isServerError
+	cfg.resourceNamer = defaultResourceNamer
 
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc
@@ -80,6 +84,20 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 	return func(cfg *config) {
 		cfg.isStatusError = fn
 	}
+}
+
+// WithResourceNamer specifies a function which will be used to
+// obtain the resource name for a given request taking the go-fiber context
+// as input
+func WithResourceNamer(fn func(*fiber.Ctx) string) Option {
+	return func(cfg *config) {
+		cfg.resourceNamer = fn
+	}
+}
+
+func defaultResourceNamer(c *fiber.Ctx) string {
+	r := c.Route()
+	return r.Method + " " + r.Path
 }
 
 func isServerError(statusCode int) bool {
