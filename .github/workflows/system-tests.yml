@@ -27,6 +27,8 @@ jobs:
             weblog-variant: echo
           - library: golang
             weblog-variant: chi
+          - library: golang
+            weblog-variant: gin
       fail-fast: false
     env:
       TEST_LIBRARY: golang
