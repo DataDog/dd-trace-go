@@ -374,6 +374,9 @@ type agentFeatures struct {
 
 	// featureFlags specifies all the feature flags reported by the trace-agent.
 	featureFlags map[string]struct{}
+
+	// Info reports whether the agent can report features via the /info endpoint.
+	Info bool
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -411,6 +414,7 @@ func (c *config) loadAgentFeatures() {
 		log.Error("Decoding features: %v", err)
 		return
 	}
+	c.agent.Info = true
 	c.agent.DropP0s = info.ClientDropP0s
 	c.agent.StatsdPort = info.StatsdPort
 	for _, endpoint := range info.Endpoints {

@@ -80,6 +80,16 @@ func TestLongrunner(t *testing.T) {
 		lr.stop()
 		lr.stop()
 	})
+
+	t.Run("longrunningSpansEnabledFalseWithoutInfo", func(t *testing.T) {
+		c := config{
+			agent: agentFeatures{
+				Info: false,
+			},
+			longRunningEnabled: true,
+		}
+		assert.False(t, longrunningSpansEnabled(&c))
+	})
 }
 
 func BenchmarkLR(b *testing.B) {

@@ -194,7 +194,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		writer = newAgentTraceWriter(c, sampler)
 	}
 	var lr *longrunner
-	if c.longRunningEnabled {
+	if longrunningSpansEnabled(c) {
 		lr = startLongrunner(c.longRunningHeartbeatInterval, c.statsd)
 	}
 	t := &tracer{

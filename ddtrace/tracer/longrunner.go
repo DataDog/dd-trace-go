@@ -1,6 +1,7 @@
 package tracer
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"sync"
 	"time"
 
@@ -21,6 +22,14 @@ type longrunner struct {
 	mu sync.Mutex
 	// spans is a map of tracked spans to their "partial_version"
 	spans map[*span]int
+}
+
+func longrunningSpansEnabled(c *config) bool {
+	if c.longRunningEnabled && !c.agent.Info {
+		log.Warn("Long running span tracking requires a newer agent version than is connected")
+		return false
+	}
+	return c.longRunningEnabled
 }
 
 // startLongrunner creates a long-running span tracker
