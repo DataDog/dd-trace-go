@@ -46,7 +46,7 @@ func defaults(cfg *config) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
-	cfg.resourceNamer = func(_ *http.Request) string { return nil }
+	cfg.resourceNamer = func(_ *http.Request) string { return "" }
 }
 
 // WithIgnoreRequest holds the function to use for determining if the
