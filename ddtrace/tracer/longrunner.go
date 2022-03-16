@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2022 Datadog, Inc.
+
 package tracer
 
 import (
@@ -98,6 +103,8 @@ func (lr *longrunner) work(now int64) {
 			for k, v := range s.Metrics {
 				metrics[k] = v
 			}
+			//Unmark span snapshots as "top_level" to avoid stats computation in the agent
+			delete(metrics, keyTopLevel)
 
 			heartBeatSpan := span{
 				Name:            s.Name,
