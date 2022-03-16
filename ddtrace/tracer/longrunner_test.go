@@ -6,12 +6,14 @@
 package tracer
 
 import (
-	"github.com/DataDog/datadog-go/statsd"
-	"github.com/stretchr/testify/assert"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DataDog/datadog-go/statsd"
+	"github.com/stretchr/testify/assert"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
 func TestLongrunner(t *testing.T) {

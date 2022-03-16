@@ -6,11 +6,11 @@
 package tracer
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // Any span living longer than heartbeatInterval will have heartbeats sent every interval
