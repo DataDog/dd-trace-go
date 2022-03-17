@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"math"
 	"reflect"
 	"time"
@@ -141,7 +142,12 @@ func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	}
 	start := time.Now()
 	conn, err := t.connector.Connect(ctx)
-	tp.tryTrace(ctx, queryTypeConnect, "", start, err)
+	span := tp.tryStartTrace(ctx, queryTypeConnect, "", start, err)
+	if span != nil {
+		go func() {
+			span.Finish(tracer.WithError(err))
+		}()
+	}
 	if err != nil {
 		return nil, err
 	}
