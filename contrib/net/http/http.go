@@ -66,8 +66,8 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 			h.ServeHTTP(w, req)
 			return
 		}
-		if dynamicResource := cfg.resourceNamer(req); dynamicResource != "" {
-			resource = dynamicResource
+		if r := cfg.resourceNamer(req); r != "" {
+			resource = r
 		}
 		TraceAndServe(h, w, req, &ServeConfig{
 			Service:    service,
