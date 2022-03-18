@@ -13,6 +13,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+// TrackingExpirationLimit is the limit for how long to track a long-running span before no longer sending snapshots
+const TrackingExpirationLimit = 12 * time.Hour
+
 // Any span living longer than heartbeatInterval will have heartbeats sent every interval
 var heartbeatInterval time.Duration
 
@@ -37,9 +40,26 @@ func longrunningSpansEnabled(c *config) bool {
 	return c.longRunningEnabled
 }
 
+func limitHeartbeat(hb int64) time.Duration {
+	hbDur := time.Duration(hb)
+	const minInterval = 20 * time.Second
+	const maxInterval = (7 * time.Minute) + (30 * time.Second)
+	switch {
+	case hbDur < minInterval:
+		log.Warn("Long Running Span Configured interval too short, defaulting to minimum 20 seconds")
+		return minInterval
+	case hbDur > maxInterval:
+		log.Warn("Long Running Span Configured interval too long, defaulting to maximum 7.5 minutes")
+		return maxInterval
+	default:
+		return hbDur
+	}
+}
+
 // startLongrunner creates a long-running span tracker
 func startLongrunner(hbInterval int64, sd statsdClient) *longrunner {
-	heartbeatInterval = time.Duration(hbInterval)
+
+	heartbeatInterval = limitHeartbeat(hbInterval)
 	lr := longrunner{
 		statsd:   sd,
 		stopFunc: sync.Once{},
@@ -90,8 +110,14 @@ func (lr *longrunner) work(now int64) {
 
 	for s, partialVersion := range lr.spans {
 		s.RLock()
-		if s.finished { //todo: Do we also remove spans that are too old(perhaps 24 hours)?
+		if s.finished {
 			delete(lr.spans, s)
+			continue
+		}
+		if (s.Start + TrackingExpirationLimit.Nanoseconds()) < now {
+			lr.statsd.Incr("datadog.tracer.longrunning.expired", nil, 1)
+			delete(lr.spans, s)
+			continue
 		}
 
 		if now > s.Start+heartbeatInterval.Nanoseconds() {

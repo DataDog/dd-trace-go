@@ -16,6 +16,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
+func TestLimitHeartbeat(t *testing.T) {
+	tooSmall := int64(10)
+	tooBig := 8 * time.Minute.Nanoseconds()
+	justRight := 4 * time.Minute.Nanoseconds()
+
+	assert.Equal(t, 20*time.Second, limitHeartbeat(tooSmall))
+	assert.Equal(t, (7*time.Minute)+(30*time.Second), limitHeartbeat(tooBig))
+	assert.Equal(t, time.Duration(justRight), limitHeartbeat(justRight))
+}
+
 func TestLongrunner(t *testing.T) {
 	t.Run("WorkRemovesFinishedSpans", func(t *testing.T) {
 		lr := longrunner{
@@ -80,6 +90,32 @@ func TestLongrunner(t *testing.T) {
 		stats := ts.IncrCalls()
 		assert.Len(t, stats, 1)
 		assert.Equal(t, "datadog.tracer.longrunning.flushed", stats[0].name)
+	})
+
+	t.Run("WorkTooOld", func(t *testing.T) {
+		start := time.Unix(0, 0)
+		heartbeatInterval = 1
+		s := &span{
+			SpanID:  555,
+			RWMutex: sync.RWMutex{},
+			Start:   start.UnixNano(),
+		}
+		s.context = newSpanContext(s, nil)
+		ts := testStatsdClient{}
+		lr := longrunner{
+			statsd: &ts,
+			mu:     sync.Mutex{},
+			spans: map[*span]int{
+				s: 1,
+			},
+		}
+
+		lr.work(start.Add(13 * time.Hour).UnixNano())
+
+		assert.Empty(t, lr.spans)
+		stats := ts.IncrCalls()
+		assert.Len(t, stats, 1)
+		assert.Equal(t, "datadog.tracer.longrunning.expired", stats[0].name)
 	})
 
 	t.Run("StopMultipleCallsOk", func(t *testing.T) {
