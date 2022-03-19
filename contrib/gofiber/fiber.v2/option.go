@@ -8,11 +8,11 @@ package fiber
 import (
 	"math"
 
-	"github.com/gofiber/fiber/v2"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 type config struct {
