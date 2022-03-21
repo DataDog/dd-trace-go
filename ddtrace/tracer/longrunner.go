@@ -16,12 +16,11 @@ import (
 // TrackingExpirationLimit is the limit for how long to track a long-running span before no longer sending snapshots
 const TrackingExpirationLimit = 12 * time.Hour
 
-// Any span living longer than heartbeatInterval will have heartbeats sent every interval
-var heartbeatInterval time.Duration
-
-//TODO: is there a better performing design than this?
+// TODO(ajgajg1134): is there a better performing design than this?
 type longrunner struct {
-	statsd statsdClient
+	// Any span living longer than heartbeatInterval will have heartbeats sent every interval
+	heartbeatInterval time.Duration
+	statsd            statsdClient
 	// stopFunc is a fire exactly once method to ensure we don't try to stop more than once
 	stopFunc sync.Once
 	// done chan stops the long-running "work" goroutine
@@ -43,14 +42,17 @@ func longrunningSpansEnabled(c *config) bool {
 func limitHeartbeat(hb int64) time.Duration {
 	hbDur := time.Duration(hb)
 	const minInterval = 20 * time.Second
-	const maxInterval = (7 * time.Minute) + (30 * time.Second)
+	// This maxKeepAliveInterval is to avoid a limitation where after 15 minutes this trace chunk
+	// will be dropped in the backend. We use half the 15 minutes to avoid the worst case where a span is
+	// opened right after a flush and is forced to wait for double the interval.
+	const maxKeepAliveInterval = (7 * time.Minute) + (30 * time.Second)
 	switch {
 	case hbDur < minInterval:
 		log.Warn("Long Running Span Configured interval too short, defaulting to minimum 20 seconds")
 		return minInterval
-	case hbDur > maxInterval:
+	case hbDur > maxKeepAliveInterval:
 		log.Warn("Long Running Span Configured interval too long, defaulting to maximum 7.5 minutes")
-		return maxInterval
+		return maxKeepAliveInterval
 	default:
 		return hbDur
 	}
@@ -58,17 +60,16 @@ func limitHeartbeat(hb int64) time.Duration {
 
 // startLongrunner creates a long-running span tracker
 func startLongrunner(hbInterval int64, sd statsdClient) *longrunner {
-
-	heartbeatInterval = limitHeartbeat(hbInterval)
+	hb := limitHeartbeat(hbInterval)
 	lr := longrunner{
-		statsd:   sd,
-		stopFunc: sync.Once{},
-		done:     make(chan struct{}),
-		mu:       sync.Mutex{},
-		spans:    map[*span]int{},
+		heartbeatInterval: hb,
+		statsd:            sd,
+		stopFunc:          sync.Once{},
+		done:              make(chan struct{}),
+		mu:                sync.Mutex{},
+		spans:             map[*span]int{},
 	}
-
-	ticker := time.NewTicker(heartbeatInterval)
+	ticker := time.NewTicker(hb)
 	go func() {
 		for {
 			select {
@@ -120,7 +121,7 @@ func (lr *longrunner) work(now int64) {
 			continue
 		}
 
-		if now > s.Start+heartbeatInterval.Nanoseconds() {
+		if now > s.Start+lr.heartbeatInterval.Nanoseconds() {
 			meta := make(map[string]string, len(s.Meta))
 			for k, v := range s.Meta {
 				meta[k] = v

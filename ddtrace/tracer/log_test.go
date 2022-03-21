@@ -53,7 +53,7 @@ func TestStartupLog(t *testing.T) {
 		defer globalconfig.SetServiceName("")
 		defer stop()
 
-		//Override longrunner var to get around not having an `/info` endpoint
+		// Override longrunner var to get around not having an `/info` endpoint
 		tracer.longrunner = &longrunner{
 			stopFunc: sync.Once{},
 			done:     make(chan struct{}),

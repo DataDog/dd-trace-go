@@ -50,7 +50,7 @@ type startupInfo struct {
 	LambdaMode                  string            `json:"lambda_mode"`                    // Whether or not the client has enabled lambda mode
 	AppSec                      bool              `json:"appsec"`                         // AppSec status: true when started, false otherwise.
 	AgentFeatures               agentFeatures     `json:"agent_features"`                 // Lists the capabilities of the agent.
-	LongRunningEnabled          bool              `json:"long_running_enabled"`           //Whether or not long running span tracking is enabled
+	LongRunningEnabled          bool              `json:"long_running_enabled"`           // Whether or not long running span tracking is enabled.
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.

@@ -59,7 +59,6 @@ func TestLongrunner(t *testing.T) {
 	})
 
 	t.Run("Work", func(t *testing.T) {
-		heartbeatInterval = 1
 		finishedS := &span{
 			RWMutex:  sync.RWMutex{},
 			Start:    1,
@@ -74,8 +73,9 @@ func TestLongrunner(t *testing.T) {
 		s.context.trace.finishedOne(finishedS)
 		ts := testStatsdClient{}
 		lr := longrunner{
-			statsd: &ts,
-			mu:     sync.Mutex{},
+			heartbeatInterval: 1,
+			statsd:            &ts,
+			mu:                sync.Mutex{},
 			spans: map[*span]int{
 				s: 1,
 			},
@@ -94,7 +94,6 @@ func TestLongrunner(t *testing.T) {
 
 	t.Run("WorkTooOld", func(t *testing.T) {
 		start := time.Unix(0, 0)
-		heartbeatInterval = 1
 		s := &span{
 			SpanID:  555,
 			RWMutex: sync.RWMutex{},
@@ -103,8 +102,9 @@ func TestLongrunner(t *testing.T) {
 		s.context = newSpanContext(s, nil)
 		ts := testStatsdClient{}
 		lr := longrunner{
-			statsd: &ts,
-			mu:     sync.Mutex{},
+			heartbeatInterval: 1,
+			statsd:            &ts,
+			mu:                sync.Mutex{},
 			spans: map[*span]int{
 				s: 1,
 			},
@@ -137,8 +137,7 @@ func TestLongrunner(t *testing.T) {
 
 func BenchmarkLR(b *testing.B) {
 	internal.SetGlobalTracer(&internal.NoopTracer{})
-	heartbeatInterval = 10 * time.Millisecond
-	lr := startLongrunner(int64(heartbeatInterval), &statsd.NoOpClient{})
+	lr := startLongrunner(int64(10*time.Millisecond), &statsd.NoOpClient{})
 	wg := sync.WaitGroup{}
 	for i := 0; i < b.N; i++ {
 		for i := 0; i < 100; i++ {
@@ -171,8 +170,8 @@ func BenchmarkLR(b *testing.B) {
 
 func BenchmarkLRWork(b *testing.B) {
 	internal.SetGlobalTracer(&internal.NoopTracer{})
-	heartbeatInterval = 1 * time.Hour //Large time so we can call work manually
-	lr := startLongrunner(int64(heartbeatInterval), &statsd.NoOpClient{})
+	hb := 1 * time.Hour //Large time so we can call work manually
+	lr := startLongrunner(int64(hb), &statsd.NoOpClient{})
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		lr.spans = map[*span]int{}
@@ -184,7 +183,7 @@ func BenchmarkLRWork(b *testing.B) {
 				Resource: "",
 				SpanID:   random.Uint64(),
 				TraceID:  random.Uint64(),
-				Start:    now() - (heartbeatInterval.Nanoseconds() * 2),
+				Start:    now() - (hb.Nanoseconds() * 2),
 			}
 			s.context = newSpanContext(s, nil)
 			lr.trackSpan(s)
@@ -192,5 +191,44 @@ func BenchmarkLRWork(b *testing.B) {
 		}
 		b.StartTimer()
 		lr.work(now())
+	}
+}
+
+func BenchmarkTracking(b *testing.B) {
+	internal.SetGlobalTracer(&internal.NoopTracer{})
+	hb := 1 * time.Hour //Large time so we can ignore "work" loop
+	lr := startLongrunner(int64(hb), &statsd.NoOpClient{})
+	n := now()
+	sid := uint64(500)
+	tid := uint64(900)
+	for i := 0; i < b.N; i++ {
+		s := &span{
+			Name:     "testspan",
+			Service:  "bench",
+			Resource: "",
+			SpanID:   sid,
+			TraceID:  tid,
+			Start:    n,
+		}
+		s.context = newSpanContext(s, nil)
+		lr.trackSpan(s)
+	}
+}
+
+func BenchmarkNoTracking(b *testing.B) {
+	internal.SetGlobalTracer(&internal.NoopTracer{})
+	n := now()
+	sid := uint64(500)
+	tid := uint64(900)
+	for i := 0; i < b.N; i++ {
+		s := &span{
+			Name:     "testspan",
+			Service:  "bench",
+			Resource: "",
+			SpanID:   sid,
+			TraceID:  tid,
+			Start:    n,
+		}
+		s.context = newSpanContext(s, nil)
 	}
 }
