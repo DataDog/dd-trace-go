@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+// Default Hostname, Port, Address and URL of the trace agent
 const (
 	DefaultHostname = "localhost"
 	DefaultPort     = "8126"
