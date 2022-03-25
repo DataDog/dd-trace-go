@@ -186,7 +186,6 @@ func newConfig(opts ...StartOption) *config {
 	if !isUnix && v != "" {
 		c.agentURL = v
 	}
-
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
