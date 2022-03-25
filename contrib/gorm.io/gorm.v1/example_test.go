@@ -31,13 +31,11 @@ func ExampleOpen() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	db, err := gormtrace.Open(postgres.New(postgres.Config{Conn: sqlDb}), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	user := User{}
+	var user User
 
 	// All calls through gorm.DB are now traced.
 	db.Where("name = ?", "jinzhu").First(&user)
@@ -50,12 +48,10 @@ func Example_context() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	db, err := gormtrace.Open(postgres.New(postgres.Config{Conn: sqlDb}), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	var user User
 
 	// Create a root span, giving name, server and resource.
