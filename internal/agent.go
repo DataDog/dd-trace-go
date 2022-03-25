@@ -51,7 +51,7 @@ func AgentURLFromEnv() (string, bool) {
 	return agentURL, false
 }
 
-// resolveAgentAddr resolves the given agent address and fills in any missing host
+// ResolveAgentAddr resolves the given agent address and fills in any missing host
 // and port using the defaults. Some environment variable settings will
 // take precedence over configuration.
 func ResolveAgentAddr(addr string) string {
