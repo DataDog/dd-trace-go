@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
@@ -71,7 +72,7 @@ func testStatsd(t *testing.T, cfg *config, addr string) {
 
 func TestAutoDetectStatsd(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
-		testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8125"))
+		testStatsd(t, newConfig(), net.JoinHostPort(internal.DefaultHostname, "8125"))
 	})
 
 	t.Run("socket", func(t *testing.T) {
@@ -116,7 +117,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 	t.Run("env", func(t *testing.T) {
 		defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
 		os.Setenv("DD_DOGSTATSD_PORT", "8111")
-		testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8111"))
+		testStatsd(t, newConfig(), net.JoinHostPort(internal.DefaultHostname, "8111"))
 	})
 
 	t.Run("agent", func(t *testing.T) {
@@ -126,7 +127,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 			}))
 			defer srv.Close()
 			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
-			testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8125"))
+			testStatsd(t, cfg, net.JoinHostPort(internal.DefaultHostname, "8125"))
 		})
 
 		t.Run("port", func(t *testing.T) {
@@ -135,7 +136,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 			}))
 			defer srv.Close()
 			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
-			testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8999"))
+			testStatsd(t, cfg, net.JoinHostPort(internal.DefaultHostname, "8999"))
 		})
 	})
 }

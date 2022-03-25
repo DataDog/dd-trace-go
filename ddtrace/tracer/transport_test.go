@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -69,7 +71,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultURL, defaultClient)
+		transport := newHTTPTransport(internal.DefaultURL, defaultClient)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)

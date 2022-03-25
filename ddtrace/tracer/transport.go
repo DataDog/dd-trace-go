@@ -52,10 +52,6 @@ var defaultClient = &http.Client{
 }
 
 const (
-	defaultHostname    = "localhost"
-	defaultPort        = "8126"
-	defaultAddress     = defaultHostname + ":" + defaultPort
-	defaultURL         = "http://" + defaultAddress
 	defaultHTTPTimeout = 2 * time.Second         // defines the current timeout before giving up with the send process
 	traceCountHeader   = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
 )

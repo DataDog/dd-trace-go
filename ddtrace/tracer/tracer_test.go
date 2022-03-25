@@ -687,7 +687,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultURL, defaultClient)
+	return newHTTPTransport(maininternal.DefaultURL, defaultClient)
 }
 
 func TestNewSpan(t *testing.T) {

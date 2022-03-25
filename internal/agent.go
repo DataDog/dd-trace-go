@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	defaultHostname = "localhost"
-	defaultPort     = "8126"
-	defaultAddress  = defaultHostname + ":" + defaultPort
-	defaultURL      = "http://" + defaultAddress
+	DefaultHostname = "localhost"
+	DefaultPort     = "8126"
+	DefaultAddress  = DefaultHostname + ":" + DefaultPort
+	DefaultURL      = "http://" + DefaultAddress
 )
 
 // AgentURLFromEnv determines the trace agent URL from environment variable
@@ -61,10 +61,10 @@ func ResolveAgentAddr(addr string) string {
 		host = addr
 	}
 	if host == "" {
-		host = defaultHostname
+		host = DefaultHostname
 	}
 	if port == "" {
-		port = defaultPort
+		port = DefaultPort
 	}
 	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
 		host = v

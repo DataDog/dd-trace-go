@@ -177,7 +177,7 @@ func forEachStringTag(str string, fn func(key string, val string)) {
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
-	c.agentURL = "http://" + internal.ResolveAgentAddr(defaultAddress)
+	c.agentURL = "http://" + internal.ResolveAgentAddr(internal.DefaultAddress)
 	c.httpClient = defaultHTTPClient()
 	v, isUnix := internal.AgentURLFromEnv()
 	if isUnix {
@@ -289,7 +289,7 @@ func newConfig(opts ...StartOption) *config {
 				// we have a valid host:port address; replace the port because
 				// the agent knows better
 				if host == "" {
-					host = defaultHostname
+					host = internal.DefaultHostname
 				}
 				addr = net.JoinHostPort(host, strconv.Itoa(agentport))
 			}
@@ -343,7 +343,7 @@ func defaultDogstatsdAddr() string {
 		// socket exists and user didn't specify otherwise via env vars
 		return "unix://" + defaultSocketDSD
 	}
-	host, port := defaultHostname, "8125"
+	host, port := internal.DefaultHostname, "8125"
 	if envHost != "" {
 		host = envHost
 	}
