@@ -41,8 +41,12 @@ type (
 		events []json.RawMessage
 		mu     sync.Mutex
 	}
-	// HandlerOperationArgs is the grpc handler arguments. Empty as of today.
-	HandlerOperationArgs struct{}
+	// HandlerOperationArgs is the grpc handler arguments.
+	HandlerOperationArgs struct {
+		// Message received by the gRPC handler.
+		// Corresponds to the address `grpc.server.request.metadata`.
+		Metadata map[string][]string
+	}
 	// HandlerOperationRes is the grpc handler results. Empty as of today.
 	HandlerOperationRes struct{}
 

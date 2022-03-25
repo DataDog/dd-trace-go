@@ -12,7 +12,7 @@
 package appsec
 
 import (
-	"golang.org/x/net/context"
+	"context"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
