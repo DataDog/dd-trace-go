@@ -17,7 +17,7 @@ import (
 const (
 	defaultHostname = "localhost"
 	defaultPort     = "8126"
-	defaultAddress     = defaultHostname + ":" + defaultPort
+	defaultAddress  = defaultHostname + ":" + defaultPort
 	defaultURL      = "http://" + defaultAddress
 )
 
