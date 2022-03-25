@@ -11,8 +11,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
-	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -21,7 +19,6 @@ import (
 
 	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/tinylib/msgp/msgp"
@@ -58,6 +55,7 @@ const (
 	defaultHostname    = "localhost"
 	defaultPort        = "8126"
 	defaultAddress     = defaultHostname + ":" + defaultPort
+	defaultURL         = "http://" + defaultAddress
 	defaultHTTPTimeout = 2 * time.Second         // defines the current timeout before giving up with the send process
 	traceCountHeader   = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
 )
@@ -81,16 +79,13 @@ type httpTransport struct {
 }
 
 // newTransport returns a new Transport implementation that sends traces to a
-// trace agent running on the given hostname and port, using a given
-// *http.Client. If the zero values for hostname and port are provided,
-// the default values will be used ("localhost" for hostname, and "8126" for
-// port). If client is nil, a default is used.
+// trace agent at the given url, using a given *http.Client.
 //
 // In general, using this method is only necessary if you have a trace agent
 // running on a non-default port, if it's located on another machine, or when
 // otherwise needing to customize the transport layer, for instance when using
 // a unix domain socket.
-func newHTTPTransport(addr string, client *http.Client) *httpTransport {
+func newHTTPTransport(url string, client *http.Client) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
 	defaultHeaders := map[string]string{
 		"Datadog-Meta-Lang":             "go",
@@ -102,10 +97,9 @@ func newHTTPTransport(addr string, client *http.Client) *httpTransport {
 	if cid := internal.ContainerID(); cid != "" {
 		defaultHeaders["Datadog-Container-ID"] = cid
 	}
-	agentURL := getAgentURL(addr)
 	return &httpTransport{
-		traceURL: fmt.Sprintf("%s/v0.4/traces", agentURL),
-		statsURL: fmt.Sprintf("%s/v0.6/stats", agentURL),
+		traceURL: fmt.Sprintf("%s/v0.4/traces", url),
+		statsURL: fmt.Sprintf("%s/v0.6/stats", url),
 		client:   client,
 		headers:  defaultHeaders,
 	}
@@ -184,46 +178,4 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 
 func (t *httpTransport) endpoint() string {
 	return t.traceURL
-}
-
-// getAgentURL determines the trace agent URL. The value held by environment variable
-// DD_TRACE_AGENT_URL takes precedence over other configuration options.
-func getAgentURL(addr string) string {
-	if agentURL := os.Getenv("DD_TRACE_AGENT_URL"); agentURL != "" {
-		u, err := url.Parse(agentURL)
-		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %v", err)
-			return fmt.Sprintf("http://%s", resolveAgentAddr(addr))
-		}
-		if u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "unix" {
-			log.Warn("Unsupported protocol '%s' in Agent URL '%s'. Must be one of: http, https, unix", u.Scheme, agentURL)
-			return fmt.Sprintf("http://%s", resolveAgentAddr(addr))
-		}
-		return agentURL
-	}
-	return fmt.Sprintf("http://%s", resolveAgentAddr(addr))
-}
-
-// resolveAgentAddr resolves the given agent address and fills in any missing host
-// and port using the defaults. Some environment variable settings will
-// take precedence over configuration.
-func resolveAgentAddr(addr string) string {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		// no port in addr
-		host = addr
-	}
-	if host == "" {
-		host = defaultHostname
-	}
-	if port == "" {
-		port = defaultPort
-	}
-	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
-		host = v
-	}
-	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
-		port = v
-	}
-	return fmt.Sprintf("%s:%s", host, port)
 }

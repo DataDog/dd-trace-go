@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -105,9 +104,6 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			log.Warn("You are currently setting profiler.WithAPIKey or the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please see the profiler.WithAPIKey go docs and verify that your integration is still working. If you can't remove DD_API_KEY from your environment, you can use WithAPIKey(\"\") to silence this warning.")
 		}
 		cfg.targetURL = cfg.agentURL
-		if v, ok := getAgentURLFromEnv(); ok {
-			cfg.targetURL = v
-		}
 	}
 	if cfg.hostname == "" {
 		hostname, err := os.Hostname()
@@ -318,23 +314,4 @@ type StatsdClient interface {
 	Count(event string, times int64, tags []string, rate float64) error
 	// Timing creates a distribution of the values registered as the duration of a certain event.
 	Timing(event string, duration time.Duration, tags []string, rate float64) error
-}
-
-// getAgentURLFromEnv determines the trace agent URL from environment variable
-// DD_TRACE_AGENT_URL. If the determined value is valid, it returns the value and true.
-// Otherwise, it returns an empty string and false.
-func getAgentURLFromEnv() (string, bool) {
-	if agentURL := os.Getenv("DD_TRACE_AGENT_URL"); agentURL != "" {
-		u, err := url.Parse(agentURL)
-		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %v", err)
-			return "", false
-		}
-		if u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "unix" {
-			log.Warn("Unsupported protocol '%s' in Agent URL '%s'. Must be one of: http, https, unix", u.Scheme, agentURL)
-			return "", false
-		}
-		return agentURL, true
-	}
-	return "", false
 }

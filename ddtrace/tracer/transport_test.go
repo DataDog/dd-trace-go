@@ -69,112 +69,12 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultAddress, defaultClient)
+		transport := newHTTPTransport(defaultURL, defaultClient)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
 		assert.NoError(err)
 	}
-}
-
-func TestResolveAgentAddr(t *testing.T) {
-	for _, tt := range []struct {
-		in, envHost, envPort, out string
-	}{
-		{"host", "", "", fmt.Sprintf("host:%s", defaultPort)},
-		{"www.my-address.com", "", "", fmt.Sprintf("www.my-address.com:%s", defaultPort)},
-		{"localhost", "", "", fmt.Sprintf("localhost:%s", defaultPort)},
-		{":1111", "", "", fmt.Sprintf("%s:1111", defaultHostname)},
-		{"", "", "", defaultAddress},
-		{"custom:1234", "", "", "custom:1234"},
-		{"", "", "", defaultAddress},
-		{"", "ip.local", "", fmt.Sprintf("ip.local:%s", defaultPort)},
-		{"", "", "1234", fmt.Sprintf("%s:1234", defaultHostname)},
-		{"", "ip.local", "1234", "ip.local:1234"},
-		{"ip.other", "ip.local", "", fmt.Sprintf("ip.local:%s", defaultPort)},
-		{"ip.other:1234", "ip.local", "", "ip.local:1234"},
-		{":8888", "", "1234", fmt.Sprintf("%s:1234", defaultHostname)},
-		{"ip.other:8888", "", "1234", "ip.other:1234"},
-		{"ip.other", "ip.local", "1234", "ip.local:1234"},
-		{"ip.other:8888", "ip.local", "1234", "ip.local:1234"},
-	} {
-		t.Run("", func(t *testing.T) {
-			if tt.envHost != "" {
-				os.Setenv("DD_AGENT_HOST", tt.envHost)
-				defer os.Unsetenv("DD_AGENT_HOST")
-			}
-			if tt.envPort != "" {
-				os.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
-				defer os.Unsetenv("DD_TRACE_AGENT_PORT")
-			}
-			assert.Equal(t, resolveAgentAddr(tt.in), tt.out)
-		})
-	}
-}
-
-func TestGetAgentURL(t *testing.T) {
-	t.Run("default", func(t *testing.T) {
-		assert.Equal(t, "http://localhost:8126", getAgentURL(defaultAddress))
-	})
-
-	t.Run("http", func(t *testing.T) {
-		os.Setenv("DD_TRACE_AGENT_URL", "http://custom:1234")
-		defer os.Unsetenv("DD_TRACE_AGENT_URL")
-
-		assert.Equal(t, "http://custom:1234", getAgentURL(defaultAddress))
-	})
-
-	t.Run("https", func(t *testing.T) {
-		os.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
-		defer os.Unsetenv("DD_TRACE_AGENT_URL")
-
-		assert.Equal(t, "https://custom:1234", getAgentURL(defaultAddress))
-	})
-
-	t.Run("unix", func(t *testing.T) {
-		os.Setenv("DD_TRACE_AGENT_URL", "unix://custom:1234")
-		defer os.Unsetenv("DD_TRACE_AGENT_URL")
-
-		assert.Equal(t, "unix://custom:1234", getAgentURL(defaultAddress))
-	})
-
-	t.Run("protocol", func(t *testing.T) {
-		os.Setenv("DD_TRACE_AGENT_URL", "bad://custom:1234")
-		defer os.Unsetenv("DD_TRACE_AGENT_URL")
-
-		assert.Equal(t, "http://localhost:8126", getAgentURL(defaultAddress))
-	})
-
-	t.Run("invalid", func(t *testing.T) {
-		os.Setenv("DD_TRACE_AGENT_URL", "http://localhost%+o:8126")
-		defer os.Unsetenv("DD_TRACE_AGENT_URL")
-
-		assert.Equal(t, "http://localhost:8126", getAgentURL(defaultAddress))
-	})
-
-	t.Run("DD_AGENT_*", func(t *testing.T) {
-		os.Setenv("DD_AGENT_HOST", "customhost")
-		defer os.Unsetenv("DD_AGENT_HOST")
-		os.Setenv("DD_TRACE_AGENT_PORT", "3333")
-		defer os.Unsetenv("DD_TRACE_AGENT_PORT")
-
-		assert.Equal(t, "http://customhost:3333", getAgentURL(defaultAddress))
-	})
-
-	t.Run("agentAddr", func(t *testing.T) {
-		assert.Equal(t, "http://customhost:5555", getAgentURL("customhost:5555"))
-	})
-
-	t.Run("override", func(t *testing.T) {
-		os.Setenv("DD_AGENT_HOST", "localhost")
-		defer os.Unsetenv("DD_AGENT_HOST")
-		os.Setenv("DD_TRACE_AGENT_PORT", "3333")
-		defer os.Unsetenv("DD_TRACE_AGENT_PORT")
-		os.Setenv("DD_TRACE_AGENT_URL", "http://custom:1234")
-		defer os.Unsetenv("DD_TRACE_AGENT_URL")
-
-		assert.Equal(t, "http://custom:1234", getAgentURL("localhost:4444"))
-	})
 }
 
 func TestTransportResponse(t *testing.T) {
@@ -202,8 +102,8 @@ func TestTransportResponse(t *testing.T) {
 				w.Write([]byte(tt.body))
 			}))
 			defer ln.Close()
-			addr := ln.Addr().String()
-			transport := newHTTPTransport(addr, defaultClient)
+			url := "http://" + ln.Addr().String()
+			transport := newHTTPTransport(url, defaultClient)
 			rc, err := transport.send(newPayload())
 			if tt.err != "" {
 				assert.Equal(tt.err, err.Error())
@@ -243,7 +143,7 @@ func TestTraceCountHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 	for _, tc := range testCases {
-		transport := newHTTPTransport(strings.TrimPrefix(srv.URL, "http://"), defaultClient)
+		transport := newHTTPTransport(srv.URL, defaultClient)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
@@ -276,7 +176,7 @@ func TestCustomTransport(t *testing.T) {
 	defer srv.Close()
 
 	crt := newRecordingRoundTripper(defaultClient)
-	transport := newHTTPTransport(strings.TrimPrefix(srv.URL, "http://"), &http.Client{
+	transport := newHTTPTransport(srv.URL, &http.Client{
 		Transport: crt,
 	})
 	p, err := encode(getTestTrace(1, 1))
