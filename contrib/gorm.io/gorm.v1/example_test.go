@@ -56,7 +56,7 @@ func Example_context() {
 		log.Fatal(err)
 	}
 
-	user := User{}
+	var user User
 
 	// Create a root span, giving name, server and resource.
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "my-query",
