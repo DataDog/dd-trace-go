@@ -18,7 +18,8 @@ func OnQuery(query string, tagSets ...map[string]string) (commentedQuery string)
 		return query
 	}
 
-	return fmt.Sprintf("%s %s", query, comment)
+	// Diverge from the sqlcommenter spec because we want to prioritize comments not being truncated
+	return fmt.Sprintf("%s %s", comment, query)
 }
 
 // totalLen returns the maximum total number of elements in all maps.

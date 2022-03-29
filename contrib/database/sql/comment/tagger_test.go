@@ -16,7 +16,7 @@ func TestOnQuery(t *testing.T) {
 			name:      "query with tag list",
 			query:     "SELECT * from FOO",
 			tags:      map[string]string{"service": "mine", "operation": "checkout"},
-			commented: "SELECT * from FOO /* operation='checkout',service='mine' */",
+			commented: "/* operation='checkout',service='mine' */ SELECT * from FOO",
 		},
 		{
 			name:      "empty query",
@@ -28,7 +28,7 @@ func TestOnQuery(t *testing.T) {
 			name:      "query with existing comment",
 			query:     "SELECT * from FOO -- test query",
 			tags:      map[string]string{"service": "mine", "operation": "elmer's glue"},
-			commented: "SELECT * from FOO -- test query /* operation='elmer%27s%20glue',service='mine' */",
+			commented: "/* operation='elmer%27s%20glue',service='mine' */ SELECT * from FOO -- test query",
 		},
 		{
 			name:      "no tags",

@@ -9,11 +9,11 @@ import (
 	"context"
 	"database/sql/driver"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/comment"
 	"math"
 	"strconv"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/comment"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -230,8 +230,6 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 	return context.WithValue(ctx, spanTagsKey, tags)
 }
 
-// TODO: migrate this to a try start trace that can be finished after execution so that we can keep the span id and the trace id
-// and use it as comments on the executed query
 // tryStartTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
 func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query string, startTime time.Time, err error) (span tracer.Span) {
 	if err == driver.ErrSkip {
