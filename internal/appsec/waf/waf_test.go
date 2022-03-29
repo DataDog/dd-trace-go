@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -951,6 +952,106 @@ func TestEncoder(t *testing.T) {
 				"my.input": tc.Data,
 			}, time.Second)
 			require.NoError(t, err)
+		})
+	}
+}
+
+// This test needs a working decoder to function properly, as it first encodes the objects before decoding them
+func TestDecoder(t *testing.T) {
+	const intSize = 32 << (^uint(0) >> 63) // copied from recent versions of math.MaxInt
+	const maxInt = 1<<(intSize-1) - 1      // copied from recent versions of math.MaxInt
+	e := encoder{
+		maxDepth:        maxInt,
+		maxStringLength: maxInt,
+		maxArrayLength:  maxInt,
+		maxMapLength:    maxInt,
+	}
+	objBuilder := func(v interface{}) *wafObject {
+		var err error
+		obj := &wafObject{}
+
+		if v, ok := v.(int64); ok {
+			obj.setInt64(toCInt64(int(v)))
+			return obj
+		}
+		if v, ok := v.(uint64); ok {
+			obj.setUint64(toCUint64(uint(v)))
+			return obj
+		}
+		obj, err = e.encode(v)
+		require.NoError(t, err, "Encoding object failed")
+		return obj
+	}
+	for _, tc := range []struct {
+		Name          string
+		Object        *wafObject
+		ExpectedValue interface{}
+		Size          int // Optional, used for arrays and maps
+	}{
+		{
+			Name:          "Basic string",
+			ExpectedValue: "string",
+			Object:        objBuilder("string"),
+		},
+		{
+			Name:          "uint64",
+			ExpectedValue: uint64(42),
+			Object:        objBuilder(uint64(42)),
+		},
+		{
+			Name:          "int64",
+			ExpectedValue: int64(42),
+			Object:        objBuilder(int64(42)),
+		},
+		{
+			Name:          "[]string",
+			ExpectedValue: []interface{}{"str1", "str2", "str3", "str4"},
+			Object:        objBuilder([]string{"str1", "str2", "str3", "str4"}),
+		},
+		{
+			Name:          "struct",
+			ExpectedValue: map[string]interface{}{"Str": "string"},
+			Object: objBuilder(struct {
+				Str string
+			}{Str: "string"}),
+		},
+		{
+			Name:          "map",
+			ExpectedValue: map[string]interface{}{"foo": "bar", "bar": "baz", "baz": "foo"},
+			Object:        objBuilder(map[string]interface{}{"foo": "bar", "bar": "baz", "baz": "foo"}),
+		},
+	} {
+		tc := tc
+		t.Run(tc.Name, func(t *testing.T) {
+			defer free(tc.Object)
+			val, err := decodeObject(tc.Object)
+			require.NoErrorf(t, err, "Error decoding the object: %v", err)
+			require.Equal(t, reflect.TypeOf(tc.ExpectedValue), reflect.TypeOf(val))
+			switch reflect.ValueOf(tc.ExpectedValue).Kind() {
+			case reflect.Int64, reflect.Uint64, reflect.String:
+				require.Equal(t, tc.ExpectedValue, val)
+			case reflect.Map:
+				valMap, ok := val.(map[string]interface{})
+				require.True(t, ok, "Type assertion to map[string]interface{} failed")
+				expMap, ok := tc.ExpectedValue.(map[string]interface{})
+				require.True(t, ok, "Type assertion to map[string]interface{} failed")
+				require.Equal(t, len(expMap), len(valMap))
+				for k, expV := range expMap {
+					valV, ok := valMap[k]
+					// First check that there is an entry for `key`
+					require.Truef(t, ok, "Could not find key '%s' in map", k)
+					require.Equal(t, expV, valV)
+				}
+			case reflect.Array:
+				valArray, ok := val.([]interface{})
+				require.True(t, ok, "Type assertion to []interface{} failed")
+				expArray, ok := tc.ExpectedValue.([]interface{})
+				require.True(t, ok, "Type assertion to []interface{} failed")
+				require.Equal(t, len(expArray), len(valArray))
+				for i, _ := range valArray {
+					require.Equal(t, expArray[i], valArray[i])
+				}
+			}
 		})
 	}
 }
