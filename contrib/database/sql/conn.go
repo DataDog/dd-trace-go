@@ -10,7 +10,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"math"
-	"strconv"
+	"os"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/comment"
@@ -44,7 +44,7 @@ func (tc *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 	start := time.Now()
 	if connBeginTx, ok := tc.Conn.(driver.ConnBeginTx); ok {
 		tx, err = connBeginTx.BeginTx(ctx, opts)
-		span := tc.tryStartTrace(ctx, queryTypeBegin, "", start, err)
+		span := tc.tryStartTrace(ctx, queryTypeBegin, nil, start, err)
 		if span != nil {
 			defer func() {
 				span.Finish(tracer.WithError(err))
@@ -56,7 +56,7 @@ func (tc *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 		return &tracedTx{tx, tc.traceParams, ctx}, nil
 	}
 	tx, err = tc.Conn.Begin()
-	span := tc.tryStartTrace(ctx, queryTypeBegin, "", start, err)
+	span := tc.tryStartTrace(ctx, queryTypeBegin, nil, start, err)
 	if span != nil {
 		defer func() {
 			span.Finish(tracer.WithError(err))
@@ -72,12 +72,11 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 	start := time.Now()
 	q := query
 	if connPrepareCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
-		span := tc.tryStartTrace(ctx, queryTypePrepare, query, start, err)
+		span := tc.tryStartTrace(ctx, queryTypePrepare, &query, start, err)
 		if span != nil {
 			go func() {
 				span.Finish(tracer.WithError(err))
 			}()
-			q = tc.commentedQuery(query, span.Context())
 		}
 		stmt, err := connPrepareCtx.PrepareContext(ctx, q)
 		if err != nil {
@@ -86,12 +85,11 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 
 		return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
 	}
-	span := tc.tryStartTrace(ctx, queryTypePrepare, query, start, err)
+	span := tc.tryStartTrace(ctx, queryTypePrepare, &query, start, err)
 	if span != nil {
 		go func() {
 			span.Finish(tracer.WithError(err))
 		}()
-		q = tc.commentedQuery(query, span.Context())
 	}
 	stmt, err = tc.Prepare(q)
 	if err != nil {
@@ -101,20 +99,19 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 	return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
 }
 
-func (tc *tracedConn) commentedQuery(query string, spanCtx ddtrace.SpanContext) string {
-	return comment.OnQuery(query, map[string]string{ext.ServiceName: tc.cfg.serviceName, "dd.span_id": strconv.FormatUint(spanCtx.SpanID(), 10), "dd.trace_id": strconv.FormatUint(spanCtx.TraceID(), 10)}, tc.meta)
-}
+//func (tc *tracedConn) commentedQuery(query string, spanCtx ddtrace.SpanContext) string {
+//	return comment.OnQuery(query, map[string]string{ext.ServiceName: tc.cfg.serviceName, "dd.span_id": strconv.FormatUint(spanCtx.SpanID(), 10), "dd.trace_id": strconv.FormatUint(spanCtx.TraceID(), 10)}, tc.meta)
+//}
 
 func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
 	start := time.Now()
 	q := query
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
-		span := tc.tryStartTrace(ctx, queryTypeBegin, "", start, err)
+		span := tc.tryStartTrace(ctx, queryTypeBegin, nil, start, err)
 		if span != nil {
 			defer func() {
 				span.Finish(tracer.WithError(err))
 			}()
-			q = tc.commentedQuery(query, span.Context())
 		}
 		r, err := execContext.ExecContext(ctx, q, args)
 		return r, err
@@ -129,13 +126,13 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 			return nil, ctx.Err()
 		default:
 		}
-		span := tc.tryStartTrace(ctx, queryTypeExec, query, start, err)
+		span := tc.tryStartTrace(ctx, queryTypeExec, &query, start, err)
 		if span != nil {
 			defer func() {
 				span.Finish(tracer.WithError(err))
 			}()
 		}
-		r, err = execer.Exec(tc.commentedQuery(query, span.Context()), dargs)
+		r, err = execer.Exec(query, dargs)
 		return r, err
 	}
 	return nil, driver.ErrSkip
@@ -147,7 +144,7 @@ func (tc *tracedConn) Ping(ctx context.Context) (err error) {
 	if pinger, ok := tc.Conn.(driver.Pinger); ok {
 		err = pinger.Ping(ctx)
 	}
-	span := tc.tryStartTrace(ctx, queryTypePing, "", start, err)
+	span := tc.tryStartTrace(ctx, queryTypePing, nil, start, err)
 	if span != nil {
 		go func() {
 			span.Finish(tracer.WithError(err))
@@ -158,16 +155,14 @@ func (tc *tracedConn) Ping(ctx context.Context) (err error) {
 
 func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
 	start := time.Now()
-	q := query
 	if queryerContext, ok := tc.Conn.(driver.QueryerContext); ok {
-		span := tc.tryStartTrace(ctx, queryTypeQuery, query, start, err)
+		span := tc.tryStartTrace(ctx, queryTypeQuery, &query, start, err)
 		if span != nil {
 			go func() {
 				span.Finish(tracer.WithError(err))
 			}()
-			q = tc.commentedQuery(query, span.Context())
 		}
-		rows, err := queryerContext.QueryContext(ctx, q, args)
+		rows, err := queryerContext.QueryContext(ctx, query, args)
 
 		return rows, err
 	}
@@ -181,15 +176,13 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 			return nil, ctx.Err()
 		default:
 		}
-		span := tc.tryStartTrace(ctx, queryTypeQuery, query, start, err)
+		span := tc.tryStartTrace(ctx, queryTypeQuery, &query, start, err)
 		if span != nil {
 			go func() {
 				span.Finish(tracer.WithError(err))
 			}()
-			// TODO: Add arg values as sql comments?
-			q = tc.commentedQuery(query, span.Context())
 		}
-		rows, err = queryer.Query(q, dargs)
+		rows, err = queryer.Query(query, dargs)
 		return rows, err
 	}
 	return nil, driver.ErrSkip
@@ -231,7 +224,7 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 }
 
 // tryStartTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
-func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query string, startTime time.Time, err error) (span tracer.Span) {
+func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query *string, startTime time.Time, err error) (span tracer.Span) {
 	if err == driver.ErrSkip {
 		// Not a user error: driver is telling sql package that an
 		// optional interface method is not implemented. There is
@@ -253,8 +246,16 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 	}
 	span, _ = tracer.StartSpanFromContext(ctx, name, opts...)
 	resource := string(qtype)
-	if query != "" {
-		resource = query
+	if query != nil {
+		resource = *query
+		queryTextCarrier := comment.QueryTextCarrier{}
+		err := tracer.Inject(span.Context(), queryTextCarrier)
+		if err != nil {
+			// this should never happen
+			fmt.Fprintf(os.Stderr, "contrib/database/sql: failed to inject query comments: %v\n", err)
+		}
+		commented := queryTextCarrier.CommentedQuery(*query)
+		query = &commented
 	}
 	span.SetTag("sql.query_type", string(qtype))
 	span.SetTag(ext.ResourceName, resource)
