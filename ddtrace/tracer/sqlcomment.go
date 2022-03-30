@@ -7,8 +7,17 @@ import (
 	"strings"
 )
 
+// SQLCommentCarrier holds tags to be serialized as a SQL Comment
 type SQLCommentCarrier struct {
 	tags map[string]string
+}
+
+// Set implements TextMapWriter.
+func (c *SQLCommentCarrier) Set(key, val string) {
+	if c.tags == nil {
+		c.tags = make(map[string]string)
+	}
+	c.tags[key] = val
 }
 
 func commentWithTags(tags map[string]string) (comment string) {
@@ -26,14 +35,8 @@ func commentWithTags(tags map[string]string) (comment string) {
 	return fmt.Sprintf("/* %s */", comment)
 }
 
-// Set implements TextMapWriter.
-func (c *SQLCommentCarrier) Set(key, val string) {
-	if c.tags == nil {
-		c.tags = make(map[string]string)
-	}
-	c.tags[key] = val
-}
-
+// CommentedQuery returns the given query with the tags from the SQLCommentCarrier applied to it as a
+// prepended SQL comment
 func (c *SQLCommentCarrier) CommentedQuery(query string) (commented string) {
 	comment := commentWithTags(c.tags)
 
