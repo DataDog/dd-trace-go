@@ -81,6 +81,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				status = mw.Status()
 			}
 			events := op.Finish(HandlerOperationRes{Status: status})
+			SetMetrics(span, op.metrics)
 			if len(events) == 0 {
 				return
 			}
@@ -129,7 +130,8 @@ func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) Han
 type (
 	Operation struct {
 		dyngo.Operation
-		events json.RawMessage
+		events  json.RawMessage
+		metrics map[string]interface{}
 	}
 
 	// SDKBodyOperation type representing an SDK body. It must be created with
@@ -146,7 +148,7 @@ type (
 // The operation is linked to the global root operation since an HTTP operation
 // is always expected to be first in the operation stack.
 func StartOperation(ctx context.Context, args HandlerOperationArgs) (context.Context, *Operation) {
-	op := &Operation{Operation: dyngo.NewOperation(nil)}
+	op := &Operation{Operation: dyngo.NewOperation(nil), metrics: make(map[string]interface{})}
 	newCtx := context.WithValue(ctx, contextKey{}, op)
 	dyngo.StartOperation(op, args)
 	return newCtx, op
@@ -184,6 +186,11 @@ func (op *Operation) AddSecurityEvent(event json.RawMessage) {
 	//   operation. In the future, multiple events per operation will become
 	//   possible and the append operation should be made thread-safe.
 	op.events = event
+}
+
+// AddMetric TODO
+func (op *Operation) AddMetric(key string, val interface{}) {
+	op.metrics[key] = val
 }
 
 // HTTP handler operation's start and finish event callback function types.

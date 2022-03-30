@@ -23,6 +23,13 @@ func SetAppSecTags(span ddtrace.Span) {
 	span.SetTag("_dd.runtime_family", "go")
 }
 
+// SetMetrics TODO
+func SetMetrics(span ddtrace.Span, metrics map[string]interface{}) {
+	for k, v := range metrics {
+		span.SetTag(k, v)
+	}
+}
+
 // setEventSpanTags sets the security event span tags into the service entry span.
 func setEventSpanTags(span ddtrace.Span, events json.RawMessage) {
 	// Set the appsec event span tag

@@ -44,6 +44,12 @@ import (
 // Version wrapper type of the WAF version.
 type Version C.ddwaf_version
 
+type AtomicDuration uint64
+
+func (d *AtomicDuration) add(ns uint64) {
+	atomic.AddUint64((*uint64)(d), ns)
+}
+
 // String returns the string representation of the version in the form
 // <major>.<minor>.<patch>.
 func (v *Version) String() string {
@@ -201,7 +207,8 @@ func (waf *Handle) Close() {
 // by calling it multiple times to run its rules every time new addresses
 // become available. Each request must have its own Context.
 type Context struct {
-	waf *Handle
+	waf            *Handle
+	totalRuntimeNs AtomicDuration
 
 	context C.ddwaf_context
 	// Mutex protecting the use of context which is not thread-safe.
@@ -251,6 +258,7 @@ func (c *Context) runWAF(data *wafObject, timeout time.Duration) (matches []byte
 	// TODO(Julio-Guerra): avoid calling result_free when there's no result
 	defer C.ddwaf_result_free(&result)
 	rc := C.ddwaf_run(c.context, data.ctype(), &result, C.uint64_t(timeout/time.Microsecond))
+	c.totalRuntimeNs.add(uint64(result.total_runtime))
 	return goReturnValues(rc, &result)
 }
 
@@ -261,6 +269,10 @@ func (c *Context) Close() {
 	defer c.waf.mu.RUnlock()
 	C.ddwaf_context_destroy(c.context)
 	decNbLiveCObjects()
+}
+
+func (c *Context) TotalRuntime() uint64 {
+	return uint64(c.totalRuntimeNs)
 }
 
 // Translate libddwaf return values into return values suitable to a Go program.

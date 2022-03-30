@@ -36,6 +36,8 @@ func registerWAF(rules []byte, timeout time.Duration, limiter Limiter) (unreg dy
 	if err != nil {
 		return nil, err
 	}
+	//rInfo := waf.RulesetInfo()
+	//TODO: do something with the ruleset metrics
 	// Close the WAF in case of an error in what's following
 	defer func() {
 		if err != nil {
@@ -127,6 +129,10 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 				}
 			}
 			matches := runWAF(wafCtx, values, timeout)
+
+			// Log WAF metrics
+			runtime_ms := time.Duration(wafCtx.TotalRuntime()).Microseconds()
+			op.AddMetric("_dd.appsec.waf.duration", float64(runtime_ms))
 
 			// Log the attacks if any
 			if len(matches) == 0 {
