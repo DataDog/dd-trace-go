@@ -99,10 +99,6 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 	return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
 }
 
-//func (tc *tracedConn) commentedQuery(query string, spanCtx ddtrace.SpanContext) string {
-//	return comment.OnQuery(query, map[string]string{ext.ServiceName: tc.cfg.serviceName, "dd.span_id": strconv.FormatUint(spanCtx.SpanID(), 10), "dd.trace_id": strconv.FormatUint(spanCtx.TraceID(), 10)}, tc.meta)
-//}
-
 func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
 	start := time.Now()
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
@@ -273,6 +269,6 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 	for k, v := range tp.meta {
 		sqlCommentCarrier.Set(k, v)
 	}
-	
+
 	return span
 }
