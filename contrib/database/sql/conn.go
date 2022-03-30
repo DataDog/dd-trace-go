@@ -105,15 +105,15 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 
 func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
 	start := time.Now()
-	q := query
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
-		span := tc.tryStartTrace(ctx, queryTypeBegin, "", start, &tracer.SQLCommentCarrier{}, err)
+		sqlCommentCarrier := tracer.SQLCommentCarrier{}
+		span := tc.tryStartTrace(ctx, queryTypeBegin, query, start, &sqlCommentCarrier, err)
 		if span != nil {
 			defer func() {
 				span.Finish(tracer.WithError(err))
 			}()
 		}
-		r, err := execContext.ExecContext(ctx, q, args)
+		r, err := execContext.ExecContext(ctx, sqlCommentCarrier.CommentedQuery(query), args)
 		return r, err
 	}
 	if execer, ok := tc.Conn.(driver.Execer); ok {
@@ -164,7 +164,7 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 				span.Finish(tracer.WithError(err))
 			}()
 		}
-		rows, err := queryerContext.QueryContext(ctx, query, args)
+		rows, err := queryerContext.QueryContext(ctx, sqlCommentCarrier.CommentedQuery(query), args)
 
 		return rows, err
 	}
