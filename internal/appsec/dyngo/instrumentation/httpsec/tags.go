@@ -23,9 +23,9 @@ func SetAppSecTags(span ddtrace.Span) {
 	span.SetTag("_dd.runtime_family", "go")
 }
 
-// SetMetrics TODO
-func SetMetrics(span ddtrace.Span, metrics map[string]interface{}) {
-	for k, v := range metrics {
+// SetTags fills the span tags using the key/value pairs found in `tags`
+func SetTags(span ddtrace.Span, tags map[string]interface{}) {
+	for k, v := range tags {
 		span.SetTag(k, v)
 	}
 }

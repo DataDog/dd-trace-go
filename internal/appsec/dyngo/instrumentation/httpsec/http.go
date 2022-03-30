@@ -81,7 +81,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				status = mw.Status()
 			}
 			events := op.Finish(HandlerOperationRes{Status: status})
-			SetMetrics(span, op.metrics)
+			SetTags(span, op.metrics)
 			if len(events) == 0 {
 				return
 			}
