@@ -80,7 +80,7 @@ type Handle struct {
 	// addresses the WAF rule is expecting.
 	addresses []string
 	// TODO
-	rulesetInfo RulesetInfo
+	rulesetInfo atomic.Value
 }
 
 // RulesetInfo stores the information - provided by the WAF - about WAF rules initialization
@@ -94,6 +94,8 @@ type RulesetInfo struct {
 	Errors map[string]interface{}
 	// Ruleset version
 	Version string
+	// Timestamp of the struct creation, used to know when to update the spans if the ruleset information has changed
+	Age time.Time
 }
 
 // NewHandle creates a new instance of the WAF with the given JSON rule.
@@ -142,6 +144,7 @@ func NewHandle(jsonRule []byte) (*Handle, error) {
 		Failed:  uint16(wafRInfo.failed),
 		Loaded:  uint16(wafRInfo.loaded),
 		Version: C.GoString(wafRInfo.version),
+		Age:     time.Now(),
 	}
 	errors, err := decodeMap((*wafObject)(&wafRInfo.errors))
 	if err != nil {
@@ -158,12 +161,13 @@ func NewHandle(jsonRule []byte) (*Handle, error) {
 		return nil, err
 	}
 
-	return &Handle{
-		handle:      handle,
-		encoder:     encoder,
-		addresses:   addresses,
-		rulesetInfo: rInfo,
-	}, nil
+	wafHandle := Handle{
+		handle:    handle,
+		encoder:   encoder,
+		addresses: addresses,
+	}
+	wafHandle.rulesetInfo.Store(rInfo)
+	return &wafHandle, nil
 }
 
 func ruleAddresses(handle C.ddwaf_handle) ([]string, error) {
@@ -185,10 +189,6 @@ func ruleAddresses(handle C.ddwaf_handle) ([]string, error) {
 // Addresses returns the list of addresses the WAF rule is expecting.
 func (waf *Handle) Addresses() []string {
 	return waf.addresses
-}
-
-func (waf *Handle) RulesetInfo() interface{} {
-	return waf.rulesetInfo
 }
 
 // Close the WAF and release the underlying C memory as soon as there are
@@ -273,6 +273,11 @@ func (c *Context) Close() {
 
 func (c *Context) TotalRuntime() uint64 {
 	return uint64(c.totalRuntimeNs)
+}
+
+func (c *Context) RulesetInfo() RulesetInfo {
+	rInfo, _ := c.waf.rulesetInfo.Load().(RulesetInfo)
+	return rInfo
 }
 
 // Translate libddwaf return values into return values suitable to a Go program.
