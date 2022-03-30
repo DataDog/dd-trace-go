@@ -81,7 +81,7 @@ func registerWAF(rules []byte, timeout time.Duration, limiter Limiter) (unreg dy
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
 func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration, limiter Limiter) dyngo.EventListener {
-	var rulesetInfo waf.RulesetInfo
+	var once sync.Once
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
 		var body interface{}
 		op.On(httpsec.OnSDKBodyOperationStart(func(op *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
@@ -132,12 +132,13 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			// Log WAF metrics
 			runtime_ms := time.Duration(wafCtx.TotalRuntime()).Microseconds()
 			op.AddMetric("_dd.appsec.waf.duration", float64(runtime_ms))
-			if rInfo := wafCtx.RulesetInfo(); rInfo.Age != rulesetInfo.Age {
+			once.Do(func() {
+				rInfo := handle.RulesetInfo()
 				op.AddMetric("_dd.appsec.event_rules.version", rInfo.Version)
 				op.AddMetric("_dd.appsec.event_rules.errors", rInfo.Errors)
 				op.AddMetric("_dd.appsec.event_rules.loaded", float64(rInfo.Loaded))
 				op.AddMetric("_dd.appsec.event_rules.error_count", float64(rInfo.Failed))
-			}
+			})
 
 			// Log the attacks if any
 			if len(matches) == 0 {
