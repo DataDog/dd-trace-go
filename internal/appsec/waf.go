@@ -127,12 +127,14 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 					values[serverResponseStatusAddr] = res.Status
 				}
 			}
+			wafRunStartTime := time.Now()
 			matches := runWAF(wafCtx, values, timeout)
+			overallWAFRunDuration := time.Since(wafRunStartTime)
 
 			// Log WAF metrics.
 			// time.Duration.Microseconds() is only as of go1.13, so we do it manually here
-			runtime_ms := time.Duration(wafCtx.TotalRuntime() / 1e3)
-			op.AddMetric("_dd.appsec.waf.duration", float64(runtime_ms))
+			op.AddMetric("_dd.appsec.waf.duration", float64(wafCtx.TotalRuntime()/1e3))
+			op.AddMetric("_dd.appsec.waf.duration_ext", float64(overallWAFRunDuration.Nanoseconds()/1e3))
 			once.Do(func() {
 				rInfo := handle.RulesetInfo()
 				op.AddMetric("_dd.appsec.event_rules.version", rInfo.Version)
