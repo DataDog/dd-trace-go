@@ -9,7 +9,6 @@ import (
 	"context"
 	"database/sql/driver"
 	"errors"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/comment"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"time"
 )
@@ -28,7 +27,7 @@ type tracedStmt struct {
 func (s *tracedStmt) Close() (err error) {
 	start := time.Now()
 	err = s.Stmt.Close()
-	span := s.tryStartTrace(s.ctx, queryTypeClose, "", start, comment.QueryTextCarrier{}, err)
+	span := s.tryStartTrace(s.ctx, queryTypeClose, "", start, tracer.SQLCommentCarrier{}, err)
 	if span != nil {
 		go func() {
 			span.Finish(tracer.WithError(err))
@@ -41,7 +40,7 @@ func (s *tracedStmt) Close() (err error) {
 func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
 	start := time.Now()
 	if stmtExecContext, ok := s.Stmt.(driver.StmtExecContext); ok {
-		span := s.tryStartTrace(ctx, queryTypeExec, s.query, start, comment.QueryTextCarrier{}, err)
+		span := s.tryStartTrace(ctx, queryTypeExec, s.query, start, tracer.SQLCommentCarrier{}, err)
 		if span != nil {
 			go func() {
 				span.Finish(tracer.WithError(err))
@@ -60,7 +59,7 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 		return nil, ctx.Err()
 	default:
 	}
-	span := s.tryStartTrace(ctx, queryTypeExec, s.query, start, comment.QueryTextCarrier{}, err)
+	span := s.tryStartTrace(ctx, queryTypeExec, s.query, start, tracer.SQLCommentCarrier{}, err)
 	if span != nil {
 		go func() {
 			span.Finish(tracer.WithError(err))
@@ -75,7 +74,7 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
 	start := time.Now()
 	if stmtQueryContext, ok := s.Stmt.(driver.StmtQueryContext); ok {
-		span := s.tryStartTrace(ctx, queryTypeQuery, s.query, start, comment.QueryTextCarrier{}, err)
+		span := s.tryStartTrace(ctx, queryTypeQuery, s.query, start, tracer.SQLCommentCarrier{}, err)
 		if span != nil {
 			go func() {
 				span.Finish(tracer.WithError(err))
@@ -94,7 +93,7 @@ func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue)
 		return nil, ctx.Err()
 	default:
 	}
-	span := s.tryStartTrace(ctx, queryTypeQuery, s.query, start, comment.QueryTextCarrier{}, err)
+	span := s.tryStartTrace(ctx, queryTypeQuery, s.query, start, tracer.SQLCommentCarrier{}, err)
 	if span != nil {
 		go func() {
 			span.Finish(tracer.WithError(err))
