@@ -260,6 +260,8 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 	if meta, ok := ctx.Value(spanTagsKey).(map[string]string); ok {
 		for k, v := range meta {
 			span.SetTag(k, v)
+			// TODO: Figure out if there's a better way to do this
+			sqlCommentCarrier.Set(k, v)
 		}
 	}
 
@@ -268,6 +270,8 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 		// this should never happen
 		fmt.Fprintf(os.Stderr, "contrib/database/sql: failed to inject query comments: %v\n", err)
 	}
+	// TODO: Figure out if there's a better way to do this
+	sqlCommentCarrier.Set(ext.ServiceName, tp.cfg.serviceName)
 
 	return span
 }
