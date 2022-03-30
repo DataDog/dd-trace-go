@@ -44,9 +44,9 @@ import (
 // Version wrapper type of the WAF version.
 type Version C.ddwaf_version
 
-type AtomicDuration uint64
+type atomicDuration uint64
 
-func (d *AtomicDuration) add(ns uint64) {
+func (d *atomicDuration) add(ns uint64) {
 	atomic.AddUint64((*uint64)(d), ns)
 }
 
@@ -210,7 +210,7 @@ func (waf *Handle) Close() {
 // become available. Each request must have its own Context.
 type Context struct {
 	waf            *Handle
-	totalRuntimeNs AtomicDuration
+	totalRuntimeNs atomicDuration
 
 	context C.ddwaf_context
 	// Mutex protecting the use of context which is not thread-safe.
