@@ -251,11 +251,6 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 	resource := string(qtype)
 	if query != "" {
 		resource = query
-		err := tracer.Inject(span.Context(), sqlCommentCarrier)
-		if err != nil {
-			// this should never happen
-			fmt.Fprintf(os.Stderr, "contrib/database/sql: failed to inject query comments: %v\n", err)
-		}
 	}
 	span.SetTag("sql.query_type", string(qtype))
 	span.SetTag(ext.ResourceName, resource)
@@ -266,6 +261,12 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 		for k, v := range meta {
 			span.SetTag(k, v)
 		}
+	}
+
+	err = tracer.Inject(span.Context(), sqlCommentCarrier)
+	if err != nil {
+		// this should never happen
+		fmt.Fprintf(os.Stderr, "contrib/database/sql: failed to inject query comments: %v\n", err)
 	}
 
 	return span
