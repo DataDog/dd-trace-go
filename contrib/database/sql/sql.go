@@ -142,7 +142,7 @@ func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	}
 	start := time.Now()
 	conn, err := t.connector.Connect(ctx)
-	span := tp.tryStartTrace(ctx, queryTypeConnect, "", start, tracer.SQLCommentCarrier{}, err)
+	span := tp.tryStartTrace(ctx, queryTypeConnect, "", start, &tracer.SQLCommentCarrier{}, err)
 	if span != nil {
 		go func() {
 			span.Finish(tracer.WithError(err))
