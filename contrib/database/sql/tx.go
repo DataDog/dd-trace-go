@@ -24,7 +24,7 @@ type tracedTx struct {
 // Commit sends a span at the end of the transaction
 func (t *tracedTx) Commit() (err error) {
 	start := time.Now()
-	span := t.tryStartTrace(t.ctx, queryTypeCommit, "", start, tracer.SQLCommentCarrier{}, err)
+	span := t.tryStartTrace(t.ctx, queryTypeCommit, "", start, &tracer.SQLCommentCarrier{}, err)
 	if span != nil {
 		go func() {
 			span.Finish(tracer.WithError(err))
@@ -37,7 +37,7 @@ func (t *tracedTx) Commit() (err error) {
 // Rollback sends a span if the connection is aborted
 func (t *tracedTx) Rollback() (err error) {
 	start := time.Now()
-	span := t.tryStartTrace(t.ctx, queryTypeRollback, "", start, tracer.SQLCommentCarrier{}, err)
+	span := t.tryStartTrace(t.ctx, queryTypeRollback, "", start, &tracer.SQLCommentCarrier{}, err)
 	err = t.Tx.Rollback()
 	if span != nil {
 		go func() {
