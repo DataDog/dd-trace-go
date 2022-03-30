@@ -167,6 +167,11 @@ func (op *Operation) Finish(res HandlerOperationRes) json.RawMessage {
 	return op.events
 }
 
+// Metrics returns the accumulated operation metrics. Should be called after Operation.Finish().
+func (op *Operation) Metrics() map[string]interface{} {
+	return op.metrics
+}
+
 // StartSDKBodyOperation starts the SDKBody operation and emits a start event
 func StartSDKBodyOperation(parent *Operation, args SDKBodyOperationArgs) *SDKBodyOperation {
 	op := &SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
