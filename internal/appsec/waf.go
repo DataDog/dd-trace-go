@@ -149,7 +149,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			}
 			log.Debug("appsec: attack detected by the waf")
 			if limiter.Allow() {
-				op.AddSecurityEvent(matches)
+				op.AddSecurityEvents(matches)
 			}
 		}))
 
@@ -211,7 +211,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 		}))
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
 			if len(events) > 0 && limiter.Allow() {
-				op.AddSecurityEvent(events)
+				op.AddSecurityEvents(events...)
 			}
 		}))
 	})

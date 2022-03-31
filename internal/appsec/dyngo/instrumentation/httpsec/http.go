@@ -20,6 +20,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -81,7 +82,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				status = mw.Status()
 			}
 			events := op.Finish(HandlerOperationRes{Status: status})
-			SetTags(span, op.metrics)
+			instrumentation.SetTags(span, op.Metrics())
 			if len(events) == 0 {
 				return
 			}
@@ -130,8 +131,8 @@ func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) Han
 type (
 	Operation struct {
 		dyngo.Operation
-		events  json.RawMessage
-		metrics map[string]interface{}
+		instrumentation.MetricsHolder
+		instrumentation.SecurityEventsHolder
 	}
 
 	// SDKBodyOperation type representing an SDK body. It must be created with
@@ -148,7 +149,10 @@ type (
 // The operation is linked to the global root operation since an HTTP operation
 // is always expected to be first in the operation stack.
 func StartOperation(ctx context.Context, args HandlerOperationArgs) (context.Context, *Operation) {
-	op := &Operation{Operation: dyngo.NewOperation(nil), metrics: make(map[string]interface{})}
+	op := &Operation{
+		Operation:     dyngo.NewOperation(nil),
+		MetricsHolder: instrumentation.NewMetricsHolder(),
+	}
 	newCtx := context.WithValue(ctx, contextKey{}, op)
 	dyngo.StartOperation(op, args)
 	return newCtx, op
@@ -164,12 +168,10 @@ func fromContext(ctx context.Context) *Operation {
 // finish event up in the operation stack.
 func (op *Operation) Finish(res HandlerOperationRes) json.RawMessage {
 	dyngo.FinishOperation(op, res)
-	return op.events
-}
-
-// Metrics returns the accumulated operation metrics. Should be called after Operation.Finish().
-func (op *Operation) Metrics() map[string]interface{} {
-	return op.metrics
+	if events := op.Events(); len(events) > 0 {
+		return events[0]
+	}
+	return json.RawMessage{}
 }
 
 // StartSDKBodyOperation starts the SDKBody operation and emits a start event
@@ -182,20 +184,6 @@ func StartSDKBodyOperation(parent *Operation, args SDKBodyOperationArgs) *SDKBod
 // Finish finishes the SDKBody operation and emits a finish event
 func (op *SDKBodyOperation) Finish() {
 	dyngo.FinishOperation(op, SDKBodyOperationRes{})
-}
-
-// AddSecurityEvent adds the security event to the list of events observed
-// during the operation lifetime.
-func (op *Operation) AddSecurityEvent(event json.RawMessage) {
-	// TODO(Julio-Guerra): the current situation involves only one event per
-	//   operation. In the future, multiple events per operation will become
-	//   possible and the append operation should be made thread-safe.
-	op.events = event
-}
-
-// AddMetric adds the key/val pair to the operation's metrics map
-func (op *Operation) AddMetric(key string, val interface{}) {
-	op.metrics[key] = val
 }
 
 // HTTP handler operation's start and finish event callback function types.
