@@ -193,7 +193,7 @@ func (op *Operation) AddSecurityEvent(event json.RawMessage) {
 	op.events = event
 }
 
-// AddMetric TODO
+// AddMetric adds the key/val pair to the operation's metrics map
 func (op *Operation) AddMetric(key string, val interface{}) {
 	op.metrics[key] = val
 }
