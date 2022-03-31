@@ -164,8 +164,11 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 		// receive unlimited number of messages where we could find security events
 		const maxWAFEventsPerRequest = 10
 		var (
-			nbEvents uint32
-			logOnce  sync.Once
+			nbEvents               uint32
+			logOnce                sync.Once
+			metricsOnce            sync.Once
+			wafRunDuration         waf.AtomicDuration
+			wafBindingsRunDuration waf.AtomicDuration
 
 			events []json.RawMessage
 			mu     sync.Mutex
@@ -199,7 +202,13 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			if md := handlerArgs.Metadata; len(md) > 0 {
 				values[grpcServerRequestMetadata] = md
 			}
+			now := time.Now()
 			event := runWAF(wafCtx, values, timeout)
+			// WAF run durations are WAF context bound. As of now we need to keep track of those externally since
+			// we use a new WAF context for each callback. When we are able to re-use the same WAF context across
+			// callbacks, we can get rid of these variables and simply use the WAF bindings in OnHandlerOperationFinish.
+			wafRunDuration.Add(wafCtx.TotalRuntime())
+			wafBindingsRunDuration.Add(uint64(time.Since(now).Nanoseconds()))
 			if len(event) == 0 {
 				return
 			}
@@ -210,6 +219,16 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			mu.Unlock()
 		}))
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
+			op.AddMetric("_dd.appsec.waf.duration", float64(wafRunDuration/1e3))
+			op.AddMetric("_dd.appsec.waf.duration_ext", float64(wafBindingsRunDuration/1e3))
+
+			metricsOnce.Do(func() {
+				rInfo := handle.RulesetInfo()
+				op.AddMetric("_dd.appsec.event_rules.version", rInfo.Version)
+				op.AddMetric("_dd.appsec.event_rules.errors", rInfo.Errors)
+				op.AddMetric("_dd.appsec.event_rules.loaded", float64(rInfo.Loaded))
+				op.AddMetric("_dd.appsec.event_rules.error_count", float64(rInfo.Failed))
+			})
 			if len(events) > 0 && limiter.Allow() {
 				op.AddSecurityEvents(events...)
 			}

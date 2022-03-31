@@ -44,9 +44,11 @@ import (
 // Version wrapper type of the WAF version.
 type Version C.ddwaf_version
 
-type atomicDuration uint64
+// AtomicDuration can be used to perform atomic duration sums thanks to AtomicDuration.Add.
+type AtomicDuration uint64
 
-func (d *atomicDuration) add(ns uint64) {
+// Add atomically sums the current duration value with `ns` to create a new duration value.
+func (d *AtomicDuration) Add(ns uint64) {
 	atomic.AddUint64((*uint64)(d), ns)
 }
 
@@ -188,6 +190,7 @@ func (waf *Handle) Addresses() []string {
 	return waf.addresses
 }
 
+// RulesetInfo returns the rules initialization metrics for the current WAF handle
 func (waf *Handle) RulesetInfo() RulesetInfo {
 	rInfo, _ := waf.rulesetInfo.Load().(RulesetInfo)
 	return rInfo
@@ -210,7 +213,7 @@ func (waf *Handle) Close() {
 // become available. Each request must have its own Context.
 type Context struct {
 	waf            *Handle
-	totalRuntimeNs atomicDuration
+	totalRuntimeNs AtomicDuration
 
 	context C.ddwaf_context
 	// Mutex protecting the use of context which is not thread-safe.
@@ -260,7 +263,7 @@ func (c *Context) runWAF(data *wafObject, timeout time.Duration) (matches []byte
 	// TODO(Julio-Guerra): avoid calling result_free when there's no result
 	defer C.ddwaf_result_free(&result)
 	rc := C.ddwaf_run(c.context, data.ctype(), &result, C.uint64_t(timeout/time.Microsecond))
-	c.totalRuntimeNs.add(uint64(result.total_runtime))
+	c.totalRuntimeNs.Add(uint64(result.total_runtime))
 	return goReturnValues(rc, &result)
 }
 
@@ -273,6 +276,8 @@ func (c *Context) Close() {
 	decNbLiveCObjects()
 }
 
+// TotalRuntime returns the cumulated waf runtime across various run calls within the same WAF context.
+// Returned time is in nanoseconds.
 func (c *Context) TotalRuntime() uint64 {
 	return uint64(c.totalRuntimeNs)
 }
