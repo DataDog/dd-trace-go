@@ -407,6 +407,89 @@ func TestRunError(t *testing.T) {
 	}
 }
 
+func TestMetrics(t *testing.T) {
+	t.Run("RulesetInfo", func(t *testing.T) {
+		rule := `
+{
+  "version": "2.1",
+  "metadata": {
+    "rules_version": "1.2.7"
+  },
+  "rules": [
+	{
+	  "id": "valid-rule",
+	  "name": "Unicode Full/Half Width Abuse Attack Attempt",
+	  "tags": {
+		"type": "http_protocol_violation"
+	  },
+	  "conditions": [
+		{
+		  "parameters": {
+			"inputs": [
+			  {
+				"address": "server.request.uri.raw"
+			  }
+			],
+			"regex": "\\%u[fF]{2}[0-9a-fA-F]{2}"
+		  },
+		  "operator": "match_regex"
+		}
+	  ],
+	  "transformers": []
+	},
+	{
+	  "id": "missing-tags-1",
+	  "name": "Unicode Full/Half Width Abuse Attack Attempt",
+	  "conditions": [
+	  ],
+	  "transformers": []
+	},
+	{
+	  "id": "missing-tags-2",
+	  "name": "Unicode Full/Half Width Abuse Attack Attempt",
+	  "conditions": [
+	  ],
+	  "transformers": []
+	},
+	{
+	  "id": "missing-name",
+	  "tags": {
+		"type": "http_protocol_violation"
+	  },
+	  "conditions": [
+	  ],
+	  "transformers": []
+	}
+  ]
+}
+`
+		waf, err := NewHandle([]byte(rule))
+		require.NoError(t, err)
+		defer waf.Close()
+		rInfo := waf.RulesetInfo()
+		require.Equal(t, uint16(3), rInfo.Failed)
+		require.Equal(t, uint16(1), rInfo.Loaded)
+		require.Equal(t, 2, len(rInfo.Errors))
+		require.Equal(t, "1.2.7", rInfo.Version)
+		for key, arr := range rInfo.Errors {
+			arr := arr.([]interface{})
+			switch key {
+			case "missing key 'tags'":
+				require.Equal(t, 2, len(arr))
+				require.Equal(t, "missing-tags-1", arr[0])
+				require.Equal(t, "missing-tags-2", arr[1])
+				break
+			case "missing key 'name'":
+				require.Equal(t, 1, len(arr))
+				require.Equal(t, "missing-name", arr[0])
+				break
+			default:
+				t.Error("unexpected key in RulesetInfo.Errors")
+			}
+		}
+	})
+}
+
 func requireZeroNBLiveCObjects(t testing.TB) {
 	require.Equal(t, uint64(0), atomic.LoadUint64(&nbLiveCObjects))
 }
