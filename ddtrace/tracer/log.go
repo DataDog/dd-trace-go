@@ -36,6 +36,7 @@ type startupInfo struct {
 	Debug                       bool              `json:"debug"`                          // Whether debug mode is enabled
 	AnalyticsEnabled            bool              `json:"analytics_enabled"`              // True if there is a global analytics rate set
 	SampleRate                  string            `json:"sample_rate"`                    // The default sampling rate for the rules sampler
+	SampleRateLimit             string            `json:"sample_rate_limit"`              // The rate limit configured with the rules sampler
 	SamplingRules               []SamplingRule    `json:"sampling_rules"`                 // Rules used by the rules sampler
 	SamplingRulesError          string            `json:"sampling_rules_error"`           // Any errors that occurred while parsing sampling rules
 	ServiceMappings             map[string]string `json:"service_mappings"`               // Service Mappings
@@ -90,6 +91,7 @@ func logStartup(t *tracer) {
 		Debug:                       t.config.debug,
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.globalRate),
+		SampleRateLimit:             "disabled",
 		SamplingRules:               t.rulesSampling.rules,
 		ServiceMappings:             t.config.serviceMappings,
 		Tags:                        tags,
@@ -106,6 +108,11 @@ func logStartup(t *tracer) {
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
+	}
+	// Based on the apply logic in sampler.go func (*rulesSampler).applyRate,
+	// the rate limit applies only when there are rules or there is a global rate set.
+	if t.rulesSampling.globalRate > 0 || len(t.rulesSampling.rules) > 0 {
+		info.SampleRateLimit = fmt.Sprintf("%f", t.rulesSampling.limiter.limiter.Limit())
 	}
 	if !t.config.logToStdout {
 		if err := checkEndpoint(t.config.transport.endpoint()); err != nil {
