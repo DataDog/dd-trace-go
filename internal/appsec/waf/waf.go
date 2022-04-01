@@ -312,11 +312,13 @@ func goRunError(rc C.DDWAF_RET_CODE) error {
 	}
 }
 
-// Errors the encoder can return.
+// Errors the encoder and decoder can return.
 var (
 	errMaxDepth         = errors.New("max depth reached")
 	errUnsupportedValue = errors.New("unsupported Go value")
 	errOutOfMemory      = errors.New("out of memory")
+	errInvalidMapKey    = errors.New("invalid WAF object map key")
+	errBadWafObjectPtr  = errors.New("invalid WAF object pointer")
 )
 
 // isIgnoredValueError returns true if the error is only about ignored Go values
@@ -572,6 +574,9 @@ func (e *encoder) encodeUint64(n uint64, wo *wafObject) error {
 }
 
 func decodeObject(wo *wafObject) (v interface{}, err error) {
+	if wo == nil {
+		return nil, errBadWafObjectPtr
+	}
 	switch wo._type {
 	case wafUintType:
 		return uint64(*wo.uint64ValuePtr()), nil
@@ -584,11 +589,14 @@ func decodeObject(wo *wafObject) (v interface{}, err error) {
 	case wafMapType: // could be a map or a struct, no way to differentiate
 		return decodeMap(wo)
 	default:
-		return nil, ErrInvalidArgument
+		return nil, errUnsupportedValue
 	}
 }
 
 func decodeArray(wo *wafObject) ([]interface{}, error) {
+	if wo == nil {
+		return nil, errBadWafObjectPtr
+	}
 	var err error
 	len := wo.length()
 	arr := make([]interface{}, len)
@@ -599,6 +607,9 @@ func decodeArray(wo *wafObject) ([]interface{}, error) {
 }
 
 func decodeMap(wo *wafObject) (map[string]interface{}, error) {
+	if wo == nil {
+		return nil, errBadWafObjectPtr
+	}
 	length := wo.length()
 	decodedMap := make(map[string]interface{}, length)
 	for i := C.uint64_t(0); i < length; i++ {
@@ -616,11 +627,17 @@ func decodeMap(wo *wafObject) (map[string]interface{}, error) {
 	return decodedMap, nil
 }
 func decodeMapKey(wo *wafObject) (string, error) {
-	keyLen := uint64(wo.parameterNameLength)
-	if keyLen == 0 {
-		return "", ErrInvalidArgument
+	if wo == nil {
+		return "", errBadWafObjectPtr
 	}
-	return C.GoString(wo.mapKey()), nil
+	keyLen := uint64(wo.parameterNameLength)
+	if keyLen == 0 || wo.mapKey() == nil {
+		return "", errInvalidMapKey
+	}
+	if key := C.GoString(wo.mapKey()); uint64(len(key)) == keyLen {
+		return C.GoString(wo.mapKey()), nil
+	}
+	return "", errInvalidMapKey
 }
 
 const (
