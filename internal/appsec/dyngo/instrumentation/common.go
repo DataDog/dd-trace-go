@@ -12,7 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
-// This file holds code commonly used between all instrumentation declinations (currently httpsec/grpcsec)
+// This file holds code commonly used between all instrumentation declinations (currently httpsec/grpcsec).
 
 // MetricsHolder wraps a map holding metrics. The purpose of this struct is to be used by composition in an Operation
 // to allow said operation to handle metrics addition/retrieval. See httpsec/http.go and grpcsec/grpc.go.

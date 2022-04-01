@@ -212,7 +212,8 @@ func (waf *Handle) Close() {
 // by calling it multiple times to run its rules every time new addresses
 // become available. Each request must have its own Context.
 type Context struct {
-	waf            *Handle
+	waf *Handle
+	// Cumulated WAF runtime for this context.
 	totalRuntimeNs AtomicDuration
 
 	context C.ddwaf_context
@@ -600,7 +601,7 @@ func decodeArray(wo *wafObject) ([]interface{}, error) {
 	var err error
 	len := wo.length()
 	arr := make([]interface{}, len)
-	for i := C.ulong(0); i < len && err == nil; i++ {
+	for i := C.uint64_t(0); i < len && err == nil; i++ {
 		arr[i], err = decodeObject(wo.index(i))
 	}
 	return arr, err
@@ -626,15 +627,16 @@ func decodeMap(wo *wafObject) (map[string]interface{}, error) {
 	}
 	return decodedMap, nil
 }
+
 func decodeMapKey(wo *wafObject) (string, error) {
 	if wo == nil {
 		return "", errBadWafObjectPtr
 	}
-	keyLen := uint64(wo.parameterNameLength)
+	keyLen := int(wo.parameterNameLength)
 	if keyLen == 0 || wo.mapKey() == nil {
 		return "", errInvalidMapKey
 	}
-	if key := C.GoString(wo.mapKey()); uint64(len(key)) == keyLen {
+	if key := C.GoString(wo.mapKey()); len(key) == keyLen {
 		return C.GoString(wo.mapKey()), nil
 	}
 	return "", errInvalidMapKey
@@ -737,7 +739,6 @@ func (v *wafObject) index(i C.uint64_t) *wafObject {
 }
 
 // Helper functions for testing, where direct cgo import is not allowed
-
 func toCInt64(v int) C.int64_t {
 	return C.int64_t(v)
 }
