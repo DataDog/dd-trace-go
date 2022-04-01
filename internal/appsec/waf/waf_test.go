@@ -408,8 +408,7 @@ func TestRunError(t *testing.T) {
 }
 
 func TestMetrics(t *testing.T) {
-	t.Run("RulesetInfo", func(t *testing.T) {
-		rule := `
+	rules := `
 {
   "version": "2.1",
   "metadata": {
@@ -463,9 +462,10 @@ func TestMetrics(t *testing.T) {
   ]
 }
 `
-		waf, err := NewHandle([]byte(rule))
-		require.NoError(t, err)
-		defer waf.Close()
+	waf, err := NewHandle([]byte(rules))
+	require.NoError(t, err)
+	defer waf.Close()
+	t.Run("RulesetInfo", func(t *testing.T) {
 		rInfo := waf.RulesetInfo()
 		require.Equal(t, uint16(3), rInfo.Failed)
 		require.Equal(t, uint16(1), rInfo.Loaded)
@@ -487,6 +487,22 @@ func TestMetrics(t *testing.T) {
 				t.Error("unexpected key in RulesetInfo.Errors")
 			}
 		}
+	})
+
+	t.Run("RunDuration", func(t *testing.T) {
+		wafCtx := NewContext(waf)
+		require.NotNil(t, wafCtx)
+		defer wafCtx.Close()
+		// Craft matching data to force work on the WAF
+		data := map[string]interface{}{
+			"server.request.uri.raw": "\\%uff00",
+		}
+		matches, err := wafCtx.Run(data, time.Second)
+		require.NoError(t, err)
+		require.NotNil(t, matches)
+		// Make sure that WAF runtime was set
+		require.Greater(t, wafCtx.TotalRuntime(), uint64(0), "wafCtx runtime metric is not set")
+		require.LessOrEqual(t, wafCtx.TotalRuntime(), uint64(time.Second), "wafCtx runtime metric is incorrect")
 	})
 }
 
