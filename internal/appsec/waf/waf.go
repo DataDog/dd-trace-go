@@ -617,7 +617,7 @@ func decodeMap(wo *wafObject) (map[string]interface{}, error) {
 }
 func decodeMapKey(wo *wafObject) (string, error) {
 	keyLen := uint64(wo.parameterNameLength)
-	if wo._type != wafStringType || keyLen == 0 {
+	if keyLen == 0 {
 		return "", ErrInvalidArgument
 	}
 	return C.GoString(wo.mapKey()), nil
