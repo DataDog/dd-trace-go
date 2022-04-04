@@ -41,11 +41,8 @@ var tpl = `// Unless explicitly stated otherwise all files in this repository ar
 
 package http
 
-import (
-	"net/http"
+import "net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-)
 
 // wrapResponseWriter wraps an underlying http.ResponseWriter so that it can
 // trace the http response codes. It also checks for various http interfaces
@@ -55,12 +52,12 @@ import (
 //
 // This code is generated because we have to account for all the permutations
 // of the interfaces.
-func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) (http.ResponseWriter, *responseWriter) {
+func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWriter) {
 {{- range .Interfaces }}
 	h{{.}}, ok{{.}} := w.(http.{{.}})
 {{- end }}
 
-	mw := newResponseWriter(w, span)
+	mw := newResponseWriter(w)
 	type monitoredResponseWriter interface {
 		http.ResponseWriter
 		Status() int
