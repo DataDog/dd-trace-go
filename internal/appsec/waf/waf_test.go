@@ -1087,7 +1087,7 @@ func TestDecoder(t *testing.T) {
 				Object:        objBuilder("string"),
 			},
 			{
-				Name:          "Empty string",
+				Name:          "empty-string",
 				ExpectedValue: "",
 				Object:        objBuilder(""),
 			},
@@ -1107,7 +1107,7 @@ func TestDecoder(t *testing.T) {
 				Object:        objBuilder([]string{"str1", "str2", "str3", "str4"}),
 			},
 			{
-				Name:          "Empty array",
+				Name:          "empty-array",
 				ExpectedValue: []interface{}{},
 				Object:        objBuilder([]interface{}{}),
 			},
@@ -1119,7 +1119,7 @@ func TestDecoder(t *testing.T) {
 				}{Str: "string"}),
 			},
 			{
-				Name:          "Empty struct",
+				Name:          "empty-struct",
 				ExpectedValue: map[string]interface{}{},
 				Object:        objBuilder(struct{}{}),
 			},
@@ -1129,7 +1129,7 @@ func TestDecoder(t *testing.T) {
 				Object:        objBuilder(map[string]interface{}{"foo": "bar", "bar": "baz", "baz": "foo"}),
 			},
 			{
-				Name:          "Empty map",
+				Name:          "empty-map",
 				ExpectedValue: map[string]interface{}{},
 				Object:        objBuilder(map[string]interface{}{}),
 			},
@@ -1158,36 +1158,36 @@ func TestDecoder(t *testing.T) {
 			ExpectedError error
 		}{
 			{
-				Name:          "WAF object",
+				Name:          "WAF-object",
 				Object:        nil,
 				ExpectedError: errNilObjectPtr,
 			},
 			{
-				Name:          "Type",
+				Name:          "type",
 				Object:        objBuilder("obj"),
 				Modifier:      func(object *wafObject) { object._type = 5 },
 				ExpectedError: errUnsupportedValue,
 			},
 			{
-				Name:          "Map key 1",
+				Name:          "map-key-1",
 				Object:        objBuilder(map[string]interface{}{"baz": "foo"}),
 				Modifier:      func(object *wafObject) { object.index(0).setMapKey(nil, 0) },
 				ExpectedError: errInvalidMapKey,
 			},
 			{
-				Name:          "Map key 2",
+				Name:          "map-key-2",
 				Object:        objBuilder(map[string]interface{}{"baz": "foo"}),
 				Modifier:      func(object *wafObject) { object.index(0).setMapKey(nil, 10) },
 				ExpectedError: errInvalidMapKey,
 			},
 			{
-				Name:          "Array ptr",
+				Name:          "array-ptr",
 				Object:        objBuilder([]interface{}{"foo"}),
 				Modifier:      func(object *wafObject) { *object.arrayValuePtr() = nil },
 				ExpectedError: errNilObjectPtr,
 			},
 			{
-				Name:          "Map ptr",
+				Name:          "map-ptr",
 				Object:        objBuilder(map[string]interface{}{"baz": "foo"}),
 				Modifier:      func(object *wafObject) { *object.arrayValuePtr() = nil },
 				ExpectedError: errNilObjectPtr,

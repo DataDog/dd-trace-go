@@ -612,15 +612,15 @@ func decodeMap(wo *wafObject) (map[string]interface{}, error) {
 	decodedMap := make(map[string]interface{}, length)
 	for i := C.uint64_t(0); i < length; i++ {
 		obj := wo.index(i)
-		if key, err := decodeMapKey(obj); err == nil {
-			if val, err := decodeObject(obj); err == nil {
-				decodedMap[key] = val
-			} else {
-				return nil, err
-			}
-		} else {
+		key, err := decodeMapKey(obj)
+		if err != nil {
 			return nil, err
 		}
+		val, err := decodeObject(obj)
+		if err != nil {
+			return nil, err
+		}
+		decodedMap[key] = val
 	}
 	return decodedMap, nil
 }
