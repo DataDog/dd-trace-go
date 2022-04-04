@@ -316,7 +316,7 @@ var (
 	errUnsupportedValue = errors.New("unsupported Go value")
 	errOutOfMemory      = errors.New("out of memory")
 	errInvalidMapKey    = errors.New("invalid WAF object map key")
-	errBadWafObjectPtr  = errors.New("invalid WAF object pointer")
+	errNilObjectPtr     = errors.New("nil WAF object pointer")
 )
 
 // isIgnoredValueError returns true if the error is only about ignored Go values
@@ -573,7 +573,7 @@ func (e *encoder) encodeUint64(n uint64, wo *wafObject) error {
 
 func decodeObject(wo *wafObject) (v interface{}, err error) {
 	if wo == nil {
-		return nil, errBadWafObjectPtr
+		return nil, errNilObjectPtr
 	}
 	switch wo._type {
 	case wafUintType:
@@ -593,7 +593,7 @@ func decodeObject(wo *wafObject) (v interface{}, err error) {
 
 func decodeArray(wo *wafObject) ([]interface{}, error) {
 	if wo == nil {
-		return nil, errBadWafObjectPtr
+		return nil, errNilObjectPtr
 	}
 	var err error
 	len := wo.length()
@@ -606,7 +606,7 @@ func decodeArray(wo *wafObject) ([]interface{}, error) {
 
 func decodeMap(wo *wafObject) (map[string]interface{}, error) {
 	if wo == nil {
-		return nil, errBadWafObjectPtr
+		return nil, errNilObjectPtr
 	}
 	length := wo.length()
 	decodedMap := make(map[string]interface{}, length)
@@ -627,7 +627,7 @@ func decodeMap(wo *wafObject) (map[string]interface{}, error) {
 
 func decodeMapKey(wo *wafObject) (string, error) {
 	if wo == nil {
-		return "", errBadWafObjectPtr
+		return "", errNilObjectPtr
 	}
 	keyLen := int(wo.parameterNameLength)
 	if keyLen == 0 || wo.mapKey() == nil {

@@ -465,28 +465,17 @@ func TestMetrics(t *testing.T) {
 	waf, err := NewHandle([]byte(rules))
 	require.NoError(t, err)
 	defer waf.Close()
+	// TODO: (Francois Mazeau) see if we can make this test more configurable to future proof against libddwaf changes
 	t.Run("RulesetInfo", func(t *testing.T) {
 		rInfo := waf.RulesetInfo()
 		require.Equal(t, uint16(3), rInfo.Failed)
 		require.Equal(t, uint16(1), rInfo.Loaded)
 		require.Equal(t, 2, len(rInfo.Errors))
 		require.Equal(t, "1.2.7", rInfo.Version)
-		for key, arr := range rInfo.Errors {
-			arr := arr.([]interface{})
-			switch key {
-			case "missing key 'tags'":
-				require.Equal(t, 2, len(arr))
-				require.Equal(t, "missing-tags-1", arr[0])
-				require.Equal(t, "missing-tags-2", arr[1])
-				break
-			case "missing key 'name'":
-				require.Equal(t, 1, len(arr))
-				require.Equal(t, "missing-name", arr[0])
-				break
-			default:
-				t.Error("unexpected key in RulesetInfo.Errors")
-			}
-		}
+		require.Equal(t, map[string]interface{}{
+			"missing key 'tags'": []interface{}{"missing-tags-1", "missing-tags-2"},
+			"missing key 'name'": []interface{}{"missing-name"},
+		}, rInfo.Errors)
 	})
 
 	t.Run("RunDuration", func(t *testing.T) {
@@ -497,12 +486,14 @@ func TestMetrics(t *testing.T) {
 		data := map[string]interface{}{
 			"server.request.uri.raw": "\\%uff00",
 		}
+		start := time.Now()
 		matches, err := wafCtx.Run(data, time.Second)
+		elapsedNS := time.Since(start).Nanoseconds()
 		require.NoError(t, err)
 		require.NotNil(t, matches)
 		// Make sure that WAF runtime was set
 		require.Greater(t, wafCtx.TotalRuntime(), uint64(0), "wafCtx runtime metric is not set")
-		require.LessOrEqual(t, wafCtx.TotalRuntime(), uint64(time.Second), "wafCtx runtime metric is incorrect")
+		require.LessOrEqual(t, wafCtx.TotalRuntime(), uint64(elapsedNS), "wafCtx runtime metric is incorrect")
 	})
 }
 
@@ -1068,7 +1059,9 @@ func TestDecoder(t *testing.T) {
 	objBuilder := func(v interface{}) *wafObject {
 		var err error
 		obj := &wafObject{}
-
+		// Right now the encoder encodes integer values as strings to match the WAF representation.
+		// We circumvent this here by manually encoding so that we can test with WAF objects that hold real integers,
+		// not string representations of integers. See https://github.com/DataDog/libddwaf/issues/41.
 		if v, ok := v.(int64); ok {
 			obj.setInt64(toCInt64(int(v)))
 			return obj
@@ -1186,7 +1179,7 @@ func TestDecoder(t *testing.T) {
 			{
 				Name:          "WAF object",
 				Object:        nil,
-				ExpectedError: errBadWafObjectPtr,
+				ExpectedError: errNilObjectPtr,
 			},
 			{
 				Name:          "Type",
@@ -1216,13 +1209,13 @@ func TestDecoder(t *testing.T) {
 				Name:          "Array ptr",
 				Object:        objBuilder([]interface{}{"foo"}),
 				Modifier:      func(object *wafObject) { *object.arrayValuePtr() = nil },
-				ExpectedError: errBadWafObjectPtr,
+				ExpectedError: errNilObjectPtr,
 			},
 			{
 				Name:          "Map ptr",
 				Object:        objBuilder(map[string]interface{}{"baz": "foo"}),
 				Modifier:      func(object *wafObject) { *object.arrayValuePtr() = nil },
-				ExpectedError: errBadWafObjectPtr,
+				ExpectedError: errNilObjectPtr,
 			},
 		} {
 			tc := tc
