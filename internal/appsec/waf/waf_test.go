@@ -1200,12 +1200,6 @@ func TestDecoder(t *testing.T) {
 				ExpectedError: errInvalidMapKey,
 			},
 			{
-				Name:          "Map key 3",
-				Object:        objBuilder(map[string]interface{}{"baz": "foo"}),
-				Modifier:      func(object *wafObject) { object.index(0).parameterNameLength = toCUint64(10) },
-				ExpectedError: errInvalidMapKey,
-			},
-			{
 				Name:          "Array ptr",
 				Object:        objBuilder([]interface{}{"foo"}),
 				Modifier:      func(object *wafObject) { *object.arrayValuePtr() = nil },

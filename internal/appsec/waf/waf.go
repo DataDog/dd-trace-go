@@ -581,7 +581,7 @@ func decodeObject(wo *wafObject) (v interface{}, err error) {
 	case wafIntType:
 		return int64(*wo.int64ValuePtr()), nil
 	case wafStringType:
-		return C.GoString(*wo.stringValuePtr()), nil
+		return gostring(*wo.stringValuePtr(), wo.length())
 	case wafArrayType:
 		return decodeArray(wo)
 	case wafMapType: // could be a map or a struct, no way to differentiate
@@ -629,14 +629,10 @@ func decodeMapKey(wo *wafObject) (string, error) {
 	if wo == nil {
 		return "", errNilObjectPtr
 	}
-	keyLen := int(wo.parameterNameLength)
-	if keyLen == 0 || wo.mapKey() == nil {
+	if wo.parameterNameLength == 0 || wo.mapKey() == nil {
 		return "", errInvalidMapKey
 	}
-	if key := C.GoString(wo.mapKey()); len(key) == keyLen {
-		return C.GoString(wo.mapKey()), nil
-	}
-	return "", errInvalidMapKey
+	return gostring(wo.mapKey(), wo.parameterNameLength)
 }
 
 const (
@@ -753,6 +749,18 @@ func incNbLiveCObjects() {
 
 func decNbLiveCObjects() {
 	atomic.AddUint64(&nbLiveCObjects, ^uint64(0))
+}
+
+// gostring returns the Go version of the C string `str`, copying at most `len` bytes from the original string.
+func gostring(str *C.char, len C.uint64_t) (string, error) {
+	if str == nil {
+		return "", ErrInvalidArgument
+	}
+	goLen := C.int(len)
+	if C.uint64_t(goLen) != len {
+		return "", ErrInvalidArgument
+	}
+	return C.GoStringN(str, goLen), nil
 }
 
 // cstring returns the C string of the given Go string `str` with up to maxWAFStringSize bytes, along with the string
