@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
@@ -150,6 +151,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 				op.AddTag(eventRulesErrorsTag, rInfo.Errors)
 				op.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
 				op.AddTag(eventRulesFailedTag, float64(rInfo.Failed))
+				op.AddTag(ext.ManualKeep, true)
 			})
 
 			// Log the attacks if any
@@ -237,6 +239,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 				op.AddTag(eventRulesErrorsTag, rInfo.Errors)
 				op.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
 				op.AddTag(eventRulesFailedTag, float64(rInfo.Failed))
+				op.AddTag(ext.ManualKeep, true)
 			})
 			if len(events) > 0 && limiter.Allow() {
 				op.AddSecurityEvents(events...)
