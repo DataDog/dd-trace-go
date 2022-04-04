@@ -41,8 +41,12 @@ type (
 		events []json.RawMessage
 		mu     sync.Mutex
 	}
-	// HandlerOperationArgs is the grpc handler arguments. Empty as of today.
-	HandlerOperationArgs struct{}
+	// HandlerOperationArgs is the grpc handler arguments.
+	HandlerOperationArgs struct {
+		// Message received by the gRPC handler.
+		// Corresponds to the address `grpc.server.request.metadata`.
+		Metadata map[string][]string
+	}
 	// HandlerOperationRes is the grpc handler results. Empty as of today.
 	HandlerOperationRes struct{}
 
@@ -84,10 +88,10 @@ func (op *HandlerOperation) Finish(res HandlerOperationRes) []json.RawMessage {
 
 // AddSecurityEvent adds the security event to the list of events observed
 // during the operation lifetime.
-func (op *HandlerOperation) AddSecurityEvent(event json.RawMessage) {
+func (op *HandlerOperation) AddSecurityEvent(events []json.RawMessage) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
-	op.events = append(op.events, event)
+	op.events = append(op.events, events...)
 }
 
 // gRPC handler operation's start and finish event callback function types.

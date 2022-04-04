@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +24,7 @@ import (
 // Middleware returns middleware that will trace incoming requests. If service is empty then the
 // default service name will be used.
 func Middleware(service string, opts ...Option) gin.HandlerFunc {
+	appsecEnabled := appsec.Enabled()
 	cfg := newConfig(service)
 	for _, opt := range opts {
 		opt(cfg)
@@ -52,6 +54,12 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 		// pass the span through the request context
 		c.Request = c.Request.WithContext(ctx)
+
+		// Use AppSec if enabled by user
+		if appsecEnabled {
+			afterMiddleware := useAppSec(c, span)
+			defer afterMiddleware()
+		}
 
 		// serve the request to the next middleware
 		c.Next()

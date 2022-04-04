@@ -19,8 +19,9 @@ import (
 
 func TestConfig(t *testing.T) {
 	expectedDefaultConfig := &config{
-		rules:      []byte(staticRecommendedRule),
-		wafTimeout: defaultWAFTimeout,
+		rules:          []byte(staticRecommendedRule),
+		wafTimeout:     defaultWAFTimeout,
+		traceRateLimit: defaultTraceRate,
 	}
 
 	t.Run("default", func(t *testing.T) {
@@ -41,8 +42,26 @@ func TestConfig(t *testing.T) {
 			require.Equal(
 				t,
 				&config{
-					rules:      []byte(staticRecommendedRule),
-					wafTimeout: 5 * time.Second,
+					rules:          []byte(staticRecommendedRule),
+					wafTimeout:     5 * time.Second,
+					traceRateLimit: defaultTraceRate,
+				},
+				cfg,
+			)
+		})
+
+		t.Run("parsable-default-microsecond", func(t *testing.T) {
+			restoreEnv := cleanEnv()
+			defer restoreEnv()
+			require.NoError(t, os.Setenv(wafTimeoutEnvVar, "1"))
+			cfg, err := newConfig()
+			require.NoError(t, err)
+			require.Equal(
+				t,
+				&config{
+					rules:          []byte(staticRecommendedRule),
+					wafTimeout:     1 * time.Microsecond,
+					traceRateLimit: defaultTraceRate,
 				},
 				cfg,
 			)
@@ -61,6 +80,15 @@ func TestConfig(t *testing.T) {
 			restoreEnv := cleanEnv()
 			defer restoreEnv()
 			require.NoError(t, os.Setenv(wafTimeoutEnvVar, "-1s"))
+			cfg, err := newConfig()
+			require.NoError(t, err)
+			require.Equal(t, expectedDefaultConfig, cfg)
+		})
+
+		t.Run("zero", func(t *testing.T) {
+			restoreEnv := cleanEnv()
+			defer restoreEnv()
+			require.NoError(t, os.Setenv(wafTimeoutEnvVar, "0"))
 			cfg, err := newConfig()
 			require.NoError(t, err)
 			require.Equal(t, expectedDefaultConfig, cfg)
@@ -111,9 +139,65 @@ func TestConfig(t *testing.T) {
 			cfg, err := newConfig()
 			require.NoError(t, err)
 			require.Equal(t, &config{
-				rules:      []byte(expectedRules),
-				wafTimeout: defaultWAFTimeout,
+				rules:          []byte(expectedRules),
+				wafTimeout:     defaultWAFTimeout,
+				traceRateLimit: defaultTraceRate,
 			}, cfg)
+		})
+	})
+
+	t.Run("trace-rate-limit", func(t *testing.T) {
+		t.Run("parsable", func(t *testing.T) {
+			restoreEnv := cleanEnv()
+			defer restoreEnv()
+			require.NoError(t, os.Setenv(traceRateLimitEnvVar, "1234567890"))
+			cfg, err := newConfig()
+			require.NoError(t, err)
+			require.Equal(
+				t,
+				&config{
+					rules:          []byte(staticRecommendedRule),
+					wafTimeout:     defaultWAFTimeout,
+					traceRateLimit: 1234567890,
+				},
+				cfg,
+			)
+		})
+
+		t.Run("not-parsable", func(t *testing.T) {
+			restoreEnv := cleanEnv()
+			defer restoreEnv()
+			require.NoError(t, os.Setenv(wafTimeoutEnvVar, "not a uint"))
+			cfg, err := newConfig()
+			require.NoError(t, err)
+			require.Equal(t, expectedDefaultConfig, cfg)
+		})
+
+		t.Run("negative", func(t *testing.T) {
+			restoreEnv := cleanEnv()
+			defer restoreEnv()
+			require.NoError(t, os.Setenv(wafTimeoutEnvVar, "-1"))
+			cfg, err := newConfig()
+			require.NoError(t, err)
+			require.Equal(t, expectedDefaultConfig, cfg)
+		})
+
+		t.Run("zero", func(t *testing.T) {
+			restoreEnv := cleanEnv()
+			defer restoreEnv()
+			require.NoError(t, os.Setenv(wafTimeoutEnvVar, "0"))
+			cfg, err := newConfig()
+			require.NoError(t, err)
+			require.Equal(t, expectedDefaultConfig, cfg)
+		})
+
+		t.Run("empty-string", func(t *testing.T) {
+			restoreEnv := cleanEnv()
+			defer restoreEnv()
+			require.NoError(t, os.Setenv(wafTimeoutEnvVar, ""))
+			cfg, err := newConfig()
+			require.NoError(t, err)
+			require.Equal(t, expectedDefaultConfig, cfg)
 		})
 	})
 }
@@ -127,9 +211,14 @@ func cleanEnv() func() {
 	if err := os.Unsetenv(rulesEnvVar); err != nil {
 		panic(err)
 	}
+	traceRateLimit := os.Getenv(traceRateLimitEnvVar)
+	if err := os.Unsetenv(traceRateLimitEnvVar); err != nil {
+		panic(err)
+	}
 	return func() {
 		restoreEnv(wafTimeoutEnvVar, wafTimeout)
 		restoreEnv(rulesEnvVar, rules)
+		restoreEnv(traceRateLimitEnvVar, traceRateLimit)
 	}
 }
 

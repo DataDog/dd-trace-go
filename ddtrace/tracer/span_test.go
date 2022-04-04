@@ -456,7 +456,9 @@ func TestSpanError(t *testing.T) {
 	span.Finish()
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(0), span.Error)
-	assert.Equal(nMeta, len(span.Meta))
+	// '+1' is `_dd.p.upstream_services`,
+	// because we add it into Meta of the first span, when root is finished.
+	assert.Equal(nMeta+1, len(span.Meta))
 	assert.Equal("", span.Meta["error.msg"])
 	assert.Equal("", span.Meta["error.type"])
 	assert.Equal("", span.Meta["error.stack"])

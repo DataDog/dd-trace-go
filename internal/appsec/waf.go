@@ -9,6 +9,7 @@
 package appsec
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -24,7 +25,7 @@ import (
 )
 
 // Register the WAF event listener.
-func registerWAF(rules []byte, timeout time.Duration) (unreg dyngo.UnregisterFunc, err error) {
+func registerWAF(rules []byte, timeout time.Duration, limiter Limiter) (unreg dyngo.UnregisterFunc, err error) {
 	// Check the WAF is healthy
 	if _, err := waf.Health(); err != nil {
 		return nil, err
@@ -59,11 +60,11 @@ func registerWAF(rules []byte, timeout time.Duration) (unreg dyngo.UnregisterFun
 	var unregisterHTTP, unregisterGRPC dyngo.UnregisterFunc
 	if len(httpAddresses) > 0 {
 		log.Debug("appsec: registering http waf listening to addresses %v", httpAddresses)
-		unregisterHTTP = dyngo.Register(newHTTPWAFEventListener(waf, httpAddresses, timeout))
+		unregisterHTTP = dyngo.Register(newHTTPWAFEventListener(waf, httpAddresses, timeout, limiter))
 	}
 	if len(grpcAddresses) > 0 {
 		log.Debug("appsec: registering grpc waf listening to addresses %v", grpcAddresses)
-		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, timeout))
+		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, timeout, limiter))
 	}
 
 	// Return an unregistration function that will also release the WAF instance.
@@ -79,8 +80,12 @@ func registerWAF(rules []byte, timeout time.Duration) (unreg dyngo.UnregisterFun
 }
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
-func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration) dyngo.EventListener {
+func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration, limiter Limiter) dyngo.EventListener {
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
+		var body interface{}
+		op.On(httpsec.OnSDKBodyOperationStart(func(op *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
+			body = args.Body
+		}))
 		// At the moment, AppSec doesn't block the requests, and so we can use the fact we are in monitoring-only mode
 		// to call the WAF only once at the end of the handler operation.
 		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
@@ -113,6 +118,10 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 					if pathParams := args.PathParams; pathParams != nil {
 						values[serverRequestPathParams] = pathParams
 					}
+				case serverRequestBody:
+					if body != nil {
+						values[serverRequestBody] = body
+					}
 				case serverResponseStatusAddr:
 					values[serverResponseStatusAddr] = res.Status
 				}
@@ -124,7 +133,9 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 				return
 			}
 			log.Debug("appsec: attack detected by the waf")
-			op.AddSecurityEvent(matches)
+			if limiter.Allow() {
+				op.AddSecurityEvent(matches)
+			}
 		}))
 
 	})
@@ -132,14 +143,17 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 
 // newGRPCWAFEventListener returns the WAF event listener to register in order
 // to enable it.
-func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Duration) dyngo.EventListener {
-	return grpcsec.OnHandlerOperationStart(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationArgs) {
+func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Duration, limiter Limiter) dyngo.EventListener {
+	return grpcsec.OnHandlerOperationStart(func(op *grpcsec.HandlerOperation, handlerArgs grpcsec.HandlerOperationArgs) {
 		// Limit the maximum number of security events, as a streaming RPC could
 		// receive unlimited number of messages where we could find security events
 		const maxWAFEventsPerRequest = 10
 		var (
 			nbEvents uint32
 			logOnce  sync.Once
+
+			events []json.RawMessage
+			mu     sync.Mutex
 		)
 		op.On(grpcsec.OnReceiveOperationFinish(func(_ grpcsec.ReceiveOperation, res grpcsec.ReceiveOperationRes) {
 			if atomic.LoadUint32(&nbEvents) == maxWAFEventsPerRequest {
@@ -166,13 +180,24 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			// Note that we don't check if the address is present in the rules
 			// as we only support one at the moment, so this callback cannot be
 			// set when the address is not present.
-			events := runWAF(wafCtx, map[string]interface{}{grpcServerRequestMessage: res.Message}, timeout)
-			if len(events) == 0 {
+			values := map[string]interface{}{grpcServerRequestMessage: res.Message}
+			if md := handlerArgs.Metadata; len(md) > 0 {
+				values[grpcServerRequestMetadata] = md
+			}
+			event := runWAF(wafCtx, values, timeout)
+			if len(event) == 0 {
 				return
 			}
 			log.Debug("appsec: attack detected by the grpc waf")
 			atomic.AddUint32(&nbEvents, 1)
-			op.AddSecurityEvent(events)
+			mu.Lock()
+			events = append(events, event)
+			mu.Unlock()
+		}))
+		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
+			if len(events) > 0 && limiter.Allow() {
+				op.AddSecurityEvent(events)
+			}
 		}))
 	})
 }
@@ -197,6 +222,7 @@ const (
 	serverRequestCookiesAddr          = "server.request.cookies"
 	serverRequestQueryAddr            = "server.request.query"
 	serverRequestPathParams           = "server.request.path_params"
+	serverRequestBody                 = "server.request.body"
 	serverResponseStatusAddr          = "server.response.status"
 )
 
@@ -207,17 +233,20 @@ var httpAddresses = []string{
 	serverRequestCookiesAddr,
 	serverRequestQueryAddr,
 	serverRequestPathParams,
+	serverRequestBody,
 	serverResponseStatusAddr,
 }
 
 // gRPC rule addresses currently supported by the WAF
 const (
-	grpcServerRequestMessage = "grpc.server.request.message"
+	grpcServerRequestMessage  = "grpc.server.request.message"
+	grpcServerRequestMetadata = "grpc.server.request.metadata"
 )
 
 // List of gRPC rule addresses currently supported by the WAF
 var grpcAddresses = []string{
 	grpcServerRequestMessage,
+	grpcServerRequestMetadata,
 }
 
 func init() {
