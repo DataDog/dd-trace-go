@@ -6,17 +6,17 @@
 package tracer
 
 import (
-	"sync"
-	"time"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"sync"
+	"time"
 )
+
+const NumShards = 32
 
 // TrackingExpirationLimit is the limit for how long to track a long-running span before no longer sending snapshots
 const TrackingExpirationLimit = 12 * time.Hour
 
-// TODO(ajgajg1134): is there a better performing design than this?
 type longrunner struct {
 	// Any span living longer than heartbeatInterval will have heartbeats sent every interval
 	heartbeatInterval time.Duration
@@ -25,9 +25,12 @@ type longrunner struct {
 	stopFunc sync.Once
 	// done chan stops the long-running "work" goroutine
 	done chan struct{}
-	// mu protects the lower fields
-	mu sync.Mutex
 	// spans is a map of tracked spans to their "partial_version"
+	spanShards []shard
+}
+
+type shard struct {
+	lock  *sync.Mutex
 	spans map[*span]int
 }
 
@@ -58,18 +61,45 @@ func limitHeartbeat(hb int64) time.Duration {
 	}
 }
 
-// startLongrunner creates a long-running span tracker
-func startLongrunner(hbInterval int64, sd statsdClient) *longrunner {
+func getShardNum(s *span) int {
+	s.RLock()
+	defer s.RUnlock()
+	// splitmix64 used to get an even distribution across spanShards faster than SHA
+	// ~10x improvement when benchmarked on an i7-1068NG7
+	return int(splitMix64(s.SpanID))
+}
+
+func splitMix64(n uint64) uint64 {
+	n = n + 0x9e3779b97f4a7c15
+	n = (n ^ (n >> 30)) * 0xbf58476d1ce4e5b9
+	n = (n ^ (n >> 27)) * 0x94d049bb133111eb
+	return (n ^ (n >> 31)) % NumShards
+}
+
+// newLongrunner creates the default longrunner struct
+func newLongrunner(hbInterval int64, sd statsdClient) *longrunner {
+	s := make([]shard, 32)
+	for i := 0; i < NumShards; i++ {
+		s[i] = shard{
+			lock:  &sync.Mutex{},
+			spans: map[*span]int{},
+		}
+	}
 	hb := limitHeartbeat(hbInterval)
 	lr := longrunner{
 		heartbeatInterval: hb,
 		statsd:            sd,
 		stopFunc:          sync.Once{},
 		done:              make(chan struct{}),
-		mu:                sync.Mutex{},
-		spans:             map[*span]int{},
+		spanShards:        s,
 	}
-	ticker := time.NewTicker(hb)
+	return &lr
+}
+
+// startLongrunner creates a long-running span tracker
+func startLongrunner(hbInterval int64, sd statsdClient) *longrunner {
+	lr := newLongrunner(hbInterval, sd)
+	ticker := time.NewTicker(lr.heartbeatInterval)
 	go func() {
 		for {
 			select {
@@ -80,7 +110,7 @@ func startLongrunner(hbInterval int64, sd statsdClient) *longrunner {
 			}
 		}
 	}()
-	return &lr
+	return lr
 }
 
 func (lr *longrunner) stop() {
@@ -90,99 +120,104 @@ func (lr *longrunner) stop() {
 }
 
 func (lr *longrunner) trackSpan(s *span) {
-	lr.mu.Lock()
-	defer lr.mu.Unlock()
-	if _, found := lr.spans[s]; !found {
-		lr.spans[s] = 1
+	shard := lr.spanShards[getShardNum(s)]
+	shard.lock.Lock()
+	defer shard.lock.Unlock()
+	if _, found := shard.spans[s]; !found {
+		shard.spans[s] = 1
 	}
 }
 
 func (lr *longrunner) stopTracking(s *span) {
-	lr.mu.Lock()
-	defer lr.mu.Unlock()
+	shard := lr.spanShards[getShardNum(s)]
+	shard.lock.Lock()
+	defer shard.lock.Unlock()
 
-	delete(lr.spans, s)
+	delete(shard.spans, s)
 }
 
 func (lr *longrunner) work(now int64) {
-	//todo: don't hold the lock this long
-	lr.mu.Lock()
-	defer lr.mu.Unlock()
+	for _, shard := range lr.spanShards {
+		func() {
+			shard.lock.Lock()
+			defer shard.lock.Unlock()
+			for s, partialVersion := range shard.spans {
+				func() {
+					s.RLock()
+					defer s.RUnlock()
 
-	for s, partialVersion := range lr.spans {
-		s.RLock()
-		if s.finished {
-			delete(lr.spans, s)
-			continue
-		}
-		if (s.Start + TrackingExpirationLimit.Nanoseconds()) < now {
-			lr.statsd.Incr("datadog.tracer.longrunning.expired", nil, 1)
-			delete(lr.spans, s)
-			continue
-		}
-
-		if now > s.Start+lr.heartbeatInterval.Nanoseconds() {
-			meta := make(map[string]string, len(s.Meta))
-			for k, v := range s.Meta {
-				meta[k] = v
-			}
-			metrics := make(map[string]float64, len(s.Metrics))
-			for k, v := range s.Metrics {
-				metrics[k] = v
-			}
-			//Unmark span snapshots as "top_level" to avoid stats computation in the agent
-			delete(metrics, keyTopLevel)
-
-			heartBeatSpan := span{
-				Name:            s.Name,
-				Service:         s.Service,
-				Resource:        s.Resource,
-				Type:            s.Type,
-				Start:           s.Start,
-				Duration:        now - s.Start,
-				Meta:            meta,
-				Metrics:         metrics,
-				SpanID:          s.SpanID,
-				TraceID:         s.TraceID,
-				ParentID:        s.ParentID,
-				Error:           s.Error,
-				noDebugStack:    s.noDebugStack,
-				finished:        s.finished,
-				context:         s.context,
-				pprofCtxActive:  s.pprofCtxActive,
-				pprofCtxRestore: s.pprofCtxRestore,
-			}
-
-			//need to pull and send finished spans from within this trace (removing the ones we send)
-			var childrenOfHeartbeat []*span
-			func() {
-				t := s.context.trace
-				t.mu.Lock()
-				defer t.mu.Unlock()
-
-				var unfinishedSpans []*span
-				for i, childSpan := range t.spans {
-					if childSpan.finished {
-						childrenOfHeartbeat = append(childrenOfHeartbeat, childSpan)
-						t.spans[i] = nil
-						t.finished--
-					} else {
-						unfinishedSpans = append(unfinishedSpans, childSpan)
+					if s.finished {
+						delete(shard.spans, s)
+						return
 					}
-				}
-				t.spans = unfinishedSpans
-			}()
+					if (s.Start + TrackingExpirationLimit.Nanoseconds()) < now {
+						lr.statsd.Incr("datadog.tracer.longrunning.expired", nil, 1)
+						delete(shard.spans, s)
+						return
+					}
 
-			heartBeatSpan.setMetric("_dd.partial_version", float64(partialVersion))
-			lr.spans[s]++
+					if now > s.Start+lr.heartbeatInterval.Nanoseconds() {
+						meta := make(map[string]string, len(s.Meta))
+						for k, v := range s.Meta {
+							meta[k] = v
+						}
+						metrics := make(map[string]float64, len(s.Metrics))
+						for k, v := range s.Metrics {
+							metrics[k] = v
+						}
 
-			lr.statsd.Incr("datadog.tracer.longrunning.flushed", nil, 1)
+						heartBeatSpan := span{
+							Name:            s.Name,
+							Service:         s.Service,
+							Resource:        s.Resource,
+							Type:            s.Type,
+							Start:           s.Start,
+							Duration:        now - s.Start,
+							Meta:            meta,
+							Metrics:         metrics,
+							SpanID:          s.SpanID,
+							TraceID:         s.TraceID,
+							ParentID:        s.ParentID,
+							Error:           s.Error,
+							noDebugStack:    s.noDebugStack,
+							finished:        s.finished,
+							context:         s.context,
+							pprofCtxActive:  s.pprofCtxActive,
+							pprofCtxRestore: s.pprofCtxRestore,
+						}
 
-			//TODO: find a good way to test this
-			if t, ok := internal.GetGlobalTracer().(*tracer); ok {
-				t.pushTrace(append(childrenOfHeartbeat, &heartBeatSpan))
+						// Need to pull and send finished spans from within this trace (removing the ones we send)
+						var childrenOfHeartbeat []*span
+						func() {
+							t := s.context.trace
+							t.mu.Lock()
+							defer t.mu.Unlock()
+
+							var unfinishedSpans []*span
+							for i, childSpan := range t.spans {
+								if childSpan.finished {
+									childrenOfHeartbeat = append(childrenOfHeartbeat, childSpan)
+									t.spans[i] = nil
+									t.finished--
+								} else {
+									unfinishedSpans = append(unfinishedSpans, childSpan)
+								}
+							}
+							t.spans = unfinishedSpans
+						}()
+
+						heartBeatSpan.setMetric("_dd.partial_version", float64(partialVersion))
+						shard.spans[s]++
+
+						lr.statsd.Incr("datadog.tracer.longrunning.flushed", nil, 1)
+
+						// TODO: find a good way to test this
+						if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+							t.pushTrace(append(childrenOfHeartbeat, &heartBeatSpan))
+						}
+					}
+				}()
 			}
-		}
-		s.RUnlock()
+		}()
 	}
 }
