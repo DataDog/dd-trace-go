@@ -17,6 +17,7 @@ import (
 // to allow said operation to handle tags addition/retrieval. See httpsec/http.go and grpcsec/grpc.go.
 type TagsHolder struct {
 	tags map[string]interface{}
+	mu   sync.Mutex
 }
 
 // NewTagsHolder returns a new instance of a TagsHolder struct.
@@ -26,6 +27,8 @@ func NewTagsHolder() TagsHolder {
 
 // AddTag adds the key/value pair to the tags map
 func (m *TagsHolder) AddTag(k string, v interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.tags[k] = v
 }
 

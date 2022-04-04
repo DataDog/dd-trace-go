@@ -81,8 +81,8 @@ type Handle struct {
 	encoder encoder
 	// addresses the WAF rule is expecting.
 	addresses []string
-	// rulesetInfo holds information about rules initialization. Used as a RulesetInfo type.
-	rulesetInfo atomic.Value
+	// rulesetInfo holds information about rules initialization
+	rulesetInfo RulesetInfo
 }
 
 // RulesetInfo stores the information - provided by the WAF - about WAF rules initialization.
@@ -159,14 +159,12 @@ func NewHandle(jsonRule []byte) (*Handle, error) {
 		decNbLiveCObjects()
 		return nil, err
 	}
-
-	wafHandle := Handle{
-		handle:    handle,
-		encoder:   encoder,
-		addresses: addresses,
-	}
-	wafHandle.rulesetInfo.Store(rInfo)
-	return &wafHandle, nil
+	return &Handle{
+		handle:      handle,
+		encoder:     encoder,
+		addresses:   addresses,
+		rulesetInfo: rInfo,
+	}, nil
 }
 
 func ruleAddresses(handle C.ddwaf_handle) ([]string, error) {
@@ -192,8 +190,7 @@ func (waf *Handle) Addresses() []string {
 
 // RulesetInfo returns the rules initialization metrics for the current WAF handle
 func (waf *Handle) RulesetInfo() RulesetInfo {
-	rInfo, _ := waf.rulesetInfo.Load().(RulesetInfo)
-	return rInfo
+	return waf.rulesetInfo
 }
 
 // Close the WAF and release the underlying C memory as soon as there are
