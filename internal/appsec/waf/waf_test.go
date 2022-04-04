@@ -1133,6 +1133,11 @@ func TestDecoder(t *testing.T) {
 				ExpectedValue: map[string]interface{}{},
 				Object:        objBuilder(map[string]interface{}{}),
 			},
+			{
+				Name:          "nested",
+				ExpectedValue: []interface{}{"1", "2", map[string]interface{}{"foo": "bar", "bar": "baz", "baz": "foo"}, []interface{}{"1", "2", "3"}},
+				Object:        objBuilder([]interface{}{1, "2", map[string]string{"foo": "bar", "bar": "baz", "baz": "foo"}, []int{1, 2, 3}}),
+			},
 		} {
 			tc := tc
 			t.Run(tc.Name, func(t *testing.T) {
