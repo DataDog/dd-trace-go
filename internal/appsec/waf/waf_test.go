@@ -1140,31 +1140,7 @@ func TestDecoder(t *testing.T) {
 				val, err := decodeObject(tc.Object)
 				require.NoErrorf(t, err, "Error decoding the object: %v", err)
 				require.Equal(t, reflect.TypeOf(tc.ExpectedValue), reflect.TypeOf(val))
-				switch reflect.ValueOf(tc.ExpectedValue).Kind() {
-				case reflect.Int64, reflect.Uint64, reflect.String:
-					require.Equal(t, tc.ExpectedValue, val)
-				case reflect.Map:
-					valMap, ok := val.(map[string]interface{})
-					require.True(t, ok, "Type assertion to map[string]interface{} failed")
-					expMap, ok := tc.ExpectedValue.(map[string]interface{})
-					require.True(t, ok, "Type assertion to map[string]interface{} failed")
-					require.Equal(t, len(expMap), len(valMap))
-					for k, expV := range expMap {
-						valV, ok := valMap[k]
-						// First check that there is an entry for `key`
-						require.Truef(t, ok, "Could not find key '%s' in map", k)
-						require.Equal(t, expV, valV)
-					}
-				case reflect.Array:
-					valArray, ok := val.([]interface{})
-					require.True(t, ok, "Type assertion to []interface{} failed")
-					expArray, ok := tc.ExpectedValue.([]interface{})
-					require.True(t, ok, "Type assertion to []interface{} failed")
-					require.Equal(t, len(expArray), len(valArray))
-					for i, _ := range valArray {
-						require.Equal(t, expArray[i], valArray[i])
-					}
-				}
+				require.Equal(t, tc.ExpectedValue, val)
 			})
 		}
 	})
