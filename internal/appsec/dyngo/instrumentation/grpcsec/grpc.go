@@ -37,7 +37,7 @@ type (
 	// to the operation using its AddSecurityEvent() method.
 	HandlerOperation struct {
 		dyngo.Operation
-		instrumentation.MetricsHolder
+		instrumentation.TagsHolder
 		instrumentation.SecurityEventsHolder
 	}
 	// HandlerOperationArgs is the grpc handler arguments.
@@ -74,8 +74,8 @@ type (
 // root operation.
 func StartHandlerOperation(args HandlerOperationArgs, parent dyngo.Operation) *HandlerOperation {
 	op := &HandlerOperation{
-		Operation:     dyngo.NewOperation(parent),
-		MetricsHolder: instrumentation.NewMetricsHolder(),
+		Operation:  dyngo.NewOperation(parent),
+		TagsHolder: instrumentation.NewTagsHolder(),
 	}
 	dyngo.StartOperation(op, args)
 	return op

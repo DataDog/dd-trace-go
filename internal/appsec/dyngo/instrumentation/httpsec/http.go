@@ -82,7 +82,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				status = mw.Status()
 			}
 			events := op.Finish(HandlerOperationRes{Status: status})
-			instrumentation.SetTags(span, op.Metrics())
+			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
 			}
@@ -131,7 +131,7 @@ func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) Han
 type (
 	Operation struct {
 		dyngo.Operation
-		instrumentation.MetricsHolder
+		instrumentation.TagsHolder
 		instrumentation.SecurityEventsHolder
 	}
 
@@ -150,8 +150,8 @@ type (
 // is always expected to be first in the operation stack.
 func StartOperation(ctx context.Context, args HandlerOperationArgs) (context.Context, *Operation) {
 	op := &Operation{
-		Operation:     dyngo.NewOperation(nil),
-		MetricsHolder: instrumentation.NewMetricsHolder(),
+		Operation:  dyngo.NewOperation(nil),
+		TagsHolder: instrumentation.NewTagsHolder(),
 	}
 	newCtx := context.WithValue(ctx, contextKey{}, op)
 	dyngo.StartOperation(op, args)

@@ -133,14 +133,14 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 
 			// Log WAF metrics.
 			// time.Duration.Microseconds() is only as of go1.13, so we do it manually here
-			op.AddMetric("_dd.appsec.waf.duration", float64(wafCtx.TotalRuntime()/1e3))
-			op.AddMetric("_dd.appsec.waf.duration_ext", float64(overallWAFRunDuration.Nanoseconds()/1e3))
+			op.AddTag("_dd.appsec.waf.duration", float64(wafCtx.TotalRuntime()/1e3))
+			op.AddTag("_dd.appsec.waf.duration_ext", float64(overallWAFRunDuration.Nanoseconds()/1e3))
 			once.Do(func() {
 				rInfo := handle.RulesetInfo()
-				op.AddMetric("_dd.appsec.event_rules.version", rInfo.Version)
-				op.AddMetric("_dd.appsec.event_rules.errors", rInfo.Errors)
-				op.AddMetric("_dd.appsec.event_rules.loaded", float64(rInfo.Loaded))
-				op.AddMetric("_dd.appsec.event_rules.error_count", float64(rInfo.Failed))
+				op.AddTag("_dd.appsec.event_rules.version", rInfo.Version)
+				op.AddTag("_dd.appsec.event_rules.errors", rInfo.Errors)
+				op.AddTag("_dd.appsec.event_rules.loaded", float64(rInfo.Loaded))
+				op.AddTag("_dd.appsec.event_rules.error_count", float64(rInfo.Failed))
 			})
 
 			// Log the attacks if any
@@ -207,8 +207,8 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			// WAF run durations are WAF context bound. As of now we need to keep track of those externally since
 			// we use a new WAF context for each callback. When we are able to re-use the same WAF context across
 			// callbacks, we can get rid of these variables and simply use the WAF bindings in OnHandlerOperationFinish.
-			wafRunDuration.Add(wafCtx.TotalRuntime())
 			wafBindingsRunDuration.Add(uint64(time.Since(now).Nanoseconds()))
+			wafRunDuration.Add(wafCtx.TotalRuntime())
 			if len(event) == 0 {
 				return
 			}
@@ -219,15 +219,15 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			mu.Unlock()
 		}))
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
-			op.AddMetric("_dd.appsec.waf.duration", float64(wafRunDuration/1e3))
-			op.AddMetric("_dd.appsec.waf.duration_ext", float64(wafBindingsRunDuration/1e3))
+			op.AddTag("_dd.appsec.waf.duration", float64(wafRunDuration/1e3))
+			op.AddTag("_dd.appsec.waf.duration_ext", float64(wafBindingsRunDuration/1e3))
 
 			metricsOnce.Do(func() {
 				rInfo := handle.RulesetInfo()
-				op.AddMetric("_dd.appsec.event_rules.version", rInfo.Version)
-				op.AddMetric("_dd.appsec.event_rules.errors", rInfo.Errors)
-				op.AddMetric("_dd.appsec.event_rules.loaded", float64(rInfo.Loaded))
-				op.AddMetric("_dd.appsec.event_rules.error_count", float64(rInfo.Failed))
+				op.AddTag("_dd.appsec.event_rules.version", rInfo.Version)
+				op.AddTag("_dd.appsec.event_rules.errors", rInfo.Errors)
+				op.AddTag("_dd.appsec.event_rules.loaded", float64(rInfo.Loaded))
+				op.AddTag("_dd.appsec.event_rules.error_count", float64(rInfo.Failed))
 			})
 			if len(events) > 0 && limiter.Allow() {
 				op.AddSecurityEvents(events...)

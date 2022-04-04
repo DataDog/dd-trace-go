@@ -34,6 +34,6 @@ func useAppSec(c echo.Context, span tracer.Span) func() {
 			}
 			httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Response().Writer.Header())
 		}
-		instrumentation.SetTags(span, op.Metrics())
+		instrumentation.SetTags(span, op.Tags())
 	}
 }

@@ -44,14 +44,6 @@ import (
 // Version wrapper type of the WAF version.
 type Version C.ddwaf_version
 
-// AtomicDuration can be used to perform atomic duration sums thanks to AtomicDuration.Add.
-type AtomicDuration uint64
-
-// Add atomically sums the current duration value with `ns` to create a new duration value.
-func (d *AtomicDuration) Add(ns uint64) {
-	atomic.AddUint64((*uint64)(d), ns)
-}
-
 // String returns the string representation of the version in the form
 // <major>.<minor>.<patch>.
 func (v *Version) String() string {
@@ -59,6 +51,14 @@ func (v *Version) String() string {
 	minor := uint16(v.minor)
 	patch := uint16(v.patch)
 	return fmt.Sprintf("%d.%d.%d", major, minor, patch)
+}
+
+// AtomicDuration can be used to perform atomic duration sums thanks to AtomicDuration.Add.
+type AtomicDuration uint64
+
+// Add atomically sums the current duration value with `ns` to create a new duration value.
+func (d *AtomicDuration) Add(ns uint64) {
+	atomic.AddUint64((*uint64)(d), ns)
 }
 
 // Health allows knowing if the WAF can be used. It returns the current WAF

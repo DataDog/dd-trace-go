@@ -3,6 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
+// Package instrumentation holds code commonly used between all instrumentation declinations (currently httpsec/grpcsec).
 package instrumentation
 
 import (
@@ -12,27 +13,25 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
-// This file holds code commonly used between all instrumentation declinations (currently httpsec/grpcsec).
-
-// MetricsHolder wraps a map holding metrics. The purpose of this struct is to be used by composition in an Operation
-// to allow said operation to handle metrics addition/retrieval. See httpsec/http.go and grpcsec/grpc.go.
-type MetricsHolder struct {
-	metrics map[string]interface{}
+// TagsHolder wraps a map holding tags. The purpose of this struct is to be used by composition in an Operation
+// to allow said operation to handle tags addition/retrieval. See httpsec/http.go and grpcsec/grpc.go.
+type TagsHolder struct {
+	tags map[string]interface{}
 }
 
-// AddMetric adds the key/value pair to the metrics map
-func (m *MetricsHolder) AddMetric(k string, v interface{}) {
-	m.metrics[k] = v
+// NewTagsHolder returns a new instance of a TagsHolder struct.
+func NewTagsHolder() TagsHolder {
+	return TagsHolder{tags: map[string]interface{}{}}
 }
 
-// Metrics returns the metrics map
-func (m *MetricsHolder) Metrics() map[string]interface{} {
-	return m.metrics
+// AddTag adds the key/value pair to the tags map
+func (m *TagsHolder) AddTag(k string, v interface{}) {
+	m.tags[k] = v
 }
 
-// NewMetricsHolder returns a new instance of a MetricsHolder struct.
-func NewMetricsHolder() MetricsHolder {
-	return MetricsHolder{metrics: map[string]interface{}{}}
+// Tags returns the tags map
+func (m *TagsHolder) Tags() map[string]interface{} {
+	return m.tags
 }
 
 // SecurityEventsHolder is a wrapper around a thread safe security events slice. The purpose of this struct is to be
