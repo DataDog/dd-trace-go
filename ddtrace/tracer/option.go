@@ -177,7 +177,7 @@ func forEachStringTag(str string, fn func(key string, val string)) {
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
-	c.agentAddr = resolveAgentAddr(defaultAddress)
+	c.agentAddr = resolveAgentAddr("")
 	c.httpClient = defaultHTTPClient()
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {

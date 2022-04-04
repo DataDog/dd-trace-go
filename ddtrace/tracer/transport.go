@@ -192,17 +192,17 @@ func resolveAgentAddr(addr string) string {
 		// no port in addr
 		host = addr
 	}
+	if v := os.Getenv("DD_AGENT_HOST"); v != "" && host == "" {
+		host = v
+	}
+	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" && port == "" {
+		port = v
+	}
 	if host == "" {
 		host = defaultHostname
 	}
 	if port == "" {
 		port = defaultPort
-	}
-	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
-		host = v
-	}
-	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
-		port = v
 	}
 	return fmt.Sprintf("%s:%s", host, port)
 }
