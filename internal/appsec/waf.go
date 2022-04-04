@@ -24,6 +24,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+const (
+	eventRulesVersionTag = "_dd.appsec.event_rules.version"
+	eventRulesErrorsTag  = "_dd.appsec.event_rules.errors"
+	eventRulesLoadedTag  = "_dd.appsec.event_rules.loaded"
+	eventRulesFailedTag  = "_dd.appsec.event_rules.error_count"
+	wafDurationTag       = "_dd.appsec.waf.duration"
+	wafDurationExtTag    = "_dd.appsec.waf.duration_ext"
+)
+
 // Register the WAF event listener.
 func registerWAF(rules []byte, timeout time.Duration, limiter Limiter) (unreg dyngo.UnregisterFunc, err error) {
 	// Check the WAF is healthy
@@ -133,14 +142,14 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 
 			// Log WAF metrics.
 			// time.Duration.Microseconds() is only as of go1.13, so we do it manually here
-			op.AddTag("_dd.appsec.waf.duration", float64(wafCtx.TotalRuntime()/1e3))
-			op.AddTag("_dd.appsec.waf.duration_ext", float64(overallWAFRunDuration.Nanoseconds()/1e3))
+			op.AddTag(wafDurationTag, float64(wafCtx.TotalRuntime()/1e3))
+			op.AddTag(wafDurationExtTag, float64(overallWAFRunDuration.Nanoseconds()/1e3))
 			once.Do(func() {
 				rInfo := handle.RulesetInfo()
-				op.AddTag("_dd.appsec.event_rules.version", rInfo.Version)
-				op.AddTag("_dd.appsec.event_rules.errors", rInfo.Errors)
-				op.AddTag("_dd.appsec.event_rules.loaded", float64(rInfo.Loaded))
-				op.AddTag("_dd.appsec.event_rules.error_count", float64(rInfo.Failed))
+				op.AddTag(eventRulesVersionTag, rInfo.Version)
+				op.AddTag(eventRulesErrorsTag, rInfo.Errors)
+				op.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
+				op.AddTag(eventRulesFailedTag, float64(rInfo.Failed))
 			})
 
 			// Log the attacks if any
@@ -219,15 +228,15 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			mu.Unlock()
 		}))
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
-			op.AddTag("_dd.appsec.waf.duration", float64(wafRunDuration/1e3))
-			op.AddTag("_dd.appsec.waf.duration_ext", float64(wafBindingsRunDuration/1e3))
+			op.AddTag(wafDurationTag, float64(wafRunDuration/1e3))
+			op.AddTag(wafDurationExtTag, float64(wafBindingsRunDuration/1e3))
 
 			metricsOnce.Do(func() {
 				rInfo := handle.RulesetInfo()
-				op.AddTag("_dd.appsec.event_rules.version", rInfo.Version)
-				op.AddTag("_dd.appsec.event_rules.errors", rInfo.Errors)
-				op.AddTag("_dd.appsec.event_rules.loaded", float64(rInfo.Loaded))
-				op.AddTag("_dd.appsec.event_rules.error_count", float64(rInfo.Failed))
+				op.AddTag(eventRulesVersionTag, rInfo.Version)
+				op.AddTag(eventRulesErrorsTag, rInfo.Errors)
+				op.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
+				op.AddTag(eventRulesFailedTag, float64(rInfo.Failed))
 			})
 			if len(events) > 0 && limiter.Allow() {
 				op.AddSecurityEvents(events...)
