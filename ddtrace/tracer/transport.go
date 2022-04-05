@@ -101,8 +101,8 @@ func newHTTPTransport(addr string, client *http.Client) *httpTransport {
 		defaultHeaders["Datadog-Container-ID"] = cid
 	}
 	return &httpTransport{
-		traceURL: fmt.Sprintf("http://%s/v0.4/traces", resolveAgentAddr(addr)),
-		statsURL: fmt.Sprintf("http://%s/v0.6/stats", resolveAgentAddr(addr)),
+		traceURL: fmt.Sprintf("http://%s/v0.4/traces", addr),
+		statsURL: fmt.Sprintf("http://%s/v0.6/stats", addr),
 		client:   client,
 		headers:  defaultHeaders,
 	}
