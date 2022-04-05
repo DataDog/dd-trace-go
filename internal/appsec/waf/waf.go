@@ -127,17 +127,20 @@ func NewHandle(jsonRule []byte) (*Handle, error) {
 
 	// Run-time encoder limiting the size of the encoded values
 	encoder := encoder{
-		maxDepth:        C.DDWAF_MAX_MAP_DEPTH,
+		maxDepth:        C.DDWAF_MAX_CONTAINER_DEPTH,
 		maxStringLength: C.DDWAF_MAX_STRING_LENGTH,
-		maxArrayLength:  C.DDWAF_MAX_ARRAY_LENGTH,
-		maxMapLength:    C.DDWAF_MAX_ARRAY_LENGTH,
+		maxArrayLength:  C.DDWAF_MAX_CONTAINER_SIZE,
+		maxMapLength:    C.DDWAF_MAX_CONTAINER_SIZE,
 	}
 
 	var wafRInfo C.ddwaf_ruleset_info
 	defer C.ddwaf_ruleset_info_free(&wafRInfo)
 	handle := C.ddwaf_init(wafRule.ctype(), &C.ddwaf_config{
-		maxArrayLength: C.uint64_t(encoder.maxArrayLength),
-		maxMapDepth:    C.uint64_t(encoder.maxMapLength),
+		limits: struct{ max_container_size, max_container_depth, max_string_length C.uint32_t }{
+			max_container_size:  C.uint32_t(encoder.maxArrayLength),
+			max_container_depth: C.uint32_t(encoder.maxMapLength),
+			max_string_length:   C.uint32_t(encoder.maxStringLength),
+		},
 	}, &wafRInfo)
 	if handle == nil {
 		return nil, errors.New("could not instantiate the waf rule")
