@@ -32,7 +32,7 @@ func TestHealth(t *testing.T) {
 	version, err := Health()
 	require.NoError(t, err)
 	require.NotNil(t, version)
-	require.Equal(t, "1.2.1", version.String())
+	require.Equal(t, "1.3.0", version.String())
 }
 
 var testRule = newTestRule(ruleInput{Address: "server.request.headers.no_cookies", KeyPath: []string{"user-agent"}})
