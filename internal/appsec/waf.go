@@ -19,6 +19,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
@@ -143,14 +144,9 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 
 			// Log WAF metrics.
 			// time.Duration.Microseconds() is only as of go1.13, so we do it manually here
-			op.AddTag(wafDurationTag, float64(wafCtx.TotalRuntime()/1e3))
-			op.AddTag(wafDurationExtTag, float64(overallWAFRunDuration.Nanoseconds()/1e3))
+			addWAFDurationTags(&op.TagsHolder, float64(wafCtx.TotalRuntime()), float64(overallWAFRunDuration.Nanoseconds()))
 			once.Do(func() {
-				rInfo := handle.RulesetInfo()
-				op.AddTag(eventRulesVersionTag, rInfo.Version)
-				op.AddTag(eventRulesErrorsTag, rInfo.Errors)
-				op.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
-				op.AddTag(eventRulesFailedTag, float64(rInfo.Failed))
+				addRulesetInfoTags(&op.TagsHolder, handle.RulesetInfo())
 				op.AddTag(ext.ManualKeep, true)
 			})
 
@@ -230,15 +226,9 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			mu.Unlock()
 		}))
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
-			op.AddTag(wafDurationTag, float64(wafRunDuration/1e3))
-			op.AddTag(wafDurationExtTag, float64(wafBindingsRunDuration/1e3))
-
+			addWAFDurationTags(&op.TagsHolder, float64(wafRunDuration), float64(wafBindingsRunDuration))
 			metricsOnce.Do(func() {
-				rInfo := handle.RulesetInfo()
-				op.AddTag(eventRulesVersionTag, rInfo.Version)
-				op.AddTag(eventRulesErrorsTag, rInfo.Errors)
-				op.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
-				op.AddTag(eventRulesFailedTag, float64(rInfo.Failed))
+				addRulesetInfoTags(&op.TagsHolder, handle.RulesetInfo())
 				op.AddTag(ext.ManualKeep, true)
 			})
 			if len(events) > 0 && limiter.Allow() {
@@ -315,4 +305,18 @@ func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC, n
 		}
 	}
 	return
+}
+
+// addRulesetInfoTags adds information retrieved from `rInfo` as tags in `th`
+func addRulesetInfoTags(th *instrumentation.TagsHolder, rInfo waf.RulesetInfo) {
+	th.AddTag(eventRulesVersionTag, rInfo.Version)
+	th.AddTag(eventRulesErrorsTag, rInfo.Errors)
+	th.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
+	th.AddTag(eventRulesFailedTag, float64(rInfo.Failed))
+}
+
+// addWAFDurationTags converts the provided durations (expected in ns) to ms and adds them as tags in `th`
+func addWAFDurationTags(th *instrumentation.TagsHolder, runtime float64, totalRuntime float64) {
+	th.AddTag(wafDurationTag, runtime/1e3)
+	th.AddTag(wafDurationExtTag, totalRuntime/1e3)
 }
