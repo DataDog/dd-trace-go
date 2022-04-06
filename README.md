@@ -25,7 +25,7 @@ The API is documented on [godoc](https://godoc.org/gopkg.in/DataDog/dd-trace-go.
 
 ### Support Policy
 
-Datadog APM for go is built upon dependencies defined in specific versions of the host operating system, go releases, and the Datadog Agent/API. For go the two latest releases are [GA](#support-ga) supported and the version before that is in [Maintenance](#support-maintenance). We do make efforts to support older releases, but generally these releases are considered [Legacy](#support-legacy). This library only officially supports [first class ports](https://github.com/golang/go/wiki/PortingPolicy#first-class-ports) of go.
+Datadog APM for Go is built upon dependencies defined in specific versions of the host operating system, Go releases, and the Datadog Agent/API. For Go the two latest releases are [GA](#support-ga) supported and the version before that is in [Maintenance](#support-maintenance). We do make efforts to support older releases, but generally these releases are considered [Legacy](#support-legacy). This library only officially supports [first class ports](https://github.com/golang/go/wiki/PortingPolicy#first-class-ports) of Go.
 
 | **Level**                                              | **Support provided**                                                                                                                                                          |
 |--------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
