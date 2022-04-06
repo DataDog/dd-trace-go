@@ -19,14 +19,50 @@ go get gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux
 
 If you installed more packages than you intended, you can use `go mod tidy` to remove any unused packages.
 
-Requires:
-
-* Go >= 1.12
-* Datadog's Trace Agent >= 5.21.1
-
 ### Documentation
 
 The API is documented on [godoc](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace) as well as Datadog's official documentation for [Tracing Go Applications](https://docs.datadoghq.com/tracing/setup/go/) and the [Continuous Go Profiler](https://docs.datadoghq.com/tracing/profiler/enabling/go). If you are migrating from an older version of the tracer (e.g. 0.6.x) you may also find the [migration document](https://github.com/DataDog/dd-trace-go/blob/v1/MIGRATING.md) we've put together helpful.
+
+### Support Policy
+
+Datadog APM for go is built upon dependencies defined in specific versions of the host operating system, go releases, and the Datadog Agent/API. For go the two latest releases are [GA](#support-ga) supported and the version before that is in [Maintenance](#support-maintenance). We do make efforts to support older releases, but generally these releases are considered [Legacy](#support-legacy). This library only officially supports [first class ports](https://github.com/golang/go/wiki/PortingPolicy#first-class-ports) of go.
+
+| **Level**                                              | **Support provided**                                                                                                                                                          |
+|--------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| <span id="support-ga">General Availability (GA)</span> |  Full implementation of all features. Full support for new features, bug & security fixes.                                                                                    |
+| <span id="support-maintenance">Maintenance</span>      |  Full implementation of existing features. Does not receive new features. Support for bug & security fixes only.                                                              |
+| <span id="support-legacy">Legacy</span>                |  Legacy implementation. May have limited function, but no maintenance provided. [Contact our customer support team for special requests.](https://www.datadoghq.com/support/) |
+
+### Supported Versions
+
+| **Go Version** | **Support level**                   |
+|----------------|-------------------------------------|
+| 1.18           | [GA](#support-ga)                   |
+| 1.17           | [GA](#support-ga)                   |
+| 1.16           | [Maintenance](#support-maintenance) |
+
+* Datadog's Trace Agent >= 5.21.1
+
+#### Package Versioning
+
+A **Minor** version change will be released whenever a new version of go is released. At that time the newest version of go is added to [GA](#support-ga), the second oldest supported version moved to [Maintenance](#support-maintenance) and the oldest previously supported version dropped to [Legacy](#support-legacy).
+**For example**:
+For a dd-trace-go version 1.37.*
+
+| Go Version | Support                             |
+|------------|-------------------------------------|
+| 1.18       | [GA](#support-ga)                   |
+| 1.17       | [GA](#support-ga)                   |
+| 1.16       | [Maintenance](#support-maintenance) |
+
+Then after Go 1.19 is released there will be a new dd-trace-go version 1.38.0 with support:
+
+| Go Version | Support                             |
+|------------|-------------------------------------|
+| 1.19       | [GA](#support-ga)                   |
+| 1.18       | [GA](#support-ga)                   |
+| 1.17       | [Maintenance](#support-maintenance) |
+| 1.16       | [Legacy](#support-legacy)           |
 
 ### Contributing
 
