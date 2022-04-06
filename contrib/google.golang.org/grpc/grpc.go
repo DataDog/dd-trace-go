@@ -22,6 +22,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// cache a constant option: saves one allocation per call
+var spanTypeRPC = tracer.SpanType(ext.AppTypeRPC)
+
 func startSpanFromContext(
 	ctx context.Context, method, operation, service string, opts ...tracer.StartSpanOption,
 ) (ddtrace.Span, context.Context) {
@@ -29,7 +32,7 @@ func startSpanFromContext(
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethodName, method),
-		tracer.SpanType(ext.AppTypeRPC),
+		spanTypeRPC,
 	)
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
