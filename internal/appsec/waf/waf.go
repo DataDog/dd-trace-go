@@ -103,8 +103,8 @@ type RulesetInfo struct {
 	Version string
 }
 
-// NewHandle creates a new instance of the WAF with the given JSON rule.
-func NewHandle(jsonRule []byte) (*Handle, error) {
+// NewHandle creates a new instance of the WAF with the given JSON rule and key/value regexps for obfuscation.
+func NewHandle(jsonRule []byte, keyRegex string, valueRegex string) (*Handle, error) {
 	var rule interface{}
 	if err := json.Unmarshal(jsonRule, &rule); err != nil {
 		return nil, fmt.Errorf("could not parse the WAF rule: %v", err)
@@ -123,7 +123,7 @@ func NewHandle(jsonRule []byte) (*Handle, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not encode the JSON WAF rule into a WAF object: %v", err)
 	}
-	defer free(wafRule)
+	defer freeWO(wafRule)
 
 	// Run-time encoder limiting the size of the encoded values
 	encoder := encoder{
@@ -132,16 +132,30 @@ func NewHandle(jsonRule []byte) (*Handle, error) {
 		maxArrayLength:  C.DDWAF_MAX_CONTAINER_SIZE,
 		maxMapLength:    C.DDWAF_MAX_CONTAINER_SIZE,
 	}
-
 	var wafRInfo C.ddwaf_ruleset_info
-	defer C.ddwaf_ruleset_info_free(&wafRInfo)
-	handle := C.ddwaf_init(wafRule.ctype(), &C.ddwaf_config{
+	keyRegexC, _, err := cstring(keyRegex, encoder.maxStringLength)
+	if err != nil {
+		return nil, fmt.Errorf("could not convert Go string to C string: %v", err)
+	}
+	defer cFree(unsafe.Pointer(keyRegexC))
+	valueRegexC, _, err := cstring(valueRegex, encoder.maxStringLength)
+	if err != nil {
+		return nil, fmt.Errorf("could not convert Go string to C string: %v", err)
+	}
+	defer cFree(unsafe.Pointer(valueRegexC))
+	wafCfg := C.ddwaf_config{
 		limits: struct{ max_container_size, max_container_depth, max_string_length C.uint32_t }{
 			max_container_size:  C.uint32_t(encoder.maxArrayLength),
 			max_container_depth: C.uint32_t(encoder.maxMapLength),
 			max_string_length:   C.uint32_t(encoder.maxStringLength),
 		},
-	}, &wafRInfo)
+		obfuscator: struct{ key_regex, value_regex *C.char }{
+			key_regex:   keyRegexC,
+			value_regex: valueRegexC,
+		},
+	}
+	defer C.ddwaf_ruleset_info_free(&wafRInfo)
+	handle := C.ddwaf_init(wafRule.ctype(), &wafCfg, &wafRInfo)
 	if handle == nil {
 		return nil, errors.New("could not instantiate the waf rule")
 	}
@@ -260,7 +274,7 @@ func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (mat
 	if err != nil {
 		return nil, err
 	}
-	defer free(wafValue)
+	defer freeWO(wafValue)
 	return c.runWAF(wafValue, timeout)
 }
 
@@ -367,7 +381,7 @@ func (e *encoder) encode(v interface{}) (object *wafObject, err error) {
 			err = fmt.Errorf("waf panic: %v", v)
 		}
 		if err != nil && object != nil {
-			free(object)
+			freeWO(object)
 		}
 	}()
 	wo := &wafObject{}
@@ -461,7 +475,7 @@ func (e *encoder) encodeStruct(v reflect.Value, wo *wafObject, depth int) error 
 
 		if err := e.encodeValue(v.Field(i), mapEntry, depth); err != nil {
 			// Free the map entry in order to free the previously allocated map key
-			free(mapEntry)
+			freeWO(mapEntry)
 			if isIgnoredValueError(err) {
 				continue
 			}
@@ -500,7 +514,7 @@ func (e *encoder) encodeMap(v reflect.Value, wo *wafObject, depth int) error {
 		}
 		if err := e.encodeValue(iter.Value(), mapEntry, depth); err != nil {
 			// Free the previously allocated map key
-			free(mapEntry)
+			freeWO(mapEntry)
 			if isIgnoredValueError(err) {
 				continue
 			}
@@ -802,40 +816,38 @@ func cstring(str string, maxLength int) (*C.char, int, error) {
 	return cstr, l, nil
 }
 
-func free(v *wafObject) {
+func cFree(ptr unsafe.Pointer) {
+	C.free(ptr)
+	decNbLiveCObjects()
+}
+
+func freeWO(v *wafObject) {
 	if v == nil {
 		return
 	}
 	// Free the map key if any
 	if key := v.mapKey(); key != nil {
-		C.free(unsafe.Pointer(v.parameterName))
-		decNbLiveCObjects()
+		cFree(unsafe.Pointer(v.parameterName))
 	}
 	// Free allocated values
 	switch v._type {
 	case wafInvalidType:
 		return
 	case wafStringType:
-		freeString(v)
+		cFree(unsafe.Pointer(v.string()))
 	case wafMapType, wafArrayType:
-		freeContainer(v)
+		freeWOContainer(v)
 	}
 	// Make the value invalid to make it unusable
 	v.setInvalid()
 }
 
-func freeString(v *wafObject) {
-	C.free(unsafe.Pointer(v.string()))
-	decNbLiveCObjects()
-}
-
-func freeContainer(v *wafObject) {
+func freeWOContainer(v *wafObject) {
 	length := v.length()
 	for i := C.uint64_t(0); i < length; i++ {
-		free(v.index(i))
+		freeWO(v.index(i))
 	}
 	if a := *v.arrayValuePtr(); a != nil {
-		C.free(unsafe.Pointer(a))
-		decNbLiveCObjects()
+		cFree(unsafe.Pointer(a))
 	}
 }

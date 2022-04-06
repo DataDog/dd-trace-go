@@ -38,14 +38,14 @@ const (
 )
 
 // Register the WAF event listener.
-func registerWAF(rules []byte, timeout time.Duration, limiter Limiter) (unreg dyngo.UnregisterFunc, err error) {
+func registerWAF(rules []byte, timeout time.Duration, limiter Limiter, obfCfg *ObfuscatorConfig) (unreg dyngo.UnregisterFunc, err error) {
 	// Check the WAF is healthy
 	if _, err := waf.Health(); err != nil {
 		return nil, err
 	}
 
 	// Instantiate the WAF
-	waf, err := waf.NewHandle(rules)
+	waf, err := waf.NewHandle(rules, obfCfg.KeyRegex, obfCfg.ValueRegex)
 	if err != nil {
 		return nil, err
 	}

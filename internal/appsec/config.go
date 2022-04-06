@@ -18,15 +18,18 @@ import (
 )
 
 const (
-	enabledEnvVar        = "DD_APPSEC_ENABLED"
-	rulesEnvVar          = "DD_APPSEC_RULES"
-	wafTimeoutEnvVar     = "DD_APPSEC_WAF_TIMEOUT"
-	traceRateLimitEnvVar = "DD_APPSEC_TRACE_RATE_LIMIT"
+	enabledEnvVar         = "DD_APPSEC_ENABLED"
+	rulesEnvVar           = "DD_APPSEC_RULES"
+	wafTimeoutEnvVar      = "DD_APPSEC_WAF_TIMEOUT"
+	traceRateLimitEnvVar  = "DD_APPSEC_TRACE_RATE_LIMIT"
+	obfuscatorKeyEnvVar   = "DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP"
+	obfuscatorValueEnvVar = "DD_APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP"
 )
 
 const (
-	defaultWAFTimeout      = 4 * time.Millisecond
-	defaultTraceRate  uint = 100 // up to 100 appsec traces/s
+	defaultWAFTimeout              = 4 * time.Millisecond
+	defaultTraceRate          uint = 100 // up to 100 appsec traces/s
+	defaultObfuscatorKeyRegex      = "(?i)(p(ass)?w(or)?d|pass(_?phrase)?|secret|(api_?|private_?|public_?)key)|token|consumer_?(id|key|secret)|sign(ed|ature)|bearer|authorization"
 )
 
 // config is the AppSec configuration.
@@ -37,6 +40,14 @@ type config struct {
 	wafTimeout time.Duration
 	// AppSec trace rate limit (traces per second).
 	traceRateLimit uint
+	// Obfuscator configuration parameters
+	obfuscator ObfuscatorConfig
+}
+
+// ObfuscatorConfig wraps the key and value regexp to be passed to the WAF to perform obfuscation.
+type ObfuscatorConfig struct {
+	KeyRegex   string
+	ValueRegex string
 }
 
 // isEnabled returns true when appsec is enabled when the environment variable
@@ -62,6 +73,7 @@ func newConfig() (*config, error) {
 		rules:          rules,
 		wafTimeout:     readWAFTimeoutConfig(),
 		traceRateLimit: readRateLimitConfig(),
+		obfuscator:     *readObfuscatorConfig(),
 	}, nil
 }
 
@@ -107,6 +119,25 @@ func readRateLimitConfig() (rate uint) {
 		return
 	}
 	return uint(parsed)
+}
+
+func readObfuscatorConfig() *ObfuscatorConfig {
+	keyRegex, kPresent := os.LookupEnv(obfuscatorKeyEnvVar)
+	valueRegex, vPresent := os.LookupEnv(obfuscatorValueEnvVar)
+
+	if keyRegex == "" && !kPresent {
+		log.Info("appsec: starting with the default regexp for matched parameter keys obfuscation")
+		keyRegex = defaultObfuscatorKeyRegex
+	} else {
+		log.Info("appsec: starting with user regexp for matched parameter keys obfuscation")
+	}
+	if valueRegex == "" && !vPresent {
+		log.Info("appsec: starting with the default empty regexp for matched parameter values/highlights obfuscation")
+	} else {
+		log.Info("appsec: starting with user regexp for matched parameter values/highlights obfuscation")
+	}
+
+	return &ObfuscatorConfig{KeyRegex: keyRegex, ValueRegex: valueRegex}
 }
 
 func readRulesConfig() (rules []byte, err error) {
