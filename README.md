@@ -45,7 +45,7 @@ Datadog APM for Go is built upon dependencies defined in specific versions of th
 
 #### Package Versioning
 
-A **Minor** version change will be released whenever a new version of go is released. At that time the newest version of go is added to [GA](#support-ga), the second oldest supported version moved to [Maintenance](#support-maintenance) and the oldest previously supported version dropped to [Legacy](#support-legacy).
+A **Minor** version change will be released whenever a new version of Go is released. At that time the newest version of Go is added to [GA](#support-ga), the second oldest supported version moved to [Maintenance](#support-maintenance) and the oldest previously supported version dropped to [Legacy](#support-legacy).
 **For example**:
 For a dd-trace-go version 1.37.*
 
