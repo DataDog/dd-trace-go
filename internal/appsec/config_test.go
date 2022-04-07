@@ -206,6 +206,14 @@ func TestConfig(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, &expCfg, cfg)
 			})
+			t.Run("compile-error", func(t *testing.T) {
+				restoreEnv := cleanEnv()
+				defer restoreEnv()
+				require.NoError(t, os.Setenv(obfuscatorKeyEnvVar, "+"))
+				cfg, err := newConfig()
+				require.NoError(t, err)
+				require.Equal(t, expectedDefaultConfig, cfg)
+			})
 		})
 
 		t.Run("value-regexp", func(t *testing.T) {
@@ -223,6 +231,14 @@ func TestConfig(t *testing.T) {
 				restoreEnv := cleanEnv()
 				defer restoreEnv()
 				require.NoError(t, os.Setenv(obfuscatorValueEnvVar, ""))
+				cfg, err := newConfig()
+				require.NoError(t, err)
+				require.Equal(t, expectedDefaultConfig, cfg)
+			})
+			t.Run("compile-error", func(t *testing.T) {
+				restoreEnv := cleanEnv()
+				defer restoreEnv()
+				require.NoError(t, os.Setenv(obfuscatorValueEnvVar, "+"))
 				cfg, err := newConfig()
 				require.NoError(t, err)
 				require.Equal(t, expectedDefaultConfig, cfg)
