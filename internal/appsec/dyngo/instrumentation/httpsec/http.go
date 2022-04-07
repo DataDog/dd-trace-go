@@ -166,12 +166,9 @@ func fromContext(ctx context.Context) *Operation {
 
 // Finish the HTTP handler operation, along with the given results and emits a
 // finish event up in the operation stack.
-func (op *Operation) Finish(res HandlerOperationRes) json.RawMessage {
+func (op *Operation) Finish(res HandlerOperationRes) []json.RawMessage {
 	dyngo.FinishOperation(op, res)
-	if events := op.Events(); len(events) > 0 {
-		return events[0]
-	}
-	return json.RawMessage{}
+	return op.Events()
 }
 
 // StartSDKBodyOperation starts the SDKBody operation and emits a start event
