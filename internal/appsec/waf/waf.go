@@ -104,7 +104,7 @@ type RulesetInfo struct {
 }
 
 // NewHandle creates a new instance of the WAF with the given JSON rule and key/value regexps for obfuscation.
-func NewHandle(jsonRule []byte, keyRegex string, valueRegex string) (*Handle, error) {
+func NewHandle(jsonRule []byte, keyRegex, valueRegex string) (*Handle, error) {
 	var rule interface{}
 	if err := json.Unmarshal(jsonRule, &rule); err != nil {
 		return nil, fmt.Errorf("could not parse the WAF rule: %v", err)
@@ -135,12 +135,12 @@ func NewHandle(jsonRule []byte, keyRegex string, valueRegex string) (*Handle, er
 	var wafRInfo C.ddwaf_ruleset_info
 	keyRegexC, _, err := cstring(keyRegex, encoder.maxStringLength)
 	if err != nil {
-		return nil, fmt.Errorf("could not convert Go string to C string: %v", err)
+		return nil, fmt.Errorf("could not convert the obfuscator key regexp string to a C string: %v", err)
 	}
 	defer cFree(unsafe.Pointer(keyRegexC))
 	valueRegexC, _, err := cstring(valueRegex, encoder.maxStringLength)
 	if err != nil {
-		return nil, fmt.Errorf("could not convert Go string to C string: %v", err)
+		return nil, fmt.Errorf("could not convert the obfuscator value regexp to a C string: %v", err)
 	}
 	defer cFree(unsafe.Pointer(valueRegexC))
 	wafCfg := C.ddwaf_config{
