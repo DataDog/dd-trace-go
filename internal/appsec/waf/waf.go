@@ -53,12 +53,17 @@ func (v *Version) String() string {
 	return fmt.Sprintf("%d.%d.%d", major, minor, patch)
 }
 
-// AtomicDuration can be used to perform atomic duration sums thanks to AtomicDuration.Add.
-type AtomicDuration uint64
+// AtomicU64 can be used to perform atomic operations on an uint64 type
+type AtomicU64 uint64
 
-// Add atomically sums the current duration value with `ns` to create a new duration value.
-func (d *AtomicDuration) Add(ns uint64) {
-	atomic.AddUint64((*uint64)(d), ns)
+// Add atomically sums the current atomic value with the provided value `v`.
+func (a *AtomicU64) Add(v uint64) {
+	atomic.AddUint64((*uint64)(a), v)
+}
+
+// Inc atomically increments the atomic value by 1
+func (a *AtomicU64) Inc() {
+	atomic.AddUint64((*uint64)(a), 1)
 }
 
 // Health allows knowing if the WAF can be used. It returns the current WAF
@@ -210,8 +215,10 @@ func (waf *Handle) Close() {
 // become available. Each request must have its own Context.
 type Context struct {
 	waf *Handle
-	// Cumulated WAF runtime for this context.
-	totalRuntimeNs AtomicDuration
+	// Cumulated WAF runtime - in nanoseconds - for this context.
+	totalRuntimeNs AtomicU64
+	// Cumulated timeout count for this context.
+	timeoutCount AtomicU64
 
 	context C.ddwaf_context
 	// Mutex protecting the use of context which is not thread-safe.
@@ -262,7 +269,12 @@ func (c *Context) runWAF(data *wafObject, timeout time.Duration) (matches []byte
 	defer C.ddwaf_result_free(&result)
 	rc := C.ddwaf_run(c.context, data.ctype(), &result, C.uint64_t(timeout/time.Microsecond))
 	c.totalRuntimeNs.Add(uint64(result.total_runtime))
-	return goReturnValues(rc, &result)
+	matches, err = goReturnValues(rc, &result)
+	if err == ErrTimeout {
+		c.timeoutCount.Inc()
+	}
+
+	return matches, err
 }
 
 // Close the WAF context by releasing its C memory and decreasing the number of
@@ -278,6 +290,11 @@ func (c *Context) Close() {
 // Returned time is in nanoseconds.
 func (c *Context) TotalRuntime() uint64 {
 	return uint64(c.totalRuntimeNs)
+}
+
+// TotalTimeouts returns the cumulated amount of WAF timeotus across various run calls within the same WAF context.
+func (c *Context) TotalTimeouts() uint64 {
+	return uint64(c.timeoutCount)
 }
 
 // Translate libddwaf return values into return values suitable to a Go program.

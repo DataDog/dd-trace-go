@@ -143,6 +143,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			overallWAFRunDuration := time.Since(wafRunStartTime)
 
 			// Log WAF metrics.
+			op.AddTag("_dd.appsec.waf.timeouts", float64(wafCtx.TotalTimeouts()))
 			// time.Duration.Microseconds() is only as of go1.13, so we do it manually here
 			addWAFDurationTags(&op.TagsHolder, float64(wafCtx.TotalRuntime()), float64(overallWAFRunDuration.Nanoseconds()))
 			once.Do(func() {
@@ -174,8 +175,9 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			nbEvents               uint32
 			logOnce                sync.Once
 			metricsOnce            sync.Once
-			wafRunDuration         waf.AtomicDuration
-			wafBindingsRunDuration waf.AtomicDuration
+			wafRunDuration         waf.AtomicU64
+			wafBindingsRunDuration waf.AtomicU64
+			wafTimeouts            waf.AtomicU64
 
 			events []json.RawMessage
 			mu     sync.Mutex
@@ -216,6 +218,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			// callbacks, we can get rid of these variables and simply use the WAF bindings in OnHandlerOperationFinish.
 			wafBindingsRunDuration.Add(uint64(time.Since(now).Nanoseconds()))
 			wafRunDuration.Add(wafCtx.TotalRuntime())
+			wafTimeouts.Add(wafCtx.TotalTimeouts())
 			if len(event) == 0 {
 				return
 			}
@@ -226,6 +229,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			mu.Unlock()
 		}))
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
+			op.AddTag("_dd.appsec.waf.timeouts", float64(wafTimeouts))
 			addWAFDurationTags(&op.TagsHolder, float64(wafRunDuration), float64(wafBindingsRunDuration))
 			metricsOnce.Do(func() {
 				addRulesetInfoTags(&op.TagsHolder, handle.RulesetInfo())

@@ -495,6 +495,22 @@ func TestMetrics(t *testing.T) {
 		require.Greater(t, wafCtx.TotalRuntime(), uint64(0), "wafCtx runtime metric is not set")
 		require.LessOrEqual(t, wafCtx.TotalRuntime(), uint64(elapsedNS), "wafCtx runtime metric is incorrect")
 	})
+
+	t.Run("Timeouts", func(t *testing.T) {
+		wafCtx := NewContext(waf)
+		require.NotNil(t, wafCtx)
+		defer wafCtx.Close()
+		// Craft matching data to force work on the WAF
+		data := map[string]interface{}{
+			"server.request.uri.raw": "\\%uff00",
+		}
+
+		for i := uint64(1); i <= 10; i++ {
+			_, err := wafCtx.Run(data, time.Nanosecond)
+			require.Equal(t, err, ErrTimeout)
+			require.Equal(t, i, wafCtx.TotalTimeouts())
+		}
+	})
 }
 
 func requireZeroNBLiveCObjects(t testing.TB) {
