@@ -1230,6 +1230,57 @@ func TestDecoder(t *testing.T) {
 	})
 }
 
+func TestObfuscatorConfig(t *testing.T) {
+	rule := newTestRule(ruleInput{Address: "my.addr", KeyPath: []string{"key"}})
+	t.Run("key", func(t *testing.T) {
+		waf, err := NewHandle(rule, "key", "")
+		require.NoError(t, err)
+		defer waf.Close()
+		wafCtx := NewContext(waf)
+		require.NotNil(t, wafCtx)
+		defer wafCtx.Close()
+		data := map[string]interface{}{
+			"my.addr": map[string]interface{}{"key": "Arachni-sensitive-Arachni"},
+		}
+		matches, err := wafCtx.Run(data, time.Second)
+		require.NotNil(t, matches)
+		require.NoError(t, err)
+		require.NotContains(t, (string)(matches), "sensitive")
+	})
+
+	t.Run("val", func(t *testing.T) {
+		waf, err := NewHandle(rule, "", "sensitive")
+		require.NoError(t, err)
+		defer waf.Close()
+		wafCtx := NewContext(waf)
+		require.NotNil(t, wafCtx)
+		defer wafCtx.Close()
+		data := map[string]interface{}{
+			"my.addr": map[string]interface{}{"key": "Arachni-sensitive-Arachni"},
+		}
+		matches, err := wafCtx.Run(data, time.Second)
+		require.NotNil(t, matches)
+		require.NoError(t, err)
+		require.NotContains(t, (string)(matches), "sensitive")
+	})
+
+	t.Run("off", func(t *testing.T) {
+		waf, err := NewHandle(rule, "", "")
+		require.NoError(t, err)
+		defer waf.Close()
+		wafCtx := NewContext(waf)
+		require.NotNil(t, wafCtx)
+		defer wafCtx.Close()
+		data := map[string]interface{}{
+			"my.addr": map[string]interface{}{"key": "Arachni-sensitive-Arachni"},
+		}
+		matches, err := wafCtx.Run(data, time.Second)
+		require.NotNil(t, matches)
+		require.NoError(t, err)
+		require.Contains(t, (string)(matches), "sensitive")
+	})
+}
+
 func TestFree(t *testing.T) {
 	t.Run("nil-value", func(t *testing.T) {
 		require.NotPanics(t, func() {
