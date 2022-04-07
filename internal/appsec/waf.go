@@ -17,11 +17,24 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+)
+
+const (
+	eventRulesVersionTag = "_dd.appsec.event_rules.version"
+	eventRulesErrorsTag  = "_dd.appsec.event_rules.errors"
+	eventRulesLoadedTag  = "_dd.appsec.event_rules.loaded"
+	eventRulesFailedTag  = "_dd.appsec.event_rules.error_count"
+	wafDurationTag       = "_dd.appsec.waf.duration"
+	wafDurationExtTag    = "_dd.appsec.waf.duration_ext"
+	wafTimeoutTag        = "_dd.appsec.waf.timeouts"
 )
 
 // Register the WAF event listener.
@@ -81,6 +94,7 @@ func registerWAF(rules []byte, timeout time.Duration, limiter Limiter) (unreg dy
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
 func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration, limiter Limiter) dyngo.EventListener {
+	var once sync.Once
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
 		var body interface{}
 		op.On(httpsec.OnSDKBodyOperationStart(func(op *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
@@ -126,7 +140,19 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 					values[serverResponseStatusAddr] = res.Status
 				}
 			}
+			wafRunStartTime := time.Now()
 			matches := runWAF(wafCtx, values, timeout)
+			overallWAFRunDuration := time.Since(wafRunStartTime)
+
+			// Log WAF metrics.
+			op.AddTag(wafTimeoutTag, float64(wafCtx.TotalTimeouts()))
+			// time.Duration.Microseconds() is only as of go1.13, so we do it manually here
+			addWAFDurationTags(&op.TagsHolder, float64(wafCtx.TotalRuntime()), float64(overallWAFRunDuration.Nanoseconds()))
+			// Log the following metrics once per instantiation of a WAF handle
+			once.Do(func() {
+				addRulesetInfoTags(&op.TagsHolder, handle.RulesetInfo())
+				op.AddTag(ext.ManualKeep, samplernames.AppSec)
+			})
 
 			// Log the attacks if any
 			if len(matches) == 0 {
@@ -134,7 +160,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			}
 			log.Debug("appsec: attack detected by the waf")
 			if limiter.Allow() {
-				op.AddSecurityEvent(matches)
+				op.AddSecurityEvents(matches)
 			}
 		}))
 
@@ -149,8 +175,12 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 		// receive unlimited number of messages where we could find security events
 		const maxWAFEventsPerRequest = 10
 		var (
-			nbEvents uint32
-			logOnce  sync.Once
+			nbEvents               uint32
+			logOnce                sync.Once
+			metricsOnce            sync.Once
+			wafRunDuration         waf.AtomicU64
+			wafBindingsRunDuration waf.AtomicU64
+			wafTimeouts            waf.AtomicU64
 
 			events []json.RawMessage
 			mu     sync.Mutex
@@ -184,7 +214,14 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			if md := handlerArgs.Metadata; len(md) > 0 {
 				values[grpcServerRequestMetadata] = md
 			}
+			now := time.Now()
 			event := runWAF(wafCtx, values, timeout)
+			// WAF run durations are WAF context bound. As of now we need to keep track of those externally since
+			// we use a new WAF context for each callback. When we are able to re-use the same WAF context across
+			// callbacks, we can get rid of these variables and simply use the WAF bindings in OnHandlerOperationFinish.
+			wafBindingsRunDuration.Add(uint64(time.Since(now).Nanoseconds()))
+			wafRunDuration.Add(wafCtx.TotalRuntime())
+			wafTimeouts.Add(wafCtx.TotalTimeouts())
 			if len(event) == 0 {
 				return
 			}
@@ -195,8 +232,15 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			mu.Unlock()
 		}))
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
+			op.AddTag(wafTimeoutTag, float64(wafTimeouts))
+			addWAFDurationTags(&op.TagsHolder, float64(wafRunDuration), float64(wafBindingsRunDuration))
+			// Log the following metrics once per instantiation of a WAF handle
+			metricsOnce.Do(func() {
+				addRulesetInfoTags(&op.TagsHolder, handle.RulesetInfo())
+				op.AddTag(ext.ManualKeep, samplernames.AppSec)
+			})
 			if len(events) > 0 && limiter.Allow() {
-				op.AddSecurityEvent(events)
+				op.AddSecurityEvents(events...)
 			}
 		}))
 	})
@@ -269,4 +313,18 @@ func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC, n
 		}
 	}
 	return
+}
+
+// addRulesetInfoTags adds information retrieved from `rInfo` as tags in `th`
+func addRulesetInfoTags(th *instrumentation.TagsHolder, rInfo waf.RulesetInfo) {
+	th.AddTag(eventRulesVersionTag, rInfo.Version)
+	th.AddTag(eventRulesErrorsTag, rInfo.Errors)
+	th.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
+	th.AddTag(eventRulesFailedTag, float64(rInfo.Failed))
+}
+
+// addWAFDurationTags converts the provided durations (expected in ns) to ms and adds them as tags in `th`
+func addWAFDurationTags(th *instrumentation.TagsHolder, runtime float64, totalRuntime float64) {
+	th.AddTag(wafDurationTag, runtime/1e3)
+	th.AddTag(wafDurationExtTag, totalRuntime/1e3)
 }
