@@ -34,6 +34,7 @@ const (
 	eventRulesFailedTag  = "_dd.appsec.event_rules.error_count"
 	wafDurationTag       = "_dd.appsec.waf.duration"
 	wafDurationExtTag    = "_dd.appsec.waf.duration_ext"
+	wafTimeoutTag        = "_dd.appsec.waf.timeouts"
 )
 
 // Register the WAF event listener.
@@ -144,9 +145,10 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			overallWAFRunDuration := time.Since(wafRunStartTime)
 
 			// Log WAF metrics.
-			op.AddTag("_dd.appsec.waf.timeouts", float64(wafCtx.TotalTimeouts()))
+			op.AddTag(wafTimeoutTag, float64(wafCtx.TotalTimeouts()))
 			// time.Duration.Microseconds() is only as of go1.13, so we do it manually here
 			addWAFDurationTags(&op.TagsHolder, float64(wafCtx.TotalRuntime()), float64(overallWAFRunDuration.Nanoseconds()))
+			// Log the following metrics once per instantiation of a WAF handle
 			once.Do(func() {
 				addRulesetInfoTags(&op.TagsHolder, handle.RulesetInfo())
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
@@ -230,8 +232,9 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			mu.Unlock()
 		}))
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
-			op.AddTag("_dd.appsec.waf.timeouts", float64(wafTimeouts))
+			op.AddTag(wafTimeoutTag, float64(wafTimeouts))
 			addWAFDurationTags(&op.TagsHolder, float64(wafRunDuration), float64(wafBindingsRunDuration))
+			// Log the following metrics once per instantiation of a WAF handle
 			metricsOnce.Do(func() {
 				addRulesetInfoTags(&op.TagsHolder, handle.RulesetInfo())
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
