@@ -317,8 +317,14 @@ func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC, n
 
 // addRulesetInfoTags adds information retrieved from `rInfo` as tags in `th`
 func addRulesetInfoTags(th *instrumentation.TagsHolder, rInfo waf.RulesetInfo) {
+	if len(rInfo.Errors) > 0 {
+		if rulesetErrors, err := json.Marshal(rInfo.Errors); err != nil {
+			th.AddTag(eventRulesErrorsTag, rulesetErrors)
+		} else {
+			log.Error("appsec: could not marshal ruleset info errors to json")
+		}
+	}
 	th.AddTag(eventRulesVersionTag, rInfo.Version)
-	th.AddTag(eventRulesErrorsTag, rInfo.Errors)
 	th.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
 	th.AddTag(eventRulesFailedTag, float64(rInfo.Failed))
 }
