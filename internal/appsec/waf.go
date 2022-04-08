@@ -145,12 +145,15 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			overallWAFRunDuration := time.Since(wafRunStartTime)
 
 			// Log WAF metrics.
+			rInfo := handle.RulesetInfo()
 			op.AddTag(wafTimeoutTag, float64(wafCtx.TotalTimeouts()))
+			// Rules version is set for every request to help the backend associate WAF duration metrics with rule version
+			op.AddTag(eventRulesVersionTag, rInfo.Version)
 			// time.Duration.Microseconds() is only as of go1.13, so we do it manually here
 			addWAFDurationTags(&op.TagsHolder, float64(wafCtx.TotalRuntime()), float64(overallWAFRunDuration.Nanoseconds()))
 			// Log the following metrics once per instantiation of a WAF handle
 			once.Do(func() {
-				addRulesetInfoTags(&op.TagsHolder, handle.RulesetInfo())
+				addRulesetInfoTags(&op.TagsHolder, rInfo)
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
 			})
 
@@ -232,11 +235,14 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			mu.Unlock()
 		}))
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
+			rInfo := handle.RulesetInfo()
+			// Rules version is set for every request to help the backend associate WAF duration metrics with rule version
+			op.AddTag(eventRulesVersionTag, rInfo.Version)
 			op.AddTag(wafTimeoutTag, float64(wafTimeouts))
 			addWAFDurationTags(&op.TagsHolder, float64(wafRunDuration), float64(wafBindingsRunDuration))
 			// Log the following metrics once per instantiation of a WAF handle
 			metricsOnce.Do(func() {
-				addRulesetInfoTags(&op.TagsHolder, handle.RulesetInfo())
+				addRulesetInfoTags(&op.TagsHolder, rInfo)
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
 			})
 			if len(events) > 0 && limiter.Allow() {
@@ -317,14 +323,15 @@ func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC, n
 
 // addRulesetInfoTags adds information retrieved from `rInfo` as tags in `th`
 func addRulesetInfoTags(th *instrumentation.TagsHolder, rInfo waf.RulesetInfo) {
-	if len(rInfo.Errors) > 0 {
-		if rulesetErrors, err := json.Marshal(rInfo.Errors); err != nil {
-			th.AddTag(eventRulesErrorsTag, rulesetErrors)
-		} else {
-			log.Error("appsec: could not marshal ruleset info errors to json")
-		}
+	// Set map to nil if empty to help with json encoding
+	if len(rInfo.Errors) == 0 {
+		rInfo.Errors = nil
 	}
-	th.AddTag(eventRulesVersionTag, rInfo.Version)
+	rulesetErrors, err := json.Marshal(rInfo.Errors)
+	if err != nil {
+		log.Error("appsec: could not marshal ruleset info errors to json")
+	}
+	th.AddTag(eventRulesErrorsTag, rulesetErrors)
 	th.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
 	th.AddTag(eventRulesFailedTag, float64(rInfo.Failed))
 }
