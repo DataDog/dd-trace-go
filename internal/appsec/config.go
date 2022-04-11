@@ -127,18 +127,18 @@ func readObfuscatorConfig() ObfuscatorConfig {
 	valueRegex, vPresent := os.LookupEnv(obfuscatorValueEnvVar)
 
 	if keyRegex == "" && !kPresent {
-		log.Info("appsec: starting with the default regexp for matched parameter keys obfuscation")
+		log.Debug("appsec: starting with the default regexp for matched parameter keys obfuscation")
 		keyRegex = defaultObfuscatorKeyRegex
 	} else if _, err := regexp.Compile(keyRegex); err == nil {
-		log.Info("appsec: starting with user regexp for matched parameter keys obfuscation")
+		log.Debug("appsec: starting with user regexp for matched parameter keys obfuscation")
 	} else {
 		log.Error("appsec: could not compile user regexp for parameter keys. Using default instead")
 		keyRegex = defaultObfuscatorKeyRegex
 	}
 	if valueRegex == "" && !vPresent {
-		log.Info("appsec: starting with the default empty regexp for matched parameter values/highlights obfuscation")
+		log.Debug("appsec: starting with the default empty regexp for matched parameter values/highlights obfuscation")
 	} else if _, err := regexp.Compile(valueRegex); err == nil {
-		log.Info("appsec: starting with user regexp for matched parameter values/highlights obfuscation")
+		log.Debug("appsec: starting with user regexp for matched parameter values/highlights obfuscation")
 	} else {
 		log.Error("appsec: could not compile user regexp for parameter value/highlights. Using empty regexp instead")
 		valueRegex = ""
