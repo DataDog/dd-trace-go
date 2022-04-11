@@ -254,7 +254,7 @@ func TestTracePriorityLocked(t *testing.T) {
 	assert.Nil(err)
 	sctx, ok := ctx.(*spanContext)
 	assert.True(ok)
-	assert.True(sctx.trace.locked)
+	assert.False(sctx.trace.locked)
 }
 
 func TestNewSpanContext(t *testing.T) {
