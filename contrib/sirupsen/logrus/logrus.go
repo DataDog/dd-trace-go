@@ -15,10 +15,12 @@ import (
 // DDContextLogHook logs any span in the log context by implementing the logrus.Hook interface
 type DDContextLogHook struct{}
 
+// Levels implements logrus.Hook interface, this hook applies to all defined levels
 func (d *DDContextLogHook) Levels() []logrus.Level {
 	return []logrus.Level{logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel, logrus.WarnLevel, logrus.InfoLevel, logrus.DebugLevel, logrus.TraceLevel}
 }
 
+// Fire implements logrus.Hook interface, attaches trace and span details found in entry context
 func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
 	span, found := tracer.SpanFromContext(e.Context)
 	if !found {
