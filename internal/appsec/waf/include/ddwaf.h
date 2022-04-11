@@ -71,13 +71,21 @@ typedef enum
     DDWAF_LOG_OFF,
 } DDWAF_LOG_LEVEL;
 
+#ifdef __cplusplus
+class PowerWAF;
+class PWAdditive;
+using ddwaf_handle = PowerWAF *;
+using ddwaf_context = PWAdditive *;
+#else
 typedef struct _ddwaf_handle* ddwaf_handle;
 typedef struct _ddwaf_context* ddwaf_context;
+#endif
+
 typedef struct _ddwaf_object ddwaf_object;
 typedef struct _ddwaf_config ddwaf_config;
 typedef struct _ddwaf_result ddwaf_result;
 typedef struct _ddwaf_version ddwaf_version;
-
+typedef struct _ddwaf_ruleset_info ddwaf_ruleset_info;
 /**
  * @struct ddwaf_object
  *
@@ -93,7 +101,7 @@ struct _ddwaf_object
         const char* stringValue;
         uint64_t uintValue;
         int64_t intValue;
-        const ddwaf_object* array;
+        ddwaf_object* array;
     };
     uint64_t nbEntries;
     DDWAF_OBJ_TYPE type;
@@ -110,8 +118,6 @@ struct _ddwaf_config
     uint64_t maxArrayLength;
     /** Maximum depth of ddwaf::object maps. */
     uint64_t maxMapDepth;
-    /** Maximum size of the rule run time store. **/
-    int32_t maxTimeStore;
 };
 
 /**
@@ -123,12 +129,10 @@ struct _ddwaf_result
 {
     /** Whether there has been a timeout during the operation **/
     bool timeout;
-    /** Total run time in microseconds **/
-    uint32_t perfTotalRuntime;
     /** Run result in JSON format **/
     const char* data;
-    /** Performance data in JSON format **/
-    const char* perfData;
+    /** Total WAF runtime in nanoseconds **/
+    uint64_t total_runtime;
 };
 
 /**
@@ -141,6 +145,24 @@ struct _ddwaf_version
     uint16_t major;
     uint16_t minor;
     uint16_t patch;
+};
+
+/**
+ * @ddwaf_ruleset_info
+ *
+ * Structure containing diagnostics on the provided ruleset.
+ * */
+struct _ddwaf_ruleset_info
+{
+    /** Number of rules successfully loaded **/
+    uint16_t loaded;
+    /** Number of rules which failed to parse **/
+    uint16_t failed;
+    /** Map from an error string to an array of all the rule ids for which
+     *  that error was raised. {error: [rule_ids]} **/
+    ddwaf_object errors;
+    /** Ruleset version **/
+    const char *version;
 };
 
 /**
@@ -173,10 +195,12 @@ typedef void (*ddwaf_log_cb)(
  *
  * @param rule ddwaf::object containing the patterns to be used by the WAF. (nonnull)
  * @param config Optional configuration of the WAF. (nullable)
+ * @param info Optional ruleset parsing diagnostics. (nullable)
  *
  * @return Handle to the WAF instance.
  **/
-ddwaf_handle ddwaf_init(const ddwaf_object *rule, const ddwaf_config* config);
+ddwaf_handle ddwaf_init(const ddwaf_object *rule,
+    const ddwaf_config* config, ddwaf_ruleset_info *info);
 
 /**
  * ddwaf_destroy
@@ -186,7 +210,14 @@ ddwaf_handle ddwaf_init(const ddwaf_object *rule, const ddwaf_config* config);
  * @param Handle to the WAF instance.
  */
 void ddwaf_destroy(ddwaf_handle handle);
-
+/**
+ * ddwaf_ruleset_info_free
+ *
+ * Free the memory associated with the ruleset info structure.
+ *
+ * @param info Ruleset info to free.
+ * */
+void ddwaf_ruleset_info_free(ddwaf_ruleset_info *info);
 /**
  * ddwaf_required_addresses
  *
@@ -247,7 +278,8 @@ ddwaf_context ddwaf_context_init(const ddwaf_handle handle, ddwaf_object_free_fn
  *                           data is unknown. The result structure will not be
  *                           filled if this error occurs.
  **/
-DDWAF_RET_CODE ddwaf_run(ddwaf_context context, ddwaf_object *data, ddwaf_result *result, uint64_t timeout);
+DDWAF_RET_CODE ddwaf_run(ddwaf_context context, ddwaf_object *data,
+                         ddwaf_result *result,  uint64_t timeout);
 
 /**
  * ddwaf_context_destroy
@@ -449,6 +481,101 @@ bool ddwaf_object_map_addl(ddwaf_object *map, const char *key, size_t length, dd
  * @return The success or failure of the operation.
  **/
 bool ddwaf_object_map_addl_nc(ddwaf_object *map, const char *key, size_t length, ddwaf_object *object);
+
+/**
+ * ddwaf_object_type
+ *
+ * Returns the type of the object.
+ *
+ * @param object The object from which to get the type.
+ *
+ * @return The object type of DDWAF_OBJ_INVALID if NULL.
+ **/
+DDWAF_OBJ_TYPE ddwaf_object_type(ddwaf_object *object);
+
+/**
+ * ddwaf_object_size
+ *
+ * Returns the size of the container object.
+ *
+ * @param object The object from which to get the size.
+ *
+ * @return The object size or 0 if the object is not a container (array, map).
+ **/
+size_t ddwaf_object_size(ddwaf_object *object);
+
+/**
+ * ddwaf_object_length
+ *
+ * Returns the length of the string object.
+ *
+ * @param object The object from which to get the length.
+ *
+ * @return The string length or 0 if the object is not a string.
+ **/
+size_t ddwaf_object_length(ddwaf_object *object);
+
+/**
+ * ddwaf_object_get_key
+ *
+ * Returns the key contained within the object.
+ *
+ * @param object The object from which to get the key.
+ * @param length Output parameter on which to return the length of the key,
+ *               this parameter is optional / nullable.
+ *
+ * @return The key of the object or NULL if the object doesn't contain a key.
+ **/
+const char* ddwaf_object_get_key(ddwaf_object *object, size_t *length);
+
+/**
+ * ddwaf_object_get_string
+ *
+ * Returns the string contained within the object.
+ *
+ * @param object The object from which to get the string.
+ * @param length Output parameter on which to return the length of the string,
+ *               this parameter is optional / nullable.
+ *
+ * @return The string of the object or NULL if the object is not a string.
+ **/
+const char* ddwaf_object_get_string(ddwaf_object *object, size_t *length);
+
+/**
+ * ddwaf_object_get_unsigned
+ *
+ * Returns the uint64 contained within the object.
+ *
+ * @param object The object from which to get the integer.
+ *
+ * @return The integer or 0 if the object is not an unsigned.
+ **/
+uint64_t ddwaf_object_get_unsigned(ddwaf_object *object);
+
+/**
+ * ddwaf_object_get_signed
+ *
+ * Returns the int64 contained within the object.
+ *
+ * @param object The object from which to get the integer.
+ *
+ * @return The integer or 0 if the object is not a signed.
+ **/
+int64_t ddwaf_object_get_signed(ddwaf_object *object);
+
+/**
+ * ddwaf_object_get_index
+ *
+ * Returns the object contained in the container at the given index.
+ *
+ * @param object The container from which to extract the object.
+ * @param index The position of the required object within the container.
+ *
+ * @return The requested object or NULL if the index is out of bounds or the
+ *         object is not a container.
+ **/
+ddwaf_object* ddwaf_object_get_index(ddwaf_object *object, size_t index);
+
 
 /**
  * ddwaf_object_free
