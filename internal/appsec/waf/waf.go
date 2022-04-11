@@ -88,6 +88,7 @@ type Handle struct {
 	addresses []string
 	// rulesetInfo holds information about rules initialization
 	rulesetInfo RulesetInfo
+	wafVersion  string
 }
 
 // RulesetInfo stores the information - provided by the WAF - about WAF rules initialization.
@@ -181,11 +182,17 @@ func NewHandle(jsonRule []byte, keyRegex, valueRegex string) (*Handle, error) {
 		decNbLiveCObjects()
 		return nil, err
 	}
+	var wafVersion Version
+	// Should not happen since we successfully initialized the WAF
+	if wafVersion, err = Health(); err != nil {
+		return nil, err
+	}
 	return &Handle{
 		handle:      handle,
 		encoder:     encoder,
 		addresses:   addresses,
 		rulesetInfo: rInfo,
+		wafVersion:  wafVersion.String(),
 	}, nil
 }
 
@@ -213,6 +220,11 @@ func (waf *Handle) Addresses() []string {
 // RulesetInfo returns the rules initialization metrics for the current WAF handle
 func (waf *Handle) RulesetInfo() RulesetInfo {
 	return waf.rulesetInfo
+}
+
+// WAFVersion returns the current version of the WAF
+func (waf *Handle) WAFVersion() string {
+	return waf.wafVersion
 }
 
 // Close the WAF and release the underlying C memory as soon as there are

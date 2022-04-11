@@ -35,6 +35,7 @@ const (
 	wafDurationTag       = "_dd.appsec.waf.duration"
 	wafDurationExtTag    = "_dd.appsec.waf.duration_ext"
 	wafTimeoutTag        = "_dd.appsec.waf.timeouts"
+	wafVersionTag        = "_dd.appsec.waf.version"
 )
 
 // Register the WAF event listener.
@@ -155,6 +156,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			once.Do(func() {
 				addRulesetInfoTags(&op.TagsHolder, rInfo)
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
+				op.AddTag(wafVersionTag, handle.WAFVersion())
 			})
 
 			// Log the attacks if any
@@ -244,6 +246,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			metricsOnce.Do(func() {
 				addRulesetInfoTags(&op.TagsHolder, rInfo)
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
+				op.AddTag(wafVersionTag, handle.WAFVersion())
 			})
 			if len(events) > 0 && limiter.Allow() {
 				op.AddSecurityEvents(events...)
