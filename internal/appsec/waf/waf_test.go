@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -31,7 +32,7 @@ func TestHealth(t *testing.T) {
 	version, err := Health()
 	require.NoError(t, err)
 	require.NotNil(t, version)
-	require.Equal(t, "1.0.18", version.String())
+	require.Equal(t, "1.2.1", version.String())
 }
 
 var testRule = newTestRule(ruleInput{Address: "server.request.headers.no_cookies", KeyPath: []string{"user-agent"}})
@@ -404,6 +405,112 @@ func TestRunError(t *testing.T) {
 			require.Equal(t, tc.ExpectedString, tc.Err.Error())
 		})
 	}
+}
+
+func TestMetrics(t *testing.T) {
+	rules := `
+{
+  "version": "2.1",
+  "metadata": {
+    "rules_version": "1.2.7"
+  },
+  "rules": [
+	{
+	  "id": "valid-rule",
+	  "name": "Unicode Full/Half Width Abuse Attack Attempt",
+	  "tags": {
+		"type": "http_protocol_violation"
+	  },
+	  "conditions": [
+		{
+		  "parameters": {
+			"inputs": [
+			  {
+				"address": "server.request.uri.raw"
+			  }
+			],
+			"regex": "\\%u[fF]{2}[0-9a-fA-F]{2}"
+		  },
+		  "operator": "match_regex"
+		}
+	  ],
+	  "transformers": []
+	},
+	{
+	  "id": "missing-tags-1",
+	  "name": "Unicode Full/Half Width Abuse Attack Attempt",
+	  "conditions": [
+	  ],
+	  "transformers": []
+	},
+	{
+	  "id": "missing-tags-2",
+	  "name": "Unicode Full/Half Width Abuse Attack Attempt",
+	  "conditions": [
+	  ],
+	  "transformers": []
+	},
+	{
+	  "id": "missing-name",
+	  "tags": {
+		"type": "http_protocol_violation"
+	  },
+	  "conditions": [
+	  ],
+	  "transformers": []
+	}
+  ]
+}
+`
+	waf, err := NewHandle([]byte(rules))
+	require.NoError(t, err)
+	defer waf.Close()
+	// TODO: (Francois Mazeau) see if we can make this test more configurable to future proof against libddwaf changes
+	t.Run("RulesetInfo", func(t *testing.T) {
+		rInfo := waf.RulesetInfo()
+		require.Equal(t, uint16(3), rInfo.Failed)
+		require.Equal(t, uint16(1), rInfo.Loaded)
+		require.Equal(t, 2, len(rInfo.Errors))
+		require.Equal(t, "1.2.7", rInfo.Version)
+		require.Equal(t, map[string]interface{}{
+			"missing key 'tags'": []interface{}{"missing-tags-1", "missing-tags-2"},
+			"missing key 'name'": []interface{}{"missing-name"},
+		}, rInfo.Errors)
+	})
+
+	t.Run("RunDuration", func(t *testing.T) {
+		wafCtx := NewContext(waf)
+		require.NotNil(t, wafCtx)
+		defer wafCtx.Close()
+		// Craft matching data to force work on the WAF
+		data := map[string]interface{}{
+			"server.request.uri.raw": "\\%uff00",
+		}
+		start := time.Now()
+		matches, err := wafCtx.Run(data, time.Second)
+		elapsedNS := time.Since(start).Nanoseconds()
+		require.NoError(t, err)
+		require.NotNil(t, matches)
+		// Make sure that WAF runtime was set
+		require.Greater(t, wafCtx.TotalRuntime(), uint64(0), "wafCtx runtime metric is not set")
+		require.LessOrEqual(t, wafCtx.TotalRuntime(), uint64(elapsedNS), "wafCtx runtime metric is incorrect")
+	})
+
+	t.Run("Timeouts", func(t *testing.T) {
+		wafCtx := NewContext(waf)
+		require.NotNil(t, wafCtx)
+		defer wafCtx.Close()
+		// Craft matching data to force work on the WAF
+		data := map[string]interface{}{
+			"server.request.uri.raw": "\\%uff00",
+		}
+
+		for i := uint64(1); i <= 10; i++ {
+			_, err := wafCtx.Run(data, time.Nanosecond)
+			require.Equal(t, err, ErrTimeout)
+			require.Equal(t, i, wafCtx.TotalTimeouts())
+		}
+	})
 }
 
 func requireZeroNBLiveCObjects(t testing.TB) {
@@ -953,6 +1060,170 @@ func TestEncoder(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+// This test needs a working encoder to function properly, as it first encodes the objects before decoding them
+func TestDecoder(t *testing.T) {
+	const intSize = 32 << (^uint(0) >> 63) // copied from recent versions of math.MaxInt
+	const maxInt = 1<<(intSize-1) - 1      // copied from recent versions of math.MaxInt
+	e := encoder{
+		maxDepth:        maxInt,
+		maxStringLength: maxInt,
+		maxArrayLength:  maxInt,
+		maxMapLength:    maxInt,
+	}
+	objBuilder := func(v interface{}) *wafObject {
+		var err error
+		obj := &wafObject{}
+		// Right now the encoder encodes integer values as strings to match the WAF representation.
+		// We circumvent this here by manually encoding so that we can test with WAF objects that hold real integers,
+		// not string representations of integers. See https://github.com/DataDog/libddwaf/issues/41.
+		if v, ok := v.(int64); ok {
+			obj.setInt64(toCInt64(int(v)))
+			return obj
+		}
+		if v, ok := v.(uint64); ok {
+			obj.setUint64(toCUint64(uint(v)))
+			return obj
+		}
+		obj, err = e.encode(v)
+		require.NoError(t, err, "Encoding object failed")
+		return obj
+	}
+
+	t.Run("Valid", func(t *testing.T) {
+		for _, tc := range []struct {
+			Name          string
+			Object        *wafObject
+			ExpectedValue interface{}
+		}{
+			{
+				Name:          "string",
+				ExpectedValue: "string",
+				Object:        objBuilder("string"),
+			},
+			{
+				Name:          "empty-string",
+				ExpectedValue: "",
+				Object:        objBuilder(""),
+			},
+			{
+				Name:          "uint64",
+				ExpectedValue: uint64(42),
+				Object:        objBuilder(uint64(42)),
+			},
+			{
+				Name:          "int64",
+				ExpectedValue: int64(42),
+				Object:        objBuilder(int64(42)),
+			},
+			{
+				Name:          "array",
+				ExpectedValue: []interface{}{"str1", "str2", "str3", "str4"},
+				Object:        objBuilder([]string{"str1", "str2", "str3", "str4"}),
+			},
+			{
+				Name:          "empty-array",
+				ExpectedValue: []interface{}{},
+				Object:        objBuilder([]interface{}{}),
+			},
+			{
+				Name:          "struct",
+				ExpectedValue: map[string]interface{}{"Str": "string"},
+				Object: objBuilder(struct {
+					Str string
+				}{Str: "string"}),
+			},
+			{
+				Name:          "empty-struct",
+				ExpectedValue: map[string]interface{}{},
+				Object:        objBuilder(struct{}{}),
+			},
+			{
+				Name:          "map",
+				ExpectedValue: map[string]interface{}{"foo": "bar", "bar": "baz", "baz": "foo"},
+				Object:        objBuilder(map[string]interface{}{"foo": "bar", "bar": "baz", "baz": "foo"}),
+			},
+			{
+				Name:          "empty-map",
+				ExpectedValue: map[string]interface{}{},
+				Object:        objBuilder(map[string]interface{}{}),
+			},
+			{
+				Name:          "nested",
+				ExpectedValue: []interface{}{"1", "2", map[string]interface{}{"foo": "bar", "bar": "baz", "baz": "foo"}, []interface{}{"1", "2", "3"}},
+				Object:        objBuilder([]interface{}{1, "2", map[string]string{"foo": "bar", "bar": "baz", "baz": "foo"}, []int{1, 2, 3}}),
+			},
+		} {
+			tc := tc
+			t.Run(tc.Name, func(t *testing.T) {
+				defer free(tc.Object)
+				val, err := decodeObject(tc.Object)
+				require.NoErrorf(t, err, "Error decoding the object: %v", err)
+				require.Equal(t, reflect.TypeOf(tc.ExpectedValue), reflect.TypeOf(val))
+				require.Equal(t, tc.ExpectedValue, val)
+			})
+		}
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		for _, tc := range []struct {
+			Name          string
+			Object        *wafObject
+			Modifier      func(object *wafObject)
+			ExpectedError error
+		}{
+			{
+				Name:          "WAF-object",
+				Object:        nil,
+				ExpectedError: errNilObjectPtr,
+			},
+			{
+				Name:          "type",
+				Object:        objBuilder("obj"),
+				Modifier:      func(object *wafObject) { object._type = 5 },
+				ExpectedError: errUnsupportedValue,
+			},
+			{
+				Name:          "map-key-1",
+				Object:        objBuilder(map[string]interface{}{"baz": "foo"}),
+				Modifier:      func(object *wafObject) { object.index(0).setMapKey(nil, 0) },
+				ExpectedError: errInvalidMapKey,
+			},
+			{
+				Name:          "map-key-2",
+				Object:        objBuilder(map[string]interface{}{"baz": "foo"}),
+				Modifier:      func(object *wafObject) { object.index(0).setMapKey(nil, 10) },
+				ExpectedError: errInvalidMapKey,
+			},
+			{
+				Name:          "array-ptr",
+				Object:        objBuilder([]interface{}{"foo"}),
+				Modifier:      func(object *wafObject) { *object.arrayValuePtr() = nil },
+				ExpectedError: errNilObjectPtr,
+			},
+			{
+				Name:          "map-ptr",
+				Object:        objBuilder(map[string]interface{}{"baz": "foo"}),
+				Modifier:      func(object *wafObject) { *object.arrayValuePtr() = nil },
+				ExpectedError: errNilObjectPtr,
+			},
+		} {
+			tc := tc
+			t.Run(tc.Name, func(t *testing.T) {
+				if tc.Modifier != nil {
+					tc.Modifier(tc.Object)
+				}
+				_, err := decodeObject(tc.Object)
+				if tc.ExpectedError != nil {
+					require.Equal(t, tc.ExpectedError, err)
+				} else {
+					require.Error(t, err)
+				}
+
+			})
+		}
+	})
 }
 
 func TestFree(t *testing.T) {
