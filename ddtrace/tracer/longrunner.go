@@ -13,7 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-const NumShards = 32
+const numShards = 32
 
 // TrackingExpirationLimit is the limit for how long to track a long-running span before no longer sending snapshots
 const TrackingExpirationLimit = 12 * time.Hour
@@ -74,13 +74,13 @@ func splitMix64(n uint64) uint64 {
 	n = n + 0x9e3779b97f4a7c15
 	n = (n ^ (n >> 30)) * 0xbf58476d1ce4e5b9
 	n = (n ^ (n >> 27)) * 0x94d049bb133111eb
-	return (n ^ (n >> 31)) % NumShards
+	return (n ^ (n >> 31)) % numShards
 }
 
 // newLongrunner creates the default longrunner struct
 func newLongrunner(hbInterval int64, sd statsdClient) *longrunner {
 	s := make([]shard, 32)
-	for i := 0; i < NumShards; i++ {
+	for i := 0; i < numShards; i++ {
 		s[i] = shard{
 			lock:  &sync.Mutex{},
 			spans: map[*span]int{},
