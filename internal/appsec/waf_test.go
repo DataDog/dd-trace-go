@@ -46,6 +46,44 @@ func TestWAF(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
+	// This needs to be the first test run in order to retrieve WAF metrics correctly. All the tests here
+	//are using the same WAF handle, meaning that ruleset metrics will be sent only once on the first request.
+	t.Run("metrics", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("POST", srv.URL+"/", nil)
+		req.Header.Add("User-Agent", "Arachni/v1")
+		if err != nil {
+			panic(err)
+		}
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+
+		// Check that the handler was properly called
+		b, err := ioutil.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, "Hello World!\n", string(b))
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		event := finished[0].Tag("_dd.appsec.json")
+		require.NotNil(t, event)
+
+		// Verify that metrics types follow the RFC. Values checks are performed in waf/waf_test.go tests
+		for _, tag := range []string{"_dd.appsec.waf.duration", "_dd.appsec.waf.duration_ext",
+			"_dd.appsec.event_rules.error_count", "_dd.appsec.event_rules.loaded"} {
+			_, ok := finished[0].Tag(tag).(float64)
+			require.True(t, ok)
+		}
+		for _, tag := range []string{"_dd.appsec.event_rules.errors", "_dd.appsec.event_rules.version",
+			"_dd.appsec.waf.version"} {
+			_, ok := finished[0].Tag(tag).(string)
+			require.True(t, ok)
+		}
+	})
+
 	t.Run("lfi", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
