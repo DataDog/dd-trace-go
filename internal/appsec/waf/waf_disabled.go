@@ -28,11 +28,10 @@ var errDisabledReason = errors.New(disabledReason)
 // String returns the string representation of the version.
 func (*Version) String() string { return "" }
 
-// Health allows knowing if the WAF can be used. It returns the current WAF
-// version and a nil error when the WAF library is healthy. Otherwise, it
-// returns a nil version and an error describing the issue.
-func Health() (*Version, error) {
-	return nil, errDisabledReason
+// Health allows knowing if the WAF can be used. It returns a nil error when the WAF library is healthy.
+// Otherwise, it returns an error describing the issue.
+func Health() error {
+	return errDisabledReason
 }
 
 // NewHandle creates a new instance of the WAF with the given JSON rule.

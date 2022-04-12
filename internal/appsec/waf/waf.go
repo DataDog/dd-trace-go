@@ -41,17 +41,7 @@ import (
 	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/linux-amd64"
 )
 
-// Version wrapper type of the WAF version.
-type Version C.ddwaf_version
-
-// String returns the string representation of the version in the form
-// <major>.<minor>.<patch>.
-func (v *Version) String() string {
-	major := uint16(v.major)
-	minor := uint16(v.minor)
-	patch := uint16(v.patch)
-	return fmt.Sprintf("%d.%d.%d", major, minor, patch)
-}
+var wafVersion = getWAFVersion()
 
 // AtomicU64 can be used to perform atomic operations on an uint64 type
 type AtomicU64 uint64
@@ -66,13 +56,15 @@ func (a *AtomicU64) Inc() {
 	atomic.AddUint64((*uint64)(a), 1)
 }
 
-// Health allows knowing if the WAF can be used. It returns the current WAF
-// version and a nil error when the WAF library is healthy. Otherwise, it
-// returns a nil version and an error describing the issue.
-func Health() (Version, error) {
-	var v C.ddwaf_version
-	C.ddwaf_get_version(&v)
-	return Version(v), nil
+// Health allows knowing if the WAF can be used. It returns a nil error when the WAF library is healthy.
+// Otherwise, it returns an error describing the issue.
+func Health() error {
+	return nil
+}
+
+// Version returns the current version of the WAF
+func Version() string {
+	return wafVersion
 }
 
 // Handle represents an instance of the WAF for a given ruleset.
@@ -88,7 +80,6 @@ type Handle struct {
 	addresses []string
 	// rulesetInfo holds information about rules initialization
 	rulesetInfo RulesetInfo
-	wafVersion  string
 }
 
 // RulesetInfo stores the information - provided by the WAF - about WAF rules initialization.
@@ -182,17 +173,11 @@ func NewHandle(jsonRule []byte, keyRegex, valueRegex string) (*Handle, error) {
 		decNbLiveCObjects()
 		return nil, err
 	}
-	var wafVersion Version
-	// Should not happen since we successfully initialized the WAF
-	if wafVersion, err = Health(); err != nil {
-		return nil, err
-	}
 	return &Handle{
 		handle:      handle,
 		encoder:     encoder,
 		addresses:   addresses,
 		rulesetInfo: rInfo,
-		wafVersion:  wafVersion.String(),
 	}, nil
 }
 
@@ -220,11 +205,6 @@ func (waf *Handle) Addresses() []string {
 // RulesetInfo returns the rules initialization metrics for the current WAF handle
 func (waf *Handle) RulesetInfo() RulesetInfo {
 	return waf.rulesetInfo
-}
-
-// WAFVersion returns the current version of the WAF
-func (waf *Handle) WAFVersion() string {
-	return waf.wafVersion
 }
 
 // Close the WAF and release the underlying C memory as soon as there are
@@ -354,6 +334,15 @@ func goRunError(rc C.DDWAF_RET_CODE) error {
 	default:
 		return fmt.Errorf("unknown waf return code %d", int(rc))
 	}
+}
+
+func getWAFVersion() string {
+	var v C.ddwaf_version
+	C.ddwaf_get_version(&v)
+	major := uint16(v.major)
+	minor := uint16(v.minor)
+	patch := uint16(v.patch)
+	return fmt.Sprintf("%d.%d.%d", major, minor, patch)
 }
 
 // Errors the encoder and decoder can return.

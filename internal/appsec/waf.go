@@ -41,7 +41,7 @@ const (
 // Register the WAF event listener.
 func registerWAF(rules []byte, timeout time.Duration, limiter Limiter, obfCfg *ObfuscatorConfig) (unreg dyngo.UnregisterFunc, err error) {
 	// Check the WAF is healthy
-	if _, err := waf.Health(); err != nil {
+	if err := waf.Health(); err != nil {
 		return nil, err
 	}
 
@@ -156,7 +156,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			once.Do(func() {
 				addRulesetInfoTags(&op.TagsHolder, rInfo)
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
-				op.AddTag(wafVersionTag, handle.WAFVersion())
+				op.AddTag(wafVersionTag, waf.Version())
 			})
 
 			// Log the attacks if any
@@ -246,7 +246,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			metricsOnce.Do(func() {
 				addRulesetInfoTags(&op.TagsHolder, rInfo)
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
-				op.AddTag(wafVersionTag, handle.WAFVersion())
+				op.AddTag(wafVersionTag, waf.Version())
 			})
 			if len(events) > 0 && limiter.Allow() {
 				op.AddSecurityEvents(events...)
