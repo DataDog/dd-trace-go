@@ -127,6 +127,7 @@ func logStartup(c *config) {
 		ProfilePeriod        string   `json:"profile_period"`
 		EnabledProfiles      []string `json:"enabled_profiles"`
 		CPUDuration          string   `json:"cpu_duration"`
+		CPUProfileRate       int      `json:"cpu_profile_rate"`
 		BlockProfileRate     int      `json:"block_profile_rate"`
 		MutexProfileFraction int      `json:"mutex_profile_fraction"`
 		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
@@ -147,6 +148,7 @@ func logStartup(c *config) {
 		Tags:                 c.tags,
 		ProfilePeriod:        c.period.String(),
 		CPUDuration:          c.cpuDuration.String(),
+		CPUProfileRate:       c.cpuProfileRate,
 		BlockProfileRate:     c.blockRate,
 		MutexProfileFraction: c.mutexFraction,
 		MaxGoroutinesWait:    c.maxGoroutinesWait,
