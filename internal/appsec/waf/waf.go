@@ -43,19 +43,6 @@ import (
 
 var wafVersion = getWAFVersion()
 
-// AtomicU64 can be used to perform atomic operations on an uint64 type
-type AtomicU64 uint64
-
-// Add atomically sums the current atomic value with the provided value `v`.
-func (a *AtomicU64) Add(v uint64) {
-	atomic.AddUint64((*uint64)(a), v)
-}
-
-// Inc atomically increments the atomic value by 1
-func (a *AtomicU64) Inc() {
-	atomic.AddUint64((*uint64)(a), 1)
-}
-
 // Health allows knowing if the WAF can be used. It returns a nil error when the WAF library is healthy.
 // Otherwise, it returns an error describing the issue.
 func Health() error {
@@ -80,19 +67,6 @@ type Handle struct {
 	addresses []string
 	// rulesetInfo holds information about rules initialization
 	rulesetInfo RulesetInfo
-}
-
-// RulesetInfo stores the information - provided by the WAF - about WAF rules initialization.
-type RulesetInfo struct {
-	// Number of rules successfully loaded
-	Loaded uint16
-	// Number of rules which failed to parse
-	Failed uint16
-	// Map from an error string to an array of all the rule ids for which
-	// that error was raised. {error: [rule_ids]}
-	Errors map[string]interface{}
-	// Ruleset version
-	Version string
 }
 
 // NewHandle creates a new instance of the WAF with the given JSON rule and key/value regexps for obfuscation.
@@ -301,7 +275,7 @@ func (c *Context) TotalRuntime() uint64 {
 	return uint64(c.totalRuntimeNs)
 }
 
-// TotalTimeouts returns the cumulated amount of WAF timeotus across various run calls within the same WAF context.
+// TotalTimeouts returns the cumulated amount of WAF timeouts across various run calls within the same WAF context.
 func (c *Context) TotalTimeouts() uint64 {
 	return uint64(c.timeoutCount)
 }
