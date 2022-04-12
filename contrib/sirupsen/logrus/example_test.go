@@ -7,23 +7,30 @@ package logrus
 
 import (
 	"context"
-
-	"github.com/sirupsen/logrus"
+	"os"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/sirupsen/logrus"
 )
 
 func ExampleHook() {
-	//Setup logrus, do this once at the beginning of your program
+	// Setup logrus, do this once at the beginning of your program
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 	logrus.AddHook(&DDContextLogHook{})
 
+	// Setting output to Stdout so output can be validated
+	logrus.SetOutput(os.Stdout)
+
 	span, sctx := tracer.StartSpanFromContext(context.Background(), "mySpan")
 
-	//Pass the current context to the logger
-	cLog := logrus.WithContext(sctx)
-	//Log as desired using the context-aware logger
+	// Pass the current span context to the logger (Time is set for consistency in output here)
+	cLog := logrus.WithContext(sctx).WithTime(time.Date(2000, 1, 1, 1, 1, 1, 0, time.UTC))
+	// Log as desired using the context-aware logger
 	cLog.Info("Completed some work!")
 
 	span.Finish()
+	// Output:
+	// {"dd.span_id":0,"dd.trace_id":0,"level":"info","msg":"Completed some work!","time":"2000-01-01T01:01:01Z"}
 }

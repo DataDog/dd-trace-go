@@ -7,12 +7,12 @@
 package logrus
 
 import (
-	"github.com/sirupsen/logrus"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/sirupsen/logrus"
 )
 
-// DDContextLogHook logs any span in the log context by implementing the logrus.Hook interface
+// DDContextLogHook ensures that any span in the log context is correlated to log output.
 type DDContextLogHook struct{}
 
 // Levels implements logrus.Hook interface, this hook applies to all defined levels
