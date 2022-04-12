@@ -98,6 +98,7 @@ type config struct {
 	types             map[ProfileType]struct{}
 	period            time.Duration
 	cpuDuration       time.Duration
+	cpuProfileRate    int
 	uploadTimeout     time.Duration
 	maxGoroutinesWait int
 	mutexFraction     int
@@ -343,6 +344,21 @@ func WithPeriod(d time.Duration) Option {
 func CPUDuration(d time.Duration) Option {
 	return func(cfg *config) {
 		cfg.cpuDuration = d
+	}
+}
+
+// CPUProfileRate sets the sampling frequency for CPU profiling. A sample will
+// be taken once for every (1 / hz) seconds of on-CPU time. If not given,
+// profiling will use the default rate from the runtime/pprof.StartCPUProfile
+// function, which is 100 as of Go 1.0.
+//
+// Setting a different profile rate will result in a spurious warning every time
+// CPU profling is started, like "cannot set cpu profile rate until previous
+// profile has finished". This is a known issue, but the rate will still be set
+// correctly and CPU profiling will work.
+func CPUProfileRate(hz int) Option {
+	return func(cfg *config) {
+		cfg.cpuProfileRate = hz
 	}
 }
 
