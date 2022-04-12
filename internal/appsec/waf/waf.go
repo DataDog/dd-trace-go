@@ -41,38 +41,17 @@ import (
 	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/linux-amd64"
 )
 
-// Version wrapper type of the WAF version.
-type Version C.ddwaf_version
+var wafVersion = getWAFVersion()
 
-// String returns the string representation of the version in the form
-// <major>.<minor>.<patch>.
-func (v *Version) String() string {
-	major := uint16(v.major)
-	minor := uint16(v.minor)
-	patch := uint16(v.patch)
-	return fmt.Sprintf("%d.%d.%d", major, minor, patch)
+// Health allows knowing if the WAF can be used. It returns a nil error when the WAF library is healthy.
+// Otherwise, it returns an error describing the issue.
+func Health() error {
+	return nil
 }
 
-// AtomicU64 can be used to perform atomic operations on an uint64 type
-type AtomicU64 uint64
-
-// Add atomically sums the current atomic value with the provided value `v`.
-func (a *AtomicU64) Add(v uint64) {
-	atomic.AddUint64((*uint64)(a), v)
-}
-
-// Inc atomically increments the atomic value by 1
-func (a *AtomicU64) Inc() {
-	atomic.AddUint64((*uint64)(a), 1)
-}
-
-// Health allows knowing if the WAF can be used. It returns the current WAF
-// version and a nil error when the WAF library is healthy. Otherwise, it
-// returns a nil version and an error describing the issue.
-func Health() (Version, error) {
-	var v C.ddwaf_version
-	C.ddwaf_get_version(&v)
-	return Version(v), nil
+// Version returns the current version of the WAF
+func Version() string {
+	return wafVersion
 }
 
 // Handle represents an instance of the WAF for a given ruleset.
@@ -90,21 +69,8 @@ type Handle struct {
 	rulesetInfo RulesetInfo
 }
 
-// RulesetInfo stores the information - provided by the WAF - about WAF rules initialization.
-type RulesetInfo struct {
-	// Number of rules successfully loaded
-	Loaded uint16
-	// Number of rules which failed to parse
-	Failed uint16
-	// Map from an error string to an array of all the rule ids for which
-	// that error was raised. {error: [rule_ids]}
-	Errors map[string]interface{}
-	// Ruleset version
-	Version string
-}
-
-// NewHandle creates a new instance of the WAF with the given JSON rule.
-func NewHandle(jsonRule []byte) (*Handle, error) {
+// NewHandle creates a new instance of the WAF with the given JSON rule and key/value regexps for obfuscation.
+func NewHandle(jsonRule []byte, keyRegex, valueRegex string) (*Handle, error) {
 	var rule interface{}
 	if err := json.Unmarshal(jsonRule, &rule); err != nil {
 		return nil, fmt.Errorf("could not parse the WAF rule: %v", err)
@@ -123,22 +89,39 @@ func NewHandle(jsonRule []byte) (*Handle, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not encode the JSON WAF rule into a WAF object: %v", err)
 	}
-	defer free(wafRule)
+	defer freeWO(wafRule)
 
 	// Run-time encoder limiting the size of the encoded values
 	encoder := encoder{
-		maxDepth:        C.DDWAF_MAX_MAP_DEPTH,
+		maxDepth:        C.DDWAF_MAX_CONTAINER_DEPTH,
 		maxStringLength: C.DDWAF_MAX_STRING_LENGTH,
-		maxArrayLength:  C.DDWAF_MAX_ARRAY_LENGTH,
-		maxMapLength:    C.DDWAF_MAX_ARRAY_LENGTH,
+		maxArrayLength:  C.DDWAF_MAX_CONTAINER_SIZE,
+		maxMapLength:    C.DDWAF_MAX_CONTAINER_SIZE,
 	}
-
 	var wafRInfo C.ddwaf_ruleset_info
+	keyRegexC, _, err := cstring(keyRegex, encoder.maxStringLength)
+	if err != nil {
+		return nil, fmt.Errorf("could not convert the obfuscator key regexp string to a C string: %v", err)
+	}
+	defer cFree(unsafe.Pointer(keyRegexC))
+	valueRegexC, _, err := cstring(valueRegex, encoder.maxStringLength)
+	if err != nil {
+		return nil, fmt.Errorf("could not convert the obfuscator value regexp to a C string: %v", err)
+	}
+	defer cFree(unsafe.Pointer(valueRegexC))
+	wafCfg := C.ddwaf_config{
+		limits: struct{ max_container_size, max_container_depth, max_string_length C.uint32_t }{
+			max_container_size:  C.uint32_t(encoder.maxArrayLength),
+			max_container_depth: C.uint32_t(encoder.maxMapLength),
+			max_string_length:   C.uint32_t(encoder.maxStringLength),
+		},
+		obfuscator: struct{ key_regex, value_regex *C.char }{
+			key_regex:   keyRegexC,
+			value_regex: valueRegexC,
+		},
+	}
 	defer C.ddwaf_ruleset_info_free(&wafRInfo)
-	handle := C.ddwaf_init(wafRule.ctype(), &C.ddwaf_config{
-		maxArrayLength: C.uint64_t(encoder.maxArrayLength),
-		maxMapDepth:    C.uint64_t(encoder.maxMapLength),
-	}, &wafRInfo)
+	handle := C.ddwaf_init(wafRule.ctype(), &wafCfg, &wafRInfo)
 	if handle == nil {
 		return nil, errors.New("could not instantiate the waf rule")
 	}
@@ -257,7 +240,7 @@ func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (mat
 	if err != nil {
 		return nil, err
 	}
-	defer free(wafValue)
+	defer freeWO(wafValue)
 	return c.runWAF(wafValue, timeout)
 }
 
@@ -292,7 +275,7 @@ func (c *Context) TotalRuntime() uint64 {
 	return uint64(c.totalRuntimeNs)
 }
 
-// TotalTimeouts returns the cumulated amount of WAF timeotus across various run calls within the same WAF context.
+// TotalTimeouts returns the cumulated amount of WAF timeouts across various run calls within the same WAF context.
 func (c *Context) TotalTimeouts() uint64 {
 	return uint64(c.timeoutCount)
 }
@@ -325,6 +308,15 @@ func goRunError(rc C.DDWAF_RET_CODE) error {
 	default:
 		return fmt.Errorf("unknown waf return code %d", int(rc))
 	}
+}
+
+func getWAFVersion() string {
+	var v C.ddwaf_version
+	C.ddwaf_get_version(&v)
+	major := uint16(v.major)
+	minor := uint16(v.minor)
+	patch := uint16(v.patch)
+	return fmt.Sprintf("%d.%d.%d", major, minor, patch)
 }
 
 // Errors the encoder and decoder can return.
@@ -364,7 +356,7 @@ func (e *encoder) encode(v interface{}) (object *wafObject, err error) {
 			err = fmt.Errorf("waf panic: %v", v)
 		}
 		if err != nil && object != nil {
-			free(object)
+			freeWO(object)
 		}
 	}()
 	wo := &wafObject{}
@@ -458,7 +450,7 @@ func (e *encoder) encodeStruct(v reflect.Value, wo *wafObject, depth int) error 
 
 		if err := e.encodeValue(v.Field(i), mapEntry, depth); err != nil {
 			// Free the map entry in order to free the previously allocated map key
-			free(mapEntry)
+			freeWO(mapEntry)
 			if isIgnoredValueError(err) {
 				continue
 			}
@@ -497,7 +489,7 @@ func (e *encoder) encodeMap(v reflect.Value, wo *wafObject, depth int) error {
 		}
 		if err := e.encodeValue(iter.Value(), mapEntry, depth); err != nil {
 			// Free the previously allocated map key
-			free(mapEntry)
+			freeWO(mapEntry)
 			if isIgnoredValueError(err) {
 				continue
 			}
@@ -799,40 +791,38 @@ func cstring(str string, maxLength int) (*C.char, int, error) {
 	return cstr, l, nil
 }
 
-func free(v *wafObject) {
+func cFree(ptr unsafe.Pointer) {
+	C.free(ptr)
+	decNbLiveCObjects()
+}
+
+func freeWO(v *wafObject) {
 	if v == nil {
 		return
 	}
 	// Free the map key if any
 	if key := v.mapKey(); key != nil {
-		C.free(unsafe.Pointer(v.parameterName))
-		decNbLiveCObjects()
+		cFree(unsafe.Pointer(v.parameterName))
 	}
 	// Free allocated values
 	switch v._type {
 	case wafInvalidType:
 		return
 	case wafStringType:
-		freeString(v)
+		cFree(unsafe.Pointer(v.string()))
 	case wafMapType, wafArrayType:
-		freeContainer(v)
+		freeWOContainer(v)
 	}
 	// Make the value invalid to make it unusable
 	v.setInvalid()
 }
 
-func freeString(v *wafObject) {
-	C.free(unsafe.Pointer(v.string()))
-	decNbLiveCObjects()
-}
-
-func freeContainer(v *wafObject) {
+func freeWOContainer(v *wafObject) {
 	length := v.length()
 	for i := C.uint64_t(0); i < length; i++ {
-		free(v.index(i))
+		freeWO(v.index(i))
 	}
 	if a := *v.arrayValuePtr(); a != nil {
-		C.free(unsafe.Pointer(a))
-		decNbLiveCObjects()
+		cFree(unsafe.Pointer(a))
 	}
 }

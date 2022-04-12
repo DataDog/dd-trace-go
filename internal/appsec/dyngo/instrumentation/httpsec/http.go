@@ -33,7 +33,7 @@ type (
 		// Headers corresponds to the address `server.request.headers.no_cookies`
 		Headers map[string][]string
 		// Cookies corresponds to the address `server.request.cookies`
-		Cookies []string
+		Cookies map[string][]string
 		// Query corresponds to the address `server.request.query`
 		Query map[string][]string
 		// PathParams corresponds to the address `server.request.path_params`
@@ -102,26 +102,37 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 // when appsec is disabled.
 func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
-	var cookies []string
 	for k, v := range r.Header {
 		k := strings.ToLower(k)
 		if k == "cookie" {
 			// Do not include cookies in the request headers
-			cookies = v
 			continue
 		}
 		headers[k] = v
 	}
+	cookies := makeCookies(r) // TODO(Julio-Guerra): avoid actively parsing the cookies thanks to dynamic instrumentation
 	headers["host"] = []string{r.Host}
 	return HandlerOperationArgs{
 		RequestURI: r.RequestURI,
 		Headers:    headers,
 		Cookies:    cookies,
-		// TODO(Julio-Guerra): avoid actively parsing the query string and move to a lazy monitoring of this value with
-		//   the dynamic instrumentation of the Query() method.
-		Query:      r.URL.Query(),
+		Query:      r.URL.Query(), // TODO(Julio-Guerra): avoid actively parsing the query values thanks to dynamic instrumentation
 		PathParams: pathParams,
 	}
+}
+
+// Return the map of parsed cookies if any and following the specification of
+// the rule address `server.request.cookies`.
+func makeCookies(r *http.Request) map[string][]string {
+	parsed := r.Cookies()
+	if len(parsed) == 0 {
+		return nil
+	}
+	cookies := make(map[string][]string, len(parsed))
+	for _, c := range parsed {
+		cookies[c.Name] = append(cookies[c.Name], c.Value)
+	}
+	return cookies
 }
 
 // TODO(Julio-Guerra): create a go-generate tool to generate the types, vars and methods below
