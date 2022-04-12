@@ -114,7 +114,7 @@ func TestLongrunner(t *testing.T) {
 	t.Run("longrunningSpansEnabledFalseWithoutInfo", func(t *testing.T) {
 		c := config{
 			agent: agentFeatures{
-				Info: false,
+				LongRunningSpans: false,
 			},
 			longRunningEnabled: true,
 		}

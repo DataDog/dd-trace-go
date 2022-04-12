@@ -36,7 +36,7 @@ type shard struct {
 }
 
 func longrunningSpansEnabled(c *config) bool {
-	if c.longRunningEnabled && !c.agent.Info {
+	if c.longRunningEnabled && !c.agent.LongRunningSpans {
 		log.Warn("Long running span tracking requires a newer agent version than is connected")
 		return false
 	}

@@ -375,8 +375,8 @@ type agentFeatures struct {
 	// featureFlags specifies all the feature flags reported by the trace-agent.
 	featureFlags map[string]struct{}
 
-	// Info reports whether the agent can report features via the /info endpoint.
-	Info bool
+	// LongRunningSpans reports whether the agent can support long-running-spans.
+	LongRunningSpans bool
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -404,17 +404,18 @@ func (c *config) loadAgentFeatures() {
 	}
 	defer resp.Body.Close()
 	type infoResponse struct {
-		Endpoints     []string `json:"endpoints"`
-		ClientDropP0s bool     `json:"client_drop_p0s"`
-		StatsdPort    int      `json:"statsd_port"`
-		FeatureFlags  []string `json:"feature_flags"`
+		Endpoints        []string `json:"endpoints"`
+		ClientDropP0s    bool     `json:"client_drop_p0s"`
+		StatsdPort       int      `json:"statsd_port"`
+		FeatureFlags     []string `json:"feature_flags"`
+		LongRunningSpans bool     `json:"long_running_spans"`
 	}
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		log.Error("Decoding features: %v", err)
 		return
 	}
-	c.agent.Info = true
+	c.agent.LongRunningSpans = info.LongRunningSpans
 	c.agent.DropP0s = info.ClientDropP0s
 	c.agent.StatsdPort = info.StatsdPort
 	for _, endpoint := range info.Endpoints {
