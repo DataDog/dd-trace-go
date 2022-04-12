@@ -334,7 +334,7 @@ func addRulesetInfoTags(th *instrumentation.TagsHolder, rInfo waf.RulesetInfo) {
 	if err != nil {
 		log.Error("appsec: could not marshal ruleset info errors to json")
 	}
-	th.AddTag(eventRulesErrorsTag, (string)(rulesetErrors))
+	th.AddTag(eventRulesErrorsTag, string(rulesetErrors)) // avoid the tracer's call to fmt.Sprintf on the value
 	th.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
 	th.AddTag(eventRulesFailedTag, float64(rInfo.Failed))
 }

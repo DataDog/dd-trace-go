@@ -33,7 +33,7 @@ func TestHealth(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
-	require.Equal(t, "1.3.0", Version())
+	require.Regexp(t, `[0-9]+\.[0-9]+\.[0-9]+`, Version())
 }
 
 var testRule = newTestRule(ruleInput{Address: "server.request.headers.no_cookies", KeyPath: []string{"user-agent"}})

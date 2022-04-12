@@ -55,10 +55,10 @@ func (*Context) Run(map[string]interface{}, time.Duration) ([]byte, error) {
 
 // TotalRuntime returns the cumulated waf runtime across various run calls within the same WAF context.
 // Returned time is in nanoseconds.
-func (*Context) TotalRuntime() uint64 { return uint64(0) }
+func (*Context) TotalRuntime() uint64 { return 0 }
 
 // TotalTimeouts returns the cumulated amount of WAF timeouts across various run calls within the same WAF context.
-func (*Context) TotalTimeouts() uint64 { return uint64(0) }
+func (*Context) TotalTimeouts() uint64 { return 0 }
 
 // Close the WAF context by releasing its C memory and decreasing the number of
 // references to the WAF handle.
