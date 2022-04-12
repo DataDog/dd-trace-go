@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/stretchr/testify/assert"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
 func TestLimitHeartbeat(t *testing.T) {

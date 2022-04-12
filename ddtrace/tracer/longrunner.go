@@ -66,7 +66,7 @@ func getShardNum(s *span) int {
 	s.RLock()
 	defer s.RUnlock()
 	// splitmix64 used to get an even distribution across spanShards faster than SHA
-	// ~10x improvement when benchmarked on an i7-1068NG7
+	// ~10x improvement over golang's maphash when benchmarked on an i7-1068NG7
 	return int(splitMix64(s.SpanID))
 }
 
