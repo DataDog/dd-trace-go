@@ -17,8 +17,8 @@ extern "C"
 #include <stddef.h>
 
 #define DDWAF_MAX_STRING_LENGTH 4096
-#define DDWAF_MAX_MAP_DEPTH 20
-#define DDWAF_MAX_ARRAY_LENGTH 256
+#define DDWAF_MAX_CONTAINER_DEPTH 20
+#define DDWAF_MAX_CONTAINER_SIZE 256
 #define DDWAF_RUN_TIMEOUT 5000
 
 /**
@@ -114,10 +114,22 @@ struct _ddwaf_object
  **/
 struct _ddwaf_config
 {
-    /** Maximum length of ddwaf::object arrays. */
-    uint64_t maxArrayLength;
-    /** Maximum depth of ddwaf::object maps. */
-    uint64_t maxMapDepth;
+    struct {
+        /** Maximum size of ddwaf::object containers. */
+        uint32_t max_container_size;
+        /** Maximum depth of ddwaf::object containers. */
+        uint32_t max_container_depth;
+        /** Maximum length of ddwaf::object strings. */
+        uint32_t max_string_length;
+    } limits;
+
+    /** Obfuscator regexes - the strings are owned by the caller */
+    struct {
+        /** Regular expression for key-based obfuscation */
+        const char *key_regex;
+        /** Regular expression for value-based obfuscation */
+        const char *value_regex;
+    } obfuscator;
 };
 
 /**
