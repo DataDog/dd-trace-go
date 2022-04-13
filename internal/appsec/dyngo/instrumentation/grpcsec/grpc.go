@@ -12,9 +12,9 @@ package grpcsec
 import (
 	"encoding/json"
 	"reflect"
-	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 )
 
 // Abstract gRPC server handler operation definitions. It is based on two
@@ -37,12 +37,15 @@ type (
 	// to the operation using its AddSecurityEvent() method.
 	HandlerOperation struct {
 		dyngo.Operation
-
-		events []json.RawMessage
-		mu     sync.Mutex
+		instrumentation.TagsHolder
+		instrumentation.SecurityEventsHolder
 	}
-	// HandlerOperationArgs is the grpc handler arguments. Empty as of today.
-	HandlerOperationArgs struct{}
+	// HandlerOperationArgs is the grpc handler arguments.
+	HandlerOperationArgs struct {
+		// Message received by the gRPC handler.
+		// Corresponds to the address `grpc.server.request.metadata`.
+		Metadata map[string][]string
+	}
 	// HandlerOperationRes is the grpc handler results. Empty as of today.
 	HandlerOperationRes struct{}
 
@@ -70,7 +73,10 @@ type (
 // operation stack. When parent is nil, the operation is linked to the global
 // root operation.
 func StartHandlerOperation(args HandlerOperationArgs, parent dyngo.Operation) *HandlerOperation {
-	op := &HandlerOperation{Operation: dyngo.NewOperation(parent)}
+	op := &HandlerOperation{
+		Operation:  dyngo.NewOperation(parent),
+		TagsHolder: instrumentation.NewTagsHolder(),
+	}
 	dyngo.StartOperation(op, args)
 	return op
 }
@@ -79,15 +85,7 @@ func StartHandlerOperation(args HandlerOperationArgs, parent dyngo.Operation) *H
 // finish event up in the operation stack.
 func (op *HandlerOperation) Finish(res HandlerOperationRes) []json.RawMessage {
 	dyngo.FinishOperation(op, res)
-	return op.events
-}
-
-// AddSecurityEvent adds the security event to the list of events observed
-// during the operation lifetime.
-func (op *HandlerOperation) AddSecurityEvent(events []json.RawMessage) {
-	op.mu.Lock()
-	defer op.mu.Unlock()
-	op.events = append(op.events, events...)
+	return op.Events()
 }
 
 // gRPC handler operation's start and finish event callback function types.

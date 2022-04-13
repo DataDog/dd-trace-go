@@ -340,7 +340,7 @@ func TestAppSec(t *testing.T) {
 	t.Run("request-uri", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		// Send an LFI attack (according to appsec rule id crs-930-100)
+		// Send an LFI attack (according to appsec rule id crs-930-110)
 		req, err := http.NewRequest("POST", srv.URL+"/../../../secret.txt", nil)
 		if err != nil {
 			panic(err)
@@ -357,12 +357,12 @@ func TestAppSec(t *testing.T) {
 		event := finished[0].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event, "server.request.uri.raw"))
-		require.True(t, strings.Contains(event, "crs-930-100"))
+		require.True(t, strings.Contains(event, "crs-930-110"))
 		// The second request should contain the event via the referrer header
 		event = finished[1].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event, "server.request.headers.no_cookies"))
-		require.True(t, strings.Contains(event, "crs-930-100"))
+		require.True(t, strings.Contains(event, "crs-930-110"))
 	})
 
 	// Test a security scanner attack via path parameters
