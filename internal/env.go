@@ -19,3 +19,13 @@ func BoolEnv(key string, def bool) bool {
 	}
 	return v
 }
+
+// IntEnv returns the parsed int value of an environment variable, or
+// def otherwise.
+func IntEnv(key string, def int) int {
+	v, err := strconv.Atoi(os.Getenv(key))
+	if err != nil {
+		return def
+	}
+	return v
+}

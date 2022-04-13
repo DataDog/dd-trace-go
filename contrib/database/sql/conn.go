@@ -22,7 +22,8 @@ var _ driver.Conn = (*tracedConn)(nil)
 type queryType string
 
 const (
-	queryTypeQuery    queryType = "Query"
+	queryTypeConnect  queryType = "Connect"
+	queryTypeQuery              = "Query"
 	queryTypePing               = "Ping"
 	queryTypePrepare            = "Prepare"
 	queryTypeExec               = "Exec"
@@ -73,13 +74,6 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 	return &tracedStmt{stmt, tc.traceParams, ctx, query}, nil
 }
 
-func (tc *tracedConn) Exec(query string, args []driver.Value) (driver.Result, error) {
-	if execer, ok := tc.Conn.(driver.Execer); ok {
-		return execer.Exec(query, args)
-	}
-	return nil, driver.ErrSkip
-}
-
 func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
 	start := time.Now()
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
@@ -87,18 +81,21 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 		tc.tryTrace(ctx, queryTypeExec, query, start, err)
 		return r, err
 	}
-	dargs, err := namedValueToValue(args)
-	if err != nil {
-		return nil, err
+	if execer, ok := tc.Conn.(driver.Execer); ok {
+		dargs, err := namedValueToValue(args)
+		if err != nil {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+		r, err = execer.Exec(query, dargs)
+		tc.tryTrace(ctx, queryTypeExec, query, start, err)
+		return r, err
 	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-	}
-	r, err = tc.Exec(query, dargs)
-	tc.tryTrace(ctx, queryTypeExec, query, start, err)
-	return r, err
+	return nil, driver.ErrSkip
 }
 
 // tracedConn has a Ping method in order to implement the pinger interface
@@ -111,13 +108,6 @@ func (tc *tracedConn) Ping(ctx context.Context) (err error) {
 	return err
 }
 
-func (tc *tracedConn) Query(query string, args []driver.Value) (driver.Rows, error) {
-	if queryer, ok := tc.Conn.(driver.Queryer); ok {
-		return queryer.Query(query, args)
-	}
-	return nil, driver.ErrSkip
-}
-
 func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
 	start := time.Now()
 	if queryerContext, ok := tc.Conn.(driver.QueryerContext); ok {
@@ -125,18 +115,21 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 		tc.tryTrace(ctx, queryTypeQuery, query, start, err)
 		return rows, err
 	}
-	dargs, err := namedValueToValue(args)
-	if err != nil {
-		return nil, err
+	if queryer, ok := tc.Conn.(driver.Queryer); ok {
+		dargs, err := namedValueToValue(args)
+		if err != nil {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+		rows, err = queryer.Query(query, dargs)
+		tc.tryTrace(ctx, queryTypeQuery, query, start, err)
+		return rows, err
 	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-	}
-	rows, err = tc.Query(query, dargs)
-	tc.tryTrace(ctx, queryTypeQuery, query, start, err)
-	return rows, err
+	return nil, driver.ErrSkip
 }
 
 func (tc *tracedConn) CheckNamedValue(value *driver.NamedValue) error {
@@ -153,7 +146,8 @@ func (tc *tracedConn) ResetSession(ctx context.Context) error {
 	if resetter, ok := tc.Conn.(driver.SessionResetter); ok {
 		return resetter.ResetSession(ctx)
 	}
-	return driver.ErrSkip
+	// If driver doesn't implement driver.SessionResetter there's nothing to do
+	return nil
 }
 
 // traceParams stores all information related to tracing the driver.Conn

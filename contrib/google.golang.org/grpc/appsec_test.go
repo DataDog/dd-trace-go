@@ -10,10 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestAppSec(t *testing.T) {
@@ -33,8 +34,9 @@ func TestAppSec(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		// Send a XSS attack
-		res, err := client.Ping(context.Background(), &FixtureRequest{Name: "<script>alert('xss');</script>"})
+		// Send a XSS attack in the payload along with the canary value in the RPC metadata
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log"))
+		res, err := client.Ping(ctx, &FixtureRequest{Name: "<script>alert('xss');</script>"})
 		// Check that the handler was properly called
 		require.NoError(t, err)
 		require.Equal(t, "passed", res.Message)
@@ -42,17 +44,20 @@ func TestAppSec(t *testing.T) {
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
 
-		// The request should have the XSS attack attempt event (appsec rule id crs-941-100).
-		event := finished[0].Tag("_dd.appsec.json")
+		// The request should have the attack attempts
+		event, _ := finished[0].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
-		require.True(t, strings.Contains(event.(string), "crs-941-100"))
+		require.True(t, strings.Contains(event, "crs-941-100")) // XSS attack attempt
+		require.True(t, strings.Contains(event, "ua0-600-55x")) // canary rule attack attempt
 	})
 
 	t.Run("stream", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		stream, err := client.StreamPing(context.Background())
+		// Send a XSS attack in the payload along with the canary value in the RPC metadata
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log"))
+		stream, err := client.StreamPing(ctx)
 		require.NoError(t, err)
 
 		// Send a XSS attack
@@ -81,11 +86,11 @@ func TestAppSec(t *testing.T) {
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 6)
 
-		// The request should both attacks: the XSS and SQLi attack attempt
-		// events (appsec rule id crs-941-100, crs-942-100).
-		event := finished[5].Tag("_dd.appsec.json")
+		// The request should have the attack attempts
+		event, _ := finished[5].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
-		require.True(t, strings.Contains(event.(string), "crs-941-100"))
-		require.True(t, strings.Contains(event.(string), "crs-942-100"))
+		require.True(t, strings.Contains(event, "crs-941-100")) // XSS attack attempt
+		require.True(t, strings.Contains(event, "crs-942-100")) // SQL-injection attack attempt
+		require.True(t, strings.Contains(event, "ua0-600-55x")) // canary rule attack attempt
 	})
 }

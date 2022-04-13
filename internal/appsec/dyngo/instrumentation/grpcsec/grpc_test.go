@@ -48,7 +48,7 @@ func TestUsage(t *testing.T) {
 						require.Equal(t, expectedMessage, res.Message)
 						recvFinished++
 
-						handlerOp.AddSecurityEvent(json.RawMessage(expectedMessage))
+						handlerOp.AddSecurityEvents(json.RawMessage(expectedMessage))
 					}))
 				}))
 

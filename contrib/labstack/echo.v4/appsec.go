@@ -9,35 +9,31 @@ import (
 	"net"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
 	"github.com/labstack/echo/v4"
 )
 
-func withAppSec(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		req := c.Request()
-		span, ok := tracer.SpanFromContext(req.Context())
-		if !ok {
-			return next(c)
-		}
-		httpsec.SetAppSecTags(span)
-		params := make(map[string]string)
-		for _, n := range c.ParamNames() {
-			params[n] = c.Param(n)
-		}
-		args := httpsec.MakeHandlerOperationArgs(req, params)
-		op := httpsec.StartOperation(args, nil)
-		defer func() {
-			events := op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
-			if len(events) > 0 {
-				remoteIP, _, err := net.SplitHostPort(req.RemoteAddr)
-				if err != nil {
-					remoteIP = req.RemoteAddr
-				}
-				httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Response().Writer.Header())
+func useAppSec(c echo.Context, span tracer.Span) func() {
+	req := c.Request()
+	httpsec.SetAppSecTags(span)
+	params := make(map[string]string)
+	for _, n := range c.ParamNames() {
+		params[n] = c.Param(n)
+	}
+	args := httpsec.MakeHandlerOperationArgs(req, params)
+	ctx, op := httpsec.StartOperation(req.Context(), args)
+	c.SetRequest(req.WithContext(ctx))
+	return func() {
+		events := op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
+		if len(events) > 0 {
+			remoteIP, _, err := net.SplitHostPort(req.RemoteAddr)
+			if err != nil {
+				remoteIP = req.RemoteAddr
 			}
-		}()
-		return next(c)
+			httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Response().Writer.Header())
+		}
+		instrumentation.SetTags(span, op.Tags())
 	}
 }

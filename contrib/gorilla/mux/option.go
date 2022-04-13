@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -28,6 +29,19 @@ type routerConfig struct {
 
 // RouterOption represents an option that can be passed to NewRouter.
 type RouterOption func(*routerConfig)
+
+func newConfig(opts []RouterOption) *routerConfig {
+	cfg := new(routerConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	if !math.IsNaN(cfg.analyticsRate) {
+		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
+	return cfg
+}
 
 func defaults(cfg *routerConfig) {
 	if internal.BoolEnv("DD_TRACE_MUX_ANALYTICS_ENABLED", false) {
