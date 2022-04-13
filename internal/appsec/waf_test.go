@@ -101,4 +101,34 @@ func TestWAF(t *testing.T) {
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event.(string), "crs-933-130"))
 	})
+
+	t.Run("obfuscation", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		sensitive := "I-m-sensitive-please-dont-expose-me"
+		vulnerable := "1234%20union%20select%20*%20from%20credit_cards"
+
+		// Send malicious request with sensitive information
+		req, err := http.NewRequest("POST", srv.URL+"/?password="+sensitive+vulnerable+sensitive, nil)
+		if err != nil {
+			panic(err)
+		}
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+
+		// Check that the handler was properly called
+		b, err := ioutil.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, "Hello World!\n", string(b))
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check that the tags don't hold any sensitive information
+		event := finished[0].Tag("_dd.appsec.json")
+		require.NotNil(t, event)
+		require.Contains(t, event, "crs-942-100")
+		require.NotContains(t, event, sensitive)
+		require.NotContains(t, event, vulnerable)
+	})
 }

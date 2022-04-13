@@ -27,6 +27,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/tinylib/msgp/msgp"
@@ -123,6 +124,16 @@ func (s *span) SetTag(key string, value interface{}) {
 		return
 	}
 	if v, ok := value.(string); ok {
+		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) {
+			// If the user overrides the resource name for the span,
+			// update the endpoint label for the runtime profilers.
+			//
+			// We don't change s.pprofCtxRestore since that should
+			// stay as the original parent span context regardless
+			// of what we change at a lower level.
+			s.pprofCtxActive = pprof.WithLabels(s.pprofCtxActive, pprof.Labels(traceprof.TraceEndpoint, v))
+			pprof.SetGoroutineLabels(s.pprofCtxActive)
+		}
 		s.setMeta(key, v)
 		return
 	}
