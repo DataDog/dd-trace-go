@@ -124,22 +124,22 @@ func readRateLimitConfig() (rate uint) {
 }
 
 func readObfuscatorConfig() ObfuscatorConfig {
-	keyRE := readObfuscatorConfigRegexp(obfuscatorKeyEnvVar, defaultObfuscatorKeyRegex, "keys")
-	valueRE := readObfuscatorConfigRegexp(obfuscatorValueEnvVar, defaultObfuscatorValueRegex, "values")
+	keyRE := readObfuscatorConfigRegexp(obfuscatorKeyEnvVar, defaultObfuscatorKeyRegex)
+	valueRE := readObfuscatorConfigRegexp(obfuscatorValueEnvVar, defaultObfuscatorValueRegex)
 	return ObfuscatorConfig{KeyRegex: keyRE, ValueRegex: valueRE}
 }
 
-func readObfuscatorConfigRegexp(name, defaultValue, what string) string {
+func readObfuscatorConfigRegexp(name, defaultValue string) string {
 	val, present := os.LookupEnv(name)
 	if !present {
-		log.Debug("appsec: starting with the default obfuscator regular expression for matched parameter %s", what)
+		log.Debug("appsec: %s not defined, starting with the default obfuscator regular expression", name)
 		return defaultValue
 	}
 	if _, err := regexp.Compile(val); err != nil {
 		log.Error("appsec: could not compile the configured obfuscator regular expression `%s=%s`. Using the default value instead", name, val)
 		return defaultValue
 	}
-	log.Debug("appsec: starting with the configured obfuscator regular expression with %s for matched parameter %s", name, what)
+	log.Debug("appsec: starting with the configured obfuscator regular expression %s", name)
 	return val
 }
 
