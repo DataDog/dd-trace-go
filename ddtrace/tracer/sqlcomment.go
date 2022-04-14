@@ -12,12 +12,31 @@ type SQLCommentCarrier struct {
 	tags map[string]string
 }
 
+const (
+	samplingPrioritySQLCommentKey = "ddsp"
+	traceIDSQLCommentKey          = "ddtid"
+	spanIDSQLCommentKey           = "ddsid"
+	ServiceNameSQLCommentKey      = "ddsn"
+)
+
 // Set implements TextMapWriter.
 func (c *SQLCommentCarrier) Set(key, val string) {
 	if c.tags == nil {
 		c.tags = make(map[string]string)
 	}
-	c.tags[key] = val
+
+	// Remap the default long key names to short versions specifically for SQL comments that prioritize size
+	// while trying to avoid conflicts
+	switch key {
+	case DefaultPriorityHeader:
+		c.tags[samplingPrioritySQLCommentKey] = val
+	case DefaultTraceIDHeader:
+		c.tags[traceIDSQLCommentKey] = val
+	case DefaultParentIDHeader:
+		c.tags[spanIDSQLCommentKey] = val
+	default:
+		c.tags[key] = val
+	}
 }
 
 func commentWithTags(tags map[string]string) (comment string) {
@@ -32,7 +51,7 @@ func commentWithTags(tags map[string]string) (comment string) {
 
 	sort.Strings(serializedTags)
 	comment = strings.Join(serializedTags, ",")
-	return fmt.Sprintf("/* %s */", comment)
+	return fmt.Sprintf("/*%s*/", comment)
 }
 
 // CommentedQuery returns the given query with the tags from the SQLCommentCarrier applied to it as a
