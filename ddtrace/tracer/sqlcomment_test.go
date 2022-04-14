@@ -17,38 +17,34 @@ func TestQueryTextCarrier(t *testing.T) {
 		{
 			name:      "query with tag list",
 			query:     "SELECT * from FOO",
-			tags:      map[string]string{"service": "mine", "operation": "checkout"},
-			commented: "/* bg-operation='checkout',bg-service='mine',span-id='1',trace-id='1',x-datadog-sampling-priority='1' */ SELECT * from FOO",
+			tags:      map[string]string{"operation": "checkout"},
+			commented: "/*ddsid='10',ddsp='2',ddtid='10',ot-baggage-operation='checkout'*/ SELECT * from FOO",
 		},
 		{
 			name:      "empty query",
 			query:     "",
-			tags:      map[string]string{"service": "mine", "operation": "elmer's glue"},
+			tags:      map[string]string{"operation": "elmer's glue"},
 			commented: "",
 		},
 		{
 			name:      "query with existing comment",
 			query:     "SELECT * from FOO -- test query",
-			tags:      map[string]string{"service": "mine", "operation": "elmer's glue"},
-			commented: "/* bg-operation='elmer%27s%20glue',bg-service='mine',span-id='1',trace-id='1',x-datadog-sampling-priority='1' */ SELECT * from FOO -- test query",
+			tags:      map[string]string{"operation": "elmer's glue"},
+			commented: "/*ddsid='10',ddsp='2',ddtid='10',ot-baggage-operation='elmer%27s%20glue'*/ SELECT * from FOO -- test query",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			propagator := NewPropagator(&PropagatorConfig{
-				BaggagePrefix: "bg-",
-				TraceHeader:   "trace-id",
-				ParentHeader:  "span-id",
-			})
+			propagator := NewPropagator(&PropagatorConfig{})
 			tracer := newTracer(WithPropagator(propagator))
 
-			root := tracer.StartSpan("web.request", WithSpanID(1)).(*span)
+			root := tracer.StartSpan("web.request", WithSpanID(10)).(*span)
 			for k, v := range tc.tags {
 				root.SetBaggageItem(k, v)
 			}
 
-			root.SetTag(ext.SamplingPriority, 1)
+			root.SetTag(ext.SamplingPriority, 2)
 			ctx := root.Context()
 
 			carrier := SQLCommentCarrier{}

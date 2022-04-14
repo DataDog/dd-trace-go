@@ -265,10 +265,7 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 		fmt.Fprintf(os.Stderr, "contrib/database/sql: failed to inject query comments: %v\n", err)
 	}
 	// TODO: Figure out if there's a better way to add those additional tags
-	sqlCommentCarrier.Set(ext.ServiceName, tp.cfg.serviceName)
-	for k, v := range tp.meta {
-		sqlCommentCarrier.Set(k, v)
-	}
+	sqlCommentCarrier.Set(tracer.ServiceNameSQLCommentKey, tp.cfg.serviceName)
 
 	return span
 }
