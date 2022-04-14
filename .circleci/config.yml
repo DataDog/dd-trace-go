@@ -138,7 +138,7 @@ jobs:
       DD_APPSEC_WAF_TIMEOUT: 1s
     working_directory: /home/circleci/dd-trace-go.v1
     docker:
-      - image: circleci/golang:1.14
+      - image: circleci/golang:1.16
         environment:
           GOPATH: "/home/circleci/go"
       - image: cassandra:3.7
