@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -105,11 +106,49 @@ func TestWAF(t *testing.T) {
 	t.Run("obfuscation", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		sensitive := "I-m-sensitive-please-dont-expose-me"
-		vulnerable := "1234%20union%20select%20*%20from%20credit_cards"
 
-		// Send malicious request with sensitive information
-		req, err := http.NewRequest("POST", srv.URL+"/?password="+sensitive+vulnerable+sensitive, nil)
+		// Send a malicious request with sensitive data that should be both
+		// obfuscated by the obfuscator key and value regexps.
+		form := url.Values{}
+
+		// Form value detected by a XSS attack that should be obfuscated by the
+		// obfuscator value regex.
+		const sensitivePayloadValue = `BEARER lwqjedqwdoqwidmoqwndun32i`
+		form.Add("payload", `
+{
+   "activeTab":"39612314-1890-45f7-8075-c793325c1d70",
+   "allOpenTabs":["132ef2e5-afaa-4e20-bc64-db9b13230a","39612314-1890-45f7-8075-c793325c1d70"],
+   "lastPage":{
+       "accessToken":"`+sensitivePayloadValue+`",
+       "account":{
+           "name":"F123123 .htaccess",
+           "contactCustomFields":{
+               "ffa77959-1ff3-464b-a3af-e5410e436f1f":{
+                   "questionServiceEntityType":"CustomField",
+                   "question":{
+                       "code":"Manager Name",
+                       "questionTypeInfo":{
+                           "questionType":"OpenEndedText",
+                           "answerFormatType":"General"
+                           ,"scores":[]
+                       },
+                   "additionalInfo":{
+                       "codeSnippetValue":"<!-- Google Tag Manager (noscript) -->\r\n<iframe src=\"https://www.googletagmanager.com/ns.html?id=GTM-PCVXQNM\"\r\nheight=\"0\" width=\"0\" style=\"display:none"
+                   }
+               }
+           }
+       }
+   }
+}
+`)
+		// Form value detected by a SQLi rule that should be obfuscated by the
+		// obfuscator value regex.
+		sensitiveParamKeyValue := "I-m-sensitive-please-dont-expose-me"
+		form.Add("password", sensitiveParamKeyValue+"1234%20union%20select%20*%20from%20credit_cards"+sensitiveParamKeyValue)
+
+		req, err := http.NewRequest("POST", srv.URL, nil)
+		req.URL.RawQuery = form.Encode()
+
 		if err != nil {
 			panic(err)
 		}
@@ -127,8 +166,9 @@ func TestWAF(t *testing.T) {
 		// Check that the tags don't hold any sensitive information
 		event := finished[0].Tag("_dd.appsec.json")
 		require.NotNil(t, event)
-		require.Contains(t, event, "crs-942-100")
-		require.NotContains(t, event, sensitive)
-		require.NotContains(t, event, vulnerable)
+		require.Contains(t, event, "crs-942-270") // SQLi
+		require.Contains(t, event, "crs-941-100") // XSS
+		require.NotContains(t, event, sensitiveParamKeyValue)
+		require.NotContains(t, event, sensitivePayloadValue)
 	})
 }

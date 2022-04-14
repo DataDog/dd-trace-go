@@ -28,9 +28,10 @@ const (
 )
 
 const (
-	defaultWAFTimeout              = 4 * time.Millisecond
-	defaultTraceRate          uint = 100 // up to 100 appsec traces/s
-	defaultObfuscatorKeyRegex      = "(?i)(p(ass)?w(or)?d|pass(_?phrase)?|secret|(api_?|private_?|public_?)key)|token|consumer_?(id|key|secret)|sign(ed|ature)|bearer|authorization"
+	defaultWAFTimeout           = 4 * time.Millisecond
+	defaultTraceRate            = 100 // up to 100 appsec traces/s
+	defaultObfuscatorKeyRegex   = `(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|(?:api_?|private_?|public_?)key)|token|consumer_?(?:id|key|secret)|sign(?:ed|ature)|bearer|authorization`
+	defaultObfuscatorValueRegex = `(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|(?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)(?:\s*=[^;]|"\s*:\s*"[^"]+")|bearer\s+[a-z0-9\._\-]+|token:[a-z0-9]{13}|gh[opsu]_[0-9a-zA-Z]{36}|ey[I-L][\w=-]+\.ey[I-L][\w=-]+(?:\.[\w.+\/=-]+)?|[\-]{5}BEGIN[a-z\s]+PRIVATE\sKEY[\-]{5}[^\-]+[\-]{5}END[a-z\s]+PRIVATE\sKEY|ssh-rsa\s*[a-z0-9\/\.+]{100,}`
 )
 
 // config is the AppSec configuration.
@@ -123,28 +124,23 @@ func readRateLimitConfig() (rate uint) {
 }
 
 func readObfuscatorConfig() ObfuscatorConfig {
-	keyRegex, kPresent := os.LookupEnv(obfuscatorKeyEnvVar)
-	valueRegex, vPresent := os.LookupEnv(obfuscatorValueEnvVar)
+	keyRE := readObfuscatorConfigRegexp(obfuscatorKeyEnvVar, defaultObfuscatorKeyRegex)
+	valueRE := readObfuscatorConfigRegexp(obfuscatorValueEnvVar, defaultObfuscatorValueRegex)
+	return ObfuscatorConfig{KeyRegex: keyRE, ValueRegex: valueRE}
+}
 
-	if keyRegex == "" && !kPresent {
-		log.Debug("appsec: starting with the default regexp for matched parameter keys obfuscation")
-		keyRegex = defaultObfuscatorKeyRegex
-	} else if _, err := regexp.Compile(keyRegex); err == nil {
-		log.Debug("appsec: starting with the configured regexp for matched parameter keys obfuscation")
-	} else {
-		log.Error("appsec: could not compile the configured regexp for parameter keys. Using default instead")
-		keyRegex = defaultObfuscatorKeyRegex
+func readObfuscatorConfigRegexp(name, defaultValue string) string {
+	val, present := os.LookupEnv(name)
+	if !present {
+		log.Debug("appsec: %s not defined, starting with the default obfuscator regular expression", name)
+		return defaultValue
 	}
-	if valueRegex == "" && !vPresent {
-		log.Debug("appsec: starting with the default empty regexp for matched parameter values/highlights obfuscation")
-	} else if _, err := regexp.Compile(valueRegex); err == nil {
-		log.Debug("appsec: starting with the configured regexp for matched parameter values/highlights obfuscation")
-	} else {
-		log.Error("appsec: could not compile the configured regexp for parameter value/highlights. Using empty regexp instead")
-		valueRegex = ""
+	if _, err := regexp.Compile(val); err != nil {
+		log.Error("appsec: could not compile the configured obfuscator regular expression `%s=%s`. Using the default value instead", name, val)
+		return defaultValue
 	}
-
-	return ObfuscatorConfig{KeyRegex: keyRegex, ValueRegex: valueRegex}
+	log.Debug("appsec: starting with the configured obfuscator regular expression %s", name)
+	return val
 }
 
 func readRulesConfig() (rules []byte, err error) {

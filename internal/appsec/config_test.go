@@ -23,7 +23,8 @@ func TestConfig(t *testing.T) {
 		wafTimeout:     defaultWAFTimeout,
 		traceRateLimit: defaultTraceRate,
 		obfuscator: ObfuscatorConfig{
-			KeyRegex: defaultObfuscatorKeyRegex,
+			KeyRegex:   defaultObfuscatorKeyRegex,
+			ValueRegex: defaultObfuscatorValueRegex,
 		},
 	}
 
@@ -228,12 +229,14 @@ func TestConfig(t *testing.T) {
 				require.Equal(t, &expCfg, cfg)
 			})
 			t.Run("env-var-empty", func(t *testing.T) {
+				expCfg := *expectedDefaultConfig
+				expCfg.obfuscator.ValueRegex = ""
 				restoreEnv := cleanEnv()
 				defer restoreEnv()
 				require.NoError(t, os.Setenv(obfuscatorValueEnvVar, ""))
 				cfg, err := newConfig()
 				require.NoError(t, err)
-				require.Equal(t, expectedDefaultConfig, cfg)
+				require.Equal(t, &expCfg, cfg)
 			})
 			t.Run("compile-error", func(t *testing.T) {
 				restoreEnv := cleanEnv()
