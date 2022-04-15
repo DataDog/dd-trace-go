@@ -15,6 +15,11 @@ package waf
 // #include <stdlib.h>
 // #include <string.h>
 // #include "ddwaf.h"
+// // Forward declaration of the Go function go_ddwaf_object_free which is a Go
+// // function defined and exported into C by CGO in this file.
+// // This allows to reference this symbol with the C wrapper and pass its
+// // pointer to ddwaf_context_init.
+// void go_ddwaf_object_free(ddwaf_object*);
 // #cgo CFLAGS: -I${SRCDIR}/include
 // #cgo linux,amd64 LDFLAGS: -L${SRCDIR}/lib/linux-amd64 -lddwaf -lm -ldl -Wl,-rpath=/lib64:/usr/lib64:/usr/local/lib64:/lib:/usr/lib:/usr/local/lib
 // #cgo darwin,amd64 LDFLAGS: -L${SRCDIR}/lib/darwin-amd64 -lddwaf -lstdc++
@@ -220,7 +225,7 @@ func NewContext(waf *Handle) *Context {
 		waf.mu.RUnlock()
 		return nil
 	}
-	context := C.ddwaf_context_init(waf.handle, nil)
+	context := C.ddwaf_context_init(waf.handle, C.ddwaf_object_free_fn(C.go_ddwaf_object_free))
 	if context == nil {
 		return nil
 	}
@@ -240,7 +245,6 @@ func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (mat
 	if err != nil {
 		return nil, err
 	}
-	defer freeWO(wafValue)
 	return c.runWAF(wafValue, timeout)
 }
 
@@ -791,11 +795,6 @@ func cstring(str string, maxLength int) (*C.char, int, error) {
 	return cstr, l, nil
 }
 
-func cFree(ptr unsafe.Pointer) {
-	C.free(ptr)
-	decNbLiveCObjects()
-}
-
 func freeWO(v *wafObject) {
 	if v == nil {
 		return
@@ -825,4 +824,16 @@ func freeWOContainer(v *wafObject) {
 	if a := *v.arrayValuePtr(); a != nil {
 		cFree(unsafe.Pointer(a))
 	}
+}
+
+func cFree(ptr unsafe.Pointer) {
+	C.free(ptr)
+	decNbLiveCObjects()
+}
+
+// Exported Go function to free ddwaf objects by using freeWO in order to keep
+// its dummy but efficient memory kallocation monitoring.
+//export go_ddwaf_object_free
+func go_ddwaf_object_free(v *C.ddwaf_object) {
+	freeWO((*wafObject)(v))
 }
