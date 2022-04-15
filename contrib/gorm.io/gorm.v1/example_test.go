@@ -41,7 +41,7 @@ func ExampleOpen() {
 	db.Where("name = ?", "jinzhu").First(&user)
 }
 
-func Example_context() {
+func ExampleContext() {
 	// Register augments the provided driver with tracing, enabling it to be loaded by gormtrace.Open.
 	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithServiceName("my-service"))
 	sqlDb, err := sqltrace.Open("pgx", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
