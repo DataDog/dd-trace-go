@@ -64,24 +64,34 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
-	defer span.Finish(cfg.FinishOpts...)
+	rw, ddrw := wrapResponseWriter(w)
+	defer func() {
+		if ddrw.status == 0 {
+			span.SetTag(ext.HTTPCode, "200")
+		} else {
+			span.SetTag(ext.HTTPCode, strconv.Itoa(ddrw.status))
+		}
+		if ddrw.status >= 500 && ddrw.status < 600 {
+			span.SetTag(ext.Error, fmt.Errorf("%d: %s", ddrw.status, http.StatusText(ddrw.status)))
+		}
+		span.Finish(cfg.FinishOpts...)
+	}()
 
 	if appsec.Enabled() {
 		h = httpsec.WrapHandler(h, span, cfg.RouteParams)
 	}
-	h.ServeHTTP(wrapResponseWriter(w, span), r.WithContext(ctx))
+	h.ServeHTTP(rw, r.WithContext(ctx))
 }
 
 // responseWriter is a small wrapper around an http response writer that will
 // intercept and store the status of a request.
 type responseWriter struct {
 	http.ResponseWriter
-	span   ddtrace.Span
 	status int
 }
 
-func newResponseWriter(w http.ResponseWriter, span ddtrace.Span) *responseWriter {
-	return &responseWriter{w, span, 0}
+func newResponseWriter(w http.ResponseWriter) *responseWriter {
+	return &responseWriter{w, 0}
 }
 
 // Status returns the status code that was monitored.
@@ -107,8 +117,4 @@ func (w *responseWriter) WriteHeader(status int) {
 	}
 	w.ResponseWriter.WriteHeader(status)
 	w.status = status
-	w.span.SetTag(ext.HTTPCode, strconv.Itoa(status))
-	if status >= 500 && status < 600 {
-		w.span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
-	}
 }
