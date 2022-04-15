@@ -13,9 +13,6 @@ import (
 // RunError the WAF can return when running it.
 type RunError int
 
-// AtomicU64 can be used to perform atomic operations on an uint64 type
-type AtomicU64 uint64
-
 // RulesetInfo stores the information - provided by the WAF - about WAF rules initialization.
 type RulesetInfo struct {
 	// Number of rules successfully loaded
@@ -59,6 +56,9 @@ func (e RunError) Error() string {
 	}
 }
 
+// AtomicU64 can be used to perform atomic operations on an uint64 type
+type AtomicU64 uint64
+
 // Add atomically sums the current atomic value with the provided value `v`.
 func (a *AtomicU64) Add(v uint64) {
 	atomic.AddUint64((*uint64)(a), v)
@@ -67,4 +67,8 @@ func (a *AtomicU64) Add(v uint64) {
 // Inc atomically increments the atomic value by 1
 func (a *AtomicU64) Inc() {
 	atomic.AddUint64((*uint64)(a), 1)
+}
+
+func (a *AtomicU64) Load() uint64 {
+	return atomic.LoadUint64((*uint64)(a))
 }
