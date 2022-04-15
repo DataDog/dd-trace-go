@@ -69,7 +69,6 @@ func TestKubernetes(t *testing.T) {
 	{
 		s := spans[0]
 		assert.Equal(t, "http.request", s.OperationName())
-		assert.Equal(t, "kubernetes", s.Tag(ext.ServiceName))
 		assert.Equal(t, "GET namespaces", s.Tag(ext.ResourceName))
 		assert.Equal(t, "200", s.Tag(ext.HTTPCode))
 		assert.Equal(t, "GET", s.Tag(ext.HTTPMethod))
