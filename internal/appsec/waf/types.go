@@ -69,6 +69,7 @@ func (a *AtomicU64) Inc() {
 	atomic.AddUint64((*uint64)(a), 1)
 }
 
+// Load atomically loads the value.
 func (a *AtomicU64) Load() uint64 {
 	return atomic.LoadUint64((*uint64)(a))
 }
