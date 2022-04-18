@@ -133,7 +133,7 @@ func NewHandle(jsonRule []byte, keyRegex, valueRegex string) (*Handle, error) {
 	incNbLiveCObjects()
 
 	// Decode the ruleset information returned by the WAF
-	errors, err := decodeMap((*wafObject)(&wafRInfo.errors))
+	errors, err := decodeErrors((*wafObject)(&wafRInfo.errors))
 	if err != nil {
 		C.ddwaf_destroy(handle)
 		decNbLiveCObjects()
@@ -203,8 +203,10 @@ func (waf *Handle) Close() {
 // become available. Each request must have its own Context.
 type Context struct {
 	waf *Handle
-	// Cumulated WAF runtime - in nanoseconds - for this context.
+	// Cumulated internal WAF run time - in nanoseconds - for this context.
 	totalRuntimeNs AtomicU64
+	// Cumulated overall run time - in nanoseconds - for this context.
+	totalOverallRuntimeNs AtomicU64
 	// Cumulated timeout count for this context.
 	timeoutCount AtomicU64
 
@@ -238,6 +240,15 @@ func NewContext(waf *Handle) *Context {
 
 // Run the WAF with the given Go values and timeout.
 func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (matches []byte, err error) {
+	now := time.Now()
+	defer func() {
+		dt := time.Since(now)
+		c.totalOverallRuntimeNs.Add(uint64(dt.Nanoseconds()))
+	}()
+	return c.run(values, timeout)
+}
+
+func (c *Context) run(values map[string]interface{}, timeout time.Duration) (matches []byte, err error) {
 	if len(values) == 0 {
 		return
 	}
@@ -275,13 +286,13 @@ func (c *Context) Close() {
 
 // TotalRuntime returns the cumulated waf runtime across various run calls within the same WAF context.
 // Returned time is in nanoseconds.
-func (c *Context) TotalRuntime() uint64 {
-	return uint64(c.totalRuntimeNs)
+func (c *Context) TotalRuntime() (overallRuntimeNs, internalRuntimeNs uint64) {
+	return c.totalOverallRuntimeNs.Load(), c.totalRuntimeNs.Load()
 }
 
 // TotalTimeouts returns the cumulated amount of WAF timeouts across various run calls within the same WAF context.
 func (c *Context) TotalTimeouts() uint64 {
-	return uint64(c.timeoutCount)
+	return c.timeoutCount.Load()
 }
 
 // Translate libddwaf return values into return values suitable to a Go program.
@@ -582,6 +593,17 @@ func (e *encoder) encodeUint64(n uint64, wo *wafObject) error {
 	// TODO(Julio-Guerra): clarify with libddwaf when should it be an actual
 	//   uint64
 	return e.encodeString(strconv.FormatUint(n, 10), wo)
+}
+
+func decodeErrors(wo *wafObject) (map[string]interface{}, error) {
+	v, err := decodeMap(wo)
+	if err != nil {
+		return nil, err
+	}
+	if len(v) == 0 {
+		v = nil // enforce a nil map when the ddwaf map was empty
+	}
+	return v, nil
 }
 
 func decodeObject(wo *wafObject) (v interface{}, err error) {
