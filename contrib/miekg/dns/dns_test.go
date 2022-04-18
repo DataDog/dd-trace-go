@@ -17,18 +17,25 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
+type testHandler struct{}
+
+func (th *testHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
+	m := new(dns.Msg)
+	m.SetReply(r)
+	w.WriteMsg(m)
+}
+
 func TestDNS(t *testing.T) {
-	mux := dns.NewServeMux()
-	mux.HandleFunc(".", func(w dns.ResponseWriter, r *dns.Msg) {
-		m := new(dns.Msg)
-		m.SetReply(r)
-		w.WriteMsg(m)
-	})
 	addr := getFreeAddr(t).String()
+	server := dns.Server{
+		Addr:    addr,
+		Net:     "udp",
+		Handler: WrapHandler(&testHandler{}),
+	}
 
 	// start the server
 	go func() {
-		err := ListenAndServe(addr, "udp", mux)
+		err := server.ListenAndServe()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,7 +51,9 @@ func TestDNS(t *testing.T) {
 	_, err := Exchange(m, addr)
 	assert.NoError(t, err)
 
-	time.Sleep(100 * time.Millisecond) // Wait for span to be closed after DNS request
+	err = server.Shutdown() // Shutdown server so span is closed after DNS request
+	assert.NoError(t, err)
+
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 2)
 	for _, s := range spans {
