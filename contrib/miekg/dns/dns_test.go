@@ -44,6 +44,7 @@ func TestDNS(t *testing.T) {
 	_, err := Exchange(m, addr)
 	assert.NoError(t, err)
 
+	time.Sleep(100 * time.Millisecond) // Wait for span to be closed after DNS request
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 2)
 	for _, s := range spans {
