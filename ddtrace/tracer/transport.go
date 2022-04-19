@@ -186,16 +186,12 @@ func (t *httpTransport) endpoint() string {
 // resolveAgentAddr resolves the given agent address and fills in any missing host
 // and port using the defaults. Some environment variable settings will
 // take precedence over configuration.
-func resolveAgentAddr(addr string) string {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		// no port in addr
-		host = addr
-	}
-	if v := os.Getenv("DD_AGENT_HOST"); v != "" && host == "" {
+func resolveAgentAddr() string {
+	var host, port string
+	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
 		host = v
 	}
-	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" && port == "" {
+	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
 		port = v
 	}
 	if host == "" {
