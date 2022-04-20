@@ -16,21 +16,19 @@ import (
 )
 
 func ExampleHook() {
+	// Ensure your tracer is started and stopped
 	// Setup logrus, do this once at the beginning of your program
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 	logrus.AddHook(&DDContextLogHook{})
-
-	// Setting output to Stdout so output can be validated
 	logrus.SetOutput(os.Stdout)
 
 	span, sctx := tracer.StartSpanFromContext(context.Background(), "mySpan")
+	defer span.Finish()
 
 	// Pass the current span context to the logger (Time is set for consistency in output here)
 	cLog := logrus.WithContext(sctx).WithTime(time.Date(2000, 1, 1, 1, 1, 1, 0, time.UTC))
 	// Log as desired using the context-aware logger
 	cLog.Info("Completed some work!")
-
-	span.Finish()
 	// Output:
 	// {"dd.span_id":0,"dd.trace_id":0,"level":"info","msg":"Completed some work!","time":"2000-01-01T01:01:01Z"}
 }
