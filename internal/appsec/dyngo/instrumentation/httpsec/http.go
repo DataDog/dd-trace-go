@@ -20,6 +20,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -32,7 +33,7 @@ type (
 		// Headers corresponds to the address `server.request.headers.no_cookies`
 		Headers map[string][]string
 		// Cookies corresponds to the address `server.request.cookies`
-		Cookies []string
+		Cookies map[string][]string
 		// Query corresponds to the address `server.request.query`
 		Query map[string][]string
 		// PathParams corresponds to the address `server.request.path_params`
@@ -81,6 +82,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				status = mw.Status()
 			}
 			events := op.Finish(HandlerOperationRes{Status: status})
+			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
 			}
@@ -100,26 +102,37 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 // when appsec is disabled.
 func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
-	var cookies []string
 	for k, v := range r.Header {
 		k := strings.ToLower(k)
 		if k == "cookie" {
 			// Do not include cookies in the request headers
-			cookies = v
 			continue
 		}
 		headers[k] = v
 	}
+	cookies := makeCookies(r) // TODO(Julio-Guerra): avoid actively parsing the cookies thanks to dynamic instrumentation
 	headers["host"] = []string{r.Host}
 	return HandlerOperationArgs{
 		RequestURI: r.RequestURI,
 		Headers:    headers,
 		Cookies:    cookies,
-		// TODO(Julio-Guerra): avoid actively parsing the query string and move to a lazy monitoring of this value with
-		//   the dynamic instrumentation of the Query() method.
-		Query:      r.URL.Query(),
+		Query:      r.URL.Query(), // TODO(Julio-Guerra): avoid actively parsing the query values thanks to dynamic instrumentation
 		PathParams: pathParams,
 	}
+}
+
+// Return the map of parsed cookies if any and following the specification of
+// the rule address `server.request.cookies`.
+func makeCookies(r *http.Request) map[string][]string {
+	parsed := r.Cookies()
+	if len(parsed) == 0 {
+		return nil
+	}
+	cookies := make(map[string][]string, len(parsed))
+	for _, c := range parsed {
+		cookies[c.Name] = append(cookies[c.Name], c.Value)
+	}
+	return cookies
 }
 
 // TODO(Julio-Guerra): create a go-generate tool to generate the types, vars and methods below
@@ -129,7 +142,8 @@ func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) Han
 type (
 	Operation struct {
 		dyngo.Operation
-		events json.RawMessage
+		instrumentation.TagsHolder
+		instrumentation.SecurityEventsHolder
 	}
 
 	// SDKBodyOperation type representing an SDK body. It must be created with
@@ -146,7 +160,10 @@ type (
 // The operation is linked to the global root operation since an HTTP operation
 // is always expected to be first in the operation stack.
 func StartOperation(ctx context.Context, args HandlerOperationArgs) (context.Context, *Operation) {
-	op := &Operation{Operation: dyngo.NewOperation(nil)}
+	op := &Operation{
+		Operation:  dyngo.NewOperation(nil),
+		TagsHolder: instrumentation.NewTagsHolder(),
+	}
 	newCtx := context.WithValue(ctx, contextKey{}, op)
 	dyngo.StartOperation(op, args)
 	return newCtx, op
@@ -160,9 +177,9 @@ func fromContext(ctx context.Context) *Operation {
 
 // Finish the HTTP handler operation, along with the given results and emits a
 // finish event up in the operation stack.
-func (op *Operation) Finish(res HandlerOperationRes) json.RawMessage {
+func (op *Operation) Finish(res HandlerOperationRes) []json.RawMessage {
 	dyngo.FinishOperation(op, res)
-	return op.events
+	return op.Events()
 }
 
 // StartSDKBodyOperation starts the SDKBody operation and emits a start event
@@ -175,15 +192,6 @@ func StartSDKBodyOperation(parent *Operation, args SDKBodyOperationArgs) *SDKBod
 // Finish finishes the SDKBody operation and emits a finish event
 func (op *SDKBodyOperation) Finish() {
 	dyngo.FinishOperation(op, SDKBodyOperationRes{})
-}
-
-// AddSecurityEvent adds the security event to the list of events observed
-// during the operation lifetime.
-func (op *Operation) AddSecurityEvent(event json.RawMessage) {
-	// TODO(Julio-Guerra): the current situation involves only one event per
-	//   operation. In the future, multiple events per operation will become
-	//   possible and the append operation should be made thread-safe.
-	op.events = event
 }
 
 // HTTP handler operation's start and finish event callback function types.
