@@ -19,6 +19,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
+func TestClientDefaultURL(t *testing.T) {
+	var c telemetry.Client
+	c.Start(nil, nil)
+	c.Stop()
+	expected := "http://localhost:8126/telemetry/proxy/api/v2/apmtelemetry"
+	if c.URL != expected {
+		t.Errorf("bad default URL. Got %s, expected %s", c.URL, expected)
+	}
+}
+
 func TestClient(t *testing.T) {
 	heartbeat := make(chan struct{})
 

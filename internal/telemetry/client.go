@@ -13,7 +13,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -47,8 +49,14 @@ var (
 		},
 		Timeout: 5 * time.Second,
 	}
-	// TODO: Default telemetry URL?
 	hostname string
+)
+
+// Default values for determining where to upload telemetry
+const (
+	DefaultAgentAddress            = "http://localhost:8126"
+	AgentTelemetryEndpoint         = "/telemetry/proxy/api/v2/apmtelemetry"
+	DefaultDirectTelemetryEndpoint = "https://instrumentation-telemetry-intake.datadoghq.com/"
 )
 
 func init() {
@@ -66,7 +74,13 @@ func init() {
 // caller since telemetry should not disrupt an application. Metrics are
 // aggregated by the Client.
 type Client struct {
-	// URL for the Datadog agent or Datadog telemetry endpoint
+	// URL for the Datadog agent or Datadog telemetry endpoint, including
+	// the scheme (e.g. "http", "https"). If pointing to a Datadog agent,
+	// the correct upload endpoint will be appended, so only the scheme and
+	// host need to be provided (e.g. "http://localhost:8126")
+	//
+	// Defaults to DefaultAgentAddress if no API key is provided, or else
+	// DefaultDirectTelemetryEndpoint.
 	URL string
 	// APIKey should be supplied if the endpoint is not a Datadog agent,
 	// i.e. you are sending telemetry directly to Datadog
@@ -173,7 +187,20 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 	c.Version = fromEnvOrDefault("DD_VERSION", c.Version)
 
 	c.APIKey = fromEnvOrDefault("DD_API_KEY", c.APIKey)
-	// TODO: Initialize URL/endpoint from environment var
+	if len(c.APIKey) == 0 {
+		if len(c.URL) == 0 {
+			c.URL = DefaultAgentAddress
+		}
+		u, err := url.Parse(c.URL)
+		if err != nil {
+			c.log("parsing given URL (%s) failed: %s", c.URL, err)
+			return
+		}
+		u.Path = path.Join(u.Path, AgentTelemetryEndpoint)
+		c.URL = u.String()
+	} else if len(c.URL) == 0 {
+		c.URL = DefaultDirectTelemetryEndpoint
+	}
 
 	r := c.newRequest(RequestTypeAppStarted)
 	r.Payload = payload
