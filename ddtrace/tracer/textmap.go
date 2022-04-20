@@ -325,7 +325,6 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 				ctx.trace = newTrace()
 			}
 			ctx.trace.tags, err = parsePropagatableTraceTags(v)
-			ctx.trace.upstreamServices = ctx.trace.tags[keyUpstreamServices]
 			if err != nil {
 				log.Warn("did not extract trace tags (err: %s)", err.Error())
 			}

@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/servicehash"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
@@ -150,7 +151,6 @@ type trace struct {
 	mu               sync.RWMutex      // guards below fields
 	spans            []*span           // all the spans that are part of this trace
 	tags             map[string]string // trace level tags
-	upstreamServices string            // _dd.p.upstream_services value from the upstream service
 	finished         int               // the number of finished spans
 	full             bool              // signifies that the span buffer is full
 	priority         *float64          // sampling priority
@@ -231,10 +231,12 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 	}
 	*t.priority = float64(p)
 	if sampler != samplernames.Upstream {
-		if t.upstreamServices != "" {
-			t.setTag(keyUpstreamServices, t.upstreamServices+";"+compactUpstreamServices(service, p, sampler, rate))
-		} else {
-			t.setTag(keyUpstreamServices, compactUpstreamServices(service, p, sampler, rate))
+		_, ok := t.tags[keyDecisionMaker]
+		if p > 0 && !ok {
+			t.setTag(keyDecisionMaker, servicehash.Hash(service)+"-"+strconv.Itoa(int(sampler)))
+		}
+		if p <= 0 && ok {
+			delete(t.tags, keyDecisionMaker)
 		}
 	}
 }
@@ -322,13 +324,6 @@ func (t *trace) finishedOne(s *span) {
 	tr.pushTrace(t.spans)
 }
 
-func compactUpstreamServices(service string, priority int, sampler samplernames.SamplerName, rate float64) string {
-	sb64 := b64Encode(service)
-	p := strconv.Itoa(priority)
-	s := strconv.Itoa(int(sampler))
-	r := ""
-	if !math.IsNaN(rate) {
-		r = strconv.FormatFloat(rate, 'f', 4, 64)
-	}
-	return sb64 + "|" + p + "|" + s + "|" + r
+func compactUpstreamServices(service string, sampler samplernames.SamplerName) string {
+	return servicehash.Hash(service) + "-" + strconv.Itoa(int(sampler))
 }

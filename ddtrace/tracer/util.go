@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -122,10 +121,4 @@ func parsePropagatableTraceTags(s string) (map[string]string, error) {
 	}
 	tags[key] = s[start:]
 	return tags, nil
-}
-
-var b64 = base64.StdEncoding.WithPadding(base64.NoPadding)
-
-func b64Encode(s string) string {
-	return b64.EncodeToString([]byte(s))
 }

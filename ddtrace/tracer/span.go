@@ -562,7 +562,7 @@ func (s *span) Format(f fmt.State, c rune) {
 const (
 	keySamplingPriority        = "_sampling_priority_v1"
 	keySamplingPriorityRate    = "_dd.agent_psr"
-	keyUpstreamServices        = "_dd.p.upstream_services"
+	keyDecisionMaker           = "_dd.p.dm"
 	keyOrigin                  = "_dd.origin"
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
