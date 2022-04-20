@@ -255,6 +255,35 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	for k, v := range ctx.baggage {
 		writer.Set(p.cfg.BaggagePrefix+k, v)
 	}
+	// propagate trace tags
+	var sb strings.Builder
+	if ctx.trace != nil {
+		ctx.trace.mu.RLock()
+		for k, v := range ctx.trace.tags {
+			if !strings.HasPrefix(k, "_dd.p.") {
+				continue
+			}
+			if err := isValidPropagatableTraceTag(k, v); err != nil {
+				log.Warn("won't propagate tag '%s' (err: %s)", k, err.Error())
+				continue
+			}
+			if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
+				sb.Reset()
+				log.Warn("won't propagate trace tags (err: max trace tags header len (%d) reached)", p.cfg.MaxTagsHeaderLen)
+				break
+			}
+			if sb.Len() > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(k)
+			sb.WriteByte('=')
+			sb.WriteString(v)
+		}
+		ctx.trace.mu.RUnlock()
+		if sb.Len() > 0 {
+			writer.Set(traceTagsHeader, sb.String())
+		}
+	}
 	return nil
 }
 
