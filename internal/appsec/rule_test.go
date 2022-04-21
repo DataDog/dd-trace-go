@@ -17,11 +17,11 @@ import (
 )
 
 func TestStaticRule(t *testing.T) {
-	if _, err := waf.Health(); err != nil {
+	if waf.Health() != nil {
 		t.Skip("waf disabled")
 		return
 	}
-	waf, err := waf.NewHandle([]byte(staticRecommendedRule))
+	waf, err := waf.NewHandle([]byte(staticRecommendedRule), "", "")
 	require.NoError(t, err)
 	waf.Close()
 }

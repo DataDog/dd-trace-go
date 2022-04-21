@@ -29,10 +29,11 @@ import (
 )
 
 func TestHealth(t *testing.T) {
-	version, err := Health()
-	require.NoError(t, err)
-	require.NotNil(t, version)
-	require.Equal(t, "1.2.1", version.String())
+	require.NoError(t, Health())
+}
+
+func TestVersion(t *testing.T) {
+	require.Regexp(t, `[0-9]+\.[0-9]+\.[0-9]+`, Version())
 }
 
 var testRule = newTestRule(ruleInput{Address: "server.request.headers.no_cookies", KeyPath: []string{"user-agent"}})
@@ -73,6 +74,10 @@ type ruleInput struct {
 	KeyPath []string
 }
 
+func newDefaultHandle(jsonRule []byte) (*Handle, error) {
+	return NewHandle(jsonRule, "", "")
+}
+
 func newTestRule(inputs ...ruleInput) []byte {
 	var buf bytes.Buffer
 	if err := testRuleTmpl.Execute(&buf, inputs); err != nil {
@@ -84,14 +89,14 @@ func newTestRule(inputs ...ruleInput) []byte {
 func TestNewWAF(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 	t.Run("valid-rule", func(t *testing.T) {
-		waf, err := NewHandle(testRule)
+		waf, err := newDefaultHandle(testRule)
 		require.NoError(t, err)
 		require.NotNil(t, waf)
 		defer waf.Close()
 	})
 
 	t.Run("invalid-json", func(t *testing.T) {
-		waf, err := NewHandle([]byte(`not json`))
+		waf, err := newDefaultHandle([]byte(`not json`))
 		require.Error(t, err)
 		require.Nil(t, waf)
 	})
@@ -99,7 +104,7 @@ func TestNewWAF(t *testing.T) {
 	t.Run("rule-encoding-error", func(t *testing.T) {
 		// For now, the null value cannot be encoded into a WAF object representation so it allows us to cover this
 		// case where the JSON rule cannot be encoded into a WAF object.
-		waf, err := NewHandle([]byte(`null`))
+		waf, err := newDefaultHandle([]byte(`null`))
 		require.Error(t, err)
 		require.Nil(t, waf)
 	})
@@ -132,7 +137,7 @@ func TestNewWAF(t *testing.T) {
   ]
 }
 `
-		waf, err := NewHandle([]byte(rule))
+		waf, err := newDefaultHandle([]byte(rule))
 		require.Error(t, err)
 		require.Nil(t, waf)
 	})
@@ -141,7 +146,7 @@ func TestNewWAF(t *testing.T) {
 func TestUsage(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 
-	waf, err := NewHandle(newTestRule(ruleInput{Address: "my.input"}))
+	waf, err := newDefaultHandle(newTestRule(ruleInput{Address: "my.input"}))
 	require.NoError(t, err)
 	require.NotNil(t, waf)
 
@@ -208,7 +213,7 @@ func TestAddresses(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 	expectedAddresses := []string{"my.first.input", "my.second.input", "my.third.input", "my.indexed.input"}
 	addresses := []ruleInput{{Address: "my.first.input"}, {Address: "my.second.input"}, {Address: "my.third.input"}, {Address: "my.indexed.input", KeyPath: []string{"indexed"}}}
-	waf, err := NewHandle(newTestRule(addresses...))
+	waf, err := newDefaultHandle(newTestRule(addresses...))
 	require.NoError(t, err)
 	defer waf.Close()
 	require.Equal(t, expectedAddresses, waf.Addresses())
@@ -222,7 +227,7 @@ func TestConcurrency(t *testing.T) {
 	nbRun := 500
 
 	t.Run("concurrent-waf-release", func(t *testing.T) {
-		waf, err := NewHandle(testRule)
+		waf, err := newDefaultHandle(testRule)
 		require.NoError(t, err)
 
 		wafCtx := NewContext(waf)
@@ -250,7 +255,7 @@ func TestConcurrency(t *testing.T) {
 	})
 
 	t.Run("concurrent-waf-context-usage", func(t *testing.T) {
-		waf, err := NewHandle(testRule)
+		waf, err := newDefaultHandle(testRule)
 		require.NoError(t, err)
 		defer waf.Close()
 
@@ -311,7 +316,7 @@ func TestConcurrency(t *testing.T) {
 	})
 
 	t.Run("concurrent-waf-instance-usage", func(t *testing.T) {
-		waf, err := NewHandle(testRule)
+		waf, err := newDefaultHandle(testRule)
 		require.NoError(t, err)
 		defer waf.Close()
 
@@ -462,7 +467,7 @@ func TestMetrics(t *testing.T) {
   ]
 }
 `
-	waf, err := NewHandle([]byte(rules))
+	waf, err := newDefaultHandle([]byte(rules))
 	require.NoError(t, err)
 	defer waf.Close()
 	// TODO: (Francois Mazeau) see if we can make this test more configurable to future proof against libddwaf changes
@@ -1022,7 +1027,7 @@ func TestEncoder(t *testing.T) {
 				require.Nil(t, wo)
 				return
 			}
-			defer free(wo)
+			defer freeWO(wo)
 
 			require.NoError(t, err)
 			require.NotEqual(t, &wafObject{}, wo)
@@ -1048,7 +1053,7 @@ func TestEncoder(t *testing.T) {
 			}
 
 			// Pass the encoded value to the WAF to make sure it doesn't return an error
-			waf, err := NewHandle(newTestRule(ruleInput{Address: "my.input"}))
+			waf, err := newDefaultHandle(newTestRule(ruleInput{Address: "my.input"}))
 			require.NoError(t, err)
 			defer waf.Close()
 			wafCtx := NewContext(waf)
@@ -1157,7 +1162,7 @@ func TestDecoder(t *testing.T) {
 		} {
 			tc := tc
 			t.Run(tc.Name, func(t *testing.T) {
-				defer free(tc.Object)
+				defer freeWO(tc.Object)
 				val, err := decodeObject(tc.Object)
 				require.NoErrorf(t, err, "Error decoding the object: %v", err)
 				require.Equal(t, reflect.TypeOf(tc.ExpectedValue), reflect.TypeOf(val))
@@ -1226,16 +1231,67 @@ func TestDecoder(t *testing.T) {
 	})
 }
 
+func TestObfuscatorConfig(t *testing.T) {
+	rule := newTestRule(ruleInput{Address: "my.addr", KeyPath: []string{"key"}})
+	t.Run("key", func(t *testing.T) {
+		waf, err := NewHandle(rule, "key", "")
+		require.NoError(t, err)
+		defer waf.Close()
+		wafCtx := NewContext(waf)
+		require.NotNil(t, wafCtx)
+		defer wafCtx.Close()
+		data := map[string]interface{}{
+			"my.addr": map[string]interface{}{"key": "Arachni-sensitive-Arachni"},
+		}
+		matches, err := wafCtx.Run(data, time.Second)
+		require.NotNil(t, matches)
+		require.NoError(t, err)
+		require.NotContains(t, (string)(matches), "sensitive")
+	})
+
+	t.Run("val", func(t *testing.T) {
+		waf, err := NewHandle(rule, "", "sensitive")
+		require.NoError(t, err)
+		defer waf.Close()
+		wafCtx := NewContext(waf)
+		require.NotNil(t, wafCtx)
+		defer wafCtx.Close()
+		data := map[string]interface{}{
+			"my.addr": map[string]interface{}{"key": "Arachni-sensitive-Arachni"},
+		}
+		matches, err := wafCtx.Run(data, time.Second)
+		require.NotNil(t, matches)
+		require.NoError(t, err)
+		require.NotContains(t, (string)(matches), "sensitive")
+	})
+
+	t.Run("off", func(t *testing.T) {
+		waf, err := NewHandle(rule, "", "")
+		require.NoError(t, err)
+		defer waf.Close()
+		wafCtx := NewContext(waf)
+		require.NotNil(t, wafCtx)
+		defer wafCtx.Close()
+		data := map[string]interface{}{
+			"my.addr": map[string]interface{}{"key": "Arachni-sensitive-Arachni"},
+		}
+		matches, err := wafCtx.Run(data, time.Second)
+		require.NotNil(t, matches)
+		require.NoError(t, err)
+		require.Contains(t, (string)(matches), "sensitive")
+	})
+}
+
 func TestFree(t *testing.T) {
 	t.Run("nil-value", func(t *testing.T) {
 		require.NotPanics(t, func() {
-			free(nil)
+			freeWO(nil)
 		})
 	})
 
 	t.Run("zero-value", func(t *testing.T) {
 		require.NotPanics(t, func() {
-			free(&wafObject{})
+			freeWO(&wafObject{})
 		})
 	})
 }
@@ -1278,7 +1334,7 @@ func BenchmarkEncoder(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				free(v)
+				freeWO(v)
 			}
 		})
 	}
