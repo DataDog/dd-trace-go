@@ -242,21 +242,6 @@ func TestSpanFinishPriority(t *testing.T) {
 	assert.Fail("span not found")
 }
 
-func TestTracePriorityLocked(t *testing.T) {
-	assert := assert.New(t)
-	ddHeaders := TextMapCarrier(map[string]string{
-		DefaultTraceIDHeader:  "2",
-		DefaultParentIDHeader: "2",
-		DefaultPriorityHeader: "2",
-	})
-
-	ctx, err := NewPropagator(nil).Extract(ddHeaders)
-	assert.Nil(err)
-	sctx, ok := ctx.(*spanContext)
-	assert.True(ok)
-	assert.False(sctx.trace.locked)
-}
-
 func TestNewSpanContext(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		span := &span{
