@@ -151,6 +151,7 @@ type trace struct {
 	mu               sync.RWMutex      // guards below fields
 	spans            []*span           // all the spans that are part of this trace
 	tags             map[string]string // trace level tags
+	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries
 	finished         int               // the number of finished spans
 	full             bool              // signifies that the span buffer is full
 	priority         *float64          // sampling priority
@@ -217,6 +218,13 @@ func (t *trace) setTag(key, value string) {
 	t.tags[key] = value
 }
 
+func (t *trace) setPropagatingTag(key, value string) {
+	if t.propagatingTags == nil {
+		t.propagatingTags = make(map[string]string, 1)
+	}
+	t.propagatingTags[key] = value
+}
+
 func (t *trace) setSamplingPriorityLocked(service string, p int, sampler samplernames.SamplerName, rate float64) {
 	if t.locked {
 		return
@@ -230,14 +238,12 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 		t.priority = new(float64)
 	}
 	*t.priority = float64(p)
-	if sampler != samplernames.Upstream {
-		_, ok := t.tags[keyDecisionMaker]
-		if p > 0 && !ok {
-			t.setTag(keyDecisionMaker, servicehash.Hash(service)+"-"+strconv.Itoa(int(sampler)))
-		}
-		if p <= 0 && ok {
-			delete(t.tags, keyDecisionMaker)
-		}
+	_, ok := t.propagatingTags[keyDecisionMaker]
+	if p > 0 && !ok {
+		t.setPropagatingTag(keyDecisionMaker, servicehash.Hash(service)+"-"+strconv.Itoa(int(sampler)))
+	}
+	if p <= 0 && ok {
+		delete(t.propagatingTags, keyDecisionMaker)
 	}
 }
 
@@ -297,6 +303,9 @@ func (t *trace) finishedOne(s *span) {
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
 		for k, v := range t.tags {
+			s.setMeta(k, v)
+		}
+		for k, v := range t.propagatingTags {
 			s.setMeta(k, v)
 		}
 	}

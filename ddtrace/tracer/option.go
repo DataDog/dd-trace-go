@@ -40,7 +40,7 @@ var (
 	defaultSocketDSD = "/var/run/datadog/dsd.socket"
 
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
-	defaultMaxTagsHeaderLen = 512
+	defaultMaxTagsHeaderLen = 128
 )
 
 // config holds the tracer configuration.
@@ -259,7 +259,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	if c.propagator == nil {
 		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
+			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", defaultMaxTagsHeaderLen),
 		})
 	}
 	if c.logger != nil {

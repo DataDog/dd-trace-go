@@ -33,6 +33,6 @@ const (
 	// AppSec specifies that the span was sampled by AppSec.
 	AppSec SamplerName = 5
 	// RemoteUserRate specifies that the span was sampled
-	// with an user specified remote rate.
+	// with a user specified remote rate.
 	RemoteUserRate SamplerName = 6
 )

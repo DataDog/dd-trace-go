@@ -242,7 +242,7 @@ func TestTracerStartSpan(t *testing.T) {
 			ext.PriorityAutoReject,
 			ext.PriorityAutoKeep,
 		}, span.Metrics[keySamplingPriority])
-		assert.Equal("cb965d81-1", span.context.trace.tags[keyDecisionMaker])
+		assert.Equal("cb965d81-1", span.context.trace.propagatingTags[keyDecisionMaker])
 		// A span is not measured unless made so specifically
 		_, ok := span.Meta[keyMeasured]
 		assert.False(ok)
@@ -255,7 +255,7 @@ func TestTracerStartSpan(t *testing.T) {
 		defer tracer.Stop()
 		span := tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep)).(*span)
 		assert.Equal(t, float64(ext.PriorityUserKeep), span.Metrics[keySamplingPriority])
-		assert.Equal(t, "cb965d81-4", span.context.trace.tags[keyDecisionMaker])
+		assert.Equal(t, "cb965d81-4", span.context.trace.propagatingTags[keyDecisionMaker])
 	})
 
 	t.Run("name", func(t *testing.T) {
@@ -565,7 +565,7 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	root := tracer.StartSpan("web.request", Tag(ext.SamplingPriority, 2)).(*span)
 	child := tracer.StartSpan("db.query", ChildOf(root.Context())).(*span)
 	assert.EqualValues(2, root.Metrics[keySamplingPriority])
-	assert.Equal("cb965d81-4", root.context.trace.tags[keyDecisionMaker])
+	assert.Equal("cb965d81-4", root.context.trace.propagatingTags[keyDecisionMaker])
 	assert.EqualValues(2, child.Metrics[keySamplingPriority])
 	assert.EqualValues(2., *root.context.trace.priority)
 	assert.EqualValues(2., *child.context.trace.priority)
@@ -583,7 +583,7 @@ func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	}
 	child := tracer.StartSpan("db.query", ChildOf(spanCtx)).(*span)
 	assert.EqualValues(1, child.Metrics[keySamplingPriority])
-	assert.Equal("cb965d81-1", child.context.trace.tags[keyDecisionMaker])
+	assert.Equal("cb965d81-1", child.context.trace.propagatingTags[keyDecisionMaker])
 }
 
 func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
@@ -600,7 +600,7 @@ func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	grandChild := tracer.StartSpan("db.query", ChildOf(child.Context())).(*span)
 	grandChild.SetTag(ext.ManualDrop, true)
 	grandChild.SetTag(ext.ManualKeep, true)
-	assert.Equal("cb965d81-4", grandChild.context.trace.tags[keyDecisionMaker])
+	assert.Equal("cb965d81-4", grandChild.context.trace.propagatingTags[keyDecisionMaker])
 }
 
 func TestTracerBaggageImmutability(t *testing.T) {
@@ -800,7 +800,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	s := tr.newEnvSpan("pylons", "")
 	assert.Equal(1., s.Metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.Metrics[keySamplingPriority])
-	assert.Equal("689bb95f-1", s.context.trace.tags[keyDecisionMaker])
+	assert.Equal("689bb95f-1", s.context.trace.propagatingTags[keyDecisionMaker])
 	p, ok := s.context.samplingPriority()
 	assert.True(ok)
 	assert.EqualValues(p, s.Metrics[keySamplingPriority])
@@ -837,9 +837,9 @@ func TestTracerPrioritySampler(t *testing.T) {
 		assert.Equal(tt.rate, s.Metrics[keySamplingPriorityRate], strconv.Itoa(i))
 		prio, ok := s.Metrics[keySamplingPriority]
 		if prio > 0 {
-			assert.Equal(servicehash.Hash(tt.service)+"-1", s.context.trace.tags[keyDecisionMaker])
+			assert.Equal(servicehash.Hash(tt.service)+"-1", s.context.trace.propagatingTags[keyDecisionMaker])
 		} else {
-			assert.Equal("", s.context.trace.tags[keyDecisionMaker])
+			assert.Equal("", s.context.trace.propagatingTags[keyDecisionMaker])
 		}
 		assert.True(ok)
 		assert.Contains([]float64{0, 1}, prio)

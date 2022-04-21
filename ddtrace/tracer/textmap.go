@@ -95,6 +95,9 @@ const originHeader = "x-datadog-origin"
 // traceTagsHeader holds the propagated trace tags
 const traceTagsHeader = "x-datadog-tags"
 
+// propagationErrorKey holds any error from propagated trace tags (if any)
+const propagationErrorKey = "_dd.propagation_error"
+
 // PropagatorConfig defines the configuration for initializing a propagator.
 type PropagatorConfig struct {
 	// BaggagePrefix specifies the prefix that will be used to store baggage
@@ -114,6 +117,7 @@ type PropagatorConfig struct {
 	PriorityHeader string
 
 	// MaxTagsHeaderLen specifies the maximum length of trace tags header value.
+	// It defaults to defaultMaxTagsHeaderLen
 	MaxTagsHeaderLen int
 
 	// B3 specifies if B3 headers should be added for trace propagation.
@@ -255,21 +259,23 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	for k, v := range ctx.baggage {
 		writer.Set(p.cfg.BaggagePrefix+k, v)
 	}
+	if p.cfg.MaxTagsHeaderLen <= 0 {
+		return nil
+	}
 	// propagate trace tags
 	var sb strings.Builder
 	if ctx.trace != nil {
-		ctx.trace.mu.RLock()
-		for k, v := range ctx.trace.tags {
-			if !strings.HasPrefix(k, "_dd.p.") {
-				continue
-			}
+		ctx.trace.mu.Lock()
+		for k, v := range ctx.trace.propagatingTags {
 			if err := isValidPropagatableTraceTag(k, v); err != nil {
 				log.Warn("won't propagate tag '%s' (err: %s)", k, err.Error())
+				ctx.trace.setTag(propagationErrorKey, "encoding_error")
 				continue
 			}
 			if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
 				sb.Reset()
 				log.Warn("won't propagate trace tags (err: max trace tags header len (%d) reached)", p.cfg.MaxTagsHeaderLen)
+				ctx.trace.setTag(propagationErrorKey, "max_size")
 				break
 			}
 			if sb.Len() > 0 {
@@ -279,7 +285,7 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 			sb.WriteByte('=')
 			sb.WriteString(v)
 		}
-		ctx.trace.mu.RUnlock()
+		ctx.trace.mu.Unlock()
 		if sb.Len() > 0 {
 			writer.Set(traceTagsHeader, sb.String())
 		}
@@ -324,10 +330,13 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if ctx.trace == nil {
 				ctx.trace = newTrace()
 			}
-			ctx.trace.tags, err = parsePropagatableTraceTags(v)
+			ctx.trace.mu.Lock()
+			ctx.trace.propagatingTags, err = parsePropagatableTraceTags(v)
 			if err != nil {
 				log.Warn("did not extract trace tags (err: %s)", err.Error())
+				ctx.trace.setTag(propagationErrorKey, "decoding_error")
 			}
+			ctx.trace.mu.Unlock()
 		default:
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
