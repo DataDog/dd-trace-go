@@ -353,20 +353,20 @@ func TestSpanSetTagError(t *testing.T) {
 func TestTraceManualKeepAndManualDrop(t *testing.T) {
 	for _, scenario := range []struct {
 		tag             string
-		shouldBeKept    bool
-		initialPriority int
+		keep    bool
+		p int // priority
 	}{
 		{ext.ManualKeep, true, 0},
 		{ext.ManualDrop, false, 1},
 	} {
-		t.Run(fmt.Sprintf("%s on span with local root", scenario.tag), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/local", scenario.tag), func(t *testing.T) {
 			tracer := newTracer()
 			span := tracer.newRootSpan("root span", "my service", "my resource")
 			span.SetTag(scenario.tag, true)
 			assert.Equal(t, scenario.shouldBeKept, shouldKeep(span))
 		})
 
-		t.Run(fmt.Sprintf("%s on span with non-local root", scenario.tag), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
 			tracer := newTracer()
 			spanCtx := &spanContext{traceID: 42, spanID: 42}
 			spanCtx.setSamplingPriority("", scenario.initialPriority, samplernames.Upstream, math.NaN())
