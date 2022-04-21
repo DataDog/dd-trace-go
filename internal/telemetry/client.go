@@ -52,11 +52,17 @@ var (
 	hostname string
 )
 
-// Default values for determining where to upload telemetry
 const (
-	DefaultAgentAddress            = "http://localhost:8126"
-	AgentTelemetryEndpoint         = "/telemetry/proxy/api/v2/apmtelemetry"
-	DefaultDirectTelemetryEndpoint = "https://instrumentation-telemetry-intake.datadoghq.com/"
+	// defaultAgentAddress is the root HTTP address of the Datadog agent if
+	// none is provided
+	defaultAgentAddress = "http://localhost:8126"
+	// agentTelemetryEndpoint is the proxy endpoint on the Datadog agent
+	// where telemetry messages should be uploaded
+	agentTelemetryEndpoint = "/telemetry/proxy/api/v2/apmtelemetry"
+	// defaultDirectTelemetryEndpoint is the endpoint for uploading messages
+	// directly to Datadog. This bypasses the agent and requires a Datadog
+	// API key
+	defaultDirectTelemetryEndpoint = "https://instrumentation-telemetry-intake.datadoghq.com/"
 )
 
 func init() {
@@ -189,17 +195,17 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 	c.APIKey = fromEnvOrDefault("DD_API_KEY", c.APIKey)
 	if len(c.APIKey) == 0 {
 		if len(c.URL) == 0 {
-			c.URL = DefaultAgentAddress
+			c.URL = defaultAgentAddress
 		}
 		u, err := url.Parse(c.URL)
 		if err != nil {
 			c.log("parsing given URL (%s) failed: %s", c.URL, err)
 			return
 		}
-		u.Path = path.Join(u.Path, AgentTelemetryEndpoint)
+		u.Path = path.Join(u.Path, agentTelemetryEndpoint)
 		c.URL = u.String()
 	} else if len(c.URL) == 0 {
-		c.URL = DefaultDirectTelemetryEndpoint
+		c.URL = defaultDirectTelemetryEndpoint
 	}
 
 	r := c.newRequest(RequestTypeAppStarted)
