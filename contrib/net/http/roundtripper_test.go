@@ -229,7 +229,7 @@ func TestRoundTripperAnalyticsSettings(t *testing.T) {
 	})
 }
 
-// TestRoundTripperDuplicate is a regression test ensuring that RoundTrip
+// TestRoundTripperCopy is a regression test ensuring that RoundTrip
 // does not modify the request per the RoundTripper contract. See:
 // https://cs.opensource.google/go/go/+/refs/tags/go1.18.1:src/net/http/client.go;l=129-133
 func TestRoundTripperCopy(t *testing.T) {
