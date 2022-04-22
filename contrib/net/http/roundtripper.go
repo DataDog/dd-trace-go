@@ -49,7 +49,6 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if rt.cfg.before != nil {
 		rt.cfg.before(req, span)
 	}
-	fmt.Printf("%p req url: ", req.URL)
 	r2 := req.WithContext(ctx)
 	// deep copy of the Header
 	r2.Header = make(http.Header, len(req.Header))
