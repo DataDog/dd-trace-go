@@ -239,7 +239,6 @@ func TestRoundTripperCopy(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 		assert.NoError(t, err)
-
 		w.Write([]byte("Hello World"))
 	}))
 	defer s.Close()
