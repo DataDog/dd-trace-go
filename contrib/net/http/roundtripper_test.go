@@ -243,7 +243,7 @@ func TestRoundTripperCopy(t *testing.T) {
 	}))
 	defer s.Close()
 
-	initial_req, err := http.NewRequest("GET", s.URL+"/hello/world", nil)
+	initialReq, err := http.NewRequest("GET", s.URL+"/hello/world", nil)
 	assert.NoError(t, err)
 	req, err := http.NewRequest("GET", s.URL+"/hello/world", nil)
 	assert.NoError(t, err)
@@ -251,7 +251,7 @@ func TestRoundTripperCopy(t *testing.T) {
 	_, err = rt.RoundTrip(req)
 	assert.NoError(t, err)
 	assert.Len(t, req.Header, 0)
-	assert.Equal(t, initial_req, req)
+	assert.Equal(t, initialReq, req)
 }
 
 func TestServiceName(t *testing.T) {
