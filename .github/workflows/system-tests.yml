@@ -1,6 +1,11 @@
 name: System Tests
 
 on:
+  push:
+    branches:
+      - v1
+    tags:
+      - "**"
   pull_request:
     branches:
       - "**"
@@ -10,7 +15,6 @@ on:
 
 jobs:
   system-tests:
-    if: ${{ github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -19,6 +23,12 @@ jobs:
             weblog-variant: net-http
           - library: golang
             weblog-variant: gorilla
+          - library: golang
+            weblog-variant: echo
+          - library: golang
+            weblog-variant: chi
+          - library: golang
+            weblog-variant: gin
       fail-fast: false
     env:
       TEST_LIBRARY: golang

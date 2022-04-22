@@ -5,10 +5,29 @@
 
 package waf
 
-import "fmt"
+import (
+	"fmt"
+	"sync/atomic"
+)
 
 // RunError the WAF can return when running it.
 type RunError int
+
+// AtomicU64 can be used to perform atomic operations on an uint64 type
+type AtomicU64 uint64
+
+// RulesetInfo stores the information - provided by the WAF - about WAF rules initialization.
+type RulesetInfo struct {
+	// Number of rules successfully loaded
+	Loaded uint16
+	// Number of rules which failed to parse
+	Failed uint16
+	// Map from an error string to an array of all the rule ids for which
+	// that error was raised. {error: [rule_ids]}
+	Errors map[string]interface{}
+	// Ruleset version
+	Version string
+}
 
 // Errors the WAF can return when running it.
 const (
@@ -40,19 +59,12 @@ func (e RunError) Error() string {
 	}
 }
 
-// AttackMetadata is the JSON metadata returned the WAF when it matches.
-type AttackMetadata []struct {
-	RetCode int    `json:"ret_code"`
-	Flow    string `json:"flow"`
-	Step    string `json:"step"`
-	Rule    string `json:"rule"`
-	Filter  []struct {
-		Operator        string        `json:"operator"`
-		OperatorValue   string        `json:"operator_value"`
-		BindingAccessor string        `json:"binding_accessor"`
-		ManifestKey     string        `json:"manifest_key"`
-		KeyPath         []interface{} `json:"key_path"`
-		ResolvedValue   string        `json:"resolved_value"`
-		MatchStatus     string        `json:"match_status"`
-	} `json:"filter"`
+// Add atomically sums the current atomic value with the provided value `v`.
+func (a *AtomicU64) Add(v uint64) {
+	atomic.AddUint64((*uint64)(a), v)
+}
+
+// Inc atomically increments the atomic value by 1
+func (a *AtomicU64) Inc() {
+	atomic.AddUint64((*uint64)(a), 1)
 }

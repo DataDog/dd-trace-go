@@ -7,7 +7,6 @@ package tracer
 
 import (
 	gocontext "context"
-	"fmt"
 	"os"
 	"runtime/pprof"
 	"strconv"
@@ -20,7 +19,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
@@ -155,6 +153,23 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return internal.GetGlobalTracer().Inject(ctx, carrier)
 }
 
+// SetUser associates user information to the current trace which the
+// provided span belongs to. The options can be used to tune which user
+// bit of information gets monitored.
+func SetUser(s Span, id string, opts ...UserMonitoringOption) {
+	if s == nil {
+		return
+	}
+	if span, ok := s.(*span); ok && span.context != nil {
+		span = span.context.trace.root
+		s = span
+	}
+	s.SetTag("usr.id", id)
+	for _, fn := range opts {
+		fn(s)
+	}
+}
+
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
@@ -226,18 +241,7 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
-	appsec.Start(&appsec.Config{
-		Client:   c.httpClient,
-		Version:  version.Tag,
-		AgentURL: fmt.Sprintf("http://%s/", resolveAddr(c.agentAddr)),
-		Hostname: c.hostname,
-		Service: appsec.ServiceConfig{
-			Name:        c.serviceName,
-			Version:     c.version,
-			Environment: c.env,
-		},
-		Tags: c.globalTags,
-	})
+	appsec.Start()
 	return t
 }
 
@@ -407,16 +411,21 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for k, v := range t.config.globalTags {
 		span.SetTag(k, v)
 	}
+	if t.config.serviceMappings != nil {
+		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
+			span.Service = newSvc
+		}
+	}
 	if context == nil || context.span == nil || context.span.Service != span.Service {
 		span.setMetric(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.Metrics, keyMeasured)
 	}
 	if t.config.version != "" && span.Service == t.config.serviceName {
-		span.SetTag(ext.Version, t.config.version)
+		span.setMeta(ext.Version, t.config.version)
 	}
 	if t.config.env != "" {
-		span.SetTag(ext.Environment, t.config.env)
+		span.setMeta(ext.Environment, t.config.env)
 	}
 	if _, ok := span.context.samplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
@@ -430,7 +439,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			span.Service = newSvc
 		}
 	}
-	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
+	if log.DebugEnabled() {
+		// avoid allocating the ...interface{} argument if debug logging is disabled
+		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
+			span, span.Name, span.Resource, span.Meta, span.Metrics)
+	}
 	return span
 }
 

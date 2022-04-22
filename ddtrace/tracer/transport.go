@@ -101,8 +101,8 @@ func newHTTPTransport(addr string, client *http.Client) *httpTransport {
 		defaultHeaders["Datadog-Container-ID"] = cid
 	}
 	return &httpTransport{
-		traceURL: fmt.Sprintf("http://%s/v0.4/traces", resolveAddr(addr)),
-		statsURL: fmt.Sprintf("http://%s/v0.6/stats", resolveAddr(addr)),
+		traceURL: fmt.Sprintf("http://%s/v0.4/traces", addr),
+		statsURL: fmt.Sprintf("http://%s/v0.6/stats", addr),
 		client:   client,
 		headers:  defaultHeaders,
 	}
@@ -148,7 +148,7 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	req.Header.Set("Content-Length", strconv.Itoa(p.size()))
 	req.Header.Set(headerComputedTopLevel, "yes")
 	if t, ok := traceinternal.GetGlobalTracer().(*tracer); ok {
-		if t.config.agent.Stats {
+		if t.config.canComputeStats() {
 			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
 		}
 		droppedTraces := int(atomic.SwapUint64(&t.droppedP0Traces, 0))
@@ -183,26 +183,22 @@ func (t *httpTransport) endpoint() string {
 	return t.traceURL
 }
 
-// resolveAddr resolves the given agent address and fills in any missing host
+// resolveAgentAddr resolves the given agent address and fills in any missing host
 // and port using the defaults. Some environment variable settings will
 // take precedence over configuration.
-func resolveAddr(addr string) string {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		// no port in addr
-		host = addr
+func resolveAgentAddr() string {
+	var host, port string
+	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
+		host = v
+	}
+	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
+		port = v
 	}
 	if host == "" {
 		host = defaultHostname
 	}
 	if port == "" {
 		port = defaultPort
-	}
-	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
-		host = v
-	}
-	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
-		port = v
 	}
 	return fmt.Sprintf("%s:%s", host, port)
 }

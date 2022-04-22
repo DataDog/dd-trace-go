@@ -23,6 +23,7 @@ import (
 	"errors"
 	"math"
 	"reflect"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -128,11 +129,7 @@ type tracedConnector struct {
 	cfg        *config
 }
 
-func (t *tracedConnector) Connect(c context.Context) (driver.Conn, error) {
-	conn, err := t.connector.Connect(c)
-	if err != nil {
-		return nil, err
-	}
+func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	tp := &traceParams{
 		driverName: t.driverName,
 		cfg:        t.cfg,
@@ -141,6 +138,12 @@ func (t *tracedConnector) Connect(c context.Context) (driver.Conn, error) {
 		tp.meta, _ = internal.ParseDSN(t.driverName, dc.dsn)
 	} else if t.cfg.dsn != "" {
 		tp.meta, _ = internal.ParseDSN(t.driverName, t.cfg.dsn)
+	}
+	start := time.Now()
+	conn, err := t.connector.Connect(ctx)
+	tp.tryTrace(ctx, queryTypeConnect, "", start, err)
+	if err != nil {
+		return nil, err
 	}
 	return &tracedConn{conn, tp}, err
 }
@@ -163,7 +166,7 @@ func (t dsnConnector) Driver() driver.Driver {
 	return t.driver
 }
 
-// OpenDB returns connection to a DB using a the traced version of the given driver. In order for OpenDB
+// OpenDB returns connection to a DB using the traced version of the given driver. In order for OpenDB
 // to work, the driver must first be registered using Register. If this did not occur, OpenDB will panic.
 func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	name, ok := registeredDrivers.name(c.Driver())
@@ -192,7 +195,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	return sql.OpenDB(tc)
 }
 
-// Open returns connection to a DB using a the traced version of the given driver. In order for Open
+// Open returns connection to a DB using the traced version of the given driver. In order for Open
 // to work, the driver must first be registered using Register. If this did not occur, Open will
 // return an error.
 func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {

@@ -186,7 +186,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 			"a": struct{}{},
 			"b": struct{}{},
 		})
-		assert.False(t, cfg.agent.Stats)
+		assert.True(t, cfg.agent.Stats)
 		assert.True(t, cfg.agent.HasFlag("a"))
 		assert.True(t, cfg.agent.HasFlag("b"))
 	})
@@ -303,6 +303,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 	})
 
+	t.Run("env-agentAddr", func(t *testing.T) {
+		os.Setenv("DD_AGENT_HOST", "trace-agent")
+		defer os.Unsetenv("DD_AGENT_HOST")
+		tracer := newTracer()
+		c := tracer.config
+		assert.Equal(t, "trace-agent:8126", c.agentAddr)
+	})
+
 	t.Run("override", func(t *testing.T) {
 		os.Setenv("DD_ENV", "dev")
 		defer os.Unsetenv("DD_ENV")
@@ -367,28 +375,28 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("profiler-endpoints", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c := newConfig()
-			assert.False(t, c.profilerEndpoints)
+			assert.True(t, c.profilerEndpoints)
 		})
 
 		t.Run("override", func(t *testing.T) {
-			os.Setenv(traceprof.EndpointEnvVar, "true")
+			os.Setenv(traceprof.EndpointEnvVar, "false")
 			defer os.Unsetenv(traceprof.EndpointEnvVar)
 			c := newConfig()
-			assert.True(t, c.profilerEndpoints)
+			assert.False(t, c.profilerEndpoints)
 		})
 	})
 
 	t.Run("profiler-hotspots", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c := newConfig()
-			assert.False(t, c.profilerHotspots)
+			assert.True(t, c.profilerHotspots)
 		})
 
 		t.Run("override", func(t *testing.T) {
-			os.Setenv(traceprof.CodeHotspotsEnvVar, "true")
+			os.Setenv(traceprof.CodeHotspotsEnvVar, "false")
 			defer os.Unsetenv(traceprof.CodeHotspotsEnvVar)
 			c := newConfig()
-			assert.True(t, c.profilerHotspots)
+			assert.False(t, c.profilerHotspots)
 		})
 	})
 
