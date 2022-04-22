@@ -295,7 +295,7 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		assert.Equal(t, "", span.context.trace.tags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
@@ -312,7 +312,7 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		assert.Equal(t, "", span.context.trace.tags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
@@ -330,7 +330,7 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		assert.Equal(t, "", span.context.trace.tags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionNone, span.context.trace.samplingDecision)
 	})
 
@@ -365,7 +365,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
 		// this trace won't be sent to the agent,
 		// therefore not necessary to populate keyDecisionMaker
-		assert.Equal(t, "", span.context.trace.tags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
 	})
 }

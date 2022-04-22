@@ -332,7 +332,3 @@ func (t *trace) finishedOne(s *span) {
 	}
 	tr.pushTrace(t.spans)
 }
-
-func compactUpstreamServices(service string, sampler samplernames.SamplerName) string {
-	return servicehash.Hash(service) + "-" + strconv.Itoa(int(sampler))
-}

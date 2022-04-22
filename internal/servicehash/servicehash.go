@@ -12,12 +12,11 @@ import (
 )
 
 const (
-	maxCachSize = 1000
+	maxCacheSize = 1000
 )
 
 var (
-	h                       = sha256.New()
-	cache map[string]string = make(map[string]string)
+	cache = make(map[string]string)
 	lock  sync.RWMutex
 )
 
@@ -45,7 +44,7 @@ func getHashFromCache(service string) string {
 func setHashInCache(service, hash string) {
 	lock.Lock()
 	defer lock.Unlock()
-	if len(cache) == maxCachSize {
+	if len(cache) == maxCacheSize {
 		// deletes a random key
 		for k := range cache {
 			delete(cache, k)
