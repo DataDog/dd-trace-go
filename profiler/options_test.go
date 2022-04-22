@@ -105,6 +105,12 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, 3*time.Second, cfg.cpuDuration)
 	})
 
+	t.Run("CPUProfileRate", func(t *testing.T) {
+		var cfg config
+		CPUProfileRate(1000)(&cfg)
+		assert.Equal(t, 1000, cfg.cpuProfileRate)
+	})
+
 	t.Run("MutexProfileFraction", func(t *testing.T) {
 		var cfg config
 		MutexProfileFraction(1)(&cfg)
@@ -330,6 +336,7 @@ func TestDefaultConfig(t *testing.T) {
 		assert.True(ok)
 		assert.Equal(DefaultPeriod, cfg.period)
 		assert.Equal(DefaultDuration, cfg.cpuDuration)
+		assert.Equal(0, cfg.cpuProfileRate)
 		assert.Equal(DefaultMutexFraction, cfg.mutexFraction)
 		assert.Equal(DefaultBlockRate, cfg.blockRate)
 		assert.Contains(cfg.tags, "runtime-id:"+globalconfig.RuntimeID())

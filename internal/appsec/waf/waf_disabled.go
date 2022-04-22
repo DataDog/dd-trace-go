@@ -15,8 +15,6 @@ import (
 )
 
 type (
-	// Version of the WAF.
-	Version struct{}
 	// Handle represents an instance of the WAF for a given ruleset.
 	Handle struct{}
 	// Context is a WAF execution context.
@@ -25,21 +23,21 @@ type (
 
 var errDisabledReason = errors.New(disabledReason)
 
-// String returns the string representation of the version.
-func (*Version) String() string { return "" }
+// Health allows knowing if the WAF can be used. It returns a nil error when the WAF library is healthy.
+// Otherwise, it returns an error describing the issue.
+func Health() error { return errDisabledReason }
 
-// Health allows knowing if the WAF can be used. It returns the current WAF
-// version and a nil error when the WAF library is healthy. Otherwise, it
-// returns a nil version and an error describing the issue.
-func Health() (*Version, error) {
-	return nil, errDisabledReason
-}
+// Version returns the current version of the WAF
+func Version() string { return "" }
 
 // NewHandle creates a new instance of the WAF with the given JSON rule.
-func NewHandle([]byte) (*Handle, error) { return nil, errDisabledReason }
+func NewHandle([]byte, string, string) (*Handle, error) { return nil, errDisabledReason }
 
 // Addresses returns the list of addresses the WAF rule is expecting.
 func (*Handle) Addresses() []string { return nil }
+
+// RulesetInfo returns the rules initialization metrics for the current WAF handle
+func (waf *Handle) RulesetInfo() RulesetInfo { return RulesetInfo{} }
 
 // Close the WAF and release the underlying C memory as soon as there are
 // no more WAF contexts using the rule.
@@ -54,6 +52,13 @@ func NewContext(*Handle) *Context { return nil }
 func (*Context) Run(map[string]interface{}, time.Duration) ([]byte, error) {
 	return nil, errDisabledReason
 }
+
+// TotalRuntime returns the cumulated waf runtime across various run calls within the same WAF context.
+// Returned time is in nanoseconds.
+func (*Context) TotalRuntime() uint64 { return 0 }
+
+// TotalTimeouts returns the cumulated amount of WAF timeouts across various run calls within the same WAF context.
+func (*Context) TotalTimeouts() uint64 { return 0 }
 
 // Close the WAF context by releasing its C memory and decreasing the number of
 // references to the WAF handle.

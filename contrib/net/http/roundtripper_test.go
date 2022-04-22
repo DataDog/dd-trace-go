@@ -124,12 +124,8 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	defer mt.Stop()
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+		_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 		assert.NoError(t, err)
-
-		span := tracer.StartSpan("test",
-			tracer.ChildOf(spanctx))
-		defer span.Finish()
 		time.Sleep(10 * time.Millisecond)
 		w.Write([]byte("Timeout"))
 	}))

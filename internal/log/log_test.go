@@ -77,7 +77,9 @@ func TestLog(t *testing.T) {
 	t.Run("Error", func(t *testing.T) {
 		t.Run("auto", func(t *testing.T) {
 			defer func(old time.Duration) { errrate = old }(errrate)
-			errrate = 10 * time.Millisecond
+			// Set a long error flush rate so that messages with the
+			// same key (format) will be suppressed
+			errrate = 10 * time.Hour
 
 			tp.Reset()
 			Error("a message %d", 1)
@@ -85,7 +87,7 @@ func TestLog(t *testing.T) {
 			Error("a message %d", 3)
 			Error("b message")
 
-			time.Sleep(2 * errrate)
+			Flush()
 			assert.True(t, hasMsg("ERROR", "a message 1, 2 additional messages skipped", tp.Lines()), tp.Lines())
 			assert.True(t, hasMsg("ERROR", "b message", tp.Lines()), tp.Lines())
 			assert.Len(t, tp.Lines(), 2)
