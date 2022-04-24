@@ -22,7 +22,6 @@ require (
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
 	github.com/emicklei/go-restful v0.0.0-20170410110728-ff4f55a20633
 	github.com/erikstmartin/go-testdb v0.0.0-20160219214506-8d10e4a1bae5 // indirect
-	github.com/fatih/color v1.9.0 // indirect
 	github.com/frankban/quicktest v1.13.0 // indirect
 	github.com/garyburd/redigo v1.6.3
 	github.com/gin-gonic/gin v1.7.0
@@ -45,15 +44,13 @@ require (
 	github.com/gorilla/context v1.1.1 // indirect
 	github.com/gorilla/mux v1.5.0
 	github.com/graph-gophers/graphql-go v1.3.0
-	github.com/hashicorp/consul/api v1.0.0
+	github.com/hashicorp/consul/api v1.12.0
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v0.16.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
-	github.com/hashicorp/memberlist v0.1.6 // indirect
-	github.com/hashicorp/serf v0.8.6 // indirect
 	github.com/hashicorp/vault/api v1.1.0
 	github.com/hashicorp/vault/sdk v0.1.14-0.20200519221838-e0cfd64bc267
 	github.com/jackc/pgx/v4 v4.14.0
@@ -67,14 +64,13 @@ require (
 	github.com/labstack/gommon v0.3.1 // indirect
 	github.com/lib/pq v1.10.2
 	github.com/mattn/go-sqlite3 v1.14.12
-	github.com/miekg/dns v1.1.25
+	github.com/miekg/dns v1.1.41
 	github.com/mitchellh/mapstructure v1.4.2 // indirect
 	github.com/onsi/gomega v1.16.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/philhofer/fwd v1.1.1 // indirect
 	github.com/pierrec/lz4 v2.5.2+incompatible // indirect
 	github.com/segmentio/kafka-go v0.4.29
-	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/syndtr/goleveldb v1.0.0
 	github.com/tidwall/btree v1.1.0 // indirect
