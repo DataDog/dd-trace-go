@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "web",
+    srcs = [
+        "goji.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/zenazn/goji.v1/web",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//contrib/net/http",
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/globalconfig",
+        "//internal/log",
+        "//vendor/github.com/zenazn/goji/web",
+    ],
+)
+
+go_test(
+    name = "web_test",
+    srcs = [
+        "example_test.go",
+        "goji_test.go",
+    ],
+    embed = [":web"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/github.com/zenazn/goji",
+        "//vendor/github.com/zenazn/goji/web",
+    ],
+)

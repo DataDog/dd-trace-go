@@ -1,0 +1,45 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "gorm_v1",
+    srcs = [
+        "gorm.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorm.io/gorm.v1",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/log",
+        "//vendor/gorm.io/gorm",
+    ],
+)
+
+go_test(
+    name = "gorm_v1_test",
+    srcs = [
+        "example_test.go",
+        "gorm_test.go",
+    ],
+    embed = [":gorm_v1"],
+    deps = [
+        "//contrib/database/sql",
+        "//contrib/internal/sqltest",
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/denisenkom/go-mssqldb",
+        "//vendor/github.com/go-sql-driver/mysql",
+        "//vendor/github.com/jackc/pgx/v4/stdlib",
+        "//vendor/github.com/lib/pq",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/gorm.io/driver/mysql",
+        "//vendor/gorm.io/driver/postgres",
+        "//vendor/gorm.io/driver/sqlserver",
+        "//vendor/gorm.io/gorm",
+    ],
+)

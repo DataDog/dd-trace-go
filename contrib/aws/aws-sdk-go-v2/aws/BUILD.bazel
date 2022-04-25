@@ -1,0 +1,38 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "aws",
+    srcs = [
+        "aws.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go-v2/aws",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//vendor/github.com/aws/aws-sdk-go-v2/aws",
+        "//vendor/github.com/aws/aws-sdk-go-v2/aws/middleware",
+        "//vendor/github.com/aws/smithy-go/middleware",
+        "//vendor/github.com/aws/smithy-go/transport/http",
+    ],
+)
+
+go_test(
+    name = "aws_test",
+    srcs = [
+        "aws_test.go",
+        "example_test.go",
+    ],
+    embed = [":aws"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//vendor/github.com/aws/aws-sdk-go-v2/aws",
+        "//vendor/github.com/aws/aws-sdk-go-v2/config",
+        "//vendor/github.com/aws/aws-sdk-go-v2/service/sqs",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

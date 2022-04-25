@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "memcache",
+    srcs = [
+        "memcache.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/bradfitz/gomemcache/memcache",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/log",
+        "//vendor/github.com/bradfitz/gomemcache/memcache",
+    ],
+)
+
+go_test(
+    name = "memcache_test",
+    srcs = [
+        "example_test.go",
+        "memcache_test.go",
+    ],
+    embed = [":memcache"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/bradfitz/gomemcache/memcache",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

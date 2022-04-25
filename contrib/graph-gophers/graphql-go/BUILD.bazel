@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "graphql-go",
+    srcs = [
+        "graphql.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/graph-gophers/graphql-go",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/globalconfig",
+        "//internal/log",
+        "//vendor/github.com/graph-gophers/graphql-go/errors",
+        "//vendor/github.com/graph-gophers/graphql-go/introspection",
+        "//vendor/github.com/graph-gophers/graphql-go/trace",
+    ],
+)
+
+go_test(
+    name = "graphql-go_test",
+    srcs = [
+        "example_test.go",
+        "graphql_test.go",
+    ],
+    embed = [":graphql-go"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/graph-gophers/graphql-go",
+        "//vendor/github.com/graph-gophers/graphql-go/relay",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

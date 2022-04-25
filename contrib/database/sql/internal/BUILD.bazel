@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "internal",
+    srcs = [
+        "dsn.go",
+        "mysql.go",
+        "postgres.go",
+        "sqlserver.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal",
+    visibility = ["//contrib/database/sql:__subpackages__"],
+    deps = ["//ddtrace/ext"],
+)
+
+go_test(
+    name = "internal_test",
+    srcs = ["dsn_test.go"],
+    embed = [":internal"],
+    deps = [
+        "//ddtrace/ext",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

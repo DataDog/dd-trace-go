@@ -1,0 +1,49 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "profiler",
+    srcs = [
+        "doc.go",
+        "metrics.go",
+        "options.go",
+        "profile.go",
+        "profiler.go",
+        "upload.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/profiler",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal",
+        "//internal/globalconfig",
+        "//internal/log",
+        "//internal/osinfo",
+        "//internal/version",
+        "//profiler/internal/pprofutils",
+        "//vendor/github.com/DataDog/datadog-go/v5/statsd",
+        "//vendor/github.com/DataDog/gostackparse",
+        "//vendor/github.com/google/pprof/profile",
+    ],
+)
+
+go_test(
+    name = "profiler_test",
+    srcs = [
+        "example_test.go",
+        "metrics_test.go",
+        "options_test.go",
+        "profile_test.go",
+        "profiler_test.go",
+        "upload_test.go",
+    ],
+    embed = [":profiler"],
+    deps = [
+        "//internal/globalconfig",
+        "//internal/log",
+        "//internal/version",
+        "//profiler/internal/pprofutils",
+        "//vendor/github.com/DataDog/datadog-go/v5/statsd",
+        "//vendor/github.com/google/pprof/profile",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/github.com/stretchr/testify/require",
+    ],
+)

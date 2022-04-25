@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "pprofutils",
+    srcs = [
+        "delta.go",
+        "pprofutils.go",
+        "protobuf.go",
+        "text.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils",
+    visibility = ["//profiler:__subpackages__"],
+    deps = ["//vendor/github.com/google/pprof/profile"],
+)
+
+go_test(
+    name = "pprofutils_test",
+    srcs = [
+        "delta_test.go",
+        "protobuf_test.go",
+        "text_test.go",
+    ],
+    embed = [":pprofutils"],
+    deps = [
+        "//vendor/github.com/google/pprof/profile",
+        "//vendor/github.com/stretchr/testify/require",
+    ],
+)

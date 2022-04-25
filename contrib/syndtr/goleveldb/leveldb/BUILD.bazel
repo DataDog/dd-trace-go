@@ -1,0 +1,43 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "leveldb",
+    srcs = [
+        "leveldb.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/syndtr/goleveldb/leveldb",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/log",
+        "//vendor/github.com/syndtr/goleveldb/leveldb",
+        "//vendor/github.com/syndtr/goleveldb/leveldb/iterator",
+        "//vendor/github.com/syndtr/goleveldb/leveldb/opt",
+        "//vendor/github.com/syndtr/goleveldb/leveldb/storage",
+        "//vendor/github.com/syndtr/goleveldb/leveldb/util",
+    ],
+)
+
+go_test(
+    name = "leveldb_test",
+    srcs = [
+        "example_test.go",
+        "leveldb_test.go",
+    ],
+    embed = [":leveldb"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/github.com/syndtr/goleveldb/leveldb",
+        "//vendor/github.com/syndtr/goleveldb/leveldb/opt",
+        "//vendor/github.com/syndtr/goleveldb/leveldb/storage",
+        "//vendor/github.com/syndtr/goleveldb/leveldb/util",
+    ],
+)

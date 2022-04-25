@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "mux",
+    srcs = [
+        "mux.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//contrib/net/http",
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/globalconfig",
+        "//internal/log",
+        "//vendor/github.com/gorilla/mux",
+    ],
+)
+
+go_test(
+    name = "mux_test",
+    srcs = [
+        "example_test.go",
+        "mux_test.go",
+    ],
+    embed = [":mux"],
+    deps = [
+        "//appsec",
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/appsec",
+        "//internal/globalconfig",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/github.com/stretchr/testify/require",
+    ],
+)

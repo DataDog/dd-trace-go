@@ -1,0 +1,38 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "httprouter",
+    srcs = [
+        "httprouter.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//contrib/net/http",
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/globalconfig",
+        "//internal/log",
+        "//vendor/github.com/julienschmidt/httprouter",
+    ],
+)
+
+go_test(
+    name = "httprouter_test",
+    srcs = [
+        "example_test.go",
+        "httprouter_test.go",
+    ],
+    embed = [":httprouter"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/julienschmidt/httprouter",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

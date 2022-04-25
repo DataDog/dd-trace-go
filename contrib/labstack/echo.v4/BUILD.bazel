@@ -1,0 +1,41 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "echo_v4",
+    srcs = [
+        "appsec.go",
+        "echotrace.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/labstack/echo.v4",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal/appsec",
+        "//internal/appsec/dyngo/instrumentation",
+        "//internal/appsec/dyngo/instrumentation/httpsec",
+        "//internal/globalconfig",
+        "//vendor/github.com/labstack/echo/v4:echo",
+    ],
+)
+
+go_test(
+    name = "echo_v4_test",
+    srcs = [
+        "echotrace_test.go",
+        "example_test.go",
+    ],
+    embed = [":echo_v4"],
+    deps = [
+        "//appsec",
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/appsec",
+        "//vendor/github.com/labstack/echo/v4:echo",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/github.com/stretchr/testify/require",
+    ],
+)

@@ -1,0 +1,38 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "mgo",
+    srcs = [
+        "collection.go",
+        "mgo.go",
+        "option.go",
+        "pipe.go",
+        "query.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/globalsign/mgo",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/log",
+        "//vendor/github.com/globalsign/mgo",
+        "//vendor/github.com/globalsign/mgo/bson",
+    ],
+)
+
+go_test(
+    name = "mgo_test",
+    srcs = ["mgo_test.go"],
+    embed = [":mgo"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/globalsign/mgo",
+        "//vendor/github.com/globalsign/mgo/bson",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

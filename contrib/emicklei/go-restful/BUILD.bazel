@@ -1,0 +1,37 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "go-restful",
+    srcs = [
+        "option.go",
+        "restful.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/emicklei/go-restful",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/globalconfig",
+        "//internal/log",
+        "//vendor/github.com/emicklei/go-restful",
+    ],
+)
+
+go_test(
+    name = "go-restful_test",
+    srcs = [
+        "example_test.go",
+        "restful_test.go",
+    ],
+    embed = [":go-restful"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/emicklei/go-restful",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

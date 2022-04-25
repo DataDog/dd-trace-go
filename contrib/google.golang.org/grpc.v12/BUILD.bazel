@@ -1,0 +1,46 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "grpc_v12",
+    srcs = [
+        "fixtures_test.pb.go",
+        "grpc.go",
+        "option.go",
+        "tags.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc.v12",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//contrib/google.golang.org/internal/grpcutil",
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/globalconfig",
+        "//internal/log",
+        "//vendor/github.com/golang/protobuf/proto",
+        "//vendor/golang.org/x/net/context",
+        "//vendor/google.golang.org/grpc",
+        "//vendor/google.golang.org/grpc/metadata",
+        "//vendor/google.golang.org/grpc/peer",
+    ],
+)
+
+go_test(
+    name = "grpc_v12_test",
+    srcs = [
+        "example_test.go",
+        "grpc_test.go",
+    ],
+    embed = [":grpc_v12"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/golang.org/x/net/context",
+        "//vendor/google.golang.org/grpc",
+        "//vendor/google.golang.org/grpc/codes",
+    ],
+)

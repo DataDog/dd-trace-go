@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "appsec",
+    srcs = ["appsec.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/appsec",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal/appsec",
+        "//internal/appsec/dyngo/instrumentation/httpsec",
+    ],
+)
+
+go_test(
+    name = "appsec_test",
+    srcs = ["example_test.go"],
+    deps = [
+        ":appsec",
+        "//contrib/labstack/echo.v4:echo_v4",
+        "//contrib/net/http",
+        "//vendor/github.com/labstack/echo/v4:echo",
+    ],
+)

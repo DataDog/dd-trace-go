@@ -1,0 +1,38 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "twirp",
+    srcs = [
+        "option.go",
+        "twirp.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/twitchtv/twirp",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/globalconfig",
+        "//internal/log",
+        "//vendor/github.com/twitchtv/twirp",
+    ],
+)
+
+go_test(
+    name = "twirp_test",
+    srcs = [
+        "example_test.go",
+        "twirp_test.go",
+    ],
+    embed = [":twirp"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/github.com/twitchtv/twirp",
+        "//vendor/github.com/twitchtv/twirp/ctxsetters",
+        "//vendor/github.com/twitchtv/twirp/example",
+    ],
+)

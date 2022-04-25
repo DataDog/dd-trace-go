@@ -1,0 +1,30 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "sqlx",
+    srcs = ["sql.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/jmoiron/sqlx",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//contrib/database/sql",
+        "//vendor/github.com/jmoiron/sqlx",
+    ],
+)
+
+go_test(
+    name = "sqlx_test",
+    srcs = [
+        "example_test.go",
+        "sql_test.go",
+    ],
+    embed = [":sqlx"],
+    deps = [
+        "//contrib/database/sql",
+        "//contrib/internal/sqltest",
+        "//ddtrace/ext",
+        "//vendor/github.com/denisenkom/go-mssqldb",
+        "//vendor/github.com/go-sql-driver/mysql",
+        "//vendor/github.com/jmoiron/sqlx",
+        "//vendor/github.com/lib/pq",
+    ],
+)

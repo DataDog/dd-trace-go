@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "internal",
+    srcs = ["tree.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api/internal",
+    visibility = ["//contrib/google.golang.org/api:__subpackages__"],
+)
+
+go_test(
+    name = "internal_test",
+    srcs = ["tree_test.go"],
+    embed = [":internal"],
+    deps = ["//vendor/github.com/stretchr/testify/assert"],
+)

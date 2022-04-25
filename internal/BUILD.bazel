@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "internal",
+    srcs = [
+        "container.go",
+        "env.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/internal",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "internal_test",
+    srcs = ["container_test.go"],
+    embed = [":internal"],
+    deps = ["//vendor/github.com/stretchr/testify/assert"],
+)

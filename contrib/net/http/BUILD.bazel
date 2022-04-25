@@ -1,0 +1,43 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "http",
+    srcs = [
+        "http.go",
+        "option.go",
+        "roundtripper.go",
+        "trace.go",
+        "trace_gen.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/appsec",
+        "//internal/appsec/dyngo/instrumentation/httpsec",
+        "//internal/globalconfig",
+        "//internal/log",
+    ],
+)
+
+go_test(
+    name = "http_test",
+    srcs = [
+        "example_test.go",
+        "http_test.go",
+        "roundtripper_test.go",
+        "trace_test.go",
+    ],
+    embed = [":http"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "traceproftest",
+    srcs = [
+        "app.go",
+        "cpu_profiler.go",
+        "traceproftest.go",
+        "util.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/traceproftest",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//contrib/google.golang.org/grpc",
+        "//contrib/julienschmidt/httprouter",
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal/log",
+        "//internal/traceprof/testapp",
+        "//vendor/github.com/google/pprof/profile",
+        "//vendor/github.com/julienschmidt/httprouter",
+        "//vendor/github.com/stretchr/testify/require",
+        "//vendor/google.golang.org/grpc",
+    ],
+)
+
+go_test(
+    name = "traceproftest_test",
+    srcs = ["traceprof_test.go"],
+    embed = [":traceproftest"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal/traceprof",
+        "//internal/traceprof/testapp",
+        "//vendor/github.com/stretchr/testify/require",
+    ],
+)

@@ -1,0 +1,44 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "chi_v5",
+    srcs = [
+        "appsec.go",
+        "chi.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi.v5",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/appsec",
+        "//internal/appsec/dyngo/instrumentation/httpsec",
+        "//internal/globalconfig",
+        "//internal/log",
+        "//vendor/github.com/go-chi/chi/v5:chi",
+        "//vendor/github.com/go-chi/chi/v5/middleware",
+    ],
+)
+
+go_test(
+    name = "chi_v5_test",
+    srcs = [
+        "chi_test.go",
+        "example_test.go",
+    ],
+    embed = [":chi_v5"],
+    deps = [
+        "//appsec",
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/appsec",
+        "//internal/globalconfig",
+        "//vendor/github.com/go-chi/chi/v5:chi",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/github.com/stretchr/testify/require",
+    ],
+)

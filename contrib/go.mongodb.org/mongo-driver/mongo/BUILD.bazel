@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "mongo",
+    srcs = [
+        "mongo.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/go.mongodb.org/mongo-driver/mongo",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/log",
+        "//vendor/go.mongodb.org/mongo-driver/bson",
+        "//vendor/go.mongodb.org/mongo-driver/event",
+    ],
+)
+
+go_test(
+    name = "mongo_test",
+    srcs = [
+        "example_test.go",
+        "mongo_test.go",
+    ],
+    embed = [":mongo"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/go.mongodb.org/mongo-driver/bson",
+        "//vendor/go.mongodb.org/mongo-driver/mongo",
+        "//vendor/go.mongodb.org/mongo-driver/mongo/options",
+    ],
+)

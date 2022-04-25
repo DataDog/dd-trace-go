@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "grpcsec",
+    srcs = [
+        "grpc.go",
+        "tags.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//ddtrace",
+        "//internal/appsec/dyngo",
+        "//internal/appsec/dyngo/instrumentation",
+        "//internal/appsec/dyngo/instrumentation/httpsec",
+        "//internal/log",
+    ],
+)
+
+go_test(
+    name = "grpcsec_test",
+    srcs = [
+        "grpc_test.go",
+        "tags_test.go",
+    ],
+    embed = [":grpcsec"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//internal/appsec/dyngo",
+        "//internal/samplernames",
+        "//vendor/github.com/stretchr/testify/require",
+    ],
+)

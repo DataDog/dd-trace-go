@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "kubernetes",
+    srcs = ["kubernetes.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/client-go/kubernetes",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//contrib/net/http",
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//internal/log",
+    ],
+)
+
+go_test(
+    name = "kubernetes_test",
+    srcs = [
+        "example_test.go",
+        "kubernetes_test.go",
+    ],
+    embed = [":kubernetes"],
+    deps = [
+        "//contrib/net/http",
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:meta",
+        "//vendor/k8s.io/client-go/kubernetes",
+        "//vendor/k8s.io/client-go/plugin/pkg/client/auth/oidc",
+        "//vendor/k8s.io/client-go/rest",
+        "//vendor/k8s.io/client-go/tools/clientcmd",
+        "//vendor/k8s.io/client-go/tools/clientcmd/api",
+    ],
+)

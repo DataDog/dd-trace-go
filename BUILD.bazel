@@ -1,0 +1,6 @@
+load("@bazel_gazelle//:def.bzl", "gazelle")
+
+# gazelle:prefix gopkg.in/DataDog/dd-trace-go.v1
+# gazelle:proto disable_global
+# gazelle:build_tags appsec
+gazelle(name = "gazelle")

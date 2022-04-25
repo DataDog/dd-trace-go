@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "lists",
+    srcs = ["combinations.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists",
+    visibility = ["//contrib:__subpackages__"],
+)
+
+go_test(
+    name = "lists_test",
+    srcs = ["combinations_test.go"],
+    embed = [":lists"],
+    deps = ["//vendor/github.com/stretchr/testify/assert"],
+)

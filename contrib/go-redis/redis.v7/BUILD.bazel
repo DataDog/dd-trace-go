@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "redis_v7",
+    srcs = [
+        "option.go",
+        "redis.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-redis/redis.v7",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//vendor/github.com/go-redis/redis/v7:redis",
+    ],
+)
+
+go_test(
+    name = "redis_v7_test",
+    srcs = [
+        "example_test.go",
+        "redis_test.go",
+    ],
+    embed = [":redis_v7"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/go-redis/redis/v7:redis",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

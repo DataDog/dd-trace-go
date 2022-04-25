@@ -1,0 +1,8 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "samplernames",
+    srcs = ["samplernames.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames",
+    visibility = ["//:__subpackages__"],
+)

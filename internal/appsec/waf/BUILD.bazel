@@ -1,0 +1,102 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+cc_import(
+    name = "libddwaf",
+    hdrs = ["//internal/appsec/waf/include:ddwaf.h"],
+    static_library = select({
+        "@io_bazel_rules_go//go/platform:android_amd64": "//internal/appsec/waf/lib/linux-amd64:libddwaf.a",
+        "@io_bazel_rules_go//go/platform:darwin_amd64": "//internal/appsec/waf/lib/linux-darwin64:libddwaf.a",
+        "@io_bazel_rules_go//go/platform:ios_amd64": "//internal/appsec/waf/lib/linux-darwin64:libddwaf.a",
+        "@io_bazel_rules_go//go/platform:linux_amd64": "//internal/appsec/waf/lib/linux-amd64:libddwaf.a",
+    }),
+)
+
+go_library(
+    name = "waf",
+    srcs = [
+        "types.go",
+        "waf.go",
+    ],
+    cgo = True,
+    clinkopts = select({
+        "@io_bazel_rules_go//go/platform:android_amd64": [
+            "-lm -ldl -Wl,-rpath=/lib64:/usr/lib64:/usr/local/lib64:/lib:/usr/lib:/usr/local/lib",
+        ],
+        "@io_bazel_rules_go//go/platform:darwin_amd64": [
+            "-lstdc++",
+        ],
+        "@io_bazel_rules_go//go/platform:ios_amd64": [
+            "-lstdc++",
+        ],
+        "@io_bazel_rules_go//go/platform:linux_amd64": [
+            "-lm -ldl -Wl,-rpath=/lib64:/usr/lib64:/usr/local/lib64:/lib:/usr/lib:/usr/local/lib",
+        ],
+        "//conditions:default": [],
+    }),
+    copts = select({
+        "@io_bazel_rules_go//go/platform:android_amd64": [
+            "-Iinternal/appsec/waf/include",
+        ],
+        "@io_bazel_rules_go//go/platform:darwin_amd64": [
+            "-Iinternal/appsec/waf/include",
+        ],
+        "@io_bazel_rules_go//go/platform:ios_amd64": [
+            "-Iinternal/appsec/waf/include",
+        ],
+        "@io_bazel_rules_go//go/platform:linux_amd64": [
+            "-Iinternal/appsec/waf/include",
+        ],
+        "//conditions:default": [],
+    }),
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf",
+    visibility = ["//:__subpackages__"],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:android_amd64": [
+            "//internal/appsec/waf/include",
+            "//internal/appsec/waf/lib/darwin-amd64",
+            "//internal/appsec/waf/lib/linux-amd64",
+        ],
+        "@io_bazel_rules_go//go/platform:darwin_amd64": [
+            "//internal/appsec/waf/include",
+            "//internal/appsec/waf/lib/darwin-amd64",
+            "//internal/appsec/waf/lib/linux-amd64",
+        ],
+        "@io_bazel_rules_go//go/platform:ios_amd64": [
+            "//internal/appsec/waf/include",
+            "//internal/appsec/waf/lib/darwin-amd64",
+            "//internal/appsec/waf/lib/linux-amd64",
+        ],
+        "@io_bazel_rules_go//go/platform:linux_amd64": [
+            "//internal/appsec/waf/include",
+            "//internal/appsec/waf/lib/darwin-amd64",
+            "//internal/appsec/waf/lib/linux-amd64",
+        ],
+        "//conditions:default": [],
+    }),
+    cdeps = [":libddwaf"]
+)
+
+go_test(
+    name = "waf_test",
+    srcs = ["waf_test.go"],
+    embed = [":waf"],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:android_amd64": [
+            "//vendor/github.com/stretchr/testify/assert",
+            "//vendor/github.com/stretchr/testify/require",
+        ],
+        "@io_bazel_rules_go//go/platform:darwin_amd64": [
+            "//vendor/github.com/stretchr/testify/assert",
+            "//vendor/github.com/stretchr/testify/require",
+        ],
+        "@io_bazel_rules_go//go/platform:ios_amd64": [
+            "//vendor/github.com/stretchr/testify/assert",
+            "//vendor/github.com/stretchr/testify/require",
+        ],
+        "@io_bazel_rules_go//go/platform:linux_amd64": [
+            "//vendor/github.com/stretchr/testify/assert",
+            "//vendor/github.com/stretchr/testify/require",
+        ],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,44 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "gin",
+    srcs = [
+        "appsec.go",
+        "gintrace.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/appsec",
+        "//internal/appsec/dyngo/instrumentation",
+        "//internal/appsec/dyngo/instrumentation/httpsec",
+        "//internal/globalconfig",
+        "//internal/log",
+        "//vendor/github.com/gin-gonic/gin",
+    ],
+)
+
+go_test(
+    name = "gin_test",
+    srcs = [
+        "example_test.go",
+        "gintrace_test.go",
+    ],
+    embed = [":gin"],
+    deps = [
+        "//appsec",
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/appsec",
+        "//internal/globalconfig",
+        "//vendor/github.com/gin-gonic/gin",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/github.com/stretchr/testify/require",
+    ],
+)

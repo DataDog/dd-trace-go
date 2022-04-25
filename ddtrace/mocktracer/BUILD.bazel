@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "mocktracer",
+    srcs = [
+        "mockspan.go",
+        "mockspancontext.go",
+        "mocktracer.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/internal",
+        "//ddtrace/tracer",
+    ],
+)
+
+go_test(
+    name = "mocktracer_test",
+    srcs = [
+        "example_test.go",
+        "mockspan_test.go",
+        "mockspancontext_test.go",
+        "mocktracer_test.go",
+    ],
+    embed = [":mocktracer"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/internal",
+        "//ddtrace/tracer",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

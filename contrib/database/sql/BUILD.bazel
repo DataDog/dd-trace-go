@@ -1,0 +1,46 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "sql",
+    srcs = [
+        "conn.go",
+        "option.go",
+        "sql.go",
+        "stmt.go",
+        "tx.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//contrib/database/sql/internal",
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/log",
+    ],
+)
+
+go_test(
+    name = "sql_test",
+    srcs = [
+        "conn_test.go",
+        "example_test.go",
+        "option_test.go",
+        "sql_test.go",
+    ],
+    embed = [":sql"],
+    deps = [
+        "//contrib/internal/sqltest",
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/denisenkom/go-mssqldb",
+        "//vendor/github.com/go-sql-driver/mysql",
+        "//vendor/github.com/lib/pq",
+        "//vendor/github.com/mattn/go-sqlite3",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/github.com/stretchr/testify/require",
+    ],
+)

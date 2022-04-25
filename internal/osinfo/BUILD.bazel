@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "osinfo",
+    srcs = [
+        "osinfo.go",
+        "osinfo_darwin.go",
+        "osinfo_default.go",
+        "osinfo_freebsd.go",
+        "osinfo_linux.go",
+        "osinfo_windows.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo",
+    visibility = ["//:__subpackages__"],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:windows": [
+            "//vendor/golang.org/x/sys/windows/registry",
+        ],
+        "//conditions:default": [],
+    }),
+)

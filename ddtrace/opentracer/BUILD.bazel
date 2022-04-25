@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "opentracer",
+    srcs = [
+        "option.go",
+        "span.go",
+        "tracer.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/opentracer",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/internal",
+        "//ddtrace/tracer",
+        "//vendor/github.com/opentracing/opentracing-go",
+        "//vendor/github.com/opentracing/opentracing-go/log",
+    ],
+)
+
+go_test(
+    name = "opentracer_test",
+    srcs = [
+        "example_test.go",
+        "tracer_test.go",
+    ],
+    embed = [":opentracer"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/internal",
+        "//ddtrace/tracer",
+        "//vendor/github.com/opentracing/opentracing-go",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

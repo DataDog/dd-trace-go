@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "go-elasticsearch_v6",
+    srcs = [
+        "elastictrace.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+    ],
+)
+
+go_test(
+    name = "go-elasticsearch_v6_test",
+    srcs = [
+        "elastictrace_test.go",
+        "elastictrace_v6_test.go",
+        "elastictrace_v7_test.go",
+        "example_test.go",
+    ],
+    embed = [":go-elasticsearch_v6"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/elastic/go-elasticsearch/v6:go-elasticsearch",
+        "//vendor/github.com/elastic/go-elasticsearch/v6/esapi",
+        "//vendor/github.com/elastic/go-elasticsearch/v7:go-elasticsearch",
+        "//vendor/github.com/elastic/go-elasticsearch/v7/esapi",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

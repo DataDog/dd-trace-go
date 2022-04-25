@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "ddtrace",
+    srcs = ["ddtrace.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/ddtrace",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "ddtrace_test",
+    srcs = ["example_test.go"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/opentracer",
+        "//ddtrace/tracer",
+        "//vendor/github.com/opentracing/opentracing-go",
+    ],
+)

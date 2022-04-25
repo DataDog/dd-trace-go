@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "redigo",
+    srcs = [
+        "option.go",
+        "redigo.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/gomodule/redigo",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/log",
+        "//vendor/github.com/gomodule/redigo/redis",
+    ],
+)
+
+go_test(
+    name = "redigo_test",
+    srcs = [
+        "example_test.go",
+        "redigo_test.go",
+    ],
+    embed = [":redigo"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/gomodule/redigo/redis",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

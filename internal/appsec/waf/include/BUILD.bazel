@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+exports_files(["ddwaf.h"])
+
+go_library(
+    name = "include",
+    srcs = [
+        "ddwaf.h",
+        "vendor.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/include",
+    visibility = ["//:__subpackages__"],
+)

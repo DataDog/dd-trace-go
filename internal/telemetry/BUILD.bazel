@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "telemetry",
+    srcs = [
+        "client.go",
+        "message.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal",
+        "//internal/globalconfig",
+        "//internal/osinfo",
+        "//internal/version",
+    ],
+)
+
+go_test(
+    name = "telemetry_test",
+    srcs = ["client_test.go"],
+    deps = [":telemetry"],
+)

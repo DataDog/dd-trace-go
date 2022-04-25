@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "grpcutil",
+    srcs = ["mdcarrier.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil",
+    visibility = ["//contrib/google.golang.org:__subpackages__"],
+    deps = [
+        "//ddtrace/tracer",
+        "//vendor/google.golang.org/grpc/metadata",
+    ],
+)
+
+go_test(
+    name = "grpcutil_test",
+    srcs = ["mdcarrier_test.go"],
+    embed = [":grpcutil"],
+    deps = [
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/google.golang.org/grpc/metadata",
+    ],
+)

@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "ext",
+    srcs = [
+        "app_types.go",
+        "cassandra.go",
+        "db.go",
+        "peer.go",
+        "priority.go",
+        "system.go",
+        "tags.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "ext_test",
+    srcs = ["ext_test.go"],
+    embed = [":ext"],
+)

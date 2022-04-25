@@ -1,0 +1,30 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "dns",
+    srcs = ["dns.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/miekg/dns",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal/log",
+        "//vendor/github.com/miekg/dns",
+    ],
+)
+
+go_test(
+    name = "dns_test",
+    srcs = [
+        "dns_test.go",
+        "example_test.go",
+    ],
+    embed = [":dns"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//vendor/github.com/miekg/dns",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

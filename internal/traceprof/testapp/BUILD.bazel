@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "testapp",
+    srcs = [
+        "test_app.go",
+        "test_app.pb.go",
+        "test_app_grpc.pb.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/testapp",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//vendor/google.golang.org/grpc",
+        "//vendor/google.golang.org/grpc/codes",
+        "//vendor/google.golang.org/grpc/status",
+        "//vendor/google.golang.org/protobuf/reflect/protoreflect",
+        "//vendor/google.golang.org/protobuf/runtime/protoimpl",
+    ],
+)

@@ -1,0 +1,48 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+# gazelle:build_tags appsec
+go_library(
+    name = "appsec",
+    srcs = [
+        "rule.go",
+        "appsec.go",
+        "config.go",
+        "limiter.go",
+        "waf.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//ddtrace/ext",
+        "//internal/appsec/dyngo",
+        "//internal/appsec/dyngo/instrumentation",
+        "//internal/appsec/dyngo/instrumentation/grpcsec",
+        "//internal/appsec/dyngo/instrumentation/httpsec",
+        "//internal/appsec/waf",
+        "//internal/log",
+        "//internal/samplernames",
+    ],
+)
+
+go_test(
+    name = "appsec_test",
+    srcs = [
+        "appsec_test.go",
+        "config_test.go",
+        "limiter_test.go",
+        "rule_test.go",
+        "waf_test.go",
+        "waf_unit_test.go",
+    ],
+    embed = [":appsec"],
+    deps = [
+        "//appsec",
+        "//contrib/net/http",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/appsec/dyngo/instrumentation",
+        "//internal/appsec/waf",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/github.com/stretchr/testify/require",
+    ],
+)

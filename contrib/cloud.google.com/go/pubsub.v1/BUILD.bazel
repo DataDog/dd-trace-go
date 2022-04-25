@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "pubsub_v1",
+    srcs = ["pubsub.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/cloud.google.com/go/pubsub.v1",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal/log",
+        "//vendor/cloud.google.com/go/pubsub",
+    ],
+)
+
+go_test(
+    name = "pubsub_v1_test",
+    srcs = [
+        "example_test.go",
+        "pubsub_test.go",
+    ],
+    embed = [":pubsub_v1"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//vendor/cloud.google.com/go/pubsub",
+        "//vendor/cloud.google.com/go/pubsub/pstest",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/google.golang.org/api/option",
+        "//vendor/google.golang.org/grpc",
+    ],
+)

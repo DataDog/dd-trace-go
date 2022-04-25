@@ -1,0 +1,10 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+exports_files(["libddwaf.a"])
+
+go_library(
+    name = "darwin-amd64",
+    srcs = ["vendor.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/darwin-amd64",
+    visibility = ["//:__subpackages__"],
+)

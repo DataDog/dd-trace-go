@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "elastic",
+    srcs = [
+        "elastictrace.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/olivere/elastic",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//ddtrace/tracer",
+        "//internal",
+        "//internal/log",
+    ],
+)
+
+go_test(
+    name = "elastic_test",
+    srcs = [
+        "elastictrace_test.go",
+        "example_test.go",
+    ],
+    embed = [":elastic"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/gopkg.in/olivere/elastic.v3:elastic_v3",
+        "//vendor/gopkg.in/olivere/elastic.v5:elastic_v5",
+    ],
+)

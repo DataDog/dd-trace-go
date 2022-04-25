@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "dyngo",
+    srcs = ["operation.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo",
+    visibility = ["//:__subpackages__"],
+    deps = ["//internal/log"],
+)
+
+go_test(
+    name = "dyngo_test",
+    srcs = ["operation_test.go"],
+    deps = [
+        ":dyngo",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/github.com/stretchr/testify/require",
+    ],
+)

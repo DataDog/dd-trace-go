@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "sqltest",
+    srcs = ["sqltest.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest",
+    visibility = ["//contrib:__subpackages__"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//ddtrace/tracer",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

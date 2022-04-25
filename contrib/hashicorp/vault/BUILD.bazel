@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "vault",
+    srcs = [
+        "option.go",
+        "vault.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/hashicorp/vault",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//contrib/net/http",
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//internal",
+        "//internal/globalconfig",
+        "//vendor/github.com/hashicorp/vault/api",
+        "//vendor/github.com/hashicorp/vault/sdk/helper/consts",
+    ],
+)
+
+go_test(
+    name = "vault_test",
+    srcs = [
+        "example_test.go",
+        "vault_test.go",
+    ],
+    embed = [":vault"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//vendor/github.com/hashicorp/vault/api",
+        "//vendor/github.com/stretchr/testify/assert",
+    ],
+)

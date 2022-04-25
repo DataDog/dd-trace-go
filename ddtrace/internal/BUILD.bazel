@@ -1,0 +1,9 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "internal",
+    srcs = ["globaltracer.go"],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal",
+    visibility = ["//ddtrace:__subpackages__"],
+    deps = ["//ddtrace"],
+)

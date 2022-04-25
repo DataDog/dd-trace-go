@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "api",
+    srcs = [
+        "api.go",
+        "endpoints_gen.go",
+        "option.go",
+    ],
+    importpath = "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//contrib/google.golang.org/api/internal",
+        "//contrib/net/http",
+        "//ddtrace",
+        "//ddtrace/ext",
+        "//internal",
+        "//internal/log",
+        "//vendor/golang.org/x/oauth2/google",
+    ],
+)
+
+go_test(
+    name = "api_test",
+    srcs = [
+        "api_test.go",
+        "example_test.go",
+    ],
+    embed = [":api"],
+    deps = [
+        "//ddtrace/ext",
+        "//ddtrace/mocktracer",
+        "//internal/globalconfig",
+        "//vendor/github.com/stretchr/testify/assert",
+        "//vendor/google.golang.org/api/books/v1:books",
+        "//vendor/google.golang.org/api/civicinfo/v2:civicinfo",
+        "//vendor/google.golang.org/api/cloudresourcemanager/v1:cloudresourcemanager",
+        "//vendor/google.golang.org/api/urlshortener/v1:urlshortener",
+    ],
+)
