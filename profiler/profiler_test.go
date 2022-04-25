@@ -227,15 +227,12 @@ func TestProfilerInternal(t *testing.T) {
 		)
 		require.NoError(t, err)
 		var startCPU, stopCPU, writeHeap uint64
-		defer func(old func(_ io.Writer) error) { startCPUProfile = old }(startCPUProfile)
-		startCPUProfile = func(_ io.Writer) error {
+		p.testHooks.startCPUProfile = func(_ io.Writer) error {
 			atomic.AddUint64(&startCPU, 1)
 			return nil
 		}
-		defer func(old func()) { stopCPUProfile = old }(stopCPUProfile)
-		stopCPUProfile = func() { atomic.AddUint64(&stopCPU, 1) }
-		defer func(old func(_ string, w io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-		lookupProfile = func(name string, w io.Writer, _ int) error {
+		p.testHooks.stopCPUProfile = func() { atomic.AddUint64(&stopCPU, 1) }
+		p.testHooks.lookupProfile = func(name string, w io.Writer, _ int) error {
 			if name == "heap" {
 				atomic.AddUint64(&writeHeap, 1)
 			}
