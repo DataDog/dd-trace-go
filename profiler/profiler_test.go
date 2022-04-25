@@ -309,6 +309,7 @@ func TestProfilerPassthrough(t *testing.T) {
 		return nil
 	}
 	p.run()
+	defer p.stop()
 	var bat batch
 	select {
 	case bat = <-out:
