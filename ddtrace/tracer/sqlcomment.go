@@ -9,14 +9,19 @@ import (
 
 // SQLCommentCarrier holds tags to be serialized as a SQL Comment
 type SQLCommentCarrier struct {
-	tags map[string]string
+	// Indicates if this SQL comment carrier should only preserve static tags or also include
+	// dynamic ones (like trace id, span id and sampling priority)
+	KeepOnlyStaticTags bool
+	tags               map[string]string
 }
 
 const (
-	samplingPrioritySQLCommentKey = "ddsp"
-	traceIDSQLCommentKey          = "ddtid"
-	spanIDSQLCommentKey           = "ddsid"
-	ServiceNameSQLCommentKey      = "ddsn"
+	samplingPrioritySQLCommentKey   = "ddsp"
+	traceIDSQLCommentKey            = "ddtid"
+	spanIDSQLCommentKey             = "ddsid"
+	ServiceNameSQLCommentKey        = "ddsn"
+	ServiceVersionSQLCommentKey     = "ddsv"
+	ServiceEnvironmentSQLCommentKey = "dde"
 )
 
 // Set implements TextMapWriter.
