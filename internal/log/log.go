@@ -56,12 +56,18 @@ func SetLevel(lvl Level) {
 	level = lvl
 }
 
-// Debug prints the given message if the level is LevelDebug.
-func Debug(fmt string, a ...interface{}) {
+// DebugEnabled returns true if debug log messages are enabled. This can be used in extremely
+// hot code paths to avoid allocating the ...interface{} argument.
+func DebugEnabled() bool {
 	mu.RLock()
 	lvl := level
 	mu.RUnlock()
-	if lvl != LevelDebug {
+	return lvl == LevelDebug
+}
+
+// Debug prints the given message if the level is LevelDebug.
+func Debug(fmt string, a ...interface{}) {
+	if !DebugEnabled() {
 		return
 	}
 	printMsg("DEBUG", fmt, a...)

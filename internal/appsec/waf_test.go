@@ -12,9 +12,11 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
+	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -24,11 +26,8 @@ import (
 
 // TestWAF is a simple validation test of the WAF protecting a net/http server. It only mockups the agent and tests that
 // the WAF is properly detecting an LFI attempt and that the corresponding security event is being sent to the agent.
+// Additionally, verifies that rule matching through SDK body instrumentation works as expected
 func TestWAF(t *testing.T) {
-	// Start the tracer along with the fake agent HTTP server
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
 	appsec.Start()
 	defer appsec.Stop()
 
@@ -41,32 +40,135 @@ func TestWAF(t *testing.T) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
+	mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
+		pAppsec.MonitorParsedHTTPBody(r.Context(), "$globals")
+		w.Write([]byte("Hello Body!\n"))
+	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	// Send an LFI attack
-	req, err := http.NewRequest("POST", srv.URL+"/../../../secret.txt", nil)
-	if err != nil {
-		panic(err)
-	}
-	res, err := srv.Client().Do(req)
-	require.NoError(t, err)
+	t.Run("lfi", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	// Check that the handler was properly called
-	b, err := ioutil.ReadAll(res.Body)
-	require.NoError(t, err)
-	require.Equal(t, "Hello World!\n", string(b))
+		// Send an LFI attack
+		req, err := http.NewRequest("POST", srv.URL+"/../../../secret.txt", nil)
+		if err != nil {
+			panic(err)
+		}
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
 
-	finished := mt.FinishedSpans()
-	require.Len(t, finished, 2)
+		// Check that the handler was properly called
+		b, err := ioutil.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, "Hello World!\n", string(b))
 
-	// Two requests were performed by the client request (due to the 301 redirection) and the two should have the LFI
-	// attack attempt event (appsec rule id crs-930-100).
-	event := finished[0].Tag("_dd.appsec.json")
-	require.NotNil(t, event)
-	require.True(t, strings.Contains(event.(string), "crs-930-100"))
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 2)
 
-	event = finished[1].Tag("_dd.appsec.json")
-	require.NotNil(t, event)
-	require.True(t, strings.Contains(event.(string), "crs-930-100"))
+		// Two requests were performed by the client request (due to the 301 redirection) and the two should have the LFI
+		// attack attempt event (appsec rule id crs-930-110).
+		event := finished[0].Tag("_dd.appsec.json")
+		require.NotNil(t, event)
+		require.Contains(t, event, "crs-930-110")
+
+		event = finished[1].Tag("_dd.appsec.json")
+		require.NotNil(t, event)
+		require.Contains(t, event, "crs-930-110")
+	})
+
+	// Test a PHP injection attack via request parsed body
+	t.Run("SDK-body", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("POST", srv.URL+"/body", nil)
+		if err != nil {
+			panic(err)
+		}
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+
+		// Check that the handler was properly called
+		b, err := ioutil.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, "Hello Body!\n", string(b))
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		event := finished[0].Tag("_dd.appsec.json")
+		require.NotNil(t, event)
+		require.True(t, strings.Contains(event.(string), "crs-933-130"))
+	})
+
+	t.Run("obfuscation", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		// Send a malicious request with sensitive data that should be both
+		// obfuscated by the obfuscator key and value regexps.
+		form := url.Values{}
+
+		// Form value detected by a XSS attack that should be obfuscated by the
+		// obfuscator value regex.
+		const sensitivePayloadValue = `BEARER lwqjedqwdoqwidmoqwndun32i`
+		form.Add("payload", `
+{
+   "activeTab":"39612314-1890-45f7-8075-c793325c1d70",
+   "allOpenTabs":["132ef2e5-afaa-4e20-bc64-db9b13230a","39612314-1890-45f7-8075-c793325c1d70"],
+   "lastPage":{
+       "accessToken":"`+sensitivePayloadValue+`",
+       "account":{
+           "name":"F123123 .htaccess",
+           "contactCustomFields":{
+               "ffa77959-1ff3-464b-a3af-e5410e436f1f":{
+                   "questionServiceEntityType":"CustomField",
+                   "question":{
+                       "code":"Manager Name",
+                       "questionTypeInfo":{
+                           "questionType":"OpenEndedText",
+                           "answerFormatType":"General"
+                           ,"scores":[]
+                       },
+                   "additionalInfo":{
+                       "codeSnippetValue":"<!-- Google Tag Manager (noscript) -->\r\n<iframe src=\"https://www.googletagmanager.com/ns.html?id=GTM-PCVXQNM\"\r\nheight=\"0\" width=\"0\" style=\"display:none"
+                   }
+               }
+           }
+       }
+   }
+}
+`)
+		// Form value detected by a SQLi rule that should be obfuscated by the
+		// obfuscator value regex.
+		sensitiveParamKeyValue := "I-m-sensitive-please-dont-expose-me"
+		form.Add("password", sensitiveParamKeyValue+"1234%20union%20select%20*%20from%20credit_cards"+sensitiveParamKeyValue)
+
+		req, err := http.NewRequest("POST", srv.URL, nil)
+		req.URL.RawQuery = form.Encode()
+
+		if err != nil {
+			panic(err)
+		}
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+
+		// Check that the handler was properly called
+		b, err := ioutil.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, "Hello World!\n", string(b))
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check that the tags don't hold any sensitive information
+		event := finished[0].Tag("_dd.appsec.json")
+		require.NotNil(t, event)
+		require.Contains(t, event, "crs-942-270") // SQLi
+		require.Contains(t, event, "crs-941-100") // XSS
+		require.NotContains(t, event, sensitiveParamKeyValue)
+		require.NotContains(t, event, sensitivePayloadValue)
+	})
 }

@@ -265,8 +265,8 @@ func TestProfilerInternal(t *testing.T) {
 		assert.EqualValues(1, startCPU)
 		assert.EqualValues(1, stopCPU)
 
-		// should contain cpu.pprof, metrics.json, heap.pprof, delta-heap.pprof
-		assert.Equal(4, len(bat.profiles))
+		// should contain cpu.pprof, metrics.json, delta-heap.pprof
+		assert.Equal(3, len(bat.profiles))
 
 		p.exit <- struct{}{}
 		<-wait
@@ -309,6 +309,7 @@ func TestProfilerPassthrough(t *testing.T) {
 		return nil
 	}
 	p.run()
+	defer p.stop()
 	var bat batch
 	select {
 	case bat = <-out:
@@ -319,11 +320,10 @@ func TestProfilerPassthrough(t *testing.T) {
 	}
 
 	assert := assert.New(t)
-	// should contain cpu.pprof, heap.pprof, delta-heap.pprof
-	assert.Equal(3, len(bat.profiles))
+	// should contain cpu.pprof, delta-heap.pprof
+	assert.Equal(2, len(bat.profiles))
 	assert.NotEmpty(bat.profiles[0].data)
 	assert.NotEmpty(bat.profiles[1].data)
-	assert.NotEmpty(bat.profiles[2].data)
 }
 
 func unstartedProfiler(opts ...Option) (*profiler, error) {

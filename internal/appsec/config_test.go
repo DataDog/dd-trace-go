@@ -22,6 +22,10 @@ func TestConfig(t *testing.T) {
 		rules:          []byte(staticRecommendedRule),
 		wafTimeout:     defaultWAFTimeout,
 		traceRateLimit: defaultTraceRate,
+		obfuscator: ObfuscatorConfig{
+			KeyRegex:   defaultObfuscatorKeyRegex,
+			ValueRegex: defaultObfuscatorValueRegex,
+		},
 	}
 
 	t.Run("default", func(t *testing.T) {
@@ -34,20 +38,25 @@ func TestConfig(t *testing.T) {
 
 	t.Run("waf-timeout", func(t *testing.T) {
 		t.Run("parsable", func(t *testing.T) {
+			expCfg := *expectedDefaultConfig
+			expCfg.wafTimeout = 5 * time.Second
 			restoreEnv := cleanEnv()
 			defer restoreEnv()
 			require.NoError(t, os.Setenv(wafTimeoutEnvVar, "5s"))
 			cfg, err := newConfig()
 			require.NoError(t, err)
-			require.Equal(
-				t,
-				&config{
-					rules:          []byte(staticRecommendedRule),
-					wafTimeout:     5 * time.Second,
-					traceRateLimit: defaultTraceRate,
-				},
-				cfg,
-			)
+			require.Equal(t, &expCfg, cfg)
+		})
+
+		t.Run("parsable-default-microsecond", func(t *testing.T) {
+			expCfg := *expectedDefaultConfig
+			expCfg.wafTimeout = 1 * time.Microsecond
+			restoreEnv := cleanEnv()
+			defer restoreEnv()
+			require.NoError(t, os.Setenv(wafTimeoutEnvVar, "1"))
+			cfg, err := newConfig()
+			require.NoError(t, err)
+			require.Equal(t, &expCfg, cfg)
 		})
 
 		t.Run("not-parsable", func(t *testing.T) {
@@ -116,35 +125,27 @@ func TestConfig(t *testing.T) {
 				os.Remove(file.Name())
 			}()
 			expectedRules := `custom rule file content`
+			expCfg := *expectedDefaultConfig
+			expCfg.rules = []byte(expectedRules)
 			_, err = file.WriteString(expectedRules)
 			require.NoError(t, err)
 			os.Setenv(rulesEnvVar, file.Name())
 			cfg, err := newConfig()
 			require.NoError(t, err)
-			require.Equal(t, &config{
-				rules:          []byte(expectedRules),
-				wafTimeout:     defaultWAFTimeout,
-				traceRateLimit: defaultTraceRate,
-			}, cfg)
+			require.Equal(t, &expCfg, cfg)
 		})
 	})
 
 	t.Run("trace-rate-limit", func(t *testing.T) {
 		t.Run("parsable", func(t *testing.T) {
+			expCfg := *expectedDefaultConfig
+			expCfg.traceRateLimit = 1234567890
 			restoreEnv := cleanEnv()
 			defer restoreEnv()
 			require.NoError(t, os.Setenv(traceRateLimitEnvVar, "1234567890"))
 			cfg, err := newConfig()
 			require.NoError(t, err)
-			require.Equal(
-				t,
-				&config{
-					rules:          []byte(staticRecommendedRule),
-					wafTimeout:     defaultWAFTimeout,
-					traceRateLimit: 1234567890,
-				},
-				cfg,
-			)
+			require.Equal(t, &expCfg, cfg)
 		})
 
 		t.Run("not-parsable", func(t *testing.T) {
@@ -183,25 +184,89 @@ func TestConfig(t *testing.T) {
 			require.Equal(t, expectedDefaultConfig, cfg)
 		})
 	})
+
+	t.Run("obfuscator", func(t *testing.T) {
+		t.Run("key-regexp", func(t *testing.T) {
+			t.Run("env-var-normal", func(t *testing.T) {
+				expCfg := *expectedDefaultConfig
+				expCfg.obfuscator.KeyRegex = "test"
+				restoreEnv := cleanEnv()
+				defer restoreEnv()
+				require.NoError(t, os.Setenv(obfuscatorKeyEnvVar, "test"))
+				cfg, err := newConfig()
+				require.NoError(t, err)
+				require.Equal(t, &expCfg, cfg)
+			})
+			t.Run("env-var-empty", func(t *testing.T) {
+				expCfg := *expectedDefaultConfig
+				expCfg.obfuscator.KeyRegex = ""
+				restoreEnv := cleanEnv()
+				defer restoreEnv()
+				require.NoError(t, os.Setenv(obfuscatorKeyEnvVar, ""))
+				cfg, err := newConfig()
+				require.NoError(t, err)
+				require.Equal(t, &expCfg, cfg)
+			})
+			t.Run("compile-error", func(t *testing.T) {
+				restoreEnv := cleanEnv()
+				defer restoreEnv()
+				require.NoError(t, os.Setenv(obfuscatorKeyEnvVar, "+"))
+				cfg, err := newConfig()
+				require.NoError(t, err)
+				require.Equal(t, expectedDefaultConfig, cfg)
+			})
+		})
+
+		t.Run("value-regexp", func(t *testing.T) {
+			t.Run("env-var-normal", func(t *testing.T) {
+				expCfg := *expectedDefaultConfig
+				expCfg.obfuscator.ValueRegex = "test"
+				restoreEnv := cleanEnv()
+				defer restoreEnv()
+				require.NoError(t, os.Setenv(obfuscatorValueEnvVar, "test"))
+				cfg, err := newConfig()
+				require.NoError(t, err)
+				require.Equal(t, &expCfg, cfg)
+			})
+			t.Run("env-var-empty", func(t *testing.T) {
+				expCfg := *expectedDefaultConfig
+				expCfg.obfuscator.ValueRegex = ""
+				restoreEnv := cleanEnv()
+				defer restoreEnv()
+				require.NoError(t, os.Setenv(obfuscatorValueEnvVar, ""))
+				cfg, err := newConfig()
+				require.NoError(t, err)
+				require.Equal(t, &expCfg, cfg)
+			})
+			t.Run("compile-error", func(t *testing.T) {
+				restoreEnv := cleanEnv()
+				defer restoreEnv()
+				require.NoError(t, os.Setenv(obfuscatorValueEnvVar, "+"))
+				cfg, err := newConfig()
+				require.NoError(t, err)
+				require.Equal(t, expectedDefaultConfig, cfg)
+			})
+		})
+	})
 }
 
 func cleanEnv() func() {
-	wafTimeout := os.Getenv(wafTimeoutEnvVar)
-	if err := os.Unsetenv(wafTimeoutEnvVar); err != nil {
-		panic(err)
+	env := map[string]string{
+		wafTimeoutEnvVar:      os.Getenv(wafTimeoutEnvVar),
+		rulesEnvVar:           os.Getenv(rulesEnvVar),
+		traceRateLimitEnvVar:  os.Getenv(traceRateLimitEnvVar),
+		obfuscatorKeyEnvVar:   os.Getenv(obfuscatorKeyEnvVar),
+		obfuscatorValueEnvVar: os.Getenv(obfuscatorValueEnvVar),
 	}
-	rules := os.Getenv(rulesEnvVar)
-	if err := os.Unsetenv(rulesEnvVar); err != nil {
-		panic(err)
-	}
-	traceRateLimit := os.Getenv(traceRateLimitEnvVar)
-	if err := os.Unsetenv(traceRateLimitEnvVar); err != nil {
-		panic(err)
+	for k, _ := range env {
+		if err := os.Unsetenv(k); err != nil {
+			panic(err)
+		}
 	}
 	return func() {
-		restoreEnv(wafTimeoutEnvVar, wafTimeout)
-		restoreEnv(rulesEnvVar, rules)
-		restoreEnv(traceRateLimitEnvVar, traceRateLimit)
+		for k, v := range env {
+			restoreEnv(k, v)
+		}
 	}
 }
 
