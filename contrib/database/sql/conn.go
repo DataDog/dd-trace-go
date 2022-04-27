@@ -276,7 +276,9 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 }
 
 func injectStaticTagsSQLComments(sqlCommentCarrier *tracer.SQLCommentCarrier) {
-	sqlCommentCarrier.Set(tracer.ServiceNameSQLCommentKey, globalconfig.ServiceName())
+	if name := globalconfig.ServiceName(); name != "" {
+		sqlCommentCarrier.Set(tracer.ServiceNameSQLCommentKey, name)
+	}
 
 	// TODO: The following two values bypass any override set via the calling application via tracer options
 	// Figure out a clean way to get those values from the private tracer configuration instead
