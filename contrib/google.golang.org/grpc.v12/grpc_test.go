@@ -6,6 +6,7 @@
 package grpc
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"testing"
@@ -16,7 +17,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
-	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 )
