@@ -104,7 +104,7 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 	start := time.Now()
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
 		sqlCommentCarrier := tracer.SQLCommentCarrier{}
-		span := tc.tryStartTrace(ctx, queryTypeBegin, query, start, &sqlCommentCarrier, err)
+		span := tc.tryStartTrace(ctx, queryTypeExec, query, start, &sqlCommentCarrier, err)
 		if span != nil {
 			defer func() {
 				span.Finish(tracer.WithError(err))

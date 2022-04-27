@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"log"
 	"testing"
 
@@ -95,7 +96,7 @@ func testPing(cfg *Config) func(*testing.T) {
 		err := cfg.DB.Ping()
 		assert.Nil(err)
 		spans := cfg.mockTracer.FinishedSpans()
-		assert.Len(spans, 2)
+		require.Len(t, spans, 2)
 
 		verifyConnectSpan(spans[0], assert, cfg)
 
