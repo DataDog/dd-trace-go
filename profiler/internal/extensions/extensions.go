@@ -1,4 +1,4 @@
-// package extensions provides an interface for using optional features.
+// Package extensions provides an interface for using optional features.
 //
 // Features such as C allocation profiling might require cgo, unsafe code, and
 // external non-Go dependencies which might not be desirable for typical users.
