@@ -313,9 +313,9 @@ func (p *propagator) injectTextMapWithOptions(spanCtx ddtrace.SpanContext, write
 		}
 	}
 
-	if cfg.VersionKey != "" {
-		if version, ok := ctx.meta(ext.Version); ok {
-			writer.Set(cfg.VersionKey, version)
+	if cfg.ParentVersionKey != "" {
+		if version, ok := ctx.meta(ext.ParentVersion); ok {
+			writer.Set(cfg.ParentVersionKey, version)
 		}
 	}
 
@@ -469,9 +469,9 @@ func (*propagatorB3) injectTextMapWithOptions(spanCtx ddtrace.SpanContext, write
 		}
 	}
 
-	if cfg.VersionKey != "" {
+	if cfg.ParentVersionKey != "" {
 		if version, ok := ctx.meta(ext.Version); ok {
-			writer.Set(cfg.VersionKey, version)
+			writer.Set(cfg.ParentVersionKey, version)
 		}
 	}
 

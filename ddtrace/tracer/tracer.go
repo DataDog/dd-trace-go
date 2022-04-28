@@ -433,6 +433,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if t.config.version != "" {
 		if t.config.universalVersion || (!t.config.universalVersion && span.Service == t.config.serviceName) {
 			span.setMeta(ext.Version, t.config.version)
+		} else {
+			span.setMeta(ext.ParentVersion, t.config.version)
 		}
 	}
 	if t.config.env != "" {

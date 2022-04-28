@@ -930,9 +930,9 @@ func WithServiceNameKey(serviceNameKey string) InjectionOption {
 	}
 }
 
-// WithVersionKey returns the option setting the version key
-func WithVersionKey(versionKey string) InjectionOption {
+// WithParentVersionKey returns the option setting the parent version key
+func WithParentVersionKey(versionKey string) InjectionOption {
 	return func(cfg *ddtrace.InjectionConfig) {
-		cfg.VersionKey = versionKey
+		cfg.ParentVersionKey = versionKey
 	}
 }

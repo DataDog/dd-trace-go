@@ -130,13 +130,13 @@ func injectionOptionsForMode(mode commentInjectionMode, discardDynamicTags bool)
 			tracer.WithSamplingPriorityKey(tracer.SamplingPrioritySQLCommentKey),
 			tracer.WithServiceNameKey(tracer.ServiceNameSQLCommentKey),
 			tracer.WithEnvironmentKey(tracer.ServiceEnvironmentSQLCommentKey),
-			tracer.WithVersionKey(tracer.ServiceVersionSQLCommentKey),
+			tracer.WithParentVersionKey(tracer.ServiceVersionSQLCommentKey),
 		}
 	case mode == fullSQLCommentInjection && discardDynamicTags || mode == staticTagsSQLCommentInjection:
 		return []tracer.InjectionOption{
 			tracer.WithServiceNameKey(tracer.ServiceNameSQLCommentKey),
 			tracer.WithEnvironmentKey(tracer.ServiceEnvironmentSQLCommentKey),
-			tracer.WithVersionKey(tracer.ServiceVersionSQLCommentKey),
+			tracer.WithParentVersionKey(tracer.ServiceVersionSQLCommentKey),
 		}
 	default:
 		return []tracer.InjectionOption{}

@@ -231,10 +231,10 @@ func (t *mocktracer) InjectWithOptions(context ddtrace.SpanContext, carrier inte
 		}
 	}
 
-	if cfg.VersionKey != "" {
-		versionRaw := ctx.span.Tag(ext.Version)
+	if cfg.ParentVersionKey != "" {
+		versionRaw := ctx.span.Tag(ext.ParentVersion)
 		if version, ok := versionRaw.(string); ok {
-			writer.Set(cfg.VersionKey, version)
+			writer.Set(cfg.ParentVersionKey, version)
 		}
 	}
 

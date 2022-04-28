@@ -162,6 +162,6 @@ type InjectionConfig struct {
 	// EnvKey defines the key to use to inject the environment. The environment is only injected if this value is not
 	// empty
 	EnvKey string
-	// VersionKey defines the key to use to inject the version. The version is only injected if this value is not empty
-	VersionKey string
+	// ParentVersionKey defines the key to use to inject the version. The version is only injected if this value is not empty
+	ParentVersionKey string
 }
