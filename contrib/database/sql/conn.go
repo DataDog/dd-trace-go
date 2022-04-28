@@ -259,12 +259,13 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 		}
 	}
 
-	injectionOpts := injectionOptionsForMode(tp.cfg.sqlCommentInjectionMode, sqlCommentCarrier.DiscardDynamicTags)
-
-	err = tracer.InjectWithOptions(span.Context(), sqlCommentCarrier, injectionOpts...)
-	if err != nil {
-		// this should never happen
-		fmt.Fprintf(os.Stderr, "contrib/database/sql: failed to inject query comments: %v\n", err)
+	if tp.cfg.sqlCommentInjectionMode != commentInjectionDisabled {
+		injectionOpts := injectionOptionsForMode(tp.cfg.sqlCommentInjectionMode, sqlCommentCarrier.DiscardDynamicTags)
+		err = tracer.InjectWithOptions(span.Context(), sqlCommentCarrier, injectionOpts...)
+		if err != nil {
+			// this should never happen
+			fmt.Fprintf(os.Stderr, "contrib/database/sql: failed to inject query comments: %v\n", err)
+		}
 	}
 
 	return span
