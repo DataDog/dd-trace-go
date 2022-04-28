@@ -81,6 +81,13 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "cpu.pprof",
 		Collect: func(_ profileType, p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
+			if p.cfg.cpuProfileRate != 0 {
+				// The profile has to be set each time before
+				// profiling is started. Otherwise,
+				// runtime/pprof.StartCPUProfile will set the
+				// rate itself.
+				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
+			}
 			if err := startCPUProfile(&buf); err != nil {
 				return nil, err
 			}
@@ -133,7 +140,7 @@ var profileTypes = map[ProfileType]profileType{
 				text  = &bytes.Buffer{}
 				pprof = &bytes.Buffer{}
 			)
-			if err := lookupProfile(t.Name, text, 2); err != nil {
+			if err := lookupProfile("goroutine", text, 2); err != nil {
 				return nil, err
 			}
 			err := goroutineDebug2ToPprof(text, pprof, now)

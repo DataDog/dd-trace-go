@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	pb "gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/testapp"
 
@@ -233,4 +235,34 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 			})
 		})
 	}
+}
+
+// Test that overriding the resource name for a span & endpoint is reflected in
+// the profile.
+func TestOverrideResourceName(t *testing.T) {
+	tracer.Start(tracer.WithProfilerEndpoints(true))
+	defer tracer.Stop()
+
+	// Running for an arbitrary amount of time is a possible source of
+	// flakiness, but the most we can do is keep trying longer and longer
+	// until what we want shows up in the CPU profile.
+	duration := 100 * time.Millisecond
+	maxDuration := 5 * time.Second
+	for duration <= maxDuration {
+		cp := StartCPUProfile(t)
+		span := tracer.StartSpan("testoverride", tracer.ResourceName("testoverride.old"))
+		span.SetTag(ext.ResourceName, "testoverride.new")
+		stop := make(chan struct{})
+		go cpuHogUntil(stop)
+		time.Sleep(duration)
+		close(stop)
+		span.Finish()
+
+		prof := cp.Stop(t)
+		if prof.LabelDuration(traceprof.TraceEndpoint, "testoverride.new") > 0 {
+			return
+		}
+		duration *= 2
+	}
+	t.Fatal("did not observe desired endpoint labels after max duration")
 }
