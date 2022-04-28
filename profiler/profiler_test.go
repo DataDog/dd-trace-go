@@ -7,9 +7,14 @@ package profiler
 
 import (
 	"io"
+	"mime"
+	"mime/multipart"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -330,4 +335,73 @@ func unstartedProfiler(opts ...Option) (*profiler, error) {
 	}
 	p.uploadFunc = func(_ batch) error { return nil }
 	return p, nil
+}
+
+func TestAllUploaded(t *testing.T) {
+	// This is a kind of end-to-end test that runs the real profiles (i.e.
+	// not mocking/replacing any internal functions) and verifies that the
+	// profiles are at least uploaded.
+	//
+	// TODO: Further check that the uploaded profiles are all valid
+	var (
+		wg       sync.WaitGroup
+		profiles []string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer wg.Done()
+		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil {
+			t.Fatalf("bad media type: %s", err)
+			return
+		}
+		mr := multipart.NewReader(r.Body, params["boundary"])
+		for {
+			p, err := mr.NextPart()
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				t.Fatalf("next part: %s", err)
+			}
+			if p.FileName() == "pprof-data" {
+				profiles = append(profiles, p.FormName())
+			}
+		}
+	}))
+	defer server.Close()
+	wg.Add(1)
+
+	// re-implemented testing.T.Setenv since that function requires Go 1.17
+	old, ok := os.LookupEnv("DD_PROFILING_WAIT_PROFILE")
+	os.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
+	if ok {
+		defer os.Setenv("DD_PROFILING_WAIT_PROFILE", old)
+	} else {
+		defer os.Unsetenv("DD_PROFILING_WAIT_PROFILE")
+	}
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(
+			BlockProfile,
+			CPUProfile,
+			GoroutineProfile,
+			HeapProfile,
+			MutexProfile,
+		),
+		WithPeriod(10*time.Millisecond),
+		CPUDuration(1*time.Millisecond),
+	)
+	defer Stop()
+	wg.Wait()
+
+	expected := []string{
+		"data[cpu.pprof]",
+		"data[delta-block.pprof]",
+		"data[delta-heap.pprof]",
+		"data[delta-mutex.pprof]",
+		"data[goroutines.pprof]",
+		"data[goroutineswait.pprof]",
+	}
+	sort.Strings(profiles)
+	assert.Equal(t, expected, profiles)
 }

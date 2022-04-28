@@ -139,7 +139,7 @@ var profileTypes = map[ProfileType]profileType{
 				text  = &bytes.Buffer{}
 				pprof = &bytes.Buffer{}
 			)
-			if err := p.lookupProfile(t.Name, text, 2); err != nil {
+			if err := p.lookupProfile("goroutine", text, 2); err != nil {
 				return nil, err
 			}
 			err := goroutineDebug2ToPprof(text, pprof, now)
