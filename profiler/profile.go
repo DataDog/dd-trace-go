@@ -14,6 +14,7 @@ import (
 	"runtime/pprof"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 
 	"github.com/DataDog/gostackparse"
@@ -216,6 +217,22 @@ func (b *batch) addProfile(p *profile) {
 }
 
 func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
+	var extra []*pprofile.Profile
+	if pt == HeapProfile {
+		// For the heap profile, we'd also like to include C allocations
+		// if that extension is enabled and have the allocations show up
+		// in the same profile
+		//
+		// TODO: Support non-delta profiles for C allocations?
+		if cAlloc, ok := extensions.GetCAllocationProfiler(); ok && p.cfg.deltaProfiles {
+			cAlloc.Start(2 * 1024 * 1024)
+			p.interruptibleSleep(p.cfg.period)
+			profile, err := cAlloc.Stop()
+			if err == nil {
+				extra = append(extra, profile)
+			}
+		}
+	}
 	start := now()
 	t := pt.lookup()
 	// Collect the original profile as-is.
@@ -225,7 +242,7 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	}
 	// Compute the deltaProf (will be nil if not enabled for this profile type).
 	deltaStart := time.Now()
-	deltaProf, err := p.deltaProfile(t, data)
+	deltaProf, err := p.deltaProfile(t, data, extra...)
 	if err != nil {
 		return nil, fmt.Errorf("delta profile error: %s", err)
 	}
@@ -251,7 +268,7 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 // deltaProfile derives the delta profile between curData and the previous
 // profile. For profile types that don't have delta profiling enabled, or
 // WithDeltaProfiles(false), it simply returns nil, nil.
-func (p *profiler) deltaProfile(t profileType, curData []byte) (*profile, error) {
+func (p *profiler) deltaProfile(t profileType, curData []byte, extra ...*pprofile.Profile) (*profile, error) {
 	if !p.cfg.deltaProfiles || t.Delta == nil {
 		return nil, nil
 	}
@@ -269,7 +286,7 @@ func (p *profiler) deltaProfile(t profileType, curData []byte) (*profile, error)
 		// Unfortunately the core implementation isn't resuable via a API, so we do
 		// our own delta calculation below.
 		// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
-		deltaProf, err := t.Delta.Convert(prevProf, curProf)
+		deltaProf, err := t.Delta.Convert(prevProf, curProf, extra...)
 		if err != nil {
 			return nil, fmt.Errorf("delta prof merge: %v", err)
 		}
