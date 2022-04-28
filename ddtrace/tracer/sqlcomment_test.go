@@ -1,10 +1,12 @@
 package tracer
 
 import (
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"testing"
 )
 
 func TestQueryTextCarrier(t *testing.T) {

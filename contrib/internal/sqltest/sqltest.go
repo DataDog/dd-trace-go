@@ -9,9 +9,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"log"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"

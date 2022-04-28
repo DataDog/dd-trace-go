@@ -21,10 +21,11 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"math"
 	"reflect"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"

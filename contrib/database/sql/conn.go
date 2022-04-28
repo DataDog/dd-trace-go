@@ -9,10 +9,11 @@ import (
 	"context"
 	"database/sql/driver"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"math"
 	"os"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -260,7 +261,7 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 		}
 	}
 
-	if tp.cfg.sqlCommentInjectionMode == FullSQLCommentInjection && !sqlCommentCarrier.KeepOnlyStaticTags {
+	if tp.cfg.sqlCommentInjectionMode == fullSQLCommentInjection && !sqlCommentCarrier.KeepOnlyStaticTags {
 		err = tracer.Inject(span.Context(), sqlCommentCarrier)
 		if err != nil {
 			// this should never happen
@@ -268,7 +269,7 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 		}
 	}
 
-	if tp.cfg.sqlCommentInjectionMode == StaticTagsSQLCommentInjection || tp.cfg.sqlCommentInjectionMode == FullSQLCommentInjection {
+	if tp.cfg.sqlCommentInjectionMode == staticTagsSQLCommentInjection || tp.cfg.sqlCommentInjectionMode == fullSQLCommentInjection {
 		injectStaticTagsSQLComments(sqlCommentCarrier)
 	}
 

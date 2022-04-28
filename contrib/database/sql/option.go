@@ -16,16 +16,16 @@ type config struct {
 	analyticsRate           float64
 	dsn                     string
 	childSpansOnly          bool
-	sqlCommentInjectionMode SQLCommentInjectionMode
+	sqlCommentInjectionMode commentInjectionMode
 }
 
-// SQLCommentInjectionMode represents the mode of sql comment injection
-type SQLCommentInjectionMode int
+// commentInjectionMode represents the mode of sql comment injection
+type commentInjectionMode int
 
 const (
-	SQLCommentInjectionDisabled   SQLCommentInjectionMode = 0 // Default value, sql comment injection disabled
-	FullSQLCommentInjection       SQLCommentInjectionMode = 1 // Full sql comment injection is enabled: include dynamic values like span id, trace id and sampling priority.
-	StaticTagsSQLCommentInjection SQLCommentInjectionMode = 2 // Static sql comment injection only: this includes values that are set once during the lifetime of an application: service name, env, version.
+	commentInjectionDisabled      commentInjectionMode = 0 // Default value, sql comment injection disabled
+	fullSQLCommentInjection       commentInjectionMode = 1 // Full sql comment injection is enabled: include dynamic values like span id, trace id and sampling priority.
+	staticTagsSQLCommentInjection commentInjectionMode = 2 // Static sql comment injection only: this includes values that are set once during the lifetime of an application: service name, env, version.
 )
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -94,27 +94,27 @@ func WithChildSpansOnly() Option {
 	}
 }
 
-// WithSQLCommentInjection enables injection of tags as sql comments on traced queries.
+// WithCommentInjection enables injection of tags as sql comments on traced queries.
 // This includes dynamic values like span id, trace id and sampling priority which can make queries
-// unique for some cache implementations. Use WithStaticTagsSQLCommentInjection if this is a concern.
-func WithSQLCommentInjection() Option {
+// unique for some cache implementations. Use WithStaticTagsCommentInjection if this is a concern.
+func WithCommentInjection() Option {
 	return func(cfg *config) {
-		cfg.sqlCommentInjectionMode = FullSQLCommentInjection
+		cfg.sqlCommentInjectionMode = fullSQLCommentInjection
 	}
 }
 
-// WithStaticTagsSQLCommentInjection enables injection of static tags as sql comments on traced queries.
+// WithStaticTagsCommentInjection enables injection of static tags as sql comments on traced queries.
 // This excludes dynamic values like span id, trace id and sampling priority which can make a query
 // unique and have side effects on caching.
-func WithStaticTagsSQLCommentInjection() Option {
+func WithStaticTagsCommentInjection() Option {
 	return func(cfg *config) {
-		cfg.sqlCommentInjectionMode = StaticTagsSQLCommentInjection
+		cfg.sqlCommentInjectionMode = staticTagsSQLCommentInjection
 	}
 }
 
-// WithoutSQLCommentInjection disables injection of sql comments on traced queries.
-func WithoutSQLCommentInjection() Option {
+// WithoutCommentInjection disables injection of sql comments on traced queries.
+func WithoutCommentInjection() Option {
 	return func(cfg *config) {
-		cfg.sqlCommentInjectionMode = SQLCommentInjectionDisabled
+		cfg.sqlCommentInjectionMode = commentInjectionDisabled
 	}
 }
