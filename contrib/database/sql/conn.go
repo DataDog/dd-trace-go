@@ -259,8 +259,8 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 		}
 	}
 
-	if tp.cfg.sqlCommentInjectionMode != commentInjectionDisabled {
-		injectionOpts := injectionOptionsForMode(tp.cfg.sqlCommentInjectionMode, sqlCommentCarrier.DiscardDynamicTags)
+	if tp.cfg.commentInjectionMode != commentInjectionDisabled {
+		injectionOpts := injectionOptionsForMode(tp.cfg.commentInjectionMode, sqlCommentCarrier.DiscardDynamicTags)
 		err = tracer.InjectWithOptions(span.Context(), sqlCommentCarrier, injectionOpts...)
 		if err != nil {
 			// this should never happen

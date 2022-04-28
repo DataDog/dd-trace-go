@@ -14,11 +14,11 @@ import (
 )
 
 type config struct {
-	serviceName             string
-	analyticsRate           float64
-	dsn                     string
-	childSpansOnly          bool
-	sqlCommentInjectionMode commentInjectionMode
+	serviceName          string
+	analyticsRate        float64
+	dsn                  string
+	childSpansOnly       bool
+	commentInjectionMode commentInjectionMode
 }
 
 // commentInjectionMode represents the mode of sql comment injection
@@ -101,7 +101,7 @@ func WithChildSpansOnly() Option {
 // unique for some cache implementations. Use WithStaticTagsCommentInjection if this is a concern.
 func WithCommentInjection() Option {
 	return func(cfg *config) {
-		cfg.sqlCommentInjectionMode = fullSQLCommentInjection
+		cfg.commentInjectionMode = fullSQLCommentInjection
 	}
 }
 
@@ -110,14 +110,14 @@ func WithCommentInjection() Option {
 // unique and have side effects on caching.
 func WithStaticTagsCommentInjection() Option {
 	return func(cfg *config) {
-		cfg.sqlCommentInjectionMode = staticTagsSQLCommentInjection
+		cfg.commentInjectionMode = staticTagsSQLCommentInjection
 	}
 }
 
 // WithoutCommentInjection disables injection of sql comments on traced queries.
 func WithoutCommentInjection() Option {
 	return func(cfg *config) {
-		cfg.sqlCommentInjectionMode = commentInjectionDisabled
+		cfg.commentInjectionMode = commentInjectionDisabled
 	}
 }
 
