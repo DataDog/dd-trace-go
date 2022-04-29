@@ -71,7 +71,7 @@ type profileType struct {
 	Delta *pprofutils.Delta
 	// Collect collects the given profile and returns the data for it. Most
 	// profiles will be in pprof format, i.e. gzip compressed proto buf data.
-	Collect func(profileType, *profiler) ([]byte, error)
+	Collect func(profileType, *profiler) (data []byte, extra []*pprofile.Profile, err error)
 }
 
 // profileTypes maps every ProfileType to its implementation.
@@ -79,7 +79,7 @@ var profileTypes = map[ProfileType]profileType{
 	CPUProfile: {
 		Name:     "cpu",
 		Filename: "cpu.pprof",
-		Collect: func(_ profileType, p *profiler) ([]byte, error) {
+		Collect: func(_ profileType, p *profiler) ([]byte, []*pprofile.Profile, error) {
 			var buf bytes.Buffer
 			if p.cfg.cpuProfileRate != 0 {
 				// The profile has to be set each time before
@@ -89,11 +89,11 @@ var profileTypes = map[ProfileType]profileType{
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
 			if err := p.startCPUProfile(&buf); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
 			p.stopCPUProfile()
-			return buf.Bytes(), nil
+			return buf.Bytes(), nil, nil
 		},
 	},
 	// HeapProfile is complex due to how the Go runtime exposes it. It contains 4
@@ -130,9 +130,9 @@ var profileTypes = map[ProfileType]profileType{
 	expGoroutineWaitProfile: {
 		Name:     "goroutinewait",
 		Filename: "goroutineswait.pprof",
-		Collect: func(t profileType, p *profiler) ([]byte, error) {
+		Collect: func(_ profileType, p *profiler) ([]byte, []*pprofile.Profile, error) {
 			if n := runtime.NumGoroutine(); n > p.cfg.maxGoroutinesWait {
-				return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
+				return nil, nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
 			}
 
 			var (
@@ -141,27 +141,44 @@ var profileTypes = map[ProfileType]profileType{
 				pprof = &bytes.Buffer{}
 			)
 			if err := p.lookupProfile("goroutine", text, 2); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			err := goroutineDebug2ToPprof(text, pprof, now)
-			return pprof.Bytes(), err
+			return pprof.Bytes(), nil, err
 		},
 	},
 	MetricsProfile: {
 		Name:     "metrics",
 		Filename: "metrics.json",
-		Collect: func(_ profileType, p *profiler) ([]byte, error) {
+		Collect: func(_ profileType, p *profiler) ([]byte, []*pprofile.Profile, error) {
 			var buf bytes.Buffer
 			err := p.met.report(now(), &buf)
-			return buf.Bytes(), err
+			return buf.Bytes(), nil, err
 		},
 	},
 }
 
-func collectGenericProfile(t profileType, p *profiler) ([]byte, error) {
+func collectGenericProfile(t profileType, p *profiler) ([]byte, []*pprofile.Profile, error) {
+	var extra []*pprofile.Profile
+	if t.Name == "heap" {
+		// For the heap profile, we'd also like to include C allocations
+		// if that extension is enabled and have the allocations show up
+		// in the same profile
+		//
+		// TODO: Support non-delta profiles for C allocations?
+		if cAlloc, ok := extensions.GetCAllocationProfiler(); ok && p.cfg.deltaProfiles {
+			cAlloc.Start(2 * 1024 * 1024)
+			p.interruptibleSleep(p.cfg.period)
+			profile, err := cAlloc.Stop()
+			if err != nil {
+				return nil, nil, err
+			}
+			extra = append(extra, profile)
+		}
+	}
 	var buf bytes.Buffer
 	err := p.lookupProfile(t.Name, &buf, 0)
-	return buf.Bytes(), err
+	return buf.Bytes(), extra, err
 }
 
 // lookup returns t's profileType implementation.
@@ -175,8 +192,8 @@ func (t ProfileType) lookup() profileType {
 		Type:     t,
 		Name:     "unknown",
 		Filename: "unknown",
-		Collect: func(_ profileType, _ *profiler) ([]byte, error) {
-			return nil, errors.New("profile type not implemented")
+		Collect: func(_ profileType, _ *profiler) ([]byte, []*pprofile.Profile, error) {
+			return nil, nil, errors.New("profile type not implemented")
 		},
 	}
 }
@@ -216,26 +233,10 @@ func (b *batch) addProfile(p *profile) {
 }
 
 func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
-	var extra []*pprofile.Profile
-	if pt == HeapProfile {
-		// For the heap profile, we'd also like to include C allocations
-		// if that extension is enabled and have the allocations show up
-		// in the same profile
-		//
-		// TODO: Support non-delta profiles for C allocations?
-		if cAlloc, ok := extensions.GetCAllocationProfiler(); ok && p.cfg.deltaProfiles {
-			cAlloc.Start(2 * 1024 * 1024)
-			p.interruptibleSleep(p.cfg.period)
-			profile, err := cAlloc.Stop()
-			if err == nil {
-				extra = append(extra, profile)
-			}
-		}
-	}
 	start := now()
 	t := pt.lookup()
 	// Collect the original profile as-is.
-	data, err := t.Collect(t, p)
+	data, extra, err := t.Collect(t, p)
 	if err != nil {
 		return nil, err
 	}
