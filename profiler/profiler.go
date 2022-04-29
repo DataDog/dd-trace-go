@@ -8,10 +8,12 @@ package profiler
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"sync"
 	"time"
 
@@ -69,6 +71,42 @@ type profiler struct {
 	wg         sync.WaitGroup                    // wg waits for all goroutines to exit when stopping.
 	met        *metrics                          // metric collector state
 	prev       map[ProfileType]*pprofile.Profile // previous collection results for delta profiling
+
+	testHooks testHooks
+}
+
+// testHooks are functions that are replaced during testing which would normally
+// depend on accessing runtime state that is not needed/available for the test
+type testHooks struct {
+	startCPUProfile func(w io.Writer) error
+	stopCPUProfile  func()
+	lookupProfile   func(name string, w io.Writer, debug int) error
+}
+
+func (p *profiler) startCPUProfile(w io.Writer) error {
+	if p.testHooks.startCPUProfile != nil {
+		return p.testHooks.startCPUProfile(w)
+	}
+	return pprof.StartCPUProfile(w)
+}
+
+func (p *profiler) stopCPUProfile() {
+	if p.testHooks.startCPUProfile != nil {
+		p.testHooks.stopCPUProfile()
+		return
+	}
+	pprof.StopCPUProfile()
+}
+
+func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
+	if p.testHooks.lookupProfile != nil {
+		return p.testHooks.lookupProfile(name, w, debug)
+	}
+	prof := pprof.Lookup(name)
+	if prof == nil {
+		return errors.New("profile not found")
+	}
+	return prof.WriteTo(w, debug)
 }
 
 // newProfiler creates a new, unstarted profiler.
