@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"runtime"
-	"runtime/pprof"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
@@ -88,11 +87,11 @@ var profileTypes = map[ProfileType]profileType{
 				// rate itself.
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
-			if err := startCPUProfile(&buf); err != nil {
+			if err := p.startCPUProfile(&buf); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
-			stopCPUProfile()
+			p.stopCPUProfile()
 			return buf.Bytes(), nil
 		},
 	},
@@ -140,7 +139,7 @@ var profileTypes = map[ProfileType]profileType{
 				text  = &bytes.Buffer{}
 				pprof = &bytes.Buffer{}
 			)
-			if err := lookupProfile("goroutine", text, 2); err != nil {
+			if err := p.lookupProfile("goroutine", text, 2); err != nil {
 				return nil, err
 			}
 			err := goroutineDebug2ToPprof(text, pprof, now)
@@ -158,9 +157,9 @@ var profileTypes = map[ProfileType]profileType{
 	},
 }
 
-func collectGenericProfile(t profileType, _ *profiler) ([]byte, error) {
+func collectGenericProfile(t profileType, p *profiler) ([]byte, error) {
 	var buf bytes.Buffer
-	err := lookupProfile(t.Name, &buf, 0)
+	err := p.lookupProfile(t.Name, &buf, 0)
 	return buf.Bytes(), err
 }
 
@@ -291,23 +290,6 @@ func (p *profiler) deltaProfile(t profileType, curData []byte) (*profile, error)
 		name: "delta-" + t.Filename,
 		data: deltaData,
 	}, nil
-}
-
-var (
-	// startCPUProfile starts the CPU profile; replaced in tests
-	startCPUProfile = pprof.StartCPUProfile
-	// stopCPUProfile stops the CPU profile; replaced in tests
-	stopCPUProfile = pprof.StopCPUProfile
-)
-
-// lookpupProfile looks up the profile with the given name and writes it to w. It returns
-// any errors encountered in the process. It is replaced in tests.
-var lookupProfile = func(name string, w io.Writer, debug int) error {
-	prof := pprof.Lookup(name)
-	if prof == nil {
-		return errors.New("profile not found")
-	}
-	return prof.WriteTo(w, debug)
 }
 
 func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
