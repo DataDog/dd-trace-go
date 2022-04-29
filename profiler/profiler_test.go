@@ -6,7 +6,9 @@
 package profiler
 
 import (
+	"encoding/json"
 	"io"
+	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net"
@@ -15,14 +17,15 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
+	pprofile "github.com/google/pprof/profile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -216,7 +219,7 @@ func TestStopLatency(t *testing.T) {
 	// CPU profiling polls in 100 millisecond intervals and this can't be
 	// interrupted by pprof.StopCPUProfile, so we can't guarantee profiling
 	// will stop faster than that.
-	timeout := 200 * time.Millisecond
+	timeout := 300 * time.Millisecond
 	select {
 	case <-stopped:
 	case <-time.After(timeout):
@@ -225,58 +228,6 @@ func TestStopLatency(t *testing.T) {
 		stacks = stacks[0:runtime.Stack(stacks, true)]
 		t.Fatalf("Stop() took longer than %s:\n%s", timeout, stacks)
 	}
-}
-
-func TestProfilerInternal(t *testing.T) {
-	t.Run("collect", func(t *testing.T) {
-		p, err := unstartedProfiler(
-			WithPeriod(1*time.Millisecond),
-			CPUDuration(1*time.Millisecond),
-			WithProfileTypes(HeapProfile, CPUProfile),
-		)
-		require.NoError(t, err)
-		var startCPU, stopCPU, writeHeap uint64
-		p.testHooks.startCPUProfile = func(_ io.Writer) error {
-			atomic.AddUint64(&startCPU, 1)
-			return nil
-		}
-		p.testHooks.stopCPUProfile = func() { atomic.AddUint64(&stopCPU, 1) }
-		p.testHooks.lookupProfile = func(name string, w io.Writer, _ int) error {
-			if name == "heap" {
-				atomic.AddUint64(&writeHeap, 1)
-			}
-			_, err := w.Write(textProfile{Text: "main 5\n"}.Protobuf())
-			return err
-		}
-
-		tick := make(chan time.Time)
-		wait := make(chan struct{})
-
-		go func() {
-			p.collect(tick)
-			close(wait)
-		}()
-
-		tick <- time.Now()
-
-		var bat batch
-		select {
-		case bat = <-p.out:
-		case <-time.After(200 * time.Millisecond):
-			t.Fatalf("missing batch")
-		}
-
-		assert := assert.New(t)
-		assert.EqualValues(1, writeHeap)
-		assert.EqualValues(1, startCPU)
-		assert.EqualValues(1, stopCPU)
-
-		// should contain cpu.pprof, metrics.json, delta-heap.pprof
-		assert.Equal(3, len(bat.profiles))
-
-		p.exit <- struct{}{}
-		<-wait
-	})
 }
 
 func TestSetProfileFraction(t *testing.T) {
@@ -301,37 +252,6 @@ func TestSetProfileFraction(t *testing.T) {
 	})
 }
 
-func TestProfilerPassthrough(t *testing.T) {
-	if testing.Short() {
-		return
-	}
-	out := make(chan batch)
-	p, err := newProfiler()
-	require.NoError(t, err)
-	p.cfg.period = 200 * time.Millisecond
-	p.cfg.cpuDuration = 1 * time.Millisecond
-	p.uploadFunc = func(bat batch) error {
-		out <- bat
-		return nil
-	}
-	p.run()
-	defer p.stop()
-	var bat batch
-	select {
-	case bat = <-out:
-	// TODO (knusbaum) this timeout is long because we were seeing timeouts at 500ms.
-	// it would be nice to have a time-independent way to test this
-	case <-time.After(1000 * time.Millisecond):
-		t.Fatal("time expired")
-	}
-
-	assert := assert.New(t)
-	// should contain cpu.pprof, delta-heap.pprof
-	assert.Equal(2, len(bat.profiles))
-	assert.NotEmpty(bat.profiles[0].data)
-	assert.NotEmpty(bat.profiles[1].data)
-}
-
 func unstartedProfiler(opts ...Option) (*profiler, error) {
 	p, err := newProfiler(opts...)
 	if err != nil {
@@ -345,11 +265,7 @@ func TestAllUploaded(t *testing.T) {
 	// This is a kind of end-to-end test that runs the real profiles (i.e.
 	// not mocking/replacing any internal functions) and verifies that the
 	// profiles are at least uploaded.
-	//
-	// TODO: Further check that the uploaded profiles are all valid
-	var (
-		profiles []string
-	)
+
 	// received indicates that the server has received a profile upload.
 	// This is used similarly to a sync.WaitGroup but avoids a potential
 	// panic if too many requests are received before profiling is stopped
@@ -358,11 +274,12 @@ func TestAllUploaded(t *testing.T) {
 	// The channel is buffered with 2 entries so we can check that the
 	// second batch of profiles is correct in case the profiler gets in a
 	// bad state after the first round of profiling.
-	received := make(chan struct{}, 2)
+	received := make(chan []string, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var profiles []string
 		defer func() {
 			select {
-			case received <- struct{}{}:
+			case received <- profiles:
 			default:
 			}
 		}()
@@ -372,7 +289,6 @@ func TestAllUploaded(t *testing.T) {
 			return
 		}
 		mr := multipart.NewReader(r.Body, params["boundary"])
-		profiles = profiles[:0]
 		for {
 			p, err := mr.NextPart()
 			if err == io.EOF {
@@ -381,20 +297,37 @@ func TestAllUploaded(t *testing.T) {
 			if err != nil {
 				t.Fatalf("next part: %s", err)
 			}
-			if p.FileName() == "pprof-data" {
+			if strings.Contains(p.FormName(), "pprof") && p.FileName() == "pprof-data" {
+				prof, err := pprofile.Parse(p)
+				if err != nil {
+					t.Fatalf("parsing pprof: %s", err)
+				}
+				err = prof.CheckValid()
+				if err != nil {
+					t.Fatalf("invalid pprof: %s", err)
+				}
+				profiles = append(profiles, p.FormName())
+			}
+			if strings.Contains(p.FormName(), "json") && p.FileName() == "pprof-data" {
+				data, err := ioutil.ReadAll(p)
+				if err != nil {
+					t.Fatalf("reading form data: %s", err)
+				}
+				if !json.Valid(data) {
+					t.Fatalf("metrics JSON invalid: %s", data)
+				}
 				profiles = append(profiles, p.FormName())
 			}
 		}
 	}))
 	defer server.Close()
 
-	// re-implemented testing.T.Setenv since that function requires Go 1.17
-	old, ok := os.LookupEnv("DD_PROFILING_WAIT_PROFILE")
-	os.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
-	if ok {
-		defer os.Setenv("DD_PROFILING_WAIT_PROFILE", old)
-	} else {
-		defer os.Unsetenv("DD_PROFILING_WAIT_PROFILE")
+	testSetenv(t, "DD_PROFILING_WAIT_PROFILE", "1")
+	period := 10 * time.Millisecond
+	cpuDuration := time.Millisecond
+	if !testing.Short() {
+		period = 1 * time.Second
+		cpuDuration = 1 * time.Second
 	}
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
@@ -403,14 +336,15 @@ func TestAllUploaded(t *testing.T) {
 			CPUProfile,
 			GoroutineProfile,
 			HeapProfile,
+			MetricsProfile,
 			MutexProfile,
 		),
-		WithPeriod(10*time.Millisecond),
-		CPUDuration(1*time.Millisecond),
+		WithPeriod(period),
+		CPUDuration(cpuDuration),
 	)
 	defer Stop()
 	<-received
-	<-received
+	profiles := <-received
 
 	expected := []string{
 		"data[cpu.pprof]",
@@ -420,6 +354,83 @@ func TestAllUploaded(t *testing.T) {
 		"data[goroutines.pprof]",
 		"data[goroutineswait.pprof]",
 	}
+	if !testing.Short() {
+		expected = append(expected, "data[metrics.json]")
+	}
 	sort.Strings(profiles)
 	assert.Equal(t, expected, profiles)
+}
+
+func TestGoroutineWaitGoroutineLimit(t *testing.T) {
+	exit := make(chan struct{})
+	defer func() {
+		close(exit)
+	}()
+
+	limit := 256
+	testSetenv(t, "DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES", strconv.Itoa(limit))
+	var ready sync.WaitGroup
+	for i := 0; i < limit+1; i++ {
+		ready.Add(1)
+		go func() {
+			ready.Done()
+			<-exit
+		}()
+	}
+	// Make sure all the goroutines have actually started before we continue
+	ready.Wait()
+
+	received := make(chan []string)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var profiles []string
+		defer func() {
+			select {
+			case received <- profiles:
+			default:
+			}
+		}()
+		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil {
+			t.Fatalf("bad media type: %s", err)
+		}
+		mr := multipart.NewReader(r.Body, params["boundary"])
+		for {
+			p, err := mr.NextPart()
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				t.Fatalf("next part: %s", err)
+			}
+			if strings.Contains(p.FormName(), "pprof") && p.FileName() == "pprof-data" {
+				profiles = append(profiles, p.FormName())
+			}
+		}
+	}))
+	defer server.Close()
+
+	testSetenv(t, "DD_PROFILING_WAIT_PROFILE", "1")
+
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithPeriod(10*time.Millisecond),
+		CPUDuration(time.Millisecond),
+	)
+	defer Stop()
+	profiles := <-received
+
+	assert.NotContains(t, profiles, "data[goroutineswait.pprof]")
+}
+
+func testSetenv(t *testing.T, key, value string) {
+	// re-implemented testing.T.Setenv since that function requires Go 1.17
+	old, ok := os.LookupEnv(key)
+	os.Setenv(key, value)
+	t.Cleanup(func() {
+		if ok {
+			os.Setenv(key, old)
+		} else {
+			os.Unsetenv(key)
+		}
+	})
 }
