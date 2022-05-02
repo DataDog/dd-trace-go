@@ -66,6 +66,10 @@ type config struct {
 	// serviceName specifies the name of this application.
 	serviceName string
 
+	// serviceNameMatch, reports whether span service name and config service name
+	// should match to set application version tag. Defaults to true
+	serviceNameMatch bool
+
 	// version specifies the version of this application
 	version string
 
@@ -179,6 +183,7 @@ func newConfig(opts ...StartOption) *config {
 	c.sampler = NewAllSampler()
 	c.agentAddr = resolveAgentAddr()
 	c.httpClient = defaultHTTPClient()
+	c.serviceNameMatch = true
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
@@ -529,6 +534,14 @@ func WithServiceName(name string) StartOption {
 				"with `WithService` or `DD_SERVICE`; integration service name will not be set.")
 		}
 		globalconfig.SetServiceName("")
+	}
+}
+
+// WithServiceNameMatch allows specifying whether span service name and config service name
+// should match to set application version tag
+func WithServiceNameMatch(shouldMatch bool) StartOption {
+	return func(c *config) {
+		c.serviceNameMatch = shouldMatch
 	}
 }
 

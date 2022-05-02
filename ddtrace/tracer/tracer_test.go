@@ -1391,8 +1391,19 @@ func TestVersion(t *testing.T) {
 		assert.Equal("4.5.6", v)
 	})
 
-	t.Run("unset", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"), WithService("servenv"))
+	t.Run("unset/match-disabled", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"),
+			WithService("servenv"), WithServiceNameMatch(false))
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request", ServiceName("otherservenv")).(*span)
+		_, ok := sp.Meta[ext.Version]
+		assert.True(ok)
+	})
+	t.Run("unset/match-enabled", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"),
+			WithService("servenv"), WithServiceNameMatch(true))
 		defer stop()
 
 		assert := assert.New(t)
