@@ -15,6 +15,11 @@ package waf
 // #include <stdlib.h>
 // #include <string.h>
 // #include "ddwaf.h"
+// // Forward declaration of the Go function go_ddwaf_object_free which is a Go
+// // function defined and exported into C by CGO in this file.
+// // This allows to reference this symbol with the C wrapper and pass its
+// // pointer to ddwaf_context_init.
+// void go_ddwaf_object_free(ddwaf_object*);
 // #cgo CFLAGS: -I${SRCDIR}/include
 // #cgo linux,amd64 LDFLAGS: -L${SRCDIR}/lib/linux-amd64 -lddwaf -lm -ldl -Wl,-rpath=/lib64:/usr/lib64:/usr/local/lib64:/lib:/usr/lib:/usr/local/lib
 // #cgo darwin,amd64 LDFLAGS: -L${SRCDIR}/lib/darwin-amd64 -lddwaf -lstdc++
@@ -128,7 +133,7 @@ func NewHandle(jsonRule []byte, keyRegex, valueRegex string) (*Handle, error) {
 	incNbLiveCObjects()
 
 	// Decode the ruleset information returned by the WAF
-	errors, err := decodeMap((*wafObject)(&wafRInfo.errors))
+	errors, err := decodeErrors((*wafObject)(&wafRInfo.errors))
 	if err != nil {
 		C.ddwaf_destroy(handle)
 		decNbLiveCObjects()
@@ -198,8 +203,10 @@ func (waf *Handle) Close() {
 // become available. Each request must have its own Context.
 type Context struct {
 	waf *Handle
-	// Cumulated WAF runtime - in nanoseconds - for this context.
+	// Cumulated internal WAF run time - in nanoseconds - for this context.
 	totalRuntimeNs AtomicU64
+	// Cumulated overall run time - in nanoseconds - for this context.
+	totalOverallRuntimeNs AtomicU64
 	// Cumulated timeout count for this context.
 	timeoutCount AtomicU64
 
@@ -220,7 +227,7 @@ func NewContext(waf *Handle) *Context {
 		waf.mu.RUnlock()
 		return nil
 	}
-	context := C.ddwaf_context_init(waf.handle, nil)
+	context := C.ddwaf_context_init(waf.handle, C.ddwaf_object_free_fn(C.go_ddwaf_object_free))
 	if context == nil {
 		return nil
 	}
@@ -233,6 +240,15 @@ func NewContext(waf *Handle) *Context {
 
 // Run the WAF with the given Go values and timeout.
 func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (matches []byte, err error) {
+	now := time.Now()
+	defer func() {
+		dt := time.Since(now)
+		c.totalOverallRuntimeNs.Add(uint64(dt.Nanoseconds()))
+	}()
+	return c.run(values, timeout)
+}
+
+func (c *Context) run(values map[string]interface{}, timeout time.Duration) (matches []byte, err error) {
 	if len(values) == 0 {
 		return
 	}
@@ -240,7 +256,6 @@ func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (mat
 	if err != nil {
 		return nil, err
 	}
-	defer freeWO(wafValue)
 	return c.runWAF(wafValue, timeout)
 }
 
@@ -271,13 +286,13 @@ func (c *Context) Close() {
 
 // TotalRuntime returns the cumulated waf runtime across various run calls within the same WAF context.
 // Returned time is in nanoseconds.
-func (c *Context) TotalRuntime() uint64 {
-	return uint64(c.totalRuntimeNs)
+func (c *Context) TotalRuntime() (overallRuntimeNs, internalRuntimeNs uint64) {
+	return c.totalOverallRuntimeNs.Load(), c.totalRuntimeNs.Load()
 }
 
 // TotalTimeouts returns the cumulated amount of WAF timeouts across various run calls within the same WAF context.
 func (c *Context) TotalTimeouts() uint64 {
-	return uint64(c.timeoutCount)
+	return c.timeoutCount.Load()
 }
 
 // Translate libddwaf return values into return values suitable to a Go program.
@@ -580,6 +595,17 @@ func (e *encoder) encodeUint64(n uint64, wo *wafObject) error {
 	return e.encodeString(strconv.FormatUint(n, 10), wo)
 }
 
+func decodeErrors(wo *wafObject) (map[string]interface{}, error) {
+	v, err := decodeMap(wo)
+	if err != nil {
+		return nil, err
+	}
+	if len(v) == 0 {
+		v = nil // enforce a nil map when the ddwaf map was empty
+	}
+	return v, nil
+}
+
 func decodeObject(wo *wafObject) (v interface{}, err error) {
 	if wo == nil {
 		return nil, errNilObjectPtr
@@ -791,11 +817,6 @@ func cstring(str string, maxLength int) (*C.char, int, error) {
 	return cstr, l, nil
 }
 
-func cFree(ptr unsafe.Pointer) {
-	C.free(ptr)
-	decNbLiveCObjects()
-}
-
 func freeWO(v *wafObject) {
 	if v == nil {
 		return
@@ -825,4 +846,16 @@ func freeWOContainer(v *wafObject) {
 	if a := *v.arrayValuePtr(); a != nil {
 		cFree(unsafe.Pointer(a))
 	}
+}
+
+func cFree(ptr unsafe.Pointer) {
+	C.free(ptr)
+	decNbLiveCObjects()
+}
+
+// Exported Go function to free ddwaf objects by using freeWO in order to keep
+// its dummy but efficient memory kallocation monitoring.
+//export go_ddwaf_object_free
+func go_ddwaf_object_free(v *C.ddwaf_object) {
+	freeWO((*wafObject)(v))
 }

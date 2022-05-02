@@ -229,11 +229,6 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 	if t.locked {
 		return
 	}
-	if t.root == nil {
-		// this trace is distributed (no local root); modifications
-		// to the sampling priority are not allowed.
-		t.locked = true
-	}
 	if t.priority == nil {
 		t.priority = new(float64)
 	}

@@ -24,6 +24,7 @@ const (
 	tagAWSOperation  = "aws.operation"
 	tagAWSRegion     = "aws.region"
 	tagAWSRetryCount = "aws.retry_count"
+	tagAWSRequestID  = "aws.request_id"
 )
 
 type handlers struct {
@@ -78,6 +79,7 @@ func (h *handlers) Complete(req *request.Request) {
 		return
 	}
 	span.SetTag(tagAWSRetryCount, req.RetryCount)
+	span.SetTag(tagAWSRequestID, req.RequestID)
 	if req.HTTPResponse != nil {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(req.HTTPResponse.StatusCode))
 	}
