@@ -563,6 +563,7 @@ const (
 	keySamplingPriority        = "_sampling_priority_v1"
 	keySamplingPriorityRate    = "_dd.agent_psr"
 	keyDecisionMaker           = "_dd.p.dm"
+	keyServiceHash             = "_dd.dm.service_hash"
 	keyOrigin                  = "_dd.origin"
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"

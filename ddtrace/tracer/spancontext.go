@@ -99,7 +99,7 @@ func (c *spanContext) setSamplingPriority(service string, p int, sampler sampler
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	c.trace.setSamplingPriority(service, p, sampler, rate)
+	c.trace.setSamplingPriority(service, p, sampler, rate, c.span)
 }
 
 func (c *spanContext) samplingPriority() (p int, ok bool) {
@@ -197,10 +197,10 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-func (t *trace) setSamplingPriority(service string, p int, sampler samplernames.SamplerName, rate float64) {
+func (t *trace) setSamplingPriority(service string, p int, sampler samplernames.SamplerName, rate float64, span *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setSamplingPriorityLocked(service, p, sampler, rate)
+	t.setSamplingPriorityLocked(service, p, sampler, rate, span)
 }
 
 func (t *trace) keep() {
@@ -225,7 +225,7 @@ func (t *trace) setPropagatingTag(key, value string) {
 	t.propagatingTags[key] = value
 }
 
-func (t *trace) setSamplingPriorityLocked(service string, p int, sampler samplernames.SamplerName, rate float64) {
+func (t *trace) setSamplingPriorityLocked(service string, p int, sampler samplernames.SamplerName, rate float64, span *span) {
 	if t.locked {
 		return
 	}
@@ -235,20 +235,27 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 	*t.priority = float64(p)
 	_, ok := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && !ok {
-		t.setServiceDecisionMaker(service, sampler)
+		t.setServiceDecisionMaker(service, sampler, span)
 	}
 	if p <= 0 && ok {
 		delete(t.propagatingTags, keyDecisionMaker)
 	}
 }
 
-func (t *trace) setServiceDecisionMaker(service string, sampler samplernames.SamplerName) {
-	serviceHash := ""
+// setServiceDecisionMaker sets metadata about the sampling decision made for this trace and span
+// it is not safe for concurrent use
+func (t *trace) setServiceDecisionMaker(service string, sampler samplernames.SamplerName, s *span) {
+	serviceHash := servicehash.Hash(service)
+	propagatedHash := ""
 	tr, haveTracer := internal.GetGlobalTracer().(*tracer)
 	if haveTracer && tr.config.propagateServiceName {
-		serviceHash = servicehash.Hash(service)
+		propagatedHash = serviceHash
 	}
-	t.setPropagatingTag(keyDecisionMaker, serviceHash+"-"+strconv.Itoa(int(sampler)))
+	t.setPropagatingTag(keyDecisionMaker, propagatedHash+"-"+strconv.Itoa(int(sampler)))
+	if s == nil {
+		return
+	}
+	s.setMeta(keyServiceHash, serviceHash)
 }
 
 // push pushes a new span into the trace. If the buffer is full, it returns
@@ -271,7 +278,7 @@ func (t *trace) push(sp *span) {
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
-		t.setSamplingPriorityLocked(sp.Service, int(v), samplernames.Upstream, math.NaN())
+		t.setSamplingPriorityLocked(sp.Service, int(v), samplernames.Upstream, math.NaN(), nil)
 	}
 	t.spans = append(t.spans, sp)
 	if haveTracer {
