@@ -422,7 +422,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		delete(span.Metrics, keyMeasured)
 	}
 	if t.config.version != "" {
-		if !t.config.serviceNameMatch || (t.config.serviceNameMatch && span.Service == t.config.serviceName) {
+		if t.config.universalVersion || (!t.config.universalVersion && span.Service == t.config.serviceName) {
 			span.setMeta(ext.Version, t.config.version)
 		}
 	}

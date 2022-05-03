@@ -66,9 +66,9 @@ type config struct {
 	// serviceName specifies the name of this application.
 	serviceName string
 
-	// serviceNameMatch, reports whether span service name and config service name
-	// should match to set application version tag. Defaults to true
-	serviceNameMatch bool
+	// universalVersion, reports whether span service name and config service name
+	// should match to set application version tag. False by default
+	universalVersion bool
 
 	// version specifies the version of this application
 	version string
@@ -183,7 +183,6 @@ func newConfig(opts ...StartOption) *config {
 	c.sampler = NewAllSampler()
 	c.agentAddr = resolveAgentAddr()
 	c.httpClient = defaultHTTPClient()
-	c.serviceNameMatch = true
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
@@ -537,15 +536,6 @@ func WithServiceName(name string) StartOption {
 	}
 }
 
-// WithUniversalVersion allows specifying whether span service name and config service name
-// should match to set application version tag
-// See: WithService, WithServiceVersion
-func WithUniversalVersion(shouldMatch bool) StartOption {
-	return func(c *config) {
-		c.serviceNameMatch = shouldMatch
-	}
-}
-
 // WithService sets the default service name for the program.
 func WithService(name string) StartOption {
 	return func(c *config) {
@@ -670,10 +660,22 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 }
 
 // WithServiceVersion specifies the version of the service that is running. This will
-// be included in spans from this service in the "version" tag.
+// be included in spans from this service in the "version" tag, provided that
+// span service name and config service name match. Do NOT use with WithUniversalVersion.
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
 		cfg.version = version
+		cfg.universalVersion = false
+	}
+}
+
+// WithUniversalVersion specifies the version of the service that is running, and will be applied to all spans,
+// regardless of whether span service name and config service name match.
+// See: WithService, WithServiceVersion. Do NOT use with WithServiceVersion.
+func WithUniversalVersion(version string) StartOption {
+	return func(c *config) {
+		c.version = version
+		c.universalVersion = true
 	}
 }
 
