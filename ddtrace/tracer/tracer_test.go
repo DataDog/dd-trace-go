@@ -1387,9 +1387,40 @@ func TestVersion(t *testing.T) {
 		v := sp.Meta[ext.Version]
 		assert.Equal("4.5.6", v)
 	})
+	t.Run("service", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"),
+			WithService("servenv"))
+		defer stop()
 
-	t.Run("unset", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"), WithService("servenv"))
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request", ServiceName("otherservenv")).(*span)
+		_, ok := sp.Meta[ext.Version]
+		assert.False(ok)
+	})
+	t.Run("universal", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithService("servenv"), WithUniversalVersion("4.5.6"))
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request", ServiceName("otherservenv")).(*span)
+		v, ok := sp.Meta[ext.Version]
+		assert.True(ok)
+		assert.Equal("4.5.6", v)
+	})
+	t.Run("service/universal", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"),
+			WithService("servenv"), WithUniversalVersion("1.2.3"))
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request", ServiceName("otherservenv")).(*span)
+		v, ok := sp.Meta[ext.Version]
+		assert.True(ok)
+		assert.Equal("1.2.3", v)
+	})
+	t.Run("universal/service", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithUniversalVersion("1.2.3"),
+			WithServiceVersion("4.5.6"), WithService("servenv"))
 		defer stop()
 
 		assert := assert.New(t)
