@@ -26,11 +26,11 @@ Requires:
 
 ### Documentation
 
-The API is documented on [godoc](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace) as well as Datadog's official documentation for [Tracing Go Applications](https://docs.datadoghq.com/tracing/setup/go/) and the [Continuous Go Profiler](https://docs.datadoghq.com/tracing/profiler/enabling/go). If you are migrating from an older version of the tracer (e.g. 0.6.x) you may also find the [migration document](https://github.com/DataDog/dd-trace-go/blob/v1/MIGRATING.md) we've put together helpful.
+The API is documented on [godoc](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace) as well as Datadog's official documentation for [Tracing Go Applications](https://docs.datadoghq.com/tracing/setup/go/) and the [Continuous Go Profiler](https://docs.datadoghq.com/tracing/profiler/enabling/go). If you are migrating from an older version of the tracer (e.g. 0.6.x) you may also find the [migration document](MIGRATING.md) we've put together helpful.
 
 ### Contributing
 
-Before considering contributions to the project, please take a moment to read our brief [contribution guidelines](https://github.com/DataDog/dd-trace-go/blob/v1/CONTRIBUTING.md).
+Before considering contributions to the project, please take a moment to read our brief [contribution guidelines](CONTRIBUTING.md).
 
 ### Testing
 
@@ -39,7 +39,7 @@ we vendor this version of the library inside the integration. Under normal circu
 might be running versions different from the vendored one, creating hard to debug conflicts.
 
 To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To get an
-idea about the versions and the set-up take a look at our [CI config](https://github.com/DataDog/dd-trace-go/blob/v1/.circleci/config.yml).
+idea about the versions and the set-up take a look at our [CI config](./.circleci/config.yml).
 
 The best way to run the entire test suite is using the [CircleCI CLI](https://circleci.com/docs/2.0/local-jobs/). Simply run `circleci build`
 in the repository root. Note that you might have to increase the resources dedicated to Docker to around 4GB.
