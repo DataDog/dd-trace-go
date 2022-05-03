@@ -263,7 +263,7 @@ func TestTextMapPropagatorTraceTagsTooLong(t *testing.T) {
 	assert.True(t, ok)
 	child := tracer.StartSpan("test", ChildOf(sctx))
 	childSpanID := child.Context().(*spanContext).spanID
-	assert.Equal(t, 100, len(sctx.trace.propagatingTags))
+	assert.Equal(t, 101, len(sctx.trace.propagatingTags))
 	dst := map[string]string{}
 	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
 	assert.Nil(t, err)
@@ -276,7 +276,8 @@ func TestTextMapPropagatorTraceTagsTooLong(t *testing.T) {
 }
 
 func TestTextMapPropagatorInvalidTraceTags(t *testing.T) {
-	tracer := newTracer()
+	tracer := newTracer(WithPropagateServiceName(true))
+	internal.SetGlobalTracer(tracer)
 	child := tracer.StartSpan("test")
 	child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello1", "world")  // valid value
 	child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello2", "world,") // invalid value
@@ -288,7 +289,7 @@ func TestTextMapPropagatorInvalidTraceTags(t *testing.T) {
 	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
 	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-trace-id"])
 	assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
-	assertTraceTags(t, "_dd.p.dm=cb965d81-1,_dd.p.hello1=world", dst["x-datadog-tags"])
+	assertTraceTags(t, "_dd.p.dm=cb965d8102-1,_dd.p.hello1=world", dst["x-datadog-tags"])
 	assert.Equal(t, "encoding_error", child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
 }
 

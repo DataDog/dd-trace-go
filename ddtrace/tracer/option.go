@@ -134,6 +134,9 @@ type config struct {
 
 	// enabled reports whether tracing is enabled.
 	enabled bool
+
+	// propagateServiceName reports whether this service's name should be horizontally propagated (as a hash)
+	propagateServiceName bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -225,6 +228,7 @@ func newConfig(opts ...StartOption) *config {
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
+	c.propagateServiceName = internal.BoolEnv("DD_TRACE_X_DATADOG_TAGS_PROPAGATE_SERVICE", false)
 
 	for _, fn := range opts {
 		fn(c)
@@ -514,6 +518,13 @@ func WithLambdaMode(enabled bool) StartOption {
 func WithPropagator(p Propagator) StartOption {
 	return func(c *config) {
 		c.propagator = p
+	}
+}
+
+// WithPropagateServiceName enable service name horizontal propagation
+func WithPropagateServiceName(enabled bool) StartOption {
+	return func(c *config) {
+		c.propagateServiceName = enabled
 	}
 }
 

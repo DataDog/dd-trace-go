@@ -27,7 +27,8 @@ func Hash(service string) string {
 		return hash
 	}
 	hashb := sha256.Sum256([]byte(service))
-	hash = hex.EncodeToString(hashb[:4])
+	// Only grab first 10 characters
+	hash = hex.EncodeToString(hashb[:5])
 	setHashInCache(service, hash)
 	return hash
 }

@@ -235,11 +235,20 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 	*t.priority = float64(p)
 	_, ok := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && !ok {
-		t.setPropagatingTag(keyDecisionMaker, servicehash.Hash(service)+"-"+strconv.Itoa(int(sampler)))
+		t.setServiceDecisionMaker(service, sampler)
 	}
 	if p <= 0 && ok {
 		delete(t.propagatingTags, keyDecisionMaker)
 	}
+}
+
+func (t *trace) setServiceDecisionMaker(service string, sampler samplernames.SamplerName) {
+	serviceHash := ""
+	tr, haveTracer := internal.GetGlobalTracer().(*tracer)
+	if haveTracer && tr.config.propagateServiceName {
+		serviceHash = servicehash.Hash(service)
+	}
+	t.setPropagatingTag(keyDecisionMaker, serviceHash+"-"+strconv.Itoa(int(sampler)))
 }
 
 // push pushes a new span into the trace. If the buffer is full, it returns
