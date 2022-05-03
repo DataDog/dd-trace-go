@@ -57,6 +57,7 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "403", s.Tag(ext.HTTPCode))
 		assert.Equal(t, "PUT", s.Tag(ext.HTTPMethod))
 		assert.Equal(t, "http://s3.us-west-2.amazonaws.com/BUCKET", s.Tag(ext.HTTPURL))
+		assert.NotNil(t, s.Tag(tagAWSRequestID))
 	})
 
 	t.Run("ec2", func(t *testing.T) {

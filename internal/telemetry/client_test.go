@@ -13,7 +13,6 @@ import (
 	"reflect"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,52 +20,31 @@ import (
 )
 
 func TestClient(t *testing.T) {
-	ch := make(chan telemetry.RequestType)
-	var (
-		hb           sync.WaitGroup
-		gotheartbeat int64
-	)
-	hb.Add(1) // signal that we got a heartbeat
+	heartbeat := make(chan struct{})
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := r.Header.Get("DD-Telemetry-Request-Type")
 		if len(h) == 0 {
 			t.Fatal("didn't get telemetry request type header")
 		}
 		if telemetry.RequestType(h) == telemetry.RequestTypeAppHeartbeat {
-			// only keep the first heartbeat in case we happen to get
-			// multiple heartbeats in the waiting interval to avoid flaky
-			// tests
-			if !atomic.CompareAndSwapInt64(&gotheartbeat, 0, 1) {
-				return
+			select {
+			case heartbeat <- struct{}{}:
+			default:
 			}
-			hb.Done()
 		}
-		ch <- telemetry.RequestType(h)
 	}))
 	defer server.Close()
 
-	go func() {
-		client := &telemetry.Client{
-			URL:                server.URL,
-			SubmissionInterval: 5 * time.Millisecond,
-		}
-		client.Start(nil, nil)
-		client.Start(nil, nil) // test idempotence
-		hb.Wait()
-		client.Stop()
-		client.Stop() // test idempotence
-	}()
-
-	var got []telemetry.RequestType
-	for i := 0; i < 3; i++ {
-		header := <-ch
-		got = append(got, header)
+	client := &telemetry.Client{
+		URL:                server.URL,
+		SubmissionInterval: time.Millisecond,
 	}
+	client.Start(nil, nil)
+	client.Start(nil, nil) // test idempotence
+	defer client.Stop()
 
-	want := []telemetry.RequestType{telemetry.RequestTypeAppStarted, telemetry.RequestTypeAppHeartbeat, telemetry.RequestTypeAppClosing}
-	if !reflect.DeepEqual(want, got) {
-		t.Fatalf("wanted %v, got %v", want, got)
-	}
+	<-heartbeat
 }
 
 func TestMetrics(t *testing.T) {
