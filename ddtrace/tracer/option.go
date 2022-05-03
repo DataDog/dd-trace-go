@@ -537,9 +537,10 @@ func WithServiceName(name string) StartOption {
 	}
 }
 
-// WithServiceNameMatch allows specifying whether span service name and config service name
+// WithUniversalVersion allows specifying whether span service name and config service name
 // should match to set application version tag
-func WithServiceNameMatch(shouldMatch bool) StartOption {
+// See: WithService, WithServiceVersion
+func WithUniversalVersion(shouldMatch bool) StartOption {
 	return func(c *config) {
 		c.serviceNameMatch = shouldMatch
 	}

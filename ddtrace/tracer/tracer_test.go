@@ -1393,7 +1393,7 @@ func TestVersion(t *testing.T) {
 
 	t.Run("unset/match-disabled", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"),
-			WithService("servenv"), WithServiceNameMatch(false))
+			WithService("servenv"), WithUniversalVersion(false))
 		defer stop()
 
 		assert := assert.New(t)
@@ -1403,7 +1403,7 @@ func TestVersion(t *testing.T) {
 	})
 	t.Run("unset/match-enabled", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"),
-			WithService("servenv"), WithServiceNameMatch(true))
+			WithService("servenv"), WithUniversalVersion(true))
 		defer stop()
 
 		assert := assert.New(t)
