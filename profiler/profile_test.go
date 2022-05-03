@@ -117,15 +117,14 @@ main;bar 0 0 8 16
 				// followed by prof2 when calling runProfile().
 				deltaProfiler := func(prof1, prof2 []byte, opts ...Option) (*profiler, func()) {
 					returnProfs := [][]byte{prof1, prof2}
-					old := lookupProfile
-					lookupProfile = func(_ string, w io.Writer, _ int) error {
+					p, err := unstartedProfiler(opts...)
+					p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 						_, err := w.Write(returnProfs[0])
 						returnProfs = returnProfs[1:]
 						return err
 					}
-					p, err := unstartedProfiler(opts...)
 					require.NoError(t, err)
-					return p, func() { lookupProfile = old }
+					return p, func() {}
 				}
 
 				t.Run(profType.String(), func(t *testing.T) {
@@ -173,15 +172,12 @@ main;bar 0 0 8 16
 	})
 
 	t.Run("cpu", func(t *testing.T) {
-		defer func(old func(_ io.Writer) error) { startCPUProfile = old }(startCPUProfile)
-		startCPUProfile = func(w io.Writer) error {
+		p, err := unstartedProfiler(CPUDuration(10 * time.Millisecond))
+		p.testHooks.startCPUProfile = func(w io.Writer) error {
 			_, err := w.Write([]byte("my-cpu-profile"))
 			return err
 		}
-		defer func(old func()) { stopCPUProfile = old }(stopCPUProfile)
-		stopCPUProfile = func() {}
-
-		p, err := unstartedProfiler(CPUDuration(10 * time.Millisecond))
+		p.testHooks.stopCPUProfile = func() {}
 		require.NoError(t, err)
 		start := time.Now()
 		profs, err := p.runProfile(CPUProfile)
@@ -193,13 +189,11 @@ main;bar 0 0 8 16
 	})
 
 	t.Run("goroutine", func(t *testing.T) {
-		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-		lookupProfile = func(name string, w io.Writer, _ int) error {
+		p, err := unstartedProfiler()
+		p.testHooks.lookupProfile = func(name string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(name))
 			return err
 		}
-
-		p, err := unstartedProfiler()
 		require.NoError(t, err)
 		profs, err := p.runProfile(GoroutineProfile)
 		require.NoError(t, err)
@@ -230,13 +224,12 @@ main.main()
 ...additional frames elided...
 `
 
-		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-		lookupProfile = func(_ string, w io.Writer, _ int) error {
+		p, err := unstartedProfiler()
+		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(sample))
 			return err
 		}
 
-		p, err := unstartedProfiler()
 		require.NoError(t, err)
 		profs, err := p.runProfile(expGoroutineWaitProfile)
 		require.NoError(t, err)
@@ -315,13 +308,11 @@ main.main()
 		os.Setenv(envVar, strconv.Itoa(limit))
 		defer os.Setenv(envVar, oldVal)
 
-		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-		lookupProfile = func(_ string, w io.Writer, _ int) error {
+		p, err := unstartedProfiler()
+		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(""))
 			return err
 		}
-
-		p, err := unstartedProfiler()
 		require.NoError(t, err)
 		_, err = p.runProfile(expGoroutineWaitProfile)
 		var errRoutines, errLimit int
