@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2022 Datadog, Inc.
 
 package servicehash
 
@@ -27,7 +27,7 @@ func Hash(service string) string {
 		return hash
 	}
 	hashb := sha256.Sum256([]byte(service))
-	// Only grab first 10 characters
+	// Only grab first 10 characters (2 chars per byte * 5 bytes = 10 chars)
 	hash = hex.EncodeToString(hashb[:5])
 	setHashInCache(service, hash)
 	return hash

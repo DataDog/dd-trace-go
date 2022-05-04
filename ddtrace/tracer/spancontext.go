@@ -242,16 +242,16 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 	}
 }
 
-// setServiceDecisionMaker sets metadata about the sampling decision made for this trace and span
-// it is not safe for concurrent use
+// setServiceDecisionMaker sets metadata about the sampling decision made for this trace and span.
+// It is not safe for concurrent use.
 func (t *trace) setServiceDecisionMaker(service string, sampler samplernames.SamplerName, s *span) {
 	serviceHash := servicehash.Hash(service)
-	propagatedHash := ""
 	tr, haveTracer := internal.GetGlobalTracer().(*tracer)
+	var propagatingHash string
 	if haveTracer && tr.config.propagateServiceName {
-		propagatedHash = serviceHash
+		propagatingHash = serviceHash
 	}
-	t.setPropagatingTag(keyDecisionMaker, propagatedHash+"-"+strconv.Itoa(int(sampler)))
+	t.setPropagatingTag(keyDecisionMaker, propagatingHash+"-"+strconv.Itoa(int(sampler)))
 	if s == nil {
 		return
 	}

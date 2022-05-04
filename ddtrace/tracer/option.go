@@ -139,7 +139,7 @@ type config struct {
 	// enabled reports whether tracing is enabled.
 	enabled bool
 
-	// propagateServiceName reports whether this service's name should be horizontally propagated (as a hash)
+	// propagateServiceName reports whether this service's name should be horizontally propagated (as a hash).
 	propagateServiceName bool
 }
 
@@ -525,7 +525,7 @@ func WithPropagator(p Propagator) StartOption {
 	}
 }
 
-// WithPropagateServiceName enable service name horizontal propagation
+// WithPropagateServiceName enable service name horizontal propagation.
 func WithPropagateServiceName(enabled bool) StartOption {
 	return func(c *config) {
 		c.propagateServiceName = enabled

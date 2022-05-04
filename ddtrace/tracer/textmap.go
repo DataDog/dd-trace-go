@@ -263,34 +263,40 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 		return nil
 	}
 	// propagate trace tags
-	var sb strings.Builder
-	if ctx.trace != nil {
-		ctx.trace.mu.Lock()
-		for k, v := range ctx.trace.propagatingTags {
-			if err := isValidPropagatableTraceTag(k, v); err != nil {
-				log.Warn("won't propagate tag '%s' (err: %s)", k, err.Error())
-				ctx.trace.setTag(propagationErrorKey, "encoding_error")
-				continue
-			}
-			if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
-				sb.Reset()
-				log.Warn("won't propagate trace tags (err: max trace tags header len (%d) reached)", p.cfg.MaxTagsHeaderLen)
-				ctx.trace.setTag(propagationErrorKey, "max_size")
-				break
-			}
-			if sb.Len() > 0 {
-				sb.WriteByte(',')
-			}
-			sb.WriteString(k)
-			sb.WriteByte('=')
-			sb.WriteString(v)
-		}
-		ctx.trace.mu.Unlock()
-		if sb.Len() > 0 {
-			writer.Set(traceTagsHeader, sb.String())
-		}
+	sb := p.formatPropagatingTags(ctx)
+	if sb.Len() > 0 {
+		writer.Set(traceTagsHeader, sb.String())
 	}
 	return nil
+}
+
+func (p *propagator) formatPropagatingTags(ctx *spanContext) strings.Builder {
+	var sb strings.Builder
+	if ctx.trace == nil {
+		return sb
+	}
+	ctx.trace.mu.Lock()
+	defer ctx.trace.mu.Unlock()
+	for k, v := range ctx.trace.propagatingTags {
+		if err := isValidPropagatableTraceTag(k, v); err != nil {
+			log.Warn("won't propagate tag '%s' (err: %s)", k, err.Error())
+			ctx.trace.setTag(propagationErrorKey, "encoding_error")
+			continue
+		}
+		if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
+			sb.Reset()
+			log.Warn("won't propagate trace tags (err: max trace tags header len (%d) reached)", p.cfg.MaxTagsHeaderLen)
+			ctx.trace.setTag(propagationErrorKey, "max_size")
+			break
+		}
+		if sb.Len() > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(k)
+		sb.WriteByte('=')
+		sb.WriteString(v)
+	}
+	return sb
 }
 
 func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
