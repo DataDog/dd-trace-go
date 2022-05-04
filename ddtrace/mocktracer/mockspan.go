@@ -118,6 +118,9 @@ func (s *mockspan) SetTag(key string, value interface{}) {
 	if s.tags == nil {
 		s.tags = make(map[string]interface{}, 1)
 	}
+	if key == "sql.query_type" {
+		fmt.Printf("New span for type %s\n", value)
+	}
 	if key == ext.SamplingPriority {
 		switch p := value.(type) {
 		case int:
@@ -188,6 +191,7 @@ func (s *mockspan) SetBaggageItem(key, val string) {
 
 // Finish finishes the current span with the given options.
 func (s *mockspan) Finish(opts ...ddtrace.FinishOption) {
+	fmt.Printf("Finishing span with type %v\n", s.Tag("sql.query_type"))
 	var cfg ddtrace.FinishConfig
 	for _, fn := range opts {
 		fn(&cfg)
@@ -212,6 +216,7 @@ func (s *mockspan) Finish(opts ...ddtrace.FinishOption) {
 	s.finished = true
 	s.finishTime = t
 	s.tracer.addFinishedSpan(s)
+	//fmt.Printf("Finished span with type %v\n", s.Tag("sql.query_type"))
 }
 
 // String implements fmt.Stringer.

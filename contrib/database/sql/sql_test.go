@@ -202,6 +202,81 @@ func TestOpenOptions(t *testing.T) {
 	})
 }
 
+func TestCommentInjectionModes(t *testing.T) {
+	testCases := []struct {
+		name                 string
+		options              []Option
+		expectedInjectedTags sqltest.TagInjectionExpectation
+	}{
+		{
+			name:    "default (no injection)",
+			options: []Option{},
+			expectedInjectedTags: sqltest.TagInjectionExpectation{
+				StaticTags:  false,
+				DynamicTags: false,
+			},
+		},
+		{
+			name:    "explicit no injection",
+			options: []Option{WithoutCommentInjection()},
+			expectedInjectedTags: sqltest.TagInjectionExpectation{
+				StaticTags:  false,
+				DynamicTags: false,
+			},
+		},
+		{
+			name:    "static tags injection",
+			options: []Option{WithStaticTagsCommentInjection()},
+			expectedInjectedTags: sqltest.TagInjectionExpectation{
+				StaticTags:  true,
+				DynamicTags: false,
+			},
+		},
+		{
+			name:    "dynamic tags injection",
+			options: []Option{WithCommentInjection()},
+			expectedInjectedTags: sqltest.TagInjectionExpectation{
+				StaticTags:  true,
+				DynamicTags: true,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockTracer := mocktracer.Start()
+			defer mockTracer.Stop()
+
+			Register("postgres", &pq.Driver{}, append(tc.options, WithServiceName("postgres-test"))...)
+			defer unregister("postgres")
+
+			db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
+
+			testConfig := &sqltest.Config{
+				DB:         db,
+				DriverName: "postgres",
+				TableName:  tableName,
+				ExpectName: "postgres.query",
+				ExpectTags: map[string]interface{}{
+					ext.ServiceName: "postgres-test",
+					ext.SpanType:    ext.SpanTypeSQL,
+					ext.TargetHost:  "127.0.0.1",
+					ext.TargetPort:  "5432",
+					ext.DBUser:      "postgres",
+					ext.DBName:      "postgres",
+				},
+				ExpectTagInjection: tc.expectedInjectedTags,
+			}
+
+			sqltest.RunAll(t, testConfig)
+		})
+	}
+}
+
 func TestMySQLUint64(t *testing.T) {
 	Register("mysql", &mysql.MySQLDriver{})
 	db, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")

@@ -13,11 +13,10 @@
 package mocktracer
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -105,6 +104,9 @@ func (t *mocktracer) OpenSpans() []Span {
 func (t *mocktracer) FinishedSpans() []Span {
 	t.RLock()
 	defer t.RUnlock()
+	for _, s := range t.finishedSpans {
+		fmt.Printf("returning finished span of type %v\n", s.Tag("sql.query_type"))
+	}
 	return t.finishedSpans
 }
 
@@ -222,41 +224,30 @@ func (t *mocktracer) InjectWithOptions(context ddtrace.SpanContext, carrier inte
 	}
 
 	if cfg.TraceIDKey != "" {
-		writer.Set(cfg.TraceIDKey, strconv.FormatUint(ctx.traceID, 10))
+		writer.Set(cfg.TraceIDKey, "test-trace-id")
 	}
 
 	if cfg.SpanIDKey != "" {
-		writer.Set(cfg.SpanIDKey, strconv.FormatUint(ctx.spanID, 10))
+		writer.Set(cfg.SpanIDKey, "test-span-id")
 	}
 
 	if cfg.SamplingPriorityKey != "" {
-		if ctx.hasSamplingPriority() {
-			writer.Set(cfg.SamplingPriorityKey, strconv.Itoa(ctx.priority))
-		}
+		writer.Set(cfg.SamplingPriorityKey, strconv.Itoa(ctx.priority))
 	}
 
 	if cfg.EnvKey != "" {
-		envRaw := ctx.span.Tag(ext.Environment)
-		if env, ok := envRaw.(string); ok {
-			writer.Set(cfg.EnvKey, env)
-		}
+		writer.Set(cfg.EnvKey, "test-env")
 	}
 
 	if cfg.ParentVersionKey != "" {
-		versionRaw := ctx.span.Tag(ext.ParentVersion)
-		if version, ok := versionRaw.(string); ok {
-			writer.Set(cfg.ParentVersionKey, version)
-		}
+		writer.Set(cfg.ParentVersionKey, "v-test")
 	}
 
 	if cfg.ServiceNameKey != "" {
-		serviceNameRaw := ctx.span.Tag(ext.ServiceName)
-		if serviceName, ok := serviceNameRaw.(string); ok {
-			writer.Set(cfg.ServiceNameKey, serviceName)
-		}
+		writer.Set(cfg.ServiceNameKey, "test-service")
 	}
 
-	sqlCommentCarrier, ok := carrier.(tracer.SQLCommentCarrier)
+	sqlCommentCarrier, ok := carrier.(*tracer.SQLCommentCarrier)
 	if ok {
 		// Save injected comments to assert the sql commenting behavior
 		t.injectedComments = append(t.injectedComments, sqlCommentCarrier.CommentedQuery(""))

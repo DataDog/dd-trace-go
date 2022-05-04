@@ -150,6 +150,8 @@ func testQuery(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, querySpan.Tag(k), "Value mismatch on tag %s", k)
 		}
+
+		assertInjectedComments(t, cfg, false)
 	}
 }
 
@@ -180,6 +182,8 @@ func testStatement(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
+
+		assertInjectedComments(t, cfg, true)
 
 		cfg.mockTracer.Reset()
 		_, err2 := stmt.Exec("New York")
@@ -288,12 +292,45 @@ func testExec(cfg *Config) func(*testing.T) {
 				span = s
 			}
 		}
+		assertInjectedComments(t, cfg, false)
+
 		assert.NotNil(span, "span not found")
 		cfg.ExpectTags["sql.query_type"] = "Commit"
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
 	}
+}
+
+func assertInjectedComments(t *testing.T, cfg *Config, discardDynamicTags bool) {
+	c := cfg.mockTracer.InjectedComments()
+	carrier := tracer.SQLCommentCarrier{}
+	for k, v := range expectedInjectedTags(cfg, discardDynamicTags) {
+		carrier.Set(k, v)
+	}
+
+	if !cfg.ExpectTagInjection.StaticTags && !cfg.ExpectTagInjection.DynamicTags {
+		assert.Len(t, c, 0)
+	} else {
+		require.Len(t, c, 1)
+		assert.Equal(t, carrier.CommentedQuery(""), c[0])
+	}
+}
+
+func expectedInjectedTags(cfg *Config, discardDynamicTags bool) map[string]string {
+	expectedInjectedTags := make(map[string]string)
+	// Prepare statements should never have dynamic tags injected so we only check if static tags are expected
+	if cfg.ExpectTagInjection.StaticTags {
+		expectedInjectedTags[tracer.ServiceNameSQLCommentKey] = "test-service"
+		expectedInjectedTags[tracer.ServiceEnvironmentSQLCommentKey] = "test-env"
+		expectedInjectedTags[tracer.ServiceVersionSQLCommentKey] = "v-test"
+	}
+	if cfg.ExpectTagInjection.DynamicTags && !discardDynamicTags {
+		expectedInjectedTags[tracer.SamplingPrioritySQLCommentKey] = "0"
+		expectedInjectedTags[tracer.TraceIDSQLCommentKey] = "test-trace-id"
+		expectedInjectedTags[tracer.SpanIDSQLCommentKey] = "test-span-id"
+	}
+	return expectedInjectedTags
 }
 
 func verifyConnectSpan(span mocktracer.Span, assert *assert.Assertions, cfg *Config) {
@@ -304,12 +341,19 @@ func verifyConnectSpan(span mocktracer.Span, assert *assert.Assertions, cfg *Con
 	}
 }
 
+// TagInjectionExpectation holds expectations relating to tag injection
+type TagInjectionExpectation struct {
+	StaticTags  bool
+	DynamicTags bool
+}
+
 // Config holds the test configuration.
 type Config struct {
 	*sql.DB
-	mockTracer mocktracer.Tracer
-	DriverName string
-	TableName  string
-	ExpectName string
-	ExpectTags map[string]interface{}
+	mockTracer         mocktracer.Tracer
+	DriverName         string
+	TableName          string
+	ExpectName         string
+	ExpectTags         map[string]interface{}
+	ExpectTagInjection TagInjectionExpectation
 }

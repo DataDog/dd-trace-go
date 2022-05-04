@@ -15,6 +15,7 @@ type SQLCommentCarrier struct {
 	tags               map[string]string
 }
 
+// Values for sql comment keys
 const (
 	SamplingPrioritySQLCommentKey   = "ddsp"
 	TraceIDSQLCommentKey            = "ddtid"
@@ -53,8 +54,12 @@ func commentWithTags(tags map[string]string) (comment string) {
 func (c *SQLCommentCarrier) CommentedQuery(query string) (commented string) {
 	comment := commentWithTags(c.tags)
 
-	if comment == "" || query == "" {
+	if comment == "" {
 		return query
+	}
+
+	if query == "" {
+		return comment
 	}
 
 	return fmt.Sprintf("%s %s", comment, query)

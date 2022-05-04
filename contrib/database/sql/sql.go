@@ -142,7 +142,7 @@ func (t *tracedConnector) Connect(ctx context.Context) (c driver.Conn, err error
 		tp.meta, _ = internal.ParseDSN(t.driverName, t.cfg.dsn)
 	}
 	start := time.Now()
-	span := tp.tryStartTrace(ctx, queryTypeConnect, "", start, &tracer.SQLCommentCarrier{}, err)
+	span := tp.tryStartTrace(ctx, queryTypeConnect, "", start, nil, err)
 	if span != nil {
 		go func() {
 			span.Finish(tracer.WithError(err))
@@ -192,6 +192,9 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	}
 	if math.IsNaN(cfg.analyticsRate) {
 		cfg.analyticsRate = rc.analyticsRate
+	}
+	if cfg.commentInjectionMode == 0 {
+		cfg.commentInjectionMode = rc.commentInjectionMode
 	}
 	cfg.childSpansOnly = rc.childSpansOnly
 	tc := &tracedConnector{
