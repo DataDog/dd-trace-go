@@ -74,7 +74,7 @@ require (
 	github.com/philhofer/fwd v1.1.1 // indirect
 	github.com/pierrec/lz4 v2.5.2+incompatible // indirect
 	github.com/segmentio/kafka-go v0.4.29
-	github.com/stretchr/objx v0.2.0 // indirect
+	github.com/sirupsen/logrus v1.7.0
 	github.com/stretchr/testify v1.7.0
 	github.com/syndtr/goleveldb v1.0.0
 	github.com/tidwall/btree v1.1.0 // indirect
