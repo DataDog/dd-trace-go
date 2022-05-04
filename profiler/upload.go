@@ -87,12 +87,7 @@ func (p *profiler) doRequest(bat batch) error {
 		}
 		cancel()
 	}()
-	// TODO(fg) use NewRequestWithContext once go 1.12 support is dropped.
-	req, err := http.NewRequest("POST", p.cfg.targetURL, body)
-	if err != nil {
-		return err
-	}
-	req = req.WithContext(ctx)
+	req, err := http.NewRequestWithContext(ctx, "POST", p.cfg.targetURL, body)
 	if p.cfg.apiKey != "" {
 		req.Header.Set("DD-API-KEY", p.cfg.apiKey)
 	}
