@@ -39,11 +39,12 @@ func (t *tracedTx) Commit() (err error) {
 func (t *tracedTx) Rollback() (err error) {
 	start := time.Now()
 	span := t.tryStartTrace(t.ctx, queryTypeRollback, "", start, &tracer.SQLCommentCarrier{}, err)
-	err = t.Tx.Rollback()
 	if span != nil {
 		go func() {
 			span.Finish(tracer.WithError(err))
 		}()
 	}
+	err = t.Tx.Rollback()
+
 	return err
 }

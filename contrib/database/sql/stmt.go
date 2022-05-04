@@ -27,13 +27,14 @@ type tracedStmt struct {
 // Close sends a span before closing a statement
 func (s *tracedStmt) Close() (err error) {
 	start := time.Now()
-	err = s.Stmt.Close()
 	span := s.tryStartTrace(s.ctx, queryTypeClose, "", start, &tracer.SQLCommentCarrier{}, err)
 	if span != nil {
 		go func() {
 			span.Finish(tracer.WithError(err))
 		}()
 	}
+	err = s.Stmt.Close()
+
 	return err
 }
 
@@ -75,13 +76,13 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
 	start := time.Now()
 	if stmtQueryContext, ok := s.Stmt.(driver.StmtQueryContext); ok {
+		rows, err := stmtQueryContext.QueryContext(ctx, args)
 		span := s.tryStartTrace(ctx, queryTypeQuery, s.query, start, &tracer.SQLCommentCarrier{}, err)
 		if span != nil {
 			go func() {
 				span.Finish(tracer.WithError(err))
 			}()
 		}
-		rows, err := stmtQueryContext.QueryContext(ctx, args)
 
 		return rows, err
 	}

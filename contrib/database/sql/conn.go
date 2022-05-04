@@ -77,7 +77,7 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 				span.Finish(tracer.WithError(err))
 			}()
 		}
-		stmt, err := connPrepareCtx.PrepareContext(ctx, sqlCommentCarrier.CommentedQuery(query))
+		stmt, err := connPrepareCtx.PrepareContext(tracer.ContextWithSpan(ctx, span), sqlCommentCarrier.CommentedQuery(query))
 		if err != nil {
 			return nil, err
 		}
@@ -139,14 +139,15 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 func (tc *tracedConn) Ping(ctx context.Context) (err error) {
 	start := time.Now()
 	if pinger, ok := tc.Conn.(driver.Pinger); ok {
+		span := tc.tryStartTrace(ctx, queryTypePing, "", start, &tracer.SQLCommentCarrier{}, err)
+		if span != nil {
+			go func() {
+				span.Finish(tracer.WithError(err))
+			}()
+		}
 		err = pinger.Ping(ctx)
 	}
-	span := tc.tryStartTrace(ctx, queryTypePing, "", start, &tracer.SQLCommentCarrier{}, err)
-	if span != nil {
-		go func() {
-			span.Finish(tracer.WithError(err))
-		}()
-	}
+
 	return err
 }
 
@@ -224,6 +225,7 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 
 // tryStartTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
 func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query string, startTime time.Time, sqlCommentCarrier *tracer.SQLCommentCarrier, err error) (span tracer.Span) {
+	fmt.Printf("Executing query type %s\n", qtype)
 	if err == driver.ErrSkip {
 		// Not a user error: driver is telling sql package that an
 		// optional interface method is not implemented. There is

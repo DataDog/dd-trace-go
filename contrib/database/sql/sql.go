@@ -131,7 +131,7 @@ type tracedConnector struct {
 	cfg        *config
 }
 
-func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
+func (t *tracedConnector) Connect(ctx context.Context) (c driver.Conn, err error) {
 	tp := &traceParams{
 		driverName: t.driverName,
 		cfg:        t.cfg,
@@ -142,13 +142,13 @@ func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 		tp.meta, _ = internal.ParseDSN(t.driverName, t.cfg.dsn)
 	}
 	start := time.Now()
-	conn, err := t.connector.Connect(ctx)
 	span := tp.tryStartTrace(ctx, queryTypeConnect, "", start, &tracer.SQLCommentCarrier{}, err)
 	if span != nil {
 		go func() {
 			span.Finish(tracer.WithError(err))
 		}()
 	}
+	conn, err := t.connector.Connect(tracer.ContextWithSpan(ctx, span))
 	if err != nil {
 		return nil, err
 	}
