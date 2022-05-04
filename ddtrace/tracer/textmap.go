@@ -148,6 +148,69 @@ func NewPropagator(cfg *PropagatorConfig) Propagator {
 	}
 }
 
+// NewInjector returns a new experimental injector which uses TextMap to inject
+// and extract values. It propagates static tags (service name, environment and version) as well
+// as dynamic trace attributes (span id, trace id and sampling priority).
+func NewInjector() ExperimentalInjector {
+	return &experimentalInjector{}
+}
+
+type experimentalInjector struct {
+}
+
+func (i *experimentalInjector) InjectWithOptions(spanCtx ddtrace.SpanContext, carrier interface{}, opts ...ddtrace.InjectionOption) error {
+	switch c := carrier.(type) {
+	case TextMapWriter:
+		return i.injectTextMapWithOptions(spanCtx, c, opts...)
+	default:
+		return ErrInvalidCarrier
+	}
+}
+
+func (i *experimentalInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanContext, writer TextMapWriter, opts ...ddtrace.InjectionOption) error {
+	ctx, ok := spanCtx.(*spanContext)
+	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
+		return ErrInvalidSpanContext
+	}
+
+	cfg := ddtrace.InjectionConfig{}
+	for _, apply := range opts {
+		apply(&cfg)
+	}
+
+	if cfg.TraceIDKey != "" {
+		writer.Set(cfg.TraceIDKey, strconv.FormatUint(ctx.traceID, 10))
+	}
+
+	if cfg.SpanIDKey != "" {
+		writer.Set(cfg.SpanIDKey, strconv.FormatUint(ctx.spanID, 10))
+	}
+
+	if cfg.SamplingPriorityKey != "" {
+		if sp, ok := ctx.samplingPriority(); ok {
+			writer.Set(cfg.SamplingPriorityKey, strconv.Itoa(sp))
+		}
+	}
+
+	if cfg.EnvKey != "" {
+		if env, ok := ctx.meta(ext.Environment); ok {
+			writer.Set(cfg.EnvKey, env)
+		}
+	}
+
+	if cfg.ParentVersionKey != "" {
+		if version, ok := ctx.meta(ext.ParentVersion); ok {
+			writer.Set(cfg.ParentVersionKey, version)
+		}
+	}
+
+	if cfg.ServiceNameKey != "" {
+		writer.Set(cfg.ServiceNameKey, globalconfig.ServiceName())
+	}
+
+	return nil
+}
+
 // chainedPropagator implements Propagator and applies a list of injectors and extractors.
 // When injecting, all injectors are called to propagate the span context.
 // When extracting, it tries each extractor, selecting the first successful one.
@@ -207,19 +270,6 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 	return nil
 }
 
-// InjectWithOptions defines the Propagator to propagate SpanContext data
-// out of the current process. The implementation propagates only the information
-// for which keys are specified by the InjectionConfig build via the options.
-func (p *chainedPropagator) InjectWithOptions(spanCtx ddtrace.SpanContext, carrier interface{}, opts ...InjectionOption) error {
-	for _, v := range p.injectors {
-		err := v.InjectWithOptions(spanCtx, carrier, opts...)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // Extract implements Propagator.
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	for _, v := range p.extractors {
@@ -270,59 +320,6 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	for k, v := range ctx.baggage {
 		writer.Set(p.cfg.BaggagePrefix+k, v)
 	}
-	return nil
-}
-
-func (p *propagator) InjectWithOptions(spanCtx ddtrace.SpanContext, carrier interface{}, opts ...ddtrace.InjectionOption) error {
-	switch c := carrier.(type) {
-	case TextMapWriter:
-		return p.injectTextMapWithOptions(spanCtx, c, opts...)
-	default:
-		return ErrInvalidCarrier
-	}
-}
-
-func (p *propagator) injectTextMapWithOptions(spanCtx ddtrace.SpanContext, writer TextMapWriter, opts ...ddtrace.InjectionOption) error {
-	ctx, ok := spanCtx.(*spanContext)
-	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
-		return ErrInvalidSpanContext
-	}
-
-	cfg := ddtrace.InjectionConfig{}
-	for _, apply := range opts {
-		apply(&cfg)
-	}
-
-	if cfg.TraceIDKey != "" {
-		writer.Set(cfg.TraceIDKey, strconv.FormatUint(ctx.traceID, 10))
-	}
-
-	if cfg.SpanIDKey != "" {
-		writer.Set(cfg.SpanIDKey, strconv.FormatUint(ctx.spanID, 10))
-	}
-
-	if cfg.SamplingPriorityKey != "" {
-		if sp, ok := ctx.samplingPriority(); ok {
-			writer.Set(cfg.SamplingPriorityKey, strconv.Itoa(sp))
-		}
-	}
-
-	if cfg.EnvKey != "" {
-		if env, ok := ctx.meta(ext.Environment); ok {
-			writer.Set(cfg.EnvKey, env)
-		}
-	}
-
-	if cfg.ParentVersionKey != "" {
-		if version, ok := ctx.meta(ext.ParentVersion); ok {
-			writer.Set(cfg.ParentVersionKey, version)
-		}
-	}
-
-	if cfg.ServiceNameKey != "" {
-		writer.Set(cfg.ServiceNameKey, globalconfig.ServiceName())
-	}
-
 	return nil
 }
 
@@ -417,70 +414,6 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 			writer.Set(b3SampledHeader, "0")
 		}
 	}
-	return nil
-}
-
-func (p *propagatorB3) InjectWithOptions(spanCtx ddtrace.SpanContext, carrier interface{}, opts ...ddtrace.InjectionOption) error {
-	switch c := carrier.(type) {
-	case TextMapWriter:
-		return p.injectTextMapWithOptions(spanCtx, c, opts...)
-	default:
-		return ErrInvalidCarrier
-	}
-}
-
-func (*propagatorB3) injectTextMapWithOptions(spanCtx ddtrace.SpanContext, writer TextMapWriter, opts ...ddtrace.InjectionOption) error {
-	ctx, ok := spanCtx.(*spanContext)
-	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
-		return ErrInvalidSpanContext
-	}
-
-	cfg := ddtrace.InjectionConfig{
-		TraceIDKey:          b3TraceIDHeader,
-		SpanIDKey:           b3SpanIDHeader,
-		SamplingPriorityKey: b3SpanIDHeader,
-	}
-
-	for _, apply := range opts {
-		apply(&cfg)
-	}
-
-	if cfg.TraceIDKey != "" {
-		writer.Set(cfg.TraceIDKey, fmt.Sprintf("%016x", ctx.traceID))
-	}
-
-	if cfg.SpanIDKey != "" {
-		writer.Set(cfg.SpanIDKey, fmt.Sprintf("%016x", ctx.spanID))
-	}
-
-	if cfg.SamplingPriorityKey != "" {
-		if p, ok := ctx.samplingPriority(); ok {
-			if p >= ext.PriorityAutoKeep {
-				writer.Set(cfg.SamplingPriorityKey, "1")
-			} else {
-				writer.Set(cfg.SamplingPriorityKey, "0")
-			}
-		}
-	}
-
-	if cfg.EnvKey != "" {
-		if env, ok := ctx.meta(ext.Environment); ok {
-			writer.Set(cfg.EnvKey, env)
-		}
-	}
-
-	if cfg.ParentVersionKey != "" {
-		if version, ok := ctx.meta(ext.Version); ok {
-			writer.Set(cfg.ParentVersionKey, version)
-		}
-	}
-
-	if cfg.ServiceNameKey != "" {
-		if serviceName := globalconfig.ServiceName(); serviceName != "" {
-			writer.Set(cfg.ServiceNameKey, serviceName)
-		}
-	}
-
 	return nil
 }
 

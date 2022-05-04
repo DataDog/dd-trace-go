@@ -96,6 +96,9 @@ type config struct {
 	// propagator propagates span context cross-process
 	propagator Propagator
 
+	// injector injects span context cross-process
+	injector ExperimentalInjector
+
 	// httpClient specifies the HTTP client to be used by the agent's transport.
 	httpClient *http.Client
 
@@ -265,6 +268,9 @@ func newConfig(opts ...StartOption) *config {
 		c.propagator = NewPropagator(&PropagatorConfig{
 			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
 		})
+	}
+	if c.injector == nil {
+		c.injector = NewInjector()
 	}
 	if c.logger != nil {
 		log.UseLogger(c.logger)

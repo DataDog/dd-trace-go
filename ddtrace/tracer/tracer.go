@@ -512,7 +512,7 @@ func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 
 // InjectWithOptions uses the configured or default TextMap Propagator.
 func (t *tracer) InjectWithOptions(ctx ddtrace.SpanContext, carrier interface{}, opts ...InjectionOption) error {
-	return t.config.propagator.InjectWithOptions(ctx, carrier, opts...)
+	return t.config.injector.InjectWithOptions(ctx, carrier, opts...)
 }
 
 // Extract uses the configured or default TextMap Propagator.

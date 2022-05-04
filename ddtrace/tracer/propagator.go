@@ -17,11 +17,18 @@ type Propagator interface {
 	// Inject takes the SpanContext and injects it into the carrier.
 	Inject(context ddtrace.SpanContext, carrier interface{}) error
 
-	// InjectWithOptions takes the SpanContext and injects it into the carrier according to the given options.
-	InjectWithOptions(context ddtrace.SpanContext, carrier interface{}, opts ...InjectionOption) error
-
 	// Extract returns the SpanContext from the given carrier.
 	Extract(carrier interface{}) (ddtrace.SpanContext, error)
+}
+
+// ExperimentalInjector implementations should be able to inject
+// SpanContexts into an implementation specific carrier. It is closely related to
+// Propagator except that it defines an experimental interface allowing more flexibility on
+// which keys are injected.
+// Note that this interface isn't meant to be public and used for other usages than internal ones.
+type ExperimentalInjector interface {
+	// InjectWithOptions takes the SpanContext and injects it into the carrier according to the given options.
+	InjectWithOptions(context ddtrace.SpanContext, carrier interface{}, opts ...InjectionOption) error
 }
 
 // TextMapWriter allows setting key/value pairs of strings on the underlying

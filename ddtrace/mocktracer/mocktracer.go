@@ -35,6 +35,9 @@ type Tracer interface {
 	// FinishedSpans returns the set of finished spans.
 	FinishedSpans() []Span
 
+	// InjectedComments returns the set of sql comments injected on queries.
+	InjectedComments() []string
+
 	// Reset resets the spans and services recorded in the tracer. This is
 	// especially useful when running tests in a loop, where a clean start
 	// is desired for FinishedSpans calls.
@@ -57,9 +60,10 @@ func Start() Tracer {
 }
 
 type mocktracer struct {
-	sync.RWMutex  // guards below spans
-	finishedSpans []Span
-	openSpans     map[uint64]Span
+	sync.RWMutex     // guards below spans
+	finishedSpans    []Span
+	injectedComments []string
+	openSpans        map[uint64]Span
 }
 
 func newMockTracer() *mocktracer {
@@ -104,12 +108,19 @@ func (t *mocktracer) FinishedSpans() []Span {
 	return t.finishedSpans
 }
 
+func (t *mocktracer) InjectedComments() []string {
+	t.RLock()
+	defer t.RUnlock()
+	return t.injectedComments
+}
+
 func (t *mocktracer) Reset() {
 	t.Lock()
 	defer t.Unlock()
 	for k := range t.openSpans {
 		delete(t.openSpans, k)
 	}
+	t.injectedComments = nil
 	t.finishedSpans = nil
 }
 
@@ -243,6 +254,12 @@ func (t *mocktracer) InjectWithOptions(context ddtrace.SpanContext, carrier inte
 		if serviceName, ok := serviceNameRaw.(string); ok {
 			writer.Set(cfg.ServiceNameKey, serviceName)
 		}
+	}
+
+	sqlCommentCarrier, ok := carrier.(tracer.SQLCommentCarrier)
+	if ok {
+		// Save injected comments to assert the sql commenting behavior
+		t.injectedComments = append(t.injectedComments, sqlCommentCarrier.CommentedQuery(""))
 	}
 
 	return nil
