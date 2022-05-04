@@ -64,14 +64,12 @@ type profileType struct {
 	// this isn't done due to idiosyncratic filename used by the
 	// GoroutineProfile.
 	Filename string
-	// Delta controls if this profile should be generated as a delta profile.
-	// This is useful for profiles that represent samples collected over the
-	// lifetime of the process (i.e. heap, block, mutex). If nil, no delta
-	// profile is generated.
-	Delta *pprofutils.Delta
+	// SupportsDelta indicates whether delta profiles can be computed for
+	// this profile type, which is used to determine the final filename
+	SupportsDelta bool
 	// Collect collects the given profile and returns the data for it. Most
 	// profiles will be in pprof format, i.e. gzip compressed proto buf data.
-	Collect func(profileType, *profiler) (data []byte, extra []*pprofile.Profile, err error)
+	Collect func(p *profiler) ([]byte, error)
 }
 
 // profileTypes maps every ProfileType to its implementation.
@@ -79,7 +77,7 @@ var profileTypes = map[ProfileType]profileType{
 	CPUProfile: {
 		Name:     "cpu",
 		Filename: "cpu.pprof",
-		Collect: func(_ profileType, p *profiler) ([]byte, []*pprofile.Profile, error) {
+		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
 			if p.cfg.cpuProfileRate != 0 {
 				// The profile has to be set each time before
@@ -89,11 +87,11 @@ var profileTypes = map[ProfileType]profileType{
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
 			if err := p.startCPUProfile(&buf); err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
 			p.stopCPUProfile()
-			return buf.Bytes(), nil, nil
+			return buf.Bytes(), nil
 		},
 	},
 	// HeapProfile is complex due to how the Go runtime exposes it. It contains 4
@@ -104,35 +102,35 @@ var profileTypes = map[ProfileType]profileType{
 	HeapProfile: {
 		Name:     "heap",
 		Filename: "heap.pprof",
-		Delta: &pprofutils.Delta{SampleTypes: []pprofutils.ValueType{
+		Collect: collectGenericProfile("heap", &pprofutils.Delta{SampleTypes: []pprofutils.ValueType{
 			{Type: "alloc_objects", Unit: "count"},
 			{Type: "alloc_space", Unit: "bytes"},
-		}},
-		Collect: collectGenericProfile,
+		}}),
+		SupportsDelta: true,
 	},
 	MutexProfile: {
-		Name:     "mutex",
-		Filename: "mutex.pprof",
-		Delta:    &pprofutils.Delta{},
-		Collect:  collectGenericProfile,
+		Name:          "mutex",
+		Filename:      "mutex.pprof",
+		Collect:       collectGenericProfile("mutex", &pprofutils.Delta{}),
+		SupportsDelta: true,
 	},
 	BlockProfile: {
-		Name:     "block",
-		Filename: "block.pprof",
-		Delta:    &pprofutils.Delta{},
-		Collect:  collectGenericProfile,
+		Name:          "block",
+		Filename:      "block.pprof",
+		Collect:       collectGenericProfile("block", &pprofutils.Delta{}),
+		SupportsDelta: true,
 	},
 	GoroutineProfile: {
 		Name:     "goroutine",
 		Filename: "goroutines.pprof",
-		Collect:  collectGenericProfile,
+		Collect:  collectGenericProfile("goroutine", nil),
 	},
 	expGoroutineWaitProfile: {
 		Name:     "goroutinewait",
 		Filename: "goroutineswait.pprof",
-		Collect: func(_ profileType, p *profiler) ([]byte, []*pprofile.Profile, error) {
+		Collect: func(p *profiler) ([]byte, error) {
 			if n := runtime.NumGoroutine(); n > p.cfg.maxGoroutinesWait {
-				return nil, nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
+				return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
 			}
 
 			var (
@@ -141,44 +139,58 @@ var profileTypes = map[ProfileType]profileType{
 				pprof = &bytes.Buffer{}
 			)
 			if err := p.lookupProfile("goroutine", text, 2); err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			err := goroutineDebug2ToPprof(text, pprof, now)
-			return pprof.Bytes(), nil, err
+			return pprof.Bytes(), err
 		},
 	},
 	MetricsProfile: {
 		Name:     "metrics",
 		Filename: "metrics.json",
-		Collect: func(_ profileType, p *profiler) ([]byte, []*pprofile.Profile, error) {
+		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
 			err := p.met.report(now(), &buf)
-			return buf.Bytes(), nil, err
+			return buf.Bytes(), err
 		},
 	},
 }
 
-func collectGenericProfile(t profileType, p *profiler) ([]byte, []*pprofile.Profile, error) {
-	var extra []*pprofile.Profile
-	if t.Name == "heap" {
-		// For the heap profile, we'd also like to include C allocations
-		// if that extension is enabled and have the allocations show up
-		// in the same profile
-		//
-		// TODO: Support non-delta profiles for C allocations?
-		if cAlloc, ok := extensions.GetCAllocationProfiler(); ok && p.cfg.deltaProfiles {
+func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profiler) ([]byte, error) {
+	return func(p *profiler) ([]byte, error) {
+		var extra []*pprofile.Profile
+		if cAlloc, ok := extensions.GetCAllocationProfiler(); ok && p.cfg.deltaProfiles && name == "heap" {
+			// For the heap profile, we'd also like to include C
+			// allocations if that extension is enabled and have the
+			// allocations show up in the same profile. Collect them
+			// first before getting the regular heap snapshot so
+			// that all allocations cover the same time period
+			//
+			// TODO: Support non-delta profiles for C allocations?
 			cAlloc.Start(2 * 1024 * 1024)
 			p.interruptibleSleep(p.cfg.period)
 			profile, err := cAlloc.Stop()
-			if err != nil {
-				return nil, nil, err
+			if err == nil {
+				extra = append(extra, profile)
 			}
-			extra = append(extra, profile)
 		}
+
+		var buf bytes.Buffer
+		err := p.lookupProfile(name, &buf, 0)
+		data := buf.Bytes()
+		if delta == nil || !p.cfg.deltaProfiles {
+			return data, err
+		}
+
+		start := time.Now()
+		delta, err := p.deltaProfile(name, delta, data, extra...)
+		tags := append(p.cfg.tags, fmt.Sprintf("profile_type:%s", name))
+		p.cfg.statsd.Timing("datadog.profiler.go.delta_time", time.Since(start), tags, 1)
+		if err != nil {
+			return nil, fmt.Errorf("delta profile error: %s", err)
+		}
+		return delta.data, err
 	}
-	var buf bytes.Buffer
-	err := p.lookupProfile(t.Name, &buf, 0)
-	return buf.Bytes(), extra, err
 }
 
 // lookup returns t's profileType implementation.
@@ -192,8 +204,8 @@ func (t ProfileType) lookup() profileType {
 		Type:     t,
 		Name:     "unknown",
 		Filename: "unknown",
-		Collect: func(_ profileType, _ *profiler) ([]byte, []*pprofile.Profile, error) {
-			return nil, nil, errors.New("profile type not implemented")
+		Collect: func(_ *profiler) ([]byte, error) {
+			return nil, errors.New("profile type not implemented")
 		},
 	}
 }
@@ -235,49 +247,30 @@ func (b *batch) addProfile(p *profile) {
 func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	start := now()
 	t := pt.lookup()
-	// Collect the original profile as-is.
-	data, extra, err := t.Collect(t, p)
+	data, err := t.Collect(p)
 	if err != nil {
 		return nil, err
 	}
-	// Compute the deltaProf (will be nil if not enabled for this profile type).
-	deltaStart := time.Now()
-	deltaProf, err := p.deltaProfile(t, data, extra...)
-	if err != nil {
-		return nil, fmt.Errorf("delta profile error: %s", err)
-	}
 	end := now()
 	tags := append(p.cfg.tags, pt.Tag())
-	var profs []*profile
-	if deltaProf != nil {
-		profs = append(profs, deltaProf)
-		p.cfg.statsd.Timing("datadog.profiler.go.delta_time", end.Sub(deltaStart), tags, 1)
-	} else {
-		// If the user has disabled delta profiles, or the profile type
-		// doesn't support delta profiles (like the CPU profile) then
-		// send the original profile unchanged.
-		profs = append(profs, &profile{
-			name: t.Filename,
-			data: data,
-		})
+	filename := t.Filename
+	if p.cfg.deltaProfiles && t.SupportsDelta {
+		filename = "delta-" + filename
 	}
 	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
-	return profs, nil
+	return []*profile{{name: filename, data: data}}, nil
 }
 
 // deltaProfile derives the delta profile between curData and the previous
-// profile. For profile types that don't have delta profiling enabled, or
-// WithDeltaProfiles(false), it simply returns nil, nil.
-func (p *profiler) deltaProfile(t profileType, curData []byte, extra ...*pprofile.Profile) (*profile, error) {
-	if !p.cfg.deltaProfiles || t.Delta == nil {
-		return nil, nil
-	}
+// profile. If extra profiles are provided, they will be merged into the final
+// profile after computing the delta profile.
+func (p *profiler) deltaProfile(name string, delta *pprofutils.Delta, curData []byte, extra ...*pprofile.Profile) (*profile, error) {
 	curProf, err := pprofile.ParseData(curData)
 	if err != nil {
 		return nil, fmt.Errorf("delta prof parse: %v", err)
 	}
 	var deltaData []byte
-	if prevProf := p.prev[t.Type]; prevProf == nil {
+	if prevProf := p.prev[name]; prevProf == nil {
 		// First time deltaProfile gets called for a type, there is no prevProf. In
 		// this case we emit the current profile as a delta profile.
 		deltaData = curData
@@ -286,7 +279,7 @@ func (p *profiler) deltaProfile(t profileType, curData []byte, extra ...*pprofil
 		// Unfortunately the core implementation isn't resuable via a API, so we do
 		// our own delta calculation below.
 		// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
-		deltaProf, err := t.Delta.Convert(prevProf, curProf, extra...)
+		deltaProf, err := delta.Convert(prevProf, curProf, extra...)
 		if err != nil {
 			return nil, fmt.Errorf("delta prof merge: %v", err)
 		}
@@ -303,11 +296,8 @@ func (p *profiler) deltaProfile(t profileType, curData []byte, extra ...*pprofil
 	}
 	// Keep the most recent profiles in memory for future diffing. This needs to
 	// be taken into account when enforcing memory limits going forward.
-	p.prev[t.Type] = curProf
-	return &profile{
-		name: "delta-" + t.Filename,
-		data: deltaData,
-	}, nil
+	p.prev[name] = curProf
+	return &profile{data: deltaData}, nil
 }
 
 func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
