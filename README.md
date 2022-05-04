@@ -21,7 +21,10 @@ If you installed more packages than you intended, you can use `go mod tidy` to r
 
 ### Documentation
 
-The API is documented on [godoc](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace) as well as Datadog's official documentation for [Tracing Go Applications](https://docs.datadoghq.com/tracing/setup/go/) and the [Continuous Go Profiler](https://docs.datadoghq.com/tracing/profiler/enabling/go). If you are migrating from an older version of the tracer (e.g. 0.6.x) you may also find the [migration document](MIGRATING.md) we've put together helpful.
+ - [API](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/ddtrace)
+ - [Tracing Go Applications](https://docs.datadoghq.com/tracing/setup/go/)
+ - [Continuous Go Profiler](https://docs.datadoghq.com/tracing/profiler/enabling/go).
+ - If you are migrating from an older version of the tracer (e.g. 0.6.x) you may also find the [migration document](MIGRATING.md) we've put together helpful.
 
 ### Support Policy
 
