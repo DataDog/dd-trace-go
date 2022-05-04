@@ -272,7 +272,10 @@ func (p *profiler) deltaProfile(name string, delta *pprofutils.Delta, curData []
 		return nil, fmt.Errorf("delta prof parse: %v", err)
 	}
 	var deltaData []byte
-	if prevProf := p.prev[name]; prevProf == nil {
+	p.mu.Lock()
+	prevProf := p.prev[name]
+	p.mu.Unlock()
+	if prevProf == nil {
 		// First time deltaProfile gets called for a type, there is no prevProf. In
 		// this case we emit the current profile as a delta profile.
 		deltaData = curData
@@ -298,7 +301,9 @@ func (p *profiler) deltaProfile(name string, delta *pprofutils.Delta, curData []
 	}
 	// Keep the most recent profiles in memory for future diffing. This needs to
 	// be taken into account when enforcing memory limits going forward.
+	p.mu.Lock()
 	p.prev[name] = curProf
+	p.mu.Unlock()
 	return &profile{data: deltaData}, nil
 }
 
