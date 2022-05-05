@@ -205,7 +205,9 @@ func (i *experimentalInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanCont
 	}
 
 	if cfg.ServiceNameKey != "" {
-		writer.Set(cfg.ServiceNameKey, globalconfig.ServiceName())
+		if globalconfig.ServiceName() != "" {
+			writer.Set(cfg.ServiceNameKey, globalconfig.ServiceName())
+		}
 	}
 
 	return nil

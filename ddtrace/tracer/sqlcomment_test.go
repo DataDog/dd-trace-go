@@ -13,44 +13,75 @@ func TestQueryTextCarrier(t *testing.T) {
 	testCases := []struct {
 		name      string
 		query     string
-		tags      map[string]string
+		options   []InjectionOption
 		commented string
 	}{
 		{
-			name:      "query with tag list",
+			name:      "all tags injected",
 			query:     "SELECT * from FOO",
-			tags:      map[string]string{"operation": "checkout"},
-			commented: "/*ddsid='10',ddsp='2',ddtid='10',ot-baggage-operation='checkout'*/ SELECT * from FOO",
+			options:   []InjectionOption{WithParentVersionKey("ddsv"), WithEnvironmentKey("dde"), WithServiceNameKey("ddsn"), WithSpanIDKey("ddsid"), WithTraceIDKey("ddtid"), WithSamplingPriorityKey("ddsp")},
+			commented: "/*dde='test-env',ddsid='10',ddsn='whiskey-service',ddsp='2',ddsv='1.0.0',ddtid='10'*/ SELECT * from FOO",
 		},
 		{
-			name:      "empty query",
+			name:      "empty query, all tags injected",
 			query:     "",
-			tags:      map[string]string{"operation": "elmer's glue"},
-			commented: "",
+			options:   []InjectionOption{WithParentVersionKey("ddsv"), WithEnvironmentKey("dde"), WithServiceNameKey("ddsn"), WithSpanIDKey("ddsid"), WithTraceIDKey("ddtis"), WithSamplingPriorityKey("ddsp")},
+			commented: "/*dde='test-env',ddsid='10',ddsn='whiskey-service',ddsp='2',ddsv='1.0.0',ddtis='10'*/",
 		},
 		{
 			name:      "query with existing comment",
 			query:     "SELECT * from FOO -- test query",
-			tags:      map[string]string{"operation": "elmer's glue"},
-			commented: "/*ddsid='10',ddsp='2',ddtid='10',ot-baggage-operation='elmer%27s%20glue'*/ SELECT * from FOO -- test query",
+			options:   []InjectionOption{WithParentVersionKey("ddsv"), WithEnvironmentKey("dde"), WithServiceNameKey("ddsn"), WithSpanIDKey("ddsid"), WithTraceIDKey("ddtis"), WithSamplingPriorityKey("ddsp")},
+			commented: "/*dde='test-env',ddsid='10',ddsn='whiskey-service',ddsp='2',ddsv='1.0.0',ddtis='10'*/ SELECT * from FOO -- test query",
+		},
+		{
+			name:      "only parent version tag",
+			query:     "SELECT * from FOO",
+			options:   []InjectionOption{WithParentVersionKey("ddsv")},
+			commented: "/*ddsv='1.0.0'*/ SELECT * from FOO",
+		},
+		{
+			name:      "only env tag",
+			query:     "SELECT * from FOO",
+			options:   []InjectionOption{WithEnvironmentKey("dde")},
+			commented: "/*dde='test-env'*/ SELECT * from FOO",
+		},
+		{
+			name:      "only service name tag",
+			query:     "SELECT * from FOO",
+			options:   []InjectionOption{WithServiceNameKey("ddsn")},
+			commented: "/*ddsn='whiskey-service'*/ SELECT * from FOO",
+		},
+		{
+			name:      "only trace id tag",
+			query:     "SELECT * from FOO",
+			options:   []InjectionOption{WithTraceIDKey("ddtid")},
+			commented: "/*ddtid='10'*/ SELECT * from FOO",
+		},
+		{
+			name:      "only span id tag",
+			query:     "SELECT * from FOO",
+			options:   []InjectionOption{WithSpanIDKey("ddsid")},
+			commented: "/*ddsid='10'*/ SELECT * from FOO",
+		},
+		{
+			name:      "only sampling priority tag",
+			query:     "SELECT * from FOO",
+			options:   []InjectionOption{WithSamplingPriorityKey("ddsp")},
+			commented: "/*ddsp='2'*/ SELECT * from FOO",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			propagator := NewPropagator(&PropagatorConfig{})
-			tracer := newTracer(WithPropagator(propagator))
+			tracer := newTracer(WithService("whiskey-service"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
 
-			root := tracer.StartSpan("web.request", WithSpanID(10)).(*span)
-			for k, v := range tc.tags {
-				root.SetBaggageItem(k, v)
-			}
-
+			root := tracer.StartSpan("db.call", WithSpanID(10), ServiceName("whiskey-db")).(*span)
 			root.SetTag(ext.SamplingPriority, 2)
 			ctx := root.Context()
 
 			carrier := SQLCommentCarrier{}
-			err := tracer.Inject(ctx, &carrier)
+			err := tracer.InjectWithOptions(ctx, &carrier, tc.options...)
 			require.NoError(t, err)
 
 			assert.Equal(t, tc.commented, carrier.CommentedQuery(tc.query))
