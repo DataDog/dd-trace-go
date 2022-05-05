@@ -159,6 +159,7 @@ var profileTypes = map[ProfileType]profileType{
 func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profiler) ([]byte, error) {
 	return func(p *profiler) ([]byte, error) {
 		var extra []*pprofile.Profile
+		// TODO: add type safety for name == "heap" check and remove redunancy with profileType.Name.
 		if cAlloc, ok := extensions.GetCAllocationProfiler(); ok && p.cfg.deltaProfiles && name == "heap" {
 			// For the heap profile, we'd also like to include C
 			// allocations if that extension is enabled and have the
