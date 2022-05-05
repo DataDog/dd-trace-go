@@ -30,7 +30,10 @@ type Delta struct {
 // profile. Samples that end up with a delta of 0 are dropped. WARNING: Profile
 // a will be mutated by this function. You should pass a copy if that's
 // undesirable.
-func (d Delta) Convert(a, b *profile.Profile) (*profile.Profile, error) {
+//
+// Other profiles that should be merged into the resulting profile can be passed
+// through the extra parameter.
+func (d Delta) Convert(a, b *profile.Profile, extra ...*profile.Profile) (*profile.Profile, error) {
 	ratios := make([]float64, len(a.SampleType))
 
 	found := 0
@@ -58,7 +61,10 @@ func (d Delta) Convert(a, b *profile.Profile) (*profile.Profile, error) {
 
 	a.ScaleN(ratios)
 
-	delta, err := profile.Merge([]*profile.Profile{a, b})
+	profiles := make([]*profile.Profile, 0, 2+len(extra))
+	profiles = append(profiles, a, b)
+	profiles = append(profiles, extra...)
+	delta, err := profile.Merge(profiles)
 	if err != nil {
 		return nil, err
 	}
