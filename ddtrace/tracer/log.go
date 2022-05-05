@@ -109,12 +109,9 @@ func logStartup(t *tracer) {
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
 	}
-	// Based on the apply logic in sampler.go func (*rulesSampler).applyRate,
-	// the rate limit applies only when there are rules or there is a global rate set.
-	if t.rulesSampling.globalRate > 0 || len(t.rulesSampling.rules) > 0 {
-		if t.rulesSampling != nil && t.rulesSampling.limiter != nil && t.rulesSampling.limiter.limiter != nil {
-			info.SampleRateLimit = fmt.Sprintf("%f", t.rulesSampling.limiter.limiter.Limit())
-		}
+
+	if limit, ok := t.rulesSampling.limit(); ok {
+		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.logToStdout {
 		if err := checkEndpoint(t.config.transport.endpoint()); err != nil {
