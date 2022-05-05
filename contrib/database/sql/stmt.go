@@ -10,8 +10,6 @@ import (
 	"database/sql/driver"
 	"errors"
 	"time"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var _ driver.Stmt = (*tracedStmt)(nil)
@@ -27,13 +25,8 @@ type tracedStmt struct {
 // Close sends a span before closing a statement
 func (s *tracedStmt) Close() (err error) {
 	start := time.Now()
-	span := s.tryStartTrace(s.ctx, queryTypeClose, "", start, nil, err)
-	if span != nil {
-		go func() {
-			span.Finish(tracer.WithError(err))
-		}()
-	}
 	err = s.Stmt.Close()
+	s.tryTrace(s.ctx, queryTypeClose, "", start, err)
 
 	return err
 }
@@ -42,14 +35,8 @@ func (s *tracedStmt) Close() (err error) {
 func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
 	start := time.Now()
 	if stmtExecContext, ok := s.Stmt.(driver.StmtExecContext); ok {
-		span := s.tryStartTrace(ctx, queryTypeExec, s.query, start, &tracer.SQLCommentCarrier{}, err)
-		if span != nil {
-			go func() {
-				span.Finish(tracer.WithError(err))
-			}()
-		}
 		res, err := stmtExecContext.ExecContext(ctx, args)
-
+		s.tryTrace(ctx, queryTypeExec, s.query, start, err)
 		return res, err
 	}
 	dargs, err := namedValueToValue(args)
@@ -61,14 +48,8 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 		return nil, ctx.Err()
 	default:
 	}
-	span := s.tryStartTrace(ctx, queryTypeExec, s.query, start, &tracer.SQLCommentCarrier{}, err)
-	if span != nil {
-		go func() {
-			span.Finish(tracer.WithError(err))
-		}()
-	}
 	res, err = s.Exec(dargs)
-
+	s.tryTrace(ctx, queryTypeExec, s.query, start, err)
 	return res, err
 }
 
@@ -77,13 +58,7 @@ func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue)
 	start := time.Now()
 	if stmtQueryContext, ok := s.Stmt.(driver.StmtQueryContext); ok {
 		rows, err := stmtQueryContext.QueryContext(ctx, args)
-		span := s.tryStartTrace(ctx, queryTypeQuery, s.query, start, &tracer.SQLCommentCarrier{}, err)
-		if span != nil {
-			go func() {
-				span.Finish(tracer.WithError(err))
-			}()
-		}
-
+		s.tryTrace(ctx, queryTypeQuery, s.query, start, err)
 		return rows, err
 	}
 	dargs, err := namedValueToValue(args)
@@ -95,14 +70,8 @@ func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue)
 		return nil, ctx.Err()
 	default:
 	}
-	span := s.tryStartTrace(ctx, queryTypeQuery, s.query, start, &tracer.SQLCommentCarrier{}, err)
-	if span != nil {
-		go func() {
-			span.Finish(tracer.WithError(err))
-		}()
-	}
 	rows, err = s.Query(dargs)
-
+	s.tryTrace(ctx, queryTypeQuery, s.query, start, err)
 	return rows, err
 }
 

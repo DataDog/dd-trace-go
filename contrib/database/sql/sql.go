@@ -25,8 +25,6 @@ import (
 	"reflect"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -142,13 +140,8 @@ func (t *tracedConnector) Connect(ctx context.Context) (c driver.Conn, err error
 		tp.meta, _ = internal.ParseDSN(t.driverName, t.cfg.dsn)
 	}
 	start := time.Now()
-	span := tp.tryStartTrace(ctx, queryTypeConnect, "", start, nil, err)
-	if span != nil {
-		go func() {
-			span.Finish(tracer.WithError(err))
-		}()
-	}
-	conn, err := t.connector.Connect(tracer.ContextWithSpan(ctx, span))
+	conn, err := t.connector.Connect(ctx)
+	tp.tryTrace(ctx, queryTypeConnect, "", start, err)
 	if err != nil {
 		return nil, err
 	}

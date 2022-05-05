@@ -133,6 +133,7 @@ func (t *mocktracer) addFinishedSpan(s Span) {
 	if t.finishedSpans == nil {
 		t.finishedSpans = make([]Span, 0, 1)
 	}
+	fmt.Printf("adding finished span %#v\n", s)
 	t.finishedSpans = append(t.finishedSpans, s)
 }
 

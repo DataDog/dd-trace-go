@@ -43,23 +43,16 @@ func (tc *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 	start := time.Now()
 	if connBeginTx, ok := tc.Conn.(driver.ConnBeginTx); ok {
 		tx, err = connBeginTx.BeginTx(ctx, opts)
-		span := tc.tryStartTrace(ctx, queryTypeBegin, "", start, nil, err)
-		if span != nil {
-			defer func() {
-				span.Finish(tracer.WithError(err))
-			}()
-		}
+		tc.tryTrace(ctx, queryTypeBegin, "", start, err)
 		if err != nil {
 			return nil, err
 		}
 		return &tracedTx{tx, tc.traceParams, ctx}, nil
 	}
 	tx, err = tc.Conn.Begin()
-	span := tc.tryStartTrace(ctx, queryTypeBegin, "", start, nil, err)
-	if span != nil {
-		defer func() {
-			span.Finish(tracer.WithError(err))
-		}()
+	tc.tryTrace(ctx, queryTypeBegin, "", start, err)
+	if err != nil {
+		return nil, err
 	}
 	if err != nil {
 		return nil, err
@@ -139,13 +132,11 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 func (tc *tracedConn) Ping(ctx context.Context) (err error) {
 	start := time.Now()
 	if pinger, ok := tc.Conn.(driver.Pinger); ok {
-		span := tc.tryStartTrace(ctx, queryTypePing, "", start, nil, err)
-		if span != nil {
-			go func() {
-				span.Finish(tracer.WithError(err))
-			}()
-		}
 		err = pinger.Ping(ctx)
+		tc.tryTrace(ctx, queryTypePing, "", start, err)
+		if err != nil {
+			return err
+		}
 	}
 
 	return err
@@ -270,4 +261,43 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 	}
 
 	return span
+}
+
+// tryTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
+func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query string, startTime time.Time, err error) {
+	if err == driver.ErrSkip {
+		// Not a user error: driver is telling sql package that an
+		// optional interface method is not implemented. There is
+		// nothing to trace here.
+		// See: https://github.com/DataDog/dd-trace-go/issues/270
+		return
+	}
+	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
+		return
+	}
+	name := fmt.Sprintf("%s.query", tp.driverName)
+	opts := []ddtrace.StartSpanOption{
+		tracer.ServiceName(tp.cfg.serviceName),
+		tracer.SpanType(ext.SpanTypeSQL),
+		tracer.StartTime(startTime),
+	}
+	if !math.IsNaN(tp.cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.cfg.analyticsRate))
+	}
+	span, _ := tracer.StartSpanFromContext(ctx, name, opts...)
+	resource := string(qtype)
+	if query != "" {
+		resource = query
+	}
+	span.SetTag("sql.query_type", string(qtype))
+	span.SetTag(ext.ResourceName, resource)
+	for k, v := range tp.meta {
+		span.SetTag(k, v)
+	}
+	if meta, ok := ctx.Value(spanTagsKey).(map[string]string); ok {
+		for k, v := range meta {
+			span.SetTag(k, v)
+		}
+	}
+	span.Finish(tracer.WithError(err))
 }
