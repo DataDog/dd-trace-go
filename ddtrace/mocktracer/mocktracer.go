@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -190,5 +192,58 @@ func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) er
 		writer.Set(baggagePrefix+k, v)
 		return true
 	})
+	return nil
+}
+
+func (t *mocktracer) InjectWithOptions(context ddtrace.SpanContext, carrier interface{}, opts ...tracer.InjectionOption) error {
+	writer, ok := carrier.(tracer.TextMapWriter)
+	if !ok {
+		return tracer.ErrInvalidCarrier
+	}
+	ctx, ok := context.(*spanContext)
+	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
+		return tracer.ErrInvalidSpanContext
+	}
+
+	cfg := ddtrace.InjectionConfig{}
+	for _, apply := range opts {
+		apply(&cfg)
+	}
+
+	if cfg.TraceIDKey != "" {
+		writer.Set(cfg.TraceIDKey, strconv.FormatUint(ctx.traceID, 10))
+	}
+
+	if cfg.SpanIDKey != "" {
+		writer.Set(cfg.SpanIDKey, strconv.FormatUint(ctx.spanID, 10))
+	}
+
+	if cfg.SamplingPriorityKey != "" {
+		if ctx.hasSamplingPriority() {
+			writer.Set(cfg.SamplingPriorityKey, strconv.Itoa(ctx.priority))
+		}
+	}
+
+	if cfg.EnvKey != "" {
+		envRaw := ctx.span.Tag(ext.Environment)
+		if env, ok := envRaw.(string); ok {
+			writer.Set(cfg.EnvKey, env)
+		}
+	}
+
+	if cfg.VersionKey != "" {
+		versionRaw := ctx.span.Tag(ext.Version)
+		if version, ok := versionRaw.(string); ok {
+			writer.Set(cfg.VersionKey, version)
+		}
+	}
+
+	if cfg.ServiceNameKey != "" {
+		serviceNameRaw := ctx.span.Tag(ext.ServiceName)
+		if serviceName, ok := serviceNameRaw.(string); ok {
+			writer.Set(cfg.ServiceNameKey, serviceName)
+		}
+	}
+
 	return nil
 }

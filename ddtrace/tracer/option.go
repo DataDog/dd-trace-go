@@ -889,3 +889,50 @@ func WithUserScope(scope string) UserMonitoringOption {
 		s.SetTag("usr.scope", scope)
 	}
 }
+
+// InjectionOption is a configuration option for InjectWithOptions. It is aliased in order
+// to help godoc group all the functions returning it together. It is considered
+// more correct to refer to it as the type as the origin, ddtrace.InjectionOption.
+type InjectionOption = ddtrace.InjectionOption
+
+// WithSpanIDKey returns the option setting the span id key
+func WithSpanIDKey(spanIDKey string) InjectionOption {
+	return func(cfg *ddtrace.InjectionConfig) {
+		cfg.SpanIDKey = spanIDKey
+	}
+}
+
+// WithTraceIDKey returns the option setting the trace id key
+func WithTraceIDKey(traceIDKey string) InjectionOption {
+	return func(cfg *ddtrace.InjectionConfig) {
+		cfg.TraceIDKey = traceIDKey
+	}
+}
+
+// WithSamplingPriorityKey returns the option setting the sampling priority key
+func WithSamplingPriorityKey(samplingPriorityKey string) InjectionOption {
+	return func(cfg *ddtrace.InjectionConfig) {
+		cfg.SamplingPriorityKey = samplingPriorityKey
+	}
+}
+
+// WithEnvironmentKey returns the option setting the environment key
+func WithEnvironmentKey(envKey string) InjectionOption {
+	return func(cfg *ddtrace.InjectionConfig) {
+		cfg.EnvKey = envKey
+	}
+}
+
+// WithServiceNameKey returns the option setting the service name key
+func WithServiceNameKey(serviceNameKey string) InjectionOption {
+	return func(cfg *ddtrace.InjectionConfig) {
+		cfg.ServiceNameKey = serviceNameKey
+	}
+}
+
+// WithVersionKey returns the option setting the version key
+func WithVersionKey(versionKey string) InjectionOption {
+	return func(cfg *ddtrace.InjectionConfig) {
+		cfg.VersionKey = versionKey
+	}
+}

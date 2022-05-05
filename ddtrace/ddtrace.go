@@ -33,6 +33,10 @@ type Tracer interface {
 	// Inject injects a span context into the given carrier.
 	Inject(context SpanContext, carrier interface{}) error
 
+	// InjectWithOptions injects a span context into the given carrier with options.
+	// This method is experimental and subject to removal or modification
+	InjectWithOptions(context SpanContext, carrier interface{}, opts ...InjectionOption) error
+
 	// Stop stops the tracer. Calls to Stop should be idempotent.
 	Stop()
 }
@@ -134,4 +138,30 @@ type StartSpanConfig struct {
 type Logger interface {
 	// Log prints the given message.
 	Log(msg string)
+}
+
+// InjectionOption is a configuration option that can be used with a Tracer's InjectWithOptions method.
+type InjectionOption func(cfg *InjectionConfig)
+
+// InjectionConfig holds the configuration for injection a span into a carrier. It is usually passed
+// around by reference to one or more InjectionOption functions which shape it into its
+// final form.
+type InjectionConfig struct {
+	// TraceIDKey defines the key to use to inject the trade id. The trace id is only injected if this value
+	// is not empty
+	TraceIDKey string
+	// SpanIDKey defines the key to use to inject the span id. The span id is only injected if this value
+	// is not empty
+	SpanIDKey string
+	// SamplingPriorityKey defines the key to use to inject the sampling priority. The sampling priority is only
+	// injected if this value is not empty
+	SamplingPriorityKey string
+	// ServiceNameKey defines the key to use to inject the service name. The service name is only
+	// injected if this value is not empty
+	ServiceNameKey string
+	// EnvKey defines the key to use to inject the environment. The environment is only injected if this value is not
+	// empty
+	EnvKey string
+	// VersionKey defines the key to use to inject the version. The version is only injected if this value is not empty
+	VersionKey string
 }

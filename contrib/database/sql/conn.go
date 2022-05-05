@@ -13,8 +13,6 @@ import (
 	"os"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -72,7 +70,7 @@ func (tc *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
 	start := time.Now()
 	if connPrepareCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
-		sqlCommentCarrier := tracer.SQLCommentCarrier{KeepOnlyStaticTags: true}
+		sqlCommentCarrier := tracer.SQLCommentCarrier{DiscardDynamicTags: true}
 		span := tc.tryStartTrace(ctx, queryTypePrepare, query, start, &sqlCommentCarrier, err)
 		if span != nil {
 			go func() {
@@ -261,33 +259,13 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 		}
 	}
 
-	if tp.cfg.sqlCommentInjectionMode == fullSQLCommentInjection && !sqlCommentCarrier.KeepOnlyStaticTags {
-		err = tracer.Inject(span.Context(), sqlCommentCarrier)
-		if err != nil {
-			// this should never happen
-			fmt.Fprintf(os.Stderr, "contrib/database/sql: failed to inject query comments: %v\n", err)
-		}
-	}
+	injectionOpts := injectionOptionsForMode(tp.cfg.sqlCommentInjectionMode, sqlCommentCarrier.DiscardDynamicTags)
 
-	if tp.cfg.sqlCommentInjectionMode == staticTagsSQLCommentInjection || tp.cfg.sqlCommentInjectionMode == fullSQLCommentInjection {
-		injectStaticTagsSQLComments(sqlCommentCarrier)
+	err = tracer.InjectWithOptions(span.Context(), sqlCommentCarrier, injectionOpts...)
+	if err != nil {
+		// this should never happen
+		fmt.Fprintf(os.Stderr, "contrib/database/sql: failed to inject query comments: %v\n", err)
 	}
 
 	return span
-}
-
-func injectStaticTagsSQLComments(sqlCommentCarrier *tracer.SQLCommentCarrier) {
-	if name := globalconfig.ServiceName(); name != "" {
-		sqlCommentCarrier.Set(tracer.ServiceNameSQLCommentKey, name)
-	}
-
-	// TODO: The following two values bypass any override set via the calling application via tracer options
-	// Figure out a clean way to get those values from the private tracer configuration instead
-	if env := os.Getenv("DD_ENV"); env != "" {
-		sqlCommentCarrier.Set(tracer.ServiceEnvironmentSQLCommentKey, env)
-	}
-
-	if ver := os.Getenv("DD_VERSION"); ver != "" {
-		sqlCommentCarrier.Set(tracer.ServiceVersionSQLCommentKey, ver)
-	}
 }

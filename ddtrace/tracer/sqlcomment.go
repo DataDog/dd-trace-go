@@ -9,16 +9,16 @@ import (
 
 // SQLCommentCarrier holds tags to be serialized as a SQL Comment
 type SQLCommentCarrier struct {
-	// Indicates if this SQL comment carrier should only preserve static tags or also include
-	// dynamic ones (like trace id, span id and sampling priority)
-	KeepOnlyStaticTags bool
+	// Indicates if this SQL comment carrier should only discard dynamic tags
+	// (like trace id, span id and sampling priority)
+	DiscardDynamicTags bool
 	tags               map[string]string
 }
 
 const (
-	samplingPrioritySQLCommentKey   = "ddsp"
-	traceIDSQLCommentKey            = "ddtid"
-	spanIDSQLCommentKey             = "ddsid"
+	SamplingPrioritySQLCommentKey   = "ddsp"
+	TraceIDSQLCommentKey            = "ddtid"
+	SpanIDSQLCommentKey             = "ddsid"
 	ServiceNameSQLCommentKey        = "ddsn"
 	ServiceVersionSQLCommentKey     = "ddsv"
 	ServiceEnvironmentSQLCommentKey = "dde"
@@ -30,18 +30,7 @@ func (c *SQLCommentCarrier) Set(key, val string) {
 		c.tags = make(map[string]string)
 	}
 
-	// Remap the default long key names to short versions specifically for SQL comments that prioritize size
-	// while trying to avoid conflicts
-	switch key {
-	case DefaultPriorityHeader:
-		c.tags[samplingPrioritySQLCommentKey] = val
-	case DefaultTraceIDHeader:
-		c.tags[traceIDSQLCommentKey] = val
-	case DefaultParentIDHeader:
-		c.tags[spanIDSQLCommentKey] = val
-	default:
-		c.tags[key] = val
-	}
+	c.tags[key] = val
 }
 
 func commentWithTags(tags map[string]string) (comment string) {

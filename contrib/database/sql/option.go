@@ -8,6 +8,8 @@ package sql
 import (
 	"math"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
@@ -116,5 +118,27 @@ func WithStaticTagsCommentInjection() Option {
 func WithoutCommentInjection() Option {
 	return func(cfg *config) {
 		cfg.sqlCommentInjectionMode = commentInjectionDisabled
+	}
+}
+
+func injectionOptionsForMode(mode commentInjectionMode, discardDynamicTags bool) (opts []tracer.InjectionOption) {
+	switch {
+	case mode == fullSQLCommentInjection && !discardDynamicTags:
+		return []tracer.InjectionOption{
+			tracer.WithTraceIDKey(tracer.TraceIDSQLCommentKey),
+			tracer.WithSpanIDKey(tracer.SpanIDSQLCommentKey),
+			tracer.WithSamplingPriorityKey(tracer.SamplingPrioritySQLCommentKey),
+			tracer.WithServiceNameKey(tracer.ServiceNameSQLCommentKey),
+			tracer.WithEnvironmentKey(tracer.ServiceEnvironmentSQLCommentKey),
+			tracer.WithVersionKey(tracer.ServiceVersionSQLCommentKey),
+		}
+	case mode == fullSQLCommentInjection && discardDynamicTags || mode == staticTagsSQLCommentInjection:
+		return []tracer.InjectionOption{
+			tracer.WithServiceNameKey(tracer.ServiceNameSQLCommentKey),
+			tracer.WithEnvironmentKey(tracer.ServiceEnvironmentSQLCommentKey),
+			tracer.WithVersionKey(tracer.ServiceVersionSQLCommentKey),
+		}
+	default:
+		return []tracer.InjectionOption{}
 	}
 }

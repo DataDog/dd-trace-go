@@ -17,6 +17,9 @@ type Propagator interface {
 	// Inject takes the SpanContext and injects it into the carrier.
 	Inject(context ddtrace.SpanContext, carrier interface{}) error
 
+	// InjectWithOptions takes the SpanContext and injects it into the carrier according to the given options.
+	InjectWithOptions(context ddtrace.SpanContext, carrier interface{}, opts ...InjectionOption) error
+
 	// Extract returns the SpanContext from the given carrier.
 	Extract(carrier interface{}) (ddtrace.SpanContext, error)
 }

@@ -127,6 +127,11 @@ func (c *spanContext) baggageItem(key string) string {
 	return c.baggage[key]
 }
 
+func (c *spanContext) meta(key string) (val string, ok bool) {
+	val, ok = c.span.Meta[key]
+	return val, ok
+}
+
 // finish marks this span as finished in the trace.
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
