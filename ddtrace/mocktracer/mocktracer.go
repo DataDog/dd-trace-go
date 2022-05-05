@@ -13,7 +13,6 @@
 package mocktracer
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -104,9 +103,6 @@ func (t *mocktracer) OpenSpans() []Span {
 func (t *mocktracer) FinishedSpans() []Span {
 	t.RLock()
 	defer t.RUnlock()
-	for _, s := range t.finishedSpans {
-		fmt.Printf("returning finished span of type %v\n", s.Tag("sql.query_type"))
-	}
 	return t.finishedSpans
 }
 
@@ -133,7 +129,6 @@ func (t *mocktracer) addFinishedSpan(s Span) {
 	if t.finishedSpans == nil {
 		t.finishedSpans = make([]Span, 0, 1)
 	}
-	fmt.Printf("adding finished span %#v\n", s)
 	t.finishedSpans = append(t.finishedSpans, s)
 }
 

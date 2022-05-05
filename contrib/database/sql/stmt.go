@@ -27,7 +27,7 @@ type tracedStmt struct {
 // Close sends a span before closing a statement
 func (s *tracedStmt) Close() (err error) {
 	start := time.Now()
-	span := s.tryStartTrace(s.ctx, queryTypeClose, "", start, nil, err)
+	span := s.tryStartTrace(s.ctx, queryTypeClose, "", start, nil)
 	if span != nil {
 		defer func() {
 			span.Finish(tracer.WithError(err))

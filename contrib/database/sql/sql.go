@@ -129,7 +129,7 @@ type tracedConnector struct {
 	cfg        *config
 }
 
-func (t *tracedConnector) Connect(ctx context.Context) (c driver.Conn, err error) {
+func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	tp := &traceParams{
 		driverName: t.driverName,
 		cfg:        t.cfg,

@@ -54,9 +54,6 @@ func (tc *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 	if err != nil {
 		return nil, err
 	}
-	if err != nil {
-		return nil, err
-	}
 	return &tracedTx{tx, tc.traceParams, ctx}, nil
 }
 
@@ -64,7 +61,7 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 	start := time.Now()
 	if connPrepareCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
 		sqlCommentCarrier := tracer.SQLCommentCarrier{DiscardDynamicTags: true}
-		span := tc.tryStartTrace(ctx, queryTypePrepare, query, start, &sqlCommentCarrier, err)
+		span := tc.tryStartTrace(ctx, queryTypePrepare, query, start, &sqlCommentCarrier)
 		if span != nil {
 			defer func() {
 				span.Finish(tracer.WithError(err))
@@ -78,7 +75,7 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 		return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
 	}
 	sqlCommentCarrier := tracer.SQLCommentCarrier{DiscardDynamicTags: true}
-	span := tc.tryStartTrace(ctx, queryTypePrepare, query, start, &sqlCommentCarrier, err)
+	span := tc.tryStartTrace(ctx, queryTypePrepare, query, start, &sqlCommentCarrier)
 	if span != nil {
 		defer func() {
 			span.Finish(tracer.WithError(err))
@@ -96,7 +93,7 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 	start := time.Now()
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
 		sqlCommentCarrier := tracer.SQLCommentCarrier{}
-		span := tc.tryStartTrace(ctx, queryTypeExec, query, start, &sqlCommentCarrier, err)
+		span := tc.tryStartTrace(ctx, queryTypeExec, query, start, &sqlCommentCarrier)
 		if span != nil {
 			defer func() {
 				span.Finish(tracer.WithError(err))
@@ -116,7 +113,7 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 		default:
 		}
 		sqlCommentCarrier := tracer.SQLCommentCarrier{}
-		span := tc.tryStartTrace(ctx, queryTypeExec, query, start, &sqlCommentCarrier, err)
+		span := tc.tryStartTrace(ctx, queryTypeExec, query, start, &sqlCommentCarrier)
 		if span != nil {
 			defer func() {
 				span.Finish(tracer.WithError(err))
@@ -146,7 +143,7 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 	start := time.Now()
 	if queryerContext, ok := tc.Conn.(driver.QueryerContext); ok {
 		sqlCommentCarrier := tracer.SQLCommentCarrier{}
-		span := tc.tryStartTrace(ctx, queryTypeQuery, query, start, &sqlCommentCarrier, err)
+		span := tc.tryStartTrace(ctx, queryTypeQuery, query, start, &sqlCommentCarrier)
 		if span != nil {
 			defer func() {
 				span.Finish(tracer.WithError(err))
@@ -167,7 +164,7 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 		default:
 		}
 		sqlCommentCarrier := tracer.SQLCommentCarrier{}
-		span := tc.tryStartTrace(ctx, queryTypeQuery, query, start, &sqlCommentCarrier, err)
+		span := tc.tryStartTrace(ctx, queryTypeQuery, query, start, &sqlCommentCarrier)
 		if span != nil {
 			defer func() {
 				span.Finish(tracer.WithError(err))
@@ -215,14 +212,7 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 }
 
 // tryStartTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
-func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query string, startTime time.Time, sqlCommentCarrier *tracer.SQLCommentCarrier, err error) (span tracer.Span) {
-	if err == driver.ErrSkip {
-		// Not a user error: driver is telling sql package that an
-		// optional interface method is not implemented. There is
-		// nothing to trace here.
-		// See: https://github.com/DataDog/dd-trace-go/issues/270
-		return nil
-	}
+func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query string, startTime time.Time, sqlCommentCarrier *tracer.SQLCommentCarrier) (span tracer.Span) {
 	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
 		return nil
 	}
@@ -253,7 +243,7 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 
 	if sqlCommentCarrier != nil && tp.cfg.commentInjectionMode != commentInjectionDisabled {
 		injectionOpts := injectionOptionsForMode(tp.cfg.commentInjectionMode, sqlCommentCarrier.DiscardDynamicTags)
-		err = tracer.InjectWithOptions(span.Context(), sqlCommentCarrier, injectionOpts...)
+		err := tracer.InjectWithOptions(span.Context(), sqlCommentCarrier, injectionOpts...)
 		if err != nil {
 			// this should never happen
 			fmt.Fprintf(os.Stderr, "contrib/database/sql: failed to inject query comments: %v\n", err)
