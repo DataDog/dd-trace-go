@@ -63,14 +63,14 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
-	cfg        *config                           // profile configuration
-	out        chan batch                        // upload queue
-	uploadFunc func(batch) error                 // defaults to (*profiler).upload; replaced in tests
-	exit       chan struct{}                     // exit signals the profiler to stop; it is closed after stopping
-	stopOnce   sync.Once                         // stopOnce ensures the profiler is stopped exactly once.
-	wg         sync.WaitGroup                    // wg waits for all goroutines to exit when stopping.
-	met        *metrics                          // metric collector state
-	prev       map[ProfileType]*pprofile.Profile // previous collection results for delta profiling
+	cfg        *config                      // profile configuration
+	out        chan batch                   // upload queue
+	uploadFunc func(batch) error            // defaults to (*profiler).upload; replaced in tests
+	exit       chan struct{}                // exit signals the profiler to stop; it is closed after stopping
+	stopOnce   sync.Once                    // stopOnce ensures the profiler is stopped exactly once.
+	wg         sync.WaitGroup               // wg waits for all goroutines to exit when stopping.
+	met        *metrics                     // metric collector state
+	prev       map[string]*pprofile.Profile // previous collection results for delta profiling
 
 	testHooks testHooks
 }
@@ -178,7 +178,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		out:  make(chan batch, outChannelSize),
 		exit: make(chan struct{}),
 		met:  newMetrics(),
-		prev: make(map[ProfileType]*pprofile.Profile),
+		prev: make(map[string]*pprofile.Profile),
 	}
 	p.uploadFunc = p.upload
 	return &p, nil
