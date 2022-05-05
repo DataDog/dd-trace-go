@@ -244,14 +244,13 @@ func TestTextMapPropagatorInvalidTraceTagsHeader(t *testing.T) {
 	assert.Equal(t, "decoding_error", sctx.trace.tags["_dd.propagation_error"])
 }
 
-func TestTextMapPropagatorTraceTagsTooLong(t *testing.T) {
+func TestTextMapPropagatorExtractTraceTagsTooLong(t *testing.T) {
 	tags := make([]string, 0)
 	for i := 0; i < 100; i++ {
 		tags = append(tags, fmt.Sprintf("_dd.p.tag%d=value%d", i, i))
 	}
 	traceTags := strings.Join(tags, ",")
 	src := TextMapCarrier(map[string]string{
-		DefaultPriorityHeader: "1",
 		DefaultTraceIDHeader:  "1",
 		DefaultParentIDHeader: "1",
 		traceTagsHeader:       traceTags,
@@ -261,18 +260,25 @@ func TestTextMapPropagatorTraceTagsTooLong(t *testing.T) {
 	assert.Nil(t, err)
 	sctx, ok := ctx.(*spanContext)
 	assert.True(t, ok)
-	child := tracer.StartSpan("test", ChildOf(sctx))
+	assert.Equal(t, "extract_max_size", sctx.trace.tags["_dd.propagation_error"])
+}
+
+func TestTextMapPropagatorInjectTraceTagsTooLong(t *testing.T) {
+	tracer := newTracer()
+	child := tracer.StartSpan("test")
+	for i := 0; i < 100; i++ {
+		child.Context().(*spanContext).trace.setPropagatingTag(fmt.Sprintf("someKey%d", i), fmt.Sprintf("someValue%d", i))
+	}
 	childSpanID := child.Context().(*spanContext).spanID
-	assert.Equal(t, 101, len(sctx.trace.propagatingTags))
 	dst := map[string]string{}
-	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
+	err := tracer.Inject(child.Context(), TextMapCarrier(dst))
 	assert.Nil(t, err)
 	assert.Equal(t, map[string]string{
 		"x-datadog-parent-id":         strconv.Itoa(int(childSpanID)),
-		"x-datadog-trace-id":          "1",
+		"x-datadog-trace-id":          strconv.Itoa(int(childSpanID)),
 		"x-datadog-sampling-priority": "1",
 	}, dst)
-	assert.Equal(t, "max_size", child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
+	assert.Equal(t, "inject_max_size", child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
 }
 
 func TestTextMapPropagatorInvalidTraceTags(t *testing.T) {

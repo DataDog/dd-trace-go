@@ -98,6 +98,9 @@ const traceTagsHeader = "x-datadog-tags"
 // propagationErrorKey holds any error from propagated trace tags (if any)
 const propagationErrorKey = "_dd.propagation_error"
 
+// propagationExtractMaxSize limits the total size of incoming propagated tags to parse
+const propagationExtractMaxSize = 512
+
 // PropagatorConfig defines the configuration for initializing a propagator.
 type PropagatorConfig struct {
 	// BaggagePrefix specifies the prefix that will be used to store baggage
@@ -286,7 +289,7 @@ func (p *propagator) formatPropagatingTags(ctx *spanContext) strings.Builder {
 		if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
 			sb.Reset()
 			log.Warn("won't propagate trace tags (err: max trace tags header len (%d) reached)", p.cfg.MaxTagsHeaderLen)
-			ctx.trace.setTag(propagationErrorKey, "max_size")
+			ctx.trace.setTag(propagationErrorKey, "inject_max_size")
 			break
 		}
 		if sb.Len() > 0 {
@@ -333,16 +336,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		case originHeader:
 			ctx.origin = v
 		case traceTagsHeader:
-			if ctx.trace == nil {
-				ctx.trace = newTrace()
-			}
-			ctx.trace.mu.Lock()
-			ctx.trace.propagatingTags, err = parsePropagatableTraceTags(v)
-			if err != nil {
-				log.Warn("did not extract trace tags (err: %s)", err.Error())
-				ctx.trace.setTag(propagationErrorKey, "decoding_error")
-			}
-			ctx.trace.mu.Unlock()
+			extractPropagatingTags(&ctx, v, err)
 		default:
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
@@ -357,6 +351,24 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		return nil, ErrSpanContextNotFound
 	}
 	return &ctx, nil
+}
+
+func extractPropagatingTags(ctx *spanContext, v string, err error) {
+	if ctx.trace == nil {
+		ctx.trace = newTrace()
+	}
+	ctx.trace.mu.Lock()
+	defer ctx.trace.mu.Unlock()
+	if len(v) > propagationExtractMaxSize {
+		log.Warn("did not extract trace tags, longer than max size limit: %d", propagationExtractMaxSize)
+		ctx.trace.setTag(propagationErrorKey, "extract_max_size")
+		return
+	}
+	ctx.trace.propagatingTags, err = parsePropagatableTraceTags(v)
+	if err != nil {
+		log.Warn("did not extract trace tags (err: %s)", err.Error())
+		ctx.trace.setTag(propagationErrorKey, "decoding_error")
+	}
 }
 
 const (
