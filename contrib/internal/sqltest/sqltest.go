@@ -122,15 +122,15 @@ func testQuery(cfg *Config) func(*testing.T) {
 		cfg.mockTracer.Reset()
 		assert := assert.New(t)
 		rows, err := cfg.DB.Query(query)
-		defer rows.Close()
+		rows.Close()
 		assert.Nil(err)
 
 		spans := cfg.mockTracer.FinishedSpans()
 		var querySpan mocktracer.Span
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared queries so there are 3 spans
-			//connect, prepare, and query
-			assert.Len(spans, 3)
+			//connect, prepare, query and close
+			assert.Len(spans, 4)
 			span := spans[1]
 			cfg.ExpectTags["sql.query_type"] = "Prepare"
 			assert.Equal(cfg.ExpectName, span.OperationName())

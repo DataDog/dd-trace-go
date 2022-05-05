@@ -221,7 +221,7 @@ func (tp *traceParams) tryStartTrace(ctx context.Context, qtype queryType, query
 		// optional interface method is not implemented. There is
 		// nothing to trace here.
 		// See: https://github.com/DataDog/dd-trace-go/issues/270
-		return
+		return nil
 	}
 	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
 		return nil
