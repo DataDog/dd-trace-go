@@ -66,7 +66,7 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 		sqlCommentCarrier := tracer.SQLCommentCarrier{DiscardDynamicTags: true}
 		span := tc.tryStartTrace(ctx, queryTypePrepare, query, start, &sqlCommentCarrier, err)
 		if span != nil {
-			go func() {
+			defer func() {
 				span.Finish(tracer.WithError(err))
 			}()
 		}
@@ -80,7 +80,7 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 	sqlCommentCarrier := tracer.SQLCommentCarrier{DiscardDynamicTags: true}
 	span := tc.tryStartTrace(ctx, queryTypePrepare, query, start, &sqlCommentCarrier, err)
 	if span != nil {
-		go func() {
+		defer func() {
 			span.Finish(tracer.WithError(err))
 		}()
 	}
@@ -148,7 +148,7 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 		sqlCommentCarrier := tracer.SQLCommentCarrier{}
 		span := tc.tryStartTrace(ctx, queryTypeQuery, query, start, &sqlCommentCarrier, err)
 		if span != nil {
-			go func() {
+			defer func() {
 				span.Finish(tracer.WithError(err))
 			}()
 		}
@@ -169,7 +169,7 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 		sqlCommentCarrier := tracer.SQLCommentCarrier{}
 		span := tc.tryStartTrace(ctx, queryTypeQuery, query, start, &sqlCommentCarrier, err)
 		if span != nil {
-			go func() {
+			defer func() {
 				span.Finish(tracer.WithError(err))
 			}()
 		}

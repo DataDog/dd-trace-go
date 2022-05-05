@@ -216,7 +216,6 @@ func (s *mockspan) Finish(opts ...ddtrace.FinishOption) {
 	s.finished = true
 	s.finishTime = t
 	s.tracer.addFinishedSpan(s)
-	//fmt.Printf("Finished span with type %v\n", s.Tag("sql.query_type"))
 }
 
 // String implements fmt.Stringer.
