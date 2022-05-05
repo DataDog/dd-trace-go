@@ -255,6 +255,7 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	end := now()
 	tags := append(p.cfg.tags, pt.Tag())
 	filename := t.Filename
+	// TODO(fg): Consider making Collect() return the filename.
 	if p.cfg.deltaProfiles && t.SupportsDelta {
 		filename = "delta-" + filename
 	}
