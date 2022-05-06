@@ -120,7 +120,7 @@ type PropagatorConfig struct {
 	PriorityHeader string
 
 	// MaxTagsHeaderLen specifies the maximum length of trace tags header value.
-	// It defaults to defaultMaxTagsHeaderLen
+	// It defaults to defaultMaxTagsHeaderLen, a value of 0 disables propagation of tags
 	MaxTagsHeaderLen int
 
 	// B3 specifies if B3 headers should be added for trace propagation.

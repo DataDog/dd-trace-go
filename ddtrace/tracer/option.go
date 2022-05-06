@@ -266,8 +266,13 @@ func newConfig(opts ...StartOption) *config {
 		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
 	if c.propagator == nil {
+		// Max tags length of 512 characters to prevent HTTP 413 issues
+		maxTagsLen := clamp(0, 512, internal.IntEnv(
+			"DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH",
+			defaultMaxTagsHeaderLen,
+		), "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", defaultMaxTagsHeaderLen),
+			MaxTagsHeaderLen: maxTagsLen,
 		})
 	}
 	if c.logger != nil {
@@ -307,6 +312,19 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	return c
+}
+
+func clamp(min int, max int, val int, name string) int {
+	switch {
+	case val < min:
+		log.Warn("%s was below minimum: %d. Setting to minimum value.", name, min)
+		return min
+	case val > max:
+		log.Warn("%s was above maximum: %d. Setting to maximum value.", name, max)
+		return max
+	default:
+		return val
+	}
 }
 
 // defaultHTTPClient returns the default http.Client to start the tracer with.

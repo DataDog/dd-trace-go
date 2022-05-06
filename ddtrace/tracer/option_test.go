@@ -412,6 +412,39 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal("myRouter", c.serviceMappings["http.router"])
 		assert.Equal("", c.serviceMappings["noval"])
 	})
+
+	t.Run("datadog-tags", func(t *testing.T) {
+		t.Run("can-set-value", func(t *testing.T) {
+			os.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "200")
+			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
+			assert := assert.New(t)
+			c := newConfig()
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			assert.Equal(200, p.cfg.MaxTagsHeaderLen)
+		})
+		t.Run("default", func(t *testing.T) {
+			assert := assert.New(t)
+			c := newConfig()
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
+		})
+		t.Run("clamped-to-zero", func(t *testing.T) {
+			os.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "-520")
+			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
+			assert := assert.New(t)
+			c := newConfig()
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			assert.Equal(0, p.cfg.MaxTagsHeaderLen)
+		})
+		t.Run("upper-clamp", func(t *testing.T) {
+			os.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "1000")
+			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
+			assert := assert.New(t)
+			c := newConfig()
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
+		})
+	})
 }
 
 func TestDefaultHTTPClient(t *testing.T) {
