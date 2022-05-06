@@ -426,7 +426,7 @@ func (s *span) finish(finishTime int64) {
 // version version.
 func newAggregableSpan(s *span, obfuscator *obfuscate.Obfuscator) *aggregableSpan {
 	var statusCode uint32
-	if sc, ok := s.Meta["http.status_code"]; ok && sc != "" {
+	if sc, ok := s.Meta[ext.HTTPCode]; ok && sc != "" {
 		if c, err := strconv.Atoi(sc); err == nil && c > 0 && c <= math.MaxInt32 {
 			statusCode = uint32(c)
 		}
