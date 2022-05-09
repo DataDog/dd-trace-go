@@ -179,6 +179,9 @@ func forEachStringTag(str string, fn func(key string, val string)) {
 	}
 }
 
+// maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 issues.
+const maxPropagatedTagsLength = 512
+
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
 func newConfig(opts ...StartOption) *config {
@@ -266,13 +269,18 @@ func newConfig(opts ...StartOption) *config {
 		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
 	if c.propagator == nil {
-		// Max tags length of 512 characters to prevent HTTP 413 issues
-		maxTagsLen := clamp(0, 512, internal.IntEnv(
-			"DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH",
-			defaultMaxTagsHeaderLen,
-		), "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
+		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
+		max := internal.IntEnv(envKey, defaultMaxTagsHeaderLen)
+		if max < 0 {
+			log.Warn("Invalid value %d for %s. Setting to 0.", max, envKey)
+			max = 0
+		}
+		if max > maxPropagatedTagsLength {
+			log.Warn("Invalid value %d for %s. Maximum allowed is %d. Setting to %d.", max, envKey, maxPropagatedTagsLength, maxPropagatedTagsLength)
+			max = maxPropagatedTagsLength
+		}
 		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: maxTagsLen,
+			MaxTagsHeaderLen: max,
 		})
 	}
 	if c.logger != nil {
@@ -312,19 +320,6 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	return c
-}
-
-func clamp(min int, max int, val int, name string) int {
-	switch {
-	case val < min:
-		log.Warn("%s was below minimum: %d. Setting to minimum value.", name, min)
-		return min
-	case val > max:
-		log.Warn("%s was above maximum: %d. Setting to maximum value.", name, max)
-		return max
-	default:
-		return val
-	}
 }
 
 // defaultHTTPClient returns the default http.Client to start the tracer with.

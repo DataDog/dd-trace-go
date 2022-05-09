@@ -422,12 +422,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(200, p.cfg.MaxTagsHeaderLen)
 		})
+
 		t.Run("default", func(t *testing.T) {
 			assert := assert.New(t)
 			c := newConfig()
 			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
 		})
+
 		t.Run("clamped-to-zero", func(t *testing.T) {
 			os.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "-520")
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
@@ -436,6 +438,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(0, p.cfg.MaxTagsHeaderLen)
 		})
+
 		t.Run("upper-clamp", func(t *testing.T) {
 			os.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "1000")
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")

@@ -8,6 +8,8 @@ package internal
 import (
 	"os"
 	"strconv"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // BoolEnv returns the parsed boolean value of an environment variable, or
@@ -25,6 +27,7 @@ func BoolEnv(key string, def bool) bool {
 func IntEnv(key string, def int) int {
 	v, err := strconv.Atoi(os.Getenv(key))
 	if err != nil {
+		log.Warn("Non-integer value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err)
 		return def
 	}
 	return v

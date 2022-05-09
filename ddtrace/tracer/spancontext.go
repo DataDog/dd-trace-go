@@ -242,7 +242,7 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 	}
 }
 
-// setServiceDecisionMaker sets metadata about the sampling decision made for this trace and span.
+// setServiceDecisionMaker sets the service and sampler which took the sampling decision made for this trace and span.
 // It is not safe for concurrent use.
 func (t *trace) setServiceDecisionMaker(service string, sampler samplernames.SamplerName, s *span) {
 	serviceHash := servicehash.Hash(service)
