@@ -94,6 +94,20 @@ func (r *Reader) ReadMessage(ctx context.Context) (kafka.Message, error) {
 	return msg, nil
 }
 
+// FetchMessage reads and returns the next message from the reader. Message will be traced.
+func (r *Reader) FetchMessage(ctx context.Context) (kafka.Message, error) {
+	if r.prev != nil {
+		r.prev.Finish()
+		r.prev = nil
+	}
+	msg, err := r.Reader.FetchMessage(ctx)
+	if err != nil {
+		return msg, err
+	}
+	r.prev = r.startSpan(ctx, &msg)
+	return msg, nil
+}
+
 // WrapWriter wraps a kafka.Writer so requests are traced.
 func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {
 	writer := &Writer{
