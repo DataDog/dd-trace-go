@@ -10,8 +10,6 @@ import (
 	"database/sql/driver"
 	"errors"
 	"time"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var _ driver.Stmt = (*tracedStmt)(nil)
@@ -27,13 +25,8 @@ type tracedStmt struct {
 // Close sends a span before closing a statement
 func (s *tracedStmt) Close() (err error) {
 	start := time.Now()
-	span := s.tryStartTrace(s.ctx, queryTypeClose, "", start, nil)
-	if span != nil {
-		defer func() {
-			span.Finish(tracer.WithError(err))
-		}()
-	}
 	err = s.Stmt.Close()
+	s.tryTrace(s.ctx, queryTypeClose, "", start, err)
 	return err
 }
 
