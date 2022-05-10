@@ -147,21 +147,23 @@ type InjectionOption func(cfg *InjectionConfig)
 // around by reference to one or more InjectionOption functions which shape it into its
 // final form.
 type InjectionConfig struct {
-	// TraceIDKey defines the key to use to inject the trade id. The trace id is only injected if this value
+	// TraceIDKey defines the key to use to inject the trade id. The trace id is only injected if this value.
 	// is not empty
 	TraceIDKey string
-	// SpanIDKey defines the key to use to inject the span id. The span id is only injected if this value
+	// SpanIDKey defines the key to use to inject the span id. The span id is only injected if this value.
 	// is not empty
 	SpanIDKey string
 	// SamplingPriorityKey defines the key to use to inject the sampling priority. The sampling priority is only
-	// injected if this value is not empty
+	// injected if this value is not empty.
 	SamplingPriorityKey string
-	// ServiceNameKey defines the key to use to inject the service name. The service name is only
+	// ServiceNameKey defines the key to use to inject the service name. The service name is only.
 	// injected if this value is not empty
 	ServiceNameKey string
-	// EnvKey defines the key to use to inject the environment. The environment is only injected if this value is not
+	// EnvKey defines the key to use to inject the environment. The environment is only injected if this value is not.
 	// empty
 	EnvKey string
-	// ParentVersionKey defines the key to use to inject the version. The version is only injected if this value is not empty
+	// ParentVersionKey defines the key to use to inject the version. The version is only injected if this value is not empty.
 	ParentVersionKey string
+	// SpanID defines the span id value to use for injection. If not present, the span id value from the SpanContext is used
+	SpanID uint64
 }

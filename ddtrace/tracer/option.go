@@ -908,6 +908,13 @@ func WithSpanIDKey(spanIDKey string) InjectionOption {
 	}
 }
 
+// WithInjectedSpanID returns the option setting the span id value
+func WithInjectedSpanID(spanID uint64) InjectionOption {
+	return func(cfg *ddtrace.InjectionConfig) {
+		cfg.SpanID = spanID
+	}
+}
+
 // WithTraceIDKey returns the option setting the trace id key
 func WithTraceIDKey(traceIDKey string) InjectionOption {
 	return func(cfg *ddtrace.InjectionConfig) {

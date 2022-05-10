@@ -9,10 +9,7 @@ import (
 
 // SQLCommentCarrier holds tags to be serialized as a SQL Comment
 type SQLCommentCarrier struct {
-	// Indicates if this SQL comment carrier should only discard dynamic tags
-	// (like trace id, span id and sampling priority)
-	DiscardDynamicTags bool
-	tags               map[string]string
+	tags map[string]string
 }
 
 // Values for sql comment keys

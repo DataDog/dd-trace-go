@@ -151,13 +151,13 @@ func NewPropagator(cfg *PropagatorConfig) Propagator {
 // and extract values. It propagates static tags (service name, environment and version) as well
 // as dynamic trace attributes (span id, trace id and sampling priority).
 func NewInjector() WithOptionsInjector {
-	return &experimentalInjector{}
+	return &withOptionsInjector{}
 }
 
-type experimentalInjector struct {
+type withOptionsInjector struct {
 }
 
-func (i *experimentalInjector) InjectWithOptions(spanCtx ddtrace.SpanContext, carrier interface{}, opts ...ddtrace.InjectionOption) error {
+func (i *withOptionsInjector) InjectWithOptions(spanCtx ddtrace.SpanContext, carrier interface{}, opts ...ddtrace.InjectionOption) error {
 	switch c := carrier.(type) {
 	case TextMapWriter:
 		return i.injectTextMapWithOptions(spanCtx, c, opts...)
@@ -166,15 +166,19 @@ func (i *experimentalInjector) InjectWithOptions(spanCtx ddtrace.SpanContext, ca
 	}
 }
 
-func (i *experimentalInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanContext, writer TextMapWriter, opts ...ddtrace.InjectionOption) error {
-	ctx, ok := spanCtx.(*spanContext)
-	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
-		return ErrInvalidSpanContext
-	}
-
+func (i *withOptionsInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanContext, writer TextMapWriter, opts ...ddtrace.InjectionOption) error {
 	cfg := ddtrace.InjectionConfig{}
 	for _, apply := range opts {
 		apply(&cfg)
+	}
+
+	ctx, ok := spanCtx.(*spanContext)
+	spanID := cfg.SpanID
+	if spanID == 0 {
+		spanID = ctx.spanID
+	}
+	if !ok || ctx.traceID == 0 || spanID == 0 {
+		return ErrInvalidSpanContext
 	}
 
 	if cfg.TraceIDKey != "" {
