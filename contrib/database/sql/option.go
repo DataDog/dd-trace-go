@@ -24,9 +24,9 @@ type config struct {
 type commentInjectionMode int
 
 const (
-	commentInjectionDisabled      commentInjectionMode = 0 // Default value, sql comment injection disabled
-	fullSQLCommentInjection       commentInjectionMode = 1 // Full sql comment injection is enabled: include dynamic values like span id, trace id and sampling priority.
-	staticTagsSQLCommentInjection commentInjectionMode = 2 // Static sql comment injection only: this includes values that are set once during the lifetime of an application: service name, env, version.
+	commentInjectionDisabled      commentInjectionMode = iota // Default value, sql comment injection disabled
+	fullSQLCommentInjection                                   // Full sql comment injection is enabled: include dynamic values like span id, trace id and sampling priority.
+	staticTagsSQLCommentInjection                             // Static sql comment injection only: this includes values that are set once during the lifetime of an application: service name, env, version.
 )
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
