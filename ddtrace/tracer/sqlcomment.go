@@ -67,7 +67,11 @@ func (c *SQLCommentCarrier) CommentedQuery(query string) (commented string) {
 
 // ForeachKey implements TextMapReader.
 func (c SQLCommentCarrier) ForeachKey(handler func(key, val string) error) error {
-	// TODO: implement this for completeness. We don't really have a use-case for this at the moment.
+	for k, v := range c.tags {
+		if err := handler(k, v); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
