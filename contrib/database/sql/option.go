@@ -20,11 +20,11 @@ type config struct {
 	commentInjectionMode commentInjectionMode
 }
 
-// commentInjectionMode represents the mode of sql comment injection
+// commentInjectionMode represents the mode of sql comment injection.
 type commentInjectionMode int
 
 const (
-	commentInjectionDisabled      commentInjectionMode = iota // Default value, sql comment injection disabled
+	commentInjectionDisabled      commentInjectionMode = iota // Default value, sql comment injection disabled.
 	fullSQLCommentInjection                                   // Full sql comment injection is enabled: include dynamic values like span id, trace id and sampling priority.
 	staticTagsSQLCommentInjection                             // Static sql comment injection only: this includes values that are set once during the lifetime of an application: service name, env, version.
 )
