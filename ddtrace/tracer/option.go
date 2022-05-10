@@ -138,6 +138,9 @@ type config struct {
 
 	// enabled reports whether tracing is enabled.
 	enabled bool
+
+	// the base TUF roots metadata file for the remote config system
+	remoteConfigTUFRoot string
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -217,6 +220,9 @@ func newConfig(opts ...StartOption) *config {
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		forEachStringTag(v, func(key, val string) { WithGlobalTag(key, val)(c) })
+	}
+	if v := os.Getenv("DD_RC_TUF_ROOT"); v != "" {
+		c.remoteConfigTUFRoot = v
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
@@ -728,6 +734,14 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 func WithProfilerEndpoints(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerEndpoints = enabled
+	}
+}
+
+// WithRemoteConfigRoot defines the base TUF root metadata file. This is required
+// if you are using a service that relies on Remote Config within the tracer.
+func WithRemoteConfigTUFRoot(root string) StartOption {
+	return func(c *config) {
+		c.remoteConfigTUFRoot = root
 	}
 }
 

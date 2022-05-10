@@ -18,8 +18,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
@@ -40,6 +43,12 @@ type tracer struct {
 	// stats specifies the concentrator used to compute statistics, when client-side
 	// stats are enabled.
 	stats *concentrator
+
+	// remoteconfig is responsible for periodically retrieveing updated config state
+	// from the agent.
+	//
+	// in this branch it's solely just a dummy to allow us to work with system-tests
+	remoteconfig *remoteconfig.Client
 
 	// traceWriter is responsible for sending finished traces to their
 	// destination, such as the Trace Agent or Datadog Forwarder.
@@ -190,12 +199,26 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	} else {
 		writer = newAgentTraceWriter(c, sampler)
 	}
+	rcClient, err := remoteconfig.NewClient(remoteconfig.ClientConfig{
+		AgentAddr:     c.agentAddr,
+		AppVersion:    c.version,
+		Env:           c.env,
+		PollRate:      time.Second * 1,
+		RuntimeID:     globalconfig.RuntimeID(),
+		ServiceName:   c.serviceName,
+		TracerVersion: version.Tag,
+		TUFRoot:       c.remoteConfigTUFRoot,
+	})
+	if err != nil {
+		log.Warn("failed to create remote config client - will not receive remote config updates: %s", err)
+	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
 		out:              make(chan []*span, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
+		remoteconfig:     rcClient,
 		rulesSampling:    newRulesSampler(c.samplingRules),
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
@@ -240,6 +263,13 @@ func newTracer(opts ...StartOption) *tracer {
 	go func() {
 		defer t.wg.Done()
 		t.reportHealthMetrics(statsInterval)
+	}()
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		if t.remoteconfig != nil {
+			t.remoteconfig.Start()
+		}
 	}()
 	t.stats.Start()
 	appsec.Start()
@@ -493,6 +523,9 @@ func (t *tracer) Stop() {
 	t.traceWriter.stop()
 	t.config.statsd.Close()
 	appsec.Stop()
+	if t.remoteconfig != nil {
+		t.remoteconfig.Stop()
+	}
 }
 
 // Inject uses the configured or default TextMap Propagator.
