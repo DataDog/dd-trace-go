@@ -9,6 +9,7 @@ import (
 	gocontext "context"
 	"os"
 	"runtime/pprof"
+	rt "runtime/trace"
 	"strconv"
 	"sync"
 	"time"
@@ -525,4 +526,12 @@ func (t *tracer) sample(span *span) {
 		return
 	}
 	t.prioritySampling.apply(span)
+}
+
+func startExecutionTracerTask(name string) func() {
+	if !rt.IsEnabled() {
+		return func() {}
+	}
+	_, task := rt.NewTask(gocontext.TODO(), name)
+	return task.End
 }
