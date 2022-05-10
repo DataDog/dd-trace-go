@@ -280,12 +280,16 @@ func newRateLimiter() *rateLimiter {
 	}
 }
 
+func (rs *rulesSampler) enabled() bool {
+	return len(rs.rules) > 0 || !math.IsNaN(rs.globalRate)
+}
+
 // apply uses the sampling rules to determine the sampling rate for the
 // provided span. If the rules don't match, and a default rate hasn't been
 // set using DD_TRACE_SAMPLE_RATE, then it returns false and the span is not
 // modified.
 func (rs *rulesSampler) apply(span *span) bool {
-	if len(rs.rules) == 0 && math.IsNaN(rs.globalRate) {
+	if !rs.enabled() {
 		// short path when disabled
 		return false
 	}
@@ -323,6 +327,15 @@ func (rs *rulesSampler) applyRate(span *span, rate float64, now time.Time) {
 		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate, rate)
 	}
 	span.SetTag(keyRulesSamplerLimiterRate, rate)
+}
+
+// limit returns the rate limit set in the rules sampler, controlled by DD_TRACE_RATE_LIMIT, and
+// true if rules sampling is enabled. If not present it returns math.NaN() and false.
+func (rs *rulesSampler) limit() (float64, bool) {
+	if rs.enabled() {
+		return float64(rs.limiter.limiter.Limit()), true
+	}
+	return math.NaN(), false
 }
 
 // SamplingRule is used for applying sampling rates to spans that match
