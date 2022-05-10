@@ -7,6 +7,7 @@ require (
 	github.com/99designs/gqlgen v0.17.16
 	github.com/99designs/gqlgen/_examples v0.0.0-20220829154420-b66fff16de0b
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.0.0-20220614205406-2074f9ac8202
 	github.com/DataDog/datadog-go/v5 v5.0.2
 	github.com/DataDog/gostackparse v0.5.0
 	github.com/DataDog/sketches-go v1.2.1
@@ -52,13 +53,16 @@ require (
 	github.com/lib/pq v1.10.2
 	github.com/mattn/go-sqlite3 v1.14.12
 	github.com/miekg/dns v1.1.25
+	github.com/mitchellh/mapstructure v1.4.2 // indirect
 	github.com/opentracing/opentracing-go v1.2.0
+	github.com/pierrec/lz4 v2.5.2+incompatible // indirect
 	github.com/segmentio/kafka-go v0.4.29
 	github.com/sirupsen/logrus v1.7.0
 	github.com/stretchr/testify v1.7.1
-	github.com/syndtr/goleveldb v1.0.0
+	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/tidwall/buntdb v1.2.0
-	github.com/tinylib/msgp v1.1.2
+	github.com/tidwall/grect v0.1.4 // indirect
+	github.com/tinylib/msgp v1.1.6
 	github.com/twitchtv/twirp v8.1.1+incompatible
 	github.com/urfave/negroni v1.0.0
 	github.com/valyala/fasthttp v1.34.0 // indirect
@@ -161,22 +165,19 @@ require (
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
-	github.com/mitchellh/mapstructure v1.4.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
-	github.com/onsi/ginkgo v1.16.4 // indirect
-	github.com/onsi/gomega v1.16.0 // indirect
 	github.com/philhofer/fwd v1.1.1 // indirect
-	github.com/pierrec/lz4 v2.5.2+incompatible // indirect
 	github.com/pierrec/lz4/v4 v4.1.14 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
+	github.com/secure-systems-lab/go-securesystemslib v0.3.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/tidwall/btree v1.1.0 // indirect
+	github.com/theupdateframework/go-tuf v0.3.0 // indirect
+	github.com/tidwall/btree v0.3.0 // indirect
 	github.com/tidwall/gjson v1.12.1 // indirect
-	github.com/tidwall/grect v0.1.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tidwall/rtred v0.1.2 // indirect
