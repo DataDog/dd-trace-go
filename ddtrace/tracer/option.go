@@ -97,7 +97,7 @@ type config struct {
 	propagator Propagator
 
 	// injector injects span context cross-process
-	injector ExperimentalInjector
+	injector WithOptionsInjector
 
 	// httpClient specifies the HTTP client to be used by the agent's transport.
 	httpClient *http.Client

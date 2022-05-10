@@ -21,12 +21,11 @@ type Propagator interface {
 	Extract(carrier interface{}) (ddtrace.SpanContext, error)
 }
 
-// ExperimentalInjector implementations should be able to inject
-// SpanContexts into an implementation specific carrier. It is closely related to
-// Propagator except that it defines an experimental interface allowing more flexibility on
-// which keys are injected.
-// Note that this interface isn't meant to be public and used for other usages than internal ones.
-type ExperimentalInjector interface {
+// WithOptionsInjector implementations should be able to inject
+// SpanContexts into an implementation specific carrier. It is related to
+// Propagator but provides a write-only flexible interface accepting options and omits
+// extraction.
+type WithOptionsInjector interface {
 	// InjectWithOptions takes the SpanContext and injects it into the carrier according to the given options.
 	InjectWithOptions(context ddtrace.SpanContext, carrier interface{}, opts ...InjectionOption) error
 }

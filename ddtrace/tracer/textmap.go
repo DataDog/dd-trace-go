@@ -150,7 +150,7 @@ func NewPropagator(cfg *PropagatorConfig) Propagator {
 // NewInjector returns a new experimental injector which uses TextMap to inject
 // and extract values. It propagates static tags (service name, environment and version) as well
 // as dynamic trace attributes (span id, trace id and sampling priority).
-func NewInjector() ExperimentalInjector {
+func NewInjector() WithOptionsInjector {
 	return &experimentalInjector{}
 }
 
