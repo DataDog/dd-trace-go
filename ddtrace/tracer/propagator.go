@@ -21,10 +21,9 @@ type Propagator interface {
 	Extract(carrier interface{}) (ddtrace.SpanContext, error)
 }
 
-// WithOptionsInjector implementations should be able to inject
-// SpanContexts into an implementation specific carrier. It is related to
-// Propagator but provides a write-only flexible interface accepting options and omits
-// extraction.
+// WithOptionsInjector implementations should be able to inject SpanContexts into an implementation
+// specific carrier. It is related to Propagator but provides a write-only flexible interface accepting
+// options and does not include extraction.
 type WithOptionsInjector interface {
 	// InjectWithOptions takes the SpanContext and injects it into the carrier according to the given options.
 	InjectWithOptions(context ddtrace.SpanContext, carrier interface{}, opts ...InjectionOption) error
