@@ -573,7 +573,7 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 
 func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	assert := assert.New(t)
-	tracer, _, _, stop := startTestTracer(t, WithPropagateServiceName(true))
+	tracer, _, _, stop := startTestTracer(t, WithServiceNamePropagation(true))
 	defer stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &spanContext{
@@ -588,7 +588,7 @@ func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 
 func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(WithPropagateServiceName(false))
+	tracer := newTracer(WithServiceNamePropagation(false))
 	defer tracer.Stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &spanContext{
@@ -793,7 +793,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 
 	tr, _, flush, stop := startTestTracer(t,
 		withTransport(newHTTPTransport(addr, defaultClient)),
-		WithPropagateServiceName(true),
+		WithServiceNamePropagation(true),
 	)
 	defer stop()
 

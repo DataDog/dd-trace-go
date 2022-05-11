@@ -538,8 +538,9 @@ func WithPropagator(p Propagator) StartOption {
 	}
 }
 
-// WithPropagateServiceName enable service name horizontal propagation.
-func WithPropagateServiceName(enabled bool) StartOption {
+// WithServiceNamePropagation enables the hashed name of this service to be horizontally
+// propagated to other services (e.g. over http requests).
+func WithServiceNamePropagation(enabled bool) StartOption {
 	return func(c *config) {
 		c.propagateServiceName = enabled
 	}
