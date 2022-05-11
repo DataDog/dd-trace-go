@@ -8,7 +8,6 @@ package restful
 
 import (
 	"math"
-	"strconv"
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -27,11 +26,11 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 	}
 	log.Debug("contrib/emicklei/go-restful: Creating tracing filter: %#v", cfg)
 	return func(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
-		var opt ddtrace.StartSpanOption
+		var opts []ddtrace.StartSpanOption
 		if !math.IsNaN(cfg.analyticsRate) {
-			opt = tracer.Tag(ext.EventSampleRate, cfg.analyticsRate)
+			opts = []ddtrace.StartSpanOption{tracer.Tag(ext.EventSampleRate, cfg.analyticsRate)}
 		}
-		span, ctx := httptrace.StartRequestSpan(req.Request, cfg.serviceName, req.SelectedRoutePath(), false, opt)
+		span, ctx := httptrace.StartRequestSpan(req.Request, cfg.serviceName, req.SelectedRoutePath(), false, opts...)
 		defer func() {
 			httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))
 		}()
@@ -44,23 +43,12 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 
 // Filter is deprecated. Please use FilterFunc.
 func Filter(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
-	opts := []ddtrace.StartSpanOption{
-		tracer.ResourceName(req.SelectedRoutePath()),
-		tracer.SpanType(ext.SpanTypeWeb),
-		tracer.Tag(ext.HTTPMethod, req.Request.Method),
-		tracer.Tag(ext.HTTPURL, req.Request.URL.Path),
-	}
-	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Request.Header)); err == nil {
-		opts = append(opts, tracer.ChildOf(spanctx))
-	}
-	span, ctx := tracer.StartSpanFromContext(req.Request.Context(), "http.request", opts...)
-	defer span.Finish()
+	span, ctx := httptrace.StartRequestSpan(req.Request, req.SelectedRoutePath(), req.SelectedRoutePath(), false)
+	defer func() {
+		httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))
+	}()
 
 	// pass the span through the request context
 	req.Request = req.Request.WithContext(ctx)
-
 	chain.ProcessFilter(req, resp)
-
-	span.SetTag(ext.HTTPCode, strconv.Itoa(resp.StatusCode()))
-	span.SetTag(ext.Error, resp.Error())
 }
