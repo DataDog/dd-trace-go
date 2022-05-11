@@ -10,6 +10,7 @@ import (
 	"math"
 	"strconv"
 
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -26,29 +27,18 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 	}
 	log.Debug("contrib/emicklei/go-restful: Creating tracing filter: %#v", cfg)
 	return func(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
-		opts := []ddtrace.StartSpanOption{
-			tracer.ServiceName(cfg.serviceName),
-			tracer.ResourceName(req.SelectedRoutePath()),
-			tracer.SpanType(ext.SpanTypeWeb),
-			tracer.Tag(ext.HTTPMethod, req.Request.Method),
-			tracer.Tag(ext.HTTPURL, req.Request.URL.Path),
-		}
+		var opt ddtrace.StartSpanOption
 		if !math.IsNaN(cfg.analyticsRate) {
-			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+			opt = tracer.Tag(ext.EventSampleRate, cfg.analyticsRate)
 		}
-		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Request.Header)); err == nil {
-			opts = append(opts, tracer.ChildOf(spanctx))
-		}
-		span, ctx := tracer.StartSpanFromContext(req.Request.Context(), "http.request", opts...)
-		defer span.Finish()
+		span, ctx := httptrace.StartRequestSpan(req.Request, cfg.serviceName, req.SelectedRoutePath(), false, opt)
+		defer func() {
+			httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))
+		}()
 
 		// pass the span through the request context
 		req.Request = req.Request.WithContext(ctx)
-
 		chain.ProcessFilter(req, resp)
-
-		span.SetTag(ext.HTTPCode, strconv.Itoa(resp.StatusCode()))
-		span.SetTag(ext.Error, resp.Error())
 	}
 }
 
