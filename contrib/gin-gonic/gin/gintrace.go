@@ -9,9 +9,8 @@ package gin // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin"
 import (
 	"fmt"
 	"math"
-	"net/http"
-	"strconv"
 
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -49,11 +48,14 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(c.Request.Header)); err == nil {
 			opts = append(opts, tracer.ChildOf(spanctx))
 		}
-		span, ctx := tracer.StartSpanFromContext(c.Request.Context(), "http.request", opts...)
-		defer span.Finish()
+		span, ctx := httptrace.StartRequestSpan(c.Request, cfg.serviceName, resource, false, tracer.Measured())
 
 		// pass the span through the request context
 		c.Request = c.Request.WithContext(ctx)
+
+		defer func() {
+			httptrace.FinishRequestSpan(span, c.Writer.Status())
+		}()
 
 		// Use AppSec if enabled by user
 		if appsecEnabled {
@@ -63,12 +65,6 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 		// serve the request to the next middleware
 		c.Next()
-
-		status := c.Writer.Status()
-		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
-		if status >= 500 && status < 600 {
-			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
-		}
 
 		if len(c.Errors) > 0 {
 			span.SetTag("gin.errors", c.Errors.String())
