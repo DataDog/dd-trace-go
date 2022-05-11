@@ -220,6 +220,11 @@ func (t *mocktracer) InjectWithOptions(context ddtrace.SpanContext, carrier inte
 		return tracer.ErrInvalidSpanContext
 	}
 
+	samplingPriority := 0
+	if ok {
+		samplingPriority = ctx.samplingPriority()
+	}
+
 	if cfg.TraceIDKey != "" {
 		writer.Set(cfg.TraceIDKey, "test-trace-id")
 	}
@@ -229,7 +234,7 @@ func (t *mocktracer) InjectWithOptions(context ddtrace.SpanContext, carrier inte
 	}
 
 	if cfg.SamplingPriorityKey != "" {
-		writer.Set(cfg.SamplingPriorityKey, strconv.Itoa(ctx.priority))
+		writer.Set(cfg.SamplingPriorityKey, strconv.Itoa(samplingPriority))
 	}
 
 	if cfg.EnvKey != "" {

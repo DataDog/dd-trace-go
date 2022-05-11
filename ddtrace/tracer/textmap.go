@@ -179,6 +179,7 @@ func (i *withOptionsInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanConte
 	}
 
 	traceID := spanID
+	samplingPriority := 0
 	if ok {
 		if ctx.TraceID() > 0 {
 			traceID = ctx.TraceID()
@@ -186,6 +187,10 @@ func (i *withOptionsInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanConte
 
 		if spanID == 0 {
 			spanID = ctx.SpanID()
+		}
+
+		if sp, ok := ctx.samplingPriority(); ok {
+			samplingPriority = sp
 		}
 	}
 
@@ -198,9 +203,7 @@ func (i *withOptionsInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanConte
 	}
 
 	if cfg.SamplingPriorityKey != "" {
-		if sp, ok := ctx.samplingPriority(); ok {
-			writer.Set(cfg.SamplingPriorityKey, strconv.Itoa(sp))
-		}
+		writer.Set(cfg.SamplingPriorityKey, strconv.Itoa(samplingPriority))
 	}
 
 	if cfg.EnvKey != "" {
