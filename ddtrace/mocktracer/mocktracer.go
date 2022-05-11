@@ -209,14 +209,15 @@ func (t *mocktracer) InjectWithOptions(context ddtrace.SpanContext, carrier inte
 	if !ok {
 		return tracer.ErrInvalidCarrier
 	}
-	ctx, ok := context.(*spanContext)
-	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
-		return tracer.ErrInvalidSpanContext
-	}
-
 	cfg := ddtrace.InjectionConfig{}
 	for _, apply := range opts {
 		apply(&cfg)
+	}
+	spanID := cfg.SpanID
+
+	ctx, ok := context.(*spanContext)
+	if !ok && spanID == 0 {
+		return tracer.ErrInvalidSpanContext
 	}
 
 	if cfg.TraceIDKey != "" {

@@ -171,22 +171,30 @@ func (i *withOptionsInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanConte
 	for _, apply := range opts {
 		apply(&cfg)
 	}
+	spanID := cfg.SpanID
 
 	ctx, ok := spanCtx.(*spanContext)
-	spanID := cfg.SpanID
-	if spanID == 0 {
-		spanID = ctx.spanID
-	}
-	if !ok || ctx.traceID == 0 || spanID == 0 {
+	if !ok && spanID == 0 {
 		return ErrInvalidSpanContext
 	}
 
+	traceID := spanID
+	if ok {
+		if ctx.TraceID() > 0 {
+			traceID = ctx.TraceID()
+		}
+
+		if spanID == 0 {
+			spanID = ctx.SpanID()
+		}
+	}
+
 	if cfg.TraceIDKey != "" {
-		writer.Set(cfg.TraceIDKey, strconv.FormatUint(ctx.traceID, 10))
+		writer.Set(cfg.TraceIDKey, strconv.FormatUint(traceID, 10))
 	}
 
 	if cfg.SpanIDKey != "" {
-		writer.Set(cfg.SpanIDKey, strconv.FormatUint(ctx.spanID, 10))
+		writer.Set(cfg.SpanIDKey, strconv.FormatUint(spanID, 10))
 	}
 
 	if cfg.SamplingPriorityKey != "" {

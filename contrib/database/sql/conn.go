@@ -208,20 +208,21 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 // with a span id injected into sql comments. If a span ID is returned, the caller should make sure to use it when creating
 // the span following the traced database call.
 func (tp *traceParams) withSQLCommentsInjected(ctx context.Context, query string, discardDynamicTags bool) (commentedQuery string, injectedSpanID *uint64) {
-	// TODO: figure out why tests are failing because the span from context is nil or if there's a different way to
-	// get access to the trace ID
+	var spanContext ddtrace.SpanContext
 	if span, ok := tracer.SpanFromContext(ctx); ok {
-		if tp.cfg.commentInjectionMode != commentInjectionDisabled {
-			sqlCommentCarrier := tracer.SQLCommentCarrier{}
-			spanID := random.Uint64()
-			injectionOpts := injectionOptionsForMode(tp.cfg.commentInjectionMode, discardDynamicTags)
-			err := tracer.InjectWithOptions(span.Context(), &sqlCommentCarrier, append(injectionOpts, tracer.WithInjectedSpanID(spanID))...)
-			if err != nil {
-				// this should never happen
-				log.Warn("contrib/database/sql: failed to inject query comments: %v", err)
-			}
-			return sqlCommentCarrier.CommentedQuery(query), &spanID
+		spanContext = span.Context()
+	}
+
+	if tp.cfg.commentInjectionMode != commentInjectionDisabled {
+		sqlCommentCarrier := tracer.SQLCommentCarrier{}
+		spanID := random.Uint64()
+		injectionOpts := injectionOptionsForMode(tp.cfg.commentInjectionMode, discardDynamicTags)
+		err := tracer.InjectWithOptions(spanContext, &sqlCommentCarrier, append(injectionOpts, tracer.WithInjectedSpanID(spanID))...)
+		if err != nil {
+			// this should never happen
+			log.Warn("contrib/database/sql: failed to inject query comments: %v", err)
 		}
+		return sqlCommentCarrier.CommentedQuery(query), &spanID
 	}
 
 	return query, nil
