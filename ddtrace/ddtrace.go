@@ -34,7 +34,6 @@ type Tracer interface {
 	Inject(context SpanContext, carrier interface{}) error
 
 	// InjectWithOptions injects a span context into the given carrier with options.
-	// This method is experimental and subject to removal or modification
 	InjectWithOptions(context SpanContext, carrier interface{}, opts ...InjectionOption) error
 
 	// Stop stops the tracer. Calls to Stop should be idempotent.

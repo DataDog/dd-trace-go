@@ -889,7 +889,7 @@ func WithUserRole(role string) UserMonitoringOption {
 	}
 }
 
-// WithUserScope returns the option setting the scope (authorizations) of the authenticated user
+// WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
 	return func(s Span) {
 		s.SetTag("usr.scope", scope)
@@ -901,49 +901,49 @@ func WithUserScope(scope string) UserMonitoringOption {
 // more correct to refer to it as the type as the origin, ddtrace.InjectionOption.
 type InjectionOption = ddtrace.InjectionOption
 
-// WithSpanIDKey returns the option setting the span id key
+// WithSpanIDKey returns the option setting the span id key.
 func WithSpanIDKey(spanIDKey string) InjectionOption {
 	return func(cfg *ddtrace.InjectionConfig) {
 		cfg.SpanIDKey = spanIDKey
 	}
 }
 
-// WithInjectedSpanID returns the option setting the span id value
+// WithInjectedSpanID returns the option setting the span id value.
 func WithInjectedSpanID(spanID uint64) InjectionOption {
 	return func(cfg *ddtrace.InjectionConfig) {
 		cfg.SpanID = spanID
 	}
 }
 
-// WithTraceIDKey returns the option setting the trace id key
+// WithTraceIDKey returns the option setting the trace id key.
 func WithTraceIDKey(traceIDKey string) InjectionOption {
 	return func(cfg *ddtrace.InjectionConfig) {
 		cfg.TraceIDKey = traceIDKey
 	}
 }
 
-// WithSamplingPriorityKey returns the option setting the sampling priority key
+// WithSamplingPriorityKey returns the option setting the sampling priority key.
 func WithSamplingPriorityKey(samplingPriorityKey string) InjectionOption {
 	return func(cfg *ddtrace.InjectionConfig) {
 		cfg.SamplingPriorityKey = samplingPriorityKey
 	}
 }
 
-// WithEnvironmentKey returns the option setting the environment key
+// WithEnvironmentKey returns the option setting the environment key.
 func WithEnvironmentKey(envKey string) InjectionOption {
 	return func(cfg *ddtrace.InjectionConfig) {
 		cfg.EnvKey = envKey
 	}
 }
 
-// WithServiceNameKey returns the option setting the service name key
+// WithServiceNameKey returns the option setting the service name key.
 func WithServiceNameKey(serviceNameKey string) InjectionOption {
 	return func(cfg *ddtrace.InjectionConfig) {
 		cfg.ServiceNameKey = serviceNameKey
 	}
 }
 
-// WithParentVersionKey returns the option setting the parent version key
+// WithParentVersionKey returns the option setting the parent version key.
 func WithParentVersionKey(versionKey string) InjectionOption {
 	return func(cfg *ddtrace.InjectionConfig) {
 		cfg.ParentVersionKey = versionKey
