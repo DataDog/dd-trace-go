@@ -33,17 +33,17 @@ func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 	defer func() {
 		// check if the responseWriter is of type negroni.ResponseWriter
 		var (
-			status    int
-			withError tracer.FinishOption
+			status int
+			opts   []tracer.FinishOption
 		)
 		responseWriter, ok := w.(negroni.ResponseWriter)
 		if ok {
 			status = responseWriter.Status()
 			if m.cfg.isStatusError(status) {
-				withError = tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status)))
+				opts = []tracer.FinishOption{tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status)))}
 			}
 		}
-		httptrace.FinishRequestSpan(span, status, withError)
+		httptrace.FinishRequestSpan(span, status, opts...)
 	}()
 
 	next(w, r.WithContext(ctx))
