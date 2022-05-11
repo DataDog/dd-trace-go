@@ -33,22 +33,13 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		if cfg.ignoreRequest(c) {
 			return
 		}
-		resource := cfg.resourceNamer(c)
 		opts := []ddtrace.StartSpanOption{
-			tracer.ServiceName(cfg.serviceName),
-			tracer.ResourceName(resource),
-			tracer.SpanType(ext.SpanTypeWeb),
-			tracer.Tag(ext.HTTPMethod, c.Request.Method),
-			tracer.Tag(ext.HTTPURL, c.Request.URL.Path),
 			tracer.Measured(),
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(c.Request.Header)); err == nil {
-			opts = append(opts, tracer.ChildOf(spanctx))
-		}
-		span, ctx := httptrace.StartRequestSpan(c.Request, cfg.serviceName, resource, false, tracer.Measured())
+		span, ctx := httptrace.StartRequestSpan(c.Request, cfg.serviceName, cfg.resourceNamer(c), false, opts...)
 
 		// pass the span through the request context
 		c.Request = c.Request.WithContext(ctx)
