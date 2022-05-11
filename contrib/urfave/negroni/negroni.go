@@ -10,11 +10,10 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"strconv"
 
 	"github.com/urfave/negroni"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -26,38 +25,28 @@ type DatadogMiddleware struct {
 }
 
 func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	opts := []ddtrace.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeWeb),
-		tracer.ServiceName(m.cfg.serviceName),
-		tracer.Tag(ext.HTTPMethod, r.Method),
-		tracer.Tag(ext.HTTPURL, r.URL.Path),
-		tracer.Tag(ext.ResourceName, m.cfg.resourceNamer(r)),
-		tracer.Measured(),
-	}
+	opts := append(m.cfg.spanOpts, tracer.Measured())
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
-	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-		opts = append(opts, tracer.ChildOf(spanctx))
-	}
-	opts = append(opts, m.cfg.spanOpts...)
-	span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
-	defer span.Finish()
-
-	r = r.WithContext(ctx)
-
-	next(w, r)
-
-	// check if the responseWriter is of type negroni.ResponseWriter
-	responseWriter, ok := w.(negroni.ResponseWriter)
-	if ok {
-		status := responseWriter.Status()
-		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
-		if m.cfg.isStatusError(status) {
-			// mark 5xx server error
-			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
+	span, ctx := httptrace.StartRequestSpan(r, m.cfg.serviceName, m.cfg.resourceNamer(r), false, opts...)
+	defer func() {
+		// check if the responseWriter is of type negroni.ResponseWriter
+		var (
+			status    int
+			withError tracer.FinishOption
+		)
+		responseWriter, ok := w.(negroni.ResponseWriter)
+		if ok {
+			status = responseWriter.Status()
+			if m.cfg.isStatusError(status) {
+				withError = tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status)))
+			}
 		}
-	}
+		httptrace.FinishRequestSpan(span, status, withError)
+	}()
+
+	next(w, r.WithContext(ctx))
 }
 
 // Middleware create the negroni middleware that will trace incoming requests

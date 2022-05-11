@@ -54,6 +54,8 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	h.ServeHTTP(rw, r.WithContext(ctx))
 }
 
+// StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags. URL query parameters
+// are added to the URL tag when queryParams is true. Any further span start option can be added with opts.
 func StartRequestSpan(r *http.Request, service, resource string, queryParams bool, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
 	path := r.URL.Path
 	if queryParams {
@@ -78,6 +80,8 @@ func StartRequestSpan(r *http.Request, service, resource string, queryParams boo
 	return tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
 }
 
+// FinishRequestSpan finishes the given HTTP request span with the standard list of HTTP request span tags.
+// Any further span finish option can be added with opts.
 func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 	var statusStr string
 	if status == 0 {
