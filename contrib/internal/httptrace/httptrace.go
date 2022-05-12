@@ -44,7 +44,8 @@ func StartRequestSpan(r *http.Request, service, resource string, queryParams boo
 	return tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
 }
 
-// FinishRequestSpan finishes the given HTTP request span with the standard list of HTTP request span tags.
+// FinishRequestSpan finishes the given HTTP request span with its Finish() method along with the standard list of HTTP
+// request span tags.
 // Any further span finish option can be added with opts.
 func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 	var statusStr string
