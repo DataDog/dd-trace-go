@@ -8,14 +8,10 @@ package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 //go:generate sh -c "go run make_responsewriter.go | gofmt > trace_gen.go"
 
 import (
-	"context"
-	"fmt"
 	"net/http"
-	"strconv"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 )
@@ -42,58 +38,16 @@ type ServeConfig struct {
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
 // according to the specified config.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
-	span, ctx := StartRequestSpan(r, cfg.Service, cfg.Resource, cfg.QueryParams, cfg.SpanOpts...)
+	span, ctx := httptrace.StartRequestSpan(r, cfg.Service, cfg.Resource, cfg.QueryParams, cfg.SpanOpts...)
 	rw, ddrw := wrapResponseWriter(w)
 	defer func() {
-		FinishRequestSpan(span, ddrw.status, cfg.FinishOpts...)
+		httptrace.FinishRequestSpan(span, ddrw.status, cfg.FinishOpts...)
 	}()
 
 	if appsec.Enabled() {
 		h = httpsec.WrapHandler(h, span, cfg.RouteParams)
 	}
 	h.ServeHTTP(rw, r.WithContext(ctx))
-}
-
-// StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags. URL query parameters
-// are added to the URL tag when queryParams is true. Any further span start option can be added with opts.
-func StartRequestSpan(r *http.Request, service, resource string, queryParams bool, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
-	path := r.URL.Path
-	if queryParams {
-		path += "?" + r.URL.RawQuery
-	}
-	opts = append([]ddtrace.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeWeb),
-		tracer.ServiceName(service),
-		tracer.ResourceName(resource),
-		tracer.Tag(ext.HTTPMethod, r.Method),
-		tracer.Tag(ext.HTTPURL, path),
-		tracer.Tag(ext.HTTPUserAgent, r.UserAgent()),
-	}, opts...)
-	if r.URL.Host != "" {
-		opts = append([]ddtrace.StartSpanOption{
-			tracer.Tag("http.host", r.URL.Host),
-		}, opts...)
-	}
-	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-		opts = append(opts, tracer.ChildOf(spanctx))
-	}
-	return tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
-}
-
-// FinishRequestSpan finishes the given HTTP request span with the standard list of HTTP request span tags.
-// Any further span finish option can be added with opts.
-func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
-	var statusStr string
-	if status == 0 {
-		statusStr = "200"
-	} else {
-		statusStr = strconv.Itoa(status)
-	}
-	s.SetTag(ext.HTTPCode, statusStr)
-	if status >= 500 && status < 600 {
-		s.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
-	}
-	s.Finish(opts...)
 }
 
 // responseWriter is a small wrapper around an http response writer that will
