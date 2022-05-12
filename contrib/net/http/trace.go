@@ -38,6 +38,9 @@ type ServeConfig struct {
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
 // according to the specified config.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
+	if cfg == nil {
+		cfg = new(ServeConfig)
+	}
 	span, ctx := httptrace.StartRequestSpan(r, cfg.Service, cfg.Resource, cfg.QueryParams, cfg.SpanOpts...)
 	rw, ddrw := wrapResponseWriter(w)
 	defer func() {
