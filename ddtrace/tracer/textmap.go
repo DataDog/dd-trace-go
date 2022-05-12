@@ -180,6 +180,8 @@ func (i *withOptionsInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanConte
 
 	traceID := spanID
 	samplingPriority := 0
+	env := ""
+	parentVersion := ""
 	if ok {
 		if ctx.TraceID() > 0 {
 			traceID = ctx.TraceID()
@@ -191,6 +193,14 @@ func (i *withOptionsInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanConte
 
 		if sp, ok := ctx.samplingPriority(); ok {
 			samplingPriority = sp
+		}
+
+		if e, ok := ctx.meta(ext.Environment); ok {
+			env = e
+		}
+
+		if version, ok := ctx.meta(ext.ParentVersion); ok {
+			parentVersion = version
 		}
 	}
 
@@ -207,15 +217,11 @@ func (i *withOptionsInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanConte
 	}
 
 	if cfg.EnvKey != "" {
-		if env, ok := ctx.meta(ext.Environment); ok {
-			writer.Set(cfg.EnvKey, env)
-		}
+		writer.Set(cfg.EnvKey, env)
 	}
 
 	if cfg.ParentVersionKey != "" {
-		if version, ok := ctx.meta(ext.ParentVersion); ok {
-			writer.Set(cfg.ParentVersionKey, version)
-		}
+		writer.Set(cfg.ParentVersionKey, parentVersion)
 	}
 
 	if cfg.ServiceNameKey != "" {
