@@ -232,6 +232,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				end: now.Add(p.cfg.cpuDuration),
 			}
 
+			completed = completed[:0]
 			for _, t := range p.enabledProfileTypes() {
 				wg.Add(1)
 				go func(t ProfileType) {
