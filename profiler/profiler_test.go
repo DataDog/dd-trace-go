@@ -216,7 +216,7 @@ func TestStopLatency(t *testing.T) {
 	// CPU profiling polls in 100 millisecond intervals and this can't be
 	// interrupted by pprof.StopCPUProfile, so we can't guarantee profiling
 	// will stop faster than that.
-	timeout := 200 * time.Millisecond
+	timeout := 300 * time.Millisecond
 	select {
 	case <-stopped:
 	case <-time.After(timeout):

@@ -356,6 +356,16 @@ func (t textProfile) Protobuf() []byte {
 	if !t.Time.IsZero() {
 		prof.TimeNanos = t.Time.UnixNano()
 	}
+	for _, st := range prof.SampleType {
+		if st.Type == "alloc_space" {
+			// this is a heap profile, add the correct period type
+			// to make pprofile.Merge happy since the C allocation
+			// profiler assumes it's generating a profile to merge
+			// with the real heap profile.
+			prof.PeriodType = &pprofile.ValueType{Type: "space", Unit: "bytes"}
+			break
+		}
+	}
 	if err := prof.Write(out); err != nil {
 		panic(err)
 	}

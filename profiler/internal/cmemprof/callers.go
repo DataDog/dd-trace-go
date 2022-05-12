@@ -1,0 +1,31 @@
+package cmemprof
+
+import (
+	"runtime"
+)
+
+/*
+#include <stdint.h> // uintptr_t
+*/
+import "C"
+
+//export recordAllocationSample
+func recordAllocationSample(size uint) {
+	p := activeProfile.Load().(*Profile)
+	if p == nil {
+		return
+	}
+
+	// There are several calls in the call stack we should skip. Ultimiately
+	// we'd like to get only the actual allocation call, but we can settle
+	// for profile_allocation. This call should be skipped, together with
+	// any of the C->Go transition functions like cgocallback and the
+	// wrapper for this function that's called through the exported version.
+	//
+	// TODO: how much to skip? Is the value consistent across Go releases?
+	// The value below just comes from experimentation with Go 1.17.5
+	const skip = 6
+	var pcs callStack
+	n := runtime.Callers(skip, pcs[:])
+	p.insert(pcs, n, size)
+}
