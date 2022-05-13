@@ -1,4 +1,5 @@
 //go:build go1.18
+// +build go1.18
 
 // Go 1.18 adds the ability to query build settings, including CGO_CFLAGS, for
 // Go executables. We can use this to check if -fno-omit-frame-pointer was set
