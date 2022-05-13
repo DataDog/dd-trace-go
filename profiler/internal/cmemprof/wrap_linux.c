@@ -15,7 +15,8 @@
 
 void *__real_malloc(size_t size);
 void *__wrap_malloc(size_t size) {
-	profile_allocation(size);
+	void *ret_addr = __builtin_return_address(0);
+	profile_allocation_checked(size, ret_addr);
 	return __real_malloc(size);
 }
 

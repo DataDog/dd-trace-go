@@ -57,19 +57,30 @@ void cgo_heap_profiler_mark_fpunwind_safe(void) {
 	safe_fpunwind = 1;
 }
 
-__attribute__((noinline)) void profile_allocation(size_t size) {
+void profile_allocation(size_t size) {
 	size_t rate = atomic_load_explicit(&sampling_rate, memory_order_relaxed);
 	if (rate == 0) {
 		return;
 	}
 	if (should_sample(rate, size) != 0) {
-		// TODO: The if the level for __builtin_return_address is too high we
-		// can segfault. This could happen if profile_allocation is inlined.
-		// Maybe make sure profile_allocation isn't inlined (even if it's a
-		// performance hit?) or make sure it's always inlined, either way have
-		// consistency so we don't crash.
-		void *retaddr = __builtin_return_address(1);
-		if (cgo_heap_profiler_malloc_check_unsafe((uintptr_t) retaddr) == 1) {
+		recordAllocationSample(size);
+	}
+}
+
+// profile_allocation_checked is similar to profile_allocation, but has a
+// fallback for frame pointer unwinding if the provided return address points to
+// a function where profiling by calling into Go is unsafe (see
+// unsafe_malloc_marker.go). The return address must be passed in this way
+// because __builtin_return_address(n) may crash for n > 0. This means we can't
+// check the return address anywhere deeper in the call stack and must check in
+// the malloc wrapper.
+void profile_allocation_checked(size_t size, void *ret_addr) {
+	size_t rate = atomic_load_explicit(&sampling_rate, memory_order_relaxed);
+	if (rate == 0) {
+		return;
+	}
+	if (should_sample(rate, size) != 0) {
+		if (cgo_heap_profiler_malloc_check_unsafe((uintptr_t) ret_addr) == 1) {
 			if (safe_fpunwind == 1) {
 				fpunwind(__builtin_frame_address(0), size);
 			}
@@ -78,6 +89,7 @@ __attribute__((noinline)) void profile_allocation(size_t size) {
 		recordAllocationSample(size);
 	}
 }
+
 
 void cgo_heap_profiler_set_sampling_rate(int hz) {
 	if (hz <= 0) {

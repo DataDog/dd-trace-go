@@ -8,4 +8,5 @@
 #include <stddef.h>
 
 void profile_allocation(size_t size);
+void profile_allocation_checked(size_t size, void *ret_addr);
 #endif

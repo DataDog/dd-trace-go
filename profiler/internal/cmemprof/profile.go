@@ -28,7 +28,7 @@
 package cmemprof
 
 /*
-#cgo CFLAGS: -g -fno-omit-frame-pointer
+#cgo CFLAGS: -g -O2 -fno-omit-frame-pointer
 #cgo linux LDFLAGS: -pthread
 #cgo linux LDFLAGS: -Wl,--wrap=calloc
 #cgo linux LDFLAGS: -Wl,--wrap=malloc
