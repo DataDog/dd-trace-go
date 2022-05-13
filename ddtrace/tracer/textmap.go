@@ -172,7 +172,6 @@ func (i *withOptionsInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanConte
 		apply(&cfg)
 	}
 	spanID := cfg.SpanID
-
 	ctx, ok := spanCtx.(*spanContext)
 	if !ok && spanID == 0 {
 		return ErrInvalidSpanContext
@@ -180,56 +179,45 @@ func (i *withOptionsInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanConte
 
 	traceID := spanID
 	samplingPriority := 0
-	env := ""
-	parentVersion := ""
+	var env, pversion string
 	if ok {
 		if ctx.TraceID() > 0 {
 			traceID = ctx.TraceID()
 		}
-
 		if spanID == 0 {
 			spanID = ctx.SpanID()
 		}
-
 		if sp, ok := ctx.samplingPriority(); ok {
 			samplingPriority = sp
 		}
-
 		if e, ok := ctx.meta(ext.Environment); ok {
 			env = e
 		}
-
 		if version, ok := ctx.meta(ext.ParentVersion); ok {
-			parentVersion = version
+			pversion = version
 		}
 	}
 
 	if cfg.TraceIDKey != "" {
 		writer.Set(cfg.TraceIDKey, strconv.FormatUint(traceID, 10))
 	}
-
 	if cfg.SpanIDKey != "" {
 		writer.Set(cfg.SpanIDKey, strconv.FormatUint(spanID, 10))
 	}
-
 	if cfg.SamplingPriorityKey != "" {
 		writer.Set(cfg.SamplingPriorityKey, strconv.Itoa(samplingPriority))
 	}
-
 	if cfg.EnvKey != "" {
 		writer.Set(cfg.EnvKey, env)
 	}
-
 	if cfg.ParentVersionKey != "" {
-		writer.Set(cfg.ParentVersionKey, parentVersion)
+		writer.Set(cfg.ParentVersionKey, pversion)
 	}
-
 	if cfg.ServiceNameKey != "" {
 		if globalconfig.ServiceName() != "" {
 			writer.Set(cfg.ServiceNameKey, globalconfig.ServiceName())
 		}
 	}
-
 	return nil
 }
 
