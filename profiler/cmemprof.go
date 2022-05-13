@@ -1,4 +1,7 @@
 //go:build cgo && experimental_cmemprof && (linux || darwin)
+// +build cgo
+// +build experimental_cmemprof
+// +build linux darwin
 
 package profiler
 
