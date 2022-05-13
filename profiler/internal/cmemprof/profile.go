@@ -6,7 +6,7 @@
 //go:build cgo
 // +build cgo
 
-// cmemprof profiles C memory allocations (malloc, calloc, realloc, etc.)
+// Package cmemprof profiles C memory allocations (malloc, calloc, realloc, etc.)
 //
 // Importing this package in a program will replace malloc, calloc, and realloc
 // with wrappers which will sample allocations and record them to a profile.
@@ -58,6 +58,8 @@ func init() {
 	extensions.SetCAllocationProfiler(new(Profile))
 }
 
+// DefaultSamplingRate is the sampling rate, in bytes allocated, which will be
+// used if a profile is started with Profile.SampleRate == 0
 const DefaultSamplingRate = 2 * 1024 * 1024 // 2 MB
 
 type callStack [32]uintptr
@@ -161,7 +163,7 @@ func (c *Profile) insertUnlocked(pcs callStack, frames int, size uint) {
 	rate := uint(c.SamplingRate)
 	if size >= rate {
 		event.bytes += size
-		event.count += 1
+		event.count++
 	} else {
 		// The allocation was sample with probability p = size / rate.
 		// So we assume there were actually (1 / p) similar allocations
