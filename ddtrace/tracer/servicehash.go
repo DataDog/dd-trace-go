@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-package servicehash
+package tracer
 
 import (
 	"crypto/sha256"
@@ -11,9 +11,7 @@ import (
 	"sync"
 )
 
-const (
-	maxCacheSize = 1000
-)
+const maxCacheSize = 1000
 
 var (
 	cache = make(map[string]string)

@@ -282,7 +282,7 @@ func TestTextMapPropagatorInjectTraceTagsTooLong(t *testing.T) {
 }
 
 func TestTextMapPropagatorInvalidTraceTags(t *testing.T) {
-	tracer := newTracer(WithServiceNamePropagation(true))
+	tracer := newTracer(WithServicePropagation(true))
 	internal.SetGlobalTracer(tracer)
 	child := tracer.StartSpan("test")
 	child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello1", "world")  // valid value

@@ -19,16 +19,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/tinylib/msgp/msgp"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/servicehash"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/tinylib/msgp/msgp"
 )
 
 func (t *tracer) newEnvSpan(service, env string) *span {
@@ -573,7 +572,7 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 
 func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	assert := assert.New(t)
-	tracer, _, _, stop := startTestTracer(t, WithServiceNamePropagation(true))
+	tracer, _, _, stop := startTestTracer(t, WithServicePropagation(true))
 	defer stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &spanContext{
@@ -588,7 +587,7 @@ func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 
 func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(WithServiceNamePropagation(false))
+	tracer := newTracer(WithServicePropagation(false))
 	defer tracer.Stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &spanContext{
@@ -793,7 +792,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 
 	tr, _, flush, stop := startTestTracer(t,
 		withTransport(newHTTPTransport(addr, defaultClient)),
-		WithServiceNamePropagation(true),
+		WithServicePropagation(true),
 	)
 	defer stop()
 
@@ -838,7 +837,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 		assert.Equal(tt.rate, s.Metrics[keySamplingPriorityRate], strconv.Itoa(i))
 		prio, ok := s.Metrics[keySamplingPriority]
 		if prio > 0 {
-			assert.Equal(servicehash.Hash(tt.service)+"-1", s.context.trace.propagatingTags[keyDecisionMaker])
+			assert.Equal(Hash(tt.service)+"-1", s.context.trace.propagatingTags[keyDecisionMaker])
 		} else {
 			assert.Equal("", s.context.trace.propagatingTags[keyDecisionMaker])
 		}

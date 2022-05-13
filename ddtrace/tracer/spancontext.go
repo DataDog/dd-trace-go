@@ -16,7 +16,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/servicehash"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
@@ -245,7 +244,7 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 // setServiceDecisionMaker sets the service and sampler which took the sampling decision made for this trace and span.
 // It is not safe for concurrent use.
 func (t *trace) setServiceDecisionMaker(service string, sampler samplernames.SamplerName, s *span) {
-	serviceHash := servicehash.Hash(service)
+	serviceHash := Hash(service)
 	tr, haveTracer := internal.GetGlobalTracer().(*tracer)
 	var propagatingHash string
 	if haveTracer && tr.config.propagateServiceName {
