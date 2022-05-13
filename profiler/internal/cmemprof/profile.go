@@ -15,14 +15,11 @@
 //	profile, err := profiler.Stop()
 //
 // Building this package on Linux requires a non-standard linker flag to wrap
-// the alloaction functions. By default cgo won't allow the flag so it has to be
-// explicitly allowed by setting the following environment variable when building
-// a program that uses this package:
+// the alloaction functions. For Go versions < 1.15, cgo won't allow the flag so
+// it has to be explicitly allowed by setting the following environment variable
+// when building a program that uses this package:
 //
 //	export CGO_LDFLAGS_ALLOW="-Wl,--wrap=.*"
-//
-// The --wrap flag is allowed by default as of Go 1.18, so this environment
-// variable is only required for Go versions <= 1.17.
 package cmemprof
 
 /*
@@ -48,6 +45,7 @@ import (
 	"time"
 
 	"github.com/google/pprof/profile"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
 )
 
