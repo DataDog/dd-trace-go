@@ -31,9 +31,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
-			opts := []ddtrace.StartSpanOption{
-				tracer.Measured(),
-			}
+			var opts []ddtrace.StartSpanOption
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}

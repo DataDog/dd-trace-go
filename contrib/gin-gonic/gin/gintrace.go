@@ -33,9 +33,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		if cfg.ignoreRequest(c) {
 			return
 		}
-		opts := []ddtrace.StartSpanOption{
-			tracer.Measured(),
-		}
+		var opts []ddtrace.StartSpanOption
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}

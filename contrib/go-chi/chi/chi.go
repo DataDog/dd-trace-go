@@ -35,11 +35,10 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			opts := append(cfg.spanOpts, tracer.Measured())
+			opts := cfg.spanOpts
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-			opts = append(opts, cfg.spanOpts...)
 			span, ctx := httptrace.StartRequestSpan(r, cfg.serviceName, "", false, opts...)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			defer func() {

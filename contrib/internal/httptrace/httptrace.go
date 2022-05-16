@@ -32,6 +32,7 @@ func StartRequestSpan(r *http.Request, service, resource string, queryParams boo
 		tracer.Tag(ext.HTTPMethod, r.Method),
 		tracer.Tag(ext.HTTPURL, path),
 		tracer.Tag(ext.HTTPUserAgent, r.UserAgent()),
+		tracer.Measured(),
 	}, opts...)
 	if r.URL.Host != "" {
 		opts = append([]ddtrace.StartSpanOption{
