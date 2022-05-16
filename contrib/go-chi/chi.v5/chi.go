@@ -40,10 +40,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
 			span, ctx := httptrace.StartRequestSpan(r, cfg.serviceName, "", false, opts...)
-
-			r = r.WithContext(ctx)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-
 			defer func() {
 				status := ww.Status()
 				var opts []tracer.FinishOption
@@ -52,6 +49,9 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				}
 				httptrace.FinishRequestSpan(span, status, opts...)
 			}()
+
+			// pass the span through the request context
+			r = r.WithContext(ctx)
 
 			next := next // avoid modifying the value of next in the outer closure scope
 			if appsec.Enabled() {

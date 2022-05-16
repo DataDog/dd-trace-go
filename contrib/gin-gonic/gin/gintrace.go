@@ -40,13 +40,12 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		span, ctx := httptrace.StartRequestSpan(c.Request, cfg.serviceName, cfg.resourceNamer(c), false, opts...)
-
-		// pass the span through the request context
-		c.Request = c.Request.WithContext(ctx)
-
 		defer func() {
 			httptrace.FinishRequestSpan(span, c.Writer.Status())
 		}()
+
+		// pass the span through the request context
+		c.Request = c.Request.WithContext(ctx)
 
 		// Use AppSec if enabled by user
 		if appsecEnabled {
