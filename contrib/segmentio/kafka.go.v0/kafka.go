@@ -33,7 +33,7 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 		Reader: c,
 		cfg:    newConfig(opts...),
 	}
-	log.Debug("contrib/confluentinc/confluent-kafka.go.v0/kafka: Wrapping Reader: %#v", wrapped.cfg)
+	log.Debug("contrib/segmentio/kafka-go.v0/kafka: Wrapping Reader: %#v", wrapped.cfg)
 	return wrapped
 }
 
