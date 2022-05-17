@@ -1,0 +1,54 @@
+name: Release / Start a new release
+
+on:
+  workflow_dispatch:
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  start:
+    name: Start a new release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Read the version.go file
+        id: version
+        run: .github/workflows/scripts/parse-version.sh
+
+      - name: Configure git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+          git fetch origin main
+
+      - name: Create the release branch release-${{ steps.version.outputs.current }}
+        env:
+          VERSION: ${{ steps.version.outputs.current }}
+        run: |
+          git checkout -b release-$VERSION origin/main
+          git push -u origin release-$VERSION
+
+      - name: Create the release note draft
+        id: release_note
+        env:
+          VERSION: ${{ steps.version.outputs.current }}
+        run: |
+          url=$(gh release create $VERSION --title $VERSION --draft --generate-notes --target v1)
+          echo $url
+          echo "::set-output name=url::$url"
+
+      - name: Open the release pull request
+        env:
+          VERSION: ${{ steps.version.outputs.current }}
+          NEXT_MINOR_VERSION: ${{ steps.version.outputs.next_minor }}
+          RELEASE_NOTE_URL: ${{ steps.release_note.outputs.url }}
+        run: |
+          body=$(.github/workflows/scripts/render-pr-template.sh "$VERSION" "$RELEASE_NOTE_URL" "$NEXT_MINOR_VERSION")
+          gh pr create \
+            --title "Release $VERSION" \
+            --base v1 \
+            --milestone $VERSION \
+            --assignee $GITHUB_ACTOR \
+            --body "$body"

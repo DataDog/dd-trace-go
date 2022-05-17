@@ -1,0 +1,88 @@
+name: Release / Merge the release (bot)
+
+on:
+  pull_request:
+    branches:
+      - v1
+    types:
+      - labeled
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  merge:
+    name: Merge the release branch
+    if: github.event.label.name == 'bot/release/merge'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Remove the workflow label
+        if: always()
+        run: gh pr edit ${{ github.event.number }} --remove-label bot/release/merge
+
+      - name: Read the version.go file
+        id: version
+        run: .github/workflows/scripts/parse-version.sh
+
+      - name: Configure git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+          git fetch origin v1 main "$GITHUB_HEAD_REF"
+
+      - name: Update the version.go file in the release branch to ${{ steps.version.outputs.current_without_rc_suffix }}
+        env:
+          VERSION: ${{ steps.version.outputs.current_without_rc_suffix }}
+        run: |
+          # Two possible cases: either version.go contains a release candidate version and it will be updated back to
+          # the non-release-candidate tag, either there was no release candidate and this step will exit without error.
+          git checkout "$GITHUB_HEAD_REF"
+          .github/workflows/scripts/update-version-file.sh $VERSION
+          if .github/workflows/scripts/has-git-diff.sh; then
+            echo "No change to commit"
+            exit 0 # no diff: the version file is unchanged and already good
+          fi
+          git add --all
+          git commit -m "update version to $VERSION"
+
+      - name: Merge the release branch into the main branch
+        run: |
+          git checkout main
+          git merge --no-edit -m "Merge branch $GITHUB_HEAD_REF into main #${{ github.event.number }}" --no-ff "$GITHUB_HEAD_REF"
+
+      - name: Bump the version.go file in the main branch to ${{ steps.version.outputs.next_minor }}
+        env:
+          NEXT_VERSION: ${{ steps.version.outputs.next_minor }}
+        run: |
+          .github/workflows/scripts/update-version-file.sh $NEXT_VERSION
+          git add --all
+          git commit -m "update version to $NEXT_VERSION"
+
+      - name: Merge the PR into the v1 branch
+        run: |
+          git checkout v1
+          git merge --no-edit -m "Merge branch $GITHUB_HEAD_REF into v1 #${{ github.event.number }}" --no-ff "$GITHUB_HEAD_REF"
+
+      # Push the branches and delete the release branch
+      # Note the order is intentional here in order to avoid pushing the tag or the release if the main branch merge
+      # fails
+      - name: Push the main branch
+        run: |
+          git push origin main # can fail if a new commit happened upstream meanwhile - the workflow should be re-executed
+
+      - name: Push the v1 branch
+        run: |
+          git push origin v1 # should never fail because the v1 is used by one release at a time
+
+      - name: Remove the release branch
+        run: git push origin ":$GITHUB_HEAD_REF"
+
+      - name: Add a PR comment
+        if: success()
+        run: |
+          gh pr comment ${{ github.event.number }} -F - <<EOF
+          :tada: Congratulations, the release branch was successfully merged.
+          Please review everything and publish your release draft.
+          EOF

@@ -1,0 +1,56 @@
+name: Release / Publish a new release candidate (bot)
+
+on:
+  pull_request:
+    branches:
+      - v1
+    types:
+      - labeled
+
+jobs:
+  bump_rc_and_tag:
+    name: Create and publish a new release candidate version
+    if: github.event.label.name == 'bot/release/publish-new-rc'
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Remove the workflow label
+        if: always()
+        run: gh pr edit ${{ github.event.number }} --remove-label bot/release/publish-new-rc
+
+      - name: Read the version.go file
+        id: version
+        run: .github/workflows/scripts/parse-version.sh
+
+      - name: Configure git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+          git fetch --tags origin "$GITHUB_HEAD_REF"
+
+      - name: Update the version.go file in the release branch to ${{ steps.version.outputs.next_rc }}
+        env:
+          VERSION: ${{ steps.version.outputs.next_rc }}
+        run: |
+          git checkout "$GITHUB_HEAD_REF"
+          .github/workflows/scripts/update-version-file.sh $VERSION
+          git add --all
+          git commit -m "update version to $VERSION"
+
+      - name: Create the git tag ${{ steps.version.outputs.next_rc }}
+        env:
+          VERSION: ${{ steps.version.outputs.next_rc }}
+        run: git tag -m "$VERSION - PR \#${{ github.event.number }}" $VERSION
+
+      - name: Push the branch and tag
+        run: git push --tags origin "$GITHUB_HEAD_REF"
+
+      - name: Add a PR comment
+        if: success()
+        run: |
+          gh pr comment ${{ github.event.number }} -F - <<EOF
+          :tada: The release candidate tag ${{ steps.version.outputs.next_rc }} has been successfully published.
+          EOF
