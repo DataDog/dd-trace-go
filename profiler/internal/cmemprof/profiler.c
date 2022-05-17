@@ -14,7 +14,7 @@
 #include "profiler.h"
 
 // sampling_rate is the portion of allocations to sample.
-atomic_int sampling_rate;
+atomic_size_t sampling_rate;
 
 __thread uint64_t rng_state;
 
@@ -91,7 +91,7 @@ void profile_allocation_checked(size_t size, void *ret_addr) {
 }
 
 
-void cgo_heap_profiler_set_sampling_rate(int hz) {
+void cgo_heap_profiler_set_sampling_rate(size_t hz) {
 	if (hz <= 0) {
 		hz = 0;
 	}

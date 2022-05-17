@@ -11,7 +11,7 @@
 // cgo_heap_profiler_set_sampling_rate configures profiling to capture 1/hz of
 // allocations, and returns the previous rate. If hz <= 0, then sampling is
 // disabled.
-void cgo_heap_profiler_set_sampling_rate(int hz);
+void cgo_heap_profiler_set_sampling_rate(size_t hz);
 
 int cgo_heap_profiler_malloc_check_unsafe(uintptr_t pc);
 void cgo_heap_profiler_malloc_mark_unsafe(uintptr_t low, uintptr_t high);

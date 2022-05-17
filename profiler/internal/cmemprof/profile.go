@@ -122,7 +122,7 @@ func (c *Profile) Start(rate int) {
 	}
 	c.SamplingRate = rate
 	activeProfile.Store(c)
-	C.cgo_heap_profiler_set_sampling_rate(C.int(rate))
+	C.cgo_heap_profiler_set_sampling_rate(C.size_t(rate))
 }
 
 func (c *Profile) collectExtra() {
