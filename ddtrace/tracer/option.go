@@ -223,6 +223,9 @@ func newConfig(opts ...StartOption) *config {
 		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
 		c.logToStdout = true
 	}
+	if v := os.Getenv("DD_APM_RECEIVER_SOCKET"); v != "" {
+		WithUDS(v)(c)
+	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
