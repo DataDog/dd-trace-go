@@ -121,6 +121,15 @@ jobs:
           name: Upload coverage report to Codecov
           command: bash <(curl -s https://codecov.io/bash)
 
+      - run:
+          name: Install datadog-ci binary
+          command: |
+            curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output "/usr/local/bin/datadog-ci" && chmod +x "/usr/local/bin/datadog-ci"
+
+      - run:
+          name: Upload test result to datadog-ci
+          command: |
+            DATADOG_API_KEY=${TEST_DATADOG_API_KEY} datadog-ci junit upload --service dd-trace-go ${TEST_RESULTS}
 
   test-contrib:
     parameters:
