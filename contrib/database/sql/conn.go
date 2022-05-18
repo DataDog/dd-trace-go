@@ -212,19 +212,17 @@ func (tp *traceParams) withSQLCommentsInjected(ctx context.Context, query string
 	if span, ok := tracer.SpanFromContext(ctx); ok {
 		spanContext = span.Context()
 	}
-
-	if tp.cfg.commentInjectionMode != commentInjectionDisabled {
-		sqlCommentCarrier := tracer.SQLCommentCarrier{}
+	if tp.cfg.commentInjectionMode != CommentInjectionDisabled {
+		var sqlCommentCarrier tracer.SQLCommentCarrier
 		spanID := random.Uint64()
-		injectionOpts := injectionOptionsForMode(tp.cfg.commentInjectionMode, discardDynamicTags)
-		err := tracer.InjectWithOptions(spanContext, &sqlCommentCarrier, append(injectionOpts, tracer.WithInjectedSpanID(spanID))...)
+		opts := injectionOptionsForMode(tp.cfg.commentInjectionMode, discardDynamicTags)
+		err := tracer.InjectWithOptions(spanContext, &sqlCommentCarrier, append(opts, tracer.WithInjectedSpanID(spanID))...)
 		if err != nil {
 			// this should never happen
 			log.Warn("contrib/database/sql: failed to inject query comments: %v", err)
 		}
 		return sqlCommentCarrier.CommentedQuery(query), &spanID
 	}
-
 	return query, nil
 }
 

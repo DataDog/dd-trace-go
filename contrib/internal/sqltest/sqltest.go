@@ -318,19 +318,19 @@ func assertInjectedComments(t *testing.T, cfg *Config, discardDynamicTags bool) 
 }
 
 func expectedInjectedTags(cfg *Config, discardDynamicTags bool) map[string]string {
-	expectedInjectedTags := make(map[string]string)
+	tags := make(map[string]string)
 	// Prepare statements should never have dynamic tags injected so we only check if static tags are expected
 	if cfg.ExpectTagInjection.StaticTags {
-		expectedInjectedTags[tracer.ServiceNameSQLCommentKey] = "test-service"
-		expectedInjectedTags[tracer.ServiceEnvironmentSQLCommentKey] = "test-env"
-		expectedInjectedTags[tracer.ServiceVersionSQLCommentKey] = "v-test"
+		tags[tracer.ServiceNameSQLCommentKey] = "test-service"
+		tags[tracer.ServiceEnvironmentSQLCommentKey] = "test-env"
+		tags[tracer.ServiceVersionSQLCommentKey] = "v-test"
 	}
 	if cfg.ExpectTagInjection.DynamicTags && !discardDynamicTags {
-		expectedInjectedTags[tracer.SamplingPrioritySQLCommentKey] = "0"
-		expectedInjectedTags[tracer.TraceIDSQLCommentKey] = "test-trace-id"
-		expectedInjectedTags[tracer.SpanIDSQLCommentKey] = "test-span-id"
+		tags[tracer.SamplingPrioritySQLCommentKey] = "0"
+		tags[tracer.TraceIDSQLCommentKey] = "test-trace-id"
+		tags[tracer.SpanIDSQLCommentKey] = "test-span-id"
 	}
-	return expectedInjectedTags
+	return tags
 }
 
 func verifyConnectSpan(span mocktracer.Span, assert *assert.Assertions, cfg *Config) {

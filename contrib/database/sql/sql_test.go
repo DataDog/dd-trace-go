@@ -205,36 +205,27 @@ func TestOpenOptions(t *testing.T) {
 func TestCommentInjectionModes(t *testing.T) {
 	testCases := []struct {
 		name                 string
-		options              []Option
+		mode                 CommentInjectionMode
 		expectedInjectedTags sqltest.TagInjectionExpectation
 	}{
 		{
-			name:    "default (no injection)",
-			options: []Option{},
+			name: "default (no injection)",
 			expectedInjectedTags: sqltest.TagInjectionExpectation{
 				StaticTags:  false,
 				DynamicTags: false,
 			},
 		},
 		{
-			name:    "explicit no injection",
-			options: []Option{WithoutCommentInjection()},
-			expectedInjectedTags: sqltest.TagInjectionExpectation{
-				StaticTags:  false,
-				DynamicTags: false,
-			},
-		},
-		{
-			name:    "static tags injection",
-			options: []Option{WithStaticTagsCommentInjection()},
+			name: "static tags injection",
+			mode: StaticTagsSQLCommentInjection,
 			expectedInjectedTags: sqltest.TagInjectionExpectation{
 				StaticTags:  true,
 				DynamicTags: false,
 			},
 		},
 		{
-			name:    "dynamic tags injection",
-			options: []Option{WithCommentInjection()},
+			name: "dynamic tags injection",
+			mode: FullSQLCommentInjection,
 			expectedInjectedTags: sqltest.TagInjectionExpectation{
 				StaticTags:  true,
 				DynamicTags: true,
@@ -247,7 +238,7 @@ func TestCommentInjectionModes(t *testing.T) {
 			mockTracer := mocktracer.Start()
 			defer mockTracer.Stop()
 
-			Register("postgres", &pq.Driver{}, append(tc.options, WithServiceName("postgres-test"))...)
+			Register("postgres", &pq.Driver{}, WithCommentInjection(tc.mode), WithServiceName("postgres-test"))
 			defer unregister("postgres")
 
 			db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
