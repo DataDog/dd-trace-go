@@ -271,7 +271,7 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 }
 
 // deltaProfile derives the delta profile between curData and the previous
-// profile. If an extra profile is provided, it will be merged into the final
+// profile. If extra profiles are provided, they will be merged into the final
 // profile after computing the delta profile.
 func (p *profiler) deltaProfile(name string, delta *pprofutils.Delta, curData []byte, extra ...*pprofile.Profile) (*profile, error) {
 	curProf, err := pprofile.ParseData(curData)
@@ -291,15 +291,9 @@ func (p *profiler) deltaProfile(name string, delta *pprofutils.Delta, curData []
 		// Unfortunately the core implementation isn't resuable via a API, so we do
 		// our own delta calculation below.
 		// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
-		deltaProf, err := delta.Convert(prevProf, curProf)
+		deltaProf, err := delta.Convert(prevProf, curProf, extra...)
 		if err != nil {
 			return nil, fmt.Errorf("delta prof merge: %v", err)
-		}
-		if len(extra) > 0 {
-			deltaProf, err = pprofile.Merge([]*pprofile.Profile{deltaProf, extra[0]})
-			if err != nil {
-				return nil, fmt.Errorf("extra prof merge: %v", err)
-			}
 		}
 		// TimeNanos is supposed to be the time the profile was collected, see
 		// https://github.com/google/pprof/blob/master/proto/profile.proto.
