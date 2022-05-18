@@ -71,7 +71,7 @@ func TestTryUpload(t *testing.T) {
 		"env:my-env",
 		"tag1:1",
 		"tag2:2",
-		fmt.Sprintf("pid:%d", os.Getpid()),
+		fmt.Sprintf("process_id:%d", os.Getpid()),
 		fmt.Sprintf("profiler_version:%s", version.Tag),
 		fmt.Sprintf("runtime_version:%s", strings.TrimPrefix(runtime.Version(), "go")),
 		fmt.Sprintf("runtime_compiler:%s", runtime.Compiler),

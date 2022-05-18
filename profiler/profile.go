@@ -160,7 +160,9 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 	return func(p *profiler) ([]byte, error) {
 		var extra []*pprofile.Profile
 		// TODO: add type safety for name == "heap" check and remove redunancy with profileType.Name.
-		if cAlloc, ok := extensions.GetCAllocationProfiler(); ok && p.cfg.deltaProfiles && name == "heap" {
+		cAlloc, ok := extensions.GetCAllocationProfiler()
+		switch {
+		case ok && p.cfg.deltaProfiles && name == "heap":
 			// For the heap profile, we'd also like to include C
 			// allocations if that extension is enabled and have the
 			// allocations show up in the same profile. Collect them
@@ -174,6 +176,11 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 			if err == nil {
 				extra = append(extra, profile)
 			}
+		default:
+			// In all cases, sleep until the end of the profile
+			// period so that all profiles cover the same period of
+			// time
+			p.interruptibleSleep(p.cfg.period)
 		}
 
 		var buf bytes.Buffer
@@ -272,7 +279,10 @@ func (p *profiler) deltaProfile(name string, delta *pprofutils.Delta, curData []
 		return nil, fmt.Errorf("delta prof parse: %v", err)
 	}
 	var deltaData []byte
-	if prevProf := p.prev[name]; prevProf == nil {
+	p.mu.Lock()
+	prevProf := p.prev[name]
+	p.mu.Unlock()
+	if prevProf == nil {
 		// First time deltaProfile gets called for a type, there is no prevProf. In
 		// this case we emit the current profile as a delta profile.
 		deltaData = curData
@@ -298,7 +308,9 @@ func (p *profiler) deltaProfile(name string, delta *pprofutils.Delta, curData []
 	}
 	// Keep the most recent profiles in memory for future diffing. This needs to
 	// be taken into account when enforcing memory limits going forward.
+	p.mu.Lock()
 	p.prev[name] = curProf
+	p.mu.Unlock()
 	return &profile{data: deltaData}, nil
 }
 

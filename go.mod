@@ -7,7 +7,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583
 	github.com/DataDog/datadog-go/v5 v5.0.2
 	github.com/DataDog/gostackparse v0.5.0
-	github.com/DataDog/sketches-go v1.0.0
+	github.com/DataDog/sketches-go v1.2.1
 	github.com/Shopify/sarama v1.22.0
 	github.com/aws/aws-sdk-go v1.34.28
 	github.com/aws/aws-sdk-go-v2 v1.0.0
