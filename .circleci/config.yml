@@ -357,7 +357,7 @@ commands:
             curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output "/tmp/datadog-ci" && chmod +x "/tmp/datadog-ci"
 
       - run:
-          name: Upload test result to datadog-ci
+          name: Upload test result to datadog ci-app
           command: |
             DATADOG_API_KEY=${TEST_DATADOG_API_KEY} /tmp/datadog-ci junit upload --service << parameters.ci-app-service-name >> << parameters.test-result-path >>
 
