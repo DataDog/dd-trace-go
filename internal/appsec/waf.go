@@ -37,8 +37,9 @@ const (
 	wafVersionTag        = "_dd.appsec.waf.version"
 )
 
-// Register the WAF event listener.
-func registerWAF(rules []byte, timeout time.Duration, limiter Limiter, obfCfg *ObfuscatorConfig) (unreg dyngo.UnregisterFunc, err error) {
+// Prepare a new instance of the WAF with the given security rules and return a function to call in order to register
+// the WAF event listener.
+func prepareWAF(rules []byte, timeout time.Duration, limiter Limiter, obfCfg *ObfuscatorConfig) (unreg func() dyngo.UnregisterFunc, err error) {
 	// Check the WAF is healthy
 	if err := waf.Health(); err != nil {
 		return nil, err
@@ -69,25 +70,27 @@ func registerWAF(rules []byte, timeout time.Duration, limiter Limiter, obfCfg *O
 		log.Debug("appsec: the addresses present in the rule are partially supported: not supported=%v", notSupported)
 	}
 
-	// Register the WAF event listener
-	var unregisterHTTP, unregisterGRPC dyngo.UnregisterFunc
-	if len(httpAddresses) > 0 {
-		log.Debug("appsec: registering http waf listening to addresses %v", httpAddresses)
-		unregisterHTTP = dyngo.Register(newHTTPWAFEventListener(waf, httpAddresses, timeout, limiter))
-	}
-	if len(grpcAddresses) > 0 {
-		log.Debug("appsec: registering grpc waf listening to addresses %v", grpcAddresses)
-		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, timeout, limiter))
-	}
-
-	// Return an unregistration function that will also release the WAF instance.
-	return func() {
-		defer waf.Close()
-		if unregisterHTTP != nil {
-			unregisterHTTP()
+	return func() dyngo.UnregisterFunc {
+		// Register the WAF event listener
+		var unregisterHTTP, unregisterGRPC dyngo.UnregisterFunc
+		if len(httpAddresses) > 0 {
+			log.Debug("appsec: registering http waf listening to addresses %v", httpAddresses)
+			unregisterHTTP = dyngo.Register(newHTTPWAFEventListener(waf, httpAddresses, timeout, limiter))
 		}
-		if unregisterGRPC != nil {
-			unregisterGRPC()
+		if len(grpcAddresses) > 0 {
+			log.Debug("appsec: registering grpc waf listening to addresses %v", grpcAddresses)
+			unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, timeout, limiter))
+		}
+
+		// Return an unregistration function that will also release the WAF instance.
+		return func() {
+			defer waf.Close()
+			if unregisterHTTP != nil {
+				unregisterHTTP()
+			}
+			if unregisterGRPC != nil {
+				unregisterGRPC()
+			}
 		}
 	}, nil
 }

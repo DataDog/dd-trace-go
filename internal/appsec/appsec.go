@@ -10,6 +10,7 @@ package appsec
 
 import (
 	"sync"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -77,6 +78,7 @@ type appsec struct {
 	cfg           *config
 	unregisterWAF dyngo.UnregisterFunc
 	limiter       *TokenTicker
+	done          chan struct{}
 }
 
 func newAppSec(cfg *config) *appsec {
@@ -90,16 +92,44 @@ func (a *appsec) start() error {
 	// Register the WAF operation event listener
 	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
 	a.limiter.Start()
-	unregisterWAF, err := registerWAF(a.cfg.rules, a.cfg.wafTimeout, a.limiter, &a.cfg.obfuscator)
+	registerWAF, err := prepareWAF(a.cfg.rules, a.cfg.wafTimeout, a.limiter, &a.cfg.obfuscator)
 	if err != nil {
 		return err
 	}
-	a.unregisterWAF = unregisterWAF
+	a.unregisterWAF = registerWAF()
+	a.done = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-a.done:
+				return
+
+			case <-time.After(20 * time.Second):
+				rules := a.cfg.rules // TODO: check if there are new remote sec rules
+				a.onNewRules(rules)
+			}
+		}
+	}()
+
 	return nil
 }
 
 // Stop AppSec by unregistering the security protections.
 func (a *appsec) stop() {
+	close(a.done)
 	a.unregisterWAF()
 	a.limiter.Stop()
+}
+
+func (a *appsec) onNewRules(rules []byte) {
+	log.Debug("appsec: applying new security rules")
+	registerWAF, err := prepareWAF(rules, a.cfg.wafTimeout, a.limiter, &a.cfg.obfuscator)
+	if err != nil {
+		log.Error("appsec: %v", err)
+		return
+	}
+
+	// TODO: hot-swap the WAF event listener instead
+	a.unregisterWAF() // TODO: and make this non-blocking by ref-counting the live uses of the WAF handle to release it
+	a.unregisterWAF = registerWAF()
 }
