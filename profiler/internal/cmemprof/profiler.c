@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
+#define _GNU_SOURCE
+#include <dlfcn.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -12,6 +14,7 @@
 #include <pthread.h>
 
 #include "profiler.h"
+#include "profiler_internal.h"
 
 // sampling_rate is the portion of allocations to sample.
 atomic_size_t sampling_rate;
@@ -67,6 +70,34 @@ void profile_allocation(size_t size) {
 	}
 }
 
+static int is_unsafe_call(void *ret_addr) {
+	// TODO: Cache this whole check?
+	Dl_info info = {0};
+	if (dladdr(ret_addr, &info) == 0) {
+		return 0;
+	}
+	const char *s = info.dli_sname;
+	cgo_heap_profiler_debug("checking symbol %p: function %s", ret_addr, s);
+	if (s == NULL) {
+		return 0;
+	}
+	if (strcmp(s, "x_cgo_thread_start") == 0) {
+		cgo_heap_profiler_debug("function %s is unsafe", s);
+		return 1;
+	}
+	int n = strlen(s);
+	const char *suffix = "_Cfunc__Cmalloc";
+	const int m = strlen(suffix);
+	if (n < m) {
+		return 0;
+	}
+	if (strcmp(s + (n - m), suffix) == 0) {
+		cgo_heap_profiler_debug("function %s is unsafe", s);
+		return 1;
+	}
+	return 0;
+}
+
 // profile_allocation_checked is similar to profile_allocation, but has a
 // fallback for frame pointer unwinding if the provided return address points to
 // a function where profiling by calling into Go is unsafe (see
@@ -79,8 +110,9 @@ void profile_allocation_checked(size_t size, void *ret_addr) {
 	if (rate == 0) {
 		return;
 	}
+
 	if (should_sample(rate, size) != 0) {
-		if (cgo_heap_profiler_malloc_check_unsafe((uintptr_t) ret_addr) == 1) {
+		if (is_unsafe_call(ret_addr)) {
 			if (safe_fpunwind == 1) {
 				fpunwind(__builtin_frame_address(0), size);
 			}
