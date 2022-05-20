@@ -12,6 +12,9 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+
+	"inet.af/netaddr"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -34,6 +37,9 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			tracer.Tag("http.host", r.Host),
 		}, opts...)
 	}
+	if ip := getClientIP(r.RemoteAddr, r.Header); ip.IsValid() {
+		opts = append(opts, tracer.Tag(ext.HTTPClientIP, ip.String()))
+	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
@@ -54,4 +60,88 @@ func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 		s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 	}
 	s.Finish(opts...)
+}
+
+// Helper function to return the IP network out of a string.
+func ippref(s string) *netaddr.IPPrefix {
+	if prefix, err := netaddr.ParseIPPrefix(s); err == nil {
+		return &prefix
+	}
+	return nil
+}
+
+var (
+	ipv6SpecialNetworks = []*netaddr.IPPrefix{
+		ippref("fec0::/10"), // site local
+	}
+	ipHeaders = []string{"x-forwarded-for", "x-real-ip", "x-client-ip", "x-forwarded", "x-cluster-client-ip", "forwarded-for", "forwarded", "via", "true-client-ip"}
+)
+
+func getClientIP(remoteAddr string, headers http.Header) netaddr.IP {
+	check := func(value string) netaddr.IP {
+		for _, ip := range strings.Split(value, ",") {
+			ipStr := strings.Trim(ip, " ")
+			ip := parseIP(ipStr)
+
+			if !ip.IsValid() {
+				continue
+			}
+
+			if isGlobal(ip) {
+				return ip
+			}
+		}
+		return netaddr.IP{}
+	}
+
+	for _, hdr := range ipHeaders {
+		if value := headers.Get(hdr); value != "" {
+			if ip := check(value); ip.IsValid() {
+				return ip
+			}
+		}
+	}
+
+	if remoteIP := parseIP(remoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
+		return remoteIP
+	}
+	return netaddr.IP{}
+}
+
+func parseIP(s string) netaddr.IP {
+	ip, err := netaddr.ParseIP(s)
+	if err != nil {
+		h, _ := splitHostPort(s)
+		ip, err = netaddr.ParseIP(h)
+	}
+	return ip
+}
+
+func isGlobal(ip netaddr.IP) bool {
+	if ip.Is6() {
+		for _, network := range ipv6SpecialNetworks {
+			if network.Contains(ip) {
+				return false
+			}
+		}
+	}
+	//IsPrivate also checks for ipv6 ULA
+	return !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast()
+}
+
+// SplitHostPort splits a network address of the form `host:port` or
+// `[host]:port` into `host` and `port`.
+func splitHostPort(addr string) (host string, port string) {
+	i := strings.LastIndex(addr, "]:")
+	if i != -1 {
+		// ipv6
+		return strings.Trim(addr[:i+1], "[]"), addr[i+2:]
+	}
+
+	i = strings.LastIndex(addr, ":")
+	if i == -1 {
+		// not an address with a port number
+		return addr, ""
+	}
+	return addr[:i], addr[i+1:]
 }
