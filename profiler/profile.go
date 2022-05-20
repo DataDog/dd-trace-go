@@ -170,7 +170,7 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 			// that all allocations cover the same time period
 			//
 			// TODO: Support non-delta profiles for C allocations?
-			cAlloc.Start(2 * 1024 * 1024)
+			cAlloc.Start(p.cfg.cmemprofRate)
 			p.interruptibleSleep(p.cfg.period)
 			profile, err := cAlloc.Stop()
 			if err == nil {
