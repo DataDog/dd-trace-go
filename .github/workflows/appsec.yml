@@ -1,0 +1,56 @@
+name: AppSec Tests
+on:
+  pull_request:
+jobs:
+  native:
+    strategy:
+      matrix:
+        runs-on: [ macos-latest, ubuntu-latest, windows-latest ]
+        go-version: [ 1.18, 1.17, 1.16 ]
+        cgo_enabled: # test it compiles with and without cgo
+          - 0
+          - 1
+        build_tags: # test it compiles with and without the appsec build tag
+          - ""
+          - "appsec"
+        appsec_enabled: # test it compiles with and without appsec enabled
+          - true
+          - false
+      fail-fast: false
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go-version }}
+      - run: |
+          go get -v -d -t ./internal/appsec/... ./contrib/...
+          env GODEBUG="cgocheck=2" CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=5s go test -mod=mod -v -tags "${{ matrix.build_tags }}" ./internal/appsec/... ./contrib/...
+
+  # Same tests but on the official golang container for linux
+  golang-linux-container:
+    strategy:
+      matrix:
+        go-version: [ 1.18, 1.17, 1.16 ]
+        distribution: [ bullseye, buster, alpine ]
+        cgo_enabled: # test it compiles with and without cgo
+          - 0
+          - 1
+        build_tags: # test it compiles with and without the appsec build tag
+          - ""
+          - "appsec"
+        appsec_enabled: # test it compiles with and without appsec enabled
+          - true
+          - false
+      fail-fast: false
+    runs-on: ubuntu-latest
+    container:
+      image: golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+    steps:
+      - uses: actions/checkout@v2
+      # Install gcc and the libc headers on alpine images
+      - if: ${{ matrix.distribution == 'alpine' }}
+        run: apk add gcc musl-dev libc6-compat git
+      - run: |
+          go get -v -d -t ./internal/appsec/... ./contrib/...
+          env GODEBUG="cgocheck=2" CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=5s go test -mod=mod -v -tags "${{ matrix.build_tags }}" ./internal/appsec/... ./contrib/...
