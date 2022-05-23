@@ -8,6 +8,8 @@ on:
   #  - 'internal/appsec/**'
   #  - 'appsec/**'
   #  - 'contrib/**/appsec.go'
+env:
+  TO_TEST: ./appsec ./internal/appsec ./contrib/google.golang.org/grpc ./contrib/net/http ./contrib/gorilla/mux ./contrib/go-chi/chi.v5 ./contrib/go-chi/chi ./contrib/labstack/echo.v4 ./contrib/gin-gonic/gin
 jobs:
   native:
     strategy:
@@ -30,8 +32,7 @@ jobs:
       - uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go-version }}
-      - run: go get -d ./contrib/...
-      - run: env GODEBUG="cgocheck=2" CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=5s go test -v -tags "${{ matrix.build_tags }}" ./internal/appsec/... ./contrib/...
+      - run: env GODEBUG="cgocheck=2" CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=5s go test -v -tags "${{ matrix.build_tags }}" $TO_TEST
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
@@ -48,5 +49,4 @@ jobs:
       # Install gcc and the libc headers on alpine images
       - if: ${{ matrix.distribution == 'alpine' }}
         run: apk add gcc musl-dev libc6-compat git
-      - run: go get -d ./contrib/...
-      - run: env GODEBUG="cgocheck=2" CGO_ENABLED=1 DD_APPSEC_ENABLED=true DD_APPSEC_WAF_TIMEOUT=5s go test -v -tags "appsec" ./internal/appsec/... ./contrib/...
+      - run: env GODEBUG="cgocheck=2" CGO_ENABLED=1 DD_APPSEC_ENABLED=true DD_APPSEC_WAF_TIMEOUT=5s go test -v -tags "appsec" $TO_TEST
