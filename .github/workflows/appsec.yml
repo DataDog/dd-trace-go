@@ -38,8 +38,8 @@ jobs:
       fail-fast: false
     runs-on: ${{ matrix.runs-on }}
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
       - run: env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} go test -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST
@@ -55,7 +55,7 @@ jobs:
     container:
       image: golang:${{ matrix.go-version }}-${{ matrix.distribution }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       # Install gcc and the libc headers on alpine images
       - if: ${{ matrix.distribution == 'alpine' }}
         run: apk add gcc musl-dev libc6-compat git
