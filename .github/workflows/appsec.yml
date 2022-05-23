@@ -4,10 +4,10 @@ on:
   schedule: # nightly
     - cron: "0 0 * * *"
   pull_request: # on pull requests touching appsec files
-    paths:
-      - 'internal/appsec/**'
-      - 'appsec/**'
-      - 'contrib/**/appsec.go'
+  #paths:
+  #  - 'internal/appsec/**'
+  #  - 'appsec/**'
+  #  - 'contrib/**/appsec.go'
 jobs:
   native:
     strategy:
