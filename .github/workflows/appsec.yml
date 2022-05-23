@@ -1,6 +1,13 @@
 name: AppSec Tests
 on:
-  pull_request:
+  workflow_dispatch: # manually
+  schedule: # nightly
+    - cron: "0 0 * * *"
+  pull_request: # on pull requests touching appsec files
+    paths:
+      - 'internal/appsec/**'
+      - 'appsec/**'
+      - 'contrib/**/appsec.go'
 jobs:
   native:
     strategy:
@@ -24,8 +31,7 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
       - run: |
-          go get -v -d -t ./internal/appsec/... ./contrib/...
-          env GODEBUG="cgocheck=2" CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=5s go test -mod=mod -v -tags "${{ matrix.build_tags }}" ./internal/appsec/... ./contrib/...
+          env GODEBUG="cgocheck=2" CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=5s go test -v -tags "${{ matrix.build_tags }}" ./internal/appsec/... ./contrib/...
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
@@ -52,5 +58,4 @@ jobs:
       - if: ${{ matrix.distribution == 'alpine' }}
         run: apk add gcc musl-dev libc6-compat git
       - run: |
-          go get -v -d -t ./internal/appsec/... ./contrib/...
-          env GODEBUG="cgocheck=2" CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=5s go test -mod=mod -v -tags "${{ matrix.build_tags }}" ./internal/appsec/... ./contrib/...
+          env GODEBUG="cgocheck=2" CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=5s go test -v -tags "${{ matrix.build_tags }}" ./internal/appsec/... ./contrib/...
