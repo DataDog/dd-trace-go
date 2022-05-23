@@ -25,11 +25,11 @@ type DatadogMiddleware struct {
 }
 
 func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	opts := m.cfg.spanOpts
+	opts := append(m.cfg.spanOpts, tracer.ServiceName(m.cfg.serviceName), tracer.ResourceName(m.cfg.resourceNamer(r)))
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
-	span, ctx := httptrace.StartRequestSpan(r, m.cfg.serviceName, m.cfg.resourceNamer(r), false, opts...)
+	span, ctx := httptrace.StartRequestSpan(r, false, opts...)
 	defer func() {
 		// check if the responseWriter is of type negroni.ResponseWriter
 		var (

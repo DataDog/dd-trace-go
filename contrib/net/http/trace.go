@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 )
@@ -41,7 +42,8 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
-	span, ctx := httptrace.StartRequestSpan(r, cfg.Service, cfg.Resource, cfg.QueryParams, cfg.SpanOpts...)
+	opts := append(cfg.SpanOpts, tracer.ServiceName(cfg.Service), tracer.ResourceName(cfg.Resource))
+	span, ctx := httptrace.StartRequestSpan(r, cfg.QueryParams, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	defer func() {
 		httptrace.FinishRequestSpan(span, ddrw.status, cfg.FinishOpts...)

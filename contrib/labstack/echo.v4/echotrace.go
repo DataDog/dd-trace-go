@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/labstack/echo/v4"
 )
@@ -26,12 +27,16 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	log.Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
+	spanOpts := []ddtrace.StartSpanOption{
+		tracer.ServiceName(cfg.serviceName),
+	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
+			opts := append(spanOpts, tracer.ResourceName(resource))
 
-			var opts []ddtrace.StartSpanOption
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
@@ -41,7 +46,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				finishOpts = []tracer.FinishOption{tracer.NoDebugStack()}
 			}
 
-			span, ctx := httptrace.StartRequestSpan(request, cfg.serviceName, resource, false, opts...)
+			span, ctx := httptrace.StartRequestSpan(request, false, opts...)
 			defer func() {
 				httptrace.FinishRequestSpan(span, c.Response().Status, finishOpts...)
 			}()

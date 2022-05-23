@@ -25,12 +25,13 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 		opt(cfg)
 	}
 	log.Debug("contrib/emicklei/go-restful: Creating tracing filter: %#v", cfg)
+	spanOpts := []ddtrace.StartSpanOption{tracer.ServiceName(cfg.serviceName)}
 	return func(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
-		var opts []ddtrace.StartSpanOption
+		spanOpts := append(spanOpts, tracer.ResourceName(req.SelectedRoutePath()))
 		if !math.IsNaN(cfg.analyticsRate) {
-			opts = []ddtrace.StartSpanOption{tracer.Tag(ext.EventSampleRate, cfg.analyticsRate)}
+			spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		span, ctx := httptrace.StartRequestSpan(req.Request, cfg.serviceName, req.SelectedRoutePath(), false, opts...)
+		span, ctx := httptrace.StartRequestSpan(req.Request, false, spanOpts...)
 		defer func() {
 			httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))
 		}()
@@ -43,7 +44,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 
 // Filter is deprecated. Please use FilterFunc.
 func Filter(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
-	span, ctx := httptrace.StartRequestSpan(req.Request, req.SelectedRoutePath(), req.SelectedRoutePath(), false)
+	span, ctx := httptrace.StartRequestSpan(req.Request, false, tracer.ResourceName(req.SelectedRoutePath()))
 	defer func() {
 		httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))
 	}()

@@ -11,7 +11,6 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -28,16 +27,19 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", service, cfg)
+	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", cfg.serviceName, cfg)
+	spanOpts := []tracer.StartSpanOption{
+		tracer.ServiceName(cfg.serviceName),
+	}
 	return func(c *gin.Context) {
 		if cfg.ignoreRequest(c) {
 			return
 		}
-		var opts []ddtrace.StartSpanOption
+		opts := append(spanOpts, tracer.ResourceName(cfg.resourceNamer(c)))
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		span, ctx := httptrace.StartRequestSpan(c.Request, cfg.serviceName, cfg.resourceNamer(c), false, opts...)
+		span, ctx := httptrace.StartRequestSpan(c.Request, false, opts...)
 		defer func() {
 			httptrace.FinishRequestSpan(span, c.Writer.Status())
 		}()
