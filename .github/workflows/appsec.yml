@@ -42,7 +42,7 @@ jobs:
       - uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go-version }}
-      - run: env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} go test -v ${{ matrix.build_tags != '' && '-tags="matrix.build_tags"'}} $TO_TEST
+      - run: env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} go test -v ${{ matrix.build_tags != '' && '-tags="matrix.build_tags"' || ''}} $TO_TEST
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
