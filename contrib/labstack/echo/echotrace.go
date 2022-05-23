@@ -34,7 +34,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
 			opts := append(spanOpts, tracer.ResourceName(resource))
-			
+
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
