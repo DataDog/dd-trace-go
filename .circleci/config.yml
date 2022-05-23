@@ -12,68 +12,68 @@ jobs:
     <<: *plain-go116
 
     steps:
-    - checkout
+      - checkout
 
-    # -mod=readonly is enabled by default starting in go1.16 causing many go
-    # tools and editor integrations to report problems if the go.sum file is
-    # not up-to-date, so let's make sure it is.
-    - run:
-        name: go.sum up-to-date
-        command: |
-          if ! go run -mod=readonly gosum.go; then
-            # Older go versions, e.g. go1.14 will fail the check above with
-            # the message below.
-            #
-            #   go: updates to go.sum needed, disabled by -mod=readonly
-            #
-            # Newer versions show which go.sum entries are missing. To get
-            # useful CI errors for older versions, always print an explicit
-            # diff when go.sum is not up-to-date.
-            cp go.sum go.sum.before
-            go mod tidy
-            echo "--> go.sum diff:"
-            diff go.sum.before go.sum
-            exit 1
-          fi
-    - run:
-        name: milestone
-        command: |
-          go run checkmilestone.go
+      # -mod=readonly is enabled by default starting in go1.16 causing many go
+      # tools and editor integrations to report problems if the go.sum file is
+      # not up-to-date, so let's make sure it is.
+      - run:
+          name: go.sum up-to-date
+          command: |
+            if ! go run -mod=readonly gosum.go; then
+              # Older go versions, e.g. go1.14 will fail the check above with
+              # the message below.
+              #
+              #   go: updates to go.sum needed, disabled by -mod=readonly
+              #
+              # Newer versions show which go.sum entries are missing. To get
+              # useful CI errors for older versions, always print an explicit
+              # diff when go.sum is not up-to-date.
+              cp go.sum go.sum.before
+              go mod tidy
+              echo "--> go.sum diff:"
+              diff go.sum.before go.sum
+              exit 1
+            fi
+      - run:
+          name: milestone
+          command: |
+            go run checkmilestone.go
 
-    - run:
-        name: copyright
-        command: |
-          go run checkcopyright.go
+      - run:
+          name: copyright
+          command: |
+            go run checkcopyright.go
 
   lint:
     <<: *plain-go116
 
     steps:
-    - checkout
+      - checkout
 
-    - run:
-        name: gofmt
-        command: |
-          if [ "$(gofmt -e -l . | wc -l)" -gt 0 ]; then
-            exit 1
-          fi
+      - run:
+          name: gofmt
+          command: |
+            if [ "$(gofmt -e -l . | wc -l)" -gt 0 ]; then
+              exit 1
+            fi
 
-    - run:
-        name: goimports
-        command: |
-          go install golang.org/x/tools/cmd/goimports
-          if [ "$(~/go/bin/goimports -e -l -local gopkg.in/DataDog/dd-trace-go.v1 . | wc -l)" -gt 0 ]; then
-            echo "Run 'goimports -w -local gopkg.in/DataDog/dd-trace-go.v1 .' to format code."
-            ~/go/bin/goimports -d -local gopkg.in/DataDog/dd-trace-go.v1 .
-            exit 1
-          fi
+      - run:
+          name: goimports
+          command: |
+            go install golang.org/x/tools/cmd/goimports
+            if [ "$(~/go/bin/goimports -e -l -local gopkg.in/DataDog/dd-trace-go.v1 . | wc -l)" -gt 0 ]; then
+              echo "Run 'goimports -w -local gopkg.in/DataDog/dd-trace-go.v1 .' to format code."
+              ~/go/bin/goimports -d -local gopkg.in/DataDog/dd-trace-go.v1 .
+              exit 1
+            fi
 
-    - run:
-        name: lint
-        command: |
-          go get -u golang.org/x/lint/golint
-          curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
-          ./bin/gometalinter --disable-all --vendor --deadline=60s --enable=golint ./...
+      - run:
+          name: lint
+          command: |
+            go get -u golang.org/x/lint/golint
+            curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
+            ./bin/gometalinter --disable-all --vendor --deadline=60s --enable=golint ./...
 
 
   test-core:
@@ -89,7 +89,6 @@ jobs:
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-      DD_APPSEC_WAF_TIMEOUT: 1s
       CI_APP_SERVICE_NAME: dd-trace-go
     <<: *plain-go116
 
@@ -104,7 +103,7 @@ jobs:
           name: Testing
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
-            env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - save_cache:
           key: go-mod-v5-core-{{ checksum "go.sum.orig" }}
@@ -139,7 +138,6 @@ jobs:
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-      DD_APPSEC_WAF_TIMEOUT: 1s
       CI_APP_SERVICE_NAME: dd-trace-go
     working_directory: /home/circleci/dd-trace-go.v1
     docker:
@@ -162,8 +160,8 @@ jobs:
           POSTGRES_DB: postgres
       - image: mcr.microsoft.com/mssql/server:2019-latest
         environment:
-         SA_PASSWORD: myPassw0rd
-         ACCEPT_EULA: Y
+          SA_PASSWORD: myPassw0rd
+          ACCEPT_EULA: Y
       - image: consul:1.6.0
       - image: redis:3.2
       - image: elasticsearch:2
@@ -201,7 +199,7 @@ jobs:
       - image: bitnami/kafka:2
         environment:
           KAFKA_CFG_ZOOKEEPER_CONNECT: localhost:2181
-        command: [kafka-topics.sh, --create, --topic, gosegtest, --bootstrap-server, localhost:9092]
+        command: [ kafka-topics.sh, --create, --topic, gosegtest, --bootstrap-server, localhost:9092 ]
 
     steps:
       - checkout
@@ -213,7 +211,7 @@ jobs:
 
       - restore_cache:
           keys:
-          - v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
+            - v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
       - run:
           name: Install librdkafka v1.3.0
           command: |
@@ -228,7 +226,7 @@ jobs:
       - save_cache:
           key: v1-librdkafka-v1.3.0-{{ checksum "/etc/os-release" }}
           paths:
-          - /tmp/librdkafka-v1.3.0
+            - /tmp/librdkafka-v1.3.0
 
       - run:
           name: Wait for MySQL
@@ -286,7 +284,6 @@ jobs:
           name: Testing integrations
           command: |
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
-            export DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true)
             export INTEGRATION=true
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
@@ -305,28 +302,28 @@ jobs:
       - run:
           name: Testing outlier google.golang.org/api
           command: |
-                go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
-                go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
-                go test -v ./contrib/google.golang.org/api/...
+            go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
+            go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
+            go test -v ./contrib/google.golang.org/api/...
 
       - run:
           name: Testing outlier gRPC v1.2
           command: |
-                # This hacky approach is necessary because running the tests regularly
-                # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
-                go mod vendor
-
-                # Checkout grpc-go@v1.2.0
-                cd vendor/google.golang.org && rm -rf grpc
-                git clone git@github.com:grpc/grpc-go grpc && cd grpc
-                git fetch origin && git checkout v1.2.0 && cd ../..
-
-                # Checkout sketches-go@v1.0.0
-                cd vendor/github.com/DataDog && rm -rf sketches-go
-                git clone git@github.com:DataDog/sketches-go && cd sketches-go
-                git fetch origin && git checkout v1.0.0 && cd ../..
-
-                INTEGRATION=true go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+            # This hacky approach is necessary because running the tests regularly
+            # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
+            go mod vendor
+            
+            # Checkout grpc-go@v1.2.0
+            cd vendor/google.golang.org && rm -rf grpc
+            git clone git@github.com:grpc/grpc-go grpc && cd grpc
+            git fetch origin && git checkout v1.2.0 && cd ../..
+            
+            # Checkout sketches-go@v1.0.0
+            cd vendor/github.com/DataDog && rm -rf sketches-go
+            git clone git@github.com:DataDog/sketches-go && cd sketches-go
+            git fetch origin && git checkout v1.0.0 && cd ../..
+            
+            INTEGRATION=true go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
 
       - save_cache:
           key: go-mod-v5-contrib-{{ checksum "go.sum.orig" }}
@@ -367,14 +364,8 @@ workflows:
     jobs:
       - metadata
       - lint
-      - test-core:
-          matrix:
-            parameters:
-              build_tags: [ "", "appsec" ]
-      - test-contrib:
-          matrix:
-            parameters:
-              build_tags: [ "", "appsec" ]
+      - test-core
+      - test-contrib
   nightly:
     triggers:
       - schedule:
@@ -387,10 +378,8 @@ workflows:
       - test-core:
           matrix:
             parameters:
-              build_tags: [ "", "appsec" ]
               goflags: [ "-race" ]
       - test-contrib:
           matrix:
             parameters:
-              build_tags: [ "", "appsec" ]
               goflags: [ "-race" ]
