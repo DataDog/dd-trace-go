@@ -61,6 +61,12 @@ func (c *Profile) build() *profile.Profile {
 			if !ok {
 				break
 			}
+			// runtime.Callers has a skip argument but we can't skip
+			// the exported allocation sample function with it, so
+			// we manually prune it here.
+			if frame.Function == "recordAllocationSample" {
+				continue
+			}
 			addr := uint64(frame.PC)
 			loc, ok := locations[addr]
 			if !ok {
