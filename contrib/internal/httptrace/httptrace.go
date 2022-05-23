@@ -33,13 +33,13 @@ const (
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags. URL query parameters
 // are added to the URL tag when queryParams is true. Any further span start option can be added with opts.
-func StartRequestSpan(r *http.Request, service, resource string, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
+func StartRequestSpan(r *http.Request, service, resource string, queryParams bool, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
 	opts = append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.ServiceName(service),
 		tracer.ResourceName(resource),
 		tracer.Tag(HTTPMethod, r.Method),
-		tracer.Tag(HTTPURL, makeURLTag(r)),
+		tracer.Tag(HTTPURL, makeURLTag(r, queryParams)),
 		tracer.Tag(HTTPUserAgent, r.UserAgent()),
 		tracer.Measured(),
 	}, opts...)
@@ -73,7 +73,7 @@ func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 
 // Create the standard http.url value out of the given HTTP request in the form
 // `scheme://host[:port]/path[?query][#fragment]`
-func makeURLTag(r *http.Request) string {
+func makeURLTag(r *http.Request, queryParams bool) string {
 	var u strings.Builder
 	if r.TLS != nil {
 		u.WriteString("https")
@@ -82,7 +82,7 @@ func makeURLTag(r *http.Request) string {
 	}
 	u.WriteString(r.URL.Host)
 	u.WriteString(r.URL.EscapedPath())
-	if query := r.URL.RawQuery; query != "" {
+	if query := r.URL.RawQuery; queryParams && query != "" {
 		u.WriteByte('?')
 		u.WriteString(query)
 	}
