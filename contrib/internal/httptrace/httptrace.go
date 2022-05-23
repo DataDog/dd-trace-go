@@ -12,22 +12,35 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
+// List of standard HTTP request span tags.
+const (
+	// HTTPMethod is the HTTP request method.
+	HTTPMethod = ext.HTTPMethod
+	// HTTPURL is the full HTTP request URL in the form `scheme://host[:port]/path[?query][#fragment]`.
+	HTTPURL = ext.HTTPURL
+	// HTTPUserAgent is the user agent header value of the HTTP request.
+	HTTPUserAgent = "http.useragent"
+	// HTTPCode is the HTTP response status code sent by the HTTP request handler.
+	HTTPCode = ext.HTTPCode
+)
+
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags. URL query parameters
 // are added to the URL tag when queryParams is true. Any further span start option can be added with opts.
-func StartRequestSpan(r *http.Request, service, resource string, queryParams bool, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
+func StartRequestSpan(r *http.Request, service, resource string, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
 	opts = append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.ServiceName(service),
 		tracer.ResourceName(resource),
-		tracer.Tag(ext.HTTPMethod, r.Method),
-		tracer.Tag(ext.HTTPURL, makeURLTag(r, queryParams)),
-		tracer.Tag(ext.HTTPUserAgent, r.UserAgent()),
+		tracer.Tag(HTTPMethod, r.Method),
+		tracer.Tag(HTTPURL, makeURLTag(r)),
+		tracer.Tag(HTTPUserAgent, r.UserAgent()),
 		tracer.Measured(),
 	}, opts...)
 	if r.URL.Host != "" {
@@ -51,24 +64,31 @@ func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 	} else {
 		statusStr = strconv.Itoa(status)
 	}
-	s.SetTag(ext.HTTPCode, statusStr)
+	s.SetTag(HTTPCode, statusStr)
 	if status >= 500 && status < 600 {
 		s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 	}
 	s.Finish(opts...)
 }
 
-func makeURLTag(r *http.Request, queryParams bool) string {
-	scheme := "http"
-	path := r.URL.RawPath
-	if path == "" {
-		path = r.URL.Path
-	}
+// Create the standard http.url value out of the given HTTP request in the form
+// `scheme://host[:port]/path[?query][#fragment]`
+func makeURLTag(r *http.Request) string {
+	var u strings.Builder
 	if r.TLS != nil {
-		scheme += "s"
+		u.WriteString("https")
+	} else {
+		u.WriteString("http")
 	}
-	if queryParams {
-		path += "?" + r.URL.RawQuery
+	u.WriteString(r.URL.Host)
+	u.WriteString(r.URL.EscapedPath())
+	if query := r.URL.RawQuery; query != "" {
+		u.WriteByte('?')
+		u.WriteString(query)
 	}
-	return scheme + "://" + r.Host + path
+	if fragment := r.URL.Fragment; fragment != "" {
+		u.WriteByte('#')
+		u.WriteString(fragment)
+	}
+	return u.String()
 }
