@@ -185,47 +185,57 @@ func TestStartStopIdempotency(t *testing.T) {
 // that ongoing profiling or upload operations are immediately canceled.
 func TestStopLatency(t *testing.T) {
 	t.Skip("broken test, see issue #1294")
-	p, err := newProfiler(
-		WithURL("http://invalid.invalid/"),
-		WithPeriod(1000*time.Millisecond),
-		CPUDuration(500*time.Millisecond),
-	)
-	require.NoError(t, err)
-	uploadStart := make(chan struct{}, 1)
-	uploadFunc := p.uploadFunc
-	p.uploadFunc = func(b batch) error {
-		select {
-		case uploadStart <- struct{}{}:
-		default:
-			// uploadFunc may be called more than once, don't leak this goroutine
+
+	t.Run("stop-profiles", func(t *testing.T) {
+		Start(
+			WithPeriod(time.Hour),
+			CPUDuration(time.Hour),
+		)
+
+		// give profiling time to start
+		time.Sleep(50 * time.Millisecond)
+		start := time.Now()
+		Stop()
+		elapsed := time.Since(start)
+		// CPU profiling polls in 100 millisecond intervals and this can't be
+		// interrupted by pprof.StopCPUProfile, so we can't guarantee profiling
+		// will stop faster than 200 milliseconds (one interval to read
+		// remaining samples, second interval to detect profiling has stopped).
+		// Set a conservative upper bound on that stop time plus profile
+		// serialization.
+		if elapsed > 500*time.Millisecond {
+			t.Errorf("profiler took %v to stop", elapsed)
 		}
-		return uploadFunc(b)
-	}
-	p.run()
+	})
 
-	<-uploadStart
-	// Wait for uploadFunc(b) to run. A bit racy, but worst case is the test
-	// passing for the wrong reasons.
-	time.Sleep(10 * time.Millisecond)
+	t.Run("stop-upload", func(t *testing.T) {
+		received := make(chan struct{})
+		stop := make(chan struct{})
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case received <- struct{}{}:
+			default:
+			}
+			<-stop
+		}))
+		defer server.Close()
+		defer close(stop)
 
-	stopped := make(chan struct{}, 1)
-	go func() {
-		p.stop()
-		stopped <- struct{}{}
-	}()
+		Start(
+			WithAgentAddr(server.Listener.Addr().String()),
+			WithPeriod(10*time.Millisecond),
+			CPUDuration(10*time.Millisecond),
+			WithUploadTimeout(time.Hour),
+		)
 
-	// CPU profiling polls in 100 millisecond intervals and this can't be
-	// interrupted by pprof.StopCPUProfile, so we can't guarantee profiling
-	// will stop faster than that.
-	timeout := 200 * time.Millisecond
-	select {
-	case <-stopped:
-	case <-time.After(timeout):
-		// Capture stacks so we can see which goroutines are hanging and why.
-		stacks := make([]byte, 64*1024)
-		stacks = stacks[0:runtime.Stack(stacks, true)]
-		t.Fatalf("Stop() took longer than %s:\n%s", timeout, stacks)
-	}
+		<-received
+		start := time.Now()
+		Stop()
+		elapsed := time.Since(start)
+		if elapsed > 500*time.Millisecond {
+			t.Errorf("profiler took %v to stop", elapsed)
+		}
+	})
 }
 
 func TestProfilerInternal(t *testing.T) {
