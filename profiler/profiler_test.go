@@ -184,6 +184,8 @@ func TestStartStopIdempotency(t *testing.T) {
 // TestStopLatency tries to make sure that calling Stop() doesn't hang, i.e.
 // that ongoing profiling or upload operations are immediately canceled.
 func TestStopLatency(t *testing.T) {
+	t.Skip("broken test, see issue #1294")
+
 	t.Run("stop-profiles", func(t *testing.T) {
 		Start(
 			WithPeriod(time.Hour),
