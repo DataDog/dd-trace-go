@@ -14,6 +14,7 @@ env:
   JUNIT_REPORT: gotestsum-report.xml
   CI_APP_SERVICE_NAME: dd-trace-go
   DD_CI_API_KEY: ${{ secrets.DD_CI_API_KEY }}
+  TO_TEST: ./appsec/... ./internal/appsec/... ./contrib/google.golang.org/grpc/... ./contrib/net/http/... ./contrib/gorilla/mux/... ./contrib/go-chi/... ./contrib/labstack/echo.v4/... ./contrib/gin-gonic/gin/...
 jobs:
   native:
     strategy:
@@ -43,15 +44,7 @@ jobs:
           env GOBIN=$PWD go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
           env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }}
-          ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} \
-            ./appsec/... \
-            ./internal/appsec/... \
-            ./contrib/google.golang.org/grpc/... \
-            ./contrib/net/http/... \
-            ./contrib/gorilla/mux/... \
-            ./contrib/go-chi/... \
-            ./contrib/labstack/echo.v4/... \
-            ./contrib/gin-gonic/gin/...
+          ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST
 
       - name: Install Datadog CI App CLI for Linux
         if: matrix.runs-on == 'ubuntu-latest'
@@ -93,15 +86,7 @@ jobs:
           env GOBIN=$PWD go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
           env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }}
-          ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} \
-            ./appsec/... \
-            ./internal/appsec/... \
-            ./contrib/google.golang.org/grpc/... \
-            ./contrib/net/http/... \
-            ./contrib/gorilla/mux/... \
-            ./contrib/go-chi/... \
-            ./contrib/labstack/echo.v4/... \
-            ./contrib/gin-gonic/gin/...
+          ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST
 
       - name: Upload Datadog CI App CLI
         if: ${{ matrix.distribution != 'alpine' }}
