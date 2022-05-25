@@ -62,11 +62,6 @@ func (NoopTracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 // Inject implements ddtrace.Tracer.
 func (NoopTracer) Inject(context ddtrace.SpanContext, carrier interface{}) error { return nil }
 
-// InjectWithOptions implements ddtrace.Tracer.
-func (NoopTracer) InjectWithOptions(context ddtrace.SpanContext, carrier interface{}, opts ...ddtrace.InjectionOption) error {
-	return nil
-}
-
 // Stop implements ddtrace.Tracer.
 func (NoopTracer) Stop() {}
 

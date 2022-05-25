@@ -186,9 +186,6 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if math.IsNaN(cfg.analyticsRate) {
 		cfg.analyticsRate = rc.analyticsRate
 	}
-	if cfg.commentInjectionMode == 0 {
-		cfg.commentInjectionMode = rc.commentInjectionMode
-	}
 	cfg.childSpansOnly = rc.childSpansOnly
 	tc := &tracedConnector{
 		connector:  c,

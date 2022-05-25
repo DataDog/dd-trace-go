@@ -96,9 +96,6 @@ type config struct {
 	// propagator propagates span context cross-process
 	propagator Propagator
 
-	// injector injects span context cross-process
-	injector WithOptionsInjector
-
 	// httpClient specifies the HTTP client to be used by the agent's transport.
 	httpClient *http.Client
 
@@ -264,13 +261,11 @@ func newConfig(opts ...StartOption) *config {
 	if c.transport == nil {
 		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
+	// TODO: add sql commenting mode to propagator config and add env variable to control the mode
 	if c.propagator == nil {
 		c.propagator = NewPropagator(&PropagatorConfig{
 			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
 		})
-	}
-	if c.injector == nil {
-		c.injector = NewInjector()
 	}
 	if c.logger != nil {
 		log.UseLogger(c.logger)
@@ -893,59 +888,5 @@ func WithUserRole(role string) UserMonitoringOption {
 func WithUserScope(scope string) UserMonitoringOption {
 	return func(s Span) {
 		s.SetTag("usr.scope", scope)
-	}
-}
-
-// InjectionOption is a configuration option for InjectWithOptions. It is aliased in order
-// to help godoc group all the functions returning it together. It is considered
-// more correct to refer to it as the type as the origin, ddtrace.InjectionOption.
-type InjectionOption = ddtrace.InjectionOption
-
-// WithSpanIDKey returns the option setting the span id key.
-func WithSpanIDKey(spanIDKey string) InjectionOption {
-	return func(cfg *ddtrace.InjectionConfig) {
-		cfg.SpanIDKey = spanIDKey
-	}
-}
-
-// WithInjectedSpanID returns the option setting the span id value.
-func WithInjectedSpanID(spanID uint64) InjectionOption {
-	return func(cfg *ddtrace.InjectionConfig) {
-		cfg.SpanID = spanID
-	}
-}
-
-// WithTraceIDKey returns the option setting the trace id key.
-func WithTraceIDKey(traceIDKey string) InjectionOption {
-	return func(cfg *ddtrace.InjectionConfig) {
-		cfg.TraceIDKey = traceIDKey
-	}
-}
-
-// WithSamplingPriorityKey returns the option setting the sampling priority key.
-func WithSamplingPriorityKey(samplingPriorityKey string) InjectionOption {
-	return func(cfg *ddtrace.InjectionConfig) {
-		cfg.SamplingPriorityKey = samplingPriorityKey
-	}
-}
-
-// WithEnvironmentKey returns the option setting the environment key.
-func WithEnvironmentKey(envKey string) InjectionOption {
-	return func(cfg *ddtrace.InjectionConfig) {
-		cfg.EnvKey = envKey
-	}
-}
-
-// WithServiceNameKey returns the option setting the service name key.
-func WithServiceNameKey(serviceNameKey string) InjectionOption {
-	return func(cfg *ddtrace.InjectionConfig) {
-		cfg.ServiceNameKey = serviceNameKey
-	}
-}
-
-// WithParentVersionKey returns the option setting the parent version key.
-func WithParentVersionKey(versionKey string) InjectionOption {
-	return func(cfg *ddtrace.InjectionConfig) {
-		cfg.ParentVersionKey = versionKey
 	}
 }

@@ -12,13 +12,11 @@ import (
 	"log"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
-	"github.com/stretchr/testify/assert"
 )
 
 // Prepare sets up a table with the given name in both the MySQL and Postgres databases and returns
@@ -313,7 +311,9 @@ func assertInjectedComments(t *testing.T, cfg *Config, discardDynamicTags bool) 
 		assert.Len(t, c, 0)
 	} else {
 		require.Len(t, c, 1)
-		assert.Equal(t, carrier.CommentedQuery(""), c[0])
+		commented, spanID := carrier.CommentQuery("")
+		assert.Equal(t, commented, c[0])
+		assert.Greater(t, spanID, 0)
 	}
 }
 

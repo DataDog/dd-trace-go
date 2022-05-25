@@ -33,9 +33,6 @@ type Tracer interface {
 	// Inject injects a span context into the given carrier.
 	Inject(context SpanContext, carrier interface{}) error
 
-	// InjectWithOptions injects a span context into the given carrier with options.
-	InjectWithOptions(context SpanContext, carrier interface{}, opts ...InjectionOption) error
-
 	// Stop stops the tracer. Calls to Stop should be idempotent.
 	Stop()
 }
@@ -138,9 +135,6 @@ type Logger interface {
 	// Log prints the given message.
 	Log(msg string)
 }
-
-// InjectionOption is a configuration option that can be used with a Tracer's InjectWithOptions method.
-type InjectionOption func(cfg *InjectionConfig)
 
 // InjectionConfig holds the configuration for injection a span into a carrier. It is usually passed
 // around by reference to one or more InjectionOption functions which shape it into its

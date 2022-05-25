@@ -15,7 +15,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -120,6 +119,8 @@ type PropagatorConfig struct {
 	// B3 specifies if B3 headers should be added for trace propagation.
 	// See https://github.com/openzipkin/b3-propagation
 	B3 bool
+
+	SQLCommentInjectionMode SQLCommentInjectionMode
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
@@ -145,80 +146,6 @@ func NewPropagator(cfg *PropagatorConfig) Propagator {
 		injectors:  getPropagators(cfg, headerPropagationStyleInject),
 		extractors: getPropagators(cfg, headerPropagationStyleExtract),
 	}
-}
-
-// NewInjector returns a new experimental injector which uses TextMap to inject
-// and extract values. It propagates static tags (service name, environment and version) as well
-// as dynamic trace attributes (span id, trace id and sampling priority).
-func NewInjector() WithOptionsInjector {
-	return &withOptionsInjector{}
-}
-
-type withOptionsInjector struct {
-}
-
-func (i *withOptionsInjector) InjectWithOptions(spanCtx ddtrace.SpanContext, carrier interface{}, opts ...ddtrace.InjectionOption) error {
-	switch c := carrier.(type) {
-	case TextMapWriter:
-		return i.injectTextMapWithOptions(spanCtx, c, opts...)
-	default:
-		return ErrInvalidCarrier
-	}
-}
-
-func (i *withOptionsInjector) injectTextMapWithOptions(spanCtx ddtrace.SpanContext, writer TextMapWriter, opts ...ddtrace.InjectionOption) error {
-	cfg := ddtrace.InjectionConfig{}
-	for _, apply := range opts {
-		apply(&cfg)
-	}
-	spanID := cfg.SpanID
-	ctx, ok := spanCtx.(*spanContext)
-	if !ok && spanID == 0 {
-		return ErrInvalidSpanContext
-	}
-
-	traceID := spanID
-	samplingPriority := 0
-	var env, pversion string
-	if ok {
-		if ctx.TraceID() > 0 {
-			traceID = ctx.TraceID()
-		}
-		if spanID == 0 {
-			spanID = ctx.SpanID()
-		}
-		if sp, ok := ctx.samplingPriority(); ok {
-			samplingPriority = sp
-		}
-		if e, ok := ctx.meta(ext.Environment); ok {
-			env = e
-		}
-		if version, ok := ctx.meta(ext.ParentVersion); ok {
-			pversion = version
-		}
-	}
-
-	if cfg.TraceIDKey != "" {
-		writer.Set(cfg.TraceIDKey, strconv.FormatUint(traceID, 10))
-	}
-	if cfg.SpanIDKey != "" {
-		writer.Set(cfg.SpanIDKey, strconv.FormatUint(spanID, 10))
-	}
-	if cfg.SamplingPriorityKey != "" {
-		writer.Set(cfg.SamplingPriorityKey, strconv.Itoa(samplingPriority))
-	}
-	if cfg.EnvKey != "" {
-		writer.Set(cfg.EnvKey, env)
-	}
-	if cfg.ParentVersionKey != "" {
-		writer.Set(cfg.ParentVersionKey, pversion)
-	}
-	if cfg.ServiceNameKey != "" {
-		if globalconfig.ServiceName() != "" {
-			writer.Set(cfg.ServiceNameKey, globalconfig.ServiceName())
-		}
-	}
-	return nil
 }
 
 // chainedPropagator implements Propagator and applies a list of injectors and extractors.
@@ -252,6 +179,12 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 		case "datadog":
 			list = append(list, dd)
 		case "b3":
+			if !cfg.B3 {
+				// propagatorB3 hasn't already been added, add a new one.
+				list = append(list, &propagatorB3{})
+			}
+			// TODO: read the sql commenting mode from env variable and/or config
+		case "sqlcommenter":
 			if !cfg.B3 {
 				// propagatorB3 hasn't already been added, add a new one.
 				list = append(list, &propagatorB3{})
@@ -305,8 +238,12 @@ type propagator struct {
 
 func (p *propagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
+	// QueryCommenter carriers are only supported by the SQLCommentPropagator
+	case QueryCommenter:
+		return nil
 	case TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
+
 	default:
 		return ErrInvalidCarrier
 	}
@@ -403,6 +340,9 @@ type propagatorB3 struct{}
 
 func (p *propagatorB3) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
+	// QueryCommenter carriers are only supported by the SQLCommentPropagator
+	case QueryCommenter:
+		return nil
 	case TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
 	default:

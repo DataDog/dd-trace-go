@@ -154,14 +154,6 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return internal.GetGlobalTracer().Inject(ctx, carrier)
 }
 
-// InjectWithOptions injects the given SpanContext into the carrier with options. This
-// is similar to Inject but adds options to specify which info to inject in the carrier
-// along with the keys to use. The carrier is still expected to implement TextMapWriter,
-// otherwise an error is returned. If the tracer is not started, calling this function is a no-op.
-func InjectWithOptions(ctx ddtrace.SpanContext, carrier interface{}, opts ...InjectionOption) error {
-	return internal.GetGlobalTracer().InjectWithOptions(ctx, carrier, opts...)
-}
-
 // SetUser associates user information to the current trace which the
 // provided span belongs to. The options can be used to tune which user
 // bit of information gets monitored.
@@ -511,11 +503,6 @@ func (t *tracer) Stop() {
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return t.config.propagator.Inject(ctx, carrier)
-}
-
-// InjectWithOptions uses the configured or default TextMap Propagator.
-func (t *tracer) InjectWithOptions(ctx ddtrace.SpanContext, carrier interface{}, opts ...InjectionOption) error {
-	return t.config.injector.InjectWithOptions(ctx, carrier, opts...)
 }
 
 // Extract uses the configured or default TextMap Propagator.

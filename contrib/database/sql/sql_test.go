@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
@@ -205,7 +206,7 @@ func TestOpenOptions(t *testing.T) {
 func TestCommentInjectionModes(t *testing.T) {
 	testCases := []struct {
 		name                 string
-		mode                 CommentInjectionMode
+		mode                 tracer.SQLCommentInjectionMode
 		expectedInjectedTags sqltest.TagInjectionExpectation
 	}{
 		{
@@ -217,7 +218,7 @@ func TestCommentInjectionModes(t *testing.T) {
 		},
 		{
 			name: "static tags injection",
-			mode: StaticTagsSQLCommentInjection,
+			mode: tracer.StaticTagsSQLCommentInjection,
 			expectedInjectedTags: sqltest.TagInjectionExpectation{
 				StaticTags:  true,
 				DynamicTags: false,
@@ -225,7 +226,7 @@ func TestCommentInjectionModes(t *testing.T) {
 		},
 		{
 			name: "dynamic tags injection",
-			mode: FullSQLCommentInjection,
+			mode: tracer.FullSQLCommentInjection,
 			expectedInjectedTags: sqltest.TagInjectionExpectation{
 				StaticTags:  true,
 				DynamicTags: true,
@@ -235,10 +236,12 @@ func TestCommentInjectionModes(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			// TODO: Rethink how to run that test now that the functionality is implemented in a propagator
+			// that we can't currently inject on the mocktracer
 			mockTracer := mocktracer.Start()
 			defer mockTracer.Stop()
 
-			Register("postgres", &pq.Driver{}, WithCommentInjection(tc.mode), WithServiceName("postgres-test"))
+			Register("postgres", &pq.Driver{}, WithServiceName("postgres-test"))
 			defer unregister("postgres")
 
 			db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
