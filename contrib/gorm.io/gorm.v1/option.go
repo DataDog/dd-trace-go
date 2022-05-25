@@ -9,6 +9,8 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+
+	"gorm.io/gorm"
 )
 
 type config struct {
@@ -16,6 +18,7 @@ type config struct {
 	analyticsRate float64
 	dsn           string
 	errCheck      func(err error) bool
+	tagFns        map[string]func(db *gorm.DB) interface{}
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -69,5 +72,21 @@ func WithAnalyticsRate(rate float64) Option {
 func WithErrorCheck(fn func(err error) bool) Option {
 	return func(cfg *config) {
 		cfg.errCheck = fn
+	}
+}
+
+// WithCustomTag will cause the given tagFn to be evaluated after executing
+// a query and attach the result to the span tagged by the key.
+func WithCustomTag(tag string, tagFn func(db *gorm.DB) interface{}) Option {
+	return func(cfg *config) {
+		if cfg.tagFns == nil {
+			cfg.tagFns = make(map[string]func(scope *gorm.Scope) interface{})
+		}
+
+		if tagFn != nil {
+			cfg.tagFns[tag] = tagFn
+		} else {
+			delete(cfg.tagFns, tag)
+		}
 	}
 }
