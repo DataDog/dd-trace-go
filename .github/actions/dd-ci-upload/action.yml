@@ -1,6 +1,6 @@
 # Composite action to upload junit test result files to Datadog CI App
-name: 'Hello World'
-description: 'Greet someone'
+name: 'Datadog CI App Upload'
+description: 'Upload junit test result files to Datadog CI App'
 inputs:
   dd-api-key:
     required: true
