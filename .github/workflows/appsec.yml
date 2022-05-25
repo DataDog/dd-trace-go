@@ -105,7 +105,6 @@ jobs:
       - name: Upload Datadog CI App CLI
         if: ${{ matrix.distribution != 'alpine' }}
         run: |
-          apk add curl
           curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output datadog-ci
           chmod +x datadog-ci
           env DD_API_KEY=$DD_CI_API_KEY ./datadog-ci junit upload \
