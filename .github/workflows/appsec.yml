@@ -38,10 +38,12 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - uses: actions/cache@v3
+      - name: Go modules cache
+        uses: actions/cache@v3
         with:
           path: ~/go/pkg/mod
-          key: go-pkg-mod
+          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-pkg-mod-
 
       - name: go test
         shell: bash
@@ -87,10 +89,12 @@ jobs:
       - if: ${{ matrix.distribution == 'alpine' }}
         run: apk add gcc musl-dev libc6-compat git
 
-      - uses: actions/cache@v3
+      - name: Go modules cache
+        uses: actions/cache@v3
         with:
           path: ~/go/pkg/mod
-          key: go-pkg-mod
+          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-pkg-mod-
 
       - name: go test
         run: |
