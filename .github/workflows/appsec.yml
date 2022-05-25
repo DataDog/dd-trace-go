@@ -37,6 +37,12 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
+
+      - uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: go-pkg-mod
+
       - name: go test
         shell: bash
         run: |
@@ -80,6 +86,12 @@ jobs:
       # Install gcc and the libc headers on alpine images
       - if: ${{ matrix.distribution == 'alpine' }}
         run: apk add gcc musl-dev libc6-compat git
+
+      - uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: go-pkg-mod
+
       - name: go test
         run: |
           # Install gotestsum to get the results in a junit file 
