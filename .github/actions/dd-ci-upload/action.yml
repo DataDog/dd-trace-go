@@ -1,0 +1,51 @@
+# Composite action to upload junit test result files to Datadog CI App
+name: 'Hello World'
+description: 'Greet someone'
+inputs:
+  dd-api-key:
+    required: true
+    description: Datadog API key to use to upload the junit files
+  service:
+    required: false
+    default: dd-trace-go
+    description: Service name to use with the uploaded test results.
+  files:
+    required: true
+    description: JUnit files to upload
+  tags:
+    required: false
+    description: Datadog tags to associate with the uploaded test results.
+runs:
+  using: "composite"
+  steps:
+    - if: runner.os == 'Windows'
+      shell: bash
+      run: echo "DD_CI_CLI_BUILD=win-x64.exe" >> $GITHUB_ENV
+    - if: runner.os == 'macOS'
+      shell: bash
+      run: echo "DD_CI_CLI_BUILD=darwin-x64" >> $GITHUB_ENV
+    - if: runner.os == 'Linux'
+      shell: bash
+      run: echo "DD_CI_CLI_BUILD=linux-x64" >> $GITHUB_ENV
+
+    - name: Datadog CI CLI cache
+      id: dd-ci-cli-cache
+      uses: actions/cache@v3
+      with:
+        path: ./datadog-ci
+        key: datadog-ci-cli-${{ env.DD_CI_CLI_BUILD }}
+
+    - name: Install Datadog CI CLI
+      if: steps.dd-ci-cli-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_${{ env.DD_CI_CLI_BUILD }}" --output datadog-ci    
+        chmod +x datadog-ci
+
+    - name: Upload the JUnit files
+      shell: bash
+      run: |
+        env DD_API_KEY=${{ inputs.dd-api-key }} ./datadog-ci junit upload \
+          --service ${{ inputs.service }} \
+          --tags "${{ inputs.tags }}" \
+          ${{ inputs.files }}

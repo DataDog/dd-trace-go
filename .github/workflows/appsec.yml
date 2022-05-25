@@ -12,8 +12,6 @@ env:
   DD_APPSEC_WAF_TIMEOUT: 5s
   GODEBUG: cgocheck=2
   JUNIT_REPORT: gotestsum-report.xml
-  CI_APP_SERVICE_NAME: dd-trace-go
-  DD_CI_API_KEY: ${{ secrets.DD_CI_API_KEY }}
   TO_TEST: ./appsec/... ./internal/appsec/... ./contrib/google.golang.org/grpc/... ./contrib/net/http/... ./contrib/gorilla/mux/... ./contrib/go-chi/... ./contrib/labstack/echo.v4/... ./contrib/gin-gonic/gin/...
 jobs:
   native:
@@ -54,24 +52,12 @@ jobs:
           env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }}
           ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST || true
 
-      - name: Install Datadog CI App CLI for Linux
-        if: matrix.runs-on == 'ubuntu-latest'
-        run: curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output datadog-ci
-      - name: Install Datadog CI App CLI for macOS
-        if: matrix.runs-on == 'macos-latest'
-        run: curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_darwin-x64" --output datadog-ci
-      - name: Install Datadog CI App CLI for Windows
-        if: matrix.runs-on == 'windows-latest'
-        run: curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_win-x64.exe" --output datadog-ci
-      - name: Upload test results to Datadog's CI App
-        shell: bash
-        run: |
-          chmod +x datadog-ci
-          env DD_API_KEY=$DD_CI_API_KEY ./datadog-ci junit upload \
-            --service $CI_APP_SERVICE_NAME \
-            --tags "go:${{ matrix.go-version }}" \
-            --tags "os:${{ matrix.runs-on }}" \
-            $JUNIT_REPORT
+      - name: Upload the results to Datadog CI App
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ env.JUNIT_REPORT }}
+          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
@@ -104,15 +90,10 @@ jobs:
           env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }}
           ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST || true
 
-      - name: Upload Datadog CI App CLI
-        if: ${{ matrix.distribution != 'alpine' }}
-        run: |
-          curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output datadog-ci
-          chmod +x datadog-ci
-          env DD_API_KEY=$DD_CI_API_KEY ./datadog-ci junit upload \
-            --service $CI_APP_SERVICE_NAME \
-            --tags "go:${{ matrix.go-version }}" \
-            --tags "arch:${{ runner.arch }}" \
-            --tags "os:${{ runner.os }}" \
-            --tags "distribution:${{ runner.distribution }}" \
-            $JUNIT_REPORT
+      - name: Upload the results to Datadog CI App
+        if: matrix.distribution != 'alpine' # datadog-ci CLI doesn't work on alpine
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ env.JUNIT_REPORT }}
+          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
