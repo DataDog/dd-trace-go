@@ -214,7 +214,7 @@ func (tp *traceParams) withSQLCommentsInjected(ctx context.Context, query string
 	}
 
 	sqlCommentCarrier := tracer.NewSQLCommentCarrier(tracer.CommentWithDynamicTagsDiscarded(discardDynamicTags))
-	err := tracer.Inject(spanContext, &sqlCommentCarrier)
+	err := tracer.Inject(spanContext, sqlCommentCarrier)
 	if err != nil {
 		// this should never happen
 		log.Warn("contrib/database/sql: failed to inject query comments: %v", err)

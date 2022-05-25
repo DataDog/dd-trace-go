@@ -16,15 +16,13 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 // tableName holds the SQL table that these tests will be run against. It must be unique cross-repo.
@@ -201,74 +199,6 @@ func TestOpenOptions(t *testing.T) {
 		}
 		sqltest.RunAll(t, testConfig)
 	})
-}
-
-func TestCommentInjectionModes(t *testing.T) {
-	testCases := []struct {
-		name                 string
-		mode                 tracer.SQLCommentInjectionMode
-		expectedInjectedTags sqltest.TagInjectionExpectation
-	}{
-		{
-			name: "default (no injection)",
-			expectedInjectedTags: sqltest.TagInjectionExpectation{
-				StaticTags:  false,
-				DynamicTags: false,
-			},
-		},
-		{
-			name: "static tags injection",
-			mode: tracer.StaticTagsSQLCommentInjection,
-			expectedInjectedTags: sqltest.TagInjectionExpectation{
-				StaticTags:  true,
-				DynamicTags: false,
-			},
-		},
-		{
-			name: "dynamic tags injection",
-			mode: tracer.FullSQLCommentInjection,
-			expectedInjectedTags: sqltest.TagInjectionExpectation{
-				StaticTags:  true,
-				DynamicTags: true,
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// TODO: Rethink how to run that test now that the functionality is implemented in a propagator
-			// that we can't currently inject on the mocktracer
-			mockTracer := mocktracer.Start()
-			defer mockTracer.Stop()
-
-			Register("postgres", &pq.Driver{}, WithServiceName("postgres-test"))
-			defer unregister("postgres")
-
-			db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer db.Close()
-
-			testConfig := &sqltest.Config{
-				DB:         db,
-				DriverName: "postgres",
-				TableName:  tableName,
-				ExpectName: "postgres.query",
-				ExpectTags: map[string]interface{}{
-					ext.ServiceName: "postgres-test",
-					ext.SpanType:    ext.SpanTypeSQL,
-					ext.TargetHost:  "127.0.0.1",
-					ext.TargetPort:  "5432",
-					ext.DBUser:      "postgres",
-					ext.DBName:      "postgres",
-				},
-				ExpectTagInjection: tc.expectedInjectedTags,
-			}
-
-			sqltest.RunAll(t, testConfig)
-		})
-	}
 }
 
 func TestMySQLUint64(t *testing.T) {

@@ -85,6 +85,8 @@ func testConnect(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
+
+		assert.Len(cfg.mockTracer.InjectedComments(), 0)
 	}
 }
 
@@ -105,6 +107,8 @@ func testPing(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
+
+		assert.Len(cfg.mockTracer.InjectedComments(), 0)
 	}
 }
 
@@ -125,6 +129,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 
 		spans := cfg.mockTracer.FinishedSpans()
 		var querySpan mocktracer.Span
+		expectedComment := "/*dde='test-env',ddsid='test-span-id',ddsn='test-service',ddsp='0',ddsv='v-test',ddtid='test-trace-id'*/"
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared queries so there are 3 spans
 			//connect, prepare and query
@@ -136,7 +141,9 @@ func testQuery(cfg *Config) func(*testing.T) {
 				assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
 			querySpan = spans[2]
-
+			// Since SQLServer runs execute statements by doing a prepare first, the expected comment
+			// excludes dynamic tags which can only be injected on non-prepared statements
+			expectedComment = "/*dde='test-env',ddsn='test-service',ddsv='v-test'*/"
 		} else {
 			assert.Len(spans, 2)
 			querySpan = spans[1]
@@ -148,8 +155,9 @@ func testQuery(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, querySpan.Tag(k), "Value mismatch on tag %s", k)
 		}
-
-		assertInjectedComments(t, cfg, false)
+		comments := cfg.mockTracer.InjectedComments()
+		require.Len(t, comments, 1)
+		assert.Equal(expectedComment, comments[0])
 	}
 }
 
@@ -181,7 +189,9 @@ func testStatement(cfg *Config) func(*testing.T) {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
 
-		assertInjectedComments(t, cfg, true)
+		comments := cfg.mockTracer.InjectedComments()
+		require.Len(t, comments, 1)
+		assert.Equal("/*dde='test-env',ddsn='test-service',ddsv='v-test'*/", comments[0])
 
 		cfg.mockTracer.Reset()
 		_, err2 := stmt.Exec("New York")
@@ -230,6 +240,8 @@ func testBeginRollback(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
+
+		assert.Len(cfg.mockTracer.InjectedComments(), 0)
 	}
 }
 
@@ -254,6 +266,7 @@ func testExec(cfg *Config) func(*testing.T) {
 		parent.Finish() // flush children
 
 		spans := cfg.mockTracer.FinishedSpans()
+		expectedComment := "/*dde='test-env',ddsid='test-span-id',ddsn='test-service',ddsp='0',ddsv='v-test',ddtid='test-trace-id'*/"
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared exec so there are 2 extra spans for the exec:
 			//prepare, exec, and then a close
@@ -270,6 +283,9 @@ func testExec(cfg *Config) func(*testing.T) {
 			for k, v := range cfg.ExpectTags {
 				assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
+			// Since SQLServer runs execute statements by doing a prepare, the expected comment
+			// excludes dynamic tags which can only be injected on non-prepared statements
+			expectedComment = "/*dde='test-env',ddsn='test-service',ddsv='v-test'*/"
 		} else {
 			assert.Len(spans, 5)
 		}
@@ -290,7 +306,9 @@ func testExec(cfg *Config) func(*testing.T) {
 				span = s
 			}
 		}
-		assertInjectedComments(t, cfg, false)
+		comments := cfg.mockTracer.InjectedComments()
+		require.Len(t, comments, 1)
+		assert.Equal(expectedComment, comments[0])
 
 		assert.NotNil(span, "span not found")
 		cfg.ExpectTags["sql.query_type"] = "Commit"

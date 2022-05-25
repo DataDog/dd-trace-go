@@ -184,10 +184,17 @@ func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 }
 
 func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) error {
-	writer, ok := carrier.(tracer.TextMapWriter)
-	if !ok {
+	switch c := carrier.(type) {
+	case tracer.QueryCommentInjector:
+		return t.injectQueryComments(context, c)
+	case tracer.TextMapWriter:
+		return t.injectTextMap(context, c)
+	default:
 		return tracer.ErrInvalidCarrier
 	}
+}
+
+func (t *mocktracer) injectTextMap(context ddtrace.SpanContext, writer tracer.TextMapWriter) error {
 	ctx, ok := context.(*spanContext)
 	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
 		return tracer.ErrInvalidSpanContext
@@ -201,5 +208,23 @@ func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) er
 		writer.Set(baggagePrefix+k, v)
 		return true
 	})
+	return nil
+}
+
+func (t *mocktracer) injectQueryComments(context ddtrace.SpanContext, injector tracer.QueryCommentInjector) error {
+	ctx, ok := context.(*spanContext)
+	samplingPriority := 0
+	if ok {
+		samplingPriority = ctx.samplingPriority()
+	}
+	injector.Set(tracer.ServiceVersionSQLCommentKey, "v-test")
+	injector.Set(tracer.ServiceEnvironmentSQLCommentKey, "test-env")
+	injector.Set(tracer.ServiceNameSQLCommentKey, "test-service")
+	injector.SetDynamicTag(tracer.TraceIDSQLCommentKey, "test-trace-id")
+	injector.SetDynamicTag(tracer.SpanIDSQLCommentKey, "test-span-id")
+	injector.SetDynamicTag(tracer.SamplingPrioritySQLCommentKey, strconv.Itoa(samplingPriority))
+	// Save injected comments to assert the sql commenting behavior
+	commented, _ := injector.CommentQuery("")
+	t.injectedComments = append(t.injectedComments, commented)
 	return nil
 }

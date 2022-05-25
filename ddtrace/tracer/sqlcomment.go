@@ -34,9 +34,9 @@ const (
 	ServiceEnvironmentSQLCommentKey = "dde"
 )
 
-// QueryCommenter is a more specific interface implemented by carrier that implement the TextMapWriter
+// QueryCommentInjector is a more specific interface implemented by carrier that implement the TextMapWriter
 // as well as CommentQuery and AddSpanID methods
-type QueryCommenter interface {
+type QueryCommentInjector interface {
 	TextMapWriter
 	SetDynamicTag(key, val string)
 	CommentQuery(query string) (commented string, spanID uint64)
@@ -61,15 +61,15 @@ func NewCommentPropagator(mode SQLCommentInjectionMode) *SQLCommentPropagator {
 
 func (p *SQLCommentPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	case QueryCommenter:
+	case QueryCommentInjector:
 		return p.injectWithCommentCarrier(spanCtx, c)
 	default:
-		// SQLCommentPropagator only handles QueryCommenter carriers
+		// SQLCommentPropagator only handles QueryCommentInjector carriers
 		return nil
 	}
 }
 
-func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanContext, carrier QueryCommenter) error {
+func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanContext, carrier QueryCommentInjector) error {
 	if p.mode == CommentInjectionDisabled {
 		return nil
 	}
