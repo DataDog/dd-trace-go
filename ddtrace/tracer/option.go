@@ -41,6 +41,9 @@ var (
 
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
 	defaultMaxTagsHeaderLen = 512
+
+	// defaultMaxTagsHeaderLen specifies the default sql comment injection mode.
+	defaultSQLCommentInjectionMode = CommentInjectionDisabled
 )
 
 // config holds the tracer configuration.
@@ -261,10 +264,10 @@ func newConfig(opts ...StartOption) *config {
 	if c.transport == nil {
 		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
-	// TODO: add sql commenting mode to propagator config and add env variable to control the mode
 	if c.propagator == nil {
 		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
+			MaxTagsHeaderLen:        internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
+			SQLCommentInjectionMode: SQLCommentInjectionMode(internal.IntEnv("DD_TRACE_SQL_COMMENT_INJECTION_MODE", int(defaultSQLCommentInjectionMode))),
 		})
 	}
 	if c.logger != nil {

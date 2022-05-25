@@ -17,11 +17,11 @@ type SQLCommentInjectionMode int
 
 const (
 	// CommentInjectionDisabled represents the comment injection mode where all injection is disabled.
-	CommentInjectionDisabled SQLCommentInjectionMode = iota
+	CommentInjectionDisabled SQLCommentInjectionMode = 0
 	// StaticTagsSQLCommentInjection represents the comment injection mode where only static tags are injected. Static tags include values that are set once during the lifetime of an application: service name, env, version.
-	StaticTagsSQLCommentInjection
+	StaticTagsSQLCommentInjection SQLCommentInjectionMode = 1
 	// FullSQLCommentInjection represents the comment injection mode where both static and dynamic tags are injected. Dynamic tags include values like span id, trace id and sampling priority.
-	FullSQLCommentInjection
+	FullSQLCommentInjection SQLCommentInjectionMode = 2
 )
 
 // Values for sql comment keys
@@ -55,7 +55,7 @@ func CommentWithDynamicTagsDiscarded(discard bool) SQLCommentCarrierOption {
 	}
 }
 
-func NewCommentPropagator(mode SQLCommentInjectionMode) *SQLCommentPropagator {
+func NewSQLCommentPropagator(mode SQLCommentInjectionMode) *SQLCommentPropagator {
 	return &SQLCommentPropagator{mode: mode}
 }
 

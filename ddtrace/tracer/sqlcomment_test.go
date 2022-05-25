@@ -56,7 +56,7 @@ func TestQueryTextCarrier(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			propagator := NewCommentPropagator(tc.mode)
+			propagator := NewSQLCommentPropagator(tc.mode)
 			tracer := newTracer(WithService("whiskey-service"), WithEnv("test-env"), WithServiceVersion("1.0.0"), WithPropagator(propagator))
 
 			root := tracer.StartSpan("db.call", WithSpanID(10), ServiceName("whiskey-db")).(*span)

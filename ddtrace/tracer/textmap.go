@@ -120,6 +120,8 @@ type PropagatorConfig struct {
 	// See https://github.com/openzipkin/b3-propagation
 	B3 bool
 
+	// SQLCommentInjectionMode specifies the sql comment injection mode that will be used
+	// to inject tags. It defaults to CommentInjectionDisabled.
 	SQLCommentInjectionMode SQLCommentInjectionMode
 }
 
@@ -174,17 +176,14 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 	if cfg.B3 {
 		list = append(list, &propagatorB3{})
 	}
+	if cfg.SQLCommentInjectionMode > CommentInjectionDisabled {
+		list = append(list, NewSQLCommentPropagator(cfg.SQLCommentInjectionMode))
+	}
 	for _, v := range strings.Split(ps, ",") {
 		switch strings.ToLower(v) {
 		case "datadog":
 			list = append(list, dd)
 		case "b3":
-			if !cfg.B3 {
-				// propagatorB3 hasn't already been added, add a new one.
-				list = append(list, &propagatorB3{})
-			}
-			// TODO: read the sql commenting mode from env variable and/or config
-		case "sqlcommenter":
 			if !cfg.B3 {
 				// propagatorB3 hasn't already been added, add a new one.
 				list = append(list, &propagatorB3{})
@@ -243,7 +242,6 @@ func (p *propagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) er
 		return nil
 	case TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
-
 	default:
 		return ErrInvalidCarrier
 	}
