@@ -63,6 +63,7 @@ jobs:
         if: matrix.runs-on == 'windows-latest'
         run: curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_win-x64.exe" --output datadog-ci
       - name: Upload test results to Datadog's CI App
+        shell: bash
         run: |
           chmod +x datadog-ci
           env DD_API_KEY=$DD_CI_API_KEY ./datadog-ci junit upload \
@@ -104,7 +105,6 @@ jobs:
 
       - name: Upload Datadog CI App CLI
         if: ${{ matrix.distribution != 'alpine' }}
-        shell: bash
         run: |
           curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output datadog-ci
           chmod +x datadog-ci
