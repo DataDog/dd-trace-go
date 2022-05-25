@@ -13,7 +13,7 @@ env:
   GODEBUG: cgocheck=2
   JUNIT_REPORT: gotestsum-report.xml
   CI_APP_SERVICE_NAME: dd-trace-go
-  DD_API_KEY: ${{ secrets.DD_API_KEY }}
+  DD_CI_API_KEY: ${{ secrets.DD_CI_API_KEY }}
 jobs:
   native:
     strategy:
@@ -64,7 +64,7 @@ jobs:
       - name: Upload test results to Datadog's CI App
         run: |
           chmod +x "/tmp/datadog-ci"
-          /tmp/datadog-ci junit upload --service $CI_APP_SERVICE_NAME $JUNIT_REPORT
+          env DD_API_KEY=$DD_CI_API_KEY /tmp/datadog-ci junit upload --service $CI_APP_SERVICE_NAME $JUNIT_REPORT
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
@@ -103,4 +103,4 @@ jobs:
           chmod +x "/tmp/datadog-ci"
       - name: Upload test results to Datadog's CI App
         run: |
-          /tmp/datadog-ci junit upload --service $CI_APP_SERVICE_NAME $JUNIT_REPORT
+          env DD_API_KEY=$DD_CI_API_KEY /tmp/datadog-ci junit upload --service $CI_APP_SERVICE_NAME $JUNIT_REPORT
