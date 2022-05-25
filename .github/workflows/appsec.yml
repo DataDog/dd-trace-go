@@ -55,16 +55,16 @@ jobs:
 
       - name: Install Datadog CI App CLI for Linux
         if: matrix.runs-on == 'ubuntu-latest'
-        run: curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output "/tmp/datadog-ci"
+        run: curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output datadog-ci
       - name: Install Datadog CI App CLI for macOS
         if: matrix.runs-on == 'macos-latest'
-        run: curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_darwin-x64" --output "/tmp/datadog-ci"
+        run: curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_darwin-x64" --output datadog-ci
       - name: Install Datadog CI App CLI for Windows
         if: matrix.runs-on == 'windows-latest'
-        run: curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_win-x64.exe" --output "/tmp/datadog-ci"
+        run: curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_win-x64.exe" --output datadog-ci
       - name: Upload test results to Datadog's CI App
         run: |
-          chmod +x "/tmp/datadog-ci"
+          chmod +x datadog-ci
           env DD_API_KEY=$DD_CI_API_KEY /tmp/datadog-ci junit upload \
             --service $CI_APP_SERVICE_NAME \
             --tags "go:${{ matrix.go-version }}" \
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/checkout@v3
       # Install gcc and the libc headers on alpine images
       - if: ${{ matrix.distribution == 'alpine' }}
-        run: apk add gcc musl-dev libc6-compat git curl
+        run: apk add gcc musl-dev libc6-compat git
       - name: go test
         run: |
           # Install gotestsum to get the results in a junit file 
@@ -103,13 +103,15 @@ jobs:
             ./contrib/gin-gonic/gin/...
 
       - name: Upload Datadog CI App CLI
+        if: ${{ matrix.distribution != 'alpine' }}
         run: |
+          apk add curl
           curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output "/tmp/datadog-ci"
           chmod +x "/tmp/datadog-ci"
-      - name: Upload test results to Datadog's CI App
-        run: |
           env DD_API_KEY=$DD_CI_API_KEY /tmp/datadog-ci junit upload \
             --service $CI_APP_SERVICE_NAME \
             --tags "go:${{ matrix.go-version }}" \
-            --tags "os:${{ matrix.distribution }}" \
+            --tags "arch:${{ runner.arch }}" \
+            --tags "os:${{ runner.os }}" \
+            --tags "distribution:${{ runner.distribution }}" \
             $JUNIT_REPORT
