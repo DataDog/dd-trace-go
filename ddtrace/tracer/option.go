@@ -42,7 +42,7 @@ var (
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
 	defaultMaxTagsHeaderLen = 512
 
-	// defaultMaxTagsHeaderLen specifies the default sql comment injection mode.
+	// defaultSQLCommentInjectionMode specifies the default sql comment injection mode.
 	defaultSQLCommentInjectionMode = CommentInjectionDisabled
 )
 
