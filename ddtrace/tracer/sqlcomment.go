@@ -149,9 +149,9 @@ func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanCont
 	return nil
 }
 
-// Extract is not implemented for the SQLCommentPropagator.
+// Extract is a no-op for the SQLCommentPropagator.
 func (p *SQLCommentPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, nil
 }
 
 // SQLCommentCarrierConfig holds configuration for a SQLCommentCarrier
