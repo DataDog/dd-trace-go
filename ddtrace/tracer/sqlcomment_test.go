@@ -1,15 +1,15 @@
 package tracer
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"strconv"
 	"strings"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 func TestSQLCommentPropagator(t *testing.T) {
