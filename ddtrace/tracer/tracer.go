@@ -426,8 +426,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		if t.config.universalVersion || (!t.config.universalVersion && span.Service == t.config.serviceName) {
 			span.setMeta(ext.Version, t.config.version)
 		}
-		// If the span has a different service than the global service, attribute and set the config version as the
-		// parent version
+		// For SQL spans which have a different database-inferred service name, set the service version as
+		// the parent version to avoid confusion with the database service's version
 		if span.Service != t.config.serviceName {
 			span.setMeta(ext.ParentVersion, t.config.version)
 		}
