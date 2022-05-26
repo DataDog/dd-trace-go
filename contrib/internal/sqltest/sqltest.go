@@ -332,5 +332,4 @@ type Config struct {
 	TableName  string
 	ExpectName string
 	ExpectTags map[string]interface{}
-	ExpectTags map[string]interface{}
 }
