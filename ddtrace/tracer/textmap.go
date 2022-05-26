@@ -169,6 +169,9 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 	}
+	if cfg.SQLCommentInjectionMode > CommentInjectionDisabled {
+		defaultPs = append(defaultPs, NewSQLCommentPropagator(cfg.SQLCommentInjectionMode))
+	}
 	if ps == "" {
 		return defaultPs
 	}

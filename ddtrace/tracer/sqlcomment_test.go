@@ -93,8 +93,8 @@ func TestSQLCommentPropagator(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			propagator := NewSQLCommentPropagator(tc.mode)
-			tracer := newTracer(WithService("whiskey-service"), WithEnv("test-env"), WithServiceVersion("1.0.0"), WithPropagator(propagator))
+			p := NewPropagator(&PropagatorConfig{SQLCommentInjectionMode: tc.mode})
+			tracer := newTracer(WithService("whiskey-service"), WithEnv("test-env"), WithServiceVersion("1.0.0"), WithPropagator(p))
 
 			ctx := tc.prepareSpanContext(tracer)
 			carrier := NewSQLCommentCarrier(tc.carrierOpts...)
