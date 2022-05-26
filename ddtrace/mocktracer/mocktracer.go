@@ -185,7 +185,7 @@ func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 
 func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	case tracer.QueryCommentInjector:
+	case tracer.QueryCommentCarrier:
 		return t.injectQueryComments(context, c)
 	case tracer.TextMapWriter:
 		return t.injectTextMap(context, c)
@@ -211,7 +211,7 @@ func (t *mocktracer) injectTextMap(context ddtrace.SpanContext, writer tracer.Te
 	return nil
 }
 
-func (t *mocktracer) injectQueryComments(context ddtrace.SpanContext, injector tracer.QueryCommentInjector) error {
+func (t *mocktracer) injectQueryComments(context ddtrace.SpanContext, injector tracer.QueryCommentCarrier) error {
 	ctx, ok := context.(*spanContext)
 	samplingPriority := 0
 	if ok {

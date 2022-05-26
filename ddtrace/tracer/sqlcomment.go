@@ -24,7 +24,7 @@ const (
 	FullSQLCommentInjection SQLCommentInjectionMode = 2
 )
 
-// Values for sql comment keys
+// Key names for SQL comment tags.
 const (
 	SamplingPrioritySQLCommentKey   = "ddsp"
 	TraceIDSQLCommentKey            = "ddtid"
@@ -34,46 +34,65 @@ const (
 	ServiceEnvironmentSQLCommentKey = "dde"
 )
 
-// QueryCommentInjector is a more specific interface implemented by carrier that implement the TextMapWriter
-// as well as CommentQuery and AddSpanID methods
-type QueryCommentInjector interface {
+// QueryCommentCarrier is a more specific interface implemented by carriers that implement the TextMapWriter
+// as well as CommentQuery, AddSpanID and SetDynamicTag methods. It is compatible with Datadog's SQLCommentPropagator.
+// Note that Datadog's TextMapPropagator is compatible with QueryCommentCarriers but only in the fact that it
+// ignores it without returning errors.
+type QueryCommentCarrier interface {
 	TextMapWriter
+
+	// SetDynamicTag sets the given dynamic key/value pair. This method is a variation on TextMapWriter's Set method
+	// that exists for dynamic tag values.
 	SetDynamicTag(key, val string)
+
+	// CommentQuery returns the given query with any injected tags prepended in the form of a sqlcommenter-formatted
+	// SQL comment. It also returns a non-zero span ID if a new span ID was generated as part of the inject operation.
+	// See https://google.github.io/sqlcommenter/spec for the full sqlcommenter spec.
 	CommentQuery(query string) (commented string, spanID uint64)
+
+	// AddSpanID adds a new span ID to the carrier. This happens if no existing trace is found when the
+	// injection happens.
 	AddSpanID(spanID uint64)
 }
 
 // SQLCommentPropagator implements the Propagator interface to inject tags
-// in sql comments
+// in sql comments. It is only compatible with QueryCommentCarrier implementations
+// but allows other carriers to flow through without returning errors.
 type SQLCommentPropagator struct {
 	mode SQLCommentInjectionMode
 }
 
-func CommentWithDynamicTagsDiscarded(discard bool) SQLCommentCarrierOption {
+// SQLCommentWithDynamicTagsDiscarded enables control discarding dynamic tags on a SQLCommentCarrier.
+// Its main purpose is to allow discarding dynamic tags per SQL operation when they aren't relevant
+// (i.e. Prepared statements).
+func SQLCommentWithDynamicTagsDiscarded(discard bool) SQLCommentCarrierOption {
 	return func(c *SQLCommentCarrierConfig) {
 		c.discardDynamicTags = discard
 	}
 }
 
+// NewSQLCommentPropagator returns a new SQLCommentPropagator with the given injection mode
 func NewSQLCommentPropagator(mode SQLCommentInjectionMode) *SQLCommentPropagator {
 	return &SQLCommentPropagator{mode: mode}
 }
 
+// Inject injects the span context in the given carrier. Note that it is only compatible
+// with QueryCommentCarriers and no-ops if the carrier is of any other type.
 func (p *SQLCommentPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	case QueryCommentInjector:
+	case QueryCommentCarrier:
 		return p.injectWithCommentCarrier(spanCtx, c)
 	default:
-		// SQLCommentPropagator only handles QueryCommentInjector carriers
+		// SQLCommentPropagator only handles QueryCommentCarrier carriers but lets any other carrier
+		// flow through without returning errors
 		return nil
 	}
 }
 
-func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanContext, carrier QueryCommentInjector) error {
+func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanContext, carrier QueryCommentCarrier) error {
 	if p.mode == CommentInjectionDisabled {
 		return nil
 	}
-
 	if p.mode == StaticTagsSQLCommentInjection || p.mode == FullSQLCommentInjection {
 		ctx, ok := spanCtx.(*spanContext)
 		var env, pversion string
@@ -97,18 +116,20 @@ func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanCont
 	}
 	if p.mode == FullSQLCommentInjection {
 		samplingPriority := 0
-		ctx, _ := spanCtx.(*spanContext)
-		if sp, ok := ctx.samplingPriority(); ok {
-			samplingPriority = sp
-		}
 		var traceID, spanID uint64
-		if ctx.TraceID() > 0 {
-			traceID = ctx.TraceID()
-		}
-		if ctx.SpanID() > 0 {
-			spanID = ctx.SpanID()
-		}
 
+		ctx, ok := spanCtx.(*spanContext)
+		if ok {
+			if sp, ok := ctx.samplingPriority(); ok {
+				samplingPriority = sp
+			}
+			if ctx.TraceID() > 0 {
+				traceID = ctx.TraceID()
+			}
+			if ctx.SpanID() > 0 {
+				spanID = ctx.SpanID()
+			}
+		}
 		if spanID == 0 {
 			spanID = random.Uint64()
 			carrier.AddSpanID(spanID)
@@ -123,6 +144,7 @@ func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanCont
 	return nil
 }
 
+// Extract is not implemented for the SQLCommentPropagator.
 func (p *SQLCommentPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	return nil, fmt.Errorf("not implemented")
 }
@@ -132,16 +154,18 @@ type SQLCommentCarrierConfig struct {
 	discardDynamicTags bool
 }
 
+// SQLCommentCarrierOption represents a function that can be provided as a parameter to NewSQLCommentCarrier.
 type SQLCommentCarrierOption func(c *SQLCommentCarrierConfig)
 
-// SQLCommentCarrier holds tags to be serialized as a SQL Comment
+// SQLCommentCarrier implements QueryCommentCarrier by holding tags, configuration
+// and a potential new span id to generate a SQL comment injected in queries.
 type SQLCommentCarrier struct {
 	tags   map[string]string
 	cfg    SQLCommentCarrierConfig
 	spanID uint64
 }
 
-// NewSQLCommentCarrier returns a new SQLCommentCarrier
+// NewSQLCommentCarrier returns a new SQLCommentCarrier.
 func NewSQLCommentCarrier(opts ...SQLCommentCarrierOption) (s *SQLCommentCarrier) {
 	s = new(SQLCommentCarrier)
 	for _, apply := range opts {
@@ -151,7 +175,8 @@ func NewSQLCommentCarrier(opts ...SQLCommentCarrierOption) (s *SQLCommentCarrier
 	return s
 }
 
-// Set implements TextMapWriter.
+// Set implements TextMapWriter. In the context of SQL comment injection, this method
+// is used for static tags only. See SetDynamicTag for dynamic tags.
 func (c *SQLCommentCarrier) Set(key, val string) {
 	if c.tags == nil {
 		c.tags = make(map[string]string)
@@ -159,6 +184,18 @@ func (c *SQLCommentCarrier) Set(key, val string) {
 	c.tags[key] = val
 }
 
+// ForeachKey implements TextMapReader.
+func (c SQLCommentCarrier) ForeachKey(handler func(key, val string) error) error {
+	for k, v := range c.tags {
+		if err := handler(k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SetDynamicTag implements QueryCommentCarrier. This method is used to inject dynamic tags only
+// (i.e. span id, trace id, sampling priority). See Set for static tags.
 func (c *SQLCommentCarrier) SetDynamicTag(key, val string) {
 	if c.cfg.discardDynamicTags {
 		return
@@ -169,12 +206,24 @@ func (c *SQLCommentCarrier) SetDynamicTag(key, val string) {
 	c.tags[key] = val
 }
 
+// AddSpanID implements QueryCommentCarrier and is used to save a span id generated during SQL comment injection
+// in the case where there is no active trace.
 func (c *SQLCommentCarrier) AddSpanID(spanID uint64) {
 	c.spanID = spanID
 }
 
-func (c *SQLCommentCarrier) SpanID() uint64 {
-	return c.spanID
+// CommentQuery returns the given query with the tags from the SQLCommentCarrier applied to it as a
+// prepended SQL comment. The format of the comment follows the sqlcommenter spec.
+// See https://google.github.io/sqlcommenter/spec/ for more details.
+func (c *SQLCommentCarrier) CommentQuery(query string) (commented string, spanID uint64) {
+	comment := commentWithTags(c.tags)
+	if comment == "" {
+		return query, c.spanID
+	}
+	if query == "" {
+		return comment, c.spanID
+	}
+	return fmt.Sprintf("%s %s", comment, query), c.spanID
 }
 
 func commentWithTags(tags map[string]string) (comment string) {
@@ -188,29 +237,6 @@ func commentWithTags(tags map[string]string) (comment string) {
 	sort.Strings(serializedTags)
 	comment = strings.Join(serializedTags, ",")
 	return fmt.Sprintf("/*%s*/", comment)
-}
-
-// CommentQuery returns the given query with the tags from the SQLCommentCarrier applied to it as a
-// prepended SQL comment
-func (c *SQLCommentCarrier) CommentQuery(query string) (commented string, spanID uint64) {
-	comment := commentWithTags(c.tags)
-	if comment == "" {
-		return query, c.spanID
-	}
-	if query == "" {
-		return comment, c.spanID
-	}
-	return fmt.Sprintf("%s %s", comment, query), c.spanID
-}
-
-// ForeachKey implements TextMapReader.
-func (c SQLCommentCarrier) ForeachKey(handler func(key, val string) error) error {
-	for k, v := range c.tags {
-		if err := handler(k, v); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func serializeTag(key string, value string) (serialized string) {

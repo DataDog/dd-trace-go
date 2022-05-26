@@ -237,8 +237,8 @@ type propagator struct {
 
 func (p *propagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	// QueryCommentInjector carriers are only supported by the SQLCommentPropagator
-	case QueryCommentInjector:
+	// QueryCommentCarrier carriers are only supported by the SQLCommentPropagator
+	case QueryCommentCarrier:
 		return nil
 	case TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
@@ -338,8 +338,8 @@ type propagatorB3 struct{}
 
 func (p *propagatorB3) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	// QueryCommentInjector carriers are only supported by the SQLCommentPropagator
-	case QueryCommentInjector:
+	// QueryCommentCarrier carriers are only supported by the SQLCommentPropagator
+	case QueryCommentCarrier:
 		return nil
 	case TextMapWriter:
 		return p.injectTextMap(spanCtx, c)

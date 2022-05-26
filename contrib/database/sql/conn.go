@@ -213,7 +213,7 @@ func (tp *traceParams) withSQLCommentsInjected(ctx context.Context, query string
 		spanContext = span.Context()
 	}
 
-	sqlCommentCarrier := tracer.NewSQLCommentCarrier(tracer.CommentWithDynamicTagsDiscarded(discardDynamicTags))
+	sqlCommentCarrier := tracer.NewSQLCommentCarrier(tracer.SQLCommentWithDynamicTagsDiscarded(discardDynamicTags))
 	err := tracer.Inject(spanContext, sqlCommentCarrier)
 	if err != nil {
 		// this should never happen
