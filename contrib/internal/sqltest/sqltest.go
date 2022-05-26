@@ -131,7 +131,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 		expectedComment := "/*dde='test-env',ddsid='test-span-id',ddsn='test-service',ddsp='0',ddsv='v-test',ddtid='test-trace-id'*/"
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared queries so there are 3 spans
-			//connect, prepare and query
+			//connect, prepare, and query
 			assert.Len(spans, 3)
 			span := spans[1]
 			cfg.ExpectTags["sql.query_type"] = "Prepare"
