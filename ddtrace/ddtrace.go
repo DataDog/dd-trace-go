@@ -135,28 +135,3 @@ type Logger interface {
 	// Log prints the given message.
 	Log(msg string)
 }
-
-// InjectionConfig holds the configuration for injection a span into a carrier. It is usually passed
-// around by reference to one or more InjectionOption functions which shape it into its
-// final form.
-type InjectionConfig struct {
-	// TraceIDKey defines the key to use to inject the trade id. The trace id is only injected if this value.
-	// is not empty
-	TraceIDKey string
-	// SpanIDKey defines the key to use to inject the span id. The span id is only injected if this value.
-	// is not empty
-	SpanIDKey string
-	// SamplingPriorityKey defines the key to use to inject the sampling priority. The sampling priority is only
-	// injected if this value is not empty.
-	SamplingPriorityKey string
-	// ServiceNameKey defines the key to use to inject the service name. The service name is only.
-	// injected if this value is not empty
-	ServiceNameKey string
-	// EnvKey defines the key to use to inject the environment. The environment is only injected if this value is not.
-	// empty
-	EnvKey string
-	// ParentVersionKey defines the key to use to inject the version. The version is only injected if this value is not empty.
-	ParentVersionKey string
-	// SpanID defines the span id value to use for injection. If not present, the span id value from the SpanContext is used
-	SpanID uint64
-}
