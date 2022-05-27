@@ -53,11 +53,12 @@ jobs:
           ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST || true
 
       - name: Upload the results to Datadog CI App
-        uses: ./.github/actions/dd-ci-upload
+        uses: DataDog/junit-upload-github-action@v1
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          api-key: ${{ secrets.DD_CI_API_KEY }}
           files: ${{ env.JUNIT_REPORT }}
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
+          logs: true
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
@@ -92,8 +93,9 @@ jobs:
 
       - name: Upload the results to Datadog CI App
         if: matrix.distribution != 'alpine' # datadog-ci CLI doesn't work on alpine
-        uses: ./.github/actions/dd-ci-upload
+        uses: DataDog/junit-upload-github-action@v1
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          api-key: ${{ secrets.DD_CI_API_KEY }}
           files: ${{ env.JUNIT_REPORT }}
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          logs: true
