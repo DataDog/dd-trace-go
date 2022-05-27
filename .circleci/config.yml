@@ -89,7 +89,6 @@ jobs:
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-      DD_APPSEC_WAF_TIMEOUT: 1s
       CI_APP_SERVICE_NAME: dd-trace-go
     <<: *plain-go116
 
@@ -104,7 +103,7 @@ jobs:
           name: Testing
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
-            env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - save_cache:
           key: go-mod-v5-core-{{ checksum "go.sum.orig" }}
@@ -139,7 +138,6 @@ jobs:
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-      DD_APPSEC_WAF_TIMEOUT: 1s
       CI_APP_SERVICE_NAME: dd-trace-go
     working_directory: /home/circleci/dd-trace-go.v1
     docker:
@@ -286,7 +284,6 @@ jobs:
           name: Testing integrations
           command: |
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
-            export DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true)
             export INTEGRATION=true
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
@@ -367,14 +364,8 @@ workflows:
     jobs:
       - metadata
       - lint
-      - test-core:
-          matrix:
-            parameters:
-              build_tags: [ "", "appsec" ]
-      - test-contrib:
-          matrix:
-            parameters:
-              build_tags: [ "", "appsec" ]
+      - test-core
+      - test-contrib
   nightly:
     triggers:
       - schedule:
@@ -387,10 +378,8 @@ workflows:
       - test-core:
           matrix:
             parameters:
-              build_tags: [ "", "appsec" ]
               goflags: [ "-race" ]
       - test-contrib:
           matrix:
             parameters:
-              build_tags: [ "", "appsec" ]
               goflags: [ "-race" ]
