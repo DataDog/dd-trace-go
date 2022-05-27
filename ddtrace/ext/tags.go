@@ -52,7 +52,7 @@ const (
 
 	// Version is a tag that specifies the current application version.
 	Version = "version"
-	
+
 	// ResourceName defines the Resource name for the Span.
 	ResourceName = "resource.name"
 
