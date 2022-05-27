@@ -104,6 +104,74 @@ func TestVM(t *testing.T) {
 	fmt.Println(gostring(uint32(events)))
 }
 
+func BenchmarkVM(b *testing.B) {
+	ctx := context.Background()
+	buf, err := fs.ReadFile("libddwaf.wasm")
+	if err != nil {
+		panic(err)
+	}
+	rt := wazero.NewRuntimeWithConfig(wazero.NewRuntimeConfigCompiler())
+	code, err := rt.CompileModule(ctx, buf, wazero.NewCompileConfig())
+	if err != nil {
+		panic(err)
+	}
+	wm, err := wasi.InstantiateSnapshotPreview1(ctx, rt)
+	require.NoError(b, err)
+	defer wm.Close(ctx)
+	config := wazero.NewModuleConfig().WithStdout(os.Stdout)
+	module, err := rt.InstantiateModule(ctx, code, config)
+	require.NoError(b, err)
+	defer module.Close(ctx)
+	memory := module.Memory()
+	free := module.ExportedFunction("free")
+	init := module.ExportedFunction("ddwaf_init")
+
+	malloc := module.ExportedFunction("malloc")
+	vmbuf := func(buf []byte) uint32 {
+		ret, err := malloc.Call(nil, uint64(len(buf)+1))
+		require.NoError(b, err)
+		addr := uint32(ret[0])
+		ok := memory.Write(ctx, addr, buf)
+		require.True(b, ok)
+		memory.WriteByte(ctx, addr+uint32(len(buf)), 0)
+		return addr
+	}
+
+	encode := module.ExportedFunction("ddwaf_encode")
+	vmencode := func(buf []byte) uint32 {
+		addr := vmbuf(buf)
+		defer free.Call(nil, uint64(addr))
+		ret, err := encode.Call(nil, uint64(addr))
+		require.NoError(b, err)
+		return uint32(ret[0])
+	}
+
+	rule := vmencode(testRule)
+	require.NotZero(b, rule)
+
+	ret, err := init.Call(nil, uint64(rule), 0, 0)
+	require.NoError(b, err)
+	handle := ret[0]
+
+	ret, err = module.ExportedFunction("ddwaf_context_init").Call(nil, handle, 0)
+	require.NoError(b, err)
+	wafCtx := ret[0]
+
+	data := vmencode([]byte(`{"addr": "no match"}`))
+	run := module.ExportedFunction("my_ddwaf_run")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		ret, err = run.Call(nil, wafCtx, uint64(data))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if events := ret[0]; events != 0 {
+			b.Fatal()
+		}
+	}
+}
+
 var testRule = newTestRule(ruleInput{Address: "addr"})
 
 var testRuleTmpl = template.Must(template.New("").Parse(`
