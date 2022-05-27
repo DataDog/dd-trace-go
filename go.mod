@@ -1,6 +1,6 @@
 module gopkg.in/DataDog/dd-trace-go.v1
 
-go 1.12
+go 1.16
 
 require (
 	cloud.google.com/go/pubsub v1.4.0
@@ -77,6 +77,7 @@ require (
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/syndtr/goleveldb v1.0.0
+	github.com/tetratelabs/wazero v0.0.0-20220527082403-f9a59d269a18 // indirect
 	github.com/tidwall/btree v1.1.0 // indirect
 	github.com/tidwall/buntdb v1.2.0
 	github.com/tidwall/grect v0.1.4 // indirect
