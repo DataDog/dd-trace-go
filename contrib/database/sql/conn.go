@@ -208,6 +208,10 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 // with a span id injected into sql comments. If a span ID is returned, the caller should make sure to use it when creating
 // the span following the traced database call.
 func (tp *traceParams) withSQLCommentsInjected(ctx context.Context, query string, discardDynamicTags bool) (cquery string, injectedSpanID uint64) {
+	// The sql span only gets created after the call to the database because we need to be able to skip spans
+	// when a driver returns driver.ErrSkip. In order to work with those constraints, the parent span is used
+	// during SQL comment injection and a new span ID is generated for the sql span and used later when/if the span
+	// gets created.
 	var spanContext ddtrace.SpanContext
 	if span, ok := tracer.SpanFromContext(ctx); ok {
 		spanContext = span.Context()

@@ -19,7 +19,7 @@ import (
 
 func TestSQLCommentPropagator(t *testing.T) {
 	prepareSpanContextWithSpanID := func(tracer *tracer) ddtrace.SpanContext {
-		root := tracer.StartSpan("db.call", WithSpanID(10), ServiceName("whiskey-db")).(*span)
+		root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*span)
 		root.SetTag(ext.SamplingPriority, 2)
 		return root.Context()
 	}
@@ -39,8 +39,8 @@ func TestSQLCommentPropagator(t *testing.T) {
 			mode:               FullSQLCommentInjection,
 			carrierOpts:        nil,
 			prepareSpanContext: prepareSpanContextWithSpanID,
-			expectedQuery:      "/*dde='test-env',ddsid='10',ddsn='whiskey-service',ddsp='2',ddsv='1.0.0',ddtid='10'*/ SELECT * from FOO",
-			expectedSpanIDGen:  false,
+			expectedQuery:      "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service',ddsp='2',ddsv='1.0.0',ddtid='10'*/ SELECT * from FOO",
+			expectedSpanIDGen:  true,
 		},
 		{
 			name:        "no existing trace",
@@ -59,8 +59,8 @@ func TestSQLCommentPropagator(t *testing.T) {
 			mode:               FullSQLCommentInjection,
 			carrierOpts:        nil,
 			prepareSpanContext: prepareSpanContextWithSpanID,
-			expectedQuery:      "/*dde='test-env',ddsid='10',ddsn='whiskey-service',ddsp='2',ddsv='1.0.0',ddtid='10'*/",
-			expectedSpanIDGen:  false,
+			expectedQuery:      "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service',ddsp='2',ddsv='1.0.0',ddtid='10'*/",
+			expectedSpanIDGen:  true,
 		},
 		{
 			name:               "query with existing comment",
@@ -68,8 +68,8 @@ func TestSQLCommentPropagator(t *testing.T) {
 			mode:               FullSQLCommentInjection,
 			carrierOpts:        nil,
 			prepareSpanContext: prepareSpanContextWithSpanID,
-			expectedQuery:      "/*dde='test-env',ddsid='10',ddsn='whiskey-service',ddsp='2',ddsv='1.0.0',ddtid='10'*/ SELECT * from FOO -- test query",
-			expectedSpanIDGen:  false,
+			expectedQuery:      "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service',ddsp='2',ddsv='1.0.0',ddtid='10'*/ SELECT * from FOO -- test query",
+			expectedSpanIDGen:  true,
 		},
 		{
 			name:               "discard dynamic tags",
@@ -102,14 +102,10 @@ func TestSQLCommentPropagator(t *testing.T) {
 			require.NoError(t, err)
 
 			commented, spanID := carrier.CommentQuery(tc.query)
-			if tc.expectedSpanIDGen {
-				assert.Greater(t, spanID, uint64(0))
-				expected := strings.ReplaceAll(tc.expectedQuery, "<span_id>", strconv.FormatUint(spanID, 10))
-				assert.Equal(t, expected, commented)
-			} else {
-				assert.Equal(t, uint64(0), spanID)
-				assert.Equal(t, tc.expectedQuery, commented)
-			}
+
+			assert.Greater(t, spanID, uint64(0))
+			expected := strings.ReplaceAll(tc.expectedQuery, "<span_id>", strconv.FormatUint(spanID, 10))
+			assert.Equal(t, expected, commented)
 		})
 	}
 }

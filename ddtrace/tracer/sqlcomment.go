@@ -98,15 +98,18 @@ func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanCont
 	if p.mode == CommentInjectionDisabled {
 		return nil
 	}
+	spanID := random.Uint64()
+	carrier.AddSpanID(spanID)
+
 	if p.mode == StaticTagsSQLCommentInjection || p.mode == FullSQLCommentInjection {
 		ctx, ok := spanCtx.(*spanContext)
-		var env, pversion string
+		var env, version string
 		if ok {
 			if e, ok := ctx.meta(ext.Environment); ok {
 				env = e
 			}
-			if version, ok := ctx.meta(ext.ParentVersion); ok {
-				pversion = version
+			if v, ok := ctx.meta(ext.Version); ok {
+				version = v
 			}
 		}
 		if globalconfig.ServiceName() != "" {
@@ -115,14 +118,14 @@ func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanCont
 		if env != "" {
 			carrier.Set(ServiceEnvironmentSQLCommentKey, env)
 		}
-		if pversion != "" {
-			carrier.Set(ServiceVersionSQLCommentKey, pversion)
+		if version != "" {
+			carrier.Set(ServiceVersionSQLCommentKey, version)
 		}
 	}
 	if p.mode == FullSQLCommentInjection {
 		samplingPriority := 0
-		var traceID, spanID uint64
 
+		var traceID uint64
 		ctx, ok := spanCtx.(*spanContext)
 		if ok {
 			if sp, ok := ctx.samplingPriority(); ok {
@@ -131,13 +134,6 @@ func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanCont
 			if ctx.TraceID() > 0 {
 				traceID = ctx.TraceID()
 			}
-			if ctx.SpanID() > 0 {
-				spanID = ctx.SpanID()
-			}
-		}
-		if spanID == 0 {
-			spanID = random.Uint64()
-			carrier.AddSpanID(spanID)
 		}
 		if traceID == 0 {
 			traceID = spanID

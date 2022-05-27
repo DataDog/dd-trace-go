@@ -52,12 +52,7 @@ const (
 
 	// Version is a tag that specifies the current application version.
 	Version = "version"
-
-	// ParentVersion is a tag that specifies the parent's application version
-	// (i.e. for database service spans, this would be the version of the running application rather than
-	// the database version).
-	ParentVersion = "parent.version"
-
+	
 	// ResourceName defines the Resource name for the Span.
 	ResourceName = "resource.name"
 
