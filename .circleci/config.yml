@@ -373,7 +373,7 @@ workflows:
           filters:
             branches:
               only:
-                - v1
+                - main
     jobs:
       - test-core:
           matrix:
