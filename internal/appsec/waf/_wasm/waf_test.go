@@ -14,10 +14,13 @@ import (
 	"strings"
 	"testing"
 	"text/template"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/wasi"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 )
 
 //go:embed libddwaf.wasm
@@ -167,6 +170,30 @@ func BenchmarkVM(b *testing.B) {
 			b.Fatal(err)
 		}
 		if events := ret[0]; events != 0 {
+			b.Fatal()
+		}
+	}
+}
+
+func BenchmarkNative(b *testing.B) {
+	handle, err := waf.NewHandle(testRule, "", "")
+	require.NoError(b, err)
+	wafCtx := waf.NewContext(handle)
+	require.NotNil(b, wafCtx)
+
+	// Not matching because the address is not used by the rule
+	values := map[string]interface{}{
+		"addr": "no match",
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		matches, err := wafCtx.Run(values, time.Second)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(matches) != 0 {
 			b.Fatal()
 		}
 	}
