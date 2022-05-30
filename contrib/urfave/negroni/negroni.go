@@ -29,7 +29,7 @@ func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
-	span, ctx := httptrace.StartRequestSpan(r, false, opts...)
+	span, ctx := httptrace.StartRequestSpan(r, opts...)
 	defer func() {
 		// check if the responseWriter is of type negroni.ResponseWriter
 		var (

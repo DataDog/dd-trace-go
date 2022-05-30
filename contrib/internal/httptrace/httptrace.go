@@ -12,33 +12,21 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// List of standard HTTP request span tags.
-const (
-	// HTTPMethod is the HTTP request method.
-	HTTPMethod = ext.HTTPMethod
-	// HTTPURL is the full HTTP request URL in the form `scheme://host[:port]/path[?query][#fragment]`.
-	HTTPURL = ext.HTTPURL
-	// HTTPUserAgent is the user agent header value of the HTTP request.
-	HTTPUserAgent = "http.useragent"
-	// HTTPCode is the HTTP response status code sent by the HTTP request handler.
-	HTTPCode = ext.HTTPCode
-)
-
-// StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags. URL query parameters
-// are added to the URL tag when queryParams is true. Any further span start option can be added with opts.
-func StartRequestSpan(r *http.Request, queryParams bool, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
+// StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
+// http.useragent). Any further span start option can be added with opts.
+func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
+	// Append our span options before the given ones so that the caller can "overwrite" them.
 	opts = append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
-		tracer.Tag(HTTPMethod, r.Method),
-		tracer.Tag(HTTPURL, makeURLTag(r, queryParams)),
-		tracer.Tag(HTTPUserAgent, r.UserAgent()),
+		tracer.Tag(ext.HTTPMethod, r.Method),
+		tracer.Tag(ext.HTTPURL, r.URL.Path),
+		tracer.Tag(ext.HTTPUserAgent, r.UserAgent()),
 		tracer.Measured(),
 	}, opts...)
 	if r.URL.Host != "" {
@@ -61,20 +49,9 @@ func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 	} else {
 		statusStr = strconv.Itoa(status)
 	}
-	s.SetTag(HTTPCode, statusStr)
+	s.SetTag(ext.HTTPCode, statusStr)
 	if status >= 500 && status < 600 {
 		s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 	}
 	s.Finish(opts...)
-}
-
-// Create the http.url value out of the given HTTP request.
-func makeURLTag(r *http.Request, queryParams bool) string {
-	var u strings.Builder
-	u.WriteString(r.URL.EscapedPath())
-	if query := r.URL.RawQuery; queryParams && query != "" {
-		u.WriteByte('?')
-		u.WriteString(query)
-	}
-	return u.String()
 }

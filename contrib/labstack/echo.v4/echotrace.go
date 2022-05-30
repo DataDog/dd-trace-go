@@ -46,7 +46,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				finishOpts = []tracer.FinishOption{tracer.NoDebugStack()}
 			}
 
-			span, ctx := httptrace.StartRequestSpan(request, false, opts...)
+			span, ctx := httptrace.StartRequestSpan(request, opts...)
 			defer func() {
 				httptrace.FinishRequestSpan(span, c.Response().Status, finishOpts...)
 			}()

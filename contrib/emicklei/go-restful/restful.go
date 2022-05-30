@@ -31,7 +31,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 		if !math.IsNaN(cfg.analyticsRate) {
 			spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		span, ctx := httptrace.StartRequestSpan(req.Request, false, spanOpts...)
+		span, ctx := httptrace.StartRequestSpan(req.Request, spanOpts...)
 		defer func() {
 			httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))
 		}()
@@ -44,7 +44,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 
 // Filter is deprecated. Please use FilterFunc.
 func Filter(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
-	span, ctx := httptrace.StartRequestSpan(req.Request, false, tracer.ResourceName(req.SelectedRoutePath()))
+	span, ctx := httptrace.StartRequestSpan(req.Request, tracer.ResourceName(req.SelectedRoutePath()))
 	defer func() {
 		httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))
 	}()

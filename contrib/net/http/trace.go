@@ -8,10 +8,12 @@ package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 //go:generate sh -c "go run make_responsewriter.go | gofmt > trace_gen.go"
 
 import (
+	"fmt"
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
@@ -43,7 +45,10 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 		cfg = new(ServeConfig)
 	}
 	opts := append(cfg.SpanOpts, tracer.ServiceName(cfg.Service), tracer.ResourceName(cfg.Resource))
-	span, ctx := httptrace.StartRequestSpan(r, cfg.QueryParams, opts...)
+	if cfg.QueryParams {
+		opts = append(opts, tracer.Tag(ext.HTTPURL, fmt.Sprintf("%s?%s", r.URL.Path, r.URL.RawQuery)))
+	}
+	span, ctx := httptrace.StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	defer func() {
 		httptrace.FinishRequestSpan(span, ddrw.status, cfg.FinishOpts...)
