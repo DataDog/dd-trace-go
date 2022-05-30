@@ -184,49 +184,64 @@ func TestStartStopIdempotency(t *testing.T) {
 // TestStopLatency tries to make sure that calling Stop() doesn't hang, i.e.
 // that ongoing profiling or upload operations are immediately canceled.
 func TestStopLatency(t *testing.T) {
-	p, err := newProfiler(
-		WithURL("http://invalid.invalid/"),
-		WithPeriod(1000*time.Millisecond),
-		CPUDuration(500*time.Millisecond),
-	)
-	require.NoError(t, err)
-	uploadStart := make(chan struct{}, 1)
-	uploadFunc := p.uploadFunc
-	p.uploadFunc = func(b batch) error {
-		select {
-		case uploadStart <- struct{}{}:
-		default:
-			// uploadFunc may be called more than once, don't leak this goroutine
+	t.Skip("broken test, see issue #1294")
+
+	t.Run("stop-profiles", func(t *testing.T) {
+		Start(
+			WithPeriod(time.Hour),
+			CPUDuration(time.Hour),
+		)
+
+		// give profiling time to start
+		time.Sleep(50 * time.Millisecond)
+		start := time.Now()
+		Stop()
+		elapsed := time.Since(start)
+		// CPU profiling polls in 100 millisecond intervals and this can't be
+		// interrupted by pprof.StopCPUProfile, so we can't guarantee profiling
+		// will stop faster than 200 milliseconds (one interval to read
+		// remaining samples, second interval to detect profiling has stopped).
+		// Set a conservative upper bound on that stop time plus profile
+		// serialization.
+		if elapsed > 500*time.Millisecond {
+			t.Errorf("profiler took %v to stop", elapsed)
 		}
-		return uploadFunc(b)
-	}
-	p.run()
+	})
 
-	<-uploadStart
-	// Wait for uploadFunc(b) to run. A bit racy, but worst case is the test
-	// passing for the wrong reasons.
-	time.Sleep(10 * time.Millisecond)
+	t.Run("stop-upload", func(t *testing.T) {
+		received := make(chan struct{})
+		stop := make(chan struct{})
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case received <- struct{}{}:
+			default:
+			}
+			<-stop
+		}))
+		defer server.Close()
+		defer close(stop)
 
-	stopped := make(chan struct{}, 1)
-	go func() {
-		p.stop()
-		stopped <- struct{}{}
-	}()
+		Start(
+			WithAgentAddr(server.Listener.Addr().String()),
+			WithPeriod(10*time.Millisecond),
+			CPUDuration(10*time.Millisecond),
+			WithUploadTimeout(time.Hour),
+		)
 
-	timeout := 20 * time.Millisecond
-	select {
-	case <-stopped:
-	case <-time.After(timeout):
-		// Capture stacks so we can see which goroutines are hanging and why.
-		stacks := make([]byte, 64*1024)
-		stacks = stacks[0:runtime.Stack(stacks, true)]
-		t.Fatalf("Stop() took longer than %s:\n%s", timeout, stacks)
-	}
+		<-received
+		start := time.Now()
+		Stop()
+		elapsed := time.Since(start)
+		if elapsed > 500*time.Millisecond {
+			t.Errorf("profiler took %v to stop", elapsed)
+		}
+	})
 }
 
 func TestProfilerInternal(t *testing.T) {
 	t.Run("collect", func(t *testing.T) {
 		p, err := unstartedProfiler(
+			WithPeriod(1*time.Millisecond),
 			CPUDuration(1*time.Millisecond),
 			WithProfileTypes(HeapProfile, CPUProfile),
 		)
@@ -344,17 +359,31 @@ func TestAllUploaded(t *testing.T) {
 	//
 	// TODO: Further check that the uploaded profiles are all valid
 	var (
-		wg       sync.WaitGroup
 		profiles []string
 	)
+	// received indicates that the server has received a profile upload.
+	// This is used similarly to a sync.WaitGroup but avoids a potential
+	// panic if too many requests are received before profiling is stopped
+	// and the WaitGroup count goes negative.
+	//
+	// The channel is buffered with 2 entries so we can check that the
+	// second batch of profiles is correct in case the profiler gets in a
+	// bad state after the first round of profiling.
+	received := make(chan struct{}, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer wg.Done()
+		defer func() {
+			select {
+			case received <- struct{}{}:
+			default:
+			}
+		}()
 		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil {
 			t.Fatalf("bad media type: %s", err)
 			return
 		}
 		mr := multipart.NewReader(r.Body, params["boundary"])
+		profiles = profiles[:0]
 		for {
 			p, err := mr.NextPart()
 			if err == io.EOF {
@@ -369,7 +398,6 @@ func TestAllUploaded(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	wg.Add(1)
 
 	// re-implemented testing.T.Setenv since that function requires Go 1.17
 	old, ok := os.LookupEnv("DD_PROFILING_WAIT_PROFILE")
@@ -392,7 +420,8 @@ func TestAllUploaded(t *testing.T) {
 		CPUDuration(1*time.Millisecond),
 	)
 	defer Stop()
-	wg.Wait()
+	<-received
+	<-received
 
 	expected := []string{
 		"data[cpu.pprof]",

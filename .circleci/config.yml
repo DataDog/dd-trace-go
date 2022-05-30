@@ -89,7 +89,7 @@ jobs:
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-      DD_APPSEC_WAF_TIMEOUT: 1s
+      CI_APP_SERVICE_NAME: dd-trace-go
     <<: *plain-go116
 
     steps:
@@ -103,7 +103,7 @@ jobs:
           name: Testing
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
-            env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - save_cache:
           key: go-mod-v5-core-{{ checksum "go.sum.orig" }}
@@ -121,6 +121,9 @@ jobs:
           name: Upload coverage report to Codecov
           command: bash <(curl -s https://codecov.io/bash)
 
+      - upload-to-ci-app:
+          test-result-path: ${TEST_RESULTS}
+          ci-app-service-name: ${CI_APP_SERVICE_NAME}
 
   test-contrib:
     parameters:
@@ -135,7 +138,7 @@ jobs:
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-      DD_APPSEC_WAF_TIMEOUT: 1s
+      CI_APP_SERVICE_NAME: dd-trace-go
     working_directory: /home/circleci/dd-trace-go.v1
     docker:
       - image: circleci/golang:1.16
@@ -281,7 +284,6 @@ jobs:
           name: Testing integrations
           command: |
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
-            export DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true)
             export INTEGRATION=true
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
@@ -332,20 +334,38 @@ jobs:
           name: Upload coverage report to Codecov
           command: bash <(curl -s https://codecov.io/bash)
 
+      - upload-to-ci-app:
+          test-result-path: ${TEST_RESULTS}
+          ci-app-service-name: ${CI_APP_SERVICE_NAME}
+
+commands:
+  upload-to-ci-app:
+    parameters:
+      test-result-path:
+        description: test result path
+        type: string
+      ci-app-service-name:
+        description: service name
+        type: string
+    steps:
+      - run:
+          name: Install datadog-ci binary
+          command: |
+            curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output "/tmp/datadog-ci" && chmod +x "/tmp/datadog-ci"
+
+      - run:
+          name: Upload test result to datadog ci-app
+          command: |
+            DATADOG_API_KEY=${DATADOG_API_KEY} /tmp/datadog-ci junit upload --service << parameters.ci-app-service-name >> << parameters.test-result-path >>
+
 workflows:
   version: 2
   build-and-test:
     jobs:
       - metadata
       - lint
-      - test-core:
-          matrix:
-            parameters:
-              build_tags: [ "", "appsec" ]
-      - test-contrib:
-          matrix:
-            parameters:
-              build_tags: [ "", "appsec" ]
+      - test-core
+      - test-contrib
   nightly:
     triggers:
       - schedule:
@@ -358,10 +378,8 @@ workflows:
       - test-core:
           matrix:
             parameters:
-              build_tags: [ "", "appsec" ]
               goflags: [ "-race" ]
       - test-contrib:
           matrix:
             parameters:
-              build_tags: [ "", "appsec" ]
               goflags: [ "-race" ]
