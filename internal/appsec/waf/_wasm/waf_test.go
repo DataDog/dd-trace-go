@@ -18,6 +18,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/tetratelabs/wazero"
+	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/wasi"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
@@ -26,156 +27,265 @@ import (
 //go:embed libddwaf.wasm
 var fs embed.FS
 
-func TestVM(t *testing.T) {
-	ctx := context.Background()
-	buf, err := fs.ReadFile("libddwaf.wasm")
+type vm struct {
+	wazero.Runtime
+	memory       api.Memory
+	malloc_      api.Function
+	free_        api.Function
+	enableLogger api.Function
+	encode_      api.Function
+	init_        api.Function
+	initCtx_     api.Function
+	run_         api.Function
+}
+
+func newVM(ctx context.Context, aot bool) (w *vm, err error) {
+	src, err := fs.ReadFile("libddwaf.wasm")
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	rt := wazero.NewRuntimeWithConfig(wazero.NewRuntimeConfigInterpreter())
-	code, err := rt.CompileModule(ctx, buf, wazero.NewCompileConfig())
+
+	var cfg wazero.RuntimeConfig
+	if aot {
+		cfg = wazero.NewRuntimeConfigCompiler()
+	} else {
+		cfg = wazero.NewRuntimeConfigInterpreter()
+	}
+	rt := wazero.NewRuntimeWithConfig(cfg)
+	defer func() {
+		if err != nil && rt != nil {
+			rt.Close(ctx)
+		}
+	}()
+
+	_, err = wasi.InstantiateSnapshotPreview1(ctx, rt)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	wm, err := wasi.InstantiateSnapshotPreview1(ctx, rt)
-	require.NoError(t, err)
-	defer wm.Close(ctx)
-	config := wazero.NewModuleConfig().WithStdout(os.Stdout)
-	module, err := rt.InstantiateModule(ctx, code, config)
-	require.NoError(t, err)
-	defer module.Close(ctx)
+
+	compiled, err := rt.CompileModule(ctx, src, wazero.NewCompileConfig())
+	if err != nil {
+		return nil, err
+	}
+	module, err := rt.InstantiateModule(ctx, compiled, wazero.NewModuleConfig().WithStdout(os.Stdout).WithStderr(os.Stderr))
+	if err != nil {
+		return nil, err
+	}
+
 	memory := module.Memory()
-	free := module.ExportedFunction("free")
-	init := module.ExportedFunction("ddwaf_init")
-
-	malloc := module.ExportedFunction("malloc")
-	vmbuf := func(buf []byte) uint32 {
-		ret, err := malloc.Call(nil, uint64(len(buf)+1))
-		require.NoError(t, err)
-		addr := uint32(ret[0])
-		ok := memory.Write(ctx, addr, buf)
-		require.True(t, ok)
-		memory.WriteByte(ctx, addr+uint32(len(buf)), 0)
-		return addr
+	if memory == nil {
+		return nil, fmt.Errorf("undefined memory")
+	}
+	malloc, err := exportedFunction(module, "malloc")
+	if err != nil {
+		return nil, err
+	}
+	free, err := exportedFunction(module, "free")
+	if err != nil {
+		return nil, err
+	}
+	init, err := exportedFunction(module, "ddwaf_init")
+	if err != nil {
+		return nil, err
+	}
+	encode, err := exportedFunction(module, "ddwaf_encode")
+	if err != nil {
+		return nil, err
+	}
+	enableLogger, err := exportedFunction(module, "my_ddwaf_set_logger")
+	if err != nil {
+		return nil, err
+	}
+	initCtx, err := exportedFunction(module, "ddwaf_context_init")
+	if err != nil {
+		return nil, err
+	}
+	run, err := exportedFunction(module, "my_ddwaf_run")
+	if err != nil {
+		return nil, err
 	}
 
-	encode := module.ExportedFunction("ddwaf_encode")
-	vmencode := func(buf []byte) uint32 {
-		addr := vmbuf(buf)
-		defer free.Call(nil, uint64(addr))
-		ret, err := encode.Call(nil, uint64(addr))
-		require.NoError(t, err)
-		return uint32(ret[0])
+	return &vm{
+		Runtime:      rt,
+		memory:       memory,
+		malloc_:      malloc,
+		free_:        free,
+		enableLogger: enableLogger,
+		encode_:      encode,
+		init_:        init,
+		initCtx_:     initCtx,
+		run_:         run,
+	}, nil
+}
+
+func (w *vm) malloc(ctx context.Context, size uint64) (uint32, error) {
+	ret, err := w.malloc_.Call(ctx, size)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(ret[0]), nil
+}
+
+func (w *vm) free(ctx context.Context, addr uint32) error {
+	_, err := w.free_.Call(ctx, uint64(addr))
+	return err
+}
+
+func (w *vm) vmbytes(ctx context.Context, buf []byte) (uint32, error) {
+	addr, err := w.malloc(ctx, uint64(len(buf))+1)
+	if err != nil {
+		return 0, err
 	}
 
-	rule := vmencode(testRule)
-	require.NotZero(t, rule)
+	// Copy the null-terminated buffer
+	if ok := w.memory.Write(ctx, addr, buf); !ok {
+		goto writeError
+	}
+	if ok := w.memory.WriteByte(ctx, addr+uint32(len(buf)), 0); !ok {
+		goto writeError
+	}
 
-	module.ExportedFunction("my_ddwaf_set_logger").Call(nil)
+	return addr, nil
 
-	ret, err := init.Call(nil, uint64(rule), 0, 0)
+writeError:
+	w.free(ctx, addr)
+	return 0, fmt.Errorf("could not write the buffer into the vm's allocated memory area")
+}
+
+func (w *vm) gostring(ctx context.Context, vmbuf uint32) (string, error) {
+	var (
+		builder strings.Builder
+		i       uint32
+	)
+	for {
+		// TODO: optimize with vmbuf's strlen() + Read()
+		b, ok := w.memory.ReadByte(ctx, vmbuf+i)
+		if !ok {
+			return builder.String(), fmt.Errorf("could not read the vm's memory at %X", vmbuf+i)
+		}
+		// Stop on null character
+		if b == 0 {
+			break
+		}
+		builder.WriteByte(b)
+		i++
+	}
+	return builder.String(), nil
+}
+
+func (w *vm) encode(ctx context.Context, buf []byte) (uint32, error) {
+	vmbuf, err := w.vmbytes(ctx, buf)
+	if err != nil {
+		return 0, err
+	}
+	ret, err := w.encode_.Call(ctx, uint64(vmbuf))
+	if err != nil {
+		return 0, err
+	}
+	return uint32(ret[0]), nil
+}
+
+func (w *vm) newInstance(ctx context.Context, rules uint32, withLogs bool) (instance uint32, err error) {
+	if withLogs {
+		w.enableLogger.Call(ctx)
+	}
+	ret, err := w.init_.Call(ctx, uint64(rules), 0, 0)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(ret[0]), nil
+}
+
+func (w *vm) newContext(ctx context.Context, handle uint32) (wafCtx uint32, err error) {
+	ret, err := w.initCtx_.Call(ctx, uint64(handle), 0)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(ret[0]), nil
+}
+
+func (w *vm) run(ctx context.Context, wafCtx, inputs uint32) (events uint32, err error) {
+	ret, err := w.run_.Call(ctx, uint64(wafCtx), uint64(inputs))
+	if err != nil {
+		return 0, err
+	}
+	return uint32(ret[0]), nil
+}
+
+func exportedFunction(module api.Module, name string) (fn api.Function, err error) {
+	fn = module.ExportedFunction(name)
+	if fn == nil {
+		err = fmt.Errorf("undefined function `%s`", name)
+	}
+	return
+}
+
+func TestVM(t *testing.T) {
+	vm, err := newVM(nil, false)
 	require.NoError(t, err)
-	handle := ret[0]
+	defer vm.Close(nil)
 
-	ret, err = module.ExportedFunction("ddwaf_context_init").Call(nil, handle, 0)
+	rules, err := vm.encode(nil, testRule)
 	require.NoError(t, err)
-	wafCtx := ret[0]
+	require.NotZero(t, rules)
 
-	run := module.ExportedFunction("my_ddwaf_run")
-	data := vmencode([]byte(`{"addr": "Arachni"}`))
-	ret, err = run.Call(nil, wafCtx, uint64(data))
+	waf, err := vm.newInstance(nil, rules, true)
 	require.NoError(t, err)
-	events := ret[0]
+	require.NotZero(t, waf)
+
+	wafCtx, err := vm.newContext(nil, waf)
+	require.NoError(t, err)
+	require.NotZero(t, wafCtx)
+
+	inputs, err := vm.encode(nil, []byte(`{"addr": "Arachni"}`))
+	require.NoError(t, err)
+	require.NotZero(t, inputs)
+
+	events, err := vm.run(nil, wafCtx, inputs)
+	require.NoError(t, err)
 	require.NotZero(t, events)
 
-	gostring := func(addr uint32) string {
-		var (
-			builder strings.Builder
-			i       uint32
-		)
-		for {
-			b, ok := memory.ReadByte(ctx, addr+i)
-			require.True(t, ok)
-			if b == 0 {
-				break
-			}
-			builder.WriteByte(b)
-			i++
-		}
-		return builder.String()
-	}
-	fmt.Println(gostring(uint32(events)))
+	str, err := vm.gostring(nil, events)
+	require.NoError(t, err)
+	require.NotEmpty(t, str)
+	fmt.Println(str)
 }
 
 func BenchmarkVM(b *testing.B) {
-	ctx := context.Background()
-	buf, err := fs.ReadFile("libddwaf.wasm")
-	if err != nil {
-		panic(err)
-	}
-	rt := wazero.NewRuntimeWithConfig(wazero.NewRuntimeConfigCompiler())
-	code, err := rt.CompileModule(ctx, buf, wazero.NewCompileConfig())
-	if err != nil {
-		panic(err)
-	}
-	wm, err := wasi.InstantiateSnapshotPreview1(ctx, rt)
+	w, err := newVM(nil, false)
 	require.NoError(b, err)
-	defer wm.Close(ctx)
-	config := wazero.NewModuleConfig().WithStdout(os.Stdout)
-	module, err := rt.InstantiateModule(ctx, code, config)
+	defer w.Close(nil)
+
+	rules, err := w.encode(nil, testRule)
 	require.NoError(b, err)
-	defer module.Close(ctx)
-	memory := module.Memory()
-	free := module.ExportedFunction("free")
-	init := module.ExportedFunction("ddwaf_init")
+	require.NotZero(b, rules)
 
-	malloc := module.ExportedFunction("malloc")
-	vmbuf := func(buf []byte) uint32 {
-		ret, err := malloc.Call(nil, uint64(len(buf)+1))
-		require.NoError(b, err)
-		addr := uint32(ret[0])
-		ok := memory.Write(ctx, addr, buf)
-		require.True(b, ok)
-		memory.WriteByte(ctx, addr+uint32(len(buf)), 0)
-		return addr
-	}
-
-	encode := module.ExportedFunction("ddwaf_encode")
-	vmencode := func(buf []byte) uint32 {
-		addr := vmbuf(buf)
-		defer free.Call(nil, uint64(addr))
-		ret, err := encode.Call(nil, uint64(addr))
-		require.NoError(b, err)
-		return uint32(ret[0])
-	}
-
-	rule := vmencode(testRule)
-	require.NotZero(b, rule)
-
-	ret, err := init.Call(nil, uint64(rule), 0, 0)
+	waf, err := w.newInstance(nil, rules, false)
 	require.NoError(b, err)
-	handle := ret[0]
+	require.NotZero(b, waf)
 
-	ret, err = module.ExportedFunction("ddwaf_context_init").Call(nil, handle, 0)
+	wafCtx, err := w.newContext(nil, waf)
 	require.NoError(b, err)
-	wafCtx := ret[0]
+	require.NotZero(b, wafCtx)
 
-	data := vmencode([]byte(`{"addr": "no match"}`))
-	run := module.ExportedFunction("my_ddwaf_run")
+	data, err := w.encode(nil, []byte(`{"addr":"no match"}`))
+	require.NoError(b, err)
+	require.NotZero(b, data)
+
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		ret, err = run.Call(nil, wafCtx, uint64(data))
+		events, err := w.run(nil, wafCtx, data)
 		if err != nil {
 			b.Fatal(err)
 		}
-		if events := ret[0]; events != 0 {
+		if events != 0 {
 			b.Fatal()
 		}
 	}
 }
 
-func BenchmarkNative(b *testing.B) {
+func BenchmarkCGO(b *testing.B) {
 	handle, err := waf.NewHandle(testRule, "", "")
 	require.NoError(b, err)
 	wafCtx := waf.NewContext(handle)
