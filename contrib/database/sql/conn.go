@@ -209,8 +209,8 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 // the span following the traced database call.
 func (tp *traceParams) withSQLCommentsInjected(ctx context.Context, query string, discardDynamicTags bool) (cquery string, injectedSpanID uint64) {
 	// The sql span only gets created after the call to the database because we need to be able to skip spans
-	// when a driver returns driver.ErrSkip. In order to work with those constraints, the parent span is used
-	// during SQL comment injection and a new span ID is generated for the sql span and used later when/if the span
+	// when a driver returns driver.ErrSkip. In order to work with those constraints, a new span id is generated and
+	// used during SQL comment injection and returned for the sql span to be used later when/if the span
 	// gets created.
 	var spanContext ddtrace.SpanContext
 	if span, ok := tracer.SpanFromContext(ctx); ok {
@@ -219,8 +219,8 @@ func (tp *traceParams) withSQLCommentsInjected(ctx context.Context, query string
 	sqlCommentCarrier := tracer.NewSQLCommentCarrier(tracer.SQLCommentWithDynamicTagsDiscarded(discardDynamicTags))
 	err := tracer.Inject(spanContext, sqlCommentCarrier)
 	if err != nil {
-		// this should never happen
-		log.Warn("contrib/database/sql: failed to inject query comments: %v", err)
+		// This should happen only if the SQLCommentPropagator is not set via the sql comment injection mode.
+		log.Warn("contrib/database/sql: failed to inject query comments. Make sure you've set up SQLCommentInjectionMode on the propagator configuration: %v", err)
 	}
 	return sqlCommentCarrier.CommentQuery(query)
 }
