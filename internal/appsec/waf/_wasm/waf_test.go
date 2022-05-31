@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
+	"github.com/tetratelabs/wazero/experimental"
 	"github.com/tetratelabs/wazero/wasi"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
@@ -305,33 +306,38 @@ func BenchmarkRecommendedRules(b *testing.B) {
 }
 
 func benchmarkWASM(b *testing.B, rules []byte, inputs map[string]interface{}, withAOT bool) {
-	vm, err := newVM(nil, withAOT)
+	now := time.Now()
+	ctx := experimental.WithTimeNowUnixNano(context.Background(), func() uint64 {
+		return uint64(time.Since(now))
+	})
+	ctx := context.Background()
+	vm, err := newVM(ctx, withAOT)
 	require.NoError(b, err)
-	defer vm.Close(nil)
+	defer vm.Close(ctx)
 
-	rulesAddr, err := vm.encode(nil, rules)
+	rulesAddr, err := vm.encode(ctx, rules)
 	require.NoError(b, err)
 	require.NotZero(b, rules)
 
-	waf, err := vm.newInstance(nil, rulesAddr, false)
+	waf, err := vm.newInstance(ctx, rulesAddr, false)
 	require.NoError(b, err)
 	require.NotZero(b, waf)
 
-	wafCtx, err := vm.newContext(nil, waf)
+	wafCtx, err := vm.newContext(ctx, waf)
 	require.NoError(b, err)
 	require.NotZero(b, wafCtx)
 
 	jsonInputs, err := json.Marshal(inputs)
 	require.NoError(b, err)
 
-	data, err := vm.encode(nil, jsonInputs)
+	data, err := vm.encode(ctx, jsonInputs)
 	require.NoError(b, err)
 	require.NotZero(b, data)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		events, err := vm.run(nil, wafCtx, data)
+		events, err := vm.run(ctx, wafCtx, data)
 		if err != nil {
 			b.Fatal(err)
 		}
