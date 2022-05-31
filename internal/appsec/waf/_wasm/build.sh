@@ -5,4 +5,8 @@
 # Copyright 2016 Datadog, Inc.
 #
 
-emcc -flto -g0 -Os -I../include -I./third_party/proj_yamlcpp-prefix/src/proj_yamlcpp/include --no-entry -s EXPORTED_FUNCTIONS="_malloc,_free,_ddwaf_encode,_ddwaf_init,_ddwaf_context_init,_my_ddwaf_run,_my_ddwaf_set_logger"  -o libddwaf.wasm _api.cc ./third_party/proj_yamlcpp-prefix/src/proj_yamlcpp/src/*.cpp libddwaf.a
+mkdir build
+cd build
+emcmake cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS='-Os' ..
+emmake make VERBOSE=1
+emcc -flto -g0 -Os -I../include -I./third_party/proj_yamlcpp-prefix/src/proj_yamlcpp/include --no-entry -s EXPORTED_FUNCTIONS="_malloc,_free,_ddwaf_encode,_ddwaf_init,_ddwaf_context_init,_my_ddwaf_run,_my_ddwaf_set_logger" -o libddwaf.wasm _api.cc ./third_party/proj_yamlcpp-prefix/src/proj_yamlcpp/src/*.cpp libddwaf.a
