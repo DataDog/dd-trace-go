@@ -310,7 +310,6 @@ func benchmarkWASM(b *testing.B, rules []byte, inputs map[string]interface{}, wi
 	ctx := experimental.WithTimeNowUnixNano(context.Background(), func() uint64 {
 		return uint64(time.Since(now))
 	})
-	ctx := context.Background()
 	vm, err := newVM(ctx, withAOT)
 	require.NoError(b, err)
 	defer vm.Close(ctx)
