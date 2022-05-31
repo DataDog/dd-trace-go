@@ -224,7 +224,7 @@ func TestVM(t *testing.T) {
 	require.NoError(t, err)
 	defer vm.Close(nil)
 
-	rules, err := vm.encode(nil, simplestRule)
+	rules, err := vm.encode(nil, recommendedRules)
 	require.NoError(t, err)
 	require.NotZero(t, rules)
 
@@ -236,7 +236,7 @@ func TestVM(t *testing.T) {
 	require.NoError(t, err)
 	require.NotZero(t, wafCtx)
 
-	inputs, err := vm.encode(nil, []byte(`{"addr": "Arachni"}`))
+	inputs, err := vm.encode(nil, []byte(`{"server.request.headers.no_cookies": "Arachni/v1"}`))
 	require.NoError(t, err)
 	require.NotZero(t, inputs)
 
