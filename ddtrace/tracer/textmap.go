@@ -169,7 +169,7 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 	}
-	if cfg.SQLCommentInjectionMode > CommentInjectionDisabled {
+	if cfg.SQLCommentInjectionMode != CommentInjectionDisabled {
 		defaultPs = append(defaultPs, NewSQLCommentPropagator(cfg.SQLCommentInjectionMode))
 	}
 	if ps == "" {
@@ -179,7 +179,7 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 	if cfg.B3 {
 		list = append(list, &propagatorB3{})
 	}
-	if cfg.SQLCommentInjectionMode > CommentInjectionDisabled {
+	if cfg.SQLCommentInjectionMode != CommentInjectionDisabled {
 		list = append(list, NewSQLCommentPropagator(cfg.SQLCommentInjectionMode))
 	}
 	for _, v := range strings.Split(ps, ",") {
