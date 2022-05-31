@@ -1,63 +1,6 @@
-#include <yaml-cpp/yaml.h>
+#include <unistd.h>
 #include <ddwaf.h>
-#include <emscripten/bind.h>
-
-using namespace emscripten;
-
-ddwaf_object parseYAML(std::string buf)
-{
-  YAML::Node doc = YAML::Load(buf);
-  return doc.as<ddwaf_object>();
-}
-
-uintptr_t mwaf_init(std::string rules) {
-  auto r = parseYAML(rules);
-  if (r.type == DDWAF_OBJ_INVALID) {
-    return NULL;
-  }
-  auto h = ddwaf_init(&r, NULL, NULL);
-  ddwaf_object_free(&r);
-  return reinterpret_cast<uintptr_t>(h);
-}
-
-std::string mwaf_run(uintptr_t handle, std::string data) {
-  if (handle == NULL) {
-    return "null";
-  }
-  auto h = reinterpret_cast<ddwaf_handle>(handle);
-  auto ctx = ddwaf_context_init(h, NULL);
-  if (ctx == NULL) {
-    return "null";
-  }
-  auto d = parseYAML(data);
-  ddwaf_result res;
-  ddwaf_run(ctx, &d, &res, 1000000);
-  ddwaf_object_free(&d);
-  ddwaf_context_destroy(ctx);
-  std::string events;
-  if (res.data == NULL) {
-    events = "null";
-  } else {
-    events = std::string(res.data);
-  }
-  ddwaf_result_free(&res);
-  return events;
-}
-
-void mwaf_destroy(uintptr_t handle) {
-  if (handle == NULL) {
-    return;
-  }
-  auto h = reinterpret_cast<ddwaf_handle>(handle);
-  ddwaf_destroy(h);
-}
-
-
-EMSCRIPTEN_BINDINGS(mwaf) {
-  function("init", &mwaf_init);
-  function("run", &mwaf_run);
-  function("destroy", &mwaf_destroy);
-}
+#include <yaml-cpp/yaml.h>
 
 #define DDWAF_OBJECT_INVALID                    \
     {                                           \
@@ -139,13 +82,47 @@ ddwaf_object node_to_arg(const Node& node)
 }
 
 // template helpers
-  template <>
+template <>
 as_if<ddwaf_object, void>::as_if(const Node& node_) : node(node_) {}
 
-  template <>
+template <>
 ddwaf_object as_if<ddwaf_object, void>::operator()() const
 {
     return node_to_arg(node);
 }
+}
 
+extern "C"
+ddwaf_object* my_ddwaf_encode(const char* rule)
+{
+    YAML::Node doc = YAML::Load(rule);
+    ddwaf_object o = doc.as<ddwaf_object>();
+    if (o.type == DDWAF_OBJ_INVALID)
+    {
+        return NULL;
+    }
+    auto res = new(ddwaf_object);
+    *res = o;
+    return res;
+}
+
+extern "C"
+const char* my_ddwaf_run(ddwaf_context ctx, ddwaf_object* data)
+{
+    ddwaf_result res;
+    ddwaf_run(ctx, data, &res, 1000000000);
+    return res.data;
+}
+
+void logger(DDWAF_LOG_LEVEL level, const char* function, const char* file, unsigned line,
+    const char* message, uint64_t message_len)
+{
+    write(1, message, message_len);
+    write(1, "\n", 1);
+}
+
+extern "C"
+void my_ddwaf_set_logger()
+{
+    ddwaf_set_log_cb(logger, DDWAF_LOG_TRACE);
 }

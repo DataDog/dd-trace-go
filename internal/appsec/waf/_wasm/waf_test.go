@@ -8,7 +8,8 @@ package wasm
 import (
 	"bytes"
 	"context"
-	"embed"
+	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -25,7 +26,10 @@ import (
 )
 
 //go:embed libddwaf.wasm
-var fs embed.FS
+var libddwafWASM []byte
+
+//go:embed recommended.json
+var recommendedRules []byte
 
 type vm struct {
 	wazero.Runtime
@@ -40,11 +44,6 @@ type vm struct {
 }
 
 func newVM(ctx context.Context, aot bool) (w *vm, err error) {
-	src, err := fs.ReadFile("libddwaf.wasm")
-	if err != nil {
-		return nil, err
-	}
-
 	var cfg wazero.RuntimeConfig
 	if aot {
 		cfg = wazero.NewRuntimeConfigCompiler()
@@ -63,7 +62,7 @@ func newVM(ctx context.Context, aot bool) (w *vm, err error) {
 		return nil, err
 	}
 
-	compiled, err := rt.CompileModule(ctx, src, wazero.NewCompileConfig())
+	compiled, err := rt.CompileModule(ctx, libddwafWASM, wazero.NewCompileConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +224,7 @@ func TestVM(t *testing.T) {
 	require.NoError(t, err)
 	defer vm.Close(nil)
 
-	rules, err := vm.encode(nil, testRule)
+	rules, err := vm.encode(nil, simplestRule)
 	require.NoError(t, err)
 	require.NotZero(t, rules)
 
@@ -251,31 +250,88 @@ func TestVM(t *testing.T) {
 	fmt.Println(str)
 }
 
-func BenchmarkVM(b *testing.B) {
-	w, err := newVM(nil, false)
-	require.NoError(b, err)
-	defer w.Close(nil)
+func BenchmarkSimplestRule(b *testing.B) {
+	for _, bc := range []struct {
+		rules       []byte
+		inputs      map[string]interface{}
+		shouldMatch bool
+	}{
+		{
+			rules:       simplestRule,
+			inputs:      map[string]interface{}{"addr": "no match"},
+			shouldMatch: true,
+		},
+	} {
+		bc := bc
+		b.Run("aot", func(b *testing.B) {
+			benchmarkWASM(b, simplestRule, bc.inputs, true)
+		})
+		b.Run("interpreted", func(b *testing.B) {
+			benchmarkWASM(b, simplestRule, bc.inputs, false)
+		})
+		b.Run("cgo", func(b *testing.B) {
+			benchmarkCGO(b, simplestRule, bc.inputs)
+		})
+	}
+}
 
-	rules, err := w.encode(nil, testRule)
+func BenchmarkRecommendedRules(b *testing.B) {
+	for _, bc := range []struct {
+		rules  []byte
+		inputs map[string]interface{}
+	}{
+		{
+			rules: recommendedRules,
+			inputs: map[string]interface{}{
+				"server.request.headers.no_cookies": "no match",
+				"server.request.query":              "no match",
+				"server.request.body":               "no match",
+				"server.request.path_params":        "no match",
+				"server.request.uri.raw":            "no match",
+			},
+		},
+	} {
+		bc := bc
+		b.Run("aot", func(b *testing.B) {
+			benchmarkWASM(b, simplestRule, bc.inputs, true)
+		})
+		b.Run("interpreted", func(b *testing.B) {
+			benchmarkWASM(b, simplestRule, bc.inputs, false)
+		})
+		b.Run("cgo", func(b *testing.B) {
+			benchmarkCGO(b, simplestRule, bc.inputs)
+		})
+	}
+}
+
+func benchmarkWASM(b *testing.B, rules []byte, inputs map[string]interface{}, withAOT bool) {
+	vm, err := newVM(nil, withAOT)
+	require.NoError(b, err)
+	defer vm.Close(nil)
+
+	rulesAddr, err := vm.encode(nil, rules)
 	require.NoError(b, err)
 	require.NotZero(b, rules)
 
-	waf, err := w.newInstance(nil, rules, false)
+	waf, err := vm.newInstance(nil, rulesAddr, false)
 	require.NoError(b, err)
 	require.NotZero(b, waf)
 
-	wafCtx, err := w.newContext(nil, waf)
+	wafCtx, err := vm.newContext(nil, waf)
 	require.NoError(b, err)
 	require.NotZero(b, wafCtx)
 
-	data, err := w.encode(nil, []byte(`{"addr":"no match"}`))
+	jsonInputs, err := json.Marshal(inputs)
+	require.NoError(b, err)
+
+	data, err := vm.encode(nil, jsonInputs)
 	require.NoError(b, err)
 	require.NotZero(b, data)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		events, err := w.run(nil, wafCtx, data)
+		events, err := vm.run(nil, wafCtx, data)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -285,21 +341,19 @@ func BenchmarkVM(b *testing.B) {
 	}
 }
 
-func BenchmarkCGO(b *testing.B) {
-	handle, err := waf.NewHandle(testRule, "", "")
+func benchmarkCGO(b *testing.B, rules []byte, inputs map[string]interface{}) {
+	handle, err := waf.NewHandle(rules, "", "")
 	require.NoError(b, err)
+	defer handle.Close()
+
 	wafCtx := waf.NewContext(handle)
 	require.NotNil(b, wafCtx)
-
-	// Not matching because the address is not used by the rule
-	values := map[string]interface{}{
-		"addr": "no match",
-	}
+	defer wafCtx.Close()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		matches, err := wafCtx.Run(values, time.Second)
+		matches, err := wafCtx.Run(inputs, time.Second)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -309,9 +363,10 @@ func BenchmarkCGO(b *testing.B) {
 	}
 }
 
-var testRule = newTestRule(ruleInput{Address: "addr"})
+// 1 rule - 1 address
+var simplestRule = newTestRule(ruleInput{Address: "addr"})
 
-var testRuleTmpl = template.Must(template.New("").Parse(`
+var testRulesTmpl = template.Must(template.New("").Parse(`
 {
   "version": "2.1",
   "rules": [
@@ -332,7 +387,7 @@ var testRuleTmpl = template.Must(template.New("").Parse(`
                 { "address": "{{ $input.Address }}"{{ if ne (len $input.KeyPath) 0 }},  "key_path": [ {{ range $i, $path := $input.KeyPath }}{{ if gt $i 0 }}, {{ end }}"{{ $path }}"{{ end }} ]{{ end }} }
             {{- end }}
             ],
-            "regex": "^Arachni"
+            "regex": "Arachni"
           }
         }
       ],
@@ -349,7 +404,7 @@ type ruleInput struct {
 
 func newTestRule(inputs ...ruleInput) []byte {
 	var buf bytes.Buffer
-	if err := testRuleTmpl.Execute(&buf, inputs); err != nil {
+	if err := testRulesTmpl.Execute(&buf, inputs); err != nil {
 		panic(err)
 	}
 	return buf.Bytes()
