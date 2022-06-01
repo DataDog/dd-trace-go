@@ -113,9 +113,6 @@ void profile_allocation_checked(size_t size, void *ret_addr) {
 
 	if (should_sample(rate, size) != 0) {
 		if (is_unsafe_call(ret_addr)) {
-			if (safe_fpunwind == 1) {
-				fpunwind(__builtin_frame_address(0), size);
-			}
 			return;
 		}
 		recordAllocationSample(size);
@@ -128,52 +125,4 @@ void cgo_heap_profiler_set_sampling_rate(size_t hz) {
 		hz = 0;
 	}
 	return atomic_store(&sampling_rate, hz);
-}
-
-struct stack_buffers {
-	pthread_mutex_t mu;
-	struct stack_buffer buffers[2048];
-	int cursor;
-};
-
-static struct stack_buffers stack_buffers = {
-	.mu=PTHREAD_MUTEX_INITIALIZER,
-};
-
-static void fpunwind(void *pc, size_t size) {
-	int n = 0;
-	void **fp = pc;
-	uintptr_t buf[32] = {0};
-	while ((fp != NULL) && (n < 32)) {
-		void *pc = *((void **)((void*)fp+8));
-		if (pc != NULL) {
-			buf[n++] = (uintptr_t) pc;
-		}
-		fp = *(fp);
-	}
-	pthread_mutex_lock(&stack_buffers.mu);
-	int i = stack_buffers.cursor;
-	memcpy(stack_buffers.buffers[i].pcs, buf, 32*sizeof(uintptr_t));
-	stack_buffers.buffers[i].size = size;
-	stack_buffers.buffers[i].active = 1;
-	stack_buffers.cursor = (i + 1) % 2048;
-	pthread_mutex_unlock(&stack_buffers.mu);
-}
-
-int cgo_heap_profiler_read_stack_traces(struct stack_buffer *buffers, int max) {
-	int n = 0;
-	pthread_mutex_lock(&stack_buffers.mu);
-	for (int i = 0; i < 2048; i++) {
-		struct stack_buffer *b = &stack_buffers.buffers[i];
-		if (b->active == 0) {
-			continue;
-		}
-		b->active = 0;
-		memcpy(&buffers[n++], b, sizeof(struct stack_buffer));
-		if (n == max) {
-			break;
-		}
-	}
-	pthread_mutex_unlock(&stack_buffers.mu);
-	return n;
 }

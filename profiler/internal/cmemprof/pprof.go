@@ -55,7 +55,7 @@ func (c *Profile) build() *profile.Profile {
 		psample := &profile.Sample{
 			Value: []int64{int64(event.count), int64(event.bytes), 0, 0},
 		}
-		frames := runtime.CallersFrames(stack[:event.frames])
+		frames := runtime.CallersFrames(stack[:])
 		for {
 			frame, ok := frames.Next()
 			if !ok {

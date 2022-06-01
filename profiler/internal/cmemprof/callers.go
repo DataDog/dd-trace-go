@@ -31,6 +31,6 @@ func recordAllocationSample(size uint) {
 	// The value below just comes from experimentation with Go 1.17.5
 	const skip = 6
 	var pcs callStack
-	n := runtime.Callers(skip, pcs[:])
-	p.insert(pcs, n, size)
+	runtime.Callers(skip, pcs[:])
+	p.insert(pcs, size)
 }

@@ -47,7 +47,6 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/google/pprof/profile"
 
@@ -64,15 +63,11 @@ const DefaultSamplingRate = 2 * 1024 * 1024 // 2 MB
 
 type callStack [32]uintptr
 
-type allocationEvent struct {
+type aggregatedSample struct {
 	// bytes is the total number of bytes allocated
 	bytes uint
 	// count is the number of times this event has been observed
 	count int
-	// frames is the number of calls in the call stack. callStack is a
-	// fixed-size array for use as a map key, but the actuall call stack
-	// doesn't necessarily have len(callStack) frames
-	frames int
 }
 
 // Profile provides access to a C memory allocation profiler based on
@@ -80,13 +75,7 @@ type allocationEvent struct {
 type Profile struct {
 	mu      sync.Mutex
 	active  bool
-	samples map[callStack]*allocationEvent
-
-	// t fires periodically to trigger collectExtra
-	t *time.Timer
-	// extra holds allocation call stacks which can't be collected by
-	// calling into Go
-	extra [2048]C.struct_stack_buffer
+	samples map[callStack]*aggregatedSample
 
 	// SamplingRate is the value, in bytes, such that an average of one
 	// sample will be recorded for every SamplingRate bytes allocated.  An
@@ -111,65 +100,33 @@ func (c *Profile) Start(rate int) {
 	//
 	// TODO: can we make this more efficient and not have to re-build
 	// everything from scratch for each round of profiling?
-	c.samples = make(map[callStack]*allocationEvent)
+	c.samples = make(map[callStack]*aggregatedSample)
 	if rate == 0 {
 		rate = DefaultSamplingRate
-	}
-	if c.t == nil {
-		c.t = time.AfterFunc(100*time.Millisecond, c.collectExtra)
-	} else {
-		c.t.Reset(100 * time.Millisecond)
 	}
 	c.SamplingRate = rate
 	activeProfile.Store(c)
 	C.cgo_heap_profiler_set_sampling_rate(C.size_t(rate))
 }
 
-func (c *Profile) collectExtra() {
+func (c *Profile) insert(pcs callStack, size uint) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.active {
-		return
-	}
-	n := C.cgo_heap_profiler_read_stack_traces(&c.extra[0], C.int(len(c.extra)))
-	for _, sample := range c.extra[:n] {
-		var pcs callStack
-		var frames int
-		for i, pc := range sample.pcs {
-			if pc == 0 {
-				break
-			}
-			frames++
-			pcs[i] = uintptr(pc)
-		}
-		c.insertUnlocked(pcs, frames, uint(sample.size))
-	}
-	c.t.Reset(100 * time.Millisecond)
-}
-
-func (c *Profile) insert(pcs callStack, frames int, size uint) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.insertUnlocked(pcs, frames, size)
-}
-
-func (c *Profile) insertUnlocked(pcs callStack, frames int, size uint) {
-	event := c.samples[pcs]
-	if event == nil {
-		event = new(allocationEvent)
-		event.frames = frames
-		c.samples[pcs] = event
+	sample := c.samples[pcs]
+	if sample == nil {
+		sample = new(aggregatedSample)
+		c.samples[pcs] = sample
 	}
 	rate := uint(c.SamplingRate)
 	if size >= rate {
-		event.bytes += size
-		event.count++
+		sample.bytes += size
+		sample.count++
 	} else {
 		// The allocation was sample with probability p = size / rate.
 		// So we assume there were actually (1 / p) similar allocations
 		// for a total size of (1 / p) * size = rate
-		event.bytes += rate
-		event.count += int(float64(rate) / float64(size))
+		sample.bytes += rate
+		sample.count += int(float64(rate) / float64(size))
 	}
 }
 
@@ -177,14 +134,12 @@ func (c *Profile) insertUnlocked(pcs callStack, frames int, size uint) {
 // io.Writer passed to Start. Returns any error from writing the profile.
 func (c *Profile) Stop() (*profile.Profile, error) {
 	C.cgo_heap_profiler_set_sampling_rate(0)
-	c.collectExtra()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.active {
 		return nil, fmt.Errorf("profiling isn't started")
 	}
 	c.active = false
-	c.t.Stop()
 	p := c.build()
 	err := p.CheckValid()
 	if err != nil {
