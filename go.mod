@@ -77,6 +77,7 @@ require (
 	github.com/sirupsen/logrus v1.7.0
 	github.com/stretchr/testify v1.7.0
 	github.com/syndtr/goleveldb v1.0.0
+	github.com/tailscale/depaware v0.0.0-20210622194025-720c4b409502
 	github.com/tidwall/btree v1.1.0 // indirect
 	github.com/tidwall/buntdb v1.2.0
 	github.com/tidwall/grect v0.1.4 // indirect

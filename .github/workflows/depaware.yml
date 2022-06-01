@@ -1,0 +1,34 @@
+name: depaware
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.18
+
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: depaware profiler
+      run: go run github.com/tailscale/depaware --check gopkg.in/DataDog/dd-trace-go.v1/profiler
+
+    - name: depaware ddtrace/tracer
+      run: go run github.com/tailscale/depaware --check gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+
+    - name: depaware appsec
+      run: go run github.com/tailscale/depaware --check gopkg.in/DataDog/dd-trace-go.v1/appsec
+      env:
+        GOFLAGS: -tags=appsec
+
