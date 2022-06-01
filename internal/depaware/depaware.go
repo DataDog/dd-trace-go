@@ -3,9 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-// Package depaware maintains a dependency on github.com/tailscale/depware so it
+// Package depaware maintains a dependency on github.com/tailscale/depaware so it
 // doesn't get removed from go.mod by "go mod tidy". This lets us pin the
-// depware version and run depware with "go run github.com/tailscale/depaware"
+// depaware version and run depaware with "go run github.com/tailscale/depaware"
 // from CI or locally
 package depaware
 
