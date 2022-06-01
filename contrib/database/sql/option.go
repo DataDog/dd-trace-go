@@ -16,6 +16,7 @@ type config struct {
 	analyticsRate  float64
 	dsn            string
 	childSpansOnly bool
+	errCheck       func(err error) bool
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -81,5 +82,14 @@ func WithDSN(name string) Option {
 func WithChildSpansOnly() Option {
 	return func(cfg *config) {
 		cfg.childSpansOnly = true
+	}
+}
+
+// WithErrorCheck specifies a function fn which determines whether the passed
+// error should be marked as an error. The fn is called whenever a database/sql operation
+// finishes with an error
+func WithErrorCheck(fn func(err error) bool) Option {
+	return func(cfg *config) {
+		cfg.errCheck = fn
 	}
 }

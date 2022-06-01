@@ -186,6 +186,13 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if math.IsNaN(cfg.analyticsRate) {
 		cfg.analyticsRate = rc.analyticsRate
 	}
+	if cfg.errCheck == nil {
+		if rc.errCheck == nil {
+			cfg.errCheck = func(err error) bool { return true }
+		} else {
+			cfg.errCheck = rc.errCheck
+		}
+	}
 	cfg.childSpansOnly = rc.childSpansOnly
 	tc := &tracedConnector{
 		connector:  c,
