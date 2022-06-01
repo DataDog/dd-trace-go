@@ -86,6 +86,10 @@ jobs:
         description: "extra goflags to pass to go test"
         default: ""
         type: string
+      n:
+        description: "number of run"
+        default: 0
+        type: integer
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
