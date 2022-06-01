@@ -14,8 +14,6 @@
 package extensions
 
 import (
-	"sync"
-
 	"github.com/google/pprof/profile"
 )
 
@@ -37,15 +35,12 @@ type CAllocationProfiler interface {
 }
 
 var (
-	mu                  sync.Mutex
 	cAllocationProfiler CAllocationProfiler
 )
 
 // GetCAllocationProfiler returns the currently registered C allocation
 // profiler, if one is registered.
 func GetCAllocationProfiler() (impl CAllocationProfiler, registered bool) {
-	mu.Lock()
-	defer mu.Unlock()
 	if cAllocationProfiler == nil {
 		return nil, false
 	}
@@ -54,7 +49,5 @@ func GetCAllocationProfiler() (impl CAllocationProfiler, registered bool) {
 
 // SetCAllocationProfiler registers a C allocation profiler implementation.
 func SetCAllocationProfiler(c CAllocationProfiler) {
-	mu.Lock()
-	defer mu.Unlock()
 	cAllocationProfiler = c
 }
