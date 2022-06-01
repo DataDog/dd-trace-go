@@ -10,9 +10,8 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -30,28 +29,30 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		fn(cfg)
 	}
 	log.Debug("contrib/go-chi/chi: Configuring Middleware: %#v", cfg)
+	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName))
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.ignoreRequest(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
-			opts := []ddtrace.StartSpanOption{
-				tracer.SpanType(ext.SpanTypeWeb),
-				tracer.ServiceName(cfg.serviceName),
-				tracer.Tag(ext.HTTPMethod, r.Method),
-				tracer.Tag(ext.HTTPURL, r.URL.Path),
-				tracer.Measured(),
-			}
+			opts := spanOpts
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-				opts = append(opts, tracer.ChildOf(spanctx))
-			}
-			opts = append(opts, cfg.spanOpts...)
-			span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
-			defer span.Finish()
+			span, ctx := httptrace.StartRequestSpan(r, opts...)
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			defer func() {
+				status := ww.Status()
+				var opts []tracer.FinishOption
+				if cfg.isStatusError(status) {
+					opts = []tracer.FinishOption{tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status)))}
+				}
+				httptrace.FinishRequestSpan(span, status, opts...)
+			}()
+
+			// pass the span through the request context
+			r = r.WithContext(ctx)
 
 			next := next // avoid modifying the value of next in the outer closure scope
 			if appsec.Enabled() {
@@ -60,10 +61,8 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				// implements the `interface { Status() int }` expected by httpsec.
 			}
 
-			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-
 			// pass the span through the request context and serve the request to the next middleware
-			next.ServeHTTP(ww, r.WithContext(ctx))
+			next.ServeHTTP(ww, r)
 
 			// set the resource name as we get it only once the handler is executed
 			resourceName := chi.RouteContext(r.Context()).RoutePattern()
@@ -72,19 +71,6 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			}
 			resourceName = r.Method + " " + resourceName
 			span.SetTag(ext.ResourceName, resourceName)
-
-			// set the status code
-			status := ww.Status()
-			// 0 status means one has not yet been sent in which case net/http library will write StatusOK
-			if ww.Status() == 0 {
-				status = http.StatusOK
-			}
-			span.SetTag(ext.HTTPCode, strconv.Itoa(status))
-
-			if cfg.isStatusError(status) {
-				// mark 5xx server error
-				span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
-			}
 		})
 	}
 }
