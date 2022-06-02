@@ -172,9 +172,6 @@ func TestWithChildSpansOnly(t *testing.T) {
 }
 
 func TestWithErrorCheck(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
 	testOpts := func(errExist bool, opts ...Option) func(t *testing.T) {
 		return func(t *testing.T) {
 			mt := mocktracer.Start()
