@@ -206,10 +206,7 @@ func TestWithErrorCheck(t *testing.T) {
 		defer mt.Stop()
 
 		errFn := func(err error) bool {
-			if strings.Contains(err.Error(), `Error 1054: Unknown column 'a' in 'field list'`) {
-				return false
-			}
-			return true
+			return !strings.Contains(err.Error(), `Error 1054: Unknown column 'a' in 'field list'`)
 		}
 		assertErrCheck(t, mt, false, WithErrorCheck(errFn))
 	})
