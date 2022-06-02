@@ -99,8 +99,14 @@ func (c *Profile) Start(rate int) {
 	// the final profile returned by Stop only has the allocations between
 	// Stop and the preceding call to Start
 	//
-	// TODO: can we make this more efficient and not have to re-build
-	// everything from scratch for each round of profiling?
+	// Creating a new map rather than setting each sample count/size to 0 or
+	// deleting every entry does mean we need to do some duplicate work for
+	// each round of profiling. However, starting with a new map each time
+	// avoids the behavior of the runtime heap, block, and mutex profiles
+	// which never remove samples for the duration of the profile. In
+	// adittion, Go maps never shrink as of Go 1.18, so even if some space
+	// is reused after clearing a map, the total amount of memory used by
+	// the map only ever increases.
 	c.samples = make(map[callStack]*aggregatedSample)
 	if rate == 0 {
 		rate = DefaultSamplingRate
