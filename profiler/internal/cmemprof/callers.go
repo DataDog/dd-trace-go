@@ -18,7 +18,7 @@ func recordAllocationSample(size uint) {
 		return
 	}
 
-	// There are several calls in the call stack we should skip. Ultimiately
+	// There are several calls in the call stack we should skip. Ultimately
 	// we'd like to get only the actual allocation call, but we can settle
 	// for profile_allocation. This call should be skipped, together with
 	// any of the C->Go transition functions like cgocallback and the
