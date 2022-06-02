@@ -18,6 +18,18 @@ func (c *Profile) build() *profile.Profile {
 	// held but it wouldn't be good if this (probably expensive) function
 	// was holding the same lock that recordAllocationSample also wants to
 	// hold
+
+	// This profile is intended to be merged into the Go runtime allocation
+	// profile.  The profile.Merge function requires that several fields in
+	// the merged profile.Profile objects match in order for the merge to be
+	// successful. Refer to
+	//
+	// https://pkg.go.dev/github.com/google/pprof/profile#Merge
+	//
+	// In particular, the PeriodType and SampleType fields must match, and
+	// every sample must have the correct number of values. The TimeNanos
+	// field can be left 0, and the TimeNanos field of the Go allocation
+	// profile will be used.
 	p := &profile.Profile{}
 	m := &profile.Mapping{
 		ID:   1,
@@ -50,7 +62,6 @@ func (c *Profile) build() *profile.Profile {
 	}
 	// TODO: move this cache up into Profile?
 	locations := make(map[uint64]*profile.Location)
-	var funcid uint64
 	for stack, event := range c.samples {
 		psample := &profile.Sample{
 			Value: []int64{int64(event.count), int64(event.bytes), 0, 0},
@@ -75,9 +86,8 @@ func (c *Profile) build() *profile.Profile {
 					Mapping: m,
 					Address: uint64(frame.PC),
 				}
-				funcid++
 				function := &profile.Function{
-					ID:       funcid,
+					ID:       uint64(len(p.Function)) + 1,
 					Filename: frame.File,
 					Name:     frame.Function,
 				}
