@@ -196,7 +196,7 @@ func (c SQLCommentCarrier) ForeachKey(handler func(key, val string) error) error
 }
 
 // SetDynamicTag implements QueryCommentCarrier. This method is used to inject dynamic tags only
-// (i.e. span id, trace id, sampling priority). See Set for static tags.
+// (e.g. span id, trace id, sampling priority). See Set for static tags.
 func (c *SQLCommentCarrier) SetDynamicTag(key, val string) {
 	if c.cfg.discardDynamicTags {
 		return
