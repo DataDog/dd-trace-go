@@ -17,7 +17,13 @@
 #include "profiler_internal.h"
 
 // sampling_rate is the portion of allocations to sample.
-atomic_size_t sampling_rate;
+//
+// NOTE: sampling_rate will be automatically initialized to 0 since it is
+// static. This is important because sampling an allocation calls into Go,
+// which requires the Go runtime to be initialized. If an allocation happens at
+// program startup before main.main, such as when resolving dynamic symbols, the
+// program can deadlock. So allocation sampling must start out turned off.
+static atomic_size_t sampling_rate;
 
 __thread uint64_t rng_state;
 
