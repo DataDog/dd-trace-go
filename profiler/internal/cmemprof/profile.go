@@ -84,6 +84,7 @@ type Profile struct {
 	SamplingRate int
 }
 
+// activeProfile is an atomic value since recordAllocationSample and Profile.Start could be called concurrently.
 var activeProfile atomic.Value
 
 // Start begins profiling C memory allocations.
