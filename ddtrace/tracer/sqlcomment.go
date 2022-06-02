@@ -150,7 +150,7 @@ func (p *SQLCommentPropagator) Extract(carrier interface{}) (ddtrace.SpanContext
 	return nil, nil
 }
 
-// SQLCommentCarrierConfig holds configuration for a SQLCommentCarrier
+// SQLCommentCarrierConfig holds configuration for a SQLCommentCarrier.
 type SQLCommentCarrierConfig struct {
 	discardDynamicTags bool
 }
