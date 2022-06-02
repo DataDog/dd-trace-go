@@ -111,6 +111,50 @@ func TestNewCgoThreadCrash(t *testing.T) {
 	}
 }
 
+func TestSampling(t *testing.T) {
+	var prof cmemprof.Profile
+	prof.Start(1024)
+	for i := 0; i < 32; i++ {
+		testallocator.DoAllocC(512)
+	}
+	pprof, err := prof.Stop()
+	if err != nil {
+		t.Fatalf("running profile: %s", err)
+	}
+
+	// The sampling rate is 1024 bytes, and the allocations are 512 bytes.
+	// Each allocation is sampled with a probability of 1/2, so there is
+	// probabilty 1 / (2 ** 32) (one in four billion) that there are no
+	// samples. In other words, there should be at least on sample with very
+	// high probability.
+
+	original := pprof.Copy()
+	t.Logf("%s", original)
+	found, _, _, _ := pprof.FilterSamplesByName(regexp.MustCompile("AllocC"), nil, nil, nil)
+	if !found {
+		t.Fatal("did not find any allocation samples")
+	}
+
+	sample := pprof.Sample[0]
+	count := sample.Value[0]
+	size := sample.Value[1]
+
+	// We sampled anywhere from 1 to 32 allocations, with an average of 16.
+	// Each sample should count for 2 allocations (scaled by probability
+	// 1/2) and count for 1024 bytes (allocation size 512 * 2). Thus the
+	// count should be between 1 and 64, with an average value of 32, and
+	// the size should be between 1024 and 1024*32, with an average of
+	// 1024*16
+
+	if (count < 1) || (count > 64) {
+		t.Errorf("implausible count %d", count)
+	}
+
+	if (size < 1024) || (size > (1024 * 32)) {
+		t.Errorf("implausible szie %d", size)
+	}
+}
+
 func BenchmarkProfilerOverhead(b *testing.B) {
 	baseline := func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
