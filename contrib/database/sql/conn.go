@@ -59,8 +59,8 @@ func (tc *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 
 func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
 	start := time.Now()
+	cquery, spanID := tc.withSQLCommentsInjected(ctx, query, true)
 	if connPrepareCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
-		cquery, spanID := tc.withSQLCommentsInjected(ctx, query, true)
 		stmt, err := connPrepareCtx.PrepareContext(ctx, cquery)
 		if spanID > 0 {
 			tc.tryTrace(ctx, queryTypePrepare, query, start, err, tracer.WithSpanID(spanID))
@@ -73,7 +73,6 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 
 		return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
 	}
-	cquery, spanID := tc.withSQLCommentsInjected(ctx, query, true)
 	stmt, err = tc.Prepare(cquery)
 	if spanID > 0 {
 		tc.tryTrace(ctx, queryTypePrepare, query, start, err, tracer.WithSpanID(spanID))
@@ -126,12 +125,8 @@ func (tc *tracedConn) Ping(ctx context.Context) (err error) {
 	start := time.Now()
 	if pinger, ok := tc.Conn.(driver.Pinger); ok {
 		err = pinger.Ping(ctx)
-		tc.tryTrace(ctx, queryTypePing, "", start, err)
-		if err != nil {
-			return err
-		}
 	}
-
+	tc.tryTrace(ctx, queryTypePing, "", start, err)
 	return err
 }
 
