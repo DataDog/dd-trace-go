@@ -9,9 +9,6 @@ import (
 	"runtime"
 )
 
-/*
-#include <stdint.h> // uintptr_t
-*/
 import "C"
 
 //export recordAllocationSample
