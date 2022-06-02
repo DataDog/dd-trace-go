@@ -175,39 +175,33 @@ func TestWithErrorCheck(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	assertErrCheck := func(t *testing.T, mt mocktracer.Tracer, errExist bool, opts ...Option) {
-		Register("mysql", &mysql.MySQLDriver{})
-		defer unregister("mysql")
+	testOpts := func(errExist bool, opts ...Option) func(t *testing.T) {
+		return func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-		db, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test", opts...)
-		if err != nil {
-			log.Fatal(err)
+			Register("mysql", &mysql.MySQLDriver{})
+			defer unregister("mysql")
+
+			db, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test", opts...)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
+
+			db.QueryContext(context.Background(), "SELECT a FROM "+tableName)
+
+			spans := mt.FinishedSpans()
+			assert.True(t, len(spans) > 0)
+
+			s := spans[len(spans)-1]
+			assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
 		}
-		defer db.Close()
-
-		db.QueryContext(context.Background(), "SELECT a FROM "+tableName)
-
-		spans := mt.FinishedSpans()
-		assert.True(t, len(spans) > 0)
-
-		s := spans[len(spans)-1]
-		assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
 	}
 
-	t.Run("defaults", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+	t.Run("defaults", testOpts(true))
+	t.Run("errcheck", testOpts(false, WithErrorCheck(func(err error) bool {
+		return !strings.Contains(err.Error(), `Error 1054: Unknown column 'a' in 'field list'`)
+	})))
 
-		assertErrCheck(t, mt, true)
-	})
-
-	t.Run("errcheck", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		errFn := func(err error) bool {
-			return !strings.Contains(err.Error(), `Error 1054: Unknown column 'a' in 'field list'`)
-		}
-		assertErrCheck(t, mt, false, WithErrorCheck(errFn))
-	})
 }
