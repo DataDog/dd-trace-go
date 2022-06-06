@@ -32,7 +32,7 @@ func TestChildSpan(t *testing.T) {
 	})
 
 	r := httptest.NewRequest("GET", "/user/123", nil)
-	resp, err := router.Test(r, 100)
+	resp, err := router.Test(r)
 
 	finishedSpans := mt.FinishedSpans()
 
@@ -46,7 +46,7 @@ func TestTrace200(t *testing.T) {
 		r := httptest.NewRequest("GET", "/user/123", nil)
 
 		// do and verify the request
-		resp, err := router.Test(r, 100)
+		resp, err := router.Test(r)
 		assert.Equal(nil, err)
 		assert.Equal(resp.StatusCode, 200)
 
@@ -111,7 +111,7 @@ func TestStatusError(t *testing.T) {
 	})
 	r := httptest.NewRequest("GET", "/err", nil)
 
-	response, err := router.Test(r, 100)
+	response, err := router.Test(r)
 	assert.Equal(nil, err)
 	assert.Equal(response.StatusCode, 500)
 
@@ -142,7 +142,7 @@ func TestCustomError(t *testing.T) {
 	})
 	r := httptest.NewRequest("GET", "/err", nil)
 
-	response, err := router.Test(r, 100)
+	response, err := router.Test(r)
 	assert.Equal(nil, err)
 	assert.Equal(response.StatusCode, 400)
 
@@ -176,7 +176,7 @@ func TestUserContext(t *testing.T) {
 	})
 	r := httptest.NewRequest("GET", "/", nil)
 
-	router.Test(r, 100)
+	router.Test(r)
 
 	// verify both middleware span and router span finished
 	spans := mt.FinishedSpans()
@@ -192,7 +192,7 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	})
 	r := httptest.NewRequest("GET", "/ping", nil)
 
-	response, err := router.Test(r, 100)
+	response, err := router.Test(r)
 	assert.Equal(nil, err)
 	assert.Equal(response.StatusCode, 200)
 }
@@ -213,7 +213,7 @@ func TestPropagation(t *testing.T) {
 		return c.SendString(c.Params("id"))
 	})
 
-	_, err := router.Test(r, 100)
+	_, err := router.Test(r)
 	assert.Equal(nil, err)
 }
 
@@ -226,7 +226,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		})
 
 		r := httptest.NewRequest("GET", "/user/123", nil)
-		router.Test(r, 100)
+		router.Test(r)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
