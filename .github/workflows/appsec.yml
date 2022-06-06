@@ -1,0 +1,99 @@
+name: AppSec Tests
+on:
+  workflow_dispatch: # manually
+  schedule: # nightly
+    - cron: "0 0 * * *"
+  pull_request: # on pull requests touching appsec files
+    paths:
+      - 'internal/appsec/**'
+      - 'appsec/**'
+      - 'contrib/**/appsec.go'
+env:
+  DD_APPSEC_WAF_TIMEOUT: 5s
+  GODEBUG: cgocheck=2
+  JUNIT_REPORT: gotestsum-report.xml
+  TO_TEST: ./appsec/... ./internal/appsec/... ./contrib/google.golang.org/grpc/... ./contrib/net/http/... ./contrib/gorilla/mux/... ./contrib/go-chi/... ./contrib/labstack/echo.v4/... ./contrib/gin-gonic/gin/...
+jobs:
+  native:
+    strategy:
+      matrix:
+        runs-on: [ macos-latest, ubuntu-latest, windows-latest ]
+        go-version: [ 1.18, 1.17, 1.16 ]
+        cgo_enabled: # test it compiles with and without cgo
+          - 0
+          - 1
+        build_tags: # test it compiles with and without the appsec build tag
+          - ""
+          - "appsec"
+        appsec_enabled: # test it compiles with and without appsec enabled
+          - true
+          - false
+      fail-fast: false
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Go modules cache
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-pkg-mod-
+
+      - name: go test
+        shell: bash
+        run: |
+          # Install gotestsum to get the results in a junit file 
+          env GOBIN=$PWD go install gotest.tools/gotestsum@latest
+          # Run the tests with gotestsum
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }}
+          ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST || true
+
+      - name: Upload the results to Datadog CI App
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ env.JUNIT_REPORT }}
+          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
+
+  # Same tests but on the official golang container for linux
+  golang-linux-container:
+    runs-on: ubuntu-latest
+    container:
+      image: golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+    strategy:
+      matrix:
+        go-version: [ 1.18, 1.17, 1.16 ]
+        distribution: [ bullseye, buster, alpine ]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v3
+      # Install gcc and the libc headers on alpine images
+      - if: ${{ matrix.distribution == 'alpine' }}
+        run: apk add gcc musl-dev libc6-compat git
+
+      - name: Go modules cache
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-pkg-mod-
+
+      - name: go test
+        run: |
+          # Install gotestsum to get the results in a junit file 
+          env GOBIN=$PWD go install gotest.tools/gotestsum@latest
+          # Run the tests with gotestsum
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }}
+          ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST || true
+
+      - name: Upload the results to Datadog CI App
+        if: matrix.distribution != 'alpine' # datadog-ci CLI doesn't work on alpine
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ env.JUNIT_REPORT }}
+          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
