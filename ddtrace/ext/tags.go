@@ -33,6 +33,9 @@ const (
 	// HTTPURL sets the HTTP URL for a span.
 	HTTPURL = "http.url"
 
+	// HTTPUserAgent is the user agent header value of the HTTP request.
+	HTTPUserAgent = "http.useragent"
+
 	// SpanName is a pseudo-key for setting a span's operation name by means of
 	// a tag. It is mostly here to facilitate vendor-agnostic frameworks like Opentracing
 	// and OpenCensus.

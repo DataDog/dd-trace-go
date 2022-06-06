@@ -35,7 +35,6 @@ func New(opts ...RouterOption) *Router {
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	log.Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
 	return &Router{httprouter.New(), cfg}
 }
