@@ -235,7 +235,7 @@ func newConfig(opts ...StartOption) *config {
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
-	c.propagateServiceName = internal.BoolEnv("DD_TRACE_X_DATADOG_TAGS_PROPAGATE_SERVICE", false)
+	c.propagateServiceName = internal.BoolEnv("DD_TRACE_X_DATADOG_TAGS_PROPAGATE_SERVICE", true)
 
 	for _, fn := range opts {
 		fn(c)
