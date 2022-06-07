@@ -96,7 +96,6 @@ func testConnect(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
-		//assert.Len(cfg.mockTracer.InjectedComments(), 0)
 	}
 }
 
@@ -117,7 +116,6 @@ func testPing(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
-		//assert.Len(cfg.mockTracer.InjectedComments(), 0)
 	}
 }
 
@@ -186,7 +184,7 @@ type tagExpectation struct {
 func assertInjectedComment(t *testing.T, querySpan mocktracer.Span, expectedTags map[string]tagExpectation) {
 	q, ok := querySpan.Tag(ext.ResourceName).(string)
 	require.True(t, ok, "tag %s should be a string but was %v", ext.ResourceName, q)
-	tags, err := extractTags(q)
+	tags, err := extractQueryTags(q)
 	require.NoError(t, err)
 	for k, e := range expectedTags {
 		if e.MustBeSet {
@@ -200,7 +198,7 @@ func assertInjectedComment(t *testing.T, querySpan mocktracer.Span, expectedTags
 	}
 }
 
-func extractTags(query string) (map[string]string, error) {
+func extractQueryTags(query string) (map[string]string, error) {
 	c, err := findSQLComment(query)
 	if err != nil {
 		return nil, err
@@ -239,8 +237,8 @@ func extractCommentTags(comment string) (keyValues map[string]string, err error)
 	if comment == "" {
 		return keyValues, nil
 	}
-	tagList := strings.Split(comment, ",")
-	for _, t := range tagList {
+	tags := strings.Split(comment, ",")
+	for _, t := range tags {
 		k, v, err := extractKeyValue(t)
 		if err != nil {
 			return nil, err
@@ -250,30 +248,30 @@ func extractCommentTags(comment string) (keyValues map[string]string, err error)
 	return keyValues, nil
 }
 
-func extractKeyValue(tag string) (key string, val string, err error) {
+func extractKeyValue(tag string) (k string, v string, err error) {
 	parts := strings.SplitN(tag, "=", 2)
 	if len(parts) != 2 {
 		return "", "", fmt.Errorf("tag format invalid, expected 'key=value' but got %s", tag)
 	}
-	key, err = extractKey(parts[0])
+	k, err = extractKey(parts[0])
 	if err != nil {
 		return "", "", err
 	}
-	val, err = extractValue(parts[1])
+	v, err = extractValue(parts[1])
 	if err != nil {
 		return "", "", err
 	}
-	return key, val, nil
+	return k, v, nil
 }
 
-func extractKey(keyVal string) (key string, err error) {
+func extractKey(keyVal string) (k string, err error) {
 	unescaped := unescapeMetaCharacters(keyVal)
-	decoded, err := url.PathUnescape(unescaped)
+	dec, err := url.PathUnescape(unescaped)
 	if err != nil {
 		return "", fmt.Errorf("failed to url unescape key: %w", err)
 	}
 
-	return decoded, nil
+	return dec, nil
 }
 
 func extractValue(rawValue string) (value string, err error) {

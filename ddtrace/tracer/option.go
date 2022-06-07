@@ -41,9 +41,6 @@ var (
 
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
 	defaultMaxTagsHeaderLen = 512
-
-	// defaultSQLCommentInjectionMode specifies the default sql comment injection mode.
-	defaultSQLCommentInjectionMode = CommentInjectionDisabled
 )
 
 // config holds the tracer configuration.
