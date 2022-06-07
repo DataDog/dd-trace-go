@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -50,6 +51,7 @@ func Prepare(tableName string) func() {
 	}
 	mssql.Exec(queryDrop)
 	mssql.Exec(queryCreate)
+	os.Setenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE", strconv.Itoa(int(tracer.FullSQLCommentInjection)))
 	svc := globalconfig.ServiceName()
 	globalconfig.SetServiceName("test-service")
 	return func() {

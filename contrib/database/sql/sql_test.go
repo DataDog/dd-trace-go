@@ -13,19 +13,16 @@ import (
 	"log"
 	"math"
 	"os"
-	"strconv"
 	"testing"
 	"time"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 // tableName holds the SQL table that these tests will be run against. It must be unique cross-repo.
@@ -37,8 +34,6 @@ func TestMain(m *testing.M) {
 		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
 		os.Exit(0)
 	}
-	os.Setenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE", strconv.Itoa(int(tracer.FullSQLCommentInjection)))
-	defer os.Unsetenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	defer sqltest.Prepare(tableName)()
 	os.Exit(m.Run())
 }
