@@ -9,7 +9,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"log"
 	"net/url"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -242,9 +242,8 @@ func extractCommentTags(comment string) (keyValues map[string]string, err error)
 		k, v, err := extractKeyValue(t)
 		if err != nil {
 			return nil, err
-		} else {
-			keyValues[k] = v
 		}
+		keyValues[k] = v
 	}
 	return keyValues, nil
 }
@@ -375,7 +374,6 @@ func testBeginRollback(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
-		//assert.Len(cfg.mockTracer.InjectedComments(), 0)
 	}
 }
 
@@ -400,7 +398,12 @@ func testExec(cfg *Config) func(*testing.T) {
 		parent.Finish() // flush children
 
 		spans := cfg.mockTracer.FinishedSpans()
-		//expectedComment := "/*dde='test-env',ddsid='test-span-id',ddsn='test-service',ddsp='0',ddsv='v-test',ddtid='test-trace-id'*/"
+		expectedCommentTags := map[string]tagExpectation{
+			"ddsn":  {MustBeSet: true, ExpectedValue: "test-service"},
+			"ddsp":  {MustBeSet: true, ExpectedValue: "0"},
+			"ddsid": {MustBeSet: true},
+			"ddtid": {MustBeSet: true},
+		}
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared exec so there are 2 extra spans for the exec:
 			//prepare, exec, and then a close
@@ -417,32 +420,36 @@ func testExec(cfg *Config) func(*testing.T) {
 			for k, v := range cfg.ExpectTags {
 				assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
-			// Since SQLServer runs execute statements by doing a prepare, the expected comment
+			// Since SQLServer runs execute statements by doing a prepare first, the expected comment
 			// excludes dynamic tags which can only be injected on non-prepared statements
-			//expectedComment = "/*dde='test-env',ddsn='test-service',ddsv='v-test'*/"
+			expectedCommentTags = map[string]tagExpectation{
+				"ddsn":  {MustBeSet: true, ExpectedValue: "test-service"},
+				"ddsp":  {MustBeSet: false},
+				"ddsid": {MustBeSet: false},
+				"ddtid": {MustBeSet: false},
+			}
 		} else {
 			assert.Len(spans, 5)
 		}
 
 		var span mocktracer.Span
 		for _, s := range spans {
-			if s.OperationName() == cfg.ExpectName && s.Tag(ext.ResourceName) == query {
+			rn, _ := s.Tag(ext.ResourceName).(string)
+			if s.OperationName() == cfg.ExpectName && strings.HasSuffix(rn, query) {
 				span = s
 			}
 		}
-		assert.NotNil(span, "span not found")
+		require.NotNil(t, span, "span not found")
 		cfg.ExpectTags["sql.query_type"] = "Exec"
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
+		assertInjectedComment(t, span, expectedCommentTags)
 		for _, s := range spans {
 			if s.OperationName() == cfg.ExpectName && s.Tag(ext.ResourceName) == "Commit" {
 				span = s
 			}
 		}
-		//comments := cfg.mockTracer.InjectedComments()
-		//require.Len(t, comments, 1)
-		//assert.Equal(expectedComment, comments[0])
 
 		assert.NotNil(span, "span not found")
 		cfg.ExpectTags["sql.query_type"] = "Commit"

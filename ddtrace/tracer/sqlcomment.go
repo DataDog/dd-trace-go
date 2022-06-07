@@ -7,13 +7,14 @@ package tracer
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 // SQLCommentInjectionMode represents the mode of sql comment injection.
@@ -38,21 +39,26 @@ const (
 	ServiceEnvironmentSQLCommentKey = "dde"
 )
 
+// SQLCommentCarrier is a carrier implementation that injects a span context in a SQL query in the form
+// of a sqlcommenter formatted comment prepended to the original query text.
+// See https://google.github.io/sqlcommenter/spec/ for more details.
 type SQLCommentCarrier struct {
 	Query  string
 	Mode   SQLCommentInjectionMode
 	SpanID uint64
 }
 
-func NewSQLCommentCarrier(query string, mode SQLCommentInjectionMode) (s *SQLCommentCarrier) {
-	s = new(SQLCommentCarrier)
-	s.Mode = mode
-	s.Query = query
-	return s
+// NewSQLCommentCarrier returns a new instance of a SQLCommentCarrier
+func NewSQLCommentCarrier(query string, mode SQLCommentInjectionMode) (c *SQLCommentCarrier) {
+	c = new(SQLCommentCarrier)
+	c.Mode = mode
+	c.Query = query
+	c.SpanID = random.Uint64()
+	return c
 }
 
+// Inject injects a span context in the carrier's query.
 func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
-	c.SpanID = random.Uint64()
 	if c.Mode == CommentInjectionDisabled {
 		return nil
 	}

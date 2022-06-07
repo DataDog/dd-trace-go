@@ -83,7 +83,7 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
 		cquery, spanID := tc.injectComments(ctx, query, false)
 		r, err := execContext.ExecContext(ctx, cquery, args)
-		tc.tryTrace(ctx, queryTypeExec, query, start, err, tracer.WithSpanID(spanID))
+		tc.tryTrace(ctx, queryTypeExec, cquery, start, err, tracer.WithSpanID(spanID))
 		return r, err
 	}
 	if execer, ok := tc.Conn.(driver.Execer); ok {
@@ -98,7 +98,7 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 		}
 		cquery, spanID := tc.injectComments(ctx, query, false)
 		r, err = execer.Exec(cquery, dargs)
-		tc.tryTrace(ctx, queryTypeExec, query, start, err, tracer.WithSpanID(spanID))
+		tc.tryTrace(ctx, queryTypeExec, cquery, start, err, tracer.WithSpanID(spanID))
 		return r, err
 	}
 	return nil, driver.ErrSkip

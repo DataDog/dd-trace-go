@@ -6,9 +6,9 @@
 package sql
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"math"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
