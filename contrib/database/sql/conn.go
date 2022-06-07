@@ -67,7 +67,7 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 			return nil, err
 		}
 
-		return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
+		return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: cquery}, nil
 	}
 	stmt, err = tc.Prepare(cquery)
 	tc.tryTrace(ctx, queryTypePrepare, cquery, start, err, tracer.WithSpanID(spanID))
@@ -75,7 +75,7 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 		return nil, err
 	}
 
-	return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
+	return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: cquery}, nil
 }
 
 func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {

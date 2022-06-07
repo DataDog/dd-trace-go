@@ -10,7 +10,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"net/url"
 	"sort"
 	"strconv"
@@ -163,137 +162,7 @@ func escapeMetaChars(value string) (escaped string) {
 	return strings.ReplaceAll(value, "'", "\\'")
 }
 
-// Extract parses the first sql comment found in the query text and returns the span context with values
-// extracted from tags extracted for the sql comment.
+// Extract is not implemented on SQLCommentCarrier
 func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
-	cmt, err := findSQLComment(c.Query)
-	if err != nil {
-		return nil, err
-	}
-	if cmt == "" {
-		return nil, nil
-	}
-	tags, err := extractCommentTags(cmt)
-	if err != nil {
-		return nil, fmt.Errorf("unable to extract tags from comment [%s]: %w", cmt, err)
-	}
-	var spid uint64
-	if v := tags[SpanIDSQLCommentKey]; v != "" {
-		spid, err = strconv.ParseUint(v, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("unable to parse span id [%s]: %w", v, err)
-		}
-	}
-	var tid uint64
-	if v := tags[TraceIDSQLCommentKey]; v != "" {
-		tid, err = strconv.ParseUint(v, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("unable to parse trace id [%s]: %w", v, err)
-		}
-	}
-	svc := tags[ServiceNameSQLCommentKey]
-	ctx := newSpanContext(&span{
-		Service: svc,
-		Meta: map[string]string{
-			ext.Version:     tags[ServiceVersionSQLCommentKey],
-			ext.Environment: tags[ServiceEnvironmentSQLCommentKey],
-		},
-		SpanID:  spid,
-		TraceID: tid,
-	}, nil)
-	if v := tags[SamplingPrioritySQLCommentKey]; v != "" {
-		p, err := strconv.Atoi(v)
-		if err != nil {
-			return nil, err
-		}
-		ctx.trace = newTrace()
-		ctx.trace.setSamplingPriority(svc, p, samplernames.Default, 1)
-	}
-	return ctx, nil
-}
-
-func findSQLComment(query string) (comment string, err error) {
-	start := strings.Index(query, "/*")
-	if start == -1 {
-		return "", nil
-	}
-	end := strings.Index(query[start:], "*/")
-	if end == -1 {
-		return "", nil
-	}
-	c := query[start : end+2]
-	spacesTrimmed := strings.TrimSpace(c)
-	if !strings.HasPrefix(spacesTrimmed, "/*") {
-		return "", fmt.Errorf("comments not in the sqlcommenter format, expected to start with '/*'")
-	}
-	if !strings.HasSuffix(spacesTrimmed, "*/") {
-		return "", fmt.Errorf("comments not in the sqlcommenter format, expected to end with '*/'")
-	}
-	c = strings.TrimLeft(c, "/*")
-	c = strings.TrimRight(c, "*/")
-	return strings.TrimSpace(c), nil
-}
-
-func extractCommentTags(comment string) (keyValues map[string]string, err error) {
-	keyValues = make(map[string]string)
-	if err != nil {
-		return nil, err
-	}
-	if comment == "" {
-		return keyValues, nil
-	}
-	tagList := strings.Split(comment, ",")
-	for _, t := range tagList {
-		k, v, err := extractKeyValue(t)
-		if err != nil {
-			return nil, err
-		} else {
-			keyValues[k] = v
-		}
-	}
-	return keyValues, nil
-}
-
-func extractKeyValue(tag string) (key string, val string, err error) {
-	parts := strings.SplitN(tag, "=", 2)
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("tag format invalid, expected 'key=value' but got %s", tag)
-	}
-	key, err = extractKey(parts[0])
-	if err != nil {
-		return "", "", err
-	}
-	val, err = extractValue(parts[1])
-	if err != nil {
-		return "", "", err
-	}
-	return key, val, nil
-}
-
-func extractKey(keyVal string) (key string, err error) {
-	unescaped := unescapeMetaCharacters(keyVal)
-	decoded, err := url.PathUnescape(unescaped)
-	if err != nil {
-		return "", fmt.Errorf("failed to url unescape key: %w", err)
-	}
-
-	return decoded, nil
-}
-
-func extractValue(rawValue string) (value string, err error) {
-	trimmedLeft := strings.TrimLeft(rawValue, "'")
-	trimmed := strings.TrimRight(trimmedLeft, "'")
-
-	unescaped := unescapeMetaCharacters(trimmed)
-	decoded, err := url.PathUnescape(unescaped)
-
-	if err != nil {
-		return "", fmt.Errorf("failed to url unescape value: %w", err)
-	}
-
-	return decoded, nil
-}
-
-func unescapeMetaCharacters(val string) (unescaped string) {
-	return strings.ReplaceAll(val, "\\'", "'")
+	return nil, nil
 }

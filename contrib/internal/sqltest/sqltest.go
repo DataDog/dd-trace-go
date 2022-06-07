@@ -9,7 +9,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"log"
+	"net/url"
+	"os"
 	"strings"
 	"testing"
 
@@ -47,10 +50,14 @@ func Prepare(tableName string) func() {
 	}
 	mssql.Exec(queryDrop)
 	mssql.Exec(queryCreate)
+	svc := globalconfig.ServiceName()
+	globalconfig.SetServiceName("test-service")
 	return func() {
 		mysql.Exec(queryDrop)
 		postgres.Exec(queryDrop)
 		mssql.Exec(queryDrop)
+		globalconfig.SetServiceName(svc)
+		defer os.Unsetenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
 }
 
@@ -129,7 +136,12 @@ func testQuery(cfg *Config) func(*testing.T) {
 
 		spans := cfg.mockTracer.FinishedSpans()
 		var querySpan mocktracer.Span
-		expectedComment := "/*dde='test-env',ddsid='test-span-id',ddsn='test-service',ddsp='0',ddsv='v-test',ddtid='test-trace-id'*/"
+		expectedCommentTags := map[string]tagExpectation{
+			"ddsn":  {MustBeSet: true, ExpectedValue: "test-service"},
+			"ddsp":  {MustBeSet: true, ExpectedValue: "0"},
+			"ddsid": {MustBeSet: true},
+			"ddtid": {MustBeSet: true},
+		}
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared queries so there are 3 spans
 			//connect, prepare, and query
@@ -143,7 +155,12 @@ func testQuery(cfg *Config) func(*testing.T) {
 			querySpan = spans[2]
 			// Since SQLServer runs execute statements by doing a prepare first, the expected comment
 			// excludes dynamic tags which can only be injected on non-prepared statements
-			expectedComment = "/*dde='test-env',ddsn='test-service',ddsv='v-test'*/"
+			expectedCommentTags = map[string]tagExpectation{
+				"ddsn":  {MustBeSet: true, ExpectedValue: "test-service"},
+				"ddsp":  {MustBeSet: false},
+				"ddsid": {MustBeSet: false},
+				"ddtid": {MustBeSet: false},
+			}
 		} else {
 			assert.Len(spans, 2)
 			querySpan = spans[1]
@@ -155,16 +172,39 @@ func testQuery(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, querySpan.Tag(k), "Value mismatch on tag %s", k)
 		}
-		assertInjectedComment(t, querySpan, expectedComment)
+		assertInjectedComment(t, querySpan, expectedCommentTags)
 	}
 }
 
-func assertInjectedComment(t *testing.T, querySpan mocktracer.Span, expected string) {
+type tagExpectation struct {
+	MustBeSet     bool
+	ExpectedValue string
+}
+
+func assertInjectedComment(t *testing.T, querySpan mocktracer.Span, expectedTags map[string]tagExpectation) {
 	q, ok := querySpan.Tag(ext.ResourceName).(string)
 	require.True(t, ok, "tag %s should be a string but was %v", ext.ResourceName, q)
-	c, err := findSQLComment(q)
+	tags, err := extractTags(q)
 	require.NoError(t, err)
-	assert.Equal(t, expected, c)
+	for k, e := range expectedTags {
+		if e.MustBeSet {
+			assert.NotZerof(t, tags[k], "Value must be set on tag %s", k)
+		} else {
+			assert.Zero(t, tags[k], "Value should not be set on tag %s", k)
+		}
+		if e.ExpectedValue != "" {
+			assert.Equal(t, e.ExpectedValue, tags[k], "Value mismatch on tag %s", k)
+		}
+	}
+}
+
+func extractTags(query string) (map[string]string, error) {
+	c, err := findSQLComment(query)
+	if err != nil {
+		return nil, err
+	}
+
+	return extractCommentTags(c)
 }
 
 func findSQLComment(query string) (comment string, err error) {
@@ -184,7 +224,73 @@ func findSQLComment(query string) (comment string, err error) {
 	if !strings.HasSuffix(spacesTrimmed, "*/") {
 		return "", fmt.Errorf("comments not in the sqlcommenter format, expected to end with '*/'")
 	}
-	return c, nil
+	c = strings.TrimLeft(c, "/*")
+	c = strings.TrimRight(c, "*/")
+	return strings.TrimSpace(c), nil
+}
+
+func extractCommentTags(comment string) (keyValues map[string]string, err error) {
+	keyValues = make(map[string]string)
+	if err != nil {
+		return nil, err
+	}
+	if comment == "" {
+		return keyValues, nil
+	}
+	tagList := strings.Split(comment, ",")
+	for _, t := range tagList {
+		k, v, err := extractKeyValue(t)
+		if err != nil {
+			return nil, err
+		} else {
+			keyValues[k] = v
+		}
+	}
+	return keyValues, nil
+}
+
+func extractKeyValue(tag string) (key string, val string, err error) {
+	parts := strings.SplitN(tag, "=", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("tag format invalid, expected 'key=value' but got %s", tag)
+	}
+	key, err = extractKey(parts[0])
+	if err != nil {
+		return "", "", err
+	}
+	val, err = extractValue(parts[1])
+	if err != nil {
+		return "", "", err
+	}
+	return key, val, nil
+}
+
+func extractKey(keyVal string) (key string, err error) {
+	unescaped := unescapeMetaCharacters(keyVal)
+	decoded, err := url.PathUnescape(unescaped)
+	if err != nil {
+		return "", fmt.Errorf("failed to url unescape key: %w", err)
+	}
+
+	return decoded, nil
+}
+
+func extractValue(rawValue string) (value string, err error) {
+	trimmedLeft := strings.TrimLeft(rawValue, "'")
+	trimmed := strings.TrimRight(trimmedLeft, "'")
+
+	unescaped := unescapeMetaCharacters(trimmed)
+	decoded, err := url.PathUnescape(unescaped)
+
+	if err != nil {
+		return "", fmt.Errorf("failed to url unescape value: %w", err)
+	}
+
+	return decoded, nil
+}
+
+func unescapeMetaCharacters(val string) (unescaped string) {
+	return strings.ReplaceAll(val, "\\'", "'")
 }
 
 func testStatement(cfg *Config) func(*testing.T) {
@@ -214,11 +320,13 @@ func testStatement(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
-		assertInjectedComments(t, span)
 
-		//comments := cfg.mockTracer.InjectedComments()
-		//require.Len(t, comments, 1)
-		//assert.Equal("/*dde='test-env',ddsn='test-service',ddsv='v-test'*/", comments[0])
+		assertInjectedComment(t, span, map[string]tagExpectation{
+			"ddsn":  {MustBeSet: true, ExpectedValue: "test-service"},
+			"ddsp":  {MustBeSet: false},
+			"ddsid": {MustBeSet: false},
+			"ddtid": {MustBeSet: false},
+		})
 
 		cfg.mockTracer.Reset()
 		_, err2 := stmt.Exec("New York")
