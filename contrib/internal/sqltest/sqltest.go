@@ -10,8 +10,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -136,12 +136,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 
 		spans := cfg.mockTracer.FinishedSpans()
 		var querySpan mocktracer.Span
-		expectedCommentTags := map[string]tagExpectation{
-			"ddsn":  {MustBeSet: true, ExpectedValue: "test-service"},
-			"ddsp":  {MustBeSet: true, ExpectedValue: "0"},
-			"ddsid": {MustBeSet: true},
-			"ddtid": {MustBeSet: true},
-		}
+		expectedComment := regexp.MustCompile("/\\*ddsid='[0-9]+',ddsn='test-service',ddsp='0',ddtid='[0-9]+'\\*/")
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared queries so there are 3 spans
 			//connect, prepare, and query
@@ -155,12 +150,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 			querySpan = spans[2]
 			// Since SQLServer runs execute statements by doing a prepare first, the expected comment
 			// excludes dynamic tags which can only be injected on non-prepared statements
-			expectedCommentTags = map[string]tagExpectation{
-				"ddsn":  {MustBeSet: true, ExpectedValue: "test-service"},
-				"ddsp":  {MustBeSet: false},
-				"ddsid": {MustBeSet: false},
-				"ddtid": {MustBeSet: false},
-			}
+			expectedComment = regexp.MustCompile("/\\*ddsn='test-service'\\*/")
 		} else {
 			assert.Len(spans, 2)
 			querySpan = spans[1]
@@ -172,7 +162,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, querySpan.Tag(k), "Value mismatch on tag %s", k)
 		}
-		assertInjectedComment(t, querySpan, expectedCommentTags)
+		assertInjectedComment(t, querySpan, expectedComment)
 	}
 }
 
@@ -181,30 +171,12 @@ type tagExpectation struct {
 	ExpectedValue string
 }
 
-func assertInjectedComment(t *testing.T, querySpan mocktracer.Span, expectedTags map[string]tagExpectation) {
+func assertInjectedComment(t *testing.T, querySpan mocktracer.Span, expectedComment *regexp.Regexp) {
 	q, ok := querySpan.Tag(ext.ResourceName).(string)
 	require.True(t, ok, "tag %s should be a string but was %v", ext.ResourceName, q)
-	tags, err := extractQueryTags(q)
+	c, err := findSQLComment(q)
 	require.NoError(t, err)
-	for k, e := range expectedTags {
-		if e.MustBeSet {
-			assert.NotZerof(t, tags[k], "Value must be set on tag %s", k)
-		} else {
-			assert.Zero(t, tags[k], "Value should not be set on tag %s", k)
-		}
-		if e.ExpectedValue != "" {
-			assert.Equal(t, e.ExpectedValue, tags[k], "Value mismatch on tag %s", k)
-		}
-	}
-}
-
-func extractQueryTags(query string) (map[string]string, error) {
-	c, err := findSQLComment(query)
-	if err != nil {
-		return nil, err
-	}
-
-	return extractCommentTags(c)
+	assert.Regexp(t, expectedComment, c)
 }
 
 func findSQLComment(query string) (comment string, err error) {
@@ -224,72 +196,7 @@ func findSQLComment(query string) (comment string, err error) {
 	if !strings.HasSuffix(spacesTrimmed, "*/") {
 		return "", fmt.Errorf("comments not in the sqlcommenter format, expected to end with '*/'")
 	}
-	c = strings.TrimLeft(c, "/*")
-	c = strings.TrimRight(c, "*/")
-	return strings.TrimSpace(c), nil
-}
-
-func extractCommentTags(comment string) (keyValues map[string]string, err error) {
-	keyValues = make(map[string]string)
-	if err != nil {
-		return nil, err
-	}
-	if comment == "" {
-		return keyValues, nil
-	}
-	tags := strings.Split(comment, ",")
-	for _, t := range tags {
-		k, v, err := extractKeyValue(t)
-		if err != nil {
-			return nil, err
-		}
-		keyValues[k] = v
-	}
-	return keyValues, nil
-}
-
-func extractKeyValue(tag string) (k string, v string, err error) {
-	parts := strings.SplitN(tag, "=", 2)
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("tag format invalid, expected 'key=value' but got %s", tag)
-	}
-	k, err = extractKey(parts[0])
-	if err != nil {
-		return "", "", err
-	}
-	v, err = extractValue(parts[1])
-	if err != nil {
-		return "", "", err
-	}
-	return k, v, nil
-}
-
-func extractKey(keyVal string) (k string, err error) {
-	unescaped := unescapeMetaCharacters(keyVal)
-	dec, err := url.PathUnescape(unescaped)
-	if err != nil {
-		return "", fmt.Errorf("failed to url unescape key: %w", err)
-	}
-
-	return dec, nil
-}
-
-func extractValue(rawValue string) (value string, err error) {
-	trimmedLeft := strings.TrimLeft(rawValue, "'")
-	trimmed := strings.TrimRight(trimmedLeft, "'")
-
-	unescaped := unescapeMetaCharacters(trimmed)
-	decoded, err := url.PathUnescape(unescaped)
-
-	if err != nil {
-		return "", fmt.Errorf("failed to url unescape value: %w", err)
-	}
-
-	return decoded, nil
-}
-
-func unescapeMetaCharacters(val string) (unescaped string) {
-	return strings.ReplaceAll(val, "\\'", "'")
+	return c, nil
 }
 
 func testStatement(cfg *Config) func(*testing.T) {
@@ -319,13 +226,7 @@ func testStatement(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
-
-		assertInjectedComment(t, span, map[string]tagExpectation{
-			"ddsn":  {MustBeSet: true, ExpectedValue: "test-service"},
-			"ddsp":  {MustBeSet: false},
-			"ddsid": {MustBeSet: false},
-			"ddtid": {MustBeSet: false},
-		})
+		assertInjectedComment(t, span, regexp.MustCompile("/\\*ddsn='test-service'\\*/"))
 
 		cfg.mockTracer.Reset()
 		_, err2 := stmt.Exec("New York")
@@ -398,12 +299,7 @@ func testExec(cfg *Config) func(*testing.T) {
 		parent.Finish() // flush children
 
 		spans := cfg.mockTracer.FinishedSpans()
-		expectedCommentTags := map[string]tagExpectation{
-			"ddsn":  {MustBeSet: true, ExpectedValue: "test-service"},
-			"ddsp":  {MustBeSet: true, ExpectedValue: "0"},
-			"ddsid": {MustBeSet: true},
-			"ddtid": {MustBeSet: true},
-		}
+		expectedComment := regexp.MustCompile("/\\*ddsid='[0-9]+',ddsn='test-service',ddsp='0',ddtid='[0-9]+'\\*/")
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared exec so there are 2 extra spans for the exec:
 			//prepare, exec, and then a close
@@ -422,12 +318,7 @@ func testExec(cfg *Config) func(*testing.T) {
 			}
 			// Since SQLServer runs execute statements by doing a prepare first, the expected comment
 			// excludes dynamic tags which can only be injected on non-prepared statements
-			expectedCommentTags = map[string]tagExpectation{
-				"ddsn":  {MustBeSet: true, ExpectedValue: "test-service"},
-				"ddsp":  {MustBeSet: false},
-				"ddsid": {MustBeSet: false},
-				"ddtid": {MustBeSet: false},
-			}
+			expectedComment = regexp.MustCompile("/\\*ddsn='test-service'\\*/")
 		} else {
 			assert.Len(spans, 5)
 		}
@@ -444,7 +335,7 @@ func testExec(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
-		assertInjectedComment(t, span, expectedCommentTags)
+		assertInjectedComment(t, span, expectedComment)
 		for _, s := range spans {
 			if s.OperationName() == cfg.ExpectName && s.Tag(ext.ResourceName) == "Commit" {
 				span = s
