@@ -32,10 +32,11 @@ func TestStartRequestSpan(t *testing.T) {
 }
 
 type IPTestCase struct {
-	name       string
-	remoteAddr string
-	headers    map[string]string
-	expectedIP netaddr.IP
+	name         string
+	remoteAddr   string
+	headers      map[string]string
+	expectedIP   netaddr.IP
+	userIPHeader string
 }
 
 func genIPTestCases() []IPTestCase {
@@ -146,6 +147,18 @@ func genIPTestCases() []IPTestCase {
 			expectedIP: netaddr.MustParseIP(ipv4Global),
 			headers:    map[string]string{"X-fOrWaRdEd-FoR": ipv4Global},
 		},
+		{
+			name:         "user-header",
+			expectedIP:   netaddr.MustParseIP(ipv4Global),
+			headers:      map[string]string{"x-forwarded-for": ipv6Global, "custom-header": ipv4Global},
+			userIPHeader: "custom-header",
+		},
+		{
+			name:         "user-header-not-found",
+			expectedIP:   netaddr.IP{},
+			headers:      map[string]string{"x-forwarded-for": ipv4Global},
+			userIPHeader: "custom-header",
+		},
 	}, tcs...)
 
 	return tcs
@@ -158,7 +171,7 @@ func TestIPHeaders(t *testing.T) {
 			for k, v := range tc.headers {
 				header.Add(k, v)
 			}
-			require.Equal(t, tc.expectedIP.String(), getClientIP(tc.remoteAddr, header).String())
+			require.Equal(t, tc.expectedIP.String(), getClientIP(tc.remoteAddr, header, tc.userIPHeader).String())
 		})
 	}
 
