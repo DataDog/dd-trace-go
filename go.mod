@@ -105,6 +105,7 @@ require (
 	gorm.io/driver/postgres v1.0.0
 	gorm.io/driver/sqlserver v1.0.4
 	gorm.io/gorm v1.20.6
+	inet.af/netaddr v0.0.0-20211027220019-c74959edd3b6
 	k8s.io/apimachinery v0.17.0
 	k8s.io/client-go v0.17.0
 )
