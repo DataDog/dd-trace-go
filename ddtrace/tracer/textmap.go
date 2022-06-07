@@ -119,16 +119,12 @@ type PropagatorConfig struct {
 	// B3 specifies if B3 headers should be added for trace propagation.
 	// See https://github.com/openzipkin/b3-propagation
 	B3 bool
-
-	// SQLCommentInjectionMode specifies the sql comment injection mode that will be used
-	// to inject tags. It defaults to CommentInjectionDisabled.
-	SQLCommentInjectionMode SQLCommentInjectionMode
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
 // and extract values. It propagates trace and span IDs and baggage.
 // To use the defaults, nil may be provided in place of the config.
-func NewPropagator(cfg *PropagatorConfig) Propagator {
+func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator {
 	if cfg == nil {
 		cfg = new(PropagatorConfig)
 	}
@@ -143,6 +139,12 @@ func NewPropagator(cfg *PropagatorConfig) Propagator {
 	}
 	if cfg.PriorityHeader == "" {
 		cfg.PriorityHeader = DefaultPriorityHeader
+	}
+	if len(propagators) > 0 {
+		return &chainedPropagator{
+			injectors:  propagators,
+			extractors: propagators,
+		}
 	}
 	return &chainedPropagator{
 		injectors:  getPropagators(cfg, headerPropagationStyleInject),
@@ -169,18 +171,12 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 	}
-	if cfg.SQLCommentInjectionMode != CommentInjectionDisabled {
-		defaultPs = append(defaultPs, NewSQLCommentPropagator(cfg.SQLCommentInjectionMode))
-	}
 	if ps == "" {
 		return defaultPs
 	}
 	var list []Propagator
 	if cfg.B3 {
 		list = append(list, &propagatorB3{})
-	}
-	if cfg.SQLCommentInjectionMode != CommentInjectionDisabled {
-		list = append(list, NewSQLCommentPropagator(cfg.SQLCommentInjectionMode))
 	}
 	for _, v := range strings.Split(ps, ",") {
 		switch strings.ToLower(v) {
@@ -206,6 +202,9 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 // out of the current process. The implementation propagates the
 // TraceID and the current active SpanID, as well as the Span baggage.
 func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
+	if c, ok := carrier.(*SQLCommentCarrier); ok {
+		return c.Inject(spanCtx)
+	}
 	for _, v := range p.injectors {
 		err := v.Inject(spanCtx, carrier)
 		if err != nil {
@@ -240,9 +239,6 @@ type propagator struct {
 
 func (p *propagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	// QueryCommentCarrier carriers are only supported by the SQLCommentPropagator
-	case QueryCommentCarrier:
-		return nil
 	case TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
 	default:
@@ -341,9 +337,6 @@ type propagatorB3 struct{}
 
 func (p *propagatorB3) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	// QueryCommentCarrier carriers are only supported by the SQLCommentPropagator
-	case QueryCommentCarrier:
-		return nil
 	case TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
 	default:

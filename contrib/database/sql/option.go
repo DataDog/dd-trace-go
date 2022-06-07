@@ -6,16 +6,18 @@
 package sql
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 type config struct {
-	serviceName    string
-	analyticsRate  float64
-	dsn            string
-	childSpansOnly bool
+	serviceName          string
+	analyticsRate        float64
+	dsn                  string
+	childSpansOnly       bool
+	commentInjectionMode tracer.SQLCommentInjectionMode
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -34,6 +36,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
+	cfg.commentInjectionMode = tracer.SQLCommentInjectionMode(internal.IntEnv("DD_TRACE_SQL_COMMENT_INJECTION_MODE", int(tracer.CommentInjectionDisabled)))
 }
 
 // WithServiceName sets the given service name when registering a driver,
@@ -81,5 +84,14 @@ func WithDSN(name string) Option {
 func WithChildSpansOnly() Option {
 	return func(cfg *config) {
 		cfg.childSpansOnly = true
+	}
+}
+
+// WithCommentInjection enables injection of tags as sql comments on traced queries.
+// This includes dynamic values like span id, trace id and sampling priority which can make queries
+// unique for some cache implementations. Use WithStaticTagsCommentInjection if this is a concern.
+func WithCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
+	return func(cfg *config) {
+		cfg.commentInjectionMode = mode
 	}
 }

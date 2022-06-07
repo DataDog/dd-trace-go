@@ -7,14 +7,14 @@ package tracer
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 // SQLCommentInjectionMode represents the mode of sql comment injection.
@@ -23,9 +23,9 @@ type SQLCommentInjectionMode int
 const (
 	// CommentInjectionDisabled represents the comment injection mode where all injection is disabled.
 	CommentInjectionDisabled SQLCommentInjectionMode = 0
-	// StaticTagsSQLCommentInjection represents the comment injection mode where only static tags are injected. Static tags include values that are set once during the lifetime of an application: service name, env, version.
-	StaticTagsSQLCommentInjection SQLCommentInjectionMode = 1
-	// FullSQLCommentInjection represents the comment injection mode where both static and dynamic tags are injected. Dynamic tags include values like span id, trace id and sampling priority.
+	// ServiceTagsInjection represents the comment injection mode where only service tags (name, env, version) are injected.
+	ServiceTagsInjection SQLCommentInjectionMode = 1
+	// FullSQLCommentInjection represents the comment injection mode where both service tags and tracing tags. Tracing tags include span id, trace id and sampling priority.
 	FullSQLCommentInjection SQLCommentInjectionMode = 2
 )
 
@@ -39,69 +39,27 @@ const (
 	ServiceEnvironmentSQLCommentKey = "dde"
 )
 
-// QueryCommentCarrier is a more specific interface implemented by carriers that implement the TextMapWriter
-// as well as CommentQuery, AddSpanID and SetDynamicTag methods. It is compatible with Datadog's SQLCommentPropagator.
-// Note that Datadog's TextMapPropagator is compatible with QueryCommentCarriers but only in the fact that it
-// ignores it without returning errors.
-type QueryCommentCarrier interface {
-	TextMapWriter
-
-	// SetDynamicTag sets the given dynamic key/value pair. This method is a variation on TextMapWriter's Set method
-	// that exists for dynamic tag values.
-	SetDynamicTag(key, val string)
-
-	// CommentQuery returns the given query with any injected tags prepended in the form of a sqlcommenter-formatted
-	// SQL comment. It also returns a non-zero span ID if a new span ID was generated as part of the inject operation.
-	// See https://google.github.io/sqlcommenter/spec for the full sqlcommenter spec.
-	CommentQuery(query string) (commented string, spanID uint64)
-
-	// AddSpanID adds a new span ID to the carrier. This happens if no existing trace is found when the
-	// injection happens.
-	AddSpanID(spanID uint64)
+type SQLCommentCarrier struct {
+	Query  string
+	Mode   SQLCommentInjectionMode
+	SpanID uint64
 }
 
-// SQLCommentPropagator implements the Propagator interface to inject tags
-// in sql comments. It is only compatible with QueryCommentCarrier implementations
-// but allows other carriers to flow through without returning errors.
-type SQLCommentPropagator struct {
-	mode SQLCommentInjectionMode
+func NewSQLCommentCarrier(query string, mode SQLCommentInjectionMode) (s *SQLCommentCarrier) {
+	s = new(SQLCommentCarrier)
+	s.Mode = mode
+	s.Query = query
+	return s
 }
 
-// SQLCommentWithDynamicTagsDiscarded enables control discarding dynamic tags on a SQLCommentCarrier.
-// Its main purpose is to allow discarding dynamic tags per SQL operation when they aren't relevant
-// (i.e. Prepared statements).
-func SQLCommentWithDynamicTagsDiscarded(discard bool) SQLCommentCarrierOption {
-	return func(c *SQLCommentCarrierConfig) {
-		c.discardDynamicTags = discard
-	}
-}
-
-// NewSQLCommentPropagator returns a new SQLCommentPropagator with the given injection mode
-func NewSQLCommentPropagator(mode SQLCommentInjectionMode) *SQLCommentPropagator {
-	return &SQLCommentPropagator{mode: mode}
-}
-
-// Inject injects the span context in the given carrier. Note that it is only compatible
-// with QueryCommentCarriers and no-ops if the carrier is of any other type.
-func (p *SQLCommentPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
-	switch c := carrier.(type) {
-	case QueryCommentCarrier:
-		return p.injectWithCommentCarrier(spanCtx, c)
-	default:
-		// SQLCommentPropagator only handles QueryCommentCarrier carriers but lets any other carrier
-		// flow through without returning errors
+func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
+	c.SpanID = random.Uint64()
+	if c.Mode == CommentInjectionDisabled {
 		return nil
 	}
-}
 
-func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanContext, carrier QueryCommentCarrier) error {
-	if p.mode == CommentInjectionDisabled {
-		return nil
-	}
-	spanID := random.Uint64()
-	carrier.AddSpanID(spanID)
-
-	if p.mode == StaticTagsSQLCommentInjection || p.mode == FullSQLCommentInjection {
+	tags := make(map[string]string)
+	if c.Mode == ServiceTagsInjection || c.Mode == FullSQLCommentInjection {
 		ctx, ok := spanCtx.(*spanContext)
 		var env, version string
 		if ok {
@@ -113,16 +71,16 @@ func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanCont
 			}
 		}
 		if globalconfig.ServiceName() != "" {
-			carrier.Set(ServiceNameSQLCommentKey, globalconfig.ServiceName())
+			tags[ServiceNameSQLCommentKey] = globalconfig.ServiceName()
 		}
 		if env != "" {
-			carrier.Set(ServiceEnvironmentSQLCommentKey, env)
+			tags[ServiceEnvironmentSQLCommentKey] = env
 		}
 		if version != "" {
-			carrier.Set(ServiceVersionSQLCommentKey, version)
+			tags[ServiceVersionSQLCommentKey] = version
 		}
 	}
-	if p.mode == FullSQLCommentInjection {
+	if c.Mode == FullSQLCommentInjection {
 		samplingPriority := 0
 
 		var traceID uint64
@@ -136,98 +94,32 @@ func (p *SQLCommentPropagator) injectWithCommentCarrier(spanCtx ddtrace.SpanCont
 			}
 		}
 		if traceID == 0 {
-			traceID = spanID
+			traceID = c.SpanID
 		}
-		carrier.SetDynamicTag(TraceIDSQLCommentKey, strconv.FormatUint(traceID, 10))
-		carrier.SetDynamicTag(SpanIDSQLCommentKey, strconv.FormatUint(spanID, 10))
-		carrier.SetDynamicTag(SamplingPrioritySQLCommentKey, strconv.Itoa(samplingPriority))
+		tags[TraceIDSQLCommentKey] = strconv.FormatUint(traceID, 10)
+		tags[SpanIDSQLCommentKey] = strconv.FormatUint(c.SpanID, 10)
+		tags[SamplingPrioritySQLCommentKey] = strconv.Itoa(samplingPriority)
 	}
+
+	c.Query = commentQuery(c.Query, tags)
 	return nil
 }
 
-// Extract is a no-op for the SQLCommentPropagator.
-func (p *SQLCommentPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	return nil, nil
-}
-
-// SQLCommentCarrierConfig holds configuration for a SQLCommentCarrier.
-type SQLCommentCarrierConfig struct {
-	discardDynamicTags bool
-}
-
-// SQLCommentCarrierOption represents a function that can be provided as a parameter to NewSQLCommentCarrier.
-type SQLCommentCarrierOption func(c *SQLCommentCarrierConfig)
-
-// SQLCommentCarrier implements QueryCommentCarrier by holding tags, configuration
-// and a potential new span id to generate a SQL comment injected in queries.
-type SQLCommentCarrier struct {
-	tags   map[string]string
-	cfg    SQLCommentCarrierConfig
-	spanID uint64
-}
-
-// NewSQLCommentCarrier returns a new SQLCommentCarrier.
-func NewSQLCommentCarrier(opts ...SQLCommentCarrierOption) (s *SQLCommentCarrier) {
-	s = new(SQLCommentCarrier)
-	for _, apply := range opts {
-		apply(&s.cfg)
-	}
-
-	return s
-}
-
-// Set implements TextMapWriter. In the context of SQL comment injection, this method
-// is used for static tags only. See SetDynamicTag for dynamic tags.
-func (c *SQLCommentCarrier) Set(key, val string) {
-	if c.tags == nil {
-		c.tags = make(map[string]string)
-	}
-	c.tags[key] = val
-}
-
-// ForeachKey implements TextMapReader.
-func (c SQLCommentCarrier) ForeachKey(handler func(key, val string) error) error {
-	for k, v := range c.tags {
-		if err := handler(k, v); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// SetDynamicTag implements QueryCommentCarrier. This method is used to inject dynamic tags only
-// (e.g. span id, trace id, sampling priority). See Set for static tags.
-func (c *SQLCommentCarrier) SetDynamicTag(key, val string) {
-	if c.cfg.discardDynamicTags {
-		return
-	}
-	if c.tags == nil {
-		c.tags = make(map[string]string)
-	}
-	c.tags[key] = val
-}
-
-// AddSpanID implements QueryCommentCarrier and is used to save a span id generated during SQL comment injection
-// in the case where there is no active trace.
-func (c *SQLCommentCarrier) AddSpanID(spanID uint64) {
-	c.spanID = spanID
-}
-
-// CommentQuery returns the given query with the tags from the SQLCommentCarrier applied to it as a
+// commentQuery returns the given query with the tags from the SQLCommentCarrier applied to it as a
 // prepended SQL comment. The format of the comment follows the sqlcommenter spec.
 // See https://google.github.io/sqlcommenter/spec/ for more details.
-func (c *SQLCommentCarrier) CommentQuery(query string) (commented string, spanID uint64) {
-	comment := commentWithTags(c.tags)
-	if comment == "" {
-		return query, c.spanID
+func commentQuery(query string, tags map[string]string) string {
+	c := serializeTags(tags)
+	if c == "" {
+		return query
 	}
 	if query == "" {
-		return comment, c.spanID
+		return c
 	}
-	return fmt.Sprintf("%s %s", comment, query), c.spanID
+	return fmt.Sprintf("%s %s", c, query)
 }
 
-func commentWithTags(tags map[string]string) (comment string) {
+func serializeTags(tags map[string]string) (comment string) {
 	if len(tags) == 0 {
 		return ""
 	}
@@ -248,18 +140,19 @@ func serializeTag(key string, value string) (serialized string) {
 }
 
 func serializeKey(key string) (encoded string) {
-	urlEncoded := url.PathEscape(key)
-	escapedMeta := escapeMetaChars(urlEncoded)
-
-	return escapedMeta
+	enc := urlEncode(key)
+	return escapeMetaChars(enc)
 }
 
-func serializeValue(value string) (encoded string) {
-	urlEncoded := url.PathEscape(value)
-	escapedMeta := escapeMetaChars(urlEncoded)
-	escaped := escapeSQL(escapedMeta)
+func serializeValue(val string) (encoded string) {
+	enc := urlEncode(val)
+	escapedMeta := escapeMetaChars(enc)
+	return escapeSQL(escapedMeta)
+}
 
-	return escaped
+func urlEncode(val string) string {
+	e := url.QueryEscape(val)
+	return strings.Replace(e, "+", "%20", -1)
 }
 
 func escapeSQL(value string) (escaped string) {
@@ -268,4 +161,139 @@ func escapeSQL(value string) (escaped string) {
 
 func escapeMetaChars(value string) (escaped string) {
 	return strings.ReplaceAll(value, "'", "\\'")
+}
+
+// Extract parses the first sql comment found in the query text and returns the span context with values
+// extracted from tags extracted for the sql comment.
+func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
+	cmt, err := findSQLComment(c.Query)
+	if err != nil {
+		return nil, err
+	}
+	if cmt == "" {
+		return nil, nil
+	}
+	tags, err := extractCommentTags(cmt)
+	if err != nil {
+		return nil, fmt.Errorf("unable to extract tags from comment [%s]: %w", cmt, err)
+	}
+	var spid uint64
+	if v := tags[SpanIDSQLCommentKey]; v != "" {
+		spid, err = strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse span id [%s]: %w", v, err)
+		}
+	}
+	var tid uint64
+	if v := tags[TraceIDSQLCommentKey]; v != "" {
+		tid, err = strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse trace id [%s]: %w", v, err)
+		}
+	}
+	svc := tags[ServiceNameSQLCommentKey]
+	ctx := newSpanContext(&span{
+		Service: svc,
+		Meta: map[string]string{
+			ext.Version:     tags[ServiceVersionSQLCommentKey],
+			ext.Environment: tags[ServiceEnvironmentSQLCommentKey],
+		},
+		SpanID:  spid,
+		TraceID: tid,
+	}, nil)
+	if v := tags[SamplingPrioritySQLCommentKey]; v != "" {
+		p, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, err
+		}
+		ctx.trace = newTrace()
+		ctx.trace.setSamplingPriority(svc, p, samplernames.Default, 1)
+	}
+	return ctx, nil
+}
+
+func findSQLComment(query string) (comment string, err error) {
+	start := strings.Index(query, "/*")
+	if start == -1 {
+		return "", nil
+	}
+	end := strings.Index(query[start:], "*/")
+	if end == -1 {
+		return "", nil
+	}
+	c := query[start : end+2]
+	spacesTrimmed := strings.TrimSpace(c)
+	if !strings.HasPrefix(spacesTrimmed, "/*") {
+		return "", fmt.Errorf("comments not in the sqlcommenter format, expected to start with '/*'")
+	}
+	if !strings.HasSuffix(spacesTrimmed, "*/") {
+		return "", fmt.Errorf("comments not in the sqlcommenter format, expected to end with '*/'")
+	}
+	c = strings.TrimLeft(c, "/*")
+	c = strings.TrimRight(c, "*/")
+	return strings.TrimSpace(c), nil
+}
+
+func extractCommentTags(comment string) (keyValues map[string]string, err error) {
+	keyValues = make(map[string]string)
+	if err != nil {
+		return nil, err
+	}
+	if comment == "" {
+		return keyValues, nil
+	}
+	tagList := strings.Split(comment, ",")
+	for _, t := range tagList {
+		k, v, err := extractKeyValue(t)
+		if err != nil {
+			return nil, err
+		} else {
+			keyValues[k] = v
+		}
+	}
+	return keyValues, nil
+}
+
+func extractKeyValue(tag string) (key string, val string, err error) {
+	parts := strings.SplitN(tag, "=", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("tag format invalid, expected 'key=value' but got %s", tag)
+	}
+	key, err = extractKey(parts[0])
+	if err != nil {
+		return "", "", err
+	}
+	val, err = extractValue(parts[1])
+	if err != nil {
+		return "", "", err
+	}
+	return key, val, nil
+}
+
+func extractKey(keyVal string) (key string, err error) {
+	unescaped := unescapeMetaCharacters(keyVal)
+	decoded, err := url.PathUnescape(unescaped)
+	if err != nil {
+		return "", fmt.Errorf("failed to url unescape key: %w", err)
+	}
+
+	return decoded, nil
+}
+
+func extractValue(rawValue string) (value string, err error) {
+	trimmedLeft := strings.TrimLeft(rawValue, "'")
+	trimmed := strings.TrimRight(trimmedLeft, "'")
+
+	unescaped := unescapeMetaCharacters(trimmed)
+	decoded, err := url.PathUnescape(unescaped)
+
+	if err != nil {
+		return "", fmt.Errorf("failed to url unescape value: %w", err)
+	}
+
+	return decoded, nil
+}
+
+func unescapeMetaCharacters(val string) (unescaped string) {
+	return strings.ReplaceAll(val, "\\'", "'")
 }

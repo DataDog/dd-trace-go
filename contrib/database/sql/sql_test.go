@@ -10,9 +10,11 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"log"
 	"math"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -35,6 +37,8 @@ func TestMain(m *testing.M) {
 		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
 		os.Exit(0)
 	}
+	os.Setenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE", strconv.Itoa(int(tracer.FullSQLCommentInjection)))
+	defer os.Unsetenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	defer sqltest.Prepare(tableName)()
 	os.Exit(m.Run())
 }

@@ -33,9 +33,6 @@ type Tracer interface {
 	// FinishedSpans returns the set of finished spans.
 	FinishedSpans() []Span
 
-	// InjectedComments returns the set of sql comments injected on queries.
-	InjectedComments() []string
-
 	// Reset resets the spans and services recorded in the tracer. This is
 	// especially useful when running tests in a loop, where a clean start
 	// is desired for FinishedSpans calls.
@@ -58,10 +55,9 @@ func Start() Tracer {
 }
 
 type mocktracer struct {
-	sync.RWMutex     // guards below spans
-	finishedSpans    []Span
-	injectedComments []string
-	openSpans        map[uint64]Span
+	sync.RWMutex  // guards below spans
+	finishedSpans []Span
+	openSpans     map[uint64]Span
 }
 
 func newMockTracer() *mocktracer {
@@ -106,19 +102,12 @@ func (t *mocktracer) FinishedSpans() []Span {
 	return t.finishedSpans
 }
 
-func (t *mocktracer) InjectedComments() []string {
-	t.RLock()
-	defer t.RUnlock()
-	return t.injectedComments
-}
-
 func (t *mocktracer) Reset() {
 	t.Lock()
 	defer t.Unlock()
 	for k := range t.openSpans {
 		delete(t.openSpans, k)
 	}
-	t.injectedComments = nil
 	t.finishedSpans = nil
 }
 
@@ -140,6 +129,9 @@ const (
 )
 
 func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	if sc, ok := carrier.(*tracer.SQLCommentCarrier); ok {
+		return sc.Extract()
+	}
 	reader, ok := carrier.(tracer.TextMapReader)
 	if !ok {
 		return nil, tracer.ErrInvalidCarrier
@@ -185,8 +177,8 @@ func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 
 func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	case tracer.QueryCommentCarrier:
-		return t.injectQueryComments(context, c)
+	case *tracer.SQLCommentCarrier:
+		return c.Inject(context)
 	case tracer.TextMapWriter:
 		return t.injectTextMap(context, c)
 	default:
@@ -208,23 +200,5 @@ func (t *mocktracer) injectTextMap(context ddtrace.SpanContext, writer tracer.Te
 		writer.Set(baggagePrefix+k, v)
 		return true
 	})
-	return nil
-}
-
-func (t *mocktracer) injectQueryComments(context ddtrace.SpanContext, injector tracer.QueryCommentCarrier) error {
-	ctx, ok := context.(*spanContext)
-	samplingPriority := 0
-	if ok {
-		samplingPriority = ctx.samplingPriority()
-	}
-	injector.Set(tracer.ServiceVersionSQLCommentKey, "v-test")
-	injector.Set(tracer.ServiceEnvironmentSQLCommentKey, "test-env")
-	injector.Set(tracer.ServiceNameSQLCommentKey, "test-service")
-	injector.SetDynamicTag(tracer.TraceIDSQLCommentKey, "test-trace-id")
-	injector.SetDynamicTag(tracer.SpanIDSQLCommentKey, "test-span-id")
-	injector.SetDynamicTag(tracer.SamplingPrioritySQLCommentKey, strconv.Itoa(samplingPriority))
-	// Save injected comments to assert the sql commenting behavior
-	commented, _ := injector.CommentQuery("")
-	t.injectedComments = append(t.injectedComments, commented)
 	return nil
 }
