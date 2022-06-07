@@ -298,7 +298,3 @@ func startSocketTestServer(t *testing.T, statusCode int) *testServer {
 
 	return ts
 }
-
-func TestFail(t *testing.T) {
-	t.Fatal("to test ci app integration ...")
-}
