@@ -176,8 +176,8 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 }
 
 // injectComments returns the query with sql comments injected according to the comment injection mode along
-// with a span id injected into sql comments. If a span ID is returned, the caller should make sure to use it when creating
-// the span following the traced database call.
+// with a span id injected into sql comments. The returned span id should be used when the sql span is created
+// following the traced database call.
 func (tp *traceParams) injectComments(ctx context.Context, query string, discardTracingTags bool) (cquery string, spanID uint64) {
 	// The sql span only gets created after the call to the database because we need to be able to skip spans
 	// when a driver returns driver.ErrSkip. In order to work with those constraints, a new span id is generated and
@@ -190,8 +190,8 @@ func (tp *traceParams) injectComments(ctx context.Context, query string, discard
 	sqlCommentCarrier := tracer.NewSQLCommentCarrier(query, resolveInjectionMode(tp.cfg.commentInjectionMode, discardTracingTags))
 	err := tracer.Inject(spanContext, sqlCommentCarrier)
 	if err != nil {
-		// This should happen only if the SQLCommentPropagator is not set via the sql comment injection mode.
-		log.Warn("contrib/database/sql: failed to inject query comments. Make sure you've set up SQLCommentInjectionMode on the propagator configuration: %v", err)
+		// this should never happen
+		log.Warn("contrib/database/sql: failed to inject query comments: %v", err)
 	}
 	return sqlCommentCarrier.Query, sqlCommentCarrier.SpanID
 }
