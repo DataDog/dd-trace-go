@@ -166,17 +166,11 @@ func BenchmarkProfilerOverhead(b *testing.B) {
 	withProfiler := func(b *testing.B, rate int) {
 		var prof cmemprof.Profile
 		prof.Start(rate)
-		// We want the benchmark in a function so we can make sure the
-		// profiler gets stopped after each benchmark (in case a future
-		// regression or Go runtime update causes the profiler to crash
-		// in malloc)
-		defer func() {
-			_, err := prof.Stop()
-			if err != nil {
-				b.Fatal(err)
-			}
-		}()
 		baseline(b)
+		_, err := prof.Stop()
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 
 	for _, rate := range []int{512 * 1024, 128 * 1024, 32 * 1024, 1} {
