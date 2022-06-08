@@ -23,9 +23,9 @@
 // which requires the Go runtime to be initialized. If an allocation happens at
 // program startup before main.main, such as when resolving dynamic symbols, the
 // program can deadlock. So allocation sampling must start out turned off.
-static atomic_size_t sampling_rate;
+static atomic_size_t sampling_rate = 0;
 
-__thread uint64_t rng_state;
+__thread uint64_t rng_state = 0;
 
 static uint64_t rng_state_advance(uint64_t seed) {
 	while (seed == 0) {
