@@ -35,7 +35,7 @@ func TestCAllocationProfiler(t *testing.T) {
 		t.Fatalf("checking validity: %s", err)
 	}
 	original := pprof.Copy()
-	found, _, _, _ := pprof.FilterSamplesByName(regexp.MustCompile("[A-a]lloc"), nil, nil, nil)
+	found, _, _, _ := pprof.FilterSamplesByName(regexp.MustCompile("(DoAlloc|DoCalloc)"), nil, nil, nil)
 	if !found {
 		t.Logf("%s", original)
 		t.Fatal("did not find any allocation samples")
