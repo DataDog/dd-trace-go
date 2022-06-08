@@ -148,8 +148,7 @@ func (c *Profile) Stop() (*profile.Profile, error) {
 	}
 	c.active = false
 	p := c.build()
-	err := p.CheckValid()
-	if err != nil {
+	if err := p.CheckValid(); err != nil {
 		return nil, fmt.Errorf("bad profile: %s", err)
 	}
 	return p, nil
