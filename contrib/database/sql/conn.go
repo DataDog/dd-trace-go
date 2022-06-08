@@ -183,7 +183,7 @@ func injectComments(ctx context.Context, query string, discardTracingTags bool) 
 	// when a driver returns driver.ErrSkip. In order to work with those constraints, a new span id is generated and
 	// used during SQL comment injection and returned for the sql span to be used later when/if the span
 	// gets created.
-	var spanContext ddtrace.SpanContext
+	var spanctx ddtrace.SpanContext
 	if span, ok := tracer.SpanFromContext(ctx); ok {
 		spanContext = span.Context()
 	}
