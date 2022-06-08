@@ -234,6 +234,7 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 	*t.priority = float64(p)
 	_, ok := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && !ok {
+		// we have a positive priority and the decision maker isn't set
 		t.setServiceDecisionMaker(service, sampler, span)
 	}
 	if p <= 0 && ok {
