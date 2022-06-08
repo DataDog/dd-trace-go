@@ -187,7 +187,7 @@ func injectComments(ctx context.Context, query string, discardTracingTags bool) 
 	if span, ok := tracer.SpanFromContext(ctx); ok {
 		spanContext = span.Context()
 	}
-	sqlCommentCarrier := tracer.NewSQLCommentCarrier(query, resolveInjectionMode(tp.cfg.commentInjectionMode, discardTracingTags))
+	carrier := tracer.NewSQLCommentCarrier(query, resolveInjectionMode(tp.cfg.commentInjectionMode, discardTracingTags))
 	err := tracer.Inject(spanContext, sqlCommentCarrier)
 	if err != nil {
 		// this should never happen
