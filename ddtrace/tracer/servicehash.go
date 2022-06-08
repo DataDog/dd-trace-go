@@ -20,24 +20,23 @@ var (
 
 // Hash computes the hash for `service`. It will use a local cache to avoid recomputation.
 func Hash(service string) string {
-	hash := getHashFromCache(service)
-	if len(hash) > 0 {
-		return hash
+	if h, ok := hashFromCache(service); ok {
+		return h
 	}
 	hashb := sha256.Sum256([]byte(service))
 	// Only grab first 10 characters (2 chars per byte * 5 bytes = 10 chars)
-	hash = hex.EncodeToString(hashb[:5])
-	setHashInCache(service, hash)
-	return hash
+	h := hex.EncodeToString(hashb[:5])
+	setHashInCache(service, h)
+	return h
 }
 
-func getHashFromCache(service string) string {
+func hashFromCache(service string) (string, bool) {
 	lock.RLock()
 	defer lock.RUnlock()
 	if hash, ok := cache[service]; ok {
-		return hash
+		return hash, true
 	}
-	return ""
+	return "", false
 }
 
 func setHashInCache(service, hash string) {
