@@ -178,7 +178,7 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 // injectComments returns the query with sql comments injected according to the comment injection mode along
 // with a span id injected into sql comments. The returned span id should be used when the sql span is created
 // following the traced database call.
-func (tp *traceParams) injectComments(ctx context.Context, query string, discardTracingTags bool) (cquery string, spanID uint64) {
+func injectComments(ctx context.Context, query string, discardTracingTags bool) (cquery string, spanID uint64) {
 	// The sql span only gets created after the call to the database because we need to be able to skip spans
 	// when a driver returns driver.ErrSkip. In order to work with those constraints, a new span id is generated and
 	// used during SQL comment injection and returned for the sql span to be used later when/if the span
