@@ -40,8 +40,8 @@ static uint64_t rng_state_advance(uint64_t seed) {
 	// xorshift RNG
 	uint64_t x = seed;
 	x ^= x << 13;
-	x ^= x >> 17;
-	x ^= x << 5;
+	x ^= x >> 7;
+	x ^= x << 17;
 	return x;
 }
 
