@@ -18,7 +18,7 @@ var (
 	lock  sync.RWMutex
 )
 
-// Hash computes hash for `service`. Will use a local cache to avoid recomputation.
+// Hash computes the hash for `service`. It will use a local cache to avoid recomputation.
 func Hash(service string) string {
 	hash := getHashFromCache(service)
 	if len(hash) > 0 {
