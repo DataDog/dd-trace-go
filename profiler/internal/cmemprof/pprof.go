@@ -8,6 +8,7 @@ package cmemprof
 import (
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/google/pprof/profile"
 )
@@ -60,7 +61,8 @@ func (c *Profile) build() *profile.Profile {
 			Unit: "bytes",
 		},
 	}
-	// TODO: move this cache up into Profile?
+	// TODO: move these cache up into Profile?
+	functions := make(map[string]*profile.Function)
 	locations := make(map[uint64]*profile.Location)
 	for stack, event := range c.samples {
 		psample := &profile.Sample{
@@ -85,6 +87,9 @@ func (c *Profile) build() *profile.Profile {
 			if frame.Function == "recordAllocationSample" {
 				continue
 			}
+			if strings.HasPrefix(frame.Function, "profile_allocation") {
+				continue
+			}
 			addr := uint64(frame.PC)
 			loc, ok := locations[addr]
 			if !ok {
@@ -93,12 +98,20 @@ func (c *Profile) build() *profile.Profile {
 					Mapping: m,
 					Address: uint64(frame.PC),
 				}
-				function := &profile.Function{
-					ID:       uint64(len(p.Function)) + 1,
-					Filename: frame.File,
-					Name:     frame.Function,
+				function, ok := functions[frame.Function]
+				if !ok {
+					function = &profile.Function{
+						ID:       uint64(len(p.Function)) + 1,
+						Filename: frame.File,
+						Name:     frame.Function,
+					}
+					// On Linux, allocation functions end up
+					// with a "__wrap_" prefix, which we
+					// remove to avoid confusion ("where did
+					// __wrap_malloc come from?")
+					function.Name = strings.TrimPrefix(function.Name, "__wrap_")
+					p.Function = append(p.Function, function)
 				}
-				p.Function = append(p.Function, function)
 				loc.Line = append(loc.Line, profile.Line{
 					Function: function,
 					Line:     int64(frame.Line),
