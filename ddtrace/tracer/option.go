@@ -540,7 +540,7 @@ func WithPropagator(p Propagator) StartOption {
 
 // WithServicePropagation enables the hashed name of this service to be horizontally
 // propagated to other services (e.g. over HTTP requests). This enhances the ingestion control page
-// so that it can show which exact service is the root of ingested spans, and therefore cost.
+// so it can show the specific service that is the root of ingested spans, and therefore aid in cost analysis.
 func WithServicePropagation(enabled bool) StartOption {
 	return func(c *config) {
 		c.propagateServiceName = enabled
