@@ -48,9 +48,7 @@ func TestConfig(t *testing.T) {
 
 func cleanEnv() func() {
 	val := os.Getenv(clientIPHeaderEnvVar)
-	if err := os.Unsetenv(clientIPHeaderEnvVar); err != nil {
-		panic(err)
-	}
+	os.Unsetenv(clientIPHeaderEnvVar)
 	return func() {
 		restoreEnv(clientIPHeaderEnvVar, val)
 	}
@@ -58,12 +56,8 @@ func cleanEnv() func() {
 
 func restoreEnv(key, value string) {
 	if value != "" {
-		if err := os.Setenv(key, value); err != nil {
-			panic(err)
-		}
+		os.Setenv(key, value)
 	} else {
-		if err := os.Unsetenv(key); err != nil {
-			panic(err)
-		}
+		os.Unsetenv(key)
 	}
 }
