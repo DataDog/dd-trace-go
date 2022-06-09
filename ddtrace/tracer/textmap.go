@@ -202,9 +202,6 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 // out of the current process. The implementation propagates the
 // TraceID and the current active SpanID, as well as the Span baggage.
 func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
-	if c, ok := carrier.(*SQLCommentCarrier); ok {
-		return c.Inject(spanCtx)
-	}
 	for _, v := range p.injectors {
 		err := v.Inject(spanCtx, carrier)
 		if err != nil {

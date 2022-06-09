@@ -129,9 +129,6 @@ const (
 )
 
 func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	if sc, ok := carrier.(*tracer.SQLCommentCarrier); ok {
-		return sc.Extract()
-	}
 	reader, ok := carrier.(tracer.TextMapReader)
 	if !ok {
 		return nil, tracer.ErrInvalidCarrier
@@ -177,8 +174,6 @@ func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 
 func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	case *tracer.SQLCommentCarrier:
-		return c.Inject(context)
 	case tracer.TextMapWriter:
 		return t.injectTextMap(context, c)
 	default:

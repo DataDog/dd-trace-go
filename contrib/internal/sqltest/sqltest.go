@@ -10,19 +10,13 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
-	"regexp"
-	"strconv"
-	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // Prepare sets up a table with the given name in both the MySQL and Postgres databases and returns
@@ -51,15 +45,10 @@ func Prepare(tableName string) func() {
 	}
 	mssql.Exec(queryDrop)
 	mssql.Exec(queryCreate)
-	os.Setenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE", strconv.Itoa(int(tracer.FullSQLCommentInjection)))
-	svc := globalconfig.ServiceName()
-	globalconfig.SetServiceName("test-service")
 	return func() {
 		mysql.Exec(queryDrop)
 		postgres.Exec(queryDrop)
 		mssql.Exec(queryDrop)
-		globalconfig.SetServiceName(svc)
-		defer os.Unsetenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
 }
 
@@ -106,7 +95,7 @@ func testPing(cfg *Config) func(*testing.T) {
 		err := cfg.DB.Ping()
 		assert.Nil(err)
 		spans := cfg.mockTracer.FinishedSpans()
-		require.Len(t, spans, 2)
+		assert.Len(spans, 2)
 
 		verifyConnectSpan(spans[0], assert, cfg)
 
@@ -136,7 +125,6 @@ func testQuery(cfg *Config) func(*testing.T) {
 
 		spans := cfg.mockTracer.FinishedSpans()
 		var querySpan mocktracer.Span
-		expectedComment := regexp.MustCompile("/\\*ddsid='[0-9]+',ddsn='test-service',ddsp='0',ddtid='[0-9]+'\\*/")
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared queries so there are 3 spans
 			//connect, prepare, and query
@@ -148,9 +136,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 				assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
 			querySpan = spans[2]
-			// Since SQLServer runs execute statements by doing a prepare first, the expected comment
-			// excludes dynamic tags which can only be injected on non-prepared statements
-			expectedComment = regexp.MustCompile("/\\*ddsn='test-service'\\*/")
+
 		} else {
 			assert.Len(spans, 2)
 			querySpan = spans[1]
@@ -162,41 +148,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, querySpan.Tag(k), "Value mismatch on tag %s", k)
 		}
-		assertInjectedComment(t, querySpan, expectedComment)
 	}
-}
-
-type tagExpectation struct {
-	MustBeSet     bool
-	ExpectedValue string
-}
-
-func assertInjectedComment(t *testing.T, querySpan mocktracer.Span, expectedComment *regexp.Regexp) {
-	q, ok := querySpan.Tag(ext.ResourceName).(string)
-	require.True(t, ok, "tag %s should be a string but was %v", ext.ResourceName, q)
-	c, err := findSQLComment(q)
-	require.NoError(t, err)
-	assert.Regexp(t, expectedComment, c)
-}
-
-func findSQLComment(query string) (comment string, err error) {
-	start := strings.Index(query, "/*")
-	if start == -1 {
-		return "", nil
-	}
-	end := strings.Index(query[start:], "*/")
-	if end == -1 {
-		return "", nil
-	}
-	c := query[start : end+2]
-	spacesTrimmed := strings.TrimSpace(c)
-	if !strings.HasPrefix(spacesTrimmed, "/*") {
-		return "", fmt.Errorf("comments not in the sqlcommenter format, expected to start with '/*'")
-	}
-	if !strings.HasSuffix(spacesTrimmed, "*/") {
-		return "", fmt.Errorf("comments not in the sqlcommenter format, expected to end with '*/'")
-	}
-	return c, nil
 }
 
 func testStatement(cfg *Config) func(*testing.T) {
@@ -226,7 +178,6 @@ func testStatement(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
-		assertInjectedComment(t, span, regexp.MustCompile("/\\*ddsn='test-service'\\*/"))
 
 		cfg.mockTracer.Reset()
 		_, err2 := stmt.Exec("New York")
@@ -299,7 +250,6 @@ func testExec(cfg *Config) func(*testing.T) {
 		parent.Finish() // flush children
 
 		spans := cfg.mockTracer.FinishedSpans()
-		expectedComment := regexp.MustCompile("/\\*ddsid='[0-9]+',ddsn='test-service',ddsp='0',ddtid='[0-9]+'\\*/")
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared exec so there are 2 extra spans for the exec:
 			//prepare, exec, and then a close
@@ -316,32 +266,26 @@ func testExec(cfg *Config) func(*testing.T) {
 			for k, v := range cfg.ExpectTags {
 				assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
-			// Since SQLServer runs execute statements by doing a prepare first, the expected comment
-			// excludes dynamic tags which can only be injected on non-prepared statements
-			expectedComment = regexp.MustCompile("/\\*ddsn='test-service'\\*/")
 		} else {
 			assert.Len(spans, 5)
 		}
 
 		var span mocktracer.Span
 		for _, s := range spans {
-			rn, _ := s.Tag(ext.ResourceName).(string)
-			if s.OperationName() == cfg.ExpectName && strings.HasSuffix(rn, query) {
+			if s.OperationName() == cfg.ExpectName && s.Tag(ext.ResourceName) == query {
 				span = s
 			}
 		}
-		require.NotNil(t, span, "span not found")
+		assert.NotNil(span, "span not found")
 		cfg.ExpectTags["sql.query_type"] = "Exec"
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
-		assertInjectedComment(t, span, expectedComment)
 		for _, s := range spans {
 			if s.OperationName() == cfg.ExpectName && s.Tag(ext.ResourceName) == "Commit" {
 				span = s
 			}
 		}
-
 		assert.NotNil(span, "span not found")
 		cfg.ExpectTags["sql.query_type"] = "Commit"
 		for k, v := range cfg.ExpectTags {

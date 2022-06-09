@@ -59,14 +59,13 @@ func (tc *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 
 func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
 	start := time.Now()
-	cquery, spanID := tc.injectComments(ctx, query, true)
+	cquery, spanID := injectComments(ctx, query, resolveInjectionMode(tc.cfg.commentInjectionMode, true))
 	if connPrepareCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
 		stmt, err := connPrepareCtx.PrepareContext(ctx, cquery)
 		tc.tryTrace(ctx, queryTypePrepare, cquery, start, err, tracer.WithSpanID(spanID))
 		if err != nil {
 			return nil, err
 		}
-
 		return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: cquery}, nil
 	}
 	stmt, err = tc.Prepare(cquery)
@@ -81,7 +80,7 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
 	start := time.Now()
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
-		cquery, spanID := tc.injectComments(ctx, query, false)
+		cquery, spanID := injectComments(ctx, query, tc.cfg.commentInjectionMode)
 		r, err := execContext.ExecContext(ctx, cquery, args)
 		tc.tryTrace(ctx, queryTypeExec, cquery, start, err, tracer.WithSpanID(spanID))
 		return r, err
@@ -96,7 +95,7 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 			return nil, ctx.Err()
 		default:
 		}
-		cquery, spanID := tc.injectComments(ctx, query, false)
+		cquery, spanID := injectComments(ctx, query, tc.cfg.commentInjectionMode)
 		r, err = execer.Exec(cquery, dargs)
 		tc.tryTrace(ctx, queryTypeExec, cquery, start, err, tracer.WithSpanID(spanID))
 		return r, err
@@ -117,7 +116,7 @@ func (tc *tracedConn) Ping(ctx context.Context) (err error) {
 func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
 	start := time.Now()
 	if queryerContext, ok := tc.Conn.(driver.QueryerContext); ok {
-		cquery, spanID := tc.injectComments(ctx, query, false)
+		cquery, spanID := injectComments(ctx, query, tc.cfg.commentInjectionMode)
 		rows, err := queryerContext.QueryContext(ctx, cquery, args)
 		tc.tryTrace(ctx, queryTypeQuery, cquery, start, err, tracer.WithSpanID(spanID))
 		return rows, err
@@ -132,7 +131,7 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 			return nil, ctx.Err()
 		default:
 		}
-		cquery, spanID := tc.injectComments(ctx, query, true)
+		cquery, spanID := injectComments(ctx, query, tc.cfg.commentInjectionMode)
 		rows, err = queryer.Query(cquery, dargs)
 		tc.tryTrace(ctx, queryTypeQuery, cquery, start, err, tracer.WithSpanID(spanID))
 		return rows, err
@@ -178,22 +177,22 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 // injectComments returns the query with sql comments injected according to the comment injection mode along
 // with a span id injected into sql comments. The returned span id should be used when the sql span is created
 // following the traced database call.
-func injectComments(ctx context.Context, query string, discardTracingTags bool) (cquery string, spanID uint64) {
+func injectComments(ctx context.Context, query string, mode tracer.SQLCommentInjectionMode) (cquery string, spanID uint64) {
 	// The sql span only gets created after the call to the database because we need to be able to skip spans
 	// when a driver returns driver.ErrSkip. In order to work with those constraints, a new span id is generated and
 	// used during SQL comment injection and returned for the sql span to be used later when/if the span
 	// gets created.
-	var spanctx ddtrace.SpanContext
+	var spanCtx ddtrace.SpanContext
 	if span, ok := tracer.SpanFromContext(ctx); ok {
-		spanContext = span.Context()
+		spanCtx = span.Context()
 	}
-	carrier := tracer.NewSQLCommentCarrier(query, resolveInjectionMode(tp.cfg.commentInjectionMode, discardTracingTags))
-	err := tracer.Inject(spanContext, sqlCommentCarrier)
+	carrier := tracer.NewSQLCommentCarrier(query, mode)
+	err := carrier.Inject(spanCtx)
 	if err != nil {
 		// this should never happen
 		log.Warn("contrib/database/sql: failed to inject query comments: %v", err)
 	}
-	return sqlCommentCarrier.Query, sqlCommentCarrier.SpanID
+	return carrier.Query, carrier.SpanID
 }
 
 func resolveInjectionMode(mode tracer.SQLCommentInjectionMode, discardTracingTags bool) tracer.SQLCommentInjectionMode {
