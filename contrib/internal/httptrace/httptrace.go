@@ -95,21 +95,17 @@ func getClientIP(remoteAddr string, headers http.Header, clientIPHeader string) 
 		ipHeaders = []string{clientIPHeader}
 	}
 	check := func(value string) netaddr.IP {
-		for _, ip := range strings.Split(value, ",") {
-			ipStr := strings.Trim(ip, " ")
-			ip := parseIP(ipStr)
-
+		for _, ipstr := range strings.Split(value, ",") {
+			ip := parseIP(strings.TrimSpace(ipstr))
 			if !ip.IsValid() {
 				continue
 			}
-
 			if isGlobal(ip) {
 				return ip
 			}
 		}
 		return netaddr.IP{}
 	}
-
 	for _, hdr := range ipHeaders {
 		if value := headers.Get(hdr); value != "" {
 			if ip := check(value); ip.IsValid() {

@@ -13,13 +13,18 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	t.Run("config", func(t *testing.T) {
-		t.Run("client-ip-header-unset", func(t *testing.T) {
+	t.Run("client-ip", func(t *testing.T) {
+		t.Run("unset", func(t *testing.T) {
+			restore := cleanEnv()
+			err := os.Unsetenv(clientIPHeaderEnvVar)
+			require.NoError(t, err)
 			cfg := newConfig()
 			require.Empty(t, cfg.ipHeader)
+			defer restore()
 
 		})
-		t.Run("client-ip-header-empty", func(t *testing.T) {
+
+		t.Run("empty", func(t *testing.T) {
 			restore := cleanEnv()
 			err := os.Setenv(clientIPHeaderEnvVar, "")
 			require.NoError(t, err)
@@ -28,7 +33,8 @@ func TestConfig(t *testing.T) {
 			defer restore()
 
 		})
-		t.Run("client-ip-header-set", func(t *testing.T) {
+
+		t.Run("set", func(t *testing.T) {
 			restore := cleanEnv()
 			err := os.Setenv(clientIPHeaderEnvVar, "custom-header")
 			require.NoError(t, err)
