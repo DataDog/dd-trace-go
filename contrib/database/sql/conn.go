@@ -192,8 +192,7 @@ func injectComments(ctx context.Context, query string, mode tracer.SQLCommentInj
 		spanCtx = span.Context()
 	}
 	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode}
-	err := carrier.Inject(spanCtx)
-	if err != nil {
+	if err := carrier.Inject(spanCtx); err != nil {
 		// this should never happen
 		log.Warn("contrib/database/sql: failed to inject query comments: %v", err)
 	}
