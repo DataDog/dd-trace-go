@@ -59,7 +59,12 @@ func (tc *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 
 func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
 	start := time.Now()
-	cquery, spanID := injectComments(ctx, query, resolveInjectionMode(tc.cfg.commentInjectionMode, true))
+	mode := tc.cfg.commentInjectionMode
+	if mode == tracer.SQLInjectionModeFull {
+		// no context other than service in prepared statements
+		mode = tracer.SQLInjectionModeService
+	}
+	cquery, spanID := injectComments(ctx, query, mode)
 	if connPrepareCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
 		stmt, err := connPrepareCtx.PrepareContext(ctx, cquery)
 		tc.tryTrace(ctx, queryTypePrepare, query, start, err, tracer.WithSpanID(spanID))
