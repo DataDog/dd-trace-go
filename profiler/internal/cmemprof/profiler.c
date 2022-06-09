@@ -18,11 +18,11 @@
 
 // sampling_rate is the portion of allocations to sample.
 //
-// NOTE: sampling_rate will be automatically initialized to 0 since it is
-// static. This is important because sampling an allocation calls into Go,
-// which requires the Go runtime to be initialized. If an allocation happens at
-// program startup before main.main, such as when resolving dynamic symbols, the
-// program can deadlock. So allocation sampling must start out turned off.
+// NOTE: sampling_rate must initialized to 0. This is important because
+// sampling an allocation calls into Go, which requires the Go runtime to be
+// initialized. If an allocation happens at program startup before main.main,
+// such as when resolving dynamic symbols, the program can deadlock. So
+// allocation sampling must start out turned off.
 static atomic_size_t sampling_rate = 0;
 
 __thread uint64_t rng_state = 0;
@@ -67,7 +67,7 @@ void cgo_heap_profiler_mark_fpunwind_safe(void) {
 }
 
 void profile_allocation(size_t size) {
-	size_t rate = atomic_load_explicit(&sampling_rate, memory_order_relaxed);
+	size_t rate = atomic_load(&sampling_rate);
 	if (rate == 0) {
 		return;
 	}
@@ -154,5 +154,5 @@ void cgo_heap_profiler_set_sampling_rate(size_t hz) {
 	if (hz <= 0) {
 		hz = 0;
 	}
-	return atomic_store(&sampling_rate, hz);
+	atomic_store(&sampling_rate, hz);
 }
