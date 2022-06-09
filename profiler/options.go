@@ -20,6 +20,7 @@ import (
 	"time"
 	"unicode"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -494,5 +495,17 @@ func withOutputDir(dir string) Option {
 func WithLogStartup(enabled bool) Option {
 	return func(cfg *config) {
 		cfg.logStartup = enabled
+	}
+}
+
+// WithLogger sets logger as the profiler's error printer.
+// Note that setting the logger for the profiler sets the same logger for the
+// tracer, and vice-versa.
+func WithLogger(logger ddtrace.Logger) Option {
+	return func(cfg *config) {
+		// This is a functional option to match the other options, but
+		// the internal/log package has a single, global logger that we
+		// can just set when this Option is applied
+		log.UseLogger(logger)
 	}
 }
