@@ -199,13 +199,6 @@ func injectComments(ctx context.Context, query string, mode tracer.SQLCommentInj
 	return carrier.Query, carrier.SpanID
 }
 
-func resolveInjectionMode(mode tracer.SQLCommentInjectionMode, discardTracingTags bool) tracer.SQLCommentInjectionMode {
-	if discardTracingTags && mode == tracer.SQLInjectionModeFull {
-		mode = tracer.SQLInjectionModeService
-	}
-	return mode
-}
-
 // tryTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
 func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query string, startTime time.Time, err error, spanID uint64) {
 	if err == driver.ErrSkip {

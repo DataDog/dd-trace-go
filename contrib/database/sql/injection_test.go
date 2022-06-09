@@ -27,7 +27,7 @@ func TestCommentInjection(t *testing.T) {
 		expectedExecutedStmts []*regexp.Regexp
 	}{
 		{
-			name: "prepared statement with default mode (disabled)",
+			name: "prepare",
 			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
@@ -36,7 +36,7 @@ func TestCommentInjection(t *testing.T) {
 			expectedPreparedStmts: []string{"SELECT 1 from DUAL"},
 		},
 		{
-			name: "prepared statement in explicitly disabled mode",
+			name: "prepare-disabled",
 			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
@@ -45,7 +45,7 @@ func TestCommentInjection(t *testing.T) {
 			expectedPreparedStmts: []string{"SELECT 1 from DUAL"},
 		},
 		{
-			name: "prepared statement in service tags only mode",
+			name: "prepare-service",
 			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
@@ -54,7 +54,7 @@ func TestCommentInjection(t *testing.T) {
 			expectedPreparedStmts: []string{"/*dde='test-env',ddsn='test-service',ddsv='1.0.0'*/ SELECT 1 from DUAL"},
 		},
 		{
-			name: "prepared statement in full mode",
+			name: "prepare-full",
 			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
@@ -63,7 +63,7 @@ func TestCommentInjection(t *testing.T) {
 			expectedPreparedStmts: []string{"/*dde='test-env',ddsn='test-service',ddsv='1.0.0'*/ SELECT 1 from DUAL"},
 		},
 		{
-			name: "query in default mode (disabled)",
+			name: "query",
 			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
@@ -72,7 +72,7 @@ func TestCommentInjection(t *testing.T) {
 			expectedExecutedStmts: []*regexp.Regexp{regexp.MustCompile("SELECT 1 from DUAL")},
 		},
 		{
-			name: "query in explicitly disabled mode",
+			name: "query-disabled",
 			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
@@ -81,7 +81,7 @@ func TestCommentInjection(t *testing.T) {
 			expectedExecutedStmts: []*regexp.Regexp{regexp.MustCompile("SELECT 1 from DUAL")},
 		},
 		{
-			name: "query in service tags only mode",
+			name: "query-service",
 			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
@@ -90,7 +90,7 @@ func TestCommentInjection(t *testing.T) {
 			expectedExecutedStmts: []*regexp.Regexp{regexp.MustCompile("/\\*dde='test-env',ddsn='test-service',ddsv='1.0.0'\\*/ SELECT 1 from DUAL")},
 		},
 		{
-			name: "query in full mode",
+			name: "query-full",
 			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
@@ -99,7 +99,7 @@ func TestCommentInjection(t *testing.T) {
 			expectedExecutedStmts: []*regexp.Regexp{regexp.MustCompile("/\\*dde='test-env',ddsid='[0-9]+',ddsn='test-service',ddsp='1',ddsv='1.0.0',ddtid='1'\\*/ SELECT 1 from DUAL")},
 		},
 		{
-			name: "exec in default mode (disabled)",
+			name: "exec",
 			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
@@ -108,7 +108,7 @@ func TestCommentInjection(t *testing.T) {
 			expectedExecutedStmts: []*regexp.Regexp{regexp.MustCompile("SELECT 1 from DUAL")},
 		},
 		{
-			name: "exec in explicitly disabled mode",
+			name: "exec-disabled",
 			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
@@ -117,7 +117,7 @@ func TestCommentInjection(t *testing.T) {
 			expectedExecutedStmts: []*regexp.Regexp{regexp.MustCompile("SELECT 1 from DUAL")},
 		},
 		{
-			name: "exec in service tags only mode",
+			name: "exec-service",
 			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
@@ -126,7 +126,7 @@ func TestCommentInjection(t *testing.T) {
 			expectedExecutedStmts: []*regexp.Regexp{regexp.MustCompile("/\\*dde='test-env',ddsn='test-service',ddsv='1.0.0'\\*/ SELECT 1 from DUAL")},
 		},
 		{
-			name: "exec in full mode",
+			name: "exec-full",
 			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")

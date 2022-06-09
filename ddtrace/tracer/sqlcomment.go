@@ -8,7 +8,6 @@ package tracer
 import (
 	"fmt"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -17,7 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
-// SQLCommentInjectionMode represents the mode of sql comment injection.
+// SQLCommentInjectionMode represents the mode of SQL comment injection.
 type SQLCommentInjectionMode int
 
 const (
@@ -56,16 +55,15 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 	case SQLInjectionDisabled:
 		return nil
 	case SQLInjectionModeFull:
-		samplingPriority := 0
-		var traceID uint64
-		ctx, ok := spanCtx.(*spanContext)
-		if ok {
+		var (
+			samplingPriority int
+			traceID          uint64
+		)
+		if ctx, ok := spanCtx.(*spanContext); ok {
 			if sp, ok := ctx.samplingPriority(); ok {
 				samplingPriority = sp
 			}
-			if ctx.TraceID() > 0 {
-				traceID = ctx.TraceID()
-			}
+			traceID = ctx.TraceID()
 		}
 		if traceID == 0 {
 			traceID = c.SpanID
@@ -75,9 +73,8 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 		tags[sqlCommentKeySamplingPriority] = strconv.Itoa(samplingPriority)
 		fallthrough
 	case SQLInjectionModeService:
-		ctx, ok := spanCtx.(*spanContext)
 		var env, version string
-		if ok {
+		if ctx, ok := spanCtx.(*spanContext); ok {
 			if e, ok := ctx.meta(ext.Environment); ok {
 				env = e
 			}
@@ -107,17 +104,20 @@ func commentQuery(query string, tags map[string]string) string {
 		return ""
 	}
 	serializedTags := make([]string, 0, len(tags))
-	for k, v := range tags {
-		eKey := url.QueryEscape(k)
-		eKey = strings.Replace(eKey, "+", "%20", -1)
-		sKey := strings.ReplaceAll(eKey, "'", "\\'")
-		eVal := url.QueryEscape(v)
-		eVal = strings.Replace(eVal, "+", "%20", -1)
-		escVal := strings.ReplaceAll(eVal, "'", "\\'")
-		sValue := fmt.Sprintf("'%s'", escVal)
-		serializedTags = append(serializedTags, fmt.Sprintf("%s=%s", sKey, sValue))
+	// the sqlcommenter specification dictates that tags should be sorted. Since we know all injected keys,
+	// we skip a sorting operation by specifying the order of keys statically
+	orderedKeys := []string{sqlCommentEnv, sqlCommentSpanID, sqlCommentService, sqlCommentKeySamplingPriority, sqlCommentVersion, sqlCommentTraceID}
+	for _, k := range orderedKeys {
+		if v, ok := tags[k]; ok {
+			// we need to URL-encode all + characters and escape single quotes
+			// https://google.github.io/sqlcommenter/spec/
+			key := strings.Replace(url.QueryEscape(k), "+", "%20", -1)
+			key = strings.ReplaceAll(key, "'", "\\'")
+			val := strings.Replace(url.QueryEscape(v), "+", "%20", -1)
+			val = strings.ReplaceAll(val, "'", "\\'")
+			serializedTags = append(serializedTags, fmt.Sprintf("%s='%s'", key, val))
+		}
 	}
-	sort.Strings(serializedTags)
 	cmt := fmt.Sprintf("/*%s*/", strings.Join(serializedTags, ","))
 	if cmt == "" {
 		return query

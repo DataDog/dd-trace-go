@@ -17,62 +17,53 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSQLCommentPropagator(t *testing.T) {
-	prepareSpanContextWithSpanID := func(tracer *tracer) ddtrace.SpanContext {
-		root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*span)
-		root.SetTag(ext.SamplingPriority, 2)
-		return root.Context()
-	}
-
+func TestSQLCommentCarrier(t *testing.T) {
 	testCases := []struct {
-		name               string
-		query              string
-		mode               SQLCommentInjectionMode
-		prepareSpanContext func(*tracer) ddtrace.SpanContext
-		expectedQuery      string
-		expectedSpanIDGen  bool
+		name              string
+		query             string
+		mode              SQLCommentInjectionMode
+		injectSpan        bool
+		expectedQuery     string
+		expectedSpanIDGen bool
 	}{
 		{
-			name:               "all tags injected",
-			query:              "SELECT * from FOO",
-			mode:               SQLInjectionModeFull,
-			prepareSpanContext: prepareSpanContextWithSpanID,
-			expectedQuery:      "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsp='2',ddsv='1.0.0',ddtid='10'*/ SELECT * from FOO",
-			expectedSpanIDGen:  true,
+			name:              "all tags injected",
+			query:             "SELECT * from FOO",
+			mode:              SQLInjectionModeFull,
+			injectSpan:        true,
+			expectedQuery:     "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsp='2',ddsv='1.0.0',ddtid='10'*/ SELECT * from FOO",
+			expectedSpanIDGen: true,
 		},
 		{
-			name:  "no existing trace",
-			query: "SELECT * from FOO",
-			mode:  SQLInjectionModeFull,
-			prepareSpanContext: func(tracer *tracer) ddtrace.SpanContext {
-				return nil
-			},
+			name:              "no existing trace",
+			query:             "SELECT * from FOO",
+			mode:              SQLInjectionModeFull,
 			expectedQuery:     "/*ddsid='<span_id>',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsp='0',ddtid='<span_id>'*/ SELECT * from FOO",
 			expectedSpanIDGen: true,
 		},
 		{
-			name:               "empty query, all tags injected",
-			query:              "",
-			mode:               SQLInjectionModeFull,
-			prepareSpanContext: prepareSpanContextWithSpanID,
-			expectedQuery:      "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsp='2',ddsv='1.0.0',ddtid='10'*/",
-			expectedSpanIDGen:  true,
+			name:              "empty query, all tags injected",
+			query:             "",
+			mode:              SQLInjectionModeFull,
+			injectSpan:        true,
+			expectedQuery:     "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsp='2',ddsv='1.0.0',ddtid='10'*/",
+			expectedSpanIDGen: true,
 		},
 		{
-			name:               "query with existing comment",
-			query:              "SELECT * from FOO -- test query",
-			mode:               SQLInjectionModeFull,
-			prepareSpanContext: prepareSpanContextWithSpanID,
-			expectedQuery:      "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsp='2',ddsv='1.0.0',ddtid='10'*/ SELECT * from FOO -- test query",
-			expectedSpanIDGen:  true,
+			name:              "query with existing comment",
+			query:             "SELECT * from FOO -- test query",
+			mode:              SQLInjectionModeFull,
+			injectSpan:        true,
+			expectedQuery:     "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsp='2',ddsv='1.0.0',ddtid='10'*/ SELECT * from FOO -- test query",
+			expectedSpanIDGen: true,
 		},
 		{
-			name:               "static tags only mode",
-			query:              "SELECT * from FOO",
-			mode:               SQLInjectionModeService,
-			prepareSpanContext: prepareSpanContextWithSpanID,
-			expectedQuery:      "/*dde='test-env',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsv='1.0.0'*/ SELECT * from FOO",
-			expectedSpanIDGen:  false,
+			name:              "static tags only mode",
+			query:             "SELECT * from FOO",
+			mode:              SQLInjectionModeService,
+			injectSpan:        true,
+			expectedQuery:     "/*dde='test-env',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsv='1.0.0'*/ SELECT * from FOO",
+			expectedSpanIDGen: false,
 		},
 	}
 
@@ -81,10 +72,17 @@ func TestSQLCommentPropagator(t *testing.T) {
 			// the test service name includes all RFC3986 reserved characters to make sure all of them are url encoded
 			// as per the sqlcommenter spec
 			tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
+			defer tracer.Stop()
 
-			ctx := tc.prepareSpanContext(tracer)
+			var spanCtx ddtrace.SpanContext
+			if tc.injectSpan {
+				root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*span)
+				root.SetTag(ext.SamplingPriority, 2)
+				spanCtx = root.Context()
+			}
+
 			carrier := SQLCommentCarrier{Query: tc.query, Mode: tc.mode}
-			err := carrier.Inject(ctx)
+			err := carrier.Inject(spanCtx)
 			require.NoError(t, err)
 
 			expected := strings.ReplaceAll(tc.expectedQuery, "<span_id>", strconv.FormatUint(carrier.SpanID, 10))

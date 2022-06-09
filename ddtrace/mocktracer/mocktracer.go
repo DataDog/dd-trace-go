@@ -173,12 +173,24 @@ func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 }
 
 func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) error {
-	switch c := carrier.(type) {
-	case tracer.TextMapWriter:
-		return t.injectTextMap(context, c)
-	default:
+	writer, ok := carrier.(tracer.TextMapWriter)
+	if !ok {
 		return tracer.ErrInvalidCarrier
 	}
+	ctx, ok := context.(*spanContext)
+	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
+		return tracer.ErrInvalidSpanContext
+	}
+	writer.Set(traceHeader, strconv.FormatUint(ctx.traceID, 10))
+	writer.Set(spanHeader, strconv.FormatUint(ctx.spanID, 10))
+	if ctx.hasSamplingPriority() {
+		writer.Set(priorityHeader, strconv.Itoa(ctx.priority))
+	}
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		writer.Set(baggagePrefix+k, v)
+		return true
+	})
+	return nil
 }
 
 func (t *mocktracer) injectTextMap(context ddtrace.SpanContext, writer tracer.TextMapWriter) error {
