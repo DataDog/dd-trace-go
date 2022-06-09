@@ -141,7 +141,7 @@ func TestCommentInjection(t *testing.T) {
 			tracer.Start(tracer.WithService("test-service"), tracer.WithEnv("test-env"), tracer.WithServiceVersion("1.0.0"))
 			defer tracer.Stop()
 
-			d := internal.NewMockDriver()
+			d := &internal.MockDriver{}
 			Register("test", d, tc.opts...)
 			defer unregister("test")
 

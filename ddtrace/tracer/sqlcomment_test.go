@@ -84,7 +84,7 @@ func TestSQLCommentPropagator(t *testing.T) {
 
 			ctx := tc.prepareSpanContext(tracer)
 			carrier := SQLCommentCarrier{Query: tc.query, Mode: tc.mode}
-			err := tracer.Inject(ctx, carrier)
+			err := carrier.Inject(ctx)
 			require.NoError(t, err)
 
 			expected := strings.ReplaceAll(tc.expectedQuery, "<span_id>", strconv.FormatUint(carrier.SpanID, 10))
