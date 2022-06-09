@@ -29,7 +29,6 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-
 	spanOpts := []ddtrace.StartSpanOption{
 		tracer.ResourceName(t.String()),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
