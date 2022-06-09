@@ -74,7 +74,7 @@ var (
 	ipv6SpecialNetworks = []*netaddr.IPPrefix{
 		ippref("fec0::/10"), // site local
 	}
-	ipHeaders = []string{
+	defaultIPHeaders = []string{
 		"x-forwarded-for",
 		"x-real-ip",
 		"x-client-ip",
@@ -90,7 +90,7 @@ var (
 // getClientIP uses the request headers to resolve the client IP. If a specific header to check is provided through
 // DD_CLIENT_IP_HEADER, then only this header is checked.
 func getClientIP(remoteAddr string, headers http.Header, clientIPHeader string) netaddr.IP {
-	ipHeaders := ipHeaders
+	ipHeaders := defaultIPHeaders
 	if len(clientIPHeader) > 0 {
 		ipHeaders = []string{clientIPHeader}
 	}

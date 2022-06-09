@@ -46,7 +46,7 @@ func genIPTestCases() []IPTestCase {
 	ipv6Private := randPrivateIPv6().String()
 	tcs := []IPTestCase{}
 	// Simple ipv4 test cases over all headers
-	for _, header := range ipHeaders {
+	for _, header := range defaultIPHeaders {
 		tcs = append(tcs, IPTestCase{
 			name:       "ipv4-global." + header,
 			headers:    map[string]string{header: ipv4Global},
@@ -59,7 +59,7 @@ func genIPTestCases() []IPTestCase {
 		})
 	}
 	// Simple ipv6 test cases over all headers
-	for _, header := range ipHeaders {
+	for _, header := range defaultIPHeaders {
 		tcs = append(tcs, IPTestCase{
 			name:       "ipv6-global." + header,
 			headers:    map[string]string{header: ipv6Global},
