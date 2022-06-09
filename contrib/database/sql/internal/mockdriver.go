@@ -54,8 +54,7 @@ func (m *mockConn) Begin() (driver.Tx, error) {
 	return &mockTx{driver: m.driver}, nil
 }
 
-type rows struct {
-}
+type rows struct {}
 
 // Columns implements the Rows interface
 func (r *rows) Columns() []string {
