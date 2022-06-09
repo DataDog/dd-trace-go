@@ -124,8 +124,7 @@ func (s *mockStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (
 	return &rows{}, nil
 }
 
-type mockResult struct {
-}
+type mockResult struct {}
 
 // LastInsertId implements the Result interface
 func (r *mockResult) LastInsertId() (int64, error) {
