@@ -28,7 +28,7 @@ func TestCommentInjection(t *testing.T) {
 	}{
 		{
 			name: "prepared statement with default mode (disabled)",
-			opts: []RegisterOption{WithCommentInjection(tracer.CommentInjectionDisabled)},
+			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -37,7 +37,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "prepared statement in explicitly disabled mode",
-			opts: []RegisterOption{WithCommentInjection(tracer.CommentInjectionDisabled)},
+			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -46,7 +46,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "prepared statement in service tags only mode",
-			opts: []RegisterOption{WithCommentInjection(tracer.ServiceTagsInjection)},
+			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -55,7 +55,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "prepared statement in full mode",
-			opts: []RegisterOption{WithCommentInjection(tracer.FullSQLCommentInjection)},
+			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -64,7 +64,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "query in default mode (disabled)",
-			opts: []RegisterOption{WithCommentInjection(tracer.CommentInjectionDisabled)},
+			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -73,7 +73,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "query in explicitly disabled mode",
-			opts: []RegisterOption{WithCommentInjection(tracer.CommentInjectionDisabled)},
+			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -82,7 +82,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "query in service tags only mode",
-			opts: []RegisterOption{WithCommentInjection(tracer.ServiceTagsInjection)},
+			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -91,7 +91,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "query in full mode",
-			opts: []RegisterOption{WithCommentInjection(tracer.FullSQLCommentInjection)},
+			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -100,7 +100,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "exec in default mode (disabled)",
-			opts: []RegisterOption{WithCommentInjection(tracer.CommentInjectionDisabled)},
+			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -109,7 +109,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "exec in explicitly disabled mode",
-			opts: []RegisterOption{WithCommentInjection(tracer.CommentInjectionDisabled)},
+			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -118,7 +118,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "exec in service tags only mode",
-			opts: []RegisterOption{WithCommentInjection(tracer.ServiceTagsInjection)},
+			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -127,7 +127,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "exec in full mode",
-			opts: []RegisterOption{WithCommentInjection(tracer.FullSQLCommentInjection)},
+			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err

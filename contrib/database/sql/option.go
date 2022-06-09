@@ -36,7 +36,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
-	cfg.commentInjectionMode = tracer.SQLCommentInjectionMode(internal.IntEnv("DD_TRACE_SQL_COMMENT_INJECTION_MODE", int(tracer.CommentInjectionDisabled)))
+	cfg.commentInjectionMode = tracer.SQLCommentInjectionMode(internal.IntEnv("DD_TRACE_SQL_COMMENT_INJECTION_MODE", int(tracer.SQLInjectionDisabled)))
 }
 
 // WithServiceName sets the given service name when registering a driver,
@@ -87,10 +87,10 @@ func WithChildSpansOnly() Option {
 	}
 }
 
-// WithCommentInjection enables injection of tags as sql comments on traced queries.
+// WithSQLCommentInjection enables injection of tags as sql comments on traced queries.
 // This includes dynamic values like span id, trace id and sampling priority which can make queries
 // unique for some cache implementations. Use WithStaticTagsCommentInjection if this is a concern.
-func WithCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
+func WithSQLCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
 	return func(cfg *config) {
 		cfg.commentInjectionMode = mode
 	}
