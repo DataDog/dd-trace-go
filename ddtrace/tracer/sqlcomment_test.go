@@ -35,7 +35,7 @@ func TestSQLCommentPropagator(t *testing.T) {
 		{
 			name:               "all tags injected",
 			query:              "SELECT * from FOO",
-			mode:               FullSQLCommentInjection,
+			mode:               SQLInjectionModeFull,
 			prepareSpanContext: prepareSpanContextWithSpanID,
 			expectedQuery:      "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsp='2',ddsv='1.0.0',ddtid='10'*/ SELECT * from FOO",
 			expectedSpanIDGen:  true,
@@ -43,7 +43,7 @@ func TestSQLCommentPropagator(t *testing.T) {
 		{
 			name:  "no existing trace",
 			query: "SELECT * from FOO",
-			mode:  FullSQLCommentInjection,
+			mode:  SQLInjectionModeFull,
 			prepareSpanContext: func(tracer *tracer) ddtrace.SpanContext {
 				return nil
 			},
@@ -53,7 +53,7 @@ func TestSQLCommentPropagator(t *testing.T) {
 		{
 			name:               "empty query, all tags injected",
 			query:              "",
-			mode:               FullSQLCommentInjection,
+			mode:               SQLInjectionModeFull,
 			prepareSpanContext: prepareSpanContextWithSpanID,
 			expectedQuery:      "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsp='2',ddsv='1.0.0',ddtid='10'*/",
 			expectedSpanIDGen:  true,
@@ -61,7 +61,7 @@ func TestSQLCommentPropagator(t *testing.T) {
 		{
 			name:               "query with existing comment",
 			query:              "SELECT * from FOO -- test query",
-			mode:               FullSQLCommentInjection,
+			mode:               SQLInjectionModeFull,
 			prepareSpanContext: prepareSpanContextWithSpanID,
 			expectedQuery:      "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsp='2',ddsv='1.0.0',ddtid='10'*/ SELECT * from FOO -- test query",
 			expectedSpanIDGen:  true,
@@ -69,7 +69,7 @@ func TestSQLCommentPropagator(t *testing.T) {
 		{
 			name:               "static tags only mode",
 			query:              "SELECT * from FOO",
-			mode:               ServiceTagsInjection,
+			mode:               SQLInjectionModeService,
 			prepareSpanContext: prepareSpanContextWithSpanID,
 			expectedQuery:      "/*dde='test-env',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsv='1.0.0'*/ SELECT * from FOO",
 			expectedSpanIDGen:  false,
@@ -83,7 +83,7 @@ func TestSQLCommentPropagator(t *testing.T) {
 			tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
 
 			ctx := tc.prepareSpanContext(tracer)
-			carrier := NewSQLCommentCarrier(tc.query, tc.mode)
+			carrier := SQLCommentCarrier{Query: tc.query, Mode: tc.mode}
 			err := tracer.Inject(ctx, carrier)
 			require.NoError(t, err)
 

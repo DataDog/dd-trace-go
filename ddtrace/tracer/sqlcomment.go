@@ -21,22 +21,22 @@ import (
 type SQLCommentInjectionMode int
 
 const (
-	// CommentInjectionDisabled represents the comment injection mode where all injection is disabled.
-	CommentInjectionDisabled SQLCommentInjectionMode = 0
-	// ServiceTagsInjection represents the comment injection mode where only service tags (name, env, version) are injected.
-	ServiceTagsInjection SQLCommentInjectionMode = 1
-	// FullSQLCommentInjection represents the comment injection mode where both service tags and tracing tags. Tracing tags include span id, trace id and sampling priority.
-	FullSQLCommentInjection SQLCommentInjectionMode = 2
+	// SQLInjectionDisabled represents the comment injection mode where all injection is disabled.
+	SQLInjectionDisabled SQLCommentInjectionMode = 0
+	// SQLInjectionModeService represents the comment injection mode where only service tags (name, env, version) are injected.
+	SQLInjectionModeService SQLCommentInjectionMode = 1
+	// SQLInjectionModeFull represents the comment injection mode where both service tags and tracing tags. Tracing tags include span id, trace id and sampling priority.
+	SQLInjectionModeFull SQLCommentInjectionMode = 2
 )
 
 // Key names for SQL comment tags.
 const (
-	SamplingPrioritySQLCommentKey   = "ddsp"
-	TraceIDSQLCommentKey            = "ddtid"
-	SpanIDSQLCommentKey             = "ddsid"
-	ServiceNameSQLCommentKey        = "ddsn"
-	ServiceVersionSQLCommentKey     = "ddsv"
-	ServiceEnvironmentSQLCommentKey = "dde"
+	sqlCommentKeySamplingPriority = "ddsp"
+	sqlCommentTraceID             = "ddtid"
+	sqlCommentSpanID              = "ddsid"
+	sqlCommentService             = "ddsn"
+	sqlCommentVersion             = "ddsv"
+	sqlCommentEnv                 = "dde"
 )
 
 // SQLCommentCarrier is a carrier implementation that injects a span context in a SQL query in the form
@@ -48,46 +48,15 @@ type SQLCommentCarrier struct {
 	SpanID uint64
 }
 
-// NewSQLCommentCarrier returns a new instance of a SQLCommentCarrier
-func NewSQLCommentCarrier(query string, mode SQLCommentInjectionMode) (c *SQLCommentCarrier) {
-	c = new(SQLCommentCarrier)
-	c.Mode = mode
-	c.Query = query
-	c.SpanID = random.Uint64()
-	return c
-}
-
 // Inject injects a span context in the carrier's query.
 func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
-	if c.Mode == CommentInjectionDisabled {
-		return nil
-	}
-
+	c.SpanID = random.Uint64()
 	tags := make(map[string]string)
-	if c.Mode == ServiceTagsInjection || c.Mode == FullSQLCommentInjection {
-		ctx, ok := spanCtx.(*spanContext)
-		var env, version string
-		if ok {
-			if e, ok := ctx.meta(ext.Environment); ok {
-				env = e
-			}
-			if v, ok := ctx.meta(ext.Version); ok {
-				version = v
-			}
-		}
-		if globalconfig.ServiceName() != "" {
-			tags[ServiceNameSQLCommentKey] = globalconfig.ServiceName()
-		}
-		if env != "" {
-			tags[ServiceEnvironmentSQLCommentKey] = env
-		}
-		if version != "" {
-			tags[ServiceVersionSQLCommentKey] = version
-		}
-	}
-	if c.Mode == FullSQLCommentInjection {
+	switch c.Mode {
+	case SQLInjectionDisabled:
+		return nil
+	case SQLInjectionModeFull:
 		samplingPriority := 0
-
 		var traceID uint64
 		ctx, ok := spanCtx.(*spanContext)
 		if ok {
@@ -101,11 +70,31 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 		if traceID == 0 {
 			traceID = c.SpanID
 		}
-		tags[TraceIDSQLCommentKey] = strconv.FormatUint(traceID, 10)
-		tags[SpanIDSQLCommentKey] = strconv.FormatUint(c.SpanID, 10)
-		tags[SamplingPrioritySQLCommentKey] = strconv.Itoa(samplingPriority)
+		tags[sqlCommentTraceID] = strconv.FormatUint(traceID, 10)
+		tags[sqlCommentSpanID] = strconv.FormatUint(c.SpanID, 10)
+		tags[sqlCommentKeySamplingPriority] = strconv.Itoa(samplingPriority)
+		fallthrough
+	case SQLInjectionModeService:
+		ctx, ok := spanCtx.(*spanContext)
+		var env, version string
+		if ok {
+			if e, ok := ctx.meta(ext.Environment); ok {
+				env = e
+			}
+			if v, ok := ctx.meta(ext.Version); ok {
+				version = v
+			}
+		}
+		if globalconfig.ServiceName() != "" {
+			tags[sqlCommentService] = globalconfig.ServiceName()
+		}
+		if env != "" {
+			tags[sqlCommentEnv] = env
+		}
+		if version != "" {
+			tags[sqlCommentVersion] = version
+		}
 	}
-
 	c.Query = commentQuery(c.Query, tags)
 	return nil
 }
@@ -114,58 +103,30 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 // prepended SQL comment. The format of the comment follows the sqlcommenter spec.
 // See https://google.github.io/sqlcommenter/spec/ for more details.
 func commentQuery(query string, tags map[string]string) string {
-	c := serializeTags(tags)
-	if c == "" {
-		return query
-	}
-	if query == "" {
-		return c
-	}
-	return fmt.Sprintf("%s %s", c, query)
-}
-
-func serializeTags(tags map[string]string) (comment string) {
 	if len(tags) == 0 {
 		return ""
 	}
 	serializedTags := make([]string, 0, len(tags))
 	for k, v := range tags {
-		serializedTags = append(serializedTags, serializeTag(k, v))
+		eKey := url.QueryEscape(k)
+		eKey = strings.Replace(eKey, "+", "%20", -1)
+		sKey := strings.ReplaceAll(eKey, "'", "\\'")
+		eVal := url.QueryEscape(v)
+		eVal = strings.Replace(eVal, "+", "%20", -1)
+		escVal := strings.ReplaceAll(eVal, "'", "\\'")
+		sValue := fmt.Sprintf("'%s'", escVal)
+		serializedTags = append(serializedTags, fmt.Sprintf("%s=%s", sKey, sValue))
 	}
 	sort.Strings(serializedTags)
-	comment = strings.Join(serializedTags, ",")
-	return fmt.Sprintf("/*%s*/", comment)
-}
-
-func serializeTag(key string, value string) (serialized string) {
-	sKey := serializeKey(key)
-	sValue := serializeValue(value)
-
-	return fmt.Sprintf("%s=%s", sKey, sValue)
-}
-
-func serializeKey(key string) (encoded string) {
-	enc := urlEncode(key)
-	return escapeMetaChars(enc)
-}
-
-func serializeValue(val string) (encoded string) {
-	enc := urlEncode(val)
-	escapedMeta := escapeMetaChars(enc)
-	return escapeSQL(escapedMeta)
-}
-
-func urlEncode(val string) string {
-	e := url.QueryEscape(val)
-	return strings.Replace(e, "+", "%20", -1)
-}
-
-func escapeSQL(value string) (escaped string) {
-	return fmt.Sprintf("'%s'", value)
-}
-
-func escapeMetaChars(value string) (escaped string) {
-	return strings.ReplaceAll(value, "'", "\\'")
+	sTags := strings.Join(serializedTags, ",")
+	cmt := fmt.Sprintf("/*%s*/", sTags)
+	if cmt == "" {
+		return query
+	}
+	if query == "" {
+		return cmt
+	}
+	return fmt.Sprintf("%s %s", cmt, query)
 }
 
 // Extract is not implemented on SQLCommentCarrier
