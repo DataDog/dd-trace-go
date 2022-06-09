@@ -27,7 +27,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 		expectedSpanIDGen bool
 	}{
 		{
-			name:              "all tags injected",
+			name:              "default",
 			query:             "SELECT * from FOO",
 			mode:              SQLInjectionModeFull,
 			injectSpan:        true,
@@ -35,14 +35,22 @@ func TestSQLCommentCarrier(t *testing.T) {
 			expectedSpanIDGen: true,
 		},
 		{
-			name:              "no existing trace",
+			name:              "service",
+			query:             "SELECT * from FOO",
+			mode:              SQLInjectionModeService,
+			injectSpan:        true,
+			expectedQuery:     "/*dde='test-env',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsv='1.0.0'*/ SELECT * from FOO",
+			expectedSpanIDGen: false,
+		},
+		{
+			name:              "no-trace",
 			query:             "SELECT * from FOO",
 			mode:              SQLInjectionModeFull,
 			expectedQuery:     "/*ddsid='<span_id>',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsp='0',ddtid='<span_id>'*/ SELECT * from FOO",
 			expectedSpanIDGen: true,
 		},
 		{
-			name:              "empty query, all tags injected",
+			name:              "no-query",
 			query:             "",
 			mode:              SQLInjectionModeFull,
 			injectSpan:        true,
@@ -50,20 +58,12 @@ func TestSQLCommentCarrier(t *testing.T) {
 			expectedSpanIDGen: true,
 		},
 		{
-			name:              "query with existing comment",
+			name:              "commented",
 			query:             "SELECT * from FOO -- test query",
 			mode:              SQLInjectionModeFull,
 			injectSpan:        true,
 			expectedQuery:     "/*dde='test-env',ddsid='<span_id>',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsp='2',ddsv='1.0.0',ddtid='10'*/ SELECT * from FOO -- test query",
 			expectedSpanIDGen: true,
-		},
-		{
-			name:              "static tags only mode",
-			query:             "SELECT * from FOO",
-			mode:              SQLInjectionModeService,
-			injectSpan:        true,
-			expectedQuery:     "/*dde='test-env',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsv='1.0.0'*/ SELECT * from FOO",
-			expectedSpanIDGen: false,
 		},
 	}
 
