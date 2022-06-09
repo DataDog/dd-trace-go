@@ -118,8 +118,7 @@ func commentQuery(query string, tags map[string]string) string {
 		serializedTags = append(serializedTags, fmt.Sprintf("%s=%s", sKey, sValue))
 	}
 	sort.Strings(serializedTags)
-	sTags := strings.Join(serializedTags, ",")
-	cmt := fmt.Sprintf("/*%s*/", sTags)
+	cmt := fmt.Sprintf("/*%s*/", strings.Join(serializedTags, ","))
 	if cmt == "" {
 		return query
 	}
