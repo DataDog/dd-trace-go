@@ -6,8 +6,6 @@
 package tracer
 
 import (
-	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -96,6 +94,9 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 	return nil
 }
 
+var keyReplacer = strings.NewReplacer(" ", "%20", "!", "%21", "#", "%23", "$", "%24", "%", "%25", "&", "%26", "'", "%27", "(", "%28", ")", "%29", "*", "%2A", "+", "%2B", ",", "%2C", "/", "%2F", ":", "%3A", ";", "%3B", "=", "%3D", "?", "%3F", "@", "%40", "[", "%5B", "]", "%5D")
+var valueReplacer = strings.NewReplacer(" ", "%20", "!", "%21", "#", "%23", "$", "%24", "%", "%25", "&", "%26", "'", "%27", "(", "%28", ")", "%29", "*", "%2A", "+", "%2B", ",", "%2C", "/", "%2F", ":", "%3A", ";", "%3B", "=", "%3D", "?", "%3F", "@", "%40", "[", "%5B", "]", "%5D", "'", "\\'")
+
 // commentQuery returns the given query with the tags from the SQLCommentCarrier applied to it as a
 // prepended SQL comment. The format of the comment follows the sqlcommenter spec.
 // See https://google.github.io/sqlcommenter/spec/ for more details.
@@ -103,29 +104,40 @@ func commentQuery(query string, tags map[string]string) string {
 	if len(tags) == 0 {
 		return ""
 	}
-	serializedTags := make([]string, 0, len(tags))
+	b := strings.Builder{}
 	// the sqlcommenter specification dictates that tags should be sorted. Since we know all injected keys,
 	// we skip a sorting operation by specifying the order of keys statically
 	orderedKeys := []string{sqlCommentEnv, sqlCommentSpanID, sqlCommentService, sqlCommentKeySamplingPriority, sqlCommentVersion, sqlCommentTraceID}
+	first := true
 	for _, k := range orderedKeys {
 		if v, ok := tags[k]; ok {
-			// we need to URL-encode all + characters and escape single quotes
+			// we need to URL-encode both keys and values and escape single quotes in values
 			// https://google.github.io/sqlcommenter/spec/
-			key := strings.Replace(url.QueryEscape(k), "+", "%20", -1)
-			key = strings.ReplaceAll(key, "'", "\\'")
-			val := strings.Replace(url.QueryEscape(v), "+", "%20", -1)
-			val = strings.ReplaceAll(val, "'", "\\'")
-			serializedTags = append(serializedTags, fmt.Sprintf("%s='%s'", key, val))
+			key := keyReplacer.Replace(k)
+			val := valueReplacer.Replace(v)
+			if first {
+				b.WriteString("/*")
+			} else {
+				b.WriteRune(',')
+			}
+			b.WriteString(key)
+			b.WriteRune('=')
+			b.WriteRune('\'')
+			b.WriteString(val)
+			b.WriteRune('\'')
+			first = false
 		}
 	}
-	cmt := fmt.Sprintf("/*%s*/", strings.Join(serializedTags, ","))
-	if cmt == "" {
+	if b.Len() == 0 {
 		return query
 	}
+	b.WriteString("*/")
 	if query == "" {
-		return cmt
+		return b.String()
 	}
-	return fmt.Sprintf("%s %s", cmt, query)
+	b.WriteRune(' ')
+	b.WriteString(query)
+	return b.String()
 }
 
 // Extract is not implemented on SQLCommentCarrier

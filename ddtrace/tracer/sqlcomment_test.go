@@ -90,3 +90,18 @@ func TestSQLCommentCarrier(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkSQLCommentSerialization(b *testing.B) {
+	t := map[string]string{
+		sqlCommentEnv:     "test-env",
+		sqlCommentTraceID: "0123456789",
+		sqlCommentSpanID:  "9876543210",
+		sqlCommentVersion: "1.0.0",
+		sqlCommentService: "test-svc",
+	}
+
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		commentQuery("SELECT 1 from DUAL", t)
+	}
+}
