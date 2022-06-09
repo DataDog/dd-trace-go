@@ -11,117 +11,116 @@ import (
 	"io"
 )
 
+// MockDriver implements a mock driver that captures and stores prepared and executed statements
 type MockDriver struct {
 	PreparedStmts   []string
 	ExecutedQueries []string
 }
 
-func NewMockDriver() (d *MockDriver) {
-	return &MockDriver{}
-}
-
+// Open implements the Conn interface
 func (d *MockDriver) Open(name string) (driver.Conn, error) {
-	return &MockConn{driver: d}, nil
+	return &mockConn{driver: d}, nil
 }
 
-func (d *MockDriver) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	d.ExecutedQueries = append(d.ExecutedQueries, query)
-	return &rows{}, nil
-}
-
-func (d *MockDriver) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
-	d.PreparedStmts = append(d.PreparedStmts, query)
-	return &MockStmt{stmt: query, driver: d}, nil
-}
-
-func (d *MockDriver) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
-	return &MockTx{driver: d}, nil
-}
-
-type MockConn struct {
+type mockConn struct {
 	driver *MockDriver
 }
 
-// Prepare returns a prepared statement, bound to this connection.
-func (m *MockConn) Prepare(query string) (driver.Stmt, error) {
+// Prepare implements the driver.Conn interface
+func (m *mockConn) Prepare(query string) (driver.Stmt, error) {
 	m.driver.PreparedStmts = append(m.driver.PreparedStmts, query)
-	return &MockStmt{stmt: query, driver: m.driver}, nil
+	return &mockStmt{stmt: query, driver: m.driver}, nil
 }
 
-func (m *MockConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+// QueryContext implements the QueryerContext interface
+func (m *mockConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	m.driver.ExecutedQueries = append(m.driver.ExecutedQueries, query)
 	return &rows{}, nil
 }
 
-func (m *MockConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+// ExecContext implements the ExecerContext interface
+func (m *mockConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	m.driver.ExecutedQueries = append(m.driver.ExecutedQueries, query)
 	return &mockResult{}, nil
 }
 
-func (m *MockConn) Close() (err error) {
+// Close implements the Conn interface
+func (m *mockConn) Close() (err error) {
 	return nil
 }
 
-func (m *MockConn) Begin() (driver.Tx, error) {
-	return &MockTx{driver: m.driver}, nil
+// Begin implements the Conn interface
+func (m *mockConn) Begin() (driver.Tx, error) {
+	return &mockTx{driver: m.driver}, nil
 }
 
 type rows struct {
 }
 
+// Columns implements the Rows interface
 func (r *rows) Columns() []string {
 	return []string{}
 }
 
+// Close implements the Rows interface
 func (r *rows) Close() error {
 	return nil
 }
 
+// Next implements the Rows interface
 func (r *rows) Next(dest []driver.Value) error {
 	return io.EOF
 }
 
-type MockTx struct {
+type mockTx struct {
 	driver *MockDriver
 }
 
-func (t *MockTx) Commit() error {
+// Commit implements the Tx interface
+func (t *mockTx) Commit() error {
 	return nil
 }
 
-func (t *MockTx) Rollback() error {
+// Rollback implements the Tx interface
+func (t *mockTx) Rollback() error {
 	return nil
 }
 
-type MockStmt struct {
+type mockStmt struct {
 	stmt   string
 	driver *MockDriver
 }
 
-func (s *MockStmt) Close() error {
+// Close implements the Stmt interface
+func (s *mockStmt) Close() error {
 	return nil
 }
 
-func (s *MockStmt) NumInput() int {
+// NumInput implements the Stmt interface
+func (s *mockStmt) NumInput() int {
 	return 0
 }
 
-func (s *MockStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+// Exec implements the Stmt interface
+func (s *mockStmt) Exec(args []driver.Value) (driver.Result, error) {
 	s.driver.ExecutedQueries = append(s.driver.ExecutedQueries, s.stmt)
 	return &mockResult{}, nil
 }
 
-func (s *MockStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
+// Query implements the Stmt interface
+func (s *mockStmt) Query(args []driver.Value) (driver.Rows, error) {
 	s.driver.ExecutedQueries = append(s.driver.ExecutedQueries, s.stmt)
 	return &rows{}, nil
 }
 
-func (s *MockStmt) Exec(args []driver.Value) (driver.Result, error) {
+// ExecContext implements the StmtExecContext interface
+func (s *mockStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
 	s.driver.ExecutedQueries = append(s.driver.ExecutedQueries, s.stmt)
 	return &mockResult{}, nil
 }
 
-func (s *MockStmt) Query(args []driver.Value) (driver.Rows, error) {
+// QueryContext implements the StmtQueryContext interface
+func (s *mockStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
 	s.driver.ExecutedQueries = append(s.driver.ExecutedQueries, s.stmt)
 	return &rows{}, nil
 }
@@ -129,10 +128,12 @@ func (s *MockStmt) Query(args []driver.Value) (driver.Rows, error) {
 type mockResult struct {
 }
 
+// LastInsertId implements the Result interface
 func (r *mockResult) LastInsertId() (int64, error) {
 	return 0, nil
 }
 
+// RowsAffected implements the Result interface
 func (r *mockResult) RowsAffected() (int64, error) {
 	return 0, nil
 }
