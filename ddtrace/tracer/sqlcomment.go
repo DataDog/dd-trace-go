@@ -106,7 +106,7 @@ func commentQuery(query string, tags map[string]string) string {
 	if len(tags) == 0 {
 		return ""
 	}
-	b := strings.Builder{}
+	var b strings.Builder
 	// the sqlcommenter specification dictates that tags should be sorted. Since we know all injected keys,
 	// we skip a sorting operation by specifying the order of keys statically
 	orderedKeys := []string{sqlCommentEnv, sqlCommentSpanID, sqlCommentService, sqlCommentKeySamplingPriority, sqlCommentVersion, sqlCommentTraceID}

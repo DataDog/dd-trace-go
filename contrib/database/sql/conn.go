@@ -178,8 +178,8 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 	return context.WithValue(ctx, spanTagsKey, tags)
 }
 
-// injectComments returns the query with sql comments injected according to the comment injection mode along
-// with a span id injected into sql comments. The returned span id should be used when the sql span is created
+// injectComments returns the query with SQL comments injected according to the comment injection mode along
+// with a span ID injected into SQL comments. The returned span ID should be used when the SQL span is created
 // following the traced database call.
 func injectComments(ctx context.Context, query string, mode tracer.SQLCommentInjectionMode) (cquery string, spanID uint64) {
 	// The sql span only gets created after the call to the database because we need to be able to skip spans
