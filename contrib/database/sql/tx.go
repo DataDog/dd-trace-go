@@ -24,7 +24,7 @@ type tracedTx struct {
 func (t *tracedTx) Commit() (err error) {
 	start := time.Now()
 	err = t.Tx.Commit()
-	t.tryTrace(t.ctx, queryTypeCommit, "", start, err, 0)
+	t.tryTrace(t.ctx, queryTypeCommit, "", start, err)
 	return err
 }
 
@@ -32,6 +32,6 @@ func (t *tracedTx) Commit() (err error) {
 func (t *tracedTx) Rollback() (err error) {
 	start := time.Now()
 	err = t.Tx.Rollback()
-	t.tryTrace(t.ctx, queryTypeRollback, "", start, err, 0)
+	t.tryTrace(t.ctx, queryTypeRollback, "", start, err)
 	return err
 }
