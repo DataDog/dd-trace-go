@@ -65,6 +65,16 @@ func init() {
 // example of a hash map keyed by variable-length call stacks
 type callStack [32]uintptr
 
+// Stack returns the call stack without any trailing 0 program counters
+func (c *callStack) Stack() []uintptr {
+	for i, pc := range c {
+		if pc == 0 {
+			return c[:i]
+		}
+	}
+	return c[:]
+}
+
 type aggregatedSample struct {
 	// bytes is the total number of bytes allocated
 	bytes uint
