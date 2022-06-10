@@ -7,6 +7,7 @@ package sql
 
 import (
 	"math"
+	"os"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -36,7 +37,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
-	cfg.commentInjectionMode = tracer.SQLCommentInjectionMode(internal.IntEnv("DD_TRACE_SQL_COMMENT_INJECTION_MODE", int(tracer.SQLInjectionDisabled)))
+	cfg.commentInjectionMode = tracer.SQLCommentInjectionMode(os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE"))
 }
 
 // WithServiceName sets the given service name when registering a driver,

@@ -15,15 +15,17 @@ import (
 )
 
 // SQLCommentInjectionMode represents the mode of SQL comment injection.
-type SQLCommentInjectionMode int
+type SQLCommentInjectionMode string
 
 const (
+	// SQLInjectionUndefined represents the comment injection mode is not set. This is the same as SQLInjectionDisabled.
+	SQLInjectionUndefined SQLCommentInjectionMode = ""
 	// SQLInjectionDisabled represents the comment injection mode where all injection is disabled.
-	SQLInjectionDisabled SQLCommentInjectionMode = 0
+	SQLInjectionDisabled SQLCommentInjectionMode = "disabled"
 	// SQLInjectionModeService represents the comment injection mode where only service tags (name, env, version) are injected.
-	SQLInjectionModeService SQLCommentInjectionMode = 1
+	SQLInjectionModeService SQLCommentInjectionMode = "service"
 	// SQLInjectionModeFull represents the comment injection mode where both service tags and tracing tags. Tracing tags include span id, trace id and sampling priority.
-	SQLInjectionModeFull SQLCommentInjectionMode = 2
+	SQLInjectionModeFull SQLCommentInjectionMode = "full"
 )
 
 // Key names for SQL comment tags.
@@ -50,6 +52,8 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 	c.SpanID = random.Uint64()
 	tags := make(map[string]string)
 	switch c.Mode {
+	case SQLInjectionUndefined:
+		fallthrough
 	case SQLInjectionDisabled:
 		return nil
 	case SQLInjectionModeFull:

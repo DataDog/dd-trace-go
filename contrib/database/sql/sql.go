@@ -21,12 +21,12 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"math"
 	"reflect"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -187,7 +187,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if math.IsNaN(cfg.analyticsRate) {
 		cfg.analyticsRate = rc.analyticsRate
 	}
-	if cfg.commentInjectionMode == tracer.SQLInjectionDisabled {
+	if cfg.commentInjectionMode == tracer.SQLInjectionUndefined {
 		cfg.commentInjectionMode = rc.commentInjectionMode
 	}
 	cfg.childSpansOnly = rc.childSpansOnly
