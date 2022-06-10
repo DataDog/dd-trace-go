@@ -61,6 +61,12 @@ func init() {
 // used if a profile is started with Profile.SampleRate == 0
 const DefaultSamplingRate = 2 * 1024 * 1024 // 2 MB
 
+// callStack is a sequence of program counters representing a call to malloc,
+// calloc, etc. callStack is 0-terminated.
+//
+// TODO: make callStack larger, or support variable-length call stacks. See
+// https://cs.opensource.google/go/go/+/master:src/runtime/pprof/map.go for an
+// example of a hash map keyed by variable-length call stacks
 type callStack [32]uintptr
 
 type aggregatedSample struct {
