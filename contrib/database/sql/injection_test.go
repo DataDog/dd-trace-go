@@ -153,14 +153,14 @@ func TestCommentInjection(t *testing.T) {
 			s.Finish()
 
 			require.NoError(t, err)
-			require.Len(t, d.PreparedStmts, len(tc.prepared))
+			require.Len(t, d.Prepared, len(tc.prepared))
 			for i, e := range tc.prepared {
-				assert.Equal(t, e, d.PreparedStmts[i])
+				assert.Equal(t, e, d.Prepared[i])
 			}
 
-			require.Len(t, d.ExecutedQueries, len(tc.executed))
+			require.Len(t, d.Executed, len(tc.executed))
 			for i, e := range tc.executed {
-				assert.Regexp(t, e, d.ExecutedQueries[i])
+				assert.Regexp(t, e, d.Executed[i])
 			}
 		})
 	}

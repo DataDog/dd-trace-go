@@ -78,7 +78,6 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 	if err != nil {
 		return nil, err
 	}
-
 	return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
 }
 

@@ -13,8 +13,8 @@ import (
 
 // MockDriver implements a mock driver that captures and stores prepared and executed statements
 type MockDriver struct {
-	PreparedStmts   []string
-	ExecutedQueries []string
+	Prepared []string
+	Executed []string
 }
 
 // Open implements the Conn interface
@@ -28,19 +28,19 @@ type mockConn struct {
 
 // Prepare implements the driver.Conn interface
 func (m *mockConn) Prepare(query string) (driver.Stmt, error) {
-	m.driver.PreparedStmts = append(m.driver.PreparedStmts, query)
+	m.driver.Prepared = append(m.driver.Prepared, query)
 	return &mockStmt{stmt: query, driver: m.driver}, nil
 }
 
 // QueryContext implements the QueryerContext interface
 func (m *mockConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	m.driver.ExecutedQueries = append(m.driver.ExecutedQueries, query)
+	m.driver.Executed = append(m.driver.Executed, query)
 	return &rows{}, nil
 }
 
 // ExecContext implements the ExecerContext interface
 func (m *mockConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
-	m.driver.ExecutedQueries = append(m.driver.ExecutedQueries, query)
+	m.driver.Executed = append(m.driver.Executed, query)
 	return &mockResult{}, nil
 }
 
@@ -102,25 +102,25 @@ func (s *mockStmt) NumInput() int {
 
 // Exec implements the Stmt interface
 func (s *mockStmt) Exec(args []driver.Value) (driver.Result, error) {
-	s.driver.ExecutedQueries = append(s.driver.ExecutedQueries, s.stmt)
+	s.driver.Executed = append(s.driver.Executed, s.stmt)
 	return &mockResult{}, nil
 }
 
 // Query implements the Stmt interface
 func (s *mockStmt) Query(args []driver.Value) (driver.Rows, error) {
-	s.driver.ExecutedQueries = append(s.driver.ExecutedQueries, s.stmt)
+	s.driver.Executed = append(s.driver.Executed, s.stmt)
 	return &rows{}, nil
 }
 
 // ExecContext implements the StmtExecContext interface
 func (s *mockStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
-	s.driver.ExecutedQueries = append(s.driver.ExecutedQueries, s.stmt)
+	s.driver.Executed = append(s.driver.Executed, s.stmt)
 	return &mockResult{}, nil
 }
 
 // QueryContext implements the StmtQueryContext interface
 func (s *mockStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
-	s.driver.ExecutedQueries = append(s.driver.ExecutedQueries, s.stmt)
+	s.driver.Executed = append(s.driver.Executed, s.stmt)
 	return &rows{}, nil
 }
 
