@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -19,6 +20,24 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+)
+
+var (
+	ipv6SpecialNetworks = []*netaddr.IPPrefix{
+		ippref("fec0::/10"), // site local
+	}
+	defaultIPHeaders = []string{
+		"x-forwarded-for",
+		"x-real-ip",
+		"x-client-ip",
+		"x-forwarded",
+		"x-cluster-client-ip",
+		"forwarded-for",
+		"forwarded",
+		"via",
+		"true-client-ip",
+	}
+	clientIPHeader = os.Getenv("DD_TRACE_CLIENT_IP_HEADER")
 )
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
@@ -37,7 +56,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			tracer.Tag("http.host", r.Host),
 		}, opts...)
 	}
-	if ip := getClientIP(r.RemoteAddr, r.Header, cfg.ipHeader); ip.IsValid() {
+	if ip := getClientIP(r.RemoteAddr, r.Header, clientIPHeader); ip.IsValid() {
 		opts = append(opts, tracer.Tag(ext.HTTPClientIP, ip.String()))
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
@@ -69,23 +88,6 @@ func ippref(s string) *netaddr.IPPrefix {
 	}
 	return nil
 }
-
-var (
-	ipv6SpecialNetworks = []*netaddr.IPPrefix{
-		ippref("fec0::/10"), // site local
-	}
-	defaultIPHeaders = []string{
-		"x-forwarded-for",
-		"x-real-ip",
-		"x-client-ip",
-		"x-forwarded",
-		"x-cluster-client-ip",
-		"forwarded-for",
-		"forwarded",
-		"via",
-		"true-client-ip",
-	}
-)
 
 // getClientIP uses the request headers to resolve the client IP. If a specific header to check is provided through
 // DD_CLIENT_IP_HEADER, then only this header is checked.
