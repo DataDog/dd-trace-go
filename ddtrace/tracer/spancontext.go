@@ -246,9 +246,9 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 // It is not safe for concurrent use.
 func (t *trace) setServiceDecisionMaker(service string, sampler samplernames.SamplerName, s *span) {
 	serviceHash := Hash(service)
-	tr, haveTracer := internal.GetGlobalTracer().(*tracer)
+	tr, ok := internal.GetGlobalTracer().(*tracer)
 	var propagatingHash string
-	if haveTracer && tr.config.propagateServiceName {
+	if ok && tr.config.propagateServiceName {
 		propagatingHash = serviceHash
 	}
 	t.setPropagatingTag(keyDecisionMaker, propagatingHash+"-"+strconv.Itoa(int(sampler)))
