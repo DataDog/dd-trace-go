@@ -96,7 +96,7 @@ func TestCommentInjection(t *testing.T) {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dde='test-env',ddsid='[0-9]+',ddsn='test-service',ddsp='1',ddsv='1.0.0',ddtid='1'\\*/ SELECT 1 from DUAL")},
+			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dde='test-env',ddsid='\\d+',ddsn='test-service',ddsp='1',ddsv='1.0.0',ddtid='1'\\*/ SELECT 1 from DUAL")},
 		},
 		{
 			name: "exec",
@@ -132,7 +132,7 @@ func TestCommentInjection(t *testing.T) {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dde='test-env',ddsid='[0-9]+',ddsn='test-service',ddsp='1',ddsv='1.0.0',ddtid='1'\\*/ SELECT 1 from DUAL")},
+			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dde='test-env',ddsid='\\d+',ddsn='test-service',ddsp='1',ddsv='1.0.0',ddtid='1'\\*/ SELECT 1 from DUAL")},
 		},
 	}
 
@@ -161,6 +161,8 @@ func TestCommentInjection(t *testing.T) {
 			require.Len(t, d.Executed, len(tc.executed))
 			for i, e := range tc.executed {
 				assert.Regexp(t, e, d.Executed[i])
+				// the injected span ID should not be the parent's span ID
+				assert.NotContains(t, d.Executed[i], "ddsid='1'")
 			}
 		})
 	}
