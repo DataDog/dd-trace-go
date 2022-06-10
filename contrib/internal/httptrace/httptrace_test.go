@@ -174,7 +174,6 @@ func TestIPHeaders(t *testing.T) {
 			require.Equal(t, tc.expectedIP.String(), getClientIP(tc.remoteAddr, header, tc.userIPHeader).String())
 		})
 	}
-
 }
 
 func randIPv4() netaddr.IP {
