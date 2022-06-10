@@ -34,6 +34,10 @@ type CAllocationProfiler interface {
 	Stop() (*profile.Profile, error)
 }
 
+// DefaultCAllocationSamplingRate is the sampling rate, in bytes allocated,
+// which will be used if a profile is started with sample rate 0
+const DefaultCAllocationSamplingRate = 2 * 1024 * 1024 // 2 MB
+
 var (
 	cAllocationProfiler CAllocationProfiler
 )

@@ -57,10 +57,6 @@ func init() {
 	extensions.SetCAllocationProfiler(new(Profile))
 }
 
-// DefaultSamplingRate is the sampling rate, in bytes allocated, which will be
-// used if a profile is started with Profile.SampleRate == 0
-const DefaultSamplingRate = 2 * 1024 * 1024 // 2 MB
-
 // callStack is a sequence of program counters representing a call to malloc,
 // calloc, etc. callStack is 0-terminated.
 //
@@ -115,7 +111,7 @@ func (c *Profile) Start(rate int) {
 	// the map only ever increases.
 	c.samples = make(map[callStack]*aggregatedSample)
 	if rate == 0 {
-		rate = DefaultSamplingRate
+		rate = extensions.DefaultCAllocationSamplingRate
 	}
 	c.SamplingRate = rate
 	activeProfile.Store(c)

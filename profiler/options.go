@@ -25,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -210,7 +211,7 @@ func defaultConfig() (*config, error) {
 		tags:              []string{fmt.Sprintf("process_id:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:        true,
-		cmemprofRate:      2 * 1024 * 1024,
+		cmemprofRate:      extensions.DefaultCAllocationSamplingRate,
 	}
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
