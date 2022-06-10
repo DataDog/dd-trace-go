@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	pprofile "github.com/google/pprof/profile"
 )
@@ -131,7 +130,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		}
 		// Always warn people against using this mode for now. All customers should
 		// use agent based uploading at this point.
-		log.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported.")
+		cfg.logger.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported.")
 		cfg.targetURL = cfg.apiURL
 	} else {
 		// Historically people could use an API Key to enable agentless uploading.
@@ -140,7 +139,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		// key configured, we warn the customers that this is probably a
 		// misconfiguration.
 		if cfg.apiKey != "" {
-			log.Warn("You are currently setting profiler.WithAPIKey or the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please see the profiler.WithAPIKey go docs and verify that your integration is still working. If you can't remove DD_API_KEY from your environment, you can use WithAPIKey(\"\") to silence this warning.")
+			cfg.logger.Warn("You are currently setting profiler.WithAPIKey or the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please see the profiler.WithAPIKey go docs and verify that your integration is still working. If you can't remove DD_API_KEY from your environment, you can use WithAPIKey(\"\") to silence this warning.")
 		}
 		cfg.targetURL = cfg.agentURL
 	}
@@ -150,7 +149,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			if cfg.targetURL == cfg.apiURL {
 				return nil, fmt.Errorf("could not obtain hostname: %v", err)
 			}
-			log.Warn("unable to look up hostname: %v", err)
+			cfg.logger.Warn("unable to look up hostname: %v", err)
 		}
 		cfg.hostname = hostname
 	}
@@ -239,7 +238,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 					defer wg.Done()
 					profs, err := p.runProfile(t)
 					if err != nil {
-						log.Error("Error getting %s profile: %v; skipping.", t, err)
+						p.cfg.logger.Error("Error getting %s profile: %v; skipping.", t, err)
 						p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
 					}
 					mu.Lock()
@@ -294,7 +293,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 			select {
 			case <-p.out:
 				p.cfg.statsd.Count("datadog.profiler.go.queue_full", 1, p.cfg.tags, 1)
-				log.Warn("Evicting one profile batch from the upload queue to make room.")
+				p.cfg.logger.Warn("Evicting one profile batch from the upload queue to make room.")
 			default:
 				// this case should be almost impossible to trigger, it would require a
 				// full p.out to completely drain within nanoseconds or extreme
@@ -312,10 +311,10 @@ func (p *profiler) send() {
 			return
 		case bat := <-p.out:
 			if err := p.outputDir(bat); err != nil {
-				log.Error("Failed to output profile to dir: %v", err)
+				p.cfg.logger.Error("Failed to output profile to dir: %v", err)
 			}
 			if err := p.uploadFunc(bat); err != nil {
-				log.Error("Failed to upload profile: %v", err)
+				p.cfg.logger.Error("Failed to upload profile: %v", err)
 			}
 		}
 	}

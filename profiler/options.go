@@ -23,7 +23,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -107,6 +106,7 @@ type config struct {
 	outputDir         string
 	deltaProfiles     bool
 	logStartup        bool
+	logger            *logger
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -160,10 +160,10 @@ func logStartup(c *config) {
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
-		log.Error("Marshaling profiler configuration: %s", err)
+		c.logger.Error("Marshaling profiler configuration: %s", err)
 		return
 	}
-	log.Info("Profiler configuration: %s\n", b)
+	c.logger.Info("Profiler configuration: %s\n", b)
 }
 
 func urlForSite(site string) (string, error) {
@@ -207,7 +207,7 @@ func defaultConfig() (*config, error) {
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
 		tags:              []string{fmt.Sprintf("process_id:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
-		logStartup:        true,
+		logger:            defaultLogger,
 	}
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
@@ -283,6 +283,7 @@ func defaultConfig() (*config, error) {
 		}
 		c.maxGoroutinesWait = n
 	}
+	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	return &c, nil
 }
 
@@ -453,7 +454,7 @@ func WithSite(site string) Option {
 	return func(cfg *config) {
 		u, err := urlForSite(site)
 		if err != nil {
-			log.Error("profiler: invalid site provided, using %s (%s)", defaultAPIURL, err)
+			cfg.logger.Error("profiler: invalid site provided, using %s (%s)", defaultAPIURL, err)
 			return
 		}
 		cfg.apiURL = u
@@ -499,13 +500,8 @@ func WithLogStartup(enabled bool) Option {
 }
 
 // WithLogger sets logger as the profiler's error printer.
-// Note that setting the logger for the profiler sets the same logger for the
-// tracer, and vice-versa.
 func WithLogger(logger ddtrace.Logger) Option {
 	return func(cfg *config) {
-		// This is a functional option to match the other options, but
-		// the internal/log package has a single, global logger that we
-		// can just set when this Option is applied
-		log.UseLogger(logger)
+		cfg.logger = newLogger(logger)
 	}
 }

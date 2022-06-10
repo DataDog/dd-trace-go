@@ -28,19 +28,23 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// Profiling configuration is logged by default when starting a profile,
-	// so we want to discard it during tests to avoid flooding the terminal
-	// with logs
-	log.UseLogger(log.DiscardLogger{})
+	os.Setenv("DD_TRACE_STARTUP_LOGS", "false")
 	os.Exit(m.Run())
 }
 
 func TestStart(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
+		// re-implemented testing.T.Setenv since that function requires Go 1.17
+		old, ok := os.LookupEnv("DD_TRACE_STARTUP_LOGS")
+		os.Setenv("DD_TRACE_STARTUP_LOGS", "true")
+		if ok {
+			defer os.Setenv("DD_TRACE_STARTUP_LOGS", old)
+		} else {
+			defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
+		}
 		rl := &log.RecordLogger{}
-		defer log.UseLogger(rl)()
 
-		if err := Start(); err != nil {
+		if err := Start(WithLogger(rl)); err != nil {
 			t.Fatal(err)
 		}
 		defer Stop()
@@ -86,9 +90,8 @@ func TestStart(t *testing.T) {
 
 	t.Run("options/GoodAPIKey/Agent", func(t *testing.T) {
 		rl := &log.RecordLogger{}
-		defer log.UseLogger(rl)()
 
-		err := Start(WithAPIKey("12345678901234567890123456789012"))
+		err := Start(WithAPIKey("12345678901234567890123456789012"), WithLogger(rl))
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.agentURL, activeProfiler.cfg.targetURL)
@@ -100,11 +103,11 @@ func TestStart(t *testing.T) {
 
 	t.Run("options/GoodAPIKey/Agentless", func(t *testing.T) {
 		rl := &log.RecordLogger{}
-		defer log.UseLogger(rl)()
 
 		err := Start(
 			WithAPIKey("12345678901234567890123456789012"),
 			WithAgentlessUpload(),
+			WithLogger(rl),
 		)
 		defer Stop()
 		assert.Nil(t, err)
@@ -151,7 +154,7 @@ func TestStartStopIdempotency(t *testing.T) {
 				defer wg.Done()
 				for j := 0; j < 1000; j++ {
 					// startup logging makes this test very slow
-					Start(WithLogStartup(false))
+					Start(WithLogStartup(false), WithLogger(log.DiscardLogger{}))
 				}
 			}()
 		}
