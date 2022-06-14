@@ -57,7 +57,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			tracer.Tag("http.host", r.Host),
 		}, opts...)
 	}
-	if ip := getClientIP(r.RemoteAddr, r.Header, clientIPHeader); ip.IsValid() {
+	if ip := getClientIP(r); ip.IsValid() {
 		opts = append(opts, tracer.Tag(ext.HTTPClientIP, ip.String()))
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
@@ -92,7 +92,7 @@ func ippref(s string) *netaddr.IPPrefix {
 
 // getClientIP uses the request headers to resolve the client IP. If a specific header to check is provided through
 // DD_CLIENT_IP_HEADER, then only this header is checked.
-func getClientIP(remoteAddr string, headers http.Header, clientIPHeader string) netaddr.IP {
+func getClientIP(r *http.Request) netaddr.IP {
 	ipHeaders := defaultIPHeaders
 	if len(clientIPHeader) > 0 {
 		ipHeaders = []string{clientIPHeader}
@@ -110,13 +110,13 @@ func getClientIP(remoteAddr string, headers http.Header, clientIPHeader string) 
 		return netaddr.IP{}
 	}
 	for _, hdr := range ipHeaders {
-		if v := headers.Get(hdr); v != "" {
+		if v := r.Header.Get(hdr); v != "" {
 			if ip := check(v); ip.IsValid() {
 				return ip
 			}
 		}
 	}
-	if remoteIP := parseIP(remoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
+	if remoteIP := parseIP(r.RemoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
 		return remoteIP
 	}
 	return netaddr.IP{}
@@ -136,14 +136,14 @@ func parseIP(s string) netaddr.IP {
 
 func isGlobal(ip netaddr.IP) bool {
 	//IsPrivate also checks for ipv6 ULA
-	globalCheck := !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast()
-	if !globalCheck || !ip.Is6() {
-		return globalCheck
+	isGlobal := !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast()
+	if !isGlobal || !ip.Is6() {
+		return isGlobal
 	}
 	for _, n := range ipv6SpecialNetworks {
 		if n.Contains(ip) {
 			return false
 		}
 	}
-	return globalCheck
+	return isGlobal
 }

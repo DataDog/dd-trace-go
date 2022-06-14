@@ -32,11 +32,11 @@ func TestStartRequestSpan(t *testing.T) {
 }
 
 type IPTestCase struct {
-	name         string
-	remoteAddr   string
-	headers      map[string]string
-	expectedIP   netaddr.IP
-	userIPHeader string
+	name           string
+	remoteAddr     string
+	headers        map[string]string
+	expectedIP     netaddr.IP
+	clientIPHeader string
 }
 
 func genIPTestCases() []IPTestCase {
@@ -148,16 +148,16 @@ func genIPTestCases() []IPTestCase {
 			headers:    map[string]string{"X-fOrWaRdEd-FoR": ipv4Global},
 		},
 		{
-			name:         "user-header",
-			expectedIP:   netaddr.MustParseIP(ipv4Global),
-			headers:      map[string]string{"x-forwarded-for": ipv6Global, "custom-header": ipv4Global},
-			userIPHeader: "custom-header",
+			name:           "user-header",
+			expectedIP:     netaddr.MustParseIP(ipv4Global),
+			headers:        map[string]string{"x-forwarded-for": ipv6Global, "custom-header": ipv4Global},
+			clientIPHeader: "custom-header",
 		},
 		{
-			name:         "user-header-not-found",
-			expectedIP:   netaddr.IP{},
-			headers:      map[string]string{"x-forwarded-for": ipv4Global},
-			userIPHeader: "custom-header",
+			name:           "user-header-not-found",
+			expectedIP:     netaddr.IP{},
+			headers:        map[string]string{"x-forwarded-for": ipv4Global},
+			clientIPHeader: "custom-header",
 		},
 	}, tcs...)
 
@@ -165,13 +165,17 @@ func genIPTestCases() []IPTestCase {
 }
 
 func TestIPHeaders(t *testing.T) {
+	// Make sure to restore the real value of clientIPHeader at the end of the test
+	defer func(s string) { clientIPHeader = s }(clientIPHeader)
 	for _, tc := range genIPTestCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			header := http.Header{}
 			for k, v := range tc.headers {
 				header.Add(k, v)
 			}
-			require.Equal(t, tc.expectedIP.String(), getClientIP(tc.remoteAddr, header, tc.userIPHeader).String())
+			r := http.Request{Header: header, RemoteAddr: tc.remoteAddr}
+			clientIPHeader = tc.clientIPHeader
+			require.Equal(t, tc.expectedIP.String(), getClientIP(&r).String())
 		})
 	}
 }
