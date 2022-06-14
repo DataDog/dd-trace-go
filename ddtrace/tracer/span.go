@@ -506,6 +506,7 @@ func shouldComputeStats(s *span) bool {
 // production, just debugging.
 func (s *span) String() string {
 	s.RLock()
+	defer s.RUnlock()
 	lines := []string{
 		fmt.Sprintf("Name: %s", s.Name),
 		fmt.Sprintf("Service: %s", s.Service),
@@ -525,7 +526,6 @@ func (s *span) String() string {
 	for key, val := range s.Metrics {
 		lines = append(lines, fmt.Sprintf("\t%s:%f", key, val))
 	}
-	s.RUnlock()
 	return strings.Join(lines, "\n")
 }
 
