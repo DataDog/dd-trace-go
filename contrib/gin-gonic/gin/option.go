@@ -96,3 +96,16 @@ func defaultResourceNamer(c *gin.Context) string {
 	}
 	return getName(c.Request, c)
 }
+func getRoute(c *gin.Context) string {
+	// getFullPath uses the same trick as getName above to make sure we don't break pre v1.4.0 builds for which
+	// gin.Context.GetFullPath() does not exist
+	getFullPath := func(req *http.Request, c interface{}) string {
+		if fp, ok := c.(interface {
+			FullPath() string
+		}); ok {
+			return fp.FullPath()
+		}
+		return ""
+	}
+	return getFullPath(c.Request, c)
+}
