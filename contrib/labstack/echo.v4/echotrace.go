@@ -34,8 +34,9 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			request := c.Request()
-			resource := request.Method + " " + c.Path()
-			opts := append(spanOpts, tracer.ResourceName(resource))
+			route := c.Path()
+			resource := request.Method + " " + route
+			opts := append(spanOpts, tracer.ResourceName(resource), tracer.Tag(ext.HTTPRoute, route))
 
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
