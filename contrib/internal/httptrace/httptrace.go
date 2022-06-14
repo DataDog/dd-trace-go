@@ -82,7 +82,7 @@ func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 	s.Finish(opts...)
 }
 
-// Helper function to return the IP network out of a string.
+// ippref returns the IP network from an IP address string s. If not possible, it returns nil.
 func ippref(s string) *netaddr.IPPrefix {
 	if prefix, err := netaddr.ParseIPPrefix(s); err == nil {
 		return &prefix
@@ -90,8 +90,7 @@ func ippref(s string) *netaddr.IPPrefix {
 	return nil
 }
 
-// getClientIP uses the request headers to resolve the client IP. If a specific header to check is provided through
-// DD_CLIENT_IP_HEADER, then only this header is checked.
+// getClientIP attempts to find the client IP address in the given request r.
 func getClientIP(r *http.Request) netaddr.IP {
 	ipHeaders := defaultIPHeaders
 	if len(clientIPHeader) > 0 {
