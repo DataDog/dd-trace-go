@@ -134,7 +134,9 @@ func parseIP(s string) netaddr.IP {
 }
 
 func isGlobal(ip netaddr.IP) bool {
-	//IsPrivate also checks for ipv6 ULA
+	// IsPrivate also checks for ipv6 ULA.
+	// We care to check for these addresses are not considered public, hence not global.
+	// See https://www.rfc-editor.org/rfc/rfc4193.txt for more details.
 	isGlobal := !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast()
 	if !isGlobal || !ip.Is6() {
 		return isGlobal
