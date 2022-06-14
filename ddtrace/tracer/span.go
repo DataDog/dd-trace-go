@@ -505,6 +505,7 @@ func shouldComputeStats(s *span) bool {
 // String returns a human readable representation of the span. Not for
 // production, just debugging.
 func (s *span) String() string {
+	s.RLock()
 	lines := []string{
 		fmt.Sprintf("Name: %s", s.Name),
 		fmt.Sprintf("Service: %s", s.Service),
@@ -518,7 +519,6 @@ func (s *span) String() string {
 		fmt.Sprintf("Type: %s", s.Type),
 		"Tags:",
 	}
-	s.RLock()
 	for key, val := range s.Meta {
 		lines = append(lines, fmt.Sprintf("\t%s:%s", key, val))
 	}
