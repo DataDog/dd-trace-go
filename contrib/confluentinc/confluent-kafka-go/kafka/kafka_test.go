@@ -8,6 +8,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -144,7 +145,7 @@ func TestConsumerFunctional(t *testing.T) {
 			defer mt.Stop()
 
 			// first write a message to the topic
-
+			fmt.Println("NEW PRODUCER.")
 			p, err := NewProducer(&kafka.ConfigMap{
 				"group.id":            testGroupID,
 				"bootstrap.servers":   "127.0.0.1:9092",
@@ -152,6 +153,7 @@ func TestConsumerFunctional(t *testing.T) {
 			}, WithAnalyticsRate(0.1))
 			assert.NoError(t, err)
 			delivery := make(chan kafka.Event, 1)
+			fmt.Println("PRODUCE.")
 			err = p.Produce(&kafka.Message{
 				TopicPartition: kafka.TopicPartition{
 					Topic:     &testTopic,
@@ -165,7 +167,7 @@ func TestConsumerFunctional(t *testing.T) {
 			p.Close()
 
 			// next attempt to consume the message
-
+			fmt.Println("NEW CONSUMER.")
 			c, err := NewConsumer(&kafka.ConfigMap{
 				"group.id":                 testGroupID,
 				"bootstrap.servers":        "127.0.0.1:9092",
@@ -183,8 +185,10 @@ func TestConsumerFunctional(t *testing.T) {
 			msg2, err := tt.action(c)
 			assert.NoError(t, err)
 			assert.Equal(t, msg1.String(), msg2.String())
+			fmt.Println("CLOSE CONSUMER.")
 			c.Close()
 
+			fmt.Println("CHECKING SPANS.")
 			// now verify the spans
 			spans := mt.FinishedSpans()
 			assert.Len(t, spans, 2)
