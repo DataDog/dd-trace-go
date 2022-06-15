@@ -36,6 +36,9 @@ const (
 	// HTTPUserAgent is the user agent header value of the HTTP request.
 	HTTPUserAgent = "http.useragent"
 
+	// HTTPClientIP sets the HTTP client IP tag.
+	HTTPClientIP = "http.client_ip"
+
 	// SpanName is a pseudo-key for setting a span's operation name by means of
 	// a tag. It is mostly here to facilitate vendor-agnostic frameworks like Opentracing
 	// and OpenCensus.
