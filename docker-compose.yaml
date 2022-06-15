@@ -44,12 +44,20 @@ services:
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
     ports:
       - "9200:9200"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   elasticsearch5:
     image: elasticsearch:5
     environment:
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
     ports:
-      - "9201:9201"
+      - "9201:9200"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   elasticsearch6:
     image: elasticsearch:6.8.13
     environment:
@@ -58,6 +66,10 @@ services:
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
     ports:
       - "9202:9202"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   elasticsearch7:
     image: elasticsearch:7.14.1
     environment:
@@ -66,6 +78,10 @@ services:
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
     ports:
       - "9203:9203"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   datadog-agent:
     image: datadog/docker-dd-agent
     environment:
@@ -88,23 +104,17 @@ services:
       ALLOW_ANONYMOUS_LOGIN: "yes"
     ports:
       - "2181:2181"
-  kafka2_1:
+  kafka2:
     image: bitnami/kafka:2
     environment:
       KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
       KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092
       ALLOW_PLAINTEXT_LISTENER: "yes"
-      KAFKA_CREATE_TOPICS: gotest:1:1
+      KAFKA_CREATE_TOPICS: gotest:1:1,gosegtest1:1
+      KAFKA_BROKER_ID: 1
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     depends_on:
       - zookeeper
     ports:
       - "9092:9092"
-#  kafka2_2:
-#    image: bitnami/kafka:2
-#    environment:
-#      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
-#    command: [kafka-topics.sh, --create, --topic, gosegtest, --bootstrap-server, kafka2_1:9092]
-#    depends_on:
-#      - kafka2_1
