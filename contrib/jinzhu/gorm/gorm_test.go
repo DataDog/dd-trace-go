@@ -141,6 +141,10 @@ func TestCallbacks(t *testing.T) {
 		)
 
 		db = WithContext(ctx, db)
+		var queryText string
+		db.Callback().Create().After("testing").Register("query text", func(scope *gorm.Scope) {
+			queryText = scope.SQL
+		})
 		db.Create(&Product{Code: "L1212", Price: 1000})
 
 		parentSpan.Finish()
@@ -151,9 +155,7 @@ func TestCallbacks(t *testing.T) {
 		span := spans[len(spans)-3]
 		assert.Equal("gorm.create", span.OperationName())
 		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
-		assert.Equal(
-			`INSERT  INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
-			span.Tag(ext.ResourceName))
+		assert.Equal(queryText, span.Tag(ext.ResourceName))
 	})
 
 	t.Run("query", func(t *testing.T) {
@@ -163,6 +165,10 @@ func TestCallbacks(t *testing.T) {
 		)
 
 		db = WithContext(ctx, db)
+		var queryText string
+		db.Callback().Query().After("testing").Register("query text", func(scope *gorm.Scope) {
+			queryText = scope.SQL
+		})
 		var product Product
 		db.First(&product, "code = ?", "L1212")
 
@@ -174,9 +180,7 @@ func TestCallbacks(t *testing.T) {
 		span := spans[len(spans)-2]
 		assert.Equal("gorm.query", span.OperationName())
 		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
-		assert.Equal(
-			`SELECT * FROM "products"  WHERE "products"."deleted_at" IS NULL AND ((code = $1)) ORDER BY "products"."id" ASC LIMIT 1`,
-			span.Tag(ext.ResourceName))
+		assert.Equal(queryText, span.Tag(ext.ResourceName))
 	})
 
 	t.Run("update", func(t *testing.T) {
@@ -186,6 +190,10 @@ func TestCallbacks(t *testing.T) {
 		)
 
 		db = WithContext(ctx, db)
+		var queryText string
+		db.Callback().Update().After("testing").Register("query text", func(scope *gorm.Scope) {
+			queryText = scope.SQL
+		})
 		var product Product
 		db.First(&product, "code = ?", "L1212")
 		db.Model(&product).Update("Price", 2000)
@@ -198,9 +206,7 @@ func TestCallbacks(t *testing.T) {
 		span := spans[len(spans)-3]
 		assert.Equal("gorm.update", span.OperationName())
 		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
-		assert.Equal(
-			`UPDATE "products" SET "price" = $1, "updated_at" = $2  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $3`,
-			span.Tag(ext.ResourceName))
+		assert.Equal(queryText, span.Tag(ext.ResourceName))
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -210,6 +216,10 @@ func TestCallbacks(t *testing.T) {
 		)
 
 		db = WithContext(ctx, db)
+		var queryText string
+		db.Callback().Delete().After("testing").Register("query text", func(scope *gorm.Scope) {
+			queryText = scope.SQL
+		})
 		var product Product
 		db.First(&product, "code = ?", "L1212")
 		db.Delete(&product)
@@ -222,9 +232,7 @@ func TestCallbacks(t *testing.T) {
 		span := spans[len(spans)-3]
 		assert.Equal("gorm.delete", span.OperationName())
 		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
-		assert.Equal(
-			`UPDATE "products" SET "deleted_at"=$1  WHERE "products"."deleted_at" IS NULL AND "products"."id" = $2`,
-			span.Tag(ext.ResourceName))
+		assert.Equal(queryText, span.Tag(ext.ResourceName))
 	})
 }
 
@@ -354,6 +362,10 @@ func TestCustomTags(t *testing.T) {
 	)
 
 	db = WithContext(ctx, db)
+	var queryText string
+	db.Callback().Create().After("testing").Register("query text", func(scope *gorm.Scope) {
+		queryText = scope.SQL
+	})
 	db.Create(&Product{Code: "L1212", Price: 1000})
 
 	parentSpan.Finish()
@@ -367,9 +379,7 @@ func TestCustomTags(t *testing.T) {
 	assert.Equal("gorm.create", span.OperationName())
 	assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 	assert.Equal("L1212", span.Tag("custom_tag"))
-	assert.Equal(
-		`INSERT  INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
-		span.Tag(ext.ResourceName))
+	assert.Equal(queryText, span.Tag(ext.ResourceName))
 }
 
 func TestError(t *testing.T) {
