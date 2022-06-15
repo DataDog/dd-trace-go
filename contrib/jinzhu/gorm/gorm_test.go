@@ -152,7 +152,7 @@ func TestCallbacks(t *testing.T) {
 		assert.Equal("gorm.create", span.OperationName())
 		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		assert.Equal(
-			`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
+			`INSERT  INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
 			span.Tag(ext.ResourceName))
 	})
 
@@ -368,7 +368,7 @@ func TestCustomTags(t *testing.T) {
 	assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 	assert.Equal("L1212", span.Tag("custom_tag"))
 	assert.Equal(
-		`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
+		`INSERT  INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "products"."id"`,
 		span.Tag(ext.ResourceName))
 }
 
