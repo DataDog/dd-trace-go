@@ -144,6 +144,7 @@ func TestConsumerFunctional(t *testing.T) {
 			defer mt.Stop()
 
 			// first write a message to the topic
+
 			p, err := NewProducer(&kafka.ConfigMap{
 				"group.id":            testGroupID,
 				"bootstrap.servers":   "127.0.0.1:9092",
@@ -164,6 +165,7 @@ func TestConsumerFunctional(t *testing.T) {
 			p.Close()
 
 			// next attempt to consume the message
+
 			c, err := NewConsumer(&kafka.ConfigMap{
 				"group.id":                 testGroupID,
 				"bootstrap.servers":        "127.0.0.1:9092",
