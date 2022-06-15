@@ -8,7 +8,6 @@ package kafka
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"testing"
 	"time"
