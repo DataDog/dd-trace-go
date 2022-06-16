@@ -12,7 +12,6 @@ import (
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
@@ -90,15 +89,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var (
 		match    mux.RouteMatch
 		spanopts []ddtrace.StartSpanOption
+		route    string
 	)
 	// get the resource associated to this request
 	if r.Match(req, &match) && match.Route != nil {
 		if h, err := match.Route.GetHostTemplate(); err == nil {
 			spanopts = append(spanopts, tracer.Tag("mux.host", h))
 		}
-		if route, err := match.Route.GetPathTemplate(); err == nil {
-			spanopts = append(spanopts, tracer.Tag(ext.HTTPRoute, route))
-		}
+		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
 	if r.config.headerTags {
@@ -112,6 +110,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		SpanOpts:    spanopts,
 		QueryParams: r.config.queryParams,
 		RouteParams: match.Vars,
+		Route:       route,
 	})
 }
 

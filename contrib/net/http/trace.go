@@ -27,6 +27,8 @@ type ServeConfig struct {
 	Resource string
 	// QueryParams should be true in order to append the URL query values to the  "http.url" tag.
 	QueryParams bool
+	// Route is the request matched route if any, or is empty otherwise
+	Route string
 	// RouteParams specifies framework-specific route parameters (e.g. for route /user/:id coming
 	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
 	// by AppSec. It is only taken into account when AppSec is enabled.
@@ -47,7 +49,7 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	if cfg.QueryParams {
 		opts = append(opts, tracer.Tag(ext.HTTPURL, r.URL.Path+"?"+r.URL.RawQuery))
 	}
-	opts = append(opts, tracer.Tag(ext.HTTPRoute, r.URL.EscapedPath()))
+	opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
 	span, ctx := httptrace.StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	defer func() {
