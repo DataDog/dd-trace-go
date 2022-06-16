@@ -65,7 +65,7 @@ func TestMain(m *testing.M) {
 }
 
 func (t *tracer) awaitPayload(tst *testing.T, n int) {
-	timeout := time.After(200 * time.Millisecond * timeMultiplicator)
+	timeout := time.After(time.Second * timeMultiplicator)
 loop:
 	for {
 		select {
@@ -1520,7 +1520,7 @@ func startTestTracer(t interface {
 			tick <- time.Now()
 			return
 		}
-		d := 200 * time.Millisecond * timeMultiplicator
+		d := time.Second * timeMultiplicator
 		expire := time.After(d)
 	loop:
 		for {
