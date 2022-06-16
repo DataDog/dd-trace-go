@@ -46,6 +46,7 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 			ss.cfg.serverServiceName(),
 			tracer.AnalyticsRate(ss.cfg.analyticsRate),
 			tracer.Measured(),
+			toTagsOpts(ss.cfg)...,
 		)
 		defer func() { finishWithError(span, err, ss.cfg) }()
 	}
@@ -62,6 +63,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 			ss.cfg.serverServiceName(),
 			tracer.AnalyticsRate(ss.cfg.analyticsRate),
 			tracer.Measured(),
+			toTagsOpts(ss.cfg)...,
 		)
 		defer func() { finishWithError(span, err, ss.cfg) }()
 	}
@@ -89,6 +91,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				cfg.serverServiceName(),
 				tracer.AnalyticsRate(cfg.analyticsRate),
 				tracer.Measured(),
+				toTagsOpts(ss.cfg)...,
 			)
 			switch {
 			case info.IsServerStream && info.IsClientStream:
@@ -134,6 +137,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			cfg.serverServiceName(),
 			tracer.AnalyticsRate(cfg.analyticsRate),
 			tracer.Measured(),
+			toTagsOpts(ss.cfg)...,
 		)
 		span.SetTag(tagMethodKind, methodKindUnary)
 

@@ -22,6 +22,22 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+
+func toTagsOpts(cfg *config) []tracer.StartSpanOption {
+	if cfg == nil || len(cfg.tags) == 0 {
+		return nil
+	}
+
+	opts := make([]tracer.StartSpanOption, len(cfg.tags))
+	i := 0
+	for key, tag := range cfg.tags {
+		opts[i] = tracer.Tag(key, tag)
+		i++
+	}
+	return opts
+}
+
+
 func startSpanFromContext(
 	ctx context.Context, method, operation, service string, opts ...tracer.StartSpanOption,
 ) (ddtrace.Span, context.Context) {
@@ -31,6 +47,7 @@ func startSpanFromContext(
 		tracer.Tag(tagMethodName, method),
 		tracer.SpanType(ext.AppTypeRPC),
 	)
+
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
 		opts = append(opts, tracer.ChildOf(sctx))
