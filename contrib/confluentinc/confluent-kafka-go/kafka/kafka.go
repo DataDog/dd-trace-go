@@ -98,6 +98,13 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.Tag("offset", msg.TopicPartition.Offset),
 		tracer.Measured(),
 	}
+
+	if c.cfg.tagFns != nil {
+		for key, tagFn := range cfg.tagFns {
+			opts = append(opts, tracer.Tag(key, tagFn(msg)))
+		}
+	}
+
 	if !math.IsNaN(c.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, c.cfg.analyticsRate))
 	}
