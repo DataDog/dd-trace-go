@@ -14,7 +14,7 @@ sleep 120
 
 ## CONTRIB
 echo testing contrib
-PACKAGE_NAMES=./contrib/segmentio/kafka.go.v0 #$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
+PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
 export INTEGRATION=true
 gotestsum --junitfile ./gotestsum-report.xml -- $PACKAGE_NAMES -v  -coverprofile=coverage.txt -covermode=atomic 
 docker-compose down
