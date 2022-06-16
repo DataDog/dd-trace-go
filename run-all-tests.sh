@@ -4,15 +4,13 @@
 docker-compose up -d
 
 ## CORE
-#echo testing core
-#PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
-#gotestsum --junitfile ./gotestsum-report.xml -- $PACKAGE_NAMES -v  -coverprofile=coverage.txt -covermode=atomic
+echo testing core
+PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
+gotestsum --junitfile ./gotestsum-report.xml -- $PACKAGE_NAMES -v  -coverprofile=coverage.txt -covermode=atomic
 
 ## wait extra long for all the docker containers to be "ready"
-#echo Waiting for docker for 120 seconds
-#sleep 120
-
-sleep 20
+echo Waiting for docker for 120 seconds
+sleep 120
 
 ## CONTRIB
 echo testing contrib
