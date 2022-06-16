@@ -9,10 +9,8 @@ package gin // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin"
 import (
 	"fmt"
 	"math"
-	"net/http"
-	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -29,28 +27,22 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", service, cfg)
+	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", cfg.serviceName, cfg)
+	spanOpts := []tracer.StartSpanOption{
+		tracer.ServiceName(cfg.serviceName),
+	}
 	return func(c *gin.Context) {
 		if cfg.ignoreRequest(c) {
 			return
 		}
-		resource := cfg.resourceNamer(c)
-		opts := []ddtrace.StartSpanOption{
-			tracer.ServiceName(cfg.serviceName),
-			tracer.ResourceName(resource),
-			tracer.SpanType(ext.SpanTypeWeb),
-			tracer.Tag(ext.HTTPMethod, c.Request.Method),
-			tracer.Tag(ext.HTTPURL, c.Request.URL.Path),
-			tracer.Measured(),
-		}
+		opts := append(spanOpts, tracer.ResourceName(cfg.resourceNamer(c)))
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(c.Request.Header)); err == nil {
-			opts = append(opts, tracer.ChildOf(spanctx))
-		}
-		span, ctx := tracer.StartSpanFromContext(c.Request.Context(), "http.request", opts...)
-		defer span.Finish()
+		span, ctx := httptrace.StartRequestSpan(c.Request, opts...)
+		defer func() {
+			httptrace.FinishRequestSpan(span, c.Writer.Status())
+		}()
 
 		// pass the span through the request context
 		c.Request = c.Request.WithContext(ctx)
@@ -63,12 +55,6 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 		// serve the request to the next middleware
 		c.Next()
-
-		status := c.Writer.Status()
-		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
-		if status >= 500 && status < 600 {
-			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
-		}
 
 		if len(c.Errors) > 0 {
 			span.SetTag("gin.errors", c.Errors.String())

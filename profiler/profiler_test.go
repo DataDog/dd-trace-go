@@ -184,58 +184,43 @@ func TestStartStopIdempotency(t *testing.T) {
 // TestStopLatency tries to make sure that calling Stop() doesn't hang, i.e.
 // that ongoing profiling or upload operations are immediately canceled.
 func TestStopLatency(t *testing.T) {
-	t.Skip("broken test, see issue #1294")
-
-	t.Run("stop-profiles", func(t *testing.T) {
-		Start(
-			WithPeriod(time.Hour),
-			CPUDuration(time.Hour),
-		)
-
-		// give profiling time to start
-		time.Sleep(50 * time.Millisecond)
-		start := time.Now()
-		Stop()
-		elapsed := time.Since(start)
-		// CPU profiling polls in 100 millisecond intervals and this can't be
-		// interrupted by pprof.StopCPUProfile, so we can't guarantee profiling
-		// will stop faster than 200 milliseconds (one interval to read
-		// remaining samples, second interval to detect profiling has stopped).
-		// Set a conservative upper bound on that stop time plus profile
-		// serialization.
-		if elapsed > 500*time.Millisecond {
-			t.Errorf("profiler took %v to stop", elapsed)
+	received := make(chan struct{})
+	stop := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case received <- struct{}{}:
+		default:
 		}
-	})
+		<-stop
+	}))
+	defer server.Close()
+	defer close(stop)
 
-	t.Run("stop-upload", func(t *testing.T) {
-		received := make(chan struct{})
-		stop := make(chan struct{})
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			select {
-			case received <- struct{}{}:
-			default:
-			}
-			<-stop
-		}))
-		defer server.Close()
-		defer close(stop)
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithPeriod(time.Second),
+		CPUDuration(time.Second),
+		WithUploadTimeout(time.Hour),
+	)
 
-		Start(
-			WithAgentAddr(server.Listener.Addr().String()),
-			WithPeriod(10*time.Millisecond),
-			CPUDuration(10*time.Millisecond),
-			WithUploadTimeout(time.Hour),
-		)
+	<-received
+	// received indicates that an upload has started, and due to waiting on
+	// stop the upload won't actually complete. So we know calling Stop()
+	// should interrupt the upload. Ideally profiling is also currently
+	// running, though that is harder to detect and guarantee.
+	start := time.Now()
+	Stop()
 
-		<-received
-		start := time.Now()
-		Stop()
-		elapsed := time.Since(start)
-		if elapsed > 500*time.Millisecond {
-			t.Errorf("profiler took %v to stop", elapsed)
-		}
-	})
+	// CPU profiling can take up to 200ms to stop. This is because the inner
+	// loop of CPU profiling has an uninterruptible 100ms sleep. Each
+	// iteration reads available profile samples, so it can take two
+	// iterations to stop: one to read the remaining samples, and a second
+	// to detect that there are no more samples and exit. We give extra time
+	// on top of that to account for CI slowness.
+	elapsed := time.Since(start)
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("profiler took %v to stop", elapsed)
+	}
 }
 
 func TestProfilerInternal(t *testing.T) {

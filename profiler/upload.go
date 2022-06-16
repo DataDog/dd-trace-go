@@ -88,6 +88,9 @@ func (p *profiler) doRequest(bat batch) error {
 		cancel()
 	}()
 	req, err := http.NewRequestWithContext(ctx, "POST", p.cfg.targetURL, body)
+	if err != nil {
+		return err
+	}
 	if p.cfg.apiKey != "" {
 		req.Header.Set("DD-API-KEY", p.cfg.apiKey)
 	}

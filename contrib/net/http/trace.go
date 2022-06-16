@@ -8,10 +8,9 @@ package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 //go:generate sh -c "go run make_responsewriter.go | gofmt > trace_gen.go"
 
 import (
-	"fmt"
 	"net/http"
-	"strconv"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -26,7 +25,7 @@ type ServeConfig struct {
 	Service string
 	// Resource optionally specifies the resource name for this request.
 	Resource string
-	// QueryParams specifies any query parameters that be appended to the resulting "http.url" tag.
+	// QueryParams should be true in order to append the URL query values to the  "http.url" tag.
 	QueryParams bool
 	// RouteParams specifies framework-specific route parameters (e.g. for route /user/:id coming
 	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
@@ -44,37 +43,14 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
-	path := r.URL.Path
+	opts := append(cfg.SpanOpts, tracer.ServiceName(cfg.Service), tracer.ResourceName(cfg.Resource))
 	if cfg.QueryParams {
-		path += "?" + r.URL.RawQuery
+		opts = append(opts, tracer.Tag(ext.HTTPURL, r.URL.Path+"?"+r.URL.RawQuery))
 	}
-	opts := append([]ddtrace.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeWeb),
-		tracer.ServiceName(cfg.Service),
-		tracer.ResourceName(cfg.Resource),
-		tracer.Tag(ext.HTTPMethod, r.Method),
-		tracer.Tag(ext.HTTPURL, path),
-	}, cfg.SpanOpts...)
-	if r.URL.Host != "" {
-		opts = append([]ddtrace.StartSpanOption{
-			tracer.Tag("http.host", r.URL.Host),
-		}, opts...)
-	}
-	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-		opts = append(opts, tracer.ChildOf(spanctx))
-	}
-	span, ctx := tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
+	span, ctx := httptrace.StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	defer func() {
-		if ddrw.status == 0 {
-			span.SetTag(ext.HTTPCode, "200")
-		} else {
-			span.SetTag(ext.HTTPCode, strconv.Itoa(ddrw.status))
-		}
-		if ddrw.status >= 500 && ddrw.status < 600 {
-			span.SetTag(ext.Error, fmt.Errorf("%d: %s", ddrw.status, http.StatusText(ddrw.status)))
-		}
-		span.Finish(cfg.FinishOpts...)
+		httptrace.FinishRequestSpan(span, ddrw.status, cfg.FinishOpts...)
 	}()
 
 	if appsec.Enabled() {
