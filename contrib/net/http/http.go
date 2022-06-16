@@ -49,6 +49,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Service:  mux.cfg.serviceName,
 		Resource: resource,
 		SpanOpts: mux.cfg.spanOpts,
+		Route:    route,
 	})
 }
 
@@ -74,6 +75,7 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 			Resource:   resource,
 			FinishOpts: cfg.finishOpts,
 			SpanOpts:   cfg.spanOpts,
+			Route:      req.URL.EscapedPath(),
 		})
 	})
 }
