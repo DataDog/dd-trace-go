@@ -92,6 +92,10 @@ type Client struct {
 		Printf(msg string, args ...interface{})
 	}
 
+	// Client will be used for telemetry uploads. If Client is nil, a
+	// default value will be used.
+	Client *http.Client
+
 	// mu guards all of the following fields
 	mu sync.Mutex
 	// started is true in between when Start() returns and the next call to
@@ -148,6 +152,8 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 					// TODO: Neither of the types in the API
 					// docs (this or "SharedSystemLibrary")
 					// describe Go dependencies well
+					// TODO: I think the telemetry API doesn't
+					// have this field any more anyway
 					Type: "PlatformStandard",
 				},
 			)
@@ -387,7 +393,11 @@ func (c *Client) submit(r *Request) error {
 	}
 	req.ContentLength = int64(len(b))
 
-	resp, err := defaultClient.Do(req)
+	client := c.Client
+	if client == nil {
+		client = defaultClient
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
@@ -19,6 +20,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	pprofile "github.com/google/pprof/profile"
 )
@@ -72,6 +74,7 @@ type profiler struct {
 	wg         sync.WaitGroup               // wg waits for all goroutines to exit when stopping.
 	met        *metrics                     // metric collector state
 	prev       map[string]*pprofile.Profile // previous collection results for delta profiling
+	telemetry  *telemetry.Client
 
 	testHooks testHooks
 }
@@ -182,15 +185,71 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		prev: make(map[string]*pprofile.Profile),
 	}
 	p.uploadFunc = p.upload
+	p.telemetry = &telemetry.Client{
+		APIKey:    cfg.apiKey,
+		Namespace: "profilers",
+		Service:   cfg.service,
+		Env:       cfg.env,
+		Client:    p.cfg.httpClient, // use the profiler's http.Client, gives us UDS if that's used
+	}
+
+	// For the initial release, prefer off-by-default rather than
+	// on-by-default
+	if !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", false) {
+		p.telemetry.Disabled = true
+	}
+
+	// For the URL, uploading through agent goes through
+	//	${AGENT_URL}/telemetry/proxy/api/v2/apmtelemetry
+	// for agentless (which we technically don't support):
+	//	https://instrumentation-telemetry-intake.datadoghq.com
+	// with an API key
+	//
+	// TODO: move this logic into the telemetry package, make the URL field
+	// unnecessary?
+	if cfg.agentless {
+		p.telemetry.URL = "https://instrumentation-telemetry-intake.datadoghq.com"
+	} else {
+		// TODO: check agent /info endpoint to see if the agent is
+		// sufficiently recent to support this endpiont? overkill?
+		p.telemetry.URL = path.Join(cfg.agentURL, "/telemetry/proxy/api/v2/apmtelemetry")
+	}
 	return &p, nil
 }
 
 // run runs the profiler.
 func (p *profiler) run() {
-	if _, ok := p.cfg.types[MutexProfile]; ok {
+	profileEnabled := func(t ProfileType) bool {
+		_, ok := p.cfg.types[t]
+		return ok
+	}
+	p.telemetry.Start(
+		// Integrations are part of this API to match the telemetry API,
+		// but there aren't really "integrations" for the profiler. For
+		// Go in general, the enabled integrations can be found by
+		// looking for contrib packages in the dependencies reported by
+		// the telemetry client.
+		[]telemetry.Integration{},
+		[]telemetry.Configuration{
+			{Name: "delta_profiles", Value: p.cfg.deltaProfiles},
+			{Name: "agentless", Value: p.cfg.agentless},
+			{Name: "profile_period", Value: p.cfg.period.String()},
+			{Name: "cpu_duration", Value: p.cfg.cpuDuration.String()},
+			{Name: "cpu_profile_rate", Value: p.cfg.cpuProfileRate},
+			{Name: "block_profile_rate", Value: p.cfg.blockRate},
+			{Name: "mutex_profile_fraction", Value: p.cfg.mutexFraction},
+			{Name: "max_goroutines_wait", Value: p.cfg.maxGoroutinesWait},
+			{Name: "goroutine_profile_enabled", Value: profileEnabled(expGoroutineWaitProfile)},
+			{Name: "goroutine_wait_enabled", Value: profileEnabled(GoroutineProfile)},
+			{Name: "upload_timeout", Value: p.cfg.uploadTimeout.String()},
+			// TODO: other Go metrics here? e.g. max procs?
+		},
+	)
+
+	if profileEnabled(MutexProfile) {
 		runtime.SetMutexProfileFraction(p.cfg.mutexFraction)
 	}
-	if _, ok := p.cfg.types[BlockProfile]; ok {
+	if profileEnabled(BlockProfile) {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
 	}
 	p.wg.Add(1)
@@ -356,6 +415,7 @@ func (p *profiler) interruptibleSleep(d time.Duration) {
 func (p *profiler) stop() {
 	p.stopOnce.Do(func() {
 		close(p.exit)
+		p.telemetry.Stop()
 	})
 	p.wg.Wait()
 }
