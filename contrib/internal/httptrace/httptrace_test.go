@@ -32,11 +32,12 @@ func TestStartRequestSpan(t *testing.T) {
 }
 
 type IPTestCase struct {
-	name           string
-	remoteAddr     string
-	headers        map[string]string
-	expectedIP     netaddr.IP
-	clientIPHeader string
+	name            string
+	remoteAddr      string
+	headers         map[string]string
+	expectedIP      netaddr.IP
+	expectedMatches map[string]string
+	clientIPHeader  string
 }
 
 func genIPTestCases() []IPTestCase {
@@ -107,14 +108,16 @@ func genIPTestCases() []IPTestCase {
 			expectedIP: netaddr.MustParseIP(ipv4Global),
 		},
 		{
-			name:       "invalid-ipv4-recover-multi-header-1",
-			headers:    map[string]string{"x-forwarded-for": "127..0.0.1", "forwarded-for": ipv4Global},
-			expectedIP: netaddr.MustParseIP(ipv4Global),
+			name:            "ipv4-multi-header-1",
+			headers:         map[string]string{"x-forwarded-for": "127.0.0.1", "forwarded-for": ipv4Global},
+			expectedIP:      netaddr.IP{},
+			expectedMatches: map[string]string{"x-forwarded-for": "127.0.0.1", "forwarded-for": ipv4Global},
 		},
 		{
-			name:       "invalid-ipv4-recover-multi-header-2",
-			headers:    map[string]string{"forwarded-for": ipv4Global, "x-forwarded-for": "127..0.0.1"},
-			expectedIP: netaddr.MustParseIP(ipv4Global),
+			name:            "ipv4-multi-header-2",
+			headers:         map[string]string{"forwarded-for": ipv4Global, "x-forwarded-for": "127.0.0.1"},
+			expectedIP:      netaddr.IP{},
+			expectedMatches: map[string]string{"x-forwarded-for": "127.0.0.1", "forwarded-for": ipv4Global},
 		},
 		{
 			name:       "invalid-ipv6",
@@ -127,14 +130,16 @@ func genIPTestCases() []IPTestCase {
 			expectedIP: netaddr.MustParseIP(ipv6Global),
 		},
 		{
-			name:       "invalid-ipv6-recover-multi-header-1",
-			headers:    map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::", "forwarded-for": ipv6Global},
-			expectedIP: netaddr.MustParseIP(ipv6Global),
+			name:            "ipv6-multi-header-1",
+			headers:         map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::", "forwarded-for": ipv6Global},
+			expectedIP:      netaddr.IP{},
+			expectedMatches: map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::", "forwarded-for": ipv6Global},
 		},
 		{
-			name:       "invalid-ipv6-recover-multi-header-2",
-			headers:    map[string]string{"forwarded-for": ipv6Global, "x-forwarded-for": "2001:0db8:2001:zzzz::"},
-			expectedIP: netaddr.MustParseIP(ipv6Global),
+			name:            "ipv6-multi-header-2",
+			headers:         map[string]string{"forwarded-for": ipv6Global, "x-forwarded-for": "2001:0db8:2001:zzzz::"},
+			expectedIP:      netaddr.IP{},
+			expectedMatches: map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::", "forwarded-for": ipv6Global},
 		},
 	}, tcs...)
 	tcs = append([]IPTestCase{
@@ -175,7 +180,10 @@ func TestIPHeaders(t *testing.T) {
 			}
 			r := http.Request{Header: header, RemoteAddr: tc.remoteAddr}
 			clientIPHeader = tc.clientIPHeader
-			require.Equal(t, tc.expectedIP.String(), getClientIP(&r).String())
+			ip, matches := getClientIP(&r)
+			require.Equal(t, tc.expectedIP, ip)
+			require.Equal(t, tc.expectedMatches, matches)
+			genClientIPSpanTags(&http.Request{Header: header, RemoteAddr: tc.remoteAddr})
 		})
 	}
 }

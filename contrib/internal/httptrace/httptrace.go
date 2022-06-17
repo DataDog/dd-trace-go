@@ -57,8 +57,8 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			tracer.Tag("http.host", r.Host),
 		}, opts...)
 	}
-	if ip := getClientIP(r); ip.IsValid() {
-		opts = append(opts, tracer.Tag(ext.HTTPClientIP, ip.String()))
+	for k, v := range genClientIPSpanTags(r) {
+		opts = append([]ddtrace.StartSpanOption{tracer.Tag(k, v)}, opts...)
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
@@ -90,8 +90,31 @@ func ippref(s string) *netaddr.IPPrefix {
 	return nil
 }
 
+// genClientIPSpanTags generates the client IP related key/value map of tags that need to be added to the span.
+func genClientIPSpanTags(r *http.Request) map[string]string {
+	tags := map[string]string{}
+	ip, matches := getClientIP(r)
+	if matches == nil {
+		if ip.IsValid() {
+			tags[ext.HTTPClientIP] = ip.String()
+		}
+		return tags
+	}
+	sb := strings.Builder{}
+	for hdr, ip := range matches {
+		tags[ext.HTTPRequestHeaders+"."+hdr] = ip
+		sb.WriteString(hdr + ":" + ip + ",")
+	}
+	hdrList := sb.String()
+	tags[ext.MultipleIPHeaders] = hdrList[:len(hdrList)-1]
+	return tags
+}
+
 // getClientIP attempts to find the client IP address in the given request r.
-func getClientIP(r *http.Request) netaddr.IP {
+// If several IP headers are present in the request, the returned IP is invalid and the map gets filled with the
+// header/ip pairs for all IP headers found in the request. Otherwise, the returned map is nil.
+// See https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2118779066/Client+IP+addresses+resolution
+func getClientIP(r *http.Request) (netaddr.IP, map[string]string) {
 	ipHeaders := defaultIPHeaders
 	if len(clientIPHeader) > 0 {
 		ipHeaders = []string{clientIPHeader}
@@ -108,17 +131,26 @@ func getClientIP(r *http.Request) netaddr.IP {
 		}
 		return netaddr.IP{}
 	}
+	matches := map[string]string{}
+	var matchedIP netaddr.IP
 	for _, hdr := range ipHeaders {
 		if v := r.Header.Get(hdr); v != "" {
+			matches[hdr] = v
 			if ip := check(v); ip.IsValid() {
-				return ip
+				matchedIP = ip
 			}
 		}
 	}
-	if remoteIP := parseIP(r.RemoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
-		return remoteIP
+	if len(matches) == 1 {
+		return matchedIP, nil
 	}
-	return netaddr.IP{}
+	if len(matches) > 1 {
+		return netaddr.IP{}, matches
+	}
+	if remoteIP := parseIP(r.RemoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
+		return remoteIP, nil
+	}
+	return netaddr.IP{}, nil
 }
 
 func parseIP(s string) netaddr.IP {
