@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"inet.af/netaddr"
@@ -172,8 +173,8 @@ func genIPTestCases() []IPTestCase {
 }
 
 func TestIPHeaders(t *testing.T) {
-	// Make sure to restore the real value of clientIPHeader at the end of the test
-	defer func(s string) { clientIPHeader = s }(clientIPHeader)
+	// Make sure to restore the real value of cfg.clientIPHeader at the end of the test
+	defer func(s string) { cfg.clientIPHeader = s }(cfg.clientIPHeader)
 	for _, tc := range genIPTestCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			header := http.Header{}
@@ -181,23 +182,103 @@ func TestIPHeaders(t *testing.T) {
 				header.Add(k, v)
 			}
 			r := http.Request{Header: header, RemoteAddr: tc.remoteAddr}
-			clientIPHeader = tc.clientIPHeader
-			cfg := ddtrace.StartSpanConfig{}
+			cfg.clientIPHeader = tc.clientIPHeader
+			spanCfg := ddtrace.StartSpanConfig{}
 			for _, opt := range genClientIPSpanTags(&r) {
-				opt(&cfg)
+				opt(&spanCfg)
 			}
 			if tc.expectedIP.IsValid() {
-				require.Equal(t, tc.expectedIP.String(), cfg.Tags[ext.HTTPClientIP])
-				require.Nil(t, cfg.Tags[ext.MultipleIPHeaders])
+				require.Equal(t, tc.expectedIP.String(), spanCfg.Tags[ext.HTTPClientIP])
+				require.Nil(t, spanCfg.Tags[ext.MultipleIPHeaders])
 			} else {
-				require.Nil(t, cfg.Tags[ext.HTTPClientIP])
+				require.Nil(t, spanCfg.Tags[ext.HTTPClientIP])
 				if tc.multiHeaders != "" {
-					require.Equal(t, tc.multiHeaders, cfg.Tags[ext.MultipleIPHeaders])
+					require.Equal(t, tc.multiHeaders, spanCfg.Tags[ext.MultipleIPHeaders])
 					for hdr, ip := range tc.headers {
-						require.Equal(t, ip, cfg.Tags[ext.HTTPRequestHeaders+"."+hdr])
+						require.Equal(t, ip, spanCfg.Tags[ext.HTTPRequestHeaders+"."+hdr])
 					}
 				}
 			}
+		})
+	}
+}
+
+func TestURLTags(t *testing.T) {
+	type URLTC struct {
+		name, expectedURL, redactedUrl, host, port, path, query string
+	}
+	for _, tc := range []URLTC{
+		{
+			name:        "basic",
+			expectedURL: "http://example.com",
+			host:        "example.com",
+		},
+		{
+			name:        "basic-path",
+			expectedURL: "http://example.com/test",
+			host:        "example.com",
+			path:        "/test",
+		},
+		{
+			name:        "basic-port",
+			expectedURL: "http://example.com:8080",
+			host:        "example.com",
+			port:        "8080",
+		},
+		{
+			name:        "query1",
+			expectedURL: "http://example.com?test1=test2",
+			host:        "example.com",
+			query:       "test1=test2",
+		},
+		{
+			name:        "query2",
+			expectedURL: "http://example.com?test1=test2&test3=test4",
+			host:        "example.com",
+			query:       "test1=test2&test3=test4",
+		},
+		{
+			name:        "combined",
+			expectedURL: "http://example.com:7777/test?test1=test2&test3=test4",
+			host:        "example.com",
+			path:        "/test",
+			query:       "test1=test2&test3=test4",
+			port:        "7777",
+		},
+		{
+			name:        "basic-obfuscation1",
+			expectedURL: "http://example.com?<redacted>",
+			host:        "example.com",
+			query:       "token=value",
+		},
+		{
+			name:        "basic-obfuscation2",
+			expectedURL: "http://example.com?test0=test1&<redacted>&test1=test2",
+			host:        "example.com",
+			query:       "test0=test1&token=value&test1=test2",
+		},
+		{
+			name:        "combined-obfuscation",
+			expectedURL: "http://example.com:7777/test?test1=test2&<redacted>&test3=test4",
+			host:        "example.com",
+			path:        "/test",
+			query:       "test1=test2&token=value&test3=test4",
+			port:        "7777",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := http.Request{
+				URL: &url.URL{
+					Path:     tc.path,
+					RawQuery: tc.query,
+				},
+				Host: tc.host,
+			}
+			if tc.port != "" {
+				r.Host += ":" + tc.port
+			}
+			url := getURL(&r)
+			require.Equal(t, tc.expectedURL, url)
 		})
 	}
 }

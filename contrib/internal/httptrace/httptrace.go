@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -38,8 +37,7 @@ var (
 		"via",
 		"true-client-ip",
 	}
-	clientIPHeader = os.Getenv("DD_TRACE_CLIENT_IP_HEADER")
-	collectIP      = os.Getenv("DD_TRACE_CLIENT_IP_HEADER_DISABLED") != "true"
+	cfg = newConfig()
 )
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
@@ -50,7 +48,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	opts = append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, r.Method),
-		tracer.Tag(ext.HTTPURL, r.URL.Path),
+		tracer.Tag(ext.HTTPURL, getURL(r)),
 		tracer.Tag(ext.HTTPUserAgent, r.UserAgent()),
 		tracer.Measured(),
 	}, opts...)
@@ -59,7 +57,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			tracer.Tag("http.host", r.Host),
 		}, opts...)
 	}
-	if collectIP {
+	if cfg.collectIP {
 		opts = append(genClientIPSpanTags(r), opts...)
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
@@ -96,8 +94,8 @@ func ippref(s string) *netaddr.IPPrefix {
 // See https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2118779066/Client+IP+addresses+resolution
 func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
 	ipHeaders := defaultIPHeaders
-	if len(clientIPHeader) > 0 {
-		ipHeaders = []string{clientIPHeader}
+	if len(cfg.clientIPHeader) > 0 {
+		ipHeaders = []string{cfg.clientIPHeader}
 	}
 	var headers []string
 	var ips []string
@@ -155,4 +153,31 @@ func isGlobal(ip netaddr.IP) bool {
 		}
 	}
 	return isGlobal
+}
+
+// getURL returns the full URL of the http request. If query params are collected, they will be obfuscated granted
+// obfuscation is not disabled by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
+// For more information see https://datadoghq.atlassian.net/wiki/spaces/APM/pages/2357395856/Span+attributes#http.url
+func getURL(r *http.Request) string {
+	// Quoting net/http comments about net.Request.URL on server requests:
+	// "For most requests, fields other than Path and RawQuery will be
+	// empty. (See RFC 7230, Section 5.3)"
+	// This is why we don't rely on url.URL.String(), url.URL.Host, url.URL.Scheme, etc...
+	host := r.Host
+	path := r.URL.EscapedPath()
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	url := strings.Join([]string{scheme, "://", host, path}, "")
+	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
+	// https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2490990623/QueryString+-+Sensitive+Data+Obfuscation
+	if cfg.collectQueryString && r.URL.RawQuery != "" {
+		query := r.URL.RawQuery
+		if cfg.queryStringObfRegexp != nil {
+			query = cfg.queryStringObfRegexp.ReplaceAllLiteralString(query, "<redacted>")
+		}
+		url += "?" + query
+	}
+	return url
 }
