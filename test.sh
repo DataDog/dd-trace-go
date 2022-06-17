@@ -34,8 +34,9 @@ while [[ $# -gt 0 ]]; do
 			shift
 			;;
 		-s|--sleep)
-			sleeptime=$1
+			sleeptime=$2
 			shift
+            shift
 			;;
 		-h|--help)
 			echo "test.sh - Run the tests for dd-trace-go"
