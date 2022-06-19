@@ -90,7 +90,7 @@ func (a *appsec) start() error {
 	// Register the WAF operation event listener
 	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
 	a.limiter.Start()
-	unregisterWAF, err := registerWAF(a.cfg.rules, a.cfg.wafTimeout, a.limiter)
+	unregisterWAF, err := registerWAF(a.cfg.rules, a.cfg.wafTimeout, a.limiter, &a.cfg.obfuscator)
 	if err != nil {
 		return err
 	}

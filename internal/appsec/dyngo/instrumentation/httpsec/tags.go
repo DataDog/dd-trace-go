@@ -11,9 +11,7 @@ import (
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 )
 
 // SetAppSecTags sets the AppSec-specific span tags that are expected to be in
@@ -23,35 +21,9 @@ func SetAppSecTags(span ddtrace.Span) {
 	span.SetTag("_dd.runtime_family", "go")
 }
 
-// setEventSpanTags sets the security event span tags into the service entry span.
-func setEventSpanTags(span ddtrace.Span, events json.RawMessage) {
-	// Set the appsec event span tag
-	// eventTag is the structure to use in the `_dd.appsec.json` span tag.
-	type eventTag struct {
-		Triggers json.RawMessage `json:"triggers"`
-	}
-	// TODO(Julio-Guerra): avoid serializing the json in the request hot path
-	event, err := json.Marshal(eventTag{Triggers: events})
-	if err != nil {
-		log.Error("appsec: unexpected error while serializing the appsec event span tag: %v", err)
-		return
-	}
-	span.SetTag("_dd.appsec.json", string(event))
-	// Keep this span due to the security event
-	//
-	// This is a workaround to tell the tracer that the trace was kept by AppSec.
-	// Passing any other value than `appsec.SamplerAppSec` has no effect.
-	// Customers should use `span.SetTag(ext.ManualKeep, true)` pattern
-	// to keep the trace, manually.
-	span.SetTag(ext.ManualKeep, samplernames.AppSec)
-	span.SetTag("_dd.origin", "appsec")
-	// Set the appsec.event tag needed by the appsec backend
-	span.SetTag("appsec.event", true)
-}
-
 // SetSecurityEventTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
-func SetSecurityEventTags(span ddtrace.Span, events json.RawMessage, remoteIP string, headers, respHeaders map[string][]string) {
-	setEventSpanTags(span, events)
+func SetSecurityEventTags(span ddtrace.Span, events []json.RawMessage, remoteIP string, headers, respHeaders map[string][]string) {
+	instrumentation.SetEventSpanTags(span, events)
 	span.SetTag("network.client.ip", remoteIP)
 	for h, v := range NormalizeHTTPHeaders(headers) {
 		span.SetTag("http.request.headers."+h, v)

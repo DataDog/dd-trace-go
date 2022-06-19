@@ -7,11 +7,7 @@
 
 package http
 
-import (
-	"net/http"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-)
+import "net/http"
 
 // wrapResponseWriter wraps an underlying http.ResponseWriter so that it can
 // trace the http response codes. It also checks for various http interfaces
@@ -21,13 +17,13 @@ import (
 //
 // This code is generated because we have to account for all the permutations
 // of the interfaces.
-func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) http.ResponseWriter {
+func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWriter) {
 	hFlusher, okFlusher := w.(http.Flusher)
 	hPusher, okPusher := w.(http.Pusher)
 	hCloseNotifier, okCloseNotifier := w.(http.CloseNotifier)
 	hHijacker, okHijacker := w.(http.Hijacker)
 
-	mw := newResponseWriter(w, span)
+	mw := newResponseWriter(w)
 	type monitoredResponseWriter interface {
 		http.ResponseWriter
 		Status() int
@@ -129,5 +125,5 @@ func wrapResponseWriter(w http.ResponseWriter, span ddtrace.Span) http.ResponseW
 		w = mw
 	}
 
-	return w
+	return w, mw
 }

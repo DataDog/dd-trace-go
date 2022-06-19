@@ -124,7 +124,7 @@ type PropagatorConfig struct {
 // NewPropagator returns a new propagator which uses TextMap to inject
 // and extract values. It propagates trace and span IDs and baggage.
 // To use the defaults, nil may be provided in place of the config.
-func NewPropagator(cfg *PropagatorConfig) Propagator {
+func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator {
 	if cfg == nil {
 		cfg = new(PropagatorConfig)
 	}
@@ -139,6 +139,12 @@ func NewPropagator(cfg *PropagatorConfig) Propagator {
 	}
 	if cfg.PriorityHeader == "" {
 		cfg.PriorityHeader = DefaultPriorityHeader
+	}
+	if len(propagators) > 0 {
+		return &chainedPropagator{
+			injectors:  propagators,
+			extractors: propagators,
+		}
 	}
 	return &chainedPropagator{
 		injectors:  getPropagators(cfg, headerPropagationStyleInject),
@@ -310,7 +316,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 	if err != nil {
 		return nil, err
 	}
-	if ctx.traceID == 0 || ctx.spanID == 0 {
+	if ctx.traceID == 0 || (ctx.spanID == 0 && ctx.origin != "synthetics") {
 		return nil, ErrSpanContextNotFound
 	}
 	return &ctx, nil
