@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -52,6 +53,10 @@ var defaultClient = &http.Client{
 }
 
 const (
+	defaultHostname    = "localhost"
+	defaultPort        = "8126"
+	defaultAddress     = defaultHostname + ":" + defaultPort
+	defaultURL         = "http://" + defaultAddress
 	defaultHTTPTimeout = 2 * time.Second         // defines the current timeout before giving up with the send process
 	traceCountHeader   = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
 )
@@ -174,4 +179,24 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 
 func (t *httpTransport) endpoint() string {
 	return t.traceURL
+}
+
+// resolveAgentAddr resolves the given agent address and fills in any missing host
+// and port using the defaults. Some environment variable settings will
+// take precedence over configuration.
+func resolveAgentAddr() string {
+	var host, port string
+	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
+		host = v
+	}
+	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
+		port = v
+	}
+	if host == "" {
+		host = defaultHostname
+	}
+	if port == "" {
+		port = defaultPort
+	}
+	return fmt.Sprintf("%s:%s", host, port)
 }

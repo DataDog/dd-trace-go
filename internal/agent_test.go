@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -62,39 +61,4 @@ func TestAgentURLFromEnv(t *testing.T) {
 		assert.Equal(t, false, ok)
 		assert.Equal(t, "", v)
 	})
-}
-
-func TestResolveAgentAddr(t *testing.T) {
-	for _, tt := range []struct {
-		in, envHost, envPort, out string
-	}{
-		{"host", "", "", fmt.Sprintf("host:%s", DefaultPort)},
-		{"www.my-address.com", "", "", fmt.Sprintf("www.my-address.com:%s", DefaultPort)},
-		{"localhost", "", "", fmt.Sprintf("localhost:%s", DefaultPort)},
-		{":1111", "", "", fmt.Sprintf("%s:1111", DefaultHostname)},
-		{"", "", "", DefaultAddress},
-		{"custom:1234", "", "", "custom:1234"},
-		{"", "", "", DefaultAddress},
-		{"", "ip.local", "", fmt.Sprintf("ip.local:%s", DefaultPort)},
-		{"", "", "1234", fmt.Sprintf("%s:1234", DefaultHostname)},
-		{"", "ip.local", "1234", "ip.local:1234"},
-		{"ip.other", "ip.local", "", fmt.Sprintf("ip.local:%s", DefaultPort)},
-		{"ip.other:1234", "ip.local", "", "ip.local:1234"},
-		{":8888", "", "1234", fmt.Sprintf("%s:1234", DefaultHostname)},
-		{"ip.other:8888", "", "1234", "ip.other:1234"},
-		{"ip.other", "ip.local", "1234", "ip.local:1234"},
-		{"ip.other:8888", "ip.local", "1234", "ip.local:1234"},
-	} {
-		t.Run("", func(t *testing.T) {
-			if tt.envHost != "" {
-				os.Setenv("DD_AGENT_HOST", tt.envHost)
-				defer os.Unsetenv("DD_AGENT_HOST")
-			}
-			if tt.envPort != "" {
-				os.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
-				defer os.Unsetenv("DD_TRACE_AGENT_PORT")
-			}
-			assert.Equal(t, ResolveAgentAddr(tt.in), tt.out)
-		})
-	}
 }

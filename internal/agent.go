@@ -6,20 +6,10 @@
 package internal
 
 import (
-	"fmt"
-	"net"
 	"net/url"
 	"os"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-)
-
-// Default Hostname, Port, Address and URL of the trace agent
-const (
-	DefaultHostname = "localhost"
-	DefaultPort     = "8126"
-	DefaultAddress  = DefaultHostname + ":" + DefaultPort
-	DefaultURL      = "http://" + DefaultAddress
 )
 
 // AgentURLFromEnv determines the trace agent URL from environment variable
@@ -50,28 +40,4 @@ func AgentURLFromEnv() (string, bool) {
 		return "", false
 	}
 	return agentURL, false
-}
-
-// ResolveAgentAddr resolves the given agent address and fills in any missing host
-// and port using the defaults. Some environment variable settings will
-// take precedence over configuration.
-func ResolveAgentAddr(addr string) string {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		// no port in addr
-		host = addr
-	}
-	if host == "" {
-		host = DefaultHostname
-	}
-	if port == "" {
-		port = DefaultPort
-	}
-	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
-		host = v
-	}
-	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
-		port = v
-	}
-	return fmt.Sprintf("%s:%s", host, port)
 }

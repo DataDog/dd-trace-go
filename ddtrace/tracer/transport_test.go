@@ -18,8 +18,6 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-
 	"github.com/stretchr/testify/assert"
 )
 
@@ -71,11 +69,44 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(internal.DefaultURL, defaultClient)
+		transport := newHTTPTransport(defaultURL, defaultClient)
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
 		assert.NoError(err)
+	}
+}
+
+func TestResolveAgentAddr(t *testing.T) {
+	c := new(config)
+	for _, tt := range []struct {
+		inOpt                 StartOption
+		envHost, envPort, out string
+	}{
+		{nil, "", "", defaultURL},
+		{nil, "ip.local", "", fmt.Sprintf("http://ip.local:%s", defaultPort)},
+		{nil, "", "1234", fmt.Sprintf("http://%s:1234", defaultHostname)},
+		{nil, "ip.local", "1234", "http://ip.local:1234"},
+		{WithAgentAddr("host:1243"), "", "", "http://host:1243"},
+		{WithAgentAddr("ip.other:9876"), "ip.local", "", "http://ip.other:9876"},
+		{WithAgentAddr("ip.other:1234"), "", "9876", "http://ip.other:1234"},
+		{WithAgentAddr("ip.other:8888"), "ip.local", "1234", "http://ip.other:8888"},
+	} {
+		t.Run("", func(t *testing.T) {
+			if tt.envHost != "" {
+				os.Setenv("DD_AGENT_HOST", tt.envHost)
+				defer os.Unsetenv("DD_AGENT_HOST")
+			}
+			if tt.envPort != "" {
+				os.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
+				defer os.Unsetenv("DD_TRACE_AGENT_PORT")
+			}
+			c.agentURL = "http://" + resolveAgentAddr()
+			if tt.inOpt != nil {
+				tt.inOpt(c)
+			}
+			assert.Equal(t, tt.out, c.agentURL)
+		})
 	}
 }
 
