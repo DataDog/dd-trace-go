@@ -10,12 +10,35 @@ package httptrace
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
+
+	"inet.af/netaddr"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+)
+
+var (
+	ipv6SpecialNetworks = []*netaddr.IPPrefix{
+		ippref("fec0::/10"), // site local
+	}
+	defaultIPHeaders = []string{
+		"x-forwarded-for",
+		"x-real-ip",
+		"x-client-ip",
+		"x-forwarded",
+		"x-cluster-client-ip",
+		"forwarded-for",
+		"forwarded",
+		"via",
+		"true-client-ip",
+	}
+	clientIPHeader = os.Getenv("DD_TRACE_CLIENT_IP_HEADER")
 )
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
@@ -29,10 +52,13 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 		tracer.Tag(ext.HTTPUserAgent, r.UserAgent()),
 		tracer.Measured(),
 	}, opts...)
-	if r.URL.Host != "" {
+	if r.Host != "" {
 		opts = append([]ddtrace.StartSpanOption{
-			tracer.Tag("http.host", r.URL.Host),
+			tracer.Tag("http.host", r.Host),
 		}, opts...)
+	}
+	if ip := getClientIP(r); ip.IsValid() {
+		opts = append(opts, tracer.Tag(ext.HTTPClientIP, ip.String()))
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
@@ -54,4 +80,71 @@ func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 		s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 	}
 	s.Finish(opts...)
+}
+
+// ippref returns the IP network from an IP address string s. If not possible, it returns nil.
+func ippref(s string) *netaddr.IPPrefix {
+	if prefix, err := netaddr.ParseIPPrefix(s); err == nil {
+		return &prefix
+	}
+	return nil
+}
+
+// getClientIP attempts to find the client IP address in the given request r.
+func getClientIP(r *http.Request) netaddr.IP {
+	ipHeaders := defaultIPHeaders
+	if len(clientIPHeader) > 0 {
+		ipHeaders = []string{clientIPHeader}
+	}
+	check := func(s string) netaddr.IP {
+		for _, ipstr := range strings.Split(s, ",") {
+			ip := parseIP(strings.TrimSpace(ipstr))
+			if !ip.IsValid() {
+				continue
+			}
+			if isGlobal(ip) {
+				return ip
+			}
+		}
+		return netaddr.IP{}
+	}
+	for _, hdr := range ipHeaders {
+		if v := r.Header.Get(hdr); v != "" {
+			if ip := check(v); ip.IsValid() {
+				return ip
+			}
+		}
+	}
+	if remoteIP := parseIP(r.RemoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
+		return remoteIP
+	}
+	return netaddr.IP{}
+}
+
+func parseIP(s string) netaddr.IP {
+	if ip, err := netaddr.ParseIP(s); err == nil {
+		return ip
+	}
+	if h, _, err := net.SplitHostPort(s); err == nil {
+		if ip, err := netaddr.ParseIP(h); err == nil {
+			return ip
+		}
+	}
+	return netaddr.IP{}
+}
+
+func isGlobal(ip netaddr.IP) bool {
+	// IsPrivate also checks for ipv6 ULA.
+	// We care to check for these addresses are not considered public, hence not global.
+	// See https://www.rfc-editor.org/rfc/rfc4193.txt for more details.
+	isGlobal := !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast()
+	if !isGlobal || !ip.Is6() {
+		return isGlobal
+	}
+	for _, n := range ipv6SpecialNetworks {
+		if n.Contains(ip) {
+			return false
+		}
+	}
+	return isGlobal
 }

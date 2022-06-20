@@ -265,10 +265,13 @@ func newConfig(opts ...StartOption) *config {
 	if c.transport == nil {
 		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
-	if c.propagator == nil {
-		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
-		})
+	pcfg := &PropagatorConfig{
+		MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
+	}
+	if c.propagator != nil {
+		c.propagator = NewPropagator(pcfg, c.propagator)
+	} else {
+		c.propagator = NewPropagator(pcfg)
 	}
 	if c.logger != nil {
 		log.UseLogger(c.logger)
@@ -887,7 +890,7 @@ func WithUserRole(role string) UserMonitoringOption {
 	}
 }
 
-// WithUserScope returns the option setting the scope (authorizations) of the authenticated user
+// WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
 	return func(s Span) {
 		s.SetTag("usr.scope", scope)
