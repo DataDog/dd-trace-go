@@ -22,7 +22,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-
 func toTagsOpts(cfg *config) []tracer.StartSpanOption {
 	if cfg == nil || len(cfg.tags) == 0 {
 		return nil
@@ -36,7 +35,6 @@ func toTagsOpts(cfg *config) []tracer.StartSpanOption {
 	}
 	return opts
 }
-
 
 func startSpanFromContext(
 	ctx context.Context, method, operation, service string, opts ...tracer.StartSpanOption,

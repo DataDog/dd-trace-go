@@ -96,4 +96,3 @@ func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) Optio
 		cfg.tagFns[tag] = tagFn
 	}
 }
-

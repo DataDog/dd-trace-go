@@ -18,7 +18,7 @@ type config struct {
 	analyticsRate        float64
 	dsn                  string
 	childSpansOnly       bool
-  tags                 map[string]interface{}
+	tags                 map[string]interface{}
 	commentInjectionMode tracer.SQLCommentInjectionMode
 }
 
@@ -96,7 +96,7 @@ func WithCustomTag(key string, value interface{}) Option {
 			cfg.tags = make(map[string]interface{})
 		}
 		cfg.tags[key] = value
-  }
+	}
 }
 
 // WithSQLCommentInjection enables injection of tags as sql comments on traced queries.
