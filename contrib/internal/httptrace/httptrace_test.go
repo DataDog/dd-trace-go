@@ -36,7 +36,7 @@ type IPTestCase struct {
 	remoteAddr      string
 	headers         map[string]string
 	expectedIP      netaddr.IP
-	expectedMatches map[string]string
+	expectedMatches []string
 	clientIPHeader  string
 }
 
@@ -111,13 +111,13 @@ func genIPTestCases() []IPTestCase {
 			name:            "ipv4-multi-header-1",
 			headers:         map[string]string{"x-forwarded-for": "127.0.0.1", "forwarded-for": ipv4Global},
 			expectedIP:      netaddr.IP{},
-			expectedMatches: map[string]string{"x-forwarded-for": "127.0.0.1", "forwarded-for": ipv4Global},
+			expectedMatches: []string{"x-forwarded-for", "forwarded-for"},
 		},
 		{
 			name:            "ipv4-multi-header-2",
 			headers:         map[string]string{"forwarded-for": ipv4Global, "x-forwarded-for": "127.0.0.1"},
 			expectedIP:      netaddr.IP{},
-			expectedMatches: map[string]string{"x-forwarded-for": "127.0.0.1", "forwarded-for": ipv4Global},
+			expectedMatches: []string{"x-forwarded-for", "forwarded-for"},
 		},
 		{
 			name:       "invalid-ipv6",
@@ -133,13 +133,13 @@ func genIPTestCases() []IPTestCase {
 			name:            "ipv6-multi-header-1",
 			headers:         map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::", "forwarded-for": ipv6Global},
 			expectedIP:      netaddr.IP{},
-			expectedMatches: map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::", "forwarded-for": ipv6Global},
+			expectedMatches: []string{"x-forwarded-for", "forwarded-for"},
 		},
 		{
 			name:            "ipv6-multi-header-2",
 			headers:         map[string]string{"forwarded-for": ipv6Global, "x-forwarded-for": "2001:0db8:2001:zzzz::"},
 			expectedIP:      netaddr.IP{},
-			expectedMatches: map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::", "forwarded-for": ipv6Global},
+			expectedMatches: []string{"x-forwarded-for", "forwarded-for"},
 		},
 	}, tcs...)
 	tcs = append([]IPTestCase{
@@ -183,7 +183,6 @@ func TestIPHeaders(t *testing.T) {
 			ip, matches := getClientIP(&r)
 			require.Equal(t, tc.expectedIP, ip)
 			require.Equal(t, tc.expectedMatches, matches)
-			genClientIPSpanTags(&http.Request{Header: header, RemoteAddr: tc.remoteAddr})
 		})
 	}
 }

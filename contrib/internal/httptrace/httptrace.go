@@ -39,6 +39,7 @@ var (
 		"true-client-ip",
 	}
 	clientIPHeader = os.Getenv("DD_TRACE_CLIENT_IP_HEADER")
+	collectIP      = os.Getenv("DD_TRACE_CLIENT_IP_HEADER_DISABLED") != "true"
 )
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
@@ -57,8 +58,8 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			tracer.Tag("http.host", r.Host),
 		}, opts...)
 	}
-	for k, v := range genClientIPSpanTags(r) {
-		opts = append([]ddtrace.StartSpanOption{tracer.Tag(k, v)}, opts...)
+	if collectIP {
+		opts = append(genClientIPSpanTags(r), opts...)
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
@@ -90,31 +91,31 @@ func ippref(s string) *netaddr.IPPrefix {
 	return nil
 }
 
-// genClientIPSpanTags generates the client IP related key/value map of tags that need to be added to the span.
-func genClientIPSpanTags(r *http.Request) map[string]string {
-	tags := map[string]string{}
+// genClientIPSpanTags generates the client IP related span tags.
+func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
+	tags := []ddtrace.StartSpanOption{}
 	ip, matches := getClientIP(r)
 	if matches == nil {
 		if ip.IsValid() {
-			tags[ext.HTTPClientIP] = ip.String()
+			tags = append(tags, tracer.Tag(ext.HTTPClientIP, ip.String()))
 		}
 		return tags
 	}
 	sb := strings.Builder{}
-	for hdr, ip := range matches {
-		tags[ext.HTTPRequestHeaders+"."+hdr] = ip
-		sb.WriteString(hdr + ":" + ip + ",")
+	for _, hdr := range matches {
+		tags = append(tags, tracer.Tag(ext.HTTPRequestHeaders+"."+hdr, ip))
+		sb.WriteString(hdr + ",")
 	}
 	hdrList := sb.String()
-	tags[ext.MultipleIPHeaders] = hdrList[:len(hdrList)-1]
+	tags = append(tags, tracer.Tag(ext.MultipleIPHeaders, hdrList[:len(hdrList)-1]))
 	return tags
 }
 
 // getClientIP attempts to find the client IP address in the given request r.
-// If several IP headers are present in the request, the returned IP is invalid and the map gets filled with the
-// header/ip pairs for all IP headers found in the request. Otherwise, the returned map is nil.
+// If several IP headers are present in the request, the returned IP is invalid and the list of all IP headers is
+// returned. Otherwise, the returned list is nil.
 // See https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2118779066/Client+IP+addresses+resolution
-func getClientIP(r *http.Request) (netaddr.IP, map[string]string) {
+func getClientIP(r *http.Request) (netaddr.IP, []string) {
 	ipHeaders := defaultIPHeaders
 	if len(clientIPHeader) > 0 {
 		ipHeaders = []string{clientIPHeader}
@@ -131,11 +132,11 @@ func getClientIP(r *http.Request) (netaddr.IP, map[string]string) {
 		}
 		return netaddr.IP{}
 	}
-	matches := map[string]string{}
+	matches := []string{}
 	var matchedIP netaddr.IP
 	for _, hdr := range ipHeaders {
 		if v := r.Header.Get(hdr); v != "" {
-			matches[hdr] = v
+			matches = append(matches, hdr)
 			if ip := check(v); ip.IsValid() {
 				matchedIP = ip
 			}
