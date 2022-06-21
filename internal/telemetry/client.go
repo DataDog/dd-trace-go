@@ -75,7 +75,7 @@ type Client struct {
 	SubmissionInterval time.Duration
 
 	// e.g. "tracers", "profilers", "appsec"
-	Namespace string
+	Namespace Namespace
 
 	// App-specific information
 	Service string

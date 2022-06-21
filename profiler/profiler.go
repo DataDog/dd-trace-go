@@ -187,7 +187,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	p.uploadFunc = p.upload
 	p.telemetry = &telemetry.Client{
 		APIKey:    cfg.apiKey,
-		Namespace: "profilers",
+		Namespace: telemetry.NamespaceProfilers,
 		Service:   cfg.service,
 		Env:       cfg.env,
 		Client:    p.cfg.httpClient, // use the profiler's http.Client, gives us UDS if that's used

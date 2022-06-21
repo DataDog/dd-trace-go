@@ -35,6 +35,19 @@ const (
 	RequestTypeAppClosing RequestType = "app-closing"
 )
 
+// Namespace describes an APM product to distinguish telemetry coming from
+// different products used by the same application
+type Namespace string
+
+const (
+	// Distributed tracing
+	NamespaceTracers Namespace = "tracers"
+	// Continuous profiling
+	NamespaceProfilers Namespace = "profilers"
+	// Application security monitoring
+	NamespaceASM Namespace = "appsec"
+)
+
 // Application is identifying information about the app itself
 type Application struct {
 	ServiceName     string `json:"service_name"`
@@ -94,10 +107,10 @@ type Configuration struct {
 
 // Metrics corresponds to the "generate-metrics" request type
 type Metrics struct {
-	Namespace   string   `json:"namespace"`
-	LibLanguage string   `json:"lib_language"`
-	LibVersion  string   `json:"lib_version"`
-	Series      []Series `json:"series"`
+	Namespace   Namespace `json:"namespace"`
+	LibLanguage string    `json:"lib_language"`
+	LibVersion  string    `json:"lib_version"`
+	Series      []Series  `json:"series"`
 }
 
 // Series is a sequence of observations for a single named metric
