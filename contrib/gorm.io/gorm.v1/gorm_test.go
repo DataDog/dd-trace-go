@@ -447,6 +447,7 @@ func TestCustomTags(t *testing.T) {
 		log.Fatal(err)
 	}
 
+	db = db.WithContext(context.Background())
 	db.First(&Product{}, Product{Code: "L1210", Price: 2000})
 
 	spans := mt.FinishedSpans()

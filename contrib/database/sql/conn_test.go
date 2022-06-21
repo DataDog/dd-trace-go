@@ -19,8 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// todo: xdu. test custom tags
-
 func TestWithSpanTags(t *testing.T) {
 	type sqlRegister struct {
 		name   string
@@ -176,7 +174,6 @@ func TestWithCustomTag(t *testing.T) {
 		name   string
 		dsn    string
 		driver driver.Driver
-		opts   []RegisterOption
 	}
 	type want struct {
 		opName     string
@@ -186,6 +183,7 @@ func TestWithCustomTag(t *testing.T) {
 		name        string
 		sqlRegister sqlRegister
 		want        want
+		options     []Option
 	}{
 		{
 			name: "mysql",
@@ -193,10 +191,6 @@ func TestWithCustomTag(t *testing.T) {
 				name:   "mysql",
 				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
 				driver: &mysql.MySQLDriver{},
-				opts: []RegisterOption{
-					WithCustomTag("foo", "bar"),
-					WithCustomTag("baz", 123),
-				},
 			},
 			want: want{
 				opName: "mysql.query",
@@ -205,6 +199,10 @@ func TestWithCustomTag(t *testing.T) {
 					"baz": 123,
 				},
 			},
+			options: []Option{
+				WithCustomTag("foo", "bar"),
+				WithCustomTag("baz", 123),
+			},
 		},
 		{
 			name: "postgres",
@@ -212,10 +210,6 @@ func TestWithCustomTag(t *testing.T) {
 				name:   "postgres",
 				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
 				driver: &pq.Driver{},
-				opts: []RegisterOption{
-					WithCustomTag("foo", "bar"),
-					WithCustomTag("baz", 123),
-				},
 			},
 			want: want{
 				opName: "postgres.query",
@@ -224,15 +218,19 @@ func TestWithCustomTag(t *testing.T) {
 					"baz": 123,
 				},
 			},
+			options: []Option{
+				WithCustomTag("foo", "bar"),
+				WithCustomTag("baz", 123),
+			},
 		},
 	}
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	for _, tt := range testcases {
 		t.Run(tt.name, func(t *testing.T) {
-			Register(tt.sqlRegister.name, tt.sqlRegister.driver, tt.sqlRegister.opts...)
+			Register(tt.sqlRegister.name, tt.sqlRegister.driver, tt.options...)
 			defer unregister(tt.sqlRegister.name)
-			db, err := Open(tt.sqlRegister.name, tt.sqlRegister.dsn)
+			db, err := Open(tt.sqlRegister.name, tt.sqlRegister.dsn, tt.options...)
 			if err != nil {
 				log.Fatal(err)
 			}
