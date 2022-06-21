@@ -425,8 +425,8 @@ func TestCustomTags(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	sqltrace.Register("pgx", &stdlib.Driver{})
-	sqlDb, err := sqltrace.Open("pgx", pgConnString)
+	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithChildSpanOnly())
+	sqlDb, err := sqltrace.Open("pgx", pgConnString, sqltrace.WithChildSpanOnly())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -451,7 +451,7 @@ func TestCustomTags(t *testing.T) {
 	db.First(&Product{}, Product{Code: "L1210", Price: 2000})
 
 	spans := mt.FinishedSpans()
-	assert.True(len(spans) == 1)
+	assert.Equal(1, len(spans))
 
 	// Get last span (gorm.db)
 	s := spans[len(spans)-1]
