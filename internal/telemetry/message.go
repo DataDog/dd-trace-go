@@ -40,12 +40,12 @@ const (
 type Namespace string
 
 const (
-	// Distributed tracing
+	// NamespaceTracers is for distributed tracing
 	NamespaceTracers Namespace = "tracers"
-	// Continuous profiling
+	// NamespaceProfilers is for continuous profiling
 	NamespaceProfilers Namespace = "profilers"
-	// Application security monitoring
-	NamespaceASM Namespace = "appsec"
+	// NamespaceASM is for application security monitoring
+	NamespaceASM Namespace = "appsec" // This was defined before the appsec -> ASM change
 )
 
 // Application is identifying information about the app itself
