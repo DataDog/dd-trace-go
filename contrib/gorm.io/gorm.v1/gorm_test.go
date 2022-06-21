@@ -425,8 +425,8 @@ func TestCustomTags(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithChildSpanOnly())
-	sqlDb, err := sqltrace.Open("pgx", pgConnString, sqltrace.WithChildSpanOnly())
+	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithChildSpansOnly())
+	sqlDb, err := sqltrace.Open("pgx", pgConnString, sqltrace.WithChildSpansOnly())
 	if err != nil {
 		log.Fatal(err)
 	}
