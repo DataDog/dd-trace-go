@@ -239,10 +239,13 @@ func (p *profiler) run() {
 			{Name: "block_profile_rate", Value: p.cfg.blockRate},
 			{Name: "mutex_profile_fraction", Value: p.cfg.mutexFraction},
 			{Name: "max_goroutines_wait", Value: p.cfg.maxGoroutinesWait},
+			{Name: "cpu_profile_enabled", Value: profileEnabled(CPUProfile)},
+			{Name: "heap_profile_enabled", Value: profileEnabled(HeapProfile)},
+			{Name: "block_profile_enabled", Value: profileEnabled(BlockProfile)},
+			{Name: "mutex_profile_enabled", Value: profileEnabled(MutexProfile)},
 			{Name: "goroutine_profile_enabled", Value: profileEnabled(expGoroutineWaitProfile)},
 			{Name: "goroutine_wait_enabled", Value: profileEnabled(GoroutineProfile)},
 			{Name: "upload_timeout", Value: p.cfg.uploadTimeout.String()},
-			// TODO: other Go metrics here? e.g. max procs?
 		},
 	)
 
