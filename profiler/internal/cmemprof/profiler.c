@@ -71,26 +71,24 @@ extern __thread atomic_int in_cgo_start;
 // If the allocator implementation calls itself (e.g. calloc is implemented as
 // malloc + memset) then we will incorrectly count an allocation multiple times.
 // This thread-local counter tracks whether or not we're already sampling
-__thread int in_profiler = 0;
+extern __thread int in_allocation;
 
 void profile_allocation(size_t size) {
 	size_t rate = atomic_load(&sampling_rate);
 	if (rate == 0) {
 		return;
 	}
-	if (in_profiler == 0) {
+	if (in_allocation > 0) {
 		return;
 	}
-	in_profiler++;
 	if (should_sample(rate, size) != 0) {
 		if (atomic_load(&in_cgo_start) != 0) {
-			in_profiler--;
+			in_allocation--;
 			return;
 		}
 
 		recordAllocationSample(size);
 	}
-	in_profiler--;
 }
 
 // is_unsafe_call checks whether the given return address is inside a function
@@ -150,24 +148,24 @@ void profile_allocation_checked(size_t size, void *ret_addr) {
 		return;
 	}
 
-	if (in_profiler == 0) {
+	if (in_allocation > 0) {
 		return;
 	}
-	in_profiler++;
+	in_allocation++;
 
 	if (should_sample(rate, size) != 0) {
 		if (atomic_load(&in_cgo_start) != 0) {
-			in_profiler--;
+			in_allocation--;
 			return;
 		}
 
 		if (is_unsafe_call(ret_addr)) {
-			in_profiler--;
+			in_allocation--;
 			return;
 		}
 		recordAllocationSample(size);
 	}
-	in_profiler--;
+	in_allocation--;
 }
 
 

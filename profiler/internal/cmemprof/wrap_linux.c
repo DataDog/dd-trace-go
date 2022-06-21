@@ -13,11 +13,16 @@
 /* The GNU linker supports a --wrap flag that lets wrap allocation calls
  * without the problem of using dlsym in functions called by dlsym */
 
+__thread int in_allocation = 0;
+
 void *__real_malloc(size_t size);
 void *__wrap_malloc(size_t size) {
 	void *ret_addr = __builtin_return_address(0);
 	profile_allocation_checked(size, ret_addr);
-	return __real_malloc(size);
+	in_allocation++;
+	void *res = __real_malloc(size);
+	in_allocation--;
+	return res;
 }
 
 void *__real_calloc(size_t nmemb, size_t size);
@@ -28,29 +33,44 @@ void *__wrap_calloc(size_t nmemb, size_t size) {
 		return __real_calloc(nmemb, size);
 	}
 	profile_allocation(size * nmemb);
-	return __real_calloc(nmemb, size);
+	in_allocation++;
+	void *res = __real_calloc(nmemb, size);
+	in_allocation--;
+	return res;
 }
 
 void *__real_realloc(void *p, size_t size);
 void *__wrap_realloc(void *p, size_t size) {
 	profile_allocation(size);
-	return __real_realloc(p, size);
+	in_allocation++;
+	void *res = __real_realloc(p, size);
+	in_allocation--;
+	return res;
 }
 
 void *__real_valloc(size_t size);
 void *__wrap_valloc(size_t size) {
 	profile_allocation(size);
-	return __real_valloc(size);
+	in_allocation++;
+	void *res = __real_valloc(size);
+	in_allocation--;
+	return res;
 }
 
 void *__real_aligned_alloc(size_t alignment, size_t size);
 void *__wrap_aligned_alloc(size_t alignment, size_t size) {
 	profile_allocation(size);
-	return __real_aligned_alloc(alignment, size);
+	in_allocation++;
+	void *res = __real_aligned_alloc(alignment, size);
+	in_allocation--;
+	return res;
 }
 
 int __real_posix_memalign(void **p, size_t alignment, size_t size);
 int __wrap_posix_memalign(void **p, size_t alignment, size_t size) {
 	profile_allocation(size);
-	return __real_posix_memalign(p, alignment, size);
+	in_allocation++;
+	int res = __real_posix_memalign(p, alignment, size);
+	in_allocation--;
+	return res;
 }
