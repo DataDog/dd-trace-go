@@ -100,7 +100,7 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 	}
 
 	if c.cfg.tagFns != nil {
-		for key, tagFn := range cfg.tagFns {
+		for key, tagFn := range c.cfg.tagFns {
 			opts = append(opts, tracer.Tag(key, tagFn(msg)))
 		}
 	}

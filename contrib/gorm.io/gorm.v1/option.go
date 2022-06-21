@@ -80,7 +80,7 @@ func WithErrorCheck(fn func(err error) bool) Option {
 func WithCustomTag(tag string, tagFn func(db *gorm.DB) interface{}) Option {
 	return func(cfg *config) {
 		if cfg.tagFns == nil {
-			cfg.tagFns = make(map[string]func(scope *gorm.Scope) interface{})
+			cfg.tagFns = make(map[string]func(db *gorm.DB) interface{})
 		}
 
 		if tagFn != nil {

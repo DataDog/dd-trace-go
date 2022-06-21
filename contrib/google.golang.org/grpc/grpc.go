@@ -22,18 +22,22 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func toTagsOpts(cfg *config) []tracer.StartSpanOption {
+func addCustomTags(cfg *config, opts ...tracer.StartSpanOption) []tracer.StartSpanOption {
 	if cfg == nil || len(cfg.tags) == 0 {
-		return nil
+		return opts
 	}
 
-	opts := make([]tracer.StartSpanOption, len(cfg.tags))
+	ret := make([]tracer.StartSpanOption, len(cfg.tags)+len(opts))
 	i := 0
-	for key, tag := range cfg.tags {
-		opts[i] = tracer.Tag(key, tag)
+	for _, opt := range opts {
+		ret[i] = opt
 		i++
 	}
-	return opts
+	for key, tag := range cfg.tags {
+		ret[i] = tracer.Tag(key, tag)
+		i++
+	}
+	return ret
 }
 
 func startSpanFromContext(

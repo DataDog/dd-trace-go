@@ -217,8 +217,8 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query stri
 		tracer.StartTime(startTime),
 	)
 
-	if cfg.tags != nil {
-		for key, tag := range cfg.tags {
+	if tp.cfg.tags != nil {
+		for key, tag := range tp.cfg.tags {
 			opts = append(opts, tracer.Tag(key, tag))
 		}
 	}

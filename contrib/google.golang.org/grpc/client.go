@@ -39,8 +39,7 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 			cs.method,
 			"grpc.message",
 			cs.cfg.clientServiceName(),
-			tracer.AnalyticsRate(cs.cfg.analyticsRate),
-			toTagsOpts(cs.cfg)...,
+			addCustomTags(cs.cfg, tracer.AnalyticsRate(cs.cfg.analyticsRate))...,
 		)
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
@@ -58,8 +57,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 			cs.method,
 			"grpc.message",
 			cs.cfg.clientServiceName(),
-			tracer.AnalyticsRate(cs.cfg.analyticsRate),
-			toTagsOpts(cs.cfg)...,
+			addCustomTags(cs.cfg, tracer.AnalyticsRate(cs.cfg.analyticsRate))...,
 		)
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
@@ -172,8 +170,7 @@ func doClientRequest(
 		method,
 		"grpc.client",
 		cfg.clientServiceName(),
-		tracer.AnalyticsRate(cfg.analyticsRate),
-		toTagsOpts(cs.cfg)...,
+		addCustomTags(cfg, tracer.AnalyticsRate(cfg.analyticsRate))...,
 	)
 	if methodKind != "" {
 		span.SetTag(tagMethodKind, methodKind)
