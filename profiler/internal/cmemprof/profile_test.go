@@ -155,6 +155,34 @@ func TestSampling(t *testing.T) {
 	}
 }
 
+func TestDynamicLibraryAllocation(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("this feature is only supported on Linux")
+	}
+
+	var prof cmemprof.Profile
+	prof.Start(1)
+
+	testallocator.DoLibcAlloc()
+
+	pprof, err := prof.Stop()
+	if err != nil {
+		t.Fatalf("running profile: %s", err)
+	}
+
+	err = pprof.CheckValid()
+	if err != nil {
+		t.Fatalf("checking validity: %s", err)
+	}
+
+	original := pprof.Copy()
+	found, _, _, _ := pprof.FilterSamplesByName(regexp.MustCompile("DoLibcAlloc"), nil, nil, nil)
+	t.Logf("%s", original)
+	if !found {
+		t.Fatal("did not find any allocation samples")
+	}
+}
+
 func BenchmarkProfilerOverhead(b *testing.B) {
 	baseline := func(b *testing.B) {
 		for i := 0; i < b.N; i++ {

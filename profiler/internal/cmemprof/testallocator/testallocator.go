@@ -7,6 +7,7 @@ package testallocator
 
 /*
 #include <stdlib.h>
+#include <string.h>
 
 void *side_effect;
 
@@ -14,6 +15,12 @@ void doAlloc(size_t size) {
 	// have some observable side effect of malloc so that it doesn't get
 	// optimized away
 	void *p = malloc(size);
+	side_effect = p;
+	free(p);
+}
+
+void dolibcAlloc(void) {
+	void *p = (void *) strdup("hello world");
 	side_effect = p;
 	free(p);
 }
@@ -41,4 +48,13 @@ func DoAllocC(size int) {
 func DoCalloc(size int) {
 	p := C.calloc(C.size_t(size), 1)
 	C.free(p)
+}
+
+// DoLibcAlloc calls a libc function (in this case, strdup) which is documented
+// to allocate memory using malloc. This is for testing that we can intercept
+// references to malloc which might happen in dynamic libraries and thus can't be
+// detected at compile-time.
+//go:noinline
+func DoLibcAlloc() {
+	C.dolibcAlloc()
 }

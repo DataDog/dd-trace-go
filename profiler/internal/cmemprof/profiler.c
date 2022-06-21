@@ -66,12 +66,18 @@ void cgo_heap_profiler_mark_fpunwind_safe(void) {
 	safe_fpunwind = 1;
 }
 
+extern __thread atomic_int in_cgo_start;
+
 void profile_allocation(size_t size) {
 	size_t rate = atomic_load(&sampling_rate);
 	if (rate == 0) {
 		return;
 	}
 	if (should_sample(rate, size) != 0) {
+		if (atomic_load(&in_cgo_start) != 0) {
+			return;
+		}
+
 		recordAllocationSample(size);
 	}
 }
@@ -82,11 +88,7 @@ void profile_allocation(size_t size) {
 // There are two such functions:
 //
 // * x_cgo_thread_start 
-//      This function creates a new OS thread for cgo programs.  Calling back
-//      into Go requires an "m" (OS thread) with a corresponding "g" (goroutine)
-//      to run the Go code. But x_cgo_thread_start creates an "m" and calls
-//      malloc (meaning it might be profiled) before the "m" has a "g". This
-//      causes a crash.
+//      This is handled seperately, see cgothread.{c,go}
 // * C.malloc
 //      The cgo tool generates wrapper functions for Go programs to call C code.
 //      Since malloc is required by other cgo builtins like C.CString need to
@@ -107,14 +109,10 @@ static int is_unsafe_call(void *ret_addr) {
 	if (s == NULL) {
 		return 0;
 	}
-	if (strcmp(s, "x_cgo_thread_start") == 0) {
-		cgo_heap_profiler_debug("function %s is unsafe", s);
-		return 1;
-	}
-        // Each package which calls C.malloc gets its own malloc wrapper. The
-        // symbol will have a name like "_cgo_<PREFIX>_Cfunc__Cmalloc", where
-        // <PREFIX> is a unique value for each package. We just look for the
-        // suffix.
+	// Each package which calls C.malloc gets its own malloc wrapper. The
+	// symbol will have a name like "_cgo_<PREFIX>_Cfunc__Cmalloc", where
+	// <PREFIX> is a unique value for each package. We just look for the
+	// suffix.
 	int n = strlen(s);
 	const char *suffix = "_Cfunc__Cmalloc";
 	const int m = strlen(suffix);
@@ -142,6 +140,10 @@ void profile_allocation_checked(size_t size, void *ret_addr) {
 	}
 
 	if (should_sample(rate, size) != 0) {
+		if (atomic_load(&in_cgo_start) != 0) {
+			return;
+		}
+
 		if (is_unsafe_call(ret_addr)) {
 			return;
 		}
