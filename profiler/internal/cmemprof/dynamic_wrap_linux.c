@@ -71,8 +71,27 @@ static void traverse_relas(ElfW(Rela) *relas, size_t nrelas, ElfW(Sym) *syms, ch
 	}
 }
 
+// glibc's dynamic linker implementation seems to adjust the d_ptr entries (e.g.
+// DT_SYMTAB, DT_STRTAB) in the PT_DYNAMIC by the memory base address before
+// they're accessed through dl_iterate_phdr. This is inconsistent with the ELF
+// documentation which states that "when interpreting these addresses, the
+// actual address should be computed based on the original file value and memory
+// base address". See https://sourceware.org/git/?p=glibc.git;a=blob_plain;f=elf/get-dynamic-info.h;hb=glibc-2.35
+//
+// For reference, musl libc does what's arguably the correct thing and doesn't
+// adjust the addresses.
+
+#ifdef __GLIBC__
+#define GLIBC_ADJUST(x) (0)
+#else
+#define GLIBC_ADJUST(x) (x)
+#endif
+
 static int callback(struct dl_phdr_info *info, size_t size, void *data) {
-	if (strcmp(info->dlpi_name, "") == 0) {
+	int *p = data;
+	int count = *p;
+	*p = count + 1;
+	if (count == 0) {
 		// skip the program itself since we're already hooking into
 		// allocations through the linker using --wrap
 		return 0;
@@ -105,25 +124,25 @@ static int callback(struct dl_phdr_info *info, size_t size, void *data) {
 		for (ElfW(Dyn) *dyn = (ElfW(Dyn) *) (hdr.p_vaddr + info->dlpi_addr); dyn->d_tag != 0; dyn++) {
 			switch (dyn->d_tag) {
 			case DT_SYMTAB:
-				symbols = (ElfW(Sym) *) dyn->d_un.d_ptr;
+				symbols = (ElfW(Sym) *) (dyn->d_un.d_ptr + GLIBC_ADJUST(info->dlpi_addr));
 				break;
 			case DT_STRTAB:
-				strings = (char *) dyn->d_un.d_ptr;
+				strings = (char *) (dyn->d_un.d_ptr + GLIBC_ADJUST(info->dlpi_addr));
 				break;
 			case DT_REL:
-				rel = (ElfW(Rel) *) dyn->d_un.d_ptr;
+				rel = (ElfW(Rel) *) (dyn->d_un.d_ptr + GLIBC_ADJUST(info->dlpi_addr));
 				break;
 			case DT_RELSZ:
 				rel_size = (size_t) dyn->d_un.d_val;
 				break;
 			case DT_RELA:
-				rela = (ElfW(Rela) *) dyn->d_un.d_ptr;
+				rela = (ElfW(Rela) *) (dyn->d_un.d_ptr + GLIBC_ADJUST(info->dlpi_addr));
 				break;
 			case DT_RELASZ:
 				rela_size = (size_t) dyn->d_un.d_val;
 				break;
 			case DT_JMPREL:
-				jmprel = (ElfW(Rela) *) dyn->d_un.d_ptr;
+				jmprel = (ElfW(Rela) *) (dyn->d_un.d_ptr + GLIBC_ADJUST(info->dlpi_addr));
 				break;
 			case DT_PLTRELSZ:
 				jmprel_size = (size_t) dyn->d_un.d_val;
@@ -152,5 +171,6 @@ static int callback(struct dl_phdr_info *info, size_t size, void *data) {
 }
 
 __attribute__ ((constructor)) static void find_dynamic_mallocs(void) {
-	dl_iterate_phdr(callback, NULL);
+	int count = 0;
+	dl_iterate_phdr(callback, &count);
 }
