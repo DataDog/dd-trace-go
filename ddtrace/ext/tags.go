@@ -30,6 +30,9 @@ const (
 	// HTTPCode sets the HTTP status code as a tag.
 	HTTPCode = "http.status_code"
 
+	// HTTPRoute is the route value of the HTTP request.
+	HTTPRoute = "http.route"
+
 	// HTTPURL sets the HTTP URL for a span.
 	HTTPURL = "http.url"
 
