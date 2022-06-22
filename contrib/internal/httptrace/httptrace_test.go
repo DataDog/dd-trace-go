@@ -193,6 +193,9 @@ func TestIPHeaders(t *testing.T) {
 				require.Nil(t, cfg.Tags[ext.HTTPClientIP])
 				if tc.multiHeaders != "" {
 					require.Equal(t, tc.multiHeaders, cfg.Tags[ext.MultipleIPHeaders])
+					for hdr, ip := range tc.headers {
+						require.Equal(t, ip, cfg.Tags[ext.HTTPRequestHeaders+"."+hdr])
+					}
 				}
 			}
 		})
