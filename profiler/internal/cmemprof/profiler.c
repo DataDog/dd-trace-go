@@ -58,13 +58,6 @@ static int should_sample(size_t rate, size_t size) {
 }
 
 extern void recordAllocationSample(size_t size);
-static void fpunwind(void *pc, size_t size);
-
-static int safe_fpunwind = 0;
-
-void cgo_heap_profiler_mark_fpunwind_safe(void) {
-	safe_fpunwind = 1;
-}
 
 extern __thread atomic_int in_cgo_start;
 
