@@ -101,13 +101,10 @@ func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
 		}
 		return tags
 	}
-	sb := strings.Builder{}
 	for _, hdr := range matches {
 		tags = append(tags, tracer.Tag(ext.HTTPRequestHeaders+"."+hdr, ip))
-		sb.WriteString(hdr + ",")
 	}
-	hdrList := sb.String()
-	tags = append(tags, tracer.Tag(ext.MultipleIPHeaders, hdrList[:len(hdrList)-1]))
+	tags = append(tags, tracer.Tag(ext.MultipleIPHeaders, strings.Join(matches, ",")))
 	return tags
 }
 
