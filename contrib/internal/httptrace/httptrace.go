@@ -92,64 +92,41 @@ func ippref(s string) *netaddr.IPPrefix {
 	return nil
 }
 
-// genClientIPSpanTags generates the client IP related span tags.
-func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
-	tags := []ddtrace.StartSpanOption{}
-	ip, matches := getClientIP(r)
-	if matches == nil {
-		if ip.IsValid() {
-			tags = append(tags, tracer.Tag(ext.HTTPClientIP, ip.String()))
-		}
-		return tags
-	}
-	for _, hdr := range matches {
-		tags = append(tags, tracer.Tag(ext.HTTPRequestHeaders+"."+hdr, ip))
-	}
-	tags = append(tags, tracer.Tag(ext.MultipleIPHeaders, strings.Join(matches, ",")))
-	return tags
-}
-
-// getClientIP attempts to find the client IP address in the given request r.
-// If several IP headers are present in the request, the returned IP is invalid and the list of all IP headers is
-// returned. Otherwise, the returned list is nil.
+// genClientIPSpanTags generates the client IP related tags that need to be added to the span.
 // See https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2118779066/Client+IP+addresses+resolution
-func getClientIP(r *http.Request) (netaddr.IP, []string) {
+func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
 	ipHeaders := defaultIPHeaders
 	if len(clientIPHeader) > 0 {
 		ipHeaders = []string{clientIPHeader}
 	}
-	check := func(s string) netaddr.IP {
-		for _, ipstr := range strings.Split(s, ",") {
-			ip := parseIP(strings.TrimSpace(ipstr))
-			if !ip.IsValid() {
-				continue
-			}
-			if isGlobal(ip) {
-				return ip
-			}
-		}
-		return netaddr.IP{}
-	}
-	matches := []string{}
-	var matchedIP netaddr.IP
+	var headers []string
+	var ips []string
+	var opts []ddtrace.StartSpanOption
 	for _, hdr := range ipHeaders {
 		if v := r.Header.Get(hdr); v != "" {
-			matches = append(matches, hdr)
-			if ip := check(v); ip.IsValid() {
-				matchedIP = ip
-			}
+			headers = append(headers, hdr)
+			ips = append(ips, v)
 		}
 	}
-	if len(matches) == 1 {
-		return matchedIP, nil
+	if len(ips) == 0 {
+		if remoteIP := parseIP(r.RemoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
+			opts = append(opts, tracer.Tag(ext.HTTPClientIP, remoteIP.String()))
+		}
+	} else if len(ips) == 1 {
+		for _, ipstr := range strings.Split(ips[0], ",") {
+			ip := parseIP(strings.TrimSpace(ipstr))
+			if ip.IsValid() && isGlobal(ip) {
+				opts = append(opts, tracer.Tag(ext.HTTPClientIP, ip.String()))
+				break
+			}
+		}
+	} else {
+		for i := range ips {
+			opts = append(opts, tracer.Tag(ext.HTTPRequestHeaders+"."+headers[i], ips[i]))
+		}
+		opts = append(opts, tracer.Tag(ext.MultipleIPHeaders, strings.Join(headers, ",")))
 	}
-	if len(matches) > 1 {
-		return netaddr.IP{}, matches
-	}
-	if remoteIP := parseIP(r.RemoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
-		return remoteIP, nil
-	}
-	return netaddr.IP{}, nil
+	return opts
 }
 
 func parseIP(s string) netaddr.IP {
