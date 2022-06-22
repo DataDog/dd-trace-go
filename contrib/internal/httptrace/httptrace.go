@@ -46,6 +46,7 @@ var (
 // http.useragent). Any further span start option can be added with opts.
 func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
 	// Append our span options before the given ones so that the caller can "overwrite" them.
+	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
 	opts = append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, r.Method),
