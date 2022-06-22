@@ -13,7 +13,7 @@
 /* The GNU linker supports a --wrap flag that lets wrap allocation calls
  * without the problem of using dlsym in functions called by dlsym */
 
-__thread int in_allocation = 0;
+extern __thread int in_allocation;
 
 void *__real_malloc(size_t size);
 void *__wrap_malloc(size_t size) {

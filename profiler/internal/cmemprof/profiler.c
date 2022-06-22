@@ -71,7 +71,7 @@ extern __thread atomic_int in_cgo_start;
 // If the allocator implementation calls itself (e.g. calloc is implemented as
 // malloc + memset) then we will incorrectly count an allocation multiple times.
 // This thread-local counter tracks whether or not we're already sampling
-extern __thread int in_allocation;
+__thread int in_allocation = 0;
 
 void profile_allocation(size_t size) {
 	size_t rate = atomic_load(&sampling_rate);
