@@ -90,7 +90,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal(root.Context().SpanID(), span.ParentID())
 
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
 
 func TestTraceAnalytics(t *testing.T) {
@@ -137,7 +137,7 @@ func TestTraceAnalytics(t *testing.T) {
 	assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 	assert.Equal(root.Context().SpanID(), span.ParentID())
 
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
 
 func TestError(t *testing.T) {
