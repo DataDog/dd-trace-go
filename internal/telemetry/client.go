@@ -149,12 +149,6 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 				Dependency{
 					Name:    dep.Path,
 					Version: dep.Version,
-					// TODO: Neither of the types in the API
-					// docs (this or "SharedSystemLibrary")
-					// describe Go dependencies well
-					// TODO: I think the telemetry API doesn't
-					// have this field any more anyway
-					Type: "PlatformStandard",
 				},
 			)
 		}
