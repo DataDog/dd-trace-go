@@ -202,13 +202,13 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	// For the URL, uploading through agent goes through
 	//	${AGENT_URL}/telemetry/proxy/api/v2/apmtelemetry
 	// for agentless (which we technically don't support):
-	//	https://instrumentation-telemetry-intake.datadoghq.com
+	//	https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
 	// with an API key
 	//
 	// TODO: move this logic into the telemetry package, make the URL field
 	// unnecessary?
 	if cfg.agentless {
-		p.telemetry.URL = "https://instrumentation-telemetry-intake.datadoghq.com"
+		p.telemetry.URL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
 	} else {
 		// TODO: check agent /info endpoint to see if the agent is
 		// sufficiently recent to support this endpiont? overkill?
