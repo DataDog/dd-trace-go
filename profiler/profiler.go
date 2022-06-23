@@ -244,8 +244,8 @@ func (p *profiler) run() {
 			{Name: "heap_profile_enabled", Value: profileEnabled(HeapProfile)},
 			{Name: "block_profile_enabled", Value: profileEnabled(BlockProfile)},
 			{Name: "mutex_profile_enabled", Value: profileEnabled(MutexProfile)},
-			{Name: "goroutine_profile_enabled", Value: profileEnabled(expGoroutineWaitProfile)},
-			{Name: "goroutine_wait_enabled", Value: profileEnabled(GoroutineProfile)},
+			{Name: "goroutine_profile_enabled", Value: profileEnabled(GoroutineProfile)},
+			{Name: "goroutine_wait_profile_enabled", Value: profileEnabled(expGoroutineWaitProfile)},
 			{Name: "upload_timeout", Value: p.cfg.uploadTimeout.String()},
 		},
 	)
