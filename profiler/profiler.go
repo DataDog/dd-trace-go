@@ -225,10 +225,11 @@ func (p *profiler) run() {
 	}
 	p.telemetry.Start(
 		// Integrations are part of this API to match the telemetry API,
-		// but there aren't really "integrations" for the profiler. For
-		// Go in general, the enabled integrations can be found by
-		// looking for contrib packages in the dependencies reported by
-		// the telemetry client.
+		// but there aren't really "integrations" for the profiler.
+		// Note that if we did have integrations, we'd need a mechanism
+		// to report the individual packages. runtime/debug.BuildInfo
+		// only shows *modules* that we depend on, not individual
+		// packages.
 		[]telemetry.Integration{},
 		[]telemetry.Configuration{
 			{Name: "delta_profiles", Value: p.cfg.deltaProfiles},
