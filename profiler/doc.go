@@ -3,7 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package profiler periodically collects and sends profiles to the Datadog API. Use
-// Start to start the profiler. An API key needs to be specified by means of the WithAPIKey
-// option.
+// Package profiler periodically collects and sends profiles to the Datadog API.
+// Use Start to start the profiler.
 package profiler // import "gopkg.in/DataDog/dd-trace-go.v1/profiler"
