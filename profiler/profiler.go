@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
@@ -212,7 +212,12 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	} else {
 		// TODO: check agent /info endpoint to see if the agent is
 		// sufficiently recent to support this endpiont? overkill?
-		p.telemetry.URL = path.Join(cfg.agentURL, "/telemetry/proxy/api/v2/apmtelemetry")
+		u, err := url.Parse(cfg.agentURL)
+		if err == nil {
+			u.Path = "/telemetry/proxy/api/v2/apmtelemetry"
+			p.telemetry.URL = u.String()
+		}
+		// ??? what do we even do if the URL isn't valid....
 	}
 	return &p, nil
 }
