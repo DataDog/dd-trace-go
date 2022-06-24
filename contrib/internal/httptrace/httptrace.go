@@ -163,13 +163,18 @@ func getURL(r *http.Request) string {
 	// "For most requests, fields other than Path and RawQuery will be
 	// empty. (See RFC 7230, Section 5.3)"
 	// This is why we don't rely on url.URL.String(), url.URL.Host, url.URL.Scheme, etc...
+	var url string
 	host := r.Host
 	path := r.URL.EscapedPath()
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	url := strings.Join([]string{scheme, "://", host, path}, "")
+	if r.Host != "" {
+		url = strings.Join([]string{scheme, "://", host, path}, "")
+	} else {
+		url = path
+	}
 	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
 	// https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2490990623/QueryString+-+Sensitive+Data+Obfuscation
 	if cfg.collectQueryString && r.URL.RawQuery != "" {
