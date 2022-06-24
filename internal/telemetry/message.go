@@ -12,9 +12,10 @@ type Request struct {
 	TracerTime  int64       `json:"tracer_time"`
 	RuntimeID   string      `json:"runtime_id"`
 	SeqID       int64       `json:"seq_id"`
+	Debug       bool        `json:"debug"`
+	Payload     interface{} `json:"payload"`
 	Application Application `json:"application"`
 	Host        Host        `json:"host"`
-	Payload     interface{} `json:"payload"`
 }
 
 // RequestType determines how the Payload of a request should be handled
@@ -37,12 +38,27 @@ const (
 
 // Application is identifying information about the app itself
 type Application struct {
-	ServiceName     string `json:"service_name"`
-	Env             string `json:"env"`
-	ServiceVersion  string `json:"service_version,omitempty"`
-	TracerVersion   string `json:"tracer_version"`
-	LanguageName    string `json:"language_name"`
-	LanguageVersion string `json:"language_version"`
+	ServiceName     string   `json:"service_name"`
+	Env             string   `json:"env,omitempty"`
+	ServiceVersion  string   `json:"service_version,omitempty"`
+	TracerVersion   string   `json:"tracer_version"`
+	LanguageName    string   `json:"language_name"`
+	LanguageVersion string   `json:"language_version"`
+	RuntimeName     string   `json:"runtime_name,omitempty"`
+	RuntimeVersion  string   `json:"runtime_version,omitempty"`
+	RuntimePatches  string   `json:"runtime_patches,omitempty"`
+	Products        Products `json:"products,omitempty"`
+}
+
+// Products specifies information about available products.
+type Products struct {
+	AppSec   ProductDetails `json:"appsec,omitempty"`
+	Profiler ProductDetails `json:"profiler,omitempty"`
+}
+
+// ProductDetails specifies details about a product.
+type ProductDetails struct {
+	Version string `json:"version"`
 }
 
 // Host is identifying information about the host on which the app
