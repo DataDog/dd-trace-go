@@ -130,7 +130,7 @@ func TestWithQueryParams(t *testing.T) {
 
 	mux.ServeHTTP(httptest.NewRecorder(), r)
 
-	assert.Equal("/200?token=value&id=3&name=5", mt.FinishedSpans()[0].Tags()[ext.HTTPURL])
+	assert.Equal("http://localhost/200?<redacted>&id=3&name=5", mt.FinishedSpans()[0].Tags()[ext.HTTPURL])
 }
 
 func TestSpanOptions(t *testing.T) {
