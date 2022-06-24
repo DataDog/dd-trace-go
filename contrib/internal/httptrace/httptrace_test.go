@@ -203,11 +203,16 @@ func TestIPHeaders(t *testing.T) {
 	}
 }
 
-func TestURLTags(t *testing.T) {
-	type URLTC struct {
-		name, expectedURL, redactedUrl, host, port, path, query string
+func TestURLTag(t *testing.T) {
+	type URLTestCase struct {
+		name, expectedURL, host, port, path, query, fragment string
 	}
-	for _, tc := range []URLTC{
+	for _, tc := range []URLTestCase{
+		{
+			name:        "no-host",
+			expectedURL: "/test",
+			path:        "/test",
+		},
 		{
 			name:        "basic",
 			expectedURL: "http://example.com",
@@ -226,6 +231,12 @@ func TestURLTags(t *testing.T) {
 			port:        "8080",
 		},
 		{
+			name:        "basic-fragment",
+			expectedURL: "http://example.com#test",
+			host:        "example.com",
+			fragment:    "test",
+		},
+		{
 			name:        "query1",
 			expectedURL: "http://example.com?test1=test2",
 			host:        "example.com",
@@ -239,11 +250,12 @@ func TestURLTags(t *testing.T) {
 		},
 		{
 			name:        "combined",
-			expectedURL: "http://example.com:7777/test?test1=test2&test3=test4",
+			expectedURL: "http://example.com:7777/test?test1=test2&test3=test4#test",
 			host:        "example.com",
 			path:        "/test",
 			query:       "test1=test2&test3=test4",
 			port:        "7777",
+			fragment:    "test",
 		},
 		{
 			name:        "basic-obfuscation1",
@@ -259,11 +271,12 @@ func TestURLTags(t *testing.T) {
 		},
 		{
 			name:        "combined-obfuscation",
-			expectedURL: "http://example.com:7777/test?test1=test2&<redacted>&test3=test4",
+			expectedURL: "http://example.com:7777/test?test1=test2&<redacted>&test3=test4#test",
 			host:        "example.com",
 			path:        "/test",
 			query:       "test1=test2&token=value&test3=test4",
 			port:        "7777",
+			fragment:    "test",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -271,6 +284,7 @@ func TestURLTags(t *testing.T) {
 				URL: &url.URL{
 					Path:     tc.path,
 					RawQuery: tc.query,
+					Fragment: tc.fragment,
 				},
 				Host: tc.host,
 			}

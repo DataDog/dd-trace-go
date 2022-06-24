@@ -164,14 +164,13 @@ func getURL(r *http.Request) string {
 	// empty. (See RFC 7230, Section 5.3)"
 	// This is why we don't rely on url.URL.String(), url.URL.Host, url.URL.Scheme, etc...
 	var url string
-	host := r.Host
 	path := r.URL.EscapedPath()
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
 	if r.Host != "" {
-		url = strings.Join([]string{scheme, "://", host, path}, "")
+		url = strings.Join([]string{scheme, "://", r.Host, path}, "")
 	} else {
 		url = path
 	}
@@ -182,7 +181,10 @@ func getURL(r *http.Request) string {
 		if cfg.queryStringObfRegexp != nil {
 			query = cfg.queryStringObfRegexp.ReplaceAllLiteralString(query, "<redacted>")
 		}
-		url += "?" + query
+		url = strings.Join([]string{url, query}, "?")
+	}
+	if frag := r.URL.EscapedFragment(); frag != "" {
+		url = strings.Join([]string{url, frag}, "#")
 	}
 	return url
 }
