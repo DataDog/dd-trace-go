@@ -30,11 +30,27 @@ const (
 	// HTTPCode sets the HTTP status code as a tag.
 	HTTPCode = "http.status_code"
 
+	// HTTPRoute is the route value of the HTTP request.
+	HTTPRoute = "http.route"
+
 	// HTTPURL sets the HTTP URL for a span.
 	HTTPURL = "http.url"
 
 	// HTTPUserAgent is the user agent header value of the HTTP request.
 	HTTPUserAgent = "http.useragent"
+
+	// HTTPClientIP sets the HTTP client IP tag.
+	HTTPClientIP = "http.client_ip"
+
+	// MultipleIPHeaders sets the multiple ip header tag used internally to tell the backend an error occurred when
+	// retrieving an HTTP request client IP.
+	// See https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2118779066/Client+IP+addresses+resolution
+	MultipleIPHeaders = "_dd.multiple-ip-headers"
+
+	// HTTPRequestHeaders sets the HTTP request headers partial tag
+	// This tag is meant to be composed, i.e http.request.headers.headerX, http.request.headers.headerY, etc...
+	// See https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/2302444638/DD+TRACE+HEADER+TAGS
+	HTTPRequestHeaders = "http.request.headers"
 
 	// SpanName is a pseudo-key for setting a span's operation name by means of
 	// a tag. It is mostly here to facilitate vendor-agnostic frameworks like Opentracing
