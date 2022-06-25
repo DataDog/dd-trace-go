@@ -9,6 +9,7 @@ import (
 	gocontext "context"
 	"os"
 	"runtime/pprof"
+	rt "runtime/trace"
 	"strconv"
 	"sync"
 	"time"
@@ -421,8 +422,10 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.Metrics, keyMeasured)
 	}
-	if t.config.version != "" && span.Service == t.config.serviceName {
-		span.setMeta(ext.Version, t.config.version)
+	if t.config.version != "" {
+		if t.config.universalVersion || (!t.config.universalVersion && span.Service == t.config.serviceName) {
+			span.setMeta(ext.Version, t.config.version)
+		}
 	}
 	if t.config.env != "" {
 		span.setMeta(ext.Environment, t.config.env)
@@ -523,4 +526,12 @@ func (t *tracer) sample(span *span) {
 		return
 	}
 	t.prioritySampling.apply(span)
+}
+
+func startExecutionTracerTask(name string) func() {
+	if !rt.IsEnabled() {
+		return func() {}
+	}
+	_, task := rt.NewTask(gocontext.TODO(), name)
+	return task.End
 }

@@ -9,6 +9,7 @@ import (
 	"net"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
 	"github.com/gin-gonic/gin"
@@ -38,5 +39,6 @@ func useAppSec(c *gin.Context, span tracer.Span) func() {
 			}
 			httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Writer.Header())
 		}
+		instrumentation.SetTags(span, op.Tags())
 	}
 }

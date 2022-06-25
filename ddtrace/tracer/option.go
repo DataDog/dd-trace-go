@@ -66,6 +66,10 @@ type config struct {
 	// serviceName specifies the name of this application.
 	serviceName string
 
+	// universalVersion, reports whether span service name and config service name
+	// should match to set application version tag. False by default
+	universalVersion bool
+
 	// version specifies the version of this application
 	version string
 
@@ -262,10 +266,13 @@ func newConfig(opts ...StartOption) *config {
 	if c.transport == nil {
 		c.transport = newHTTPTransport(c.agentURL, c.httpClient)
 	}
-	if c.propagator == nil {
-		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
-		})
+	pcfg := &PropagatorConfig{
+		MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
+	}
+	if c.propagator != nil {
+		c.propagator = NewPropagator(pcfg, c.propagator)
+	} else {
+		c.propagator = NewPropagator(pcfg)
 	}
 	if c.logger != nil {
 		log.UseLogger(c.logger)
@@ -642,9 +649,12 @@ func WithRuntimeMetrics() StartOption {
 	}
 }
 
-// WithDogstatsdAddress specifies the address to connect to for sending metrics
-// to the Datadog Agent. If not set, it defaults to "localhost:8125" or to the
-// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
+// WithDogstatsdAddress specifies the address to connect to for sending metrics to the Datadog
+// Agent. It should be a "host:port" string, or the path to a unix domain socket.If not set, it
+// attempts to determine the address of the statsd service according to the following rules:
+//   1. Look for /var/run/datadog/dsd.socket and use it if present. IF NOT, continue to #2.
+//   2. The host is determined by DD_AGENT_HOST, and defaults to "localhost"
+//   3. The port is retrieved from the agent. If not present, it is determined by DD_DOGSTATSD_PORT, and defaults to 8125
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
@@ -661,10 +671,22 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 }
 
 // WithServiceVersion specifies the version of the service that is running. This will
-// be included in spans from this service in the "version" tag.
+// be included in spans from this service in the "version" tag, provided that
+// span service name and config service name match. Do NOT use with WithUniversalVersion.
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
 		cfg.version = version
+		cfg.universalVersion = false
+	}
+}
+
+// WithUniversalVersion specifies the version of the service that is running, and will be applied to all spans,
+// regardless of whether span service name and config service name match.
+// See: WithService, WithServiceVersion. Do NOT use with WithServiceVersion.
+func WithUniversalVersion(version string) StartOption {
+	return func(c *config) {
+		c.version = version
+		c.universalVersion = true
 	}
 }
 
@@ -869,7 +891,7 @@ func WithUserRole(role string) UserMonitoringOption {
 	}
 }
 
-// WithUserScope returns the option setting the scope (authorizations) of the authenticated user
+// WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
 	return func(s Span) {
 		s.SetTag("usr.scope", scope)

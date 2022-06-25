@@ -14,6 +14,9 @@ import (
 
 // To start tracing requests, add the trace middleware to your Gin router.
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	// Create a gin.Engine
 	r := gin.New()
 
@@ -30,6 +33,9 @@ func Example() {
 }
 
 func ExampleHTML() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	r := gin.Default()
 	r.Use(gintrace.Middleware("my-web-app"))
 	r.LoadHTMLGlob("templates/*")
@@ -43,6 +49,9 @@ func ExampleHTML() {
 }
 
 func Example_spanFromContext() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	r := gin.Default()
 	r.Use(gintrace.Middleware("image-encoder"))
 	r.GET("/image/encode", func(c *gin.Context) {
@@ -54,5 +63,4 @@ func Example_spanFromContext() {
 
 		c.String(200, "ok!")
 	})
-
 }

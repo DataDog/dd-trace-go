@@ -157,7 +157,7 @@ func TestTraceAndServe(t *testing.T) {
 		_, ok = w.(http.Pusher)
 		assert.True(t, ok)
 
-		w = wrapResponseWriter(w, nil)
+		w, _ = wrapResponseWriter(w)
 		_, ok = w.(http.ResponseWriter)
 		assert.True(t, ok)
 		_, ok = w.(http.Pusher)
@@ -256,6 +256,37 @@ func TestTraceAndServe(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
 		assert.Equal("200", spans[0].Tag(ext.HTTPCode))
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		called := false
+		w := httptest.NewRecorder()
+		r, err := http.NewRequest("GET", "/path?token=value", nil)
+		assert.NoError(err)
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			_, ok := w.(http.Hijacker)
+			assert.False(ok)
+			called = true
+		}
+		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
+			Service:  "service",
+			Resource: "resource",
+		})
+		spans := mt.FinishedSpans()
+		span := spans[0]
+
+		assert.True(called)
+		assert.Len(spans, 1)
+		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+		assert.Equal("service", span.Tag(ext.ServiceName))
+		assert.Equal("resource", span.Tag(ext.ResourceName))
+		assert.Equal("GET", span.Tag(ext.HTTPMethod))
+		assert.Equal("/path", span.Tag(ext.HTTPURL))
+		assert.Equal("200", span.Tag(ext.HTTPCode))
 	})
 }
 

@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -100,5 +101,74 @@ func TestWAF(t *testing.T) {
 		event := finished[0].Tag("_dd.appsec.json")
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event.(string), "crs-933-130"))
+	})
+
+	t.Run("obfuscation", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		// Send a malicious request with sensitive data that should be both
+		// obfuscated by the obfuscator key and value regexps.
+		form := url.Values{}
+
+		// Form value detected by a XSS attack that should be obfuscated by the
+		// obfuscator value regex.
+		const sensitivePayloadValue = `BEARER lwqjedqwdoqwidmoqwndun32i`
+		form.Add("payload", `
+{
+   "activeTab":"39612314-1890-45f7-8075-c793325c1d70",
+   "allOpenTabs":["132ef2e5-afaa-4e20-bc64-db9b13230a","39612314-1890-45f7-8075-c793325c1d70"],
+   "lastPage":{
+       "accessToken":"`+sensitivePayloadValue+`",
+       "account":{
+           "name":"F123123 .htaccess",
+           "contactCustomFields":{
+               "ffa77959-1ff3-464b-a3af-e5410e436f1f":{
+                   "questionServiceEntityType":"CustomField",
+                   "question":{
+                       "code":"Manager Name",
+                       "questionTypeInfo":{
+                           "questionType":"OpenEndedText",
+                           "answerFormatType":"General"
+                           ,"scores":[]
+                       },
+                   "additionalInfo":{
+                       "codeSnippetValue":"<!-- Google Tag Manager (noscript) -->\r\n<iframe src=\"https://www.googletagmanager.com/ns.html?id=GTM-PCVXQNM\"\r\nheight=\"0\" width=\"0\" style=\"display:none"
+                   }
+               }
+           }
+       }
+   }
+}
+`)
+		// Form value detected by a SQLi rule that should be obfuscated by the
+		// obfuscator value regex.
+		sensitiveParamKeyValue := "I-m-sensitive-please-dont-expose-me"
+		form.Add("password", sensitiveParamKeyValue+"1234%20union%20select%20*%20from%20credit_cards"+sensitiveParamKeyValue)
+
+		req, err := http.NewRequest("POST", srv.URL, nil)
+		req.URL.RawQuery = form.Encode()
+
+		if err != nil {
+			panic(err)
+		}
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+
+		// Check that the handler was properly called
+		b, err := ioutil.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, "Hello World!\n", string(b))
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check that the tags don't hold any sensitive information
+		event := finished[0].Tag("_dd.appsec.json")
+		require.NotNil(t, event)
+		require.Contains(t, event, "crs-942-270") // SQLi
+		require.Contains(t, event, "crs-941-100") // XSS
+		require.NotContains(t, event, sensitiveParamKeyValue)
+		require.NotContains(t, event, sensitivePayloadValue)
 	})
 }

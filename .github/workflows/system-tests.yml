@@ -3,7 +3,7 @@ name: System Tests
 on:
   push:
     branches:
-      - v1
+      - main
     tags:
       - "**"
   pull_request:

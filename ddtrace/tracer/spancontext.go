@@ -127,6 +127,13 @@ func (c *spanContext) baggageItem(key string) string {
 	return c.baggage[key]
 }
 
+func (c *spanContext) meta(key string) (val string, ok bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	val, ok = c.span.Meta[key]
+	return val, ok
+}
+
 // finish marks this span as finished in the trace.
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
@@ -220,11 +227,6 @@ func (t *trace) setTag(key, value string) {
 func (t *trace) setSamplingPriorityLocked(service string, p int, sampler samplernames.SamplerName, rate float64) {
 	if t.locked {
 		return
-	}
-	if t.root == nil {
-		// this trace is distributed (no local root); modifications
-		// to the sampling priority are not allowed.
-		t.locked = true
 	}
 	if t.priority == nil {
 		t.priority = new(float64)

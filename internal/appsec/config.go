@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"regexp"
 	"strconv"
 	"time"
 	"unicode"
@@ -18,15 +19,19 @@ import (
 )
 
 const (
-	enabledEnvVar        = "DD_APPSEC_ENABLED"
-	rulesEnvVar          = "DD_APPSEC_RULES"
-	wafTimeoutEnvVar     = "DD_APPSEC_WAF_TIMEOUT"
-	traceRateLimitEnvVar = "DD_APPSEC_TRACE_RATE_LIMIT"
+	enabledEnvVar         = "DD_APPSEC_ENABLED"
+	rulesEnvVar           = "DD_APPSEC_RULES"
+	wafTimeoutEnvVar      = "DD_APPSEC_WAF_TIMEOUT"
+	traceRateLimitEnvVar  = "DD_APPSEC_TRACE_RATE_LIMIT"
+	obfuscatorKeyEnvVar   = "DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP"
+	obfuscatorValueEnvVar = "DD_APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP"
 )
 
 const (
-	defaultWAFTimeout      = 4 * time.Millisecond
-	defaultTraceRate  uint = 100 // up to 100 appsec traces/s
+	defaultWAFTimeout           = 4 * time.Millisecond
+	defaultTraceRate            = 100 // up to 100 appsec traces/s
+	defaultObfuscatorKeyRegex   = `(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|(?:api_?|private_?|public_?)key)|token|consumer_?(?:id|key|secret)|sign(?:ed|ature)|bearer|authorization`
+	defaultObfuscatorValueRegex = `(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|(?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)(?:\s*=[^;]|"\s*:\s*"[^"]+")|bearer\s+[a-z0-9\._\-]+|token:[a-z0-9]{13}|gh[opsu]_[0-9a-zA-Z]{36}|ey[I-L][\w=-]+\.ey[I-L][\w=-]+(?:\.[\w.+\/=-]+)?|[\-]{5}BEGIN[a-z\s]+PRIVATE\sKEY[\-]{5}[^\-]+[\-]{5}END[a-z\s]+PRIVATE\sKEY|ssh-rsa\s*[a-z0-9\/\.+]{100,}`
 )
 
 // config is the AppSec configuration.
@@ -37,6 +42,14 @@ type config struct {
 	wafTimeout time.Duration
 	// AppSec trace rate limit (traces per second).
 	traceRateLimit uint
+	// Obfuscator configuration parameters
+	obfuscator ObfuscatorConfig
+}
+
+// ObfuscatorConfig wraps the key and value regexp to be passed to the WAF to perform obfuscation.
+type ObfuscatorConfig struct {
+	KeyRegex   string
+	ValueRegex string
 }
 
 // isEnabled returns true when appsec is enabled when the environment variable
@@ -62,6 +75,7 @@ func newConfig() (*config, error) {
 		rules:          rules,
 		wafTimeout:     readWAFTimeoutConfig(),
 		traceRateLimit: readRateLimitConfig(),
+		obfuscator:     readObfuscatorConfig(),
 	}, nil
 }
 
@@ -107,6 +121,26 @@ func readRateLimitConfig() (rate uint) {
 		return
 	}
 	return uint(parsed)
+}
+
+func readObfuscatorConfig() ObfuscatorConfig {
+	keyRE := readObfuscatorConfigRegexp(obfuscatorKeyEnvVar, defaultObfuscatorKeyRegex)
+	valueRE := readObfuscatorConfigRegexp(obfuscatorValueEnvVar, defaultObfuscatorValueRegex)
+	return ObfuscatorConfig{KeyRegex: keyRE, ValueRegex: valueRE}
+}
+
+func readObfuscatorConfigRegexp(name, defaultValue string) string {
+	val, present := os.LookupEnv(name)
+	if !present {
+		log.Debug("appsec: %s not defined, starting with the default obfuscator regular expression", name)
+		return defaultValue
+	}
+	if _, err := regexp.Compile(val); err != nil {
+		log.Error("appsec: could not compile the configured obfuscator regular expression `%s=%s`. Using the default value instead", name, val)
+		return defaultValue
+	}
+	log.Debug("appsec: starting with the configured obfuscator regular expression %s", name)
+	return val
 }
 
 func readRulesConfig() (rules []byte, err error) {

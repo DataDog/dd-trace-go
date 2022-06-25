@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+// Package opentracer is deprecated and support is no longer offered. Please consider using OpenTelemetry or ddtrace/tracer directly.
+//
 // Package opentracer provides a wrapper on top of the Datadog tracer that can be used with Opentracing.
 // It also provides a set of opentracing.StartSpanOption that are specific to Datadog's APM product.
 // To use it, simply call "New".

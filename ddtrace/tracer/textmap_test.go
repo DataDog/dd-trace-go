@@ -117,6 +117,12 @@ func TestTextMapPropagatorErrors(t *testing.T) {
 		DefaultParentIDHeader: "0",
 	}))
 	assert.Equal(ErrSpanContextNotFound, err)
+
+	_, err = propagator.Extract(TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "3",
+		DefaultParentIDHeader: "0",
+	}))
+	assert.Equal(ErrSpanContextNotFound, err)
 }
 
 func TestTextMapPropagatorInjectHeader(t *testing.T) {
@@ -173,6 +179,26 @@ func TestTextMapPropagatorOrigin(t *testing.T) {
 	if dst[originHeader] != "synthetics" {
 		t.Fatal("didn't inject header")
 	}
+}
+
+func TestExtractOriginSynthetics(t *testing.T) {
+	src := TextMapCarrier(map[string]string{
+		originHeader:          "synthetics",
+		DefaultTraceIDHeader:  "3",
+		DefaultParentIDHeader: "0",
+	})
+	tracer := newTracer()
+	ctx, err := tracer.Extract(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sctx, ok := ctx.(*spanContext)
+	if !ok {
+		t.Fatal("not a *spanContext")
+	}
+	assert.Equal(t, sctx.spanID, uint64(0))
+	assert.Equal(t, sctx.traceID, uint64(3))
+	assert.Equal(t, sctx.origin, "synthetics")
 }
 
 func TestTextMapPropagatorInvalidTraceTagsHeader(t *testing.T) {

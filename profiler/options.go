@@ -98,6 +98,7 @@ type config struct {
 	types             map[ProfileType]struct{}
 	period            time.Duration
 	cpuDuration       time.Duration
+	cpuProfileRate    int
 	uploadTimeout     time.Duration
 	maxGoroutinesWait int
 	mutexFraction     int
@@ -115,7 +116,7 @@ func logStartup(c *config) {
 		OSVersion            string   `json:"os_version"`   // Version of the OS
 		Version              string   `json:"version"`      // Profiler version
 		Lang                 string   `json:"lang"`         // "Go"
-		LangVersion          string   `json:"lang_version"` // Go version, e.g. go1.13
+		LangVersion          string   `json:"lang_version"` // Go version, e.g. go1.18
 		Hostname             string   `json:"hostname"`
 		DeltaProfiles        bool     `json:"delta_profiles"`
 		Service              string   `json:"service"`
@@ -126,6 +127,7 @@ func logStartup(c *config) {
 		ProfilePeriod        string   `json:"profile_period"`
 		EnabledProfiles      []string `json:"enabled_profiles"`
 		CPUDuration          string   `json:"cpu_duration"`
+		CPUProfileRate       int      `json:"cpu_profile_rate"`
 		BlockProfileRate     int      `json:"block_profile_rate"`
 		MutexProfileFraction int      `json:"mutex_profile_fraction"`
 		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
@@ -146,6 +148,7 @@ func logStartup(c *config) {
 		Tags:                 c.tags,
 		ProfilePeriod:        c.period.String(),
 		CPUDuration:          c.cpuDuration.String(),
+		CPUProfileRate:       c.cpuProfileRate,
 		BlockProfileRate:     c.blockRate,
 		MutexProfileFraction: c.mutexFraction,
 		MaxGoroutinesWait:    c.maxGoroutinesWait,
@@ -201,7 +204,7 @@ func defaultConfig() (*config, error) {
 		mutexFraction:     DefaultMutexFraction,
 		uploadTimeout:     DefaultUploadTimeout,
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
-		tags:              []string{fmt.Sprintf("pid:%d", os.Getpid())},
+		tags:              []string{fmt.Sprintf("process_id:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:        true,
 	}
@@ -350,6 +353,21 @@ func WithPeriod(d time.Duration) Option {
 func CPUDuration(d time.Duration) Option {
 	return func(cfg *config) {
 		cfg.cpuDuration = d
+	}
+}
+
+// CPUProfileRate sets the sampling frequency for CPU profiling. A sample will
+// be taken once for every (1 / hz) seconds of on-CPU time. If not given,
+// profiling will use the default rate from the runtime/pprof.StartCPUProfile
+// function, which is 100 as of Go 1.0.
+//
+// Setting a different profile rate will result in a spurious warning every time
+// CPU profling is started, like "cannot set cpu profile rate until previous
+// profile has finished". This is a known issue, but the rate will still be set
+// correctly and CPU profiling will work.
+func CPUProfileRate(hz int) Option {
+	return func(cfg *config) {
+		cfg.cpuProfileRate = hz
 	}
 }
 
