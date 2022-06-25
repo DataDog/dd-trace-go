@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2022 Datadog, Inc.
 
 package internal
 
@@ -17,27 +17,21 @@ import (
 // it returns the value and false. If the determined value is valid and a UDS
 // socket, it returns the UDS path and true. If the value is not valid, it returns
 // an empty string and false.
-func AgentURLFromEnv() (string, bool) {
+func AgentURLFromEnv() *url.URL {
 	agentURL := os.Getenv("DD_TRACE_AGENT_URL")
 	if agentURL == "" {
-		return "", false
+		return nil
 	}
 	u, err := url.Parse(agentURL)
 	if err != nil {
 		log.Warn("Failed to parse DD_TRACE_AGENT_URL: %v", err)
-		return "", false
+		return nil
 	}
-	// Return the UDS path to include in the HTTP client
-	// Transport's DialContext.
-	if u.Scheme == "unix" {
-		if u.Path == "" {
-			return "", false
-		}
-		return u.Path, true
+	switch u.Scheme {
+	case "unix", "http", "https":
+		return u
+	default:
+		log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
+		return nil
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		log.Warn("Unsupported protocol '%s' in Agent URL '%s'. Must be one of: http, https, unix", u.Scheme, agentURL)
-		return "", false
-	}
-	return agentURL, false
 }

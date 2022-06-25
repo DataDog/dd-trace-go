@@ -75,8 +75,7 @@ type config struct {
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler Sampler
 
-	// agentURL specifies the scheme, hostname and port of the agent where the traces
-	// are sent to.
+	// agentURL is the agent URL that receives traces from the tracer.
 	agentURL string
 
 	// serviceMappings holds a set of service mappings to dynamically rename services
@@ -179,12 +178,12 @@ func newConfig(opts ...StartOption) *config {
 	c.sampler = NewAllSampler()
 	c.agentURL = "http://" + resolveAgentAddr()
 	c.httpClient = defaultHTTPClient()
-	v, isUnix := internal.AgentURLFromEnv()
-	if isUnix {
-		c.httpClient = udsClient(v)
-	}
-	if !isUnix && v != "" {
-		c.agentURL = v
+	if url := internal.AgentURLFromEnv(); url != nil {
+		if url.Scheme == "unix" {
+			c.httpClient = udsClient(url.Path)
+		} else {
+			c.agentURL = url.String()
+		}
 	}
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)

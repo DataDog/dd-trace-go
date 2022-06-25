@@ -7,58 +7,27 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestAgentURLFromEnv(t *testing.T) {
-	t.Run("empty", func(t *testing.T) {
-		v, ok := AgentURLFromEnv()
-		assert.Equal(t, false, ok)
-		assert.Equal(t, "", v)
-	})
-
-	t.Run("http", func(t *testing.T) {
-		os.Setenv("DD_TRACE_AGENT_URL", "http://custom:1234")
-		defer os.Unsetenv("DD_TRACE_AGENT_URL")
-		v, ok := AgentURLFromEnv()
-		assert.Equal(t, false, ok)
-		assert.Equal(t, "http://custom:1234", v)
-	})
-
-	t.Run("https", func(t *testing.T) {
-		os.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
-		defer os.Unsetenv("DD_TRACE_AGENT_URL")
-		v, ok := AgentURLFromEnv()
-		assert.Equal(t, false, ok)
-		assert.Equal(t, "https://custom:1234", v)
-	})
-
-	t.Run("unix", func(t *testing.T) {
-		os.Setenv("DD_TRACE_AGENT_URL", "unix:///path/to/custom.socket")
-		defer os.Unsetenv("DD_TRACE_AGENT_URL")
-		v, ok := AgentURLFromEnv()
-		assert.Equal(t, true, ok)
-		assert.Equal(t, "/path/to/custom.socket", v)
-	})
-
-	t.Run("unix-path", func(t *testing.T) {
-		os.Setenv("DD_TRACE_AGENT_URL", "unix://")
-		defer os.Unsetenv("DD_TRACE_AGENT_URL")
-		v, ok := AgentURLFromEnv()
-		assert.Equal(t, false, ok)
-		assert.Equal(t, "", v)
-	})
-
-	t.Run("protocol", func(t *testing.T) {
-		os.Setenv("DD_TRACE_AGENT_URL", "bad://custom:1234")
-		defer os.Unsetenv("DD_TRACE_AGENT_URL")
-		v, ok := AgentURLFromEnv()
-		assert.Equal(t, false, ok)
-		assert.Equal(t, "", v)
-	})
-
-	t.Run("invalid", func(t *testing.T) {
-		os.Setenv("DD_TRACE_AGENT_URL", "http://localhost%+o:8126")
-		defer os.Unsetenv("DD_TRACE_AGENT_URL")
-		v, ok := AgentURLFromEnv()
-		assert.Equal(t, false, ok)
-		assert.Equal(t, "", v)
-	})
+func TestAgentURLFromEnv2(t *testing.T) {
+	for name, tc := range map[string]struct {
+		input string
+		want  string
+	}{
+		"empty":    {input: "", want: ""},
+		"protocol": {input: "bad://custom:1234", want: ""},
+		"invalid":  {input: "http://localhost%+o:8126", want: ""},
+		"http":     {input: "http://custom:1234", want: "http://custom:1234"},
+		"https":    {input: "https://custom:1234", want: "https://custom:1234"},
+		"unix":     {input: "unix:///path/to/custom.socket", want: "unix:///path/to/custom.socket"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			os.Setenv("DD_TRACE_AGENT_URL", tc.input)
+			defer os.Unsetenv("DD_TRACE_AGENT_URL")
+			url := AgentURLFromEnv()
+			if tc.want == "" {
+				assert.Nil(t, url)
+			} else {
+				assert.Equal(t, tc.want, url.String())
+			}
+		})
+	}
 }
