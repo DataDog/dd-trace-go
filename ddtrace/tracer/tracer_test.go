@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -122,7 +121,7 @@ func TestTracerCleanStop(t *testing.T) {
 		}()
 	}
 
-	defer setLogWriter(ioutil.Discard)()
+	defer setLogWriter(io.Discard)()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -1580,7 +1579,7 @@ func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
 	t.Lock()
 	t.traces = append(t.traces, traces...)
 	t.Unlock()
-	ok := ioutil.NopCloser(strings.NewReader("OK"))
+	ok := io.NopCloser(strings.NewReader("OK"))
 	return ok, nil
 }
 

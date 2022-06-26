@@ -7,7 +7,7 @@ package mux
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -377,7 +377,7 @@ func TestAppSec(t *testing.T) {
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
 		// Check that the handler was properly called
-		b, err := ioutil.ReadAll(res.Body)
+		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		require.Equal(t, "Hello World!\n", string(b))
 		require.Equal(t, http.StatusOK, res.StatusCode)
@@ -423,7 +423,7 @@ func TestAppSec(t *testing.T) {
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
 		// Check that the handler was properly called
-		b, err := ioutil.ReadAll(res.Body)
+		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		require.Equal(t, "Hello Body!\n", string(b))
 

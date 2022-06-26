@@ -6,7 +6,7 @@
 package api
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -32,7 +32,7 @@ var badRequestTransport roundTripperFunc = func(req *http.Request) (*http.Respon
 		Header:     make(http.Header),
 		Request:    req,
 		StatusCode: http.StatusBadRequest,
-		Body:       ioutil.NopCloser(strings.NewReader("")),
+		Body:       io.NopCloser(strings.NewReader("")),
 	}
 	return res, nil
 }

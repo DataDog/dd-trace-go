@@ -6,7 +6,6 @@
 package profiler
 
 import (
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -370,7 +369,7 @@ func TestAddProfileType(t *testing.T) {
 }
 
 func TestWith_outputDir(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "")
+	tmpDir, err := os.MkdirTemp("", "")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
@@ -393,7 +392,7 @@ func TestWith_outputDir(t *testing.T) {
 
 	fileData := map[string]string{}
 	for _, file := range files {
-		data, err := ioutil.ReadFile(file)
+		data, err := os.ReadFile(file)
 		require.NoError(t, err)
 		fileData[filepath.Base(file)] = string(data)
 	}

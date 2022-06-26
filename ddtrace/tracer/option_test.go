@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"io"
-	"io/ioutil"
 	"math"
 	"net"
 	"net/http"
@@ -81,7 +80,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 		if testing.Short() {
 			return
 		}
-		dir, err := ioutil.TempDir("", "socket")
+		dir, err := os.MkdirTemp("", "socket")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -423,7 +422,7 @@ func TestDefaultHTTPClient(t *testing.T) {
 	})
 
 	t.Run("socket", func(t *testing.T) {
-		f, err := ioutil.TempFile("", "apm.socket")
+		f, err := os.CreateTemp("", "apm.socket")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -452,7 +451,7 @@ func TestDefaultDogstatsdAddr(t *testing.T) {
 		defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
 		os.Setenv("DD_DOGSTATSD_PORT", "8111")
 		assert.Equal(t, defaultDogstatsdAddr(), "localhost:8111")
-		f, err := ioutil.TempFile("", "dsd.socket")
+		f, err := os.CreateTemp("", "dsd.socket")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -470,7 +469,7 @@ func TestDefaultDogstatsdAddr(t *testing.T) {
 		defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
 		os.Unsetenv("DD_AGENT_HOST")
 		os.Unsetenv("DD_DOGSTATSD_PORT")
-		f, err := ioutil.TempFile("", "dsd.socket")
+		f, err := os.CreateTemp("", "dsd.socket")
 		if err != nil {
 			t.Fatal(err)
 		}

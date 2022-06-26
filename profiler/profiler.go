@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -336,7 +335,7 @@ func (p *profiler) outputDir(bat batch) error {
 	for _, prof := range bat.profiles {
 		filePath := filepath.Join(dirPath, prof.name)
 		// 0644 is what touch does, should be reasonable for the use cases here.
-		if err := ioutil.WriteFile(filePath, prof.data, 0644); err != nil {
+		if err := os.WriteFile(filePath, prof.data, 0644); err != nil {
 			return err
 		}
 	}
