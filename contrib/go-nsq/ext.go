@@ -28,4 +28,17 @@ const (
 
 	// Enqueue deferred duration.
 	DeferredDuration = "deferred_duration"
+
+	//
+	Connections    = "connections"
+	NsqMsgReceived = "nsq_msg_received"
+	NsqMsgFinished = "nsq_msg_finished"
+	NsqMsgRequeued = "nsq_msg_requeued"
+	Starved        = "starved"
+	MsgID          = "msg_id"
+	MsgAttempts    = "msg_attempts"
+	MsgTimestamp   = "msg_timestamp"
+	MsgSrcNSQD     = "msg_src_nsqd"
+	DequeueTime    = "dequeue_time"
+	Concurrency    = "concurrency"
 )
