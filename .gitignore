@@ -7,10 +7,11 @@ bin/
 
 # generic
 .DS_Store
+.idea
+.vscode
 *.cov
 *.lock
 *.swp
-.idea
 dd-trace-go.iml
 vendor
 
