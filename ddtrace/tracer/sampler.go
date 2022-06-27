@@ -188,19 +188,62 @@ func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	}
 }
 
-// samplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES
-// environment variable.
+// samplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES environment variable
+// and combines them with spanSamplingRules
 func samplingRulesFromEnv() ([]SamplingRule, error) {
-	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
-	if rulesFromEnv == "" {
+	errs := []string{}
+	spanRules, err := spanSamplingRulesFromEnv()
+	if err != nil {
+		errs = append(errs, err.Error())
+	}
+	traceRules, err := processSamplingRulesFromEnv([]byte(os.Getenv("DD_TRACE_SAMPLING_RULES")), TraceSamplingRuleType)
+	if err != nil {
+		errs = append(errs, err.Error())
+	}
+
+	rules := append(spanRules, traceRules...)
+	if len(errs) != 0 {
+		return rules, fmt.Errorf("%s", strings.Join(errs, "\n\t"))
+	}
+	return rules, nil
+}
+
+// spanSamplingRulesFromEnv parses sampling rules from the DD_SPAN_SAMPLING_RULES and
+// DD_SPAN_SAMPLING_RULES_FILE environment variables.
+func spanSamplingRulesFromEnv() ([]SamplingRule, error) {
+	errs := []string{}
+	rules, err := processSamplingRulesFromEnv([]byte(os.Getenv("DD_SPAN_SAMPLING_RULES")), SingleSpanSamplingType)
+	if err != nil {
+		errs = append(errs, err.Error())
+	}
+	if len(rules) != 0 {
+		if os.Getenv("DD_SPAN_SAMPLING_RULES_FILE") != "" {
+			log.Warn("DIAGNOSTICS Error(s): DD_SPAN_SAMPLING_RULES is available and will take precedence over DD_SPAN_SAMPLING_RULES_FILE")
+		}
+		return rules, err
+	}
+	rulesFile := os.Getenv("DD_SPAN_SAMPLING_RULES_FILE")
+	if rulesFile == "" {
+		return rules, err
+	}
+	rulesFromEnvFile, err := os.ReadFile(rulesFile)
+	if err != nil {
+		log.Warn("Couldn't read file from DD_SPAN_SAMPLING_RULES_FILE")
+	}
+	return processSamplingRulesFromEnv(rulesFromEnvFile, SingleSpanSamplingType)
+}
+
+func processSamplingRulesFromEnv(b []byte, ruleType SamplingRuleType) ([]SamplingRule, error) {
+	if len(b) == 0 {
 		return nil, nil
 	}
-	jsonRules := []struct {
-		Service string      `json:"service"`
-		Name    string      `json:"name"`
-		Rate    json.Number `json:"sample_rate"`
-	}{}
-	err := json.Unmarshal([]byte(rulesFromEnv), &jsonRules)
+	var jsonRules []struct {
+		Service      string      `json:"service"`
+		Name         string      `json:"name"`
+		Rate         json.Number `json:"sample_rate"`
+		MaxPerSecond float64     `json:"max_per_second"`
+	}
+	err := json.Unmarshal(b, &jsonRules)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling JSON: %v", err)
 	}
@@ -220,6 +263,32 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 			log.Warn("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v)
 			continue
 		}
+		if ruleType == SingleSpanSamplingType {
+			if v.Service == "" {
+				v.Service = "*"
+			}
+			srvGlob, err := globMatch(v.Service)
+			if err != nil {
+				log.Warn("at index %d: ignoring rule %+v: service name regex pattern can't be compiled", i, v)
+				continue
+			}
+			if v.Name == "" {
+				v.Name = "*"
+			}
+			opGlob, err := globMatch(v.Name)
+			if err != nil {
+				log.Warn("at index %d: ignoring rule %+v: operation name regex pattern can't be compiled", i, v)
+				continue
+			}
+			rules = append(rules, SamplingRule{
+				Service:      srvGlob,
+				Name:         opGlob,
+				Rate:         rate,
+				MaxPerSecond: v.MaxPerSecond,
+				Type:         SingleSpanSamplingType,
+			})
+			continue
+		}
 		switch {
 		case v.Service != "" && v.Name != "":
 			rules = append(rules, NameServiceRule(v.Name, v.Service, rate))
@@ -230,7 +299,7 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 		}
 	}
 	if len(errs) != 0 {
-		return rules, fmt.Errorf("found errors:\n\t%s", strings.Join(errs, "\n\t"))
+		return rules, fmt.Errorf("\n\t%s", strings.Join(errs, "\n\t"))
 	}
 	return rules, nil
 }
@@ -300,6 +369,13 @@ func (rs *rulesSampler) apply(span *span) bool {
 		if rule.match(span) {
 			matched = true
 			rate = rule.Rate
+			if rule.Type == SingleSpanSamplingType {
+				span.setMetric(ext.SpanSamplingMechanism, ext.SingleSpanSamplingMechanism)
+				span.setMetric(ext.SingleSpanSamplingRuleRate, rule.Rate)
+				if rule.MaxPerSecond != 0 {
+					span.setMetric(ext.SingleSpanSamplingMPS, rule.MaxPerSecond)
+				}
+			}
 			break
 		}
 	}
@@ -338,13 +414,22 @@ func (rs *rulesSampler) limit() (float64, bool) {
 	return math.NaN(), false
 }
 
+type SamplingRuleType int
+
+const (
+	TraceSamplingRuleType = iota
+	SingleSpanSamplingType
+)
+
 // SamplingRule is used for applying sampling rates to spans that match
 // the service name, operation name or both.
 // For basic usage, consider using the helper functions ServiceRule, NameRule, etc.
 type SamplingRule struct {
-	Service *regexp.Regexp
-	Name    *regexp.Regexp
-	Rate    float64
+	Service      *regexp.Regexp
+	Name         *regexp.Regexp
+	Rate         float64
+	MaxPerSecond float64
+	Type         SamplingRuleType
 
 	exactService string
 	exactName    string
