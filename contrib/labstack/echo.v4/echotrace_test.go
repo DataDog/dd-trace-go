@@ -283,7 +283,7 @@ func TestSkipFunc(t *testing.T) {
 		return true
 	}
 	router := echo.New()
-	router.Use(Middleware(WithSkipFunction(skipFunc)))
+	router.Use(Middleware(WithIgnoreRequest(skipFunc)))
 
 	// a handler with an error and make the requests
 	router.GET("/err", func(c echo.Context) error {

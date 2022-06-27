@@ -73,9 +73,9 @@ func NoDebugStack() Option {
 	}
 }
 
-// WithSkipFunction sets a function which determines if tracing will be
+// WithIgnoreRequest sets a function which determines if tracing will be
 // skipped for a given request.
-func WithSkipFunction(skipFunc SkipFunction) Option {
+func WithIgnoreRequest(skipFunc SkipFunction) Option {
 	return func(cfg *config) {
 		cfg.skipFunc = skipFunc
 	}
