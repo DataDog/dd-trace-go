@@ -8,6 +8,8 @@ package echo
 import (
 	"math"
 
+	"github.com/labstack/echo/v4"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -15,10 +17,14 @@ type config struct {
 	serviceName   string
 	analyticsRate float64
 	noDebugStack  bool
+	skipFunc      SkipFunction
 }
 
 // Option represents an option that can be passed to Middleware.
 type Option func(*config)
+
+// SkipFunction detmines if tracing will be skipped for a request.
+type SkipFunction func(c echo.Context) bool
 
 func defaults(cfg *config) {
 	cfg.serviceName = "echo"
@@ -64,5 +70,13 @@ func WithAnalyticsRate(rate float64) Option {
 func NoDebugStack() Option {
 	return func(cfg *config) {
 		cfg.noDebugStack = true
+	}
+}
+
+// WithSkipFunction sets a function which determines if tracing will be
+// skipped for a given request.
+func WithSkipFunction(skipFunc SkipFunction) Option {
+	return func(cfg *config) {
+		cfg.skipFunc = skipFunc
 	}
 }
