@@ -115,3 +115,54 @@ func TestParsePropagatableTraceTags(t *testing.T) {
 		})
 	}
 }
+
+func TestGlobMatch(t *testing.T) {
+	for i, tt := range []struct {
+		pattern     string
+		input       string
+		shouldMatch bool
+	}{
+		// pattern with *
+		{"test*", "test", true},
+		{"test*", "test-case", true},
+		{"test*", "a-test", false},
+		{"*test", "a-test", true},
+		{"a*case", "acase", true},
+		{"a*case", "a-test-case", true},
+		{"a*test*case", "a-test-case", true},
+		{"a*test*case", "atestcase", true},
+		{"a*test*case", "abadcase", false},
+		// pattern with ?
+		{"test?", "test", false},
+		{"test?", "test-case", false},
+		{"test?", "a-test", false},
+		{"?test", "a-test", false},
+		{"a?case", "acase", false},
+		{"a?case", "a-case", true},
+		{"a?test?case", "a-test-case", true},
+		{"a?test?case", "a-test--case", false},
+		// pattern with ? and *
+		{"?test*", "atest", true},
+		{"?test*", "atestcase", true},
+		{"?test*", "testcase", false},
+		{"?test*", "testcase", false},
+		{"test*case", "testcase", true},
+		{"a?test*", "a-test-case", true},
+		{"a?test*", "atestcase", false},
+		{"a*test?", "a-test-", true},
+		{"a*test?", "atestcase", false},
+		{"a*test?case", "a--test-case", true},
+		{"a*test?case", "a--test--case", false},
+		{"a?test*case", "a-testing--case", true},
+		{"the?test*case", "the-test-cases", false},
+	} {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			rg, _ := globMatch(tt.pattern)
+			if tt.shouldMatch {
+				assert.Regexp(t, rg, tt.input)
+			} else {
+				assert.NotRegexp(t, rg, tt.input)
+			}
+		})
+	}
+}
