@@ -23,7 +23,7 @@ type config struct {
 // Option represents an option that can be passed to Middleware.
 type Option func(*config)
 
-// SkipFunction detmines if tracing will be skipped for a request.
+// SkipFunction determines if tracing will be skipped for a request.
 type SkipFunction func(c echo.Context) bool
 
 func defaults(cfg *config) {
