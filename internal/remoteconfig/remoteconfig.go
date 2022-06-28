@@ -53,6 +53,10 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
+	// Tracers should always listen for FEATURES and it's not a traditional "product"
+	// that would be enabled by a subsystem.
+	config.Products = append(config.Products, "FEATURES")
+
 	return &Client{
 		ClientConfig: config,
 		clientID:     generateID(),
