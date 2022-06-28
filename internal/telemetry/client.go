@@ -92,8 +92,14 @@ type Client struct {
 		Printf(msg string, args ...interface{})
 	}
 
-	// Client will be used for telemetry uploads. If Client is nil, a
-	// default value will be used.
+	// Client will be used for telemetry uploads. This http.Client, if
+	// provided, should be the same as would be used for any other
+	// interaction with the Datadog agent, e.g. if the agent is accessed
+	// over UDS, or if the user provides their own http.Client to the
+	// profiler/tracer to access the agent over a proxy.
+	//
+	// If Client is nil, an http.Client with the same Transport settings as
+	// http.DefaultTransport and a 5 second timeout will be used.
 	Client *http.Client
 
 	// mu guards all of the following fields
