@@ -216,8 +216,10 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		if err == nil {
 			u.Path = "/telemetry/proxy/api/v2/apmtelemetry"
 			p.telemetry.URL = u.String()
+		} else {
+			log.Warn("Agent URL %s is invalid, not starting telemetry", cfg.agentURL)
+			p.telemetry.Disabled = true
 		}
-		// ??? what do we even do if the URL isn't valid....
 	}
 	return &p, nil
 }
