@@ -18,7 +18,7 @@ type clientConfig struct {
 }
 
 func defaultConfig(cfg *clientConfig) {
-	cfg.serviceName = "nsq"
+	cfg.serviceName = "go-nsq"
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {

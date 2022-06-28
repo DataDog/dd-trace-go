@@ -23,22 +23,31 @@ const (
 	MsgCount = "msg_count"
 	MsgSize  = "msg_size"
 
-	// Enqueue timestamp.
+	// Enqueue and dequeue timestamp.
 	EnqueueTime = "enqueue_time"
+	DequeueTime = "dequeue_time"
 
 	// Enqueue deferred duration.
 	DeferredDuration = "deferred_duration"
 
-	//
-	Connections    = "connections"
-	NsqMsgReceived = "nsq_msg_received"
-	NsqMsgFinished = "nsq_msg_finished"
-	NsqMsgRequeued = "nsq_msg_requeued"
-	Starved        = "starved"
-	MsgID          = "msg_id"
-	MsgAttempts    = "msg_attempts"
-	MsgTimestamp   = "msg_timestamp"
-	MsgSrcNSQD     = "msg_src_nsqd"
-	DequeueTime    = "dequeue_time"
-	Concurrency    = "concurrency"
+	// ConsumerStats represents a snapshot of the state of a Consumer's connections and the messages
+	// it has seen.
+	Connections = "connections"
+	MsgReceived = "msg_received"
+	MsgFinished = "msg_finished"
+	MsgRequeued = "msg_requeued"
+
+	// IsStarved indicates whether any connections for this consumer are blocked on processing
+	// before being able to receive more messages (ie. RDY count of 0 and not exiting)
+	IsStarved = "is_starved"
+
+	// Message id attempts and timestamp.
+	// Nsqd address.
+	MsgID        = "msg_id"
+	MsgAttempts  = "msg_attempts"
+	MsgTimestamp = "msg_timestamp"
+	MsgSrcNSQD   = "msg_src_nsqd"
+
+	// The number of goroutines to spawn for message handling.
+	Concurrency = "concurrency"
 )

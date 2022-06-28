@@ -8,11 +8,9 @@ package nsq
 
 import (
 	"context"
-	"math"
 	"time"
 
 	"github.com/nsqio/go-nsq"
-	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -50,13 +48,8 @@ func (prodc *Producer) Publish(topic string, body []byte) error {
 // PublishFromContext is a wrp-up function of nsq Publish with a given context.
 func (prodc *Producer) PublishWithContext(ctx context.Context, topic string, body []byte) error {
 	var err error
-	span, ctx := prodc.startSpanFromContext(ctx, topic, "PublishWithContext")
-	defer func() {
-		if err != nil {
-			span.SetTag(ext.ErrorMsg, err.Error())
-		}
-		span.Finish()
-	}()
+	span, ctx := startSpanFromContext(ctx, prodc.ccfg, prodc.nsqcfg, topic, "PublishWithContext")
+	defer span.Finish(tracer.WithError(err))
 
 	var combBody []byte
 	if combBody, err = inject(span, body); err != nil {
@@ -81,13 +74,8 @@ func (prodc *Producer) MultiPublish(topic string, body [][]byte) error {
 // MultiPublishWithContext is a wrp-up function of nsq MultiPublish with a given context.
 func (prodc *Producer) MultiPublishWithContext(ctx context.Context, topic string, body [][]byte) error {
 	var err error
-	span, ctx := prodc.startSpanFromContext(ctx, topic, "MultiPublishWithContext")
-	defer func() {
-		if err != nil {
-			span.SetTag(ext.ErrorMsg, err.Error())
-		}
-		span.Finish()
-	}()
+	span, ctx := startSpanFromContext(ctx, prodc.ccfg, prodc.nsqcfg, topic, "MultiPublishWithContext")
+	defer span.Finish(tracer.WithError(err))
 
 	combBody := make([][]byte, len(body))
 	for i := range body {
@@ -114,13 +102,8 @@ func (prodc *Producer) PublishAsync(topic string, body []byte, doneChan chan *ns
 // PublishAsyncWithContext is a wrp-up function of nsq PublishAsync with a given context.
 func (prodc *Producer) PublishAsyncWithContext(ctx context.Context, topic string, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	var err error
-	span, ctx := prodc.startSpanFromContext(ctx, topic, "PublishAsyncWithContext")
-	defer func() {
-		if err != nil {
-			span.SetTag(ext.ErrorMsg, err.Error())
-		}
-		span.Finish()
-	}()
+	span, ctx := startSpanFromContext(ctx, prodc.ccfg, prodc.nsqcfg, topic, "PublishAsyncWithContext")
+	defer span.Finish(tracer.WithError(err))
 
 	var combBody []byte
 	if combBody, err = inject(span, body); err != nil {
@@ -145,13 +128,8 @@ func (prodc *Producer) MultiPublishAsync(topic string, body [][]byte, doneChan c
 // MultiPublishAsyncWithContext is a wrp-up function of nsq MultiPublishAsync with a given context.
 func (prodc *Producer) MultiPublishAsyncWithContext(ctx context.Context, topic string, body [][]byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	var err error
-	span, ctx := prodc.startSpanFromContext(ctx, topic, "MultiPublishAsyncWithContext")
-	defer func() {
-		if err != nil {
-			span.SetTag(ext.ErrorMsg, err.Error())
-		}
-		span.Finish()
-	}()
+	span, ctx := startSpanFromContext(ctx, prodc.ccfg, prodc.nsqcfg, topic, "MultiPublishAsyncWithContext")
+	defer span.Finish(tracer.WithError(err))
 
 	combBody := make([][]byte, len(body))
 	for i := range body {
@@ -178,13 +156,8 @@ func (prodc *Producer) DeferredPublish(topic string, delay time.Duration, body [
 // DeferredPublishWithContext is a wrp-up function of nsq DeferredPublish with a given context.
 func (prodc *Producer) DeferredPublishWithContext(ctx context.Context, topic string, delay time.Duration, body []byte) error {
 	var err error
-	span, ctx := prodc.startSpanFromContext(ctx, topic, "DeferredPublishWithContext")
-	defer func() {
-		if err != nil {
-			span.SetTag(ext.ErrorMsg, err.Error())
-		}
-		span.Finish()
-	}()
+	span, ctx := startSpanFromContext(ctx, prodc.ccfg, prodc.nsqcfg, topic, "DeferredPublishWithContext")
+	defer span.Finish(tracer.WithError(err))
 
 	var combBody []byte
 	if combBody, err = inject(span, body); err != nil {
@@ -210,13 +183,8 @@ func (prodc *Producer) DeferredPublishAsync(topic string, delay time.Duration, b
 // DeferredPublishAsyncWithContext is a wrp-up function of nsq DeferredPublishAsync with a given context.
 func (prodc *Producer) DeferredPublishAsyncWithContext(ctx context.Context, topic string, delay time.Duration, body []byte, doneChan chan *nsq.ProducerTransaction, args ...interface{}) error {
 	var err error
-	span, ctx := prodc.startSpanFromContext(ctx, topic, "DeferredPublishAsyncWithContext")
-	defer func() {
-		if err != nil {
-			span.SetTag(ext.ErrorMsg, err.Error())
-		}
-		span.Finish()
-	}()
+	span, ctx := startSpanFromContext(ctx, prodc.ccfg, prodc.nsqcfg, topic, "DeferredPublishAsyncWithContext")
+	defer span.Finish(tracer.WithError(err))
 
 	var combBody []byte
 	if combBody, err = inject(span, body); err != nil {
@@ -231,30 +199,4 @@ func (prodc *Producer) DeferredPublishAsyncWithContext(ctx context.Context, topi
 	}
 
 	return err
-}
-
-// startSpanFromContext will try to start span from a given context.
-func (prodc *Producer) startSpanFromContext(ctx context.Context, topic, funcName string) (tracer.Span, context.Context) {
-	opts := []tracer.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.ServiceName(prodc.ccfg.serviceName),
-		tracer.ResourceName(topic),
-	}
-	if !math.IsNaN(prodc.ccfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, prodc.ccfg.analyticsRate))
-	}
-	if prodc.nsqcfg != nil {
-		opts = append(opts, []tracer.StartSpanOption{
-			tracer.Tag(LocalAddr, prodc.nsqcfg.LocalAddr),
-			tracer.Tag(ClientID, prodc.nsqcfg.ClientID),
-			tracer.Tag(Hostname, prodc.nsqcfg.Hostname),
-			tracer.Tag(UserAgent, prodc.nsqcfg.UserAgent),
-			tracer.Tag(SampleRate, prodc.nsqcfg.SampleRate),
-			tracer.Tag(Deflate, prodc.nsqcfg.Deflate),
-			tracer.Tag(DeflateLevel, prodc.nsqcfg.DeflateLevel),
-			tracer.Tag(Snappy, prodc.nsqcfg.Snappy),
-		}...)
-	}
-
-	return tracer.StartSpanFromContext(ctx, funcName, opts...)
 }

@@ -2,11 +2,18 @@ package nsq
 
 import (
 	"bytes"
+	"context"
 	"encoding/gob"
+	"math"
+	"path"
+	"reflect"
+	"runtime"
 	"sync"
 
+	"github.com/nsqio/go-nsq"
 	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace"
 	"gopkg.in/CodapeWild/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 var bfp = sync.Pool{
@@ -92,6 +99,42 @@ func bodySize(body [][]byte) int {
 	}
 
 	return size
+}
+
+// startSpanFromContext will try to start span from a given context.
+func startSpanFromContext(ctx context.Context, config *clientConfig, nsqconfig *nsq.Config, resource, funcName string) (tracer.Span, context.Context) {
+	if config == nil {
+		cfg := &clientConfig{}
+		defaultConfig(cfg)
+		config = cfg
+	}
+
+	opts := []tracer.StartSpanOption{
+		tracer.SpanType(ext.SpanTypeMessageProducer),
+		tracer.ServiceName(config.serviceName),
+		tracer.ResourceName(resource),
+	}
+	if !math.IsNaN(config.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, config.analyticsRate))
+	}
+	if nsqconfig != nil {
+		opts = append(opts, []tracer.StartSpanOption{
+			tracer.Tag(LocalAddr, nsqconfig.LocalAddr),
+			tracer.Tag(ClientID, nsqconfig.ClientID),
+			tracer.Tag(Hostname, nsqconfig.Hostname),
+			tracer.Tag(UserAgent, nsqconfig.UserAgent),
+			tracer.Tag(SampleRate, nsqconfig.SampleRate),
+			tracer.Tag(Deflate, nsqconfig.Deflate),
+			tracer.Tag(DeflateLevel, nsqconfig.DeflateLevel),
+			tracer.Tag(Snappy, nsqconfig.Snappy),
+		}...)
+	}
+
+	return tracer.StartSpanFromContext(ctx, funcName, opts...)
+}
+
+func getFuncName(f interface{}) string {
+	return path.Base(runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name())
 }
 
 func init() {
