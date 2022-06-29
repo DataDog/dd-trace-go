@@ -244,7 +244,7 @@ jobs:
 
       - run:
           name: Wait for ElasticSearch (8)
-          command: dockerize -wait http://localhost:9203 -timeout 1m
+          command: dockerize -wait https://localhost:9203 -timeout 1m
 
       - run:
           name: Wait for Datadog Agent
