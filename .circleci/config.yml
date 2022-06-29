@@ -246,7 +246,7 @@ jobs:
           command: dockerize -wait tcp://localhost:6379 -timeout 1m
 
       - run:
-          name: Wait for ElasticSearch (3)
+          name: Wait for ElasticSearch (2)
           command: dockerize -wait http://localhost:9200 -timeout 1m
 
       - run:
