@@ -35,9 +35,13 @@ func setenv(t *testing.T, key, value string) {
 	old, ok := os.LookupEnv(key)
 	os.Setenv(key, value)
 	if ok {
-		defer os.Setenv(key, old)
+		t.Cleanup(func() {
+			os.Setenv(key, old)
+		})
 	} else {
-		defer os.Unsetenv(key)
+		t.Cleanup(func() {
+			os.Unsetenv(key)
+		})
 	}
 }
 
