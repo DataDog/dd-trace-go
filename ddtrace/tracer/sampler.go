@@ -196,16 +196,30 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
-	traceRules, err := processSamplingRulesFromEnv([]byte(os.Getenv("DD_TRACE_SAMPLING_RULES")), TraceSamplingRuleType)
+	traceRules, err := traceSamplingRulesFromEnv()
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
-
-	rules := append(spanRules, traceRules...)
+	rules := []SamplingRule{}
+	if traceRules != nil {
+		rules = traceRules
+	}
+	if spanRules != nil {
+		rules = append(rules, spanRules...)
+	}
 	if len(errs) != 0 {
 		return rules, fmt.Errorf("%s", strings.Join(errs, "\n\t"))
 	}
 	return rules, nil
+}
+
+// traceSamplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES environment variable.
+func traceSamplingRulesFromEnv() ([]SamplingRule, error) {
+	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
+	if rulesFromEnv == "" {
+		return nil, nil
+	}
+	return processSamplingRulesFromEnv([]byte(rulesFromEnv), TraceSamplingRuleType)
 }
 
 // spanSamplingRulesFromEnv parses sampling rules from the DD_SPAN_SAMPLING_RULES and
@@ -286,6 +300,7 @@ func processSamplingRulesFromEnv(b []byte, ruleType SamplingRuleType) ([]Samplin
 				Rate:         rate,
 				MaxPerSecond: v.MaxPerSecond,
 				Type:         SingleSpanSamplingType,
+				limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
 			})
 			continue
 		}
@@ -369,13 +384,6 @@ func (rs *rulesSampler) apply(span *span) bool {
 		if rule.match(span) {
 			matched = true
 			rate = rule.Rate
-			if rule.Type == SingleSpanSamplingType {
-				span.setMetric(ext.SpanSamplingMechanism, ext.SingleSpanSamplingMechanism)
-				span.setMetric(ext.SingleSpanSamplingRuleRate, rule.Rate)
-				if rule.MaxPerSecond != 0 {
-					span.setMetric(ext.SingleSpanSamplingMPS, rule.MaxPerSecond)
-				}
-			}
 			break
 		}
 	}
@@ -433,6 +441,7 @@ type SamplingRule struct {
 
 	exactService string
 	exactName    string
+	limiter      *rateLimiter
 }
 
 // ServiceRule returns a SamplingRule that applies the provided sampling rate
@@ -488,9 +497,10 @@ func (sr *SamplingRule) match(s *span) bool {
 // MarshalJSON implements the json.Marshaler interface.
 func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 	s := struct {
-		Service string  `json:"service"`
-		Name    string  `json:"name"`
-		Rate    float64 `json:"sample_rate"`
+		Service      string   `json:"service"`
+		Name         string   `json:"name"`
+		Rate         float64  `json:"sample_rate"`
+		MaxPerSecond *float64 `json:"max_per_second,omitempty"`
 	}{}
 	if sr.exactService != "" {
 		s.Service = sr.exactService
@@ -503,6 +513,9 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		s.Name = fmt.Sprintf("%s", sr.Name)
 	}
 	s.Rate = sr.Rate
+	if sr.MaxPerSecond != 0 {
+		s.MaxPerSecond = &sr.MaxPerSecond
+	}
 	return json.Marshal(&s)
 }
 

@@ -262,7 +262,7 @@ func (t *trace) push(sp *span) {
 	}
 }
 
-// finishedOne aknowledges that another span in the trace has finished, and checks
+// finishedOne acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span.
 func (t *trace) finishedOne(s *span) {

@@ -434,7 +434,7 @@ func TestRulesSampler(t *testing.T) {
 				rules, _ := samplingRulesFromEnv()
 
 				assert := assert.New(t)
-				rs := newRulesSampler(rules)
+				rs := newSingleSpanRulesSampler(rules)
 
 				span := makeSpan(tt.spanName, tt.spanSrv)
 				result := rs.apply(span)
