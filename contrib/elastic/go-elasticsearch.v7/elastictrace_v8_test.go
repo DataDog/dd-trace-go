@@ -20,15 +20,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
-func checkPUTTraceV8(assert *assert.Assertions, mt mocktracer.Tracer) {
-	span := mt.FinishedSpans()[1]
-	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
-	assert.Equal("PUT /twitter/tweet/?", span.Tag(ext.ResourceName))
-	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
-	assert.Equal("PUT", span.Tag("elasticsearch.method"))
-	assert.Equal(`{"user": "test", "message": "hello"}`, span.Tag("elasticsearch.body"))
-}
-
 func checkGETTraceV8(assert *assert.Assertions, mt mocktracer.Tracer) {
 	span := mt.FinishedSpans()[0]
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
@@ -136,8 +127,6 @@ func TestClientV8Failure(t *testing.T) {
 	assert.Error(err)
 
 	spans := mt.FinishedSpans()
-	checkPUTTraceV8(assert, mt)
-
 	assert.NotEmpty(spans[0].Tag(ext.Error))
 	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
 }
