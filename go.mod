@@ -18,8 +18,8 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/confluentinc/confluent-kafka-go v1.4.0
 	github.com/denisenkom/go-mssqldb v0.11.0
-	github.com/elastic/go-elasticsearch/v6 v6.8.5
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
+	github.com/elastic/go-elasticsearch/v8 v8.3.0
 	github.com/emicklei/go-restful v0.0.0-20170410110728-ff4f55a20633
 	github.com/erikstmartin/go-testdb v0.0.0-20160219214506-8d10e4a1bae5 // indirect
 	github.com/fatih/color v1.9.0 // indirect
