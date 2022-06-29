@@ -14,17 +14,17 @@ import (
 )
 
 type config struct {
-	serviceName   string
-	analyticsRate float64
-	noDebugStack  bool
-	skipFunc      SkipFunction
+	serviceName       string
+	analyticsRate     float64
+	noDebugStack      bool
+	ignoreRequestFunc IgnoreRequestFunc
 }
 
 // Option represents an option that can be passed to Middleware.
 type Option func(*config)
 
-// SkipFunction determines if tracing will be skipped for a request.
-type SkipFunction func(c echo.Context) bool
+// IgnoreRequestFunc determines if tracing will be skipped for a request.
+type IgnoreRequestFunc func(c echo.Context) bool
 
 func defaults(cfg *config) {
 	cfg.serviceName = "echo"
@@ -75,8 +75,8 @@ func NoDebugStack() Option {
 
 // WithIgnoreRequest sets a function which determines if tracing will be
 // skipped for a given request.
-func WithIgnoreRequest(skipFunc SkipFunction) Option {
+func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) Option {
 	return func(cfg *config) {
-		cfg.skipFunc = skipFunc
+		cfg.ignoreRequestFunc = ignoreRequestFunc
 	}
 }

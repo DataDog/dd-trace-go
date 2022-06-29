@@ -272,18 +272,18 @@ func TestNoDebugStack(t *testing.T) {
 	assert.Equal("<debug stack disabled>", span.Tag(ext.ErrorStack))
 }
 
-func TestSkipFunc(t *testing.T) {
+func TestIgnoreRequestFunc(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	var called, traced bool
 
 	// setup
-	skipFunc := func(c echo.Context) bool {
+	ignoreRequestFunc := func(c echo.Context) bool {
 		return true
 	}
 	router := echo.New()
-	router.Use(Middleware(WithIgnoreRequest(skipFunc)))
+	router.Use(Middleware(WithIgnoreRequest(ignoreRequestFunc)))
 
 	// a handler with an error and make the requests
 	router.GET("/err", func(c echo.Context) error {

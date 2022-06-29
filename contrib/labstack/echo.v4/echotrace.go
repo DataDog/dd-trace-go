@@ -34,8 +34,8 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 
-			// If we have a skip function, use it to see if we proceed with tracing
-			if cfg.skipFunc != nil && cfg.skipFunc(c) {
+			// If we have an ignoreRequestFunc, use it to see if we proceed with tracing
+			if cfg.ignoreRequestFunc != nil && cfg.ignoreRequestFunc(c) {
 				if err := next(c); err != nil {
 					c.Error(err)
 					return err
