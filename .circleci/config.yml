@@ -173,7 +173,7 @@ jobs:
         environment:
           http.port: 9203-9300
           discovery.type: single-node
-          xpack.http.ssl.verification_mode: none
+          xpack.security.enabled: false
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
       - image: datadog/docker-dd-agent
         environment:
