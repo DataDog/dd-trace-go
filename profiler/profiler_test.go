@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"encoding/json"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -22,10 +23,23 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func setenv(t *testing.T, key, value string) {
+	t.Helper()
+	// re-implemented testing.T.Setenv since that function requires Go 1.17
+	old, ok := os.LookupEnv(key)
+	os.Setenv(key, value)
+	if ok {
+		defer os.Setenv(key, old)
+	} else {
+		defer os.Unsetenv(key)
+	}
+}
 
 func TestMain(m *testing.M) {
 	// Profiling configuration is logged by default when starting a profile,
@@ -384,14 +398,7 @@ func TestAllUploaded(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// re-implemented testing.T.Setenv since that function requires Go 1.17
-	old, ok := os.LookupEnv("DD_PROFILING_WAIT_PROFILE")
-	os.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
-	if ok {
-		defer os.Setenv("DD_PROFILING_WAIT_PROFILE", old)
-	} else {
-		defer os.Unsetenv("DD_PROFILING_WAIT_PROFILE")
-	}
+	setenv(t, "DD_PROFILING_WAIT_PROFILE", "1")
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(
@@ -418,4 +425,61 @@ func TestAllUploaded(t *testing.T) {
 	}
 	sort.Strings(profiles)
 	assert.Equal(t, expected, profiles)
+}
+
+func TestTelemetryEnabled(t *testing.T) {
+	received := make(chan *telemetry.AppStarted, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
+			return
+		}
+		if r.Header.Get("DD-Telemetry-Request-Type") != string(telemetry.RequestTypeAppStarted) {
+			return
+		}
+
+		var body telemetry.Request
+		body.Payload = new(telemetry.AppStarted)
+		err := json.NewDecoder(r.Body).Decode(&body)
+		if err != nil {
+			t.Errorf("bad body: %s", err)
+		}
+		select {
+		case received <- body.Payload.(*telemetry.AppStarted):
+		default:
+		}
+	}))
+	defer server.Close()
+
+	setenv(t, "DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(
+			BlockProfile,
+			CPUProfile,
+			HeapProfile,
+			MutexProfile,
+		),
+		WithPeriod(10*time.Millisecond),
+		CPUDuration(1*time.Millisecond),
+	)
+	defer Stop()
+	payload := <-received
+	check := func(key string, expected interface{}) {
+		for _, kv := range payload.Configuration {
+			if kv.Name == key {
+				if kv.Value != expected {
+					t.Errorf("configuration %s: wanted %v, got %T", key, expected, kv.Value)
+				}
+				return
+			}
+		}
+		t.Errorf("missing configuration %s", key)
+	}
+
+	check("heap_profile_enabled", true)
+	check("block_profile_enabled", true)
+	check("goroutine_profile_enabled", false)
+	check("mutex_profile_enabled", true)
+	check("profile_period", time.Duration(10*time.Millisecond).String())
+	check("cpu_duration", time.Duration(1*time.Millisecond).String())
 }
