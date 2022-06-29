@@ -315,7 +315,17 @@ func (t *trace) finishedOne(s *span) {
 			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
 			atomic.AddUint64(&tr.droppedP0Traces, 1)
 		}
-		return
+		//if trace sampling decision is drop, we still want to send single spans
+		singleSpans := []*span{}
+		for i, span := range t.spans {
+			if _, ok := span.Metrics[ext.SpanSamplingMechanism]; ok {
+				singleSpans = append(singleSpans, t.spans[i])
+			}
+		}
+		t.spans = singleSpans
+		if len(t.spans) == 0 {
+			return
+		}
 	}
 	tr.pushTrace(t.spans)
 }

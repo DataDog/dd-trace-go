@@ -422,10 +422,14 @@ func (rs *rulesSampler) limit() (float64, bool) {
 	return math.NaN(), false
 }
 
+// SamplingRuleType represents a sampling rule type spans are matched against.
 type SamplingRuleType int
 
 const (
+	// TraceSamplingRuleType rules match spans and influence sampling decision.
 	TraceSamplingRuleType = iota
+	// SingleSpanSamplingType rules are matched against all spans regardless of
+	// sampling decision. Such spans might be sent separately.
 	SingleSpanSamplingType
 )
 

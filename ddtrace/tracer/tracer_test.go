@@ -367,7 +367,8 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, "", span.context.trace.tags[keyUpstreamServices])
 		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
 	})
-	t.Run("client_dropped", func(t *testing.T) {
+	//todo rename
+	t.Run("client_dropped_with_single_spans", func(t *testing.T) {
 		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		tracer, _, _, stop := startTestTracer(t)
