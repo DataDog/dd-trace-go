@@ -82,7 +82,6 @@ func WithCustomTag(tag string, tagFn func(db *gorm.DB) interface{}) Option {
 		if cfg.tagFns == nil {
 			cfg.tagFns = make(map[string]func(db *gorm.DB) interface{})
 		}
-
 		if tagFn != nil {
 			cfg.tagFns[tag] = tagFn
 		} else {

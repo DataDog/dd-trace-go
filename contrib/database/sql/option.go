@@ -89,7 +89,7 @@ func WithChildSpansOnly() Option {
 	}
 }
 
-// WithCustomTag will attach the value to the span tagged by the key.
+// WithCustomTag will attach the value to the span tagged by the key
 func WithCustomTag(key string, value interface{}) Option {
 	return func(cfg *config) {
 		if cfg.tags == nil {
