@@ -110,6 +110,8 @@ func TestClientV8Failure(t *testing.T) {
 	assert.Error(err)
 
 	spans := mt.FinishedSpans()
+	checkPUTTrace(assert, mt)
+
 	assert.NotEmpty(spans[0].Tag(ext.Error))
 	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
 }
