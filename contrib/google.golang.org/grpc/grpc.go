@@ -27,15 +27,12 @@ func addCustomTags(cfg *config, opts ...tracer.StartSpanOption) []tracer.StartSp
 		return opts
 	}
 
-	ret := make([]tracer.StartSpanOption, len(cfg.tags)+len(opts))
-	i := 0
+	ret := make([]tracer.StartSpanOption, 0, len(cfg.tags)+len(opts))
 	for _, opt := range opts {
-		ret[i] = opt
-		i++
+		ret = append(ret, opt)
 	}
 	for key, tag := range cfg.tags {
-		ret[i] = tracer.Tag(key, tag)
-		i++
+		ret = append(ret, tracer.Tag(key, tag))
 	}
 	return ret
 }
@@ -49,7 +46,6 @@ func startSpanFromContext(
 		tracer.Tag(tagMethodName, method),
 		tracer.SpanType(ext.AppTypeRPC),
 	)
-
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
 		opts = append(opts, tracer.ChildOf(sctx))
