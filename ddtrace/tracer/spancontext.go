@@ -304,6 +304,9 @@ func (t *trace) finishedOne(s *span) {
 	if !ok {
 		return
 	}
+	for i := range t.spans {
+		tr.singleSpanRulesSampling.apply(t.spans[i])
+	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
 	sd := samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision)))

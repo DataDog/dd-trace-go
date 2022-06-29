@@ -6,11 +6,13 @@
 package tracer
 
 import (
-	"golang.org/x/time/rate"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"math"
 	"time"
+
+	"golang.org/x/time/rate"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 // singleSpanRulesSampler allows a user-defined list of rules to apply to spans
@@ -54,7 +56,7 @@ func (rs *singleSpanRulesSampler) apply(span *span) bool {
 }
 
 func (rs *singleSpanRulesSampler) applyRate(span *span, rule SamplingRule, rate float64, now time.Time) {
-	span.SetTag(keyRulesSamplerAppliedRate, rate)
+	span.setMetric(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.SpanID, rate) {
 		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate, rate)
 		return

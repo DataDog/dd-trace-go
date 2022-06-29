@@ -367,6 +367,28 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, "", span.context.trace.tags[keyUpstreamServices])
 		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
 	})
+	t.Run("client_dropped", func(t *testing.T) {
+		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
+		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		tracer.config.agent.DropP0s = true
+		tracer.config.sampler = NewRateSampler(0)
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		span := tracer.StartSpan("name_1").(*span)
+		child := tracer.StartSpan("name_2", ChildOf(span.context))
+		child.Finish()
+		span.Finish()
+		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
+		// this trace won't be sent to the agent,
+		// therefore not necessary to populate keyUpstreamServices
+		assert.Equal(t, "", span.context.trace.tags[keyUpstreamServices])
+		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
+		assert.Equal(t, 8.0, span.Metrics[ext.SpanSamplingMechanism])
+		assert.Equal(t, 1.0, span.Metrics[ext.SingleSpanSamplingRuleRate])
+		assert.Equal(t, 15.0, span.Metrics[ext.SingleSpanSamplingMPS])
+	})
 }
 
 func TestTracerRuntimeMetrics(t *testing.T) {
