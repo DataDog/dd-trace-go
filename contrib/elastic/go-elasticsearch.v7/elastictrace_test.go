@@ -24,7 +24,7 @@ const debug = false
 
 const (
 	elasticV7URL = "http://127.0.0.1:9202"
-	elasticV8URL = "https://127.0.0.1:9203"
+	elasticV8URL = "http://127.0.0.1:9203"
 )
 
 func TestMain(m *testing.M) {
