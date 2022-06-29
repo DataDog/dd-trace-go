@@ -20,6 +20,32 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
+func checkPUTTraceV8(assert *assert.Assertions, mt mocktracer.Tracer) {
+	span := mt.FinishedSpans()[1]
+	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
+	assert.Equal("PUT /twitter/tweet/?", span.Tag(ext.ResourceName))
+	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
+	assert.Equal("PUT", span.Tag("elasticsearch.method"))
+	assert.Equal(`{"user": "test", "message": "hello"}`, span.Tag("elasticsearch.body"))
+}
+
+func checkGETTraceV8(assert *assert.Assertions, mt mocktracer.Tracer) {
+	span := mt.FinishedSpans()[0]
+	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
+	assert.Equal("GET /twitter/_doc/?", span.Tag(ext.ResourceName))
+	assert.Equal("/twitter/_doc/1", span.Tag("elasticsearch.url"))
+	assert.Equal("GET", span.Tag("elasticsearch.method"))
+}
+
+func checkErrTraceV8(assert *assert.Assertions, mt mocktracer.Tracer) {
+	span := mt.FinishedSpans()[0]
+	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
+	assert.Equal("GET /not-real-index/_doc/?", span.Tag(ext.ResourceName))
+	assert.Equal("/not-real-index/_doc/1", span.Tag("elasticsearch.url"))
+	assert.NotEmpty(span.Tag(ext.Error))
+	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
+}
+
 func TestClientV8(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -47,7 +73,7 @@ func TestClientV8(t *testing.T) {
 		DocumentID: "1",
 	}.Do(context.Background(), client)
 	assert.NoError(err)
-	checkGETTrace(assert, mt)
+	checkGETTraceV8(assert, mt)
 
 	mt.Reset()
 	_, err = esapi8.GetRequest{
@@ -55,7 +81,7 @@ func TestClientV8(t *testing.T) {
 		DocumentID: "1",
 	}.Do(context.Background(), client)
 	assert.NoError(err)
-	checkErrTrace(assert, mt)
+	checkErrTraceV8(assert, mt)
 
 }
 
@@ -110,7 +136,7 @@ func TestClientV8Failure(t *testing.T) {
 	assert.Error(err)
 
 	spans := mt.FinishedSpans()
-	checkPUTTrace(assert, mt)
+	checkPUTTraceV8(assert, mt)
 
 	assert.NotEmpty(spans[0].Tag(ext.Error))
 	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
