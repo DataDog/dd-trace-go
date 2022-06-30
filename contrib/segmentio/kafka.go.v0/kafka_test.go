@@ -35,7 +35,7 @@ to setup the integration test locally run:
 */
 
 func TestConsumerFunctional(t *testing.T) {
-	skipIntegrationTest(t)
+	// skipIntegrationTest(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
@@ -68,9 +68,23 @@ func TestConsumerFunctional(t *testing.T) {
 	assert.Equal(t, msg1[0].Value, msg2.Value, "Values should be equal")
 	r.Close()
 
+	t2ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	r2 := NewReader(kafka.ReaderConfig{
+		Brokers: []string{"localhost:9092"},
+		GroupID: testGroupID + "reader-2",
+		Topic:   testTopic,
+	})
+	msg3, err := r2.FetchMessage(t2ctx)
+	assert.NoError(t, err, "Expected to fetch message")
+	assert.Equal(t, msg1[0].Value, msg3.Value, "Values should be equal")
+
+	err = r2.CommitMessages(t2ctx, msg3)
+	assert.NoError(t, err, "Expected to commit message")
+	r2.Close()
+
 	// now verify the spans
 	spans := mt.FinishedSpans()
-	assert.Len(t, spans, 2)
+	assert.Len(t, spans, 4)
 	// they should be linked via headers
 	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID(), "Trace IDs should match")
 
@@ -89,4 +103,20 @@ func TestConsumerFunctional(t *testing.T) {
 	assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 	assert.Equal(t, 0, s1.Tag("partition"))
+
+	s3 := spans[2] // consume (fetch message)
+	assert.Equal(t, "kafka.consume", s3.OperationName())
+	assert.Equal(t, "kafka", s3.Tag(ext.ServiceName))
+	assert.Equal(t, "Consume Topic "+testTopic+" FetchMessage", s3.Tag(ext.ResourceName))
+	assert.Equal(t, nil, s3.Tag(ext.EventSampleRate))
+	assert.Equal(t, "queue", s3.Tag(ext.SpanType))
+	assert.Equal(t, 0, s3.Tag("partition"))
+
+	s4 := spans[3] // consume (commit message)
+	assert.Equal(t, "kafka.consume", s4.OperationName())
+	assert.Equal(t, "kafka", s4.Tag(ext.ServiceName))
+	assert.Equal(t, "Consume Topic "+testTopic+" CommitMessages", s4.Tag(ext.ResourceName))
+	assert.Equal(t, nil, s4.Tag(ext.EventSampleRate))
+	assert.Equal(t, "queue", s4.Tag(ext.SpanType))
+	assert.Equal(t, 0, s4.Tag("partition"))
 }

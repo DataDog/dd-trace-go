@@ -7,6 +7,7 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"math"
 
 	"github.com/segmentio/kafka-go"
@@ -44,10 +45,10 @@ type Reader struct {
 	prev ddtrace.Span
 }
 
-func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span {
+func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message, rn string) ddtrace.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(r.cfg.consumerServiceName),
-		tracer.ResourceName("Consume Topic " + msg.Topic),
+		tracer.ResourceName(rn),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag("partition", msg.Partition),
 		tracer.Tag("offset", msg.Offset),
@@ -86,12 +87,49 @@ func (r *Reader) ReadMessage(ctx context.Context) (kafka.Message, error) {
 		r.prev.Finish()
 		r.prev = nil
 	}
+
 	msg, err := r.Reader.ReadMessage(ctx)
 	if err != nil {
 		return kafka.Message{}, err
 	}
-	r.prev = r.startSpan(ctx, &msg)
+
+	r.prev = r.startSpan(ctx, &msg, fmt.Sprint("Consume Topic ", msg.Topic))
+
 	return msg, nil
+}
+
+// FetchMessage polls the consumer for a message. Message will be traced.
+func (r *Reader) FetchMessage(ctx context.Context) (kafka.Message, error) {
+	if r.prev != nil {
+		r.prev.Finish()
+		r.prev = nil
+	}
+	msg, err := r.Reader.FetchMessage(ctx)
+	if err != nil {
+		return kafka.Message{}, err
+	}
+	r.prev = r.startSpan(ctx, &msg, fmt.Sprint("Consume Topic ", msg.Topic, " FetchMessage"))
+	return msg, nil
+}
+
+// CommitMessages commit the given messages. Commit will be traced using the last message as reference.
+func (r *Reader) CommitMessages(ctx context.Context, msgs ...kafka.Message) error {
+	if r.prev != nil {
+		r.prev.Finish()
+		r.prev = nil
+	}
+
+	err := r.Reader.CommitMessages(ctx, msgs...)
+	if err != nil {
+		return err
+	}
+
+	if len(msgs) != 0 {
+		msg := msgs[len(msgs)-1]
+		r.prev = r.startSpan(ctx, &msg, fmt.Sprint("Consume Topic ", msg.Topic, " CommitMessages"))
+	}
+
+	return nil
 }
 
 // WrapWriter wraps a kafka.Writer so requests are traced.

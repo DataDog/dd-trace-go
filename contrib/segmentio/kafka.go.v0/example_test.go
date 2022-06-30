@@ -55,3 +55,35 @@ func ExampleReader() {
 	s := tracer.StartSpan(operationName, tracer.ChildOf(spanContext))
 	defer s.Finish()
 }
+
+func ExampleReaderFetchCommitMessages() {
+	r := kafkatrace.NewReader(kafka.ReaderConfig{
+		Brokers:        []string{"localhost:9092"},
+		Topic:          "some-topic",
+		GroupID:        "group-id",
+		SessionTimeout: 30 * time.Second,
+	})
+
+	ctx := context.Background()
+	msg, err := r.FetchMessage(ctx)
+	if err != nil {
+		log.Fatal("Failed to read message", err)
+	}
+
+	// create a child span using span id and trace id in message header
+	spanContext, err := kafkatrace.ExtractSpanContext(msg)
+	if err != nil {
+		log.Fatal("Failed to extract span context from carrier", err)
+	}
+	operationName := "child-span"
+	s := tracer.StartSpan(operationName, tracer.ChildOf(spanContext))
+	defer s.Finish()
+
+	// process your message :D
+
+	err = r.CommitMessages(ctx, msg)
+	if err != nil {
+		log.Fatal("Failed to commit message", err)
+	}
+
+}
