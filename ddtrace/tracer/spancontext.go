@@ -94,11 +94,11 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
-func (c *spanContext) setSamplingPriority(service string, p int, sampler samplernames.SamplerName, rate float64) {
+func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName, rate float64) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	c.trace.setSamplingPriority(service, p, sampler, rate, c.span)
+	c.trace.setSamplingPriority(p, sampler, rate, c.span)
 }
 
 func (c *spanContext) samplingPriority() (p int, ok bool) {
@@ -196,10 +196,10 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-func (t *trace) setSamplingPriority(service string, p int, sampler samplernames.SamplerName, rate float64, span *span) {
+func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName, rate float64, span *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setSamplingPriorityLocked(service, p, sampler, rate, span)
+	t.setSamplingPriorityLocked(p, sampler, rate, span)
 }
 
 func (t *trace) keep() {
@@ -224,7 +224,7 @@ func (t *trace) setPropagatingTag(key, value string) {
 	t.propagatingTags[key] = value
 }
 
-func (t *trace) setSamplingPriorityLocked(service string, p int, sampler samplernames.SamplerName, rate float64, span *span) {
+func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName, rate float64, span *span) {
 	if t.locked {
 		return
 	}
@@ -234,28 +234,12 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 	*t.priority = float64(p)
 	_, ok := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && !ok {
-		// we have a positive priority and the decision maker isn't set
-		t.setServiceDecisionMaker(service, sampler, span)
+		// we have a positive priority and the sampling mechanism isn't set
+		t.setPropagatingTag(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
 	}
 	if p <= 0 && ok {
 		delete(t.propagatingTags, keyDecisionMaker)
 	}
-}
-
-// setServiceDecisionMaker sets the service and sampler which took the sampling decision made for this trace and span.
-// It is not safe for concurrent use.
-func (t *trace) setServiceDecisionMaker(service string, sampler samplernames.SamplerName, s *span) {
-	serviceHash := Hash(service)
-	tr, ok := internal.GetGlobalTracer().(*tracer)
-	var propagatingHash string
-	if ok && tr.config.propagateServiceName {
-		propagatingHash = serviceHash
-	}
-	t.setPropagatingTag(keyDecisionMaker, propagatingHash+"-"+strconv.Itoa(int(sampler)))
-	if s == nil {
-		return
-	}
-	s.setMeta(keyServiceHash, serviceHash)
 }
 
 // push pushes a new span into the trace. If the buffer is full, it returns
@@ -278,7 +262,7 @@ func (t *trace) push(sp *span) {
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
-		t.setSamplingPriorityLocked(sp.Service, int(v), samplernames.Upstream, math.NaN(), nil)
+		t.setSamplingPriorityLocked(int(v), samplernames.Upstream, math.NaN(), nil)
 	}
 	t.spans = append(t.spans, sp)
 	if haveTracer {

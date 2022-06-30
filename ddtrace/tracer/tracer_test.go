@@ -572,7 +572,7 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 
 func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	assert := assert.New(t)
-	tracer, _, _, stop := startTestTracer(t, WithServicePropagation(true))
+	tracer, _, _, stop := startTestTracer(t)
 	defer stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &spanContext{
@@ -582,12 +582,12 @@ func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	}
 	child := tracer.StartSpan("db.query", ChildOf(spanCtx)).(*span)
 	assert.EqualValues(1, child.Metrics[keySamplingPriority])
-	assert.Equal("cb965d8102-1", child.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-1", child.context.trace.propagatingTags[keyDecisionMaker])
 }
 
 func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(WithServicePropagation(false))
+	tracer := newTracer()
 	defer tracer.Stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &spanContext{
@@ -792,7 +792,6 @@ func TestTracerPrioritySampler(t *testing.T) {
 
 	tr, _, flush, stop := startTestTracer(t,
 		withTransport(newHTTPTransport(addr, defaultClient)),
-		WithServicePropagation(true),
 	)
 	defer stop()
 
@@ -800,7 +799,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	s := tr.newEnvSpan("pylons", "")
 	assert.Equal(1., s.Metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.Metrics[keySamplingPriority])
-	assert.Equal("689bb95f05-1", s.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
 	p, ok := s.context.samplingPriority()
 	assert.True(ok)
 	assert.EqualValues(p, s.Metrics[keySamplingPriority])
@@ -837,7 +836,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 		assert.Equal(tt.rate, s.Metrics[keySamplingPriorityRate], strconv.Itoa(i))
 		prio, ok := s.Metrics[keySamplingPriority]
 		if prio > 0 {
-			assert.Equal(Hash(tt.service)+"-1", s.context.trace.propagatingTags[keyDecisionMaker])
+			assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
 		} else {
 			assert.Equal("", s.context.trace.propagatingTags[keyDecisionMaker])
 		}
