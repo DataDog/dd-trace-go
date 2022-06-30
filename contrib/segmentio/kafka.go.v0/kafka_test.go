@@ -35,7 +35,7 @@ to setup the integration test locally run:
 */
 
 func TestConsumerFunctional(t *testing.T) {
-	// skipIntegrationTest(t)
+	skipIntegrationTest(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
