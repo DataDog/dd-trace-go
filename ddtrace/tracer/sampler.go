@@ -188,66 +188,46 @@ func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	}
 }
 
-// samplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES environment variable
-// and combines them with spanSamplingRules
-func samplingRulesFromEnv() ([]SamplingRule, error) {
-	errs := []string{}
-	spanRules, err := spanSamplingRulesFromEnv()
-	if err != nil {
-		errs = append(errs, err.Error())
-	}
-	traceRules, err := traceSamplingRulesFromEnv()
-	if err != nil {
-		errs = append(errs, err.Error())
-	}
-	rules := []SamplingRule{}
-	if traceRules != nil {
-		rules = traceRules
-	}
-	if spanRules != nil {
-		rules = append(rules, spanRules...)
-	}
-	if len(errs) != 0 {
-		return rules, fmt.Errorf("%s", strings.Join(errs, "\n\t"))
-	}
-	return rules, nil
-}
-
-// traceSamplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES environment variable.
+// traceSamplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES environment variable
 func traceSamplingRulesFromEnv() ([]SamplingRule, error) {
 	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
 	if rulesFromEnv == "" {
 		return nil, nil
 	}
-	return processSamplingRulesFromEnv([]byte(rulesFromEnv), TraceSamplingRuleType)
+	return processSamplingRules([]byte(rulesFromEnv), false)
 }
 
 // spanSamplingRulesFromEnv parses sampling rules from the DD_SPAN_SAMPLING_RULES and
 // DD_SPAN_SAMPLING_RULES_FILE environment variables.
 func spanSamplingRulesFromEnv() ([]SamplingRule, error) {
-	errs := []string{}
-	rules, err := processSamplingRulesFromEnv([]byte(os.Getenv("DD_SPAN_SAMPLING_RULES")), SingleSpanSamplingType)
+	var errs []string
+	rulesFromEnv := os.Getenv("DD_SPAN_SAMPLING_RULES")
+	if rulesFromEnv == "" {
+		return nil, nil
+	}
+	rules, err := processSamplingRules([]byte(rulesFromEnv), true)
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
+	rulesFile := os.Getenv("DD_SPAN_SAMPLING_RULES_FILE")
 	if len(rules) != 0 {
-		if os.Getenv("DD_SPAN_SAMPLING_RULES_FILE") != "" {
+		if rulesFile != "" {
 			log.Warn("DIAGNOSTICS Error(s): DD_SPAN_SAMPLING_RULES is available and will take precedence over DD_SPAN_SAMPLING_RULES_FILE")
 		}
 		return rules, err
 	}
-	rulesFile := os.Getenv("DD_SPAN_SAMPLING_RULES_FILE")
 	if rulesFile == "" {
 		return rules, err
 	}
 	rulesFromEnvFile, err := os.ReadFile(rulesFile)
 	if err != nil {
 		log.Warn("Couldn't read file from DD_SPAN_SAMPLING_RULES_FILE")
+		return nil, err
 	}
-	return processSamplingRulesFromEnv(rulesFromEnvFile, SingleSpanSamplingType)
+	return processSamplingRules(rulesFromEnvFile, true)
 }
 
-func processSamplingRulesFromEnv(b []byte, ruleType SamplingRuleType) ([]SamplingRule, error) {
+func processSamplingRules(b []byte, isIndividualSamplingRule bool) ([]SamplingRule, error) {
 	if len(b) == 0 {
 		return nil, nil
 	}
@@ -277,7 +257,7 @@ func processSamplingRulesFromEnv(b []byte, ruleType SamplingRuleType) ([]Samplin
 			log.Warn("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v)
 			continue
 		}
-		if ruleType == SingleSpanSamplingType {
+		if isIndividualSamplingRule {
 			if v.Service == "" {
 				v.Service = "*"
 			}
@@ -299,7 +279,6 @@ func processSamplingRulesFromEnv(b []byte, ruleType SamplingRuleType) ([]Samplin
 				Name:         opGlob,
 				Rate:         rate,
 				MaxPerSecond: v.MaxPerSecond,
-				Type:         SingleSpanSamplingType,
 				limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
 			})
 			continue
@@ -422,17 +401,6 @@ func (rs *rulesSampler) limit() (float64, bool) {
 	return math.NaN(), false
 }
 
-// SamplingRuleType represents a sampling rule type spans are matched against.
-type SamplingRuleType int
-
-const (
-	// TraceSamplingRuleType rules match spans and influence sampling decision.
-	TraceSamplingRuleType = iota
-	// SingleSpanSamplingType rules are matched against all spans regardless of
-	// sampling decision. Such spans might be sent separately.
-	SingleSpanSamplingType
-)
-
 // SamplingRule is used for applying sampling rates to spans that match
 // the service name, operation name or both.
 // For basic usage, consider using the helper functions ServiceRule, NameRule, etc.
@@ -441,7 +409,6 @@ type SamplingRule struct {
 	Name         *regexp.Regexp
 	Rate         float64
 	MaxPerSecond float64
-	Type         SamplingRuleType
 
 	exactService string
 	exactName    string

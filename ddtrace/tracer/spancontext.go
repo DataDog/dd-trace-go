@@ -304,8 +304,8 @@ func (t *trace) finishedOne(s *span) {
 	if !ok {
 		return
 	}
-	for i := range t.spans {
-		tr.singleSpanRulesSampling.apply(t.spans[i])
+	for _, span := range t.spans {
+		tr.singleSpanRulesSampling.apply(span)
 	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
@@ -316,9 +316,9 @@ func (t *trace) finishedOne(s *span) {
 			atomic.AddUint64(&tr.droppedP0Traces, 1)
 		}
 		//if trace sampling decision is drop, we still want to send single spans
-		singleSpans := []*span{}
+		var singleSpans []*span
 		for i, span := range t.spans {
-			if _, ok := span.Metrics[ext.SpanSamplingMechanism]; ok {
+			if _, ok := span.Metrics[spanSamplingMechanism]; ok {
 				singleSpans = append(singleSpans, t.spans[i])
 			}
 		}

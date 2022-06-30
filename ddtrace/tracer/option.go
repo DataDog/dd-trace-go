@@ -118,12 +118,14 @@ type config struct {
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
 
-	// traceSamplingRules contains user-defined rules determine the sampling rate to apply
-	// to trace spans.
+	// traceSamplingRules contains user-defined rules to determine the sampling rate to apply
+	// to trace spans. If a span matches a rule, it will impact the trace sampling decision.
 	traceSamplingRules []SamplingRule
 
-	// spanSamplingRules contains user-defined rules determine the sampling rate to apply
-	// to single spans, regardless of the trace sampling decision.
+	// spanSamplingRules contains user-defined rules to determine the sampling rate to apply
+	// to single spans. If a span matches a rule, it will NOT impact the trace sampling decision.
+	// In the case that a trace is dropped and thus not sent to the Agent, spans kept on account
+	// of matching span sampling rules must be conveyed separately.
 	spanSamplingRules []SamplingRule
 
 	// tickChan specifies a channel which will receive the time every time the tracer must flush.
@@ -660,7 +662,7 @@ func WithDogstatsdAddress(addr string) StartOption {
 
 // WithSamplingRules specifies the sampling rates to apply to trace spans based on the
 // provided rules.
-// todo(shevchenko): there might be a need to add an analogous option for
+// TODO(shevchenko): there might be a need to add an analogous option for
 // single span sampling rules
 func WithSamplingRules(rules []SamplingRule) StartOption {
 	return func(cfg *config) {

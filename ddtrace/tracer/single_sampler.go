@@ -6,7 +6,10 @@
 package tracer
 
 import (
+	"fmt"
 	"math"
+	"regexp"
+	"strings"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -18,21 +21,21 @@ import (
 // singleSpanRulesSampler allows a user-defined list of rules to apply to spans
 // to sample single spans.
 // These rules match based on the span's Service and Name. If empty value is supplied
-// to either Service or Name field, it will default to "*", allow all
+// to either Service or Name field, it will default to "*", allow all.
 // When making a sampling decision, the rules are checked in order until
 // a match is found.
 // If a match is found, the rate from that rule is used.
 // If no match is found, no changes or further sampling is applied to the spans.
 // The rate is used to determine if the span should be sampled, but an upper
 // limit can be defined using the max_per_second field when supplying the rule.
-// If such value is absent in the rule, the default is allow all.
+// If max_per_second is absent in the rule, the default is allow all.
 // Its value is the max number of spans to sample per second.
 // Spans that matched the rules but exceeded the rate limit are not sampled.
 type singleSpanRulesSampler struct {
 	rules []SamplingRule // the rules to match spans with
 }
 
-// newRulesSampler configures a *rulesSampler instance using the given set of rules.
+// newSingleSpanRulesSampler configures a *singleSpanRulesSampler instance using the given set of rules.
 // Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
 func newSingleSpanRulesSampler(rules []SamplingRule) *singleSpanRulesSampler {
 	return &singleSpanRulesSampler{
@@ -40,19 +43,33 @@ func newSingleSpanRulesSampler(rules []SamplingRule) *singleSpanRulesSampler {
 	}
 }
 
+const (
+	// spanSamplingMechanism specifies the sampling mechanism by which an individual span was sampled
+	spanSamplingMechanism = "_dd.span_sampling.mechanism"
+
+	// singleSpanSamplingMechanism specifies value reserved to indicate that a span was kept
+	// on account of a single span sampling rule.
+	singleSpanSamplingMechanism = 8
+
+	// singleSpanSamplingRuleRate specifies the configured sampling probability for the single span sampling rule.
+	singleSpanSamplingRuleRate = "_dd.span_sampling.rule_rate"
+
+	// singleSpanSamplingMPS specifies the configured limit for the single span sampling rule
+	// that the span matched. If there is no configured limit, then this tag is omitted.
+	singleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
+)
+
 // apply uses the sampling rules to determine the sampling rate for the
 // provided span. If the rules don't match, then it returns false and the span is not
 // modified.
 func (rs *singleSpanRulesSampler) apply(span *span) bool {
-	var matched bool
 	for _, rule := range rs.rules {
 		if rule.match(span) {
-			matched = true
 			rs.applyRate(span, rule, rule.Rate, time.Now())
-			break
+			return true
 		}
 	}
-	return matched
+	return false
 }
 
 func (rs *singleSpanRulesSampler) applyRate(span *span, rule SamplingRule, rate float64, now time.Time) {
@@ -62,21 +79,21 @@ func (rs *singleSpanRulesSampler) applyRate(span *span, rule SamplingRule, rate 
 		return
 	}
 
-	sampled := true
+	var sampled bool
 	if rule.limiter != nil {
 		sampled, rate = rule.limiter.allowOne(now)
 		if !sampled {
 			return
 		}
 	}
-	span.setMetric(ext.SpanSamplingMechanism, ext.SingleSpanSamplingMechanism)
-	span.setMetric(ext.SingleSpanSamplingRuleRate, rate)
+	span.setMetric(spanSamplingMechanism, singleSpanSamplingMechanism)
+	span.setMetric(singleSpanSamplingRuleRate, rate)
 	if rule.MaxPerSecond != 0 {
-		span.setMetric(ext.SingleSpanSamplingMPS, rule.MaxPerSecond)
+		span.setMetric(singleSpanSamplingMPS, rule.MaxPerSecond)
 	}
 }
 
-// newRateLimiter returns a rate limiter which restricts the number of single spans sampled per second.
+// newSingleSpanRateLimiter returns a rate limiter which restricts the number of single spans sampled per second.
 // This defaults to infinite, allow all behaviour. The MaxPerSecond value of the rule may override the default.
 func newSingleSpanRateLimiter(mps float64) *rateLimiter {
 	limit := math.MaxFloat64
@@ -87,4 +104,16 @@ func newSingleSpanRateLimiter(mps float64) *rateLimiter {
 		limiter:  rate.NewLimiter(rate.Limit(limit), int(math.Ceil(limit))),
 		prevTime: time.Now(),
 	}
+}
+
+// globMatch compiles pattern string into glob format, i.e. regular expressions with only '?'
+// and '*' treated as regex metacharacters.
+func globMatch(pattern string) (*regexp.Regexp, error) {
+	// escaping regex characters
+	pattern = regexp.QuoteMeta(pattern)
+	// replacing '?' and '*' with regex characters
+	pattern = strings.Replace(pattern, "\\?", ".", -1)
+	pattern = strings.Replace(pattern, "\\*", ".*", -1)
+	//pattern must match an entire string
+	return regexp.Compile(fmt.Sprintf("^%s$", pattern))
 }

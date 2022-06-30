@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -106,8 +107,15 @@ func logStartup(t *tracer) {
 		AgentFeatures:               t.config.agent,
 		AppSec:                      appsec.Enabled(),
 	}
-	if _, err := samplingRulesFromEnv(); err != nil {
-		info.SamplingRulesError = fmt.Sprintf("%s", err)
+	var errs []string
+	if _, err := traceSamplingRulesFromEnv(); err != nil {
+		errs = append(errs, err.Error())
+	}
+	if _, err := spanSamplingRulesFromEnv(); err != nil {
+		errs = append(errs, err.Error())
+	}
+	if errs != nil {
+		info.SamplingRulesError = fmt.Sprintf("%s", strings.Join(errs, "\n\t"))
 	}
 
 	if limit, ok := t.rulesSampling.limit(); ok {

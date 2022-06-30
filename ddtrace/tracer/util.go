@@ -8,7 +8,6 @@ package tracer
 import (
 	"encoding/base64"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -129,16 +128,4 @@ var b64 = base64.StdEncoding.WithPadding(base64.NoPadding)
 
 func b64Encode(s string) string {
 	return b64.EncodeToString([]byte(s))
-}
-
-// globMatch compiles pattern string into glob format, i.e. regular expressions with only '?'
-// and '*' treated as regex metacharacters.
-func globMatch(pattern string) (*regexp.Regexp, error) {
-	// escaping regex characters
-	pattern = regexp.QuoteMeta(pattern)
-	// replacing '?' and '*' with regex characters
-	pattern = strings.Replace(pattern, "\\?", ".", -1)
-	pattern = strings.Replace(pattern, "\\*", ".*", -1)
-	//pattern must match an entire string
-	return regexp.Compile(fmt.Sprintf("^%s$", pattern))
 }

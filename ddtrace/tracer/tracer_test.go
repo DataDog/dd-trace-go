@@ -367,7 +367,6 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, "", span.context.trace.tags[keyUpstreamServices])
 		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
 	})
-	//todo rename
 	t.Run("client_dropped_with_single_spans", func(t *testing.T) {
 		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
@@ -386,9 +385,9 @@ func TestSamplingDecision(t *testing.T) {
 		// therefore not necessary to populate keyUpstreamServices
 		assert.Equal(t, "", span.context.trace.tags[keyUpstreamServices])
 		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
-		assert.Equal(t, 8.0, span.Metrics[ext.SpanSamplingMechanism])
-		assert.Equal(t, 1.0, span.Metrics[ext.SingleSpanSamplingRuleRate])
-		assert.Equal(t, 15.0, span.Metrics[ext.SingleSpanSamplingMPS])
+		assert.Equal(t, 8.0, span.Metrics[spanSamplingMechanism])
+		assert.Equal(t, 1.0, span.Metrics[singleSpanSamplingRuleRate])
+		assert.Equal(t, 15.0, span.Metrics[singleSpanSamplingMPS])
 	})
 }
 

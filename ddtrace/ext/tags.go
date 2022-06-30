@@ -79,19 +79,6 @@ const (
 	// Search & Analytics event.
 	AnalyticsEvent = "analytics.event"
 
-	// SpanSamplingMechanism is the metric key holding a span sampling rule that a span was kept on
-	SpanSamplingMechanism = "_dd.span_sampling.mechanism"
-
-	// SingleSpanSamplingMechanism is a constant reserved to indicate that a span was kept on account of a span sampling rule.
-	SingleSpanSamplingMechanism = 8
-
-	// SingleSpanSamplingRuleRate is the metric key containing the configured sampling probability for the span sampling rule.
-	SingleSpanSamplingRuleRate = "_dd.span_sampling.rule_rate"
-
-	// SingleSpanSamplingMPS is the metric key contains the configured limit for the span sampling rule that the span matched.
-	//	// If there is no configured limit, then this tag is omitted.
-	SingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
-
 	// ManualKeep is a tag which specifies that the trace to which this span
 	// belongs to should be kept when set to true.
 	ManualKeep = "manual.keep"

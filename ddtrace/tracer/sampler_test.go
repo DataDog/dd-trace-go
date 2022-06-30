@@ -260,7 +260,7 @@ func TestRuleEnvVars(t *testing.T) {
 		} {
 			t.Run("", func(t *testing.T) {
 				os.Setenv("DD_TRACE_SAMPLING_RULES", tt.value)
-				rules, err := samplingRulesFromEnv()
+				rules, err := traceSamplingRulesFromEnv()
 				if tt.errStr == "" {
 					assert.NoError(err)
 				} else {
@@ -270,6 +270,7 @@ func TestRuleEnvVars(t *testing.T) {
 			})
 		}
 	})
+
 	t.Run("span-sampling-rules", func(t *testing.T) {
 		assert := assert.New(t)
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
@@ -299,7 +300,7 @@ func TestRuleEnvVars(t *testing.T) {
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
 				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.value)
-				rules, err := samplingRulesFromEnv()
+				rules, err := spanSamplingRulesFromEnv()
 				if tt.errStr == "" {
 					assert.NoError(err)
 				} else {
@@ -340,7 +341,7 @@ func TestRuleEnvVars(t *testing.T) {
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
 				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
-				rules, err := samplingRulesFromEnv()
+				rules, err := spanSamplingRulesFromEnv()
 				assert.NoError(err)
 				assert.Equal(tt.srvRegex, rules[0].Service.String())
 				assert.Equal(tt.nameRegex, rules[0].Name.String())
@@ -431,7 +432,7 @@ func TestRulesSampler(t *testing.T) {
 		} {
 			t.Run("", func(t *testing.T) {
 				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
-				rules, _ := samplingRulesFromEnv()
+				rules, _ := spanSamplingRulesFromEnv()
 
 				assert := assert.New(t)
 				rs := newSingleSpanRulesSampler(rules)
@@ -439,12 +440,13 @@ func TestRulesSampler(t *testing.T) {
 				span := makeSpan(tt.spanName, tt.spanSrv)
 				result := rs.apply(span)
 				assert.True(result)
-				assert.Contains(span.Metrics, ext.SpanSamplingMechanism)
-				assert.Contains(span.Metrics, ext.SingleSpanSamplingRuleRate)
-				assert.Contains(span.Metrics, ext.SingleSpanSamplingMPS)
+				assert.Contains(span.Metrics, spanSamplingMechanism)
+				assert.Contains(span.Metrics, singleSpanSamplingRuleRate)
+				assert.Contains(span.Metrics, singleSpanSamplingMPS)
 			})
 		}
 	})
+
 	t.Run("not-matching-span-rules", func(t *testing.T) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		for _, tt := range []struct {
@@ -471,7 +473,7 @@ func TestRulesSampler(t *testing.T) {
 		} {
 			t.Run("", func(t *testing.T) {
 				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
-				rules, _ := samplingRulesFromEnv()
+				rules, _ := spanSamplingRulesFromEnv()
 
 				assert := assert.New(t)
 				rs := newRulesSampler(rules)
@@ -479,9 +481,9 @@ func TestRulesSampler(t *testing.T) {
 				span := makeSpan(tt.spanName, tt.spanSrv)
 				result := rs.apply(span)
 				assert.False(result)
-				assert.NotContains(span.Metrics, ext.SpanSamplingMechanism)
-				assert.NotContains(span.Metrics, ext.SingleSpanSamplingRuleRate)
-				assert.NotContains(span.Metrics, ext.SingleSpanSamplingMPS)
+				assert.NotContains(span.Metrics, spanSamplingMechanism)
+				assert.NotContains(span.Metrics, singleSpanSamplingRuleRate)
+				assert.NotContains(span.Metrics, singleSpanSamplingMPS)
 			})
 		}
 	})
@@ -511,7 +513,7 @@ func TestRulesSampler(t *testing.T) {
 			t.Run("", func(t *testing.T) {
 				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.spanRules)
 				os.Setenv("DD_TRACE_SAMPLING_RULES", tt.traceRules)
-				rules, _ := samplingRulesFromEnv()
+				rules, _ := spanSamplingRulesFromEnv()
 
 				assert := assert.New(t)
 				rs := newRulesSampler(rules)
@@ -519,9 +521,9 @@ func TestRulesSampler(t *testing.T) {
 				span := makeSpan(tt.spanName, tt.spanSrv)
 				result := rs.apply(span)
 				assert.True(result)
-				assert.NotContains(span.Metrics, ext.SpanSamplingMechanism)
-				assert.NotContains(span.Metrics, ext.SingleSpanSamplingRuleRate)
-				assert.NotContains(span.Metrics, ext.SingleSpanSamplingMPS)
+				assert.NotContains(span.Metrics, spanSamplingMechanism)
+				assert.NotContains(span.Metrics, singleSpanSamplingRuleRate)
+				assert.NotContains(span.Metrics, singleSpanSamplingMPS)
 			})
 		}
 	})
@@ -787,4 +789,55 @@ func BenchmarkRulesSampler(b *testing.B) {
 		tracer := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
+}
+
+func TestGlobMatch(t *testing.T) {
+	for i, tt := range []struct {
+		pattern     string
+		input       string
+		shouldMatch bool
+	}{
+		// pattern with *
+		{"test*", "test", true},
+		{"test*", "test-case", true},
+		{"test*", "a-test", false},
+		{"*test", "a-test", true},
+		{"a*case", "acase", true},
+		{"a*case", "a-test-case", true},
+		{"a*test*case", "a-test-case", true},
+		{"a*test*case", "atestcase", true},
+		{"a*test*case", "abadcase", false},
+		// pattern with ?
+		{"test?", "test", false},
+		{"test?", "test-case", false},
+		{"test?", "a-test", false},
+		{"?test", "a-test", false},
+		{"a?case", "acase", false},
+		{"a?case", "a-case", true},
+		{"a?test?case", "a-test-case", true},
+		{"a?test?case", "a-test--case", false},
+		// pattern with ? and *
+		{"?test*", "atest", true},
+		{"?test*", "atestcase", true},
+		{"?test*", "testcase", false},
+		{"?test*", "testcase", false},
+		{"test*case", "testcase", true},
+		{"a?test*", "a-test-case", true},
+		{"a?test*", "atestcase", false},
+		{"a*test?", "a-test-", true},
+		{"a*test?", "atestcase", false},
+		{"a*test?case", "a--test-case", true},
+		{"a*test?case", "a--test--case", false},
+		{"a?test*case", "a-testing--case", true},
+		{"the?test*case", "the-test-cases", false},
+	} {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			rg, _ := globMatch(tt.pattern)
+			if tt.shouldMatch {
+				assert.Regexp(t, rg, tt.input)
+			} else {
+				assert.NotRegexp(t, rg, tt.input)
+			}
+		})
+	}
 }
