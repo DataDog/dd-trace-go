@@ -155,7 +155,7 @@ func TestResourceNamerSettingsV8(t *testing.T) {
 			DocumentID: "1",
 		}.Do(context.Background(), client)
 
-		span := mt.FinishedSpans()[1]
+		span := mt.FinishedSpans()[0]
 		assert.Equal(t, "GET /logs_?_?/event/_search/tweet/?", span.Tag(ext.ResourceName))
 	})
 
