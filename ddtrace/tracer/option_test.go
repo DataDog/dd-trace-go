@@ -452,7 +452,10 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 func TestDefaultHTTPClient(t *testing.T) {
 	t.Run("no-socket", func(t *testing.T) {
-		assert.Equal(t, defaultHTTPClient(), defaultClient)
+		// We care that whether clients are different, but doing a deep
+		// comparison is overkill and can trigger the race detector, so
+		// just compare the pointers.
+		assert.Same(t, defaultHTTPClient(), defaultClient)
 	})
 
 	t.Run("socket", func(t *testing.T) {
@@ -466,7 +469,7 @@ func TestDefaultHTTPClient(t *testing.T) {
 		defer os.RemoveAll(f.Name())
 		defer func(old string) { defaultSocketAPM = old }(defaultSocketAPM)
 		defaultSocketAPM = f.Name()
-		assert.NotEqual(t, defaultHTTPClient(), defaultClient)
+		assert.NotSame(t, defaultHTTPClient(), defaultClient)
 	})
 }
 

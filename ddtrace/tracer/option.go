@@ -896,7 +896,7 @@ func WithUserRole(role string) UserMonitoringOption {
 	}
 }
 
-// WithUserScope returns the option setting the scope (authorizations) of the authenticated user
+// WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
 	return func(s Span) {
 		s.SetTag("usr.scope", scope)

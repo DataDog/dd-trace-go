@@ -25,7 +25,7 @@ require (
 	github.com/fatih/color v1.9.0 // indirect
 	github.com/frankban/quicktest v1.13.0 // indirect
 	github.com/garyburd/redigo v1.6.3
-	github.com/gin-gonic/gin v1.7.0
+	github.com/gin-gonic/gin v1.7.7
 	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
 	github.com/go-chi/chi v1.5.0
 	github.com/go-chi/chi/v5 v5.0.0
@@ -105,6 +105,7 @@ require (
 	gorm.io/driver/postgres v1.0.0
 	gorm.io/driver/sqlserver v1.0.4
 	gorm.io/gorm v1.20.6
+	inet.af/netaddr v0.0.0-20211027220019-c74959edd3b6
 	k8s.io/apimachinery v0.17.0
 	k8s.io/client-go v0.17.0
 )
