@@ -202,7 +202,7 @@ func TestAnalyticsSettingsV8(t *testing.T) {
 		assert.NoError(t, err)
 
 		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 2)
+		assert.Len(t, spans, 1)
 		s := spans[0]
 		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 	}
