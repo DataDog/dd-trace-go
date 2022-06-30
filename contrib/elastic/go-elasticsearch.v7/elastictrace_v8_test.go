@@ -156,7 +156,7 @@ func TestResourceNamerSettingsV8(t *testing.T) {
 		}.Do(context.Background(), client)
 
 		span := mt.FinishedSpans()[0]
-		assert.Equal(t, "GET /logs_?_?/event/_search/tweet/?", span.Tag(ext.ResourceName))
+		assert.Equal(t, "GET /logs_?_?/event/_search/_doc/?", span.Tag(ext.ResourceName))
 	})
 
 	t.Run("custom", func(t *testing.T) {
@@ -203,7 +203,7 @@ func TestAnalyticsSettingsV8(t *testing.T) {
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 2)
-		s := spans[1]
+		s := spans[0]
 		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 	}
 
