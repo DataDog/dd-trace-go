@@ -487,46 +487,6 @@ func TestRulesSampler(t *testing.T) {
 			})
 		}
 	})
-	t.Run("not-matching-span-rules/matching-trace-rules", func(t *testing.T) {
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
-		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
-		for _, tt := range []struct {
-			spanRules  string
-			traceRules string
-			spanSrv    string
-			spanName   string
-		}{
-			{
-				//first matching rule takes precedence
-				spanRules:  `[{"name": "abcdef?", "sample_rate": 1.0}]`,
-				traceRules: `[{"name": "abcdef", "sample_rate": 1.0},{"name": "abcd?", "sample_rate": 1.0}]`,
-				spanName:   "abcdef",
-				spanSrv:    "test-service",
-			},
-			{
-				spanRules:  `[{"service": "abcde", "sample_rate": 1.0}]`,
-				traceRules: `[{"service": "abcd", "sample_rate": 1.0}]`,
-				spanSrv:    "abcd",
-				spanName:   "abcde",
-			},
-		} {
-			t.Run("", func(t *testing.T) {
-				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.spanRules)
-				os.Setenv("DD_TRACE_SAMPLING_RULES", tt.traceRules)
-				rules, _ := spanSamplingRulesFromEnv()
-
-				assert := assert.New(t)
-				rs := newRulesSampler(rules)
-
-				span := makeSpan(tt.spanName, tt.spanSrv)
-				result := rs.apply(span)
-				assert.True(result)
-				assert.NotContains(span.Metrics, spanSamplingMechanism)
-				assert.NotContains(span.Metrics, singleSpanSamplingRuleRate)
-				assert.NotContains(span.Metrics, singleSpanSamplingMPS)
-			})
-		}
-	})
 
 	t.Run("default-rate", func(t *testing.T) {
 		ruleSets := [][]SamplingRule{
