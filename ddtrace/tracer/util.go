@@ -71,7 +71,7 @@ func parseUint64(str string) (uint64, error) {
 	return strconv.ParseUint(str, 10, 64)
 }
 
-func isValidPropagatableTraceTag(k, v string) error {
+func isValidPropagatableTag(k, v string) error {
 	if len(k) == 0 {
 		return fmt.Errorf("key length must be greater than zero")
 	}

@@ -272,29 +272,30 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 		return nil
 	}
 	// propagate trace tags
-	sb := p.formatPropagatingTags(ctx)
-	if sb.Len() > 0 {
-		writer.Set(traceTagsHeader, sb.String())
+	s := p.marshalPropagatingTags(ctx)
+	if len(s) > 0 {
+		writer.Set(traceTagsHeader, s)
 	}
 	return nil
 }
 
-func (p *propagator) formatPropagatingTags(ctx *spanContext) strings.Builder {
+// marshalPropagatingTags marshals all propagating tags included in ctx to a comma separated string
+func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 	var sb strings.Builder
 	if ctx.trace == nil {
-		return sb
+		return ""
 	}
 	ctx.trace.mu.Lock()
 	defer ctx.trace.mu.Unlock()
 	for k, v := range ctx.trace.propagatingTags {
-		if err := isValidPropagatableTraceTag(k, v); err != nil {
-			log.Warn("won't propagate tag '%s' (err: %s)", k, err.Error())
+		if err := isValidPropagatableTag(k, v); err != nil {
+			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
 			ctx.trace.setTag(propagationErrorKey, "encoding_error")
 			continue
 		}
 		if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
 			sb.Reset()
-			log.Warn("won't propagate trace tags (err: max trace tags header len (%d) reached)", p.cfg.MaxTagsHeaderLen)
+			log.Warn("Won't propagate tag: maximum trace tags header len (%d) reached.", p.cfg.MaxTagsHeaderLen)
 			ctx.trace.setTag(propagationErrorKey, "inject_max_size")
 			break
 		}
@@ -305,7 +306,7 @@ func (p *propagator) formatPropagatingTags(ctx *spanContext) strings.Builder {
 		sb.WriteByte('=')
 		sb.WriteString(v)
 	}
-	return sb
+	return sb.String()
 }
 
 func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
@@ -342,7 +343,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		case originHeader:
 			ctx.origin = v
 		case traceTagsHeader:
-			extractPropagatingTags(&ctx, v, err)
+			unmarshalPropagatingTags(&ctx, v)
 		default:
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
@@ -359,20 +360,22 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 	return &ctx, nil
 }
 
-func extractPropagatingTags(ctx *spanContext, v string, err error) {
+// unmarshalPropagatingTags unmarshals tags from v into ctx
+func unmarshalPropagatingTags(ctx *spanContext, v string) {
 	if ctx.trace == nil {
 		ctx.trace = newTrace()
 	}
 	ctx.trace.mu.Lock()
 	defer ctx.trace.mu.Unlock()
 	if len(v) > propagationExtractMaxSize {
-		log.Warn("did not extract trace tags, longer than max size limit: %d", propagationExtractMaxSize)
+		log.Warn("Did not extract %s, size limit exceeded: %d. Incoming tags will not be propagated further.", traceTagsHeader, propagationExtractMaxSize)
 		ctx.trace.setTag(propagationErrorKey, "extract_max_size")
 		return
 	}
+	var err error
 	ctx.trace.propagatingTags, err = parsePropagatableTraceTags(v)
 	if err != nil {
-		log.Warn("did not extract trace tags (err: %s)", err.Error())
+		log.Warn("Did not extract %s: %v. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
 		ctx.trace.setTag(propagationErrorKey, "decoding_error")
 	}
 }
