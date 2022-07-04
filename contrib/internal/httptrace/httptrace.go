@@ -48,7 +48,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	opts = append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, r.Method),
-		tracer.Tag(ext.HTTPURL, getURL(r)),
+		tracer.Tag(ext.HTTPURL, urlFromRequest(r)),
 		tracer.Tag(ext.HTTPUserAgent, r.UserAgent()),
 		tracer.Measured(),
 	}, opts...)
@@ -155,10 +155,10 @@ func isGlobal(ip netaddr.IP) bool {
 	return isGlobal
 }
 
-// getURL returns the full URL of the http request. If query params are collected, they will be obfuscated granted
+// urlFromRequest returns the full URL from the HTTP request. If query params are collected, they are obfuscated granted
 // obfuscation is not disabled by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
 // For more information see https://datadoghq.atlassian.net/wiki/spaces/APM/pages/2357395856/Span+attributes#http.url
-func getURL(r *http.Request) string {
+func urlFromRequest(r *http.Request) string {
 	// Quoting net/http comments about net.Request.URL on server requests:
 	// "For most requests, fields other than Path and RawQuery will be
 	// empty. (See RFC 7230, Section 5.3)"

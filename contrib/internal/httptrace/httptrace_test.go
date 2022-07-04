@@ -291,7 +291,7 @@ func TestURLTag(t *testing.T) {
 			if tc.port != "" {
 				r.Host += ":" + tc.port
 			}
-			url := getURL(&r)
+			url := urlFromRequest(&r)
 			require.Equal(t, tc.expectedURL, url)
 		})
 	}
