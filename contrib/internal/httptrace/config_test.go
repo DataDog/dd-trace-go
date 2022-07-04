@@ -27,28 +27,28 @@ func TestConfig(t *testing.T) {
 		{
 			name: "bad-values",
 			env: map[string]string{
-				queryStringDisabledEnvVar:    "invalid",
-				clientIPHeaderDisabledEnvVar: "invalid",
-				queryStringObfRegexpEnvVar:   "+",
+				envQueryStringDisabled:    "invalid",
+				envClientIPHeaderDisabled: "invalid",
+				envQueryStringRegexp:      "+",
 			},
 		},
 		{
 			name: "disable-query",
-			env:  map[string]string{queryStringDisabledEnvVar: "true"},
+			env:  map[string]string{envQueryStringDisabled: "true"},
 			cfgSetter: func(c *config) {
 				c.collectQueryString = false
 			},
 		},
 		{
 			name: "disable-ip",
-			env:  map[string]string{clientIPHeaderDisabledEnvVar: "true"},
+			env:  map[string]string{envClientIPHeaderDisabled: "true"},
 			cfgSetter: func(c *config) {
 				c.collectIP = false
 			},
 		},
 		{
 			name: "disable-query-obf",
-			env:  map[string]string{queryStringObfRegexpEnvVar: ""},
+			env:  map[string]string{envQueryStringRegexp: ""},
 			cfgSetter: func(c *config) {
 				c.queryStringObfRegexp = nil
 			},
@@ -74,10 +74,10 @@ func TestConfig(t *testing.T) {
 
 func cleanEnv() func() {
 	env := map[string]string{
-		queryStringDisabledEnvVar:    os.Getenv(queryStringDisabledEnvVar),
-		queryStringObfRegexpEnvVar:   os.Getenv(queryStringObfRegexpEnvVar),
-		clientIPHeaderDisabledEnvVar: os.Getenv(clientIPHeaderDisabledEnvVar),
-		clientIPHeaderEnvVar:         os.Getenv(clientIPHeaderEnvVar),
+		envQueryStringDisabled:    os.Getenv(envQueryStringDisabled),
+		envQueryStringRegexp:      os.Getenv(envQueryStringRegexp),
+		envClientIPHeaderDisabled: os.Getenv(envClientIPHeaderDisabled),
+		envClientIPHeader:         os.Getenv(envClientIPHeader),
 	}
 
 	for k := range env {
