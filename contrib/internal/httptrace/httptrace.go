@@ -57,7 +57,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			tracer.Tag("http.host", r.Host),
 		}, opts...)
 	}
-	if cfg.collectIP {
+	if cfg.clientIP {
 		opts = append(genClientIPSpanTags(r), opts...)
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
@@ -176,10 +176,10 @@ func urlFromRequest(r *http.Request) string {
 	}
 	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
 	// https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2490990623/QueryString+-+Sensitive+Data+Obfuscation
-	if cfg.collectQueryString && r.URL.RawQuery != "" {
+	if cfg.queryString && r.URL.RawQuery != "" {
 		query := r.URL.RawQuery
-		if cfg.queryStringObfRegexp != nil {
-			query = cfg.queryStringObfRegexp.ReplaceAllLiteralString(query, "<redacted>")
+		if cfg.queryStringRegexp != nil {
+			query = cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")
 		}
 		url = strings.Join([]string{url, query}, "?")
 	}

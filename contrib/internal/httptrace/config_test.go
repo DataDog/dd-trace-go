@@ -13,16 +13,19 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	restore := cleanEnv()
-	defaultCfg := newConfig()
-	restore()
+	defaultCfg := config{
+		clientIP:          true,
+		queryString:       true,
+		queryStringRegexp: defaultQueryStringRegexp,
+	}
 	for _, tc := range []struct {
-		name      string
-		env       map[string]string
-		cfgSetter func(*config)
+		name string
+		env  map[string]string
+		cfg  config // cfg is the expected output config
 	}{
 		{
 			name: "empty-env",
+			cfg:  defaultCfg,
 		},
 		{
 			name: "bad-values",
@@ -31,26 +34,30 @@ func TestConfig(t *testing.T) {
 				envClientIPHeaderDisabled: "invalid",
 				envQueryStringRegexp:      "+",
 			},
+			cfg: defaultCfg,
 		},
 		{
 			name: "disable-query",
 			env:  map[string]string{envQueryStringDisabled: "true"},
-			cfgSetter: func(c *config) {
-				c.collectQueryString = false
+			cfg: config{
+				clientIP:          true,
+				queryStringRegexp: defaultQueryStringRegexp,
 			},
 		},
 		{
 			name: "disable-ip",
 			env:  map[string]string{envClientIPHeaderDisabled: "true"},
-			cfgSetter: func(c *config) {
-				c.collectIP = false
+			cfg: config{
+				queryString:       true,
+				queryStringRegexp: defaultQueryStringRegexp,
 			},
 		},
 		{
 			name: "disable-query-obf",
 			env:  map[string]string{envQueryStringRegexp: ""},
-			cfgSetter: func(c *config) {
-				c.queryStringObfRegexp = nil
+			cfg: config{
+				queryString: true,
+				clientIP:    true,
 			},
 		},
 	} {
@@ -59,15 +66,11 @@ func TestConfig(t *testing.T) {
 			for k, v := range tc.env {
 				os.Setenv(k, v)
 			}
-			expectedCfg := defaultCfg
-			if tc.cfgSetter != nil {
-				tc.cfgSetter(&expectedCfg)
-			}
 			c := newConfig()
-			require.Equal(t, expectedCfg.queryStringObfRegexp, c.queryStringObfRegexp)
-			require.Equal(t, expectedCfg.collectQueryString, c.collectQueryString)
-			require.Equal(t, expectedCfg.clientIPHeader, c.clientIPHeader)
-			require.Equal(t, expectedCfg.collectIP, c.collectIP)
+			require.Equal(t, tc.cfg.queryStringRegexp, c.queryStringRegexp)
+			require.Equal(t, tc.cfg.queryString, c.queryString)
+			require.Equal(t, tc.cfg.clientIPHeader, c.clientIPHeader)
+			require.Equal(t, tc.cfg.clientIP, c.clientIP)
 		})
 	}
 }
@@ -79,11 +82,9 @@ func cleanEnv() func() {
 		envClientIPHeaderDisabled: os.Getenv(envClientIPHeaderDisabled),
 		envClientIPHeader:         os.Getenv(envClientIPHeader),
 	}
-
 	for k := range env {
 		os.Unsetenv(k)
 	}
-
 	return func() {
 		for k, v := range env {
 			os.Setenv(k, v)
