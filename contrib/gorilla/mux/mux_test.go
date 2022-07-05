@@ -80,7 +80,7 @@ func TestHttpTracer(t *testing.T) {
 			assert.Equal("my-service", s.Tag(ext.ServiceName))
 			assert.Equal(codeStr, s.Tag(ext.HTTPCode))
 			assert.Equal(ht.method, s.Tag(ext.HTTPMethod))
-			assert.Equal(ht.url, s.Tag(ext.HTTPURL))
+			assert.Equal("http://example.com"+ht.url, s.Tag(ext.HTTPURL))
 			assert.Equal(ht.resourceName, s.Tag(ext.ResourceName))
 			if ht.errorStr != "" {
 				assert.Equal(ht.errorStr, s.Tag(ext.Error).(error).Error())
@@ -130,7 +130,7 @@ func TestWithQueryParams(t *testing.T) {
 
 	mux.ServeHTTP(httptest.NewRecorder(), r)
 
-	assert.Equal("/200?token=value&id=3&name=5", mt.FinishedSpans()[0].Tags()[ext.HTTPURL])
+	assert.Equal("http://localhost/200?<redacted>&id=3&name=5", mt.FinishedSpans()[0].Tags()[ext.HTTPURL])
 }
 
 func TestSpanOptions(t *testing.T) {

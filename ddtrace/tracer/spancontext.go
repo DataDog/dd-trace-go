@@ -94,11 +94,11 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
-func (c *spanContext) setSamplingPriority(service string, p int, sampler samplernames.SamplerName, rate float64) {
+func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName, rate float64) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	c.trace.setSamplingPriority(service, p, sampler, rate)
+	c.trace.setSamplingPriority(p, sampler, rate, c.span)
 }
 
 func (c *spanContext) samplingPriority() (p int, ok bool) {
@@ -127,6 +127,13 @@ func (c *spanContext) baggageItem(key string) string {
 	return c.baggage[key]
 }
 
+func (c *spanContext) meta(key string) (val string, ok bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	val, ok = c.span.Meta[key]
+	return val, ok
+}
+
 // finish marks this span as finished in the trace.
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
@@ -150,7 +157,7 @@ type trace struct {
 	mu               sync.RWMutex      // guards below fields
 	spans            []*span           // all the spans that are part of this trace
 	tags             map[string]string // trace level tags
-	upstreamServices string            // _dd.p.upstream_services value from the upstream service
+	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries
 	finished         int               // the number of finished spans
 	full             bool              // signifies that the span buffer is full
 	priority         *float64          // sampling priority
@@ -196,10 +203,10 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-func (t *trace) setSamplingPriority(service string, p int, sampler samplernames.SamplerName, rate float64) {
+func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName, rate float64, span *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setSamplingPriorityLocked(service, p, sampler, rate)
+	t.setSamplingPriorityLocked(p, sampler, rate, span)
 }
 
 func (t *trace) keep() {
@@ -217,7 +224,14 @@ func (t *trace) setTag(key, value string) {
 	t.tags[key] = value
 }
 
-func (t *trace) setSamplingPriorityLocked(service string, p int, sampler samplernames.SamplerName, rate float64) {
+func (t *trace) setPropagatingTag(key, value string) {
+	if t.propagatingTags == nil {
+		t.propagatingTags = make(map[string]string, 1)
+	}
+	t.propagatingTags[key] = value
+}
+
+func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName, rate float64, span *span) {
 	if t.locked {
 		return
 	}
@@ -225,12 +239,13 @@ func (t *trace) setSamplingPriorityLocked(service string, p int, sampler sampler
 		t.priority = new(float64)
 	}
 	*t.priority = float64(p)
-	if sampler != samplernames.Upstream {
-		if t.upstreamServices != "" {
-			t.setTag(keyUpstreamServices, t.upstreamServices+";"+compactUpstreamServices(service, p, sampler, rate))
-		} else {
-			t.setTag(keyUpstreamServices, compactUpstreamServices(service, p, sampler, rate))
-		}
+	_, ok := t.propagatingTags[keyDecisionMaker]
+	if p > 0 && !ok {
+		// we have a positive priority and the sampling mechanism isn't set
+		t.setPropagatingTag(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
+	}
+	if p <= 0 && ok {
+		delete(t.propagatingTags, keyDecisionMaker)
 	}
 }
 
@@ -254,7 +269,7 @@ func (t *trace) push(sp *span) {
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
-		t.setSamplingPriorityLocked(sp.Service, int(v), samplernames.Upstream, math.NaN())
+		t.setSamplingPriorityLocked(int(v), samplernames.Upstream, math.NaN(), nil)
 	}
 	t.spans = append(t.spans, sp)
 	if haveTracer {
@@ -292,6 +307,9 @@ func (t *trace) finishedOne(s *span) {
 		for k, v := range t.tags {
 			s.setMeta(k, v)
 		}
+		for k, v := range t.propagatingTags {
+			s.setMeta(k, v)
+		}
 	}
 	if len(t.spans) != t.finished {
 		return
@@ -325,15 +343,4 @@ func (t *trace) finishedOne(s *span) {
 		}
 	}
 	tr.pushTrace(t.spans)
-}
-
-func compactUpstreamServices(service string, priority int, sampler samplernames.SamplerName, rate float64) string {
-	sb64 := b64Encode(service)
-	p := strconv.Itoa(priority)
-	s := strconv.Itoa(int(sampler))
-	r := ""
-	if !math.IsNaN(rate) {
-		r = strconv.FormatFloat(rate, 'f', 4, 64)
-	}
-	return sb64 + "|" + p + "|" + s + "|" + r
 }

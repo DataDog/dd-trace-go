@@ -40,7 +40,7 @@ var (
 	defaultSocketDSD = "/var/run/datadog/dsd.socket"
 
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
-	defaultMaxTagsHeaderLen = 512
+	defaultMaxTagsHeaderLen = 128
 )
 
 // config holds the tracer configuration.
@@ -182,6 +182,9 @@ func forEachStringTag(str string, fn func(key string, val string)) {
 	}
 }
 
+// maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
+const maxPropagatedTagsLength = 512
+
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
 func newConfig(opts ...StartOption) *config {
@@ -268,8 +271,18 @@ func newConfig(opts ...StartOption) *config {
 		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
 	if c.propagator == nil {
+		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
+		max := internal.IntEnv(envKey, defaultMaxTagsHeaderLen)
+		if max < 0 {
+			log.Warn("Invalid value %d for %s. Setting to 0.", max, envKey)
+			max = 0
+		}
+		if max > maxPropagatedTagsLength {
+			log.Warn("Invalid value %d for %s. Maximum allowed is %d. Setting to %d.", max, envKey, maxPropagatedTagsLength, maxPropagatedTagsLength)
+			max = maxPropagatedTagsLength
+		}
 		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
+			MaxTagsHeaderLen: max,
 		})
 	}
 	if c.logger != nil {
@@ -891,7 +904,7 @@ func WithUserRole(role string) UserMonitoringOption {
 	}
 }
 
-// WithUserScope returns the option setting the scope (authorizations) of the authenticated user
+// WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
 	return func(s Span) {
 		s.SetTag("usr.scope", scope)
