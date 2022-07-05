@@ -10,6 +10,7 @@ package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.or
 
 import (
 	"io"
+	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
