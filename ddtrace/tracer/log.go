@@ -107,7 +107,7 @@ func logStartup(t *tracer) {
 		AppSec:                      appsec.Enabled(),
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
-		info.SamplingRulesError = fmt.Sprintf("%s", err)
+		info.SamplingRulesError = fmt.Sprintf("found errors:%s", err)
 	}
 	if limit, ok := t.rulesSampling.traceRulesSampler.limit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
