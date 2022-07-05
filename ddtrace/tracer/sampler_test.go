@@ -507,7 +507,7 @@ func TestRulesSampler(t *testing.T) {
 					rs := newRulesSampler(rules)
 
 					span := makeSpan("http.request", "test-service")
-					result := rs.singleSpanRulesSampler.apply(span)
+					result := rs.traceRulesSampler.apply(span)
 					assert.True(result)
 					assert.Equal(rate, span.Metrics["_dd.rule_psr"])
 					if rate > 0.0 {
