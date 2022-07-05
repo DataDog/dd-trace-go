@@ -12,7 +12,6 @@ import (
 	"math"
 	"net/http"
 	"runtime"
-	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -91,9 +90,9 @@ func logStartup(t *tracer) {
 		AgentURL:                    t.config.transport.endpoint(),
 		Debug:                       t.config.debug,
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
-		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.globalRate),
+		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traceRulesSampler.globalRate),
 		SampleRateLimit:             "disabled",
-		SamplingRules:               t.rulesSampling.rules,
+		SamplingRules:               t.config.samplingRules,
 		ServiceMappings:             t.config.serviceMappings,
 		Tags:                        tags,
 		RuntimeMetricsEnabled:       t.config.runtimeMetrics,
@@ -107,18 +106,10 @@ func logStartup(t *tracer) {
 		AgentFeatures:               t.config.agent,
 		AppSec:                      appsec.Enabled(),
 	}
-	var errs []string
-	if _, err := traceSamplingRulesFromEnv(); err != nil {
-		errs = append(errs, err.Error())
+	if _, err := samplingRulesFromEnv(); err != nil {
+		info.SamplingRulesError = fmt.Sprintf("%s", err)
 	}
-	if _, err := spanSamplingRulesFromEnv(); err != nil {
-		errs = append(errs, err.Error())
-	}
-	if errs != nil {
-		info.SamplingRulesError = fmt.Sprintf("%s", strings.Join(errs, "\n\t"))
-	}
-
-	if limit, ok := t.rulesSampling.limit(); ok {
+	if limit, ok := t.rulesSampling.traceRulesSampler.limit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.logToStdout {

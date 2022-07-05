@@ -158,43 +158,66 @@ func (ps *prioritySampler) apply(spn *span) {
 	spn.SetTag(keySamplingPriorityRate, rate)
 }
 
-// rulesSampler allows a user-defined list of rules to apply to spans.
-// These rules can match based on the span's Service, Name or both.
-// When making a sampling decision, the rules are checked in order until
-// a match is found.
-// If a match is found, the rate from that rule is used.
-// If no match is found, and the DD_TRACE_SAMPLE_RATE environment variable
-// was set to a valid rate, that value is used.
-// Otherwise, the rules sampler didn't apply to the span, and the decision
-// is passed to the priority sampler.
-//
-// The rate is used to determine if the span should be sampled, but an upper
-// limit can be defined using the DD_TRACE_RATE_LIMIT environment variable.
-// Its value is the number of spans to sample per second.
-// Spans that matched the rules but exceeded the rate limit are not sampled.
+// rulesSampler holds instances of trace sampler and single span sampler, that are configured with the given set of rules.
+// traceRulesSampler samples trace spans based on a user-defined set of rules and might impact sampling decision of the trace.
+// singleSpanRulesSampler samples individual spans based on a separate user-defined set of rules and
+// cannot impact the trace sampling decision.
 type rulesSampler struct {
-	rules      []SamplingRule // the rules to match spans with
-	globalRate float64        // a rate to apply when no rules match a span
-	limiter    *rateLimiter   // used to limit the volume of spans sampled
+	traceRulesSampler      *traceRulesSampler
+	singleSpanRulesSampler *singleSpanRulesSampler
 }
 
 // newRulesSampler configures a *rulesSampler instance using the given set of rules.
+// Rules are split between trace and single span sampling rules according to their type.
+// Such rules are user-defined through environment variable or WithSamplingRules option.
 // Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
 func newRulesSampler(rules []SamplingRule) *rulesSampler {
+	var spanRules, traceRules []SamplingRule
+	for _, rule := range rules {
+		if rule.Type == SamplingRuleSingleSpan {
+			rule.limiter = newSingleSpanRateLimiter(rule.MaxPerSecond)
+			spanRules = append(spanRules, rule)
+		} else {
+			traceRules = append(traceRules, rule)
+		}
+	}
 	return &rulesSampler{
-		rules:      rules,
-		globalRate: globalSampleRate(),
-		limiter:    newRateLimiter(),
+		traceRulesSampler:      newTraceRulesSampler(traceRules),
+		singleSpanRulesSampler: newSingleSpanRulesSampler(spanRules),
 	}
 }
 
-// traceSamplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES environment variable
-func traceSamplingRulesFromEnv() ([]SamplingRule, error) {
+const (
+	// SamplingRuleTrace specifies that if a span matches a sampling rule of this type,
+	// an entire trace might be kept based on the given span and sent to the agent.
+	SamplingRuleTrace = iota
+	// SamplingRuleSingleSpan specifies that if a span matches a sampling rule,
+	// an individual span might be kept and sent to the agent.
+	SamplingRuleSingleSpan
+)
+
+// samplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES,
+// DD_SPAN_SAMPLING_RULES and DD_SPAN_SAMPLING_RULES_FILE environment variables.
+func samplingRulesFromEnv() ([]SamplingRule, error) {
+	var errs []string
+	var rules []SamplingRule
 	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
-	if rulesFromEnv == "" {
-		return nil, nil
+	if rulesFromEnv != "" {
+		traceRules, err := processSamplingRules([]byte(rulesFromEnv), SamplingRuleTrace)
+		if err != nil {
+			errs = append(errs, err.Error())
+		}
+		rules = append(rules, traceRules...)
 	}
-	return processSamplingRules([]byte(rulesFromEnv), false)
+	spanRules, err := spanSamplingRulesFromEnv()
+	if err != nil {
+		errs = append(errs, err.Error())
+	}
+	rules = append(rules, spanRules...)
+	if len(errs) != 0 {
+		return rules, fmt.Errorf("%s", strings.Join(errs, "\n\t"))
+	}
+	return rules, nil
 }
 
 // spanSamplingRulesFromEnv parses sampling rules from the DD_SPAN_SAMPLING_RULES and
@@ -205,7 +228,7 @@ func spanSamplingRulesFromEnv() ([]SamplingRule, error) {
 	if rulesFromEnv == "" {
 		return nil, nil
 	}
-	rules, err := processSamplingRules([]byte(rulesFromEnv), true)
+	rules, err := processSamplingRules([]byte(rulesFromEnv), SamplingRuleSingleSpan)
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
@@ -216,18 +239,24 @@ func spanSamplingRulesFromEnv() ([]SamplingRule, error) {
 		}
 		return rules, err
 	}
-	if rulesFile == "" {
-		return rules, err
+	if rulesFile != "" {
+		rulesFromEnvFile, err := os.ReadFile(rulesFile)
+		if err != nil {
+			log.Warn("Couldn't read file from DD_SPAN_SAMPLING_RULES_FILE")
+			return nil, err
+		}
+		rules, err = processSamplingRules(rulesFromEnvFile, SamplingRuleSingleSpan)
+		if err != nil {
+			errs = append(errs, err.Error())
+		}
 	}
-	rulesFromEnvFile, err := os.ReadFile(rulesFile)
-	if err != nil {
-		log.Warn("Couldn't read file from DD_SPAN_SAMPLING_RULES_FILE")
-		return nil, err
+	if len(errs) != 0 {
+		return rules, fmt.Errorf("%s", strings.Join(errs, "\n\t"))
 	}
-	return processSamplingRules(rulesFromEnvFile, true)
+	return rules, nil
 }
 
-func processSamplingRules(b []byte, isIndividualSamplingRule bool) ([]SamplingRule, error) {
+func processSamplingRules(b []byte, spanType int) ([]SamplingRule, error) {
 	if len(b) == 0 {
 		return nil, nil
 	}
@@ -257,7 +286,7 @@ func processSamplingRules(b []byte, isIndividualSamplingRule bool) ([]SamplingRu
 			log.Warn("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v)
 			continue
 		}
-		if isIndividualSamplingRule {
+		if spanType == SamplingRuleSingleSpan {
 			if v.Service == "" {
 				v.Service = "*"
 			}
@@ -280,6 +309,7 @@ func processSamplingRules(b []byte, isIndividualSamplingRule bool) ([]SamplingRu
 				Rate:         rate,
 				MaxPerSecond: v.MaxPerSecond,
 				limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
+				Type:         SamplingRuleSingleSpan,
 			})
 			continue
 		}
@@ -318,89 +348,6 @@ func globalSampleRate() float64 {
 	return defaultRate
 }
 
-// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
-const defaultRateLimit = 100.0
-
-// newRateLimiter returns a rate limiter which restricts the number of traces sampled per second.
-// This defaults to 100.0. The DD_TRACE_RATE_LIMIT environment variable may override the default.
-func newRateLimiter() *rateLimiter {
-	limit := defaultRateLimit
-	v := os.Getenv("DD_TRACE_RATE_LIMIT")
-	if v != "" {
-		l, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			log.Warn("using default rate limit because DD_TRACE_RATE_LIMIT is invalid: %v", err)
-		} else if l < 0.0 {
-			log.Warn("using default rate limit because DD_TRACE_RATE_LIMIT is negative: %f", l)
-		} else {
-			// override the default limit
-			limit = l
-		}
-	}
-	return &rateLimiter{
-		limiter:  rate.NewLimiter(rate.Limit(limit), int(math.Ceil(limit))),
-		prevTime: time.Now(),
-	}
-}
-
-func (rs *rulesSampler) enabled() bool {
-	return len(rs.rules) > 0 || !math.IsNaN(rs.globalRate)
-}
-
-// apply uses the sampling rules to determine the sampling rate for the
-// provided span. If the rules don't match, and a default rate hasn't been
-// set using DD_TRACE_SAMPLE_RATE, then it returns false and the span is not
-// modified.
-func (rs *rulesSampler) apply(span *span) bool {
-	if !rs.enabled() {
-		// short path when disabled
-		return false
-	}
-
-	var matched bool
-	rate := rs.globalRate
-	for _, rule := range rs.rules {
-		if rule.match(span) {
-			matched = true
-			rate = rule.Rate
-			break
-		}
-	}
-	if !matched && math.IsNaN(rate) {
-		// no matching rule or global rate, so we want to fall back
-		// to priority sampling
-		return false
-	}
-
-	rs.applyRate(span, rate, time.Now())
-	return true
-}
-
-func (rs *rulesSampler) applyRate(span *span, rate float64, now time.Time) {
-	span.SetTag(keyRulesSamplerAppliedRate, rate)
-	if !sampledByRate(span.TraceID, rate) {
-		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate, rate)
-		return
-	}
-
-	sampled, rate := rs.limiter.allowOne(now)
-	if sampled {
-		span.setSamplingPriority(ext.PriorityUserKeep, samplernames.RuleRate, rate)
-	} else {
-		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate, rate)
-	}
-	span.SetTag(keyRulesSamplerLimiterRate, rate)
-}
-
-// limit returns the rate limit set in the rules sampler, controlled by DD_TRACE_RATE_LIMIT, and
-// true if rules sampling is enabled. If not present it returns math.NaN() and false.
-func (rs *rulesSampler) limit() (float64, bool) {
-	if rs.enabled() {
-		return float64(rs.limiter.limiter.Limit()), true
-	}
-	return math.NaN(), false
-}
-
 // SamplingRule is used for applying sampling rates to spans that match
 // the service name, operation name or both.
 // For basic usage, consider using the helper functions ServiceRule, NameRule, etc.
@@ -409,6 +356,7 @@ type SamplingRule struct {
 	Name         *regexp.Regexp
 	Rate         float64
 	MaxPerSecond float64
+	Type         int
 
 	exactService string
 	exactName    string

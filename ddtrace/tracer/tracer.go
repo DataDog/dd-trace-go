@@ -74,16 +74,11 @@ type tracer struct {
 	// Records the number of dropped P0 traces and spans.
 	droppedP0Traces, droppedP0Spans uint64
 
-	// rulesSampling holds an instance of the rules sampler. These are user-defined
+	// rulesSampling holds an instance of the rules sampler used to apply either trace sampling,
+	//or single span sampling rules on spans. These are user-defined
 	// rules for applying a sampling rate to spans that match the designated service
 	// or operation name.
 	rulesSampling *rulesSampler
-
-	// singleSpanRulesSampling holds an instance of the single span rules sampler. These are user-defined
-	// rules for applying a sampling rate to spans that match the designated service
-	// or operation name. Such spans are sampled if trace sampling decision is 'drop' and
-	// may be sent separately
-	singleSpanRulesSampling *singleSpanRulesSampler
 
 	// obfuscator holds the obfuscator used to obfuscate resources in aggregated stats.
 	// obfuscator may be nil if disabled.
@@ -182,20 +177,6 @@ const payloadQueueSize = 1000
 
 func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := newConfig(opts...)
-	traceRules, err := traceSamplingRulesFromEnv()
-	if err != nil {
-		log.Warn("DIAGNOSTICS Error(s) parsing DD_TRACE_SAMPLING_RULES: found errors: %s", err)
-	}
-	if traceRules != nil {
-		c.traceSamplingRules = traceRules
-	}
-	spanRules, err := spanSamplingRulesFromEnv()
-	if err != nil {
-		log.Warn("DIAGNOSTICS Error(s) parsing DD_SPAN_SAMPLING_RULES: found errors: %s", err)
-	}
-	if spanRules != nil {
-		c.spanSamplingRules = spanRules
-	}
 	sampler := newPrioritySampler()
 	var writer traceWriter
 	if c.logToStdout {
@@ -203,17 +184,23 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	} else {
 		writer = newAgentTraceWriter(c, sampler)
 	}
+	rules, err := samplingRulesFromEnv()
+	if err != nil {
+		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors:%s", err)
+	}
+	if rules != nil {
+		c.samplingRules = rules
+	}
 	t := &tracer{
-		config:                  c,
-		traceWriter:             writer,
-		out:                     make(chan []*span, payloadQueueSize),
-		stop:                    make(chan struct{}),
-		flush:                   make(chan chan<- struct{}),
-		rulesSampling:           newRulesSampler(c.traceSamplingRules),
-		singleSpanRulesSampling: newSingleSpanRulesSampler(c.spanSamplingRules),
-		prioritySampling:        sampler,
-		pid:                     strconv.Itoa(os.Getpid()),
-		stats:                   newConcentrator(c, defaultStatsBucketSize),
+		config:           c,
+		traceWriter:      writer,
+		out:              make(chan []*span, payloadQueueSize),
+		stop:             make(chan struct{}),
+		flush:            make(chan chan<- struct{}),
+		rulesSampling:    newRulesSampler(c.samplingRules),
+		prioritySampling: sampler,
+		pid:              strconv.Itoa(os.Getpid()),
+		stats:            newConcentrator(c, defaultStatsBucketSize),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),
@@ -536,7 +523,7 @@ func (t *tracer) sample(span *span) {
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, rs.Rate())
 	}
-	if t.rulesSampling.apply(span) {
+	if t.rulesSampling.traceRulesSampler.apply(span) {
 		return
 	}
 	t.prioritySampling.apply(span)

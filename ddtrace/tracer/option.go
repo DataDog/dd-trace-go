@@ -118,15 +118,15 @@ type config struct {
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
 
-	// traceSamplingRules contains user-defined rules to determine the sampling rate to apply
-	// to trace spans. If a span matches a rule, it will impact the trace sampling decision.
-	traceSamplingRules []SamplingRule
-
-	// spanSamplingRules contains user-defined rules to determine the sampling rate to apply
-	// to single spans. If a span matches a rule, it will NOT impact the trace sampling decision.
+	// samplingRules contains user-defined rules to determine the sampling rate to apply
+	// to spans. Rules might be of a type SamplingRuleSingleSpan or SamplingRuleTrace.
+	// If a sampling rule is of type SamplingRuleTrace, such rule determines the sampling rate to apply
+	// to trace spans. If a span matches that rule, it will impact the trace sampling decision.
+	// If a sampling rule is of type SamplingRuleSingleSpan, such rule determines the sampling rate to apply
+	// to individual spans. If a span matches a rule, it will NOT impact the trace sampling decision.
 	// In the case that a trace is dropped and thus not sent to the Agent, spans kept on account
-	// of matching span sampling rules must be conveyed separately.
-	spanSamplingRules []SamplingRule
+	// of matching SamplingRuleSingleSpan rules must be conveyed separately.
+	samplingRules []SamplingRule
 
 	// tickChan specifies a channel which will receive the time every time the tracer must flush.
 	// It defaults to time.Ticker; replaced in tests.
@@ -661,12 +661,12 @@ func WithDogstatsdAddress(addr string) StartOption {
 }
 
 // WithSamplingRules specifies the sampling rates to apply to trace spans based on the
-// provided rules.
-// TODO(shevchenko): there might be a need to add an analogous option for
-// single span sampling rules
+// provided rules. Both trace sampling and single span sampling rules can be configured with this option.
+// If one wants to configure single span rules, Type field of SamplingRule struct must be specified
+// and be equal to SamplingRuleSingleSpan.
 func WithSamplingRules(rules []SamplingRule) StartOption {
 	return func(cfg *config) {
-		cfg.traceSamplingRules = rules
+		cfg.samplingRules = rules
 	}
 }
 
