@@ -221,7 +221,6 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query stri
 			opts = append(opts, tracer.Tag(key, tag))
 		}
 	}
-
 	if !math.IsNaN(tp.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.cfg.analyticsRate))
 	}

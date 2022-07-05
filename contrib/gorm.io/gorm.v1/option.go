@@ -33,6 +33,7 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = math.NaN()
 	}
 	cfg.errCheck = func(error) bool { return true }
+	cfg.tagFns = make(map[string]func(db *gorm.DB) interface{})
 }
 
 // WithServiceName sets the given service name when registering a driver,
@@ -79,9 +80,6 @@ func WithErrorCheck(fn func(err error) bool) Option {
 // a query and attach the result to the span tagged by the key.
 func WithCustomTag(tag string, tagFn func(db *gorm.DB) interface{}) Option {
 	return func(cfg *config) {
-		if cfg.tagFns == nil {
-			cfg.tagFns = make(map[string]func(db *gorm.DB) interface{})
-		}
 		if tagFn != nil {
 			cfg.tagFns[tag] = tagFn
 		} else {
