@@ -270,6 +270,7 @@ func TestTextMapPropagator(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "decoding_error", sctx.trace.tags["_dd.propagation_error"])
 	})
+
 	t.Run("ExtractTraceTagsTooLong", func(t *testing.T) {
 		tags := make([]string, 0)
 		for i := 0; i < 100; i++ {
@@ -288,6 +289,7 @@ func TestTextMapPropagator(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "extract_max_size", sctx.trace.tags["_dd.propagation_error"])
 	})
+
 	t.Run("InjectTraceTagsTooLong", func(t *testing.T) {
 		tracer := newTracer()
 		child := tracer.StartSpan("test")
@@ -305,6 +307,7 @@ func TestTextMapPropagator(t *testing.T) {
 		}, dst)
 		assert.Equal(t, "inject_max_size", child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
 	})
+
 	t.Run("InvalidTraceTags", func(t *testing.T) {
 		tracer := newTracer()
 		internal.SetGlobalTracer(tracer)
@@ -322,6 +325,7 @@ func TestTextMapPropagator(t *testing.T) {
 		assertTraceTags(t, "_dd.p.dm=-1,_dd.p.hello1=world", dst["x-datadog-tags"])
 		assert.Equal(t, "encoding_error", child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
 	})
+
 	t.Run("InjectExtract", func(t *testing.T) {
 		propagator := NewPropagator(&PropagatorConfig{
 			BaggagePrefix: "bg-",

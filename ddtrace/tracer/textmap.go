@@ -95,9 +95,6 @@ const originHeader = "x-datadog-origin"
 // traceTagsHeader holds the propagated trace tags
 const traceTagsHeader = "x-datadog-tags"
 
-// propagationErrorKey holds any error from propagated trace tags (if any)
-const propagationErrorKey = "_dd.propagation_error"
-
 // propagationExtractMaxSize limits the total size of incoming propagated tags to parse
 const propagationExtractMaxSize = 512
 
@@ -271,9 +268,7 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if p.cfg.MaxTagsHeaderLen <= 0 {
 		return nil
 	}
-	// propagate trace tags
-	s := p.marshalPropagatingTags(ctx)
-	if len(s) > 0 {
+	if s := p.marshalPropagatingTags(ctx); len(s) > 0 {
 		writer.Set(traceTagsHeader, s)
 	}
 	return nil
@@ -290,13 +285,13 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 	for k, v := range ctx.trace.propagatingTags {
 		if err := isValidPropagatableTag(k, v); err != nil {
 			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
-			ctx.trace.setTag(propagationErrorKey, "encoding_error")
+			ctx.trace.setTag(keyPropagationError, "encoding_error")
 			continue
 		}
 		if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
 			sb.Reset()
 			log.Warn("Won't propagate tag: maximum trace tags header len (%d) reached.", p.cfg.MaxTagsHeaderLen)
-			ctx.trace.setTag(propagationErrorKey, "inject_max_size")
+			ctx.trace.setTag(keyPropagationError, "inject_max_size")
 			break
 		}
 		if sb.Len() > 0 {
@@ -369,14 +364,14 @@ func unmarshalPropagatingTags(ctx *spanContext, v string) {
 	defer ctx.trace.mu.Unlock()
 	if len(v) > propagationExtractMaxSize {
 		log.Warn("Did not extract %s, size limit exceeded: %d. Incoming tags will not be propagated further.", traceTagsHeader, propagationExtractMaxSize)
-		ctx.trace.setTag(propagationErrorKey, "extract_max_size")
+		ctx.trace.setTag(keyPropagationError, "extract_max_size")
 		return
 	}
 	var err error
 	ctx.trace.propagatingTags, err = parsePropagatableTraceTags(v)
 	if err != nil {
 		log.Warn("Did not extract %s: %v. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
-		ctx.trace.setTag(propagationErrorKey, "decoding_error")
+		ctx.trace.setTag(keyPropagationError, "decoding_error")
 	}
 }
 
