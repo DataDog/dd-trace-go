@@ -381,9 +381,6 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		// this trace won't be sent to the agent,
-		// therefore not necessary to populate keyUpstreamServices
-		assert.Equal(t, "", span.context.trace.tags[keyUpstreamServices])
 		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
 		assert.Equal(t, 8.0, span.Metrics[spanSamplingMechanism])
 		assert.Equal(t, 1.0, span.Metrics[singleSpanSamplingRuleRate])
