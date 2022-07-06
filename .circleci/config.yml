@@ -351,13 +351,17 @@ commands:
       - run:
           name: Install datadog-ci binary
           command: |
-            curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output "/tmp/datadog-ci" && chmod +x "/tmp/datadog-ci"
+            if [ -n "${DATADOG_API_KEY}" ]; then
+              curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output "/tmp/datadog-ci" && chmod +x "/tmp/datadog-ci"
+            fi
           when: always
 
       - run:
           name: Upload test result to datadog ci-app
           command: |
-            DATADOG_API_KEY=${DATADOG_API_KEY} /tmp/datadog-ci junit upload --service << parameters.ci-app-service-name >> << parameters.test-result-path >>
+            if [ -n "${DATADOG_API_KEY}" ]; then
+              DATADOG_API_KEY=${DATADOG_API_KEY} /tmp/datadog-ci junit upload --service << parameters.ci-app-service-name >> << parameters.test-result-path >>
+            fi
           when: always
 
 workflows:

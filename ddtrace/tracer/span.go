@@ -179,7 +179,7 @@ func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 		return
 	}
 	s.setMetric(keySamplingPriority, float64(priority))
-	s.context.setSamplingPriority(s.Service, priority, sampler, rate)
+	s.context.setSamplingPriority(priority, sampler, rate)
 }
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
@@ -562,7 +562,8 @@ func (s *span) Format(f fmt.State, c rune) {
 const (
 	keySamplingPriority        = "_sampling_priority_v1"
 	keySamplingPriorityRate    = "_dd.agent_psr"
-	keyUpstreamServices        = "_dd.p.upstream_services"
+	keyDecisionMaker           = "_dd.p.dm"
+	keyServiceHash             = "_dd.dm.service_hash"
 	keyOrigin                  = "_dd.origin"
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
@@ -571,4 +572,6 @@ const (
 	// keyTopLevel is the key of top level metric indicating if a span is top level.
 	// A top level span is a local root (parent span of the local trace) or the first span of each service.
 	keyTopLevel = "_dd.top_level"
+	// keyPropagationError holds any error from propagated trace tags (if any)
+	keyPropagationError = "_dd.propagation_error"
 )
