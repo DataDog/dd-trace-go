@@ -76,7 +76,7 @@ func TestSpanFinish(t *testing.T) {
 	// the finish should set finished and the duration
 	time.Sleep(wait)
 	span.Finish()
-	assert.True(span.Duration > int64(wait))
+	assert.Greater(span.Duration, int64(wait))
 	assert.True(span.finished)
 }
 

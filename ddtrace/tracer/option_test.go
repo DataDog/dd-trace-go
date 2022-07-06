@@ -209,7 +209,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig()
 		assert.Equal(float64(1), c.sampler.(RateSampler).Rate())
-		assert.Equal("tracer.test", c.serviceName)
+		assert.Regexp(`tracer\.test(\.exe)?`, c.serviceName)
 		assert.Equal("localhost:8126", c.agentAddr)
 		assert.Equal("localhost:8125", c.dogstatsdAddr)
 		assert.Nil(nil, c.httpClient)
