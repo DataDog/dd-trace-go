@@ -63,14 +63,15 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
-	cfg        *config                           // profile configuration
-	out        chan batch                        // upload queue
-	uploadFunc func(batch) error                 // defaults to (*profiler).upload; replaced in tests
-	exit       chan struct{}                     // exit signals the profiler to stop; it is closed after stopping
-	stopOnce   sync.Once                         // stopOnce ensures the profiler is stopped exactly once.
-	wg         sync.WaitGroup                    // wg waits for all goroutines to exit when stopping.
-	met        *metrics                          // metric collector state
-	prev       map[ProfileType]*pprofile.Profile // previous collection results for delta profiling
+	mu         sync.Mutex
+	cfg        *config                      // profile configuration
+	out        chan batch                   // upload queue
+	uploadFunc func(batch) error            // defaults to (*profiler).upload; replaced in tests
+	exit       chan struct{}                // exit signals the profiler to stop; it is closed after stopping
+	stopOnce   sync.Once                    // stopOnce ensures the profiler is stopped exactly once.
+	wg         sync.WaitGroup               // wg waits for all goroutines to exit when stopping.
+	met        *metrics                     // metric collector state
+	prev       map[string]*pprofile.Profile // previous collection results for delta profiling
 
 	testHooks testHooks
 }
@@ -178,7 +179,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		out:  make(chan batch, outChannelSize),
 		exit: make(chan struct{}),
 		met:  newMetrics(),
-		prev: make(map[ProfileType]*pprofile.Profile),
+		prev: make(map[string]*pprofile.Profile),
 	}
 	p.uploadFunc = p.upload
 	return &p, nil
@@ -211,6 +212,12 @@ func (p *profiler) run() {
 // an item.
 func (p *profiler) collect(ticker <-chan time.Time) {
 	defer close(p.out)
+	var (
+		// mu guards completed
+		mu        sync.Mutex
+		completed []*profile
+		wg        sync.WaitGroup
+	)
 	for {
 		select {
 		case <-ticker:
@@ -225,16 +232,24 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				end: now.Add(p.cfg.cpuDuration),
 			}
 
+			completed = completed[:0]
 			for _, t := range p.enabledProfileTypes() {
-				profs, err := p.runProfile(t)
-				if err != nil {
-					log.Error("Error getting %s profile: %v; skipping.", t, err)
-					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
-					continue
-				}
-				for _, prof := range profs {
-					bat.addProfile(prof)
-				}
+				wg.Add(1)
+				go func(t ProfileType) {
+					defer wg.Done()
+					profs, err := p.runProfile(t)
+					if err != nil {
+						log.Error("Error getting %s profile: %v; skipping.", t, err)
+						p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
+					}
+					mu.Lock()
+					defer mu.Unlock()
+					completed = append(completed, profs...)
+				}(t)
+			}
+			wg.Wait()
+			for _, prof := range completed {
+				bat.addProfile(prof)
 			}
 			p.enqueueUpload(bat)
 		case <-p.exit:

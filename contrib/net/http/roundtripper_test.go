@@ -64,7 +64,7 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, "http.request", s1.Tag(ext.ResourceName))
 	assert.Equal(t, "200", s1.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s1.Tag(ext.HTTPMethod))
-	assert.Equal(t, "/hello/world", s1.Tag(ext.HTTPURL))
+	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
 	assert.Equal(t, true, s1.Tag("CalledBefore"))
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
 }
@@ -113,7 +113,7 @@ func TestRoundTripperServerError(t *testing.T) {
 	assert.Equal(t, "http.request", s1.Tag(ext.ResourceName))
 	assert.Equal(t, "500", s1.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s1.Tag(ext.HTTPMethod))
-	assert.Equal(t, "/hello/world", s1.Tag(ext.HTTPURL))
+	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
 	assert.Equal(t, fmt.Errorf("500: Internal Server Error"), s1.Tag(ext.Error))
 	assert.Equal(t, true, s1.Tag("CalledBefore"))
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
@@ -123,13 +123,14 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
+	done := make(chan struct{})
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 		assert.NoError(t, err)
-		time.Sleep(10 * time.Millisecond)
-		w.Write([]byte("Timeout"))
+		<-done
 	}))
 	defer s.Close()
+	defer close(done)
 
 	rt := WrapRoundTripper(http.DefaultTransport,
 		WithBefore(func(req *http.Request, span ddtrace.Span) {
@@ -154,7 +155,7 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	assert.Equal(t, "http.request", s0.Tag(ext.ResourceName))
 	assert.Equal(t, nil, s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
-	assert.Equal(t, "/hello/world", s0.Tag(ext.HTTPURL))
+	assert.Equal(t, s.URL+"/hello/world", s0.Tag(ext.HTTPURL))
 	assert.NotNil(t, s0.Tag(ext.Error))
 	assert.Equal(t, true, s0.Tag("CalledBefore"))
 	assert.Equal(t, true, s0.Tag("CalledAfter"))

@@ -95,6 +95,9 @@ const originHeader = "x-datadog-origin"
 // traceTagsHeader holds the propagated trace tags
 const traceTagsHeader = "x-datadog-tags"
 
+// propagationExtractMaxSize limits the total size of incoming propagated tags to parse
+const propagationExtractMaxSize = 512
+
 // PropagatorConfig defines the configuration for initializing a propagator.
 type PropagatorConfig struct {
 	// BaggagePrefix specifies the prefix that will be used to store baggage
@@ -114,6 +117,7 @@ type PropagatorConfig struct {
 	PriorityHeader string
 
 	// MaxTagsHeaderLen specifies the maximum length of trace tags header value.
+	// It defaults to defaultMaxTagsHeaderLen, a value of 0 disables propagation of tags.
 	MaxTagsHeaderLen int
 
 	// B3 specifies if B3 headers should be added for trace propagation.
@@ -124,7 +128,7 @@ type PropagatorConfig struct {
 // NewPropagator returns a new propagator which uses TextMap to inject
 // and extract values. It propagates trace and span IDs and baggage.
 // To use the defaults, nil may be provided in place of the config.
-func NewPropagator(cfg *PropagatorConfig) Propagator {
+func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator {
 	if cfg == nil {
 		cfg = new(PropagatorConfig)
 	}
@@ -139,6 +143,12 @@ func NewPropagator(cfg *PropagatorConfig) Propagator {
 	}
 	if cfg.PriorityHeader == "" {
 		cfg.PriorityHeader = DefaultPriorityHeader
+	}
+	if len(propagators) > 0 {
+		return &chainedPropagator{
+			injectors:  propagators,
+			extractors: propagators,
+		}
 	}
 	return &chainedPropagator{
 		injectors:  getPropagators(cfg, headerPropagationStyleInject),
@@ -255,7 +265,43 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	for k, v := range ctx.baggage {
 		writer.Set(p.cfg.BaggagePrefix+k, v)
 	}
+	if p.cfg.MaxTagsHeaderLen <= 0 {
+		return nil
+	}
+	if s := p.marshalPropagatingTags(ctx); len(s) > 0 {
+		writer.Set(traceTagsHeader, s)
+	}
 	return nil
+}
+
+// marshalPropagatingTags marshals all propagating tags included in ctx to a comma separated string
+func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
+	var sb strings.Builder
+	if ctx.trace == nil {
+		return ""
+	}
+	ctx.trace.mu.Lock()
+	defer ctx.trace.mu.Unlock()
+	for k, v := range ctx.trace.propagatingTags {
+		if err := isValidPropagatableTag(k, v); err != nil {
+			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
+			ctx.trace.setTag(keyPropagationError, "encoding_error")
+			continue
+		}
+		if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
+			sb.Reset()
+			log.Warn("Won't propagate tag: maximum trace tags header len (%d) reached.", p.cfg.MaxTagsHeaderLen)
+			ctx.trace.setTag(keyPropagationError, "inject_max_size")
+			break
+		}
+		if sb.Len() > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(k)
+		sb.WriteByte('=')
+		sb.WriteString(v)
+	}
+	return sb.String()
 }
 
 func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
@@ -288,18 +334,11 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			ctx.setSamplingPriority("", priority, samplernames.Upstream, math.NaN())
+			ctx.setSamplingPriority(priority, samplernames.Upstream, math.NaN())
 		case originHeader:
 			ctx.origin = v
 		case traceTagsHeader:
-			if ctx.trace == nil {
-				ctx.trace = newTrace()
-			}
-			ctx.trace.tags, err = parsePropagatableTraceTags(v)
-			ctx.trace.upstreamServices = ctx.trace.tags[keyUpstreamServices]
-			if err != nil {
-				log.Warn("did not extract trace tags (err: %s)", err.Error())
-			}
+			unmarshalPropagatingTags(&ctx, v)
 		default:
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
@@ -310,10 +349,30 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 	if err != nil {
 		return nil, err
 	}
-	if ctx.traceID == 0 || ctx.spanID == 0 {
+	if ctx.traceID == 0 || (ctx.spanID == 0 && ctx.origin != "synthetics") {
 		return nil, ErrSpanContextNotFound
 	}
 	return &ctx, nil
+}
+
+// unmarshalPropagatingTags unmarshals tags from v into ctx
+func unmarshalPropagatingTags(ctx *spanContext, v string) {
+	if ctx.trace == nil {
+		ctx.trace = newTrace()
+	}
+	ctx.trace.mu.Lock()
+	defer ctx.trace.mu.Unlock()
+	if len(v) > propagationExtractMaxSize {
+		log.Warn("Did not extract %s, size limit exceeded: %d. Incoming tags will not be propagated further.", traceTagsHeader, propagationExtractMaxSize)
+		ctx.trace.setTag(keyPropagationError, "extract_max_size")
+		return
+	}
+	var err error
+	ctx.trace.propagatingTags, err = parsePropagatableTraceTags(v)
+	if err != nil {
+		log.Warn("Did not extract %s: %v. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
+		ctx.trace.setTag(keyPropagationError, "decoding_error")
+	}
 }
 
 const (
@@ -385,7 +444,7 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			ctx.setSamplingPriority("", priority, samplernames.Upstream, math.NaN())
+			ctx.setSamplingPriority(priority, samplernames.Upstream, math.NaN())
 		default:
 		}
 		return nil

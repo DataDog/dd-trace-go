@@ -116,7 +116,7 @@ func logStartup(c *config) {
 		OSVersion            string   `json:"os_version"`   // Version of the OS
 		Version              string   `json:"version"`      // Profiler version
 		Lang                 string   `json:"lang"`         // "Go"
-		LangVersion          string   `json:"lang_version"` // Go version, e.g. go1.13
+		LangVersion          string   `json:"lang_version"` // Go version, e.g. go1.18
 		Hostname             string   `json:"hostname"`
 		DeltaProfiles        bool     `json:"delta_profiles"`
 		Service              string   `json:"service"`
@@ -204,7 +204,7 @@ func defaultConfig() (*config, error) {
 		mutexFraction:     DefaultMutexFraction,
 		uploadTimeout:     DefaultUploadTimeout,
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
-		tags:              []string{fmt.Sprintf("pid:%d", os.Getpid())},
+		tags:              []string{fmt.Sprintf("process_id:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:        true,
 	}
