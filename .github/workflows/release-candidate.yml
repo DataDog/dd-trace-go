@@ -38,7 +38,7 @@ jobs:
         run: |
           .github/workflows/scripts/update-version-file.sh $VERSION
           git add --all
-          git commit -m "update version to $VERSION"
+          git commit -m "version: update to $VERSION"
 
       - name: Create the git tag ${{ steps.version.outputs.next_rc }}
         env:
