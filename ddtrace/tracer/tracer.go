@@ -523,7 +523,7 @@ func (t *tracer) sample(span *span) {
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, rs.Rate())
 	}
-	if t.rulesSampling.traceRulesSampler.apply(span) {
+	if t.rulesSampling.sampleTrace(span) {
 		return
 	}
 	t.prioritySampling.apply(span)

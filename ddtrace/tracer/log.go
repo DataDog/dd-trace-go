@@ -90,7 +90,7 @@ func logStartup(t *tracer) {
 		AgentURL:                    t.config.transport.endpoint(),
 		Debug:                       t.config.debug,
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
-		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traceRulesSampler.globalRate),
+		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traces.globalRate),
 		SampleRateLimit:             "disabled",
 		SamplingRules:               t.config.samplingRules,
 		ServiceMappings:             t.config.serviceMappings,
@@ -109,7 +109,7 @@ func logStartup(t *tracer) {
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("found errors:%s", err)
 	}
-	if limit, ok := t.rulesSampling.traceRulesSampler.limit(); ok {
+	if limit, ok := t.rulesSampling.traces.limit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.logToStdout {

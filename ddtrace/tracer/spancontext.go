@@ -331,9 +331,13 @@ func (t *trace) finishedOne(s *span) {
 			atomic.AddUint64(&tr.droppedP0Traces, 1)
 		}
 		// if trace sampling decision is drop, we still want to send single spans
+		// unless there are no single span sampling rules defined
+		if !tr.rulesSampling.spans.enabled() {
+			return
+		}
 		var singleSpans []*span
 		for _, span := range t.spans {
-			if tr.rulesSampling.singleSpanRulesSampler.apply(span) {
+			if tr.rulesSampling.sampleSpan(span) {
 				singleSpans = append(singleSpans, span)
 			}
 		}

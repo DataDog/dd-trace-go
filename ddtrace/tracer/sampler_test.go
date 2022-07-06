@@ -360,7 +360,7 @@ func TestRulesSampler(t *testing.T) {
 		rs := newRulesSampler(nil)
 
 		span := makeSpan("http.request", "test-service")
-		result := rs.traceRulesSampler.apply(span)
+		result := rs.sampleTrace(span)
 		assert.False(result)
 	})
 
@@ -378,7 +378,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v)
 
 				span := makeSpan("http.request", "test-service")
-				result := rs.traceRulesSampler.apply(span)
+				result := rs.sampleTrace(span)
 				assert.True(result)
 				assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
 				assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
@@ -401,7 +401,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v)
 
 				span := makeSpan("http.request", "test-service")
-				result := rs.traceRulesSampler.apply(span)
+				result := rs.sampleTrace(span)
 				assert.False(result)
 			})
 		}
@@ -438,7 +438,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(rules)
 
 				span := makeSpan(tt.spanName, tt.spanSrv)
-				result := rs.singleSpanRulesSampler.apply(span)
+				result := rs.sampleSpan(span)
 				assert.True(result)
 				assert.Contains(span.Metrics, spanSamplingMechanism)
 				assert.Contains(span.Metrics, singleSpanSamplingRuleRate)
@@ -479,7 +479,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(rules)
 
 				span := makeSpan(tt.spanName, tt.spanSrv)
-				result := rs.singleSpanRulesSampler.apply(span)
+				result := rs.sampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.Metrics, spanSamplingMechanism)
 				assert.NotContains(span.Metrics, singleSpanSamplingRuleRate)
@@ -507,7 +507,7 @@ func TestRulesSampler(t *testing.T) {
 					rs := newRulesSampler(rules)
 
 					span := makeSpan("http.request", "test-service")
-					result := rs.traceRulesSampler.apply(span)
+					result := rs.sampleTrace(span)
 					assert.True(result)
 					assert.Equal(rate, span.Metrics["_dd.rule_psr"])
 					if rate > 0.0 {
@@ -551,7 +551,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 		now := time.Now()
 		rs := &rulesSampler{}
 		span := makeSpanAt("http.request", "test-service", now)
-		rs.traceRulesSampler.applyRate(span, 0.0, now)
+		rs.traces.applyRate(span, 0.0, now)
 		assert.Equal(0.0, span.Metrics["_dd.rule_psr"])
 		_, ok := span.Metrics["_dd.limit_psr"]
 		assert.False(ok)
@@ -562,12 +562,12 @@ func TestRulesSamplerInternals(t *testing.T) {
 		now := time.Now()
 		rs := newRulesSampler(nil)
 		// set samplingLimiter to specific state
-		rs.traceRulesSampler.limiter.prevTime = now.Add(-1 * time.Second)
-		rs.traceRulesSampler.limiter.allowed = 1
-		rs.traceRulesSampler.limiter.seen = 1
+		rs.traces.limiter.prevTime = now.Add(-1 * time.Second)
+		rs.traces.limiter.allowed = 1
+		rs.traces.limiter.seen = 1
 
 		span := makeSpanAt("http.request", "test-service", now)
-		rs.traceRulesSampler.applyRate(span, 1.0, now)
+		rs.traces.applyRate(span, 1.0, now)
 		assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
 		assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
 	})
@@ -577,18 +577,18 @@ func TestRulesSamplerInternals(t *testing.T) {
 		now := time.Now()
 		rs := newRulesSampler(nil)
 		// force sampling limiter to 1.0 spans/sec
-		rs.traceRulesSampler.limiter.limiter = rate.NewLimiter(rate.Limit(1.0), 1)
-		rs.traceRulesSampler.limiter.prevTime = now.Add(-1 * time.Second)
-		rs.traceRulesSampler.limiter.allowed = 2
-		rs.traceRulesSampler.limiter.seen = 2
+		rs.traces.limiter.limiter = rate.NewLimiter(rate.Limit(1.0), 1)
+		rs.traces.limiter.prevTime = now.Add(-1 * time.Second)
+		rs.traces.limiter.allowed = 2
+		rs.traces.limiter.seen = 2
 		// first span kept, second dropped
 		span := makeSpanAt("http.request", "test-service", now)
-		rs.traceRulesSampler.applyRate(span, 1.0, now)
+		rs.traces.applyRate(span, 1.0, now)
 		assert.EqualValues(ext.PriorityUserKeep, span.Metrics[keySamplingPriority])
 		assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
 		assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
 		span = makeSpanAt("http.request", "test-service", now)
-		rs.traceRulesSampler.applyRate(span, 1.0, now)
+		rs.traces.applyRate(span, 1.0, now)
 		assert.EqualValues(ext.PriorityUserReject, span.Metrics[keySamplingPriority])
 		assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
 		assert.Equal(0.75, span.Metrics["_dd.limit_psr"])
