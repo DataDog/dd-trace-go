@@ -6,18 +6,8 @@
 
 package nsq
 
-var (
-	service         = "go-nsq"
-	lookupdHttpAddr = "127.0.0.1:4161"
-	nsqdTcpAddr     = "127.0.0.1:4150"
-	nsqdHttpAddr    = "127.0.0.1:4151"
-	topic           = "nsq_ddtrace_test"
-	channels        = []string{"Jacky", "Caroline"}
-	msgBody         = []byte(`{"service":"nsq_ddtrace"}`)
-	multiMsgBody    = [][]byte{msgBody, msgBody, msgBody}
-)
+import "testing"
 
-var (
-	prodc  *Producer
-	consus []*Consumer
-)
+func TestNsq(t *testing.T) {
+
+}
