@@ -11,6 +11,7 @@ bin/
 *.lock
 *.swp
 .idea
+.vscode
 dd-trace-go.iml
 vendor
 
