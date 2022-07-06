@@ -7,6 +7,8 @@ bin/
 
 # generic
 .DS_Store
+.idea
+.vscode
 *.cov
 *.lock
 *.swp
