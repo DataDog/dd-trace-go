@@ -7,7 +7,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583
 	github.com/DataDog/datadog-go/v5 v5.0.2
 	github.com/DataDog/gostackparse v0.5.0
-	github.com/DataDog/sketches-go v1.0.0
+	github.com/DataDog/sketches-go v1.2.1
 	github.com/Shopify/sarama v1.22.0
 	github.com/aws/aws-sdk-go v1.34.28
 	github.com/aws/aws-sdk-go-v2 v1.0.0
@@ -21,11 +21,10 @@ require (
 	github.com/elastic/go-elasticsearch/v6 v6.8.5
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
 	github.com/emicklei/go-restful v0.0.0-20170410110728-ff4f55a20633
-	github.com/erikstmartin/go-testdb v0.0.0-20160219214506-8d10e4a1bae5 // indirect
 	github.com/fatih/color v1.9.0 // indirect
 	github.com/frankban/quicktest v1.13.0 // indirect
 	github.com/garyburd/redigo v1.6.3
-	github.com/gin-gonic/gin v1.7.0
+	github.com/gin-gonic/gin v1.7.7
 	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
 	github.com/go-chi/chi v1.5.0
 	github.com/go-chi/chi/v5 v5.0.0
@@ -36,14 +35,13 @@ require (
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gocql/gocql v0.0.0-20220224095938-0eacd3183625
 	github.com/gofiber/fiber/v2 v2.11.0
-	github.com/gogo/protobuf v1.3.1 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/gomodule/redigo v1.7.0
 	github.com/google/pprof v0.0.0-20210423192551-a2663126120b
 	github.com/google/uuid v1.3.0
-	github.com/gorilla/context v1.1.1 // indirect
-	github.com/gorilla/mux v1.5.0
+	github.com/gorilla/mux v1.6.2
 	github.com/graph-gophers/graphql-go v1.3.0
 	github.com/hashicorp/consul/api v1.0.0
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -57,10 +55,10 @@ require (
 	github.com/hashicorp/vault/api v1.1.0
 	github.com/hashicorp/vault/sdk v0.1.14-0.20200519221838-e0cfd64bc267
 	github.com/jackc/pgx/v4 v4.14.0
-	github.com/jinzhu/gorm v1.9.1
+	github.com/jinzhu/gorm v1.9.10
 	github.com/jinzhu/now v1.1.3 // indirect
 	github.com/jmoiron/sqlx v1.2.0
-	github.com/julienschmidt/httprouter v1.1.0
+	github.com/julienschmidt/httprouter v1.2.0
 	github.com/kr/text v0.2.0 // indirect
 	github.com/labstack/echo v3.3.10+incompatible
 	github.com/labstack/echo/v4 v4.2.0
@@ -83,18 +81,15 @@ require (
 	github.com/tinylib/msgp v1.1.2
 	github.com/twitchtv/twirp v8.1.1+incompatible
 	github.com/urfave/negroni v1.0.0
-	github.com/valyala/fasthttp v1.32.0 // indirect
+	github.com/valyala/fasthttp v1.34.0 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.3.4 // indirect
 	github.com/vmihailenco/tagparser v0.1.2 // indirect
 	github.com/zenazn/goji v1.0.1
-	go.mongodb.org/mongo-driver v1.5.1
+	go.mongodb.org/mongo-driver v1.7.5
 	go.opencensus.io v0.22.4 // indirect
-	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519 // indirect
-	golang.org/x/net v0.0.0-20211020060615-d418f374d309
+	golang.org/x/net v0.0.0-20220225172249-27dd8689420f
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sys v0.0.0-20220227234510-4e6760a101f9
-	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
-	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 	google.golang.org/api v0.29.0
@@ -108,6 +103,7 @@ require (
 	gorm.io/driver/postgres v1.0.0
 	gorm.io/driver/sqlserver v1.0.4
 	gorm.io/gorm v1.20.6
+	inet.af/netaddr v0.0.0-20211027220019-c74959edd3b6
 	k8s.io/apimachinery v0.17.0
 	k8s.io/client-go v0.17.0
 )

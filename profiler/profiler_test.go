@@ -184,46 +184,42 @@ func TestStartStopIdempotency(t *testing.T) {
 // TestStopLatency tries to make sure that calling Stop() doesn't hang, i.e.
 // that ongoing profiling or upload operations are immediately canceled.
 func TestStopLatency(t *testing.T) {
-	p, err := newProfiler(
-		WithURL("http://invalid.invalid/"),
-		WithPeriod(1000*time.Millisecond),
-		CPUDuration(500*time.Millisecond),
-	)
-	require.NoError(t, err)
-	uploadStart := make(chan struct{}, 1)
-	uploadFunc := p.uploadFunc
-	p.uploadFunc = func(b batch) error {
+	received := make(chan struct{})
+	stop := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
-		case uploadStart <- struct{}{}:
+		case received <- struct{}{}:
 		default:
-			// uploadFunc may be called more than once, don't leak this goroutine
 		}
-		return uploadFunc(b)
-	}
-	p.run()
+		<-stop
+	}))
+	defer server.Close()
+	defer close(stop)
 
-	<-uploadStart
-	// Wait for uploadFunc(b) to run. A bit racy, but worst case is the test
-	// passing for the wrong reasons.
-	time.Sleep(10 * time.Millisecond)
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithPeriod(time.Second),
+		CPUDuration(time.Second),
+		WithUploadTimeout(time.Hour),
+	)
 
-	stopped := make(chan struct{}, 1)
-	go func() {
-		p.stop()
-		stopped <- struct{}{}
-	}()
+	<-received
+	// received indicates that an upload has started, and due to waiting on
+	// stop the upload won't actually complete. So we know calling Stop()
+	// should interrupt the upload. Ideally profiling is also currently
+	// running, though that is harder to detect and guarantee.
+	start := time.Now()
+	Stop()
 
-	// CPU profiling polls in 100 millisecond intervals and this can't be
-	// interrupted by pprof.StopCPUProfile, so we can't guarantee profiling
-	// will stop faster than that.
-	timeout := 200 * time.Millisecond
-	select {
-	case <-stopped:
-	case <-time.After(timeout):
-		// Capture stacks so we can see which goroutines are hanging and why.
-		stacks := make([]byte, 64*1024)
-		stacks = stacks[0:runtime.Stack(stacks, true)]
-		t.Fatalf("Stop() took longer than %s:\n%s", timeout, stacks)
+	// CPU profiling can take up to 200ms to stop. This is because the inner
+	// loop of CPU profiling has an uninterruptible 100ms sleep. Each
+	// iteration reads available profile samples, so it can take two
+	// iterations to stop: one to read the remaining samples, and a second
+	// to detect that there are no more samples and exit. We give extra time
+	// on top of that to account for CI slowness.
+	elapsed := time.Since(start)
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("profiler took %v to stop", elapsed)
 	}
 }
 

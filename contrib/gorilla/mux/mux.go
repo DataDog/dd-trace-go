@@ -89,12 +89,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var (
 		match    mux.RouteMatch
 		spanopts []ddtrace.StartSpanOption
+		route    string
 	)
 	// get the resource associated to this request
 	if r.Match(req, &match) && match.Route != nil {
 		if h, err := match.Route.GetHostTemplate(); err == nil {
 			spanopts = append(spanopts, tracer.Tag("mux.host", h))
 		}
+		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
 	if r.config.headerTags {
@@ -108,6 +110,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		SpanOpts:    spanopts,
 		QueryParams: r.config.queryParams,
 		RouteParams: match.Vars,
+		Route:       route,
 	})
 }
 
