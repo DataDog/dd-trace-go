@@ -19,15 +19,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/tinylib/msgp/msgp"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/tinylib/msgp/msgp"
 )
 
 func (t *tracer) newEnvSpan(service, env string) *span {
@@ -65,7 +65,7 @@ func TestMain(m *testing.M) {
 }
 
 func (t *tracer) awaitPayload(tst *testing.T, n int) {
-	timeout := time.After(200 * time.Millisecond * timeMultiplicator)
+	timeout := time.After(time.Second * timeMultiplicator)
 loop:
 	for {
 		select {
@@ -241,7 +241,7 @@ func TestTracerStartSpan(t *testing.T) {
 			ext.PriorityAutoReject,
 			ext.PriorityAutoKeep,
 		}, span.Metrics[keySamplingPriority])
-		assert.Equal("dHJhY2VyLnRlc3Q|1|1|1.0000", span.context.trace.tags[keyUpstreamServices])
+		assert.Equal("-1", span.context.trace.propagatingTags[keyDecisionMaker])
 		// A span is not measured unless made so specifically
 		_, ok := span.Meta[keyMeasured]
 		assert.False(ok)
@@ -254,7 +254,7 @@ func TestTracerStartSpan(t *testing.T) {
 		defer tracer.Stop()
 		span := tracer.StartSpan("web.request", Tag(ext.SamplingPriority, ext.PriorityUserKeep)).(*span)
 		assert.Equal(t, float64(ext.PriorityUserKeep), span.Metrics[keySamplingPriority])
-		assert.Equal(t, "dHJhY2VyLnRlc3Q|2|4|", span.context.trace.tags[keyUpstreamServices])
+		assert.Equal(t, "-4", span.context.trace.propagatingTags[keyDecisionMaker])
 	})
 
 	t.Run("name", func(t *testing.T) {
@@ -294,7 +294,7 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		assert.Equal(t, "dGVzdF9zZXJ2aWNl|0|1|0.0000", span.context.trace.tags[keyUpstreamServices])
+		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
@@ -311,7 +311,7 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		assert.Equal(t, "dGVzdF9zZXJ2aWNl|0|1|0.0000", span.context.trace.tags[keyUpstreamServices])
+		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
@@ -329,7 +329,7 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		assert.Equal(t, "dGVzdF9zZXJ2aWNl|0|1|0.0000", span.context.trace.tags[keyUpstreamServices])
+		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionNone, span.context.trace.samplingDecision)
 	})
 
@@ -345,7 +345,7 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		assert.Equal(t, "dGVzdF9zZXJ2aWNl|0|1|0.0000", span.context.trace.tags[keyUpstreamServices])
+		assert.Equal(t, "", span.context.trace.tags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
@@ -363,8 +363,8 @@ func TestSamplingDecision(t *testing.T) {
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
 		// this trace won't be sent to the agent,
-		// therefore not necessary to populate keyUpstreamServices
-		assert.Equal(t, "", span.context.trace.tags[keyUpstreamServices])
+		// therefore not necessary to populate keyDecisionMaker
+		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
 	})
 }
@@ -564,7 +564,7 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	root := tracer.StartSpan("web.request", Tag(ext.SamplingPriority, 2)).(*span)
 	child := tracer.StartSpan("db.query", ChildOf(root.Context())).(*span)
 	assert.EqualValues(2, root.Metrics[keySamplingPriority])
-	assert.Equal("dHJhY2VyLnRlc3Q|2|4|", root.context.trace.tags[keyUpstreamServices])
+	assert.Equal("-4", root.context.trace.propagatingTags[keyDecisionMaker])
 	assert.EqualValues(2, child.Metrics[keySamplingPriority])
 	assert.EqualValues(2., *root.context.trace.priority)
 	assert.EqualValues(2., *child.context.trace.priority)
@@ -572,22 +572,17 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 
 func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer()
-	defer tracer.Stop()
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &spanContext{
 		traceID: root.context.TraceID(),
 		spanID:  root.context.SpanID(),
-		trace: &trace{
-			tags: map[string]string{
-				keyUpstreamServices: "previous",
-			},
-			upstreamServices: "previous",
-		},
+		trace:   &trace{},
 	}
 	child := tracer.StartSpan("db.query", ChildOf(spanCtx)).(*span)
 	assert.EqualValues(1, child.Metrics[keySamplingPriority])
-	assert.Equal("previous;dHJhY2VyLnRlc3Q|1|1|1.0000", child.context.trace.tags[keyUpstreamServices])
+	assert.Equal("-1", child.context.trace.propagatingTags[keyDecisionMaker])
 }
 
 func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
@@ -598,17 +593,13 @@ func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	spanCtx := &spanContext{
 		traceID: root.context.TraceID(),
 		spanID:  root.context.SpanID(),
-		trace: &trace{
-			tags: map[string]string{
-				keyUpstreamServices: "previous",
-			},
-			upstreamServices: "previous",
-		},
+		trace:   &trace{},
 	}
 	child := tracer.StartSpan("db.query", ChildOf(spanCtx)).(*span)
 	grandChild := tracer.StartSpan("db.query", ChildOf(child.Context())).(*span)
+	grandChild.SetTag(ext.ManualDrop, true)
 	grandChild.SetTag(ext.ManualKeep, true)
-	assert.Equal("previous;dHJhY2VyLnRlc3Q|2|4|", grandChild.context.trace.tags[keyUpstreamServices])
+	assert.Equal("-4", grandChild.context.trace.propagatingTags[keyDecisionMaker])
 }
 
 func TestTracerBaggageImmutability(t *testing.T) {
@@ -808,7 +799,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	s := tr.newEnvSpan("pylons", "")
 	assert.Equal(1., s.Metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.Metrics[keySamplingPriority])
-	assert.Equal("cHlsb25z|1|1|1.0000", s.context.trace.tags[keyUpstreamServices])
+	assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
 	p, ok := s.context.samplingPriority()
 	assert.True(ok)
 	assert.EqualValues(p, s.Metrics[keySamplingPriority])
@@ -844,7 +835,11 @@ func TestTracerPrioritySampler(t *testing.T) {
 		s := tr.newEnvSpan(tt.service, tt.env)
 		assert.Equal(tt.rate, s.Metrics[keySamplingPriorityRate], strconv.Itoa(i))
 		prio, ok := s.Metrics[keySamplingPriority]
-		assert.Equal(b64Encode(tt.service)+"|"+strconv.Itoa(int(prio))+"|1|"+strconv.FormatFloat(tt.rate, 'f', 4, 64), s.context.trace.tags[keyUpstreamServices])
+		if prio > 0 {
+			assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
+		} else {
+			assert.Equal("", s.context.trace.propagatingTags[keyDecisionMaker])
+		}
 		assert.True(ok)
 		assert.Contains([]float64{0, 1}, prio)
 		p, ok := s.context.samplingPriority()
@@ -1520,7 +1515,7 @@ func startTestTracer(t interface {
 			tick <- time.Now()
 			return
 		}
-		d := 200 * time.Millisecond * timeMultiplicator
+		d := time.Second * timeMultiplicator
 		expire := time.After(d)
 	loop:
 		for {

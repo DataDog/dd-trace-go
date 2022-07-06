@@ -36,21 +36,21 @@ func (p *profiler) upload(bat batch) error {
 
 		err = p.doRequest(bat)
 		if rerr, ok := err.(*retriableError); ok {
-			statsd.Count("datadog.profiler.go.upload_retry", 1, nil, 1)
+			statsd.Count("datadog.profiling.go.upload_retry", 1, nil, 1)
 			wait := time.Duration(rand.Int63n(p.cfg.period.Nanoseconds()))
 			p.cfg.logger.Error("Uploading profile failed: %v. Trying again in %s...", rerr, wait)
 			p.interruptibleSleep(time.Second)
 			continue
 		}
 		if err != nil {
-			statsd.Count("datadog.profiler.go.upload_error", 1, nil, 1)
+			statsd.Count("datadog.profiling.go.upload_error", 1, nil, 1)
 		} else {
-			statsd.Count("datadog.profiler.go.upload_success", 1, nil, 1)
+			statsd.Count("datadog.profiling.go.upload_success", 1, nil, 1)
 			var b int64
 			for _, p := range bat.profiles {
 				b += int64(len(p.data))
 			}
-			statsd.Count("datadog.profiler.go.uploaded_profile_bytes", b, nil, 1)
+			statsd.Count("datadog.profiling.go.uploaded_profile_bytes", b, nil, 1)
 		}
 		return err
 	}
