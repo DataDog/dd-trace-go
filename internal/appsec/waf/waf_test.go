@@ -497,8 +497,11 @@ func TestMetrics(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, matches)
 		// Make sure that WAF runtime was set
-		require.Greater(t, wafCtx.TotalRuntime(), uint64(0), "wafCtx runtime metric is not set")
-		require.LessOrEqual(t, wafCtx.TotalRuntime(), uint64(elapsedNS), "wafCtx runtime metric is incorrect")
+		overall, internal := wafCtx.TotalRuntime()
+		require.Greater(t, overall, uint64(0))
+		require.Greater(t, internal, uint64(0))
+		require.Greater(t, overall, internal)
+		require.LessOrEqual(t, overall, uint64(elapsedNS))
 	})
 
 	t.Run("Timeouts", func(t *testing.T) {

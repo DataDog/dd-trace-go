@@ -8,6 +8,7 @@ package tracer
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/stretchr/testify/assert"
@@ -346,6 +348,33 @@ func TestSpanSetTagError(t *testing.T) {
 		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
 		assert.NotEmpty(span.Meta[ext.ErrorStack])
 	})
+}
+
+func TestTraceManualKeepAndManualDrop(t *testing.T) {
+	for _, scenario := range []struct {
+		tag  string
+		keep bool
+		p    int // priority
+	}{
+		{ext.ManualKeep, true, 0},
+		{ext.ManualDrop, false, 1},
+	} {
+		t.Run(fmt.Sprintf("%s/local", scenario.tag), func(t *testing.T) {
+			tracer := newTracer()
+			span := tracer.newRootSpan("root span", "my service", "my resource")
+			span.SetTag(scenario.tag, true)
+			assert.Equal(t, scenario.keep, shouldKeep(span))
+		})
+
+		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
+			tracer := newTracer()
+			spanCtx := &spanContext{traceID: 42, spanID: 42}
+			spanCtx.setSamplingPriority("", scenario.p, samplernames.Upstream, math.NaN())
+			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx)).(*span)
+			span.SetTag(scenario.tag, true)
+			assert.Equal(t, scenario.keep, shouldKeep(span))
+		})
+	}
 }
 
 func TestSpanSetDatadogTags(t *testing.T) {
