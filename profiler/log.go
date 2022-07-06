@@ -23,9 +23,9 @@ func newLogger(l ddtrace.Logger) *logger {
 	return &logger{l: l}
 }
 
-func (l *logger) Info(format string, a ...interface{})  { l.msg("", format, a...) }
-func (l *logger) Error(format string, a ...interface{}) { l.msg("", format, a...) }
-func (l *logger) Warn(format string, a ...interface{})  { l.msg("", format, a...) }
+func (l *logger) Info(format string, a ...interface{})  { l.msg("INFO", format, a...) }
+func (l *logger) Error(format string, a ...interface{}) { l.msg("ERROR", format, a...) }
+func (l *logger) Warn(format string, a ...interface{})  { l.msg("WARN", format, a...) }
 
 func (l *logger) msg(lvl, format string, a ...interface{}) {
 	if l == nil {
