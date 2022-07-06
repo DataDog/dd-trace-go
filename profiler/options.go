@@ -208,6 +208,7 @@ func defaultConfig() (*config, error) {
 		tags:              []string{fmt.Sprintf("process_id:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logger:            defaultLogger,
+		logStartup:        internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 	}
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
@@ -283,7 +284,6 @@ func defaultConfig() (*config, error) {
 		}
 		c.maxGoroutinesWait = n
 	}
-	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	return &c, nil
 }
 
