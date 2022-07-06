@@ -49,12 +49,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if rt.cfg.before != nil {
 		rt.cfg.before(req, span)
 	}
-	r2 := req.WithContext(ctx)
-	// deep copy of the Header
-	r2.Header = make(http.Header, len(req.Header))
-	for k, s := range req.Header {
-		r2.Header[k] = append([]string(nil), s...)
-	}
+	r2 := req.Clone(ctx)
 	// inject the span context into the http request copy
 	err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(r2.Header))
 	if err != nil {
