@@ -550,6 +550,7 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		Service      string   `json:"service"`
 		Name         string   `json:"name"`
 		Rate         float64  `json:"sample_rate"`
+		Type         int      `json:"type"`
 		MaxPerSecond *float64 `json:"max_per_second,omitempty"`
 	}{}
 	if sr.exactService != "" {
@@ -563,6 +564,7 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		s.Name = fmt.Sprintf("%s", sr.Name)
 	}
 	s.Rate = sr.Rate
+	s.Type = int(sr.Type)
 	if sr.MaxPerSecond != 0 {
 		s.MaxPerSecond = &sr.MaxPerSecond
 	}
