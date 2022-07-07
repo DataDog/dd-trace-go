@@ -15,7 +15,17 @@ import (
 // git tag that is older than HEAD.
 const Tag = "v1.40.0"
 
-var Major, Minor, Patch, RC int
+// Dissected version number. Filled during init()
+var (
+	// Major is the current major version number
+	Major int
+	// Minor is the current minor version number
+	Minor int
+	// Patch is the current patch version number
+	Patch int
+	// RC is the current release candidate version number
+	RC int
+)
 
 func init() {
 	// This regexp matches the version format we use and captures major/minor/patch/rc in different groups
