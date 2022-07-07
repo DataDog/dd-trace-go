@@ -75,7 +75,7 @@ type tracer struct {
 	droppedP0Traces, droppedP0Spans uint64
 
 	// rulesSampling holds an instance of the rules sampler used to apply either trace sampling,
-	//or single span sampling rules on spans. These are user-defined
+	// or single span sampling rules on spans. These are user-defined
 	// rules for applying a sampling rate to spans that match the designated service
 	// or operation name.
 	rulesSampling *rulesSampler

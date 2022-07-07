@@ -341,10 +341,10 @@ func (t *trace) finishedOne(s *span) {
 				singleSpans = append(singleSpans, span)
 			}
 		}
-		t.spans = singleSpans
 		if len(t.spans) == 0 {
-			return
+			return // no spans matched the rules and were sampled
 		}
+		t.spans = singleSpans
 	}
 	tr.pushTrace(t.spans)
 }

@@ -251,11 +251,12 @@ func TestRuleEnvVars(t *testing.T) {
 				ruleN: 3,
 			}, {
 				// invalid rule ignored
-				value: `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
-				ruleN: 1,
+				value:  `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
+				ruleN:  1,
+				errStr: "\n\tat index 0: ignoring rule {Service:abcd Name: Rate:42.0 MaxPerSecond:0}: rate is out of [0.0, 1.0] range",
 			}, {
 				value:  `not JSON at all`,
-				errStr: `error unmarshalling JSON: invalid character 'o' in literal null (expecting 'u')`,
+				errStr: "\n\terror unmarshalling JSON: invalid character 'o' in literal null (expecting 'u')",
 			},
 		} {
 			t.Run("", func(t *testing.T) {
@@ -291,11 +292,15 @@ func TestRuleEnvVars(t *testing.T) {
 				ruleN: 3,
 			}, {
 				// invalid rule ignored
-				value: `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
-				ruleN: 1,
+				value:  `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
+				ruleN:  1,
+				errStr: "\n\tat index 0: ignoring rule {Service:abcd Name: Rate:42.0 MaxPerSecond:0}: rate is out of [0.0, 1.0] range",
 			}, {
 				value:  `not JSON at all`,
-				errStr: `error unmarshalling JSON: invalid character 'o' in literal null (expecting 'u')`,
+				errStr: "\n\terror unmarshalling JSON: invalid character 'o' in literal null (expecting 'u')",
+			}, {
+				value:  `[{"sample_rate": 1.0}]`,
+				errStr: "\n\tat index 0: ignoring rule {Service: Name: Rate:1.0 MaxPerSecond:0}: service name and operation name are not provided",
 			},
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
@@ -333,10 +338,6 @@ func TestRuleEnvVars(t *testing.T) {
 				rules:     `[{"service": "*abcd", "sample_rate": 1.0}]`,
 				nameRegex: "^.*$",
 				srvRegex:  "^.*abcd$",
-			}, {
-				rules:     `[{"sample_rate": 1.0},{"name": "wxyz", "sample_rate": 0.9}]`,
-				nameRegex: "^.*$",
-				srvRegex:  "^.*$",
 			},
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
@@ -800,4 +801,55 @@ func TestGlobMatch(t *testing.T) {
 			}
 		})
 	}
+}
+
+func BenchmarkGlobMatchSpan(b *testing.B) {
+	var spans []*span
+	for i := 0; i < 1000; i++ {
+		spans = append(spans, newSpan("name.ops.date", "srv.name.ops.date", "", 0, 0, 0))
+	}
+
+	b.Run("no-regex", func(b *testing.B) {
+		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "srv.name.ops.date", name:"name.ops.date?", sample_rate": 0.234}]`)
+		os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		rules, err := samplingRulesFromEnv()
+		assert.Nil(b, err)
+		rs := newSingleSpanRulesSampler(rules)
+		b.ResetTimer()
+		for n := 0; n < b.N; n++ {
+			for _, span := range spans {
+				rs.apply(span)
+			}
+		}
+	})
+
+	b.Run("glob-match-?", func(b *testing.B) {
+		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "srv?name?ops?date", name:"name*ops*date*", sample_rate": 0.234}]`)
+		os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		rules, err := samplingRulesFromEnv()
+		assert.Nil(b, err)
+		rs := newSingleSpanRulesSampler(rules)
+		b.ResetTimer()
+		for n := 0; n < b.N; n++ {
+			for _, span := range spans {
+				rs.apply(span)
+			}
+		}
+	})
+
+	b.Run("glob-match-*", func(b *testing.B) {
+		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "srv*name*ops*date", name:"name?ops?date?", sample_rate": 0.234}]`)
+		os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+
+		rules, err := samplingRulesFromEnv()
+		assert.Nil(b, err)
+		rs := newSingleSpanRulesSampler(rules)
+
+		b.ResetTimer()
+		for n := 0; n < b.N; n++ {
+			for _, span := range spans {
+				rs.apply(span)
+			}
+		}
+	})
 }

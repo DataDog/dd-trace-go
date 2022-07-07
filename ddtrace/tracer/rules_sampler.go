@@ -420,15 +420,19 @@ func globMatch(pattern string) (*regexp.Regexp, error) {
 	// replacing '?' and '*' with regex characters
 	pattern = strings.Replace(pattern, "\\?", ".", -1)
 	pattern = strings.Replace(pattern, "\\*", ".*", -1)
-	//pattern must match an entire string
+	// pattern must match an entire string
 	return regexp.Compile(fmt.Sprintf("^%s$", pattern))
 }
 
 // samplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES,
 // DD_SPAN_SAMPLING_RULES and DD_SPAN_SAMPLING_RULES_FILE environment variables.
-func samplingRulesFromEnv() ([]SamplingRule, error) {
+func samplingRulesFromEnv() (rules []SamplingRule, err error) {
 	var errs []string
-	var rules []SamplingRule
+	defer func() {
+		if len(errs) != 0 {
+			err = fmt.Errorf("\n\t%s", strings.Join(errs, "\n\t"))
+		}
+	}()
 	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
 	if rulesFromEnv != "" {
 		traceRules, err := unmarshalSamplingRules([]byte(rulesFromEnv), SamplingRuleTrace)
@@ -448,7 +452,7 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 			log.Warn("DIAGNOSTICS Error(s): DD_SPAN_SAMPLING_RULES is available and will take precedence over DD_SPAN_SAMPLING_RULES_FILE")
 		}
 		if len(errs) != 0 {
-			return rules, fmt.Errorf("%s", strings.Join(errs, "\n\t"))
+			return rules, err
 		}
 		return rules, nil
 	}
@@ -457,16 +461,13 @@ func samplingRulesFromEnv() ([]SamplingRule, error) {
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("Couldn't read file from DD_SPAN_SAMPLING_RULES_FILE: %v", err))
 		}
-		spanRules, err = unmarshalSamplingRules(rulesFromEnvFile, SamplingRuleSpan)
+		spanRules, err := unmarshalSamplingRules(rulesFromEnvFile, SamplingRuleSpan)
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
 		rules = append(rules, spanRules...)
 	}
-	if len(errs) != 0 {
-		return rules, fmt.Errorf("%s", strings.Join(errs, "\n\t"))
-	}
-	return rules, nil
+	return rules, err
 }
 
 // unmarshalSamplingRules unmarshals JSON from b and returns the sampling rules found, attributing
@@ -497,18 +498,22 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 			errs = append(errs, fmt.Sprintf("at index %d: %v", i, err))
 			continue
 		}
-		if !(rate >= 0.0 && rate <= 1.0) {
-			log.Warn("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v)
+		if rate < 0.0 || rate > 1.0 {
+			errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v))
 			continue
 		}
 		switch spanType {
 		case SamplingRuleSpan:
+			if v.Service == "" && v.Name == "" {
+				errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: service name and operation name are not provided", i, v))
+				continue
+			}
 			if v.Service == "" {
 				v.Service = "*"
 			}
 			srvGlob, err := globMatch(v.Service)
 			if err != nil {
-				log.Warn("at index %d: ignoring rule %+v: service name regex pattern can't be compiled", i, v)
+				errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: service name regex pattern can't be compiled", i, v))
 				continue
 			}
 			if v.Name == "" {
@@ -516,7 +521,7 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 			}
 			opGlob, err := globMatch(v.Name)
 			if err != nil {
-				log.Warn("at index %d: ignoring rule %+v: operation name regex pattern can't be compiled", i, v)
+				errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: operation name regex pattern can't be compiled", i, v))
 				continue
 			}
 			rules = append(rules, SamplingRule{
@@ -539,7 +544,7 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 		}
 	}
 	if len(errs) != 0 {
-		return rules, fmt.Errorf("\n\t%s", strings.Join(errs, "\n\t"))
+		return rules, fmt.Errorf("%s", strings.Join(errs, "\n\t"))
 	}
 	return rules, nil
 }

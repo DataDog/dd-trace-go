@@ -125,9 +125,8 @@ func TestLogSamplingRules(t *testing.T) {
 	defer stop()
 
 	lines := removeAppSec(tp.Lines())
-	assert.Len(lines, 2)
-	assert.Contains(lines[0], "WARN: at index 4: ignoring rule {Service: Name: Rate:9.10 MaxPerSecond:0}: rate is out of [0.0, 1.0] range")
-	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)? WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 1: rate not provided\n\tat index 3: rate not provided$`, lines[1])
+	assert.Len(lines, 1)
+	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)? WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 1: rate not provided\n\tat index 3: rate not provided\n\tat index 4: ignoring rule {Service: Name: Rate:9\.10 MaxPerSecond:0}: rate is out of \[0\.0, 1\.0] range$`, lines[0])
 }
 
 func TestLogAgentReachable(t *testing.T) {
