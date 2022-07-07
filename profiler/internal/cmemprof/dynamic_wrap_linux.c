@@ -8,6 +8,45 @@
 // This code traverses the linked libraries at startup to find any references to
 // malloc/calloc/etc in their relocation tables. These are not visible at
 // compile time and thus need to be edited at runtime to point to our wrappers.
+//
+// OVERVIEW:
+//
+// On Linux, executables and shared libraries are stored in the ELF file format
+// (specified at https://refspecs.linuxfoundation.org/elf/elf.pdf). We call ELF
+// files "objects". An ELF object contains code and other data needed for running
+// programs. This information is divided up in two ways:
+//
+//	* sections, which contain distinct kinds of information such as code,
+//	  strings and defined constants, names of libraries to link, etc.
+//	* segments, which are regions of the object that must be loaded into
+//	  memory to actually run the program or make the shared library's
+//	  code and data accessible to other programs and libraries. Segments
+//	  can contain many sections, but not all sections go in a segment.
+//
+// The segments in an ELF object are defined by its program headers. At runtime,
+// we can find the program headers for the program and each linked library by
+// calling dl_iterate_phdr.
+//
+// The segment we want is PT_DYNAMIC. This segment contains references to various
+// other parts of the ELF object needed as part of dynamic linking, including:
+//
+//	* a (dynamic) symbol table that specifies functions and other data
+//	  that the object either contains (and can provide to other objects)
+//	  or needs from another object.
+//	* a string table. Symbols in the symbol table have names, and the names
+//	  are contained in the string table.
+//	* relocation tables. There are several varieties, but essentially all
+//	  of them point to symbols in the symbol table that must be resolved
+//	  by the dynamic linker.
+//
+// To summarize what we need to do:
+//
+//	* Find the shared libraries linked by the program
+//	* Locate the dynamic symbol and string tables, and the relocation tables.
+//	* Find relocation entries that point to symbols named "malloc", "calloc",
+//	  etc.
+//	* For each of those entries, edit the address of the symbol to point to
+//	  our wrappers.
 
 extern void *__wrap_malloc(size_t size);
 extern void *__wrap_calloc(size_t nmemb, size_t size);
