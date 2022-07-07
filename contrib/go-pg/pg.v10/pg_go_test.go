@@ -41,6 +41,7 @@ func TestSelect(t *testing.T) {
 
 	conn := pg.Connect(&pg.Options{
 		User:     "postgres",
+		Password: "postgres",
 		Database: "postgres",
 	})
 
@@ -76,6 +77,7 @@ func TestServiceName(t *testing.T) {
 
 		conn := pg.Connect(&pg.Options{
 			User:     "postgres",
+			Password: "postgres",
 			Database: "postgres",
 		})
 
@@ -115,6 +117,7 @@ func TestServiceName(t *testing.T) {
 
 		conn := pg.Connect(&pg.Options{
 			User:     "postgres",
+			Password: "postgres",
 			Database: "postgres",
 		})
 
@@ -151,6 +154,7 @@ func TestServiceName(t *testing.T) {
 
 		conn := pg.Connect(&pg.Options{
 			User:     "postgres",
+			Password: "postgres",
 			Database: "postgres",
 		})
 
@@ -185,6 +189,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
 		conn := pg.Connect(&pg.Options{
 			User:     "postgres",
+			Password: "postgres",
 			Database: "postgres",
 		})
 
