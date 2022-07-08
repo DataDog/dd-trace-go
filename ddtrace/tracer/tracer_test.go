@@ -1820,3 +1820,67 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 		span.Finish(StackFrames(64, 0))
 	}
 }
+
+func BenchmarkSingleSpanRetention(b *testing.B) {
+	b.Run("no-rules", func(b *testing.B) {
+		tracer, _, _, stop := startTestTracer(b)
+		defer stop()
+		tracer.config.agent.DropP0s = true
+		tracer.config.sampler = NewRateSampler(0)
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			span := tracer.StartSpan("name_1").(*span)
+			for i := 0; i < 100; i++ {
+				child := tracer.StartSpan("name_2", ChildOf(span.context))
+				child.Finish()
+			}
+			span.Finish()
+		}
+	})
+
+	b.Run("with-rules/match-half", func(b *testing.B) {
+		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
+		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		tracer, _, _, stop := startTestTracer(b)
+		defer stop()
+		tracer.config.agent.DropP0s = true
+		tracer.config.sampler = NewRateSampler(0)
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			span := tracer.StartSpan("name_1").(*span)
+			for i := 0; i < 50; i++ {
+				child := tracer.StartSpan("name_2", ChildOf(span.context))
+				child.Finish()
+			}
+			for i := 0; i < 50; i++ {
+				child := tracer.StartSpan("name", ChildOf(span.context))
+				child.Finish()
+			}
+			span.Finish()
+		}
+	})
+
+	b.Run("with-rules/match-all", func(b *testing.B) {
+		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
+		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		tracer, _, _, stop := startTestTracer(b)
+		defer stop()
+		tracer.config.agent.DropP0s = true
+		tracer.config.sampler = NewRateSampler(0)
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			span := tracer.StartSpan("name_1").(*span)
+			for i := 0; i < 100; i++ {
+				child := tracer.StartSpan("name_2", ChildOf(span.context))
+				child.Finish()
+			}
+			span.Finish()
+		}
+	})
+}
