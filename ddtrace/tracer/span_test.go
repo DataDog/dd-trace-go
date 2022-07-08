@@ -549,6 +549,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		span.Finish()
 		// It doesn't make much sense to update the span after it's been finished,
 		// but an error in a user's code could lead to this.
+		span.SetOperationName("race_test")
 		span.SetTag("race_test", "true")
 		span.SetTag("race_test2", 133.7)
 		span.SetTag("race_test3", 133.7)
