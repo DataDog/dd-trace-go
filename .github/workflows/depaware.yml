@@ -22,13 +22,21 @@ jobs:
       uses: actions/checkout@v3
 
     - name: depaware profiler
-      run: go run github.com/tailscale/depaware --check gopkg.in/DataDog/dd-trace-go.v1/profiler
+      run: go run github.com/tailscale/depaware --update gopkg.in/DataDog/dd-trace-go.v1/profiler
 
     - name: depaware ddtrace/tracer
-      run: go run github.com/tailscale/depaware --check gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+      run: go run github.com/tailscale/depaware --update gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
 
     - name: depaware appsec
-      run: go run github.com/tailscale/depaware --check gopkg.in/DataDog/dd-trace-go.v1/appsec
+      run: go run github.com/tailscale/depaware --update gopkg.in/DataDog/dd-trace-go.v1/appsec
       env:
         GOFLAGS: -tags=appsec
+
+    - name: commit updated depaware
+      run: |
+        if git diff --name-only | grep depaware.txt; then
+          find . -name depaware.txt -exec git add {} +
+          git commit -m "update depaware.txt"
+          git push
+        fi
 
