@@ -36,6 +36,8 @@ jobs:
       run: |
         if git diff --name-only | grep depaware.txt; then
           find . -name depaware.txt -exec git add {} +
+          git config user.name github-actions
+          git config user.email github-actions@github.com
           git commit -m "update depaware.txt"
           git push
         fi
