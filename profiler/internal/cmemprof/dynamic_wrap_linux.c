@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
 // This code traverses the linked libraries at startup to find any references to
 // malloc/calloc/etc in their relocation tables. These are not visible at
@@ -73,8 +74,9 @@ static void write_table_entry(ElfW(Addr) addr, void *value) {
 	// The memory page containing the relocation table entry might not be
 	// writable. Without changing the permissions for the page, the
 	// subsequent memcpy will segfault
-	void *page = (void *)(addr & ~(0x1000 - 1));
-	mprotect(page, 0x1000, PROT_READ | PROT_WRITE);
+	long page_size = sysconf(_SC_PAGESIZE);
+	void *page = (void *)((addr / page_size) * page_size);
+	mprotect(page, page_size, PROT_READ | PROT_WRITE);
 	memcpy((void *)(addr), &value, sizeof(void *));
 }
 
