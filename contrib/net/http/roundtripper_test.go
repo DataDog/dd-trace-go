@@ -64,7 +64,7 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, "http.request", s1.Tag(ext.ResourceName))
 	assert.Equal(t, "200", s1.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s1.Tag(ext.HTTPMethod))
-	assert.Equal(t, "/hello/world", s1.Tag(ext.HTTPURL))
+	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
 	assert.Equal(t, true, s1.Tag("CalledBefore"))
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
 }
@@ -113,7 +113,7 @@ func TestRoundTripperServerError(t *testing.T) {
 	assert.Equal(t, "http.request", s1.Tag(ext.ResourceName))
 	assert.Equal(t, "500", s1.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s1.Tag(ext.HTTPMethod))
-	assert.Equal(t, "/hello/world", s1.Tag(ext.HTTPURL))
+	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
 	assert.Equal(t, fmt.Errorf("500: Internal Server Error"), s1.Tag(ext.Error))
 	assert.Equal(t, true, s1.Tag("CalledBefore"))
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
@@ -155,7 +155,7 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	assert.Equal(t, "http.request", s0.Tag(ext.ResourceName))
 	assert.Equal(t, nil, s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
-	assert.Equal(t, "/hello/world", s0.Tag(ext.HTTPURL))
+	assert.Equal(t, s.URL+"/hello/world", s0.Tag(ext.HTTPURL))
 	assert.NotNil(t, s0.Tag(ext.Error))
 	assert.Equal(t, true, s0.Tag("CalledBefore"))
 	assert.Equal(t, true, s0.Tag("CalledAfter"))
@@ -228,6 +228,31 @@ func TestRoundTripperAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, RTWithAnalyticsRate(0.23))
 	})
+}
+
+// TestRoundTripperCopy is a regression test ensuring that RoundTrip
+// does not modify the request per the RoundTripper contract. See:
+// https://cs.opensource.google/go/go/+/refs/tags/go1.18.1:src/net/http/client.go;l=129-133
+func TestRoundTripperCopy(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+		assert.NoError(t, err)
+		w.Write([]byte("Hello World"))
+	}))
+	defer s.Close()
+
+	initialReq, err := http.NewRequest("GET", s.URL+"/hello/world", nil)
+	assert.NoError(t, err)
+	req, err := http.NewRequest("GET", s.URL+"/hello/world", nil)
+	assert.NoError(t, err)
+	rt := WrapRoundTripper(http.DefaultTransport).(*roundTripper)
+	_, err = rt.RoundTrip(req)
+	assert.NoError(t, err)
+	assert.Len(t, req.Header, 0)
+	assert.Equal(t, initialReq, req)
 }
 
 func TestServiceName(t *testing.T) {

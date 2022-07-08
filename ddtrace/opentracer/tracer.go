@@ -3,6 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+// Package opentracer is in "Maintenance" mode and limited support is offered. Please consider
+// using OpenTelemetry or ddtrace/tracer directly. For additional details, please see our Support
+// Policy: https://github.com/DataDog/dd-trace-go#support-policy
+//
 // Package opentracer provides a wrapper on top of the Datadog tracer that can be used with Opentracing.
 // It also provides a set of opentracing.StartSpanOption that are specific to Datadog's APM product.
 // To use it, simply call "New".
