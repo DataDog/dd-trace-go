@@ -76,7 +76,6 @@ void profile_allocation(size_t size) {
 	}
 	if (should_sample(rate, size) != 0) {
 		if (atomic_load(&in_cgo_start) != 0) {
-			in_allocation--;
 			return;
 		}
 
@@ -144,21 +143,17 @@ void profile_allocation_checked(size_t size, void *ret_addr) {
 	if (in_allocation > 0) {
 		return;
 	}
-	in_allocation++;
 
 	if (should_sample(rate, size) != 0) {
 		if (atomic_load(&in_cgo_start) != 0) {
-			in_allocation--;
 			return;
 		}
 
 		if (is_unsafe_call(ret_addr)) {
-			in_allocation--;
 			return;
 		}
 		recordAllocationSample(size);
 	}
-	in_allocation--;
 }
 
 
