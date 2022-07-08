@@ -191,16 +191,18 @@ static int callback(struct dl_phdr_info *info, size_t size, void *data) {
 			}
 		}
 
-		if ((rel != NULL) && (symbols != NULL) && (strings != NULL)) {
-			traverse_rels(rel, rel_size / sizeof(ElfW(Rel)), symbols, strings, info->dlpi_addr);
-		}
+		if ((symbols != NULL) && (strings != NULL)) {
+			if (rel != NULL) {
+				traverse_rels(rel, rel_size / sizeof(ElfW(Rel)), symbols, strings, info->dlpi_addr);
+			}
 
-		if ((rela != NULL) && (symbols != NULL) && (strings != NULL)) {
-			traverse_relas(rela, rela_size / sizeof(ElfW(Rela)), symbols, strings, info->dlpi_addr);
-		}
+			if (rela != NULL) {
+				traverse_relas(rela, rela_size / sizeof(ElfW(Rela)), symbols, strings, info->dlpi_addr);
+			}
 
-		if ((jmprel != NULL) && (symbols != NULL) && (strings != NULL)) {
-			traverse_relas(jmprel, jmprel_size / sizeof(ElfW(Rela)), symbols, strings, info->dlpi_addr);
+			if (jmprel != NULL) {
+				traverse_relas(jmprel, jmprel_size / sizeof(ElfW(Rela)), symbols, strings, info->dlpi_addr);
+			}
 		}
 	}
 	return 0;
