@@ -107,6 +107,7 @@ type config struct {
 	outputDir         string
 	deltaProfiles     bool
 	logStartup        bool
+	cmemprofEnabled   bool
 	cmemprofRate      int
 }
 
@@ -134,6 +135,7 @@ func logStartup(c *config) {
 		MutexProfileFraction int      `json:"mutex_profile_fraction"`
 		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
 		UploadTimeout        string   `json:"upload_timeout"`
+		CmemprofEnabled      bool     `json:"cmemprof_enabled"`
 		CmemprofRate         int      `json:"cmemprof_rate"`
 	}{
 		Date:                 time.Now().Format(time.RFC3339),
@@ -156,6 +158,7 @@ func logStartup(c *config) {
 		MutexProfileFraction: c.mutexFraction,
 		MaxGoroutinesWait:    c.maxGoroutinesWait,
 		UploadTimeout:        c.uploadTimeout.String(),
+		CmemprofEnabled:      c.cmemprofEnabled,
 		CmemprofRate:         c.cmemprofRate,
 	}
 	for t := range c.types {
@@ -211,6 +214,7 @@ func defaultConfig() (*config, error) {
 		tags:              []string{fmt.Sprintf("process_id:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:        true,
+		cmemprofEnabled:   false,
 		cmemprofRate:      extensions.DefaultCAllocationSamplingRate,
 	}
 	for _, t := range defaultProfileTypes {
@@ -287,6 +291,7 @@ func defaultConfig() (*config, error) {
 		}
 		c.maxGoroutinesWait = n
 	}
+	c.cmemprofEnabled = internal.BoolEnv("DD_PROFILING_CMEMPROF_ENABLED", false)
 	if v := os.Getenv("DD_PROFILING_CMEMPROF_SAMPLING_RATE"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {

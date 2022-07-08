@@ -162,7 +162,7 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 		// TODO: add type safety for name == "heap" check and remove redunancy with profileType.Name.
 		cAlloc, ok := extensions.GetCAllocationProfiler()
 		switch {
-		case ok && p.cfg.deltaProfiles && name == "heap":
+		case ok && p.cfg.cmemprofEnabled && p.cfg.deltaProfiles && name == "heap":
 			// For the heap profile, we'd also like to include C
 			// allocations if that extension is enabled and have the
 			// allocations show up in the same profile. Collect them

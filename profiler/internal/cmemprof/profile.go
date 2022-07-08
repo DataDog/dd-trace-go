@@ -101,6 +101,9 @@ var activeProfile atomic.Value
 
 // Start begins profiling C memory allocations.
 func (c *Profile) Start(rate int) {
+	if rate <= 0 {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.active {
@@ -152,9 +155,9 @@ func (c *Profile) insert(pcs callStack, size uint) {
 // Stop cancels memory profiling and waits for the profile to be written to the
 // io.Writer passed to Start. Returns any error from writing the profile.
 func (c *Profile) Stop() (*profile.Profile, error) {
-	C.cgo_heap_profiler_set_sampling_rate(0)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	C.cgo_heap_profiler_set_sampling_rate(0)
 	if !c.active {
 		return nil, fmt.Errorf("profiling isn't started")
 	}
