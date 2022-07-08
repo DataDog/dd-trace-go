@@ -123,9 +123,6 @@ func (c *Profile) Start(rate int) {
 	// is reused after clearing a map, the total amount of memory used by
 	// the map only ever increases.
 	c.samples = make(map[callStack]*aggregatedSample)
-	if rate == 0 {
-		rate = extensions.DefaultCAllocationSamplingRate
-	}
 	c.SamplingRate = rate
 	activeProfile.Store(c)
 	C.cgo_heap_profiler_set_sampling_rate(C.size_t(rate))
