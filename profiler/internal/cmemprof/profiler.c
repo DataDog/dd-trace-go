@@ -114,13 +114,7 @@ static int is_unsafe_call(void *ret_addr) {
 	// symbol will have a name like "_cgo_<PREFIX>_Cfunc__Cmalloc", where
 	// <PREFIX> is a unique value for each package. We just look for the
 	// suffix.
-	int n = strlen(s);
-	const char *suffix = "_Cfunc__Cmalloc";
-	const int m = strlen(suffix);
-	if (n < m) {
-		return 0;
-	}
-	if (strcmp(s + (n - m), suffix) == 0) {
+	if (strstr(s, "_Cfunc__Cmalloc")) {
 		cgo_heap_profiler_debug("function %s is unsafe", s);
 		return 1;
 	}
