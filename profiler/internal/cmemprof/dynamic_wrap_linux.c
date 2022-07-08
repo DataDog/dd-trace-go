@@ -129,12 +129,12 @@ static void traverse_relas(ElfW(Rela) *relas, size_t nrelas, ElfW(Sym) *syms, ch
 #endif
 
 static int callback(struct dl_phdr_info *info, size_t size, void *data) {
-	int *p = data;
-	int count = *p;
-	*p = count + 1;
-	if (count == 0) {
-		// skip the program itself since we're already hooking into
-		// allocations through the linker using --wrap
+	int *count = data;
+	if ((*count)++ == 0) {
+		// The program itself will be the first object visited by
+		// dl_iterate_phdr. Don't edit the relocation table for the
+		// program itself since we're already hooking into allocations
+		// through the linker using --wrap
 		return 0;
 	}
 
