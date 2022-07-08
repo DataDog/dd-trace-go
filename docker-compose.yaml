@@ -1,0 +1,119 @@
+version: "3.9"  # optional since v1.27.0
+services:
+  cassandra:
+    image: cassandra:3.7
+    environment:
+      JVM_OPTS: "-Xms750m -Xmx750m"
+    ports:
+      - "9042:9042"
+  mysql:
+    image: circleci/mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_PASSWORD: test
+      MYSQL_USER: test
+      MYSQL_DATABASE: test
+    ports:
+      - "3306:3306"
+  postgres:
+    image: circleci/postgres:9.5
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    environment:
+      SA_PASSWORD: myPassw0rd
+      ACCEPT_EULA: Y
+    ports:
+      - "1433:1433"
+  consul:
+    image: consul:1.6.0
+    ports:
+      - "8500:8500"
+  redis:
+    image: redis:3.2
+    ports:
+      - "6379:6379"
+  elasticsearch2:
+    image: elasticsearch:2
+    environment:
+      ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    ports:
+      - "9200:9200"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+  elasticsearch5:
+    image: elasticsearch:5
+    environment:
+      ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    ports:
+      - "9201:9200"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+  elasticsearch6:
+    image: elasticsearch:6.8.13
+    environment:
+      http.port: 9202-9300
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    ports:
+      - "9202:9202"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+  elasticsearch7:
+    image: elasticsearch:7.14.1
+    environment:
+      http.port: 9203-9300
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    ports:
+      - "9203:9203"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+  datadog-agent:
+    image: datadog/docker-dd-agent
+    environment:
+      DD_APM_ENABLED: "true"
+      DD_BIND_HOST: "0.0.0.0"
+      DD_API_KEY: invalid_key_but_this_is_fine
+    ports:
+      - "8126:8126"
+  mongodb:
+    image: circleci/mongo:latest-ram
+    ports:
+      - "27017:27017"
+  memcached:
+    image: memcached:1.5.9
+    ports:
+      - "11211:11211"
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+    ports:
+      - "2181:2181"
+  kafka2:
+    image: wurstmeister/kafka:2.13-2.8.1
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      #KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT,LISTENER_NAME:PLAINTEXT
+      KAFKA_CREATE_TOPICS: gotest:1:1,gosegtest:1:1
+      KAFKA_BROKER_ID: 1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"

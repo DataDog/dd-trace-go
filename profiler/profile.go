@@ -193,7 +193,7 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 		start := time.Now()
 		delta, err := p.deltaProfile(name, delta, data, extra...)
 		tags := append(p.cfg.tags, fmt.Sprintf("profile_type:%s", name))
-		p.cfg.statsd.Timing("datadog.profiler.go.delta_time", time.Since(start), tags, 1)
+		p.cfg.statsd.Timing("datadog.profiling.go.delta_time", time.Since(start), tags, 1)
 		if err != nil {
 			return nil, fmt.Errorf("delta profile error: %s", err)
 		}
@@ -266,7 +266,7 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	if p.cfg.deltaProfiles && t.SupportsDelta {
 		filename = "delta-" + filename
 	}
-	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
+	p.cfg.statsd.Timing("datadog.profiling.go.collect_time", end.Sub(start), tags, 1)
 	return []*profile{{name: filename, data: data}}, nil
 }
 
