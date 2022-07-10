@@ -343,9 +343,7 @@ func TestAllUploaded(t *testing.T) {
 	// profiles are at least uploaded.
 	//
 	// TODO: Further check that the uploaded profiles are all valid
-	var (
-		profiles []string
-	)
+
 	// received indicates that the server has received a profile upload.
 	// This is used similarly to a sync.WaitGroup but avoids a potential
 	// panic if too many requests are received before profiling is stopped
@@ -354,11 +352,12 @@ func TestAllUploaded(t *testing.T) {
 	// The channel is buffered with 2 entries so we can check that the
 	// second batch of profiles is correct in case the profiler gets in a
 	// bad state after the first round of profiling.
-	received := make(chan struct{}, 2)
+	received := make(chan []string, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var profiles []string
 		defer func() {
 			select {
-			case received <- struct{}{}:
+			case received <- profiles:
 			default:
 			}
 		}()
@@ -368,7 +367,6 @@ func TestAllUploaded(t *testing.T) {
 			return
 		}
 		mr := multipart.NewReader(r.Body, params["boundary"])
-		profiles = profiles[:0]
 		for {
 			p, err := mr.NextPart()
 			if err == io.EOF {
@@ -406,7 +404,7 @@ func TestAllUploaded(t *testing.T) {
 	)
 	defer Stop()
 	<-received
-	<-received
+	profiles := <-received
 
 	expected := []string{
 		"data[cpu.pprof]",
@@ -418,4 +416,71 @@ func TestAllUploaded(t *testing.T) {
 	}
 	sort.Strings(profiles)
 	assert.Equal(t, expected, profiles)
+}
+
+func TestCorrectTags(t *testing.T) {
+	got := make(chan []string)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var tags []string
+		defer func() {
+			got <- tags
+		}()
+		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil {
+			t.Fatalf("bad media type: %s", err)
+			return
+		}
+		mr := multipart.NewReader(r.Body, params["boundary"])
+		for {
+			p, err := mr.NextPart()
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				t.Fatalf("next part: %s", err)
+			}
+			if p.FormName() == "tags[]" {
+				tag, err := io.ReadAll(p)
+				if err != nil {
+					t.Fatalf("reading tags: %s", err)
+				}
+				tags = append(tags, string(tag))
+			}
+		}
+	}))
+	defer server.Close()
+
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(
+			BlockProfile,
+			CPUProfile,
+			GoroutineProfile,
+			HeapProfile,
+			MutexProfile,
+		),
+		WithPeriod(10*time.Millisecond),
+		CPUDuration(10*time.Millisecond),
+		WithService("xyz"),
+		WithEnv("testing"),
+		WithTags("foo:bar", "baz:bonk"),
+	)
+	defer Stop()
+	expected := []string{
+		"baz:bonk",
+		"env:testing",
+		"foo:bar",
+		"service:xyz",
+	}
+	for i := 0; i < 20; i++ {
+		// We check the tags we get several times to try to have a
+		// better chance of catching a bug where the some of the tags
+		// are clobbered due to a bug caused by the same
+		// profiler-internal tag slice being appended to from different
+		// goroutines concurrently.
+		tags := <-got
+		for _, tag := range expected {
+			require.Contains(t, tags, tag)
+		}
+	}
 }
