@@ -25,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -94,7 +95,7 @@ type config struct {
 	hostname          string
 	statsd            StatsdClient
 	httpClient        *http.Client
-	tags              []string
+	tags              immutable.StringSlice
 	types             map[ProfileType]struct{}
 	period            time.Duration
 	cpuDuration       time.Duration
@@ -145,7 +146,7 @@ func logStartup(c *config) {
 		Env:                  c.env,
 		TargetURL:            c.targetURL,
 		Agentless:            c.agentless,
-		Tags:                 c.tags,
+		Tags:                 c.tags.Get(),
 		ProfilePeriod:        c.period.String(),
 		CPUDuration:          c.cpuDuration.String(),
 		CPUProfileRate:       c.cpuProfileRate,
@@ -204,10 +205,10 @@ func defaultConfig() (*config, error) {
 		mutexFraction:     DefaultMutexFraction,
 		uploadTimeout:     DefaultUploadTimeout,
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
-		tags:              []string{fmt.Sprintf("process_id:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:        true,
 	}
+	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
 	}
@@ -424,7 +425,7 @@ func WithVersion(version string) Option {
 // filter the profiling view based on various information.
 func WithTags(tags ...string) Option {
 	return func(cfg *config) {
-		cfg.tags = append(cfg.tags, tags...)
+		cfg.tags = cfg.tags.Append(tags...)
 	}
 }
 
