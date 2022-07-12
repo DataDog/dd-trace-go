@@ -25,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -106,6 +107,8 @@ type config struct {
 	outputDir         string
 	deltaProfiles     bool
 	logStartup        bool
+	cmemprofEnabled   bool
+	cmemprofRate      int
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -132,6 +135,8 @@ func logStartup(c *config) {
 		MutexProfileFraction int      `json:"mutex_profile_fraction"`
 		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
 		UploadTimeout        string   `json:"upload_timeout"`
+		CmemprofEnabled      bool     `json:"cmemprof_enabled"`
+		CmemprofRate         int      `json:"cmemprof_rate"`
 	}{
 		Date:                 time.Now().Format(time.RFC3339),
 		OSName:               osinfo.OSName(),
@@ -153,6 +158,8 @@ func logStartup(c *config) {
 		MutexProfileFraction: c.mutexFraction,
 		MaxGoroutinesWait:    c.maxGoroutinesWait,
 		UploadTimeout:        c.uploadTimeout.String(),
+		CmemprofEnabled:      c.cmemprofEnabled,
+		CmemprofRate:         c.cmemprofRate,
 	}
 	for t := range c.types {
 		info.EnabledProfiles = append(info.EnabledProfiles, t.String())
@@ -207,6 +214,8 @@ func defaultConfig() (*config, error) {
 		tags:              []string{fmt.Sprintf("process_id:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:        true,
+		cmemprofEnabled:   false,
+		cmemprofRate:      extensions.DefaultCAllocationSamplingRate,
 	}
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
@@ -281,6 +290,14 @@ func defaultConfig() (*config, error) {
 			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
 		}
 		c.maxGoroutinesWait = n
+	}
+	c.cmemprofEnabled = internal.BoolEnv("DD_PROFILING_CMEMPROF_ENABLED", false)
+	if v := os.Getenv("DD_PROFILING_CMEMPROF_SAMPLING_RATE"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("DD_PROFILING_CMEMPROF_SAMPLING_RATE: %s", err)
+		}
+		c.cmemprofRate = n
 	}
 	return &c, nil
 }
