@@ -4,6 +4,7 @@ go 1.12
 
 require (
 	cloud.google.com/go/pubsub v1.4.0
+	github.com/99designs/gqlgen v0.14.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583
 	github.com/DataDog/datadog-go/v5 v5.0.2
 	github.com/DataDog/gostackparse v0.5.0
@@ -27,7 +28,7 @@ require (
 	github.com/garyburd/redigo v1.6.3
 	github.com/gin-gonic/gin v1.7.0
 	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
-	github.com/go-chi/chi v1.5.0
+	github.com/go-chi/chi v3.3.2+incompatible
 	github.com/go-chi/chi/v5 v5.0.0
 	github.com/go-pg/pg/v10 v10.0.0
 	github.com/go-redis/redis v6.15.9+incompatible
@@ -36,14 +37,13 @@ require (
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gocql/gocql v0.0.0-20220224095938-0eacd3183625
 	github.com/gofiber/fiber/v2 v2.11.0
-	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/gomodule/redigo v1.7.0
 	github.com/google/pprof v0.0.0-20210423192551-a2663126120b
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/context v1.1.1 // indirect
-	github.com/gorilla/mux v1.5.0
+	github.com/gorilla/mux v1.6.1
 	github.com/graph-gophers/graphql-go v1.3.0
 	github.com/hashicorp/consul/api v1.0.0
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -74,8 +74,7 @@ require (
 	github.com/philhofer/fwd v1.1.1 // indirect
 	github.com/pierrec/lz4 v2.5.2+incompatible // indirect
 	github.com/segmentio/kafka-go v0.4.29
-	github.com/stretchr/objx v0.2.0 // indirect
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.1
 	github.com/syndtr/goleveldb v1.0.0
 	github.com/tidwall/btree v1.1.0 // indirect
 	github.com/tidwall/buntdb v1.2.0
@@ -84,6 +83,7 @@ require (
 	github.com/twitchtv/twirp v8.1.1+incompatible
 	github.com/urfave/negroni v1.0.0
 	github.com/valyala/fasthttp v1.32.0 // indirect
+	github.com/vektah/gqlparser/v2 v2.2.0
 	github.com/vmihailenco/msgpack/v5 v5.3.4 // indirect
 	github.com/vmihailenco/tagparser v0.1.2 // indirect
 	github.com/zenazn/goji v1.0.1
@@ -100,7 +100,7 @@ require (
 	google.golang.org/api v0.29.0
 	google.golang.org/genproto v0.0.0-20200726014623-da3ae01ef02d // indirect
 	google.golang.org/grpc v1.32.0
-	google.golang.org/protobuf v1.27.1
+	google.golang.org/protobuf v1.28.0
 	gopkg.in/jinzhu/gorm.v1 v1.9.1
 	gopkg.in/olivere/elastic.v3 v3.0.75
 	gopkg.in/olivere/elastic.v5 v5.0.84
