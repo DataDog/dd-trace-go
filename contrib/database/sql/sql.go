@@ -189,7 +189,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	}
 	if cfg.errCheck == nil {
 		cfg.errCheck = rc.errCheck
-  }
+	}
 	if cfg.commentInjectionMode == tracer.SQLInjectionUndefined {
 		cfg.commentInjectionMode = rc.commentInjectionMode
 	}
