@@ -77,6 +77,8 @@ type span struct {
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
 	context      *spanContext `msg:"-"` // span propagation context
+	inProcessor  bool         `msg:"-"` // true if the span is in postProcessor.
+	remove       bool         `msg:"-"` // true if the span should be removed from trace. note: currently does nothing.
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
@@ -109,7 +111,7 @@ func (s *span) SetTag(key string, value interface{}) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
-	if s.finished {
+	if s.finished && !s.inProcessor {
 		return
 	}
 	switch key {
@@ -363,12 +365,15 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	if s.taskEnd != nil {
 		s.taskEnd()
 	}
-	s.finish(t)
+	traceNotFinished := s.finish(t)
 
 	if s.pprofCtxRestore != nil {
 		// Restore the labels of the parent span so any CPU samples after this
 		// point are attributed correctly.
 		pprof.SetGoroutineLabels(s.pprofCtxRestore)
+	}
+	if !traceNotFinished {
+		s.context.finishTrace()
 	}
 }
 
@@ -379,14 +384,16 @@ func (s *span) SetOperationName(operationName string) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
-	if s.finished {
+	if s.finished && !s.inProcessor {
 		// already finished
 		return
 	}
 	s.Name = operationName
 }
 
-func (s *span) finish(finishTime int64) {
+// finish reports whether there are more spans left in the trace 
+// which s belongs to.
+func (s *span) finish(finishTime int64) bool {
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -394,7 +401,7 @@ func (s *span) finish(finishTime int64) {
 	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		// already finished
-		return
+		return true
 	}
 	if s.Duration == 0 {
 		s.Duration = finishTime - s.Start
@@ -407,13 +414,17 @@ func (s *span) finish(finishTime int64) {
 	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have an active tracer
-		if t.config.canComputeStats() && shouldComputeStats(s) {
-			// the agent supports computed stats
-			select {
-			case t.stats.In <- newAggregableSpan(s, t.obfuscator):
-				// ok
-			default:
-				log.Error("Stats channel full, disregarding span.")
+		if t.config.postProcessor == nil {
+			// if we have a processor stats would be inaccurate
+			// at this point.
+			if t.config.canComputeStats() && shouldComputeStats(s) {
+				// the agent supports computed stats
+				select {
+				case t.stats.In <- newAggregableSpan(s, t.obfuscator):
+					// ok
+				default:
+					log.Error("Stats channel full, disregarding span.")
+				}
 			}
 		}
 		if t.config.canDropP0s() {
@@ -425,7 +436,7 @@ func (s *span) finish(finishTime int64) {
 		// a single kept span keeps the whole trace.
 		s.context.trace.keep()
 	}
-	s.context.finish()
+	return s.context.finish()
 }
 
 // newAggregableSpan creates a new summary for the span s, within an application

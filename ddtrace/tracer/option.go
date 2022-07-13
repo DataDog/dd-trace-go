@@ -138,6 +138,21 @@ type config struct {
 
 	// enabled reports whether tracing is enabled.
 	enabled bool
+
+	// postProcessor holds the function used to process finished spans of a trace.
+	// It reports whether the trace should be dropped.
+	postProcessor func([]ReadWriteSpan) bool
+}
+
+// WithPostProcessor enables processing finished spans of a trace by f. Spans
+// can be read from and written to in the processor by using the methods specified by
+// the ReadWriteSpan interface. f should return false if the trace should be dropped.
+// todo: document performance impact and inaccurate stats if client side
+// stats are not enabled.
+func WithPostProcessor(f func([]ReadWriteSpan) bool) StartOption {
+	return func(c *config) {
+		c.postProcessor = f
+	}
 }
 
 // HasFeature reports whether feature f is enabled.

@@ -134,8 +134,12 @@ func (c *spanContext) meta(key string) (val string, ok bool) {
 	return val, ok
 }
 
-// finish marks this span as finished in the trace.
-func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
+// finish marks this span as finished in the trace, and reports whether
+// there are more spans left in the trace.
+func (c *spanContext) finish() bool { return c.trace.finishedOne(c.span) }
+
+// todo: document
+func (s *spanContext) finishTrace() { s.trace.finish() }
 
 // samplingDecision is the decision to send a trace to the agent or not.
 type samplingDecision int64
@@ -277,10 +281,10 @@ func (t *trace) push(sp *span) {
 	}
 }
 
-// finishedOne aknowledges that another span in the trace has finished, and checks
-// if the trace is complete, in which case it calls the onFinish function. It uses
-// the given priority, if non-nil, to mark the root span.
-func (t *trace) finishedOne(s *span) {
+// finishedOne aknowledges that another span in the trace has finished, and reports
+// whether there are more spans left in this trace. It uses the given priority,
+// if non-nil, to mark the root span.
+func (t *trace) finishedOne(s *span) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.full {
@@ -288,7 +292,7 @@ func (t *trace) finishedOne(s *span) {
 		// all the spans in the trace, so the below conditions will not
 		// be accurate and would trigger a pre-mature flush, exposing us
 		// to a race condition where spans can be modified while flushing.
-		return
+		return true
 	}
 	t.finished++
 	if s == t.root && t.priority != nil {
@@ -312,14 +316,28 @@ func (t *trace) finishedOne(s *span) {
 		}
 	}
 	if len(t.spans) != t.finished {
-		return
+		// trace is not finished
+		return true
 	}
+	// trace is finished
+	return false
+}
+
+// todo: document
+func (t *trace) finish() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	defer func() {
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 	}()
 	tr, ok := internal.GetGlobalTracer().(*tracer)
 	if !ok {
+		return
+	}
+	if tr.config.postProcessor != nil && processTrace(t.spans) == false {
+		// trace dropped by processor
 		return
 	}
 	// we have a tracer that can receive completed traces.
