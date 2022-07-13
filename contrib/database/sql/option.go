@@ -18,7 +18,7 @@ type config struct {
 	analyticsRate        float64
 	dsn                  string
 	childSpansOnly       bool
-	errCheck       func(err error) bool
+	errCheck             func(err error) bool
 	commentInjectionMode tracer.SQLCommentInjectionMode
 }
 
@@ -89,14 +89,13 @@ func WithChildSpansOnly() Option {
 	}
 }
 
-
 // WithErrorCheck specifies a function fn which determines whether the passed
 // error should be marked as an error. The fn is called whenever a database/sql operation
 // finishes with an error
 func WithErrorCheck(fn func(err error) bool) Option {
 	return func(cfg *config) {
 		cfg.errCheck = fn
-  }
+	}
 }
 
 // WithSQLCommentInjection enables injection of tags as sql comments on traced queries.
