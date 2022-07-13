@@ -139,7 +139,7 @@ func (c *spanContext) meta(key string) (val string, ok bool) {
 func (c *spanContext) finish() bool { return c.trace.finishedOne(c.span) }
 
 // todo: document
-func (s *spanContext) finishTrace() { s.trace.finish() }
+func (c *spanContext) finishTrace() { c.trace.finish() }
 
 // samplingDecision is the decision to send a trace to the agent or not.
 type samplingDecision int64
