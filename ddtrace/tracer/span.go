@@ -391,7 +391,7 @@ func (s *span) SetOperationName(operationName string) {
 	s.Name = operationName
 }
 
-// finish reports whether there are more spans left in the trace 
+// finish reports whether there are more spans left in the trace
 // which s belongs to.
 func (s *span) finish(finishTime int64) bool {
 	s.Lock()
