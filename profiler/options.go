@@ -26,7 +26,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
-  "gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
