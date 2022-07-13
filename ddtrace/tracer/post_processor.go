@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2022 Datadog, Inc.
+
 package tracer
 
 import (
@@ -11,7 +16,7 @@ import (
 // and the (s *span) *() methods to span.go.
 
 // ReadOnlySpan specifies methods to read from a span.
-type readOnlySpan interface {
+type readableSpan interface {
 	// Span name returns the operation of the span.
 	SpanName() string
 	// etc...
@@ -21,7 +26,7 @@ type readOnlySpan interface {
 // and readOnlyspan (to read from a span).
 type ReadWriteSpan interface {
 	ddtrace.Span
-	readOnlySpan
+	readableSpan
 	Remove()
 }
 
@@ -29,15 +34,6 @@ type ReadWriteSpan interface {
 func (s *span) SpanName() string {
 	s.Lock()
 	defer s.Unlock()
-	// the if statement below is not necessary to
-	// prevent a race condition with spans being
-	// flushed, as this is a read. I decided
-	// to still have this because it should be
-	// a user error to call this on a finished span
-	// (that is not being processed). I can remove it.
-	if s.finished && !s.inProcessor {
-		return "span is finished"
-	}
 	return s.Name
 }
 

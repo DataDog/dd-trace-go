@@ -365,14 +365,14 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	if s.taskEnd != nil {
 		s.taskEnd()
 	}
-	traceNotFinished := s.finish(t)
+	more := s.finish(t)
 
 	if s.pprofCtxRestore != nil {
 		// Restore the labels of the parent span so any CPU samples after this
 		// point are attributed correctly.
 		pprof.SetGoroutineLabels(s.pprofCtxRestore)
 	}
-	if !traceNotFinished {
+	if !more {
 		s.context.finishTrace()
 	}
 }
@@ -391,8 +391,7 @@ func (s *span) SetOperationName(operationName string) {
 	s.Name = operationName
 }
 
-// finish reports whether there are more spans left in the trace
-// which s belongs to.
+// finish finishes span s and reports whether there are more spans left in the trace.
 func (s *span) finish(finishTime int64) bool {
 	s.Lock()
 	defer s.Unlock()
