@@ -374,6 +374,8 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 		tracer.config.agent.DropP0s = true
+		tracer.config.featureFlags = make(map[string]struct{})
+		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -386,6 +388,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, 8.0, span.Metrics[spanSamplingMechanism])
 		assert.Equal(t, 1.0, span.Metrics[singleSpanSamplingRuleRate])
 		assert.Equal(t, 15.0, span.Metrics[singleSpanSamplingMPS])
+		assert.NotContains(t, span.Metrics, keyTopLevel)
 	})
 }
 
@@ -1826,6 +1829,8 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop := startTestTracer(b)
 		defer stop()
 		tracer.config.agent.DropP0s = true
+		tracer.config.featureFlags = make(map[string]struct{})
+		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -1846,6 +1851,8 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop := startTestTracer(b)
 		defer stop()
 		tracer.config.agent.DropP0s = true
+		tracer.config.featureFlags = make(map[string]struct{})
+		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -1870,6 +1877,8 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop := startTestTracer(b)
 		defer stop()
 		tracer.config.agent.DropP0s = true
+		tracer.config.featureFlags = make(map[string]struct{})
+		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"

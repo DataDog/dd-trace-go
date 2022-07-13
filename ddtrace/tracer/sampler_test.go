@@ -768,6 +768,8 @@ func TestGlobMatch(t *testing.T) {
 		{"a*test*case", "a-test-case", true},
 		{"a*test*case", "atestcase", true},
 		{"a*test*case", "abadcase", false},
+		{"*a*a*a*a*a*a", "aaaaaaaaaaaaaaaaaaaaaaaaaax", false},
+		{"*a*a*a*a*a*a", "aaaaaaaarrrrrrraaaraaarararaarararaarararaaa", true},
 		// pattern with ?
 		{"test?", "test", false},
 		{"test?", "test-case", false},

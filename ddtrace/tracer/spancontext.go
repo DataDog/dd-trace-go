@@ -336,8 +336,14 @@ func (t *trace) finishedOne(s *span) {
 			return
 		}
 		var singleSpans []*span
+		canDropP0s := tr.config.canDropP0s()
 		for _, span := range t.spans {
 			if tr.rulesSampling.sampleSpan(span) {
+				// since stats are computed on the tracer side, the keyTopLevel tag
+				// must be removed to preserve stats correctness
+				if canDropP0s {
+					delete(span.Metrics, keyTopLevel)
+				}
 				singleSpans = append(singleSpans, span)
 			}
 		}
