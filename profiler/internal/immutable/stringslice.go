@@ -7,7 +7,8 @@
 package immutable
 
 // StringSlice is a wrapped slice which cannot be modified and must be copied to
-// access. The zero value for a StringSlice is ready to use
+// access. The zero value for a StringSlice is ready to use. All StringSlice
+// methods are safe to call from multiple goroutines concurrently.
 type StringSlice struct {
 	s []string
 }
