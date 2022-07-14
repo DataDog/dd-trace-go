@@ -151,7 +151,7 @@ func logStartup(c *config) {
 		Env:                  c.env,
 		TargetURL:            c.targetURL,
 		Agentless:            c.agentless,
-		Tags:                 c.tags.Get(),
+		Tags:                 c.tags.Slice(),
 		ProfilePeriod:        c.period.String(),
 		CPUDuration:          c.cpuDuration.String(),
 		CPUProfileRate:       c.cpuProfileRate,

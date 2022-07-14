@@ -240,8 +240,8 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 					profs, err := p.runProfile(t)
 					if err != nil {
 						log.Error("Error getting %s profile: %v; skipping.", t, err)
-						tags := append(p.cfg.tags.Get(), t.Tag())
-						p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, append(tags, t.Tag()), 1)
+						tags := append(p.cfg.tags.Slice(), t.Tag())
+						p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, tags, 1)
 					}
 					mu.Lock()
 					defer mu.Unlock()
@@ -294,7 +294,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 			// queue is full; evict oldest
 			select {
 			case <-p.out:
-				p.cfg.statsd.Count("datadog.profiling.go.queue_full", 1, p.cfg.tags.Get(), 1)
+				p.cfg.statsd.Count("datadog.profiling.go.queue_full", 1, p.cfg.tags.Slice(), 1)
 				log.Warn("Evicting one profile batch from the upload queue to make room.")
 			default:
 				// this case should be almost impossible to trigger, it would require a

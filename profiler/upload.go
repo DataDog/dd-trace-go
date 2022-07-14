@@ -68,7 +68,7 @@ func (e retriableError) Error() string { return e.err.Error() }
 // doRequest makes an HTTP POST request to the Datadog Profiling API with the
 // given profile.
 func (p *profiler) doRequest(bat batch) error {
-	tags := append(p.cfg.tags.Get(),
+	tags := append(p.cfg.tags.Slice(),
 		fmt.Sprintf("service:%s", p.cfg.service),
 		fmt.Sprintf("env:%s", p.cfg.env),
 	)

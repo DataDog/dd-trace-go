@@ -6,8 +6,8 @@
 // Package immutable provides read-only types
 package immutable
 
-// StringSlice is a wrapped slice which cannot be modified and must be copied to
-// access. The zero value for a StringSlice is ready to use. All StringSlice
+// StringSlice holds a slice which cannot be modified and must be copied to
+// access. The zero value for a StringSlice is an empty slice (not nil). All StringSlice
 // methods are safe to call from multiple goroutines concurrently.
 type StringSlice struct {
 	s []string
@@ -18,13 +18,13 @@ func NewStringSlice(s []string) StringSlice {
 	return StringSlice{s: append([]string{}, s...)}
 }
 
-// Get returns a copy of the wrapped slice
-func (s StringSlice) Get() []string {
+// Slice returns a copy of the slice held by s
+func (s StringSlice) Slice() []string {
 	return append([]string{}, s.s...)
 }
 
 // Append creates a new StringSlice by concatenating the given strings to a copy
-// of the slice wrapped by f.
+// of the slice held by s.
 func (s StringSlice) Append(strings ...string) StringSlice {
 	dup := make([]string, len(s.s)+len(strings))
 	copy(dup, s.s)

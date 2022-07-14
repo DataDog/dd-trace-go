@@ -16,7 +16,7 @@ import (
 func TestStringSlice(t *testing.T) {
 	tags := []string{"service:foo", "env:bar", "ggthingy:baz"}
 	f := immutable.NewStringSlice(tags)
-	assert.Equal(t, tags, f.Get())
+	assert.Equal(t, tags, f.Slice())
 }
 
 func TestStringSliceModify(t *testing.T) {
@@ -24,15 +24,13 @@ func TestStringSliceModify(t *testing.T) {
 		tags := []string{"service:foo", "env:bar", "thingy:baz"}
 		f := immutable.NewStringSlice(tags)
 		tags[0] = "service:different"
-		assert.Equal(t, "service:foo", f.Get()[0])
-		t.Log(f.Get())
-		t.Log(tags)
+		assert.Equal(t, "service:foo", f.Slice()[0])
 	})
 
 	t.Run("modify-copy", func(t *testing.T) {
 		tags := []string{"service:foo", "env:bar", "thingy:baz"}
 		f := immutable.NewStringSlice(tags)
-		dup := f.Get()
+		dup := f.Slice()
 		dup[0] = "service:different"
 		assert.Equal(t, "service:foo", tags[0])
 	})
@@ -40,9 +38,9 @@ func TestStringSliceModify(t *testing.T) {
 	t.Run("modify-2-copies", func(t *testing.T) {
 		tags := []string{"service:foo", "env:bar", "thingy:baz"}
 		f := immutable.NewStringSlice(tags)
-		dup := f.Get()
+		dup := f.Slice()
 		dup[0] = "service:different"
-		dup2 := f.Get()
+		dup2 := f.Slice()
 		dup2[0] = "service:alsodifferent"
 		assert.Equal(t, "service:foo", tags[0])
 		assert.Equal(t, "service:different", dup[0])
@@ -51,11 +49,11 @@ func TestStringSliceModify(t *testing.T) {
 
 	t.Run("append-duplicates", func(t *testing.T) {
 		var f immutable.StringSlice
-		before := f.Get()
+		before := f.Slice()
 		g := f.Append("foo:bar")
 		h := f.Append("other:tag")
-		after := g.Get()
-		after2 := h.Get()
+		after := g.Slice()
+		after2 := h.Slice()
 		assert.NotEqual(t, before, after)
 		assert.NotEqual(t, before, after2)
 		assert.NotEqual(t, after, after2)
