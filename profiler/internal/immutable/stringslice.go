@@ -13,7 +13,7 @@ type StringSlice struct {
 	s []string
 }
 
-// NewStringSlice wraps a copy of the input slice
+// NewStringSlice creates a StringSlice from a copy of the input slice
 func NewStringSlice(s []string) StringSlice {
 	return StringSlice{s: append([]string{}, s...)}
 }
