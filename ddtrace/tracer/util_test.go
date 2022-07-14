@@ -86,7 +86,7 @@ func TestIsValidPropagatableTraceTag(t *testing.T) {
 		{"hello", "世界", fmt.Errorf("value contains an invalid character 19990")},
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			assert.Equal(t, tt.err, isValidPropagatableTraceTag(tt.key, tt.value))
+			assert.Equal(t, tt.err, isValidPropagatableTag(tt.key, tt.value))
 		})
 	}
 }

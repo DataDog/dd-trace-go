@@ -310,7 +310,7 @@ func TestCustomTags(t *testing.T) {
 		}
 	}()
 
-	_ = (<-c.Events()).(*kafka.Message)
+	<-c.Events()
 
 	c.Close()
 	// wait for the events channel to be closed

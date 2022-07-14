@@ -67,13 +67,13 @@ func TestKubernetes(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
 	{
-		s := spans[0]
-		assert.Equal(t, "http.request", s.OperationName())
-		assert.Equal(t, "GET namespaces", s.Tag(ext.ResourceName))
-		assert.Equal(t, "200", s.Tag(ext.HTTPCode))
-		assert.Equal(t, "GET", s.Tag(ext.HTTPMethod))
-		assert.Equal(t, "/api/v1/namespaces", s.Tag(ext.HTTPURL))
-		auditID, ok := s.Tag("kubernetes.audit_id").(string)
+		span := spans[0]
+		assert.Equal(t, "http.request", span.OperationName())
+		assert.Equal(t, "GET namespaces", span.Tag(ext.ResourceName))
+		assert.Equal(t, "200", span.Tag(ext.HTTPCode))
+		assert.Equal(t, "GET", span.Tag(ext.HTTPMethod))
+		assert.Equal(t, s.URL+"/api/v1/namespaces", span.Tag(ext.HTTPURL))
+		auditID, ok := span.Tag("kubernetes.audit_id").(string)
 		assert.True(t, ok)
 		assert.True(t, len(auditID) > 0)
 	}

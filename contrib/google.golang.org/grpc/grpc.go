@@ -10,6 +10,7 @@ package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.or
 
 import (
 	"io"
+	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -22,12 +23,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func addCustomTags(cfg *config, opts ...tracer.StartSpanOption) []tracer.StartSpanOption {
-	if cfg == nil || len(cfg.tags) == 0 {
+func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.StartSpanOption {
+	if len(cfg.tags) == 0 && math.IsNaN(cfg.analyticsRate) {
 		return opts
 	}
 
-	ret := make([]tracer.StartSpanOption, 0, len(cfg.tags)+len(opts))
+	ret := make([]tracer.StartSpanOption, 0, 1+len(cfg.tags)+len(opts))
+	ret = append(ret, tracer.AnalyticsRate(cfg.analyticsRate))
 	for _, opt := range opts {
 		ret = append(ret, opt)
 	}

@@ -119,12 +119,9 @@ func after(db *gorm.DB, operationName string, cfg *config) {
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-
-	if cfg.tagFns != nil {
-		for key, tagFn := range cfg.tagFns {
-			if tagFn != nil {
-				opts = append(opts, tracer.Tag(key, tagFn(db)))
-			}
+	for key, tagFn := range cfg.tagFns {
+		if tagFn != nil {
+			opts = append(opts, tracer.Tag(key, tagFn(db)))
 		}
 	}
 
