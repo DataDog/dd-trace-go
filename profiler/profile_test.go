@@ -225,7 +225,7 @@ main.main()
 ...additional frames elided...
 `
 
-		p, err := unstartedProfiler()
+		p, err := unstartedProfiler(WithPeriod(10 * time.Millisecond))
 		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(sample))
 			return err
