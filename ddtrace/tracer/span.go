@@ -77,8 +77,7 @@ type span struct {
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
 	context      *spanContext `msg:"-"` // span propagation context
-	inProcessor  bool         `msg:"-"` // true if the span is in postProcessor.
-	remove       bool         `msg:"-"` // true if the span should be removed from trace. note: currently does nothing.
+	drop         bool         `msg:"-"` // true if the span should be dropped from trace. note: currently does nothing.
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
@@ -111,9 +110,13 @@ func (s *span) SetTag(key string, value interface{}) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
-	if s.finished && !s.inProcessor {
+	if s.finished {
 		return
 	}
+	s.setTagLocked(key, value)
+}
+
+func (s *span) setTagLocked(key string, value interface{}) {
 	switch key {
 	case ext.Error:
 		s.setTagError(value, errorConfig{
@@ -384,7 +387,7 @@ func (s *span) SetOperationName(operationName string) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
-	if s.finished && !s.inProcessor {
+	if s.finished {
 		// already finished
 		return
 	}

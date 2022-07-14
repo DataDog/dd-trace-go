@@ -336,7 +336,7 @@ func (t *trace) finish() {
 	if !ok {
 		return
 	}
-	if tr.config.postProcessor != nil && processTrace(t.spans) == false {
+	if tr.config.postProcessor != nil && !tr.runProcessor(t.spans) {
 		// trace dropped by processor
 		return
 	}
