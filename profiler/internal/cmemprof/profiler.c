@@ -83,6 +83,10 @@ void profile_allocation(size_t size) {
 	}
 }
 
+// replaced_with_safety_wrapper indicates whether the library was able to locate
+// Go's malloc wrappers and replace them with our safe implementation.
+int replaced_with_safety_wrapper = 0;
+
 // is_unsafe_call checks whether the given return address is inside a function
 // from which it is unsafe to call back into Go code.
 //
@@ -100,6 +104,9 @@ void profile_allocation(size_t size) {
 //      goroutine's stack. If the stack grows and malloc's return value goes in
 //      the wrong place, the program can crash.
 static int is_unsafe_call(void *ret_addr) {
+	if (replaced_with_safety_wrapper == 1) {
+		return 0;
+	}
 	// TODO: Cache this whole check?
 	Dl_info info = {0};
 	if (dladdr(ret_addr, &info) == 0) {

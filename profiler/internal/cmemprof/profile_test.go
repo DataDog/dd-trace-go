@@ -75,10 +75,11 @@ func TestCgoMallocNoPanic(t *testing.T) {
 	testallocator.DoAllocGo(32)
 	testallocator.DoAllocGo(32)
 
-	_, err := prof.Stop()
+	p, err := prof.Stop()
 	if err != nil {
 		t.Fatalf("running profile: %s", err)
 	}
+	t.Logf("%v", p)
 }
 
 // TestNewCgoThreadCrash checks that wrapping malloc does not cause creating a
