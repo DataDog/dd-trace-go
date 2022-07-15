@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -871,34 +872,49 @@ type UserMonitoringOption func(Span)
 // WithUserEmail returns the option setting the email of the authenticated user.
 func WithUserEmail(email string) UserMonitoringOption {
 	return func(s Span) {
-		s.SetTag("usr.email", email)
+		s.SetTag(ext.UserEmail, email)
 	}
 }
 
 // WithUserName returns the option setting the name of the authenticated user.
 func WithUserName(name string) UserMonitoringOption {
 	return func(s Span) {
-		s.SetTag("usr.name", name)
+		s.SetTag(ext.UserName, name)
 	}
 }
 
 // WithUserSessionID returns the option setting the session ID of the authenticated user.
 func WithUserSessionID(sessionID string) UserMonitoringOption {
 	return func(s Span) {
-		s.SetTag("usr.session_id", sessionID)
+		s.SetTag(ext.UserSessionID, sessionID)
 	}
 }
 
 // WithUserRole returns the option setting the role of the authenticated user.
 func WithUserRole(role string) UserMonitoringOption {
 	return func(s Span) {
-		s.SetTag("usr.role", role)
+		s.SetTag(ext.UserRole, role)
 	}
 }
 
 // WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
 	return func(s Span) {
-		s.SetTag("usr.scope", scope)
+		s.SetTag(ext.UserScope, scope)
+	}
+}
+
+// WithPropagation returns the option allowing the user id to be propagated through distributed traces.
+// The user id is base64 encoded and added to the datadog propagated tags header.
+// RFC https://docs.google.com/document/d/1T3qAE5nol18psOaHESQ3r-WRiZWss9nyGmroShug8ao
+func WithPropagation() UserMonitoringOption {
+	return func(s Span) {
+		if span, ok := s.(*span); ok && span.context != nil {
+			id := span.context.trace.root.Meta[ext.UserID]
+			// Delete usr.id from the tags since _dd.p.usr.id will be reported
+			delete(span.context.trace.root.Meta, ext.UserID)
+			id = base64.StdEncoding.EncodeToString([]byte(id))
+			span.context.trace.setPropagatingTag(ext.PropagatedUserID, id)
+		}
 	}
 }

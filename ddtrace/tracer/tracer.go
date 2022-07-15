@@ -168,9 +168,14 @@ func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 	}
 	if span, ok := s.(*span); ok && span.context != nil {
 		span = span.context.trace.root
+		// Unset the propagated user ID by default so that if the function is called without WithPropagation(),
+		// a propagated user ID coming from upstream won't be propagated anymore.
+		// RFC: https://docs.google.com/document/d/1T3qAE5nol18psOaHESQ3r-WRiZWss9nyGmroShug8ao/edit#heading=h.3wmduzc8mwe1
+		delete(span.context.trace.propagatingTags, ext.PropagatedUserID)
+		delete(span.Meta, ext.PropagatedUserID)
 		s = span
 	}
-	s.SetTag("usr.id", id)
+	s.SetTag(ext.UserID, id)
 	for _, fn := range opts {
 		fn(s)
 	}
