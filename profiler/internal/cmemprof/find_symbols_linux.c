@@ -31,6 +31,7 @@ static char *safe_readlink(const char *path) {
 		}
 		ssize_t nread = readlink(path, buf, size);
 		if (nread < 0) {
+			free(buf);
 			return NULL;
 		}
 	} while (nread == size);
