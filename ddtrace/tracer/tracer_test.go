@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -1780,12 +1781,12 @@ func TestUserMonitoring(t *testing.T) {
 	const role = "admin"
 	const sessionID = "session#12345"
 	expected := []struct{ key, value string }{
-		{key: "usr.id", value: id},
-		{key: "usr.name", value: name},
-		{key: "usr.email", value: email},
-		{key: "usr.scope", value: scope},
-		{key: "usr.role", value: role},
-		{key: "usr.session_id", value: sessionID},
+		{key: ext.UserID, value: id},
+		{key: ext.UserName, value: name},
+		{key: ext.UserEmail, value: email},
+		{key: ext.UserScope, value: scope},
+		{key: ext.UserRole, value: role},
+		{key: ext.UserSessionID, value: sessionID},
 	}
 	tr := newTracer()
 	defer tr.Stop()
@@ -1810,6 +1811,17 @@ func TestUserMonitoring(t *testing.T) {
 		for _, pair := range expected {
 			assert.Equal(t, pair.value, root.Meta[pair.key])
 		}
+	})
+
+	t.Run("propagation", func(t *testing.T) {
+		s := tr.newRootSpan("root", "test", "test")
+		SetUser(s, id, WithPropagation())
+		s.Finish()
+		_, ok := s.Meta[ext.UserID]
+		assert.False(t, ok)
+		encoded := base64.StdEncoding.EncodeToString([]byte(id))
+		assert.Equal(t, encoded, s.context.trace.propagatingTags[ext.PropagatedUserID])
+		assert.Equal(t, encoded, s.Meta[ext.PropagatedUserID])
 	})
 }
 
