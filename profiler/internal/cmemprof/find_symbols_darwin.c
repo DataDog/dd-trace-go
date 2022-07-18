@@ -96,7 +96,7 @@ static void find_mallocs(void) {
 			// section of this object
 			char *name = strings + sym->n_un.n_strx;
 			if (strstr(name, "_Cfunc_safety_malloc_wrapper")) {
-				safety_wrapper = (uintptr_t) sym->n_value;
+				safety_wrapper = (uintptr_t)(sym->n_value + slide);
 			}
 		}
 	}
@@ -106,7 +106,7 @@ static void find_mallocs(void) {
 		char *name = strings + sym->n_un.n_strx;
 		if (strstr(name, "_Cfunc__Cmalloc")) {
 			// TODO: Adjust these pointers??
-			uintptr_t *p = (uintptr_t *)sym->n_value;
+			uintptr_t *p = (uintptr_t *)(sym->n_value + slide);
 			*p = safety_wrapper;
 		}
 	}
