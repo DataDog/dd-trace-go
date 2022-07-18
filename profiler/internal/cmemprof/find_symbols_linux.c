@@ -16,31 +16,6 @@
 
 extern int replaced_with_safety_wrapper;
 
-// safe_readlink is a wrapper around readlink which will read the link
-// in a size-independent way
-static char *safe_readlink(const char *path) {
-	size_t size = 256;
-	ssize_t nread = 0;
-	char *buf = NULL;
-	do {
-		size *= 2;
-		free(buf); // OK if buf is NULL
-		buf = calloc(1, size);
-		if (buf == NULL) {
-			return NULL;
-		}
-		ssize_t nread = readlink(path, buf, size);
-		if (nread < 0) {
-			free(buf);
-			return NULL;
-		}
-	} while (nread == size);
-	// if nread == size, we *might* have read to the end of the symlink or
-	// there might be more. Make the buffer big enough to hold the value
-	// plus room for the terminating 0 byte
-	return buf;
-}
-
 static int callback(struct dl_phdr_info *info, size_t size, void *data) {
 	uintptr_t *base_addr = data;
 	*base_addr = info->dlpi_addr;
@@ -54,12 +29,7 @@ __attribute__ ((constructor)) static void init(void) {
 	uintptr_t base_addr = 0;
 	dl_iterate_phdr(callback, &base_addr);
 
-	char *filename = safe_readlink("/proc/self/exe");
-	if (filename == NULL) {
-		return;
-	}
-	int fd = open(filename, O_RDONLY);
-	free(filename);
+	int fd = open("/proc/self/exe", O_RDONLY);
 	if (fd < 0) {
 		return;
 	}
