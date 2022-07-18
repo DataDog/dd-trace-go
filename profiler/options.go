@@ -213,7 +213,7 @@ func defaultConfig() (*config, error) {
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
 		tags:              []string{fmt.Sprintf("process_id:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
-		logStartup:        true,
+		logStartup:        internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		cmemprofEnabled:   false,
 		cmemprofRate:      extensions.DefaultCAllocationSamplingRate,
 	}
