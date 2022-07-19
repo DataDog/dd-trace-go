@@ -133,6 +133,8 @@ var profileTypes = map[ProfileType]profileType{
 				return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
 			}
 
+			p.interruptibleSleep(p.cfg.period)
+
 			var (
 				now   = now()
 				text  = &bytes.Buffer{}
@@ -150,6 +152,7 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "metrics.json",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
+			p.interruptibleSleep(p.cfg.period)
 			err := p.met.report(now(), &buf)
 			return buf.Bytes(), err
 		},
@@ -162,7 +165,7 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 		// TODO: add type safety for name == "heap" check and remove redunancy with profileType.Name.
 		cAlloc, ok := extensions.GetCAllocationProfiler()
 		switch {
-		case ok && p.cfg.deltaProfiles && name == "heap":
+		case ok && p.cfg.cmemprofEnabled && p.cfg.deltaProfiles && name == "heap":
 			// For the heap profile, we'd also like to include C
 			// allocations if that extension is enabled and have the
 			// allocations show up in the same profile. Collect them
@@ -170,7 +173,7 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 			// that all allocations cover the same time period
 			//
 			// TODO: Support non-delta profiles for C allocations?
-			cAlloc.Start(2 * 1024 * 1024)
+			cAlloc.Start(p.cfg.cmemprofRate)
 			p.interruptibleSleep(p.cfg.period)
 			profile, err := cAlloc.Stop()
 			if err == nil {
