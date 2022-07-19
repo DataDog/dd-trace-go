@@ -328,28 +328,29 @@ func (t *trace) finishedOne(s *span) {
 	if sd != decisionKeep {
 		// if trace sampling decision is drop, we still want to send single spans
 		// unless there are no single span sampling rules defined
-		var singleSpans []*span
-		if tr.rulesSampling.HasSpanRules() {
-			canDropP0s := tr.config.canDropP0s()
-			for _, span := range t.spans {
-				if tr.rulesSampling.sampleSpan(span) {
-					// since stats are computed on the tracer side, the keyTopLevel tag
-					// must be removed to preserve stats correctness
-					if canDropP0s {
-						delete(span.Metrics, keyTopLevel)
-					}
-					singleSpans = append(singleSpans, span)
+		if !tr.rulesSampling.HasSpanRules() {
+			return
+		}
+		var spans []*span
+		canDropP0s := tr.config.canDropP0s()
+		for _, span := range t.spans {
+			if tr.rulesSampling.SampleSpan(span) {
+				// since stats are computed on the tracer side, the keyTopLevel tag
+				// must be removed to preserve stats correctness
+				if canDropP0s {
+					delete(span.Metrics, keyTopLevel)
 				}
+				spans = append(spans, span)
 			}
 		}
 		if p, ok := t.samplingPriorityLocked(); ok && p == ext.PriorityAutoReject {
-			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)-len(singleSpans)))
+			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)-len(spans)))
 			atomic.AddUint64(&tr.droppedP0Traces, 1)
 		}
-		if len(singleSpans) == 0 {
+		if len(spans) == 0 {
 			return // no spans matched the rules and were sampled
 		}
-		t.spans = singleSpans
+		t.spans = spans
 	}
 	tr.pushTrace(t.spans)
 }

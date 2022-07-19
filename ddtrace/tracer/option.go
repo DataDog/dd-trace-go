@@ -119,7 +119,7 @@ type config struct {
 	statsd statsdClient
 
 	// samplingRules contains user-defined rules to determine the sampling rate to apply
-	// to spans. Rules might be of a type SamplingRuleSingleSpan or SamplingRuleTrace.
+	// to spans.
 	samplingRules []SamplingRule
 
 	// tickChan specifies a channel which will receive the time every time the tracer must flush.
@@ -667,8 +667,8 @@ func WithDogstatsdAddress(addr string) StartOption {
 	}
 }
 
-// WithSamplingRules specifies the sampling rates to apply to trace spans based on the
-// provided rules. Both trace sampling and single span sampling rules can be configured with this option.
+// WithSamplingRules specifies the sampling rates to apply to spans based on the
+// provided rules.
 func WithSamplingRules(rules []SamplingRule) StartOption {
 	return func(cfg *config) {
 		cfg.samplingRules = rules

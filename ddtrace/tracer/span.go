@@ -582,12 +582,15 @@ const (
 	keyPropagationError = "_dd.propagation_error"
 	// keySpanSamplingMechanism specifies the sampling mechanism by which an individual span was sampled
 	keySpanSamplingMechanism = "_dd.span_sampling.mechanism"
-	// singleSpanSamplingMechanism specifies value reserved to indicate that a span was kept
-	// on account of a single span sampling rule.
-	samplingMechanismSingleSpan = 8
 	// keySingleSpanSamplingRuleRate specifies the configured sampling probability for the single span sampling rule.
 	keySingleSpanSamplingRuleRate = "_dd.span_sampling.rule_rate"
 	// keySingleSpanSamplingMPS specifies the configured limit for the single span sampling rule
 	// that the span matched. If there is no configured limit, then this tag is omitted.
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
+)
+
+const (
+	// samplingMechanismSingleSpan specifies value reserved to indicate that a span was kept
+	// on account of a single span sampling rule.
+	samplingMechanismSingleSpan = 8
 )

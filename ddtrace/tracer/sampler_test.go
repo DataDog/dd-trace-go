@@ -361,7 +361,7 @@ func TestRulesSampler(t *testing.T) {
 		rs := newRulesSampler(nil)
 
 		span := makeSpan("http.request", "test-service")
-		result := rs.sampleTrace(span)
+		result := rs.SampleTrace(span)
 		assert.False(result)
 	})
 
@@ -379,7 +379,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v)
 
 				span := makeSpan("http.request", "test-service")
-				result := rs.sampleTrace(span)
+				result := rs.SampleTrace(span)
 				assert.True(result)
 				assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
 				assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
@@ -402,7 +402,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v)
 
 				span := makeSpan("http.request", "test-service")
-				result := rs.sampleTrace(span)
+				result := rs.SampleTrace(span)
 				assert.False(result)
 			})
 		}
@@ -439,7 +439,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(rules)
 
 				span := makeSpan(tt.spanName, tt.spanSrv)
-				result := rs.sampleSpan(span)
+				result := rs.SampleSpan(span)
 				assert.True(result)
 				assert.Contains(span.Metrics, keySpanSamplingMechanism)
 				assert.Contains(span.Metrics, keySingleSpanSamplingRuleRate)
@@ -480,7 +480,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(rules)
 
 				span := makeSpan(tt.spanName, tt.spanSrv)
-				result := rs.sampleSpan(span)
+				result := rs.SampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.Metrics, keySpanSamplingMechanism)
 				assert.NotContains(span.Metrics, keySingleSpanSamplingRuleRate)
@@ -508,7 +508,7 @@ func TestRulesSampler(t *testing.T) {
 					rs := newRulesSampler(rules)
 
 					span := makeSpan("http.request", "test-service")
-					result := rs.sampleTrace(span)
+					result := rs.SampleTrace(span)
 					assert.True(result)
 					assert.Equal(rate, span.Metrics["_dd.rule_psr"])
 					if rate > 0.0 {

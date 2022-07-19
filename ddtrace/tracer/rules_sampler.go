@@ -24,12 +24,13 @@ import (
 )
 
 // rulesSampler holds instances of trace sampler and single span sampler, that are configured with the given set of rules.
-// traceRulesSampler samples trace spans based on a user-defined set of rules and might impact sampling decision of the trace.
-// singleSpanRulesSampler samples individual spans based on a separate user-defined set of rules and
-// cannot impact the trace sampling decision.
 type rulesSampler struct {
+	// traceRulesSampler samples trace spans based on a user-defined set of rules and might impact sampling decision of the trace.
 	traces *traceRulesSampler
-	spans  *singleSpanRulesSampler
+
+	// singleSpanRulesSampler samples individual spans based on a separate user-defined set of rules and
+	// cannot impact the trace sampling decision.
+	spans *singleSpanRulesSampler
 }
 
 // newRulesSampler configures a *rulesSampler instance using the given set of rules.
@@ -52,21 +53,13 @@ func newRulesSampler(rules []SamplingRule) *rulesSampler {
 	}
 }
 
-func (r *rulesSampler) sampleTrace(s *span) bool {
-	return r.traces.apply(s)
-}
+func (r *rulesSampler) SampleTrace(s *span) bool { return r.traces.apply(s) }
 
-func (r *rulesSampler) sampleSpan(s *span) bool {
-	return r.spans.apply(s)
-}
+func (r *rulesSampler) SampleSpan(s *span) bool { return r.spans.apply(s) }
 
-func (r *rulesSampler) HasSpanRules() bool {
-	return r.spans.enabled()
-}
+func (r *rulesSampler) HasSpanRules() bool { return r.spans.enabled() }
 
-func (r *rulesSampler) TraceRateLimit() (float64, bool) {
-	return r.traces.limit()
-}
+func (r *rulesSampler) TraceRateLimit() (float64, bool) { return r.traces.limit() }
 
 // SamplingRule is used for applying sampling rates to spans that match
 // the service name, operation name or both.
@@ -82,6 +75,21 @@ type SamplingRule struct {
 	exactService string
 	exactName    string
 	limiter      *rateLimiter
+}
+
+// match returns true when the span's details match all the expected values in the rule.
+func (sr *SamplingRule) match(s *span) bool {
+	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
+		return false
+	} else if sr.exactService != "" && sr.exactService != s.Service {
+		return false
+	}
+	if sr.Name != nil && !sr.Name.MatchString(s.Name) {
+		return false
+	} else if sr.exactName != "" && sr.exactName != s.Name {
+		return false
+	}
+	return true
 }
 
 // SamplingRuleType represents a type of sampling rule spans are matched against.
@@ -136,7 +144,7 @@ func RateRule(rate float64) SamplingRule {
 	}
 }
 
-// traceRulesSampler allows a user-defined list of rules to apply to spans.
+// traceRulesSampler allows a user-defined list of rules to apply to traces.
 // These rules can match based on the span's Service, Name or both.
 // When making a sampling decision, the rules are checked in order until
 // a match is found.
@@ -216,21 +224,6 @@ func (rs *traceRulesSampler) apply(span *span) bool {
 	}
 
 	rs.applyRate(span, rate, time.Now())
-	return true
-}
-
-// match returns true when the span's details match all the expected values in the rule.
-func (sr *SamplingRule) match(s *span) bool {
-	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
-		return false
-	} else if sr.exactService != "" && sr.exactService != s.Service {
-		return false
-	}
-	if sr.Name != nil && !sr.Name.MatchString(s.Name) {
-		return false
-	} else if sr.exactName != "" && sr.exactName != s.Name {
-		return false
-	}
 	return true
 }
 
