@@ -230,6 +230,31 @@ func TestRoundTripperAnalyticsSettings(t *testing.T) {
 	})
 }
 
+// TestRoundTripperCopy is a regression test ensuring that RoundTrip
+// does not modify the request per the RoundTripper contract. See:
+// https://cs.opensource.google/go/go/+/refs/tags/go1.18.1:src/net/http/client.go;l=129-133
+func TestRoundTripperCopy(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+		assert.NoError(t, err)
+		w.Write([]byte("Hello World"))
+	}))
+	defer s.Close()
+
+	initialReq, err := http.NewRequest("GET", s.URL+"/hello/world", nil)
+	assert.NoError(t, err)
+	req, err := http.NewRequest("GET", s.URL+"/hello/world", nil)
+	assert.NoError(t, err)
+	rt := WrapRoundTripper(http.DefaultTransport).(*roundTripper)
+	_, err = rt.RoundTrip(req)
+	assert.NoError(t, err)
+	assert.Len(t, req.Header, 0)
+	assert.Equal(t, initialReq, req)
+}
+
 func TestServiceName(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World"))
