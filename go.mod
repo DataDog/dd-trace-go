@@ -21,7 +21,6 @@ require (
 	github.com/elastic/go-elasticsearch/v6 v6.8.5
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
 	github.com/emicklei/go-restful v0.0.0-20170410110728-ff4f55a20633
-	github.com/erikstmartin/go-testdb v0.0.0-20160219214506-8d10e4a1bae5 // indirect
 	github.com/fatih/color v1.9.0 // indirect
 	github.com/frankban/quicktest v1.13.0 // indirect
 	github.com/garyburd/redigo v1.6.3
@@ -42,8 +41,7 @@ require (
 	github.com/gomodule/redigo v1.7.0
 	github.com/google/pprof v0.0.0-20210423192551-a2663126120b
 	github.com/google/uuid v1.3.0
-	github.com/gorilla/context v1.1.1 // indirect
-	github.com/gorilla/mux v1.5.0
+	github.com/gorilla/mux v1.6.2
 	github.com/graph-gophers/graphql-go v1.3.0
 	github.com/hashicorp/consul/api v1.0.0
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -57,10 +55,10 @@ require (
 	github.com/hashicorp/vault/api v1.1.0
 	github.com/hashicorp/vault/sdk v0.1.14-0.20200519221838-e0cfd64bc267
 	github.com/jackc/pgx/v4 v4.14.0
-	github.com/jinzhu/gorm v1.9.1
+	github.com/jinzhu/gorm v1.9.10
 	github.com/jinzhu/now v1.1.3 // indirect
 	github.com/jmoiron/sqlx v1.2.0
-	github.com/julienschmidt/httprouter v1.1.0
+	github.com/julienschmidt/httprouter v1.2.0
 	github.com/kr/text v0.2.0 // indirect
 	github.com/labstack/echo v3.3.10+incompatible
 	github.com/labstack/echo/v4 v4.2.0
@@ -87,7 +85,7 @@ require (
 	github.com/vmihailenco/msgpack/v5 v5.3.4 // indirect
 	github.com/vmihailenco/tagparser v0.1.2 // indirect
 	github.com/zenazn/goji v1.0.1
-	go.mongodb.org/mongo-driver v1.5.1
+	go.mongodb.org/mongo-driver v1.7.5
 	go.opencensus.io v0.22.4 // indirect
 	golang.org/x/net v0.0.0-20220225172249-27dd8689420f
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d

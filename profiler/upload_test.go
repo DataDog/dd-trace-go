@@ -29,6 +29,7 @@ import (
 )
 
 var testBatch = batch{
+	seq:   23,
 	start: time.Now().Add(-10 * time.Second),
 	end:   time.Now(),
 	host:  "my-host",
@@ -69,6 +70,7 @@ func TestTryUpload(t *testing.T) {
 		"runtime:go",
 		"service:my-service",
 		"env:my-env",
+		"profile_seq:23",
 		"tag1:1",
 		"tag2:2",
 		fmt.Sprintf("process_id:%d", os.Getpid()),
