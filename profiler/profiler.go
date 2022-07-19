@@ -72,6 +72,7 @@ type profiler struct {
 	wg         sync.WaitGroup               // wg waits for all goroutines to exit when stopping.
 	met        *metrics                     // metric collector state
 	prev       map[string]*pprofile.Profile // previous collection results for delta profiling
+	seq        uint64                       // seq is the value of the profile_seq tag
 
 	testHooks testHooks
 }
@@ -223,6 +224,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		case <-ticker:
 			now := now()
 			bat := batch{
+				seq:   p.seq,
 				host:  p.cfg.hostname,
 				start: now,
 				// NB: while this is technically wrong in that it does not
@@ -231,6 +233,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				// configured CPU profile duration: (start-end).
 				end: now.Add(p.cfg.cpuDuration),
 			}
+			p.seq++
 
 			completed = completed[:0]
 			for _, t := range p.enabledProfileTypes() {

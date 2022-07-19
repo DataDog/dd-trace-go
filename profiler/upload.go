@@ -73,6 +73,10 @@ func (p *profiler) doRequest(bat batch) error {
 	tags = append(tags,
 		fmt.Sprintf("service:%s", p.cfg.service),
 		fmt.Sprintf("env:%s", p.cfg.env),
+		// The profile_seq tag can be used to identify the first profile
+		// uploaded by a given runtime-id, identify missing profiles, etc.. See
+		// PROF-5612 (internal) for more details.
+		fmt.Sprintf("profile_seq:%d", bat.seq),
 	)
 	contentType, body, err := encode(bat, tags)
 	if err != nil {
