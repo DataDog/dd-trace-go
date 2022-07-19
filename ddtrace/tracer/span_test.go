@@ -369,7 +369,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
 			tracer := newTracer()
 			spanCtx := &spanContext{traceID: 42, spanID: 42}
-			spanCtx.setSamplingPriority("", scenario.p, samplernames.Upstream, math.NaN())
+			spanCtx.setSamplingPriority(scenario.p, samplernames.Upstream, math.NaN())
 			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx)).(*span)
 			span.SetTag(scenario.tag, true)
 			assert.Equal(t, scenario.keep, shouldKeep(span))
@@ -485,8 +485,8 @@ func TestSpanError(t *testing.T) {
 	span.Finish()
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(0), span.Error)
-	// '+1' is `_dd.p.upstream_services`,
-	// because we add it into Meta of the first span, when root is finished.
+
+	// '+1' is `_dd.p.dm`
 	assert.Equal(nMeta+1, len(span.Meta))
 	assert.Equal("", span.Meta["error.msg"])
 	assert.Equal("", span.Meta["error.type"])
@@ -523,14 +523,14 @@ func TestUniqueTagKeys(t *testing.T) {
 	assert := assert.New(t)
 	span := newBasicSpan("web.request")
 
-	//check to see if setMeta correctly wipes out a metric tag
+	// check to see if setMeta correctly wipes out a metric tag
 	span.SetTag("foo.bar", 12)
 	span.SetTag("foo.bar", "val")
 
 	assert.NotContains(span.Metrics, "foo.bar")
 	assert.Equal("val", span.Meta["foo.bar"])
 
-	//check to see if setMetric correctly wipes out a meta tag
+	// check to see if setMetric correctly wipes out a meta tag
 	span.SetTag("foo.bar", "val")
 	span.SetTag("foo.bar", 12)
 
@@ -549,6 +549,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		span.Finish()
 		// It doesn't make much sense to update the span after it's been finished,
 		// but an error in a user's code could lead to this.
+		span.SetOperationName("race_test")
 		span.SetTag("race_test", "true")
 		span.SetTag("race_test2", 133.7)
 		span.SetTag("race_test3", 133.7)

@@ -38,21 +38,21 @@ func (p *profiler) upload(bat batch) error {
 
 		err = p.doRequest(bat)
 		if rerr, ok := err.(*retriableError); ok {
-			statsd.Count("datadog.profiler.go.upload_retry", 1, nil, 1)
+			statsd.Count("datadog.profiling.go.upload_retry", 1, nil, 1)
 			wait := time.Duration(rand.Int63n(p.cfg.period.Nanoseconds()))
 			log.Error("Uploading profile failed: %v. Trying again in %s...", rerr, wait)
 			p.interruptibleSleep(time.Second)
 			continue
 		}
 		if err != nil {
-			statsd.Count("datadog.profiler.go.upload_error", 1, nil, 1)
+			statsd.Count("datadog.profiling.go.upload_error", 1, nil, 1)
 		} else {
-			statsd.Count("datadog.profiler.go.upload_success", 1, nil, 1)
+			statsd.Count("datadog.profiling.go.upload_success", 1, nil, 1)
 			var b int64
 			for _, p := range bat.profiles {
 				b += int64(len(p.data))
 			}
-			statsd.Count("datadog.profiler.go.uploaded_profile_bytes", b, nil, 1)
+			statsd.Count("datadog.profiling.go.uploaded_profile_bytes", b, nil, 1)
 		}
 		return err
 	}
@@ -68,9 +68,15 @@ func (e retriableError) Error() string { return e.err.Error() }
 // doRequest makes an HTTP POST request to the Datadog Profiling API with the
 // given profile.
 func (p *profiler) doRequest(bat batch) error {
-	tags := append(p.cfg.tags,
+	tags := make([]string, len(p.cfg.tags))
+	copy(tags, p.cfg.tags)
+	tags = append(tags,
 		fmt.Sprintf("service:%s", p.cfg.service),
 		fmt.Sprintf("env:%s", p.cfg.env),
+		// The profile_seq tag can be used to identify the first profile
+		// uploaded by a given runtime-id, identify missing profiles, etc.. See
+		// PROF-5612 (internal) for more details.
+		fmt.Sprintf("profile_seq:%d", bat.seq),
 	)
 	contentType, body, err := encode(bat, tags)
 	if err != nil {
