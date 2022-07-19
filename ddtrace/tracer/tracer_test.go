@@ -385,9 +385,9 @@ func TestSamplingDecision(t *testing.T) {
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
 		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
-		assert.Equal(t, 8.0, span.Metrics[spanSamplingMechanism])
-		assert.Equal(t, 1.0, span.Metrics[singleSpanSamplingRuleRate])
-		assert.Equal(t, 15.0, span.Metrics[singleSpanSamplingMPS])
+		assert.Equal(t, 8.0, span.Metrics[keySpanSamplingMechanism])
+		assert.Equal(t, 1.0, span.Metrics[keySingleSpanSamplingRuleRate])
+		assert.Equal(t, 15.0, span.Metrics[keySingleSpanSamplingMPS])
 		assert.NotContains(t, span.Metrics, keyTopLevel)
 	})
 }

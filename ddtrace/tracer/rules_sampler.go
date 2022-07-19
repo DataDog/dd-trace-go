@@ -60,6 +60,14 @@ func (r *rulesSampler) sampleSpan(s *span) bool {
 	return r.spans.apply(s)
 }
 
+func (r *rulesSampler) HasSpanRules() bool {
+	return r.spans.enabled()
+}
+
+func (r *rulesSampler) TraceRateLimit() (float64, bool) {
+	return r.traces.limit()
+}
+
 // SamplingRule is used for applying sampling rates to spans that match
 // the service name, operation name or both.
 // For basic usage, consider using the helper functions ServiceRule, NameRule, etc.
@@ -84,6 +92,7 @@ const (
 	// If a sampling rule is of type SamplingRuleTrace, such rule determines the sampling rate to apply
 	// to trace spans. If a span matches that rule, it will impact the trace sampling decision.
 	SamplingRuleTrace = iota
+
 	// SamplingRuleSpan specifies a sampling rule that applies to a single span without affecting the entire trace.
 	// If a sampling rule is of type SamplingRuleSingleSpan, such rule determines the sampling rate to apply
 	// to individual spans. If a span matches a rule, it will NOT impact the trace sampling decision.
@@ -304,22 +313,6 @@ func (rs *singleSpanRulesSampler) enabled() bool {
 	return len(rs.rules) > 0
 }
 
-const (
-	// spanSamplingMechanism specifies the sampling mechanism by which an individual span was sampled
-	spanSamplingMechanism = "_dd.span_sampling.mechanism"
-
-	// singleSpanSamplingMechanism specifies value reserved to indicate that a span was kept
-	// on account of a single span sampling rule.
-	singleSpanSamplingMechanism = 8
-
-	// singleSpanSamplingRuleRate specifies the configured sampling probability for the single span sampling rule.
-	singleSpanSamplingRuleRate = "_dd.span_sampling.rule_rate"
-
-	// singleSpanSamplingMPS specifies the configured limit for the single span sampling rule
-	// that the span matched. If there is no configured limit, then this tag is omitted.
-	singleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
-)
-
 // apply uses the sampling rules to determine the sampling rate for the
 // provided span. If the rules don't match, then it returns false and the span is not
 // modified.
@@ -347,10 +340,10 @@ func (rs *singleSpanRulesSampler) applyRate(span *span, rule SamplingRule, rate 
 			return
 		}
 	}
-	span.setMetric(spanSamplingMechanism, singleSpanSamplingMechanism)
-	span.setMetric(singleSpanSamplingRuleRate, rate)
+	span.setMetric(keySpanSamplingMechanism, samplingMechanismSingleSpan)
+	span.setMetric(keySingleSpanSamplingRuleRate, rate)
 	if rule.MaxPerSecond != 0 {
-		span.setMetric(singleSpanSamplingMPS, rule.MaxPerSecond)
+		span.setMetric(keySingleSpanSamplingMPS, rule.MaxPerSecond)
 	}
 }
 
