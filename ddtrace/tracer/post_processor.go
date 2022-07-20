@@ -157,8 +157,9 @@ func (s readWriteSpan) SetTag(key string, value interface{}) {
 	case ext.SpanName, ext.SpanType, ext.ResourceName, ext.ServiceName, ext.HTTPCode, ext.Environment, keyMeasured, keyTopLevel, ext.AnalyticsEvent, ext.EventSampleRate:
 		log.Debug("Setting the tag %v in the processor is not allowed", key)
 		return
-	// Returning is not necessary, as the call to setSamplingPriorityLocked is a no-op on finished spans. Adding this case
-	// for the purpose of logging that this is not allowed.
+	// Returning is not necessary, as the call to setSamplingPriorityLocked is
+	// a no-op on finished spans. Adding this case for the purpose of logging
+	// that this is not allowed.
 	case ext.ManualKeep, ext.ManualDrop, ext.SamplingPriority, keySamplingPriority:
 		log.Debug("Setting sampling priority tag %v in the processor is not allowed", key)
 		return
