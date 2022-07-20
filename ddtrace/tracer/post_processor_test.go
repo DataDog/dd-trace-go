@@ -4,8 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTag(t *testing.T) {
