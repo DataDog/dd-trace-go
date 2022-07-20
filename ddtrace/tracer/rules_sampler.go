@@ -64,13 +64,23 @@ func (r *rulesSampler) TraceRateLimit() (float64, bool) { return r.traces.limit(
 // SamplingRule is used for applying sampling rates to spans that match
 // the service name, operation name or both.
 // For basic usage, consider using the helper functions ServiceRule, NameRule, etc.
-// See `SamplingRuleType` for more details.
 type SamplingRule struct {
-	Service      *regexp.Regexp
-	Name         *regexp.Regexp
-	Rate         float64
+	// Service specifies the regex expression span service name should match.
+	Service *regexp.Regexp
+
+	// Name specifies the regex expression span operation name should match.
+	Name *regexp.Regexp
+
+	// Rate specifies the sampling rate that should be applied to spans that match
+	// service and/or name of the rule.
+	Rate float64
+
+	// MaxPerSecond specifies max number of spans per second that can be sampled per the rule.
+	// If not specified, the default is no limit.
 	MaxPerSecond float64
-	Type         SamplingRuleType
+
+	// Type specifies type of the sampling rules. See `SamplingRuleType` for more details.
+	Type SamplingRuleType
 
 	exactService string
 	exactName    string
