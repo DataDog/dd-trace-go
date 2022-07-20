@@ -8,7 +8,6 @@ package pprofutils
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strconv"
 	"strings"
 	"time"
@@ -39,7 +38,7 @@ func (c Text) Convert(text io.Reader) (*profile.Profile, error) {
 	m := &profile.Mapping{ID: 1, HasFunctions: true}
 	p.Mapping = []*profile.Mapping{m}
 
-	lines, err := ioutil.ReadAll(text)
+	lines, err := io.ReadAll(text)
 	if err != nil {
 		return nil, err
 	}

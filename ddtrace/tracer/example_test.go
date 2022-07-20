@@ -6,8 +6,8 @@
 package tracer
 
 import (
-	"io/ioutil"
 	"log"
+	"os"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
@@ -28,7 +28,7 @@ func Example() {
 	child.SetTag(ext.ResourceName, "test.json")
 
 	// Perform an operation.
-	_, err := ioutil.ReadFile("~/test.json")
+	_, err := os.ReadFile("~/test.json")
 
 	// We may finish the child span using the returned error. If it's
 	// nil, it will be disregarded.

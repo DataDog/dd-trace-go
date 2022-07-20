@@ -8,7 +8,6 @@ package profiler
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net"
@@ -168,7 +167,7 @@ func TestContainerIDHeader(t *testing.T) {
 
 func BenchmarkDoRequest(b *testing.B) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		_, err := ioutil.ReadAll(req.Body)
+		_, err := io.ReadAll(req.Body)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -236,7 +235,7 @@ func newTestServer(t *testing.T, statusCode int) *testServer {
 			if err != nil {
 				t.Fatal(err)
 			}
-			slurp, err := ioutil.ReadAll(p)
+			slurp, err := io.ReadAll(p)
 			if err != nil {
 				t.Fatal(err)
 			}
