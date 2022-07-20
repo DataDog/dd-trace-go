@@ -40,7 +40,7 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("GET "+url, s.Tag(ext.ResourceName))
 	assert.Equal("200", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
-	assert.Equal(url, s.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
 }
@@ -68,7 +68,7 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("GET "+url, s.Tag(ext.ResourceName))
 	assert.Equal("500", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
-	assert.Equal(url, s.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
 	assert.Equal("bar", s.Tag("foo"))
 }
@@ -98,7 +98,7 @@ func TestWrapHandler200(t *testing.T) {
 	assert.Equal("my-resource", s.Tag(ext.ResourceName))
 	assert.Equal("200", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
-	assert.Equal(url, s.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
 }

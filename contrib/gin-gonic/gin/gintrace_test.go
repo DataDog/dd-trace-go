@@ -85,7 +85,7 @@ func TestTrace200(t *testing.T) {
 	assert.Contains(span.Tag(ext.ResourceName), "GET /user/:id")
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
 
 func TestTraceDefaultResponse(t *testing.T) {
@@ -121,7 +121,7 @@ func TestTraceDefaultResponse(t *testing.T) {
 	assert.Contains(span.Tag(ext.ResourceName), "GET /user/:id")
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
 
 func TestTraceMultipleResponses(t *testing.T) {
@@ -160,7 +160,7 @@ func TestTraceMultipleResponses(t *testing.T) {
 	assert.Contains(span.Tag(ext.ResourceName), "GET /user/:id")
 	assert.Equal("133", span.Tag(ext.HTTPCode)) // Will be fixed by https://github.com/gin-gonic/gin/pull/2627 once merged and released
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
 
 func TestError(t *testing.T) {

@@ -90,7 +90,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal(root.Context().SpanID(), span.ParentID())
 
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
 
 func TestTraceAnalytics(t *testing.T) {
@@ -137,7 +137,7 @@ func TestTraceAnalytics(t *testing.T) {
 	assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 	assert.Equal(root.Context().SpanID(), span.ParentID())
 
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
 
 func TestError(t *testing.T) {
@@ -270,6 +270,37 @@ func TestNoDebugStack(t *testing.T) {
 	span := spans[0]
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
 	assert.Equal("<debug stack disabled>", span.Tag(ext.ErrorStack))
+}
+
+func TestIgnoreRequestFunc(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called, traced bool
+
+	// setup
+	ignoreRequestFunc := func(c echo.Context) bool {
+		return true
+	}
+	router := echo.New()
+	router.Use(Middleware(WithIgnoreRequest(ignoreRequestFunc)))
+
+	// a handler with an error and make the requests
+	router.GET("/err", func(c echo.Context) error {
+		_, traced = tracer.SpanFromContext(c.Request().Context())
+		called = true
+		return nil
+	})
+	r := httptest.NewRequest("GET", "/err", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	// verify the error is correct and the stacktrace is disabled
+	assert.True(called)
+	assert.False(traced)
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 0)
 }
 
 func TestAppSec(t *testing.T) {
