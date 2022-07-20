@@ -133,6 +133,8 @@ var profileTypes = map[ProfileType]profileType{
 				return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
 			}
 
+			p.interruptibleSleep(p.cfg.period)
+
 			var (
 				now   = now()
 				text  = &bytes.Buffer{}
@@ -150,6 +152,7 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "metrics.json",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
+			p.interruptibleSleep(p.cfg.period)
 			err := p.met.report(now(), &buf)
 			return buf.Bytes(), err
 		},
@@ -245,6 +248,7 @@ type profile struct {
 // batch is a collection of profiles of different types, collected at roughly the same time. It maps
 // to what the Datadog UI calls a profile.
 type batch struct {
+	seq        uint64 // seq is the value of the profile_seq tag
 	start, end time.Time
 	host       string
 	profiles   []*profile
