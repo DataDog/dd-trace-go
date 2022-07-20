@@ -677,7 +677,6 @@ func WithRuntimeMetrics() StartOption {
 //   1. Look for /var/run/datadog/dsd.socket and use it if present. IF NOT, continue to #2.
 //   2. The host is determined by DD_AGENT_HOST, and defaults to "localhost"
 //   3. The port is retrieved from the agent. If not present, it is determined by DD_DOGSTATSD_PORT, and defaults to 8125
-//
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
