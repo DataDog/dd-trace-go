@@ -77,7 +77,6 @@ type span struct {
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
 	context      *spanContext `msg:"-"` // span propagation context
-	drop         bool         `msg:"-"` // true if the span should be dropped from trace. note: currently does nothing.
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
@@ -368,15 +367,12 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	if s.taskEnd != nil {
 		s.taskEnd()
 	}
-	more := s.finish(t)
+	s.finish(t)
 
 	if s.pprofCtxRestore != nil {
 		// Restore the labels of the parent span so any CPU samples after this
 		// point are attributed correctly.
 		pprof.SetGoroutineLabels(s.pprofCtxRestore)
-	}
-	if !more {
-		s.context.finishTrace()
 	}
 }
 
@@ -394,8 +390,7 @@ func (s *span) SetOperationName(operationName string) {
 	s.Name = operationName
 }
 
-// finish finishes span s and reports whether there are more spans left in the trace.
-func (s *span) finish(finishTime int64) bool {
+func (s *span) finish(finishTime int64) {
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -403,7 +398,7 @@ func (s *span) finish(finishTime int64) bool {
 	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		// already finished
-		return true
+		return
 	}
 	if s.Duration == 0 {
 		s.Duration = finishTime - s.Start
@@ -416,17 +411,13 @@ func (s *span) finish(finishTime int64) bool {
 	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have an active tracer
-		if t.config.postProcessor == nil {
-			// if we have a processor stats would be inaccurate
-			// at this point.
-			if t.config.canComputeStats() && shouldComputeStats(s) {
-				// the agent supports computed stats
-				select {
-				case t.stats.In <- newAggregableSpan(s, t.obfuscator):
-					// ok
-				default:
-					log.Error("Stats channel full, disregarding span.")
-				}
+		if t.config.canComputeStats() && shouldComputeStats(s) {
+			// the agent supports computed stats
+			select {
+			case t.stats.In <- newAggregableSpan(s, t.obfuscator):
+				// ok
+			default:
+				log.Error("Stats channel full, disregarding span.")
 			}
 		}
 		if t.config.canDropP0s() {
@@ -438,7 +429,7 @@ func (s *span) finish(finishTime int64) bool {
 		// a single kept span keeps the whole trace.
 		s.context.trace.keep()
 	}
-	return s.context.finish()
+	s.context.finish()
 }
 
 // newAggregableSpan creates a new summary for the span s, within an application

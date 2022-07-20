@@ -12,6 +12,7 @@ import (
 	rt "runtime/trace"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -73,6 +74,9 @@ type tracer struct {
 
 	// Records the number of dropped P0 traces and spans.
 	droppedP0Traces, droppedP0Spans uint64
+
+	// Records the number of dropped traces and spans by the processor.
+	droppedProcessorTraces, droppedProcessorSpans uint64
 
 	// rulesSampling holds an instance of the rules sampler. These are user-defined
 	// rules for applying a sampling rate to spans that match the designated service
@@ -275,6 +279,12 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
+			if !t.runProcessor(trace) {
+				// trace dropped by processor.
+				atomic.AddUint64(&t.droppedProcessorSpans, uint64(len(trace)))
+				atomic.AddUint64(&t.droppedProcessorTraces, 1)
+				continue
+			}
 			t.traceWriter.add(trace)
 
 		case <-tick:
