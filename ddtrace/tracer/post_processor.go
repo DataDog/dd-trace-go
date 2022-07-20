@@ -18,7 +18,7 @@ type readWriteSpan struct {
 	*span
 }
 
-// Tag returns the value of tag key.
+// Tag returns the tag value held by the given key.
 func (s readWriteSpan) Tag(key string) interface{} {
 	s.Lock()
 	defer s.Unlock()
