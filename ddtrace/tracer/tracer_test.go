@@ -196,7 +196,7 @@ func TestTracerStart(t *testing.T) {
 		Start()
 
 		// ensure at least one worker started and handles requests
-		internal.GetGlobalTracer().(*tracer).pushTrace([]*span{})
+		internal.GetGlobalTracer().(*tracer).pushTraceInfo(&traceInfo{spans: []*span{}})
 
 		Stop()
 		Stop()
@@ -207,7 +207,7 @@ func TestTracerStart(t *testing.T) {
 	t.Run("deadlock/direct", func(t *testing.T) {
 		tr, _, _, stop := startTestTracer(t)
 		defer stop()
-		tr.pushTrace([]*span{}) // blocks until worker is started
+		tr.pushTraceInfo(&traceInfo{spans: []*span{}}) // blocks until worker is started
 		select {
 		case <-tr.stop:
 			t.Fatal("stopped channel should be open")
@@ -379,16 +379,19 @@ func TestSamplingDecision(t *testing.T) {
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
-		span := tracer.StartSpan("name_1").(*span)
-		child := tracer.StartSpan("name_2", ChildOf(span.context))
+		parent := tracer.StartSpan("name_1").(*span)
+		child := tracer.StartSpan("name_2", ChildOf(parent.context)).(*span)
 		child.Finish()
-		span.Finish()
-		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
-		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
-		assert.Equal(t, 8.0, span.Metrics[keySpanSamplingMechanism])
-		assert.Equal(t, 1.0, span.Metrics[keySingleSpanSamplingRuleRate])
-		assert.Equal(t, 15.0, span.Metrics[keySingleSpanSamplingMPS])
-		assert.NotContains(t, span.Metrics, keyTopLevel)
+		parent.Finish()
+		tracer.pushTraceInfo(&traceInfo{spans: []*span{parent, child}})
+		// timing out since single span sampling runs in the worker thread
+		time.Sleep(time.Millisecond)
+		assert.Equal(t, float64(ext.PriorityAutoReject), parent.Metrics[keySamplingPriority])
+		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
+		assert.Equal(t, 8.0, parent.Metrics[keySpanSamplingMechanism])
+		assert.Equal(t, 1.0, parent.Metrics[keySingleSpanSamplingRuleRate])
+		assert.Equal(t, 15.0, parent.Metrics[keySingleSpanSamplingMPS])
+		assert.NotContains(t, parent.Metrics, keyTopLevel)
 	})
 }
 
@@ -1212,11 +1215,11 @@ func TestPushPayload(t *testing.T) {
 	s.Meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
 
 	// half payload size reached
-	tracer.pushTrace([]*span{s})
+	tracer.pushTraceInfo(&traceInfo{[]*span{s}, decisionKeep})
 	tracer.awaitPayload(t, 1)
 
 	// payload size exceeded
-	tracer.pushTrace([]*span{s})
+	tracer.pushTraceInfo(&traceInfo{[]*span{s}, decisionKeep})
 	flush(2)
 }
 
@@ -1238,16 +1241,16 @@ func TestPushTrace(t *testing.T) {
 			Resource: "/foo",
 		},
 	}
-	tracer.pushTrace(trace)
+	tracer.pushTraceInfo(&traceInfo{spans: trace})
 
 	assert.Len(tracer.out, 1)
 
 	t0 := <-tracer.out
-	assert.Equal(trace, t0)
+	assert.Equal(&traceInfo{spans: trace}, t0)
 
 	many := payloadQueueSize + 2
 	for i := 0; i < many; i++ {
-		tracer.pushTrace(make([]*span, i))
+		tracer.pushTraceInfo(&traceInfo{spans: make([]*span, i)})
 	}
 	assert.Len(tracer.out, payloadQueueSize)
 	log.Flush()

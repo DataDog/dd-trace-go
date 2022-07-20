@@ -12,6 +12,7 @@ import (
 	rt "runtime/trace"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -45,8 +46,8 @@ type tracer struct {
 	// destination, such as the Trace Agent or Datadog Forwarder.
 	traceWriter traceWriter
 
-	// out receives traces to be added to the payload.
-	out chan []*span
+	// out receives traceInfo with spans  to be added to the payload.
+	out chan *traceInfo
 
 	// flush receives a channel onto which it will confirm after a flush has been
 	// triggered and completed.
@@ -194,7 +195,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
-		out:              make(chan []*span, payloadQueueSize),
+		out:              make(chan *traceInfo, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    newRulesSampler(c.samplingRules),
@@ -275,9 +276,11 @@ func (t *tracer) flushSync() {
 func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
-		case trace := <-t.out:
-			t.traceWriter.add(trace)
-
+		case info := <-t.out:
+			t.processTraceInfo(info)
+			if len(info.spans) != 0 {
+				t.traceWriter.add(info.spans)
+			}
 		case <-tick:
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -296,8 +299,11 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			// before the final flush to ensure no traces are lost (see #526)
 			for {
 				select {
-				case trace := <-t.out:
-					t.traceWriter.add(trace)
+				case info := <-t.out:
+					t.processTraceInfo(info)
+					if len(info.spans) != 0 {
+						t.traceWriter.add(info.spans)
+					}
 				default:
 					break loop
 				}
@@ -307,16 +313,55 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	}
 }
 
-func (t *tracer) pushTrace(trace []*span) {
+// traceInfo contains span list and sampling decision of the trace
+// needed to run single span sampling.
+type traceInfo struct {
+	spans            []*span
+	samplingDecision samplingDecision
+}
+
+// processTraceInfo runs single span sampling on the spans pushed to the worker thread.
+// Sampling spans on the worker thread keeps any associated latency off the application thread.
+func (t *tracer) processTraceInfo(info *traceInfo) {
+	if info.samplingDecision == decisionKeep {
+		return
+	}
+	if !t.rulesSampling.HasSpanRules() {
+		info.spans = nil
+		return
+	}
+	// if trace sampling decision is drop, we still want to send single spans
+	// unless there are no single span sampling rules defined
+	var kept []*span
+	canDropP0s := t.config.canDropP0s()
+	for _, span := range info.spans {
+		if t.rulesSampling.SampleSpan(span) {
+			// since stats are computed on the tracer side, the keyTopLevel tag
+			// must be removed to preserve stats correctness
+			if canDropP0s {
+				delete(span.Metrics, keyTopLevel)
+			}
+			kept = append(kept, span)
+		}
+	}
+	atomic.AddUint64(&t.droppedP0Spans, uint64(len(info.spans)-len(kept)))
+	info.spans = kept
+	if len(kept) == 0 {
+		atomic.AddUint64(&t.droppedP0Traces, 1)
+		return // no spans matched the rules and were sampled
+	}
+}
+
+func (t *tracer) pushTraceInfo(info *traceInfo) {
 	select {
 	case <-t.stop:
 		return
 	default:
 	}
 	select {
-	case t.out <- trace:
+	case t.out <- info:
 	default:
-		log.Error("payload queue full, dropping %d traces", len(trace))
+		log.Error("payload queue full, dropping %d traces", len(info.spans))
 	}
 }
 

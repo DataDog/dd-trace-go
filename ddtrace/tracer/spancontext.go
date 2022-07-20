@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
@@ -324,33 +323,8 @@ func (t *trace) finishedOne(s *span) {
 	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
-	sd := samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision)))
-	if sd != decisionKeep {
-		// if trace sampling decision is drop, we still want to send single spans
-		// unless there are no single span sampling rules defined
-		if !tr.rulesSampling.HasSpanRules() {
-			return
-		}
-		var spans []*span
-		canDropP0s := tr.config.canDropP0s()
-		for _, span := range t.spans {
-			if tr.rulesSampling.SampleSpan(span) {
-				// since stats are computed on the tracer side, the keyTopLevel tag
-				// must be removed to preserve stats correctness
-				if canDropP0s {
-					delete(span.Metrics, keyTopLevel)
-				}
-				spans = append(spans, span)
-			}
-		}
-		if p, ok := t.samplingPriorityLocked(); ok && p == ext.PriorityAutoReject {
-			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)-len(spans)))
-			atomic.AddUint64(&tr.droppedP0Traces, 1)
-		}
-		if len(spans) == 0 {
-			return // no spans matched the rules and were sampled
-		}
-		t.spans = spans
-	}
-	tr.pushTrace(t.spans)
+	tr.pushTraceInfo(&traceInfo{
+		spans:            t.spans,
+		samplingDecision: samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision))),
+	})
 }
