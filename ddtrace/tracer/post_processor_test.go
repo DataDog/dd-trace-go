@@ -70,7 +70,7 @@ func TestErrorGetter(t *testing.T) {
 		assert.Equal(false, s.IsError())
 	})
 
-	t.Run("no-error", func(t *testing.T) {
+	t.Run("error", func(t *testing.T) {
 		assert := assert.New(t)
 		span := newBasicSpan("http.request")
 		s := readWriteSpan{span}
@@ -84,7 +84,6 @@ func TestSetTag(t *testing.T) {
 		key      string
 		val      interface{}
 		rWSetVal interface{}
-		want     interface{}
 	}{
 		"name":              {key: ext.SpanName, val: "http.request", rWSetVal: "changed.name"},
 		"type":              {key: ext.SpanType, val: "web", rWSetVal: "db"},
@@ -92,14 +91,14 @@ func TestSetTag(t *testing.T) {
 		"service":           {key: ext.ServiceName, val: "test_svc", rWSetVal: "new_svc"},
 		"status_code":       {key: ext.HTTPCode, val: "200", rWSetVal: "404"},
 		"env":               {key: ext.Environment, val: "prod", rWSetVal: "breaking"},
-		"measured":          {key: keyMeasured, val: 0, rWSetVal: 1, want: float64(0)},
-		"keyTopLevel":       {key: keyTopLevel, val: 0, rWSetVal: 1, want: float64(0)},
+		"measured":          {key: keyMeasured, val: float64(0), rWSetVal: 1},
+		"keyTopLevel":       {key: keyTopLevel, val: float64(0), rWSetVal: 1},
 		"ManualKeep":        {key: ext.ManualKeep, val: true, rWSetVal: false},
 		"ManualDrop":        {key: ext.ManualDrop, val: true, rWSetVal: false},
-		"analytics":         {key: ext.AnalyticsEvent, val: true, rWSetVal: true, want: true},
-		"analytics-rate":    {key: ext.EventSampleRate, val: 0, rWSetVal: 1, want: float64(0)},
-		"sampling-priority": {key: ext.SamplingPriority, val: 1, rWSetVal: 4, want: float64(1)},
-		"sampling-v1":       {key: keySamplingPriority, val: 1, rWSetVal: 4, want: float64(1)},
+		"analytics":         {key: ext.AnalyticsEvent, val: true, rWSetVal: true},
+		"analytics-rate":    {key: ext.EventSampleRate, val: float64(0), rWSetVal: 1},
+		"sampling-priority": {key: ext.SamplingPriority, val: float64(1), rWSetVal: 4},
+		"sampling-v1":       {key: keySamplingPriority, val: float64(1), rWSetVal: 4},
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -107,11 +106,7 @@ func TestSetTag(t *testing.T) {
 			s := readWriteSpan{span}
 			span.SetTag(tc.key, tc.val)
 			s.SetTag(tc.key, tc.rWSetVal)
-			if tc.want == nil {
-				assert.Equal(tc.val, s.Tag(tc.key))
-			} else {
-				assert.Equal(tc.want, s.Tag(tc.key))
-			}
+			assert.Equal(tc.val, s.Tag(tc.key))
 		})
 	}
 
