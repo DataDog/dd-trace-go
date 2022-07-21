@@ -75,6 +75,9 @@ type tracer struct {
 	// Records the number of dropped P0 traces and spans.
 	droppedP0Traces, droppedP0Spans uint64
 
+	// partialTrace the number of partially dropped traces.
+	partialTraces uint64
+
 	// rulesSampling holds an instance of the rules sampler used to apply either trace sampling,
 	// or single span sampling rules on spans. These are user-defined
 	// rules for applying a sampling rate to spans that match the designated service
@@ -350,6 +353,7 @@ func (t *tracer) processTraceInfo(info *traceInfo) {
 		atomic.AddUint64(&t.droppedP0Traces, 1)
 		return // no spans matched the rules and were sampled
 	}
+	atomic.AddUint64(&t.partialTraces, 1)
 }
 
 func (t *tracer) pushTraceInfo(info *traceInfo) {
