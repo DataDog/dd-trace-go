@@ -3,6 +3,7 @@ package remoteconfig
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -155,7 +156,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		for alg, hash := range f.Hashes {
 			pbHashes = append(pbHashes, &TargetFileHash{
 				Algorithm: alg,
-				Hash:      hash,
+				Hash:      hex.EncodeToString(hash),
 			})
 		}
 		pbCachedFiles = append(pbCachedFiles, &TargetFileMeta{
