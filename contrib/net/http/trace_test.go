@@ -7,7 +7,7 @@ package http
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -137,7 +137,7 @@ func TestTraceAndServe(t *testing.T) {
 
 		res, err := http.Get(srv.URL)
 		assert.NoError(err)
-		slurp, err := ioutil.ReadAll(res.Body)
+		slurp, err := io.ReadAll(res.Body)
 		res.Body.Close()
 		assert.True(called)
 		assert.NoError(err)

@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -14,7 +15,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -338,6 +338,11 @@ func unstartedProfiler(opts ...Option) (*profiler, error) {
 }
 
 func TestAllUploaded(t *testing.T) {
+	type profileMeta struct {
+		tags  []string
+		files []string
+	}
+
 	// This is a kind of end-to-end test that runs the real profiles (i.e.
 	// not mocking/replacing any internal functions) and verifies that the
 	// profiles are at least uploaded.
@@ -352,12 +357,12 @@ func TestAllUploaded(t *testing.T) {
 	// The channel is buffered with 2 entries so we can check that the
 	// second batch of profiles is correct in case the profiler gets in a
 	// bad state after the first round of profiling.
-	received := make(chan []string, 2)
+	received := make(chan profileMeta, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var profiles []string
+		var profile profileMeta
 		defer func() {
 			select {
-			case received <- profiles:
+			case received <- profile:
 			default:
 			}
 		}()
@@ -375,8 +380,15 @@ func TestAllUploaded(t *testing.T) {
 			if err != nil {
 				t.Fatalf("next part: %s", err)
 			}
+			if p.FormName() == "tags[]" {
+				val, err := io.ReadAll(p)
+				if err != nil {
+					t.Fatalf("next part: %s", err)
+				}
+				profile.tags = append(profile.tags, string(val))
+			}
 			if p.FileName() == "pprof-data" {
-				profiles = append(profiles, p.FormName())
+				profile.files = append(profile.files, p.FormName())
 			}
 		}
 	}))
@@ -403,19 +415,23 @@ func TestAllUploaded(t *testing.T) {
 		CPUDuration(1*time.Millisecond),
 	)
 	defer Stop()
-	<-received
-	profiles := <-received
 
-	expected := []string{
-		"data[cpu.pprof]",
-		"data[delta-block.pprof]",
-		"data[delta-heap.pprof]",
-		"data[delta-mutex.pprof]",
-		"data[goroutines.pprof]",
-		"data[goroutineswait.pprof]",
+	validateProfile := func(profile profileMeta, seq uint64) {
+		expected := []string{
+			"data[cpu.pprof]",
+			"data[delta-block.pprof]",
+			"data[delta-heap.pprof]",
+			"data[delta-mutex.pprof]",
+			"data[goroutines.pprof]",
+			"data[goroutineswait.pprof]",
+		}
+		assert.ElementsMatch(t, expected, profile.files)
+
+		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
 	}
-	sort.Strings(profiles)
-	assert.Equal(t, expected, profiles)
+
+	validateProfile(<-received, 0)
+	validateProfile(<-received, 1)
 }
 
 func TestCorrectTags(t *testing.T) {
