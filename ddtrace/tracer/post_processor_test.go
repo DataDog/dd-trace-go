@@ -1,12 +1,18 @@
 package tracer
 
 import (
+	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tinylib/msgp/msgp"
 )
 
 func TestTag(t *testing.T) {
@@ -56,38 +62,12 @@ func TestTag(t *testing.T) {
 	})
 }
 
-func TestFieldGetters(t *testing.T) {
-	t.Run("unset", func(t *testing.T) {
-		assert := assert.New(t)
-		span := newBasicSpan("")
-		s := readWriteSpan{span}
-		assert.Equal("", s.GetName())
-		assert.Equal("", s.GetService())
-		assert.Equal("", s.GetResource())
-		assert.Equal("", s.GetType())
-	})
-
-	t.Run("set", func(t *testing.T) {
-		assert := assert.New(t)
-		span := newSpan("http.request", "test_svc", "GET /example", 0, 0, 0)
-		span.Type = "web"
-		s := readWriteSpan{span}
-		assert.Equal("http.request", s.GetName())
-		assert.Equal("test_svc", s.GetService())
-		assert.Equal("GET /example", s.GetResource())
-		assert.Equal("web", s.GetType())
-	})
-}
-
-func TestErrorGetters(t *testing.T) {
+func TestErrorGetter(t *testing.T) {
 	t.Run("no-error", func(t *testing.T) {
 		assert := assert.New(t)
 		span := newBasicSpan("http.request")
 		s := readWriteSpan{span}
 		assert.Equal(false, s.IsError())
-		assert.Equal("", s.ErrorMessage())
-		assert.Equal("", s.ErrorType())
-		assert.Equal("", s.ErrorStack())
 	})
 
 	t.Run("no-error", func(t *testing.T) {
@@ -96,10 +76,6 @@ func TestErrorGetters(t *testing.T) {
 		s := readWriteSpan{span}
 		span.SetTag(ext.Error, errors.New("abc"))
 		assert.Equal(true, s.IsError())
-		assert.Equal("abc", s.ErrorMessage())
-		assert.Equal("*errors.errorString", s.ErrorType())
-		assert.Equal("", s.ErrorDetails())
-		assert.NotEmpty(s.ErrorStack())
 	})
 }
 
@@ -160,4 +136,180 @@ func TestNewReadWriteSpanSlice(t *testing.T) {
 		assert.Equal(s.(readWriteSpan).span, spans[i])
 		assert.Same(s.(readWriteSpan).span, spans[i])
 	}
+}
+
+func TestRunProcessor(t *testing.T) {
+	t.Run("accept", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ddtrace.ReadWriteSpan) bool { return true }))
+		defer stop()
+		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
+		assert.Equal(true, tracer.runProcessor(spans))
+	})
+
+	t.Run("reject", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ddtrace.ReadWriteSpan) bool { return false }))
+		defer stop()
+		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
+		assert.Equal(false, tracer.runProcessor(spans))
+	})
+
+	t.Run("tag", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool {
+			for _, span := range spans {
+				if span.Tag(ext.SpanName) == "http.request" {
+					span.SetTag("custom", "val")
+				}
+				if span.Tag(ext.SpanName) == "db.request" {
+					span.SetTag("metric", float64(1))
+				}
+			}
+			return true
+		}))
+		defer stop()
+		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
+		assert.Equal(true, tracer.runProcessor(spans))
+		for _, span := range spans {
+			if span.Name == "http.request" {
+				assert.Equal("val", span.Meta["custom"])
+				assert.Equal(float64(0), span.Metrics["metric"])
+			}
+			if span.Name == "db.request" {
+				assert.Equal("", span.Meta["custom"])
+				assert.Equal(float64(1), span.Metrics["metric"])
+			}
+		}
+	})
+}
+
+// E2E test below is still a WIP.
+type testTransport struct {
+	transport
+}
+
+func newTransport(URL string) testTransport {
+	transport := newDefaultTransport()
+	if t, ok := transport.(*httpTransport); ok {
+		t.traceURL = URL
+	}
+
+	return testTransport{
+		transport: transport,
+	}
+}
+
+func (dt testTransport) sendStats(s *statsPayload) error {
+	return nil
+}
+
+func runProcessorTestEndToEnd(t *testing.T, testFunc func(sls spanLists), processor func([]ddtrace.ReadWriteSpan) bool, startSpans func()) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var sls spanLists
+		if err := msgp.Decode(r.Body, &sls); err != nil {
+			t.Fatal(err)
+		}
+		testFunc(sls)
+	}))
+	defer srv.Close()
+
+	// Disables call to checkEndpoint which sends an empty payload.
+	os.Setenv("DD_TRACE_STARTUP_LOGS", "false")
+	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
+
+	Start(
+		WithPostProcessor(processor),
+		withTransport(newTransport(srv.URL)),
+	)
+	defer Stop()
+
+	startSpans()
+}
+
+func TestProcessorEndToEnd(t *testing.T) {
+	t.Run("accepted", func(t *testing.T) {
+		runProcessorTestEndToEnd(t,
+			func(sls spanLists) {
+				assert.Equal(t, 3, len(sls))
+				for _, spanList := range sls {
+					assert.Equal(t, 1, len(spanList))
+					for _, span := range spanList {
+						assert.Equal(t, "accepted.req", span.Name)
+					}
+				}
+			},
+			func(spans []ddtrace.ReadWriteSpan) bool { return true },
+			func() {
+				span1 := StartSpan("accepted.req")
+				span1.Finish()
+				span2 := StartSpan("accepted.req")
+				span2.Finish()
+				span3 := StartSpan("accepted.req")
+				span3.Finish()
+			},
+		)
+	})
+
+	t.Run("rejected", func(t *testing.T) {
+		runProcessorTestEndToEnd(t,
+			func(sls spanLists) {
+				assert.Equal(t, 1, len(sls))
+				for _, spanList := range sls {
+					assert.Equal(t, 1, len(spanList))
+					for _, span := range spanList {
+						assert.Equal(t, "accepted.req", span.Name)
+					}
+				}
+			},
+			func(spans []ddtrace.ReadWriteSpan) bool {
+				for _, span := range spans {
+					if span.Tag(ext.SpanName) == "reject.req" {
+						return false
+					}
+				}
+				return true
+			},
+			func() {
+				span1 := StartSpan("reject.req")
+				span1.Finish()
+				span2 := StartSpan("accepted.req")
+				span2.Finish()
+				span3 := StartSpan("reject.req")
+				span3.Finish()
+			})
+	})
+
+	t.Run("tagged", func(t *testing.T) {
+		runProcessorTestEndToEnd(t,
+			func(sls spanLists) {
+				assert.Equal(t, 1, len(sls))
+				for _, spanList := range sls {
+					assert.Equal(t, 2, len(spanList))
+					for _, span := range spanList {
+						if span.Name == "tagged.req" {
+							assert.Equal(t, "true", span.Meta["processor_tag"])
+						} else {
+							assert.Equal(t, "", span.Meta["processor_tag"])
+						}
+					}
+				}
+			},
+			func(spans []ddtrace.ReadWriteSpan) bool {
+				for _, span := range spans {
+					if span.Tag(ext.SpanName) == "tagged.req" {
+						span.SetTag("processor_tag", "true")
+					}
+				}
+				return true
+			},
+			func() {
+				parent, ctx := StartSpanFromContext(context.Background(), "accepted.req")
+				child, _ := StartSpanFromContext(ctx, "tagged.req")
+				child.Finish()
+				parent.Finish()
+			},
+		)
+	})
 }

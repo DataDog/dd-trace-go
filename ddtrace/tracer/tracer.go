@@ -279,13 +279,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
-			if !t.runProcessor(trace) {
-				// trace dropped by processor.
-				atomic.AddUint64(&t.droppedProcessorSpans, uint64(len(trace)))
-				atomic.AddUint64(&t.droppedProcessorTraces, 1)
-				continue
-			}
-			t.traceWriter.add(trace)
+			t.writeTrace(trace)
 
 		case <-tick:
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
@@ -306,7 +300,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			for {
 				select {
 				case trace := <-t.out:
-					t.traceWriter.add(trace)
+					t.writeTrace(trace)
 				default:
 					break loop
 				}
@@ -314,6 +308,16 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			return
 		}
 	}
+}
+
+func (t *tracer) writeTrace(trace []*span) {
+	if !t.runProcessor(trace) {
+		// trace dropped by processor.
+		atomic.AddUint64(&t.droppedProcessorSpans, uint64(len(trace)))
+		atomic.AddUint64(&t.droppedProcessorTraces, 1)
+		return
+	}
+	t.traceWriter.add(trace)
 }
 
 func (t *tracer) pushTrace(trace []*span) {

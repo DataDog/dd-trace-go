@@ -41,12 +41,7 @@ func (s readWriteSpan) Tag(key string) interface{} {
 	case ext.ManualKeep:
 		return s.Metrics[keySamplingPriority] == 2
 	// Metrics.
-	case ext.SamplingPriority:
-		if val, ok := s.Metrics[keySamplingPriority]; ok {
-			return val
-		}
-		return nil
-	case keySamplingPriority:
+	case ext.SamplingPriority, keySamplingPriority:
 		if val, ok := s.Metrics[keySamplingPriority]; ok {
 			return val
 		}
@@ -61,84 +56,12 @@ func (s readWriteSpan) Tag(key string) interface{} {
 	return nil
 }
 
-// GetName returns the operation name of s.
-func (s readWriteSpan) GetName() string {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.Name
-}
-
-// GetService returns the service name of s.
-func (s readWriteSpan) GetService() string {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.Service
-}
-
-// GetResource returns the resource name of s.
-func (s readWriteSpan) GetResource() string {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.Resource
-}
-
-// GetType returns the type of s.
-func (s readWriteSpan) GetType() string {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.Type
-}
-
-// GetDuration returns the duration of s.
-func (s readWriteSpan) GetDuration() int64 {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.Duration
-}
-
 // IsError reports wether s is an error.
 func (s readWriteSpan) IsError() bool {
 	s.Lock()
 	defer s.Unlock()
 
 	return s.Error == 1
-}
-
-// ErrorMessage returns the error message of s.
-func (s readWriteSpan) ErrorMessage() string {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.Meta[ext.ErrorMsg]
-}
-
-// ErrorType returns the error type of s.
-func (s readWriteSpan) ErrorType() string {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.Meta[ext.ErrorType]
-}
-
-// ErrorStack returns the error stack of s.
-func (s readWriteSpan) ErrorStack() string {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.Meta[ext.ErrorStack]
-}
-
-// ErrorDetails returns the error details of s.
-func (s readWriteSpan) ErrorDetails() string {
-	s.Lock()
-	defer s.Unlock()
-
-	return s.Meta[ext.ErrorDetails]
 }
 
 // SetOperationName is a no-op.
@@ -157,10 +80,10 @@ func (s readWriteSpan) SetTag(key string, value interface{}) {
 	case ext.SpanName, ext.SpanType, ext.ResourceName, ext.ServiceName, ext.HTTPCode, ext.Environment, keyMeasured, keyTopLevel, ext.AnalyticsEvent, ext.EventSampleRate:
 		log.Debug("Setting the tag %v in the processor is not allowed", key)
 		return
-	// Returning is not necessary, as the call to setSamplingPriorityLocked is
-	// a no-op on finished spans. Adding this case for the purpose of logging
-	// that this is not allowed.
 	case ext.ManualKeep, ext.ManualDrop, ext.SamplingPriority, keySamplingPriority:
+		// Returning is not necessary, as the call to setSamplingPriorityLocked is
+		// a no-op on finished spans. Adding this case for the purpose of logging
+		// that this is not allowed.
 		log.Debug("Setting sampling priority tag %v in the processor is not allowed", key)
 		return
 	default:
