@@ -41,7 +41,7 @@ type ClientState struct {
 
 type TargetFileHash struct {
 	Algorithm string `json:"algorithm,omitempty"`
-	Hash      []byte `json:"hash,omitempty"`
+	Hash      string `json:"hash,omitempty"`
 }
 
 type TargetFileMeta struct {
