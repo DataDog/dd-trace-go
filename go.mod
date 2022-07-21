@@ -7,7 +7,7 @@ require (
 	github.com/99designs/gqlgen v0.17.16
 	github.com/99designs/gqlgen/_examples v0.0.0-20220829154420-b66fff16de0b
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.0.0-20220614205406-2074f9ac8202
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.38.0-rc.6
 	github.com/DataDog/datadog-go/v5 v5.0.2
 	github.com/DataDog/gostackparse v0.5.0
 	github.com/DataDog/sketches-go v1.2.1
