@@ -194,7 +194,6 @@ func newTransport(URL string) testTransport {
 	if t, ok := transport.(*httpTransport); ok {
 		t.traceURL = URL
 	}
-
 	return testTransport{
 		transport: transport,
 	}
@@ -218,13 +217,11 @@ func runProcessorTestEndToEnd(t *testing.T, testFunc func(sls spanLists), proces
 	// Disables call to checkEndpoint which sends an empty payload.
 	os.Setenv("DD_TRACE_STARTUP_LOGS", "false")
 	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
-
 	Start(
 		WithPostProcessor(processor),
 		withTransport(newTransport(srv.URL)),
 	)
 	defer Stop()
-
 	startSpans()
 }
 
@@ -309,6 +306,32 @@ func TestProcessorEndToEnd(t *testing.T) {
 				child, _ := StartSpanFromContext(ctx, "tagged.req")
 				child.Finish()
 				parent.Finish()
+			},
+		)
+	})
+
+	t.Run("no-filter", func(t *testing.T) {
+		runProcessorTestEndToEnd(t,
+			func(sls spanLists) {
+				assert.Equal(t, 2, len(sls))
+				for _, spanList := range sls {
+					assert.Equal(t, 2, len(spanList))
+					for _, span := range spanList {
+						assert.Equal(t, span.Name, "http.req")
+					}
+				}
+			},
+			nil,
+			func() {
+				parent, ctx := StartSpanFromContext(context.Background(), "http.req")
+				child, _ := StartSpanFromContext(ctx, "http.req")
+				child.Finish()
+				parent.Finish()
+
+				parent2, ctx := StartSpanFromContext(context.Background(), "http.req")
+				child2, _ := StartSpanFromContext(ctx, "http.req")
+				child2.Finish()
+				parent2.Finish()
 			},
 		)
 	})
