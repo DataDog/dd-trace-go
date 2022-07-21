@@ -95,7 +95,7 @@ func TestSetTag(t *testing.T) {
 		"keyTopLevel":       {key: keyTopLevel, val: float64(0), rWSetVal: 1},
 		"ManualKeep":        {key: ext.ManualKeep, val: true, rWSetVal: false},
 		"ManualDrop":        {key: ext.ManualDrop, val: true, rWSetVal: false},
-		"analytics":         {key: ext.AnalyticsEvent, val: true, rWSetVal: true},
+		"analytics":         {key: ext.AnalyticsEvent, val: true, rWSetVal: false},
 		"analytics-rate":    {key: ext.EventSampleRate, val: float64(0), rWSetVal: 1},
 		"sampling-priority": {key: ext.SamplingPriority, val: float64(1), rWSetVal: 4},
 		"sampling-v1":       {key: keySamplingPriority, val: float64(1), rWSetVal: 4},
@@ -128,8 +128,12 @@ func TestNewReadWriteSpanSlice(t *testing.T) {
 	spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
 	rWSpans := newReadWriteSpanSlice(spans)
 	for i, s := range rWSpans {
-		assert.Equal(s.(readWriteSpan).span, spans[i])
-		assert.Same(s.(readWriteSpan).span, spans[i])
+		rwSpan, ok := s.(readWriteSpan)
+		if !ok {
+			t.Fatal("readWriteSpan type assertion failed")
+		}
+		assert.Equal(rwSpan.span, spans[i])
+		assert.Same(rwSpan.span, spans[i])
 	}
 }
 
