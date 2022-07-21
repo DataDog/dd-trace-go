@@ -79,46 +79,15 @@ type SpanContext interface {
 	ForeachBaggageItem(handler func(k, v string) bool)
 }
 
-// ReadableSpan specifies methods to read from a span.
-type ReadableSpan interface {
-	// GetName returns the span's operation name.
-	GetName() string
-
-	// GetService returns the span's service name.
-	GetService() string
-
-	// GetResource returns the span's resource name.
-	GetResource() string
-
-	// GetType returns the span's type.
-	GetType() string
-
-	// GetDuration returns the span's duration.
-	GetDuration() int64
+// ReadWriteSpan implementations are spans with read/write access.
+type ReadWriteSpan interface {
+	Span
 
 	// Tag returns the tag value held by the given key.
 	Tag(key string) interface{}
 
 	// IsError reports wether the span is an error.
 	IsError() bool
-
-	// ErrorMessage returns the span's error message.
-	ErrorMessage() string
-
-	// ErrorType returns the span's error type.
-	ErrorType() string
-
-	// ErrorStack returns the span's error stack.
-	ErrorStack() string
-
-	// ErrorDetails returns the span's error details.
-	ErrorDetails() string
-}
-
-// ReadWriteSpan implementations are spans with read/write access.
-type ReadWriteSpan interface {
-	Span
-	ReadableSpan
 }
 
 // StartSpanOption is a configuration option that can be used with a Tracer's StartSpan method.
