@@ -99,14 +99,30 @@ func (c *concentrator) Start() {
 	}()
 }
 
+// send sends a stats payload using the transport
+func (c *concentrator) send(sp *statsPayload) {
+	if len(sp.Stats) == 0 {
+		// nothing to flush
+		return
+	}
+	c.statsd().Incr("datadog.tracer.stats.flush_payloads", nil, 1)
+	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(len(sp.Stats)))
+	if err := c.cfg.transport.sendStats(sp); err != nil {
+		c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
+		log.Error("Error sending stats payload: %v", err)
+	}
+}
+
 // runFlusher runs the flushing loop which sends stats to the underlying transport.
 func (c *concentrator) runFlusher(tick <-chan time.Time) {
 	for {
 		select {
 		case now := <-tick:
-			c.flush(now, withoutCurrentBucket)
+			sp := c.flush(now, withoutCurrentBucket)
+			c.send(&sp)
 		case <-c.stop:
-			c.flush(time.Now(), withCurrentBucket)
+			sp := c.flush(time.Now(), withCurrentBucket)
+			c.send(&sp)
 			return
 		}
 	}
@@ -164,7 +180,7 @@ const (
 
 // flush flushes all the stats buckets with the given timestamp. The current bucket is only included if
 // includeCurrent is true, such as during shutdown.
-func (c *concentrator) flush(timenow time.Time, includeCurrent bool) {
+func (c *concentrator) flush(timenow time.Time, includeCurrent bool) statsPayload {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -184,16 +200,7 @@ func (c *concentrator) flush(timenow time.Time, includeCurrent bool) {
 		sp.Stats = append(sp.Stats, srb.Export())
 		delete(c.buckets, ts)
 	}
-	if len(sp.Stats) == 0 {
-		// nothing to flush
-		return
-	}
-	c.statsd().Incr("datadog.tracer.stats.flush_payloads", nil, 1)
-	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(len(sp.Stats)))
-	if err := c.cfg.transport.sendStats(&sp); err != nil {
-		c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
-		log.Error("Error sending stats payload: %v", err)
-	}
+	return sp
 }
 
 // aggregation specifies a uniquely identifiable key under which a certain set
