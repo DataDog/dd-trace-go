@@ -268,6 +268,29 @@ func TestProcessorEndToEnd(t *testing.T) {
 			})
 	})
 
+	t.Run("no-payload", func(t *testing.T) {
+		runProcessorTestEndToEnd(t,
+			func(sls spanLists) { t.Fatal("no payloads should be received") },
+			func(spans []ddtrace.ReadWriteSpan) bool {
+				for _, span := range spans {
+					if span.Tag(ext.SpanName) == "reject.req" {
+						return false
+					}
+				}
+				return true
+			},
+			func() {
+				span1, ctx := StartSpanFromContext(context.Background(), "http.req")
+				span1Child, _ := StartSpanFromContext(ctx, "reject.req")
+				span1Child.Finish()
+				span1.Finish()
+				span2 := StartSpan("reject.req")
+				span2.Finish()
+				span3 := StartSpan("reject.req")
+				span3.Finish()
+			})
+	})
+
 	t.Run("tagged", func(t *testing.T) {
 		runProcessorTestEndToEnd(t,
 			func(sls spanLists) {
