@@ -19,6 +19,7 @@ func waitForBuckets(c *concentrator, n int) bool {
 		time.Sleep(time.Millisecond * timeMultiplicator)
 		c.mu.Lock()
 		if len(c.buckets) == n {
+			c.mu.Unlock()
 			return true
 		}
 		c.mu.Unlock()
@@ -106,7 +107,8 @@ func TestConcentrator(t *testing.T) {
 	})
 
 	t.Run("ingester", func(t *testing.T) {
-		c := newConcentrator(&config{}, defaultStatsBucketSize)
+		transport := newDummyTransport()
+		c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
 		c.Start()
 		assert.Len(t, c.buckets, 0)
 		c.In <- ss1
