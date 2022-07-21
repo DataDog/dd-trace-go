@@ -184,25 +184,6 @@ func TestRunProcessor(t *testing.T) {
 	})
 }
 
-// E2E test below is still a WIP.
-type testTransport struct {
-	transport
-}
-
-func newTransport(URL string) testTransport {
-	transport := newDefaultTransport()
-	if t, ok := transport.(*httpTransport); ok {
-		t.traceURL = URL
-	}
-	return testTransport{
-		transport: transport,
-	}
-}
-
-func (dt testTransport) sendStats(s *statsPayload) error {
-	return nil
-}
-
 func runProcessorTestEndToEnd(t *testing.T, testFunc func(sls spanLists), processor func([]ddtrace.ReadWriteSpan) bool, startSpans func()) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -217,9 +198,18 @@ func runProcessorTestEndToEnd(t *testing.T, testFunc func(sls spanLists), proces
 	// Disables call to checkEndpoint which sends an empty payload.
 	os.Setenv("DD_TRACE_STARTUP_LOGS", "false")
 	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
+	transport := newDefaultTransport()
+	httpTransport, ok := transport.(*httpTransport)
+	if !ok {
+		t.Fatal("transport type assertion failed")
+	}
+	// Setting the traceURL manually instead of WithAgentAddr because
+	// the latter would force us to have an endpoint "/v0.4/traces",
+	// which is subject to change.
+	httpTransport.traceURL = srv.URL
 	Start(
 		WithPostProcessor(processor),
-		withTransport(newTransport(srv.URL)),
+		withTransport(transport),
 	)
 	defer Stop()
 	startSpans()
@@ -310,7 +300,7 @@ func TestProcessorEndToEnd(t *testing.T) {
 		)
 	})
 
-	t.Run("no-filter", func(t *testing.T) {
+	t.Run("no-processor", func(t *testing.T) {
 		runProcessorTestEndToEnd(t,
 			func(sls spanLists) {
 				assert.Equal(t, 2, len(sls))
