@@ -147,12 +147,51 @@ func TestRunProcessor(t *testing.T) {
 		assert.Equal(true, tracer.runProcessor(spans))
 	})
 
+	t.Run("accept-condition", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool {
+			for _, span := range spans {
+				if span.Tag(ext.SpanName) == "accept.request" {
+					return true
+				}
+			}
+			return false
+		}))
+		defer stop()
+		spans := []*span{newBasicSpan("http.request"), newBasicSpan("accept.request")}
+		assert.Equal(true, tracer.runProcessor(spans))
+	})
+
 	t.Run("reject", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ddtrace.ReadWriteSpan) bool { return false }))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
 		assert.Equal(false, tracer.runProcessor(spans))
+	})
+
+	t.Run("reject-condition", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool {
+			for _, span := range spans {
+				if span.Tag(ext.SpanName) == "reject.request" {
+					return false
+				}
+			}
+			return true
+		}))
+		defer stop()
+		spans := []*span{newBasicSpan("http.request"), newBasicSpan("reject.request")}
+		assert.Equal(false, tracer.runProcessor(spans))
+	})
+
+	t.Run("empty-spans", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool { return true }))
+		defer stop()
+		spans := []*span{}
+		assert.Equal(true, tracer.runProcessor(spans))
+		assert.Equal(0, len(spans))
 	})
 
 	t.Run("tag", func(t *testing.T) {
