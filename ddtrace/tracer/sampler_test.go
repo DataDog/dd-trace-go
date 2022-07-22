@@ -7,7 +7,7 @@ package tracer
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"os"
 	"regexp"
@@ -93,7 +93,7 @@ func TestPrioritySampler(t *testing.T) {
 				},
 			},
 		} {
-			assert.NoError(ps.readRatesJSON(ioutil.NopCloser(strings.NewReader(tt.in))))
+			assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(tt.in))))
 			for k, v := range tt.out {
 				assert.Equal(v, ps.getRate(mkSpan(k.service, k.env)), k)
 			}
@@ -111,7 +111,7 @@ func TestPrioritySampler(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < 500; i++ {
 				assert.NoError(ps.readRatesJSON(
-					ioutil.NopCloser(strings.NewReader(
+					io.NopCloser(strings.NewReader(
 						`{
 							"rate_by_service":{
 								"service:,env:":0.8,
@@ -139,7 +139,7 @@ func TestPrioritySampler(t *testing.T) {
 		ps := newPrioritySampler()
 		assert := assert.New(t)
 		assert.NoError(ps.readRatesJSON(
-			ioutil.NopCloser(strings.NewReader(
+			io.NopCloser(strings.NewReader(
 				`{
 					"rate_by_service":{
 						"service:obfuscate.http,env:":0.5,
@@ -663,7 +663,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 		defer func() {
 			internal.SetGlobalTracer(&internal.NoopTracer{})
 		}()
-		t.prioritySampling.readRatesJSON(ioutil.NopCloser(strings.NewReader(
+		t.prioritySampling.readRatesJSON(io.NopCloser(strings.NewReader(
 			`{
                                         "rate_by_service":{
                                                 "service:obfuscate.http,env:":0.5,

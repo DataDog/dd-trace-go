@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
 	"github.com/stretchr/testify/assert"
@@ -422,7 +421,7 @@ func TestPeek(t *testing.T) {
 	} {
 		var readcloser io.ReadCloser
 		if tt.txt != "" {
-			readcloser = ioutil.NopCloser(bytes.NewBufferString(tt.txt))
+			readcloser = io.NopCloser(bytes.NewBufferString(tt.txt))
 		}
 		snip, rc, err := peek(readcloser, "", tt.max, tt.n)
 		assert.Equal(tt.err, err)
@@ -431,7 +430,7 @@ func TestPeek(t *testing.T) {
 		if readcloser != nil {
 			// if a non-nil io.ReadCloser was sent, the returned io.ReadCloser
 			// must always return the entire original content.
-			all, err := ioutil.ReadAll(rc)
+			all, err := io.ReadAll(rc)
 			assert.Nil(err)
 			assert.Equal(tt.txt, string(all))
 		}
