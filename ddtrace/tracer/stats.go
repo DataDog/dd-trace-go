@@ -54,10 +54,10 @@ type concentrator struct {
 	// stopped reports whether the concentrator is stopped (when non-zero)
 	stopped uint64
 
-	wg         sync.WaitGroup // waits for any active goroutines
-	bucketSize int64          // the size of a bucket in nanoseconds
-	stop       chan struct{}  // closing this channel triggers shutdown
-	cfg        *config        // tracer startup configuration
+	wg         *sync.WaitGroup // waits for any active goroutines
+	bucketSize int64           // the size of a bucket in nanoseconds
+	stop       chan struct{}   // closing this channel triggers shutdown
+	cfg        *config         // tracer startup configuration
 }
 
 // newConcentrator creates a new concentrator using the given tracer
@@ -65,6 +65,7 @@ type concentrator struct {
 func newConcentrator(c *config, bucketSize int64) *concentrator {
 	return &concentrator{
 		In:         make(chan *aggregableSpan, 10000),
+		wg:         &sync.WaitGroup{},
 		bucketSize: bucketSize,
 		stopped:    1,
 		buckets:    make(map[int64]*rawBucket),
@@ -121,8 +122,6 @@ func (c *concentrator) runFlusher(tick <-chan time.Time) {
 			sp := c.flush(now, withoutCurrentBucket)
 			c.send(&sp)
 		case <-c.stop:
-			sp := c.flush(time.Now(), withCurrentBucket)
-			c.send(&sp)
 			return
 		}
 	}
@@ -171,6 +170,18 @@ func (c *concentrator) Stop() {
 	}
 	close(c.stop)
 	c.wg.Wait()
+empty:
+	for {
+		select {
+		case s := <-c.In:
+			c.statsd().Incr("datadog.tracer.stats.spans_in", nil, 1)
+			c.add(s)
+		default:
+			break empty
+		}
+	}
+	sp := c.flush(time.Now(), withCurrentBucket)
+	c.send(&sp)
 }
 
 const (

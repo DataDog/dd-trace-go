@@ -157,7 +157,7 @@ func TestConcentrator(t *testing.T) {
 				Duration: 1,
 			}
 			c.Stop()
-			assert.Zero(t, transport.Stats())
+			assert.NotEmpty(t, transport.Stats())
 		})
 
 		// stats should be sent if the concentrator is stopped
@@ -172,9 +172,7 @@ func TestConcentrator(t *testing.T) {
 				Duration: 1,
 			}
 			c.Stop()
-			// TODO: race condition between In and c.stop
-			// so this assert is non-deterministic
-			assert.NotZero(t, transport.Stats())
+			assert.NotEmpty(t, transport.Stats())
 		})
 	})
 }
