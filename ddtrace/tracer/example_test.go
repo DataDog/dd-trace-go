@@ -7,8 +7,8 @@ package tracer_test
 
 import (
 	"context"
-	"log"
-	"math/rand"
+	"fmt"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -17,7 +17,8 @@ import (
 // A basic example demonstrating how to start the tracer, as well as how
 // to create a root span and a child span that is a descendant of it.
 func Example() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 
 	// Start the tracer and defer the Stop method.
 	tracer.Start()
@@ -27,23 +28,24 @@ func Example() {
 	span, ctx := tracer.StartSpanFromContext(ctx, "your.work")
 	defer span.Finish()
 
-	yourCode := func(ctx context.Context) error {
-		// Perform an operation.
-		b := make([]byte, 100000)
-		_, err := rand.Read(b)
-		if err != nil {
-			log.Fatal(err)
-		}
-		return err
-	}
-
 	// Create a child, using the context of the parent span.
 	child, ctx := tracer.StartSpanFromContext(ctx, "this.service")
-	child.SetTag(ext.ResourceName, "randomization")
+	child.SetTag(ext.ResourceName, "alarm")
 
 	// Run some code.
 	err := yourCode(ctx)
 
 	// Finish the span.
 	child.Finish(tracer.WithError(err))
+}
+
+func yourCode(ctx context.Context) error {
+	// Perform an operation.
+	select {
+	case <-time.After(5 * time.Millisecond):
+		fmt.Println("ding!")
+	case <-ctx.Done():
+		fmt.Println("overslept :(")
+	}
+	return ctx.Err()
 }
