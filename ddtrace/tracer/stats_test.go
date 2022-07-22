@@ -159,5 +159,22 @@ func TestConcentrator(t *testing.T) {
 			c.Stop()
 			assert.Zero(t, transport.Stats())
 		})
+
+		// stats should be sent if the concentrator is stopped
+		t.Run("stop", func(t *testing.T) {
+			transport := newDummyTransport()
+			c := newConcentrator(&config{transport: transport}, 500000)
+			assert.Len(t, transport.Stats(), 0)
+			c.Start()
+			c.In <- &aggregableSpan{
+				key:      key1,
+				Start:    time.Now().UnixNano(),
+				Duration: 1,
+			}
+			c.Stop()
+			// TODO: race condition between In and c.stop
+			// so this assert is non-deterministic
+			assert.NotZero(t, transport.Stats())
+		})
 	})
 }
