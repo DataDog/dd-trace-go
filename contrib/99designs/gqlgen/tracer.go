@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -65,6 +66,8 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 	)
 	name := ext.SpanTypeGraphQL
 	if graphql.HasOperationContext(ctx) {
+		// Variables in the operation will be left out of the tags
+		// until obfuscation is implemented in the agent.
 		octx = graphql.GetOperationContext(ctx)
 		if octx.Operation != nil {
 			if octx.Operation.Operation == ast.Subscription {
@@ -79,23 +82,20 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 		if octx.RawQuery != "" {
 			opts = append(opts, tracer.Tag(graphQLQuery, octx.RawQuery))
 		}
-		for key, val := range octx.Variables {
-			opts = append(opts, tracer.Tag(fmt.Sprintf("graphql.variables.%s", key), val))
-		}
 		opts = append(opts, tracer.StartTime(octx.Stats.OperationStart))
 	}
-	if s, ok := tracer.SpanFromContext(ctx); ok {
-		opts = append(opts, tracer.ChildOf(s.Context()))
-	}
-	opts = append(opts, opts...)
 	var span ddtrace.Span
 	span, ctx = tracer.StartSpanFromContext(ctx, name, opts...)
 	defer func() {
-		var finishOpts []ddtrace.FinishOption
+		var errs []string
 		for _, err := range graphql.GetErrors(ctx) {
-			finishOpts = append(finishOpts, tracer.WithError(err))
+			errs = append(errs, err.Message)
 		}
-		span.Finish(finishOpts...)
+		var err error
+		if len(errs) > 0 {
+			err = fmt.Errorf(strings.Join(errs, ", "))
+		}
+		span.Finish(tracer.WithError(err))
 	}()
 
 	if octx != nil {
