@@ -25,21 +25,23 @@ func Example() {
 	defer tracer.Stop()
 
 	// Start a root span.
-	span, ctx := tracer.StartSpanFromContext(ctx, "your.work")
+	span, ctx := tracer.StartSpanFromContext(ctx, "parent")
 	defer span.Finish()
 
-	// Create a child, using the context of the parent span.
-	child, ctx := tracer.StartSpanFromContext(ctx, "this.service")
-	child.SetTag(ext.ResourceName, "alarm")
-
 	// Run some code.
-	err := yourCode(ctx)
-
-	// Finish the span.
-	child.Finish(tracer.WithError(err))
+	doSomething(ctx)
 }
 
-func yourCode(ctx context.Context) error {
+func doSomething(ctx context.Context) {
+	// Create a child, using the context of the parent span.
+	opts := []tracer.StartSpanOption{
+		tracer.Tag(ext.ResourceName, "alarm"),
+	}
+	span, ctx := tracer.StartSpanFromContext(ctx, "do.something", opts...)
+	defer func() {
+		span.Finish(tracer.WithError(ctx.Err()))
+	}()
+
 	// Perform an operation.
 	select {
 	case <-time.After(5 * time.Millisecond):
@@ -47,5 +49,4 @@ func yourCode(ctx context.Context) error {
 	case <-ctx.Done():
 		fmt.Println("overslept :(")
 	}
-	return ctx.Err()
 }
