@@ -34,10 +34,7 @@ func Example() {
 
 func doSomething(ctx context.Context) {
 	// Create a child, using the context of the parent span.
-	opts := []tracer.StartSpanOption{
-		tracer.Tag(ext.ResourceName, "alarm"),
-	}
-	span, ctx := tracer.StartSpanFromContext(ctx, "do.something", opts...)
+	span, ctx := tracer.StartSpanFromContext(ctx, "do.something", tracer.Tag(ext.ResourceName, "alarm"))
 	defer func() {
 		span.Finish(tracer.WithError(ctx.Err()))
 	}()
