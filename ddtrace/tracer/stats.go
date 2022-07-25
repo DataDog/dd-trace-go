@@ -100,27 +100,12 @@ func (c *concentrator) Start() {
 	}()
 }
 
-// send sends a stats payload using the transport
-func (c *concentrator) send(sp *statsPayload) {
-	if len(sp.Stats) == 0 {
-		// nothing to flush
-		return
-	}
-	c.statsd().Incr("datadog.tracer.stats.flush_payloads", nil, 1)
-	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(len(sp.Stats)))
-	if err := c.cfg.transport.sendStats(sp); err != nil {
-		c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
-		log.Error("Error sending stats payload: %v", err)
-	}
-}
-
 // runFlusher runs the flushing loop which sends stats to the underlying transport.
 func (c *concentrator) runFlusher(tick <-chan time.Time) {
 	for {
 		select {
 		case now := <-tick:
-			sp := c.flush(now, withoutCurrentBucket)
-			c.send(&sp)
+			c.flushAndSend(now, withoutCurrentBucket)
 		case <-c.stop:
 			return
 		}
@@ -180,8 +165,7 @@ empty:
 			break empty
 		}
 	}
-	sp := c.flush(time.Now(), withCurrentBucket)
-	c.send(&sp)
+	c.flushAndSend(time.Now(), withCurrentBucket)
 }
 
 const (
@@ -189,12 +173,10 @@ const (
 	withoutCurrentBucket = false
 )
 
-// flush flushes all the stats buckets with the given timestamp. The current bucket is only included if
-// includeCurrent is true, such as during shutdown.
-func (c *concentrator) flush(timenow time.Time, includeCurrent bool) statsPayload {
+// flushAndSend flushes all the stats buckets with the given timestamp and sends them using the transport specified in
+// the concentrator config. The current bucket is only included if includeCurrent is true, such as during shutdown.
+func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	now := timenow.UnixNano()
 	sp := statsPayload{
 		Hostname: c.cfg.hostname,
@@ -211,7 +193,18 @@ func (c *concentrator) flush(timenow time.Time, includeCurrent bool) statsPayloa
 		sp.Stats = append(sp.Stats, srb.Export())
 		delete(c.buckets, ts)
 	}
-	return sp
+	c.mu.Unlock()
+
+	if len(sp.Stats) == 0 {
+		// nothing to flush
+		return
+	}
+	c.statsd().Incr("datadog.tracer.stats.flush_payloads", nil, 1)
+	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(len(sp.Stats)))
+	if err := c.cfg.transport.sendStats(&sp); err != nil {
+		c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
+		log.Error("Error sending stats payload: %v", err)
+	}
 }
 
 // aggregation specifies a uniquely identifiable key under which a certain set
