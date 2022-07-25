@@ -54,10 +54,10 @@ type concentrator struct {
 	// stopped reports whether the concentrator is stopped (when non-zero)
 	stopped uint64
 
-	wg         *sync.WaitGroup // waits for any active goroutines
-	bucketSize int64           // the size of a bucket in nanoseconds
-	stop       chan struct{}   // closing this channel triggers shutdown
-	cfg        *config         // tracer startup configuration
+	wg         sync.WaitGroup // waits for any active goroutines
+	bucketSize int64          // the size of a bucket in nanoseconds
+	stop       chan struct{}  // closing this channel triggers shutdown
+	cfg        *config        // tracer startup configuration
 }
 
 // newConcentrator creates a new concentrator using the given tracer
@@ -65,7 +65,7 @@ type concentrator struct {
 func newConcentrator(c *config, bucketSize int64) *concentrator {
 	return &concentrator{
 		In:         make(chan *aggregableSpan, 10000),
-		wg:         &sync.WaitGroup{},
+		wg:         sync.WaitGroup{},
 		bucketSize: bucketSize,
 		stopped:    1,
 		buckets:    make(map[int64]*rawBucket),
@@ -155,14 +155,14 @@ func (c *concentrator) Stop() {
 	}
 	close(c.stop)
 	c.wg.Wait()
-empty:
+drain:
 	for {
 		select {
 		case s := <-c.In:
 			c.statsd().Incr("datadog.tracer.stats.spans_in", nil, 1)
 			c.add(s)
 		default:
-			break empty
+			break drain
 		}
 	}
 	c.flushAndSend(time.Now(), withCurrentBucket)
@@ -176,24 +176,27 @@ const (
 // flushAndSend flushes all the stats buckets with the given timestamp and sends them using the transport specified in
 // the concentrator config. The current bucket is only included if includeCurrent is true, such as during shutdown.
 func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
-	c.mu.Lock()
-	now := timenow.UnixNano()
-	sp := statsPayload{
-		Hostname: c.cfg.hostname,
-		Env:      c.cfg.env,
-		Version:  c.cfg.version,
-		Stats:    make([]statsBucket, 0, len(c.buckets)),
-	}
-	for ts, srb := range c.buckets {
-		if !includeCurrent && ts > now-c.bucketSize {
-			// do not flush the current bucket
-			continue
+	sp := func() statsPayload {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		now := timenow.UnixNano()
+		sp := statsPayload{
+			Hostname: c.cfg.hostname,
+			Env:      c.cfg.env,
+			Version:  c.cfg.version,
+			Stats:    make([]statsBucket, 0, len(c.buckets)),
 		}
-		log.Debug("Flushing bucket %d", ts)
-		sp.Stats = append(sp.Stats, srb.Export())
-		delete(c.buckets, ts)
-	}
-	c.mu.Unlock()
+		for ts, srb := range c.buckets {
+			if !includeCurrent && ts > now-c.bucketSize {
+				// do not flush the current bucket
+				continue
+			}
+			log.Debug("Flushing bucket %d", ts)
+			sp.Stats = append(sp.Stats, srb.Export())
+			delete(c.buckets, ts)
+		}
+		return sp
+	}()
 
 	if len(sp.Stats) == 0 {
 		// nothing to flush
