@@ -65,7 +65,6 @@ type concentrator struct {
 func newConcentrator(c *config, bucketSize int64) *concentrator {
 	return &concentrator{
 		In:         make(chan *aggregableSpan, 10000),
-		wg:         sync.WaitGroup{},
 		bucketSize: bucketSize,
 		stopped:    1,
 		buckets:    make(map[int64]*rawBucket),
