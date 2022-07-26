@@ -29,14 +29,17 @@ func Example() {
 	defer span.Finish()
 
 	// Run some code.
-	doSomething(ctx)
+	err := doSomething(ctx)
+	if err != nil {
+		panic(err)
+	}
 }
 
-func doSomething(ctx context.Context) {
+func doSomething(ctx context.Context) (err error) {
 	// Create a child, using the context of the parent span.
 	span, ctx := tracer.StartSpanFromContext(ctx, "do.something", tracer.Tag(ext.ResourceName, "alarm"))
 	defer func() {
-		span.Finish(tracer.WithError(ctx.Err()))
+		span.Finish(tracer.WithError(err))
 	}()
 
 	// Perform an operation.
@@ -44,6 +47,7 @@ func doSomething(ctx context.Context) {
 	case <-time.After(5 * time.Millisecond):
 		fmt.Println("ding!")
 	case <-ctx.Done():
-		fmt.Println("overslept :(")
+		fmt.Println("timed out :(")
 	}
+	return ctx.Err()
 }
