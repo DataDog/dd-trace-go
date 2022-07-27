@@ -7,6 +7,7 @@
 package sarama // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/Shopify/sarama"
 
 import (
+	"context"
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -104,6 +105,134 @@ func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
 	return &consumer{
 		Consumer: c,
 		opts:     opts,
+	}
+}
+
+type consumerGroupClaim struct {
+	sarama.ConsumerGroupClaim
+	messages chan *sarama.ConsumerMessage
+}
+
+// Messages returns the read channel for the messages that are returned by
+// the broker. The messages channel will be closed when a new rebalance cycle
+// is due. You must finish processing and mark offsets within
+// Config.Consumer.Group.Session.Timeout before the topic/partition is eventually
+// re-assigned to another group member.
+func (claim *consumerGroupClaim) Messages() <-chan *sarama.ConsumerMessage {
+	return claim.messages
+}
+
+func wrapConsumerGroupClaim(claim sarama.ConsumerGroupClaim, opts ...Option) sarama.ConsumerGroupClaim {
+	cfg := new(config)
+	defaults(cfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	log.Debug("contrib/Shopify/sarama: Wrapping Consumer Group Claim: %#v", cfg)
+	wrapped := &consumerGroupClaim{
+		ConsumerGroupClaim: claim,
+		messages:           make(chan *sarama.ConsumerMessage),
+	}
+	go func() {
+		msgs := claim.Messages()
+		var prev ddtrace.Span
+		for msg := range msgs {
+			// create the next span from the message
+			opts := []tracer.StartSpanOption{
+				tracer.ServiceName(cfg.consumerServiceName),
+				tracer.ResourceName("Consume Topic " + msg.Topic),
+				tracer.SpanType(ext.SpanTypeMessageConsumer),
+				tracer.Tag("partition", msg.Partition),
+				tracer.Tag("offset", msg.Offset),
+				tracer.Measured(),
+			}
+
+			// kafka supports headers, so try to extract a span context
+			carrier := NewConsumerMessageCarrier(msg)
+			if spanctx, err := tracer.Extract(carrier); err == nil {
+				opts = append(opts, tracer.ChildOf(spanctx))
+			}
+			next := tracer.StartSpan("kafka.consume", opts...)
+			// reinject the span context so consumers can pick it up
+			tracer.Inject(next.Context(), carrier)
+
+			wrapped.messages <- msg
+
+			// if the next message was received, finish the previous span
+			if prev != nil {
+				prev.Finish()
+			}
+			prev = next
+		}
+		// finish any remaining span
+		if prev != nil {
+			prev.Finish()
+		}
+		close(wrapped.messages)
+	}()
+
+	return wrapped
+}
+
+type consumerGroupHandler struct {
+	sarama.ConsumerGroupHandler
+	opts []Option
+}
+
+func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	return h.ConsumerGroupHandler.ConsumeClaim(session, wrapConsumerGroupClaim(claim, h.opts...))
+}
+
+func wrapConsumerGroupHandler(h sarama.ConsumerGroupHandler, opts ...Option) sarama.ConsumerGroupHandler {
+	return &consumerGroupHandler{
+		ConsumerGroupHandler: h,
+		opts:                 opts,
+	}
+}
+
+type consumerGroup struct {
+	sarama.ConsumerGroup
+	opts []Option
+}
+
+// Consume joins a cluster of consumers for a given list of topics and
+// starts a blocking ConsumerGroupSession through the ConsumerGroupHandler.
+//
+// The life-cycle of a session is represented by the following steps:
+//
+// 1. The consumers join the group (as explained in https://kafka.apache.org/documentation/#intro_consumers)
+//    and is assigned their "fair share" of partitions, aka 'claims'.
+// 2. Before processing starts, the handler's Setup() hook is called to notify the user
+//    of the claims and allow any necessary preparation or alteration of state.
+// 3. For each of the assigned claims the handler's ConsumeClaim() function is then called
+//    in a separate goroutine which requires it to be thread-safe. Any state must be carefully protected
+//    from concurrent reads/writes.
+// 4. The session will persist until one of the ConsumeClaim() functions exits. This can be either when the
+//    parent context is canceled or when a server-side rebalance cycle is initiated.
+// 5. Once all the ConsumeClaim() loops have exited, the handler's Cleanup() hook is called
+//    to allow the user to perform any final tasks before a rebalance.
+// 6. Finally, marked offsets are committed one last time before claims are released.
+//
+// Please note, that once a rebalance is triggered, sessions must be completed within
+// Config.Consumer.Group.Rebalance.Timeout. This means that ConsumeClaim() functions must exit
+// as quickly as possible to allow time for Cleanup() and the final offset commit. If the timeout
+// is exceeded, the consumer will be removed from the group by Kafka, which will cause offset
+// commit failures.
+// This method should be called inside an infinite loop, when a
+// server-side rebalance happens, the consumer session will need to be
+// recreated to get the new claims.
+func (c *consumerGroup) Consume(ctx context.Context, topics []string, handler sarama.ConsumerGroupHandler) error {
+	wrapped := wrapConsumerGroupHandler(handler, c.opts...)
+	return c.ConsumerGroup.Consume(ctx, topics, wrapped)
+}
+
+// WrapConsumerGroup wraps a sarama.ConsumerGroup so that all consumed messages
+// are traced. Tracing requires at least sarama.V0_10_2_0 version which is the first version
+// that supports consumer groups.
+func WrapConsumerGroup(c sarama.ConsumerGroup, opts ...Option) sarama.ConsumerGroup {
+	return &consumerGroup{
+		ConsumerGroup: c,
+		opts:          opts,
 	}
 }
 

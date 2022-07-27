@@ -7,6 +7,7 @@ package sarama
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -89,6 +90,110 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, int64(1), s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
+		assert.Equal(t, "queue", s.Tag(ext.SpanType))
+		assert.Equal(t, "kafka.consume", s.OperationName())
+	}
+}
+
+type handler struct {
+	*testing.T
+	cancel context.CancelFunc
+	msg    *sarama.ConsumerMessage
+}
+
+func (h *handler) Setup(s sarama.ConsumerGroupSession) error   { return nil }
+func (h *handler) Cleanup(s sarama.ConsumerGroupSession) error { return nil }
+func (h *handler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	for msg := range claim.Messages() {
+		h.msg = msg
+		sess.MarkMessage(msg, "")
+		h.Logf("consumed msg %v", msg)
+		h.cancel()
+		break
+	}
+	return nil
+}
+
+func TestConsumerGroup(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	broker := sarama.NewMockBroker(t, 0)
+	defer broker.Close()
+
+	broker.SetHandlerByMap(map[string]sarama.MockResponse{
+		"MetadataRequest": sarama.NewMockMetadataResponse(t).
+			SetBroker(broker.Addr(), broker.BrokerID()).
+			SetLeader("group-topic", 0, broker.BrokerID()),
+		"OffsetRequest": sarama.NewMockOffsetResponse(t).
+			SetOffset("group-topic", 0, sarama.OffsetOldest, 0).
+			SetOffset("group-topic", 0, sarama.OffsetNewest, 1),
+		"FindCoordinatorRequest": sarama.NewMockFindCoordinatorResponse(t).
+			SetCoordinator(sarama.CoordinatorGroup, "my-group", broker),
+		"HeartbeatRequest": sarama.NewMockHeartbeatResponse(t),
+		"JoinGroupRequest": sarama.NewMockSequence(
+			sarama.NewMockJoinGroupResponse(t).SetError(sarama.ErrOffsetsLoadInProgress),
+			sarama.NewMockJoinGroupResponse(t),
+		),
+		"SyncGroupRequest": sarama.NewMockSequence(
+			sarama.NewMockSyncGroupResponse(t).SetError(sarama.ErrOffsetsLoadInProgress),
+			sarama.NewMockSyncGroupResponse(t).SetMemberAssignment(
+				&sarama.ConsumerGroupMemberAssignment{
+					Version: 0,
+					Topics: map[string][]int32{
+						"group-topic": {0},
+					},
+				}),
+		),
+		"OffsetFetchRequest": sarama.NewMockOffsetFetchResponse(t).SetOffset(
+			"my-group", "group-topic", 0, 0, "", sarama.ErrNoError,
+		).SetError(sarama.ErrNoError),
+		"FetchRequest": sarama.NewMockSequence(
+			sarama.NewMockFetchResponse(t, 1).
+				SetMessage("group-topic", 0, 0, sarama.StringEncoder("foo")),
+			sarama.NewMockFetchResponse(t, 1),
+		),
+	})
+
+	cfg := sarama.NewConfig()
+	cfg.ClientID = t.Name()
+	cfg.Version = sarama.V0_10_2_0
+
+	group, err := sarama.NewConsumerGroup([]string{broker.Addr()}, "my-group", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer group.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	group = WrapConsumerGroup(group)
+	h := &handler{t, cancel, nil}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		topics := []string{"group-topic"}
+		if err := group.Consume(ctx, topics, h); err != nil {
+			t.Error(err)
+		}
+	}()
+	wg.Wait()
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+	{
+		s := spans[0]
+		spanctx, err := tracer.Extract(NewConsumerMessageCarrier(h.msg))
+		assert.NoError(t, err)
+		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
+			"span context should be injected into the consumer message headers")
+
+		assert.Equal(t, int32(0), s.Tag("partition"))
+		assert.Equal(t, int64(0), s.Tag("offset"))
+		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
+		assert.Equal(t, "Consume Topic group-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "kafka.consume", s.OperationName())
 	}
