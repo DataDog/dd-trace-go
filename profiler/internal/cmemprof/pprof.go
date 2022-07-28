@@ -6,12 +6,131 @@
 package cmemprof
 
 import (
+	"bytes"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/google/pprof/profile"
 )
+
+var defaultMapping = &profile.Mapping{
+	ID:   1,
+	File: os.Args[0],
+}
+
+var mappings []*profile.Mapping
+
+func getMapping(addr uint64) *profile.Mapping {
+	for _, m := range mappings {
+		if addr >= m.Start && addr <= m.Limit {
+			return m
+		}
+	}
+	return defaultMapping
+}
+
+// bytes.Cut, but backported so we can still support Go 1.17
+func bytesCut(s, sep []byte) (before, after []byte, found bool) {
+	if i := bytes.Index(s, sep); i >= 0 {
+		return s[:i], s[i+len(sep):], true
+	}
+	return s, nil, false
+}
+
+func stringsCut(s, sep string) (before, after string, found bool) {
+	if i := strings.Index(s, sep); i >= 0 {
+		return s[:i], s[i+len(sep):], true
+	}
+	return s, "", false
+}
+
+func init() {
+	if runtime.GOOS != "linux" {
+		mappings = append(mappings, defaultMapping)
+		return
+	}
+
+	data, err := os.ReadFile("/proc/self/maps")
+	if err != nil {
+		mappings = append(mappings, defaultMapping)
+		return
+	}
+
+	// To have a more accurate profile, we need to provide mappings for the
+	// executable and linked libraries, since the profile might contain
+	// samples from outside the executable if the allocation profiler is
+	// used in conjunction with a cgo traceback library.
+	//
+	// /proc/self/maps parsing code lifted from runtime/pprof/proto.go, see
+	// https://cs.opensource.google/go/go/+/refs/tags/go1.18.4:src/runtime/pprof/proto.go;l=596
+
+	var line []byte
+	// next removes and returns the next field in the line.
+	// It also removes from line any spaces following the field.
+	next := func() []byte {
+		var f []byte
+		f, line, _ = bytesCut(line, []byte(" "))
+		line = bytes.TrimLeft(line, " ")
+		return f
+	}
+
+	for len(data) > 0 {
+		line, data, _ = bytesCut(data, []byte("\n"))
+		addr := next()
+		loStr, hiStr, ok := stringsCut(string(addr), "-")
+		if !ok {
+			continue
+		}
+		lo, err := strconv.ParseUint(loStr, 16, 64)
+		if err != nil {
+			continue
+		}
+		hi, err := strconv.ParseUint(hiStr, 16, 64)
+		if err != nil {
+			continue
+		}
+		perm := next()
+		if len(perm) < 4 || perm[2] != 'x' {
+			// Only interested in executable mappings.
+			continue
+		}
+		offset, err := strconv.ParseUint(string(next()), 16, 64)
+		if err != nil {
+			continue
+		}
+		next()          // dev
+		inode := next() // inode
+		if line == nil {
+			continue
+		}
+		file := string(line)
+
+		// Trim deleted file marker.
+		deletedStr := " (deleted)"
+		deletedLen := len(deletedStr)
+		if len(file) >= deletedLen && file[len(file)-deletedLen:] == deletedStr {
+			file = file[:len(file)-deletedLen]
+		}
+
+		if len(inode) == 1 && inode[0] == '0' && file == "" {
+			// Huge-page text mappings list the initial fragment of
+			// mapped but unpopulated memory as being inode 0.
+			// Don't report that part.
+			// But [vdso] and [vsyscall] are inode 0, so let non-empty file names through.
+			continue
+		}
+
+		mappings = append(mappings, &profile.Mapping{
+			ID:     uint64(len(mappings) + 1),
+			Start:  lo,
+			Limit:  hi,
+			Offset: offset,
+			File:   file,
+		})
+	}
+}
 
 func (c *Profile) build() *profile.Profile {
 	// TODO: can we be sure that there won't be other allocation samples
@@ -32,13 +151,9 @@ func (c *Profile) build() *profile.Profile {
 	// field can be left 0, and the TimeNanos field of the Go allocation
 	// profile will be used.
 	p := &profile.Profile{}
-	m := &profile.Mapping{
-		ID:   1,
-		File: os.Args[0], // XXX: Is there a better way to get the executable?
-	}
 	p.PeriodType = &profile.ValueType{Type: "space", Unit: "bytes"}
 	p.Period = 1
-	p.Mapping = []*profile.Mapping{m}
+	p.Mapping = mappings
 	p.SampleType = []*profile.ValueType{
 		{
 			Type: "alloc_objects",
@@ -88,8 +203,8 @@ func (c *Profile) build() *profile.Profile {
 			if !ok {
 				loc = &profile.Location{
 					ID:      uint64(len(locations)) + 1,
-					Mapping: m,
-					Address: uint64(frame.PC),
+					Mapping: getMapping(addr),
+					Address: addr,
 				}
 				function, ok := functions[frame.Function]
 				if !ok {
