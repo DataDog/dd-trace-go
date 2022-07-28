@@ -906,7 +906,8 @@ func WithUserScope(scope string) UserMonitoringOption {
 
 // WithPropagation returns the option allowing the user id to be propagated through distributed traces.
 // The user id is base64 encoded and added to the datadog propagated tags header.
-// RFC https://docs.google.com/document/d/1T3qAE5nol18psOaHESQ3r-WRiZWss9nyGmroShug8ao
+// This option should only be used if you are certain that the user id passed to `SetUser()` does not contain any
+// personal identifiable information or any kind of sensitive data, as it will be leaked to other services.
 func WithPropagation() UserMonitoringOption {
 	return func(s Span) {
 		sp, ok := s.(*span)
