@@ -76,9 +76,6 @@ const (
 	// UserScope defines the user scope span tag
 	UserScope = "usr.scope"
 
-	// PropagatedUserID defines the propagated user identifier, if user id propagation is enabled.
-	PropagatedUserID = "_dd.p.usr.id"
-
 	// Version is a tag that specifies the current application version.
 	Version = "version"
 

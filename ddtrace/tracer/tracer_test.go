@@ -1820,8 +1820,8 @@ func TestUserMonitoring(t *testing.T) {
 		_, ok := s.Meta[ext.UserID]
 		assert.False(t, ok)
 		encoded := base64.StdEncoding.EncodeToString([]byte(id))
-		assert.Equal(t, encoded, s.context.trace.propagatingTags[ext.PropagatedUserID])
-		assert.Equal(t, encoded, s.Meta[ext.PropagatedUserID])
+		assert.Equal(t, encoded, s.context.trace.propagatingTags[keyPropagatedUserID])
+		assert.Equal(t, encoded, s.Meta[keyPropagatedUserID])
 	})
 }
 

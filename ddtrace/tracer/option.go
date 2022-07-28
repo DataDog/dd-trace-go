@@ -909,12 +909,14 @@ func WithUserScope(scope string) UserMonitoringOption {
 // RFC https://docs.google.com/document/d/1T3qAE5nol18psOaHESQ3r-WRiZWss9nyGmroShug8ao
 func WithPropagation() UserMonitoringOption {
 	return func(s Span) {
-		if span, ok := s.(*span); ok && span.context != nil {
-			id := span.context.trace.root.Meta[ext.UserID]
-			// Delete usr.id from the tags since _dd.p.usr.id will be reported
-			delete(span.context.trace.root.Meta, ext.UserID)
-			id = base64.StdEncoding.EncodeToString([]byte(id))
-			span.context.trace.setPropagatingTag(ext.PropagatedUserID, id)
+		sp, ok := s.(*span)
+		if !ok || sp.context == nil {
+			return
 		}
+		id := sp.context.trace.root.Meta[ext.UserID]
+		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
+		delete(sp.context.trace.root.Meta, ext.UserID)
+		id = base64.StdEncoding.EncodeToString([]byte(id))
+		sp.context.trace.setPropagatingTag(keyPropagatedUserID, id)
 	}
 }

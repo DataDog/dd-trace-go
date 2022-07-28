@@ -171,8 +171,8 @@ func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 		// Unset the propagated user ID by default so that if the function is called without WithPropagation(),
 		// a propagated user ID coming from upstream won't be propagated anymore.
 		// RFC: https://docs.google.com/document/d/1T3qAE5nol18psOaHESQ3r-WRiZWss9nyGmroShug8ao/edit#heading=h.3wmduzc8mwe1
-		delete(span.context.trace.propagatingTags, ext.PropagatedUserID)
-		delete(span.Meta, ext.PropagatedUserID)
+		delete(span.context.trace.propagatingTags, keyPropagatedUserID)
+		delete(span.Meta, keyPropagatedUserID)
 		s = span
 	}
 	s.SetTag(ext.UserID, id)

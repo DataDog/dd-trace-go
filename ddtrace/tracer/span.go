@@ -587,6 +587,8 @@ const (
 	// keySingleSpanSamplingMPS specifies the configured limit for the single span sampling rule
 	// that the span matched. If there is no configured limit, then this tag is omitted.
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
+	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
+	keyPropagatedUserID = "_dd.p.usr.id"
 )
 
 const (
