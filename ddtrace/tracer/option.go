@@ -913,9 +913,11 @@ func WithPropagation() UserMonitoringOption {
 		if !ok || sp.context == nil {
 			return
 		}
-		id := sp.context.trace.root.Meta[ext.UserID]
+		sp.Lock()
+		defer sp.Unlock()
+		id := sp.Meta[ext.UserID]
 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
-		delete(sp.context.trace.root.Meta, ext.UserID)
+		delete(sp.Meta, ext.UserID)
 		id = base64.StdEncoding.EncodeToString([]byte(id))
 		sp.context.trace.setPropagatingTag(keyPropagatedUserID, id)
 	}
