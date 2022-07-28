@@ -71,6 +71,8 @@ jobs:
     - run:
         name: lint
         command: |
+          go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
+          go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
           go vet ./...
 
   test-core:
