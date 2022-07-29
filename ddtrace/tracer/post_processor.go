@@ -64,9 +64,9 @@ func (s readWriteSpan) IsError() bool {
 	return s.Error == 1
 }
 
-// SetOperationName is a no-op.
+// SetOperationName is not allowed in the processor and will not modify the operation name.
 func (s readWriteSpan) SetOperationName(operationName string) {
-	s.SetTag(ext.SpanName, operationName)
+	log.Debug("Modifying the operation name in the processor is not allowed")
 }
 
 // SetTag adds a set of key/value metadata to the span. Setting metric aggregator tags
@@ -78,6 +78,8 @@ func (s readWriteSpan) SetTag(key string, value interface{}) {
 
 	switch key {
 	case ext.SpanName, ext.SpanType, ext.ResourceName, ext.ServiceName, ext.HTTPCode, ext.Environment, keyMeasured, keyTopLevel, ext.AnalyticsEvent, ext.EventSampleRate:
+		// Client side stats are computed pre-processor, so modifying these fields
+		// would lead to inaccurate stats.
 		log.Debug("Setting the tag %v in the processor is not allowed", key)
 		return
 	case ext.ManualKeep, ext.ManualDrop, ext.SamplingPriority, keySamplingPriority:

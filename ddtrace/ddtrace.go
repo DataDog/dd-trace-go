@@ -79,7 +79,7 @@ type SpanContext interface {
 	ForeachBaggageItem(handler func(k, v string) bool)
 }
 
-// ReadWriteSpan implementations are spans with read/write access.
+// ReadWriteSpan implementations are spans which can be read from and modified by using the provided methods.
 type ReadWriteSpan interface {
 	Span
 

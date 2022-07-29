@@ -123,6 +123,14 @@ func TestSetTag(t *testing.T) {
 	})
 }
 
+func TestSetOperationName(t *testing.T) {
+	assert := assert.New(t)
+	span := newBasicSpan("http.request")
+	s := readWriteSpan{span}
+	s.SetOperationName("modified.name")
+	assert.Equal("http.request", span.Name)
+}
+
 func TestNewReadWriteSpanSlice(t *testing.T) {
 	assert := assert.New(t)
 	spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
