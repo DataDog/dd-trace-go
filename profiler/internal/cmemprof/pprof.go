@@ -61,7 +61,7 @@ func init() {
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	for sc.Scan() {
 		fields := bytes.Fields(sc.Bytes())
-		if len(fields) != 5 {
+		if len(fields) != 6 {
 			continue
 		}
 		addrs := bytes.Split(fields[0], []byte("-"))
