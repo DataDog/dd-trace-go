@@ -50,7 +50,7 @@ func defaults(cfg *config) {
 }
 
 // WithIgnoreRequest holds the function to use for determining if the
-// incoming HTTP request tracing should be skipped.
+// incoming HTTP request should not be traced.
 func WithIgnoreRequest(f func(*http.Request) bool) MuxOption {
 	return func(cfg *config) {
 		cfg.ignoreRequest = f
@@ -210,7 +210,7 @@ func RTWithAnalyticsRate(rate float64) RoundTripperOption {
 }
 
 // RTWithIgnoreRequest holds the function to use for determining if the
-// outgoing HTTP request tracing should be skipped.
+// outgoing HTTP request should not be traced.
 func RTWithIgnoreRequest(f func(*http.Request) bool) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.ignoreRequest = f
