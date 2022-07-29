@@ -83,7 +83,7 @@ type SpanContext interface {
 type ReadWriteSpan interface {
 	Span
 
-	// Tag returns the tag value held by the given key.
+	// Tag returns the tag value held by the given key, nil if none was found.
 	Tag(key string) interface{}
 
 	// IsError reports wether the span is an error.
