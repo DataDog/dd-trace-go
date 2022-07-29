@@ -127,6 +127,7 @@ type roundTripperConfig struct {
 	analyticsRate float64
 	serviceName   string
 	resourceNamer func(req *http.Request) string
+	ignoreRequest func(*http.Request) bool
 	spanOpts      []ddtrace.StartSpanOption
 }
 
@@ -204,5 +205,13 @@ func RTWithAnalyticsRate(rate float64) RoundTripperOption {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// RTWithIgnoreRequest holds the function to use for determining if the
+// outgoing HTTP request tracing should be skipped.
+func RTWithIgnoreRequest(f func(*http.Request) bool) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.ignoreRequest = f
 	}
 }
