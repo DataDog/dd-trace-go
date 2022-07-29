@@ -6,9 +6,11 @@
 package cmemprof
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -23,37 +25,17 @@ var defaultMapping = &profile.Mapping{
 var mappings []*profile.Mapping
 
 func getMapping(addr uint64) *profile.Mapping {
-	for _, m := range mappings {
-		if addr >= m.Start && addr <= m.Limit {
-			return m
-		}
+	i := sort.Search(len(mappings), func(n int) bool {
+		return mappings[n].Limit >= addr
+	})
+	if i == len(mappings) || addr < mappings[i].Start {
+		return defaultMapping
 	}
-	return defaultMapping
-}
-
-// bytes.Cut, but backported so we can still support Go 1.17
-func bytesCut(s, sep []byte) (before, after []byte, found bool) {
-	if i := bytes.Index(s, sep); i >= 0 {
-		return s[:i], s[i+len(sep):], true
-	}
-	return s, nil, false
-}
-
-func stringsCut(s, sep string) (before, after string, found bool) {
-	if i := strings.Index(s, sep); i >= 0 {
-		return s[:i], s[i+len(sep):], true
-	}
-	return s, "", false
+	return mappings[i]
 }
 
 func init() {
 	if runtime.GOOS != "linux" {
-		mappings = append(mappings, defaultMapping)
-		return
-	}
-
-	data, err := os.ReadFile("/proc/self/maps")
-	if err != nil {
 		mappings = append(mappings, defaultMapping)
 		return
 	}
@@ -63,64 +45,44 @@ func init() {
 	// samples from outside the executable if the allocation profiler is
 	// used in conjunction with a cgo traceback library.
 	//
-	// /proc/self/maps parsing code lifted from runtime/pprof/proto.go, see
-	// https://cs.opensource.google/go/go/+/refs/tags/go1.18.4:src/runtime/pprof/proto.go;l=596
+	// We can find this information in /proc/self/maps on Linux. Code comes
+	// from mappings with executable permissions (r-xp), and a record looks
+	// like
+	//	address           perms offset  dev   inode       pathname
+	//	00400000-00452000 r-xp 00000000 08:02 173521      /usr/bin/dbus-daemon
+	// (see "man 5 proc" for details)
 
-	var line []byte
-	// next removes and returns the next field in the line.
-	// It also removes from line any spaces following the field.
-	next := func() []byte {
-		var f []byte
-		f, line, _ = bytesCut(line, []byte(" "))
-		line = bytes.TrimLeft(line, " ")
-		return f
+	data, err := os.ReadFile("/proc/self/maps")
+	if err != nil {
+		mappings = append(mappings, defaultMapping)
+		return
 	}
 
-	for len(data) > 0 {
-		line, data, _ = bytesCut(data, []byte("\n"))
-		addr := next()
-		loStr, hiStr, ok := stringsCut(string(addr), "-")
-		if !ok {
+	sc := bufio.NewScanner(bytes.NewReader(data))
+	for sc.Scan() {
+		fields := bytes.Fields(sc.Bytes())
+		if len(fields) != 5 {
 			continue
 		}
-		lo, err := strconv.ParseUint(loStr, 16, 64)
+		addrs := bytes.Split(fields[0], []byte("-"))
+		lo, err := strconv.ParseUint(string(addrs[0]), 16, 64)
 		if err != nil {
 			continue
 		}
-		hi, err := strconv.ParseUint(hiStr, 16, 64)
+		hi, err := strconv.ParseUint(string(addrs[1]), 16, 64)
 		if err != nil {
 			continue
 		}
-		perm := next()
-		if len(perm) < 4 || perm[2] != 'x' {
-			// Only interested in executable mappings.
+		// Want permissions like 'r-xp' (in particular, 'x')
+		if perm := fields[1]; len(perm) < 4 || perm[2] != 'x' {
 			continue
 		}
-		offset, err := strconv.ParseUint(string(next()), 16, 64)
+		offset, err := strconv.ParseUint(string(fields[2]), 16, 64)
 		if err != nil {
 			continue
 		}
-		next()          // dev
-		inode := next() // inode
-		if line == nil {
-			continue
-		}
-		file := string(line)
-
-		// Trim deleted file marker.
-		deletedStr := " (deleted)"
-		deletedLen := len(deletedStr)
-		if len(file) >= deletedLen && file[len(file)-deletedLen:] == deletedStr {
-			file = file[:len(file)-deletedLen]
-		}
-
-		if len(inode) == 1 && inode[0] == '0' && file == "" {
-			// Huge-page text mappings list the initial fragment of
-			// mapped but unpopulated memory as being inode 0.
-			// Don't report that part.
-			// But [vdso] and [vsyscall] are inode 0, so let non-empty file names through.
-			continue
-		}
+		// We don't need the dev or inode fields (3 and 4)
+		file := string(fields[5])
 
 		mappings = append(mappings, &profile.Mapping{
 			ID:     uint64(len(mappings) + 1),
@@ -130,6 +92,10 @@ func init() {
 			File:   file,
 		})
 	}
+
+	sort.Slice(mappings, func(i, j int) bool {
+		return mappings[i].Start < mappings[j].Start
+	})
 }
 
 func (c *Profile) build() *profile.Profile {
