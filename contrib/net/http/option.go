@@ -135,6 +135,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 	return &roundTripperConfig{
 		analyticsRate: globalconfig.AnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
+		ignoreRequest: func(_ *http.Request) bool { return false },
 	}
 }
 
