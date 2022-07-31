@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -14,7 +15,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -338,14 +338,17 @@ func unstartedProfiler(opts ...Option) (*profiler, error) {
 }
 
 func TestAllUploaded(t *testing.T) {
+	type profileMeta struct {
+		tags  []string
+		files []string
+	}
+
 	// This is a kind of end-to-end test that runs the real profiles (i.e.
 	// not mocking/replacing any internal functions) and verifies that the
 	// profiles are at least uploaded.
 	//
 	// TODO: Further check that the uploaded profiles are all valid
-	var (
-		profiles []string
-	)
+
 	// received indicates that the server has received a profile upload.
 	// This is used similarly to a sync.WaitGroup but avoids a potential
 	// panic if too many requests are received before profiling is stopped
@@ -354,11 +357,12 @@ func TestAllUploaded(t *testing.T) {
 	// The channel is buffered with 2 entries so we can check that the
 	// second batch of profiles is correct in case the profiler gets in a
 	// bad state after the first round of profiling.
-	received := make(chan struct{}, 2)
+	received := make(chan profileMeta, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var profile profileMeta
 		defer func() {
 			select {
-			case received <- struct{}{}:
+			case received <- profile:
 			default:
 			}
 		}()
@@ -368,7 +372,6 @@ func TestAllUploaded(t *testing.T) {
 			return
 		}
 		mr := multipart.NewReader(r.Body, params["boundary"])
-		profiles = profiles[:0]
 		for {
 			p, err := mr.NextPart()
 			if err == io.EOF {
@@ -377,8 +380,15 @@ func TestAllUploaded(t *testing.T) {
 			if err != nil {
 				t.Fatalf("next part: %s", err)
 			}
+			if p.FormName() == "tags[]" {
+				val, err := io.ReadAll(p)
+				if err != nil {
+					t.Fatalf("next part: %s", err)
+				}
+				profile.tags = append(profile.tags, string(val))
+			}
 			if p.FileName() == "pprof-data" {
-				profiles = append(profiles, p.FormName())
+				profile.files = append(profile.files, p.FormName())
 			}
 		}
 	}))
@@ -405,17 +415,88 @@ func TestAllUploaded(t *testing.T) {
 		CPUDuration(1*time.Millisecond),
 	)
 	defer Stop()
-	<-received
-	<-received
 
-	expected := []string{
-		"data[cpu.pprof]",
-		"data[delta-block.pprof]",
-		"data[delta-heap.pprof]",
-		"data[delta-mutex.pprof]",
-		"data[goroutines.pprof]",
-		"data[goroutineswait.pprof]",
+	validateProfile := func(profile profileMeta, seq uint64) {
+		expected := []string{
+			"data[cpu.pprof]",
+			"data[delta-block.pprof]",
+			"data[delta-heap.pprof]",
+			"data[delta-mutex.pprof]",
+			"data[goroutines.pprof]",
+			"data[goroutineswait.pprof]",
+		}
+		assert.ElementsMatch(t, expected, profile.files)
+
+		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
 	}
-	sort.Strings(profiles)
-	assert.Equal(t, expected, profiles)
+
+	validateProfile(<-received, 0)
+	validateProfile(<-received, 1)
+}
+
+func TestCorrectTags(t *testing.T) {
+	got := make(chan []string)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var tags []string
+		defer func() {
+			got <- tags
+		}()
+		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil {
+			t.Fatalf("bad media type: %s", err)
+			return
+		}
+		mr := multipart.NewReader(r.Body, params["boundary"])
+		for {
+			p, err := mr.NextPart()
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				t.Fatalf("next part: %s", err)
+			}
+			if p.FormName() == "tags[]" {
+				tag, err := io.ReadAll(p)
+				if err != nil {
+					t.Fatalf("reading tags: %s", err)
+				}
+				tags = append(tags, string(tag))
+			}
+		}
+	}))
+	defer server.Close()
+
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(
+			BlockProfile,
+			CPUProfile,
+			GoroutineProfile,
+			HeapProfile,
+			MutexProfile,
+		),
+		WithPeriod(10*time.Millisecond),
+		CPUDuration(10*time.Millisecond),
+		WithService("xyz"),
+		WithEnv("testing"),
+		WithTags("foo:bar", "baz:bonk"),
+	)
+	defer Stop()
+	expected := []string{
+		"baz:bonk",
+		"env:testing",
+		"foo:bar",
+		"service:xyz",
+	}
+	for i := 0; i < 20; i++ {
+		// We check the tags we get several times to try to have a
+		// better chance of catching a bug where the some of the tags
+		// are clobbered due to a bug caused by the same
+		// profiler-internal tag slice being appended to from different
+		// goroutines concurrently.
+		tags := <-got
+		for _, tag := range expected {
+			require.Contains(t, tags, tag)
+		}
+	}
 }

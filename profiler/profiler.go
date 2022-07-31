@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -72,6 +71,7 @@ type profiler struct {
 	wg         sync.WaitGroup               // wg waits for all goroutines to exit when stopping.
 	met        *metrics                     // metric collector state
 	prev       map[string]*pprofile.Profile // previous collection results for delta profiling
+	seq        uint64                       // seq is the value of the profile_seq tag
 
 	testHooks testHooks
 }
@@ -223,6 +223,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		case <-ticker:
 			now := now()
 			bat := batch{
+				seq:   p.seq,
 				host:  p.cfg.hostname,
 				start: now,
 				// NB: while this is technically wrong in that it does not
@@ -231,6 +232,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				// configured CPU profile duration: (start-end).
 				end: now.Add(p.cfg.cpuDuration),
 			}
+			p.seq++
 
 			completed = completed[:0]
 			for _, t := range p.enabledProfileTypes() {
@@ -240,7 +242,8 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 					profs, err := p.runProfile(t)
 					if err != nil {
 						log.Error("Error getting %s profile: %v; skipping.", t, err)
-						p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
+						tags := append(p.cfg.tags.Slice(), t.Tag())
+						p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, tags, 1)
 					}
 					mu.Lock()
 					defer mu.Unlock()
@@ -293,7 +296,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 			// queue is full; evict oldest
 			select {
 			case <-p.out:
-				p.cfg.statsd.Count("datadog.profiler.go.queue_full", 1, p.cfg.tags, 1)
+				p.cfg.statsd.Count("datadog.profiling.go.queue_full", 1, p.cfg.tags.Slice(), 1)
 				log.Warn("Evicting one profile batch from the upload queue to make room.")
 			default:
 				// this case should be almost impossible to trigger, it would require a
@@ -336,7 +339,7 @@ func (p *profiler) outputDir(bat batch) error {
 	for _, prof := range bat.profiles {
 		filePath := filepath.Join(dirPath, prof.name)
 		// 0644 is what touch does, should be reasonable for the use cases here.
-		if err := ioutil.WriteFile(filePath, prof.data, 0644); err != nil {
+		if err := os.WriteFile(filePath, prof.data, 0644); err != nil {
 			return err
 		}
 	}

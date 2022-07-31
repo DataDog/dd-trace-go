@@ -33,7 +33,7 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 		Reader: c,
 		cfg:    newConfig(opts...),
 	}
-	log.Debug("contrib/confluentinc/confluent-kafka.go.v0/kafka: Wrapping Reader: %#v", wrapped.cfg)
+	log.Debug("contrib/segmentio/kafka-go.v0/kafka: Wrapping Reader: %#v", wrapped.cfg)
 	return wrapped
 }
 
@@ -89,6 +89,20 @@ func (r *Reader) ReadMessage(ctx context.Context) (kafka.Message, error) {
 	msg, err := r.Reader.ReadMessage(ctx)
 	if err != nil {
 		return kafka.Message{}, err
+	}
+	r.prev = r.startSpan(ctx, &msg)
+	return msg, nil
+}
+
+// FetchMessage reads and returns the next message from the reader. Message will be traced.
+func (r *Reader) FetchMessage(ctx context.Context) (kafka.Message, error) {
+	if r.prev != nil {
+		r.prev.Finish()
+		r.prev = nil
+	}
+	msg, err := r.Reader.FetchMessage(ctx)
+	if err != nil {
+		return msg, err
 	}
 	r.prev = r.startSpan(ctx, &msg)
 	return msg, nil

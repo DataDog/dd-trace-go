@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net/http"
 	"regexp"
@@ -143,7 +142,7 @@ func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser,
 			return string(snip), rc2, nil
 		}
 		defer gzr.Close()
-		snip, err = ioutil.ReadAll(gzr)
+		snip, err = io.ReadAll(gzr)
 	}
 	return string(snip), rc2, err
 }

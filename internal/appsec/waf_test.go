@@ -9,7 +9,7 @@
 package appsec_test
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -60,7 +60,7 @@ func TestWAF(t *testing.T) {
 		require.NoError(t, err)
 
 		// Check that the handler was properly called
-		b, err := ioutil.ReadAll(res.Body)
+		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		require.Equal(t, "Hello World!\n", string(b))
 
@@ -91,7 +91,7 @@ func TestWAF(t *testing.T) {
 		require.NoError(t, err)
 
 		// Check that the handler was properly called
-		b, err := ioutil.ReadAll(res.Body)
+		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		require.Equal(t, "Hello Body!\n", string(b))
 
@@ -156,7 +156,7 @@ func TestWAF(t *testing.T) {
 		require.NoError(t, err)
 
 		// Check that the handler was properly called
-		b, err := ioutil.ReadAll(res.Body)
+		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		require.Equal(t, "Hello World!\n", string(b))
 
