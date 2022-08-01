@@ -127,8 +127,12 @@ type Writer struct {
 func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(w.cfg.producerServiceName),
-		tracer.ResourceName("Produce Topic " + w.Writer.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
+	}
+	if w.Writer.Topic != "" {
+		opts = append(opts, tracer.ResourceName("Produce Topic "+w.Writer.Topic))
+	} else {
+		opts = append(opts, tracer.ResourceName("Produce Topic "+msg.Topic))
 	}
 	if !math.IsNaN(w.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, w.cfg.analyticsRate))
