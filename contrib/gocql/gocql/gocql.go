@@ -111,6 +111,9 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 }
 
 func (tq *Query) finishSpan(span ddtrace.Span, err error) {
+	if err != nil && tq.params.config.shouldIgnoreError(err) {
+		err = nil
+	}
 	if tq.params.config.noDebugStack {
 		span.Finish(tracer.WithError(err), tracer.NoDebugStack())
 	} else {
@@ -259,6 +262,9 @@ func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.Span {
 }
 
 func (tb *Batch) finishSpan(span ddtrace.Span, err error) {
+	if err != nil && tb.params.config.shouldIgnoreError(err) {
+		err = nil
+	}
 	if tb.params.config.noDebugStack {
 		span.Finish(tracer.WithError(err), tracer.NoDebugStack())
 	} else {
