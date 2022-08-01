@@ -65,10 +65,10 @@ func (r *rulesSampler) TraceRateLimit() (float64, bool) { return r.traces.limit(
 // the service name, operation name or both.
 // For basic usage, consider using the helper functions ServiceRule, NameRule, etc.
 type SamplingRule struct {
-	// Service specifies the regex expression span service name should match.
+	// Service specifies the regex pattern that a span service name must match.
 	Service *regexp.Regexp
 
-	// Name specifies the regex expression span operation name should match.
+	// Name specifies the regex pattern that a span operation name must match.
 	Name *regexp.Regexp
 
 	// Rate specifies the sampling rate that should be applied to spans that match
@@ -343,6 +343,7 @@ func (rs *singleSpanRulesSampler) applyRate(span *span, rule SamplingRule, rate 
 			return
 		}
 	}
+	span.setSamplingPriority(ext.PriorityUserKeep, samplernames.RuleRate, rate)
 	span.setMetric(keySpanSamplingMechanism, samplingMechanismSingleSpan)
 	span.setMetric(keySingleSpanSamplingRuleRate, rate)
 	if rule.MaxPerSecond != 0 {

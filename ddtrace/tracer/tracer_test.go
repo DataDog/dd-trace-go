@@ -383,14 +383,13 @@ func TestSamplingDecision(t *testing.T) {
 		child.Finish()
 		parent.Finish()
 		tracer.pushTraceInfo(&traceInfo{spans: []*span{parent, child}})
-		// timing out since single span sampling runs in the worker thread
+		tracer.Stop()
 		time.Sleep(5 * time.Millisecond)
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.Metrics[keySamplingPriority])
 		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
 		assert.Equal(t, 8.0, parent.Metrics[keySpanSamplingMechanism])
 		assert.Equal(t, 1.0, parent.Metrics[keySingleSpanSamplingRuleRate])
 		assert.Equal(t, 15.0, parent.Metrics[keySingleSpanSamplingMPS])
-		assert.NotContains(t, parent.Metrics, keyTopLevel)
 	})
 }
 

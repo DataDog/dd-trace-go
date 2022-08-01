@@ -336,14 +336,8 @@ func (t *tracer) processTraceInfo(info *traceInfo) {
 	// if trace sampling decision is drop, we still want to send single spans
 	// unless there are no single span sampling rules defined
 	var kept []*span
-	canDropP0s := t.config.canDropP0s()
 	for _, span := range info.spans {
 		if t.rulesSampling.SampleSpan(span) {
-			// since stats are computed on the tracer side, the keyTopLevel tag
-			// must be removed to preserve stats correctness
-			if canDropP0s {
-				delete(span.Metrics, keyTopLevel)
-			}
 			kept = append(kept, span)
 		}
 	}

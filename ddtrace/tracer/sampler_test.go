@@ -441,6 +441,7 @@ func TestRulesSampler(t *testing.T) {
 				span := makeSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
 				assert.True(result)
+				assert.Equal(float64(ext.PriorityUserKeep), span.Metrics[keySamplingPriority])
 				assert.Contains(span.Metrics, keySpanSamplingMechanism)
 				assert.Contains(span.Metrics, keySingleSpanSamplingRuleRate)
 				assert.Contains(span.Metrics, keySingleSpanSamplingMPS)
