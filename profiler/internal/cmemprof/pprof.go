@@ -58,6 +58,11 @@ func init() {
 		return
 	}
 
+	mappings = parseMappings(data)
+}
+
+func parseMappings(data []byte) []*profile.Mapping {
+	var results []*profile.Mapping
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	for sc.Scan() {
 		fields := bytes.Fields(sc.Bytes())
@@ -84,8 +89,8 @@ func init() {
 		// We don't need the dev or inode fields (3 and 4)
 		file := string(fields[5])
 
-		mappings = append(mappings, &profile.Mapping{
-			ID:     uint64(len(mappings) + 1),
+		results = append(results, &profile.Mapping{
+			ID:     uint64(len(results) + 1),
 			Start:  lo,
 			Limit:  hi,
 			Offset: offset,
@@ -93,9 +98,10 @@ func init() {
 		})
 	}
 
-	sort.Slice(mappings, func(i, j int) bool {
-		return mappings[i].Start < mappings[j].Start
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Start < results[j].Start
 	})
+	return results
 }
 
 func (c *Profile) build() *profile.Profile {
