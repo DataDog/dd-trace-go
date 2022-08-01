@@ -1,147 +1,56 @@
 package cmemprof
 
 import (
-	"bytes"
-	"sort"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/google/pprof/profile"
 	"github.com/stretchr/testify/require"
 )
 
+// There are a few special cases that the Go /proc/self/maps parsing code
+// handles that we want to preserve:
+//
+//	* If a file is deleted after the progam starts, there will be a
+//	  " (deleted)" suffix which should be removed
+//	* Per "man 5 proc", the file name will be unescaped except for
+//	  newlines. In particular, this means the filename can contain
+//	  whitespace.
+//
+// The following /proc/self/maps example was obtained by compiling a C program
+// which just calls "sleep(1000)", giving it a name with a space ("space daemon"),
+// and deleting the executable after starting the program.
+
+var procMaps = []byte(`55f747992000-55f747993000 r--p 00000000 08:01 788178                     /usr/bin/space daemon (deleted)
+55f747993000-55f747994000 r-xp 00001000 08:01 788178                     /usr/bin/space daemon (deleted)
+55f747994000-55f747995000 r--p 00002000 08:01 788178                     /usr/bin/space daemon (deleted)
+55f747995000-55f747996000 r--p 00002000 08:01 788178                     /usr/bin/space daemon (deleted)
+55f747996000-55f747997000 rw-p 00003000 08:01 788178                     /usr/bin/space daemon (deleted)
+7fa3b3c00000-7fa3b3c22000 r--p 00000000 08:01 3463                       /usr/lib/x86_64-linux-gnu/libc-2.31.so
+7fa3b3c22000-7fa3b3d9a000 r-xp 00022000 08:01 3463                       /usr/lib/x86_64-linux-gnu/libc-2.31.so
+7fa3b3d9a000-7fa3b3de8000 r--p 0019a000 08:01 3463                       /usr/lib/x86_64-linux-gnu/libc-2.31.so
+7fa3b3de8000-7fa3b3dec000 r--p 001e7000 08:01 3463                       /usr/lib/x86_64-linux-gnu/libc-2.31.so
+7fa3b3dec000-7fa3b3dee000 rw-p 001eb000 08:01 3463                       /usr/lib/x86_64-linux-gnu/libc-2.31.so
+7fa3b3dee000-7fa3b3df4000 rw-p 00000000 00:00 0 
+7fa3b3dfc000-7fa3b3dfd000 r--p 00000000 08:01 3459                       /usr/lib/x86_64-linux-gnu/ld-2.31.so
+7fa3b3dfd000-7fa3b3e20000 r-xp 00001000 08:01 3459                       /usr/lib/x86_64-linux-gnu/ld-2.31.so
+7fa3b3e20000-7fa3b3e28000 r--p 00024000 08:01 3459                       /usr/lib/x86_64-linux-gnu/ld-2.31.so
+7fa3b3e29000-7fa3b3e2a000 r--p 0002c000 08:01 3459                       /usr/lib/x86_64-linux-gnu/ld-2.31.so
+7fa3b3e2a000-7fa3b3e2b000 rw-p 0002d000 08:01 3459                       /usr/lib/x86_64-linux-gnu/ld-2.31.so
+7fa3b3e2b000-7fa3b3e2c000 rw-p 00000000 00:00 0 
+7fff1e028000-7fff1e049000 rw-p 00000000 00:00 0                          [stack]
+7fff1e04c000-7fff1e04f000 r--p 00000000 00:00 0                          [vvar]
+7fff1e04f000-7fff1e050000 r-xp 00000000 00:00 0                          [vdso]
+ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0                  [vsyscall]
+`)
+
 func Test_parseMapping(t *testing.T) {
-	implementations := []struct {
-		Name string
-		Func func([]byte) []*profile.Mapping
-	}{
-		{"parseMappingsOriginal", parseMappingsOriginal},
-		{"parseMappings", parseMappings},
+	want := []*profile.Mapping{
+		{ID: 1, Start: 0x55f747993000, Limit: 0x55f747994000, Offset: 0x00001000, File: "/usr/bin/space daemon"},
+		{ID: 2, Start: 0x7fa3b3c22000, Limit: 0x7fa3b3d9a000, Offset: 0x00022000, File: "/usr/lib/x86_64-linux-gnu/libc-2.31.so"},
+		{ID: 3, Start: 0x7fa3b3dfd000, Limit: 0x7fa3b3e20000, Offset: 0x00001000, File: "/usr/lib/x86_64-linux-gnu/ld-2.31.so"},
+		{ID: 4, Start: 0x7fff1e04f000, Limit: 0x7fff1e050000, Offset: 0x00000000, File: "[vdso]"},
+		{ID: 5, Start: 0xffffffffff600000, Limit: 0xffffffffff601000, Offset: 0x00000000, File: "[vsyscall]"},
 	}
-	example := strings.TrimSpace(`
-address           perms offset  dev   inode       pathname
-00400000-00452000 r-xp 00000000 08:02 173521      /usr/bin/dbus-daemon
-00300000-00352000 r-xp 00000000 08:02 173521      /usr/bin/white space/daemon
-`) + "\n"
-
-	for _, impl := range implementations {
-		t.Run(impl.Name, func(t *testing.T) {
-			got := impl.Func([]byte(example))
-			require.Equal(t, []*profile.Mapping{
-				{
-					ID:              2,
-					Start:           3145728,
-					Limit:           3481600,
-					Offset:          0,
-					File:            "/usr/bin/white space/daemon",
-					BuildID:         "",
-					HasFunctions:    false,
-					HasFilenames:    false,
-					HasLineNumbers:  false,
-					HasInlineFrames: false,
-				},
-				{
-					ID:              1,
-					Start:           4194304,
-					Limit:           4530176,
-					Offset:          0,
-					File:            "/usr/bin/dbus-daemon",
-					BuildID:         "",
-					HasFunctions:    false,
-					HasFilenames:    false,
-					HasLineNumbers:  false,
-					HasInlineFrames: false,
-				},
-			}, got)
-		})
-	}
-}
-
-// bytes.Cut, but backported so we can still support Go 1.17
-func bytesCut(s, sep []byte) (before, after []byte, found bool) {
-	if i := bytes.Index(s, sep); i >= 0 {
-		return s[:i], s[i+len(sep):], true
-	}
-	return s, nil, false
-}
-
-func stringsCut(s, sep string) (before, after string, found bool) {
-	if i := strings.Index(s, sep); i >= 0 {
-		return s[:i], s[i+len(sep):], true
-	}
-	return s, "", false
-}
-
-func parseMappingsOriginal(data []byte) []*profile.Mapping {
-	var results []*profile.Mapping
-	var line []byte
-	// next removes and returns the next field in the line.
-	// It also removes from line any spaces following the field.
-	next := func() []byte {
-		var f []byte
-		f, line, _ = bytesCut(line, []byte(" "))
-		line = bytes.TrimLeft(line, " ")
-		return f
-	}
-
-	for len(data) > 0 {
-		line, data, _ = bytesCut(data, []byte("\n"))
-		addr := next()
-		loStr, hiStr, ok := stringsCut(string(addr), "-")
-		if !ok {
-			continue
-		}
-		lo, err := strconv.ParseUint(loStr, 16, 64)
-		if err != nil {
-			continue
-		}
-		hi, err := strconv.ParseUint(hiStr, 16, 64)
-		if err != nil {
-			continue
-		}
-		perm := next()
-		if len(perm) < 4 || perm[2] != 'x' {
-			// Only interested in executable mappings.
-			continue
-		}
-		offset, err := strconv.ParseUint(string(next()), 16, 64)
-		if err != nil {
-			continue
-		}
-		next()          // dev
-		inode := next() // inode
-		if line == nil {
-			continue
-		}
-		file := string(line)
-
-		// Trim deleted file marker.
-		deletedStr := " (deleted)"
-		deletedLen := len(deletedStr)
-		if len(file) >= deletedLen && file[len(file)-deletedLen:] == deletedStr {
-			file = file[:len(file)-deletedLen]
-		}
-
-		if len(inode) == 1 && inode[0] == '0' && file == "" {
-			// Huge-page text mappings list the initial fragment of
-			// mapped but unpopulated memory as being inode 0.
-			// Don't report that part.
-			// But [vdso] and [vsyscall] are inode 0, so let non-empty file names through.
-			continue
-		}
-
-		results = append(results, &profile.Mapping{
-			ID:     uint64(len(results) + 1),
-			Start:  lo,
-			Limit:  hi,
-			Offset: offset,
-			File:   file,
-		})
-	}
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Start < results[j].Start
-	})
-
-	return results
+	got := parseMappings(procMaps)
+	require.Equal(t, want, got)
 }

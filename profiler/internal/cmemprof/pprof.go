@@ -2,11 +2,19 @@
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
+//
+// The parseMapping code comes from the Google Go source code. The code is
+// licensed under the BSD 3-clause license (a copy is in LICENSE-go in this
+// directory, see also LICENSE-3rdparty.csv) and comes with the following
+// notice:
+//
+// Copyright 2016 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
 package cmemprof
 
 import (
-	"bufio"
 	"bytes"
 	"os"
 	"runtime"
@@ -61,33 +69,82 @@ func init() {
 	mappings = parseMappings(data)
 }
 
+// bytes.Cut, but backported so we can still support Go 1.17
+func bytesCut(s, sep []byte) (before, after []byte, found bool) {
+	if i := bytes.Index(s, sep); i >= 0 {
+		return s[:i], s[i+len(sep):], true
+	}
+	return s, nil, false
+}
+
+func stringsCut(s, sep string) (before, after string, found bool) {
+	if i := strings.Index(s, sep); i >= 0 {
+		return s[:i], s[i+len(sep):], true
+	}
+	return s, "", false
+}
+
 func parseMappings(data []byte) []*profile.Mapping {
+	// This code comes from parseProcSelfMaps in the
+	// official Go repository. See
+	//	https://go.googlesource.com/go/+/refs/tags/go1.18.4/src/runtime/pprof/proto.go#596
+
 	var results []*profile.Mapping
-	sc := bufio.NewScanner(bytes.NewReader(data))
-	for sc.Scan() {
-		fields := bytes.Fields(sc.Bytes())
-		if len(fields) != 6 {
+	var line []byte
+	// next removes and returns the next field in the line.
+	// It also removes from line any spaces following the field.
+	next := func() []byte {
+		var f []byte
+		f, line, _ = bytesCut(line, []byte(" "))
+		line = bytes.TrimLeft(line, " ")
+		return f
+	}
+
+	for len(data) > 0 {
+		line, data, _ = bytesCut(data, []byte("\n"))
+		addr := next()
+		loStr, hiStr, ok := stringsCut(string(addr), "-")
+		if !ok {
 			continue
 		}
-		addrs := bytes.Split(fields[0], []byte("-"))
-		lo, err := strconv.ParseUint(string(addrs[0]), 16, 64)
+		lo, err := strconv.ParseUint(loStr, 16, 64)
 		if err != nil {
 			continue
 		}
-		hi, err := strconv.ParseUint(string(addrs[1]), 16, 64)
+		hi, err := strconv.ParseUint(hiStr, 16, 64)
 		if err != nil {
 			continue
 		}
-		// Want permissions like 'r-xp' (in particular, 'x')
-		if perm := fields[1]; len(perm) < 4 || perm[2] != 'x' {
+		perm := next()
+		if len(perm) < 4 || perm[2] != 'x' {
+			// Only interested in executable mappings.
 			continue
 		}
-		offset, err := strconv.ParseUint(string(fields[2]), 16, 64)
+		offset, err := strconv.ParseUint(string(next()), 16, 64)
 		if err != nil {
 			continue
 		}
-		// We don't need the dev or inode fields (3 and 4)
-		file := string(fields[5])
+		next()          // dev
+		inode := next() // inode
+		if line == nil {
+			continue
+		}
+		file := string(line)
+
+		// Trim deleted file marker.
+		deletedStr := " (deleted)"
+		deletedLen := len(deletedStr)
+		if len(file) >= deletedLen && file[len(file)-deletedLen:] == deletedStr {
+			file = file[:len(file)-deletedLen]
+		}
+
+		if len(inode) == 1 && inode[0] == '0' && file == "" {
+			// Huge-page text mappings list the initial fragment of
+			// mapped but unpopulated memory as being inode 0.
+			// Don't report that part.
+			// But [vdso] and [vsyscall] are inode 0, so let non-empty file names through.
+			continue
+		}
 
 		results = append(results, &profile.Mapping{
 			ID:     uint64(len(results) + 1),
@@ -95,12 +152,18 @@ func parseMappings(data []byte) []*profile.Mapping {
 			Limit:  hi,
 			Offset: offset,
 			File:   file,
+			// Go normally sets the HasFunctions, HasLineNumbers,
+			// etc. fields for the main executable when it consists
+			// solely of Go code. However, users of this C
+			// allocation profiler will necessarily be using non-Go
+			// code and we don't know whether there are functions,
+			// line numbers, etc. available for the non-Go code.
 		})
 	}
-
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Start < results[j].Start
 	})
+
 	return results
 }
 
