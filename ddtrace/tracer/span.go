@@ -9,6 +9,7 @@ package tracer
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"math"
 	"os"
@@ -167,6 +168,37 @@ func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.Lock()
 	defer s.Unlock()
 	s.setSamplingPriorityLocked(priority, sampler, rate)
+}
+
+// setUser sets the span user ID tag as well as some optional user monitoring tags depending on the configuration.
+// The function assumes that the span it is called on is the trace's root span.
+func (s *span) setUser(id string, cfg UserMonitoringConfig) {
+	tags := map[string]string{}
+	keys := []string{ext.UserEmail, ext.UserName, ext.UserScope, ext.UserRole, ext.UserSessionID}
+	vals := []string{cfg.email, cfg.name, cfg.scope, cfg.role, cfg.sessionID}
+	// Build optional tags map before locking
+	for i, v := range vals {
+		if v != "" {
+			tags[keys[i]] = v
+		}
+	}
+	s.Lock()
+	defer s.Unlock()
+	if cfg.propagateID {
+		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
+		delete(s.Meta, ext.UserID)
+		id = base64.StdEncoding.EncodeToString([]byte(id))
+		s.context.trace.setPropagatingTag(keyPropagatedUserID, id)
+	} else {
+		// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
+		delete(s.context.trace.propagatingTags, keyPropagatedUserID)
+		delete(s.Meta, keyPropagatedUserID)
+		// setMeta is used since the span is already locked
+		s.setMeta(ext.UserID, id)
+	}
+	for k, v := range tags {
+		s.setMeta(k, v)
+	}
 }
 
 // setSamplingPriorityLocked updates the sampling priority.

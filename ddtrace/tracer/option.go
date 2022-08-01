@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -866,41 +865,52 @@ func StackFrames(n, skip uint) FinishOption {
 	}
 }
 
+// UserMonitoringConfig is used to configure what is used to identify a user.
+// This configuration can be set by combining one or several UserMonitoringOption with a call to SetUser().
+type UserMonitoringConfig struct {
+	propagateID bool
+	email       string
+	name        string
+	role        string
+	sessionID   string
+	scope       string
+}
+
 // UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
-type UserMonitoringOption func(Span)
+type UserMonitoringOption func(*UserMonitoringConfig)
 
 // WithUserEmail returns the option setting the email of the authenticated user.
 func WithUserEmail(email string) UserMonitoringOption {
-	return func(s Span) {
-		s.SetTag(ext.UserEmail, email)
+	return func(cfg *UserMonitoringConfig) {
+		cfg.email = email
 	}
 }
 
 // WithUserName returns the option setting the name of the authenticated user.
 func WithUserName(name string) UserMonitoringOption {
-	return func(s Span) {
-		s.SetTag(ext.UserName, name)
+	return func(cfg *UserMonitoringConfig) {
+		cfg.name = name
 	}
 }
 
 // WithUserSessionID returns the option setting the session ID of the authenticated user.
 func WithUserSessionID(sessionID string) UserMonitoringOption {
-	return func(s Span) {
-		s.SetTag(ext.UserSessionID, sessionID)
+	return func(cfg *UserMonitoringConfig) {
+		cfg.sessionID = sessionID
 	}
 }
 
 // WithUserRole returns the option setting the role of the authenticated user.
 func WithUserRole(role string) UserMonitoringOption {
-	return func(s Span) {
-		s.SetTag(ext.UserRole, role)
+	return func(cfg *UserMonitoringConfig) {
+		cfg.role = role
 	}
 }
 
 // WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
-	return func(s Span) {
-		s.SetTag(ext.UserScope, scope)
+	return func(cfg *UserMonitoringConfig) {
+		cfg.scope = scope
 	}
 }
 
@@ -909,17 +919,7 @@ func WithUserScope(scope string) UserMonitoringOption {
 // This option should only be used if you are certain that the user id passed to `SetUser()` does not contain any
 // personal identifiable information or any kind of sensitive data, as it will be leaked to other services.
 func WithPropagation() UserMonitoringOption {
-	return func(s Span) {
-		sp, ok := s.(*span)
-		if !ok || sp.context == nil {
-			return
-		}
-		sp.Lock()
-		defer sp.Unlock()
-		id := sp.Meta[ext.UserID]
-		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
-		delete(sp.Meta, ext.UserID)
-		id = base64.StdEncoding.EncodeToString([]byte(id))
-		sp.context.trace.setPropagatingTag(keyPropagatedUserID, id)
+	return func(cfg *UserMonitoringConfig) {
+		cfg.propagateID = true
 	}
 }

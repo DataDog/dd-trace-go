@@ -168,20 +168,16 @@ func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 	if s == nil {
 		return
 	}
-	if sp, ok := s.(*span); ok && sp.context != nil {
-		sp = sp.context.trace.root
-		// Unset the propagated user ID by default so that if the function is called without WithPropagation(),
-		// a propagated user ID coming from upstream won't be propagated anymore.
-		sp.Lock()
-		delete(sp.context.trace.propagatingTags, keyPropagatedUserID)
-		delete(sp.Meta, keyPropagatedUserID)
-		sp.Unlock()
-		s = sp
+	sp, ok := s.(*span)
+	if !ok || sp.context == nil {
+		return
 	}
-	s.SetTag(ext.UserID, id)
+	sp = sp.context.trace.root
+	var cfg UserMonitoringConfig
 	for _, fn := range opts {
-		fn(s)
+		fn(&cfg)
 	}
+	sp.setUser(id, cfg)
 }
 
 // payloadQueueSize is the buffer size of the trace channel.
