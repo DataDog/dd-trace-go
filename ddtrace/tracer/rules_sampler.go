@@ -119,6 +119,17 @@ const (
 	SamplingRuleSpan
 )
 
+func (sr SamplingRuleType) String() string {
+	switch sr {
+	case SamplingRuleTrace:
+		return "trace"
+	case SamplingRuleSpan:
+		return "span"
+	default:
+		return ""
+	}
+}
+
 // ServiceRule returns a SamplingRule that applies the provided sampling rate
 // to spans that match the service name provided.
 func ServiceRule(service string, rate float64) SamplingRule {
@@ -552,7 +563,7 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		Service      string   `json:"service"`
 		Name         string   `json:"name"`
 		Rate         float64  `json:"sample_rate"`
-		Type         int      `json:"type"`
+		Type         string   `json:"type"`
 		MaxPerSecond *float64 `json:"max_per_second,omitempty"`
 	}{}
 	if sr.exactService != "" {
@@ -566,7 +577,7 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		s.Name = fmt.Sprintf("%s", sr.Name)
 	}
 	s.Rate = sr.Rate
-	s.Type = int(sr.Type)
+	s.Type = fmt.Sprintf("%v(%d)", sr.Type.String(), sr.Type)
 	if sr.MaxPerSecond != 0 {
 		s.MaxPerSecond = &sr.MaxPerSecond
 	}
