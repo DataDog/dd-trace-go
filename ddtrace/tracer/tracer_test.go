@@ -1823,6 +1823,18 @@ func TestUserMonitoring(t *testing.T) {
 		assert.Equal(t, encoded, s.context.trace.propagatingTags[keyPropagatedUserID])
 		assert.Equal(t, encoded, s.Meta[keyPropagatedUserID])
 	})
+
+	t.Run("no-propagation", func(t *testing.T) {
+		s := tr.newRootSpan("root", "test", "test")
+		SetUser(s, id)
+		s.Finish()
+		_, ok := s.Meta[ext.UserID]
+		assert.True(t, ok)
+		_, ok = s.Meta[keyPropagatedUserID]
+		assert.False(t, ok)
+		_, ok = s.context.trace.propagatingTags[keyPropagatedUserID]
+		assert.False(t, ok)
+	})
 }
 
 // BenchmarkTracerStackFrames tests the performance of taking stack trace.
