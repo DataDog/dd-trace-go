@@ -23,6 +23,9 @@ type roundTripper struct {
 }
 
 func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
+	if rt.cfg.ignoreRequest(req) {
+		return rt.base.RoundTrip(req)
+	}
 	resourceName := rt.cfg.resourceNamer(req)
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
