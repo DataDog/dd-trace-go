@@ -37,7 +37,7 @@ func TestDNS(t *testing.T) {
 	go func() {
 		err := server.ListenAndServe()
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
 		}
 	}()
 	waitTillUDPReady(t, addr)
