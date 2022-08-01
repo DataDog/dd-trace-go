@@ -40,6 +40,10 @@ var (
 	cfg = newConfig()
 )
 
+// multipleIPHeaders sets the multiple ip header tag used internally to tell the backend an error occurred when
+// retrieving an HTTP request client IP.
+const multipleIPHeaders = "_dd.multiple-ip-headers"
+
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
 func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
@@ -91,7 +95,7 @@ func ippref(s string) *netaddr.IPPrefix {
 }
 
 // genClientIPSpanTags generates the client IP related tags that need to be added to the span.
-// See https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2118779066/Client+IP+addresses+resolution
+// See https://docs.datadoghq.com/tracing/configure_data_security#configuring-a-client-ip-header for more information.
 func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
 	ipHeaders := defaultIPHeaders
 	if len(cfg.clientIPHeader) > 0 {
@@ -122,7 +126,7 @@ func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
 		for i := range ips {
 			opts = append(opts, tracer.Tag(ext.HTTPRequestHeaders+"."+headers[i], ips[i]))
 		}
-		opts = append(opts, tracer.Tag(ext.MultipleIPHeaders, strings.Join(headers, ",")))
+		opts = append(opts, tracer.Tag(multipleIPHeaders, strings.Join(headers, ",")))
 	}
 	return opts
 }
@@ -157,7 +161,7 @@ func isGlobal(ip netaddr.IP) bool {
 
 // urlFromRequest returns the full URL from the HTTP request. If query params are collected, they are obfuscated granted
 // obfuscation is not disabled by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
-// For more information see https://datadoghq.atlassian.net/wiki/spaces/APM/pages/2357395856/Span+attributes#http.url
+// See https://docs.datadoghq.com/tracing/configure_data_security#redacting-the-query-in-the-url for more information.
 func urlFromRequest(r *http.Request) string {
 	// Quoting net/http comments about net.Request.URL on server requests:
 	// "For most requests, fields other than Path and RawQuery will be
@@ -175,7 +179,6 @@ func urlFromRequest(r *http.Request) string {
 		url = path
 	}
 	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
-	// https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2490990623/QueryString+-+Sensitive+Data+Obfuscation
 	if cfg.queryString && r.URL.RawQuery != "" {
 		query := r.URL.RawQuery
 		if cfg.queryStringRegexp != nil {

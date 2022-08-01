@@ -44,7 +44,7 @@ func ExampleMonitorParsedHTTPBody() {
 }
 
 // Monitor HTTP request parsed body with a framework customized context type
-func ExampleMonitorParsedHTTPBody_CustomContext() {
+func ExampleMonitorParsedHTTPBody_customContext() {
 	r := echo.New()
 	r.Use(echotrace.Middleware())
 	r.POST("/body", func(c echo.Context) (e error) {
