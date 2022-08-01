@@ -812,17 +812,17 @@ func TestSamplingRuleMarshall(t *testing.T) {
 		out string
 	}{
 		{SamplingRule{nil, nil, 0, 0, 0, "srv", "ops", nil},
-			`{"service":"srv","name":"ops","sample_rate":0,"type":0}`},
+			`{"service":"srv","name":"ops","sample_rate":0,"type":"trace(0)"}`},
 		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), nil, 0, 0, 0, "srv", "ops", nil},
-			`{"service":"srv","name":"ops","sample_rate":0,"type":0}`},
+			`{"service":"srv","name":"ops","sample_rate":0,"type":"trace(0)"}`},
 		{SamplingRule{regexp.MustCompile("srv.*"), regexp.MustCompile("ops.[0-9]+]"), 0, 0, 0, "", "", nil},
-			`{"service":"srv.*","name":"ops.[0-9]+]","sample_rate":0,"type":0}`},
+			`{"service":"srv.*","name":"ops.[0-9]+]","sample_rate":0,"type":"trace(0)"}`},
 		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), 0.55, 0, 0, "", "", nil},
-			`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","sample_rate":0.55,"type":0}`},
+			`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","sample_rate":0.55,"type":"trace(0)"}`},
 		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), 0.55, 0, 1, "", "", nil},
-			`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","sample_rate":0.55,"type":1}`},
+			`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","sample_rate":0.55,"type":"span(1)"}`},
 		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), 0.55, 1000, 1, "", "", nil},
-			`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","sample_rate":0.55,"type":1,"max_per_second":1000}`},
+			`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","sample_rate":0.55,"type":"span(1)","max_per_second":1000}`},
 	} {
 		m, err := tt.in.MarshalJSON()
 		assert.Nil(t, err)
