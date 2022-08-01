@@ -255,6 +255,35 @@ func TestRoundTripperCopy(t *testing.T) {
 	assert.Equal(t, initialReq, req)
 }
 
+func TestRoundTripperIgnoreRequest(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	}))
+	defer s.Close()
+
+	rt := WrapRoundTripper(http.DefaultTransport, RTWithIgnoreRequest(
+		func(req *http.Request) bool {
+			return req.URL.Path == "/ignore"
+		},
+	)).(*roundTripper)
+
+	ignoreReq, err := http.NewRequest("GET", s.URL+"/ignore", nil)
+	assert.NoError(t, err)
+	_, err = rt.RoundTrip(ignoreReq)
+	assert.NoError(t, err)
+
+	req, err := http.NewRequest("GET", s.URL+"/hello", nil)
+	assert.NoError(t, err)
+	_, err = rt.RoundTrip(req)
+	assert.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+}
+
 func TestServiceName(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World"))
