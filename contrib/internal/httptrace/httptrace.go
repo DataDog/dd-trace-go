@@ -95,6 +95,7 @@ func ippref(s string) *netaddr.IPPrefix {
 }
 
 // genClientIPSpanTags generates the client IP related tags that need to be added to the span.
+// See https://docs.datadoghq.com/tracing/configure_data_security#configuring-a-client-ip-header for more information.
 func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
 	ipHeaders := defaultIPHeaders
 	if len(cfg.clientIPHeader) > 0 {
@@ -160,6 +161,7 @@ func isGlobal(ip netaddr.IP) bool {
 
 // urlFromRequest returns the full URL from the HTTP request. If query params are collected, they are obfuscated granted
 // obfuscation is not disabled by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
+// See https://docs.datadoghq.com/tracing/configure_data_security#redacting-the-query-in-the-url for more information.
 func urlFromRequest(r *http.Request) string {
 	// Quoting net/http comments about net.Request.URL on server requests:
 	// "For most requests, fields other than Path and RawQuery will be
