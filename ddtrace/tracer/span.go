@@ -173,16 +173,19 @@ func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 // setUser sets the span user ID tag as well as some optional user monitoring tags depending on the configuration.
 // The function assumes that the span it is called on is the trace's root span.
 func (s *span) setUser(id string, cfg UserMonitoringConfig) {
+	trace := s.context.trace
 	s.Lock()
 	defer s.Unlock()
+	trace.mu.Lock()
+	defer trace.mu.Unlock()
 	if cfg.propagateID {
 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
 		delete(s.Meta, keyUserID)
 		idenc := base64.StdEncoding.EncodeToString([]byte(id))
-		s.context.trace.setPropagatingTag(keyPropagatedUserID, idenc)
+		trace.setPropagatingTag(keyPropagatedUserID, idenc)
 	} else {
 		// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
-		delete(s.context.trace.propagatingTags, keyPropagatedUserID)
+		delete(trace.propagatingTags, keyPropagatedUserID)
 		delete(s.Meta, keyPropagatedUserID)
 		// setMeta is used since the span is already locked
 		s.setMeta(keyUserID, id)

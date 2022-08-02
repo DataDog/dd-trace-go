@@ -223,6 +223,8 @@ func (t *trace) setTag(key, value string) {
 	t.tags[key] = value
 }
 
+// setPropagatingTag sets the key/value pair as a trace propagating tag.
+// Not safe for concurrent use, trace should be locked before calling this method.
 func (t *trace) setPropagatingTag(key, value string) {
 	if t.propagatingTags == nil {
 		t.propagatingTags = make(map[string]string, 1)
