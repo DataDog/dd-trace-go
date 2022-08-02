@@ -195,7 +195,7 @@ func TestTracerStart(t *testing.T) {
 		Start()
 
 		// ensure at least one worker started and handles requests
-		internal.GetGlobalTracer().(*tracer).pushTrace([]*span{})
+		internal.GetGlobalTracer().(*tracer).pushTrace(&finishedTrace{spans: []*span{}})
 
 		Stop()
 		Stop()
@@ -206,7 +206,7 @@ func TestTracerStart(t *testing.T) {
 	t.Run("deadlock/direct", func(t *testing.T) {
 		tr, _, _, stop := startTestTracer(t)
 		defer stop()
-		tr.pushTrace([]*span{}) // blocks until worker is started
+		tr.pushTrace(&finishedTrace{spans: []*span{}}) // blocks until worker is started
 		select {
 		case <-tr.stop:
 			t.Fatal("stopped channel should be open")
@@ -365,6 +365,30 @@ func TestSamplingDecision(t *testing.T) {
 		// therefore not necessary to populate keyDecisionMaker
 		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
+	})
+
+	t.Run("client_dropped_with_single_spans", func(t *testing.T) {
+		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
+		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		tracer.config.agent.DropP0s = true
+		tracer.config.featureFlags = make(map[string]struct{})
+		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.sampler = NewRateSampler(0)
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		parent := tracer.StartSpan("name_1").(*span)
+		child := tracer.StartSpan("name_2", ChildOf(parent.context)).(*span)
+		child.Finish()
+		parent.Finish()
+		tracer.pushTrace(&finishedTrace{spans: []*span{parent, child}})
+		tracer.Stop()
+		assert.Equal(t, float64(ext.PriorityAutoReject), parent.Metrics[keySamplingPriority])
+		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
+		assert.Equal(t, 8.0, parent.Metrics[keySpanSamplingMechanism])
+		assert.Equal(t, 1.0, parent.Metrics[keySingleSpanSamplingRuleRate])
+		assert.Equal(t, 15.0, parent.Metrics[keySingleSpanSamplingMPS])
 	})
 }
 
@@ -1188,11 +1212,11 @@ func TestPushPayload(t *testing.T) {
 	s.Meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
 
 	// half payload size reached
-	tracer.pushTrace([]*span{s})
+	tracer.pushTrace(&finishedTrace{[]*span{s}, decisionKeep})
 	tracer.awaitPayload(t, 1)
 
 	// payload size exceeded
-	tracer.pushTrace([]*span{s})
+	tracer.pushTrace(&finishedTrace{[]*span{s}, decisionKeep})
 	flush(2)
 }
 
@@ -1214,16 +1238,16 @@ func TestPushTrace(t *testing.T) {
 			Resource: "/foo",
 		},
 	}
-	tracer.pushTrace(trace)
+	tracer.pushTrace(&finishedTrace{spans: trace})
 
 	assert.Len(tracer.out, 1)
 
 	t0 := <-tracer.out
-	assert.Equal(trace, t0)
+	assert.Equal(&finishedTrace{spans: trace}, t0)
 
 	many := payloadQueueSize + 2
 	for i := 0; i < many; i++ {
-		tracer.pushTrace(make([]*span, i))
+		tracer.pushTrace(&finishedTrace{spans: make([]*span, i)})
 	}
 	assert.Len(tracer.out, payloadQueueSize)
 	log.Flush()
@@ -1798,4 +1822,74 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 		span := tracer.StartSpan("test")
 		span.Finish(StackFrames(64, 0))
 	}
+}
+
+func BenchmarkSingleSpanRetention(b *testing.B) {
+	b.Run("no-rules", func(b *testing.B) {
+		tracer, _, _, stop := startTestTracer(b)
+		defer stop()
+		tracer.config.agent.DropP0s = true
+		tracer.config.featureFlags = make(map[string]struct{})
+		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.sampler = NewRateSampler(0)
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			span := tracer.StartSpan("name_1").(*span)
+			for i := 0; i < 100; i++ {
+				child := tracer.StartSpan("name_2", ChildOf(span.context))
+				child.Finish()
+			}
+			span.Finish()
+		}
+	})
+
+	b.Run("with-rules/match-half", func(b *testing.B) {
+		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
+		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		tracer, _, _, stop := startTestTracer(b)
+		defer stop()
+		tracer.config.agent.DropP0s = true
+		tracer.config.featureFlags = make(map[string]struct{})
+		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.sampler = NewRateSampler(0)
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			span := tracer.StartSpan("name_1").(*span)
+			for i := 0; i < 50; i++ {
+				child := tracer.StartSpan("name_2", ChildOf(span.context))
+				child.Finish()
+			}
+			for i := 0; i < 50; i++ {
+				child := tracer.StartSpan("name", ChildOf(span.context))
+				child.Finish()
+			}
+			span.Finish()
+		}
+	})
+
+	b.Run("with-rules/match-all", func(b *testing.B) {
+		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
+		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		tracer, _, _, stop := startTestTracer(b)
+		defer stop()
+		tracer.config.agent.DropP0s = true
+		tracer.config.featureFlags = make(map[string]struct{})
+		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.sampler = NewRateSampler(0)
+		tracer.prioritySampling.defaultRate = 0
+		tracer.config.serviceName = "test_service"
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			span := tracer.StartSpan("name_1").(*span)
+			for i := 0; i < 100; i++ {
+				child := tracer.StartSpan("name_2", ChildOf(span.context))
+				child.Finish()
+			}
+			span.Finish()
+		}
+	})
 }

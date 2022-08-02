@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
@@ -277,7 +276,7 @@ func (t *trace) push(sp *span) {
 	}
 }
 
-// finishedOne aknowledges that another span in the trace has finished, and checks
+// finishedOne acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span.
 func (t *trace) finishedOne(s *span) {
@@ -324,13 +323,8 @@ func (t *trace) finishedOne(s *span) {
 	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
-	sd := samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision)))
-	if sd != decisionKeep {
-		if p, ok := t.samplingPriorityLocked(); ok && p == ext.PriorityAutoReject {
-			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
-			atomic.AddUint64(&tr.droppedP0Traces, 1)
-		}
-		return
-	}
-	tr.pushTrace(t.spans)
+	tr.pushTrace(&finishedTrace{
+		spans:    t.spans,
+		decision: samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision))),
+	})
 }

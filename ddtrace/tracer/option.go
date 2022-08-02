@@ -118,7 +118,7 @@ type config struct {
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
 
-	// samplingRules contains user-defined rules determine the sampling rate to apply
+	// samplingRules contains user-defined rules to determine the sampling rate to apply
 	// to spans.
 	samplingRules []SamplingRule
 
