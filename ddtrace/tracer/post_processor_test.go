@@ -145,7 +145,7 @@ func TestNewReadWriteSpanSlice(t *testing.T) {
 	}
 }
 
-func TestRunProcessor(t *testing.T) {
+func TestDroppedByProcessor(t *testing.T) {
 	t.Run("accept", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ddtrace.ReadWriteSpan) bool { return true }))
@@ -227,6 +227,14 @@ func TestRunProcessor(t *testing.T) {
 				assert.Equal(float64(1), span.Metrics["metric"])
 			}
 		}
+	})
+
+	t.Run("no-processor", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		spans := []*span{}
+		assert.Equal(false, tracer.droppedByProcessor(spans))
 	})
 }
 
