@@ -97,7 +97,7 @@ func (s *readWriteSpan) SetTag(key string, value interface{}) {
 // whether the trace should be dropped.
 func (tr *tracer) droppedByProcessor(spans []*span) bool {
 	if tr.config.postProcessor == nil {
-		return true
+		return false
 	}
 	return !tr.config.postProcessor(newReadWriteSpanSlice(spans))
 }
