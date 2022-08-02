@@ -19,7 +19,7 @@ type readWriteSpan struct {
 }
 
 // Tag returns the tag value held by the given key.
-func (s readWriteSpan) Tag(key string) interface{} {
+func (s *readWriteSpan) Tag(key string) interface{} {
 	s.Lock()
 	defer s.Unlock()
 
@@ -57,7 +57,7 @@ func (s readWriteSpan) Tag(key string) interface{} {
 }
 
 // IsError reports wether s is an error.
-func (s readWriteSpan) IsError() bool {
+func (s *readWriteSpan) IsError() bool {
 	s.Lock()
 	defer s.Unlock()
 
@@ -65,14 +65,14 @@ func (s readWriteSpan) IsError() bool {
 }
 
 // SetOperationName is not allowed in the processor and will not modify the operation name.
-func (s readWriteSpan) SetOperationName(operationName string) {
+func (s *readWriteSpan) SetOperationName(operationName string) {
 	log.Debug("Modifying the operation name in the processor is not allowed")
 }
 
 // SetTag adds a set of key/value metadata to the span. Setting metric aggregator tags
 // (name, env, service, version, resource, http.status_code and keyMeasured) or modifying
 // the sampling priority in the processor is not allowed.
-func (s readWriteSpan) SetTag(key string, value interface{}) {
+func (s *readWriteSpan) SetTag(key string, value interface{}) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -93,13 +93,13 @@ func (s readWriteSpan) SetTag(key string, value interface{}) {
 	}
 }
 
-// runProcessor pushes finished spans from a trace to the processor, and reports
+// droppedByProcessor pushes finished spans from a trace to the processor, and reports
 // whether the trace should be dropped.
-func (tr *tracer) runProcessor(spans []*span) bool {
+func (tr *tracer) droppedByProcessor(spans []*span) bool {
 	if tr.config.postProcessor == nil {
 		return true
 	}
-	return tr.config.postProcessor(newReadWriteSpanSlice(spans))
+	return !tr.config.postProcessor(newReadWriteSpanSlice(spans))
 }
 
 // newReadWriteSpanSlice copies the elements of slice spans to the
@@ -107,7 +107,7 @@ func (tr *tracer) runProcessor(spans []*span) bool {
 func newReadWriteSpanSlice(spans []*span) []ddtrace.ReadWriteSpan {
 	rwSlice := make([]ddtrace.ReadWriteSpan, len(spans))
 	for i, span := range spans {
-		rwSlice[i] = readWriteSpan{span}
+		rwSlice[i] = &readWriteSpan{span}
 	}
 	return rwSlice
 }

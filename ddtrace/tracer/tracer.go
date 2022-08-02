@@ -311,8 +311,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 }
 
 func (t *tracer) writeTrace(trace []*span) {
-	if !t.runProcessor(trace) {
-		// trace dropped by processor.
+	if t.droppedByProcessor(trace) {
 		atomic.AddUint64(&t.droppedProcessorSpans, uint64(len(trace)))
 		atomic.AddUint64(&t.droppedProcessorTraces, 1)
 		return
