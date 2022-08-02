@@ -384,7 +384,6 @@ func TestSamplingDecision(t *testing.T) {
 		parent.Finish()
 		tracer.pushTrace(&finishedTrace{spans: []*span{parent, child}})
 		tracer.Stop()
-		time.Sleep(5 * time.Millisecond)
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.Metrics[keySamplingPriority])
 		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
 		assert.Equal(t, 8.0, parent.Metrics[keySpanSamplingMechanism])
