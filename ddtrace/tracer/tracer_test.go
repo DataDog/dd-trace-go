@@ -1781,12 +1781,12 @@ func TestUserMonitoring(t *testing.T) {
 	const role = "admin"
 	const sessionID = "session#12345"
 	expected := []struct{ key, value string }{
-		{key: ext.UserID, value: id},
-		{key: ext.UserName, value: name},
-		{key: ext.UserEmail, value: email},
-		{key: ext.UserScope, value: scope},
-		{key: ext.UserRole, value: role},
-		{key: ext.UserSessionID, value: sessionID},
+		{key: keyUserID, value: id},
+		{key: keyUserName, value: name},
+		{key: keyUserEmail, value: email},
+		{key: keyUserScope, value: scope},
+		{key: keyUserRole, value: role},
+		{key: keyUserSessionID, value: sessionID},
 	}
 	tr := newTracer()
 	defer tr.Stop()
@@ -1817,7 +1817,7 @@ func TestUserMonitoring(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")
 		SetUser(s, id, WithPropagation())
 		s.Finish()
-		_, ok := s.Meta[ext.UserID]
+		_, ok := s.Meta[keyUserID]
 		assert.False(t, ok)
 		encoded := base64.StdEncoding.EncodeToString([]byte(id))
 		assert.Equal(t, encoded, s.context.trace.propagatingTags[keyPropagatedUserID])
@@ -1828,7 +1828,7 @@ func TestUserMonitoring(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")
 		SetUser(s, id)
 		s.Finish()
-		_, ok := s.Meta[ext.UserID]
+		_, ok := s.Meta[keyUserID]
 		assert.True(t, ok)
 		_, ok = s.Meta[keyPropagatedUserID]
 		assert.False(t, ok)

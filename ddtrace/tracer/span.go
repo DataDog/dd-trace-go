@@ -174,7 +174,7 @@ func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 // The function assumes that the span it is called on is the trace's root span.
 func (s *span) setUser(id string, cfg UserMonitoringConfig) {
 	tags := map[string]string{}
-	keys := []string{ext.UserEmail, ext.UserName, ext.UserScope, ext.UserRole, ext.UserSessionID}
+	keys := []string{keyUserEmail, keyUserName, keyUserScope, keyUserRole, keyUserSessionID}
 	vals := []string{cfg.email, cfg.name, cfg.scope, cfg.role, cfg.sessionID}
 	// Build optional tags map before locking
 	for i, v := range vals {
@@ -186,15 +186,15 @@ func (s *span) setUser(id string, cfg UserMonitoringConfig) {
 	defer s.Unlock()
 	if cfg.propagateID {
 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
-		delete(s.Meta, ext.UserID)
-		id = base64.StdEncoding.EncodeToString([]byte(id))
-		s.context.trace.setPropagatingTag(keyPropagatedUserID, id)
+		delete(s.Meta, keyUserID)
+		idenc := base64.StdEncoding.EncodeToString([]byte(id))
+		s.context.trace.setPropagatingTag(keyPropagatedUserID, idenc)
 	} else {
 		// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
 		delete(s.context.trace.propagatingTags, keyPropagatedUserID)
 		delete(s.Meta, keyPropagatedUserID)
 		// setMeta is used since the span is already locked
-		s.setMeta(ext.UserID, id)
+		s.setMeta(keyUserID, id)
 	}
 	for k, v := range tags {
 		s.setMeta(k, v)
@@ -621,6 +621,16 @@ const (
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
 	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
 	keyPropagatedUserID = "_dd.p.usr.id"
+)
+
+// The following set of tags is used for user monitoring and set through calls to span.setUser().
+const (
+	keyUserID        = "usr.id"
+	keyUserEmail     = "usr.email"
+	keyUserName      = "usr.name"
+	keyUserRole      = "usr.role"
+	keyUserScope     = "usr.scope"
+	keyUserSessionID = "usr.session_id"
 )
 
 const (

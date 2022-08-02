@@ -58,24 +58,6 @@ const (
 	// ServiceName defines the Service name for this Span.
 	ServiceName = "service.name"
 
-	// UserEmail defines the user e-mail span tag
-	UserEmail = "usr.email"
-
-	// UserID defines the user identifier span tag
-	UserID = "usr.id"
-
-	// UserName defines the username span tag
-	UserName = "usr.name"
-
-	// UserRole defines the user role span tag
-	UserRole = "usr.role"
-
-	// UserSessionID defines the user session identifier span tag
-	UserSessionID = "usr.session_id"
-
-	// UserScope defines the user scope span tag
-	UserScope = "usr.scope"
-
 	// Version is a tag that specifies the current application version.
 	Version = "version"
 
