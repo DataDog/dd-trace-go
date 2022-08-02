@@ -173,15 +173,6 @@ func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 // setUser sets the span user ID tag as well as some optional user monitoring tags depending on the configuration.
 // The function assumes that the span it is called on is the trace's root span.
 func (s *span) setUser(id string, cfg UserMonitoringConfig) {
-	tags := map[string]string{}
-	keys := []string{keyUserEmail, keyUserName, keyUserScope, keyUserRole, keyUserSessionID}
-	vals := []string{cfg.email, cfg.name, cfg.scope, cfg.role, cfg.sessionID}
-	// Build optional tags map before locking
-	for i, v := range vals {
-		if v != "" {
-			tags[keys[i]] = v
-		}
-	}
 	s.Lock()
 	defer s.Unlock()
 	if cfg.propagateID {
@@ -196,8 +187,16 @@ func (s *span) setUser(id string, cfg UserMonitoringConfig) {
 		// setMeta is used since the span is already locked
 		s.setMeta(keyUserID, id)
 	}
-	for k, v := range tags {
-		s.setMeta(k, v)
+	for k, v := range map[string]string{
+		keyUserEmail:     cfg.email,
+		keyUserName:      cfg.name,
+		keyUserScope:     cfg.scope,
+		keyUserRole:      cfg.role,
+		keyUserSessionID: cfg.sessionID,
+	} {
+		if v != "" {
+			s.setMeta(k, v)
+		}
 	}
 }
 
