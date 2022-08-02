@@ -195,7 +195,7 @@ func TestTracerStart(t *testing.T) {
 		Start()
 
 		// ensure at least one worker started and handles requests
-		internal.GetGlobalTracer().(*tracer).pushTraceInfo(&traceInfo{spans: []*span{}})
+		internal.GetGlobalTracer().(*tracer).pushTrace(&finishedTrace{spans: []*span{}})
 
 		Stop()
 		Stop()
@@ -206,7 +206,7 @@ func TestTracerStart(t *testing.T) {
 	t.Run("deadlock/direct", func(t *testing.T) {
 		tr, _, _, stop := startTestTracer(t)
 		defer stop()
-		tr.pushTraceInfo(&traceInfo{spans: []*span{}}) // blocks until worker is started
+		tr.pushTrace(&finishedTrace{spans: []*span{}}) // blocks until worker is started
 		select {
 		case <-tr.stop:
 			t.Fatal("stopped channel should be open")
@@ -382,7 +382,7 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context)).(*span)
 		child.Finish()
 		parent.Finish()
-		tracer.pushTraceInfo(&traceInfo{spans: []*span{parent, child}})
+		tracer.pushTrace(&finishedTrace{spans: []*span{parent, child}})
 		tracer.Stop()
 		time.Sleep(5 * time.Millisecond)
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.Metrics[keySamplingPriority])
@@ -1213,11 +1213,11 @@ func TestPushPayload(t *testing.T) {
 	s.Meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
 
 	// half payload size reached
-	tracer.pushTraceInfo(&traceInfo{[]*span{s}, decisionKeep})
+	tracer.pushTrace(&finishedTrace{[]*span{s}, decisionKeep})
 	tracer.awaitPayload(t, 1)
 
 	// payload size exceeded
-	tracer.pushTraceInfo(&traceInfo{[]*span{s}, decisionKeep})
+	tracer.pushTrace(&finishedTrace{[]*span{s}, decisionKeep})
 	flush(2)
 }
 
@@ -1239,16 +1239,16 @@ func TestPushTrace(t *testing.T) {
 			Resource: "/foo",
 		},
 	}
-	tracer.pushTraceInfo(&traceInfo{spans: trace})
+	tracer.pushTrace(&finishedTrace{spans: trace})
 
 	assert.Len(tracer.out, 1)
 
 	t0 := <-tracer.out
-	assert.Equal(&traceInfo{spans: trace}, t0)
+	assert.Equal(&finishedTrace{spans: trace}, t0)
 
 	many := payloadQueueSize + 2
 	for i := 0; i < many; i++ {
-		tracer.pushTraceInfo(&traceInfo{spans: make([]*span, i)})
+		tracer.pushTrace(&finishedTrace{spans: make([]*span, i)})
 	}
 	assert.Len(tracer.out, payloadQueueSize)
 	log.Flush()

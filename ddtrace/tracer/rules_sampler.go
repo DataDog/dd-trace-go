@@ -244,11 +244,11 @@ func (rs *traceRulesSampler) apply(span *span) bool {
 		return false
 	}
 
-	rs.applyRate(span, rate, time.Now())
+	rs.applyRule(span, rate, time.Now())
 	return true
 }
 
-func (rs *traceRulesSampler) applyRate(span *span, rate float64, now time.Time) {
+func (rs *traceRulesSampler) applyRule(span *span, rate float64, now time.Time) {
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
 		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate, rate)
@@ -333,33 +333,29 @@ func (rs *singleSpanRulesSampler) enabled() bool {
 func (rs *singleSpanRulesSampler) apply(span *span) bool {
 	for _, rule := range rs.rules {
 		if rule.match(span) {
-			rs.applyRate(span, rule, rule.Rate, time.Now())
+			rate := rule.Rate
+			span.setMetric(keyRulesSamplerAppliedRate, rate)
+			if !sampledByRate(span.SpanID, rate) {
+				span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate, rate)
+				return false
+			}
+			var sampled bool
+			if rule.limiter != nil {
+				sampled, rate = rule.limiter.allowOne(time.Now())
+				if !sampled {
+					return false
+				}
+			}
+			span.setSamplingPriority(ext.PriorityUserKeep, samplernames.RuleRate, rate)
+			span.setMetric(keySpanSamplingMechanism, samplingMechanismSingleSpan)
+			span.setMetric(keySingleSpanSamplingRuleRate, rate)
+			if rule.MaxPerSecond != 0 {
+				span.setMetric(keySingleSpanSamplingMPS, rule.MaxPerSecond)
+			}
 			return true
 		}
 	}
 	return false
-}
-
-func (rs *singleSpanRulesSampler) applyRate(span *span, rule SamplingRule, rate float64, now time.Time) {
-	span.setMetric(keyRulesSamplerAppliedRate, rate)
-	if !sampledByRate(span.SpanID, rate) {
-		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate, rate)
-		return
-	}
-
-	var sampled bool
-	if rule.limiter != nil {
-		sampled, rate = rule.limiter.allowOne(now)
-		if !sampled {
-			return
-		}
-	}
-	span.setSamplingPriority(ext.PriorityUserKeep, samplernames.RuleRate, rate)
-	span.setMetric(keySpanSamplingMechanism, samplingMechanismSingleSpan)
-	span.setMetric(keySingleSpanSamplingRuleRate, rate)
-	if rule.MaxPerSecond != 0 {
-		span.setMetric(keySingleSpanSamplingMPS, rule.MaxPerSecond)
-	}
 }
 
 // rateLimiter is a wrapper on top of golang.org/x/time/rate which implements a rate limiter but also

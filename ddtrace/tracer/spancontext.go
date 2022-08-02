@@ -323,8 +323,8 @@ func (t *trace) finishedOne(s *span) {
 	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
-	tr.pushTraceInfo(&traceInfo{
-		spans:            t.spans,
-		samplingDecision: samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision))),
+	tr.pushTrace(&finishedTrace{
+		spans:    t.spans,
+		decision: samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision))),
 	})
 }
