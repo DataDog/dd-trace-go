@@ -243,12 +243,6 @@ func (t *trace) setPropagatingTagLocked(key, value string) {
 func (t *trace) unsetPropagatingTag(key string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.unsetPropagatingTagLocked(key)
-}
-
-// unsetPropagatingTagLocked deletes the key/value pair from the trace's propagated tags.
-// Not safe for concurrent use, unsetPropagatingTag should be used instead in that case.
-func (t *trace) unsetPropagatingTagLocked(key string) {
 	delete(t.propagatingTags, key)
 }
 
