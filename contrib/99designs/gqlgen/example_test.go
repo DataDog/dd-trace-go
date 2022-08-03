@@ -12,6 +12,7 @@ import (
 
 	"github.com/99designs/gqlgen/example/todo"
 	"github.com/99designs/gqlgen/graphql/handler"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	gqlgentrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/99designs/gqlgen"
