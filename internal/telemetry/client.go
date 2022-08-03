@@ -87,6 +87,11 @@ type Client struct {
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED is set to 0 or false
 	Disabled bool
 
+	// Debug enables the debug flag for all requests, see
+	// https://dtdg.co/3bv2MMv If set, the DD_INSTRUMENTATION_TELEMETRY_DEBUG
+	// takes precedence over this field.
+	Debug bool
+
 	// Optional destination to record submission-related logging events
 	Logger interface {
 		Printf(msg string, args ...interface{})
@@ -139,6 +144,8 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 	if c.started {
 		return
 	}
+	c.Debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", c.Debug)
+
 	c.started = true
 
 	// XXX: Should we let metrics persist between starting and stopping?
@@ -355,6 +362,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 		TracerTime:  time.Now().Unix(),
 		RuntimeID:   globalconfig.RuntimeID(),
 		SeqID:       seqID,
+		Debug:       c.Debug,
 		Application: Application{
 			ServiceName:     c.Service,
 			Env:             c.Env,
