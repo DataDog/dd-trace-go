@@ -161,19 +161,23 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 
 // SetUser associates user information to the current trace which the
 // provided span belongs to. The options can be used to tune which user
-// bit of information gets monitored.
+// bit of information gets monitored. In case of distributed traces,
+// the user id can be propagated across traces using the WithPropagation() option.
+// See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
 func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 	if s == nil {
 		return
 	}
-	if span, ok := s.(*span); ok && span.context != nil {
-		span = span.context.trace.root
-		s = span
+	sp, ok := s.(*span)
+	if !ok || sp.context == nil {
+		return
 	}
-	s.SetTag("usr.id", id)
+	sp = sp.context.trace.root
+	var cfg UserMonitoringConfig
 	for _, fn := range opts {
-		fn(s)
+		fn(&cfg)
 	}
+	sp.setUser(id, cfg)
 }
 
 // payloadQueueSize is the buffer size of the trace channel.
