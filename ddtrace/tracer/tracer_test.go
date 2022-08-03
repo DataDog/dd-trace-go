@@ -1835,6 +1835,24 @@ func TestUserMonitoring(t *testing.T) {
 		_, ok = s.context.trace.propagatingTags[keyPropagatedUserID]
 		assert.False(t, ok)
 	})
+
+	// This tests data races for trace.propagatingTags reads/writes through public API.
+	// The Go data race detector should not complain when running the test with '-race'.
+	t.Run("data-race", func(t *testing.T) {
+		root := tr.newRootSpan("root", "test", "test")
+
+		go func() {
+			for i := 0; i < 10000; i++ {
+				SetUser(root, "test")
+			}
+		}()
+		go func() {
+			for i := 0; i < 10000; i++ {
+				tr.StartSpan("test", ChildOf(root.Context())).Finish()
+			}
+		}()
+		root.Finish()
+	})
 }
 
 // BenchmarkTracerStackFrames tests the performance of taking stack trace.

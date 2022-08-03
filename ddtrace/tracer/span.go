@@ -176,8 +176,6 @@ func (s *span) setUser(id string, cfg UserMonitoringConfig) {
 	trace := s.context.trace
 	s.Lock()
 	defer s.Unlock()
-	trace.mu.Lock()
-	defer trace.mu.Unlock()
 	if cfg.propagateID {
 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
 		delete(s.Meta, keyUserID)
@@ -185,7 +183,7 @@ func (s *span) setUser(id string, cfg UserMonitoringConfig) {
 		trace.setPropagatingTag(keyPropagatedUserID, idenc)
 	} else {
 		// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
-		delete(trace.propagatingTags, keyPropagatedUserID)
+		trace.unsetPropagatingTag(keyPropagatedUserID)
 		delete(s.Meta, keyPropagatedUserID)
 		// setMeta is used since the span is already locked
 		s.setMeta(keyUserID, id)
