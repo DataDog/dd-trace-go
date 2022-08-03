@@ -1,7 +1,9 @@
 ### Contributing
 
+Thanks for your interest in contributing! This is an open source project, so we appreciate community contributions.
+
 Pull requests for bug fixes are welcome, but before submitting new features or changes to current functionalities [open an issue](https://github.com/DataDog/dd-trace-go/issues/new)
-and discuss your ideas or propose the changes you wish to make. After a resolution is reached a PR can be submitted for review.
+and discuss your ideas or propose the changes you wish to make. After a resolution is reached a PR can be submitted for review. PRs created before a decision has been reached may be closed.
 
 For commit messages, try to use the same conventions as most Go projects, for example:
 ```
@@ -28,15 +30,20 @@ The code coverage report has a target of 90%. This is the goal, but is not a har
 
 Please feel free to comment on a PR if there is any difficulty or confusion about any of the checks.
 
+#### What to expect
+
+We try to review new PRs within a week of them being opened. If more than two weeks have passed with no reply, please feel free to comment on the PR to bubble it up.
+
+If a PR sits open for more than a month awaiting work or replies by the author, the PR may be closed due to staleness. If you would like to work on it again in the future, feel free to open a new PR and someone will review.
+
 ### Style guidelines
 
 A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.
 It will help tremendously in avoiding comments and speeding up the PR process.
 
-
 ### Integrations
 
-Please view our contrib [README.md](contrib/README.md) for information on new integrations.
+Please view our contrib [README.md](contrib/README.md) for information on new integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.
 
 ### Go Modules
 
