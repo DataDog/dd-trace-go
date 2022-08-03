@@ -3,6 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build ignore
 // +build ignore
 
 // This tool is used to valdiate that the go.sum file is up-to-date, see
