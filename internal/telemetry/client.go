@@ -87,10 +87,10 @@ type Client struct {
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED is set to 0 or false
 	Disabled bool
 
-	// Debug enables the debug flag for all requests, see
+	// debug enables the debug flag for all requests, see
 	// https://dtdg.co/3bv2MMv If set, the DD_INSTRUMENTATION_TELEMETRY_DEBUG
 	// takes precedence over this field.
-	Debug bool
+	debug bool
 
 	// Optional destination to record submission-related logging events
 	Logger interface {
@@ -137,14 +137,13 @@ func (c *Client) log(msg string, args ...interface{}) {
 func (c *Client) Start(integrations []Integration, configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	enabled := os.Getenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED")
-	if c.Disabled || enabled == "0" || enabled == "false" {
+	if c.Disabled || !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) {
 		return
 	}
 	if c.started {
 		return
 	}
-	c.Debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", c.Debug)
+	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", c.debug)
 
 	c.started = true
 
@@ -362,7 +361,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 		TracerTime:  time.Now().Unix(),
 		RuntimeID:   globalconfig.RuntimeID(),
 		SeqID:       seqID,
-		Debug:       c.Debug,
+		Debug:       c.debug,
 		Application: Application{
 			ServiceName:     c.Service,
 			Env:             c.Env,
