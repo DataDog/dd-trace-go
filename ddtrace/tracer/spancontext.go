@@ -223,11 +223,27 @@ func (t *trace) setTag(key, value string) {
 	t.tags[key] = value
 }
 
+// setPropagatingTag sets the key/value pair as a trace propagating tag.
 func (t *trace) setPropagatingTag(key, value string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.setPropagatingTagLocked(key, value)
+}
+
+// setPropagatingTagLocked sets the key/value pair as a trace propagating tag.
+// Not safe for concurrent use, setPropagatingTag should be used instead in that case.
+func (t *trace) setPropagatingTagLocked(key, value string) {
 	if t.propagatingTags == nil {
 		t.propagatingTags = make(map[string]string, 1)
 	}
 	t.propagatingTags[key] = value
+}
+
+// unsetPropagatingTag deletes the key/value pair from the trace's propagated tags.
+func (t *trace) unsetPropagatingTag(key string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.propagatingTags, key)
 }
 
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName, rate float64, span *span) {
@@ -241,7 +257,7 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	_, ok := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && !ok {
 		// we have a positive priority and the sampling mechanism isn't set
-		t.setPropagatingTag(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
+		t.setPropagatingTagLocked(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
 	}
 	if p <= 0 && ok {
 		delete(t.propagatingTags, keyDecisionMaker)
