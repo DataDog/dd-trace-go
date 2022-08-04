@@ -6,7 +6,7 @@
 //go:build ignore
 // +build ignore
 
-// This tool is used to valdiate that the go.sum file is up-to-date, see
+// This tool is used to validate that the go.sum file is up-to-date, see
 // .circleci.
 package main
 
