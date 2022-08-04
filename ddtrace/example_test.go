@@ -6,8 +6,8 @@
 package ddtrace_test
 
 import (
-	"io/ioutil"
 	"log"
+	"os"
 
 	opentracing "github.com/opentracing/opentracing-go"
 
@@ -34,7 +34,7 @@ func Example_datadog() {
 	child.SetTag(ext.ResourceName, "test.json")
 
 	// Perform an operation.
-	_, err := ioutil.ReadFile("~/test.json")
+	_, err := os.ReadFile("~/test.json")
 
 	// We may finish the child span using the returned error. If it's
 	// nil, it will be disregarded.

@@ -7,7 +7,6 @@ package appsec
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"regexp"
 	"strconv"
@@ -150,7 +149,7 @@ func readRulesConfig() (rules []byte, err error) {
 		log.Info("appsec: starting with the default recommended security rules")
 		return rules, nil
 	}
-	buf, err := ioutil.ReadFile(filepath)
+	buf, err := os.ReadFile(filepath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			log.Error("appsec: could not find the rules file in path %s: %v.", filepath, err)

@@ -104,17 +104,7 @@ func (c *concentrator) runFlusher(tick <-chan time.Time) {
 	for {
 		select {
 		case now := <-tick:
-			p := c.flush(now)
-			if len(p.Stats) == 0 {
-				// nothing to flush
-				continue
-			}
-			c.statsd().Incr("datadog.tracer.stats.flush_payloads", nil, 1)
-			c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(len(p.Stats)))
-			if err := c.cfg.transport.sendStats(&p); err != nil {
-				c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
-				log.Error("Error sending stats payload: %v", err)
-			}
+			c.flushAndSend(now, withoutCurrentBucket)
 		case <-c.stop:
 			return
 		}
@@ -164,29 +154,59 @@ func (c *concentrator) Stop() {
 	}
 	close(c.stop)
 	c.wg.Wait()
+drain:
+	for {
+		select {
+		case s := <-c.In:
+			c.statsd().Incr("datadog.tracer.stats.spans_in", nil, 1)
+			c.add(s)
+		default:
+			break drain
+		}
+	}
+	c.flushAndSend(time.Now(), withCurrentBucket)
 }
 
-func (c *concentrator) flush(timenow time.Time) statsPayload {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+const (
+	withCurrentBucket    = true
+	withoutCurrentBucket = false
+)
 
-	now := timenow.UnixNano()
-	sp := statsPayload{
-		Hostname: c.cfg.hostname,
-		Env:      c.cfg.env,
-		Version:  c.cfg.version,
-		Stats:    make([]statsBucket, 0, len(c.buckets)),
-	}
-	for ts, srb := range c.buckets {
-		if ts > now-c.bucketSize {
-			// do not flush the current bucket
-			continue
+// flushAndSend flushes all the stats buckets with the given timestamp and sends them using the transport specified in
+// the concentrator config. The current bucket is only included if includeCurrent is true, such as during shutdown.
+func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
+	sp := func() statsPayload {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		now := timenow.UnixNano()
+		sp := statsPayload{
+			Hostname: c.cfg.hostname,
+			Env:      c.cfg.env,
+			Version:  c.cfg.version,
+			Stats:    make([]statsBucket, 0, len(c.buckets)),
 		}
-		log.Debug("Flushing bucket %d", ts)
-		sp.Stats = append(sp.Stats, srb.Export())
-		delete(c.buckets, ts)
+		for ts, srb := range c.buckets {
+			if !includeCurrent && ts > now-c.bucketSize {
+				// do not flush the current bucket
+				continue
+			}
+			log.Debug("Flushing bucket %d", ts)
+			sp.Stats = append(sp.Stats, srb.Export())
+			delete(c.buckets, ts)
+		}
+		return sp
+	}()
+
+	if len(sp.Stats) == 0 {
+		// nothing to flush
+		return
 	}
-	return sp
+	c.statsd().Incr("datadog.tracer.stats.flush_payloads", nil, 1)
+	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(len(sp.Stats)))
+	if err := c.cfg.transport.sendStats(&sp); err != nil {
+		c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
+		log.Error("Error sending stats payload: %v", err)
+	}
 }
 
 // aggregation specifies a uniquely identifiable key under which a certain set

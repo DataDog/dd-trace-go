@@ -189,11 +189,11 @@ func TestIPHeaders(t *testing.T) {
 			}
 			if tc.expectedIP.IsValid() {
 				require.Equal(t, tc.expectedIP.String(), spanCfg.Tags[ext.HTTPClientIP])
-				require.Nil(t, spanCfg.Tags[ext.MultipleIPHeaders])
+				require.Nil(t, spanCfg.Tags[multipleIPHeaders])
 			} else {
 				require.Nil(t, spanCfg.Tags[ext.HTTPClientIP])
 				if tc.multiHeaders != "" {
-					require.Equal(t, tc.multiHeaders, spanCfg.Tags[ext.MultipleIPHeaders])
+					require.Equal(t, tc.multiHeaders, spanCfg.Tags[multipleIPHeaders])
 					for hdr, ip := range tc.headers {
 						require.Equal(t, ip, spanCfg.Tags[ext.HTTPRequestHeaders+"."+hdr])
 					}
