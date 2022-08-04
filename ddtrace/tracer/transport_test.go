@@ -7,7 +7,7 @@ package tracer
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -77,26 +77,20 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 }
 
-func TestResolveAddr(t *testing.T) {
+func TestResolveAgentAddr(t *testing.T) {
+	c := new(config)
 	for _, tt := range []struct {
-		in, envHost, envPort, out string
+		inOpt                 StartOption
+		envHost, envPort, out string
 	}{
-		{"host", "", "", fmt.Sprintf("host:%s", defaultPort)},
-		{"www.my-address.com", "", "", fmt.Sprintf("www.my-address.com:%s", defaultPort)},
-		{"localhost", "", "", fmt.Sprintf("localhost:%s", defaultPort)},
-		{":1111", "", "", fmt.Sprintf("%s:1111", defaultHostname)},
-		{"", "", "", defaultAddress},
-		{"custom:1234", "", "", "custom:1234"},
-		{"", "", "", defaultAddress},
-		{"", "ip.local", "", fmt.Sprintf("ip.local:%s", defaultPort)},
-		{"", "", "1234", fmt.Sprintf("%s:1234", defaultHostname)},
-		{"", "ip.local", "1234", "ip.local:1234"},
-		{"ip.other", "ip.local", "", fmt.Sprintf("ip.local:%s", defaultPort)},
-		{"ip.other:1234", "ip.local", "", "ip.local:1234"},
-		{":8888", "", "1234", fmt.Sprintf("%s:1234", defaultHostname)},
-		{"ip.other:8888", "", "1234", "ip.other:1234"},
-		{"ip.other", "ip.local", "1234", "ip.local:1234"},
-		{"ip.other:8888", "ip.local", "1234", "ip.local:1234"},
+		{nil, "", "", defaultAddress},
+		{nil, "ip.local", "", fmt.Sprintf("ip.local:%s", defaultPort)},
+		{nil, "", "1234", fmt.Sprintf("%s:1234", defaultHostname)},
+		{nil, "ip.local", "1234", "ip.local:1234"},
+		{WithAgentAddr("host:1243"), "", "", "host:1243"},
+		{WithAgentAddr("ip.other:9876"), "ip.local", "", "ip.other:9876"},
+		{WithAgentAddr("ip.other:1234"), "", "9876", "ip.other:1234"},
+		{WithAgentAddr("ip.other:8888"), "ip.local", "1234", "ip.other:8888"},
 	} {
 		t.Run("", func(t *testing.T) {
 			if tt.envHost != "" {
@@ -107,7 +101,11 @@ func TestResolveAddr(t *testing.T) {
 				os.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
 				defer os.Unsetenv("DD_TRACE_AGENT_PORT")
 			}
-			assert.Equal(t, resolveAddr(tt.in), tt.out)
+			c.agentAddr = resolveAgentAddr()
+			if tt.inOpt != nil {
+				tt.inOpt(c)
+			}
+			assert.Equal(t, c.agentAddr, tt.out)
 		})
 	}
 }
@@ -145,7 +143,7 @@ func TestTransportResponse(t *testing.T) {
 				return
 			}
 			assert.NoError(err)
-			slurp, err := ioutil.ReadAll(rc)
+			slurp, err := io.ReadAll(rc)
 			rc.Close()
 			assert.NoError(err)
 			assert.Equal(tt.body, string(slurp))
@@ -254,7 +252,7 @@ func TestWithUDS(t *testing.T) {
 	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
 	assert := assert.New(t)
-	dir, err := ioutil.TempDir("", "socket")
+	dir, err := os.MkdirTemp("", "socket")
 	if err != nil {
 		t.Fatal(err)
 	}

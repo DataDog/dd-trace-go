@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	context "golang.org/x/net/context"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/stats"
@@ -42,7 +42,7 @@ func TestServerStatsHandler(t *testing.T) {
 	span := spans[0]
 	assert.Zero(span.ParentID())
 	assert.NotZero(span.StartTime())
-	assert.True(span.FinishTime().After(span.StartTime()))
+	assert.True(span.FinishTime().Sub(span.StartTime()) >= 0)
 	assert.Equal("grpc.server", span.OperationName())
 	tags := span.Tags()
 	assert.Equal(ext.AppTypeRPC, tags["span.type"])

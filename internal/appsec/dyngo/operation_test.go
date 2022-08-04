@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -261,7 +262,7 @@ func TestUsage(t *testing.T) {
 
 		t.Run("operation-stacking", func(t *testing.T) {
 			// Run an operation stack that is monitored and not blocked by waf
-			root := dyngo.StartOperation(RootArgs{}, nil)
+			root := startOperation(RootArgs{}, nil)
 
 			var (
 				WAFBlocked bool
@@ -286,20 +287,20 @@ func TestUsage(t *testing.T) {
 			root.On(jsonBodyValueListener)
 
 			// Run the monitored stack of operations
-			operation(
+			runOperation(
 				root,
 				HTTPHandlerArgs{
 					URL:     &url.URL{RawQuery: "?v=ok"},
 					Headers: http.Header{"header": []string{"value"}}},
 				HTTPHandlerRes{},
 				func(op dyngo.Operation) {
-					operation(op, JSONParserArgs{}, JSONParserRes{Value: []interface{}{"a", "json", "array"}}, func(op dyngo.Operation) {
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("my ")}, nil)
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("raw ")}, nil)
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("bo")}, nil)
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("dy"), Err: io.EOF}, nil)
+					runOperation(op, JSONParserArgs{}, JSONParserRes{Value: []interface{}{"a", "json", "array"}}, func(op dyngo.Operation) {
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("my ")}, nil)
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("raw ")}, nil)
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("bo")}, nil)
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("dy"), Err: io.EOF}, nil)
 					})
-					operation(op, SQLQueryArgs{}, SQLQueryRes{}, nil)
+					runOperation(op, SQLQueryArgs{}, SQLQueryRes{}, nil)
 				},
 			)
 
@@ -318,7 +319,7 @@ func TestUsage(t *testing.T) {
 
 		t.Run("operation-stacking", func(t *testing.T) {
 			// Operation stack monitored and blocked by waf via the http operation monitoring
-			root := dyngo.StartOperation(RootArgs{}, nil)
+			root := startOperation(RootArgs{}, nil)
 
 			var (
 				WAFBlocked bool
@@ -344,22 +345,22 @@ func TestUsage(t *testing.T) {
 
 			// Run the monitored stack of operations
 			RawBodyBuf = nil
-			operation(
+			runOperation(
 				root,
 				HTTPHandlerArgs{
 					URL:     &url.URL{RawQuery: "?v=attack"},
 					Headers: http.Header{"header": []string{"value"}}},
 				HTTPHandlerRes{},
 				func(op dyngo.Operation) {
-					operation(op, JSONParserArgs{}, JSONParserRes{Value: "a string", Err: errors.New("an error")}, func(op dyngo.Operation) {
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("another ")}, nil)
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("raw ")}, nil)
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("bo")}, nil)
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("dy"), Err: nil}, nil)
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte(" value"), Err: io.EOF}, nil)
+					runOperation(op, JSONParserArgs{}, JSONParserRes{Value: "a string", Err: errors.New("an error")}, func(op dyngo.Operation) {
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("another ")}, nil)
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("raw ")}, nil)
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("bo")}, nil)
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("dy"), Err: nil}, nil)
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte(" value"), Err: io.EOF}, nil)
 					})
 
-					operation(op, SQLQueryArgs{}, SQLQueryRes{}, nil)
+					runOperation(op, SQLQueryArgs{}, SQLQueryRes{}, nil)
 				},
 			)
 
@@ -378,7 +379,7 @@ func TestUsage(t *testing.T) {
 
 		t.Run("operation-stack", func(t *testing.T) {
 			// Operation stack not monitored
-			root := dyngo.StartOperation(RootArgs{}, nil)
+			root := startOperation(RootArgs{}, nil)
 
 			var (
 				WAFBlocked bool
@@ -403,17 +404,17 @@ func TestUsage(t *testing.T) {
 			root.On(jsonBodyValueListener)
 
 			// Run the monitored stack of operations
-			operation(
+			runOperation(
 				root,
 				GRPCHandlerArgs{}, GRPCHandlerRes{},
 				func(op dyngo.Operation) {
-					operation(op, JSONParserArgs{}, JSONParserRes{Value: []interface{}{"a", "json", "array"}}, func(op dyngo.Operation) {
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("my ")}, nil)
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("raw ")}, nil)
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("bo")}, nil)
-						operation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("dy"), Err: io.EOF}, nil)
+					runOperation(op, JSONParserArgs{}, JSONParserRes{Value: []interface{}{"a", "json", "array"}}, func(op dyngo.Operation) {
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("my ")}, nil)
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("raw ")}, nil)
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("bo")}, nil)
+						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("dy"), Err: io.EOF}, nil)
 					})
-					operation(op, SQLQueryArgs{}, SQLQueryRes{}, nil)
+					runOperation(op, SQLQueryArgs{}, SQLQueryRes{}, nil)
 				},
 			)
 
@@ -432,7 +433,7 @@ func TestUsage(t *testing.T) {
 	})
 
 	t.Run("recursive-operation", func(t *testing.T) {
-		root := dyngo.StartOperation(RootArgs{}, nil)
+		root := startOperation(RootArgs{}, nil)
 		defer root.Finish(RootRes{})
 
 		called := 0
@@ -440,11 +441,11 @@ func TestUsage(t *testing.T) {
 			called++
 		}))
 
-		operation(root, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(o dyngo.Operation) {
-			operation(o, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(o dyngo.Operation) {
-				operation(o, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(o dyngo.Operation) {
-					operation(o, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(o dyngo.Operation) {
-						operation(o, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(dyngo.Operation) {
+		runOperation(root, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(o dyngo.Operation) {
+			runOperation(o, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(o dyngo.Operation) {
+				runOperation(o, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(o dyngo.Operation) {
+					runOperation(o, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(o dyngo.Operation) {
+						runOperation(o, HTTPHandlerArgs{}, HTTPHandlerRes{}, func(dyngo.Operation) {
 						})
 					})
 				})
@@ -454,9 +455,46 @@ func TestUsage(t *testing.T) {
 		require.Equal(t, 5, called)
 	})
 
+	t.Run("wrapped-operation-type-assertion", func(t *testing.T) {
+		// dyngo's API should allow to retrieve the actual wrapper types: an
+		// event listener should be called with the wrapped value.
+
+		// Define `myop` so that it wraps a dyngo.Operation value so that it
+		// implements dyngo.Operation interface and we can check the event
+		// listeners get called with a value of type `myop`.
+		type myop struct {
+			dyngo.Operation
+			// count the number of calls to check the test is working as expected
+			called int
+		}
+
+		// Create a root operation to listen for a child `myop` operation.
+		someRoot := dyngo.NewOperation(nil)
+		dyngo.StartOperation(someRoot, RootArgs{})
+		defer dyngo.FinishOperation(someRoot, RootRes{})
+		// Register start and finish event listeners, and type-assert that the
+		// passed operation has type `myop`.
+		someRoot.On(OnMyOperationStart(func(op dyngo.Operation, _ MyOperationArgs) {
+			v, ok := op.(*myop)
+			assert.True(t, ok)
+			v.called++
+		}))
+		someRoot.On(OnMyOperationFinish(func(op dyngo.Operation, _ MyOperationRes) {
+			v, ok := op.(*myop)
+			assert.True(t, ok)
+			v.called++
+		}))
+
+		// Create a `myop` pointer value and start an operation with it.
+		op := &myop{Operation: dyngo.NewOperation(someRoot)}
+		dyngo.StartOperation(op, MyOperationArgs{})
+		dyngo.FinishOperation(op, MyOperationRes{})
+		require.Equal(t, 2, op.called)
+	})
+
 	t.Run("concurrency", func(t *testing.T) {
 		// root is the shared operation having concurrent accesses in this test
-		root := dyngo.StartOperation(RootArgs{}, nil)
+		root := startOperation(RootArgs{}, nil)
 		defer root.Finish(RootRes{})
 
 		// Create nbGoroutines registering event listeners concurrently
@@ -499,8 +537,8 @@ func TestUsage(t *testing.T) {
 				started.Done()
 				startBarrier.Wait()
 				defer done.Done()
-				op := dyngo.StartOperation(MyOperationArgs{}, root)
-				defer op.Finish(MyOperationRes{})
+				op := startOperation(MyOperationArgs{}, root)
+				defer dyngo.FinishOperation(op, MyOperationRes{})
 			}()
 		}
 
@@ -549,7 +587,7 @@ func TestUsage(t *testing.T) {
 				defer unregister()
 
 				// Emit events by passing the goroutine number g
-				op := dyngo.StartOperation(MyOperationArgs{g}, nil)
+				op := startOperation(MyOperationArgs{g}, nil)
 				defer op.Finish(MyOperationRes{g})
 			}(g)
 		}
@@ -572,21 +610,21 @@ func TestRegisterUnregister(t *testing.T) {
 			called++
 		}))
 
-		op := dyngo.StartOperation(MyOperationArgs{}, nil)
+		op := startOperation(MyOperationArgs{}, nil)
 		require.Equal(t, 1, called)
-		op.Finish(MyOperationRes{})
+		dyngo.FinishOperation(op, MyOperationRes{})
 
 		unregister()
-		op = dyngo.StartOperation(MyOperationArgs{}, nil)
+		op = startOperation(MyOperationArgs{}, nil)
 		require.Equal(t, 1, called)
-		op.Finish(MyOperationRes{})
+		dyngo.FinishOperation(op, MyOperationRes{})
 
 		require.NotPanics(t, func() {
 			unregister()
 		})
-		op = dyngo.StartOperation(MyOperationArgs{}, nil)
+		op = startOperation(MyOperationArgs{}, nil)
 		require.Equal(t, 1, called)
-		op.Finish(MyOperationRes{})
+		dyngo.FinishOperation(op, MyOperationRes{})
 	})
 
 	t.Run("multiple-listeners", func(t *testing.T) {
@@ -601,12 +639,12 @@ func TestRegisterUnregister(t *testing.T) {
 			}),
 		)
 
-		operation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+		runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
 		require.Equal(t, 1, onStartCalled)
 		require.Equal(t, 1, onFinishCalled)
 
 		unregister()
-		operation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+		runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
 		require.Equal(t, 1, onStartCalled)
 		require.Equal(t, 1, onFinishCalled)
 
@@ -616,9 +654,24 @@ func TestRegisterUnregister(t *testing.T) {
 	})
 }
 
-func operation(parent dyngo.Operation, args, res interface{}, child func(dyngo.Operation)) {
-	op := dyngo.StartOperation(args, parent)
-	defer op.Finish(res)
+// Helper type wrapping a dyngo.Operation to provide some helper function and
+// method helping to simplify the source code of the tests
+type operation struct{ dyngo.Operation }
+
+// Helper function to create an operation, wrap it and start it
+func startOperation(args interface{}, parent dyngo.Operation) operation {
+	op := operation{dyngo.NewOperation(parent)}
+	dyngo.StartOperation(op, args)
+	return op
+}
+
+// Helper method to finish the operation
+func (op operation) Finish(res interface{}) { dyngo.FinishOperation(op, res) }
+
+// Helper function to run operations recursively.
+func runOperation(parent dyngo.Operation, args, res interface{}, child func(dyngo.Operation)) {
+	op := startOperation(args, parent)
+	defer dyngo.FinishOperation(op, res)
 	if child != nil {
 		child(op)
 	}
@@ -626,29 +679,29 @@ func operation(parent dyngo.Operation, args, res interface{}, child func(dyngo.O
 
 func TestOperationEvents(t *testing.T) {
 	t.Run("start-event", func(t *testing.T) {
-		op1 := dyngo.StartOperation(MyOperationArgs{}, nil)
+		op1 := startOperation(MyOperationArgs{}, nil)
 
 		var called int
 		op1.On(OnMyOperation2Start(func(dyngo.Operation, MyOperation2Args) {
 			called++
 		}))
 
-		op2 := dyngo.StartOperation(MyOperation2Args{}, op1)
+		op2 := startOperation(MyOperation2Args{}, op1)
 		op2.Finish(MyOperation2Res{})
 
 		// Called once
 		require.Equal(t, 1, called)
 
-		op2 = dyngo.StartOperation(MyOperation2Args{}, op1)
+		op2 = startOperation(MyOperation2Args{}, op1)
 		op2.Finish(MyOperation2Res{})
 
 		// Called again
 		require.Equal(t, 2, called)
 
 		// Finish the operation so that it gets disabled and its listeners removed
-		op1.Finish(MyOperationRes{})
+		dyngo.FinishOperation(op1, MyOperationRes{})
 
-		op2 = dyngo.StartOperation(MyOperation2Args{}, op1)
+		op2 = startOperation(MyOperation2Args{}, op1)
 		op2.Finish(MyOperation2Res{})
 
 		// No longer called
@@ -656,29 +709,29 @@ func TestOperationEvents(t *testing.T) {
 	})
 
 	t.Run("finish-event", func(t *testing.T) {
-		op1 := dyngo.StartOperation(MyOperationArgs{}, nil)
+		op1 := startOperation(MyOperationArgs{}, nil)
 
 		var called int
 		op1.On(OnMyOperation2Finish(func(dyngo.Operation, MyOperation2Res) {
 			called++
 		}))
 
-		op2 := dyngo.StartOperation(MyOperation2Args{}, op1)
+		op2 := startOperation(MyOperation2Args{}, op1)
 		op2.Finish(MyOperation2Res{})
 		// Called once
 		require.Equal(t, 1, called)
 
-		op2 = dyngo.StartOperation(MyOperation2Args{}, op1)
+		op2 = startOperation(MyOperation2Args{}, op1)
 		op2.Finish(MyOperation2Res{})
 		// Called again
 		require.Equal(t, 2, called)
 
-		op3 := dyngo.StartOperation(MyOperation3Args{}, op2)
+		op3 := startOperation(MyOperation3Args{}, op2)
 		op3.Finish(MyOperation3Res{})
 		// Not called
 		require.Equal(t, 2, called)
 
-		op2 = dyngo.StartOperation(MyOperation2Args{}, op3)
+		op2 = startOperation(MyOperation2Args{}, op3)
 		op2.Finish(MyOperation2Res{})
 		// Called again
 		require.Equal(t, 3, called)
@@ -686,12 +739,12 @@ func TestOperationEvents(t *testing.T) {
 		// Finish the operation so that it gets disabled and its listeners removed
 		op1.Finish(MyOperationRes{})
 
-		op2 = dyngo.StartOperation(MyOperation2Args{}, op3)
+		op2 = startOperation(MyOperation2Args{}, op3)
 		op2.Finish(MyOperation2Res{})
 		// No longer called
 		require.Equal(t, 3, called)
 
-		op2 = dyngo.StartOperation(MyOperation2Args{}, op2)
+		op2 = startOperation(MyOperation2Args{}, op2)
 		op2.Finish(MyOperation2Res{})
 		// No longer called
 		require.Equal(t, 3, called)
@@ -710,11 +763,11 @@ func TestOperationEvents(t *testing.T) {
 
 		// Start an operation and register event listeners to it.
 		// This step allows to test the listeners are called when the operation is alive
-		op := dyngo.StartOperation(MyOperationArgs{}, nil)
+		op := startOperation(MyOperationArgs{}, nil)
 		registerTo(op)
 
 		// Trigger the registered events
-		op2 := dyngo.StartOperation(MyOperation2Args{}, op)
+		op2 := startOperation(MyOperation2Args{}, op)
 		op2.Finish(MyOperation2Res{})
 		// We should have 4 calls
 		require.Equal(t, 2, calls)
@@ -723,7 +776,7 @@ func TestOperationEvents(t *testing.T) {
 		op.Finish(MyOperationRes{})
 
 		// Trigger the same events
-		op2 = dyngo.StartOperation(MyOperation2Args{}, op)
+		op2 = startOperation(MyOperation2Args{}, op)
 		op2.Finish(MyOperation2Res{})
 		// The number of calls should be unchanged
 		require.Equal(t, 2, calls)
@@ -731,7 +784,7 @@ func TestOperationEvents(t *testing.T) {
 		// Register again, but it shouldn't work because the operation is finished.
 		registerTo(op)
 		// Trigger the same events
-		op2 = dyngo.StartOperation(MyOperation2Args{}, op)
+		op2 = startOperation(MyOperation2Args{}, op)
 		op2.Finish(MyOperation2Res{})
 		// The number of calls should be unchanged
 		require.Equal(t, 2, calls)
@@ -739,7 +792,7 @@ func TestOperationEvents(t *testing.T) {
 
 	t.Run("event-listener-panic", func(t *testing.T) {
 		t.Run("start", func(t *testing.T) {
-			op := dyngo.StartOperation(MyOperationArgs{}, nil)
+			op := startOperation(MyOperationArgs{}, nil)
 			defer op.Finish(MyOperationRes{})
 
 			// Panic on start
@@ -751,7 +804,7 @@ func TestOperationEvents(t *testing.T) {
 			}))
 			// Start the operation triggering the event: it should not panic
 			require.NotPanics(t, func() {
-				op := dyngo.StartOperation(MyOperationArgs{}, op)
+				op := startOperation(MyOperationArgs{}, op)
 				require.NotNil(t, op)
 				defer op.Finish(MyOperationRes{})
 				require.Equal(t, calls, 1)
@@ -759,7 +812,7 @@ func TestOperationEvents(t *testing.T) {
 		})
 
 		t.Run("finish", func(t *testing.T) {
-			op := dyngo.StartOperation(MyOperationArgs{}, nil)
+			op := startOperation(MyOperationArgs{}, nil)
 			defer op.Finish(MyOperationRes{})
 			// Panic on finish
 			calls := 0
@@ -770,7 +823,7 @@ func TestOperationEvents(t *testing.T) {
 			}))
 			// Run the operation triggering the finish event: it should not panic
 			require.NotPanics(t, func() {
-				op := dyngo.StartOperation(MyOperationArgs{}, op)
+				op := startOperation(MyOperationArgs{}, op)
 				require.NotNil(t, op)
 				op.Finish(MyOperationRes{})
 				require.Equal(t, calls, 1)
@@ -784,12 +837,12 @@ func BenchmarkEvents(b *testing.B) {
 		// Benchmark the emission of events according to the operation stack length
 		for length := 1; length <= 64; length *= 2 {
 			b.Run(fmt.Sprintf("stack=%d", length), func(b *testing.B) {
-				root := dyngo.StartOperation(MyOperationArgs{}, nil)
+				root := startOperation(MyOperationArgs{}, nil)
 				defer root.Finish(MyOperationRes{})
 
 				op := root
 				for i := 0; i < length-1; i++ {
-					op = dyngo.StartOperation(MyOperationArgs{}, op)
+					op = startOperation(MyOperationArgs{}, op)
 					defer op.Finish(MyOperationRes{})
 				}
 
@@ -799,7 +852,7 @@ func BenchmarkEvents(b *testing.B) {
 					b.ReportAllocs()
 					b.ResetTimer()
 					for n := 0; n < b.N; n++ {
-						dyngo.StartOperation(MyOperationArgs{}, op)
+						startOperation(MyOperationArgs{}, op)
 					}
 				})
 
@@ -809,7 +862,7 @@ func BenchmarkEvents(b *testing.B) {
 					b.ReportAllocs()
 					b.ResetTimer()
 					for n := 0; n < b.N; n++ {
-						leafOp := dyngo.StartOperation(MyOperationArgs{}, op)
+						leafOp := startOperation(MyOperationArgs{}, op)
 						leafOp.Finish(MyOperationRes{})
 					}
 				})
@@ -818,7 +871,7 @@ func BenchmarkEvents(b *testing.B) {
 	})
 
 	b.Run("registering", func(b *testing.B) {
-		op := dyngo.StartOperation(MyOperationArgs{}, nil)
+		op := startOperation(MyOperationArgs{}, nil)
 		defer op.Finish(MyOperationRes{})
 
 		b.Run("start event", func(b *testing.B) {

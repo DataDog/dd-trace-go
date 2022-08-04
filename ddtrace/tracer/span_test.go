@@ -8,6 +8,7 @@ package tracer
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/stretchr/testify/assert"
@@ -266,7 +268,6 @@ type panicStringer struct {
 // String causes panic which SetTag should not handle.
 func (p *panicStringer) String() string {
 	panic("This should not be handled.")
-	return ""
 }
 
 func TestSpanSetTag(t *testing.T) {
@@ -346,6 +347,33 @@ func TestSpanSetTagError(t *testing.T) {
 		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
 		assert.NotEmpty(span.Meta[ext.ErrorStack])
 	})
+}
+
+func TestTraceManualKeepAndManualDrop(t *testing.T) {
+	for _, scenario := range []struct {
+		tag  string
+		keep bool
+		p    int // priority
+	}{
+		{ext.ManualKeep, true, 0},
+		{ext.ManualDrop, false, 1},
+	} {
+		t.Run(fmt.Sprintf("%s/local", scenario.tag), func(t *testing.T) {
+			tracer := newTracer()
+			span := tracer.newRootSpan("root span", "my service", "my resource")
+			span.SetTag(scenario.tag, true)
+			assert.Equal(t, scenario.keep, shouldKeep(span))
+		})
+
+		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
+			tracer := newTracer()
+			spanCtx := &spanContext{traceID: 42, spanID: 42}
+			spanCtx.setSamplingPriority(scenario.p, samplernames.Upstream, math.NaN())
+			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx)).(*span)
+			span.SetTag(scenario.tag, true)
+			assert.Equal(t, scenario.keep, shouldKeep(span))
+		})
+	}
 }
 
 func TestSpanSetDatadogTags(t *testing.T) {
@@ -456,7 +484,9 @@ func TestSpanError(t *testing.T) {
 	span.Finish()
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(0), span.Error)
-	assert.Equal(nMeta, len(span.Meta))
+
+	// '+1' is `_dd.p.dm`
+	assert.Equal(nMeta+1, len(span.Meta))
 	assert.Equal("", span.Meta["error.msg"])
 	assert.Equal("", span.Meta["error.type"])
 	assert.Equal("", span.Meta["error.stack"])
@@ -492,14 +522,14 @@ func TestUniqueTagKeys(t *testing.T) {
 	assert := assert.New(t)
 	span := newBasicSpan("web.request")
 
-	//check to see if setMeta correctly wipes out a metric tag
+	// check to see if setMeta correctly wipes out a metric tag
 	span.SetTag("foo.bar", 12)
 	span.SetTag("foo.bar", "val")
 
 	assert.NotContains(span.Metrics, "foo.bar")
 	assert.Equal("val", span.Meta["foo.bar"])
 
-	//check to see if setMetric correctly wipes out a meta tag
+	// check to see if setMetric correctly wipes out a meta tag
 	span.SetTag("foo.bar", "val")
 	span.SetTag("foo.bar", 12)
 
@@ -518,6 +548,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		span.Finish()
 		// It doesn't make much sense to update the span after it's been finished,
 		// but an error in a user's code could lead to this.
+		span.SetOperationName("race_test")
 		span.SetTag("race_test", "true")
 		span.SetTag("race_test2", 133.7)
 		span.SetTag("race_test3", 133.7)

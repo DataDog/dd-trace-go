@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httputil"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -35,7 +35,6 @@ func New(opts ...RouterOption) *Router {
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	log.Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
 	return &Router{httprouter.New(), cfg}
 }
@@ -49,11 +48,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
-	httputil.TraceAndServe(r.Router, &httputil.TraceConfig{
-		ResponseWriter: w,
-		Request:        req,
-		Service:        r.config.serviceName,
-		Resource:       resource,
-		SpanOpts:       r.config.spanOpts,
+	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
+		Service:  r.config.serviceName,
+		Resource: resource,
+		SpanOpts: r.config.spanOpts,
 	})
 }

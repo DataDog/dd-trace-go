@@ -17,11 +17,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
-)
-
-const (
-	unknown = "unknown"
 )
 
 // startupInfo contains various information about the status of the tracer on startup.
@@ -39,6 +36,7 @@ type startupInfo struct {
 	Debug                       bool              `json:"debug"`                          // Whether debug mode is enabled
 	AnalyticsEnabled            bool              `json:"analytics_enabled"`              // True if there is a global analytics rate set
 	SampleRate                  string            `json:"sample_rate"`                    // The default sampling rate for the rules sampler
+	SampleRateLimit             string            `json:"sample_rate_limit"`              // The rate limit configured with the rules sampler
 	SamplingRules               []SamplingRule    `json:"sampling_rules"`                 // Rules used by the rules sampler
 	SamplingRulesError          string            `json:"sampling_rules_error"`           // Any errors that occurred while parsing sampling rules
 	ServiceMappings             map[string]string `json:"service_mappings"`               // Service Mappings
@@ -82,8 +80,8 @@ func logStartup(t *tracer) {
 
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
-		OSName:                      osName(),
-		OSVersion:                   osVersion(),
+		OSName:                      osinfo.OSName(),
+		OSVersion:                   osinfo.OSVersion(),
 		Version:                     version.Tag,
 		Lang:                        "Go",
 		LangVersion:                 runtime.Version(),
@@ -92,8 +90,9 @@ func logStartup(t *tracer) {
 		AgentURL:                    t.config.transport.endpoint(),
 		Debug:                       t.config.debug,
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
-		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.globalRate),
-		SamplingRules:               t.rulesSampling.rules,
+		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traces.globalRate),
+		SampleRateLimit:             "disabled",
+		SamplingRules:               t.config.samplingRules,
 		ServiceMappings:             t.config.serviceMappings,
 		Tags:                        tags,
 		RuntimeMetricsEnabled:       t.config.runtimeMetrics,
@@ -109,6 +108,9 @@ func logStartup(t *tracer) {
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
+	}
+	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
+		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.logToStdout {
 		if err := checkEndpoint(t.config.transport.endpoint()); err != nil {

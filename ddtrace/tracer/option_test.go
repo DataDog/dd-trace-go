@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"io"
-	"io/ioutil"
 	"math"
 	"net"
 	"net/http"
@@ -81,7 +80,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 		if testing.Short() {
 			return
 		}
-		dir, err := ioutil.TempDir("", "socket")
+		dir, err := os.MkdirTemp("", "socket")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -186,7 +185,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 			"a": struct{}{},
 			"b": struct{}{},
 		})
-		assert.False(t, cfg.agent.Stats)
+		assert.True(t, cfg.agent.Stats)
 		assert.True(t, cfg.agent.HasFlag("a"))
 		assert.True(t, cfg.agent.HasFlag("b"))
 	})
@@ -303,6 +302,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 	})
 
+	t.Run("env-agentAddr", func(t *testing.T) {
+		os.Setenv("DD_AGENT_HOST", "trace-agent")
+		defer os.Unsetenv("DD_AGENT_HOST")
+		tracer := newTracer()
+		c := tracer.config
+		assert.Equal(t, "trace-agent:8126", c.agentAddr)
+	})
+
 	t.Run("override", func(t *testing.T) {
 		os.Setenv("DD_ENV", "dev")
 		defer os.Unsetenv("DD_ENV")
@@ -367,28 +374,28 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("profiler-endpoints", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c := newConfig()
-			assert.False(t, c.profilerEndpoints)
+			assert.True(t, c.profilerEndpoints)
 		})
 
 		t.Run("override", func(t *testing.T) {
-			os.Setenv(traceprof.EndpointEnvVar, "true")
+			os.Setenv(traceprof.EndpointEnvVar, "false")
 			defer os.Unsetenv(traceprof.EndpointEnvVar)
 			c := newConfig()
-			assert.True(t, c.profilerEndpoints)
+			assert.False(t, c.profilerEndpoints)
 		})
 	})
 
 	t.Run("profiler-hotspots", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c := newConfig()
-			assert.False(t, c.profilerHotspots)
+			assert.True(t, c.profilerHotspots)
 		})
 
 		t.Run("override", func(t *testing.T) {
-			os.Setenv(traceprof.CodeHotspotsEnvVar, "true")
+			os.Setenv(traceprof.CodeHotspotsEnvVar, "false")
 			defer os.Unsetenv(traceprof.CodeHotspotsEnvVar)
 			c := newConfig()
-			assert.True(t, c.profilerHotspots)
+			assert.False(t, c.profilerHotspots)
 		})
 	})
 
@@ -404,15 +411,54 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal("myRouter", c.serviceMappings["http.router"])
 		assert.Equal("", c.serviceMappings["noval"])
 	})
+
+	t.Run("datadog-tags", func(t *testing.T) {
+		t.Run("can-set-value", func(t *testing.T) {
+			os.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "200")
+			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
+			assert := assert.New(t)
+			c := newConfig()
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			assert.Equal(200, p.cfg.MaxTagsHeaderLen)
+		})
+
+		t.Run("default", func(t *testing.T) {
+			assert := assert.New(t)
+			c := newConfig()
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
+		})
+
+		t.Run("clamped-to-zero", func(t *testing.T) {
+			os.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "-520")
+			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
+			assert := assert.New(t)
+			c := newConfig()
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			assert.Equal(0, p.cfg.MaxTagsHeaderLen)
+		})
+
+		t.Run("upper-clamp", func(t *testing.T) {
+			os.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "1000")
+			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
+			assert := assert.New(t)
+			c := newConfig()
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
+		})
+	})
 }
 
 func TestDefaultHTTPClient(t *testing.T) {
 	t.Run("no-socket", func(t *testing.T) {
-		assert.Equal(t, defaultHTTPClient(), defaultClient)
+		// We care that whether clients are different, but doing a deep
+		// comparison is overkill and can trigger the race detector, so
+		// just compare the pointers.
+		assert.Same(t, defaultHTTPClient(), defaultClient)
 	})
 
 	t.Run("socket", func(t *testing.T) {
-		f, err := ioutil.TempFile("", "apm.socket")
+		f, err := os.CreateTemp("", "apm.socket")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -422,7 +468,7 @@ func TestDefaultHTTPClient(t *testing.T) {
 		defer os.RemoveAll(f.Name())
 		defer func(old string) { defaultSocketAPM = old }(defaultSocketAPM)
 		defaultSocketAPM = f.Name()
-		assert.NotEqual(t, defaultHTTPClient(), defaultClient)
+		assert.NotSame(t, defaultHTTPClient(), defaultClient)
 	})
 }
 
@@ -441,7 +487,7 @@ func TestDefaultDogstatsdAddr(t *testing.T) {
 		defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
 		os.Setenv("DD_DOGSTATSD_PORT", "8111")
 		assert.Equal(t, defaultDogstatsdAddr(), "localhost:8111")
-		f, err := ioutil.TempFile("", "dsd.socket")
+		f, err := os.CreateTemp("", "dsd.socket")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -459,7 +505,7 @@ func TestDefaultDogstatsdAddr(t *testing.T) {
 		defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
 		os.Unsetenv("DD_AGENT_HOST")
 		os.Unsetenv("DD_DOGSTATSD_PORT")
-		f, err := ioutil.TempFile("", "dsd.socket")
+		f, err := os.CreateTemp("", "dsd.socket")
 		if err != nil {
 			t.Fatal(err)
 		}

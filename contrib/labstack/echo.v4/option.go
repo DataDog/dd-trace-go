@@ -8,16 +8,23 @@ package echo
 import (
 	"math"
 
+	"github.com/labstack/echo/v4"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type config struct {
-	serviceName   string
-	analyticsRate float64
+	serviceName       string
+	analyticsRate     float64
+	noDebugStack      bool
+	ignoreRequestFunc IgnoreRequestFunc
 }
 
 // Option represents an option that can be passed to Middleware.
 type Option func(*config)
+
+// IgnoreRequestFunc determines if tracing will be skipped for a request.
+type IgnoreRequestFunc func(c echo.Context) bool
 
 func defaults(cfg *config) {
 	cfg.serviceName = "echo"
@@ -54,5 +61,22 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// NoDebugStack prevents stack traces from being attached to spans finishing
+// with an error. This is useful in situations where errors are frequent and
+// performance is critical.
+func NoDebugStack() Option {
+	return func(cfg *config) {
+		cfg.noDebugStack = true
+	}
+}
+
+// WithIgnoreRequest sets a function which determines if tracing will be
+// skipped for a given request.
+func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) Option {
+	return func(cfg *config) {
+		cfg.ignoreRequestFunc = ignoreRequestFunc
 	}
 }

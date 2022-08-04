@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/stretchr/testify/assert"
 	context "golang.org/x/net/context"
@@ -269,7 +270,7 @@ func TestSpanTree(t *testing.T) {
 		assert.Equal(t, operationName, span.OperationName())
 		assert.Equal(t, "grpc", span.Tag(ext.ServiceName))
 		assert.Equal(t, span.Tag(ext.ResourceName), resourceName)
-		assert.True(t, span.FinishTime().Sub(span.StartTime()) > 0)
+		assert.True(t, span.FinishTime().Sub(span.StartTime()) >= 0)
 
 		if parent == nil {
 			return
@@ -405,7 +406,7 @@ func TestPass(t *testing.T) {
 	assert.Equal(s.Tag(ext.SpanType), ext.AppTypeRPC)
 	assert.NotContains(s.Tags(), tagRequest)
 	assert.NotContains(s.Tags(), tagMetadataPrefix+"test-key")
-	assert.True(s.FinishTime().Sub(s.StartTime()) > 0)
+	assert.True(s.FinishTime().Sub(s.StartTime()) >= 0)
 }
 
 func TestPreservesMetadata(t *testing.T) {
@@ -794,4 +795,89 @@ func TestIgnoredMetadata(t *testing.T) {
 		rig.Close()
 		mt.Reset()
 	}
+}
+
+func BenchmarkUnaryServerInterceptor(b *testing.B) {
+	// need to use the real tracer to get representative measurments
+	tracer.Start(tracer.WithLogger(log.DiscardLogger{}),
+		tracer.WithEnv("test"),
+		tracer.WithServiceVersion("0.1.2"))
+	defer tracer.Stop()
+
+	doNothingOKGRPCHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return nil, nil
+	}
+
+	unknownErr := status.Error(codes.Unknown, "some unknown error")
+	doNothingErrorGRPCHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return nil, unknownErr
+	}
+
+	// Add gRPC metadata to ctx to get resonably accurate performance numbers. From a production
+	// application, there can be quite a few key/value pairs. A number of these are added by
+	// gRPC itself, and others by Datadog tracing
+	md := metadata.Pairs(
+		":authority", "example-service-name.example.com:12345",
+		"content-type", "application/grpc",
+		"user-agent", "grpc-go/1.32.0",
+		"x-datadog-sampling-priority", "1",
+	)
+	mdWithParent := metadata.Join(md, metadata.Pairs(
+		"x-datadog-trace-id", "9219028207762307503",
+		"x-datadog-parent-id", "7525005002014855056",
+	))
+	ctx := context.Background()
+	ctxWithMetadataNoParent := metadata.NewIncomingContext(ctx, md)
+	ctxWithMetadataWithParent := metadata.NewIncomingContext(ctx, mdWithParent)
+
+	methodInfo := &grpc.UnaryServerInfo{FullMethod: "/package.MyService/ExampleMethod"}
+	interceptor := UnaryServerInterceptor()
+	b.Run("ok_no_metadata", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			interceptor(ctx, "ignoredRequestValue", methodInfo, doNothingOKGRPCHandler)
+		}
+	})
+
+	b.Run("ok_with_metadata_no_parent", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			interceptor(ctxWithMetadataNoParent, "ignoredRequestValue", methodInfo, doNothingOKGRPCHandler)
+		}
+	})
+
+	b.Run("ok_with_metadata_with_parent", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			interceptor(ctxWithMetadataWithParent, "ignoredRequestValue", methodInfo, doNothingOKGRPCHandler)
+		}
+	})
+
+	interceptorWithRate := UnaryServerInterceptor(WithAnalyticsRate(0.5))
+	b.Run("ok_no_metadata_with_analytics_rate", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			interceptorWithRate(ctx, "ignoredRequestValue", methodInfo, doNothingOKGRPCHandler)
+		}
+	})
+
+	b.Run("error_no_metadata", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			interceptor(ctx, "ignoredRequestValue", methodInfo, doNothingErrorGRPCHandler)
+		}
+	})
+	interceptorNoStack := UnaryServerInterceptor(NoDebugStack())
+	b.Run("error_no_metadata_no_stack", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			interceptorNoStack(ctx, "ignoredRequestValue", methodInfo, doNothingErrorGRPCHandler)
+		}
+	})
 }

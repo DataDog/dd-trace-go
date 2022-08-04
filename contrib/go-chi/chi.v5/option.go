@@ -7,6 +7,7 @@ package chi
 
 import (
 	"math"
+	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -18,6 +19,7 @@ type config struct {
 	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
 	analyticsRate float64
 	isStatusError func(statusCode int) bool
+	ignoreRequest func(r *http.Request) bool
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -34,6 +36,7 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.isStatusError = isServerError
+	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 }
 
 // WithServiceName sets the given service name for the router.
@@ -84,4 +87,12 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 
 func isServerError(statusCode int) bool {
 	return statusCode >= 500 && statusCode < 600
+}
+
+// WithIgnoreRequest specifies a function to use for determining if the
+// incoming HTTP request tracing should be skipped.
+func WithIgnoreRequest(fn func(r *http.Request) bool) Option {
+	return func(cfg *config) {
+		cfg.ignoreRequest = fn
+	}
 }

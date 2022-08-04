@@ -6,13 +6,15 @@
 package tracer
 
 import (
+	"math"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
@@ -91,11 +93,11 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
-func (c *spanContext) setSamplingPriority(p int) {
+func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName, rate float64) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	c.trace.setSamplingPriority(float64(p))
+	c.trace.setSamplingPriority(p, sampler, rate, c.span)
 }
 
 func (c *spanContext) samplingPriority() (p int, ok bool) {
@@ -124,6 +126,13 @@ func (c *spanContext) baggageItem(key string) string {
 	return c.baggage[key]
 }
 
+func (c *spanContext) meta(key string) (val string, ok bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	val, ok = c.span.Meta[key]
+	return val, ok
+}
+
 // finish marks this span as finished in the trace.
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
@@ -144,13 +153,15 @@ const (
 // priority, the root reference and a buffer of the spans which are part of the
 // trace, if these exist.
 type trace struct {
-	mu               sync.RWMutex     // guards below fields
-	spans            []*span          // all the spans that are part of this trace
-	finished         int              // the number of finished spans
-	full             bool             // signifies that the span buffer is full
-	priority         *float64         // sampling priority
-	locked           bool             // specifies if the sampling priority can be altered
-	samplingDecision samplingDecision // samplingDecision indicates whether to send the trace to the agent.
+	mu               sync.RWMutex      // guards below fields
+	spans            []*span           // all the spans that are part of this trace
+	tags             map[string]string // trace level tags
+	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries
+	finished         int               // the number of finished spans
+	full             bool              // signifies that the span buffer is full
+	priority         *float64          // sampling priority
+	locked           bool              // specifies if the sampling priority can be altered
+	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
@@ -191,10 +202,10 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-func (t *trace) setSamplingPriority(p float64) {
+func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName, rate float64, span *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setSamplingPriorityLocked(p)
+	t.setSamplingPriorityLocked(p, sampler, rate, span)
 }
 
 func (t *trace) keep() {
@@ -205,19 +216,52 @@ func (t *trace) drop() {
 	atomic.CompareAndSwapInt64((*int64)(&t.samplingDecision), int64(decisionNone), int64(decisionDrop))
 }
 
-func (t *trace) setSamplingPriorityLocked(p float64) {
+func (t *trace) setTag(key, value string) {
+	if t.tags == nil {
+		t.tags = make(map[string]string, 1)
+	}
+	t.tags[key] = value
+}
+
+// setPropagatingTag sets the key/value pair as a trace propagating tag.
+func (t *trace) setPropagatingTag(key, value string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.setPropagatingTagLocked(key, value)
+}
+
+// setPropagatingTagLocked sets the key/value pair as a trace propagating tag.
+// Not safe for concurrent use, setPropagatingTag should be used instead in that case.
+func (t *trace) setPropagatingTagLocked(key, value string) {
+	if t.propagatingTags == nil {
+		t.propagatingTags = make(map[string]string, 1)
+	}
+	t.propagatingTags[key] = value
+}
+
+// unsetPropagatingTag deletes the key/value pair from the trace's propagated tags.
+func (t *trace) unsetPropagatingTag(key string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.propagatingTags, key)
+}
+
+func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName, rate float64, span *span) {
 	if t.locked {
 		return
-	}
-	if t.root == nil {
-		// this trace is distributed (no local root); modifications
-		// to the sampling priority are not allowed.
-		t.locked = true
 	}
 	if t.priority == nil {
 		t.priority = new(float64)
 	}
-	*t.priority = p
+	*t.priority = float64(p)
+	_, ok := t.propagatingTags[keyDecisionMaker]
+	if p > 0 && !ok {
+		// we have a positive priority and the sampling mechanism isn't set
+		t.setPropagatingTagLocked(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
+	}
+	if p <= 0 && ok {
+		delete(t.propagatingTags, keyDecisionMaker)
+	}
 }
 
 // push pushes a new span into the trace. If the buffer is full, it returns
@@ -240,7 +284,7 @@ func (t *trace) push(sp *span) {
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
-		t.setSamplingPriorityLocked(v)
+		t.setSamplingPriorityLocked(int(v), samplernames.Upstream, math.NaN(), nil)
 	}
 	t.spans = append(t.spans, sp)
 	if haveTracer {
@@ -248,7 +292,7 @@ func (t *trace) push(sp *span) {
 	}
 }
 
-// finishedOne aknowledges that another span in the trace has finished, and checks
+// finishedOne acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span.
 func (t *trace) finishedOne(s *span) {
@@ -269,6 +313,19 @@ func (t *trace) finishedOne(s *span) {
 		t.root.setMetric(keySamplingPriority, *t.priority)
 		t.locked = true
 	}
+	if len(t.spans) > 0 && s == t.spans[0] {
+		// first span in chunk finished, lock down the tags
+		//
+		// TODO(barbayar): make sure this doesn't happen in vain when switching to
+		// the new wire format. We won't need to set the tags on the first span
+		// in the chunk there.
+		for k, v := range t.tags {
+			s.setMeta(k, v)
+		}
+		for k, v := range t.propagatingTags {
+			s.setMeta(k, v)
+		}
+	}
 	if len(t.spans) != t.finished {
 		return
 	}
@@ -282,13 +339,8 @@ func (t *trace) finishedOne(s *span) {
 	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
-	sd := samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision)))
-	if sd != decisionKeep {
-		if p, ok := t.samplingPriorityLocked(); ok && p == ext.PriorityAutoReject {
-			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
-			atomic.AddUint64(&tr.droppedP0Traces, 1)
-		}
-		return
-	}
-	tr.pushTrace(t.spans)
+	tr.pushTrace(&finishedTrace{
+		spans:    t.spans,
+		decision: samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision))),
+	})
 }

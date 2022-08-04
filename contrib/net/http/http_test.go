@@ -40,7 +40,7 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("GET "+url, s.Tag(ext.ResourceName))
 	assert.Equal("200", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
-	assert.Equal(url, s.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
 }
@@ -68,7 +68,7 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("GET "+url, s.Tag(ext.ResourceName))
 	assert.Equal("500", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
-	assert.Equal(url, s.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
 	assert.Equal("bar", s.Tag("foo"))
 }
@@ -98,7 +98,7 @@ func TestWrapHandler200(t *testing.T) {
 	assert.Equal("my-resource", s.Tag(ext.ResourceName))
 	assert.Equal("200", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
-	assert.Equal(url, s.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
 }
@@ -216,19 +216,33 @@ func TestIgnoreRequestOption(t *testing.T) {
 			spanCount: 1,
 		},
 	}
-	mux := NewServeMux(WithIgnoreRequest(func(req *http.Request) bool {
+	ignore := func(req *http.Request) bool {
 		return req.URL.Path == "/skip"
-	}))
+	}
+	mux := NewServeMux(WithIgnoreRequest(ignore))
 	mux.HandleFunc("/skip", handler200)
 	mux.HandleFunc("/200", handler200)
 
 	for _, test := range tests {
-		t.Run(test.url, func(t *testing.T) {
+		t.Run("servemux"+test.url, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, test.spanCount, len(spans))
+		})
+
+		t.Run("wraphandler"+test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
+			w := httptest.NewRecorder()
+			f := http.HandlerFunc(handler200)
+			handler := WrapHandler(f, "my-service", "my-resource", WithIgnoreRequest(ignore))
+			handler.ServeHTTP(w, r)
 
 			spans := mt.FinishedSpans()
 			assert.Equal(t, test.spanCount, len(spans))

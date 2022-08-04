@@ -79,6 +79,21 @@ func TestAsyncSpanRace(t *testing.T) {
 				defer wg.Done()
 				select {
 				case <-done:
+					root.Finish()
+					for i := 0; i < 500; i++ {
+						for range root.(*span).Meta {
+							// this range simulates iterating over the meta map
+							// as we do when encoding msgpack upon flushing.
+						}
+					}
+					return
+				}
+			}()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				select {
+				case <-done:
 					for i := 0; i < 50; i++ {
 						// to trigger the bug, the child should be created after the root was finished,
 						// as its being flushed
@@ -223,21 +238,6 @@ func TestSpanFinishPriority(t *testing.T) {
 		}
 	}
 	assert.Fail("span not found")
-}
-
-func TestTracePriorityLocked(t *testing.T) {
-	assert := assert.New(t)
-	ddHeaders := TextMapCarrier(map[string]string{
-		DefaultTraceIDHeader:  "2",
-		DefaultParentIDHeader: "2",
-		DefaultPriorityHeader: "2",
-	})
-
-	ctx, err := NewPropagator(nil).Extract(ddHeaders)
-	assert.Nil(err)
-	sctx, ok := ctx.(*spanContext)
-	assert.True(ok)
-	assert.True(sctx.trace.locked)
 }
 
 func TestNewSpanContext(t *testing.T) {

@@ -9,7 +9,9 @@ package tracer
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"math"
 	"os"
 	"reflect"
 	"runtime"
@@ -25,6 +27,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/tinylib/msgp/msgp"
@@ -121,6 +125,16 @@ func (s *span) SetTag(key string, value interface{}) {
 		return
 	}
 	if v, ok := value.(string); ok {
+		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) {
+			// If the user overrides the resource name for the span,
+			// update the endpoint label for the runtime profilers.
+			//
+			// We don't change s.pprofCtxRestore since that should
+			// stay as the original parent span context regardless
+			// of what we change at a lower level.
+			s.pprofCtxActive = pprof.WithLabels(s.pprofCtxActive, pprof.Labels(traceprof.TraceEndpoint, v))
+			pprof.SetGoroutineLabels(s.pprofCtxActive)
+		}
 		s.setMeta(key, v)
 		return
 	}
@@ -146,6 +160,58 @@ func (s *span) SetTag(key string, value interface{}) {
 	}
 	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
 	s.setMeta(key, fmt.Sprint(value))
+}
+
+// setSamplingPriority locks then span, then updates the sampling priority.
+// It also updates the trace's sampling priority.
+func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerName, rate float64) {
+	s.Lock()
+	defer s.Unlock()
+	s.setSamplingPriorityLocked(priority, sampler, rate)
+}
+
+// setUser sets the span user ID tag as well as some optional user monitoring tags depending on the configuration.
+// The function assumes that the span it is called on is the trace's root span.
+func (s *span) setUser(id string, cfg UserMonitoringConfig) {
+	trace := s.context.trace
+	s.Lock()
+	defer s.Unlock()
+	if cfg.propagateID {
+		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
+		delete(s.Meta, keyUserID)
+		idenc := base64.StdEncoding.EncodeToString([]byte(id))
+		trace.setPropagatingTag(keyPropagatedUserID, idenc)
+	} else {
+		// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
+		trace.unsetPropagatingTag(keyPropagatedUserID)
+		delete(s.Meta, keyPropagatedUserID)
+		// setMeta is used since the span is already locked
+		s.setMeta(keyUserID, id)
+	}
+	for k, v := range map[string]string{
+		keyUserEmail:     cfg.email,
+		keyUserName:      cfg.name,
+		keyUserScope:     cfg.scope,
+		keyUserRole:      cfg.role,
+		keyUserSessionID: cfg.sessionID,
+	} {
+		if v != "" {
+			s.setMeta(k, v)
+		}
+	}
+}
+
+// setSamplingPriorityLocked updates the sampling priority.
+// It also updates the trace's sampling priority.
+func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName, rate float64) {
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		return
+	}
+	s.setMetric(keySamplingPriority, float64(priority))
+	s.context.setSamplingPriority(priority, sampler, rate)
 }
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
@@ -266,11 +332,11 @@ func (s *span) setTagBool(key string, v bool) {
 		}
 	case ext.ManualDrop:
 		if v {
-			s.setMetric(ext.SamplingPriority, ext.PriorityUserReject)
+			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplernames.Manual, math.NaN())
 		}
 	case ext.ManualKeep:
 		if v {
-			s.setMetric(ext.SamplingPriority, ext.PriorityUserKeep)
+			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual, math.NaN())
 		}
 	default:
 		if v {
@@ -289,10 +355,14 @@ func (s *span) setMetric(key string, v float64) {
 	}
 	delete(s.Meta, key)
 	switch key {
+	case ext.ManualKeep:
+		if v == float64(samplernames.AppSec) {
+			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec, math.NaN())
+		}
 	case ext.SamplingPriority:
-		// setting sampling priority per spec
-		s.Metrics[keySamplingPriority] = v
-		s.context.setSamplingPriority(int(v))
+		// ext.SamplingPriority is deprecated in favor of ext.ManualKeep and ext.ManualDrop.
+		// We have it here for backward compatibility.
+		s.setSamplingPriorityLocked(int(v), samplernames.Manual, math.NaN())
 	default:
 		s.Metrics[key] = v
 	}
@@ -338,7 +408,13 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 func (s *span) SetOperationName(operationName string) {
 	s.Lock()
 	defer s.Unlock()
-
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		// already finished
+		return
+	}
 	s.Name = operationName
 }
 
@@ -363,8 +439,7 @@ func (s *span) finish(finishTime int64) {
 	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have an active tracer
-		feats := t.config.agent
-		if feats.Stats && shouldComputeStats(s) {
+		if t.config.canComputeStats() && shouldComputeStats(s) {
 			// the agent supports computed stats
 			select {
 			case t.stats.In <- newAggregableSpan(s, t.obfuscator):
@@ -373,7 +448,7 @@ func (s *span) finish(finishTime int64) {
 				log.Error("Stats channel full, disregarding span.")
 			}
 		}
-		if feats.DropP0s {
+		if t.config.canDropP0s() {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
 		}
@@ -390,7 +465,7 @@ func (s *span) finish(finishTime int64) {
 func newAggregableSpan(s *span, obfuscator *obfuscate.Obfuscator) *aggregableSpan {
 	var statusCode uint32
 	if sc, ok := s.Meta["http.status_code"]; ok && sc != "" {
-		if c, err := strconv.Atoi(sc); err == nil {
+		if c, err := strconv.Atoi(sc); err == nil && c > 0 && c <= math.MaxInt32 {
 			statusCode = uint32(c)
 		}
 	}
@@ -525,6 +600,8 @@ func (s *span) Format(f fmt.State, c rune) {
 const (
 	keySamplingPriority        = "_sampling_priority_v1"
 	keySamplingPriorityRate    = "_dd.agent_psr"
+	keyDecisionMaker           = "_dd.p.dm"
+	keyServiceHash             = "_dd.dm.service_hash"
 	keyOrigin                  = "_dd.origin"
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
@@ -533,4 +610,31 @@ const (
 	// keyTopLevel is the key of top level metric indicating if a span is top level.
 	// A top level span is a local root (parent span of the local trace) or the first span of each service.
 	keyTopLevel = "_dd.top_level"
+	// keyPropagationError holds any error from propagated trace tags (if any)
+	keyPropagationError = "_dd.propagation_error"
+	// keySpanSamplingMechanism specifies the sampling mechanism by which an individual span was sampled
+	keySpanSamplingMechanism = "_dd.span_sampling.mechanism"
+	// keySingleSpanSamplingRuleRate specifies the configured sampling probability for the single span sampling rule.
+	keySingleSpanSamplingRuleRate = "_dd.span_sampling.rule_rate"
+	// keySingleSpanSamplingMPS specifies the configured limit for the single span sampling rule
+	// that the span matched. If there is no configured limit, then this tag is omitted.
+	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
+	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
+	keyPropagatedUserID = "_dd.p.usr.id"
+)
+
+// The following set of tags is used for user monitoring and set through calls to span.setUser().
+const (
+	keyUserID        = "usr.id"
+	keyUserEmail     = "usr.email"
+	keyUserName      = "usr.name"
+	keyUserRole      = "usr.role"
+	keyUserScope     = "usr.scope"
+	keyUserSessionID = "usr.session_id"
+)
+
+const (
+	// samplingMechanismSingleSpan specifies value reserved to indicate that a span was kept
+	// on account of a single span sampling rule.
+	samplingMechanismSingleSpan = 8
 )
