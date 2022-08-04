@@ -60,7 +60,7 @@ type errorConfig struct {
 // span represents a computation. Callers must call Finish when a span is
 // complete to ensure it's submitted.
 type span struct {
-	sync.RWMutex `msg:"-"`
+	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
 	Name     string             `msg:"name"`              // operation name
 	Service  string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
