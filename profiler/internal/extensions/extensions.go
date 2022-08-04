@@ -14,8 +14,6 @@
 package extensions
 
 import (
-	"sync"
-
 	"github.com/google/pprof/profile"
 )
 
@@ -36,16 +34,17 @@ type CAllocationProfiler interface {
 	Stop() (*profile.Profile, error)
 }
 
+// DefaultCAllocationSamplingRate is the sampling rate, in bytes allocated,
+// which will be used if a profile is started with sample rate 0
+const DefaultCAllocationSamplingRate = 2 * 1024 * 1024 // 2 MB
+
 var (
-	mu                  sync.Mutex
 	cAllocationProfiler CAllocationProfiler
 )
 
 // GetCAllocationProfiler returns the currently registered C allocation
 // profiler, if one is registered.
 func GetCAllocationProfiler() (impl CAllocationProfiler, registered bool) {
-	mu.Lock()
-	defer mu.Unlock()
 	if cAllocationProfiler == nil {
 		return nil, false
 	}
@@ -54,7 +53,5 @@ func GetCAllocationProfiler() (impl CAllocationProfiler, registered bool) {
 
 // SetCAllocationProfiler registers a C allocation profiler implementation.
 func SetCAllocationProfiler(c CAllocationProfiler) {
-	mu.Lock()
-	defer mu.Unlock()
 	cAllocationProfiler = c
 }

@@ -268,7 +268,6 @@ type panicStringer struct {
 // String causes panic which SetTag should not handle.
 func (p *panicStringer) String() string {
 	panic("This should not be handled.")
-	return ""
 }
 
 func TestSpanSetTag(t *testing.T) {

@@ -7,7 +7,7 @@ package tracer
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -143,7 +143,7 @@ func TestTransportResponse(t *testing.T) {
 				return
 			}
 			assert.NoError(err)
-			slurp, err := ioutil.ReadAll(rc)
+			slurp, err := io.ReadAll(rc)
 			rc.Close()
 			assert.NoError(err)
 			assert.Equal(tt.body, string(slurp))
@@ -252,7 +252,7 @@ func TestWithUDS(t *testing.T) {
 	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
 	assert := assert.New(t)
-	dir, err := ioutil.TempDir("", "socket")
+	dir, err := os.MkdirTemp("", "socket")
 	if err != nil {
 		t.Fatal(err)
 	}

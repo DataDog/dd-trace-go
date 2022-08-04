@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
@@ -224,11 +223,27 @@ func (t *trace) setTag(key, value string) {
 	t.tags[key] = value
 }
 
+// setPropagatingTag sets the key/value pair as a trace propagating tag.
 func (t *trace) setPropagatingTag(key, value string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.setPropagatingTagLocked(key, value)
+}
+
+// setPropagatingTagLocked sets the key/value pair as a trace propagating tag.
+// Not safe for concurrent use, setPropagatingTag should be used instead in that case.
+func (t *trace) setPropagatingTagLocked(key, value string) {
 	if t.propagatingTags == nil {
 		t.propagatingTags = make(map[string]string, 1)
 	}
 	t.propagatingTags[key] = value
+}
+
+// unsetPropagatingTag deletes the key/value pair from the trace's propagated tags.
+func (t *trace) unsetPropagatingTag(key string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.propagatingTags, key)
 }
 
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName, rate float64, span *span) {
@@ -242,7 +257,7 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	_, ok := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && !ok {
 		// we have a positive priority and the sampling mechanism isn't set
-		t.setPropagatingTag(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
+		t.setPropagatingTagLocked(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
 	}
 	if p <= 0 && ok {
 		delete(t.propagatingTags, keyDecisionMaker)
@@ -277,7 +292,7 @@ func (t *trace) push(sp *span) {
 	}
 }
 
-// finishedOne aknowledges that another span in the trace has finished, and checks
+// finishedOne acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span.
 func (t *trace) finishedOne(s *span) {
@@ -324,13 +339,8 @@ func (t *trace) finishedOne(s *span) {
 	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
-	sd := samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision)))
-	if sd != decisionKeep {
-		if p, ok := t.samplingPriorityLocked(); ok && p == ext.PriorityAutoReject {
-			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
-			atomic.AddUint64(&tr.droppedP0Traces, 1)
-		}
-		return
-	}
-	tr.pushTrace(t.spans)
+	tr.pushTrace(&finishedTrace{
+		spans:    t.spans,
+		decision: samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision))),
+	})
 }

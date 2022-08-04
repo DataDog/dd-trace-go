@@ -57,7 +57,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	err = w.Close()
 	assert.NoError(t, err)
 
-	tctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	tctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	r := NewReader(kafka.ReaderConfig{
 		Brokers: []string{"localhost:9092"},
 		GroupID: testGroupID,
@@ -66,6 +66,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	msg2, err := r.ReadMessage(tctx)
 	assert.NoError(t, err, "Expected to consume message")
 	assert.Equal(t, msg1[0].Value, msg2.Value, "Values should be equal")
+	cancel()
 	r.Close()
 
 	// now verify the spans
@@ -114,7 +115,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	err = w.Close()
 	assert.NoError(t, err)
 
-	tctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	tctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	r := NewReader(kafka.ReaderConfig{
 		Brokers: []string{"localhost:9092"},
 		GroupID: testGroupID,
@@ -128,6 +129,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.NoError(t, err, "Expected CommitMessages to not return an error")
 
 	r.Close()
+	cancel()
 
 	// now verify the spans
 	spans := mt.FinishedSpans()
