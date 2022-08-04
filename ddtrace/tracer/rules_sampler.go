@@ -37,16 +37,7 @@ type rulesSampler struct {
 // Rules are split between trace and single span sampling rules according to their type.
 // Such rules are user-defined through environment variable or WithSamplingRules option.
 // Invalid rules or environment variable values are tolerated, by logging warnings and then ignoring them.
-func newRulesSampler(rules []SamplingRule) *rulesSampler {
-	var spanRules, traceRules []SamplingRule
-	for _, rule := range rules {
-		if rule.Type == SamplingRuleSpan {
-			rule.limiter = newSingleSpanRateLimiter(rule.MaxPerSecond)
-			spanRules = append(spanRules, rule)
-		} else {
-			traceRules = append(traceRules, rule)
-		}
-	}
+func newRulesSampler(traceRules, spanRules []SamplingRule) *rulesSampler {
 	return &rulesSampler{
 		traces: newTraceRulesSampler(traceRules),
 		spans:  newSingleSpanRulesSampler(spanRules),
@@ -79,9 +70,7 @@ type SamplingRule struct {
 	// If not specified, the default is no limit.
 	MaxPerSecond float64
 
-	// Type specifies type of the sampling rules. See `SamplingRuleType` for more details.
-	Type SamplingRuleType
-
+	ruleType     SamplingRuleType
 	exactService string
 	exactName    string
 	limiter      *rateLimiter
@@ -162,6 +151,21 @@ func NameServiceRule(name string, service string, rate float64) SamplingRule {
 func RateRule(rate float64) SamplingRule {
 	return SamplingRule{
 		Rate: rate,
+	}
+}
+
+// SpanNameServiceRule returns a SamplingRule of type SamplingRuleSpan that applies
+// the provided sampling rate to all spans matching the operation and service name glob patterns provided.
+// Operation and service fields must be valid glob patterns. MaxPerSecond is optional and defaults to infinite, allow all behaviour.
+func SpanNameServiceRule(name, service string, rate, mps float64) SamplingRule {
+	return SamplingRule{
+		Service:      globMatch(service),
+		Name:         globMatch(name),
+		MaxPerSecond: mps,
+		Rate:         rate,
+		ruleType:     SamplingRuleSpan,
+		exactName:    name,
+		limiter:      newSingleSpanRateLimiter(mps),
 	}
 }
 
@@ -418,19 +422,22 @@ func newSingleSpanRateLimiter(mps float64) *rateLimiter {
 
 // globMatch compiles pattern string into glob format, i.e. regular expressions with only '?'
 // and '*' treated as regex metacharacters.
-func globMatch(pattern string) (*regexp.Regexp, error) {
+func globMatch(pattern string) *regexp.Regexp {
+	if pattern == "" {
+		return regexp.MustCompile("^.*$")
+	}
 	// escaping regex characters
 	pattern = regexp.QuoteMeta(pattern)
 	// replacing '?' and '*' with regex characters
 	pattern = strings.Replace(pattern, "\\?", ".", -1)
 	pattern = strings.Replace(pattern, "\\*", ".*", -1)
 	// pattern must match an entire string
-	return regexp.Compile(fmt.Sprintf("^%s$", pattern))
+	return regexp.MustCompile(fmt.Sprintf("^%s$", pattern))
 }
 
 // samplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES,
 // DD_SPAN_SAMPLING_RULES and DD_SPAN_SAMPLING_RULES_FILE environment variables.
-func samplingRulesFromEnv() (rules []SamplingRule, err error) {
+func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
 	var errs []string
 	defer func() {
 		if len(errs) != 0 {
@@ -439,39 +446,33 @@ func samplingRulesFromEnv() (rules []SamplingRule, err error) {
 	}()
 	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
 	if rulesFromEnv != "" {
-		traceRules, err := unmarshalSamplingRules([]byte(rulesFromEnv), SamplingRuleTrace)
+		trace, err = unmarshalSamplingRules([]byte(rulesFromEnv), SamplingRuleTrace)
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
-		rules = append(rules, traceRules...)
 	}
-	spanRules, err := unmarshalSamplingRules([]byte(os.Getenv("DD_SPAN_SAMPLING_RULES")), SamplingRuleSpan)
+	span, err = unmarshalSamplingRules([]byte(os.Getenv("DD_SPAN_SAMPLING_RULES")), SamplingRuleSpan)
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
-	rules = append(rules, spanRules...)
 	rulesFile := os.Getenv("DD_SPAN_SAMPLING_RULES_FILE")
-	if len(rules) != 0 {
+	if len(span) != 0 {
 		if rulesFile != "" {
 			log.Warn("DIAGNOSTICS Error(s): DD_SPAN_SAMPLING_RULES is available and will take precedence over DD_SPAN_SAMPLING_RULES_FILE")
 		}
-		if len(errs) != 0 {
-			return rules, err
-		}
-		return rules, nil
+		return trace, span, err
 	}
 	if rulesFile != "" {
 		rulesFromEnvFile, err := os.ReadFile(rulesFile)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("Couldn't read file from DD_SPAN_SAMPLING_RULES_FILE: %v", err))
 		}
-		spanRules, err := unmarshalSamplingRules(rulesFromEnvFile, SamplingRuleSpan)
+		span, err = unmarshalSamplingRules(rulesFromEnvFile, SamplingRuleSpan)
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
-		rules = append(rules, spanRules...)
 	}
-	return rules, err
+	return trace, span, err
 }
 
 // unmarshalSamplingRules unmarshals JSON from b and returns the sampling rules found, attributing
@@ -512,29 +513,13 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 				errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: service name and operation name are not provided", i, v))
 				continue
 			}
-			if v.Service == "" {
-				v.Service = "*"
-			}
-			srvGlob, err := globMatch(v.Service)
-			if err != nil {
-				errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: service name regex pattern can't be compiled", i, v))
-				continue
-			}
-			if v.Name == "" {
-				v.Name = "*"
-			}
-			opGlob, err := globMatch(v.Name)
-			if err != nil {
-				errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: operation name regex pattern can't be compiled", i, v))
-				continue
-			}
 			rules = append(rules, SamplingRule{
-				Service:      srvGlob,
-				Name:         opGlob,
+				Service:      globMatch(v.Service),
+				Name:         globMatch(v.Name),
 				Rate:         rate,
 				MaxPerSecond: v.MaxPerSecond,
 				limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
-				Type:         SamplingRuleSpan,
+				ruleType:     SamplingRuleSpan,
 			})
 		case SamplingRuleTrace:
 			switch {
@@ -573,7 +558,7 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		s.Name = fmt.Sprintf("%s", sr.Name)
 	}
 	s.Rate = sr.Rate
-	s.Type = fmt.Sprintf("%v(%d)", sr.Type.String(), sr.Type)
+	s.Type = fmt.Sprintf("%v(%d)", sr.ruleType.String(), sr.ruleType)
 	if sr.MaxPerSecond != 0 {
 		s.MaxPerSecond = &sr.MaxPerSecond
 	}
