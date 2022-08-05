@@ -192,12 +192,15 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	} else {
 		writer = newAgentTraceWriter(c, sampler)
 	}
-	rules, err := samplingRulesFromEnv()
+	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
 		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors:%s", err)
 	}
-	if rules != nil {
-		c.samplingRules = rules
+	if traces != nil {
+		c.traceRules = traces
+	}
+	if spans != nil {
+		c.spanRules = spans
 	}
 	t := &tracer{
 		config:           c,
@@ -205,7 +208,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		out:              make(chan *finishedTrace, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
-		rulesSampling:    newRulesSampler(c.samplingRules),
+		rulesSampling:    newRulesSampler(c.traceRules, c.spanRules),
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
