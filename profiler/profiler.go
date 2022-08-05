@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,6 +19,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	pprofile "github.com/google/pprof/profile"
 )
@@ -72,7 +73,8 @@ type profiler struct {
 	wg         sync.WaitGroup               // wg waits for all goroutines to exit when stopping.
 	met        *metrics                     // metric collector state
 	prev       map[string]*pprofile.Profile // previous collection results for delta profiling
-	seq        uint64                       // seq is the value of the profile_seq tag
+	telemetry  *telemetry.Client
+	seq        uint64 // seq is the value of the profile_seq tag
 
 	testHooks testHooks
 }
@@ -183,15 +185,82 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		prev: make(map[string]*pprofile.Profile),
 	}
 	p.uploadFunc = p.upload
+	p.telemetry = &telemetry.Client{
+		APIKey:    cfg.apiKey,
+		Namespace: telemetry.NamespaceProfilers,
+		Service:   cfg.service,
+		Env:       cfg.env,
+		Client:    p.cfg.httpClient, // use the profiler's http.Client, gives us UDS if that's used
+	}
+
+	// For the initial release, prefer off-by-default rather than
+	// on-by-default
+	if !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", false) {
+		p.telemetry.Disabled = true
+	}
+
+	// For the URL, uploading through agent goes through
+	//	${AGENT_URL}/telemetry/proxy/api/v2/apmtelemetry
+	// for agentless (which we technically don't support):
+	//	https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
+	// with an API key
+	//
+	// TODO: move this logic into the telemetry package, make the URL field
+	// unnecessary?
+	if cfg.agentless {
+		p.telemetry.URL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
+	} else {
+		// TODO: check agent /info endpoint to see if the agent is
+		// sufficiently recent to support this endpiont? overkill?
+		u, err := url.Parse(cfg.agentURL)
+		if err == nil {
+			u.Path = "/telemetry/proxy/api/v2/apmtelemetry"
+			p.telemetry.URL = u.String()
+		} else {
+			log.Warn("Agent URL %s is invalid, not starting telemetry", cfg.agentURL)
+			p.telemetry.Disabled = true
+		}
+	}
 	return &p, nil
 }
 
 // run runs the profiler.
 func (p *profiler) run() {
-	if _, ok := p.cfg.types[MutexProfile]; ok {
+	profileEnabled := func(t ProfileType) bool {
+		_, ok := p.cfg.types[t]
+		return ok
+	}
+	p.telemetry.Start(
+		// Integrations are part of this API to match the telemetry API,
+		// but there aren't really "integrations" for the profiler.
+		// Note that if we did have integrations, we'd need a mechanism
+		// to report the individual packages. runtime/debug.BuildInfo
+		// only shows *modules* that we depend on, not individual
+		// packages.
+		[]telemetry.Integration{},
+		[]telemetry.Configuration{
+			{Name: "delta_profiles", Value: p.cfg.deltaProfiles},
+			{Name: "agentless", Value: p.cfg.agentless},
+			{Name: "profile_period", Value: p.cfg.period.String()},
+			{Name: "cpu_duration", Value: p.cfg.cpuDuration.String()},
+			{Name: "cpu_profile_rate", Value: p.cfg.cpuProfileRate},
+			{Name: "block_profile_rate", Value: p.cfg.blockRate},
+			{Name: "mutex_profile_fraction", Value: p.cfg.mutexFraction},
+			{Name: "max_goroutines_wait", Value: p.cfg.maxGoroutinesWait},
+			{Name: "cpu_profile_enabled", Value: profileEnabled(CPUProfile)},
+			{Name: "heap_profile_enabled", Value: profileEnabled(HeapProfile)},
+			{Name: "block_profile_enabled", Value: profileEnabled(BlockProfile)},
+			{Name: "mutex_profile_enabled", Value: profileEnabled(MutexProfile)},
+			{Name: "goroutine_profile_enabled", Value: profileEnabled(GoroutineProfile)},
+			{Name: "goroutine_wait_profile_enabled", Value: profileEnabled(expGoroutineWaitProfile)},
+			{Name: "upload_timeout", Value: p.cfg.uploadTimeout.String()},
+		},
+	)
+
+	if profileEnabled(MutexProfile) {
 		runtime.SetMutexProfileFraction(p.cfg.mutexFraction)
 	}
-	if _, ok := p.cfg.types[BlockProfile]; ok {
+	if profileEnabled(BlockProfile) {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
 	}
 	p.wg.Add(1)
@@ -243,9 +312,8 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 					profs, err := p.runProfile(t)
 					if err != nil {
 						log.Error("Error getting %s profile: %v; skipping.", t, err)
-						tags := make([]string, len(p.cfg.tags), len(p.cfg.tags)+1)
-						copy(tags, p.cfg.tags)
-						p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, append(tags, t.Tag()), 1)
+						tags := append(p.cfg.tags.Slice(), t.Tag())
+						p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, tags, 1)
 					}
 					mu.Lock()
 					defer mu.Unlock()
@@ -298,7 +366,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 			// queue is full; evict oldest
 			select {
 			case <-p.out:
-				p.cfg.statsd.Count("datadog.profiling.go.queue_full", 1, p.cfg.tags, 1)
+				p.cfg.statsd.Count("datadog.profiling.go.queue_full", 1, p.cfg.tags.Slice(), 1)
 				log.Warn("Evicting one profile batch from the upload queue to make room.")
 			default:
 				// this case should be almost impossible to trigger, it would require a
@@ -341,7 +409,7 @@ func (p *profiler) outputDir(bat batch) error {
 	for _, prof := range bat.profiles {
 		filePath := filepath.Join(dirPath, prof.name)
 		// 0644 is what touch does, should be reasonable for the use cases here.
-		if err := ioutil.WriteFile(filePath, prof.data, 0644); err != nil {
+		if err := os.WriteFile(filePath, prof.data, 0644); err != nil {
 			return err
 		}
 	}
@@ -361,6 +429,7 @@ func (p *profiler) interruptibleSleep(d time.Duration) {
 func (p *profiler) stop() {
 	p.stopOnce.Do(func() {
 		close(p.exit)
+		p.telemetry.Stop()
 	})
 	p.wg.Wait()
 }

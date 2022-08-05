@@ -46,8 +46,8 @@ type tracer struct {
 	// destination, such as the Trace Agent or Datadog Forwarder.
 	traceWriter traceWriter
 
-	// out receives traces to be added to the payload.
-	out chan []*span
+	// out receives finishedTrace with spans  to be added to the payload.
+	out chan *finishedTrace
 
 	// flush receives a channel onto which it will confirm after a flush has been
 	// triggered and completed.
@@ -78,7 +78,11 @@ type tracer struct {
 	// Records the number of dropped traces and spans by the processor.
 	droppedProcessorTraces, droppedProcessorSpans uint64
 
-	// rulesSampling holds an instance of the rules sampler. These are user-defined
+	// partialTrace the number of partially dropped traces.
+	partialTraces uint64
+
+	// rulesSampling holds an instance of the rules sampler used to apply either trace sampling,
+	// or single span sampling rules on spans. These are user-defined
 	// rules for applying a sampling rate to spans that match the designated service
 	// or operation name.
 	rulesSampling *rulesSampler
@@ -160,19 +164,23 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 
 // SetUser associates user information to the current trace which the
 // provided span belongs to. The options can be used to tune which user
-// bit of information gets monitored.
+// bit of information gets monitored. In case of distributed traces,
+// the user id can be propagated across traces using the WithPropagation() option.
+// See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
 func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 	if s == nil {
 		return
 	}
-	if span, ok := s.(*span); ok && span.context != nil {
-		span = span.context.trace.root
-		s = span
+	sp, ok := s.(*span)
+	if !ok || sp.context == nil {
+		return
 	}
-	s.SetTag("usr.id", id)
+	sp = sp.context.trace.root
+	var cfg UserMonitoringConfig
 	for _, fn := range opts {
-		fn(s)
+		fn(&cfg)
 	}
+	sp.setUser(id, cfg)
 }
 
 // payloadQueueSize is the buffer size of the trace channel.
@@ -180,13 +188,6 @@ const payloadQueueSize = 1000
 
 func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := newConfig(opts...)
-	envRules, err := samplingRulesFromEnv()
-	if err != nil {
-		log.Warn("DIAGNOSTICS Error(s) parsing DD_TRACE_SAMPLING_RULES: %s", err)
-	}
-	if envRules != nil {
-		c.samplingRules = envRules
-	}
 	sampler := newPrioritySampler()
 	var writer traceWriter
 	if c.logToStdout {
@@ -194,10 +195,17 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	} else {
 		writer = newAgentTraceWriter(c, sampler)
 	}
+	rules, err := samplingRulesFromEnv()
+	if err != nil {
+		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors:%s", err)
+	}
+	if rules != nil {
+		c.samplingRules = rules
+	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
-		out:              make(chan []*span, payloadQueueSize),
+		out:              make(chan *finishedTrace, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    newRulesSampler(c.samplingRules),
@@ -279,8 +287,10 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
-			t.writeTrace(trace)
-
+			t.sampleFinishedTrace(trace)
+			if len(trace.spans) != 0 {
+				t.writeTrace(trace.spans)
+			}
 		case <-tick:
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -300,7 +310,10 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			for {
 				select {
 				case trace := <-t.out:
-					t.writeTrace(trace)
+					t.sampleFinishedTrace(trace)
+					if len(trace.spans) != 0 {
+						t.writeTrace(trace.spans)
+					}
 				default:
 					break loop
 				}
@@ -319,7 +332,39 @@ func (t *tracer) writeTrace(trace []*span) {
 	t.traceWriter.add(trace)
 }
 
-func (t *tracer) pushTrace(trace []*span) {
+// finishedTrace holds information about a trace that has finished, including its spans.
+type finishedTrace struct {
+	spans    []*span
+	decision samplingDecision
+}
+
+// sampleFinishedTrace applies single-span sampling to the provided trace, which is considered to be finished.
+func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
+	if info.decision == decisionKeep {
+		return
+	}
+	if !t.rulesSampling.HasSpanRules() {
+		info.spans = nil
+		return
+	}
+	// if trace sampling decision is drop, we still want to send single spans
+	// unless there are no single span sampling rules defined
+	var kept []*span
+	for _, span := range info.spans {
+		if t.rulesSampling.SampleSpan(span) {
+			kept = append(kept, span)
+		}
+	}
+	atomic.AddUint64(&t.droppedP0Spans, uint64(len(info.spans)-len(kept)))
+	info.spans = kept
+	if len(kept) == 0 {
+		atomic.AddUint64(&t.droppedP0Traces, 1)
+		return // no spans matched the rules and were sampled
+	}
+	atomic.AddUint64(&t.partialTraces, 1)
+}
+
+func (t *tracer) pushTrace(trace *finishedTrace) {
 	select {
 	case <-t.stop:
 		return
@@ -328,7 +373,7 @@ func (t *tracer) pushTrace(trace []*span) {
 	select {
 	case t.out <- trace:
 	default:
-		log.Error("payload queue full, dropping %d traces", len(trace))
+		log.Error("payload queue full, dropping %d traces", len(trace.spans))
 	}
 }
 
@@ -535,7 +580,7 @@ func (t *tracer) sample(span *span) {
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, rs.Rate())
 	}
-	if t.rulesSampling.apply(span) {
+	if t.rulesSampling.SampleTrace(span) {
 		return
 	}
 	t.prioritySampling.apply(span)
