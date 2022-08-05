@@ -117,6 +117,12 @@ func TestTextMapPropagatorErrors(t *testing.T) {
 		DefaultParentIDHeader: "0",
 	}))
 	assert.Equal(ErrSpanContextNotFound, err)
+
+	_, err = propagator.Extract(TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "3",
+		DefaultParentIDHeader: "0",
+	}))
+	assert.Equal(ErrSpanContextNotFound, err)
 }
 
 func TestTextMapPropagatorInjectHeader(t *testing.T) {
@@ -175,31 +181,12 @@ func TestTextMapPropagatorOrigin(t *testing.T) {
 	}
 }
 
-func TestTextMapPropagatorInvalidTraceTagsHeader(t *testing.T) {
-	src := TextMapCarrier(map[string]string{
-		DefaultTraceIDHeader:  "1",
-		DefaultParentIDHeader: "1",
-		traceTagsHeader:       "hello=world,=", // invalid value
-	})
-	tracer := newTracer()
-	ctx, err := tracer.Extract(src)
-	assert.Nil(t, err)
-	sctx, ok := ctx.(*spanContext)
-	assert.True(t, ok)
-	assert.Equal(t, map[string]string(nil), sctx.trace.tags)
-}
-
-func TestTextMapPropagatorTraceTagsTooLong(t *testing.T) {
-	tags := make([]string, 0)
-	for i := 0; i < 100; i++ {
-		tags = append(tags, fmt.Sprintf("_dd.p.tag%d=value%d", i, i))
-	}
-	traceTags := strings.Join(tags, ",")
+func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 	src := TextMapCarrier(map[string]string{
 		DefaultPriorityHeader: "1",
 		DefaultTraceIDHeader:  "1",
 		DefaultParentIDHeader: "1",
-		traceTagsHeader:       traceTags,
+		traceTagsHeader:       "hello=world,_dd.p.dm=934086a6-4",
 	})
 	tracer := newTracer()
 	ctx, err := tracer.Extract(src)
@@ -208,43 +195,164 @@ func TestTextMapPropagatorTraceTagsTooLong(t *testing.T) {
 	assert.True(t, ok)
 	child := tracer.StartSpan("test", ChildOf(sctx))
 	childSpanID := child.Context().(*spanContext).spanID
-	assert.Equal(t, 100, len(sctx.trace.tags))
+	assert.Equal(t, map[string]string{
+		"hello":    "world",
+		"_dd.p.dm": "934086a6-4",
+	}, sctx.trace.propagatingTags)
 	dst := map[string]string{}
 	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
 	assert.Nil(t, err)
-	assert.Equal(t, map[string]string{
-		"x-datadog-parent-id":         strconv.Itoa(int(childSpanID)),
-		"x-datadog-trace-id":          "1",
-		"x-datadog-sampling-priority": "1",
-	}, dst)
+	assert.Len(t, dst, 4)
+	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
+	assert.Equal(t, "1", dst["x-datadog-trace-id"])
+	assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
+	assertTraceTags(t, "hello=world,_dd.p.dm=934086a6-4", dst["x-datadog-tags"])
 }
 
-func TestTextMapPropagatorInjectExtract(t *testing.T) {
-	propagator := NewPropagator(&PropagatorConfig{
-		BaggagePrefix: "bg-",
-		TraceHeader:   "tid",
-		ParentHeader:  "pid",
+func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
+	src := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "1",
+		traceTagsHeader:       "hello=world,_dd.p.dm=934086a6-4",
 	})
-	tracer := newTracer(WithPropagator(propagator))
-	root := tracer.StartSpan("web.request").(*span)
-	root.SetTag(ext.SamplingPriority, -1)
-	root.SetBaggageItem("item", "x")
-	ctx := root.Context().(*spanContext)
-	headers := TextMapCarrier(map[string]string{})
-	err := tracer.Inject(ctx, headers)
+	tracer := newTracer()
+	ctx, err := tracer.Extract(src)
+	assert.Nil(t, err)
+	sctx, ok := ctx.(*spanContext)
+	assert.True(t, ok)
+	child := tracer.StartSpan("test", ChildOf(sctx))
+	childSpanID := child.Context().(*spanContext).spanID
+	assert.Equal(t, map[string]string{
+		"hello":    "world",
+		"_dd.p.dm": "934086a6-4",
+	}, sctx.trace.propagatingTags)
+	dst := map[string]string{}
+	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
+	assert.Nil(t, err)
+	assert.Len(t, dst, 4)
+	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
+	assert.Equal(t, "1", dst["x-datadog-trace-id"])
+	assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
+	assertTraceTags(t, "hello=world,_dd.p.dm=934086a6-4", dst["x-datadog-tags"])
+}
 
-	assert := assert.New(t)
-	assert.Nil(err)
+func TestExtractOriginSynthetics(t *testing.T) {
+	src := TextMapCarrier(map[string]string{
+		originHeader:          "synthetics",
+		DefaultTraceIDHeader:  "3",
+		DefaultParentIDHeader: "0",
+	})
+	tracer := newTracer()
+	ctx, err := tracer.Extract(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sctx, ok := ctx.(*spanContext)
+	if !ok {
+		t.Fatal("not a *spanContext")
+	}
+	assert.Equal(t, sctx.spanID, uint64(0))
+	assert.Equal(t, sctx.traceID, uint64(3))
+	assert.Equal(t, sctx.origin, "synthetics")
+}
 
-	sctx, err := tracer.Extract(headers)
-	assert.Nil(err)
+func TestTextMapPropagator(t *testing.T) {
+	t.Run("InvalidTraceTagsHeader", func(t *testing.T) {
+		src := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1",
+			DefaultParentIDHeader: "1",
+			traceTagsHeader:       "hello=world,=", // invalid value
+		})
+		tracer := newTracer()
+		ctx, err := tracer.Extract(src)
+		assert.Nil(t, err)
+		sctx, ok := ctx.(*spanContext)
+		assert.True(t, ok)
+		assert.Equal(t, "decoding_error", sctx.trace.tags["_dd.propagation_error"])
+	})
 
-	xctx, ok := sctx.(*spanContext)
-	assert.True(ok)
-	assert.Equal(xctx.traceID, ctx.traceID)
-	assert.Equal(xctx.spanID, ctx.spanID)
-	assert.Equal(xctx.baggage, ctx.baggage)
-	assert.Equal(xctx.trace.priority, ctx.trace.priority)
+	t.Run("ExtractTraceTagsTooLong", func(t *testing.T) {
+		tags := make([]string, 0)
+		for i := 0; i < 100; i++ {
+			tags = append(tags, fmt.Sprintf("_dd.p.tag%d=value%d", i, i))
+		}
+		traceTags := strings.Join(tags, ",")
+		src := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1",
+			DefaultParentIDHeader: "1",
+			traceTagsHeader:       traceTags,
+		})
+		tracer := newTracer()
+		ctx, err := tracer.Extract(src)
+		assert.Nil(t, err)
+		sctx, ok := ctx.(*spanContext)
+		assert.True(t, ok)
+		assert.Equal(t, "extract_max_size", sctx.trace.tags["_dd.propagation_error"])
+	})
+
+	t.Run("InjectTraceTagsTooLong", func(t *testing.T) {
+		tracer := newTracer()
+		child := tracer.StartSpan("test")
+		for i := 0; i < 100; i++ {
+			child.Context().(*spanContext).trace.setPropagatingTag(fmt.Sprintf("someKey%d", i), fmt.Sprintf("someValue%d", i))
+		}
+		childSpanID := child.Context().(*spanContext).spanID
+		dst := map[string]string{}
+		err := tracer.Inject(child.Context(), TextMapCarrier(dst))
+		assert.Nil(t, err)
+		assert.Equal(t, map[string]string{
+			"x-datadog-parent-id":         strconv.Itoa(int(childSpanID)),
+			"x-datadog-trace-id":          strconv.Itoa(int(childSpanID)),
+			"x-datadog-sampling-priority": "1",
+		}, dst)
+		assert.Equal(t, "inject_max_size", child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
+	})
+
+	t.Run("InvalidTraceTags", func(t *testing.T) {
+		tracer := newTracer()
+		internal.SetGlobalTracer(tracer)
+		child := tracer.StartSpan("test")
+		child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello1", "world")  // valid value
+		child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello2", "world,") // invalid value
+		childSpanID := child.Context().(*spanContext).spanID
+		dst := map[string]string{}
+		err := tracer.Inject(child.Context(), TextMapCarrier(dst))
+		assert.Nil(t, err)
+		assert.Len(t, dst, 4)
+		assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
+		assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-trace-id"])
+		assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
+		assertTraceTags(t, "_dd.p.dm=-1,_dd.p.hello1=world", dst["x-datadog-tags"])
+		assert.Equal(t, "encoding_error", child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
+	})
+
+	t.Run("InjectExtract", func(t *testing.T) {
+		propagator := NewPropagator(&PropagatorConfig{
+			BaggagePrefix: "bg-",
+			TraceHeader:   "tid",
+			ParentHeader:  "pid",
+		})
+		tracer := newTracer(WithPropagator(propagator))
+		root := tracer.StartSpan("web.request").(*span)
+		root.SetTag(ext.SamplingPriority, -1)
+		root.SetBaggageItem("item", "x")
+		ctx := root.Context().(*spanContext)
+		headers := TextMapCarrier(map[string]string{})
+		err := tracer.Inject(ctx, headers)
+
+		assert := assert.New(t)
+		assert.Nil(err)
+
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+
+		xctx, ok := sctx.(*spanContext)
+		assert.True(ok)
+		assert.Equal(xctx.traceID, ctx.traceID)
+		assert.Equal(xctx.spanID, ctx.spanID)
+		assert.Equal(xctx.baggage, ctx.baggage)
+		assert.Equal(xctx.trace.priority, ctx.trace.priority)
+	})
 }
 
 func TestB3(t *testing.T) {

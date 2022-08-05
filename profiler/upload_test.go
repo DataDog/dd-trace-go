@@ -8,7 +8,6 @@ package profiler
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net"
@@ -29,6 +28,7 @@ import (
 )
 
 var testBatch = batch{
+	seq:   23,
 	start: time.Now().Add(-10 * time.Second),
 	end:   time.Now(),
 	host:  "my-host",
@@ -69,9 +69,10 @@ func TestTryUpload(t *testing.T) {
 		"runtime:go",
 		"service:my-service",
 		"env:my-env",
+		"profile_seq:23",
 		"tag1:1",
 		"tag2:2",
-		fmt.Sprintf("pid:%d", os.Getpid()),
+		fmt.Sprintf("process_id:%d", os.Getpid()),
 		fmt.Sprintf("profiler_version:%s", version.Tag),
 		fmt.Sprintf("runtime_version:%s", strings.TrimPrefix(runtime.Version(), "go")),
 		fmt.Sprintf("runtime_compiler:%s", runtime.Compiler),
@@ -166,7 +167,7 @@ func TestContainerIDHeader(t *testing.T) {
 
 func BenchmarkDoRequest(b *testing.B) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		_, err := ioutil.ReadAll(req.Body)
+		_, err := io.ReadAll(req.Body)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -234,7 +235,7 @@ func newTestServer(t *testing.T, statusCode int) *testServer {
 			if err != nil {
 				t.Fatal(err)
 			}
-			slurp, err := ioutil.ReadAll(p)
+			slurp, err := io.ReadAll(p)
 			if err != nil {
 				t.Fatal(err)
 			}

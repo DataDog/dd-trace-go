@@ -38,21 +38,21 @@ func (p *profiler) upload(bat batch) error {
 
 		err = p.doRequest(bat)
 		if rerr, ok := err.(*retriableError); ok {
-			statsd.Count("datadog.profiler.go.upload_retry", 1, nil, 1)
-			wait := time.Duration(rand.Int63n(p.cfg.period.Nanoseconds()))
+			statsd.Count("datadog.profiling.go.upload_retry", 1, nil, 1)
+			wait := time.Duration(rand.Int63n(p.cfg.period.Nanoseconds())) * time.Nanosecond
 			log.Error("Uploading profile failed: %v. Trying again in %s...", rerr, wait)
-			p.interruptibleSleep(time.Second)
+			p.interruptibleSleep(wait)
 			continue
 		}
 		if err != nil {
-			statsd.Count("datadog.profiler.go.upload_error", 1, nil, 1)
+			statsd.Count("datadog.profiling.go.upload_error", 1, nil, 1)
 		} else {
-			statsd.Count("datadog.profiler.go.upload_success", 1, nil, 1)
+			statsd.Count("datadog.profiling.go.upload_success", 1, nil, 1)
 			var b int64
 			for _, p := range bat.profiles {
 				b += int64(len(p.data))
 			}
-			statsd.Count("datadog.profiler.go.uploaded_profile_bytes", b, nil, 1)
+			statsd.Count("datadog.profiling.go.uploaded_profile_bytes", b, nil, 1)
 		}
 		return err
 	}
@@ -68,9 +68,13 @@ func (e retriableError) Error() string { return e.err.Error() }
 // doRequest makes an HTTP POST request to the Datadog Profiling API with the
 // given profile.
 func (p *profiler) doRequest(bat batch) error {
-	tags := append(p.cfg.tags,
+	tags := append(p.cfg.tags.Slice(),
 		fmt.Sprintf("service:%s", p.cfg.service),
 		fmt.Sprintf("env:%s", p.cfg.env),
+		// The profile_seq tag can be used to identify the first profile
+		// uploaded by a given runtime-id, identify missing profiles, etc.. See
+		// PROF-5612 (internal) for more details.
+		fmt.Sprintf("profile_seq:%d", bat.seq),
 	)
 	contentType, body, err := encode(bat, tags)
 	if err != nil {
@@ -87,12 +91,10 @@ func (p *profiler) doRequest(bat batch) error {
 		}
 		cancel()
 	}()
-	// TODO(fg) use NewRequestWithContext once go 1.12 support is dropped.
-	req, err := http.NewRequest("POST", p.cfg.targetURL, body)
+	req, err := http.NewRequestWithContext(ctx, "POST", p.cfg.targetURL, body)
 	if err != nil {
 		return err
 	}
-	req = req.WithContext(ctx)
 	if p.cfg.apiKey != "" {
 		req.Header.Set("DD-API-KEY", p.cfg.apiKey)
 	}

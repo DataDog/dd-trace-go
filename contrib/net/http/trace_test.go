@@ -7,7 +7,7 @@ package http
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -49,7 +49,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("service", span.Tag(ext.ServiceName))
 		assert.Equal("resource", span.Tag(ext.ResourceName))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
-		assert.Equal("/path", span.Tag(ext.HTTPURL))
+		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
 		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
 	})
@@ -85,7 +85,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("service", span.Tag(ext.ServiceName))
 		assert.Equal("resource", span.Tag(ext.ResourceName))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
-		assert.Equal("/path", span.Tag(ext.HTTPURL))
+		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
 		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
 	})
@@ -111,7 +111,7 @@ func TestTraceAndServe(t *testing.T) {
 
 		assert.True(called)
 		assert.Len(spans, 1)
-		assert.Equal("/path?token=value&id=1", spans[0].Tag(ext.HTTPURL))
+		assert.Equal("/path?<redacted>&id=1", spans[0].Tag(ext.HTTPURL))
 	})
 
 	t.Run("Hijacker,Flusher,CloseNotifier", func(t *testing.T) {
@@ -137,7 +137,7 @@ func TestTraceAndServe(t *testing.T) {
 
 		res, err := http.Get(srv.URL)
 		assert.NoError(err)
-		slurp, err := ioutil.ReadAll(res.Body)
+		slurp, err := io.ReadAll(res.Body)
 		res.Body.Close()
 		assert.True(called)
 		assert.NoError(err)
@@ -285,7 +285,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("service", span.Tag(ext.ServiceName))
 		assert.Equal("resource", span.Tag(ext.ResourceName))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
-		assert.Equal("/path", span.Tag(ext.HTTPURL))
+		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 	})
 }

@@ -40,7 +40,7 @@ var (
 	defaultSocketDSD = "/var/run/datadog/dsd.socket"
 
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
-	defaultMaxTagsHeaderLen = 512
+	defaultMaxTagsHeaderLen = 128
 )
 
 // config holds the tracer configuration.
@@ -65,6 +65,10 @@ type config struct {
 
 	// serviceName specifies the name of this application.
 	serviceName string
+
+	// universalVersion, reports whether span service name and config service name
+	// should match to set application version tag. False by default
+	universalVersion bool
 
 	// version specifies the version of this application
 	version string
@@ -114,7 +118,7 @@ type config struct {
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
 
-	// samplingRules contains user-defined rules determine the sampling rate to apply
+	// samplingRules contains user-defined rules to determine the sampling rate to apply
 	// to spans.
 	samplingRules []SamplingRule
 
@@ -171,6 +175,9 @@ func forEachStringTag(str string, fn func(key string, val string)) {
 		fn(key, val)
 	}
 }
+
+// maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
+const maxPropagatedTagsLength = 512
 
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
@@ -258,8 +265,18 @@ func newConfig(opts ...StartOption) *config {
 		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
 	}
 	if c.propagator == nil {
+		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
+		max := internal.IntEnv(envKey, defaultMaxTagsHeaderLen)
+		if max < 0 {
+			log.Warn("Invalid value %d for %s. Setting to 0.", max, envKey)
+			max = 0
+		}
+		if max > maxPropagatedTagsLength {
+			log.Warn("Invalid value %d for %s. Maximum allowed is %d. Setting to %d.", max, envKey, maxPropagatedTagsLength, maxPropagatedTagsLength)
+			max = maxPropagatedTagsLength
+		}
 		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: internal.IntEnv("DD_TRACE_TAGS_PROPAGATION_MAX_LENGTH", defaultMaxTagsHeaderLen),
+			MaxTagsHeaderLen: max,
 		})
 	}
 	if c.logger != nil {
@@ -637,9 +654,12 @@ func WithRuntimeMetrics() StartOption {
 	}
 }
 
-// WithDogstatsdAddress specifies the address to connect to for sending metrics
-// to the Datadog Agent. If not set, it defaults to "localhost:8125" or to the
-// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
+// WithDogstatsdAddress specifies the address to connect to for sending metrics to the Datadog
+// Agent. It should be a "host:port" string, or the path to a unix domain socket.If not set, it
+// attempts to determine the address of the statsd service according to the following rules:
+//   1. Look for /var/run/datadog/dsd.socket and use it if present. IF NOT, continue to #2.
+//   2. The host is determined by DD_AGENT_HOST, and defaults to "localhost"
+//   3. The port is retrieved from the agent. If not present, it is determined by DD_DOGSTATSD_PORT, and defaults to 8125
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
@@ -656,10 +676,22 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 }
 
 // WithServiceVersion specifies the version of the service that is running. This will
-// be included in spans from this service in the "version" tag.
+// be included in spans from this service in the "version" tag, provided that
+// span service name and config service name match. Do NOT use with WithUniversalVersion.
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
 		cfg.version = version
+		cfg.universalVersion = false
+	}
+}
+
+// WithUniversalVersion specifies the version of the service that is running, and will be applied to all spans,
+// regardless of whether span service name and config service name match.
+// See: WithService, WithServiceVersion. Do NOT use with WithServiceVersion.
+func WithUniversalVersion(version string) StartOption {
+	return func(c *config) {
+		c.version = version
+		c.universalVersion = true
 	}
 }
 
@@ -864,7 +896,7 @@ func WithUserRole(role string) UserMonitoringOption {
 	}
 }
 
-// WithUserScope returns the option setting the scope (authorizations) of the authenticated user
+// WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
 	return func(s Span) {
 		s.SetTag("usr.scope", scope)
