@@ -18,7 +18,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -167,9 +166,12 @@ func TestStartStopIdempotency(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				for j := 0; j < 1000; j++ {
+				for j := 0; j < 20; j++ {
 					// startup logging makes this test very slow
-					Start(WithLogStartup(false))
+					//
+					// Also, the CPU profile is really slow to stop (200ms/iter)
+					// so we just do the heap profile
+					Start(WithLogStartup(false), WithProfileTypes(HeapProfile))
 				}
 			}()
 		}
@@ -177,7 +179,7 @@ func TestStartStopIdempotency(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				for j := 0; j < 1000; j++ {
+				for j := 0; j < 20; j++ {
 					Stop()
 				}
 			}()
@@ -239,58 +241,6 @@ func TestStopLatency(t *testing.T) {
 	if elapsed > 500*time.Millisecond {
 		t.Errorf("profiler took %v to stop", elapsed)
 	}
-}
-
-func TestProfilerInternal(t *testing.T) {
-	t.Run("collect", func(t *testing.T) {
-		p, err := unstartedProfiler(
-			WithPeriod(1*time.Millisecond),
-			CPUDuration(1*time.Millisecond),
-			WithProfileTypes(HeapProfile, CPUProfile),
-		)
-		require.NoError(t, err)
-		var startCPU, stopCPU, writeHeap uint64
-		p.testHooks.startCPUProfile = func(_ io.Writer) error {
-			atomic.AddUint64(&startCPU, 1)
-			return nil
-		}
-		p.testHooks.stopCPUProfile = func() { atomic.AddUint64(&stopCPU, 1) }
-		p.testHooks.lookupProfile = func(name string, w io.Writer, _ int) error {
-			if name == "heap" {
-				atomic.AddUint64(&writeHeap, 1)
-			}
-			_, err := w.Write(textProfile{Text: "main 5\n"}.Protobuf())
-			return err
-		}
-
-		tick := make(chan time.Time)
-		wait := make(chan struct{})
-
-		go func() {
-			p.collect(tick)
-			close(wait)
-		}()
-
-		tick <- time.Now()
-
-		var bat batch
-		select {
-		case bat = <-p.out:
-		case <-time.After(200 * time.Millisecond):
-			t.Fatalf("missing batch")
-		}
-
-		assert := assert.New(t)
-		assert.EqualValues(1, writeHeap)
-		assert.EqualValues(1, startCPU)
-		assert.EqualValues(1, stopCPU)
-
-		// should contain cpu.pprof, metrics.json, delta-heap.pprof
-		assert.Equal(3, len(bat.profiles))
-
-		p.exit <- struct{}{}
-		<-wait
-	})
 }
 
 func TestSetProfileFraction(t *testing.T) {
