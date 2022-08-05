@@ -9,6 +9,7 @@ package tracer
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"math"
 	"os"
@@ -167,6 +168,37 @@ func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.Lock()
 	defer s.Unlock()
 	s.setSamplingPriorityLocked(priority, sampler, rate)
+}
+
+// setUser sets the span user ID tag as well as some optional user monitoring tags depending on the configuration.
+// The function assumes that the span it is called on is the trace's root span.
+func (s *span) setUser(id string, cfg UserMonitoringConfig) {
+	trace := s.context.trace
+	s.Lock()
+	defer s.Unlock()
+	if cfg.propagateID {
+		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
+		delete(s.Meta, keyUserID)
+		idenc := base64.StdEncoding.EncodeToString([]byte(id))
+		trace.setPropagatingTag(keyPropagatedUserID, idenc)
+	} else {
+		// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
+		trace.unsetPropagatingTag(keyPropagatedUserID)
+		delete(s.Meta, keyPropagatedUserID)
+		// setMeta is used since the span is already locked
+		s.setMeta(keyUserID, id)
+	}
+	for k, v := range map[string]string{
+		keyUserEmail:     cfg.email,
+		keyUserName:      cfg.name,
+		keyUserScope:     cfg.scope,
+		keyUserRole:      cfg.role,
+		keyUserSessionID: cfg.sessionID,
+	} {
+		if v != "" {
+			s.setMeta(k, v)
+		}
+	}
 }
 
 // setSamplingPriorityLocked updates the sampling priority.
@@ -587,6 +619,18 @@ const (
 	// keySingleSpanSamplingMPS specifies the configured limit for the single span sampling rule
 	// that the span matched. If there is no configured limit, then this tag is omitted.
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
+	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
+	keyPropagatedUserID = "_dd.p.usr.id"
+)
+
+// The following set of tags is used for user monitoring and set through calls to span.setUser().
+const (
+	keyUserID        = "usr.id"
+	keyUserEmail     = "usr.email"
+	keyUserName      = "usr.name"
+	keyUserRole      = "usr.role"
+	keyUserScope     = "usr.scope"
+	keyUserSessionID = "usr.session_id"
 )
 
 const (
