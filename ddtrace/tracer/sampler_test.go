@@ -498,21 +498,21 @@ func TestRulesSampler(t *testing.T) {
 			rules    []SamplingRule
 		}{
 			{
-				rules:    []SamplingRule{SpanNameServiceRule("[a-z]+\\d+", "^test-[a-z]+", 1.0, 0)},
+				rules:    []SamplingRule{SpanNameServiceRule("[a-z]+\\d+", "^test-[a-z]+", 1.)},
 				spanSrv:  "test-service",
 				spanName: "abcde123",
 			},
 			{
-				rules:    []SamplingRule{SpanNameServiceRule("[a-z]+\\d+", "^test-\\w+", 1.0, 0)},
+				rules:    []SamplingRule{SpanNameServiceRule("[a-z]+\\d+", "^test-\\w+", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde123",
 			},
 			{
-				rules:    []SamplingRule{SpanNameServiceRule("[a-z]+\\d+", "\\w+", 1.0, 0)},
+				rules:    []SamplingRule{SpanNameServiceRule("[a-z]+\\d+", "\\w+", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde123",
 			}, {
-				rules:    []SamplingRule{SpanNameServiceRule(``, "\\w+", 1.0, 0)},
+				rules:    []SamplingRule{SpanNameServiceRule(``, "\\w+", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde123",
 			},

@@ -156,16 +156,31 @@ func RateRule(rate float64) SamplingRule {
 
 // SpanNameServiceRule returns a SamplingRule of type SamplingRuleSpan that applies
 // the provided sampling rate to all spans matching the operation and service name glob patterns provided.
-// Operation and service fields must be valid glob patterns. MaxPerSecond is optional and defaults to infinite, allow all behaviour.
-func SpanNameServiceRule(name, service string, rate, mps float64) SamplingRule {
+// Operation and service fields must be valid glob patterns.
+func SpanNameServiceRule(name, service string, rate float64) SamplingRule {
+	return SamplingRule{
+		Service:   globMatch(service),
+		Name:      globMatch(name),
+		Rate:      rate,
+		ruleType:  SamplingRuleSpan,
+		exactName: name,
+		limiter:   newSingleSpanRateLimiter(0),
+	}
+}
+
+// SpanNameServiceMPSRule returns a SamplingRule of type SamplingRuleSpan that applies
+// the provided sampling rate to all spans matching the operation and service name glob patterns
+// up to the max number of spans per second that can be sampled.
+// Operation and service fields must be valid glob patterns.
+func SpanNameServiceMPSRule(name, service string, rate, limit float64) SamplingRule {
 	return SamplingRule{
 		Service:      globMatch(service),
 		Name:         globMatch(name),
-		MaxPerSecond: mps,
+		MaxPerSecond: limit,
 		Rate:         rate,
 		ruleType:     SamplingRuleSpan,
 		exactName:    name,
-		limiter:      newSingleSpanRateLimiter(mps),
+		limiter:      newSingleSpanRateLimiter(limit),
 	}
 }
 
