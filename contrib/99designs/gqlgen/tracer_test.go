@@ -19,16 +19,17 @@ import (
 )
 
 func TestOptions(t *testing.T) {
+	query := `{ name }`
 	for name, tt := range map[string]struct {
 		tracerOpts []Option
 		test       func(assert *assert.Assertions, root mocktracer.Span)
 	}{
 		"default": {
 			test: func(assert *assert.Assertions, root mocktracer.Span) {
-				assert.Equal(root.OperationName(), graphQLQuery)
-				assert.Equal(root.Tag(ext.ResourceName), graphQLQuery)
-				assert.Equal(root.Tag(ext.ServiceName), defaultServiceName)
-				assert.Equal(root.Tag(ext.SpanType), ext.SpanTypeGraphQL)
+				assert.Equal(graphQLQuery, root.OperationName())
+				assert.Equal(query, root.Tag(ext.ResourceName))
+				assert.Equal(defaultServiceName, root.Tag(ext.ServiceName))
+				assert.Equal(ext.SpanTypeGraphQL, root.Tag(ext.SpanType))
 				assert.Nil(root.Tag(ext.EventSampleRate))
 			},
 		},
@@ -65,7 +66,7 @@ func TestOptions(t *testing.T) {
 			var resp struct {
 				Name string
 			}
-			c.MustPost(`{ name }`, &resp)
+			c.MustPost(query, &resp)
 			var root mocktracer.Span
 			for _, span := range mt.FinishedSpans() {
 				if span.ParentID() == 0 {
@@ -99,7 +100,7 @@ func TestError(t *testing.T) {
 	assert.NotNil(root.Tag(ext.Error))
 }
 
-func TestWithChildSpans(t *testing.T) {
+func TestObfuscation(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -107,18 +108,44 @@ func TestWithChildSpans(t *testing.T) {
 	var resp struct {
 		Name string
 	}
-	err := c.Post(`{ name }`, &resp)
+	query := `query($id: Int!) {
+	name
+	find(id: $id)
+}
+`
+	err := c.Post(query, &resp, client.Var("id", 12345))
+	assert.Nil(err)
+
+	// No spans should contain the sensitive ID.
+	for _, span := range mt.FinishedSpans() {
+		assert.NotContains(span.Tag(ext.ResourceName), "12345")
+	}
+}
+
+func TestChildSpans(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	c := newTestClient(t, testserver.New(), NewTracer())
+	var resp struct {
+		Name string
+	}
+	query := `{ name }`
+	err := c.Post(query, &resp)
 	assert.Nil(err)
 	var root mocktracer.Span
 	allSpans := mt.FinishedSpans()
-	var foundOps []string
+	var resNames []string
+	var opNames []string
 	for _, span := range allSpans {
 		if span.ParentID() == 0 {
 			root = span
 		}
-		foundOps = append(foundOps, span.Tag(ext.ResourceName).(string))
+		resNames = append(resNames, span.Tag(ext.ResourceName).(string))
+		opNames = append(opNames, span.OperationName())
 	}
-	assert.ElementsMatch(foundOps, []string{readOp, validationOp, parsingOp, graphQLQuery})
+	assert.ElementsMatch(resNames, []string{readOp, validationOp, parsingOp, query})
+	assert.ElementsMatch(opNames, []string{readOp, validationOp, parsingOp, graphQLQuery})
 	assert.NotNil(root)
 	assert.Nil(root.Tag(ext.Error))
 }

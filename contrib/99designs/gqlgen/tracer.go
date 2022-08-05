@@ -3,8 +3,14 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-// Package gqlgen contains an implementation of a gqlgen tracer, and functions to construct and configure the tracer.
-// The tracer can be passed to the gqlgen handler (see package github.com/99designs/gqlgen/handler)
+// Package gqlgen contains an implementation of a gqlgen tracer, and functions
+// to construct and configure the tracer. The tracer can be passed to the gqlgen
+// handler (see package github.com/99designs/gqlgen/handler)
+//
+// Warning: Data obfuscation hasn't been implemented for graphql queries yet,
+// any sensitive data in the query will be sent to Datadog as the resource name
+// of the span. To ensure no sensitive data is included in your spans, always
+// use parameterized graphql queries with sensitive data in variables.
 package gqlgen
 
 import (
@@ -65,7 +71,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 	var (
 		octx *graphql.OperationContext
 	)
-	name := ext.SpanTypeGraphQL
+	name := graphQLQuery
 	if graphql.HasOperationContext(ctx) {
 		// Variables in the operation will be left out of the tags
 		// until obfuscation is implemented in the agent.
@@ -79,9 +85,8 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 			}
 			name = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
 		}
-		opts = append(opts, tracer.ResourceName(octx.OperationName))
 		if octx.RawQuery != "" {
-			opts = append(opts, tracer.Tag(graphQLQuery, octx.RawQuery))
+			opts = append(opts, tracer.ResourceName(octx.RawQuery))
 		}
 		opts = append(opts, tracer.StartTime(octx.Stats.OperationStart))
 	}
