@@ -518,3 +518,32 @@ func TestTelemetryEnabled(t *testing.T) {
 	check("profile_period", time.Duration(10*time.Millisecond).String())
 	check("cpu_duration", time.Duration(1*time.Millisecond).String())
 }
+
+func TestImmediateProfile(t *testing.T) {
+	received := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case received <- struct{}{}:
+		default:
+		}
+	}))
+	defer server.Close()
+
+	err := Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(HeapProfile),
+		WithPeriod(3*time.Second),
+	)
+	require.NoError(t, err)
+	defer Stop()
+
+	// Wait a little less than 2 profile periods. We should start profiling
+	// immediately. If it significantly longer than 1 profile period to get
+	// a profile, consider the test failed
+	timeout := time.After(5 * time.Second)
+	select {
+	case <-timeout:
+		t.Fatal("should have ")
+	case <-received:
+	}
+}
