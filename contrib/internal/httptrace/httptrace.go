@@ -15,15 +15,13 @@ import (
 	"strconv"
 	"strings"
 
-	"inet.af/netaddr"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var (
-	ipv6SpecialNetworks = []*netaddr.IPPrefix{
+	ipv6SpecialNetworks = []*netaddrIPPrefix{
 		ippref("fec0::/10"), // site local
 	}
 	defaultIPHeaders = []string{
@@ -87,8 +85,8 @@ func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 }
 
 // ippref returns the IP network from an IP address string s. If not possible, it returns nil.
-func ippref(s string) *netaddr.IPPrefix {
-	if prefix, err := netaddr.ParseIPPrefix(s); err == nil {
+func ippref(s string) *netaddrIPPrefix {
+	if prefix, err := netaddrParseIPPrefix(s); err == nil {
 		return &prefix
 	}
 	return nil
@@ -131,19 +129,19 @@ func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
 	return opts
 }
 
-func parseIP(s string) netaddr.IP {
-	if ip, err := netaddr.ParseIP(s); err == nil {
+func parseIP(s string) netaddrIP {
+	if ip, err := netaddrParseIP(s); err == nil {
 		return ip
 	}
 	if h, _, err := net.SplitHostPort(s); err == nil {
-		if ip, err := netaddr.ParseIP(h); err == nil {
+		if ip, err := netaddrParseIP(h); err == nil {
 			return ip
 		}
 	}
-	return netaddr.IP{}
+	return netaddrIP{}
 }
 
-func isGlobal(ip netaddr.IP) bool {
+func isGlobal(ip netaddrIP) bool {
 	// IsPrivate also checks for ipv6 ULA.
 	// We care to check for these addresses are not considered public, hence not global.
 	// See https://www.rfc-editor.org/rfc/rfc4193.txt for more details.

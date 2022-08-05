@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -1780,12 +1781,12 @@ func TestUserMonitoring(t *testing.T) {
 	const role = "admin"
 	const sessionID = "session#12345"
 	expected := []struct{ key, value string }{
-		{key: "usr.id", value: id},
-		{key: "usr.name", value: name},
-		{key: "usr.email", value: email},
-		{key: "usr.scope", value: scope},
-		{key: "usr.role", value: role},
-		{key: "usr.session_id", value: sessionID},
+		{key: keyUserID, value: id},
+		{key: keyUserName, value: name},
+		{key: keyUserEmail, value: email},
+		{key: keyUserScope, value: scope},
+		{key: keyUserRole, value: role},
+		{key: keyUserSessionID, value: sessionID},
 	}
 	tr := newTracer()
 	defer tr.Stop()
@@ -1810,6 +1811,47 @@ func TestUserMonitoring(t *testing.T) {
 		for _, pair := range expected {
 			assert.Equal(t, pair.value, root.Meta[pair.key])
 		}
+	})
+
+	t.Run("propagation", func(t *testing.T) {
+		s := tr.newRootSpan("root", "test", "test")
+		SetUser(s, id, WithPropagation())
+		s.Finish()
+		_, ok := s.Meta[keyUserID]
+		assert.False(t, ok)
+		encoded := base64.StdEncoding.EncodeToString([]byte(id))
+		assert.Equal(t, encoded, s.context.trace.propagatingTags[keyPropagatedUserID])
+		assert.Equal(t, encoded, s.Meta[keyPropagatedUserID])
+	})
+
+	t.Run("no-propagation", func(t *testing.T) {
+		s := tr.newRootSpan("root", "test", "test")
+		SetUser(s, id)
+		s.Finish()
+		_, ok := s.Meta[keyUserID]
+		assert.True(t, ok)
+		_, ok = s.Meta[keyPropagatedUserID]
+		assert.False(t, ok)
+		_, ok = s.context.trace.propagatingTags[keyPropagatedUserID]
+		assert.False(t, ok)
+	})
+
+	// This tests data races for trace.propagatingTags reads/writes through public API.
+	// The Go data race detector should not complain when running the test with '-race'.
+	t.Run("data-race", func(t *testing.T) {
+		root := tr.newRootSpan("root", "test", "test")
+
+		go func() {
+			for i := 0; i < 10000; i++ {
+				SetUser(root, "test")
+			}
+		}()
+		go func() {
+			for i := 0; i < 10000; i++ {
+				tr.StartSpan("test", ChildOf(root.Context())).Finish()
+			}
+		}()
+		root.Finish()
 	})
 }
 
