@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	graphQLQuery = "graphql.query"
+	defaultGraphqlOperation = "graphql.request"
 
 	readOp       = "graphql.read"
 	parsingOp    = "graphql.parse"
@@ -71,7 +71,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 	var (
 		octx *graphql.OperationContext
 	)
-	name := graphQLQuery
+	name := defaultGraphqlOperation
 	if graphql.HasOperationContext(ctx) {
 		// Variables in the operation will be left out of the tags
 		// until obfuscation is implemented in the agent.

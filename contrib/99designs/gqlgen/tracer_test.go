@@ -26,7 +26,7 @@ func TestOptions(t *testing.T) {
 	}{
 		"default": {
 			test: func(assert *assert.Assertions, root mocktracer.Span) {
-				assert.Equal(graphQLQuery, root.OperationName())
+				assert.Equal("graphql.query", root.OperationName())
 				assert.Equal(query, root.Tag(ext.ResourceName))
 				assert.Equal(defaultServiceName, root.Tag(ext.ServiceName))
 				assert.Equal(ext.SpanTypeGraphQL, root.Tag(ext.SpanType))
@@ -145,7 +145,7 @@ func TestChildSpans(t *testing.T) {
 		opNames = append(opNames, span.OperationName())
 	}
 	assert.ElementsMatch(resNames, []string{readOp, validationOp, parsingOp, query})
-	assert.ElementsMatch(opNames, []string{readOp, validationOp, parsingOp, graphQLQuery})
+	assert.ElementsMatch(opNames, []string{readOp, validationOp, parsingOp, "graphql.query"})
 	assert.NotNil(root)
 	assert.Nil(root.Tag(ext.Error))
 }
