@@ -11,7 +11,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
-const defaultServiceName = "gqlgen"
+const defaultServiceName = "graphql"
 
 type config struct {
 	serviceName   string
