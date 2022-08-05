@@ -8,25 +8,83 @@ import (
 	"testing"
 
 	"github.com/gogearbox/gearbox"
+	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
-func TestDatadog(t *testing.T) {
-	var reqctx fasthttp.RequestCtx
-	reqctx.URI().SetPath("/any")
-	reqctx.Request.Header.SetMethod("post")
-	reqctx.Response.SetStatusCode(500)
-		
-	t.Run("error", func(t *testing.T) {
-		gb := &GearboxContextMock{RequestCtx:  &reqctx}
-		Middleware(gb)
-	})
+const (
+	xDatadogParentID         = "741852"
+	xDatadogTraceID          = "123456"
+	xDatadogSamplingPriority = "2"
+	hostTest                 = "http://apicat.com"
+)
 
-	t.Run("ok ", func(t *testing.T) {
-		gb := &GearboxContextMock{RequestCtx:  reqctx}
-		gb.Set("X-Datadog-Trace-Id", "any-trace-id")
-		Middleware(gb)
-	})
+var body = make([]byte, 1000)
+
+type requestTest struct {
+	TitleTest      string
+	Path           string
+	Method         string
+	StatusResponse int
+}
+
+func TestDatadog(t *testing.T) {
+
+	listTest := []requestTest{
+		{
+			TitleTest:      "Request Post with Status 200",
+			Path:           "/cat",
+			Method:         "post",
+			StatusResponse: 200,
+		},
+		{
+			TitleTest:      "Request Get with Status 201",
+			Path:           "/cat",
+			Method:         "get",
+			StatusResponse: 201,
+		},
+	}
+
+	for _, test := range listTest {
+
+		t.Run(test.TitleTest, func(t *testing.T) {
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			//First Request..
+			var reqctx fasthttp.RequestCtx
+			reqctx.URI().SetHost(hostTest)
+			reqctx.URI().SetPath(test.Path)
+			reqctx.Request.Header.SetMethod(test.Method)
+			//reqctx.Request.Header.Add()
+			reqctx.Response.SetStatusCode(test.StatusResponse)
+
+			gb := &ContextMock{
+				RequestCtx: &reqctx,
+				//Headers:     headers,
+				LocalParams: map[string]interface{}{},
+			}
+			gb.Context().Response.SetBody(body)
+			Middleware(gb)
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, 1)
+			spanF := spans[0]
+
+			assert.Equal(t, ext.SpanTypeWeb, spanF.Tag(ext.SpanType))
+			assert.Equal(t, test.Method, spanF.Tag(ext.HTTPMethod))
+			assert.Equal(t, string(gb.RequestCtx.URI().FullURI()), spanF.Tag(ext.HTTPURL))
+			assert.Equal(t, operationName, spanF.OperationName())
+			assert.Equal(t, test.Path, spanF.Tag(ext.ResourceName))
+			assert.Equal(t, test.StatusResponse, spanF.Tag(ext.HTTPCode))
+
+		})
+
+	}
+
 }
 
 type ContextMock struct {
@@ -68,7 +126,7 @@ func (ctx *ContextMock) Status(status int) gearbox.Context {
 	return ctx
 }
 
-func (_ ContextMock) Set(key string, value string) {
+func (ctx ContextMock) Set(key string, value string) {
 	ctx.Headers[key] = value
 }
 

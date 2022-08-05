@@ -8,7 +8,6 @@ package gearbox
 
 import (
 	"context"
-	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -17,11 +16,13 @@ import (
 	"github.com/gogearbox/gearbox"
 )
 
+const (
+	operationName = "http.request"
+)
+
 //Datadog this method should implement at a middleware layer
-func Datadog(ctx gearbox.Context) {
-
+func Middleware(ctx gearbox.Context) {
 	method := string(ctx.Context().Method())
-
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, method),
@@ -29,51 +30,21 @@ func Datadog(ctx gearbox.Context) {
 		tracer.Measured(),
 	}
 
-	headers := mapCtxToHTTPHeader(ctx)
-
-	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(headers)); err == nil {
+	carrier := gearboxContextCarrier{ctx}
+	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 
-	span, ctxSpan := tracer.StartSpanFromContext(context.Background(), "http.request", opts...)
-
+	span, ctxSpan := tracer.StartSpanFromContext(context.Background(), operationName, opts...)
 	ctx.SetLocal("ctxspan", ctxSpan)
+	//Next function is used to successfully pass from current middleware to next middleware.
 	ctx.Next()
-
-	span.SetTag(ext.ResourceName, string(ctx.Context().URI().Path()))
-
 	status := ctx.Context().Response.StatusCode()
-
+	resouceName := string(ctx.Context().URI().Path())
+	span.SetTag(ext.ResourceName, resouceName)
 	span.SetTag(ext.HTTPCode, status)
-
 	if status == gearbox.StatusInternalServerError || status == gearbox.StatusBadRequest {
-
 		span.SetTag(ext.Error, string(ctx.Context().Response.Body()[:5000]))
 	}
-
 	span.Finish()
-
-}
-
-func mapCtxToHTTPHeader(ctx gearbox.Context) http.Header {
-
-	headers := http.Header{}
-
-	listHeadersDatadog := [3]string{
-		"X-Datadog-Trace-Id",
-		"X-Datadog-Parent-Id",
-		"X-Datadog-Sampling-Priority",
-	}
-
-	for _, headerDataDog := range listHeadersDatadog {
-
-		valueHeader := ctx.Get(headerDataDog)
-
-		if len(valueHeader) > 0 {
-			headers.Add(headerDataDog, valueHeader)
-		}
-	}
-
-	return headers
-
 }

@@ -19,7 +19,7 @@ func Example() {
 	defer tracer.Stop()
 
 	gb := gearbox.New()
-	gb.Use(Datadog)
+	gb.Use(Middleware)
 
 	err := gb.Start(":8080")
 	if err != nil {
