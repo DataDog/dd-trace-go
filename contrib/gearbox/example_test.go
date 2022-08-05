@@ -7,8 +7,9 @@ package gearbox
 import (
 	"log"
 
-	"github.com/gogearbox/gearbox"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/gogearbox/gearbox"
 )
 
 func Example() {

@@ -7,11 +7,12 @@ package gearbox
 import (
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+
 	"github.com/gogearbox/gearbox"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 const (
