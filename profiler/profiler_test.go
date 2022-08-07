@@ -538,12 +538,12 @@ func TestImmediateProfile(t *testing.T) {
 	defer Stop()
 
 	// Wait a little less than 2 profile periods. We should start profiling
-	// immediately. If it significantly longer than 1 profile period to get
+	// immediately. If it takes significantly longer than 1 profile period to get
 	// a profile, consider the test failed
 	timeout := time.After(5 * time.Second)
 	select {
 	case <-timeout:
-		t.Fatal("should have ")
+		t.Fatal("should have received a profile already")
 	case <-received:
 	}
 }
