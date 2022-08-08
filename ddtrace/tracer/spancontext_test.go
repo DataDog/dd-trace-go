@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"context"
-	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -17,7 +16,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 func setupteardown(start, max int) func() {
@@ -242,21 +240,6 @@ func TestSpanFinishPriority(t *testing.T) {
 	assert.Fail("span not found")
 }
 
-func TestTracePriorityLocked(t *testing.T) {
-	assert := assert.New(t)
-	ddHeaders := TextMapCarrier(map[string]string{
-		DefaultTraceIDHeader:  "2",
-		DefaultParentIDHeader: "2",
-		DefaultPriorityHeader: "2",
-	})
-
-	ctx, err := NewPropagator(nil).Extract(ddHeaders)
-	assert.Nil(err)
-	sctx, ok := ctx.(*spanContext)
-	assert.True(ok)
-	assert.True(sctx.trace.locked)
-}
-
 func TestNewSpanContext(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		span := &span{
@@ -420,24 +403,6 @@ func TestSpanContextIteratorBreak(t *testing.T) {
 	})
 
 	assert.Len(t, got, 0)
-}
-
-func TestBuildNewUpstreamServices(t *testing.T) {
-	var testCases = []struct {
-		service  string
-		priority int
-		sampler  samplernames.SamplerName
-		rate     float64
-		expected string
-	}{
-		{"service-account", 1, samplernames.AgentRate, 0.99, "c2VydmljZS1hY2NvdW50|1|1|0.9900"},
-		{"service-storage", 2, samplernames.Manual, math.NaN(), "c2VydmljZS1zdG9yYWdl|2|4|"},
-		{"service-video", 1, samplernames.RuleRate, 1, "c2VydmljZS12aWRlbw|1|3|1.0000"},
-	}
-
-	for _, tt := range testCases {
-		assert.Equal(t, tt.expected, compactUpstreamServices(tt.service, tt.priority, tt.sampler, tt.rate))
-	}
 }
 
 // testLogger implements a mock Printer.

@@ -39,7 +39,6 @@ func newConfig(opts []RouterOption) *routerConfig {
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	return cfg
 }
 

@@ -23,12 +23,15 @@ type roundTripper struct {
 }
 
 func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
+	if rt.cfg.ignoreRequest(req) {
+		return rt.base.RoundTrip(req)
+	}
 	resourceName := rt.cfg.resourceNamer(req)
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(resourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
-		tracer.Tag(ext.HTTPURL, req.URL.Path),
+		tracer.Tag(ext.HTTPURL, req.URL.String()),
 	}
 	if !math.IsNaN(rt.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.analyticsRate))
@@ -49,13 +52,14 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if rt.cfg.before != nil {
 		rt.cfg.before(req, span)
 	}
-	// inject the span context into the http request
-	err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
+	r2 := req.Clone(ctx)
+	// inject the span context into the http request copy
+	err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(r2.Header))
 	if err != nil {
 		// this should never happen
 		fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", err)
 	}
-	res, err = rt.base.RoundTrip(req.WithContext(ctx))
+	res, err = rt.base.RoundTrip(r2)
 	if err != nil {
 		span.SetTag("http.errors", err.Error())
 		span.SetTag(ext.Error, err)

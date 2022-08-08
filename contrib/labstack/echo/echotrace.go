@@ -8,8 +8,8 @@ package echo
 
 import (
 	"math"
-	"strconv"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -20,37 +20,34 @@ import (
 
 // Middleware returns echo middleware which will trace incoming requests.
 func Middleware(opts ...Option) echo.MiddlewareFunc {
+	cfg := new(config)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	log.Debug("contrib/labstack/echo: Configuring Middleware: %#v", cfg)
+	spanOpts := []ddtrace.StartSpanOption{
+		tracer.ServiceName(cfg.serviceName),
+	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		cfg := new(config)
-		defaults(cfg)
-		for _, fn := range opts {
-			fn(cfg)
-		}
-		log.Debug("contrib/labstack/echo: Configuring Middleware: %#v", cfg)
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
-			opts := []ddtrace.StartSpanOption{
-				tracer.ServiceName(cfg.serviceName),
-				tracer.ResourceName(resource),
-				tracer.SpanType(ext.SpanTypeWeb),
-				tracer.Tag(ext.HTTPMethod, request.Method),
-				tracer.Tag(ext.HTTPURL, request.URL.Path),
-				tracer.Measured(),
-			}
+			opts := append(spanOpts, tracer.ResourceName(resource))
 
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(request.Header)); err == nil {
-				opts = append(opts, tracer.ChildOf(spanctx))
-			}
+
 			var finishOpts []tracer.FinishOption
 			if cfg.noDebugStack {
-				finishOpts = append(finishOpts, tracer.NoDebugStack())
+				finishOpts = []tracer.FinishOption{tracer.NoDebugStack()}
 			}
-			span, ctx := tracer.StartSpanFromContext(request.Context(), "http.request", opts...)
-			defer func() { span.Finish(finishOpts...) }()
+
+			span, ctx := httptrace.StartRequestSpan(request, opts...)
+			defer func() {
+				httptrace.FinishRequestSpan(span, c.Response().Status, finishOpts...)
+			}()
 
 			// pass the span through the request context
 			c.SetRequest(request.WithContext(ctx))
@@ -63,7 +60,6 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				c.Error(err)
 			}
 
-			span.SetTag(ext.HTTPCode, strconv.Itoa(c.Response().Status))
 			return err
 		}
 	}
