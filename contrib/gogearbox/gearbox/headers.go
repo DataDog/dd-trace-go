@@ -21,7 +21,6 @@ func (gcc gearboxContextCarrier) ForeachKey(handler func(key, val string) error)
 			errorList = append(errorList, err)
 		}
 	})
-
 	if len(errorList) > 0 {
 		return errorList[0]
 	}

@@ -38,7 +38,7 @@ func Middleware(ctx gearbox.Context) {
 	span, ctxSpan := tracer.StartSpanFromContext(context.Background(), operationName, opts...)
 	defer span.Finish()
 	ctx.SetLocal("ctxspan", ctxSpan)
-	//Next function is used to successfully pass from current middleware to next middleware.
+	//Next function is used to successfully pass from current middleware to next middleware
 	ctx.Next()
 	status := ctx.Context().Response.StatusCode()
 	resourceName := string(ctx.Context().URI().Path())

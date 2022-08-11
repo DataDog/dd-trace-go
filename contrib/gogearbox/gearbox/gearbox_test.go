@@ -59,12 +59,10 @@ func TestDatadog(t *testing.T) {
 			reqctx.URI().SetHost(hostTest)
 			reqctx.URI().SetPath(test.Path)
 			reqctx.Request.Header.SetMethod(test.Method)
-			//reqctx.Request.Header.Add()
 			reqctx.Response.SetStatusCode(test.StatusResponse)
 
 			gb := &ContextMock{
-				RequestCtx: &reqctx,
-				//Headers:     headers,
+				RequestCtx:  &reqctx,
 				LocalParams: map[string]interface{}{},
 			}
 			gb.Context().Response.SetBody(body)
