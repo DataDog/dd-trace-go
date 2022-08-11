@@ -465,6 +465,11 @@ func TestCorrectTags(t *testing.T) {
 func TestTelemetryEnabled(t *testing.T) {
 	received := make(chan *telemetry.AppStarted, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/info" {
+			response := []byte(`{"endpoints": ["/telemetry/proxy/api/v2/apmtelemetry"]}`)
+			w.Write(response)
+			return
+		}
 		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
 			return
 		}

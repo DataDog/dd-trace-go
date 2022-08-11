@@ -21,6 +21,7 @@ import (
 	"unicode"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/agentdiscovery"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
@@ -63,24 +64,6 @@ const (
 	defaultAgentPort = "8126"
 	defaultEnv       = "none"
 )
-
-var defaultClient = &http.Client{
-	// We copy the transport to avoid using the default one, as it might be
-	// augmented with tracing and we don't want these calls to be recorded.
-	// See https://golang.org/pkg/net/http/#DefaultTransport .
-	Transport: &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-			DualStack: true,
-		}).DialContext,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	},
-}
 
 var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
 
@@ -205,7 +188,6 @@ func defaultConfig() (*config, error) {
 		apiURL:            defaultAPIURL,
 		service:           filepath.Base(os.Args[0]),
 		statsd:            &statsd.NoOpClient{},
-		httpClient:        defaultClient,
 		period:            DefaultPeriod,
 		cpuDuration:       DefaultDuration,
 		blockRate:         DefaultBlockRate,
@@ -222,14 +204,8 @@ func defaultConfig() (*config, error) {
 		c.addProfileType(t)
 	}
 
-	agentHost, agentPort := defaultAgentHost, defaultAgentPort
-	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
-		agentHost = v
-	}
-	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
-		agentPort = v
-	}
-	WithAgentAddr(net.JoinHostPort(agentHost, agentPort))(&c)
+	WithAgentAddr(agentdiscovery.ResolveAgentAddr())(&c)
+	c.httpClient = agentdiscovery.HTTPClient()
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {

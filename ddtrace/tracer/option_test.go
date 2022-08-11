@@ -212,13 +212,10 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal("tracer.test", c.serviceName)
 		assert.Equal("localhost:8126", c.agentAddr)
 		assert.Equal("localhost:8125", c.dogstatsdAddr)
-		assert.Nil(nil, c.httpClient)
-		assert.Equal(defaultClient, c.httpClient)
 	})
 
 	t.Run("http-client", func(t *testing.T) {
 		c := newConfig()
-		assert.Equal(t, defaultClient, c.httpClient)
 		client := &http.Client{}
 		WithHTTPClient(client)(c)
 		assert.Equal(t, client, c.httpClient)
@@ -446,29 +443,6 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
 		})
-	})
-}
-
-func TestDefaultHTTPClient(t *testing.T) {
-	t.Run("no-socket", func(t *testing.T) {
-		// We care that whether clients are different, but doing a deep
-		// comparison is overkill and can trigger the race detector, so
-		// just compare the pointers.
-		assert.Same(t, defaultHTTPClient(), defaultClient)
-	})
-
-	t.Run("socket", func(t *testing.T) {
-		f, err := os.CreateTemp("", "apm.socket")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := f.Close(); err != nil {
-			t.Fatal(err)
-		}
-		defer os.RemoveAll(f.Name())
-		defer func(old string) { defaultSocketAPM = old }(defaultSocketAPM)
-		defaultSocketAPM = f.Name()
-		assert.NotSame(t, defaultHTTPClient(), defaultClient)
 	})
 }
 

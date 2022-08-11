@@ -7,8 +7,6 @@ package tracer
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"math"
 	"net"
 	"net/http"
@@ -22,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/agentdiscovery"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
@@ -31,10 +30,6 @@ import (
 )
 
 var (
-	// defaultSocketAPM specifies the socket path to use for connecting to the trace-agent.
-	// Replaced in tests
-	defaultSocketAPM = "/var/run/datadog/apm.socket"
-
 	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
 	// Replaced in tests
 	defaultSocketDSD = "/var/run/datadog/dsd.socket"
@@ -188,8 +183,8 @@ const maxPropagatedTagsLength = 512
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
-	c.agentAddr = resolveAgentAddr()
-	c.httpClient = defaultHTTPClient()
+	c.agentAddr = agentdiscovery.ResolveAgentAddr()
+	c.httpClient = agentdiscovery.HTTPClient()
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
@@ -289,7 +284,20 @@ func newConfig(opts ...StartOption) *config {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
-	c.loadAgentFeatures()
+	if info, err := agentdiscovery.AgentFeatures(c.agentAddr, c.httpClient); err == nil {
+		c.agent.DropP0s = info.ClientDropP0s
+		c.agent.StatsdPort = info.StatsdPort
+		for _, endpoint := range info.Endpoints {
+			switch endpoint {
+			case "/v0.6/stats":
+				c.agent.Stats = true
+			}
+		}
+		c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
+		for _, flag := range info.FeatureFlags {
+			c.agent.featureFlags[flag] = struct{}{}
+		}
+	}
 	if c.statsd == nil {
 		// configure statsd client
 		addr := c.dogstatsdAddr
@@ -320,15 +328,6 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	return c
-}
-
-// defaultHTTPClient returns the default http.Client to start the tracer with.
-func defaultHTTPClient() *http.Client {
-	if _, err := os.Stat(defaultSocketAPM); err == nil {
-		// we have the UDS socket file, use it
-		return udsClient(defaultSocketAPM)
-	}
-	return defaultClient
 }
 
 // udsClient returns a new http.Client which connects using the given UDS socket path.
@@ -392,49 +391,6 @@ type agentFeatures struct {
 func (a *agentFeatures) HasFlag(feat string) bool {
 	_, ok := a.featureFlags[feat]
 	return ok
-}
-
-// loadAgentFeatures queries the trace-agent for its capabilities and updates
-// the tracer's behaviour.
-func (c *config) loadAgentFeatures() {
-	c.agent = agentFeatures{}
-	if c.logToStdout {
-		// there is no agent; all features off
-		return
-	}
-	resp, err := c.httpClient.Get(fmt.Sprintf("http://%s/info", c.agentAddr))
-	if err != nil {
-		log.Error("Loading features: %v", err)
-		return
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		// agent is older than 7.28.0, features not discoverable
-		return
-	}
-	defer resp.Body.Close()
-	type infoResponse struct {
-		Endpoints     []string `json:"endpoints"`
-		ClientDropP0s bool     `json:"client_drop_p0s"`
-		StatsdPort    int      `json:"statsd_port"`
-		FeatureFlags  []string `json:"feature_flags"`
-	}
-	var info infoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		log.Error("Decoding features: %v", err)
-		return
-	}
-	c.agent.DropP0s = info.ClientDropP0s
-	c.agent.StatsdPort = info.StatsdPort
-	for _, endpoint := range info.Endpoints {
-		switch endpoint {
-		case "/v0.6/stats":
-			c.agent.Stats = true
-		}
-	}
-	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
-	for _, flag := range info.FeatureFlags {
-		c.agent.featureFlags[flag] = struct{}{}
-	}
 }
 
 func (c *config) canComputeStats() bool {

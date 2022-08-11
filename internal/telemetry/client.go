@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/agentdiscovery"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -143,6 +145,40 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 	if c.started {
 		return
 	}
+
+	if c.Client == nil {
+		c.Client = defaultClient
+	}
+
+	// For the URL, uploading through agent goes through
+	//	${AGENT_URL}/telemetry/proxy/api/v2/apmtelemetry
+	// for agentless (which we technically don't support):
+	//	https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
+	// with an API key
+	if c.APIKey != "" {
+		c.URL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
+	} else {
+		u, err := url.Parse(c.URL)
+		if err != nil {
+			c.log("agent URL %s is invalid: %s", c.URL, err)
+			return
+		}
+		features, err := agentdiscovery.AgentFeatures(u.Host, c.Client)
+		if err != nil {
+			c.log("couldn't get agent features: %s", err)
+			return
+		}
+		// disable telemetry unless we find the agent endpoint
+		c.Disabled = true
+		for _, endpoint := range features.Endpoints {
+			if endpoint == "/telemetry/proxy/api/v2/apmtelemetry" {
+				u.Path = endpoint
+				c.URL = u.String()
+				c.Disabled = false
+			}
+		}
+	}
+
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", c.debug)
 
 	c.started = true
