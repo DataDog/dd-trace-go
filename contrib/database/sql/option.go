@@ -18,6 +18,7 @@ type config struct {
 	analyticsRate        float64
 	dsn                  string
 	childSpansOnly       bool
+	tags                 map[string]interface{}
 	commentInjectionMode tracer.SQLCommentInjectionMode
 }
 
@@ -85,6 +86,16 @@ func WithDSN(name string) Option {
 func WithChildSpansOnly() Option {
 	return func(cfg *config) {
 		cfg.childSpansOnly = true
+	}
+}
+
+// WithCustomTag will attach the value to the span tagged by the key
+func WithCustomTag(key string, value interface{}) Option {
+	return func(cfg *config) {
+		if cfg.tags == nil {
+			cfg.tags = make(map[string]interface{})
+		}
+		cfg.tags[key] = value
 	}
 }
 

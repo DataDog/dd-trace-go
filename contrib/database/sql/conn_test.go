@@ -168,3 +168,94 @@ func TestWithChildSpansOnly(t *testing.T) {
 		})
 	}
 }
+
+func TestWithCustomTag(t *testing.T) {
+	type sqlRegister struct {
+		name   string
+		dsn    string
+		driver driver.Driver
+	}
+	type want struct {
+		opName     string
+		customTags map[string]interface{}
+	}
+	testcases := []struct {
+		name        string
+		sqlRegister sqlRegister
+		want        want
+		options     []Option
+	}{
+		{
+			name: "mysql",
+			sqlRegister: sqlRegister{
+				name:   "mysql",
+				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
+				driver: &mysql.MySQLDriver{},
+			},
+			want: want{
+				opName: "mysql.query",
+				customTags: map[string]interface{}{
+					"foo": "bar",
+					"baz": 123,
+				},
+			},
+			options: []Option{
+				WithCustomTag("foo", "bar"),
+				WithCustomTag("baz", 123),
+			},
+		},
+		{
+			name: "postgres",
+			sqlRegister: sqlRegister{
+				name:   "postgres",
+				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+				driver: &pq.Driver{},
+			},
+			want: want{
+				opName: "postgres.query",
+				customTags: map[string]interface{}{
+					"foo": "bar",
+					"baz": 123,
+				},
+			},
+			options: []Option{
+				WithCustomTag("foo", "bar"),
+				WithCustomTag("baz", 123),
+			},
+		},
+	}
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	for _, tt := range testcases {
+		t.Run(tt.name, func(t *testing.T) {
+			Register(tt.sqlRegister.name, tt.sqlRegister.driver, tt.options...)
+			defer unregister(tt.sqlRegister.name)
+			db, err := Open(tt.sqlRegister.name, tt.sqlRegister.dsn, tt.options...)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
+			mt.Reset()
+
+			rows, err := db.QueryContext(context.Background(), "SELECT 1")
+			assert.NoError(t, err)
+			rows.Close()
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, 2)
+
+			connectSpan := spans[0]
+			assert.Equal(t, tt.want.opName, connectSpan.OperationName())
+			assert.Equal(t, "Connect", connectSpan.Tag("sql.query_type"))
+			for k, v := range tt.want.customTags {
+				assert.Equal(t, v, connectSpan.Tag(k), "Value mismatch on tag %s", k)
+			}
+
+			span := spans[1]
+			assert.Equal(t, tt.want.opName, span.OperationName())
+			for k, v := range tt.want.customTags {
+				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)
+			}
+		})
+	}
+}
