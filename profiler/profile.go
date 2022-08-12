@@ -133,6 +133,8 @@ var profileTypes = map[ProfileType]profileType{
 				return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
 			}
 
+			p.interruptibleSleep(p.cfg.period)
+
 			var (
 				now   = now()
 				text  = &bytes.Buffer{}
@@ -150,6 +152,7 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "metrics.json",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
+			p.interruptibleSleep(p.cfg.period)
 			err := p.met.report(now(), &buf)
 			return buf.Bytes(), err
 		},
@@ -162,7 +165,7 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 		// TODO: add type safety for name == "heap" check and remove redunancy with profileType.Name.
 		cAlloc, ok := extensions.GetCAllocationProfiler()
 		switch {
-		case ok && p.cfg.deltaProfiles && name == "heap":
+		case ok && p.cfg.cmemprofEnabled && p.cfg.deltaProfiles && name == "heap":
 			// For the heap profile, we'd also like to include C
 			// allocations if that extension is enabled and have the
 			// allocations show up in the same profile. Collect them
@@ -170,7 +173,7 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 			// that all allocations cover the same time period
 			//
 			// TODO: Support non-delta profiles for C allocations?
-			cAlloc.Start(2 * 1024 * 1024)
+			cAlloc.Start(p.cfg.cmemprofRate)
 			p.interruptibleSleep(p.cfg.period)
 			profile, err := cAlloc.Stop()
 			if err == nil {
@@ -192,8 +195,8 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 
 		start := time.Now()
 		delta, err := p.deltaProfile(name, delta, data, extra...)
-		tags := append(p.cfg.tags, fmt.Sprintf("profile_type:%s", name))
-		p.cfg.statsd.Timing("datadog.profiler.go.delta_time", time.Since(start), tags, 1)
+		tags := append(p.cfg.tags.Slice(), fmt.Sprintf("profile_type:%s", name))
+		p.cfg.statsd.Timing("datadog.profiling.go.delta_time", time.Since(start), tags, 1)
 		if err != nil {
 			return nil, fmt.Errorf("delta profile error: %s", err)
 		}
@@ -243,6 +246,7 @@ type profile struct {
 // batch is a collection of profiles of different types, collected at roughly the same time. It maps
 // to what the Datadog UI calls a profile.
 type batch struct {
+	seq        uint64 // seq is the value of the profile_seq tag
 	start, end time.Time
 	host       string
 	profiles   []*profile
@@ -260,13 +264,13 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 		return nil, err
 	}
 	end := now()
-	tags := append(p.cfg.tags, pt.Tag())
+	tags := append(p.cfg.tags.Slice(), pt.Tag())
 	filename := t.Filename
 	// TODO(fg): Consider making Collect() return the filename.
 	if p.cfg.deltaProfiles && t.SupportsDelta {
 		filename = "delta-" + filename
 	}
-	p.cfg.statsd.Timing("datadog.profiler.go.collect_time", end.Sub(start), tags, 1)
+	p.cfg.statsd.Timing("datadog.profiling.go.collect_time", end.Sub(start), tags, 1)
 	return []*profile{{name: filename, data: data}}, nil
 }
 

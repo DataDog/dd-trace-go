@@ -33,7 +33,7 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 		Reader: c,
 		cfg:    newConfig(opts...),
 	}
-	log.Debug("contrib/confluentinc/confluent-kafka.go.v0/kafka: Wrapping Reader: %#v", wrapped.cfg)
+	log.Debug("contrib/segmentio/kafka-go.v0/kafka: Wrapping Reader: %#v", wrapped.cfg)
 	return wrapped
 }
 
@@ -94,6 +94,20 @@ func (r *Reader) ReadMessage(ctx context.Context) (kafka.Message, error) {
 	return msg, nil
 }
 
+// FetchMessage reads and returns the next message from the reader. Message will be traced.
+func (r *Reader) FetchMessage(ctx context.Context) (kafka.Message, error) {
+	if r.prev != nil {
+		r.prev.Finish()
+		r.prev = nil
+	}
+	msg, err := r.Reader.FetchMessage(ctx)
+	if err != nil {
+		return msg, err
+	}
+	r.prev = r.startSpan(ctx, &msg)
+	return msg, nil
+}
+
 // WrapWriter wraps a kafka.Writer so requests are traced.
 func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {
 	writer := &Writer{
@@ -113,8 +127,12 @@ type Writer struct {
 func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(w.cfg.producerServiceName),
-		tracer.ResourceName("Produce Topic " + w.Writer.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
+	}
+	if w.Writer.Topic != "" {
+		opts = append(opts, tracer.ResourceName("Produce Topic "+w.Writer.Topic))
+	} else {
+		opts = append(opts, tracer.ResourceName("Produce Topic "+msg.Topic))
 	}
 	if !math.IsNaN(w.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, w.cfg.analyticsRate))

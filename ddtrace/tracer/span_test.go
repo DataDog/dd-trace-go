@@ -268,7 +268,6 @@ type panicStringer struct {
 // String causes panic which SetTag should not handle.
 func (p *panicStringer) String() string {
 	panic("This should not be handled.")
-	return ""
 }
 
 func TestSpanSetTag(t *testing.T) {
@@ -549,6 +548,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		span.Finish()
 		// It doesn't make much sense to update the span after it's been finished,
 		// but an error in a user's code could lead to this.
+		span.SetOperationName("race_test")
 		span.SetTag("race_test", "true")
 		span.SetTag("race_test2", 133.7)
 		span.SetTag("race_test3", 133.7)
