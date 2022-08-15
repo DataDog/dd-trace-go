@@ -83,24 +83,24 @@ func Example_processor() {
 	// This processor will drop traces that do not contain an error, db span or client http request
 	// to endpoint GET /api/v1. In the case there is a http request to endpoint GET /api/v1, it will add
 	// a span tag to the local root span.
-	tracer.Start(tracer.WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool {
+	tracer.Start(tracer.WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) (dropTrace bool) {
 		for _, s := range spans {
 			// trace contains an error which isn't "specific error".
 			if s.IsError() && s.Tag("error.message") != "specific error" {
-				return true
+				return false
 			}
-			// trace contains a db request
+			// trace contains a db request.
 			if s.Tag("span.type") == "db" {
-				return true
+				return false
 			}
 			// trace contains a http request to endpoint GET /api/v1.
 			if s.Tag("service.name") == "service-a-http-client" && s.Tag("resource.name") == "GET /api/v1" {
 				// set tag on local root span.
 				spans[0].SetTag("calls.external.service", "service-b-api")
-				return true
+				return false
 			}
 		}
-		return false
+		return true
 	}))
 	defer tracer.Stop()
 }

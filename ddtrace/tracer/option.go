@@ -141,18 +141,20 @@ type config struct {
 
 	// postProcessor holds the function used to process finished spans of a trace.
 	// It reports whether the trace should be dropped.
-	postProcessor func([]ddtrace.ReadWriteSpan) bool
+	postProcessor func([]ddtrace.ReadWriteSpan) (dropTrace bool)
 }
 
-// WithPostProcessor enables processing finished spans of a trace by f. Spans
-// can be read from and written to in the processor by using the methods specified by
-// the ReadWriteSpan interface. f reports whether the trace should be dropped (dropped
-// traces and spans will not be accounted for in APM stats).
+// WithPostProcessor sets post processor function f, which allows certain span fields to change
+// after a trace has finished, and can force a trace to be dropped despite any existing sampling
+// rules. Modifying the span can be done by using methods of the ReadWriteSpan interface, such
+// as SetTag. If f returns true, the entire trace will be dropped. If f returns false, then no
+// changes to the sampling method will be made based on the post processor function, though the
+// trace may be dropped in the agent due to other sampling rules.
 //
-// Please note that modifying any of the ReadWriteSpans outside the scope of the processor
-// function can and will likely cause a panic, and that using the processor will incur additional
-// overhead (which is directly linked to the performance of the code in f).
-func WithPostProcessor(f func([]ddtrace.ReadWriteSpan) bool) StartOption {
+// Please note that dropped traces and spans will not be accounted for in APM stats, and that
+// modifying any of the ReadWriteSpans outside the scope of the processor function can and will
+// likely cause a panic.
+func WithPostProcessor(f func([]ddtrace.ReadWriteSpan) (dropTrace bool)) StartOption {
 	return func(c *config) {
 		c.postProcessor = f
 	}

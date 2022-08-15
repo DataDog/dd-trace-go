@@ -99,7 +99,7 @@ func (tr *tracer) droppedByProcessor(spans []*span) bool {
 	if tr.config.postProcessor == nil {
 		return false
 	}
-	return !tr.config.postProcessor(newReadWriteSpanSlice(spans))
+	return tr.config.postProcessor(newReadWriteSpanSlice(spans))
 }
 
 // newReadWriteSpanSlice copies the elements of slice spans to the

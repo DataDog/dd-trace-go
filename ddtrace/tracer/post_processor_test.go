@@ -148,7 +148,7 @@ func TestNewReadWriteSpanSlice(t *testing.T) {
 func TestDroppedByProcessor(t *testing.T) {
 	t.Run("accept", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ddtrace.ReadWriteSpan) bool { return true }))
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ddtrace.ReadWriteSpan) bool { return false }))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
 		assert.Equal(false, tracer.droppedByProcessor(spans))
@@ -159,33 +159,33 @@ func TestDroppedByProcessor(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool {
 			for _, span := range spans {
 				if span.Tag(ext.SpanName) == "accept.request" {
-					return true
+					return false
 				}
 			}
-			return false
+			return true
 		}))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("accept.request")}
 		assert.Equal(false, tracer.droppedByProcessor(spans))
 	})
 
-	t.Run("reject", func(t *testing.T) {
+	t.Run("drop", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ddtrace.ReadWriteSpan) bool { return false }))
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ddtrace.ReadWriteSpan) bool { return true }))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
 		assert.Equal(true, tracer.droppedByProcessor(spans))
 	})
 
-	t.Run("reject-condition", func(t *testing.T) {
+	t.Run("drop-condition", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool {
 			for _, span := range spans {
 				if span.Tag(ext.SpanName) == "reject.request" {
-					return false
+					return true
 				}
 			}
-			return true
+			return false
 		}))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("reject.request")}
@@ -194,7 +194,7 @@ func TestDroppedByProcessor(t *testing.T) {
 
 	t.Run("empty-spans", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool { return true }))
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool { return false }))
 		defer stop()
 		spans := []*span{}
 		assert.Equal(false, tracer.droppedByProcessor(spans))
@@ -212,7 +212,7 @@ func TestDroppedByProcessor(t *testing.T) {
 					span.SetTag("metric", float64(1))
 				}
 			}
-			return true
+			return false
 		}))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
@@ -281,7 +281,7 @@ func TestProcessorEndToEnd(t *testing.T) {
 					}
 				}
 			},
-			func(spans []ddtrace.ReadWriteSpan) bool { return true },
+			func(spans []ddtrace.ReadWriteSpan) bool { return false },
 			func() {
 				span1 := StartSpan("accepted.req")
 				span1.Finish()
@@ -293,7 +293,7 @@ func TestProcessorEndToEnd(t *testing.T) {
 		)
 	})
 
-	t.Run("rejected", func(t *testing.T) {
+	t.Run("dropped", func(t *testing.T) {
 		runProcessorTestEndToEnd(t,
 			func(sls spanLists) {
 				assert.Equal(t, 1, len(sls))
@@ -307,10 +307,10 @@ func TestProcessorEndToEnd(t *testing.T) {
 			func(spans []ddtrace.ReadWriteSpan) bool {
 				for _, span := range spans {
 					if span.Tag(ext.SpanName) == "reject.req" {
-						return false
+						return true
 					}
 				}
-				return true
+				return false
 			},
 			func() {
 				span1 := StartSpan("reject.req")
@@ -328,10 +328,10 @@ func TestProcessorEndToEnd(t *testing.T) {
 			func(spans []ddtrace.ReadWriteSpan) bool {
 				for _, span := range spans {
 					if span.Tag(ext.SpanName) == "reject.req" {
-						return false
+						return true
 					}
 				}
-				return true
+				return false
 			},
 			func() {
 				span1, ctx := StartSpanFromContext(context.Background(), "http.req")
@@ -366,7 +366,7 @@ func TestProcessorEndToEnd(t *testing.T) {
 						span.SetTag("processor_tag", "true")
 					}
 				}
-				return true
+				return false
 			},
 			func() {
 				parent, ctx := StartSpanFromContext(context.Background(), "accepted.req")
