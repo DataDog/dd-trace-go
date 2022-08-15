@@ -178,6 +178,9 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 			}
 		}
 	}
+	if c.Disabled {
+		return
+	}
 
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", c.debug)
 
