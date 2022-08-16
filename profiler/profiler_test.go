@@ -145,12 +145,12 @@ func TestStart(t *testing.T) {
 
 func TestStartStopIdempotency(t *testing.T) {
 	t.Run("linear", func(t *testing.T) {
-		Start()
-		Start()
-		Start()
-		Start()
-		Start()
-		Start()
+		Start(WithProfileTypes())
+		Start(WithProfileTypes())
+		Start(WithProfileTypes())
+		Start(WithProfileTypes())
+		Start(WithProfileTypes())
+		Start(WithProfileTypes())
 
 		Stop()
 		Stop()
@@ -169,9 +169,11 @@ func TestStartStopIdempotency(t *testing.T) {
 				for j := 0; j < 20; j++ {
 					// startup logging makes this test very slow
 					//
-					// Also, the CPU profile is really slow to stop (200ms/iter)
-					// so we just do the heap profile
-					Start(WithLogStartup(false), WithProfileTypes(HeapProfile))
+					// Also, the CPU profile is really slow
+					// to stop (200ms/iter) and in general
+					// we don't need to actually run any
+					// profiles for this test
+					Start(WithLogStartup(false), WithProfileTypes())
 				}
 			}()
 		}
@@ -430,11 +432,7 @@ func TestCorrectTags(t *testing.T) {
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(
-			BlockProfile,
-			CPUProfile,
-			GoroutineProfile,
 			HeapProfile,
-			MutexProfile,
 		),
 		WithPeriod(10*time.Millisecond),
 		CPUDuration(10*time.Millisecond),
@@ -495,7 +493,6 @@ func TestTelemetryEnabled(t *testing.T) {
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(
 			BlockProfile,
-			CPUProfile,
 			HeapProfile,
 			MutexProfile,
 		),
