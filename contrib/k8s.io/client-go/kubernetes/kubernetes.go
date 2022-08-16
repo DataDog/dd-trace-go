@@ -39,7 +39,6 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 
 func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTripperOption) http.RoundTripper {
 	opts = append(opts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
-		span.SetTag(ext.ServiceName, "kubernetes")
 		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
 		traceID := span.Context().TraceID()
 		if traceID == 0 {

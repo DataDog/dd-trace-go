@@ -16,7 +16,5 @@ import (
 )
 
 func TestHealth(t *testing.T) {
-	version, err := Health()
-	require.Error(t, err)
-	require.Nil(t, version)
+	require.Error(t, Health())
 }

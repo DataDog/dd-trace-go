@@ -30,8 +30,22 @@ const (
 	// HTTPCode sets the HTTP status code as a tag.
 	HTTPCode = "http.status_code"
 
+	// HTTPRoute is the route value of the HTTP request.
+	HTTPRoute = "http.route"
+
 	// HTTPURL sets the HTTP URL for a span.
 	HTTPURL = "http.url"
+
+	// HTTPUserAgent is the user agent header value of the HTTP request.
+	HTTPUserAgent = "http.useragent"
+
+	// HTTPClientIP sets the HTTP client IP tag.
+	HTTPClientIP = "http.client_ip"
+
+	// HTTPRequestHeaders sets the HTTP request headers partial tag
+	// This tag is meant to be composed, i.e http.request.headers.headerX, http.request.headers.headerY, etc...
+	// See https://docs.datadoghq.com/tracing/trace_collection/tracing_naming_convention/#http-requests
+	HTTPRequestHeaders = "http.request.headers"
 
 	// SpanName is a pseudo-key for setting a span's operation name by means of
 	// a tag. It is mostly here to facilitate vendor-agnostic frameworks like Opentracing
