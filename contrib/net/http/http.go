@@ -44,7 +44,10 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// get the resource associated to this request
 	_, route := mux.Handler(r)
-	resource := r.Method + " " + route
+	resource := mux.cfg.resourceNamer(r)
+	if resource == "" {
+		resource = r.Method + " " + route
+	}
 	TraceAndServe(mux.ServeMux, w, r, &ServeConfig{
 		Service:  mux.cfg.serviceName,
 		Resource: resource,
