@@ -240,7 +240,9 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 					profs, err := p.runProfile(t)
 					if err != nil {
 						log.Error("Error getting %s profile: %v; skipping.", t, err)
-						p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
+						tags := make([]string, len(p.cfg.tags), len(p.cfg.tags)+1)
+						copy(tags, p.cfg.tags)
+						p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, append(tags, t.Tag()), 1)
 					}
 					mu.Lock()
 					defer mu.Unlock()

@@ -162,7 +162,7 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 		// TODO: add type safety for name == "heap" check and remove redunancy with profileType.Name.
 		cAlloc, ok := extensions.GetCAllocationProfiler()
 		switch {
-		case ok && p.cfg.deltaProfiles && name == "heap":
+		case ok && p.cfg.cmemprofEnabled && p.cfg.deltaProfiles && name == "heap":
 			// For the heap profile, we'd also like to include C
 			// allocations if that extension is enabled and have the
 			// allocations show up in the same profile. Collect them
@@ -170,7 +170,7 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 			// that all allocations cover the same time period
 			//
 			// TODO: Support non-delta profiles for C allocations?
-			cAlloc.Start(2 * 1024 * 1024)
+			cAlloc.Start(p.cfg.cmemprofRate)
 			p.interruptibleSleep(p.cfg.period)
 			profile, err := cAlloc.Stop()
 			if err == nil {
@@ -192,7 +192,9 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 
 		start := time.Now()
 		delta, err := p.deltaProfile(name, delta, data, extra...)
-		tags := append(p.cfg.tags, fmt.Sprintf("profile_type:%s", name))
+		tags := make([]string, len(p.cfg.tags), len(p.cfg.tags)+1)
+		copy(tags, p.cfg.tags)
+		tags = append(tags, fmt.Sprintf("profile_type:%s", name))
 		p.cfg.statsd.Timing("datadog.profiling.go.delta_time", time.Since(start), tags, 1)
 		if err != nil {
 			return nil, fmt.Errorf("delta profile error: %s", err)
@@ -260,7 +262,9 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 		return nil, err
 	}
 	end := now()
-	tags := append(p.cfg.tags, pt.Tag())
+	tags := make([]string, len(p.cfg.tags), len(p.cfg.tags)+1)
+	copy(tags, p.cfg.tags)
+	tags = append(tags, pt.Tag())
 	filename := t.Filename
 	// TODO(fg): Consider making Collect() return the filename.
 	if p.cfg.deltaProfiles && t.SupportsDelta {
