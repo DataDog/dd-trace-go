@@ -439,6 +439,7 @@ func TestCorrectTags(t *testing.T) {
 		WithService("xyz"),
 		WithEnv("testing"),
 		WithTags("foo:bar", "baz:bonk"),
+		WithHostname("example"),
 	)
 	defer Stop()
 	expected := []string{
@@ -446,6 +447,7 @@ func TestCorrectTags(t *testing.T) {
 		"env:testing",
 		"foo:bar",
 		"service:xyz",
+		"host:example",
 	}
 	for i := 0; i < 20; i++ {
 		// We check the tags we get several times to try to have a
