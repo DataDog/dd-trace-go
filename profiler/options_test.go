@@ -222,6 +222,12 @@ func TestOptions(t *testing.T) {
 		WithDeltaProfiles(false)(&cfg)
 		assert.Equal(t, false, cfg.deltaProfiles)
 	})
+
+	t.Run("WithHostname", func(t *testing.T) {
+		var cfg config
+		WithHostname("example")(&cfg)
+		assert.Equal(t, "example", cfg.hostname)
+	})
 }
 
 func TestEnvVars(t *testing.T) {
