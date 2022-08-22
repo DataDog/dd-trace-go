@@ -8,8 +8,6 @@ package profiler
 import (
 	"fmt"
 	"io"
-	"mime"
-	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -221,30 +219,24 @@ func newTestServer(t *testing.T, statusCode int) *testServer {
 		t.Helper()
 		w.WriteHeader(statusCode)
 		ts.header = req.Header
-		_, params, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
-		if err != nil {
-			t.Fatal(err)
+		if err := req.ParseMultipartForm(-1); err != nil {
+			t.Fatalf("bad multipart form: %s", err)
+			return
 		}
-		mr := multipart.NewReader(req.Body, params["boundary"])
-		defer req.Body.Close()
-		for {
-			p, err := mr.NextPart()
-			if err == io.EOF {
-				break
-			}
+		ts.tags = append(ts.tags, req.Form["tags[]"]...)
+		for k, v := range req.MultipartForm.Value {
+			ts.fields[k] = v[0]
+		}
+		for k, v := range req.MultipartForm.File {
+			file, err := v[0].Open()
 			if err != nil {
 				t.Fatal(err)
 			}
-			slurp, err := io.ReadAll(p)
+			body, err := io.ReadAll(file)
 			if err != nil {
 				t.Fatal(err)
 			}
-			switch k := p.FormName(); k {
-			case "tags[]":
-				ts.tags = append(ts.tags, string(slurp))
-			default:
-				ts.fields[k] = string(slurp)
-			}
+			ts.fields[k] = string(body)
 		}
 		close(ts.waitc)
 	})
