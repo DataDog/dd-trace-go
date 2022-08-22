@@ -277,3 +277,49 @@ func TestDeprecatedContext(t *testing.T) {
 	<-c.Events()
 
 }
+
+func TestCustomTags(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	c, err := NewConsumer(&kafka.ConfigMap{
+		"go.events.channel.enable": true, // required for the events channel to be turned on
+		"group.id":                 testGroupID,
+		"socket.timeout.ms":        10,
+		"session.timeout.ms":       10,
+		"enable.auto.offset.store": false,
+	}, WithCustomTag("foo", func(msg *kafka.Message) interface{} {
+		return "bar"
+	}), WithCustomTag("key", func(msg *kafka.Message) interface{} {
+		return msg.Key
+	}))
+	assert.NoError(t, err)
+
+	err = c.Subscribe(testTopic, nil)
+	assert.NoError(t, err)
+
+	go func() {
+		c.Consumer.Events() <- &kafka.Message{
+			TopicPartition: kafka.TopicPartition{
+				Topic:     &testTopic,
+				Partition: 1,
+				Offset:    1,
+			},
+			Key:   []byte("key1"),
+			Value: []byte("value1"),
+		}
+	}()
+
+	<-c.Events()
+
+	c.Close()
+	// wait for the events channel to be closed
+	<-c.Events()
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+	s := spans[0]
+
+	assert.Equal(t, "bar", s.Tag("foo"))
+	assert.Equal(t, []byte("key1"), s.Tag("key"))
+}

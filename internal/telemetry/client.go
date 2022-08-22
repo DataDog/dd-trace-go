@@ -166,13 +166,15 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 		}
 	}
 
-	fromEnvOrDefault := func(key, def string) string {
-		if v := os.Getenv(key); len(v) > 0 {
-			return v
+	// configEnvFallback returns the value of environment variable with the
+	// given key if def == ""
+	configEnvFallback := func(key, def string) string {
+		if def != "" {
+			return def
 		}
-		return def
+		return os.Getenv(key)
 	}
-	c.Service = fromEnvOrDefault("DD_SERVICE", c.Service)
+	c.Service = configEnvFallback("DD_SERVICE", c.Service)
 	if len(c.Service) == 0 {
 		if name := globalconfig.ServiceName(); len(name) != 0 {
 			c.Service = name
@@ -181,11 +183,10 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 			c.Service = "unnamed-go-service"
 		}
 	}
-	c.Env = fromEnvOrDefault("DD_ENV", c.Env)
-	c.Version = fromEnvOrDefault("DD_VERSION", c.Version)
+	c.Env = configEnvFallback("DD_ENV", c.Env)
+	c.Version = configEnvFallback("DD_VERSION", c.Version)
 
-	c.APIKey = fromEnvOrDefault("DD_API_KEY", c.APIKey)
-	// TODO: Initialize URL/endpoint from environment var
+	c.APIKey = configEnvFallback("DD_API_KEY", c.APIKey)
 
 	r := c.newRequest(RequestTypeAppStarted)
 	r.Payload = payload

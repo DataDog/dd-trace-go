@@ -427,3 +427,42 @@ func TestError(t *testing.T) {
 		assertErrCheck(t, mt, false, WithErrorCheck(errFn))
 	})
 }
+
+func TestCustomTags(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithChildSpansOnly())
+	sqlDb, err := sqltrace.Open("pgx", pgConnString, sqltrace.WithChildSpansOnly())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db, err := Open(
+		postgres.New(postgres.Config{Conn: sqlDb}),
+		&gorm.Config{},
+		WithCustomTag("foo", func(db *gorm.DB) interface{} {
+			return "bar"
+		}),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = db.AutoMigrate(&Product{})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db = db.WithContext(context.Background())
+	db.First(&Product{}, Product{Code: "L1210", Price: 2000})
+
+	spans := mt.FinishedSpans()
+	assert.True(len(spans) > 0)
+
+	// Get last span (gorm.db)
+	s := spans[len(spans)-1]
+
+	assert.Equal("bar", s.Tag("foo"))
+}
