@@ -128,7 +128,7 @@ func (c *spanContext) baggageItem(key string) string {
 
 func (c *spanContext) meta(key string) (val string, ok bool) {
 	c.span.RLock()
-	defer c.span.RLock()
+	defer c.span.RUnlock()
 	val, ok = c.span.Meta[key]
 	return val, ok
 }
