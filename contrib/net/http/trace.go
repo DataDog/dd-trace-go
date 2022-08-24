@@ -46,9 +46,6 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 		cfg = new(ServeConfig)
 	}
 	opts := append(cfg.SpanOpts, tracer.ServiceName(cfg.Service), tracer.ResourceName(cfg.Resource))
-	if cfg.QueryParams {
-		opts = append(opts, tracer.Tag(ext.HTTPURL, r.URL.Path+"?"+r.URL.RawQuery))
-	}
 	opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
 	span, ctx := httptrace.StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)

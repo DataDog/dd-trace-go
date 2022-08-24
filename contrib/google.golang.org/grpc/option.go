@@ -29,6 +29,7 @@ type config struct {
 	withMetadataTags    bool
 	ignoredMetadata     map[string]struct{}
 	withRequestTags     bool
+	tags                map[string]interface{}
 }
 
 func (cfg *config) serverServiceName() string {
@@ -169,5 +170,15 @@ func WithIgnoredMetadata(ms ...string) Option {
 func WithRequestTags() Option {
 	return func(cfg *config) {
 		cfg.withRequestTags = true
+	}
+}
+
+// WithCustomTag will attach the value to the span tagged by the key.
+func WithCustomTag(key string, value interface{}) Option {
+	return func(cfg *config) {
+		if cfg.tags == nil {
+			cfg.tags = make(map[string]interface{})
+		}
+		cfg.tags[key] = value
 	}
 }

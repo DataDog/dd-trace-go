@@ -19,6 +19,7 @@ type config struct {
 	dsn                  string
 	childSpansOnly       bool
 	errCheck             func(err error) bool
+	tags                 map[string]interface{}
 	commentInjectionMode tracer.SQLCommentInjectionMode
 }
 
@@ -95,6 +96,16 @@ func WithChildSpansOnly() Option {
 func WithErrorCheck(fn func(err error) bool) Option {
 	return func(cfg *config) {
 		cfg.errCheck = fn
+	}
+}
+
+// WithCustomTag will attach the value to the span tagged by the key
+func WithCustomTag(key string, value interface{}) Option {
+	return func(cfg *config) {
+		if cfg.tags == nil {
+			cfg.tags = make(map[string]interface{})
+		}
+		cfg.tags[key] = value
 	}
 }
 
