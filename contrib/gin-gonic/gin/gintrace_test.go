@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -85,7 +85,7 @@ func TestTrace200(t *testing.T) {
 	assert.Contains(span.Tag(ext.ResourceName), "GET /user/:id")
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
 
 func TestTraceDefaultResponse(t *testing.T) {
@@ -121,7 +121,7 @@ func TestTraceDefaultResponse(t *testing.T) {
 	assert.Contains(span.Tag(ext.ResourceName), "GET /user/:id")
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
 
 func TestTraceMultipleResponses(t *testing.T) {
@@ -160,7 +160,7 @@ func TestTraceMultipleResponses(t *testing.T) {
 	assert.Contains(span.Tag(ext.ResourceName), "GET /user/:id")
 	assert.Equal("133", span.Tag(ext.HTTPCode)) // Will be fixed by https://github.com/gin-gonic/gin/pull/2627 once merged and released
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
 
 func TestError(t *testing.T) {
@@ -575,7 +575,7 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 		// Check that the server behaved as intended
 		require.Equal(t, http.StatusOK, res.StatusCode)
-		b, err := ioutil.ReadAll(res.Body)
+		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		require.Equal(t, "Hello World!\n", string(b))
 		// The span should contain the security event
@@ -601,7 +601,7 @@ func TestAppSec(t *testing.T) {
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
 		// Check that the handler was properly called
-		b, err := ioutil.ReadAll(res.Body)
+		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		require.Equal(t, "Hello Params!\n", string(b))
 		require.Equal(t, http.StatusOK, res.StatusCode)
@@ -649,7 +649,7 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 
 		// Check that the handler was properly called
-		b, err := ioutil.ReadAll(res.Body)
+		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		require.Equal(t, "Hello Body!\n", string(b))
 

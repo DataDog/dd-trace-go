@@ -37,14 +37,16 @@ Datadog APM for Go is built upon dependencies defined in specific versions of th
 | <span id="support-legacy">Legacy</span>                | Legacy implementation. May have limited function, but no maintenance provided. [Contact our customer support team for special requests.](https://www.datadoghq.com/support/) |
 
 ### Supported Versions
-
+<!-- NOTE: When updating the below section ensure you update the minimum supported version listed in the public docs here: https://docs.datadoghq.com/tracing/setup_overview/setup/go/?tab=containers#compatibility-requirements -->
 | **Go Version** | **Support level**                   |
 |----------------|-------------------------------------|
+| 1.19           | [GA](#support-ga)                   |
 | 1.18           | [GA](#support-ga)                   |
-| 1.17           | [GA](#support-ga)                   |
-| 1.16           | [Maintenance](#support-maintenance) |
+| 1.17           | [Maintenance](#support-maintenance) |
+| 1.16           | [Legacy](#support-legacy)           |
 
 * Datadog's Trace Agent >= 5.21.1
+
 
 #### Package Versioning
 

@@ -42,6 +42,11 @@ const (
 	// HTTPClientIP sets the HTTP client IP tag.
 	HTTPClientIP = "http.client_ip"
 
+	// HTTPRequestHeaders sets the HTTP request headers partial tag
+	// This tag is meant to be composed, i.e http.request.headers.headerX, http.request.headers.headerY, etc...
+	// See https://docs.datadoghq.com/tracing/trace_collection/tracing_naming_convention/#http-requests
+	HTTPRequestHeaders = "http.request.headers"
+
 	// SpanName is a pseudo-key for setting a span's operation name by means of
 	// a tag. It is mostly here to facilitate vendor-agnostic frameworks like Opentracing
 	// and OpenCensus.

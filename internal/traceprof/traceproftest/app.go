@@ -10,7 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -285,7 +285,7 @@ func cpuHogUntil(stop chan struct{}) {
 			return
 		default:
 			// burn cpu
-			fmt.Fprintf(ioutil.Discard, "%d", i)
+			fmt.Fprintf(io.Discard, "%d", i)
 		}
 	}
 }

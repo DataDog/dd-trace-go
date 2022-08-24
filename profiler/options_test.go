@@ -6,7 +6,6 @@
 package profiler
 
 import (
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -213,7 +212,7 @@ func TestOptions(t *testing.T) {
 	t.Run("WithVersion", func(t *testing.T) {
 		var cfg config
 		WithVersion("1.2.3")(&cfg)
-		assert.Contains(t, cfg.tags, "version:1.2.3")
+		assert.Contains(t, cfg.tags.Slice(), "version:1.2.3")
 	})
 
 	t.Run("WithVersion/override", func(t *testing.T) {
@@ -222,15 +221,16 @@ func TestOptions(t *testing.T) {
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithVersion("1.2.3")(cfg)
-		assert.Contains(t, cfg.tags, "version:1.2.3")
+		assert.Contains(t, cfg.tags.Slice(), "version:1.2.3")
 	})
 
 	t.Run("WithTags", func(t *testing.T) {
 		var cfg config
 		WithTags("a:1", "b:2", "c:3")(&cfg)
-		assert.Contains(t, cfg.tags, "a:1")
-		assert.Contains(t, cfg.tags, "b:2")
-		assert.Contains(t, cfg.tags, "c:3")
+		tags := cfg.tags.Slice()
+		assert.Contains(t, tags, "a:1")
+		assert.Contains(t, tags, "b:2")
+		assert.Contains(t, tags, "c:3")
 	})
 
 	t.Run("WithTags/override", func(t *testing.T) {
@@ -239,11 +239,12 @@ func TestOptions(t *testing.T) {
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithTags("a:1", "b:2", "c:3")(cfg)
-		assert.Contains(t, cfg.tags, "a:1")
-		assert.Contains(t, cfg.tags, "b:2")
-		assert.Contains(t, cfg.tags, "c:3")
-		assert.Contains(t, cfg.tags, "env1:tag1")
-		assert.Contains(t, cfg.tags, "env2:tag2")
+		tags := cfg.tags.Slice()
+		assert.Contains(t, tags, "a:1")
+		assert.Contains(t, tags, "b:2")
+		assert.Contains(t, tags, "c:3")
+		assert.Contains(t, tags, "env1:tag1")
+		assert.Contains(t, tags, "env2:tag2")
 	})
 
 	t.Run("WithDeltaProfiles", func(t *testing.T) {
@@ -252,6 +253,12 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, true, cfg.deltaProfiles)
 		WithDeltaProfiles(false)(&cfg)
 		assert.Equal(t, false, cfg.deltaProfiles)
+	})
+
+	t.Run("WithHostname", func(t *testing.T) {
+		var cfg config
+		WithHostname("example")(&cfg)
+		assert.Equal(t, "example", cfg.hostname)
 	})
 }
 
@@ -327,7 +334,7 @@ func TestEnvVars(t *testing.T) {
 		defer os.Unsetenv("DD_VERSION")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
-		assert.Contains(t, cfg.tags, "version:1.2.3")
+		assert.Contains(t, cfg.tags.Slice(), "version:1.2.3")
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
@@ -335,9 +342,10 @@ func TestEnvVars(t *testing.T) {
 		defer os.Unsetenv("DD_TAGS")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
-		assert.Contains(t, cfg.tags, "a:1")
-		assert.Contains(t, cfg.tags, "b:2")
-		assert.Contains(t, cfg.tags, "c:3")
+		tags := cfg.tags.Slice()
+		assert.Contains(t, tags, "a:1")
+		assert.Contains(t, tags, "b:2")
+		assert.Contains(t, tags, "c:3")
 	})
 
 	t.Run("DD_PROFILING_DELTA", func(t *testing.T) {
@@ -371,7 +379,7 @@ func TestDefaultConfig(t *testing.T) {
 		assert.Equal(0, cfg.cpuProfileRate)
 		assert.Equal(DefaultMutexFraction, cfg.mutexFraction)
 		assert.Equal(DefaultBlockRate, cfg.blockRate)
-		assert.Contains(cfg.tags, "runtime-id:"+globalconfig.RuntimeID())
+		assert.Contains(cfg.tags.Slice(), "runtime-id:"+globalconfig.RuntimeID())
 		assert.Equal(true, cfg.deltaProfiles)
 	})
 }
@@ -402,7 +410,7 @@ func TestAddProfileType(t *testing.T) {
 }
 
 func TestWith_outputDir(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "")
+	tmpDir, err := os.MkdirTemp("", "")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
@@ -425,7 +433,7 @@ func TestWith_outputDir(t *testing.T) {
 
 	fileData := map[string]string{}
 	for _, file := range files {
-		data, err := ioutil.ReadFile(file)
+		data, err := os.ReadFile(file)
 		require.NoError(t, err)
 		fileData[filepath.Base(file)] = string(data)
 	}

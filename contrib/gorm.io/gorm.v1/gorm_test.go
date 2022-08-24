@@ -184,6 +184,10 @@ func TestCallbacks(t *testing.T) {
 		)
 
 		db = db.WithContext(ctx)
+		var queryText string
+		db.Callback().Create().After("testing").Register("query text", func(d *gorm.DB) {
+			queryText = d.Statement.SQL.String()
+		})
 		db.Create(&Product{Code: "L1212", Price: 1000})
 
 		parentSpan.Finish()
@@ -194,9 +198,7 @@ func TestCallbacks(t *testing.T) {
 		span := spans[len(spans)-2]
 		a.Equal("gorm.create", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
-		a.Equal(
-			`INSERT INTO "products" ("created_at","updated_at","deleted_at","code","price") VALUES ($1,$2,$3,$4,$5) RETURNING "id"`,
-			span.Tag(ext.ResourceName))
+		a.Equal(queryText, span.Tag(ext.ResourceName))
 	})
 
 	t.Run("query", func(t *testing.T) {
@@ -206,6 +208,10 @@ func TestCallbacks(t *testing.T) {
 		)
 
 		db = db.WithContext(ctx)
+		var queryText string
+		db.Callback().Query().After("testing").Register("query text", func(d *gorm.DB) {
+			queryText = d.Statement.SQL.String()
+		})
 		var product Product
 		db.First(&product, "code = ?", "L1212")
 
@@ -217,9 +223,7 @@ func TestCallbacks(t *testing.T) {
 		span := spans[len(spans)-2]
 		a.Equal("gorm.query", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
-		a.Equal(
-			`SELECT * FROM "products" WHERE code = $1 AND "products"."deleted_at" IS NULL ORDER BY "products"."id" LIMIT 1`,
-			span.Tag(ext.ResourceName))
+		a.Equal(queryText, span.Tag(ext.ResourceName))
 	})
 
 	t.Run("update", func(t *testing.T) {
@@ -229,6 +233,10 @@ func TestCallbacks(t *testing.T) {
 		)
 
 		db = db.WithContext(ctx)
+		var queryText string
+		db.Callback().Update().After("testing").Register("query text", func(d *gorm.DB) {
+			queryText = d.Statement.SQL.String()
+		})
 		var product Product
 		db.First(&product, "code = ?", "L1212")
 		db.Model(&product).Update("Price", 2000)
@@ -241,9 +249,7 @@ func TestCallbacks(t *testing.T) {
 		span := spans[len(spans)-2]
 		a.Equal("gorm.update", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
-		a.Equal(
-			`UPDATE "products" SET "price"=$1,"updated_at"=$2 WHERE "id" = $3`,
-			span.Tag(ext.ResourceName))
+		a.Equal(queryText, span.Tag(ext.ResourceName))
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -253,6 +259,10 @@ func TestCallbacks(t *testing.T) {
 		)
 
 		db = db.WithContext(ctx)
+		var queryText string
+		db.Callback().Delete().After("testing").Register("query text", func(d *gorm.DB) {
+			queryText = d.Statement.SQL.String()
+		})
 		var product Product
 		db.First(&product, "code = ?", "L1212")
 		db.Delete(&product)
@@ -265,9 +275,7 @@ func TestCallbacks(t *testing.T) {
 		span := spans[len(spans)-2]
 		a.Equal("gorm.delete", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
-		a.Equal(
-			`UPDATE "products" SET "deleted_at"=$1 WHERE "products"."id" = $2 AND "products"."deleted_at" IS NULL`,
-			span.Tag(ext.ResourceName))
+		a.Equal(queryText, span.Tag(ext.ResourceName))
 	})
 }
 
@@ -418,4 +426,43 @@ func TestError(t *testing.T) {
 		}
 		assertErrCheck(t, mt, false, WithErrorCheck(errFn))
 	})
+}
+
+func TestCustomTags(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithChildSpansOnly())
+	sqlDb, err := sqltrace.Open("pgx", pgConnString, sqltrace.WithChildSpansOnly())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db, err := Open(
+		postgres.New(postgres.Config{Conn: sqlDb}),
+		&gorm.Config{},
+		WithCustomTag("foo", func(db *gorm.DB) interface{} {
+			return "bar"
+		}),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = db.AutoMigrate(&Product{})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db = db.WithContext(context.Background())
+	db.First(&Product{}, Product{Code: "L1210", Price: 2000})
+
+	spans := mt.FinishedSpans()
+	assert.True(len(spans) > 0)
+
+	// Get last span (gorm.db)
+	s := spans[len(spans)-1]
+
+	assert.Equal("bar", s.Tag("foo"))
 }

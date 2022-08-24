@@ -119,6 +119,11 @@ func after(db *gorm.DB, operationName string, cfg *config) {
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
+	for key, tagFn := range cfg.tagFns {
+		if tagFn != nil {
+			opts = append(opts, tracer.Tag(key, tagFn(db)))
+		}
+	}
 
 	span, _ := tracer.StartSpanFromContext(ctx, operationName, opts...)
 	var dbErr error
