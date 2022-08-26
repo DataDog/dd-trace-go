@@ -133,6 +133,8 @@ var profileTypes = map[ProfileType]profileType{
 				return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
 			}
 
+			p.interruptibleSleep(p.cfg.period)
+
 			var (
 				now   = now()
 				text  = &bytes.Buffer{}
@@ -150,6 +152,7 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "metrics.json",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
+			p.interruptibleSleep(p.cfg.period)
 			err := p.met.report(now(), &buf)
 			return buf.Bytes(), err
 		},
@@ -192,9 +195,7 @@ func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profile
 
 		start := time.Now()
 		delta, err := p.deltaProfile(name, delta, data, extra...)
-		tags := make([]string, len(p.cfg.tags), len(p.cfg.tags)+1)
-		copy(tags, p.cfg.tags)
-		tags = append(tags, fmt.Sprintf("profile_type:%s", name))
+		tags := append(p.cfg.tags.Slice(), fmt.Sprintf("profile_type:%s", name))
 		p.cfg.statsd.Timing("datadog.profiling.go.delta_time", time.Since(start), tags, 1)
 		if err != nil {
 			return nil, fmt.Errorf("delta profile error: %s", err)
@@ -245,6 +246,7 @@ type profile struct {
 // batch is a collection of profiles of different types, collected at roughly the same time. It maps
 // to what the Datadog UI calls a profile.
 type batch struct {
+	seq        uint64 // seq is the value of the profile_seq tag
 	start, end time.Time
 	host       string
 	profiles   []*profile
@@ -262,9 +264,7 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 		return nil, err
 	}
 	end := now()
-	tags := make([]string, len(p.cfg.tags), len(p.cfg.tags)+1)
-	copy(tags, p.cfg.tags)
-	tags = append(tags, pt.Tag())
+	tags := append(p.cfg.tags.Slice(), pt.Tag())
 	filename := t.Filename
 	// TODO(fg): Consider making Collect() return the filename.
 	if p.cfg.deltaProfiles && t.SupportsDelta {

@@ -26,6 +26,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -95,7 +96,7 @@ type config struct {
 	hostname          string
 	statsd            StatsdClient
 	httpClient        *http.Client
-	tags              []string
+	tags              immutable.StringSlice
 	types             map[ProfileType]struct{}
 	period            time.Duration
 	cpuDuration       time.Duration
@@ -150,7 +151,7 @@ func logStartup(c *config) {
 		Env:                  c.env,
 		TargetURL:            c.targetURL,
 		Agentless:            c.agentless,
-		Tags:                 c.tags,
+		Tags:                 c.tags.Slice(),
 		ProfilePeriod:        c.period.String(),
 		CPUDuration:          c.cpuDuration.String(),
 		CPUProfileRate:       c.cpuProfileRate,
@@ -211,12 +212,12 @@ func defaultConfig() (*config, error) {
 		mutexFraction:     DefaultMutexFraction,
 		uploadTimeout:     DefaultUploadTimeout,
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
-		tags:              []string{fmt.Sprintf("process_id:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
-		logStartup:        true,
+		logStartup:        internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		cmemprofEnabled:   false,
 		cmemprofRate:      extensions.DefaultCAllocationSamplingRate,
 	}
+	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
 	}
@@ -441,7 +442,7 @@ func WithVersion(version string) Option {
 // filter the profiling view based on various information.
 func WithTags(tags ...string) Option {
 	return func(cfg *config) {
-		cfg.tags = append(cfg.tags, tags...)
+		cfg.tags = cfg.tags.Append(tags...)
 	}
 }
 
@@ -511,5 +512,14 @@ func withOutputDir(dir string) Option {
 func WithLogStartup(enabled bool) Option {
 	return func(cfg *config) {
 		cfg.logStartup = enabled
+	}
+}
+
+// WithHostname sets the hostname which will be added to uploaded profiles
+// through the "host:<hostname>" tag. If no hostname is given, the hostname will
+// default to the output of os.Hostname()
+func WithHostname(hostname string) Option {
+	return func(cfg *config) {
+		cfg.hostname = hostname
 	}
 }

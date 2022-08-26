@@ -7,7 +7,7 @@ package tracer
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"strconv"
 	"strings"
 	"testing"
@@ -49,7 +49,7 @@ func TestPayloadIntegrity(t *testing.T) {
 			assert.Equal(want.Len(), p.size())
 			assert.Equal(p.itemCount(), n)
 
-			got, err := ioutil.ReadAll(p)
+			got, err := io.ReadAll(p)
 			assert.NoError(err)
 			assert.Equal(want.Bytes(), got)
 		})

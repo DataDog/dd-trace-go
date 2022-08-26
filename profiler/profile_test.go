@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
@@ -225,7 +224,7 @@ main.main()
 ...additional frames elided...
 `
 
-		p, err := unstartedProfiler()
+		p, err := unstartedProfiler(WithPeriod(10 * time.Millisecond))
 		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(sample))
 			return err
@@ -237,7 +236,7 @@ main.main()
 		require.Equal(t, "goroutineswait.pprof", profs[0].name)
 
 		// pro tip: enable line below to inspect the pprof output using cli tools
-		// ioutil.WriteFile(prof.name, prof.data, 0644)
+		// os.WriteFile(prof.name, prof.data, 0644)
 
 		requireFunctions := func(t *testing.T, s *pprofile.Sample, want []string) {
 			t.Helper()
@@ -325,7 +324,7 @@ main.main()
 }
 
 func Test_goroutineDebug2ToPprof_CrashSafety(t *testing.T) {
-	err := goroutineDebug2ToPprof(panicReader{}, ioutil.Discard, time.Time{})
+	err := goroutineDebug2ToPprof(panicReader{}, io.Discard, time.Time{})
 	require.NotNil(t, err)
 	require.Equal(t, "panic: 42", err.Error())
 }
