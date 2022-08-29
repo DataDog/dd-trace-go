@@ -7,7 +7,6 @@ package profiler
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -16,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -311,6 +311,7 @@ func TestAllUploaded(t *testing.T) {
 	type profileMeta struct {
 		tags  []string
 		files []string
+		seq   uint64
 	}
 
 	// This is a kind of end-to-end test that runs the real profiles (i.e.
@@ -349,6 +350,17 @@ func TestAllUploaded(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("next part: %s", err)
+			}
+			if p.FormName() == "profile_seq" {
+				val, err := io.ReadAll(p)
+				if err != nil {
+					t.Fatalf("next part: %s", err)
+				}
+				seq, err := strconv.ParseUint(string(val), 10, 64)
+				if err != nil {
+					t.Fatalf("parsing profile_seq: %s", err)
+				}
+				profile.seq = seq
 			}
 			if p.FormName() == "tags[]" {
 				val, err := io.ReadAll(p)
@@ -389,8 +401,7 @@ func TestAllUploaded(t *testing.T) {
 			"data[goroutineswait.pprof]",
 		}
 		assert.ElementsMatch(t, expected, profile.files)
-
-		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
+		assert.Equal(t, seq, profile.seq)
 	}
 
 	validateProfile(<-received, 0)

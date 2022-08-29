@@ -14,6 +14,7 @@ import (
 	"math/rand"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -71,10 +72,6 @@ func (p *profiler) doRequest(bat batch) error {
 	tags := append(p.cfg.tags.Slice(),
 		fmt.Sprintf("service:%s", p.cfg.service),
 		fmt.Sprintf("env:%s", p.cfg.env),
-		// The profile_seq tag can be used to identify the first profile
-		// uploaded by a given runtime-id, identify missing profiles, etc.. See
-		// PROF-5612 (internal) for more details.
-		fmt.Sprintf("profile_seq:%d", bat.seq),
 	)
 	contentType, body, err := encode(bat, tags)
 	if err != nil {
@@ -139,6 +136,10 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 	writeField("family", "go")
 	writeField("start", bat.start.Format(time.RFC3339))
 	writeField("end", bat.end.Format(time.RFC3339))
+	// The profile_seq attribute can be used to identify the first profile
+	// uploaded by a given runtime-id, identify missing profiles, etc.. See
+	// PROF-5612 (internal) for more details.
+	writeField("profile_seq", strconv.FormatUint(bat.seq, 10))
 	if bat.host != "" {
 		writeField("tags[]", fmt.Sprintf("host:%s", bat.host))
 	}

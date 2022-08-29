@@ -69,7 +69,6 @@ func TestTryUpload(t *testing.T) {
 		"runtime:go",
 		"service:my-service",
 		"env:my-env",
-		"profile_seq:23",
 		"tag1:1",
 		"tag2:2",
 		fmt.Sprintf("process_id:%d", os.Getpid()),
@@ -81,6 +80,7 @@ func TestTryUpload(t *testing.T) {
 		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
 	}, tags)
 	for k, v := range map[string]string{
+		"profile_seq":      "23",
 		"version":          "3",
 		"family":           "go",
 		"data[cpu.pprof]":  "my-cpu-profile",
