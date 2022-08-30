@@ -232,6 +232,7 @@ func newTestServer(t *testing.T, statusCode int) *testServer {
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer file.Close()
 			body, err := io.ReadAll(file)
 			if err != nil {
 				t.Fatal(err)
