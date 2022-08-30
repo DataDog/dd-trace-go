@@ -386,7 +386,7 @@ func TestCorrectTags(t *testing.T) {
 		defer func() {
 			got <- tags
 		}()
-		if err := r.ParseMultipartForm(-1); err != nil {
+		if err := r.ParseMultipartForm(50 << 20); err != nil {
 			t.Fatalf("bad multipart form: %s", err)
 			return
 		}
