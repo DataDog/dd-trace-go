@@ -8,9 +8,6 @@ package profiler
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"mime"
-	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -320,29 +317,14 @@ func TestAllUploaded(t *testing.T) {
 			default:
 			}
 		}()
-		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil {
-			t.Fatalf("bad media type: %s", err)
+		if err := r.ParseMultipartForm(50 << 20); err != nil {
+			t.Fatalf("bad multipart form: %s", err)
 			return
 		}
-		mr := multipart.NewReader(r.Body, params["boundary"])
-		for {
-			p, err := mr.NextPart()
-			if err == io.EOF {
-				return
-			}
-			if err != nil {
-				t.Fatalf("next part: %s", err)
-			}
-			if p.FormName() == "tags[]" {
-				val, err := io.ReadAll(p)
-				if err != nil {
-					t.Fatalf("next part: %s", err)
-				}
-				profile.tags = append(profile.tags, string(val))
-			}
-			if p.FileName() == "pprof-data" {
-				profile.files = append(profile.files, p.FormName())
+		profile.tags = append(profile.tags, r.Form["tags[]"]...)
+		for k, v := range r.MultipartForm.File {
+			if v[0].Filename == "pprof-data" {
+				profile.files = append(profile.files, k)
 			}
 		}
 	}))
@@ -388,28 +370,11 @@ func TestCorrectTags(t *testing.T) {
 		defer func() {
 			got <- tags
 		}()
-		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil {
-			t.Fatalf("bad media type: %s", err)
+		if err := r.ParseMultipartForm(50 << 20); err != nil {
+			t.Fatalf("bad multipart form: %s", err)
 			return
 		}
-		mr := multipart.NewReader(r.Body, params["boundary"])
-		for {
-			p, err := mr.NextPart()
-			if err == io.EOF {
-				return
-			}
-			if err != nil {
-				t.Fatalf("next part: %s", err)
-			}
-			if p.FormName() == "tags[]" {
-				tag, err := io.ReadAll(p)
-				if err != nil {
-					t.Fatalf("reading tags: %s", err)
-				}
-				tags = append(tags, string(tag))
-			}
-		}
+		tags = append(tags, r.Form["tags[]"]...)
 	}))
 	defer server.Close()
 
