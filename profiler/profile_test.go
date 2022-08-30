@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -303,10 +302,7 @@ main.main()
 
 		stop := spawnGoroutines(goroutines)
 		defer stop()
-		envVar := "DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"
-		oldVal := os.Getenv(envVar)
-		os.Setenv(envVar, strconv.Itoa(limit))
-		defer os.Setenv(envVar, oldVal)
+		t.Setenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES", strconv.Itoa(limit))
 
 		p, err := unstartedProfiler()
 		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {

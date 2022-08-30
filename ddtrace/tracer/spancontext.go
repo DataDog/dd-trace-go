@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"math"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -127,8 +126,8 @@ func (c *spanContext) baggageItem(key string) string {
 }
 
 func (c *spanContext) meta(key string) (val string, ok bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.span.RLock()
+	defer c.span.RUnlock()
 	val, ok = c.span.Meta[key]
 	return val, ok
 }
@@ -205,7 +204,7 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName, rate float64, span *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setSamplingPriorityLocked(p, sampler, rate, span)
+	t.setSamplingPriorityLocked(p, sampler)
 }
 
 func (t *trace) keep() {
@@ -246,7 +245,7 @@ func (t *trace) unsetPropagatingTag(key string) {
 	delete(t.propagatingTags, key)
 }
 
-func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName, rate float64, span *span) {
+func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) {
 	if t.locked {
 		return
 	}
@@ -255,8 +254,9 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	}
 	*t.priority = float64(p)
 	_, ok := t.propagatingTags[keyDecisionMaker]
-	if p > 0 && !ok {
-		// we have a positive priority and the sampling mechanism isn't set
+	if p > 0 && !ok && sampler != samplernames.Unknown {
+		// We have a positive priority and the sampling mechanism isn't set.
+		// Send nothing when sampler is `Unknown` for RFC compliance.
 		t.setPropagatingTagLocked(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
 	}
 	if p <= 0 && ok {
@@ -284,7 +284,7 @@ func (t *trace) push(sp *span) {
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
-		t.setSamplingPriorityLocked(int(v), samplernames.Upstream, math.NaN(), nil)
+		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)
 	if haveTracer {

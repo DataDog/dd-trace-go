@@ -25,22 +25,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setenv(t *testing.T, key, value string) {
-	t.Helper()
-	// re-implemented testing.T.Setenv since that function requires Go 1.17
-	old, ok := os.LookupEnv(key)
-	os.Setenv(key, value)
-	if ok {
-		t.Cleanup(func() {
-			os.Setenv(key, old)
-		})
-	} else {
-		t.Cleanup(func() {
-			os.Unsetenv(key)
-		})
-	}
-}
-
 func TestMain(m *testing.M) {
 	// Profiling configuration is logged by default when starting a profile,
 	// so we want to discard it during tests to avoid flooding the terminal
@@ -346,7 +330,7 @@ func TestAllUploaded(t *testing.T) {
 	}))
 	defer server.Close()
 
-	setenv(t, "DD_PROFILING_WAIT_PROFILE", "1")
+	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(
@@ -404,6 +388,7 @@ func TestCorrectTags(t *testing.T) {
 		WithService("xyz"),
 		WithEnv("testing"),
 		WithTags("foo:bar", "baz:bonk"),
+		WithHostname("example"),
 	)
 	defer Stop()
 	expected := []string{
@@ -411,6 +396,7 @@ func TestCorrectTags(t *testing.T) {
 		"env:testing",
 		"foo:bar",
 		"service:xyz",
+		"host:example",
 	}
 	for i := 0; i < 20; i++ {
 		// We check the tags we get several times to try to have a
@@ -448,7 +434,7 @@ func TestTelemetryEnabled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	setenv(t, "DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(
