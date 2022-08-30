@@ -36,16 +36,27 @@ while [[ $# -gt 0 ]]; do
 		-s|--sleep)
 			sleeptime=$2
 			shift
-            shift
+			shift
+			;;
+		-l|--lint)
+			lint=true
+			shift
+			;;
+		-t|--tools)
+			tools=true
+			shift
 			;;
 		-h|--help)
 			echo "test.sh - Run the tests for dd-trace-go"
+			echo "	this script requires gotestsum, goimports, docker and docker-compose."
+			echo "	-l | --lint		- Run the linter"
 			echo "	-a | --appsec		- Test with appsec enabled"
 			echo "	-i | --integration	- Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
 			echo "	-c | --contrib		- Run contrib tests"
-			echo "	--all			- Synonym for -a -i -c"
+			echo "	--all			- Synonym for -l -a -i -c"
 			echo "	-s | --sleep		- The amount of seconds to wait for docker containers to be ready - default: 30 seconds"
-			echo "	-h | --help			- Print this help message"
+			echo "	-t | --tools		- Install gotestsum and goimports"
+			echo "	-h | --help		- Print this help message"
 			exit 0
 			;;
 		*)
@@ -54,6 +65,18 @@ while [[ $# -gt 0 ]]; do
 			;;
 	esac
 done
+
+if [[ ! -z "$tools" ]]; then
+    pushd /tmp
+    go install golang.org/x/tools/cmd/goimports@latest
+    go install gotest.tools/gotestsum@latest
+    popd
+fi
+
+if [[ ! -z "$lint" ]]; then
+    echo "Running Linter"
+    goimports -e -l -local gopkg.in/DataDog/dd-trace-go.v1 .
+fi
 
 if [[ "$INTEGRATION" != "" ]]; then
 	## Make sure we shut down the docker containers on exit.
