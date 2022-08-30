@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // SQLCommentInjectionMode represents the mode of SQL comment injection.
@@ -146,6 +147,9 @@ func commentQuery(query string, tags map[string]string) string {
 	b.WriteString("*/")
 	if query == "" {
 		return b.String()
+	}
+	if log.DebugEnabled() {
+		log.Debug("Injected sql comment %s", b.String())
 	}
 	b.WriteRune(' ')
 	b.WriteString(query)
