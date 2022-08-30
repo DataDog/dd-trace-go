@@ -219,7 +219,7 @@ func newTestServer(t *testing.T, statusCode int) *testServer {
 		t.Helper()
 		w.WriteHeader(statusCode)
 		ts.header = req.Header
-		if err := req.ParseMultipartForm(-1); err != nil {
+		if err := req.ParseMultipartForm(50 << 20); err != nil {
 			t.Fatalf("bad multipart form: %s", err)
 			return
 		}
