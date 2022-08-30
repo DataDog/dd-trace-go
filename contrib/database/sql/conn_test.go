@@ -9,8 +9,10 @@ import (
 	"context"
 	"database/sql/driver"
 	"log"
+	"strings"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
 	"github.com/go-sql-driver/mysql"
@@ -167,6 +169,38 @@ func TestWithChildSpansOnly(t *testing.T) {
 			assert.Len(t, spans, 0)
 		})
 	}
+}
+
+func TestWithErrorCheck(t *testing.T) {
+	testOpts := func(errExist bool, opts ...Option) func(t *testing.T) {
+		return func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			Register("mysql", &mysql.MySQLDriver{})
+			defer unregister("mysql")
+
+			db, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test", opts...)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
+
+			db.QueryContext(context.Background(), "SELECT a FROM "+tableName)
+
+			spans := mt.FinishedSpans()
+			assert.True(t, len(spans) > 0)
+
+			s := spans[len(spans)-1]
+			assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
+		}
+	}
+
+	t.Run("defaults", testOpts(true))
+	t.Run("errcheck", testOpts(false, WithErrorCheck(func(err error) bool {
+		return !strings.Contains(err.Error(), `Error 1054: Unknown column 'a' in 'field list'`)
+	})))
+
 }
 
 func TestWithCustomTag(t *testing.T) {
