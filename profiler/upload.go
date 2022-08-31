@@ -15,6 +15,7 @@ import (
 	"math/rand"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"strings"
 	"time"
 
@@ -164,7 +165,10 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 		}
 	}
 
-	f, err := mw.CreateFormFile("event", "event.json")
+	f, err := mw.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": []string{`form-data; name="event"; filename="event.json"`},
+		"Content-Type":        []string{"application/json"},
+	})
 	if err != nil {
 		return "", nil, err
 	}
