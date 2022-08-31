@@ -86,9 +86,6 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 			if v, ok := ctx.meta(ext.Version); ok {
 				version = v
 			}
-			if ctx.span != nil {
-				tags[sqlCommentDBService] = ctx.span.Service
-			}
 		}
 		if globalconfig.ServiceName() != "" {
 			tags[sqlCommentService] = globalconfig.ServiceName()
