@@ -8,6 +8,7 @@ package profiler
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -288,12 +289,67 @@ func unstartedProfiler(opts ...Option) (*profiler, error) {
 	return p, nil
 }
 
-func TestAllUploaded(t *testing.T) {
-	type profileMeta struct {
-		tags  []string
-		files []string
+type profileMeta struct {
+	tags        []string
+	headers     http.Header
+	event       uploadEvent
+	attachments map[string][]byte
+}
+
+type mockBackend struct {
+	t        *testing.T
+	profiles chan profileMeta
+}
+
+func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	profile := profileMeta{
+		attachments: make(map[string][]byte),
+	}
+	defer func() {
+		select {
+		case m.profiles <- profile:
+		default:
+		}
+	}()
+	profile.headers = r.Header.Clone()
+	if err := r.ParseMultipartForm(50 << 20); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		m.t.Fatalf("bad multipart form: %s", err)
+		return
+	}
+	file, _, err := r.FormFile("event")
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		m.t.Fatalf("getting event.json: %s", err)
+		return
+	}
+	if err := json.NewDecoder(file).Decode(&profile.event); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		m.t.Fatalf("decoding event payload: %s", err)
+		return
 	}
 
+	profile.tags = append(profile.tags, strings.Split(profile.event.Tags, ",")...)
+	for _, name := range profile.event.Attachments {
+		f, _, err := r.FormFile(name)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			m.t.Fatalf("event attachment %s is missing from upload: %s", name, err)
+			return
+		}
+		defer f.Close()
+		data, err := io.ReadAll(f)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			m.t.Fatalf("reading attachment %s: %s", name, err)
+			return
+		}
+		profile.attachments[name] = data
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func TestAllUploaded(t *testing.T) {
 	// This is a kind of end-to-end test that runs the real profiles (i.e.
 	// not mocking/replacing any internal functions) and verifies that the
 	// profiles are at least uploaded.
@@ -309,25 +365,7 @@ func TestAllUploaded(t *testing.T) {
 	// second batch of profiles is correct in case the profiler gets in a
 	// bad state after the first round of profiling.
 	received := make(chan profileMeta, 2)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var profile profileMeta
-		defer func() {
-			select {
-			case received <- profile:
-			default:
-			}
-		}()
-		if err := r.ParseMultipartForm(50 << 20); err != nil {
-			t.Fatalf("bad multipart form: %s", err)
-			return
-		}
-		profile.tags = append(profile.tags, r.Form["tags[]"]...)
-		for k, v := range r.MultipartForm.File {
-			if v[0].Filename == "pprof-data" {
-				profile.files = append(profile.files, k)
-			}
-		}
-	}))
+	server := httptest.NewServer(&mockBackend{t: t, profiles: received})
 	defer server.Close()
 
 	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
@@ -347,14 +385,14 @@ func TestAllUploaded(t *testing.T) {
 
 	validateProfile := func(profile profileMeta, seq uint64) {
 		expected := []string{
-			"data[cpu.pprof]",
-			"data[delta-block.pprof]",
-			"data[delta-heap.pprof]",
-			"data[delta-mutex.pprof]",
-			"data[goroutines.pprof]",
-			"data[goroutineswait.pprof]",
+			"cpu.pprof",
+			"delta-block.pprof",
+			"delta-heap.pprof",
+			"delta-mutex.pprof",
+			"goroutines.pprof",
+			"goroutineswait.pprof",
 		}
-		assert.ElementsMatch(t, expected, profile.files)
+		assert.ElementsMatch(t, expected, profile.event.Attachments)
 
 		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
 	}
@@ -364,18 +402,8 @@ func TestAllUploaded(t *testing.T) {
 }
 
 func TestCorrectTags(t *testing.T) {
-	got := make(chan []string)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var tags []string
-		defer func() {
-			got <- tags
-		}()
-		if err := r.ParseMultipartForm(50 << 20); err != nil {
-			t.Fatalf("bad multipart form: %s", err)
-			return
-		}
-		tags = append(tags, r.Form["tags[]"]...)
-	}))
+	got := make(chan profileMeta)
+	server := httptest.NewServer(&mockBackend{t: t, profiles: got})
 	defer server.Close()
 
 	Start(
@@ -404,9 +432,9 @@ func TestCorrectTags(t *testing.T) {
 		// are clobbered due to a bug caused by the same
 		// profiler-internal tag slice being appended to from different
 		// goroutines concurrently.
-		tags := <-got
+		p := <-got
 		for _, tag := range expected {
-			require.Contains(t, tags, tag)
+			require.Contains(t, p.tags, tag)
 		}
 	}
 }
