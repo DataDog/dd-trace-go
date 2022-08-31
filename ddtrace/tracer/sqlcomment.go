@@ -86,7 +86,7 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 			if v, ok := ctx.meta(ext.Version); ok {
 				version = v
 			}
-			if s := ctx.span; s != nil {
+			if ctx.span != nil {
 				tags[sqlCommentDBService] = ctx.span.Service
 			}
 		}
@@ -148,9 +148,7 @@ func commentQuery(query string, tags map[string]string) string {
 	if query == "" {
 		return b.String()
 	}
-	if log.DebugEnabled() {
-		log.Debug("Injected sql comment %s", b.String())
-	}
+	log.Debug("Injected sql comment: %s", b.String())
 	b.WriteRune(' ')
 	b.WriteString(query)
 	return b.String()
