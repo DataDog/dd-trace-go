@@ -13,7 +13,7 @@ import (
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Println("Usage: go run .github/workflows/apps/update-version-file.go <new version>")
+		fmt.Println("Usage: go run .github/workflows/apps/update_version_file.go <new version>")
 		return
 	}
 	r := regexp.MustCompile(`v\d+\.\d+\.\d+(-rc\.\d+)?$`)

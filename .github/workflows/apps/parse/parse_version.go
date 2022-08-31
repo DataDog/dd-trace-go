@@ -7,12 +7,16 @@ package main
 
 import (
 	"fmt"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
+func ghOutput(varName, v string) string {
+	return fmt.Sprintf("::set-output name=%s::%s\n", varName, v)
+}
+
 func main() {
 	noRC := fmt.Sprintf("v%d.%d.%d", version.Major, version.Minor, version.Patch)
+	noPatch := fmt.Sprintf("v%d.%d.x", version.Major, version.Minor)
 	nextMin := fmt.Sprintf("v%d.%d.%d", version.Major, version.Minor+1, version.Patch)
 	nextPatch := fmt.Sprintf("v%d.%d.%d", version.Major, version.Minor, version.Patch+1)
 	nextRC := fmt.Sprintf("v%d.%d.%d-rc.%d", version.Major, version.Minor, version.Patch, version.RC+1)
@@ -21,10 +25,10 @@ func main() {
 	fmt.Printf("The next patch version is %s\n", nextPatch)
 	fmt.Printf("The next rc version is %s\n", nextRC)
 
-	fmt.Printf("::set-output name=current::%s\n", version.Tag)
-	fmt.Printf("::set-output name=current_without_rc_suffix::%s\n", noRC)
-	fmt.Printf("::set-output name=current_without_patch::v%d.%d.x\n", version.Major, version.Minor)
-	fmt.Printf("::set-output name=next_minor::%s\n", nextMin)
-	fmt.Printf("::set-output name=next_patch::%s\n", nextPatch)
-	fmt.Printf("::set-output name=next_rc::%s\n", nextRC)
+	fmt.Printf(ghOutput("current", version.Tag))
+	fmt.Printf(ghOutput("current_without_rc_suffix", noRC))
+	fmt.Printf(ghOutput("current_without_patch", noPatch))
+	fmt.Printf(ghOutput("next_minor", nextMin))
+	fmt.Printf(ghOutput("next_patch", nextPatch))
+	fmt.Printf(ghOutput("next_rc", nextRC))
 }
