@@ -8,7 +8,7 @@ package vault
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -27,7 +27,7 @@ func setupServer(t *testing.T) (*httptest.Server, func()) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:
-			slurp, err := ioutil.ReadAll(r.Body)
+			slurp, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Fatal(err)
 			}

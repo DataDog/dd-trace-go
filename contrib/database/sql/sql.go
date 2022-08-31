@@ -187,6 +187,9 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if math.IsNaN(cfg.analyticsRate) {
 		cfg.analyticsRate = rc.analyticsRate
 	}
+	if cfg.errCheck == nil {
+		cfg.errCheck = rc.errCheck
+	}
 	if cfg.commentInjectionMode == tracer.SQLInjectionUndefined {
 		cfg.commentInjectionMode = rc.commentInjectionMode
 	}
