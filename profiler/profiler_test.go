@@ -8,9 +8,6 @@ package profiler
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"mime"
-	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -27,22 +24,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func setenv(t *testing.T, key, value string) {
-	t.Helper()
-	// re-implemented testing.T.Setenv since that function requires Go 1.17
-	old, ok := os.LookupEnv(key)
-	os.Setenv(key, value)
-	if ok {
-		t.Cleanup(func() {
-			os.Setenv(key, old)
-		})
-	} else {
-		t.Cleanup(func() {
-			os.Unsetenv(key)
-		})
-	}
-}
 
 func TestMain(m *testing.M) {
 	// Profiling configuration is logged by default when starting a profile,
@@ -336,35 +317,20 @@ func TestAllUploaded(t *testing.T) {
 			default:
 			}
 		}()
-		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil {
-			t.Fatalf("bad media type: %s", err)
+		if err := r.ParseMultipartForm(50 << 20); err != nil {
+			t.Fatalf("bad multipart form: %s", err)
 			return
 		}
-		mr := multipart.NewReader(r.Body, params["boundary"])
-		for {
-			p, err := mr.NextPart()
-			if err == io.EOF {
-				return
-			}
-			if err != nil {
-				t.Fatalf("next part: %s", err)
-			}
-			if p.FormName() == "tags[]" {
-				val, err := io.ReadAll(p)
-				if err != nil {
-					t.Fatalf("next part: %s", err)
-				}
-				profile.tags = append(profile.tags, string(val))
-			}
-			if p.FileName() == "pprof-data" {
-				profile.files = append(profile.files, p.FormName())
+		profile.tags = append(profile.tags, r.Form["tags[]"]...)
+		for k, v := range r.MultipartForm.File {
+			if v[0].Filename == "pprof-data" {
+				profile.files = append(profile.files, k)
 			}
 		}
 	}))
 	defer server.Close()
 
-	setenv(t, "DD_PROFILING_WAIT_PROFILE", "1")
+	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(
@@ -404,28 +370,11 @@ func TestCorrectTags(t *testing.T) {
 		defer func() {
 			got <- tags
 		}()
-		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil {
-			t.Fatalf("bad media type: %s", err)
+		if err := r.ParseMultipartForm(50 << 20); err != nil {
+			t.Fatalf("bad multipart form: %s", err)
 			return
 		}
-		mr := multipart.NewReader(r.Body, params["boundary"])
-		for {
-			p, err := mr.NextPart()
-			if err == io.EOF {
-				return
-			}
-			if err != nil {
-				t.Fatalf("next part: %s", err)
-			}
-			if p.FormName() == "tags[]" {
-				tag, err := io.ReadAll(p)
-				if err != nil {
-					t.Fatalf("reading tags: %s", err)
-				}
-				tags = append(tags, string(tag))
-			}
-		}
+		tags = append(tags, r.Form["tags[]"]...)
 	}))
 	defer server.Close()
 
@@ -485,7 +434,7 @@ func TestTelemetryEnabled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	setenv(t, "DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(
