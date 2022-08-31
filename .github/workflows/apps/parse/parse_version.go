@@ -7,6 +7,7 @@ package main
 
 import (
 	"fmt"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
