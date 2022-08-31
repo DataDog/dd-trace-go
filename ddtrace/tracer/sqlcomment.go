@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -31,14 +32,15 @@ const (
 
 // Key names for SQL comment tags.
 const (
-	sqlCommentKeySamplingPriority = "ddsp"
-	sqlCommentTraceID             = "ddtid"
-	sqlCommentSpanID              = "ddsid"
-	sqlCommentService             = "ddsn"
-	sqlCommentDBService           = "dddbs"
-	sqlCommentVersion             = "ddsv"
-	sqlCommentEnv                 = "dde"
+	sqlCommentTraceParent   = "traceparent"
+	sqlCommentParentService = "ddsn"
+	sqlCommentDBService     = "dddbs"
+	sqlCommentParentVersion = "ddsv"
+	sqlCommentParentEnv     = "dde"
 )
+
+// Current trace context version (see https://www.w3.org/TR/trace-context/#version)
+const w3cContextVersion = "00"
 
 // SQLCommentCarrier is a carrier implementation that injects a span context in a SQL query in the form
 // of a sqlcommenter formatted comment prepended to the original query text.
@@ -73,9 +75,19 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 		if traceID == 0 {
 			traceID = c.SpanID
 		}
-		tags[sqlCommentTraceID] = strconv.FormatUint(traceID, 10)
-		tags[sqlCommentSpanID] = strconv.FormatUint(c.SpanID, 10)
-		tags[sqlCommentKeySamplingPriority] = strconv.Itoa(samplingPriority)
+		sampled := int64(0)
+		if samplingPriority > 0 {
+			sampled = 1
+		}
+		tid := strconv.FormatUint(traceID, 16)
+		if len(tid) > 32 {
+			tid = tid[:32]
+		}
+		sid := strconv.FormatUint(c.SpanID, 16)
+		if len(sid) > 16 {
+			sid = sid[:16]
+		}
+		tags[sqlCommentTraceParent] = fmt.Sprintf("%s-%032s-%016s-%02s", w3cContextVersion, tid, sid, strconv.FormatInt(sampled, 16))
 		fallthrough
 	case SQLInjectionModeService:
 		var env, version string
@@ -88,13 +100,13 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 			}
 		}
 		if globalconfig.ServiceName() != "" {
-			tags[sqlCommentService] = globalconfig.ServiceName()
+			tags[sqlCommentParentService] = globalconfig.ServiceName()
 		}
 		if env != "" {
-			tags[sqlCommentEnv] = env
+			tags[sqlCommentParentEnv] = env
 		}
 		if version != "" {
-			tags[sqlCommentVersion] = version
+			tags[sqlCommentParentVersion] = version
 		}
 		tags[sqlCommentDBService] = c.DBServiceName
 	}
@@ -117,7 +129,7 @@ func commentQuery(query string, tags map[string]string) string {
 	var b strings.Builder
 	// the sqlcommenter specification dictates that tags should be sorted. Since we know all injected keys,
 	// we skip a sorting operation by specifying the order of keys statically
-	orderedKeys := []string{sqlCommentDBService, sqlCommentEnv, sqlCommentSpanID, sqlCommentService, sqlCommentKeySamplingPriority, sqlCommentVersion, sqlCommentTraceID}
+	orderedKeys := []string{sqlCommentDBService, sqlCommentParentEnv, sqlCommentParentService, sqlCommentParentVersion, sqlCommentTraceParent}
 	first := true
 	for _, k := range orderedKeys {
 		if v, ok := tags[k]; ok {
