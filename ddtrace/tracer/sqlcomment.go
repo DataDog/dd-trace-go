@@ -32,9 +32,9 @@ const (
 // Key names for SQL comment tags.
 const (
 	sqlCommentTraceParent   = "traceparent"
-	sqlCommentParentService = "ddsn"
+	sqlCommentParentService = "ddps"
 	sqlCommentDBService     = "dddbs"
-	sqlCommentParentVersion = "ddsv"
+	sqlCommentParentVersion = "ddpv"
 	sqlCommentParentEnv     = "dde"
 )
 

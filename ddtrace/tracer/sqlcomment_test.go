@@ -33,7 +33,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			query:             "SELECT * from FOO",
 			mode:              SQLInjectionModeFull,
 			injectSpan:        true,
-			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-00'*/ SELECT * from FOO",
+			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-00'*/ SELECT * from FOO",
 			expectedSpanIDGen: true,
 		},
 		{
@@ -41,14 +41,14 @@ func TestSQLCommentCarrier(t *testing.T) {
 			query:             "SELECT * from FOO",
 			mode:              SQLInjectionModeService,
 			injectSpan:        true,
-			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsv='1.0.0'*/ SELECT * from FOO",
+			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0'*/ SELECT * from FOO",
 			expectedSpanIDGen: false,
 		},
 		{
 			name:              "no-trace",
 			query:             "SELECT * from FOO",
 			mode:              SQLInjectionModeFull,
-			expectedQuery:     "/*dddbs='whiskey-db',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',traceparent='00-0000000000000000<span_id>-<span_id>-00'*/ SELECT * from FOO",
+			expectedQuery:     "/*dddbs='whiskey-db',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',traceparent='00-0000000000000000<span_id>-<span_id>-00'*/ SELECT * from FOO",
 			expectedSpanIDGen: true,
 		},
 		{
@@ -56,7 +56,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			query:             "",
 			mode:              SQLInjectionModeFull,
 			injectSpan:        true,
-			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-00'*/",
+			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-00'*/",
 			expectedSpanIDGen: true,
 		},
 		{
@@ -65,7 +65,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			mode:              SQLInjectionModeFull,
 			injectSpan:        true,
 			samplingPriority:  1,
-			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddsn='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddsv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-01'*/ SELECT * from FOO -- test query",
+			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-01'*/ SELECT * from FOO -- test query",
 			expectedSpanIDGen: true,
 		},
 	}
