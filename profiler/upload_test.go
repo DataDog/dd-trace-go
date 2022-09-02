@@ -67,7 +67,6 @@ func TestTryUpload(t *testing.T) {
 		"runtime:go",
 		"service:my-service",
 		"env:my-env",
-		"profile_seq:23",
 		"tag1:1",
 		"tag2:2",
 		fmt.Sprintf("process_id:%d", os.Getpid()),
@@ -78,6 +77,7 @@ func TestTryUpload(t *testing.T) {
 		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
 		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
 	}, profile.tags)
+	assert.Equal(profile.event.ProfileSeq, uint64(23))
 	assert.Equal(profile.event.Version, "4")
 	assert.Equal(profile.event.Family, "go")
 	assert.NotNil(profile.event.Start)

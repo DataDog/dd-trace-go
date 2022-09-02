@@ -7,7 +7,6 @@ package profiler
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -393,8 +392,7 @@ func TestAllUploaded(t *testing.T) {
 			"goroutineswait.pprof",
 		}
 		assert.ElementsMatch(t, expected, profile.event.Attachments)
-
-		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
+		assert.Equal(t, profile.event.ProfileSeq, seq)
 	}
 
 	validateProfile(<-received, 0)

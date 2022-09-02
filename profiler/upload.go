@@ -74,10 +74,6 @@ func (p *profiler) doRequest(bat batch) error {
 	tags := append(p.cfg.tags.Slice(),
 		fmt.Sprintf("service:%s", p.cfg.service),
 		fmt.Sprintf("env:%s", p.cfg.env),
-		// The profile_seq tag can be used to identify the first profile
-		// uploaded by a given runtime-id, identify missing profiles, etc.. See
-		// PROF-5612 (internal) for more details.
-		fmt.Sprintf("profile_seq:%d", bat.seq),
 	)
 	contentType, body, err := encode(bat, tags)
 	if err != nil {
@@ -133,6 +129,10 @@ type uploadEvent struct {
 	Tags        string   `json:"tags_profiler"`
 	Family      string   `json:"family"`
 	Version     string   `json:"version"`
+	// The profile_seq attribute can be used to identify the first profile
+	// uploaded by a given runtime-id, identify missing profiles, etc.. See
+	// PROF-5612 (internal) for more details.
+	ProfileSeq uint64 `json:"profile_seq"`
 }
 
 // encode encodes the profile as a multipart mime request.
@@ -147,11 +147,12 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 	tags = append(tags, "runtime:go")
 
 	event := &uploadEvent{
-		Version: "4",
-		Family:  "go",
-		Start:   bat.start.Format(time.RFC3339),
-		End:     bat.end.Format(time.RFC3339),
-		Tags:    strings.Join(tags, ","),
+		Version:    "4",
+		Family:     "go",
+		Start:      bat.start.Format(time.RFC3339),
+		End:        bat.end.Format(time.RFC3339),
+		Tags:       strings.Join(tags, ","),
+		ProfileSeq: bat.seq,
 	}
 
 	for _, p := range bat.profiles {
