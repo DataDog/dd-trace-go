@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // SQLCommentInjectionMode represents the mode of SQL comment injection.
@@ -34,6 +35,7 @@ const (
 	sqlCommentTraceID             = "ddtid"
 	sqlCommentSpanID              = "ddsid"
 	sqlCommentService             = "ddsn"
+	sqlCommentDBService           = "dddbs"
 	sqlCommentVersion             = "ddsv"
 	sqlCommentEnv                 = "dde"
 )
@@ -42,9 +44,10 @@ const (
 // of a sqlcommenter formatted comment prepended to the original query text.
 // See https://google.github.io/sqlcommenter/spec/ for more details.
 type SQLCommentCarrier struct {
-	Query  string
-	Mode   SQLCommentInjectionMode
-	SpanID uint64
+	Query         string
+	Mode          SQLCommentInjectionMode
+	DBServiceName string
+	SpanID        uint64
 }
 
 // Inject injects a span context in the carrier's Query field as a comment.
@@ -93,6 +96,7 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 		if version != "" {
 			tags[sqlCommentVersion] = version
 		}
+		tags[sqlCommentDBService] = c.DBServiceName
 	}
 	c.Query = commentQuery(c.Query, tags)
 	return nil
@@ -113,7 +117,7 @@ func commentQuery(query string, tags map[string]string) string {
 	var b strings.Builder
 	// the sqlcommenter specification dictates that tags should be sorted. Since we know all injected keys,
 	// we skip a sorting operation by specifying the order of keys statically
-	orderedKeys := []string{sqlCommentEnv, sqlCommentSpanID, sqlCommentService, sqlCommentKeySamplingPriority, sqlCommentVersion, sqlCommentTraceID}
+	orderedKeys := []string{sqlCommentDBService, sqlCommentEnv, sqlCommentSpanID, sqlCommentService, sqlCommentKeySamplingPriority, sqlCommentVersion, sqlCommentTraceID}
 	first := true
 	for _, k := range orderedKeys {
 		if v, ok := tags[k]; ok {
@@ -141,6 +145,7 @@ func commentQuery(query string, tags map[string]string) string {
 	if query == "" {
 		return b.String()
 	}
+	log.Debug("Injected sql comment: %s", b.String())
 	b.WriteRune(' ')
 	b.WriteString(query)
 	return b.String()
