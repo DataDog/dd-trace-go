@@ -79,15 +79,7 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 		if samplingPriority > 0 {
 			sampled = 1
 		}
-		tid := strconv.FormatUint(traceID, 16)
-		if len(tid) > 32 {
-			tid = tid[:32]
-		}
-		sid := strconv.FormatUint(c.SpanID, 16)
-		if len(sid) > 16 {
-			sid = sid[:16]
-		}
-		tags[sqlCommentTraceParent] = fmt.Sprintf("%s-%032s-%016s-%02s", w3cContextVersion, tid, sid, strconv.FormatInt(sampled, 16))
+		tags[sqlCommentTraceParent] = fmt.Sprintf("%s-%032s-%016s-%02s", w3cContextVersion, strconv.FormatUint(traceID, 16), strconv.FormatUint(c.SpanID, 16), strconv.FormatInt(sampled, 16))
 		fallthrough
 	case SQLInjectionModeService:
 		var env, version string
