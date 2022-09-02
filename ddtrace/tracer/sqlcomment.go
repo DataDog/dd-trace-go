@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -79,15 +78,24 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 		if samplingPriority > 0 {
 			sampled = 1
 		}
+		var b strings.Builder
+		b.WriteString(w3cContextVersion)
+		b.WriteRune('-')
 		tid := strconv.FormatUint(traceID, 16)
-		if len(tid) > 32 {
-			tid = tid[:32]
+		for i := 0; i < 32-len(tid); i++ {
+			b.WriteRune('0')
 		}
+		b.WriteString(tid)
+		b.WriteRune('-')
 		sid := strconv.FormatUint(c.SpanID, 16)
-		if len(sid) > 16 {
-			sid = sid[:16]
+		for i := 0; i < 16-len(sid); i++ {
+			b.WriteRune('0')
 		}
-		tags[sqlCommentTraceParent] = fmt.Sprintf("%s-%032s-%016s-%02s", w3cContextVersion, tid, sid, strconv.FormatInt(sampled, 16))
+		b.WriteString(sid)
+		b.WriteRune('-')
+		b.WriteRune('0')
+		b.WriteString(strconv.FormatInt(sampled, 16))
+		tags[sqlCommentTraceParent] = b.String()
 		fallthrough
 	case SQLInjectionModeService:
 		var env, version string
