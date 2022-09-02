@@ -35,7 +35,7 @@ const (
 	sqlCommentParentService = "ddps"
 	sqlCommentDBService     = "dddbs"
 	sqlCommentParentVersion = "ddpv"
-	sqlCommentParentEnv     = "dde"
+	sqlCommentEnv           = "dde"
 )
 
 // Current trace context version (see https://www.w3.org/TR/trace-context/#version)
@@ -94,7 +94,7 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 			tags[sqlCommentParentService] = globalconfig.ServiceName()
 		}
 		if env != "" {
-			tags[sqlCommentParentEnv] = env
+			tags[sqlCommentEnv] = env
 		}
 		if version != "" {
 			tags[sqlCommentParentVersion] = version
@@ -145,7 +145,7 @@ func commentQuery(query string, tags map[string]string) string {
 	var b strings.Builder
 	// the sqlcommenter specification dictates that tags should be sorted. Since we know all injected keys,
 	// we skip a sorting operation by specifying the order of keys statically
-	orderedKeys := []string{sqlCommentDBService, sqlCommentParentEnv, sqlCommentParentService, sqlCommentParentVersion, sqlCommentTraceParent}
+	orderedKeys := []string{sqlCommentDBService, sqlCommentEnv, sqlCommentParentService, sqlCommentParentVersion, sqlCommentTraceParent}
 	first := true
 	for _, k := range orderedKeys {
 		if v, ok := tags[k]; ok {
