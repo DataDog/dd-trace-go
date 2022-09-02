@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -79,7 +78,7 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 		if samplingPriority > 0 {
 			sampled = 1
 		}
-		tags[sqlCommentTraceParent] = fmt.Sprintf("%s-%032s-%016s-%02s", w3cContextVersion, strconv.FormatUint(traceID, 16), strconv.FormatUint(c.SpanID, 16), strconv.FormatInt(sampled, 16))
+		tags[sqlCommentTraceParent] = encodeTraceParent(traceID, c.SpanID, sampled)
 		fallthrough
 	case SQLInjectionModeService:
 		var env, version string
@@ -104,6 +103,31 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 	}
 	c.Query = commentQuery(c.Query, tags)
 	return nil
+}
+
+// encodeTraceParent encodes trace parent as per the w3c trace context spec (https://www.w3.org/TR/trace-context/#version).
+func encodeTraceParent(traceID uint64, spanID uint64, sampled int64) string {
+	var b strings.Builder
+	// traceparent has a fixed length of 55:
+	// 2 bytes for the version, 32 for the trace id, 16 for the span id, 2 for the sampled flag and 3 for separators
+	b.Grow(55)
+	b.WriteString(w3cContextVersion)
+	b.WriteRune('-')
+	tid := strconv.FormatUint(traceID, 16)
+	for i := 0; i < 32-len(tid); i++ {
+		b.WriteRune('0')
+	}
+	b.WriteString(tid)
+	b.WriteRune('-')
+	sid := strconv.FormatUint(spanID, 16)
+	for i := 0; i < 16-len(sid); i++ {
+		b.WriteRune('0')
+	}
+	b.WriteString(sid)
+	b.WriteRune('-')
+	b.WriteRune('0')
+	b.WriteString(strconv.FormatInt(sampled, 16))
+	return b.String()
 }
 
 var (
