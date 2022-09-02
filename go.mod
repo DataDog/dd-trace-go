@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	cloud.google.com/go/pubsub v1.4.0
-	github.com/99designs/gqlgen v0.14.0
+	github.com/99designs/gqlgen v0.16.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583
 	github.com/DataDog/datadog-go/v5 v5.0.2
 	github.com/DataDog/gostackparse v0.5.0
@@ -37,7 +37,7 @@ require (
 	github.com/gomodule/redigo v1.7.0
 	github.com/google/pprof v0.0.0-20210423192551-a2663126120b
 	github.com/google/uuid v1.3.0
-	github.com/gorilla/mux v1.6.2
+	github.com/gorilla/mux v1.8.0
 	github.com/graph-gophers/graphql-go v1.3.0
 	github.com/hashicorp/consul/api v1.0.0
 	github.com/hashicorp/vault/api v1.1.0
@@ -54,14 +54,14 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/segmentio/kafka-go v0.4.29
 	github.com/sirupsen/logrus v1.7.0
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.1
 	github.com/syndtr/goleveldb v1.0.0
 	github.com/tidwall/buntdb v1.2.0
 	github.com/tinylib/msgp v1.1.2
 	github.com/twitchtv/twirp v8.1.1+incompatible
 	github.com/urfave/negroni v1.0.0
 	github.com/valyala/fasthttp v1.34.0 // indirect
-	github.com/vektah/gqlparser/v2 v2.2.0
+	github.com/vektah/gqlparser/v2 v2.5.0
 	github.com/vmihailenco/msgpack/v5 v5.3.4 // indirect
 	github.com/vmihailenco/tagparser v0.1.2 // indirect
 	github.com/zenazn/goji v1.0.1
@@ -85,6 +85,8 @@ require (
 	k8s.io/apimachinery v0.17.0
 	k8s.io/client-go v0.17.0
 )
+
+require github.com/99designs/gqlgen/_examples v0.0.0-20220829154420-b66fff16de0b
 
 require (
 	cloud.google.com/go v0.57.0 // indirect
@@ -124,8 +126,7 @@ require (
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.0.5 // indirect
 	github.com/googleapis/gnostic v0.0.0-20170729233727-0c5108395e2d // indirect
-	github.com/gorilla/context v1.1.1 // indirect
-	github.com/gorilla/websocket v1.4.2 // indirect
+	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
