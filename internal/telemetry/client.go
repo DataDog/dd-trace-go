@@ -19,7 +19,6 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -403,13 +402,13 @@ func getOSVersion() string {
 // newRequests populates a request with the common fields shared by all requests
 // sent through this Client
 func (c *Client) newRequest(t RequestType) *Request {
-	seqID := atomic.AddInt64(&c.seqID, 1)
+	c.seqID += 1
 	return &Request{
 		APIVersion:  "v1",
 		RequestType: t,
 		TracerTime:  time.Now().Unix(),
 		RuntimeID:   globalconfig.RuntimeID(),
-		SeqID:       seqID,
+		SeqID:       c.seqID,
 		Debug:       c.debug,
 		Application: Application{
 			ServiceName:     c.Service,

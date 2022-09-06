@@ -490,3 +490,12 @@ func WithLogStartup(enabled bool) Option {
 		cfg.logStartup = enabled
 	}
 }
+
+// WithHostname sets the hostname which will be added to uploaded profiles
+// through the "host:<hostname>" tag. If no hostname is given, the hostname will
+// default to the output of os.Hostname()
+func WithHostname(hostname string) Option {
+	return func(cfg *config) {
+		cfg.hostname = hostname
+	}
+}
