@@ -11,6 +11,8 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 type config struct {
@@ -18,6 +20,7 @@ type config struct {
 	consumerServiceName string
 	producerServiceName string
 	analyticsRate       float64
+	tagFns              map[string]func(msg *kafka.Message) interface{}
 }
 
 // An Option customizes the config.
@@ -80,5 +83,16 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithCustomTag will cause the given tagFn to be evaluated after executing
+// a query and attach the result to the span tagged by the key.
+func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) Option {
+	return func(cfg *config) {
+		if cfg.tagFns == nil {
+			cfg.tagFns = make(map[string]func(msg *kafka.Message) interface{})
+		}
+		cfg.tagFns[tag] = tagFn
 	}
 }

@@ -60,7 +60,7 @@ type errorConfig struct {
 // span represents a computation. Callers must call Finish when a span is
 // complete to ensure it's submitted.
 type span struct {
-	sync.RWMutex `msg:"-"`
+	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
 	Name     string             `msg:"name"`              // operation name
 	Service  string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
@@ -543,6 +543,8 @@ func shouldComputeStats(s *span) bool {
 // String returns a human readable representation of the span. Not for
 // production, just debugging.
 func (s *span) String() string {
+	s.RLock()
+	defer s.RUnlock()
 	lines := []string{
 		fmt.Sprintf("Name: %s", s.Name),
 		fmt.Sprintf("Service: %s", s.Service),
@@ -556,14 +558,12 @@ func (s *span) String() string {
 		fmt.Sprintf("Type: %s", s.Type),
 		"Tags:",
 	}
-	s.RLock()
 	for key, val := range s.Meta {
 		lines = append(lines, fmt.Sprintf("\t%s:%s", key, val))
 	}
 	for key, val := range s.Metrics {
 		lines = append(lines, fmt.Sprintf("\t%s:%f", key, val))
 	}
-	s.RUnlock()
 	return strings.Join(lines, "\n")
 }
 

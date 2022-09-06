@@ -6,10 +6,9 @@
 package profiler
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
-	"mime"
-	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,11 +16,11 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -128,12 +127,12 @@ func TestStart(t *testing.T) {
 
 func TestStartStopIdempotency(t *testing.T) {
 	t.Run("linear", func(t *testing.T) {
-		Start()
-		Start()
-		Start()
-		Start()
-		Start()
-		Start()
+		Start(WithProfileTypes())
+		Start(WithProfileTypes())
+		Start(WithProfileTypes())
+		Start(WithProfileTypes())
+		Start(WithProfileTypes())
+		Start(WithProfileTypes())
 
 		Stop()
 		Stop()
@@ -149,9 +148,14 @@ func TestStartStopIdempotency(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				for j := 0; j < 1000; j++ {
+				for j := 0; j < 20; j++ {
 					// startup logging makes this test very slow
-					Start(WithLogStartup(false))
+					//
+					// Also, the CPU profile is really slow
+					// to stop (200ms/iter) and in general
+					// we don't need to actually run any
+					// profiles for this test
+					Start(WithLogStartup(false), WithProfileTypes())
 				}
 			}()
 		}
@@ -159,7 +163,7 @@ func TestStartStopIdempotency(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				for j := 0; j < 1000; j++ {
+				for j := 0; j < 20; j++ {
 					Stop()
 				}
 			}()
@@ -221,58 +225,6 @@ func TestStopLatency(t *testing.T) {
 	if elapsed > 500*time.Millisecond {
 		t.Errorf("profiler took %v to stop", elapsed)
 	}
-}
-
-func TestProfilerInternal(t *testing.T) {
-	t.Run("collect", func(t *testing.T) {
-		p, err := unstartedProfiler(
-			WithPeriod(1*time.Millisecond),
-			CPUDuration(1*time.Millisecond),
-			WithProfileTypes(HeapProfile, CPUProfile),
-		)
-		require.NoError(t, err)
-		var startCPU, stopCPU, writeHeap uint64
-		p.testHooks.startCPUProfile = func(_ io.Writer) error {
-			atomic.AddUint64(&startCPU, 1)
-			return nil
-		}
-		p.testHooks.stopCPUProfile = func() { atomic.AddUint64(&stopCPU, 1) }
-		p.testHooks.lookupProfile = func(name string, w io.Writer, _ int) error {
-			if name == "heap" {
-				atomic.AddUint64(&writeHeap, 1)
-			}
-			_, err := w.Write(textProfile{Text: "main 5\n"}.Protobuf())
-			return err
-		}
-
-		tick := make(chan time.Time)
-		wait := make(chan struct{})
-
-		go func() {
-			p.collect(tick)
-			close(wait)
-		}()
-
-		tick <- time.Now()
-
-		var bat batch
-		select {
-		case bat = <-p.out:
-		case <-time.After(200 * time.Millisecond):
-			t.Fatalf("missing batch")
-		}
-
-		assert := assert.New(t)
-		assert.EqualValues(1, writeHeap)
-		assert.EqualValues(1, startCPU)
-		assert.EqualValues(1, stopCPU)
-
-		// should contain cpu.pprof, metrics.json, delta-heap.pprof
-		assert.Equal(3, len(bat.profiles))
-
-		p.exit <- struct{}{}
-		<-wait
-	})
 }
 
 func TestSetProfileFraction(t *testing.T) {
@@ -337,12 +289,67 @@ func unstartedProfiler(opts ...Option) (*profiler, error) {
 	return p, nil
 }
 
-func TestAllUploaded(t *testing.T) {
-	type profileMeta struct {
-		tags  []string
-		files []string
+type profileMeta struct {
+	tags        []string
+	headers     http.Header
+	event       uploadEvent
+	attachments map[string][]byte
+}
+
+type mockBackend struct {
+	t        *testing.T
+	profiles chan profileMeta
+}
+
+func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	profile := profileMeta{
+		attachments: make(map[string][]byte),
+	}
+	defer func() {
+		select {
+		case m.profiles <- profile:
+		default:
+		}
+	}()
+	profile.headers = r.Header.Clone()
+	if err := r.ParseMultipartForm(50 << 20); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		m.t.Fatalf("bad multipart form: %s", err)
+		return
+	}
+	file, _, err := r.FormFile("event")
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		m.t.Fatalf("getting event.json: %s", err)
+		return
+	}
+	if err := json.NewDecoder(file).Decode(&profile.event); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		m.t.Fatalf("decoding event payload: %s", err)
+		return
 	}
 
+	profile.tags = append(profile.tags, strings.Split(profile.event.Tags, ",")...)
+	for _, name := range profile.event.Attachments {
+		f, _, err := r.FormFile(name)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			m.t.Fatalf("event attachment %s is missing from upload: %s", name, err)
+			return
+		}
+		defer f.Close()
+		data, err := io.ReadAll(f)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			m.t.Fatalf("reading attachment %s: %s", name, err)
+			return
+		}
+		profile.attachments[name] = data
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func TestAllUploaded(t *testing.T) {
 	// This is a kind of end-to-end test that runs the real profiles (i.e.
 	// not mocking/replacing any internal functions) and verifies that the
 	// profiles are at least uploaded.
@@ -358,50 +365,10 @@ func TestAllUploaded(t *testing.T) {
 	// second batch of profiles is correct in case the profiler gets in a
 	// bad state after the first round of profiling.
 	received := make(chan profileMeta, 2)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var profile profileMeta
-		defer func() {
-			select {
-			case received <- profile:
-			default:
-			}
-		}()
-		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil {
-			t.Fatalf("bad media type: %s", err)
-			return
-		}
-		mr := multipart.NewReader(r.Body, params["boundary"])
-		for {
-			p, err := mr.NextPart()
-			if err == io.EOF {
-				return
-			}
-			if err != nil {
-				t.Fatalf("next part: %s", err)
-			}
-			if p.FormName() == "tags[]" {
-				val, err := io.ReadAll(p)
-				if err != nil {
-					t.Fatalf("next part: %s", err)
-				}
-				profile.tags = append(profile.tags, string(val))
-			}
-			if p.FileName() == "pprof-data" {
-				profile.files = append(profile.files, p.FormName())
-			}
-		}
-	}))
+	server := httptest.NewServer(&mockBackend{t: t, profiles: received})
 	defer server.Close()
 
-	// re-implemented testing.T.Setenv since that function requires Go 1.17
-	old, ok := os.LookupEnv("DD_PROFILING_WAIT_PROFILE")
-	os.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
-	if ok {
-		defer os.Setenv("DD_PROFILING_WAIT_PROFILE", old)
-	} else {
-		defer os.Unsetenv("DD_PROFILING_WAIT_PROFILE")
-	}
+	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(
@@ -418,14 +385,14 @@ func TestAllUploaded(t *testing.T) {
 
 	validateProfile := func(profile profileMeta, seq uint64) {
 		expected := []string{
-			"data[cpu.pprof]",
-			"data[delta-block.pprof]",
-			"data[delta-heap.pprof]",
-			"data[delta-mutex.pprof]",
-			"data[goroutines.pprof]",
-			"data[goroutineswait.pprof]",
+			"cpu.pprof",
+			"delta-block.pprof",
+			"delta-heap.pprof",
+			"delta-mutex.pprof",
+			"goroutines.pprof",
+			"goroutineswait.pprof",
 		}
-		assert.ElementsMatch(t, expected, profile.files)
+		assert.ElementsMatch(t, expected, profile.event.Attachments)
 
 		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
 	}
@@ -435,51 +402,21 @@ func TestAllUploaded(t *testing.T) {
 }
 
 func TestCorrectTags(t *testing.T) {
-	got := make(chan []string)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var tags []string
-		defer func() {
-			got <- tags
-		}()
-		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil {
-			t.Fatalf("bad media type: %s", err)
-			return
-		}
-		mr := multipart.NewReader(r.Body, params["boundary"])
-		for {
-			p, err := mr.NextPart()
-			if err == io.EOF {
-				return
-			}
-			if err != nil {
-				t.Fatalf("next part: %s", err)
-			}
-			if p.FormName() == "tags[]" {
-				tag, err := io.ReadAll(p)
-				if err != nil {
-					t.Fatalf("reading tags: %s", err)
-				}
-				tags = append(tags, string(tag))
-			}
-		}
-	}))
+	got := make(chan profileMeta)
+	server := httptest.NewServer(&mockBackend{t: t, profiles: got})
 	defer server.Close()
 
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(
-			BlockProfile,
-			CPUProfile,
-			GoroutineProfile,
 			HeapProfile,
-			MutexProfile,
 		),
 		WithPeriod(10*time.Millisecond),
 		CPUDuration(10*time.Millisecond),
 		WithService("xyz"),
 		WithEnv("testing"),
 		WithTags("foo:bar", "baz:bonk"),
+		WithHostname("example"),
 	)
 	defer Stop()
 	expected := []string{
@@ -487,6 +424,7 @@ func TestCorrectTags(t *testing.T) {
 		"env:testing",
 		"foo:bar",
 		"service:xyz",
+		"host:example",
 	}
 	for i := 0; i < 20; i++ {
 		// We check the tags we get several times to try to have a
@@ -494,9 +432,94 @@ func TestCorrectTags(t *testing.T) {
 		// are clobbered due to a bug caused by the same
 		// profiler-internal tag slice being appended to from different
 		// goroutines concurrently.
-		tags := <-got
+		p := <-got
 		for _, tag := range expected {
-			require.Contains(t, tags, tag)
+			require.Contains(t, p.tags, tag)
 		}
+	}
+}
+
+func TestTelemetryEnabled(t *testing.T) {
+	received := make(chan *telemetry.AppStarted, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
+			return
+		}
+		if r.Header.Get("DD-Telemetry-Request-Type") != string(telemetry.RequestTypeAppStarted) {
+			return
+		}
+
+		var body telemetry.Request
+		body.Payload = new(telemetry.AppStarted)
+		err := json.NewDecoder(r.Body).Decode(&body)
+		if err != nil {
+			t.Errorf("bad body: %s", err)
+		}
+		select {
+		case received <- body.Payload.(*telemetry.AppStarted):
+		default:
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(
+			BlockProfile,
+			HeapProfile,
+			MutexProfile,
+		),
+		WithPeriod(10*time.Millisecond),
+		CPUDuration(1*time.Millisecond),
+	)
+	defer Stop()
+	payload := <-received
+	check := func(key string, expected interface{}) {
+		for _, kv := range payload.Configuration {
+			if kv.Name == key {
+				if kv.Value != expected {
+					t.Errorf("configuration %s: wanted %v, got %T", key, expected, kv.Value)
+				}
+				return
+			}
+		}
+		t.Errorf("missing configuration %s", key)
+	}
+
+	check("heap_profile_enabled", true)
+	check("block_profile_enabled", true)
+	check("goroutine_profile_enabled", false)
+	check("mutex_profile_enabled", true)
+	check("profile_period", time.Duration(10*time.Millisecond).String())
+	check("cpu_duration", time.Duration(1*time.Millisecond).String())
+}
+
+func TestImmediateProfile(t *testing.T) {
+	received := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case received <- struct{}{}:
+		default:
+		}
+	}))
+	defer server.Close()
+
+	err := Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(HeapProfile),
+		WithPeriod(3*time.Second),
+	)
+	require.NoError(t, err)
+	defer Stop()
+
+	// Wait a little less than 2 profile periods. We should start profiling
+	// immediately. If it takes significantly longer than 1 profile period to get
+	// a profile, consider the test failed
+	timeout := time.After(5 * time.Second)
+	select {
+	case <-timeout:
+		t.Fatal("should have received a profile already")
+	case <-received:
 	}
 }
