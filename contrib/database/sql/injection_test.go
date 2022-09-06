@@ -52,7 +52,7 @@ func TestCommentInjection(t *testing.T) {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			prepared: []string{"/*dddbs='test.db',dde='test-env',ddsn='test-service',ddsv='1.0.0'*/ SELECT 1 from DUAL"},
+			prepared: []string{"/*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0'*/ SELECT 1 from DUAL"},
 		},
 		{
 			name: "prepare-full",
@@ -61,7 +61,7 @@ func TestCommentInjection(t *testing.T) {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			prepared: []string{"/*dddbs='test.db',dde='test-env',ddsn='test-service',ddsv='1.0.0'*/ SELECT 1 from DUAL"},
+			prepared: []string{"/*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0'*/ SELECT 1 from DUAL"},
 		},
 		{
 			name: "query",
@@ -88,7 +88,7 @@ func TestCommentInjection(t *testing.T) {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddsn='test-service',ddsv='1.0.0'\\*/ SELECT 1 from DUAL")},
+			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0'\\*/ SELECT 1 from DUAL")},
 		},
 		{
 			name: "query-full",
@@ -97,7 +97,7 @@ func TestCommentInjection(t *testing.T) {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddsid='\\d+',ddsn='test-service',ddsp='1',ddsv='1.0.0',ddtid='1'\\*/ SELECT 1 from DUAL")},
+			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01'\\*/ SELECT 1 from DUAL")},
 		},
 		{
 			name: "exec",
@@ -124,7 +124,7 @@ func TestCommentInjection(t *testing.T) {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddsn='test-service',ddsv='1.0.0'\\*/ SELECT 1 from DUAL")},
+			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0'\\*/ SELECT 1 from DUAL")},
 		},
 		{
 			name: "exec-full",
@@ -133,7 +133,7 @@ func TestCommentInjection(t *testing.T) {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddsid='\\d+',ddsn='test-service',ddsp='1',ddsv='1.0.0',ddtid='1'\\*/ SELECT 1 from DUAL")},
+			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01'\\*/ SELECT 1 from DUAL")},
 		},
 	}
 
@@ -163,7 +163,7 @@ func TestCommentInjection(t *testing.T) {
 			for i, e := range tc.executed {
 				assert.Regexp(t, e, d.Executed[i])
 				// the injected span ID should not be the parent's span ID
-				assert.NotContains(t, d.Executed[i], "ddsid='1'")
+				assert.NotContains(t, d.Executed[i], "traceparent='00-00000000000000000000000000000001-0000000000000001")
 			}
 		})
 	}
