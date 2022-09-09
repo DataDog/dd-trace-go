@@ -335,6 +335,8 @@ func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
 		return
 	}
 	if !t.rulesSampling.HasSpanRules() {
+		atomic.AddUint64(&t.droppedP0Traces, 1)
+		atomic.AddUint64(&t.droppedP0Spans, uint64(len(info.spans)))
 		info.spans = nil
 		return
 	}
