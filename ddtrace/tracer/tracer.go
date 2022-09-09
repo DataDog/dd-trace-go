@@ -334,27 +334,24 @@ func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
 	if info.decision == decisionKeep {
 		return
 	}
-	if !t.rulesSampling.HasSpanRules() {
-		atomic.AddUint64(&t.droppedP0Traces, 1)
-		atomic.AddUint64(&t.droppedP0Spans, uint64(len(info.spans)))
-		info.spans = nil
-		return
-	}
-	// if trace sampling decision is drop, we still want to send single spans
-	// unless there are no single span sampling rules defined
 	var kept []*span
-	for _, span := range info.spans {
-		if t.rulesSampling.SampleSpan(span) {
-			kept = append(kept, span)
+	if t.rulesSampling.HasSpanRules() {
+		// Apply sampling rules to individual spans in the trace.
+		for _, span := range info.spans {
+			if t.rulesSampling.SampleSpan(span) {
+				kept = append(kept, span)
+			}
 		}
+		if len(kept) > 0 && len(kept) < len(info.spans) {
+			// Some spans in the trace were kept, so a partial trace will be sent.
+			atomic.AddUint64(&t.partialTraces, 1)
+		}
+	}
+	if len(kept) == 0 {
+		atomic.AddUint64(&t.droppedP0Traces, 1)
 	}
 	atomic.AddUint64(&t.droppedP0Spans, uint64(len(info.spans)-len(kept)))
 	info.spans = kept
-	if len(kept) == 0 {
-		atomic.AddUint64(&t.droppedP0Traces, 1)
-		return // no spans matched the rules and were sampled
-	}
-	atomic.AddUint64(&t.partialTraces, 1)
 }
 
 func (t *tracer) pushTrace(trace *finishedTrace) {
