@@ -12,9 +12,15 @@ import (
 )
 
 type dialConfig struct {
-	serviceName   string
-	analyticsRate float64
+	serviceName    string
+	analyticsRate  float64
+	connectionType int
 }
+
+const (
+	connectionTypeWithTimeout = iota
+	connectionTypeWithContext
+)
 
 // DialOption represents an option that can be passed to Dial.
 type DialOption func(*dialConfig)
@@ -27,6 +33,9 @@ func defaults(cfg *dialConfig) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
+
+	// Default to withTimeout to maintain backwards compatibility.
+	cfg.connectionType = connectionTypeWithTimeout
 }
 
 // WithServiceName sets the given service name for the dialled connection.
@@ -56,5 +65,19 @@ func WithAnalyticsRate(rate float64) DialOption {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithTimeoutConnection wraps the connection with redis.ConnWithTimeout.
+func WithTimeoutConnection() DialOption {
+	return func(cfg *dialConfig) {
+		cfg.connectionType = connectionTypeWithTimeout
+	}
+}
+
+// WithContextConnection wraps the connection with redis.ConnWithContext.
+func WithContextConnection() DialOption {
+	return func(cfg *dialConfig) {
+		cfg.connectionType = connectionTypeWithContext
 	}
 }

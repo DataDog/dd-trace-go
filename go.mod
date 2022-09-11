@@ -34,7 +34,7 @@ require (
 	github.com/gocql/gocql v0.0.0-20220224095938-0eacd3183625
 	github.com/gofiber/fiber/v2 v2.11.0
 	github.com/golang/protobuf v1.5.2
-	github.com/gomodule/redigo v1.7.0
+	github.com/gomodule/redigo v1.8.9
 	github.com/google/pprof v0.0.0-20210423192551-a2663126120b
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.6.2
