@@ -70,13 +70,13 @@ type tracer struct {
 
 	// These integers track metrics about spans and traces as they are started,
 	// finished, and dropped
-	spansStarted, spansFinished, tracesDropped int64
+	spansStarted, spansFinished, tracesDropped uint32
 
 	// Records the number of dropped P0 traces and spans.
-	droppedP0Traces, droppedP0Spans uint64
+	droppedP0Traces, droppedP0Spans uint32
 
 	// partialTrace the number of partially dropped traces.
-	partialTraces uint64
+	partialTraces uint32
 
 	// rulesSampling holds an instance of the rules sampler used to apply either trace sampling,
 	// or single span sampling rules on spans. These are user-defined
@@ -344,13 +344,13 @@ func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
 		}
 		if len(kept) > 0 && len(kept) < len(info.spans) {
 			// Some spans in the trace were kept, so a partial trace will be sent.
-			atomic.AddUint64(&t.partialTraces, 1)
+			atomic.AddUint32(&t.partialTraces, 1)
 		}
 	}
 	if len(kept) == 0 {
-		atomic.AddUint64(&t.droppedP0Traces, 1)
+		atomic.AddUint32(&t.droppedP0Traces, 1)
 	}
-	atomic.AddUint64(&t.droppedP0Spans, uint64(len(info.spans)-len(kept)))
+	atomic.AddUint32(&t.droppedP0Spans, uint32(len(info.spans)-len(kept)))
 	info.spans = kept
 }
 
