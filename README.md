@@ -12,7 +12,7 @@ The package [`gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer`](https://pkg.go.de
 - [Datadog Go Continuous Profiler](https://docs.datadoghq.com/profiler/): Continuously profile your Go apps to find CPU, memory, and synchronization bottlenecks, broken down by function name, and line number, to significantly reduce end-user latency and infrastructure costs.  
 The package [`gopkg.in/DataDog/dd-trace-go.v1/profiler`](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/profiler) allows you to periodically collect and send Go profiles to the Datadog API.
 
-- [Datadog Application Security Monitoring (ASM)](https://docs.datadoghq.com/security_platform/application_security/): Get observability into your Go apps attacks that aim to exploit code-level vulnerabilities, such as Server-Side-Request-Forgery (SSRF), SQL injection, Log4Shell, and Reflected Cross-Site-Scripting (XSS). ASM is not a standalone Go package and is transparently integrated into the APM tracer. Simply [enable it](https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?code-lang=go) in order to make benefit from the security monitor.
+- [Datadog Application Security Monitoring (ASM)](https://docs.datadoghq.com/security_platform/application_security/): Get observability into your Go apps attacks that aim to exploit code-level vulnerabilities, such as Server-Side-Request-Forgery (SSRF), SQL injection, Log4Shell, and Reflected Cross-Site-Scripting (XSS). ASM is not a standalone Go package and is transparently integrated into the APM tracer. Simply [enable it](https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?code-lang=go) to make benefit from the security monitoring.
 
 ### Installing
 
