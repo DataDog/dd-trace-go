@@ -16,6 +16,8 @@ package ddtrace // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 import (
 	"context"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -134,4 +136,9 @@ type StartSpanConfig struct {
 type Logger interface {
 	// Log prints the given message.
 	Log(msg string)
+}
+
+// UseLogger sets l as the logger for all tracer and profiler logs.
+func UseLogger(l Logger) {
+	log.UseLogger(l)
 }
