@@ -132,7 +132,7 @@ type StartSpanConfig struct {
 	Context context.Context
 }
 
-// Logger implementations are able to log given messages that the tracer might output.
+// Logger implementations are able to log given messages that the tracer or profiler might output.
 type Logger interface {
 	// Log prints the given message.
 	Log(msg string)
