@@ -6,14 +6,24 @@
 package tracer
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-var _ ddtrace.ReadWriteSpan = (*readWriteSpan)(nil)
+var _ ReadWriteSpan = (*readWriteSpan)(nil)
 
-// readWriteSpan wraps span and implements the ddtrace.ReadWriteSpan interface.
+// ReadWriteSpan implementations are spans which can be read from and modified by using the provided methods.
+type ReadWriteSpan interface {
+	Span
+
+	// Tag returns the tag value held by the given key, nil if none was found.
+	Tag(key string) interface{}
+
+	// IsError reports wether the span is an error.
+	IsError() bool
+}
+
+// readWriteSpan wraps span and implements the ReadWriteSpan interface.
 type readWriteSpan struct {
 	*span
 }
@@ -103,9 +113,9 @@ func (tr *tracer) droppedByProcessor(spans []*span) bool {
 }
 
 // newReadWriteSpanSlice copies the elements of slice spans to the
-// destination slice of type ddtrace.ReadWriteSpan to be fed to the processor.
-func newReadWriteSpanSlice(spans []*span) []ddtrace.ReadWriteSpan {
-	rwSlice := make([]ddtrace.ReadWriteSpan, len(spans))
+// destination slice of type ReadWriteSpan to be fed to the processor.
+func newReadWriteSpanSlice(spans []*span) []ReadWriteSpan {
+	rwSlice := make([]ReadWriteSpan, len(spans))
 	for i, span := range spans {
 		rwSlice[i] = &readWriteSpan{span}
 	}

@@ -79,17 +79,6 @@ type SpanContext interface {
 	ForeachBaggageItem(handler func(k, v string) bool)
 }
 
-// ReadWriteSpan implementations are spans which can be read from and modified by using the provided methods.
-type ReadWriteSpan interface {
-	Span
-
-	// Tag returns the tag value held by the given key, nil if none was found.
-	Tag(key string) interface{}
-
-	// IsError reports wether the span is an error.
-	IsError() bool
-}
-
 // StartSpanOption is a configuration option that can be used with a Tracer's StartSpan method.
 type StartSpanOption func(cfg *StartSpanConfig)
 

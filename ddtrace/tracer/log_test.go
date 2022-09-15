@@ -10,7 +10,6 @@ import (
 	"os"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
@@ -48,7 +47,7 @@ func TestStartupLog(t *testing.T) {
 			WithServiceVersion("2.3.4"),
 			WithSamplingRules([]SamplingRule{ServiceRule("mysql", 0.75)}),
 			WithDebugMode(true),
-			WithPostProcessor(func([]ddtrace.ReadWriteSpan) bool { return true }),
+			WithPostProcessor(func([]ReadWriteSpan) bool { return true }),
 		)
 		defer globalconfig.SetAnalyticsRate(math.NaN())
 		defer globalconfig.SetServiceName("")

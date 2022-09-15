@@ -8,7 +8,6 @@ import (
 	"os"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 
 	"github.com/stretchr/testify/assert"
@@ -148,7 +147,7 @@ func TestNewReadWriteSpanSlice(t *testing.T) {
 func TestDroppedByProcessor(t *testing.T) {
 	t.Run("accept", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ddtrace.ReadWriteSpan) bool { return false }))
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ReadWriteSpan) bool { return false }))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
 		assert.Equal(false, tracer.droppedByProcessor(spans))
@@ -156,7 +155,7 @@ func TestDroppedByProcessor(t *testing.T) {
 
 	t.Run("accept-condition", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool {
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) bool {
 			for _, span := range spans {
 				if span.Tag(ext.SpanName) == "accept.request" {
 					return false
@@ -171,7 +170,7 @@ func TestDroppedByProcessor(t *testing.T) {
 
 	t.Run("drop", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ddtrace.ReadWriteSpan) bool { return true }))
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ReadWriteSpan) bool { return true }))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
 		assert.Equal(true, tracer.droppedByProcessor(spans))
@@ -179,7 +178,7 @@ func TestDroppedByProcessor(t *testing.T) {
 
 	t.Run("drop-condition", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool {
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) bool {
 			for _, span := range spans {
 				if span.Tag(ext.SpanName) == "reject.request" {
 					return true
@@ -194,7 +193,7 @@ func TestDroppedByProcessor(t *testing.T) {
 
 	t.Run("empty-spans", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool { return false }))
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) bool { return false }))
 		defer stop()
 		spans := []*span{}
 		assert.Equal(false, tracer.droppedByProcessor(spans))
@@ -203,7 +202,7 @@ func TestDroppedByProcessor(t *testing.T) {
 
 	t.Run("tag", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ddtrace.ReadWriteSpan) bool {
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) bool {
 			for _, span := range spans {
 				if span.Tag(ext.SpanName) == "http.request" {
 					span.SetTag("custom", "val")
@@ -238,7 +237,7 @@ func TestDroppedByProcessor(t *testing.T) {
 	})
 }
 
-func runProcessorTestEndToEnd(t *testing.T, testFunc func(sls spanLists), processor func([]ddtrace.ReadWriteSpan) bool, startSpans func()) {
+func runProcessorTestEndToEnd(t *testing.T, testFunc func(sls spanLists), processor func([]ReadWriteSpan) bool, startSpans func()) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		var sls spanLists
@@ -281,7 +280,7 @@ func TestProcessorEndToEnd(t *testing.T) {
 					}
 				}
 			},
-			func(spans []ddtrace.ReadWriteSpan) bool { return false },
+			func(spans []ReadWriteSpan) bool { return false },
 			func() {
 				span1 := StartSpan("accepted.req")
 				span1.Finish()
@@ -304,7 +303,7 @@ func TestProcessorEndToEnd(t *testing.T) {
 					}
 				}
 			},
-			func(spans []ddtrace.ReadWriteSpan) bool {
+			func(spans []ReadWriteSpan) bool {
 				for _, span := range spans {
 					if span.Tag(ext.SpanName) == "reject.req" {
 						return true
@@ -325,7 +324,7 @@ func TestProcessorEndToEnd(t *testing.T) {
 	t.Run("no-payload", func(t *testing.T) {
 		runProcessorTestEndToEnd(t,
 			func(sls spanLists) { t.Fatal("no payloads should be received") },
-			func(spans []ddtrace.ReadWriteSpan) bool {
+			func(spans []ReadWriteSpan) bool {
 				for _, span := range spans {
 					if span.Tag(ext.SpanName) == "reject.req" {
 						return true
@@ -360,7 +359,7 @@ func TestProcessorEndToEnd(t *testing.T) {
 					}
 				}
 			},
-			func(spans []ddtrace.ReadWriteSpan) bool {
+			func(spans []ReadWriteSpan) bool {
 				for _, span := range spans {
 					if span.Tag(ext.SpanName) == "tagged.req" {
 						span.SetTag("processor_tag", "true")
