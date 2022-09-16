@@ -8,7 +8,6 @@ package tracer
 import (
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -368,7 +367,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
 			tracer := newTracer()
 			spanCtx := &spanContext{traceID: 42, spanID: 42}
-			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate, math.NaN())
+			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
 			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx)).(*span)
 			span.SetTag(scenario.tag, true)
 			assert.Equal(t, scenario.keep, shouldKeep(span))
