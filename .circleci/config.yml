@@ -198,6 +198,10 @@ jobs:
         environment:
           KAFKA_CFG_ZOOKEEPER_CONNECT: localhost:2181
         command: [kafka-topics.sh, --create, --topic, gosegtest, --bootstrap-server, localhost:9092]
+      - image: clickhouse/clickhouse-server:22.8.5.29-alpine
+        ports:
+          - "8123:8123"
+          - "9000:9000"
 
     steps:
       - checkout
@@ -273,6 +277,10 @@ jobs:
       - run:
           name: Wait for Consul
           command: dockerize -wait http://localhost:8500 -timeout 1m
+
+      - run:
+          name: Wait for ClickHouse
+          command: dockerize -wait tcp://localhost:9000 -timeout 1m
 
       - run:
           name: Go module graph (before)

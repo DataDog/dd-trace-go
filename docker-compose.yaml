@@ -82,6 +82,12 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+  clickhouse:
+    image: clickhouse/clickhouse-server:22.8.5.29-alpine
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+
   datadog-agent:
     image: datadog/docker-dd-agent
     environment:

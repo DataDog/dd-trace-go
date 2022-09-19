@@ -64,6 +64,9 @@ const (
 	// SpanTypeLevelDB marks a span as a leveldb operation
 	SpanTypeLevelDB = "leveldb"
 
+	// SpanTypeClickHouse marks a span as a SpanTypeClickHouse operation
+	SpanTypeClickHouse = "clickhouse"
+
 	// SpanTypeDNS marks a span as a DNS operation.
 	SpanTypeDNS = "dns"
 
