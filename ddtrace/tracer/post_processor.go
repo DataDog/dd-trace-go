@@ -10,81 +10,63 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-var _ ReadWriteSpan = (*readWriteSpan)(nil)
-
-// ReadWriteSpan implementations are spans which can be read from and modified by using the provided methods.
-type ReadWriteSpan interface {
-	Span
-
-	// Tag returns the tag value held by the given key, nil if none was found.
-	Tag(key string) interface{}
-
-	// IsError reports wether the span is an error.
-	IsError() bool
-}
-
-// readWriteSpan wraps span and implements the ReadWriteSpan interface.
-type readWriteSpan struct {
-	*span
+// ReadWriteSpan is a span which can be read from and modified by using the provided methods.
+type ReadWriteSpan struct {
+	span *span
 }
 
 // Tag returns the tag value held by the given key.
-func (s *readWriteSpan) Tag(key string) interface{} {
-	s.Lock()
-	defer s.Unlock()
+func (s *ReadWriteSpan) Tag(key string) interface{} {
+	s.span.Lock()
+	defer s.span.Unlock()
 
 	switch key {
 	// String.
 	case ext.SpanName:
-		return s.Name
+		return s.span.Name
 	case ext.ServiceName:
-		return s.Service
+		return s.span.Service
 	case ext.ResourceName:
-		return s.Resource
+		return s.span.Resource
 	case ext.SpanType:
-		return s.Type
+		return s.span.Type
 	// Bool.
 	case ext.AnalyticsEvent:
-		return s.Metrics[ext.EventSampleRate] == 1.0
+		return s.span.Metrics[ext.EventSampleRate] == 1.0
 	case ext.ManualDrop:
-		return s.Metrics[keySamplingPriority] == -1
+		return s.span.Metrics[keySamplingPriority] == -1
 	case ext.ManualKeep:
-		return s.Metrics[keySamplingPriority] == 2
+		return s.span.Metrics[keySamplingPriority] == 2
 	// Metrics.
 	case ext.SamplingPriority, keySamplingPriority:
-		if val, ok := s.Metrics[keySamplingPriority]; ok {
+		if val, ok := s.span.Metrics[keySamplingPriority]; ok {
 			return val
 		}
 		return nil
 	}
-	if val, ok := s.Meta[key]; ok {
+	if val, ok := s.span.Meta[key]; ok {
 		return val
 	}
-	if val, ok := s.Metrics[key]; ok {
+	if val, ok := s.span.Metrics[key]; ok {
 		return val
 	}
 	return nil
 }
 
 // IsError reports wether s is an error.
-func (s *readWriteSpan) IsError() bool {
-	s.Lock()
-	defer s.Unlock()
+func (s *ReadWriteSpan) IsError() bool {
+	s.span.Lock()
+	defer s.span.Unlock()
 
-	return s.Error == 1
-}
-
-// SetOperationName is not allowed in the processor and will not modify the operation name.
-func (s *readWriteSpan) SetOperationName(operationName string) {
-	log.Debug("Modifying the operation name in the processor is not allowed")
+	return s.span.Error == 1
 }
 
 // SetTag adds a set of key/value metadata to the span. Setting metric aggregator tags
 // (name, env, service, version, resource, http.status_code and keyMeasured) or modifying
 // the sampling priority in the processor is not allowed.
-func (s *readWriteSpan) SetTag(key string, value interface{}) {
-	s.Lock()
-	defer s.Unlock()
+func (s *ReadWriteSpan) SetTag(key string, value interface{}) {
+	s.span.Lock()
+	defer s.span.Unlock()
 
 	switch key {
 	case ext.SpanName, ext.SpanType, ext.ResourceName, ext.ServiceName, ext.HTTPCode, ext.Environment, keyMeasured, keyTopLevel, ext.AnalyticsEvent, ext.EventSampleRate:
@@ -99,7 +81,7 @@ func (s *readWriteSpan) SetTag(key string, value interface{}) {
 		log.Debug("Setting sampling priority tag %v in the processor is not allowed", key)
 		return
 	default:
-		s.setTagLocked(key, value)
+		s.span.setTagLocked(key, value)
 	}
 }
 
@@ -117,7 +99,7 @@ func (tr *tracer) droppedByProcessor(spans []*span) bool {
 func newReadWriteSpanSlice(spans []*span) []ReadWriteSpan {
 	rwSlice := make([]ReadWriteSpan, len(spans))
 	for i, span := range spans {
-		rwSlice[i] = &readWriteSpan{span}
+		rwSlice[i] = ReadWriteSpan{span}
 	}
 	return rwSlice
 }

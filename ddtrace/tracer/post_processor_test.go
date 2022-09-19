@@ -47,7 +47,7 @@ func TestTag(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
 			span := newBasicSpan("")
-			s := readWriteSpan{span}
+			s := ReadWriteSpan{span}
 			span.SetTag(tc.key, tc.val)
 			assert.Equal(tc.want, s.Tag(tc.key))
 		})
@@ -56,7 +56,7 @@ func TestTag(t *testing.T) {
 	t.Run("no-tag", func(t *testing.T) {
 		assert := assert.New(t)
 		span := newBasicSpan("")
-		s := readWriteSpan{span}
+		s := ReadWriteSpan{span}
 		assert.Equal(nil, s.Tag("no-tag"))
 	})
 }
@@ -65,14 +65,14 @@ func TestErrorGetter(t *testing.T) {
 	t.Run("no-error", func(t *testing.T) {
 		assert := assert.New(t)
 		span := newBasicSpan("http.request")
-		s := readWriteSpan{span}
+		s := ReadWriteSpan{span}
 		assert.Equal(false, s.IsError())
 	})
 
 	t.Run("error", func(t *testing.T) {
 		assert := assert.New(t)
 		span := newBasicSpan("http.request")
-		s := readWriteSpan{span}
+		s := ReadWriteSpan{span}
 		span.SetTag(ext.Error, errors.New("abc"))
 		assert.Equal(true, s.IsError())
 	})
@@ -102,7 +102,7 @@ func TestSetTag(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
 			span := newBasicSpan("")
-			s := readWriteSpan{span}
+			s := ReadWriteSpan{span}
 			span.SetTag(tc.key, tc.val)
 			s.SetTag(tc.key, tc.rWSetVal)
 			assert.Equal(tc.val, s.Tag(tc.key))
@@ -112,7 +112,7 @@ func TestSetTag(t *testing.T) {
 	t.Run("allowed-tags", func(t *testing.T) {
 		assert := assert.New(t)
 		span := newBasicSpan("")
-		s := readWriteSpan{span}
+		s := ReadWriteSpan{span}
 		s.SetTag("custom_string", "value")
 		assert.Equal("value", s.Tag("custom_string"))
 		s.SetTag("custom_int", 1234)
@@ -122,25 +122,13 @@ func TestSetTag(t *testing.T) {
 	})
 }
 
-func TestSetOperationName(t *testing.T) {
-	assert := assert.New(t)
-	span := newBasicSpan("http.request")
-	s := readWriteSpan{span}
-	s.SetOperationName("modified.name")
-	assert.Equal("http.request", span.Name)
-}
-
 func TestNewReadWriteSpanSlice(t *testing.T) {
 	assert := assert.New(t)
 	spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
 	rWSpans := newReadWriteSpanSlice(spans)
 	for i, s := range rWSpans {
-		rwSpan, ok := s.(*readWriteSpan)
-		if !ok {
-			t.Fatal("readWriteSpan type assertion failed")
-		}
-		assert.Equal(rwSpan.span, spans[i])
-		assert.Same(rwSpan.span, spans[i])
+		assert.Equal(s.span, spans[i])
+		assert.Same(s.span, spans[i])
 	}
 }
 
