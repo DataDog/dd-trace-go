@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"fmt"
-	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -334,7 +333,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			ctx.setSamplingPriority(priority, samplernames.Unknown, math.NaN())
+			ctx.setSamplingPriority(priority, samplernames.Unknown)
 		case originHeader:
 			ctx.origin = v
 		case traceTagsHeader:
@@ -444,7 +443,7 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			ctx.setSamplingPriority(priority, samplernames.Unknown, math.NaN())
+			ctx.setSamplingPriority(priority, samplernames.Unknown)
 		default:
 		}
 		return nil
