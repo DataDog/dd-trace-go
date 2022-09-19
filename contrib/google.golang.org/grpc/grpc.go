@@ -9,6 +9,7 @@
 package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
 
 import (
+	"errors"
 	"io"
 	"math"
 
@@ -60,7 +61,7 @@ func startSpanFromContext(
 
 // finishWithError applies finish option and a tag with gRPC status code, disregarding OK, EOF and Canceled errors.
 func finishWithError(span ddtrace.Span, err error, cfg *config) {
-	if err == io.EOF || err == context.Canceled {
+	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 		err = nil
 	}
 	errcode := status.Code(err)

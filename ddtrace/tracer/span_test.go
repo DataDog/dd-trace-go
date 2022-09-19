@@ -106,7 +106,7 @@ func TestSpanFinishTwice(t *testing.T) {
 func TestShouldDrop(t *testing.T) {
 	for _, tt := range []struct {
 		prio   int
-		errors int64
+		errors int32
 		rate   float64
 		want   bool
 	}{
@@ -122,7 +122,7 @@ func TestShouldDrop(t *testing.T) {
 			s := newSpan("", "", "", 1, 1, 0)
 			s.SetTag(ext.SamplingPriority, tt.prio)
 			s.SetTag(ext.EventSampleRate, tt.rate)
-			atomic.StoreInt64(&s.context.errors, tt.errors)
+			atomic.StoreInt32(&s.context.errors, tt.errors)
 			assert.Equal(t, shouldKeep(s), tt.want)
 		})
 	}
