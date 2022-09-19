@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	serviceName   = "clickhouse"
-	operationName = "clickhouse.query"
+	serviceName = "clickhouse"
 )
 
 type connectionConfig struct {

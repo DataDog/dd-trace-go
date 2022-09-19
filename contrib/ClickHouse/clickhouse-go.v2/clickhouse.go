@@ -128,7 +128,6 @@ func (c *Connection) startSpan(query string) ddtrace.Span {
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeClickHouse),
 		tracer.ServiceName(c.cfg.serviceName),
-		tracer.Tag(ext.DBType, "clickhouse"),
 	}
 	if c.cfg.resourceName != "" {
 		opts = append(opts, tracer.Tag(ext.ResourceName, c.cfg.resourceName))
@@ -146,7 +145,7 @@ func (c *Connection) startSpan(query string) ddtrace.Span {
 		opts = append(opts, tracer.Tag(ext.ClickHouseMaxOpenConnections, stats.MaxOpenConns))
 		opts = append(opts, tracer.Tag(ext.ClickHouseMaxIdleConnections, stats.MaxIdleConns))
 	}
-	span, _ := tracer.StartSpanFromContext(c.ctx, operationName, opts...)
+	span, _ := tracer.StartSpanFromContext(c.ctx, ext.ClickHouseQuery, opts...)
 	return span
 }
 
@@ -166,7 +165,7 @@ func (b *Batch) startSpan(resourceName string) ddtrace.Span {
 	if !math.IsNaN(b.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, b.cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(b.ctx, operationName, opts...)
+	span, _ := tracer.StartSpanFromContext(b.ctx, ext.ClickHouseBatch, opts...)
 	return span
 }
 

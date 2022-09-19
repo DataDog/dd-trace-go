@@ -6,8 +6,22 @@
 package ext
 
 const (
-	ClickHouseConnectionOpen     = "clickhouse.connection.open"
-	ClickHouseConnectionIdle     = "clickhouse.connection.idle"
+
+	// ClickHouseQuery is the tag name used for cassandra queries.
+	ClickHouseQuery = "clickhouse.query"
+
+	// ClickHouseBatch is the tag name used for cassandra batches.
+	ClickHouseBatch = "clickhouse.batch"
+
+	// ClickHouseConnectionOpen specifies the tag name to use when WithStats() option is enabled.
+	ClickHouseConnectionOpen = "clickhouse.connection.open"
+
+	// ClickHouseConnectionIdle specifies the tag name to use when WithStats() option is enabled.
+	ClickHouseConnectionIdle = "clickhouse.connection.idle"
+
+	// ClickHouseMaxOpenConnections specifies the tag name to use when WithStats() option is enabled.
 	ClickHouseMaxOpenConnections = "clickhouse.connection.maxOpen"
+
+	// ClickHouseMaxIdleConnections specifies the tag name to use when WithStats() option is enabled.
 	ClickHouseMaxIdleConnections = "clickhouse.connection.maxIdle"
 )
