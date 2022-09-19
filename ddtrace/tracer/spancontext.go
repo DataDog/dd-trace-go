@@ -92,11 +92,11 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
-func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName, rate float64) {
+func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	c.trace.setSamplingPriority(p, sampler, rate, c.span)
+	c.trace.setSamplingPriority(p, sampler)
 }
 
 func (c *spanContext) samplingPriority() (p int, ok bool) {
@@ -201,7 +201,7 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName, rate float64, span *span) {
+func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.setSamplingPriorityLocked(p, sampler)
