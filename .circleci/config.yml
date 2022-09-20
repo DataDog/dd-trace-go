@@ -1,15 +1,15 @@
 version: 2.1
 
-plain-go114: &plain-go116
+plain-go117: &plain-go117
   working_directory: /home/circleci/dd-trace-go.v1
   docker:
-    - image: circleci/golang:1.16
+    - image: circleci/golang:1.17
       environment:
         GOPATH: "/home/circleci/go"
 
 jobs:
   metadata:
-    <<: *plain-go116
+    <<: *plain-go117
 
     steps:
     - checkout
@@ -46,7 +46,7 @@ jobs:
           go run checkcopyright.go
 
   lint:
-    <<: *plain-go116
+    <<: *plain-go117
 
     steps:
     - checkout
@@ -71,10 +71,8 @@ jobs:
     - run:
         name: lint
         command: |
-          go get -u golang.org/x/lint/golint
-          curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
-          ./bin/gometalinter --disable-all --vendor --deadline=60s --enable=golint ./...
-
+          PACKAGE_NAMES=$(go list ./... | grep -v -e grpc.v12) # grpc.v12 is broken so skip it
+          go vet -- $PACKAGE_NAMES
 
   test-core:
     parameters:
@@ -90,7 +88,7 @@ jobs:
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
       CI_APP_SERVICE_NAME: dd-trace-go
-    <<: *plain-go116
+    <<: *plain-go117
 
     steps:
       - checkout
@@ -141,7 +139,7 @@ jobs:
       CI_APP_SERVICE_NAME: dd-trace-go
     working_directory: /home/circleci/dd-trace-go.v1
     docker:
-      - image: circleci/golang:1.16
+      - image: circleci/golang:1.17
         environment:
           GOPATH: "/home/circleci/go"
       - image: cassandra:3.7
@@ -351,13 +349,17 @@ commands:
       - run:
           name: Install datadog-ci binary
           command: |
-            curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output "/tmp/datadog-ci" && chmod +x "/tmp/datadog-ci"
+            if [ -n "${DATADOG_API_KEY}" ]; then
+              curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output "/tmp/datadog-ci" && chmod +x "/tmp/datadog-ci"
+            fi
           when: always
 
       - run:
           name: Upload test result to datadog ci-app
           command: |
-            DATADOG_API_KEY=${DATADOG_API_KEY} /tmp/datadog-ci junit upload --service << parameters.ci-app-service-name >> << parameters.test-result-path >>
+            if [ -n "${DATADOG_API_KEY}" ]; then
+              DATADOG_API_KEY=${DATADOG_API_KEY} /tmp/datadog-ci junit upload --service << parameters.ci-app-service-name >> << parameters.test-result-path >>
+            fi
           when: always
 
 workflows:

@@ -797,6 +797,42 @@ func TestIgnoredMetadata(t *testing.T) {
 	}
 }
 
+func TestCustomTag(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	for _, c := range []struct {
+		key   string
+		value interface{}
+	}{
+		{key: "foo", value: "bar"},
+		{key: "val", value: 123},
+	} {
+		rig, err := newRig(true, WithCustomTag(c.key, c.value))
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		ctx := context.Background()
+		span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
+		rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
+		span.Finish()
+
+		spans := mt.FinishedSpans()
+
+		var serverSpan mocktracer.Span
+		for _, s := range spans {
+			switch s.OperationName() {
+			case "grpc.server":
+				serverSpan = s
+			}
+		}
+
+		assert.NotNil(t, serverSpan)
+		assert.Equal(t, c.value, serverSpan.Tag(c.key))
+		rig.Close()
+		mt.Reset()
+	}
+}
+
 func BenchmarkUnaryServerInterceptor(b *testing.B) {
 	// need to use the real tracer to get representative measurments
 	tracer.Start(tracer.WithLogger(log.DiscardLogger{}),

@@ -60,7 +60,7 @@ func testMemcache(t *testing.T, addr string) {
 				Key:   "key1",
 				Value: []byte("value1"),
 			})
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
@@ -80,7 +80,7 @@ func testMemcache(t *testing.T, addr string) {
 				Key:   "key2",
 				Value: []byte("value2"),
 			})
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 
 		span.Finish()
 

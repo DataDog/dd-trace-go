@@ -12,11 +12,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
-
-	"inet.af/netaddr"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -24,7 +21,7 @@ import (
 )
 
 var (
-	ipv6SpecialNetworks = []*netaddr.IPPrefix{
+	ipv6SpecialNetworks = []*netaddrIPPrefix{
 		ippref("fec0::/10"), // site local
 	}
 	defaultIPHeaders = []string{
@@ -38,9 +35,12 @@ var (
 		"via",
 		"true-client-ip",
 	}
-	clientIPHeader = os.Getenv("DD_TRACE_CLIENT_IP_HEADER")
-	collectIP      = os.Getenv("DD_TRACE_CLIENT_IP_HEADER_DISABLED") != "true"
+	cfg = newConfig()
 )
+
+// multipleIPHeaders sets the multiple ip header tag used internally to tell the backend an error occurred when
+// retrieving an HTTP request client IP.
+const multipleIPHeaders = "_dd.multiple-ip-headers"
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
@@ -50,7 +50,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	opts = append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, r.Method),
-		tracer.Tag(ext.HTTPURL, r.URL.Path),
+		tracer.Tag(ext.HTTPURL, urlFromRequest(r)),
 		tracer.Tag(ext.HTTPUserAgent, r.UserAgent()),
 		tracer.Measured(),
 	}, opts...)
@@ -59,7 +59,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			tracer.Tag("http.host", r.Host),
 		}, opts...)
 	}
-	if collectIP {
+	if cfg.clientIP {
 		opts = append(genClientIPSpanTags(r), opts...)
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
@@ -85,19 +85,19 @@ func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 }
 
 // ippref returns the IP network from an IP address string s. If not possible, it returns nil.
-func ippref(s string) *netaddr.IPPrefix {
-	if prefix, err := netaddr.ParseIPPrefix(s); err == nil {
+func ippref(s string) *netaddrIPPrefix {
+	if prefix, err := netaddrParseIPPrefix(s); err == nil {
 		return &prefix
 	}
 	return nil
 }
 
 // genClientIPSpanTags generates the client IP related tags that need to be added to the span.
-// See https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2118779066/Client+IP+addresses+resolution
+// See https://docs.datadoghq.com/tracing/configure_data_security#configuring-a-client-ip-header for more information.
 func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
 	ipHeaders := defaultIPHeaders
-	if len(clientIPHeader) > 0 {
-		ipHeaders = []string{clientIPHeader}
+	if len(cfg.clientIPHeader) > 0 {
+		ipHeaders = []string{cfg.clientIPHeader}
 	}
 	var headers []string
 	var ips []string
@@ -124,24 +124,24 @@ func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
 		for i := range ips {
 			opts = append(opts, tracer.Tag(ext.HTTPRequestHeaders+"."+headers[i], ips[i]))
 		}
-		opts = append(opts, tracer.Tag(ext.MultipleIPHeaders, strings.Join(headers, ",")))
+		opts = append(opts, tracer.Tag(multipleIPHeaders, strings.Join(headers, ",")))
 	}
 	return opts
 }
 
-func parseIP(s string) netaddr.IP {
-	if ip, err := netaddr.ParseIP(s); err == nil {
+func parseIP(s string) netaddrIP {
+	if ip, err := netaddrParseIP(s); err == nil {
 		return ip
 	}
 	if h, _, err := net.SplitHostPort(s); err == nil {
-		if ip, err := netaddr.ParseIP(h); err == nil {
+		if ip, err := netaddrParseIP(h); err == nil {
 			return ip
 		}
 	}
-	return netaddr.IP{}
+	return netaddrIP{}
 }
 
-func isGlobal(ip netaddr.IP) bool {
+func isGlobal(ip netaddrIP) bool {
 	// IsPrivate also checks for ipv6 ULA.
 	// We care to check for these addresses are not considered public, hence not global.
 	// See https://www.rfc-editor.org/rfc/rfc4193.txt for more details.
@@ -155,4 +155,37 @@ func isGlobal(ip netaddr.IP) bool {
 		}
 	}
 	return isGlobal
+}
+
+// urlFromRequest returns the full URL from the HTTP request. If query params are collected, they are obfuscated granted
+// obfuscation is not disabled by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
+// See https://docs.datadoghq.com/tracing/configure_data_security#redacting-the-query-in-the-url for more information.
+func urlFromRequest(r *http.Request) string {
+	// Quoting net/http comments about net.Request.URL on server requests:
+	// "For most requests, fields other than Path and RawQuery will be
+	// empty. (See RFC 7230, Section 5.3)"
+	// This is why we don't rely on url.URL.String(), url.URL.Host, url.URL.Scheme, etc...
+	var url string
+	path := r.URL.EscapedPath()
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if r.Host != "" {
+		url = strings.Join([]string{scheme, "://", r.Host, path}, "")
+	} else {
+		url = path
+	}
+	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
+	if cfg.queryString && r.URL.RawQuery != "" {
+		query := r.URL.RawQuery
+		if cfg.queryStringRegexp != nil {
+			query = cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")
+		}
+		url = strings.Join([]string{url, query}, "?")
+	}
+	if frag := r.URL.EscapedFragment(); frag != "" {
+		url = strings.Join([]string{url, frag}, "#")
+	}
+	return url
 }

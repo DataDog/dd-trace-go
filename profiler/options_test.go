@@ -6,7 +6,6 @@
 package profiler
 
 import (
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -55,10 +54,8 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("WithAgentAddr/override", func(t *testing.T) {
-		os.Setenv("DD_AGENT_HOST", "bad_host")
-		defer os.Unsetenv("DD_AGENT_HOST")
-		os.Setenv("DD_TRACE_AGENT_PORT", "bad_port")
-		defer os.Unsetenv("DD_TRACE_AGENT_PORT")
+		t.Setenv("DD_AGENT_HOST", "bad_host")
+		t.Setenv("DD_TRACE_AGENT_PORT", "bad_port")
 		var cfg config
 		WithAgentAddr("test:123")(&cfg)
 		expectedURL := "http://test:123/profiling/v1/input"
@@ -79,8 +76,7 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("WithAPIKey/override", func(t *testing.T) {
-		os.Setenv("DD_API_KEY", "apikey")
-		defer os.Unsetenv("DD_API_KEY")
+		t.Setenv("DD_API_KEY", "apikey")
 		var testAPIKey = "12345678901234567890123456789012"
 		var cfg config
 		WithAPIKey(testAPIKey)(&cfg)
@@ -140,8 +136,7 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("WithService/override", func(t *testing.T) {
-		os.Setenv("DD_SERVICE", "envService")
-		defer os.Unsetenv("DD_SERVICE")
+		t.Setenv("DD_SERVICE", "envService")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithService("serviceName")(cfg)
@@ -155,8 +150,7 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("WithSite/override", func(t *testing.T) {
-		os.Setenv("DD_SITE", "wrong.site")
-		defer os.Unsetenv("DD_SITE")
+		t.Setenv("DD_SITE", "wrong.site")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithSite("datadog.eu")(cfg)
@@ -170,8 +164,7 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("WithEnv/override", func(t *testing.T) {
-		os.Setenv("DD_ENV", "envEnv")
-		defer os.Unsetenv("DD_ENV")
+		t.Setenv("DD_ENV", "envEnv")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithEnv("envName")(cfg)
@@ -181,37 +174,37 @@ func TestOptions(t *testing.T) {
 	t.Run("WithVersion", func(t *testing.T) {
 		var cfg config
 		WithVersion("1.2.3")(&cfg)
-		assert.Contains(t, cfg.tags, "version:1.2.3")
+		assert.Contains(t, cfg.tags.Slice(), "version:1.2.3")
 	})
 
 	t.Run("WithVersion/override", func(t *testing.T) {
-		os.Setenv("DD_VERSION", "envVersion")
-		defer os.Unsetenv("DD_VERSION")
+		t.Setenv("DD_VERSION", "envVersion")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithVersion("1.2.3")(cfg)
-		assert.Contains(t, cfg.tags, "version:1.2.3")
+		assert.Contains(t, cfg.tags.Slice(), "version:1.2.3")
 	})
 
 	t.Run("WithTags", func(t *testing.T) {
 		var cfg config
 		WithTags("a:1", "b:2", "c:3")(&cfg)
-		assert.Contains(t, cfg.tags, "a:1")
-		assert.Contains(t, cfg.tags, "b:2")
-		assert.Contains(t, cfg.tags, "c:3")
+		tags := cfg.tags.Slice()
+		assert.Contains(t, tags, "a:1")
+		assert.Contains(t, tags, "b:2")
+		assert.Contains(t, tags, "c:3")
 	})
 
 	t.Run("WithTags/override", func(t *testing.T) {
-		os.Setenv("DD_TAGS", "env1:tag1,env2:tag2")
-		defer os.Unsetenv("DD_TAGS")
+		t.Setenv("DD_TAGS", "env1:tag1,env2:tag2")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithTags("a:1", "b:2", "c:3")(cfg)
-		assert.Contains(t, cfg.tags, "a:1")
-		assert.Contains(t, cfg.tags, "b:2")
-		assert.Contains(t, cfg.tags, "c:3")
-		assert.Contains(t, cfg.tags, "env1:tag1")
-		assert.Contains(t, cfg.tags, "env2:tag2")
+		tags := cfg.tags.Slice()
+		assert.Contains(t, tags, "a:1")
+		assert.Contains(t, tags, "b:2")
+		assert.Contains(t, tags, "c:3")
+		assert.Contains(t, tags, "env1:tag1")
+		assert.Contains(t, tags, "env2:tag2")
 	})
 
 	t.Run("WithDeltaProfiles", func(t *testing.T) {
@@ -221,96 +214,91 @@ func TestOptions(t *testing.T) {
 		WithDeltaProfiles(false)(&cfg)
 		assert.Equal(t, false, cfg.deltaProfiles)
 	})
+
+	t.Run("WithHostname", func(t *testing.T) {
+		var cfg config
+		WithHostname("example")(&cfg)
+		assert.Equal(t, "example", cfg.hostname)
+	})
 }
 
 func TestEnvVars(t *testing.T) {
 	t.Run("DD_AGENT_HOST", func(t *testing.T) {
-		os.Setenv("DD_AGENT_HOST", "agent_host_1")
-		defer os.Unsetenv("DD_AGENT_HOST")
+		t.Setenv("DD_AGENT_HOST", "agent_host_1")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "http://agent_host_1:8126/profiling/v1/input", cfg.agentURL)
 	})
 
 	t.Run("DD_TRACE_AGENT_PORT", func(t *testing.T) {
-		os.Setenv("DD_TRACE_AGENT_PORT", "6218")
-		defer os.Unsetenv("DD_TRACE_AGENT_PORT")
+		t.Setenv("DD_TRACE_AGENT_PORT", "6218")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "http://localhost:6218/profiling/v1/input", cfg.agentURL)
 	})
 
 	t.Run("DD_PROFILING_UPLOAD_TIMEOUT", func(t *testing.T) {
-		os.Setenv("DD_PROFILING_UPLOAD_TIMEOUT", "3s")
-		defer os.Unsetenv("DD_PROFILING_UPLOAD_TIMEOUT")
+		t.Setenv("DD_PROFILING_UPLOAD_TIMEOUT", "3s")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, 3*time.Second, cfg.uploadTimeout)
 	})
 
 	t.Run("DD_AGENT_HOST+DD_TRACE_AGENT_PORT", func(t *testing.T) {
-		os.Setenv("DD_AGENT_HOST", "agent_host_1")
-		defer os.Unsetenv("DD_AGENT_HOST")
-		os.Setenv("DD_TRACE_AGENT_PORT", "6218")
-		defer os.Unsetenv("DD_TRACE_AGENT_PORT")
+		t.Setenv("DD_AGENT_HOST", "agent_host_1")
+		t.Setenv("DD_TRACE_AGENT_PORT", "6218")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "http://agent_host_1:6218/profiling/v1/input", cfg.agentURL)
 	})
 
 	t.Run("DD_API_KEY", func(t *testing.T) {
-		os.Setenv("DD_API_KEY", testAPIKey)
-		defer os.Unsetenv("DD_API_KEY")
+		t.Setenv("DD_API_KEY", testAPIKey)
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, testAPIKey, cfg.apiKey)
 	})
 
 	t.Run("DD_SITE", func(t *testing.T) {
-		os.Setenv("DD_SITE", "datadog.eu")
-		defer os.Unsetenv("DD_SITE")
+		t.Setenv("DD_SITE", "datadog.eu")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "https://intake.profile.datadog.eu/v1/input", cfg.apiURL)
 	})
 
 	t.Run("DD_ENV", func(t *testing.T) {
-		os.Setenv("DD_ENV", "someEnv")
-		defer os.Unsetenv("DD_ENV")
+		t.Setenv("DD_ENV", "someEnv")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "someEnv", cfg.env)
 	})
 
 	t.Run("DD_SERVICE", func(t *testing.T) {
-		os.Setenv("DD_SERVICE", "someService")
-		defer os.Unsetenv("DD_SERVICE")
+		t.Setenv("DD_SERVICE", "someService")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "someService", cfg.service)
 	})
 
 	t.Run("DD_VERSION", func(t *testing.T) {
-		os.Setenv("DD_VERSION", "1.2.3")
-		defer os.Unsetenv("DD_VERSION")
+		t.Setenv("DD_VERSION", "1.2.3")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
-		assert.Contains(t, cfg.tags, "version:1.2.3")
+		assert.Contains(t, cfg.tags.Slice(), "version:1.2.3")
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
-		os.Setenv("DD_TAGS", "a:1,b:2,c:3")
-		defer os.Unsetenv("DD_TAGS")
+		t.Setenv("DD_TAGS", "a:1,b:2,c:3")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
-		assert.Contains(t, cfg.tags, "a:1")
-		assert.Contains(t, cfg.tags, "b:2")
-		assert.Contains(t, cfg.tags, "c:3")
+		tags := cfg.tags.Slice()
+		assert.Contains(t, tags, "a:1")
+		assert.Contains(t, tags, "b:2")
+		assert.Contains(t, tags, "c:3")
 	})
 
 	t.Run("DD_PROFILING_DELTA", func(t *testing.T) {
-		os.Setenv("DD_PROFILING_DELTA", "false")
-		defer os.Unsetenv("DD_PROFILING_DELTA")
+		t.Setenv("DD_PROFILING_DELTA", "false")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, cfg.deltaProfiles, false)
@@ -339,7 +327,7 @@ func TestDefaultConfig(t *testing.T) {
 		assert.Equal(0, cfg.cpuProfileRate)
 		assert.Equal(DefaultMutexFraction, cfg.mutexFraction)
 		assert.Equal(DefaultBlockRate, cfg.blockRate)
-		assert.Contains(cfg.tags, "runtime-id:"+globalconfig.RuntimeID())
+		assert.Contains(cfg.tags.Slice(), "runtime-id:"+globalconfig.RuntimeID())
 		assert.Equal(true, cfg.deltaProfiles)
 	})
 }
@@ -370,13 +358,12 @@ func TestAddProfileType(t *testing.T) {
 }
 
 func TestWith_outputDir(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "")
+	tmpDir, err := os.MkdirTemp("", "")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	// Use env to enable this like a user would.
-	os.Setenv("DD_PROFILING_OUTPUT_DIR", tmpDir)
-	defer os.Unsetenv("DD_PROFILING_OUTPUT_DIR")
+	t.Setenv("DD_PROFILING_OUTPUT_DIR", tmpDir)
 
 	p, err := unstartedProfiler()
 	require.NoError(t, err)
@@ -393,7 +380,7 @@ func TestWith_outputDir(t *testing.T) {
 
 	fileData := map[string]string{}
 	for _, file := range files {
-		data, err := ioutil.ReadFile(file)
+		data, err := os.ReadFile(file)
 		require.NoError(t, err)
 		fileData[filepath.Base(file)] = string(data)
 	}

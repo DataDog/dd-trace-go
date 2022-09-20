@@ -18,7 +18,6 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -75,7 +74,7 @@ type Client struct {
 	SubmissionInterval time.Duration
 
 	// e.g. "tracers", "profilers", "appsec"
-	Namespace string
+	Namespace Namespace
 
 	// App-specific information
 	Service string
@@ -87,10 +86,25 @@ type Client struct {
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED is set to 0 or false
 	Disabled bool
 
+	// debug enables the debug flag for all requests, see
+	// https://dtdg.co/3bv2MMv If set, the DD_INSTRUMENTATION_TELEMETRY_DEBUG
+	// takes precedence over this field.
+	debug bool
+
 	// Optional destination to record submission-related logging events
 	Logger interface {
 		Printf(msg string, args ...interface{})
 	}
+
+	// Client will be used for telemetry uploads. This http.Client, if
+	// provided, should be the same as would be used for any other
+	// interaction with the Datadog agent, e.g. if the agent is accessed
+	// over UDS, or if the user provides their own http.Client to the
+	// profiler/tracer to access the agent over a proxy.
+	//
+	// If Client is nil, an http.Client with the same Transport settings as
+	// http.DefaultTransport and a 5 second timeout will be used.
+	Client *http.Client
 
 	// mu guards all of the following fields
 	mu sync.Mutex
@@ -122,13 +136,14 @@ func (c *Client) log(msg string, args ...interface{}) {
 func (c *Client) Start(integrations []Integration, configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	enabled := os.Getenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED")
-	if c.Disabled || enabled == "0" || enabled == "false" {
+	if c.Disabled || !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) {
 		return
 	}
 	if c.started {
 		return
 	}
+	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", c.debug)
+
 	c.started = true
 
 	// XXX: Should we let metrics persist between starting and stopping?
@@ -145,22 +160,20 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 				Dependency{
 					Name:    dep.Path,
 					Version: dep.Version,
-					// TODO: Neither of the types in the API
-					// docs (this or "SharedSystemLibrary")
-					// describe Go dependencies well
-					Type: "PlatformStandard",
 				},
 			)
 		}
 	}
 
-	fromEnvOrDefault := func(key, def string) string {
-		if v := os.Getenv(key); len(v) > 0 {
-			return v
+	// configEnvFallback returns the value of environment variable with the
+	// given key if def == ""
+	configEnvFallback := func(key, def string) string {
+		if def != "" {
+			return def
 		}
-		return def
+		return os.Getenv(key)
 	}
-	c.Service = fromEnvOrDefault("DD_SERVICE", c.Service)
+	c.Service = configEnvFallback("DD_SERVICE", c.Service)
 	if len(c.Service) == 0 {
 		if name := globalconfig.ServiceName(); len(name) != 0 {
 			c.Service = name
@@ -169,11 +182,10 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 			c.Service = "unnamed-go-service"
 		}
 	}
-	c.Env = fromEnvOrDefault("DD_ENV", c.Env)
-	c.Version = fromEnvOrDefault("DD_VERSION", c.Version)
+	c.Env = configEnvFallback("DD_ENV", c.Env)
+	c.Version = configEnvFallback("DD_VERSION", c.Version)
 
-	c.APIKey = fromEnvOrDefault("DD_API_KEY", c.APIKey)
-	// TODO: Initialize URL/endpoint from environment var
+	c.APIKey = configEnvFallback("DD_API_KEY", c.APIKey)
 
 	r := c.newRequest(RequestTypeAppStarted)
 	r.Payload = payload
@@ -342,13 +354,14 @@ func getOSVersion() string {
 // newRequests populates a request with the common fields shared by all requests
 // sent through this Client
 func (c *Client) newRequest(t RequestType) *Request {
-	seqID := atomic.AddInt64(&c.seqID, 1)
+	c.seqID += 1
 	return &Request{
 		APIVersion:  "v1",
 		RequestType: t,
 		TracerTime:  time.Now().Unix(),
 		RuntimeID:   globalconfig.RuntimeID(),
-		SeqID:       seqID,
+		SeqID:       c.seqID,
+		Debug:       c.debug,
 		Application: Application{
 			ServiceName:     c.Service,
 			Env:             c.Env,
@@ -387,7 +400,11 @@ func (c *Client) submit(r *Request) error {
 	}
 	req.ContentLength = int64(len(b))
 
-	resp, err := defaultClient.Do(req)
+	client := c.Client
+	if client == nil {
+		client = defaultClient
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

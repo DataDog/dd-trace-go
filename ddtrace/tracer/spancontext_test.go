@@ -7,17 +7,16 @@ package tracer
 
 import (
 	"context"
-	"math"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func setupteardown(start, max int) func() {
@@ -407,24 +406,6 @@ func TestSpanContextIteratorBreak(t *testing.T) {
 	assert.Len(t, got, 0)
 }
 
-func TestBuildNewUpstreamServices(t *testing.T) {
-	var testCases = []struct {
-		service  string
-		priority int
-		sampler  samplernames.SamplerName
-		rate     float64
-		expected string
-	}{
-		{"service-account", 1, samplernames.AgentRate, 0.99, "c2VydmljZS1hY2NvdW50|1|1|0.9900"},
-		{"service-storage", 2, samplernames.Manual, math.NaN(), "c2VydmljZS1zdG9yYWdl|2|4|"},
-		{"service-video", 1, samplernames.RuleRate, 1, "c2VydmljZS12aWRlbw|1|3|1.0000"},
-	}
-
-	for _, tt := range testCases {
-		assert.Equal(t, tt.expected, compactUpstreamServices(tt.service, tt.priority, tt.sampler, tt.rate))
-	}
-}
-
 // testLogger implements a mock Printer.
 type testLogger struct {
 	mu    sync.RWMutex
@@ -480,4 +461,35 @@ func removeAppSec(lines []string) []string {
 		res = append(res, line)
 	}
 	return res
+}
+
+func TestSetSamplingPriorityLocked(t *testing.T) {
+	t.Run("NoPriorAndP0IsIgnored", func(t *testing.T) {
+		tr := trace{
+			propagatingTags: map[string]string{},
+		}
+		tr.setSamplingPriorityLocked(0, samplernames.RemoteRate)
+		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
+	})
+	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
+		tr := trace{
+			propagatingTags: map[string]string{},
+		}
+		tr.setSamplingPriorityLocked(0, samplernames.Unknown)
+		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
+	})
+	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
+		tr := trace{
+			propagatingTags: map[string]string{},
+		}
+		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
+		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
+	})
+	t.Run("PriorAndP1IsIgnored", func(t *testing.T) {
+		tr := trace{
+			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
+		}
+		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
+		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
+	})
 }

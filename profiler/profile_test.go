@@ -9,8 +9,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -225,7 +223,7 @@ main.main()
 ...additional frames elided...
 `
 
-		p, err := unstartedProfiler()
+		p, err := unstartedProfiler(WithPeriod(10 * time.Millisecond))
 		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(sample))
 			return err
@@ -237,7 +235,7 @@ main.main()
 		require.Equal(t, "goroutineswait.pprof", profs[0].name)
 
 		// pro tip: enable line below to inspect the pprof output using cli tools
-		// ioutil.WriteFile(prof.name, prof.data, 0644)
+		// os.WriteFile(prof.name, prof.data, 0644)
 
 		requireFunctions := func(t *testing.T, s *pprofile.Sample, want []string) {
 			t.Helper()
@@ -304,10 +302,7 @@ main.main()
 
 		stop := spawnGoroutines(goroutines)
 		defer stop()
-		envVar := "DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"
-		oldVal := os.Getenv(envVar)
-		os.Setenv(envVar, strconv.Itoa(limit))
-		defer os.Setenv(envVar, oldVal)
+		t.Setenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES", strconv.Itoa(limit))
 
 		p, err := unstartedProfiler()
 		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
@@ -325,7 +320,7 @@ main.main()
 }
 
 func Test_goroutineDebug2ToPprof_CrashSafety(t *testing.T) {
-	err := goroutineDebug2ToPprof(panicReader{}, ioutil.Discard, time.Time{})
+	err := goroutineDebug2ToPprof(panicReader{}, io.Discard, time.Time{})
 	require.NotNil(t, err)
 	require.Equal(t, "panic: 42", err.Error())
 }
@@ -355,6 +350,16 @@ func (t textProfile) Protobuf() []byte {
 	}
 	if !t.Time.IsZero() {
 		prof.TimeNanos = t.Time.UnixNano()
+	}
+	for _, st := range prof.SampleType {
+		if st.Type == "alloc_space" {
+			// this is a heap profile, add the correct period type
+			// to make pprofile.Merge happy since the C allocation
+			// profiler assumes it's generating a profile to merge
+			// with the real heap profile.
+			prof.PeriodType = &pprofile.ValueType{Type: "space", Unit: "bytes"}
+			break
+		}
 	}
 	if err := prof.Write(out); err != nil {
 		panic(err)
