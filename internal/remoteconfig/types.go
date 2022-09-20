@@ -7,6 +7,7 @@ type ClientData struct {
 	IsTracer     bool          `json:"is_tracer,omitempty"`
 	ClientTracer *ClientTracer `json:"client_tracer,omitempty"`
 	LastSeen     uint64        `json:"last_seen,omitempty"`
+	Capabilities []byte        `json:"capabilities,omitempty"`
 }
 
 type ClientTracer struct {
