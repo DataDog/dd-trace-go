@@ -7,13 +7,14 @@ package chi
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 
+	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -66,7 +67,7 @@ func TestTrace200(t *testing.T) {
 		assert.Equal("GET /user/{id}", span.Tag(ext.ResourceName))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
-		assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+		assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 	}
 
 	t.Run("response written", func(t *testing.T) {
@@ -323,6 +324,11 @@ func TestAppSec(t *testing.T) {
 		_, err := w.Write([]byte("Hello World!\n"))
 		require.NoError(t, err)
 	})
+	router.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
+		pappsec.MonitorParsedHTTPBody(r.Context(), "$globals")
+		_, err := w.Write([]byte("Hello Body!\n"))
+		require.NoError(t, err)
+	})
 
 	srv := httptest.NewServer(router)
 	defer srv.Close()
@@ -331,7 +337,7 @@ func TestAppSec(t *testing.T) {
 	t.Run("request-uri", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		// Send an LFI attack (according to appsec rule id crs-930-100)
+		// Send an LFI attack (according to appsec rule id crs-930-110)
 		req, err := http.NewRequest("POST", srv.URL+"/../../../secret.txt", nil)
 		if err != nil {
 			panic(err)
@@ -340,7 +346,7 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 		// Check that the server behaved as intended
 		require.Equal(t, http.StatusOK, res.StatusCode)
-		b, err := ioutil.ReadAll(res.Body)
+		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		require.Equal(t, "Hello World!\n", string(b))
 		// The span should contain the security event
@@ -351,7 +357,7 @@ func TestAppSec(t *testing.T) {
 		event := finished[0].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event, "server.request.uri.raw"))
-		require.True(t, strings.Contains(event, "crs-930-100"))
+		require.True(t, strings.Contains(event, "crs-930-110"))
 	})
 
 	// Test a security scanner attack via path parameters
@@ -366,7 +372,7 @@ func TestAppSec(t *testing.T) {
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
 		// Check that the handler was properly called
-		b, err := ioutil.ReadAll(res.Body)
+		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		require.Equal(t, "Hello World!\n", string(b))
 		require.Equal(t, http.StatusOK, res.StatusCode)
@@ -378,5 +384,30 @@ func TestAppSec(t *testing.T) {
 		require.True(t, strings.Contains(event, "crs-913-120"))
 		require.True(t, strings.Contains(event, "myPathParam2"))
 		require.True(t, strings.Contains(event, "server.request.path_params"))
+	})
+
+	// Test a PHP injection attack via request parsed body
+	t.Run("SDK-body", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("POST", srv.URL+"/body", nil)
+		if err != nil {
+			panic(err)
+		}
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+
+		// Check that the handler was properly called
+		b, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, "Hello Body!\n", string(b))
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		event := finished[0].Tag("_dd.appsec.json")
+		require.NotNil(t, event)
+		require.True(t, strings.Contains(event.(string), "crs-933-130"))
 	})
 }

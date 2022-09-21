@@ -9,8 +9,10 @@ import (
 	gocontext "context"
 	"os"
 	"runtime/pprof"
+	rt "runtime/trace"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -44,8 +46,8 @@ type tracer struct {
 	// destination, such as the Trace Agent or Datadog Forwarder.
 	traceWriter traceWriter
 
-	// out receives traces to be added to the payload.
-	out chan []*span
+	// out receives finishedTrace with spans  to be added to the payload.
+	out chan *finishedTrace
 
 	// flush receives a channel onto which it will confirm after a flush has been
 	// triggered and completed.
@@ -68,12 +70,16 @@ type tracer struct {
 
 	// These integers track metrics about spans and traces as they are started,
 	// finished, and dropped
-	spansStarted, spansFinished, tracesDropped int64
+	spansStarted, spansFinished, tracesDropped uint32
 
 	// Records the number of dropped P0 traces and spans.
-	droppedP0Traces, droppedP0Spans uint64
+	droppedP0Traces, droppedP0Spans uint32
 
-	// rulesSampling holds an instance of the rules sampler. These are user-defined
+	// partialTrace the number of partially dropped traces.
+	partialTraces uint32
+
+	// rulesSampling holds an instance of the rules sampler used to apply either trace sampling,
+	// or single span sampling rules on spans. These are user-defined
 	// rules for applying a sampling rate to spans that match the designated service
 	// or operation name.
 	rulesSampling *rulesSampler
@@ -153,18 +159,32 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return internal.GetGlobalTracer().Inject(ctx, carrier)
 }
 
+// SetUser associates user information to the current trace which the
+// provided span belongs to. The options can be used to tune which user
+// bit of information gets monitored. In case of distributed traces,
+// the user id can be propagated across traces using the WithPropagation() option.
+// See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
+func SetUser(s Span, id string, opts ...UserMonitoringOption) {
+	if s == nil {
+		return
+	}
+	sp, ok := s.(*span)
+	if !ok || sp.context == nil {
+		return
+	}
+	sp = sp.context.trace.root
+	var cfg UserMonitoringConfig
+	for _, fn := range opts {
+		fn(&cfg)
+	}
+	sp.setUser(id, cfg)
+}
+
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
 func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := newConfig(opts...)
-	envRules, err := samplingRulesFromEnv()
-	if err != nil {
-		log.Warn("DIAGNOSTICS Error(s) parsing DD_TRACE_SAMPLING_RULES: %s", err)
-	}
-	if envRules != nil {
-		c.samplingRules = envRules
-	}
 	sampler := newPrioritySampler()
 	var writer traceWriter
 	if c.logToStdout {
@@ -172,13 +192,23 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	} else {
 		writer = newAgentTraceWriter(c, sampler)
 	}
+	traces, spans, err := samplingRulesFromEnv()
+	if err != nil {
+		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors:%s", err)
+	}
+	if traces != nil {
+		c.traceRules = traces
+	}
+	if spans != nil {
+		c.spanRules = spans
+	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
-		out:              make(chan []*span, payloadQueueSize),
+		out:              make(chan *finishedTrace, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
-		rulesSampling:    newRulesSampler(c.samplingRules),
+		rulesSampling:    newRulesSampler(c.traceRules, c.spanRules),
 		prioritySampling: sampler,
 		pid:              strconv.Itoa(os.Getpid()),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
@@ -257,8 +287,10 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
-			t.traceWriter.add(trace)
-
+			t.sampleFinishedTrace(trace)
+			if len(trace.spans) != 0 {
+				t.traceWriter.add(trace.spans)
+			}
 		case <-tick:
 			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -278,7 +310,10 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			for {
 				select {
 				case trace := <-t.out:
-					t.traceWriter.add(trace)
+					t.sampleFinishedTrace(trace)
+					if len(trace.spans) != 0 {
+						t.traceWriter.add(trace.spans)
+					}
 				default:
 					break loop
 				}
@@ -288,7 +323,38 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	}
 }
 
-func (t *tracer) pushTrace(trace []*span) {
+// finishedTrace holds information about a trace that has finished, including its spans.
+type finishedTrace struct {
+	spans    []*span
+	decision samplingDecision
+}
+
+// sampleFinishedTrace applies single-span sampling to the provided trace, which is considered to be finished.
+func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
+	if info.decision == decisionKeep {
+		return
+	}
+	var kept []*span
+	if t.rulesSampling.HasSpanRules() {
+		// Apply sampling rules to individual spans in the trace.
+		for _, span := range info.spans {
+			if t.rulesSampling.SampleSpan(span) {
+				kept = append(kept, span)
+			}
+		}
+		if len(kept) > 0 && len(kept) < len(info.spans) {
+			// Some spans in the trace were kept, so a partial trace will be sent.
+			atomic.AddUint32(&t.partialTraces, 1)
+		}
+	}
+	if len(kept) == 0 {
+		atomic.AddUint32(&t.droppedP0Traces, 1)
+	}
+	atomic.AddUint32(&t.droppedP0Spans, uint32(len(info.spans)-len(kept)))
+	info.spans = kept
+}
+
+func (t *tracer) pushTrace(trace *finishedTrace) {
 	select {
 	case <-t.stop:
 		return
@@ -297,7 +363,7 @@ func (t *tracer) pushTrace(trace []*span) {
 	select {
 	case t.out <- trace:
 	default:
-		log.Error("payload queue full, dropping %d traces", len(trace))
+		log.Error("payload queue full, dropping %d traces", len(trace.spans))
 	}
 }
 
@@ -340,7 +406,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	id := opts.SpanID
 	if id == 0 {
-		id = random.Uint64()
+		id = generateSpanID(startTime)
 	}
 	// span defaults
 	span := &span{
@@ -394,16 +460,23 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for k, v := range t.config.globalTags {
 		span.SetTag(k, v)
 	}
+	if t.config.serviceMappings != nil {
+		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
+			span.Service = newSvc
+		}
+	}
 	if context == nil || context.span == nil || context.span.Service != span.Service {
 		span.setMetric(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.Metrics, keyMeasured)
 	}
-	if t.config.version != "" && span.Service == t.config.serviceName {
-		span.SetTag(ext.Version, t.config.version)
+	if t.config.version != "" {
+		if t.config.universalVersion || (!t.config.universalVersion && span.Service == t.config.serviceName) {
+			span.setMeta(ext.Version, t.config.version)
+		}
 	}
 	if t.config.env != "" {
-		span.SetTag(ext.Environment, t.config.env)
+		span.setMeta(ext.Environment, t.config.env)
 	}
 	if _, ok := span.context.samplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
@@ -417,8 +490,19 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			span.Service = newSvc
 		}
 	}
-	log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", span, span.Name, span.Resource, span.Meta, span.Metrics)
+	if log.DebugEnabled() {
+		// avoid allocating the ...interface{} argument if debug logging is disabled
+		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
+			span, span.Name, span.Resource, span.Meta, span.Metrics)
+	}
 	return span
+}
+
+// generateSpanID returns a random uint64 that has been XORd with the startTime.
+// This is done to get around the 32-bit random seed limitation that may create collisions if there is a large number
+// of go services all generating spans.
+func generateSpanID(startTime int64) uint64 {
+	return random.Uint64() ^ uint64(startTime)
 }
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
@@ -493,8 +577,16 @@ func (t *tracer) sample(span *span) {
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, rs.Rate())
 	}
-	if t.rulesSampling.apply(span) {
+	if t.rulesSampling.SampleTrace(span) {
 		return
 	}
 	t.prioritySampling.apply(span)
+}
+
+func startExecutionTracerTask(name string) func() {
+	if !rt.IsEnabled() {
+		return func() {}
+	}
+	_, task := rt.NewTask(gocontext.TODO(), name)
+	return task.End
 }

@@ -22,26 +22,36 @@
 //
 // More precise control of sampling rates can be configured using sampling rules.
 // This can be applied based on span name, service or both, and is used to determine
-// the sampling rate to apply.
-//   rules := []tracer.SamplingRule{
-//         // sample 10% of traces with the span name "web.request"
-//         tracer.NameRule("web.request", 0.1),
-//         // sample 20% of traces for the service "test-service"
-//         tracer.ServiceRule("test-service", 0.2),
-//         // sample 30% of traces when the span name is "db.query" and the service
-//         // is "postgres.db"
-//         tracer.NameServiceRule("db.query", "postgres.db", 0.3),
-//         // sample 100% of traces when service and name match these regular expressions
-//         {Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile("http\\..*"), Rate: 1.0},
-//   }
-//   tracer.Start(tracer.WithSamplingRules(rules))
-//   defer tracer.Stop()
+// the sampling rate to apply. MaxPerSecond specifies max number of spans per second
+// that can be sampled per the rule and applies only to sampling rules of type
+// tracer.SamplingRuleSpan. If MaxPerSecond is not specified, the default is no limit.
+//	rules := []tracer.SamplingRule{
+//	      // sample 10% of traces with the span name "web.request"
+//	      tracer.NameRule("web.request", 0.1),
+//	      // sample 20% of traces for the service "test-service"
+//	      tracer.ServiceRule("test-service", 0.2),
+//	      // sample 30% of traces when the span name is "db.query" and the service
+//	      // is "postgres.db"
+//	      tracer.NameServiceRule("db.query", "postgres.db", 0.3),
+//	      // sample 100% of traces when service and name match these regular expressions
+//	      {Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile("http\\..*"), Rate: 1.0},
+//	      // sample 50% of traces when service and name match these glob patterns with no limit on the number of spans
+//	      tracer.SpanNameServiceRule("^test-", "http\\..*", 0.5),
+//	      // sample 50% of traces when service and name match these glob patterns up to 100 spans per second
+//	      tracer.SpanNameServiceMPSRule("^test-", "http\\..*", 0.5, 100),
+//	}
+//	tracer.Start(tracer.WithSamplingRules(rules))
+//	defer tracer.Stop()
 //
-// Sampling rules can also be configured at runtime using the DD_TRACE_SAMPLING_RULES
-// environment variable. When set, it overrides rules set by tracer.WithSamplingRules.
-// The value is a JSON array of objects. Each object must have a "sample_rate", and the
-// "name" and "service" fields are optional.
-//    export DD_TRACE_SAMPLING_RULES='[{"name": "web.request", "sample_rate": 1.0}]'
+// Sampling rules can also be configured at runtime using the DD_TRACE_SAMPLING_RULES and
+// DD_SPAN_SAMPLING_RULES environment variables. When set, it overrides rules set by tracer.WithSamplingRules.
+// The value is a JSON array of objects. All rule objects must have a "sample_rate".
+// For trace sampling rules the "name" and "service" fields are optional.
+// For span sampling rules, at least one of the fields must be specified and must be a valid glob pattern,
+// i.e. a string where "*" matches any contiguous substring, even the empty string,
+// and "?" character matches exactly one of any character.
+//	export DD_TRACE_SAMPLING_RULES='[{"name": "web.request", "sample_rate": 1.0}]'
+//	export DD_SPAN_SAMPLING_RULES='[{"service":"test.?","name": "web.*", "sample_rate": 1.0, "max_per_second":100}]'
 //
 // To create spans, use the functions StartSpan and StartSpanFromContext. Both accept
 // StartSpanOptions that can be used to configure the span. A span that is started

@@ -46,7 +46,7 @@ func TestClientStatsHandler(t *testing.T) {
 	span := spans[0]
 	assert.Equal(rootSpan.Context().SpanID(), span.ParentID())
 	assert.NotZero(span.StartTime())
-	assert.True(span.FinishTime().After(span.StartTime()))
+	assert.True(span.FinishTime().Sub(span.StartTime()) >= 0)
 	assert.Equal("grpc.client", span.OperationName())
 	tags := span.Tags()
 	assert.Equal(ext.AppTypeRPC, tags["span.type"])

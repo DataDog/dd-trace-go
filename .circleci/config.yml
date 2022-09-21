@@ -1,39 +1,15 @@
 version: 2.1
 
-plain-go114: &plain-go114
+plain-go117: &plain-go117
   working_directory: /home/circleci/dd-trace-go.v1
   docker:
-    - image: circleci/golang:1.14
+    - image: circleci/golang:1.17
       environment:
         GOPATH: "/home/circleci/go"
 
 jobs:
-  go1_12-build:
-    # Validate that the core builds with go1.12
-    parameters:
-      build_tags:
-        description: "go build tags used to compile"
-        default: ""
-        type: string
-    docker:
-      - image: circleci/golang:1.12
-        environment:
-          GOPATH: "/home/circleci/go"
-    working_directory: /home/circleci/dd-trace-go.v1
-    steps:
-    - checkout
-
-    - run:
-        name: build
-        command: |
-          # Fixes fatal: unable to access 'https://gopkg.in/yaml.v3/': server certificate verification failed. CAfile: none CRLfile: none
-          # See https://github.com/DataDog/dd-trace-go/pull/1029
-          sudo apt update && sudo apt install ca-certificates libgnutls30 -y
-
-          go build -v -tags "<< parameters.build_tags >>" ./ddtrace/... ./profiler/... ./internal/appsec/...
-
   metadata:
-    <<: *plain-go114
+    <<: *plain-go117
 
     steps:
     - checkout
@@ -70,7 +46,7 @@ jobs:
           go run checkcopyright.go
 
   lint:
-    <<: *plain-go114
+    <<: *plain-go117
 
     steps:
     - checkout
@@ -95,10 +71,8 @@ jobs:
     - run:
         name: lint
         command: |
-          go get -u golang.org/x/lint/golint
-          curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
-          ./bin/gometalinter --disable-all --vendor --deadline=60s --enable=golint ./...
-
+          PACKAGE_NAMES=$(go list ./... | grep -v -e grpc.v12) # grpc.v12 is broken so skip it
+          go vet -- $PACKAGE_NAMES
 
   test-core:
     parameters:
@@ -106,11 +80,15 @@ jobs:
         description: "go build tags to use to compile the tests"
         default: ""
         type: string
+      goflags:
+        description: "extra goflags to pass to go test"
+        default: ""
+        type: string
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-      DD_APPSEC_WAF_TIMEOUT: 1s
-    <<: *plain-go114
+      CI_APP_SERVICE_NAME: dd-trace-go
+    <<: *plain-go117
 
     steps:
       - checkout
@@ -120,15 +98,10 @@ jobs:
           keys:
             - go-mod-v5-core-{{ checksum "go.sum.orig" }}
       - run:
-          name: Enforce some dependencies
-          command: |
-            # last version compatible with go1.14, needed for testtraceprof
-            echo 'replace golang.org/x/net => golang.org/x/net d418f374d30933c6c7db22cf349625c295a5afaa' >> go.mod
-      - run:
           name: Testing
           command: |
             PACKAGE_NAMES=$(go list ./... | grep -v /contrib/ | circleci tests split --split-by=timings --timings-type=classname)
-            env DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true) gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
 
       - save_cache:
           key: go-mod-v5-core-{{ checksum "go.sum.orig" }}
@@ -146,6 +119,9 @@ jobs:
           name: Upload coverage report to Codecov
           command: bash <(curl -s https://codecov.io/bash)
 
+      - upload-to-ci-app:
+          test-result-path: ${TEST_RESULTS}
+          ci-app-service-name: ${CI_APP_SERVICE_NAME}
 
   test-contrib:
     parameters:
@@ -153,13 +129,17 @@ jobs:
         description: "go build tags to use to compile the tests"
         default: ""
         type: string
+      goflags:
+        description: "extra goflags to pass to go test"
+        default: ""
+        type: string
     resource_class: xlarge
     environment: # environment variables for the build itself
       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-      DD_APPSEC_WAF_TIMEOUT: 1s
+      CI_APP_SERVICE_NAME: dd-trace-go
     working_directory: /home/circleci/dd-trace-go.v1
     docker:
-      - image: circleci/golang:1.14
+      - image: circleci/golang:1.17
         environment:
           GOPATH: "/home/circleci/go"
       - image: cassandra:3.7
@@ -176,6 +156,10 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
           POSTGRES_DB: postgres
+      - image: mcr.microsoft.com/mssql/server:2019-latest
+        environment:
+         SA_PASSWORD: myPassw0rd
+         ACCEPT_EULA: Y
       - image: consul:1.6.0
       - image: redis:3.2
       - image: elasticsearch:2
@@ -201,16 +185,19 @@ jobs:
           DD_API_KEY: invalid_key_but_this_is_fine
       - image: circleci/mongo:latest-ram
       - image: memcached:1.5.9
-      - image: confluentinc/cp-zookeeper:5.0.0
+      - image: bitnami/zookeeper:latest
         environment:
-          ZOOKEEPER_CLIENT_PORT: "2181"
-      - image: confluentinc/cp-kafka:5.0.0
+          ALLOW_ANONYMOUS_LOGIN: yes
+      - image: bitnami/kafka:2
         environment:
-          KAFKA_ZOOKEEPER_CONNECT: localhost:2181
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-          KAFKA_CREATE_TOPICS: gotest:1:1
-          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+          KAFKA_CFG_ZOOKEEPER_CONNECT: localhost:2181
+          KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092
+          ALLOW_PLAINTEXT_LISTENER: yes
+      - image: bitnami/kafka:2
+        environment:
+          KAFKA_CFG_ZOOKEEPER_CONNECT: localhost:2181
+        command: [kafka-topics.sh, --create, --topic, gosegtest, --bootstrap-server, localhost:9092]
       - image: aerospike:ce-5.7.0.8
 
     steps:
@@ -241,27 +228,16 @@ jobs:
           - /tmp/librdkafka-v1.3.0
 
       - run:
-          name: Enforce some dependencies
-          command: |
-            go get k8s.io/client-go@v0.17.0
-            go get k8s.io/apimachinery@v0.17.0
-            go get cloud.google.com/go/pubsub@v1.6.1
-            # Temporarily enforce this version. 1.9.0 is incompatible with go < 1.16
-            go get github.com/hashicorp/consul/api@v1.8.1
-            # github.com/hashicorp/vault/sdk > v0.2.0 doesn't compile with go1.14
-            go get github.com/hashicorp/vault/sdk@v0.2.0
-            # Shopify/sarama > v1.22 doesn't compile with go1.14
-            go get github.com/Shopify/sarama@v1.22.0
-            # Temporary enforcing gorm to v1.22.4 to avoid the problems of v1.22.5
-            go get -v gorm.io/gorm@v1.22.4
-
-      - run:
           name: Wait for MySQL
           command: dockerize -wait tcp://localhost:3306 -timeout 1m
 
       - run:
           name: Wait for Postgres
           command: dockerize -wait tcp://localhost:5432 -timeout 1m
+
+      - run:
+          name: Wait for MS SQL Server
+          command: dockerize -wait tcp://localhost:1433 -timeout 1m
 
       - run:
           name: Wait for Redis
@@ -304,12 +280,20 @@ jobs:
           command: dockerize -wait tcp://localhost:3000 -timeout 1m
 
       - run:
+          name: Go module graph (before)
+          command: go mod graph
+
+      - run:
           name: Testing integrations
           command: |
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api | circleci tests split --split-by=timings --timings-type=classname)
-            export DD_APPSEC_ENABLED=$(test "<< parameters.build_tags >>" = appsec && echo -n true)
             export INTEGRATION=true
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v << parameters.goflags >> -coverprofile=coverage.txt -covermode=atomic -tags "<< parameters.build_tags >>"
+
+      - run:
+          name: Go module graph (after)
+          command: go mod graph
+          when: always
 
       - store_artifacts: # upload test summary for display in Artifacts
           path: /tmp/test-results
@@ -322,6 +306,7 @@ jobs:
           name: Testing outlier google.golang.org/api
           command: |
                 go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
+                go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
                 go test -v ./contrib/google.golang.org/api/...
 
       - run:
@@ -352,21 +337,58 @@ jobs:
           name: Upload coverage report to Codecov
           command: bash <(curl -s https://codecov.io/bash)
 
+      - upload-to-ci-app:
+          test-result-path: ${TEST_RESULTS}
+          ci-app-service-name: ${CI_APP_SERVICE_NAME}
+
+commands:
+  upload-to-ci-app:
+    parameters:
+      test-result-path:
+        description: test result path
+        type: string
+      ci-app-service-name:
+        description: service name
+        type: string
+    steps:
+      - run:
+          name: Install datadog-ci binary
+          command: |
+            if [ -n "${DATADOG_API_KEY}" ]; then
+              curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output "/tmp/datadog-ci" && chmod +x "/tmp/datadog-ci"
+            fi
+          when: always
+
+      - run:
+          name: Upload test result to datadog ci-app
+          command: |
+            if [ -n "${DATADOG_API_KEY}" ]; then
+              DATADOG_API_KEY=${DATADOG_API_KEY} /tmp/datadog-ci junit upload --service << parameters.ci-app-service-name >> << parameters.test-result-path >>
+            fi
+          when: always
+
 workflows:
   version: 2
   build-and-test:
     jobs:
-      - go1_12-build:
-          matrix:
-            parameters:
-              build_tags: [ "", "appsec" ]
       - metadata
       - lint
+      - test-core
+      - test-contrib
+  nightly:
+    triggers:
+      - schedule:
+          cron: "0 0 * * *"
+          filters:
+            branches:
+              only:
+                - main
+    jobs:
       - test-core:
           matrix:
             parameters:
-              build_tags: [ "", "appsec" ]
+              goflags: [ "-race" ]
       - test-contrib:
           matrix:
             parameters:
-              build_tags: [ "", "appsec" ]
+              goflags: [ "-race" ]

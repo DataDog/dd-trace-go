@@ -25,6 +25,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -34,18 +36,20 @@ const (
 	// For more information or for changing this value, check MutexProfileFraction
 	DefaultMutexFraction = 10
 
-	// DefaultBlockRate specifies the default block profiling rate used by the
-	// block profiler. For more information or for changing this value, check
-	// BlockProfileRate. The default rate is chosen to prevent high overhead
-	// based on the research from:
-	// https://github.com/felixge/go-profiler-notes/blob/main/block.md#benchmarks
-	DefaultBlockRate = 10000
+	// DefaultBlockRate specifies the default block profiling rate (in ns) used
+	// by the block profiler. For more information or for changing this value,
+	// check BlockProfileRate(). The default value of 100ms is somewhat
+	// arbitrary. There is no provably safe value that will guarantee low
+	// overhead for this profile type for all workloads. We don't recommend
+	// enabling it under normal circumstances. See the link below for more
+	// information: https://github.com/DataDog/go-profiler-notes/pull/15/files
+	DefaultBlockRate = 100000000
 
 	// DefaultPeriod specifies the default period at which profiles will be collected.
 	DefaultPeriod = time.Minute
 
 	// DefaultDuration specifies the default length of the CPU profile snapshot.
-	DefaultDuration = time.Second * 15
+	DefaultDuration = time.Minute
 
 	// DefaultUploadTimeout specifies the default timeout for uploading profiles.
 	// It can be overwritten using the DD_PROFILING_UPLOAD_TIMEOUT env variable
@@ -92,10 +96,11 @@ type config struct {
 	hostname          string
 	statsd            StatsdClient
 	httpClient        *http.Client
-	tags              []string
+	tags              immutable.StringSlice
 	types             map[ProfileType]struct{}
 	period            time.Duration
 	cpuDuration       time.Duration
+	cpuProfileRate    int
 	uploadTimeout     time.Duration
 	maxGoroutinesWait int
 	mutexFraction     int
@@ -103,6 +108,8 @@ type config struct {
 	outputDir         string
 	deltaProfiles     bool
 	logStartup        bool
+	cmemprofEnabled   bool
+	cmemprofRate      int
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -113,7 +120,7 @@ func logStartup(c *config) {
 		OSVersion            string   `json:"os_version"`   // Version of the OS
 		Version              string   `json:"version"`      // Profiler version
 		Lang                 string   `json:"lang"`         // "Go"
-		LangVersion          string   `json:"lang_version"` // Go version, e.g. go1.13
+		LangVersion          string   `json:"lang_version"` // Go version, e.g. go1.18
 		Hostname             string   `json:"hostname"`
 		DeltaProfiles        bool     `json:"delta_profiles"`
 		Service              string   `json:"service"`
@@ -124,10 +131,13 @@ func logStartup(c *config) {
 		ProfilePeriod        string   `json:"profile_period"`
 		EnabledProfiles      []string `json:"enabled_profiles"`
 		CPUDuration          string   `json:"cpu_duration"`
+		CPUProfileRate       int      `json:"cpu_profile_rate"`
 		BlockProfileRate     int      `json:"block_profile_rate"`
 		MutexProfileFraction int      `json:"mutex_profile_fraction"`
 		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
 		UploadTimeout        string   `json:"upload_timeout"`
+		CmemprofEnabled      bool     `json:"cmemprof_enabled"`
+		CmemprofRate         int      `json:"cmemprof_rate"`
 	}{
 		Date:                 time.Now().Format(time.RFC3339),
 		OSName:               osinfo.OSName(),
@@ -141,13 +151,16 @@ func logStartup(c *config) {
 		Env:                  c.env,
 		TargetURL:            c.targetURL,
 		Agentless:            c.agentless,
-		Tags:                 c.tags,
+		Tags:                 c.tags.Slice(),
 		ProfilePeriod:        c.period.String(),
 		CPUDuration:          c.cpuDuration.String(),
+		CPUProfileRate:       c.cpuProfileRate,
 		BlockProfileRate:     c.blockRate,
 		MutexProfileFraction: c.mutexFraction,
 		MaxGoroutinesWait:    c.maxGoroutinesWait,
 		UploadTimeout:        c.uploadTimeout.String(),
+		CmemprofEnabled:      c.cmemprofEnabled,
+		CmemprofRate:         c.cmemprofRate,
 	}
 	for t := range c.types {
 		info.EnabledProfiles = append(info.EnabledProfiles, t.String())
@@ -199,10 +212,12 @@ func defaultConfig() (*config, error) {
 		mutexFraction:     DefaultMutexFraction,
 		uploadTimeout:     DefaultUploadTimeout,
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
-		tags:              []string{fmt.Sprintf("pid:%d", os.Getpid())},
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
-		logStartup:        true,
+		logStartup:        internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
+		cmemprofEnabled:   false,
+		cmemprofRate:      extensions.DefaultCAllocationSamplingRate,
 	}
+	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
 	}
@@ -277,6 +292,14 @@ func defaultConfig() (*config, error) {
 		}
 		c.maxGoroutinesWait = n
 	}
+	c.cmemprofEnabled = internal.BoolEnv("DD_PROFILING_CMEMPROF_ENABLED", false)
+	if v := os.Getenv("DD_PROFILING_CMEMPROF_SAMPLING_RATE"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("DD_PROFILING_CMEMPROF_SAMPLING_RATE: %s", err)
+		}
+		c.cmemprofRate = n
+	}
 	return &c, nil
 }
 
@@ -344,6 +367,21 @@ func CPUDuration(d time.Duration) Option {
 	}
 }
 
+// CPUProfileRate sets the sampling frequency for CPU profiling. A sample will
+// be taken once for every (1 / hz) seconds of on-CPU time. If not given,
+// profiling will use the default rate from the runtime/pprof.StartCPUProfile
+// function, which is 100 as of Go 1.0.
+//
+// Setting a different profile rate will result in a spurious warning every time
+// CPU profling is started, like "cannot set cpu profile rate until previous
+// profile has finished". This is a known issue, but the rate will still be set
+// correctly and CPU profiling will work.
+func CPUProfileRate(hz int) Option {
+	return func(cfg *config) {
+		cfg.cpuProfileRate = hz
+	}
+}
+
 // MutexProfileFraction turns on mutex profiles with rate indicating the fraction
 // of mutex contention events reported in the mutex profile.
 // On average, 1/rate events are reported.
@@ -356,13 +394,10 @@ func MutexProfileFraction(rate int) Option {
 	}
 }
 
-// BlockProfileRate turns on block profiles with the given rate.
-// The profiler samples an average of one blocking event per rate nanoseconds spent blocked.
-// For example, set rate to 1000000000 (aka int(time.Second.Nanoseconds())) to
-// record one sample per second a goroutine is blocked.
-// A rate of 1 catches every event.
-// Setting an aggressive rate can hurt performance.
-// For more information on this value, check runtime.SetBlockProfileRate.
+// BlockProfileRate turns on block profiles with the given rate. We do not
+// recommend enabling this profile type, see DefaultBlockRate for more
+// information. The rate is given in nanoseconds and a block event with a given
+// duration has a min(duration/rate, 1) chance of getting sampled.
 func BlockProfileRate(rate int) Option {
 	return func(cfg *config) {
 		cfg.addProfileType(BlockProfile)
@@ -407,7 +442,7 @@ func WithVersion(version string) Option {
 // filter the profiling view based on various information.
 func WithTags(tags ...string) Option {
 	return func(cfg *config) {
-		cfg.tags = append(cfg.tags, tags...)
+		cfg.tags = cfg.tags.Append(tags...)
 	}
 }
 
@@ -477,5 +512,14 @@ func withOutputDir(dir string) Option {
 func WithLogStartup(enabled bool) Option {
 	return func(cfg *config) {
 		cfg.logStartup = enabled
+	}
+}
+
+// WithHostname sets the hostname which will be added to uploaded profiles
+// through the "host:<hostname>" tag. If no hostname is given, the hostname will
+// default to the output of os.Hostname()
+func WithHostname(hostname string) Option {
+	return func(cfg *config) {
+		cfg.hostname = hostname
 	}
 }

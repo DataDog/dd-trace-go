@@ -9,8 +9,10 @@ import (
 	"context"
 	"database/sql/driver"
 	"log"
+	"strings"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
 	"github.com/go-sql-driver/mysql"
@@ -92,9 +94,16 @@ func TestWithSpanTags(t *testing.T) {
 			rows.Close()
 
 			spans := mt.FinishedSpans()
-			assert.Len(t, spans, 1)
+			assert.Len(t, spans, 2)
 
-			span := spans[0]
+			connectSpan := spans[0]
+			assert.Equal(t, tt.want.opName, connectSpan.OperationName())
+			assert.Equal(t, "Connect", connectSpan.Tag("sql.query_type"))
+			for k, v := range tt.want.ctxTags {
+				assert.Equal(t, v, connectSpan.Tag(k), "Value mismatch on tag %s", k)
+			}
+
+			span := spans[1]
 			assert.Equal(t, tt.want.opName, span.OperationName())
 			for k, v := range tt.want.ctxTags {
 				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)
@@ -158,6 +167,129 @@ func TestWithChildSpansOnly(t *testing.T) {
 
 			spans := mt.FinishedSpans()
 			assert.Len(t, spans, 0)
+		})
+	}
+}
+
+func TestWithErrorCheck(t *testing.T) {
+	testOpts := func(errExist bool, opts ...Option) func(t *testing.T) {
+		return func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			Register("mysql", &mysql.MySQLDriver{})
+			defer unregister("mysql")
+
+			db, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test", opts...)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
+
+			db.QueryContext(context.Background(), "SELECT a FROM "+tableName)
+
+			spans := mt.FinishedSpans()
+			assert.True(t, len(spans) > 0)
+
+			s := spans[len(spans)-1]
+			assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
+		}
+	}
+
+	t.Run("defaults", testOpts(true))
+	t.Run("errcheck", testOpts(false, WithErrorCheck(func(err error) bool {
+		return !strings.Contains(err.Error(), `Error 1054: Unknown column 'a' in 'field list'`)
+	})))
+
+}
+
+func TestWithCustomTag(t *testing.T) {
+	type sqlRegister struct {
+		name   string
+		dsn    string
+		driver driver.Driver
+	}
+	type want struct {
+		opName     string
+		customTags map[string]interface{}
+	}
+	testcases := []struct {
+		name        string
+		sqlRegister sqlRegister
+		want        want
+		options     []Option
+	}{
+		{
+			name: "mysql",
+			sqlRegister: sqlRegister{
+				name:   "mysql",
+				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
+				driver: &mysql.MySQLDriver{},
+			},
+			want: want{
+				opName: "mysql.query",
+				customTags: map[string]interface{}{
+					"foo": "bar",
+					"baz": 123,
+				},
+			},
+			options: []Option{
+				WithCustomTag("foo", "bar"),
+				WithCustomTag("baz", 123),
+			},
+		},
+		{
+			name: "postgres",
+			sqlRegister: sqlRegister{
+				name:   "postgres",
+				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+				driver: &pq.Driver{},
+			},
+			want: want{
+				opName: "postgres.query",
+				customTags: map[string]interface{}{
+					"foo": "bar",
+					"baz": 123,
+				},
+			},
+			options: []Option{
+				WithCustomTag("foo", "bar"),
+				WithCustomTag("baz", 123),
+			},
+		},
+	}
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	for _, tt := range testcases {
+		t.Run(tt.name, func(t *testing.T) {
+			Register(tt.sqlRegister.name, tt.sqlRegister.driver, tt.options...)
+			defer unregister(tt.sqlRegister.name)
+			db, err := Open(tt.sqlRegister.name, tt.sqlRegister.dsn, tt.options...)
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
+			mt.Reset()
+
+			rows, err := db.QueryContext(context.Background(), "SELECT 1")
+			assert.NoError(t, err)
+			rows.Close()
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, 2)
+
+			connectSpan := spans[0]
+			assert.Equal(t, tt.want.opName, connectSpan.OperationName())
+			assert.Equal(t, "Connect", connectSpan.Tag("sql.query_type"))
+			for k, v := range tt.want.customTags {
+				assert.Equal(t, v, connectSpan.Tag(k), "Value mismatch on tag %s", k)
+			}
+
+			span := spans[1]
+			assert.Equal(t, tt.want.opName, span.OperationName())
+			for k, v := range tt.want.customTags {
+				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)
+			}
 		})
 	}
 }

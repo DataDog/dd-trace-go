@@ -270,7 +270,7 @@ func TestSpanTree(t *testing.T) {
 		assert.Equal(t, operationName, span.OperationName())
 		assert.Equal(t, "grpc", span.Tag(ext.ServiceName))
 		assert.Equal(t, span.Tag(ext.ResourceName), resourceName)
-		assert.True(t, span.FinishTime().Sub(span.StartTime()) > 0)
+		assert.True(t, span.FinishTime().Sub(span.StartTime()) >= 0)
 
 		if parent == nil {
 			return
@@ -406,7 +406,7 @@ func TestPass(t *testing.T) {
 	assert.Equal(s.Tag(ext.SpanType), ext.AppTypeRPC)
 	assert.NotContains(s.Tags(), tagRequest)
 	assert.NotContains(s.Tags(), tagMetadataPrefix+"test-key")
-	assert.True(s.FinishTime().Sub(s.StartTime()) > 0)
+	assert.True(s.FinishTime().Sub(s.StartTime()) >= 0)
 }
 
 func TestPreservesMetadata(t *testing.T) {
@@ -797,9 +797,47 @@ func TestIgnoredMetadata(t *testing.T) {
 	}
 }
 
+func TestCustomTag(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	for _, c := range []struct {
+		key   string
+		value interface{}
+	}{
+		{key: "foo", value: "bar"},
+		{key: "val", value: 123},
+	} {
+		rig, err := newRig(true, WithCustomTag(c.key, c.value))
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		ctx := context.Background()
+		span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
+		rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
+		span.Finish()
+
+		spans := mt.FinishedSpans()
+
+		var serverSpan mocktracer.Span
+		for _, s := range spans {
+			switch s.OperationName() {
+			case "grpc.server":
+				serverSpan = s
+			}
+		}
+
+		assert.NotNil(t, serverSpan)
+		assert.Equal(t, c.value, serverSpan.Tag(c.key))
+		rig.Close()
+		mt.Reset()
+	}
+}
+
 func BenchmarkUnaryServerInterceptor(b *testing.B) {
 	// need to use the real tracer to get representative measurments
-	tracer.Start(tracer.WithLogger(log.DiscardLogger{}))
+	tracer.Start(tracer.WithLogger(log.DiscardLogger{}),
+		tracer.WithEnv("test"),
+		tracer.WithServiceVersion("0.1.2"))
 	defer tracer.Stop()
 
 	doNothingOKGRPCHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
@@ -868,6 +906,14 @@ func BenchmarkUnaryServerInterceptor(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			interceptor(ctx, "ignoredRequestValue", methodInfo, doNothingErrorGRPCHandler)
+		}
+	})
+	interceptorNoStack := UnaryServerInterceptor(NoDebugStack())
+	b.Run("error_no_metadata_no_stack", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			interceptorNoStack(ctx, "ignoredRequestValue", methodInfo, doNothingErrorGRPCHandler)
 		}
 	})
 }

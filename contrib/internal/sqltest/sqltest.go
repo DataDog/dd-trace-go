@@ -38,9 +38,17 @@ func Prepare(tableName string) func() {
 	}
 	postgres.Exec(queryDrop)
 	postgres.Exec(queryCreate)
+	mssql, err := sql.Open("sqlserver", "sqlserver://sa:myPassw0rd@localhost:1433?database=master")
+	defer mssql.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	mssql.Exec(queryDrop)
+	mssql.Exec(queryCreate)
 	return func() {
 		mysql.Exec(queryDrop)
 		postgres.Exec(queryDrop)
+		mssql.Exec(queryDrop)
 	}
 }
 
@@ -48,8 +56,10 @@ func Prepare(tableName string) func() {
 func RunAll(t *testing.T, cfg *Config) {
 	cfg.mockTracer = mocktracer.Start()
 	defer cfg.mockTracer.Stop()
+	cfg.DB.SetMaxIdleConns(0)
 
 	for name, test := range map[string]func(*Config) func(*testing.T){
+		"Connect":       testConnect,
 		"Ping":          testPing,
 		"Query":         testQuery,
 		"Statement":     testStatement,
@@ -60,6 +70,24 @@ func RunAll(t *testing.T, cfg *Config) {
 	}
 }
 
+func testConnect(cfg *Config) func(*testing.T) {
+	return func(t *testing.T) {
+		cfg.mockTracer.Reset()
+		assert := assert.New(t)
+		err := cfg.DB.Ping()
+		assert.Nil(err)
+		spans := cfg.mockTracer.FinishedSpans()
+		assert.Len(spans, 2)
+
+		span := spans[0]
+		assert.Equal(cfg.ExpectName, span.OperationName())
+		cfg.ExpectTags["sql.query_type"] = "Connect"
+		for k, v := range cfg.ExpectTags {
+			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
+		}
+	}
+}
+
 func testPing(cfg *Config) func(*testing.T) {
 	return func(t *testing.T) {
 		cfg.mockTracer.Reset()
@@ -67,9 +95,11 @@ func testPing(cfg *Config) func(*testing.T) {
 		err := cfg.DB.Ping()
 		assert.Nil(err)
 		spans := cfg.mockTracer.FinishedSpans()
-		assert.Len(spans, 1)
+		assert.Len(spans, 2)
 
-		span := spans[0]
+		verifyConnectSpan(spans[0], assert, cfg)
+
+		span := spans[1]
 		assert.Equal(cfg.ExpectName, span.OperationName())
 		cfg.ExpectTags["sql.query_type"] = "Ping"
 		for k, v := range cfg.ExpectTags {
@@ -79,7 +109,13 @@ func testPing(cfg *Config) func(*testing.T) {
 }
 
 func testQuery(cfg *Config) func(*testing.T) {
-	query := fmt.Sprintf("SELECT id, name FROM %s LIMIT 5", cfg.TableName)
+	var query string
+	switch cfg.DriverName {
+	case "postgres", "pgx", "mysql":
+		query = fmt.Sprintf("SELECT id, name FROM %s LIMIT 5", cfg.TableName)
+	case "sqlserver":
+		query = fmt.Sprintf("SELECT TOP 5 id, name FROM %s", cfg.TableName)
+	}
 	return func(t *testing.T) {
 		cfg.mockTracer.Reset()
 		assert := assert.New(t)
@@ -88,13 +124,29 @@ func testQuery(cfg *Config) func(*testing.T) {
 		assert.Nil(err)
 
 		spans := cfg.mockTracer.FinishedSpans()
-		assert.Len(spans, 1)
+		var querySpan mocktracer.Span
+		if cfg.DriverName == "sqlserver" {
+			//The mssql driver doesn't support non-prepared queries so there are 3 spans
+			//connect, prepare, and query
+			assert.Len(spans, 3)
+			span := spans[1]
+			cfg.ExpectTags["sql.query_type"] = "Prepare"
+			assert.Equal(cfg.ExpectName, span.OperationName())
+			for k, v := range cfg.ExpectTags {
+				assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
+			}
+			querySpan = spans[2]
 
-		span := spans[0]
+		} else {
+			assert.Len(spans, 2)
+			querySpan = spans[1]
+		}
+
+		verifyConnectSpan(spans[0], assert, cfg)
 		cfg.ExpectTags["sql.query_type"] = "Query"
-		assert.Equal(cfg.ExpectName, span.OperationName())
+		assert.Equal(cfg.ExpectName, querySpan.OperationName())
 		for k, v := range cfg.ExpectTags {
-			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
+			assert.Equal(v, querySpan.Tag(k), "Value mismatch on tag %s", k)
 		}
 	}
 }
@@ -106,6 +158,8 @@ func testStatement(cfg *Config) func(*testing.T) {
 		query = fmt.Sprintf(query, cfg.TableName, "$1")
 	case "mysql":
 		query = fmt.Sprintf(query, cfg.TableName, "?")
+	case "sqlserver":
+		query = fmt.Sprintf(query, cfg.TableName, "@p1")
 	}
 	return func(t *testing.T) {
 		cfg.mockTracer.Reset()
@@ -114,9 +168,11 @@ func testStatement(cfg *Config) func(*testing.T) {
 		assert.Equal(nil, err)
 
 		spans := cfg.mockTracer.FinishedSpans()
-		assert.Len(spans, 1)
+		assert.Len(spans, 3)
 
-		span := spans[0]
+		verifyConnectSpan(spans[0], assert, cfg)
+
+		span := spans[1]
 		assert.Equal(cfg.ExpectName, span.OperationName())
 		cfg.ExpectTags["sql.query_type"] = "Prepare"
 		for k, v := range cfg.ExpectTags {
@@ -128,8 +184,8 @@ func testStatement(cfg *Config) func(*testing.T) {
 		assert.Equal(nil, err2)
 
 		spans = cfg.mockTracer.FinishedSpans()
-		assert.Len(spans, 1)
-		span = spans[0]
+		assert.Len(spans, 4)
+		span = spans[2]
 		assert.Equal(cfg.ExpectName, span.OperationName())
 		cfg.ExpectTags["sql.query_type"] = "Exec"
 		for k, v := range cfg.ExpectTags {
@@ -147,9 +203,11 @@ func testBeginRollback(cfg *Config) func(*testing.T) {
 		assert.Equal(nil, err)
 
 		spans := cfg.mockTracer.FinishedSpans()
-		assert.Len(spans, 1)
+		assert.Len(spans, 2)
 
-		span := spans[0]
+		verifyConnectSpan(spans[0], assert, cfg)
+
+		span := spans[1]
 		assert.Equal(cfg.ExpectName, span.OperationName())
 		cfg.ExpectTags["sql.query_type"] = "Begin"
 		for k, v := range cfg.ExpectTags {
@@ -192,7 +250,25 @@ func testExec(cfg *Config) func(*testing.T) {
 		parent.Finish() // flush children
 
 		spans := cfg.mockTracer.FinishedSpans()
-		assert.Len(spans, 4)
+		if cfg.DriverName == "sqlserver" {
+			//The mssql driver doesn't support non-prepared exec so there are 2 extra spans for the exec:
+			//prepare, exec, and then a close
+			assert.Len(spans, 7)
+			span := spans[2]
+			cfg.ExpectTags["sql.query_type"] = "Prepare"
+			assert.Equal(cfg.ExpectName, span.OperationName())
+			for k, v := range cfg.ExpectTags {
+				assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
+			}
+			span = spans[4]
+			cfg.ExpectTags["sql.query_type"] = "Close"
+			assert.Equal(cfg.ExpectName, span.OperationName())
+			for k, v := range cfg.ExpectTags {
+				assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
+			}
+		} else {
+			assert.Len(spans, 5)
+		}
 
 		var span mocktracer.Span
 		for _, s := range spans {
@@ -215,6 +291,14 @@ func testExec(cfg *Config) func(*testing.T) {
 		for k, v := range cfg.ExpectTags {
 			assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 		}
+	}
+}
+
+func verifyConnectSpan(span mocktracer.Span, assert *assert.Assertions, cfg *Config) {
+	assert.Equal(cfg.ExpectName, span.OperationName())
+	cfg.ExpectTags["sql.query_type"] = "Connect"
+	for k, v := range cfg.ExpectTags {
+		assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 	}
 }
 

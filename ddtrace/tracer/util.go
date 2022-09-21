@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -72,7 +71,7 @@ func parseUint64(str string) (uint64, error) {
 	return strconv.ParseUint(str, 10, 64)
 }
 
-func isValidPropagatableTraceTag(k, v string) error {
+func isValidPropagatableTag(k, v string) error {
 	if len(k) == 0 {
 		return fmt.Errorf("key length must be greater than zero")
 	}
@@ -102,11 +101,13 @@ func parsePropagatableTraceTags(s string) (map[string]string, error) {
 	for i, ch := range s {
 		switch ch {
 		case '=':
-			if !searchingKey || i-start == 0 {
-				return nil, fmt.Errorf("invalid format")
+			if searchingKey {
+				if i-start == 0 {
+					return nil, fmt.Errorf("invalid format")
+				}
+				key = s[start:i]
+				searchingKey, start = false, i+1
 			}
-			key = s[start:i]
-			searchingKey, start = false, i+1
 		case ',':
 			if searchingKey || i-start == 0 {
 				return nil, fmt.Errorf("invalid format")
@@ -120,10 +121,4 @@ func parsePropagatableTraceTags(s string) (map[string]string, error) {
 	}
 	tags[key] = s[start:]
 	return tags, nil
-}
-
-var b64 = base64.StdEncoding.WithPadding(base64.NoPadding)
-
-func b64Encode(s string) string {
-	return b64.EncodeToString([]byte(s))
 }

@@ -86,7 +86,7 @@ func TestIsValidPropagatableTraceTag(t *testing.T) {
 		{"hello", "世界", fmt.Errorf("value contains an invalid character 19990")},
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			assert.Equal(t, tt.err, isValidPropagatableTraceTag(tt.key, tt.value))
+			assert.Equal(t, tt.err, isValidPropagatableTag(tt.key, tt.value))
 		})
 	}
 }
@@ -100,10 +100,12 @@ func TestParsePropagatableTraceTags(t *testing.T) {
 		{"hello=world", map[string]string{"hello": "world"}, nil},
 		{" hello = world ", map[string]string{" hello ": " world "}, nil},
 		{"hello=world,service=account", map[string]string{"hello": "world", "service": "account"}, nil},
+		{"hello=wor=ld====,service=account,tag1=val=ue1", map[string]string{"hello": "wor=ld====", "service": "account", "tag1": "val=ue1"}, nil},
 		{"hello", nil, fmt.Errorf("invalid format")},
 		{"hello=world,service=", nil, fmt.Errorf("invalid format")},
 		{"hello=world,", nil, fmt.Errorf("invalid format")},
 		{"=world", nil, fmt.Errorf("invalid format")},
+		{"hello=,tag1=value1", nil, fmt.Errorf("invalid format")},
 		{",hello=world", nil, fmt.Errorf("invalid format")},
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {

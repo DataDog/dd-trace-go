@@ -7,15 +7,20 @@ package sql
 
 import (
 	"math"
+	"os"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 type config struct {
-	serviceName    string
-	analyticsRate  float64
-	dsn            string
-	childSpansOnly bool
+	serviceName          string
+	analyticsRate        float64
+	dsn                  string
+	childSpansOnly       bool
+	errCheck             func(err error) bool
+	tags                 map[string]interface{}
+	commentInjectionMode tracer.SQLCommentInjectionMode
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -34,6 +39,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
+	cfg.commentInjectionMode = tracer.SQLCommentInjectionMode(os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE"))
 }
 
 // WithServiceName sets the given service name when registering a driver,
@@ -81,5 +87,33 @@ func WithDSN(name string) Option {
 func WithChildSpansOnly() Option {
 	return func(cfg *config) {
 		cfg.childSpansOnly = true
+	}
+}
+
+// WithErrorCheck specifies a function fn which determines whether the passed
+// error should be marked as an error. The fn is called whenever a database/sql operation
+// finishes with an error
+func WithErrorCheck(fn func(err error) bool) Option {
+	return func(cfg *config) {
+		cfg.errCheck = fn
+	}
+}
+
+// WithCustomTag will attach the value to the span tagged by the key
+func WithCustomTag(key string, value interface{}) Option {
+	return func(cfg *config) {
+		if cfg.tags == nil {
+			cfg.tags = make(map[string]interface{})
+		}
+		cfg.tags[key] = value
+	}
+}
+
+// WithSQLCommentInjection enables injection of tags as sql comments on traced queries.
+// This includes dynamic values like span id, trace id and sampling priority which can make queries
+// unique for some cache implementations. Use WithStaticTagsCommentInjection if this is a concern.
+func WithSQLCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
+	return func(cfg *config) {
+		cfg.commentInjectionMode = mode
 	}
 }

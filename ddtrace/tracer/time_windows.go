@@ -23,7 +23,7 @@ func highPrecisionNow() int64 {
 }
 
 func lowPrecisionNow() int64 {
-	return time.Now().UTC().UnixNano()
+	return time.Now().UnixNano()
 }
 
 var now func() int64

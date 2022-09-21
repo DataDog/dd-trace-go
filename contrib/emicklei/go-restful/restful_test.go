@@ -54,7 +54,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("my-service", span.Tag(ext.ServiceName))
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
-	assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
 
 func TestError(t *testing.T) {

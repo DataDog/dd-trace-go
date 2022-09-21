@@ -7,13 +7,11 @@
 package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 
 import (
-	"math"
 	"net/http"
 	"strings"
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
@@ -76,20 +74,7 @@ func (r *Router) UseEncodedPath() *Router {
 
 // NewRouter returns a new router instance traced with the global tracer.
 func NewRouter(opts ...RouterOption) *Router {
-	cfg := new(routerConfig)
-	defaults(cfg)
-	for _, fn := range opts {
-		fn(cfg)
-	}
-	if !math.IsNaN(cfg.analyticsRate) {
-		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
-	}
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
-	log.Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
-	return &Router{
-		Router: mux.NewRouter(),
-		config: cfg,
-	}
+	return WrapRouter(mux.NewRouter(), opts...)
 }
 
 // ServeHTTP dispatches the request to the handler
@@ -104,12 +89,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var (
 		match    mux.RouteMatch
 		spanopts []ddtrace.StartSpanOption
+		route    string
 	)
 	// get the resource associated to this request
 	if r.Match(req, &match) && match.Route != nil {
 		if h, err := match.Route.GetHostTemplate(); err == nil {
 			spanopts = append(spanopts, tracer.Tag("mux.host", h))
 		}
+		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
 	if r.config.headerTags {
@@ -123,7 +110,19 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		SpanOpts:    spanopts,
 		QueryParams: r.config.queryParams,
 		RouteParams: match.Vars,
+		Route:       route,
 	})
+}
+
+// WrapRouter returns the given router wrapped with the tracing of the HTTP
+// requests and responses served by the router.
+func WrapRouter(router *mux.Router, opts ...RouterOption) *Router {
+	cfg := newConfig(opts)
+	log.Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
+	return &Router{
+		Router: router,
+		config: cfg,
+	}
 }
 
 // defaultResourceNamer attempts to quantize the resource for an HTTP request by

@@ -15,17 +15,19 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestEnabled(t *testing.T) {
-	enabled, _ := strconv.ParseBool(os.Getenv("DD_APPSEC_ENABLED"))
+	enabledConfig, _ := strconv.ParseBool(os.Getenv("DD_APPSEC_ENABLED"))
+	canBeEnabled := enabledConfig && waf.Health() == nil
 
 	require.False(t, appsec.Enabled())
 	tracer.Start()
-	assert.Equal(t, enabled, appsec.Enabled())
+	assert.Equal(t, canBeEnabled, appsec.Enabled())
 	tracer.Stop()
 	assert.False(t, appsec.Enabled())
 }

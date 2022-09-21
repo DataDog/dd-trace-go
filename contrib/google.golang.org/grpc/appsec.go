@@ -10,6 +10,7 @@ import (
 	"net"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
@@ -23,9 +24,11 @@ import (
 func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
 	httpsec.SetAppSecTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{}, nil)
+		md, _ := metadata.FromIncomingContext(ctx)
+		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
+			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
 			}
@@ -40,9 +43,11 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
 	httpsec.SetAppSecTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{}, nil)
+		md, _ := metadata.FromIncomingContext(stream.Context())
+		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
+			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
 			}
