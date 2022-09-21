@@ -18,7 +18,6 @@ import (
 	"reflect"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -70,7 +69,7 @@ func MonitorParsedBody(ctx context.Context, body interface{}) {
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
-func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
+func WrapHandler(handler http.Handler, span instrumentation.Span, pathParams map[string]string) http.Handler {
 	SetAppSecTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		args := MakeHandlerOperationArgs(r, pathParams)

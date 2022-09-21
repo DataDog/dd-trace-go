@@ -10,19 +10,18 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 )
 
 // SetAppSecTags sets the AppSec-specific span tags that are expected to be in
 // the web service entry span (span of type `web`) when AppSec is enabled.
-func SetAppSecTags(span ddtrace.Span) {
+func SetAppSecTags(span instrumentation.Span) {
 	span.SetTag("_dd.appsec.enabled", 1)
 	span.SetTag("_dd.runtime_family", "go")
 }
 
 // SetSecurityEventTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
-func SetSecurityEventTags(span ddtrace.Span, events []json.RawMessage, remoteIP string, headers, respHeaders map[string][]string) {
+func SetSecurityEventTags(span instrumentation.Span, events []json.RawMessage, remoteIP string, headers, respHeaders map[string][]string) {
 	instrumentation.SetEventSpanTags(span, events)
 	span.SetTag("network.client.ip", remoteIP)
 	for h, v := range NormalizeHTTPHeaders(headers) {

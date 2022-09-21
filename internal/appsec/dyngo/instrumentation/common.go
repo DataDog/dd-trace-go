@@ -11,10 +11,13 @@ import (
 	"fmt"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
+
+type Span interface {
+	SetTag(tag string, value interface{})
+}
 
 // TagsHolder wraps a map holding tags. The purpose of this struct is to be used by composition in an Operation
 // to allow said operation to handle tags addition/retrieval. See httpsec/http.go and grpcsec/grpc.go.
@@ -62,14 +65,14 @@ func (s *SecurityEventsHolder) Events() []json.RawMessage {
 }
 
 // SetTags fills the span tags using the key/value pairs found in `tags`
-func SetTags(span ddtrace.Span, tags map[string]interface{}) {
+func SetTags(span Span, tags map[string]interface{}) {
 	for k, v := range tags {
 		span.SetTag(k, v)
 	}
 }
 
 // SetEventSpanTags sets the security event span tags into the service entry span.
-func SetEventSpanTags(span ddtrace.Span, events []json.RawMessage) error {
+func SetEventSpanTags(span Span, events []json.RawMessage) error {
 	// Set the appsec event span tag
 	val, err := makeEventTagValue(events)
 	if err != nil {

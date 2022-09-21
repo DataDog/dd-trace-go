@@ -66,6 +66,10 @@ type responseWriter struct {
 	status int
 }
 
+func WrapResponseWriter(w http.ResponseWriter) http.ResponseWriter {
+	return newResponseWriter(w)
+}
+
 func newResponseWriter(w http.ResponseWriter) *responseWriter {
 	return &responseWriter{w, 0}
 }
