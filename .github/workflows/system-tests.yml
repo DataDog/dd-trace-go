@@ -37,7 +37,7 @@ jobs:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
     steps:
       - name: PRINT THE REPO NAME
-        run: echo ${github.event.pull_request.head.repo.name}
+        run: echo ${{ github.event.pull_request.head.repo.name }}
 
       - name: Checkout system tests
         uses: actions/checkout@v2
