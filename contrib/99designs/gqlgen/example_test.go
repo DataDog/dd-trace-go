@@ -10,7 +10,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/99designs/gqlgen/example/todo"
+	"github.com/99designs/gqlgen/_examples/todo"
 	"github.com/99designs/gqlgen/graphql/handler"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
