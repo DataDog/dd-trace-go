@@ -101,12 +101,12 @@ func (tr *tracer) finishTrace(spans []*span) []*span {
 		}
 	}
 	if len(newTrace) == 0 {
-		atomic.AddUint64(&tr.droppedProcessorSpans, uint64(len(spans)))
-		atomic.AddUint64(&tr.droppedProcessorTraces, 1)
+		atomic.AddUint32(&tr.droppedProcessorSpans, uint32(len(spans)))
+		atomic.AddUint32(&tr.droppedProcessorTraces, 1)
 		return nil
 	}
 	if droppedSpans := len(spans) - len(newTrace); droppedSpans > 0 {
-		atomic.AddUint64(&tr.droppedProcessorSpans, uint64(droppedSpans))
+		atomic.AddUint32(&tr.droppedProcessorSpans, uint32(droppedSpans))
 	}
 	return newTrace
 }

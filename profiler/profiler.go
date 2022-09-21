@@ -289,42 +289,42 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		wg        sync.WaitGroup
 	)
 	for {
+		now := now()
+		bat := batch{
+			seq:   p.seq,
+			host:  p.cfg.hostname,
+			start: now,
+			// NB: while this is technically wrong in that it does not
+			// record the actual start and end timestamps for the batch,
+			// it is how the backend understands the client-side
+			// configured CPU profile duration: (start-end).
+			end: now.Add(p.cfg.cpuDuration),
+		}
+		p.seq++
+
+		completed = completed[:0]
+		for _, t := range p.enabledProfileTypes() {
+			wg.Add(1)
+			go func(t ProfileType) {
+				defer wg.Done()
+				profs, err := p.runProfile(t)
+				if err != nil {
+					log.Error("Error getting %s profile: %v; skipping.", t, err)
+					tags := append(p.cfg.tags.Slice(), t.Tag())
+					p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, tags, 1)
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				completed = append(completed, profs...)
+			}(t)
+		}
+		wg.Wait()
+		for _, prof := range completed {
+			bat.addProfile(prof)
+		}
+		p.enqueueUpload(bat)
 		select {
 		case <-ticker:
-			now := now()
-			bat := batch{
-				seq:   p.seq,
-				host:  p.cfg.hostname,
-				start: now,
-				// NB: while this is technically wrong in that it does not
-				// record the actual start and end timestamps for the batch,
-				// it is how the backend understands the client-side
-				// configured CPU profile duration: (start-end).
-				end: now.Add(p.cfg.cpuDuration),
-			}
-			p.seq++
-
-			completed = completed[:0]
-			for _, t := range p.enabledProfileTypes() {
-				wg.Add(1)
-				go func(t ProfileType) {
-					defer wg.Done()
-					profs, err := p.runProfile(t)
-					if err != nil {
-						log.Error("Error getting %s profile: %v; skipping.", t, err)
-						tags := append(p.cfg.tags.Slice(), t.Tag())
-						p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, tags, 1)
-					}
-					mu.Lock()
-					defer mu.Unlock()
-					completed = append(completed, profs...)
-				}(t)
-			}
-			wg.Wait()
-			for _, prof := range completed {
-				bat.addProfile(prof)
-			}
-			p.enqueueUpload(bat)
 		case <-p.exit:
 			return
 		}
@@ -432,6 +432,9 @@ func (p *profiler) stop() {
 		p.telemetry.Stop()
 	})
 	p.wg.Wait()
+	if p.cfg.logStartup {
+		log.Info("Profiling stopped")
+	}
 }
 
 // StatsdClient implementations can count and time certain event occurrences that happen

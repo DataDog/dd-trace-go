@@ -12,10 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func setupteardown(start, max int) func() {
@@ -460,4 +461,35 @@ func removeAppSec(lines []string) []string {
 		res = append(res, line)
 	}
 	return res
+}
+
+func TestSetSamplingPriorityLocked(t *testing.T) {
+	t.Run("NoPriorAndP0IsIgnored", func(t *testing.T) {
+		tr := trace{
+			propagatingTags: map[string]string{},
+		}
+		tr.setSamplingPriorityLocked(0, samplernames.RemoteRate)
+		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
+	})
+	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
+		tr := trace{
+			propagatingTags: map[string]string{},
+		}
+		tr.setSamplingPriorityLocked(0, samplernames.Unknown)
+		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
+	})
+	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
+		tr := trace{
+			propagatingTags: map[string]string{},
+		}
+		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
+		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
+	})
+	t.Run("PriorAndP1IsIgnored", func(t *testing.T) {
+		tr := trace{
+			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
+		}
+		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
+		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
+	})
 }
