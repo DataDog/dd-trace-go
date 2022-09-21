@@ -47,7 +47,7 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 
 var (
 	// timeMultiplicator specifies by how long to extend waiting times.
-	// It may be altered in some envinronment (like AppSec) where things
+	// It may be altered in some environments (like AppSec) where things
 	// move slower and could otherwise create flaky tests.
 	timeMultiplicator = time.Duration(1)
 
@@ -353,8 +353,8 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint64(1), tracer.droppedP0Traces)
-			assert.Equal(t, uint64(2), tracer.droppedP0Spans)
+			assert.Equal(t, uint32(1), tracer.droppedP0Traces)
+			assert.Equal(t, uint32(2), tracer.droppedP0Spans)
 		}()
 		defer stop()
 		tracer.config.agent.DropP0s = true
