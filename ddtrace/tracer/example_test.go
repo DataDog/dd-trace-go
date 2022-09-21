@@ -57,7 +57,7 @@ func Example_processor() {
 	// This processor will drop traces that do not contain an error, db span or client http request
 	// to endpoint GET /api/v1. In the case there is a http request to endpoint GET /api/v1, it will add
 	// a span tag to the local root span.
-	tracer.Start(tracer.WithPostProcessor(func(spans []tracer.ReadWriteSpan) []tracer.ReadWriteSpan {
+	tracer.Start(tracer.WithOnFinish(func(spans []tracer.ReadWriteSpan) []tracer.ReadWriteSpan {
 		for _, s := range spans {
 			// trace contains an error which isn't "specific error".
 			if s.IsError() && s.Tag("error.message") != "specific error" {

@@ -139,24 +139,20 @@ type config struct {
 	// enabled reports whether tracing is enabled.
 	enabled bool
 
-	// postProcessor holds the function used to process finished spans of a trace.
+	// onFinish holds the function used to process finished spans of a trace.
 	// It reports whether the trace should be dropped.
-	postProcessor func([]ReadWriteSpan) []ReadWriteSpan
+	onFinish func([]ReadWriteSpan) []ReadWriteSpan
 }
 
-// WithPostProcessor sets post processor function f, which allows certain span fields to change
-// after a trace has finished, and can force a trace to be dropped despite any existing sampling
-// rules. Modifying the span can be done by using methods of the ReadWriteSpan interface, such
-// as SetTag. If f returns true, the entire trace will be dropped. If f returns false, then no
-// changes to the sampling method will be made based on the post processor function, though the
-// trace may be dropped in the agent due to other sampling rules.
-//
-// Please note that dropped traces and spans will not be accounted for in APM stats, and that
-// modifying any of the ReadWriteSpans outside the scope of the processor function can and will
+// WithOnFinish sets function f to run after the trace has finished, which allows certain span fields
+// to change before being sent to the Datadog Agent, or be abandoned entirely by returning nil. If set,
+// only the spans returned by this function will be processed in any way by Datadog, including calculation
+// of APM Stats and delivery to the Datadog Agent. Please note that spans dropped by single span sampling
+// will no be passed to f and modifying any of the ReadWriteSpans outside the scope of f can and will
 // likely cause a panic.
-func WithPostProcessor(f func([]ReadWriteSpan) []ReadWriteSpan) StartOption {
+func WithOnFinish(f func([]ReadWriteSpan) []ReadWriteSpan) StartOption {
 	return func(c *config) {
-		c.postProcessor = f
+		c.onFinish = f
 	}
 }
 

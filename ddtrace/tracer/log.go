@@ -51,7 +51,7 @@ type startupInfo struct {
 	LambdaMode                  string            `json:"lambda_mode"`                    // Whether or not the client has enabled lambda mode
 	AppSec                      bool              `json:"appsec"`                         // AppSec status: true when started, false otherwise.
 	AgentFeatures               agentFeatures     `json:"agent_features"`                 // Lists the capabilities of the agent.
-	PostProcessor               bool              `json:"post_processor"`                 // Whether or not a post processor is set.
+	OnFinish                    bool              `json:"on_finish"`                      // Whether or not a post processor is set.
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -106,7 +106,7 @@ func logStartup(t *tracer) {
 		LambdaMode:                  fmt.Sprintf("%t", t.config.logToStdout),
 		AgentFeatures:               t.config.agent,
 		AppSec:                      appsec.Enabled(),
-		PostProcessor:               t.config.postProcessor != nil,
+		OnFinish:                    t.config.onFinish != nil,
 	}
 	if _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)

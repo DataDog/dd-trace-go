@@ -90,12 +90,12 @@ func (s *ReadWriteSpan) SetTag(key string, value interface{}) {
 // finishTrace pushes finished spans from a trace to the processor, and returns
 // the modified trace or nil if the trace should be dropped.
 func (tr *tracer) finishTrace(spans []*span) []*span {
-	if tr.config.postProcessor == nil {
+	if tr.config.onFinish == nil {
 		return spans
 	}
-	processedTrace := tr.config.postProcessor(newReadWriteSpanSlice(spans))
+	modifiedTrace := tr.config.onFinish(newReadWriteSpanSlice(spans))
 	var newTrace []*span
-	for _, s := range processedTrace {
+	for _, s := range modifiedTrace {
 		if s.span != nil {
 			newTrace = append(newTrace, s.span)
 		}
