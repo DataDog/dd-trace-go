@@ -8,12 +8,15 @@ package profiler
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
+	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -123,41 +126,56 @@ func (p *profiler) doRequest(bat batch) error {
 	return errors.New(resp.Status)
 }
 
+type uploadEvent struct {
+	Start       string   `json:"start"`
+	End         string   `json:"end"`
+	Attachments []string `json:"attachments"`
+	Tags        string   `json:"tags_profiler"`
+	Family      string   `json:"family"`
+	Version     string   `json:"version"`
+}
+
 // encode encodes the profile as a multipart mime request.
 func encode(bat batch, tags []string) (contentType string, body io.Reader, err error) {
 	var buf bytes.Buffer
 
 	mw := multipart.NewWriter(&buf)
-	// write all of the profile metadata (including some useless ones)
-	// with a small helper function that makes error tracking less verbose.
-	writeField := func(k, v string) {
-		if err == nil {
-			err = mw.WriteField(k, v)
-		}
-	}
-	writeField("version", "3")
-	writeField("family", "go")
-	writeField("start", bat.start.Format(time.RFC3339))
-	writeField("end", bat.end.Format(time.RFC3339))
+
 	if bat.host != "" {
-		writeField("tags[]", fmt.Sprintf("host:%s", bat.host))
+		tags = append(tags, fmt.Sprintf("host:%s", bat.host))
 	}
-	writeField("tags[]", "runtime:go")
-	for _, tag := range tags {
-		writeField("tags[]", tag)
+	tags = append(tags, "runtime:go")
+
+	event := &uploadEvent{
+		Version: "4",
+		Family:  "go",
+		Start:   bat.start.Format(time.RFC3339),
+		End:     bat.end.Format(time.RFC3339),
+		Tags:    strings.Join(tags, ","),
 	}
-	if err != nil {
-		return "", nil, err
-	}
+
 	for _, p := range bat.profiles {
-		formFile, err := mw.CreateFormFile(fmt.Sprintf("data[%s]", p.name), "pprof-data")
+		event.Attachments = append(event.Attachments, p.name)
+		f, err := mw.CreateFormFile(p.name, p.name)
 		if err != nil {
 			return "", nil, err
 		}
-		if _, err := formFile.Write(p.data); err != nil {
+		if _, err := f.Write(p.data); err != nil {
 			return "", nil, err
 		}
 	}
+
+	f, err := mw.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": []string{`form-data; name="event"; filename="event.json"`},
+		"Content-Type":        []string{"application/json"},
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	if err := json.NewEncoder(f).Encode(event); err != nil {
+		return "", nil, err
+	}
+
 	if err := mw.Close(); err != nil {
 		return "", nil, err
 	}

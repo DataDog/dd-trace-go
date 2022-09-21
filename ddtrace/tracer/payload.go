@@ -36,7 +36,7 @@ type payload struct {
 	off int
 
 	// count specifies the number of items in the stream.
-	count uint64
+	count uint32
 
 	// buf holds the sequence of msgpack-encoded items.
 	buf bytes.Buffer
@@ -58,14 +58,14 @@ func (p *payload) push(t spanList) error {
 	if err := msgp.Encode(&p.buf, t); err != nil {
 		return err
 	}
-	atomic.AddUint64(&p.count, 1)
+	atomic.AddUint32(&p.count, 1)
 	p.updateHeader()
 	return nil
 }
 
 // itemCount returns the number of items available in the srteam.
 func (p *payload) itemCount() int {
-	return int(atomic.LoadUint64(&p.count))
+	return int(atomic.LoadUint32(&p.count))
 }
 
 // size returns the payload size in bytes. After the first read the value becomes
@@ -102,7 +102,7 @@ const (
 // updateHeader updates the payload header based on the number of items currently
 // present in the stream.
 func (p *payload) updateHeader() {
-	n := atomic.LoadUint64(&p.count)
+	n := uint64(atomic.LoadUint32(&p.count))
 	switch {
 	case n <= 15:
 		p.header[7] = msgpackArrayFix + byte(n)

@@ -124,6 +124,7 @@ func NewHandle(jsonRule []byte, keyRegex, valueRegex string) (*Handle, error) {
 			key_regex:   keyRegexC,
 			value_regex: valueRegexC,
 		},
+		free_fn: C.ddwaf_object_free_fn(C.go_ddwaf_object_free),
 	}
 	defer C.ddwaf_ruleset_info_free(&wafRInfo)
 	handle := C.ddwaf_init(wafRule.ctype(), &wafCfg, &wafRInfo)
@@ -227,7 +228,7 @@ func NewContext(waf *Handle) *Context {
 		waf.mu.RUnlock()
 		return nil
 	}
-	context := C.ddwaf_context_init(waf.handle, C.ddwaf_object_free_fn(C.go_ddwaf_object_free))
+	context := C.ddwaf_context_init(waf.handle)
 	if context == nil {
 		return nil
 	}
@@ -299,17 +300,23 @@ func (c *Context) TotalTimeouts() uint64 {
 // Note that it is possible to have matches != nil && err != nil in case of a
 // timeout during the WAF call.
 func goReturnValues(rc C.DDWAF_RET_CODE, result *C.ddwaf_result) (matches []byte, err error) {
-	if rc < 0 {
-		return nil, goRunError(rc)
-	}
-	if result.data != nil {
-		matches = C.GoBytes(unsafe.Pointer(result.data), C.int(C.strlen(result.data)))
-	}
-	// There could have been a timeout during the call
 	if bool(result.timeout) {
 		err = ErrTimeout
 	}
-	return matches, err
+
+	switch rc {
+	case C.DDWAF_OK:
+		return nil, err
+
+	case C.DDWAF_MATCH:
+		if result.data != nil {
+			matches = C.GoBytes(unsafe.Pointer(result.data), C.int(C.strlen(result.data)))
+		}
+		return matches, err
+
+	default:
+		return nil, goRunError(rc)
+	}
 }
 
 func goRunError(rc C.DDWAF_RET_CODE) error {
@@ -326,12 +333,8 @@ func goRunError(rc C.DDWAF_RET_CODE) error {
 }
 
 func getWAFVersion() string {
-	var v C.ddwaf_version
-	C.ddwaf_get_version(&v)
-	major := uint16(v.major)
-	minor := uint16(v.minor)
-	patch := uint16(v.patch)
-	return fmt.Sprintf("%d.%d.%d", major, minor, patch)
+	cversion := C.ddwaf_get_version() // static mem pointer returned - no need to free it
+	return C.GoString(cversion)
 }
 
 // Errors the encoder and decoder can return.
