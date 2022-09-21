@@ -12,6 +12,8 @@ import (
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
+type Callback func(*rc.Update)
+
 // ClientConfig contains the required values to configure a remoteconfig client
 type ClientConfig struct {
 	// The address at which the agent is listening for remoteconfig update requests on
@@ -44,6 +46,8 @@ type Client struct {
 	repository *rc.Repository
 	stop       chan struct{}
 
+	callbacks map[string][]Callback
+
 	lastError error
 }
 
@@ -56,7 +60,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 
 	// Tracers should always listen for FEATURES and it's not a traditional "product"
 	// that would be enabled by a subsystem.
-	config.Products = append(config.Products, "FEATURES")
+	config.Products = append(config.Products, rc.ProductFeatures)
 
 	return &Client{
 		ClientConfig: config,
@@ -64,6 +68,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		repository:   repo,
 		stop:         make(chan struct{}),
 		lastError:    nil,
+		callbacks:    map[string][]Callback{},
 	}, nil
 }
 
@@ -118,6 +123,10 @@ func (c *Client) updateState() {
 	c.lastError = err
 }
 
+func (c *Client) RegisterCallback(f Callback, product string) {
+	c.callbacks[product] = append(c.callbacks[product], f)
+}
+
 func (c *Client) applyUpdate(pbUpdate *ClientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
 	for _, f := range pbUpdate.TargetFiles {
@@ -139,7 +148,13 @@ func (c *Client) applyUpdate(pbUpdate *ClientGetConfigsResponse) error {
 	// map[string]<CONFIG_TYPE>. The client provides a "register listener" function for each supported
 	// product which stores the callbacks in a list. It's up to the service to use goroutines as needed
 	// if the update application process would block the RC client for too long.
-	_, err := c.repository.Update(update)
+	products, err := c.repository.Update(update)
+	// Performs the callbacks registered for all updated products
+	for _, p := range products {
+		for _, c := range c.callbacks[p] {
+			c(&update)
+		}
+	}
 
 	return err
 }
@@ -201,6 +216,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Env:           c.Env,
 				AppVersion:    c.AppVersion,
 			},
+			Capabilities: []byte{64},
 		},
 		CachedTargetFiles: pbCachedFiles,
 	}
