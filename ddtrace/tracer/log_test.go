@@ -47,7 +47,7 @@ func TestStartupLog(t *testing.T) {
 			WithServiceVersion("2.3.4"),
 			WithSamplingRules([]SamplingRule{ServiceRule("mysql", 0.75)}),
 			WithDebugMode(true),
-			WithPostProcessor(func([]ReadWriteSpan) bool { return true }),
+			WithPostProcessor(func([]ReadWriteSpan) []ReadWriteSpan { return nil }),
 		)
 		defer globalconfig.SetAnalyticsRate(math.NaN())
 		defer globalconfig.SetServiceName("")

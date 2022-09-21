@@ -6,6 +6,8 @@
 package tracer
 
 import (
+	"sync/atomic"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -85,13 +87,28 @@ func (s *ReadWriteSpan) SetTag(key string, value interface{}) {
 	}
 }
 
-// droppedByProcessor pushes finished spans from a trace to the processor, and reports
-// whether the trace should be dropped.
-func (tr *tracer) droppedByProcessor(spans []*span) bool {
+// finishTrace pushes finished spans from a trace to the processor, and returns
+// the modified trace or nil if the trace should be dropped.
+func (tr *tracer) finishTrace(spans []*span) []*span {
 	if tr.config.postProcessor == nil {
-		return false
+		return spans
 	}
-	return tr.config.postProcessor(newReadWriteSpanSlice(spans))
+	processedTrace := tr.config.postProcessor(newReadWriteSpanSlice(spans))
+	var newTrace []*span
+	for _, s := range processedTrace {
+		if s.span != nil {
+			newTrace = append(newTrace, s.span)
+		}
+	}
+	if len(newTrace) == 0 {
+		atomic.AddUint64(&tr.droppedProcessorSpans, uint64(len(spans)))
+		atomic.AddUint64(&tr.droppedProcessorTraces, 1)
+		return nil
+	}
+	if droppedSpans := len(spans) - len(newTrace); droppedSpans > 0 {
+		atomic.AddUint64(&tr.droppedProcessorSpans, uint64(droppedSpans))
+	}
+	return newTrace
 }
 
 // newReadWriteSpanSlice copies the elements of slice spans to the

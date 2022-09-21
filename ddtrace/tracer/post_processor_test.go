@@ -132,65 +132,144 @@ func TestNewReadWriteSpanSlice(t *testing.T) {
 	}
 }
 
-func TestDroppedByProcessor(t *testing.T) {
+func TestFinishTrace(t *testing.T) {
 	t.Run("accept", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ReadWriteSpan) bool { return false }))
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) []ReadWriteSpan { return spans }))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
-		assert.Equal(false, tracer.droppedByProcessor(spans))
+		assert.Equal(spans, tracer.finishTrace(spans))
 	})
 
 	t.Run("accept-condition", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) bool {
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) []ReadWriteSpan {
 			for _, span := range spans {
 				if span.Tag(ext.SpanName) == "accept.request" {
-					return false
+					return spans
 				}
 			}
-			return true
+			return nil
 		}))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("accept.request")}
-		assert.Equal(false, tracer.droppedByProcessor(spans))
+		assert.Equal(spans, tracer.finishTrace(spans))
 	})
 
-	t.Run("drop", func(t *testing.T) {
+	t.Run("empty-span", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ReadWriteSpan) bool { return true }))
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) []ReadWriteSpan {
+			spans = append(spans, ReadWriteSpan{})
+			return spans
+		}))
+		defer stop()
+		spans := []*span{newBasicSpan("http.request"), newBasicSpan("accept.request")}
+		assert.Equal(spans, tracer.finishTrace(spans))
+	})
+
+	t.Run("drop-nil", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ReadWriteSpan) []ReadWriteSpan { return nil }))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
-		assert.Equal(true, tracer.droppedByProcessor(spans))
+		assert.Nil(tracer.finishTrace(spans))
+	})
+
+	t.Run("drop-empty", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func([]ReadWriteSpan) []ReadWriteSpan { return []ReadWriteSpan{} }))
+		defer stop()
+		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
+		assert.Nil(tracer.finishTrace(spans))
 	})
 
 	t.Run("drop-condition", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) bool {
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) []ReadWriteSpan {
 			for _, span := range spans {
 				if span.Tag(ext.SpanName) == "reject.request" {
-					return true
+					return nil
 				}
 			}
-			return false
+			return spans
 		}))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("reject.request")}
-		assert.Equal(true, tracer.droppedByProcessor(spans))
+		assert.Nil(tracer.finishTrace(spans))
+	})
+
+	t.Run("drop-span", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) []ReadWriteSpan {
+			n := 0
+			for _, span := range spans {
+				if span.Tag(ext.SpanName) != "reject.span" {
+					spans[n] = span
+					n++
+				}
+			}
+			spans = spans[:n]
+			return spans
+		}))
+		defer stop()
+		rootSpan := tracer.newRootSpan("reject.span", "my.service", "my.resource")
+		childSpan := tracer.newChildSpan("my.child", rootSpan)
+		assert.Equal([]*span{childSpan}, tracer.finishTrace([]*span{rootSpan, childSpan}))
+	})
+
+	t.Run("drop-multiple", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) []ReadWriteSpan {
+			n := 0
+			for _, span := range spans {
+				if span.Tag(ext.SpanName) != "reject.span" {
+					spans[n] = span
+					n++
+				}
+			}
+			spans = spans[:n]
+			return spans
+		}))
+		defer stop()
+		rootSpan := tracer.newRootSpan("accept.span", "my.service", "my.resource")
+		secondSpan := tracer.newChildSpan("reject.span", rootSpan)
+		thirdSpan := tracer.newChildSpan("reject.span", secondSpan)
+		childSpan := tracer.newChildSpan("accept.span", thirdSpan)
+		assert.Equal([]*span{rootSpan, childSpan}, tracer.finishTrace([]*span{rootSpan, secondSpan, thirdSpan, childSpan}))
+	})
+
+	t.Run("drop-all", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) []ReadWriteSpan {
+			n := 0
+			for _, span := range spans {
+				if span.Tag(ext.SpanName) != "reject.span" {
+					spans[n] = span
+					n++
+				}
+			}
+			spans = spans[:n]
+			return spans
+		}))
+		defer stop()
+		rootSpan := tracer.newRootSpan("reject.span", "my.service", "my.resource")
+		middleSpan := tracer.newChildSpan("reject.span", rootSpan)
+		childSpan := tracer.newChildSpan("reject.span", middleSpan)
+		assert.Nil(tracer.finishTrace([]*span{rootSpan, middleSpan, childSpan}))
 	})
 
 	t.Run("empty-spans", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) bool { return false }))
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) []ReadWriteSpan { return spans }))
 		defer stop()
 		spans := []*span{}
-		assert.Equal(false, tracer.droppedByProcessor(spans))
+		assert.Nil(tracer.finishTrace(spans))
 		assert.Equal(0, len(spans))
 	})
 
 	t.Run("tag", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) bool {
+		tracer, _, _, stop := startTestTracer(t, WithPostProcessor(func(spans []ReadWriteSpan) []ReadWriteSpan {
 			for _, span := range spans {
 				if span.Tag(ext.SpanName) == "http.request" {
 					span.SetTag("custom", "val")
@@ -199,11 +278,11 @@ func TestDroppedByProcessor(t *testing.T) {
 					span.SetTag("metric", float64(1))
 				}
 			}
-			return false
+			return spans
 		}))
 		defer stop()
 		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
-		assert.Equal(false, tracer.droppedByProcessor(spans))
+		assert.Equal(spans, tracer.finishTrace(spans))
 		for _, span := range spans {
 			if span.Name == "http.request" {
 				assert.Equal("val", span.Meta["custom"])
@@ -220,12 +299,12 @@ func TestDroppedByProcessor(t *testing.T) {
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		spans := []*span{}
-		assert.Equal(false, tracer.droppedByProcessor(spans))
+		spans := []*span{newBasicSpan("http.request"), newBasicSpan("db.request")}
+		assert.Equal(spans, tracer.finishTrace(spans))
 	})
 }
 
-func runProcessorTestEndToEnd(t *testing.T, testFunc func(sls spanLists), processor func([]ReadWriteSpan) bool, startSpans func()) {
+func runProcessorTestEndToEnd(t *testing.T, testFunc func(sls spanLists), processor func([]ReadWriteSpan) []ReadWriteSpan, startSpans func()) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		var sls spanLists
@@ -268,7 +347,7 @@ func TestProcessorEndToEnd(t *testing.T) {
 					}
 				}
 			},
-			func(spans []ReadWriteSpan) bool { return false },
+			func(spans []ReadWriteSpan) []ReadWriteSpan { return spans },
 			func() {
 				span1 := StartSpan("accepted.req")
 				span1.Finish()
@@ -291,13 +370,13 @@ func TestProcessorEndToEnd(t *testing.T) {
 					}
 				}
 			},
-			func(spans []ReadWriteSpan) bool {
+			func(spans []ReadWriteSpan) []ReadWriteSpan {
 				for _, span := range spans {
 					if span.Tag(ext.SpanName) == "reject.req" {
-						return true
+						return nil
 					}
 				}
-				return false
+				return spans
 			},
 			func() {
 				span1 := StartSpan("reject.req")
@@ -309,16 +388,48 @@ func TestProcessorEndToEnd(t *testing.T) {
 			})
 	})
 
+	t.Run("partial-dropped", func(t *testing.T) {
+		runProcessorTestEndToEnd(t,
+			func(sls spanLists) {
+				assert.Equal(t, 1, len(sls))
+				for _, spanList := range sls {
+					assert.Equal(t, 2, len(spanList))
+					for _, span := range spanList {
+						assert.Equal(t, "accepted.req", span.Name)
+					}
+				}
+			},
+			func(spans []ReadWriteSpan) []ReadWriteSpan {
+				n := 0
+				for _, span := range spans {
+					if span.Tag(ext.SpanName) != "reject.span" {
+						spans[n] = span
+						n++
+					}
+				}
+				spans = spans[:n]
+				return spans
+			},
+			func() {
+				span1, ctx := StartSpanFromContext(context.Background(), "accepted.req")
+				span2, ctx := StartSpanFromContext(ctx, "reject.span")
+				span3, _ := StartSpanFromContext(ctx, "accepted.req")
+				span3.Finish()
+				span2.Finish()
+				span1.Finish()
+			})
+	})
+
 	t.Run("no-payload", func(t *testing.T) {
 		runProcessorTestEndToEnd(t,
 			func(sls spanLists) { t.Fatal("no payloads should be received") },
-			func(spans []ReadWriteSpan) bool {
+			func(spans []ReadWriteSpan) []ReadWriteSpan {
 				for _, span := range spans {
 					if span.Tag(ext.SpanName) == "reject.req" {
-						return true
+						return nil
 					}
 				}
-				return false
+				return spans
 			},
 			func() {
 				span1, ctx := StartSpanFromContext(context.Background(), "http.req")
@@ -347,13 +458,13 @@ func TestProcessorEndToEnd(t *testing.T) {
 					}
 				}
 			},
-			func(spans []ReadWriteSpan) bool {
+			func(spans []ReadWriteSpan) []ReadWriteSpan {
 				for _, span := range spans {
 					if span.Tag(ext.SpanName) == "tagged.req" {
 						span.SetTag("processor_tag", "true")
 					}
 				}
-				return false
+				return spans
 			},
 			func() {
 				parent, ctx := StartSpanFromContext(context.Background(), "accepted.req")

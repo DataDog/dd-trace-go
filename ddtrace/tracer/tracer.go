@@ -324,12 +324,9 @@ func (t *tracer) worker(tick <-chan time.Time) {
 }
 
 func (t *tracer) writeTrace(trace []*span) {
-	if t.droppedByProcessor(trace) {
-		atomic.AddUint64(&t.droppedProcessorSpans, uint64(len(trace)))
-		atomic.AddUint64(&t.droppedProcessorTraces, 1)
-		return
+	if finishedTrace := t.finishTrace(trace); finishedTrace != nil {
+		t.traceWriter.add(finishedTrace)
 	}
-	t.traceWriter.add(trace)
 }
 
 // finishedTrace holds information about a trace that has finished, including its spans.

@@ -141,7 +141,7 @@ type config struct {
 
 	// postProcessor holds the function used to process finished spans of a trace.
 	// It reports whether the trace should be dropped.
-	postProcessor func([]ReadWriteSpan) (dropTrace bool)
+	postProcessor func([]ReadWriteSpan) []ReadWriteSpan
 }
 
 // WithPostProcessor sets post processor function f, which allows certain span fields to change
@@ -154,7 +154,7 @@ type config struct {
 // Please note that dropped traces and spans will not be accounted for in APM stats, and that
 // modifying any of the ReadWriteSpans outside the scope of the processor function can and will
 // likely cause a panic.
-func WithPostProcessor(f func([]ReadWriteSpan) (dropTrace bool)) StartOption {
+func WithPostProcessor(f func([]ReadWriteSpan) []ReadWriteSpan) StartOption {
 	return func(c *config) {
 		c.postProcessor = f
 	}
@@ -677,9 +677,10 @@ func WithRuntimeMetrics() StartOption {
 // WithDogstatsdAddress specifies the address to connect to for sending metrics to the Datadog
 // Agent. It should be a "host:port" string, or the path to a unix domain socket.If not set, it
 // attempts to determine the address of the statsd service according to the following rules:
-//   1. Look for /var/run/datadog/dsd.socket and use it if present. IF NOT, continue to #2.
-//   2. The host is determined by DD_AGENT_HOST, and defaults to "localhost"
-//   3. The port is retrieved from the agent. If not present, it is determined by DD_DOGSTATSD_PORT, and defaults to 8125
+//  1. Look for /var/run/datadog/dsd.socket and use it if present. IF NOT, continue to #2.
+//  2. The host is determined by DD_AGENT_HOST, and defaults to "localhost"
+//  3. The port is retrieved from the agent. If not present, it is determined by DD_DOGSTATSD_PORT, and defaults to 8125
+//
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
