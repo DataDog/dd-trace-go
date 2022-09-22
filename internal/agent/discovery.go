@@ -3,9 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-// Package agentdiscovery provides a mechanism for automatically discovering a
-// Datadog agent and its available features
-package agentdiscovery
+// Package agent provides tools for interacting with the Datdog agent, including
+// automatically discovering the Datadog agent and its available features
+package agent
 
 import (
 	"context"
@@ -40,8 +40,8 @@ type Features struct {
 	FeatureFlags []string `json:"feature_flags"`
 }
 
-// AgentFeatures queries the agent's /info endpoint
-func AgentFeatures(addr string, client *http.Client) (*Features, error) {
+// LoadFeatures queries the agent's /info endpoint
+func LoadFeatures(addr string, client *http.Client) (*Features, error) {
 	u := url.URL{
 		Scheme: "http",
 		Host:   addr,
@@ -87,7 +87,7 @@ var (
 	}
 )
 
-// HTTPClient returns the default http.Client to start the tracer with.
+// HTTPClient returns the default http.Client for interacting with the agent
 func HTTPClient() *http.Client {
 	var sockaddr string
 	if v := os.Getenv("DD_TRACE_AGENT_URL"); v != "" {

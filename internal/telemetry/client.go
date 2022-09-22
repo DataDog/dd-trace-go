@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/agentdiscovery"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/agent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -171,7 +171,7 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 		return
 	}
 	if !c.Agentless {
-		features, err := agentdiscovery.AgentFeatures(u.Host, c.Client)
+		features, err := agent.LoadFeatures(u.Host, c.Client)
 		if err != nil {
 			c.log("couldn't get agent features: %s", err)
 			return

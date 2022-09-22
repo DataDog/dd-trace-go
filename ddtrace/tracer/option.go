@@ -20,7 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/agentdiscovery"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/agent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
@@ -183,8 +183,8 @@ const maxPropagatedTagsLength = 512
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
-	c.agentAddr = agentdiscovery.ResolveAgentAddr()
-	c.httpClient = agentdiscovery.HTTPClient()
+	c.agentAddr = agent.ResolveAgentAddr()
+	c.httpClient = agent.HTTPClient()
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
@@ -284,7 +284,7 @@ func newConfig(opts ...StartOption) *config {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
-	if info, err := agentdiscovery.AgentFeatures(c.agentAddr, c.httpClient); err == nil {
+	if info, err := agent.LoadFeatures(c.agentAddr, c.httpClient); err == nil {
 		c.agent.DropP0s = info.ClientDropP0s
 		c.agent.StatsdPort = info.StatsdPort
 		for _, endpoint := range info.Endpoints {
@@ -620,6 +620,7 @@ func WithRuntimeMetrics() StartOption {
 //   1. Look for /var/run/datadog/dsd.socket and use it if present. IF NOT, continue to #2.
 //   2. The host is determined by DD_AGENT_HOST, and defaults to "localhost"
 //   3. The port is retrieved from the agent. If not present, it is determined by DD_DOGSTATSD_PORT, and defaults to 8125
+//
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {

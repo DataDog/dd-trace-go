@@ -21,7 +21,7 @@ import (
 	"unicode"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/agentdiscovery"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/agent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
@@ -204,8 +204,8 @@ func defaultConfig() (*config, error) {
 		c.addProfileType(t)
 	}
 
-	WithAgentAddr(agentdiscovery.ResolveAgentAddr())(&c)
-	c.httpClient = agentdiscovery.HTTPClient()
+	WithAgentAddr(agent.ResolveAgentAddr())(&c)
+	c.httpClient = agent.HTTPClient()
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
