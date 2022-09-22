@@ -167,7 +167,7 @@ func (s *span) SetTag(key string, value interface{}) {
 func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerName, rate float64) {
 	s.Lock()
 	defer s.Unlock()
-	s.setSamplingPriorityLocked(priority, sampler, rate)
+	s.setSamplingPriorityLocked(priority, sampler)
 }
 
 // setUser sets the span user ID tag as well as some optional user monitoring tags depending on the configuration.
@@ -203,7 +203,7 @@ func (s *span) setUser(id string, cfg UserMonitoringConfig) {
 
 // setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
-func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName, rate float64) {
+func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -211,7 +211,7 @@ func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 		return
 	}
 	s.setMetric(keySamplingPriority, float64(priority))
-	s.context.setSamplingPriority(priority, sampler, rate)
+	s.context.setSamplingPriority(priority, sampler)
 }
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
@@ -221,13 +221,13 @@ func (s *span) setTagError(value interface{}, cfg errorConfig) {
 		if yes {
 			if s.Error == 0 {
 				// new error
-				atomic.AddInt64(&s.context.errors, 1)
+				atomic.AddInt32(&s.context.errors, 1)
 			}
 			s.Error = 1
 		} else {
 			if s.Error > 0 {
 				// flip from active to inactive
-				atomic.AddInt64(&s.context.errors, -1)
+				atomic.AddInt32(&s.context.errors, -1)
 			}
 			s.Error = 0
 		}
@@ -332,11 +332,11 @@ func (s *span) setTagBool(key string, v bool) {
 		}
 	case ext.ManualDrop:
 		if v {
-			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplernames.Manual, math.NaN())
+			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplernames.Manual)
 		}
 	case ext.ManualKeep:
 		if v {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual, math.NaN())
+			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual)
 		}
 	default:
 		if v {
@@ -357,12 +357,12 @@ func (s *span) setMetric(key string, v float64) {
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec, math.NaN())
+			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
 		}
 	case ext.SamplingPriority:
 		// ext.SamplingPriority is deprecated in favor of ext.ManualKeep and ext.ManualDrop.
 		// We have it here for backward compatibility.
-		s.setSamplingPriorityLocked(int(v), samplernames.Manual, math.NaN())
+		s.setSamplingPriorityLocked(int(v), samplernames.Manual)
 	default:
 		s.Metrics[key] = v
 	}
@@ -518,7 +518,7 @@ func shouldKeep(s *span) bool {
 		// positive sampling priorities stay
 		return true
 	}
-	if atomic.LoadInt64(&s.context.errors) > 0 {
+	if atomic.LoadInt32(&s.context.errors) > 0 {
 		// traces with any span containing an error get kept
 		return true
 	}
