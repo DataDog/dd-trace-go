@@ -22,6 +22,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
@@ -207,6 +208,7 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 
 	heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
 	if heartbeat < 1 || heartbeat > 3600 {
+		log.Warn("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
 		heartbeat = defaultHeartbeatInterval
 	}
 	c.heartbeatInterval = time.Duration(heartbeat) * time.Second
