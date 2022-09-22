@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
@@ -30,15 +29,23 @@ const (
 
 var prefixMsg = fmt.Sprintf("Datadog Tracer %s", version.Tag)
 
+// Logger implementations are able to log given messages that the tracer might
+// output. This interface is duplicated here to avoid a cyclic dependency
+// between this package and ddtrace
+type Logger interface {
+	// Log prints the given message.
+	Log(msg string)
+}
+
 var (
-	mu     sync.RWMutex   // guards below fields
-	level                 = LevelWarn
-	logger ddtrace.Logger = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
+	mu     sync.RWMutex // guards below fields
+	level               = LevelWarn
+	logger Logger       = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
 )
 
 // UseLogger sets l as the active logger and returns a function to restore the
 // previous logger. The return value is mostly useful when testing.
-func UseLogger(l ddtrace.Logger) (undo func()) {
+func UseLogger(l Logger) (undo func()) {
 	Flush()
 	mu.Lock()
 	defer mu.Unlock()
@@ -187,7 +194,7 @@ func (p *defaultLogger) Log(msg string) { p.l.Print(msg) }
 // DiscardLogger discards every call to Log().
 type DiscardLogger struct{}
 
-// Log implements ddtrace.Logger.
+// Log implements Logger.
 func (d DiscardLogger) Log(msg string) {}
 
 // RecordLogger records every call to Log() and makes it available via Logs().
@@ -196,7 +203,7 @@ type RecordLogger struct {
 	logs []string
 }
 
-// Log implements ddtrace.Logger.
+// Log implements Logger.
 func (r *RecordLogger) Log(msg string) {
 	r.m.Lock()
 	defer r.m.Unlock()
