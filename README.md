@@ -12,7 +12,7 @@ The package [`gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer`](https://pkg.go.de
 - [Datadog Go Continuous Profiler](https://docs.datadoghq.com/profiler/): Continuously profile your Go apps to find CPU, memory, and synchronization bottlenecks, broken down by function name, and line number, to significantly reduce end-user latency and infrastructure costs.  
 The package [`gopkg.in/DataDog/dd-trace-go.v1/profiler`](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/profiler) allows you to periodically collect and send Go profiles to the Datadog API.
 
-- [Datadog Application Security Monitoring (ASM)](https://docs.datadoghq.com/security_platform/application_security/): Get observability into your Go apps attacks that aim to exploit code-level vulnerabilities, such as Server-Side-Request-Forgery (SSRF), SQL injection, Log4Shell, and Reflected Cross-Site-Scripting (XSS). ASM is not a standalone Go package and is transparently integrated into the APM tracer. Simply [enable it](https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?code-lang=go) to make benefit from the security monitoring.
+- [Datadog Application Security Monitoring (ASM)](https://docs.datadoghq.com/security_platform/application_security/): Get observability into your Go apps attacks that aim to exploit code-level vulnerabilities, such as Server-Side-Request-Forgery (SSRF), SQL injection, Log4Shell, and Reflected Cross-Site-Scripting (XSS). ASM is not a standalone Go package and is transparently integrated into the APM tracer. Simply [enable it](https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?code-lang=go) to benefit from the security monitoring.
 
 ### Installing
 
@@ -23,7 +23,7 @@ go get gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
 go get gopkg.in/DataDog/dd-trace-go.v1/profiler
 ```
 
-Additionally there are many [contrib](./contrib) packages that can be installed to automatically instrument and trace comonly used Go libraries such as [net/http](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http), [gorilla/mux](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux) or [database/sql](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql):
+Additionally there are many [contrib](./contrib) packages that can be installed to automatically instrument and trace commonly used Go libraries such as [net/http](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http), [gorilla/mux](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux) or [database/sql](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql):
 
 ```
 go get gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux
