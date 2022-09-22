@@ -7,9 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 type Callback func(*rc.Update)
@@ -49,6 +52,18 @@ type Client struct {
 	callbacks map[string][]Callback
 
 	lastError error
+}
+
+func DefaultClientConfig() ClientConfig {
+	return ClientConfig{
+		Env:           os.Getenv("DD_ENV"),
+		Products:      []string{rc.ProductFeatures},
+		PollRate:      time.Second * 1,
+		RuntimeID:     globalconfig.RuntimeID(),
+		ServiceName:   globalconfig.ServiceName(),
+		TracerVersion: version.Tag,
+		TUFRoot:       os.Getenv("DD_RC_TUF_ROOT"),
+	}
 }
 
 // NewClient creates a new remoteconfig Client
