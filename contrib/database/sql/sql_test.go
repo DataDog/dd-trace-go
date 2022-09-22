@@ -13,17 +13,19 @@ import (
 	"log"
 	"math"
 	"os"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 // tableName holds the SQL table that these tests will be run against. It must be unique cross-repo.
@@ -260,4 +262,18 @@ func TestConnectCancelledCtx(t *testing.T) {
 	s := spans[0]
 	assert.Equal("hangingConnector.query", s.OperationName())
 	assert.Equal("Connect", s.Tag("sql.query_type"))
+}
+
+func TestRegister(t *testing.T) {
+	var wg sync.WaitGroup
+
+	for i := 1; i < 10; i++ {
+		wg.Add(1)
+		go func(i int64) {
+			Register("test"+strconv.FormatInt(i, 10), &mysql.MySQLDriver{})
+			wg.Done()
+		}(int64(i))
+	}
+
+	wg.Wait()
 }

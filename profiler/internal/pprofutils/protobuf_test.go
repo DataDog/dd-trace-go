@@ -7,7 +7,7 @@ package pprofutils
 
 import (
 	"bytes"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,7 +18,7 @@ import (
 
 func TestProtobufConvert(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
-		data, err := ioutil.ReadFile(filepath.Join("test-fixtures", "pprof.samples.cpu.001.pb.gz"))
+		data, err := os.ReadFile(filepath.Join("test-fixtures", "pprof.samples.cpu.001.pb.gz"))
 		require.NoError(t, err)
 
 		proto, err := profile.Parse(bytes.NewReader(data))
@@ -39,7 +39,7 @@ runtime.mcall;runtime.park_m;runtime.schedule;runtime.findrunnable;runtime.check
 	})
 
 	t.Run("differentLinesPerFunction", func(t *testing.T) {
-		data, err := ioutil.ReadFile(filepath.Join("test-fixtures", "pprof.lines.pb.gz"))
+		data, err := os.ReadFile(filepath.Join("test-fixtures", "pprof.lines.pb.gz"))
 		require.NoError(t, err)
 
 		proto, err := profile.Parse(bytes.NewReader(data))

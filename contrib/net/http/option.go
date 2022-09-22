@@ -22,6 +22,7 @@ type config struct {
 	spanOpts      []ddtrace.StartSpanOption
 	finishOpts    []ddtrace.FinishOption
 	ignoreRequest func(*http.Request) bool
+	resourceNamer func(*http.Request) string
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -45,10 +46,11 @@ func defaults(cfg *config) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
+	cfg.resourceNamer = func(_ *http.Request) string { return "" }
 }
 
 // WithIgnoreRequest holds the function to use for determining if the
-// incoming HTTP request tracing should be skipped.
+// incoming HTTP request should not be traced.
 func WithIgnoreRequest(f func(*http.Request) bool) MuxOption {
 	return func(cfg *config) {
 		cfg.ignoreRequest = f
@@ -95,6 +97,13 @@ func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
 	}
 }
 
+// WithResourceNamer populates the name of a resource based on a custom function.
+func WithResourceNamer(namer func(req *http.Request) string) Option {
+	return func(cfg *config) {
+		cfg.resourceNamer = namer
+	}
+}
+
 // NoDebugStack prevents stack traces from being attached to spans finishing
 // with an error. This is useful in situations where errors are frequent and
 // performance is critical.
@@ -118,6 +127,7 @@ type roundTripperConfig struct {
 	analyticsRate float64
 	serviceName   string
 	resourceNamer func(req *http.Request) string
+	ignoreRequest func(*http.Request) bool
 	spanOpts      []ddtrace.StartSpanOption
 }
 
@@ -125,6 +135,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 	return &roundTripperConfig{
 		analyticsRate: globalconfig.AnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
+		ignoreRequest: func(_ *http.Request) bool { return false },
 	}
 }
 
@@ -195,5 +206,13 @@ func RTWithAnalyticsRate(rate float64) RoundTripperOption {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// RTWithIgnoreRequest holds the function to use for determining if the
+// outgoing HTTP request should not be traced.
+func RTWithIgnoreRequest(f func(*http.Request) bool) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.ignoreRequest = f
 	}
 }

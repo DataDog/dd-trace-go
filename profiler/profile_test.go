@@ -9,8 +9,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -117,15 +115,15 @@ main;bar 0 0 8 16
 				// followed by prof2 when calling runProfile().
 				deltaProfiler := func(prof1, prof2 []byte, opts ...Option) (*profiler, func()) {
 					returnProfs := [][]byte{prof1, prof2}
-					old := lookupProfile
-					lookupProfile = func(_ string, w io.Writer, _ int) error {
+					opts = append(opts, WithPeriod(5*time.Millisecond))
+					p, err := unstartedProfiler(opts...)
+					p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 						_, err := w.Write(returnProfs[0])
 						returnProfs = returnProfs[1:]
 						return err
 					}
-					p, err := unstartedProfiler(opts...)
 					require.NoError(t, err)
-					return p, func() { lookupProfile = old }
+					return p, func() {}
 				}
 
 				t.Run(profType.String(), func(t *testing.T) {
@@ -173,15 +171,12 @@ main;bar 0 0 8 16
 	})
 
 	t.Run("cpu", func(t *testing.T) {
-		defer func(old func(_ io.Writer) error) { startCPUProfile = old }(startCPUProfile)
-		startCPUProfile = func(w io.Writer) error {
+		p, err := unstartedProfiler(CPUDuration(10 * time.Millisecond))
+		p.testHooks.startCPUProfile = func(w io.Writer) error {
 			_, err := w.Write([]byte("my-cpu-profile"))
 			return err
 		}
-		defer func(old func()) { stopCPUProfile = old }(stopCPUProfile)
-		stopCPUProfile = func() {}
-
-		p, err := unstartedProfiler(CPUDuration(10 * time.Millisecond))
+		p.testHooks.stopCPUProfile = func() {}
 		require.NoError(t, err)
 		start := time.Now()
 		profs, err := p.runProfile(CPUProfile)
@@ -193,13 +188,11 @@ main;bar 0 0 8 16
 	})
 
 	t.Run("goroutine", func(t *testing.T) {
-		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-		lookupProfile = func(name string, w io.Writer, _ int) error {
+		p, err := unstartedProfiler(WithPeriod(time.Millisecond))
+		p.testHooks.lookupProfile = func(name string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(name))
 			return err
 		}
-
-		p, err := unstartedProfiler()
 		require.NoError(t, err)
 		profs, err := p.runProfile(GoroutineProfile)
 		require.NoError(t, err)
@@ -230,20 +223,19 @@ main.main()
 ...additional frames elided...
 `
 
-		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-		lookupProfile = func(_ string, w io.Writer, _ int) error {
+		p, err := unstartedProfiler(WithPeriod(10 * time.Millisecond))
+		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(sample))
 			return err
 		}
 
-		p, err := unstartedProfiler()
 		require.NoError(t, err)
 		profs, err := p.runProfile(expGoroutineWaitProfile)
 		require.NoError(t, err)
 		require.Equal(t, "goroutineswait.pprof", profs[0].name)
 
 		// pro tip: enable line below to inspect the pprof output using cli tools
-		// ioutil.WriteFile(prof.name, prof.data, 0644)
+		// os.WriteFile(prof.name, prof.data, 0644)
 
 		requireFunctions := func(t *testing.T, s *pprofile.Sample, want []string) {
 			t.Helper()
@@ -310,18 +302,13 @@ main.main()
 
 		stop := spawnGoroutines(goroutines)
 		defer stop()
-		envVar := "DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"
-		oldVal := os.Getenv(envVar)
-		os.Setenv(envVar, strconv.Itoa(limit))
-		defer os.Setenv(envVar, oldVal)
+		t.Setenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES", strconv.Itoa(limit))
 
-		defer func(old func(_ string, _ io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-		lookupProfile = func(_ string, w io.Writer, _ int) error {
+		p, err := unstartedProfiler()
+		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(""))
 			return err
 		}
-
-		p, err := unstartedProfiler()
 		require.NoError(t, err)
 		_, err = p.runProfile(expGoroutineWaitProfile)
 		var errRoutines, errLimit int
@@ -333,7 +320,7 @@ main.main()
 }
 
 func Test_goroutineDebug2ToPprof_CrashSafety(t *testing.T) {
-	err := goroutineDebug2ToPprof(panicReader{}, ioutil.Discard, time.Time{})
+	err := goroutineDebug2ToPprof(panicReader{}, io.Discard, time.Time{})
 	require.NotNil(t, err)
 	require.Equal(t, "panic: 42", err.Error())
 }
@@ -363,6 +350,16 @@ func (t textProfile) Protobuf() []byte {
 	}
 	if !t.Time.IsZero() {
 		prof.TimeNanos = t.Time.UnixNano()
+	}
+	for _, st := range prof.SampleType {
+		if st.Type == "alloc_space" {
+			// this is a heap profile, add the correct period type
+			// to make pprofile.Merge happy since the C allocation
+			// profiler assumes it's generating a profile to merge
+			// with the real heap profile.
+			prof.PeriodType = &pprofile.ValueType{Type: "space", Unit: "bytes"}
+			break
+		}
 	}
 	if err := prof.Write(out); err != nil {
 		panic(err)
