@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2022 Datadog, Inc.
+
 package remoteconfig
 
 import (
@@ -15,6 +20,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
+// Callback represents a function that can process a remote config update.
+// A Callback function can be registered to a remote config client to automatically
+// react upon receiving updates.
 type Callback func(*rc.Update)
 
 // ClientConfig contains the required values to configure a remoteconfig client
@@ -54,6 +62,7 @@ type Client struct {
 	lastError error
 }
 
+// DefaultClientConfig generates a default remote config client configuration
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
 		Env:           os.Getenv("DD_ENV"),
@@ -138,6 +147,8 @@ func (c *Client) updateState() {
 	c.lastError = err
 }
 
+// RegisterCallback allows registering a callback that will be invoked when the client
+// receives a configuration update for the specified product.
 func (c *Client) RegisterCallback(f Callback, product string) {
 	c.callbacks[product] = append(c.callbacks[product], f)
 }
