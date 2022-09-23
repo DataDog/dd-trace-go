@@ -36,7 +36,8 @@ run_binutils() {
 }
 
 run_strip() {
-  run_binutils $1-strip --strip-dwo --strip-unneeded --strip-debug $2
+  run_binutils $1-strip --strip-dwo --strip-unneeded --strip-debug --keep-section='*__compact_unwind' $2
+  return 0
 }
 
 #
