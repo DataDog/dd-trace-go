@@ -19,6 +19,7 @@ import (
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
+// AppSec is an interface allowing to use an appsec object for application security
 type AppSec interface {
 	Start()
 	Stop()
@@ -36,9 +37,6 @@ func Enabled() bool {
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
 func (a *appsec) Start() {
-	a.rc.RegisterCallback(func(u *rc.Update) {
-		log.Debug("appsec: FEATURES UPDATE")
-	}, rc.ProductFeatures)
 	enabled, err := isEnabled()
 	if err != nil {
 		logUnexpectedStartError(err)
@@ -56,7 +54,12 @@ func (a *appsec) Start() {
 		logUnexpectedStartError(err)
 		return
 	}
-	go a.rc.Start()
+	if a.rc != nil {
+		a.rc.RegisterCallback(func(u *rc.Update) {
+			log.Debug("appsec: FEATURES UPDATE")
+		}, rc.ProductFeatures)
+		go a.rc.Start()
+	}
 	instances.Add(1)
 }
 
@@ -69,6 +72,9 @@ func (a *appsec) Stop() {
 	a.stop()
 	for i := instances.Load(); !instances.CompareAndSwap(i, i-1); {
 	}
+	if a.rc != nil {
+		a.rc.Stop()
+	}
 }
 
 type appsec struct {
@@ -78,6 +84,7 @@ type appsec struct {
 	rc            *remoteconfig.Client
 }
 
+// NewAppSec instantiates an appsec object that can be manipulated through the AppSec interface.
 func NewAppSec(opts ...StartOption) AppSec {
 	cfg, err := newConfig()
 	if err != nil {
@@ -114,5 +121,4 @@ func (a *appsec) start() error {
 func (a *appsec) stop() {
 	a.unregisterWAF()
 	a.limiter.Stop()
-	a.rc.Stop()
 }
