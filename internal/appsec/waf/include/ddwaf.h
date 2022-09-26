@@ -263,10 +263,23 @@ void ddwaf_ruleset_info_free(ddwaf_ruleset_info *info);
  *
  * @param Handle to the WAF instance.
  * @param size Output parameter in which the size will be returned. The value of
- *             size will be 0 if the return value is nullptr.
- * @return NULL if error, otherwise a pointer to an array with size elements.
+ *             size will be 0 if the return value is NULL.
+ * @return NULL if empty, otherwise a pointer to an array with size elements.
  **/
 const char* const* ddwaf_required_addresses(const ddwaf_handle handle, uint32_t *size);
+/**
+ * ddwaf_required_rule_data_ids
+ *
+ * Get a list of required rule data IDs (if any). The memory is owned by the
+ * WAF and should not be freed.
+ *
+ * @param Handle to the WAF instance.
+ * @param size Output parameter in which the size will be returned. The value of
+ *             size will be 0 if the return value is NULL.
+ * @return NULL if empty, otherwise a pointer to an array with size elements.
+ **/
+const char* const* ddwaf_required_rule_data_ids(const ddwaf_handle handle, uint32_t *size);
+
 /**
  * ddwaf_context_init
  *
