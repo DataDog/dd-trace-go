@@ -20,6 +20,7 @@ type dialConfig struct {
 const (
 	connectionTypeWithTimeout = iota
 	connectionTypeWithContext
+	connectionTypeDefault
 )
 
 // DialOption represents an option that can be passed to Dial.
@@ -79,5 +80,12 @@ func WithTimeoutConnection() DialOption {
 func WithContextConnection() DialOption {
 	return func(cfg *dialConfig) {
 		cfg.connectionType = connectionTypeWithContext
+	}
+}
+
+// WithDefaultConnection overrides the default connectionType to not be connectionTypeWithTimeout.
+func WithDefaultConnection() DialOption {
+	return func(cfg *dialConfig) {
+		cfg.connectionType = connectionTypeDefault
 	}
 }

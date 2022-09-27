@@ -78,6 +78,8 @@ func wrapConn(c redis.Conn, p *params) redis.Conn {
 		if connWithContext, ok := c.(redis.ConnWithContext); ok {
 			return ConnWithContext{connWithContext, p}
 		}
+	case connectionTypeDefault:
+		// Fall through.
 	}
 
 	return Conn{c, p}
