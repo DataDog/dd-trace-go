@@ -20,8 +20,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
-	pprofile "github.com/google/pprof/profile"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -64,15 +62,14 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
-	mu              sync.Mutex
-	cfg             *config                      // profile configuration
-	out             chan batch                   // upload queue
-	uploadFunc      func(batch) error            // defaults to (*profiler).upload; replaced in tests
-	exit            chan struct{}                // exit signals the profiler to stop; it is closed after stopping
-	stopOnce        sync.Once                    // stopOnce ensures the profiler is stopped exactly once.
-	wg              sync.WaitGroup               // wg waits for all goroutines to exit when stopping.
-	met             *metrics                     // metric collector state
-	prev            map[string]*pprofile.Profile // previous collection results for delta profiling
+	cfg             *config           // profile configuration
+	out             chan batch        // upload queue
+	uploadFunc      func(batch) error // defaults to (*profiler).upload; replaced in tests
+	exit            chan struct{}     // exit signals the profiler to stop; it is closed after stopping
+	stopOnce        sync.Once         // stopOnce ensures the profiler is stopped exactly once.
+	wg              sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
+	met             *metrics          // metric collector state
+	deltas          map[string]*deltaProfiler
 	telemetry       *telemetry.Client
 	seq             uint64         // seq is the value of the profile_seq tag
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
@@ -182,11 +179,16 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	}
 
 	p := profiler{
-		cfg:  cfg,
-		out:  make(chan batch, outChannelSize),
-		exit: make(chan struct{}),
-		met:  newMetrics(),
-		prev: make(map[string]*pprofile.Profile),
+		cfg:    cfg,
+		out:    make(chan batch, outChannelSize),
+		exit:   make(chan struct{}),
+		met:    newMetrics(),
+		deltas: make(map[string]*deltaProfiler),
+	}
+	for pt := range cfg.types {
+		if d := profileTypes[pt].Delta; d != nil {
+			p.deltas[pt.lookup().Name] = &deltaProfiler{delta: d}
+		}
 	}
 	p.uploadFunc = p.upload
 	p.telemetry = &telemetry.Client{

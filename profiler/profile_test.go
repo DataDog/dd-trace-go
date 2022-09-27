@@ -115,7 +115,7 @@ main;bar 0 0 8 16
 				// followed by prof2 when calling runProfile().
 				deltaProfiler := func(prof1, prof2 []byte, opts ...Option) (*profiler, func()) {
 					returnProfs := [][]byte{prof1, prof2}
-					opts = append(opts, WithPeriod(5*time.Millisecond))
+					opts = append(opts, WithPeriod(5*time.Millisecond), WithProfileTypes(HeapProfile, MutexProfile, BlockProfile))
 					p, err := unstartedProfiler(opts...)
 					p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 						_, err := w.Write(returnProfs[0])
