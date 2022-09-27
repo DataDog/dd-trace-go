@@ -129,6 +129,7 @@ func Start(opts ...StartOption) {
 	}
 	cfg := remoteconfig.DefaultClientConfig()
 	cfg.AgentAddr = t.config.agentAddr
+	cfg.AppVersion = t.config.version
 	appsec.Start(appsec.WithRCConfig(cfg))
 }
 
