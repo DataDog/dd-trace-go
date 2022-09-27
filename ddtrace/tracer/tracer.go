@@ -88,8 +88,6 @@ type tracer struct {
 	// obfuscator holds the obfuscator used to obfuscate resources in aggregated stats.
 	// obfuscator may be nil if disabled.
 	obfuscator *obfuscate.Obfuscator
-
-	appsec appsec.AppSec
 }
 
 const (
@@ -129,7 +127,9 @@ func Start(opts ...StartOption) {
 	if t.config.logStartup {
 		logStartup(t)
 	}
-	t.appsec.Start()
+	cfg := remoteconfig.DefaultClientConfig()
+	cfg.AgentAddr = t.config.agentAddr
+	appsec.Start(appsec.WithRCConfig(cfg))
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -206,8 +206,6 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
-	rcCfg := remoteconfig.DefaultClientConfig()
-	rcCfg.AgentAddr = c.agentAddr
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -227,7 +225,6 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
-		appsec: appsec.NewAppSec(appsec.WithRCConfig(rcCfg)),
 	}
 	return t
 }
@@ -555,7 +552,7 @@ func (t *tracer) Stop() {
 	t.wg.Wait()
 	t.traceWriter.stop()
 	t.config.statsd.Close()
-	t.appsec.Stop()
+	appsec.Stop()
 }
 
 // Inject uses the configured or default TextMap Propagator.

@@ -10,31 +10,24 @@ package appsec
 
 import (
 	"os"
-	"sync/atomic"
+	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 )
 
-// AppSec is an interface allowing to use an appsec object for application security
-type AppSec interface {
-	Start()
-	Stop()
-}
-
-// instances tracks how many appsec object are currently instantiated and running
-var instances atomic.Uint32
-
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
 // DD_APPSEC_ENABLED is set to true, and the tracer is started.
 func Enabled() bool {
-	return instances.Load() > 0
+	mu.RLock()
+	defer mu.RUnlock()
+	return activeAppSec != nil
 }
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
-func (a *appsec) Start() {
+func Start(opts ...StartOption) {
 	enabled, err := isEnabled()
 	if err != nil {
 		logUnexpectedStartError(err)
@@ -48,14 +41,22 @@ func (a *appsec) Start() {
 			return
 		}
 		log.Debug("appsec: %s is not set. AppSec won't start until activated through remote configuration", enabledEnvVar)
-	} else if err := a.start(); err != nil {
+	}
+
+	cfg, err := newConfig()
+	if err != nil {
 		logUnexpectedStartError(err)
 		return
 	}
-	if a.rc != nil {
-		go a.rc.Start()
+	for _, opt := range opts {
+		opt(cfg)
 	}
-	instances.Add(1)
+	appsec := newAppSec(cfg)
+	if err := appsec.start(); err != nil {
+		logUnexpectedStartError(err)
+		return
+	}
+	setActiveAppSec(appsec)
 }
 
 // Implement the AppSec log message C1
@@ -63,14 +64,23 @@ func logUnexpectedStartError(err error) {
 	log.Error("appsec: could not start because of an unexpected error: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
 }
 
-func (a *appsec) Stop() {
-	a.stop()
-	// Check for 0 value in case appsec.Stop() gets called before appsec.Start()
-	for i := instances.Load(); i > 0 && !instances.CompareAndSwap(i, i-1); {
+// Stop AppSec.
+func Stop() {
+	setActiveAppSec(nil)
+}
+
+var (
+	activeAppSec *appsec
+	mu           sync.RWMutex
+)
+
+func setActiveAppSec(a *appsec) {
+	mu.Lock()
+	defer mu.Unlock()
+	if activeAppSec != nil {
+		activeAppSec.stop()
 	}
-	if a.rc != nil {
-		a.rc.Stop()
-	}
+	activeAppSec = a
 }
 
 type appsec struct {
@@ -81,15 +91,7 @@ type appsec struct {
 }
 
 // NewAppSec instantiates an appsec object that can be manipulated through the AppSec interface.
-func NewAppSec(opts ...StartOption) AppSec {
-	cfg, err := newConfig()
-	if err != nil {
-		log.Error(err.Error())
-		return nil
-	}
-	for _, opt := range opts {
-		opt(cfg)
-	}
+func newAppSec(cfg *Config) *appsec {
 	rc, err := remoteconfig.NewClient(cfg.rc)
 	if err != nil {
 		log.Warn("Could not create remote configuration client. Feature will be disabled.")
@@ -102,6 +104,10 @@ func NewAppSec(opts ...StartOption) AppSec {
 
 // Start AppSec by registering its security protections according to the configured the security rules.
 func (a *appsec) start() error {
+	if a.rc != nil {
+		//TODO: use callbacks to process product updates using rc.RegisterCallback()
+		go a.rc.Start()
+	}
 	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
 	a.limiter.Start()
 	// Register the WAF operation event listener
@@ -117,4 +123,5 @@ func (a *appsec) start() error {
 func (a *appsec) stop() {
 	a.unregisterWAF()
 	a.limiter.Stop()
+	a.rc.Stop()
 }
