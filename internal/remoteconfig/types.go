@@ -5,18 +5,18 @@
 
 package remoteconfig
 
-type ClientData struct {
-	State        *ClientState  `json:"state,omitempty"`
-	Id           string        `json:"id,omitempty"`
+type clientData struct {
+	State        *clientState  `json:"state,omitempty"`
+	ID           string        `json:"id,omitempty"`
 	Products     []string      `json:"products,omitempty"`
 	IsTracer     bool          `json:"is_tracer,omitempty"`
-	ClientTracer *ClientTracer `json:"client_tracer,omitempty"`
+	ClientTracer *clientTracer `json:"client_tracer,omitempty"`
 	LastSeen     uint64        `json:"last_seen,omitempty"`
 	Capabilities []byte        `json:"capabilities,omitempty"`
 }
 
-type ClientTracer struct {
-	RuntimeId     string   `json:"runtime_id,omitempty"`
+type clientTracer struct {
+	RuntimeID     string   `json:"runtime_id,omitempty"`
 	Language      string   `json:"language,omitempty"`
 	TracerVersion string   `json:"tracer_version,omitempty"`
 	Service       string   `json:"service,omitempty"`
@@ -25,55 +25,55 @@ type ClientTracer struct {
 	Tags          []string `json:"tags,omitempty"`
 }
 
-type ClientAgent struct {
+type clientAgent struct {
 	Name    string `json:"name,omitempty"`
 	Version string `json:"version,omitempty"`
 }
 
-type ConfigState struct {
-	Id      string `json:"id,omitempty"`
+type configState struct {
+	ID      string `json:"id,omitempty"`
 	Version uint64 `json:"version,omitempty"`
 	Product string `json:"product,omitempty"`
 }
 
-type ClientState struct {
+type clientState struct {
 	RootVersion        uint64         `json:"root_version"`
 	TargetsVersion     uint64         `json:"targets_version"`
-	ConfigStates       []*ConfigState `json:"config_states,omitempty"`
+	ConfigStates       []*configState `json:"config_states,omitempty"`
 	HasError           bool           `json:"has_error,omitempty"`
 	Error              string         `json:"error,omitempty"`
 	BackendClientState []byte         `json:"backend_client_state,omitempty"`
 }
 
-type TargetFileHash struct {
+type targetFileHash struct {
 	Algorithm string `json:"algorithm,omitempty"`
 	Hash      string `json:"hash,omitempty"`
 }
 
-type TargetFileMeta struct {
+type targetFileMeta struct {
 	Path   string            `json:"path,omitempty"`
 	Length int64             `json:"length,omitempty"`
-	Hashes []*TargetFileHash `json:"hashes,omitempty"`
+	Hashes []*targetFileHash `json:"hashes,omitempty"`
 }
 
-type ClientGetConfigsRequest struct {
-	Client            *ClientData       `json:"client,omitempty"`
-	CachedTargetFiles []*TargetFileMeta `json:"cached_target_files,omitempty"`
+type clientGetConfigsRequest struct {
+	Client            *clientData       `json:"client,omitempty"`
+	CachedTargetFiles []*targetFileMeta `json:"cached_target_files,omitempty"`
 }
 
-type ClientGetConfigsResponse struct {
+type clientGetConfigsResponse struct {
 	Roots         [][]byte `json:"roots,omitempty"`
 	Targets       []byte   `json:"targets,omitempty"`
-	TargetFiles   []*File  `json:"target_files,omitempty"`
+	TargetFiles   []*file  `json:"target_files,omitempty"`
 	ClientConfigs []string `json:"client_configs,omitempty"`
 }
 
-type File struct {
+type file struct {
 	Path string `json:"path,omitempty"`
 	Raw  []byte `json:"raw,omitempty"`
 }
 
-type FileMetaState struct {
+type fileMetaState struct {
 	Version uint64 `json:"version,omitempty"`
 	Hash    string `json:"hash,omitempty"`
 }

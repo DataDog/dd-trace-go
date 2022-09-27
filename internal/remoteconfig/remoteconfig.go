@@ -16,6 +16,7 @@ import (
 	"time"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
@@ -136,7 +137,7 @@ func (c *Client) updateState() {
 		return
 	}
 
-	var update ClientGetConfigsResponse
+	var update clientGetConfigsResponse
 	err = json.NewDecoder(resp.Body).Decode(&update)
 	if err != nil {
 		c.lastError = err
@@ -153,7 +154,7 @@ func (c *Client) RegisterCallback(f Callback, product string) {
 	c.callbacks[product] = append(c.callbacks[product], f)
 }
 
-func (c *Client) applyUpdate(pbUpdate *ClientGetConfigsResponse) error {
+func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
 	for _, f := range pbUpdate.TargetFiles {
 		fileMap[f.Path] = f.Raw
@@ -191,16 +192,16 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		return bytes.Buffer{}, err
 	}
 
-	pbCachedFiles := make([]*TargetFileMeta, 0, len(state.CachedFiles))
+	pbCachedFiles := make([]*targetFileMeta, 0, len(state.CachedFiles))
 	for _, f := range state.CachedFiles {
-		pbHashes := make([]*TargetFileHash, 0, len(f.Hashes))
+		pbHashes := make([]*targetFileHash, 0, len(f.Hashes))
 		for alg, hash := range f.Hashes {
-			pbHashes = append(pbHashes, &TargetFileHash{
+			pbHashes = append(pbHashes, &targetFileHash{
 				Algorithm: alg,
 				Hash:      hex.EncodeToString(hash),
 			})
 		}
-		pbCachedFiles = append(pbCachedFiles, &TargetFileMeta{
+		pbCachedFiles = append(pbCachedFiles, &targetFileMeta{
 			Path:   f.Path,
 			Length: int64(f.Length),
 			Hashes: pbHashes,
@@ -213,29 +214,29 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		errMsg = c.lastError.Error()
 	}
 
-	pbConfigState := make([]*ConfigState, 0, len(state.Configs))
+	pbConfigState := make([]*configState, 0, len(state.Configs))
 	for _, f := range state.Configs {
-		pbConfigState = append(pbConfigState, &ConfigState{
-			Id:      f.ID,
+		pbConfigState = append(pbConfigState, &configState{
+			ID:      f.ID,
 			Version: f.Version,
 			Product: f.Product,
 		})
 	}
 
-	req := ClientGetConfigsRequest{
-		Client: &ClientData{
-			State: &ClientState{
+	req := clientGetConfigsRequest{
+		Client: &clientData{
+			State: &clientState{
 				RootVersion:    uint64(state.RootsVersion),
 				TargetsVersion: uint64(state.TargetsVersion),
 				ConfigStates:   pbConfigState,
 				HasError:       hasError,
 				Error:          errMsg,
 			},
-			Id:       c.clientID,
+			ID:       c.clientID,
 			Products: c.Products,
 			IsTracer: true,
-			ClientTracer: &ClientTracer{
-				RuntimeId:     c.RuntimeID,
+			ClientTracer: &clientTracer{
+				RuntimeID:     c.RuntimeID,
 				Language:      "go",
 				TracerVersion: c.TracerVersion,
 				Service:       c.ServiceName,
