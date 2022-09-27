@@ -15,8 +15,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
-
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
 // AppSec is an interface allowing to use an appsec object for application security
@@ -55,9 +53,6 @@ func (a *appsec) Start() {
 		return
 	}
 	if a.rc != nil {
-		a.rc.RegisterCallback(func(u *rc.Update) {
-			log.Debug("appsec: FEATURES UPDATE")
-		}, rc.ProductFeatures)
 		go a.rc.Start()
 	}
 	instances.Add(1)
@@ -70,7 +65,8 @@ func logUnexpectedStartError(err error) {
 
 func (a *appsec) Stop() {
 	a.stop()
-	for i := instances.Load(); !instances.CompareAndSwap(i, i-1); {
+	// Check for 0 value in case appsec.Stop() gets called before appsec.Start()
+	for i := instances.Load(); i > 0 && !instances.CompareAndSwap(i, i-1); {
 	}
 	if a.rc != nil {
 		a.rc.Stop()
