@@ -406,7 +406,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	id := opts.SpanID
 	if id == 0 {
-		id = random.Uint64()
+		id = generateSpanID(startTime)
 	}
 	// span defaults
 	span := &span{
@@ -498,12 +498,21 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	return span
 }
 
+// generateSpanID returns a random uint64 that has been XORd with the startTime.
+// This is done to get around the 32-bit random seed limitation that may create collisions if there is a large number
+// of go services all generating spans.
+func generateSpanID(startTime int64) uint64 {
+	return random.Uint64() ^ uint64(startTime)
+}
+
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
 	if t.config.profilerHotspots {
+		// allocate the max-length slice to avoid growing it later
+		labels = make([]string, 0, 6)
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
 	}
 	// nil checks might not be needed, but better be safe than sorry
