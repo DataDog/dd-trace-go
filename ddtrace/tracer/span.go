@@ -221,13 +221,13 @@ func (s *span) setTagError(value interface{}, cfg errorConfig) {
 		if yes {
 			if s.Error == 0 {
 				// new error
-				atomic.AddInt64(&s.context.errors, 1)
+				atomic.AddInt32(&s.context.errors, 1)
 			}
 			s.Error = 1
 		} else {
 			if s.Error > 0 {
 				// flip from active to inactive
-				atomic.AddInt64(&s.context.errors, -1)
+				atomic.AddInt32(&s.context.errors, -1)
 			}
 			s.Error = 0
 		}
@@ -518,7 +518,7 @@ func shouldKeep(s *span) bool {
 		// positive sampling priorities stay
 		return true
 	}
-	if atomic.LoadInt64(&s.context.errors) > 0 {
+	if atomic.LoadInt32(&s.context.errors) > 0 {
 		// traces with any span containing an error get kept
 		return true
 	}
