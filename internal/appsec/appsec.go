@@ -12,6 +12,8 @@ import (
 	"os"
 	"sync"
 
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
@@ -22,7 +24,7 @@ import (
 func Enabled() bool {
 	mu.RLock()
 	defer mu.RUnlock()
-	return activeAppSec != nil
+	return activeAppSec != nil && activeAppSec.started
 }
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
@@ -32,15 +34,6 @@ func Start(opts ...StartOption) {
 	if err != nil {
 		logUnexpectedStartError(err)
 		return
-	}
-	if !enabled {
-		// Check if the env var is set. If it is, appsec is specifically disabled. If not, it is disabled but can be
-		// enabled through remote config, and we should start the rc client
-		if _, set := os.LookupEnv(enabledEnvVar); set {
-			log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
-			return
-		}
-		log.Debug("appsec: %s is not set. AppSec won't start until activated through remote configuration", enabledEnvVar)
 	}
 
 	cfg, err := newConfig()
@@ -52,9 +45,27 @@ func Start(opts ...StartOption) {
 		opt(cfg)
 	}
 	appsec := newAppSec(cfg)
-	if err := appsec.start(); err != nil {
-		logUnexpectedStartError(err)
-		return
+
+	if !enabled {
+		// Check if the env var is set. If it is, appsec is specifically disabled. If not, it is disabled but can be
+		// enabled through remote config, and we should start the rc client
+		if _, set := os.LookupEnv(enabledEnvVar); set {
+			log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
+			return
+		}
+		log.Debug("appsec: %s is not set. AppSec won't start until activated through remote configuration", enabledEnvVar)
+	} else { // AppSec is specifically enabled
+		if err := appsec.start(); err != nil {
+			logUnexpectedStartError(err)
+			return
+		}
+	}
+	if appsec.rc != nil {
+		//TODO: use callbacks to process product updates using rc.RegisterCallback()
+		appsec.rc.RegisterCallback(func(update *rc.Update) {
+			log.Debug("UPDATE FEATURES PRODUCT MASHALLA GAMING")
+		}, rc.ProductFeatures)
+		go appsec.rc.Start()
 	}
 	setActiveAppSec(appsec)
 }
@@ -88,10 +99,13 @@ type appsec struct {
 	unregisterWAF dyngo.UnregisterFunc
 	limiter       *TokenTicker
 	rc            *remoteconfig.Client
+	started       bool
 }
 
 // NewAppSec instantiates an appsec object that can be manipulated through the AppSec interface.
 func newAppSec(cfg *Config) *appsec {
+	// Declare RC capabilities for AppSec
+	cfg.rc.Capabilities = append(cfg.rc.Capabilities, remoteconfig.ASMActivation)
 	rc, err := remoteconfig.NewClient(cfg.rc)
 	if err != nil {
 		log.Warn("Could not create remote configuration client. Feature will be disabled.")
@@ -104,10 +118,6 @@ func newAppSec(cfg *Config) *appsec {
 
 // Start AppSec by registering its security protections according to the configured the security rules.
 func (a *appsec) start() error {
-	if a.rc != nil {
-		//TODO: use callbacks to process product updates using rc.RegisterCallback()
-		go a.rc.Start()
-	}
 	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
 	a.limiter.Start()
 	// Register the WAF operation event listener
@@ -116,11 +126,13 @@ func (a *appsec) start() error {
 		return err
 	}
 	a.unregisterWAF = unregisterWAF
+	a.started = true
 	return nil
 }
 
 // Stop AppSec by unregistering the security protections.
 func (a *appsec) stop() {
+	a.started = false
 	a.unregisterWAF()
 	a.limiter.Stop()
 	a.rc.Stop()

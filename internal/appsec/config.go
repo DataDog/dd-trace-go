@@ -34,6 +34,7 @@ const (
 	defaultObfuscatorValueRegex = `(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|(?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)(?:\s*=[^;]|"\s*:\s*"[^"]+")|bearer\s+[a-z0-9\._\-]+|token:[a-z0-9]{13}|gh[opsu]_[0-9a-zA-Z]{36}|ey[I-L][\w=-]+\.ey[I-L][\w=-]+(?:\.[\w.+\/=-]+)?|[\-]{5}BEGIN[a-z\s]+PRIVATE\sKEY[\-]{5}[^\-]+[\-]{5}END[a-z\s]+PRIVATE\sKEY|ssh-rsa\s*[a-z0-9\/\.+]{100,}`
 )
 
+// StartOption is used to customize the AppSec configuration when invoked with appsec.Start()
 type StartOption func(c *Config)
 
 // Config is the AppSec configuration.
@@ -46,10 +47,11 @@ type Config struct {
 	traceRateLimit uint
 	// Obfuscator configuration parameters
 	obfuscator ObfuscatorConfig
-
+	// rc is the remote configuration client used to receive product configuration updates
 	rc remoteconfig.ClientConfig
 }
 
+// WithRCConfig sets the AppSec remote config client configuration to the specified cfg
 func WithRCConfig(cfg remoteconfig.ClientConfig) StartOption {
 	return func(c *Config) {
 		c.rc = cfg
