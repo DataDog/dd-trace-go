@@ -35,10 +35,6 @@ run_binutils() {
   docker run -it --rm -v $bindings_dir:$bindings_dir -v $tmpdir:$tmpdir -w $PWD ghcr.io/datadog/binutils-gdb:2.37 $@
 }
 
-run_strip() {
-  run_binutils $1-strip --strip-dwo --strip-unneeded --strip-debug $2
-}
-
 #
 # darwin/amd64
 #
@@ -47,7 +43,6 @@ echo Updating libddwaf for darwin/amd64
 curl -L https://github.com/DataDog/libddwaf/releases/download/$version/libddwaf-$version-darwin-x86_64.tar.gz | tar -xz -C$tmpdir
 echo Copying the darwin/amd64 library
 cp -v $tmpdir/libddwaf-$version-darwin-x86_64/lib/libddwaf.a $bindings_dir/lib/darwin-amd64
-run_strip x86_64-apple-darwin $bindings_dir/lib/darwin-amd64/libddwaf.a
 
 #
 # linux/amd64
@@ -72,8 +67,6 @@ run_binutils x86_64-linux-gnu-ld \
    --require-defined=ddwaf_context_destroy \
    --require-defined=ddwaf_required_addresses \
    $tmpdir/libddwaf-$version-linux-x86_64/lib/libddwaf.a $libcxx_dir/libc++.a $libcxx_dir/libc++abi.a $libcxx_dir/libunwind.a
-# 4. Strip
-run_strip x86_64-linux-gnu $bindings_dir/lib/linux-amd64/libddwaf.a
 
 #
 # ddwaf.h

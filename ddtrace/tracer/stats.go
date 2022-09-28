@@ -52,7 +52,7 @@ type concentrator struct {
 	buckets map[int64]*rawBucket
 
 	// stopped reports whether the concentrator is stopped (when non-zero)
-	stopped uint64
+	stopped uint32
 
 	wg         sync.WaitGroup // waits for any active goroutines
 	bucketSize int64          // the size of a bucket in nanoseconds
@@ -79,7 +79,7 @@ func alignTs(ts, bucketSize int64) int64 { return ts - ts%bucketSize }
 // Start starts the concentrator. A started concentrator needs to be stopped
 // in order to gracefully shut down, using Stop.
 func (c *concentrator) Start() {
-	if atomic.SwapUint64(&c.stopped, 0) == 0 {
+	if atomic.SwapUint32(&c.stopped, 0) == 0 {
 		// already running
 		log.Warn("(*concentrator).Start called more than once. This is likely a programming error.")
 		return
@@ -149,7 +149,7 @@ func (c *concentrator) add(s *aggregableSpan) {
 
 // Stop stops the concentrator and blocks until the operation completes.
 func (c *concentrator) Stop() {
-	if atomic.SwapUint64(&c.stopped, 1) > 0 {
+	if atomic.SwapUint32(&c.stopped, 1) > 0 {
 		return
 	}
 	close(c.stop)
