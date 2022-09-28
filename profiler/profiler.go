@@ -74,7 +74,8 @@ type profiler struct {
 	met        *metrics                     // metric collector state
 	prev       map[string]*pprofile.Profile // previous collection results for delta profiling
 	telemetry  *telemetry.Client
-	seq        uint64 // seq is the value of the profile_seq tag
+	seq        uint64                        // seq is the value of the profile_seq tag
+	done       map[ProfileType]chan struct{} // signal that profile collection is done
 
 	testHooks testHooks
 }
@@ -183,6 +184,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		exit: make(chan struct{}),
 		met:  newMetrics(),
 		prev: make(map[string]*pprofile.Profile),
+		done: make(map[ProfileType]chan struct{}),
 	}
 	p.uploadFunc = p.upload
 	p.telemetry = &telemetry.Client{
@@ -303,6 +305,14 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		p.seq++
 
 		completed = completed[:0]
+		for k := range p.done {
+			delete(p.done, k)
+		}
+		for _, t := range p.enabledProfileTypes() {
+			if t != CPUProfile {
+				p.done[t] = make(chan struct{})
+			}
+		}
 		for _, t := range p.enabledProfileTypes() {
 			wg.Add(1)
 			go func(t ProfileType) {
@@ -328,6 +338,12 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		case <-p.exit:
 			return
 		}
+	}
+}
+
+func (p *profiler) signalCompletion(pt ProfileType) {
+	if c, ok := p.done[pt]; ok {
+		close(c)
 	}
 }
 
