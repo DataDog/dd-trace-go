@@ -302,6 +302,15 @@ type deltaProfiler struct {
 	prev  *pprofile.Profile
 }
 
+// newDeltaProfiler returns an initialized deltaProfiler. If value types
+// are given (e.g. "alloc_space", "alloc_objects"), only those values will have
+// deltas computed. Otherwise, deltas will be computed for every value.
+func newDeltaProfiler(v ...pprofutils.ValueType) *deltaProfiler {
+	return &deltaProfiler{
+		delta: &pprofutils.Delta{SampleTypes: v},
+	}
+}
+
 // Delta derives the delta profile between curData and the profile passed to the
 // previous call to Delta. The first call to Delta will return the profile
 // unchanged.
