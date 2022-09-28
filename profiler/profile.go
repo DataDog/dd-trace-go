@@ -97,7 +97,6 @@ var profileTypes = map[ProfileType]profileType{
 			// properly record all of our profile processing work for
 			// the other profile types
 			for _, ch := range p.done {
-				// TODO: also wait for p.exit?
 				<-ch
 			}
 			p.stopCPUProfile()
