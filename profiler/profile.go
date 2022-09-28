@@ -75,10 +75,13 @@ type profileType struct {
 // profileTypes maps every ProfileType to its implementation.
 var profileTypes = map[ProfileType]profileType{
 	CPUProfile: {
-		Name:     "cpu",
 		Filename: "cpu.pprof",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
+			// Start the CPU profiler at the end of the profiling
+			// period so that we're sure to capture the CPU usage of
+			// this library, which mostly happens at the end
+			p.interruptibleSleep(p.cfg.period - p.cfg.cpuDuration)
 			if p.cfg.cpuProfileRate != 0 {
 				// The profile has to be set each time before
 				// profiling is started. Otherwise,
