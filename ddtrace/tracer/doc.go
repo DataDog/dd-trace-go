@@ -35,9 +35,9 @@
 //	      tracer.NameServiceRule("db.query", "postgres.db", 0.3),
 //	      // sample 100% of traces when service and name match these regular expressions
 //	      {Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile("http\\..*"), Rate: 1.0},
-//	      // sample 50% of traces when service and name match these glob patterns with no limit on the number of spans
+//	      // sample 50% of spans when service and name match these glob patterns with no limit on the number of spans
 //	      tracer.SpanNameServiceRule("^test-", "http\\..*", 0.5),
-//	      // sample 50% of traces when service and name match these glob patterns up to 100 spans per second
+//	      // sample 50% of spans when service and name match these glob patterns up to 100 spans per second
 //	      tracer.SpanNameServiceMPSRule("^test-", "http\\..*", 0.5, 100),
 //	}
 //	tracer.Start(tracer.WithSamplingRules(rules))
