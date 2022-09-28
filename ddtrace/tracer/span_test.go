@@ -8,7 +8,6 @@ package tracer
 import (
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -106,7 +105,7 @@ func TestSpanFinishTwice(t *testing.T) {
 func TestShouldDrop(t *testing.T) {
 	for _, tt := range []struct {
 		prio   int
-		errors int64
+		errors int32
 		rate   float64
 		want   bool
 	}{
@@ -122,7 +121,7 @@ func TestShouldDrop(t *testing.T) {
 			s := newSpan("", "", "", 1, 1, 0)
 			s.SetTag(ext.SamplingPriority, tt.prio)
 			s.SetTag(ext.EventSampleRate, tt.rate)
-			atomic.StoreInt64(&s.context.errors, tt.errors)
+			atomic.StoreInt32(&s.context.errors, tt.errors)
 			assert.Equal(t, shouldKeep(s), tt.want)
 		})
 	}
@@ -368,7 +367,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
 			tracer := newTracer()
 			spanCtx := &spanContext{traceID: 42, spanID: 42}
-			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate, math.NaN())
+			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
 			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx)).(*span)
 			span.SetTag(scenario.tag, true)
 			assert.Equal(t, scenario.keep, shouldKeep(span))

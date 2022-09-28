@@ -878,12 +878,12 @@ func StackFrames(n, skip uint) FinishOption {
 // UserMonitoringConfig is used to configure what is used to identify a user.
 // This configuration can be set by combining one or several UserMonitoringOption with a call to SetUser().
 type UserMonitoringConfig struct {
-	propagateID bool
-	email       string
-	name        string
-	role        string
-	sessionID   string
-	scope       string
+	PropagateID bool
+	Email       string
+	Name        string
+	Role        string
+	SessionID   string
+	Scope       string
 }
 
 // UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
@@ -892,35 +892,35 @@ type UserMonitoringOption func(*UserMonitoringConfig)
 // WithUserEmail returns the option setting the email of the authenticated user.
 func WithUserEmail(email string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		cfg.email = email
+		cfg.Email = email
 	}
 }
 
 // WithUserName returns the option setting the name of the authenticated user.
 func WithUserName(name string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		cfg.name = name
+		cfg.Name = name
 	}
 }
 
 // WithUserSessionID returns the option setting the session ID of the authenticated user.
 func WithUserSessionID(sessionID string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		cfg.sessionID = sessionID
+		cfg.SessionID = sessionID
 	}
 }
 
 // WithUserRole returns the option setting the role of the authenticated user.
 func WithUserRole(role string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		cfg.role = role
+		cfg.Role = role
 	}
 }
 
 // WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		cfg.scope = scope
+		cfg.Scope = scope
 	}
 }
 
@@ -930,6 +930,6 @@ func WithUserScope(scope string) UserMonitoringOption {
 // personal identifiable information or any kind of sensitive data, as it will be leaked to other services.
 func WithPropagation() UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		cfg.propagateID = true
+		cfg.PropagateID = true
 	}
 }

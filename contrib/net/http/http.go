@@ -78,7 +78,6 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 			Resource:   resource,
 			FinishOpts: cfg.finishOpts,
 			SpanOpts:   cfg.spanOpts,
-			Route:      req.URL.EscapedPath(),
 		})
 	})
 }

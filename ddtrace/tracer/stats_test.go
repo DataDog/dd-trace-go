@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -60,26 +61,26 @@ func TestConcentrator(t *testing.T) {
 		assert.Nil(c.stop)
 		assert.NotNil(c.buckets)
 		assert.Equal(c.cfg, cfg)
-		assert.EqualValues(c.stopped, 1)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 	})
 
 	t.Run("start-stop", func(t *testing.T) {
 		assert := assert.New(t)
 		c := newConcentrator(&config{}, defaultStatsBucketSize)
-		assert.EqualValues(c.stopped, 1)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 		c.Start()
-		assert.EqualValues(c.stopped, 0)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
 		c.Stop()
 		c.Stop()
-		assert.EqualValues(c.stopped, 1)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 		c.Start()
-		assert.EqualValues(c.stopped, 0)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
 		c.Start()
 		c.Start()
-		assert.EqualValues(c.stopped, 0)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
 		c.Stop()
 		c.Stop()
-		assert.EqualValues(c.stopped, 1)
+		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 	})
 
 	t.Run("valid", func(t *testing.T) {
