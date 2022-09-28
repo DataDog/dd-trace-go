@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"os"
 	"time"
@@ -25,6 +26,20 @@ import (
 // A Callback function can be registered to a remote config client to automatically
 // react upon receiving updates.
 type Callback func(*rc.Update)
+
+// Capability represents a bit index to be set in clientData.Capabilites in order to register a client
+// for a specific capability
+type Capability uint
+
+const (
+	_ Capability = iota
+	// ASMActivation represents the capability to activate ASM through remote configuration
+	ASMActivation
+	// ASMIPBlocking represents the capability for ASM to block requests based on user IP
+	ASMIPBlocking
+	// ASMDDRules represents the capability to update the rules used by the ASM WAF for threat detection
+	ASMDDRules
+)
 
 // ClientConfig contains the required values to configure a remoteconfig client
 type ClientConfig struct {
@@ -46,6 +61,8 @@ type ClientConfig struct {
 	TracerVersion string
 	// The base TUF root metadata file
 	TUFRoot string
+	// The capabilities of the client
+	Capabilities []Capability
 }
 
 // A Client interacts with an Agent to update and track the state of remote
@@ -63,11 +80,11 @@ type Client struct {
 	lastError error
 }
 
-// DefaultClientConfig generates a default remote config client configuration
+// DefaultClientConfig generates a default remote config client configuration.
+// The default client configuration doesn't listen for any product.
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
 		Env:           os.Getenv("DD_ENV"),
-		Products:      []string{rc.ProductFeatures},
 		PollRate:      time.Second * 1,
 		RuntimeID:     globalconfig.RuntimeID(),
 		ServiceName:   globalconfig.ServiceName(),
@@ -223,6 +240,10 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		})
 	}
 
+	cap := big.NewInt(0)
+	for _, i := range c.Capabilities {
+		cap.SetBit(cap, int(i), 1)
+	}
 	req := clientGetConfigsRequest{
 		Client: &clientData{
 			State: &clientState{
@@ -243,7 +264,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Env:           c.Env,
 				AppVersion:    c.AppVersion,
 			},
-			Capabilities: []byte{64},
+			Capabilities: cap.Bytes(),
 		},
 		CachedTargetFiles: pbCachedFiles,
 	}
