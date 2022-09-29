@@ -36,35 +36,43 @@ func TestVersion(t *testing.T) {
 	require.Regexp(t, `[0-9]+\.[0-9]+\.[0-9]+`, Version())
 }
 
-var testRule = newTestRule(ruleInput{Address: "server.request.headers.no_cookies", KeyPath: []string{"user-agent"}})
+var testRule = newTestRule([]ruleInput{{Address: "server.request.headers.no_cookies", KeyPath: []string{"user-agent"}}}, nil)
 
 var testRuleTmpl = template.Must(template.New("").Parse(`
 {
   "version": "2.1",
   "rules": [
-    {
-      "id": "ua0-600-12x",
-      "name": "Arachni",
-      "tags": {
-        "type": "security_scanner",
+	{
+	  "id": "ua0-600-12x",
+	  "name": "Arachni",
+	  "tags": {
+		"type": "security_scanner",
 		"category": "attack_attempt"
-      },
-      "conditions": [
-        {
-          "operator": "match_regex",
-          "parameters": {
-            "inputs": [
-            {{ range $i, $input := . -}}
-              {{ if gt $i 0 }},{{ end }}
-                { "address": "{{ $input.Address }}"{{ if ne (len $input.KeyPath) 0 }},  "key_path": [ {{ range $i, $path := $input.KeyPath }}{{ if gt $i 0 }}, {{ end }}"{{ $path }}"{{ end }} ]{{ end }} }
-            {{- end }}
-            ],
-            "regex": "^Arachni"
-          }
-        }
-      ],
-      "transformers": []
-    }
+	  },
+	  "conditions": [
+		{
+		  "operator": "match_regex",
+		  "parameters": {
+			"inputs": [
+			{{ range $i, $input := .Inputs -}}
+			  {{ if gt $i 0 }},{{ end }}
+				{ "address": "{{ $input.Address }}"{{ if ne (len $input.KeyPath) 0 }},  "key_path": [ {{ range $i, $path := $input.KeyPath }}{{ if gt $i 0 }}, {{ end }}"{{ $path }}"{{ end }} ]{{ end }} }
+			{{- end }}
+			],
+			"regex": "^Arachni"
+		  }
+		}
+	  ],
+	  "transformers": []
+	  {{- if .Actions }},
+		"on_match": [
+		{{ range $i, $action := .Actions -}}
+		  {{ if gt $i 0 }},{{ end }}
+		  "{{ $action }}"
+		{{- end }}
+		]
+	  {{- end }}
+	}
   ]
 }
 `))
@@ -78,9 +86,12 @@ func newDefaultHandle(jsonRule []byte) (*Handle, error) {
 	return NewHandle(jsonRule, "", "")
 }
 
-func newTestRule(inputs ...ruleInput) []byte {
+func newTestRule(inputs []ruleInput, actions []string) []byte {
 	var buf bytes.Buffer
-	if err := testRuleTmpl.Execute(&buf, inputs); err != nil {
+	if err := testRuleTmpl.Execute(&buf, struct {
+		Inputs  []ruleInput
+		Actions []string
+	}{Inputs: inputs, Actions: actions}); err != nil {
 		panic(err)
 	}
 	return buf.Bytes()
@@ -115,25 +126,25 @@ func TestNewWAF(t *testing.T) {
 {
   "version": "2.1",
   "events": [
-    {
-      "id": "ua0-600-12x",
-      "name": "Arachni",
-      "tags": {
-        "type": "security_scanner"
-      },
-      "conditions": [
-        {
-          "operation": "match_regex",
-          "parameters": {
-            "inputs": {
-              { "address": "server.request.headers.no_cookies" }
-            },
-            "regex": "^Arachni"
-          }
-        }
-      ],
-      "transformers": []
-    }
+	{
+	  "id": "ua0-600-12x",
+	  "name": "Arachni",
+	  "tags": {
+		"type": "security_scanner"
+	  },
+	  "conditions": [
+		{
+		  "operation": "match_regex",
+		  "parameters": {
+			"inputs": {
+			  { "address": "server.request.headers.no_cookies" }
+			},
+			"regex": "^Arachni"
+		  }
+		}
+	  ],
+	  "transformers": []
+	}
   ]
 }
 `
@@ -143,10 +154,10 @@ func TestNewWAF(t *testing.T) {
 	})
 }
 
-func TestUsage(t *testing.T) {
+func TestMatching(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 
-	waf, err := newDefaultHandle(newTestRule(ruleInput{Address: "my.input"}))
+	waf, err := newDefaultHandle(newTestRule([]ruleInput{{Address: "my.input"}}, nil))
 	require.NoError(t, err)
 	require.NotNil(t, waf)
 
@@ -159,47 +170,53 @@ func TestUsage(t *testing.T) {
 	values := map[string]interface{}{
 		"my.input": "go client",
 	}
-	matches, err := wafCtx.Run(values, time.Second)
+	matches, actions, err := wafCtx.Run(values, time.Second)
 	require.NoError(t, err)
 	require.Nil(t, matches)
+	require.Nil(t, actions)
 
 	// Not matching because the address is not used by the rule
 	values = map[string]interface{}{
 		"server.request.uri.raw": "something",
 	}
-	matches, err = wafCtx.Run(values, time.Second)
+	matches, actions, err = wafCtx.Run(values, time.Second)
 	require.NoError(t, err)
 	require.Nil(t, matches)
+	require.Nil(t, actions)
 
 	// Not matching due to a timeout
 	values = map[string]interface{}{
 		"my.input": "Arachni",
 	}
-	matches, err = wafCtx.Run(values, 0)
+	matches, actions, err = wafCtx.Run(values, 0)
 	require.Equal(t, ErrTimeout, err)
 	require.Nil(t, matches)
+	require.Nil(t, actions)
 
 	// Matching
 	// Note a WAF rule can only match once. This is why we test the matching case at the end.
 	values = map[string]interface{}{
 		"my.input": "Arachni",
 	}
-	matches, err = wafCtx.Run(values, time.Second)
+	matches, actions, err = wafCtx.Run(values, time.Second)
 	require.NoError(t, err)
 	require.NotEmpty(t, matches)
+	require.Nil(t, actions)
 
 	// Not matching anymore since it already matched before
-	matches, err = wafCtx.Run(values, time.Second)
+	matches, actions, err = wafCtx.Run(values, time.Second)
 	require.NoError(t, err)
 	require.Nil(t, matches)
+	require.Nil(t, actions)
 
 	// Nil values
-	matches, err = wafCtx.Run(nil, time.Second)
+	matches, actions, err = wafCtx.Run(nil, time.Second)
 	require.NoError(t, err)
 	require.Nil(t, matches)
+	require.Nil(t, actions)
 
 	// Empty values
-	matches, err = wafCtx.Run(map[string]interface{}{}, time.Second)
+	matches, actions, err = wafCtx.Run(map[string]interface{}{}, time.Second)
 	require.NoError(t, err)
 	require.Nil(t, matches)
 
@@ -209,11 +226,41 @@ func TestUsage(t *testing.T) {
 	require.Nil(t, NewContext(waf))
 }
 
+func TestActions(t *testing.T) {
+	testActions := func(expectedActions []string) func(t *testing.T) {
+		return func(t *testing.T) {
+			defer requireZeroNBLiveCObjects(t)
+
+			waf, err := newDefaultHandle(newTestRule([]ruleInput{{Address: "my.input"}}, expectedActions))
+			require.NoError(t, err)
+			require.NotNil(t, waf)
+			defer waf.Close()
+
+			wafCtx := NewContext(waf)
+			require.NotNil(t, wafCtx)
+			defer wafCtx.Close()
+
+			// Not matching because the address value doesn't match the rule
+			values := map[string]interface{}{
+				"my.input": "Arachni",
+			}
+			matches, actions, err := wafCtx.Run(values, time.Second)
+			require.NoError(t, err)
+			require.NotEmpty(t, matches)
+			// FIXME: check with libddwaf why the order of returned actions is not kept the same
+			require.ElementsMatch(t, expectedActions, actions)
+		}
+	}
+
+	t.Run("single", testActions([]string{"block_request"}))
+	t.Run("multiple-actions", testActions([]string{"action 1", "action 2", "action 3"}))
+}
+
 func TestAddresses(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 	expectedAddresses := []string{"my.first.input", "my.second.input", "my.third.input", "my.indexed.input"}
 	addresses := []ruleInput{{Address: "my.first.input"}, {Address: "my.second.input"}, {Address: "my.third.input"}, {Address: "my.indexed.input", KeyPath: []string{"indexed"}}}
-	waf, err := newDefaultHandle(newTestRule(addresses...))
+	waf, err := newDefaultHandle(newTestRule(addresses, nil))
 	require.NoError(t, err)
 	defer waf.Close()
 	require.Equal(t, expectedAddresses, waf.Addresses())
@@ -287,7 +334,7 @@ func TestConcurrency(t *testing.T) {
 							"user-agent": userAgents[i],
 						},
 					}
-					matches, err := wafCtx.Run(data, time.Minute)
+					matches, _, err := wafCtx.Run(data, time.Minute)
 					if err != nil {
 						panic(err)
 						return
@@ -310,7 +357,7 @@ func TestConcurrency(t *testing.T) {
 				"user-agent": "Arachni",
 			},
 		}
-		matches, err := wafCtx.Run(data, time.Second)
+		matches, _, err := wafCtx.Run(data, time.Second)
 		require.NoError(t, err)
 		require.NotEmpty(t, matches)
 	})
@@ -348,7 +395,7 @@ func TestConcurrency(t *testing.T) {
 							"user-agent": userAgents[i],
 						},
 					}
-					matches, err := wafCtx.Run(data, time.Minute)
+					matches, _, err := wafCtx.Run(data, time.Minute)
 					if err != nil {
 						panic(err)
 					}
@@ -363,9 +410,10 @@ func TestConcurrency(t *testing.T) {
 						"user-agent": "Arachni",
 					},
 				}
-				matches, err := wafCtx.Run(data, time.Second)
+				matches, actions, err := wafCtx.Run(data, time.Second)
 				require.NoError(t, err)
 				require.NotEmpty(t, matches)
+				require.Nil(t, actions)
 			}()
 		}
 
@@ -417,7 +465,7 @@ func TestMetrics(t *testing.T) {
 {
   "version": "2.1",
   "metadata": {
-    "rules_version": "1.2.7"
+	"rules_version": "1.2.7"
   },
   "rules": [
 	{
@@ -492,10 +540,12 @@ func TestMetrics(t *testing.T) {
 			"server.request.uri.raw": "\\%uff00",
 		}
 		start := time.Now()
-		matches, err := wafCtx.Run(data, time.Second)
+		matches, actions, err := wafCtx.Run(data, time.Second)
 		elapsedNS := time.Since(start).Nanoseconds()
 		require.NoError(t, err)
 		require.NotNil(t, matches)
+		require.Nil(t, actions)
+
 		// Make sure that WAF runtime was set
 		overall, internal := wafCtx.TotalRuntime()
 		require.Greater(t, overall, uint64(0))
@@ -514,7 +564,7 @@ func TestMetrics(t *testing.T) {
 		}
 
 		for i := uint64(1); i <= 10; i++ {
-			_, err := wafCtx.Run(data, time.Nanosecond)
+			_, _, err := wafCtx.Run(data, time.Nanosecond)
 			require.Equal(t, err, ErrTimeout)
 			require.Equal(t, i, wafCtx.TotalTimeouts())
 		}
@@ -1056,13 +1106,13 @@ func TestEncoder(t *testing.T) {
 			}
 
 			// Pass the encoded value to the WAF to make sure it doesn't return an error
-			waf, err := newDefaultHandle(newTestRule(ruleInput{Address: "my.input"}))
+			waf, err := newDefaultHandle(newTestRule([]ruleInput{{Address: "my.input"}}, nil))
 			require.NoError(t, err)
 			defer waf.Close()
 			wafCtx := NewContext(waf)
 			require.NotNil(t, wafCtx)
 			defer wafCtx.Close()
-			_, err = wafCtx.Run(map[string]interface{}{
+			_, _, err = wafCtx.Run(map[string]interface{}{
 				"my.input": tc.Data,
 			}, time.Second)
 			require.NoError(t, err)
@@ -1235,7 +1285,7 @@ func TestDecoder(t *testing.T) {
 }
 
 func TestObfuscatorConfig(t *testing.T) {
-	rule := newTestRule(ruleInput{Address: "my.addr", KeyPath: []string{"key"}})
+	rule := newTestRule([]ruleInput{{Address: "my.addr", KeyPath: []string{"key"}}}, nil)
 	t.Run("key", func(t *testing.T) {
 		waf, err := NewHandle(rule, "key", "")
 		require.NoError(t, err)
@@ -1246,8 +1296,9 @@ func TestObfuscatorConfig(t *testing.T) {
 		data := map[string]interface{}{
 			"my.addr": map[string]interface{}{"key": "Arachni-sensitive-Arachni"},
 		}
-		matches, err := wafCtx.Run(data, time.Second)
+		matches, actions, err := wafCtx.Run(data, time.Second)
 		require.NotNil(t, matches)
+		require.Nil(t, actions)
 		require.NoError(t, err)
 		require.NotContains(t, (string)(matches), "sensitive")
 	})
@@ -1262,8 +1313,9 @@ func TestObfuscatorConfig(t *testing.T) {
 		data := map[string]interface{}{
 			"my.addr": map[string]interface{}{"key": "Arachni-sensitive-Arachni"},
 		}
-		matches, err := wafCtx.Run(data, time.Second)
+		matches, actions, err := wafCtx.Run(data, time.Second)
 		require.NotNil(t, matches)
+		require.Nil(t, actions)
 		require.NoError(t, err)
 		require.NotContains(t, (string)(matches), "sensitive")
 	})
@@ -1278,8 +1330,9 @@ func TestObfuscatorConfig(t *testing.T) {
 		data := map[string]interface{}{
 			"my.addr": map[string]interface{}{"key": "Arachni-sensitive-Arachni"},
 		}
-		matches, err := wafCtx.Run(data, time.Second)
+		matches, actions, err := wafCtx.Run(data, time.Second)
 		require.NotNil(t, matches)
+		require.Nil(t, actions)
 		require.NoError(t, err)
 		require.Contains(t, (string)(matches), "sensitive")
 	})

@@ -49,8 +49,8 @@ func (*Handle) Close() {}
 func NewContext(*Handle) *Context { return nil }
 
 // Run the WAF with the given Go values and timeout.
-func (*Context) Run(map[string]interface{}, time.Duration) ([]byte, error) {
-	return nil, errDisabledReason
+func (*Context) Run(map[string]interface{}, time.Duration) ([]byte, []string, error) {
+	return nil, nil, errDisabledReason
 }
 
 // TotalRuntime returns the cumulated waf runtime across various run calls within the same WAF context.

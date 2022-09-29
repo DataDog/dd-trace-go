@@ -168,11 +168,8 @@ func ruleAddresses(handle C.ddwaf_handle) ([]string, error) {
 		return nil, ErrEmptyRuleAddresses
 	}
 	addresses := make([]string, int(nbAddresses))
-	base := uintptr(unsafe.Pointer(caddresses))
 	for i := 0; i < len(addresses); i++ {
-		// Go pointer arithmetic equivalent to the C expression `caddresses[i]`
-		caddress := (**C.char)(unsafe.Pointer(base + unsafe.Sizeof((*C.char)(nil))*uintptr(i)))
-		addresses[i] = C.GoString(*caddress)
+		addresses[i] = C.GoString(cindexCharPtrArray(caddresses, i))
 	}
 	return addresses, nil
 }
@@ -240,7 +237,7 @@ func NewContext(waf *Handle) *Context {
 }
 
 // Run the WAF with the given Go values and timeout.
-func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (matches []byte, err error) {
+func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (matches []byte, actions []string, err error) {
 	now := time.Now()
 	defer func() {
 		dt := time.Since(now)
@@ -249,31 +246,34 @@ func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (mat
 	return c.run(values, timeout)
 }
 
-func (c *Context) run(values map[string]interface{}, timeout time.Duration) (matches []byte, err error) {
+func (c *Context) run(values map[string]interface{}, timeout time.Duration) (matches []byte, actions []string, err error) {
 	if len(values) == 0 {
 		return
 	}
 	wafValue, err := c.waf.encoder.encode(values)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	return c.runWAF(wafValue, timeout)
 }
 
-func (c *Context) runWAF(data *wafObject, timeout time.Duration) (matches []byte, err error) {
+func (c *Context) runWAF(data *wafObject, timeout time.Duration) (matches []byte, actions []string, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	var result C.ddwaf_result
-	// TODO(Julio-Guerra): avoid calling result_free when there's no result
-	defer C.ddwaf_result_free(&result)
+	defer freeWAFResult(&result)
+
 	rc := C.ddwaf_run(c.context, data.ctype(), &result, C.uint64_t(timeout/time.Microsecond))
+
 	c.totalRuntimeNs.Add(uint64(result.total_runtime))
-	matches, err = goReturnValues(rc, &result)
+
+	matches, actions, err = goReturnValues(rc, &result)
 	if err == ErrTimeout {
 		c.timeoutCount.Inc()
 	}
 
-	return matches, err
+	return matches, actions, err
 }
 
 // Close the WAF context by releasing its C memory and decreasing the number of
@@ -297,25 +297,32 @@ func (c *Context) TotalTimeouts() uint64 {
 }
 
 // Translate libddwaf return values into return values suitable to a Go program.
-// Note that it is possible to have matches != nil && err != nil in case of a
-// timeout during the WAF call.
-func goReturnValues(rc C.DDWAF_RET_CODE, result *C.ddwaf_result) (matches []byte, err error) {
+// Note that it is possible to have matches or actions even if err is not nil in
+// case of a timeout during the WAF call.
+func goReturnValues(rc C.DDWAF_RET_CODE, result *C.ddwaf_result) (matches []byte, actions []string, err error) {
 	if bool(result.timeout) {
 		err = ErrTimeout
 	}
 
 	switch rc {
 	case C.DDWAF_OK:
-		return nil, err
+		return nil, nil, err
 
 	case C.DDWAF_MATCH:
 		if result.data != nil {
 			matches = C.GoBytes(unsafe.Pointer(result.data), C.int(C.strlen(result.data)))
 		}
-		return matches, err
+		if size := result.actions.size; size > 0 {
+			cactions := result.actions.array
+			actions = make([]string, size)
+			for i := 0; i < int(size); i++ {
+				actions[i] = C.GoString(cindexCharPtrArray(cactions, i))
+			}
+		}
+		return matches, actions, err
 
 	default:
-		return nil, goRunError(rc)
+		return nil, nil, goRunError(rc)
 	}
 }
 
@@ -861,4 +868,27 @@ func cFree(ptr unsafe.Pointer) {
 //export go_ddwaf_object_free
 func go_ddwaf_object_free(v *C.ddwaf_object) {
 	freeWO((*wafObject)(v))
+}
+
+// Go reimplementation of ddwaf_result_free to avoid yet another CGO call in the
+// request hot-path and avoiding it when there are no results to free.
+func freeWAFResult(result *C.ddwaf_result) {
+	if result.data == nil || result.actions.array == nil {
+		return
+	}
+
+	C.free(unsafe.Pointer(result.data))
+
+	array := result.actions.array
+	for i := 0; i < int(result.actions.size); i++ {
+		C.free(unsafe.Pointer(cindexCharPtrArray(array, i)))
+	}
+	C.free(unsafe.Pointer(array))
+}
+
+// Helper function to access to i-th element of the given **C.char array.
+func cindexCharPtrArray(array **C.char, i int) *C.char {
+	// Go pointer arithmetic equivalent to the C expression `array[i]`
+	base := uintptr(unsafe.Pointer(array))
+	return *(**C.char)(unsafe.Pointer(base + unsafe.Sizeof((*C.char)(nil))*uintptr(i)))
 }
