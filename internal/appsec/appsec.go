@@ -61,10 +61,7 @@ func Start(opts ...StartOption) {
 		}
 	}
 	if appsec.rc != nil {
-		//TODO: use callbacks to process product updates using rc.RegisterCallback()
-		appsec.rc.RegisterCallback(func(update *rc.Update) {
-			log.Debug("UPDATE FEATURES PRODUCT MASHALLA GAMING")
-		}, rc.ProductFeatures)
+		// TODO: register ASM_FEATURES callback
 		go appsec.rc.Start()
 	}
 	setActiveAppSec(appsec)
@@ -89,6 +86,9 @@ func setActiveAppSec(a *appsec) {
 	mu.Lock()
 	defer mu.Unlock()
 	if activeAppSec != nil {
+		if activeAppSec.rc != nil {
+			activeAppSec.rc.Stop()
+		}
 		activeAppSec.stop()
 	}
 	activeAppSec = a
@@ -102,10 +102,10 @@ type appsec struct {
 	started       bool
 }
 
-// NewAppSec instantiates an appsec object that can be manipulated through the AppSec interface.
 func newAppSec(cfg *Config) *appsec {
-	// Declare RC capabilities for AppSec
+	// Set RC capabilities and products for ASM
 	cfg.rc.Capabilities = append(cfg.rc.Capabilities, remoteconfig.ASMActivation)
+	cfg.rc.Products = append(cfg.rc.Products, rc.ProductASMFeatures)
 	rc, err := remoteconfig.NewClient(cfg.rc)
 	if err != nil {
 		log.Warn("Could not create remote configuration client. Feature will be disabled.")
@@ -135,5 +135,4 @@ func (a *appsec) stop() {
 	a.started = false
 	a.unregisterWAF()
 	a.limiter.Stop()
-	a.rc.Stop()
 }
