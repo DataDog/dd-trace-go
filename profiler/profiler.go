@@ -64,18 +64,18 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
-	mu         sync.Mutex
-	cfg        *config                      // profile configuration
-	out        chan batch                   // upload queue
-	uploadFunc func(batch) error            // defaults to (*profiler).upload; replaced in tests
-	exit       chan struct{}                // exit signals the profiler to stop; it is closed after stopping
-	stopOnce   sync.Once                    // stopOnce ensures the profiler is stopped exactly once.
-	wg         sync.WaitGroup               // wg waits for all goroutines to exit when stopping.
-	met        *metrics                     // metric collector state
-	prev       map[string]*pprofile.Profile // previous collection results for delta profiling
-	telemetry  *telemetry.Client
-	seq        uint64                        // seq is the value of the profile_seq tag
-	done       map[ProfileType]chan struct{} // signal that profile collection is done
+	mu              sync.Mutex
+	cfg             *config                      // profile configuration
+	out             chan batch                   // upload queue
+	uploadFunc      func(batch) error            // defaults to (*profiler).upload; replaced in tests
+	exit            chan struct{}                // exit signals the profiler to stop; it is closed after stopping
+	stopOnce        sync.Once                    // stopOnce ensures the profiler is stopped exactly once.
+	wg              sync.WaitGroup               // wg waits for all goroutines to exit when stopping.
+	met             *metrics                     // metric collector state
+	prev            map[string]*pprofile.Profile // previous collection results for delta profiling
+	telemetry       *telemetry.Client
+	seq             uint64         // seq is the value of the profile_seq tag
+	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
 	testHooks testHooks
 }
@@ -184,7 +184,6 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		exit: make(chan struct{}),
 		met:  newMetrics(),
 		prev: make(map[string]*pprofile.Profile),
-		done: make(map[ProfileType]chan struct{}),
 	}
 	p.uploadFunc = p.upload
 	p.telemetry = &telemetry.Client{
@@ -305,18 +304,20 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		p.seq++
 
 		completed = completed[:0]
-		for k := range p.done {
-			delete(p.done, k)
-		}
 		for _, t := range p.enabledProfileTypes() {
 			if t != CPUProfile {
-				p.done[t] = make(chan struct{})
+				// pendingProfiles should be updated before
+				// starting the CPU profiler
+				p.pendingProfiles.Add(1)
 			}
 		}
 		for _, t := range p.enabledProfileTypes() {
 			wg.Add(1)
 			go func(t ProfileType) {
 				defer wg.Done()
+				if t != CPUProfile {
+					defer p.pendingProfiles.Done()
+				}
 				profs, err := p.runProfile(t)
 				if err != nil {
 					log.Error("Error getting %s profile: %v; skipping.", t, err)
@@ -338,12 +339,6 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		case <-p.exit:
 			return
 		}
-	}
-}
-
-func (p *profiler) signalCompletion(pt ProfileType) {
-	if c, ok := p.done[pt]; ok {
-		close(c)
 	}
 }
 

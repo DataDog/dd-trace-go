@@ -96,9 +96,7 @@ var profileTypes = map[ProfileType]profileType{
 			// We want the CPU profiler to finish last so that it can
 			// properly record all of our profile processing work for
 			// the other profile types
-			for _, ch := range p.done {
-				<-ch
-			}
+			p.pendingProfiles.Wait()
 			p.stopCPUProfile()
 			return buf.Bytes(), nil
 		},
@@ -138,7 +136,6 @@ var profileTypes = map[ProfileType]profileType{
 		Name:     "goroutinewait",
 		Filename: "goroutineswait.pprof",
 		Collect: func(p *profiler) ([]byte, error) {
-			defer p.signalCompletion(expGoroutineWaitProfile)
 			if n := runtime.NumGoroutine(); n > p.cfg.maxGoroutinesWait {
 				return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
 			}
@@ -161,7 +158,6 @@ var profileTypes = map[ProfileType]profileType{
 		Name:     "metrics",
 		Filename: "metrics.json",
 		Collect: func(p *profiler) ([]byte, error) {
-			defer p.signalCompletion(MetricsProfile)
 			var buf bytes.Buffer
 			p.interruptibleSleep(p.cfg.period)
 			err := p.met.report(now(), &buf)
@@ -172,12 +168,10 @@ var profileTypes = map[ProfileType]profileType{
 
 func collectGenericProfile(name string, pt ProfileType, delta *pprofutils.Delta) func(p *profiler) ([]byte, error) {
 	return func(p *profiler) ([]byte, error) {
-		defer p.signalCompletion(pt)
 		var extra []*pprofile.Profile
-		// TODO: add type safety for name == "heap" check and remove redunancy with profileType.Name.
 		cAlloc, ok := extensions.GetCAllocationProfiler()
 		switch {
-		case ok && p.cfg.cmemprofEnabled && p.cfg.deltaProfiles && name == "heap":
+		case ok && p.cfg.cmemprofEnabled && p.cfg.deltaProfiles && pt == HeapProfile:
 			// For the heap profile, we'd also like to include C
 			// allocations if that extension is enabled and have the
 			// allocations show up in the same profile. Collect them
