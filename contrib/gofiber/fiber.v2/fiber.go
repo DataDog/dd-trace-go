@@ -39,7 +39,14 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-
+		// Create a http.Header object so that a parent trace can be extracted. Fiber uses a non-standard header carrier
+		prettyHeader := http.Header{}
+		for k, v := range c.GetReqHeaders() {
+			prettyHeader.Add(k, v)
+		}
+		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(prettyHeader)); err == nil {
+			opts = append(opts, tracer.ChildOf(spanctx))
+		}
 		opts = append(opts, cfg.spanOpts...)
 		span, ctx := tracer.StartSpanFromContext(c.Context(), "http.request", opts...)
 
