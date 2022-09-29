@@ -8,6 +8,7 @@ package kubernetes // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/cli
 
 import (
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -17,9 +18,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-const (
-	prefixAPI   = "/api/v1/"
-	prefixWatch = "watch/"
+var (
+	apiRegexp = regexp.MustCompile("^(?:/api/v1/|/apis/([a-z0-9.-]+/)([a-z0-9.-]+/))(watch/)?(namespaces/[a-z0-9.-]+/)?([a-z0-9.-]+)(/[a-z0-9.-]+)?(/[a-z0-9.-]+)?(/[a-z0-9.-]+)?$")
 )
 
 // WrapRoundTripperFunc creates a new WrapTransport function using the given set of
@@ -55,7 +55,8 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTr
 
 // RequestToResource parses a Kubernetes request and extracts a resource name from it.
 func RequestToResource(method, path string) string {
-	if !strings.HasPrefix(path, prefixAPI) {
+	c := apiRegexp.FindStringSubmatch(path)
+	if c == nil {
 		return method
 	}
 
@@ -63,38 +64,31 @@ func RequestToResource(method, path string) string {
 	out.WriteString(method)
 	out.WriteByte(' ')
 
-	path = strings.TrimPrefix(path, prefixAPI)
-
-	if strings.HasPrefix(path, prefixWatch) {
-		// strip out /watch
-		path = strings.TrimPrefix(path, prefixWatch)
-		out.WriteString(prefixWatch)
+	// {group}/{version}/
+	out.WriteString(c[1])
+	out.WriteString(c[2])
+	// watch/
+	out.WriteString(c[3])
+	// namespaces/{namespace}/
+	if c[4] != "" {
+		out.WriteString("namespaces/{namespace}/")
 	}
-
-	// {type}/{name}
-	var lastType string
-	for i, str := range strings.Split(path, "/") {
-		if i > 0 {
-			out.WriteByte('/')
-		}
-		if i%2 == 0 {
-			lastType = str
-			out.WriteString(lastType)
+	// {type}
+	out.WriteString(c[5])
+	// /{name}
+	if c[6] != "" {
+		out.WriteString("/{name}")
+	}
+	// /{subresrouce type}
+	out.WriteString(c[7])
+	// /{name} or /{path}
+	if c[8] != "" {
+		if c[7] == "/proxy" {
+			out.WriteString("/{path}")
 		} else {
-			// parse {name}
-			out.WriteString(typeToPlaceholder(lastType))
+			out.WriteString("/{name}")
 		}
 	}
-	return out.String()
-}
 
-func typeToPlaceholder(typ string) string {
-	switch typ {
-	case "namespaces":
-		return "{namespace}"
-	case "proxy":
-		return "{path}"
-	default:
-		return "{name}"
-	}
+	return out.String()
 }
