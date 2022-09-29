@@ -304,10 +304,14 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		p.seq++
 
 		completed = completed[:0]
+		// We need to increment pendingProfiles for every non-CPU
+		// profile _before_ entering the next loop so that we know CPU
+		// profiling will not complete until every other profile is
+		// finished (because p.pendingProfiles will have been
+		// incremented to count every non-CPU profile before CPU
+		// profiling starts)
 		for _, t := range p.enabledProfileTypes() {
 			if t != CPUProfile {
-				// pendingProfiles should be updated before
-				// starting the CPU profiler
 				p.pendingProfiles.Add(1)
 			}
 		}
