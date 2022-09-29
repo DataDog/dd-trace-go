@@ -43,29 +43,29 @@ func TestRunProfile(t *testing.T) {
 				Prof1: textProfile{
 					Time: timeA,
 					Text: `
-stuff/count
-main 3
-main;bar 2
-main;foo 5
+contentions/count delay/nanoseconds
+main 3 1
+main;bar 2 1
+main;foo 5 1
 `,
 				},
 				Prof2: textProfile{
 					Time: timeB,
 					Text: `
-stuff/count
-main 4
-main;bar 2
-main;foo 8
-main;foobar 7
+contentions/count delay/nanoseconds
+main 4 1
+main;bar 2 1
+main;foo 8 1
+main;foobar 7 1
 `,
 				},
 				WantDelta: textProfile{
 					Time: timeA,
 					Text: `
-stuff/count
-main;foobar 7
-main;foo 3
-main 1
+contentions/count delay/nanoseconds
+main;foobar 7 1
+main;foo 3 0
+main 1 0
 `,
 				},
 				WantDuration: deltaPeriod,

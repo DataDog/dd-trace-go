@@ -67,10 +67,10 @@ type profileType struct {
 	// Collect collects the given profile and returns the data for it. Most
 	// profiles will be in pprof format, i.e. gzip compressed proto buf data.
 	Collect func(p *profiler) ([]byte, error)
-	// Delta identifies which values in profile samples should be modified
-	// when delta profiling is enabled, if the profile type supports delta
-	// profiles
-	Delta *pprofutils.Delta
+	// DeltaValues identifies which values in profile samples should be modified
+	// when delta profiling is enabled. Empty DeltaValues means delta profiling is
+	// not supported for this profile type
+	DeltaValues []pprofutils.ValueType
 }
 
 // profileTypes maps every ProfileType to its implementation.
@@ -111,22 +111,28 @@ var profileTypes = map[ProfileType]profileType{
 		Name:     "heap",
 		Filename: "heap.pprof",
 		Collect:  collectGenericProfile("heap", HeapProfile),
-		Delta: &pprofutils.Delta{SampleTypes: []pprofutils.ValueType{
+		DeltaValues: []pprofutils.ValueType{
 			{Type: "alloc_objects", Unit: "count"},
 			{Type: "alloc_space", Unit: "bytes"},
-		}},
+		},
 	},
 	MutexProfile: {
 		Name:     "mutex",
 		Filename: "mutex.pprof",
 		Collect:  collectGenericProfile("mutex", MutexProfile),
-		Delta:    &pprofutils.Delta{},
+		DeltaValues: []pprofutils.ValueType{
+			{Type: "contentions", Unit: "count"},
+			{Type: "delay", Unit: "nanoseconds"},
+		},
 	},
 	BlockProfile: {
 		Name:     "block",
 		Filename: "block.pprof",
 		Collect:  collectGenericProfile("block", BlockProfile),
-		Delta:    &pprofutils.Delta{},
+		DeltaValues: []pprofutils.ValueType{
+			{Type: "contentions", Unit: "count"},
+			{Type: "delay", Unit: "nanoseconds"},
+		},
 	},
 	GoroutineProfile: {
 		Name:     "goroutine",
@@ -290,7 +296,7 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	tags := append(p.cfg.tags.Slice(), pt.Tag())
 	filename := t.Filename
 	// TODO(fg): Consider making Collect() return the filename.
-	if p.cfg.deltaProfiles && t.Delta != nil {
+	if p.cfg.deltaProfiles && len(t.DeltaValues) > 0 {
 		filename = "delta-" + filename
 	}
 	p.cfg.statsd.Timing("datadog.profiling.go.collect_time", end.Sub(start), tags, 1)
@@ -298,7 +304,7 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 }
 
 type deltaProfiler struct {
-	delta *pprofutils.Delta
+	delta pprofutils.Delta
 	prev  *pprofile.Profile
 }
 
@@ -307,7 +313,7 @@ type deltaProfiler struct {
 // deltas computed. Otherwise, deltas will be computed for every value.
 func newDeltaProfiler(v ...pprofutils.ValueType) *deltaProfiler {
 	return &deltaProfiler{
-		delta: &pprofutils.Delta{SampleTypes: v},
+		delta: pprofutils.Delta{SampleTypes: v},
 	}
 }
 

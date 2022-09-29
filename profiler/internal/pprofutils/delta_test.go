@@ -18,6 +18,7 @@ func TestDelta(t *testing.T) {
 		var deltaText bytes.Buffer
 
 		profA, err := Text{}.Convert(strings.NewReader(strings.TrimSpace(`
+x/count
 main;foo 5
 main;foo;bar 3
 main;foobar 4
@@ -25,13 +26,14 @@ main;foobar 4
 		require.NoError(t, err)
 
 		profB, err := Text{}.Convert(strings.NewReader(strings.TrimSpace(`
+x/count
 main;foo 8
 main;foo;bar 3
 main;foobar 5
 `)))
 		require.NoError(t, err)
 
-		delta, err := Delta{}.Convert(profA, profB)
+		delta, err := Delta{SampleTypes: []ValueType{{Type: "x", Unit: "count"}}}.Convert(profA, profB)
 		require.NoError(t, err)
 
 		require.NoError(t, Protobuf{}.Convert(delta, &deltaText))

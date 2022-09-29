@@ -17,8 +17,6 @@ type Delta struct {
 	// SampleTypes limits the delta calcultion to the given sample types. Other
 	// sample types will retain the values of profile b. The defined sample types
 	// must exist in the profile, otherwise derivation will fail with an error.
-	// If the slice is empty, all sample types are subject to delta profile
-	// derivation.
 	//
 	// The use case for this for this is to deal with the heap profile which
 	// contains alloc and inuse sample types, but delta profiling makes no sense
@@ -35,13 +33,7 @@ func (d Delta) Convert(a, b *profile.Profile) (*profile.Profile, error) {
 
 	found := 0
 	for i, st := range a.SampleType {
-		// Empty c.SampleTypes means we calculate the delta for every st
-		if len(d.SampleTypes) == 0 {
-			ratios[i] = -1
-			continue
-		}
-
-		// Otherwise we only calcuate the delta for any st that is listed in
+		// We only calcuate the delta for any st that is listed in
 		// c.SampleTypes. st's not listed in there will default to ratio 0, which
 		// means we delete them from pa, so only the pb values remain in the final
 		// profile.
