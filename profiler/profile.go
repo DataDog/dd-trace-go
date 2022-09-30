@@ -75,10 +75,13 @@ type profileType struct {
 // profileTypes maps every ProfileType to its implementation.
 var profileTypes = map[ProfileType]profileType{
 	CPUProfile: {
-		Name:     "cpu",
 		Filename: "cpu.pprof",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
+			// Start the CPU profiler at the end of the profiling
+			// period so that we're sure to capture the CPU usage of
+			// this library, which mostly happens at the end
+			p.interruptibleSleep(p.cfg.period - p.cfg.cpuDuration)
 			if p.cfg.cpuProfileRate != 0 {
 				// The profile has to be set each time before
 				// profiling is started. Otherwise,
@@ -90,6 +93,10 @@ var profileTypes = map[ProfileType]profileType{
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
+			// We want the CPU profiler to finish last so that it can
+			// properly record all of our profile processing work for
+			// the other profile types
+			p.pendingProfiles.Wait()
 			p.stopCPUProfile()
 			return buf.Bytes(), nil
 		},
@@ -102,7 +109,7 @@ var profileTypes = map[ProfileType]profileType{
 	HeapProfile: {
 		Name:     "heap",
 		Filename: "heap.pprof",
-		Collect: collectGenericProfile("heap", &pprofutils.Delta{SampleTypes: []pprofutils.ValueType{
+		Collect: collectGenericProfile("heap", HeapProfile, &pprofutils.Delta{SampleTypes: []pprofutils.ValueType{
 			{Type: "alloc_objects", Unit: "count"},
 			{Type: "alloc_space", Unit: "bytes"},
 		}}),
@@ -111,19 +118,19 @@ var profileTypes = map[ProfileType]profileType{
 	MutexProfile: {
 		Name:          "mutex",
 		Filename:      "mutex.pprof",
-		Collect:       collectGenericProfile("mutex", &pprofutils.Delta{}),
+		Collect:       collectGenericProfile("mutex", MutexProfile, &pprofutils.Delta{}),
 		SupportsDelta: true,
 	},
 	BlockProfile: {
 		Name:          "block",
 		Filename:      "block.pprof",
-		Collect:       collectGenericProfile("block", &pprofutils.Delta{}),
+		Collect:       collectGenericProfile("block", BlockProfile, &pprofutils.Delta{}),
 		SupportsDelta: true,
 	},
 	GoroutineProfile: {
 		Name:     "goroutine",
 		Filename: "goroutines.pprof",
-		Collect:  collectGenericProfile("goroutine", nil),
+		Collect:  collectGenericProfile("goroutine", GoroutineProfile, nil),
 	},
 	expGoroutineWaitProfile: {
 		Name:     "goroutinewait",
@@ -159,13 +166,12 @@ var profileTypes = map[ProfileType]profileType{
 	},
 }
 
-func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profiler) ([]byte, error) {
+func collectGenericProfile(name string, pt ProfileType, delta *pprofutils.Delta) func(p *profiler) ([]byte, error) {
 	return func(p *profiler) ([]byte, error) {
 		var extra []*pprofile.Profile
-		// TODO: add type safety for name == "heap" check and remove redunancy with profileType.Name.
 		cAlloc, ok := extensions.GetCAllocationProfiler()
 		switch {
-		case ok && p.cfg.cmemprofEnabled && p.cfg.deltaProfiles && name == "heap":
+		case ok && p.cfg.cmemprofEnabled && p.cfg.deltaProfiles && pt == HeapProfile:
 			// For the heap profile, we'd also like to include C
 			// allocations if that extension is enabled and have the
 			// allocations show up in the same profile. Collect them

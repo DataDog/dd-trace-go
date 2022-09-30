@@ -171,7 +171,7 @@ main;bar 0 0 8 16
 	})
 
 	t.Run("cpu", func(t *testing.T) {
-		p, err := unstartedProfiler(CPUDuration(10 * time.Millisecond))
+		p, err := unstartedProfiler(CPUDuration(10*time.Millisecond), WithPeriod(10*time.Millisecond))
 		p.testHooks.startCPUProfile = func(w io.Writer) error {
 			_, err := w.Write([]byte("my-cpu-profile"))
 			return err
