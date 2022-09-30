@@ -173,6 +173,9 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			return nil, fmt.Errorf("unknown profile type: %d", pt)
 		}
 	}
+	if cfg.cpuDuration > cfg.period {
+		cfg.cpuDuration = cfg.period
+	}
 	if cfg.logStartup {
 		logStartup(cfg)
 	}
