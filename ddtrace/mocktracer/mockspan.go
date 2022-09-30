@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var _ ddtrace.Span = (*mockspan)(nil)
@@ -231,3 +232,41 @@ baggage: %#v
 
 // Context returns the SpanContext of this Span.
 func (s *mockspan) Context() ddtrace.SpanContext { return s.context }
+
+// SetUser associates user information to the current trace which the
+// provided span belongs to. The options can be used to tune which user
+// bit of information gets monitored. This mockup only sets the user
+// information as span tags of the root span of the current trace.
+func (s *mockspan) SetUser(id string, opts ...tracer.UserMonitoringOption) {
+	// Walk the span up to the root parent span
+	openSpans := s.tracer.openSpans
+	var current Span = s
+	for {
+		pid := current.ParentID()
+		if pid == 0 {
+			break
+		}
+		parent, ok := openSpans[pid]
+		if !ok {
+			break
+		}
+		current = parent
+	}
+
+	root, ok := current.(*mockspan)
+	if !ok {
+		return
+	}
+
+	var cfg tracer.UserMonitoringConfig
+	for _, fn := range opts {
+		fn(&cfg)
+	}
+
+	root.SetTag("usr.id", id)
+	root.SetTag("usr.email", cfg.Email)
+	root.SetTag("usr.name", cfg.Name)
+	root.SetTag("usr.role", cfg.Role)
+	root.SetTag("usr.scope", cfg.Scope)
+	root.SetTag("usr.session_id", cfg.SessionID)
+}

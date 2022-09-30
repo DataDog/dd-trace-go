@@ -168,16 +168,13 @@ func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 	if s == nil {
 		return
 	}
-	sp, ok := s.(*span)
-	if !ok || sp.context == nil {
+	sp, ok := s.(interface {
+		SetUser(string, ...UserMonitoringOption)
+	})
+	if !ok {
 		return
 	}
-	sp = sp.context.trace.root
-	var cfg UserMonitoringConfig
-	for _, fn := range opts {
-		fn(&cfg)
-	}
-	sp.setUser(id, cfg)
+	sp.SetUser(id, opts...)
 }
 
 // payloadQueueSize is the buffer size of the trace channel.
