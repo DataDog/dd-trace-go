@@ -61,9 +61,15 @@ func Version() string {
 
 // Handle represents an instance of the WAF for a given ruleset.
 type Handle struct {
+	// Instance of the WAF
 	handle C.ddwaf_handle
+
 	// RWMutex used as a simple reference counter implementation allowing to
-	// safely release the WAF handle only when there are no Context using it.
+	// safely release the WAF handle when there are no more WAF contexts using it.
+	refCounter sync.RWMutex
+
+	// RWMutex protecting the R/W accesses to the internal rules data (stored
+	// in the handle).
 	mu sync.RWMutex
 
 	// encoder of Go values into ddwaf objects.
@@ -175,32 +181,68 @@ func ruleAddresses(handle C.ddwaf_handle) ([]string, error) {
 }
 
 // Addresses returns the list of addresses the WAF rule is expecting.
-func (waf *Handle) Addresses() []string {
-	return waf.addresses
+func (h *Handle) Addresses() []string {
+	return h.addresses
 }
 
 // RulesetInfo returns the rules initialization metrics for the current WAF handle
-func (waf *Handle) RulesetInfo() RulesetInfo {
-	return waf.rulesetInfo
+func (h *Handle) RulesetInfo() RulesetInfo {
+	return h.rulesetInfo
+}
+
+// UpdateRuleData updates the data that some rules reference to.
+// The given rule data must be a raw JSON string of the form
+// [ {rule data #1}, ... {rule data #2} ]
+func (h *Handle) UpdateRuleData(jsonData []byte) error {
+	var data []interface{}
+	if err := json.Unmarshal(jsonData, &data); err != nil {
+		return fmt.Errorf("could not parse the WAF rule data: %v", err)
+	}
+
+	encoded, err := h.encoder.encode(data) // FIXME: double-check with Anil that we are good with the current conversion of integers into strings here
+	if err != nil {
+		return fmt.Errorf("could not encode the JSON WAF rule data into a WAF object: %v", err)
+	}
+	defer freeWO(encoded)
+
+	return h.updateRuleData(encoded)
+}
+
+// updateRuleData is the critical section of UpdateRuleData
+func (h *Handle) updateRuleData(data *wafObject) error {
+	// Note about this lock: ddwaf_update_rule_data already is thread-safe to
+	// use, but we chose to lock at the goroutine-level instead in order to
+	// avoid locking OS threads and therefore prevent many other goroutines from
+	// executing during that OS lock. If a goroutine locks due to this handle's
+	// RWMutex, another goroutine gets executed on its OS thread.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	rc := C.ddwaf_update_rule_data(h.handle, data.ctype())
+	if rc != C.DDWAF_OK {
+		return fmt.Errorf("unexpected error number `%d` while updating the WAF rule data", rc)
+	}
+	return nil
 }
 
 // Close the WAF and release the underlying C memory as soon as there are
 // no more WAF contexts using the rule.
-func (waf *Handle) Close() {
+func (h *Handle) Close() {
 	// Exclusively lock the mutex to ensure there's no other concurrent
 	// Context using the WAF handle.
-	waf.mu.Lock()
-	defer waf.mu.Unlock()
-	C.ddwaf_destroy(waf.handle)
+	h.refCounter.Lock()
+	defer h.refCounter.Unlock()
+	C.ddwaf_destroy(h.handle)
 	decNbLiveCObjects()
-	waf.handle = nil
+	h.handle = nil
 }
 
 // Context is a WAF execution context. It allows to run the WAF incrementally
 // by calling it multiple times to run its rules every time new addresses
 // become available. Each request must have its own Context.
 type Context struct {
-	waf *Handle
+	// Instance of the WAF
+	handle *Handle
 	// Cumulated internal WAF run time - in nanoseconds - for this context.
 	totalRuntimeNs AtomicU64
 	// Cumulated overall run time - in nanoseconds - for this context.
@@ -216,22 +258,22 @@ type Context struct {
 // NewContext a new WAF context and increase the number of references to the WAF
 // handle. A nil value is returned when the WAF handle can no longer be used
 // or the WAF context couldn't be created.
-func NewContext(waf *Handle) *Context {
+func NewContext(handle *Handle) *Context {
 	// Increase the WAF handle usage count by RLock'ing the mutex.
 	// It will be RUnlock'ed in the Close method when the Context is released.
-	waf.mu.RLock()
-	if waf.handle == nil {
-		// The WAF handle got free'd by the time we got the lock
-		waf.mu.RUnlock()
+	handle.refCounter.RLock()
+	if handle.handle == nil {
+		// The WAF waf got free'd by the time we got the lock
+		handle.refCounter.RUnlock()
 		return nil
 	}
-	context := C.ddwaf_context_init(waf.handle)
+	context := C.ddwaf_context_init(handle.handle)
 	if context == nil {
 		return nil
 	}
 	incNbLiveCObjects()
 	return &Context{
-		waf:     waf,
+		handle:  handle,
 		context: context,
 	}
 }
@@ -243,23 +285,28 @@ func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (mat
 		dt := time.Since(now)
 		c.totalOverallRuntimeNs.Add(uint64(dt.Nanoseconds()))
 	}()
-	return c.run(values, timeout)
-}
 
-func (c *Context) run(values map[string]interface{}, timeout time.Duration) (matches []byte, actions []string, err error) {
 	if len(values) == 0 {
 		return
 	}
-	wafValue, err := c.waf.encoder.encode(values)
+
+	wafValue, err := c.handle.encoder.encode(values)
 	if err != nil {
 		return nil, nil, err
 	}
-	return c.runWAF(wafValue, timeout)
+
+	return c.run(wafValue, timeout)
 }
 
-func (c *Context) runWAF(data *wafObject, timeout time.Duration) (matches []byte, actions []string, err error) {
+// run is the critical section of Run
+func (c *Context) run(data *wafObject, timeout time.Duration) (matches []byte, actions []string, err error) {
+	// Exclusively lock this WAF context for the time of this run
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// RLock the handle
+	c.handle.mu.RLock()
+	defer c.handle.mu.RUnlock()
 
 	var result C.ddwaf_result
 	defer freeWAFResult(&result)
@@ -280,12 +327,12 @@ func (c *Context) runWAF(data *wafObject, timeout time.Duration) (matches []byte
 // references to the WAF handle.
 func (c *Context) Close() {
 	// RUnlock the WAF RWMutex to decrease the count of WAF Contexts using it.
-	defer c.waf.mu.RUnlock()
+	defer c.handle.refCounter.RUnlock()
 	C.ddwaf_context_destroy(c.context)
 	decNbLiveCObjects()
 }
 
-// TotalRuntime returns the cumulated waf runtime across various run calls within the same WAF context.
+// TotalRuntime returns the cumulated WAF runtime across various run calls within the same WAF context.
 // Returned time is in nanoseconds.
 func (c *Context) TotalRuntime() (overallRuntimeNs, internalRuntimeNs uint64) {
 	return c.totalOverallRuntimeNs.Load(), c.totalRuntimeNs.Load()
