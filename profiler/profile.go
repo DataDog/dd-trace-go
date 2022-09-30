@@ -202,7 +202,7 @@ func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byt
 		var buf bytes.Buffer
 		err := p.lookupProfile(name, &buf, 0)
 		data := buf.Bytes()
-		dp, ok := p.deltas[name]
+		dp, ok := p.deltas[pt]
 		if !ok || !p.cfg.deltaProfiles {
 			return data, err
 		}
