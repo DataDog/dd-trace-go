@@ -127,9 +127,11 @@ func Start(opts ...StartOption) {
 	if t.config.logStartup {
 		logStartup(t)
 	}
+	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig
 	cfg.AgentAddr = t.config.agentAddr
 	cfg.AppVersion = t.config.version
+	cfg.Env = t.config.env
 	cfg.HTTP = t.config.httpClient
 	appsec.Start(appsec.WithRCConfig(cfg))
 }
