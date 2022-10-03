@@ -76,6 +76,7 @@ type Client struct {
 	ClientConfig
 
 	clientID   string
+	endpoint   string
 	repository *rc.Repository
 	stop       chan struct{}
 
@@ -97,6 +98,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	return &Client{
 		ClientConfig: config,
 		clientID:     generateID(),
+		endpoint:     fmt.Sprintf("http://%s/v0.7/config", config.AgentAddr),
 		repository:   repo,
 		stop:         make(chan struct{}),
 		lastError:    nil,
@@ -131,8 +133,7 @@ func (c *Client) updateState() {
 		return
 	}
 
-	url := fmt.Sprintf("http://%s/v0.7/config", c.AgentAddr)
-	req, err := http.NewRequest("GET", url, &data)
+	req, err := http.NewRequest("GET", c.endpoint, &data)
 	if err != nil {
 		c.lastError = err
 		return
