@@ -128,7 +128,7 @@ func Start(opts ...StartOption) {
 		logStartup(t)
 	}
 	// Start AppSec with remote configuration
-	cfg := remoteconfig.DefaultClientConfig
+	cfg := remoteconfig.DefaultClientConfig()
 	cfg.AgentAddr = t.config.agentAddr
 	cfg.AppVersion = t.config.version
 	cfg.Env = t.config.env

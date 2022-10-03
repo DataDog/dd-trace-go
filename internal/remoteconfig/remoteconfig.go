@@ -43,8 +43,18 @@ const (
 	ASMDDRules
 )
 
-// DefaultClientConfig is the default remote config client configuration, filled at init()
-var DefaultClientConfig ClientConfig
+// DefaultClientConfig returns the default remote config client configuration
+func DefaultClientConfig() ClientConfig {
+	return ClientConfig{
+		Env:           os.Getenv("DD_ENV"),
+		HTTP:          &http.Client{Timeout: 10 * time.Second},
+		PollInterval:  time.Second * 1,
+		RuntimeID:     globalconfig.RuntimeID(),
+		ServiceName:   globalconfig.ServiceName(),
+		TracerVersion: version.Tag,
+		TUFRoot:       os.Getenv("DD_RC_TUF_ROOT"),
+	}
+}
 
 // ProductUpdate represents an update for a specific product.
 // It is a map of file path to raw file content
@@ -98,7 +108,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 	if config.HTTP == nil {
-		config.HTTP = DefaultClientConfig.HTTP
+		config.HTTP = DefaultClientConfig().HTTP
 	}
 
 	return &Client{
@@ -295,16 +305,4 @@ func generateID() string {
 		id[i] = idAlphabet[bytes[i]&63]
 	}
 	return string(id[:idSize])
-}
-
-func init() {
-	DefaultClientConfig = ClientConfig{
-		Env:           os.Getenv("DD_ENV"),
-		HTTP:          &http.Client{Timeout: 10 * time.Second},
-		PollInterval:  time.Second * 1,
-		RuntimeID:     globalconfig.RuntimeID(),
-		ServiceName:   globalconfig.ServiceName(),
-		TracerVersion: version.Tag,
-		TUFRoot:       os.Getenv("DD_RC_TUF_ROOT"),
-	}
 }
