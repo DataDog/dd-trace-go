@@ -20,8 +20,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
-	pprofile "github.com/google/pprof/profile"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -64,17 +62,17 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
-	mu         sync.Mutex
-	cfg        *config                      // profile configuration
-	out        chan batch                   // upload queue
-	uploadFunc func(batch) error            // defaults to (*profiler).upload; replaced in tests
-	exit       chan struct{}                // exit signals the profiler to stop; it is closed after stopping
-	stopOnce   sync.Once                    // stopOnce ensures the profiler is stopped exactly once.
-	wg         sync.WaitGroup               // wg waits for all goroutines to exit when stopping.
-	met        *metrics                     // metric collector state
-	prev       map[string]*pprofile.Profile // previous collection results for delta profiling
-	telemetry  *telemetry.Client
-	seq        uint64 // seq is the value of the profile_seq tag
+	cfg             *config           // profile configuration
+	out             chan batch        // upload queue
+	uploadFunc      func(batch) error // defaults to (*profiler).upload; replaced in tests
+	exit            chan struct{}     // exit signals the profiler to stop; it is closed after stopping
+	stopOnce        sync.Once         // stopOnce ensures the profiler is stopped exactly once.
+	wg              sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
+	met             *metrics          // metric collector state
+	deltas          map[ProfileType]*deltaProfiler
+	telemetry       *telemetry.Client
+	seq             uint64         // seq is the value of the profile_seq tag
+	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
 	testHooks testHooks
 }
@@ -181,11 +179,16 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	}
 
 	p := profiler{
-		cfg:  cfg,
-		out:  make(chan batch, outChannelSize),
-		exit: make(chan struct{}),
-		met:  newMetrics(),
-		prev: make(map[string]*pprofile.Profile),
+		cfg:    cfg,
+		out:    make(chan batch, outChannelSize),
+		exit:   make(chan struct{}),
+		met:    newMetrics(),
+		deltas: make(map[ProfileType]*deltaProfiler),
+	}
+	for pt := range cfg.types {
+		if d := profileTypes[pt].DeltaValues; len(d) > 0 {
+			p.deltas[pt] = newDeltaProfiler(d...)
+		}
 	}
 	p.uploadFunc = p.upload
 	p.telemetry = &telemetry.Client{
@@ -306,10 +309,24 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		p.seq++
 
 		completed = completed[:0]
+		// We need to increment pendingProfiles for every non-CPU
+		// profile _before_ entering the next loop so that we know CPU
+		// profiling will not complete until every other profile is
+		// finished (because p.pendingProfiles will have been
+		// incremented to count every non-CPU profile before CPU
+		// profiling starts)
+		for _, t := range p.enabledProfileTypes() {
+			if t != CPUProfile {
+				p.pendingProfiles.Add(1)
+			}
+		}
 		for _, t := range p.enabledProfileTypes() {
 			wg.Add(1)
 			go func(t ProfileType) {
 				defer wg.Done()
+				if t != CPUProfile {
+					defer p.pendingProfiles.Done()
+				}
 				profs, err := p.runProfile(t)
 				if err != nil {
 					log.Error("Error getting %s profile: %v; skipping.", t, err)
