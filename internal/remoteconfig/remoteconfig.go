@@ -189,6 +189,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	for _, f := range pbUpdate.TargetFiles {
 		fileMap[f.Path] = f.Raw
 		for _, p := range c.Products {
+			productUpdates[p] = make(ProductUpdate)
 			if strings.Contains(f.Path, p) {
 				productUpdates[p][f.Path] = f.Raw
 			}
