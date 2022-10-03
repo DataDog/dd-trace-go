@@ -45,12 +45,12 @@ const (
 type ClientConfig struct {
 	// The address at which the agent is listening for remoteconfig update requests on
 	AgentAddr string
-	// The smenatic version of the user's application
+	// The semantic version of the user's application
 	AppVersion string
 	// The env this tracer is running in
 	Env string
-	// The rate at which the client should poll the agent for updates
-	PollRate time.Duration
+	// The time interval between two client polls to the agent for updates
+	PollInterval time.Duration
 	// A list of remote config products this client is interested in
 	Products []string
 	// The tracer's runtime id
@@ -85,7 +85,7 @@ type Client struct {
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
 		Env:           os.Getenv("DD_ENV"),
-		PollRate:      time.Second * 1,
+		PollInterval:  time.Second * 1,
 		RuntimeID:     globalconfig.RuntimeID(),
 		ServiceName:   globalconfig.ServiceName(),
 		TracerVersion: version.Tag,
@@ -112,7 +112,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 
 // Start starts the client's update poll loop
 func (c *Client) Start() {
-	ticker := time.NewTicker(c.PollRate)
+	ticker := time.NewTicker(c.PollInterval)
 	defer ticker.Stop()
 
 	for {
@@ -180,14 +180,6 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		ClientConfigs: pbUpdate.ClientConfigs,
 	}
 
-	// XXX: At the moment we aren't hooking this into any tracer services, however
-	// once we do we will need to update them based on the results from Update
-	// (which is an array of product names that were updated during the request)
-	//
-	// The agent client does this by allowing services to register callback functions that receive
-	// map[string]<CONFIG_TYPE>. The client provides a "register listener" function for each supported
-	// product which stores the callbacks in a list. It's up to the service to use goroutines as needed
-	// if the update application process would block the RC client for too long.
 	products, err := c.repository.Update(update)
 	// Performs the callbacks registered for all updated products
 	for _, p := range products {
