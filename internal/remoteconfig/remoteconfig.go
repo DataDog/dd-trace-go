@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"os"
@@ -144,6 +145,11 @@ func (c *Client) updateState() {
 		c.lastError = err
 		return
 	}
+	// Flush and close the response body when returning (cf. https://pkg.go.dev/net/http#Client.Do)
+	defer func() {
+		io.ReadAll(resp.Body)
+		resp.Body.Close()
+	}()
 
 	var update clientGetConfigsResponse
 	err = json.NewDecoder(resp.Body).Decode(&update)
