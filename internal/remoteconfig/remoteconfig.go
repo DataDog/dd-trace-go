@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -26,7 +27,7 @@ import (
 // Callback represents a function that can process a remote config update.
 // A Callback function can be registered to a remote config client to automatically
 // react upon receiving updates.
-type Callback func(*rc.Update)
+type Callback func(u ProductUpdate)
 
 // Capability represents a bit index to be set in clientData.Capabilites in order to register a client
 // for a specific capability
@@ -44,6 +45,10 @@ const (
 
 // DefaultClientConfig is the default remote config client configuration, filled at init()
 var DefaultClientConfig ClientConfig
+
+// ProductUpdate represents an update for a specific product.
+// It is a map of file path to raw file content
+type ProductUpdate map[string][]byte
 
 // ClientConfig contains the required values to configure a remoteconfig client
 type ClientConfig struct {
@@ -170,8 +175,14 @@ func (c *Client) RegisterCallback(f Callback, product string) {
 
 func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
+	productUpdates := make(map[string]ProductUpdate, len(c.Products))
 	for _, f := range pbUpdate.TargetFiles {
 		fileMap[f.Path] = f.Raw
+		for _, p := range c.Products {
+			if strings.Contains(f.Path, p) {
+				productUpdates[p][f.Path] = f.Raw
+			}
+		}
 	}
 
 	update := rc.Update{
@@ -185,7 +196,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	// Performs the callbacks registered for all updated products
 	for _, p := range products {
 		for _, c := range c.callbacks[p] {
-			c(&update)
+			c(productUpdates[p])
 		}
 	}
 
