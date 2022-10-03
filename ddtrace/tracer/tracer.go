@@ -127,9 +127,10 @@ func Start(opts ...StartOption) {
 	if t.config.logStartup {
 		logStartup(t)
 	}
-	cfg := remoteconfig.DefaultClientConfig()
+	cfg := remoteconfig.DefaultClientConfig
 	cfg.AgentAddr = t.config.agentAddr
 	cfg.AppVersion = t.config.version
+	cfg.HTTP = t.config.httpClient
 	appsec.Start(appsec.WithRCConfig(cfg))
 }
 

@@ -41,6 +41,9 @@ const (
 	ASMDDRules
 )
 
+// DefaultClientConfig is the default remote config client configuration, filled at init()
+var DefaultClientConfig ClientConfig
+
 // ClientConfig contains the required values to configure a remoteconfig client
 type ClientConfig struct {
 	// The address at which the agent is listening for remoteconfig update requests on
@@ -63,13 +66,14 @@ type ClientConfig struct {
 	TUFRoot string
 	// The capabilities of the client
 	Capabilities []Capability
+	// HTTP is the HTTP client used to receive config updates
+	HTTP *http.Client
 }
 
 // A Client interacts with an Agent to update and track the state of remote
 // configuration
 type Client struct {
 	ClientConfig
-	client http.Client
 
 	clientID   string
 	repository *rc.Repository
@@ -80,24 +84,14 @@ type Client struct {
 	lastError error
 }
 
-// DefaultClientConfig generates a default remote config client configuration.
-// The default client configuration doesn't listen for any product.
-func DefaultClientConfig() ClientConfig {
-	return ClientConfig{
-		Env:           os.Getenv("DD_ENV"),
-		PollInterval:  time.Second * 1,
-		RuntimeID:     globalconfig.RuntimeID(),
-		ServiceName:   globalconfig.ServiceName(),
-		TracerVersion: version.Tag,
-		TUFRoot:       os.Getenv("DD_RC_TUF_ROOT"),
-	}
-}
-
 // NewClient creates a new remoteconfig Client
 func NewClient(config ClientConfig) (*Client, error) {
 	repo, err := rc.NewRepository([]byte(config.TUFRoot))
 	if err != nil {
 		return nil, err
+	}
+	if config.HTTP == nil {
+		config.HTTP = DefaultClientConfig.HTTP
 	}
 
 	return &Client{
@@ -144,7 +138,7 @@ func (c *Client) updateState() {
 		return
 	}
 
-	resp, err := c.client.Do(req)
+	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		c.lastError = err
 		return
@@ -283,4 +277,16 @@ func generateID() string {
 		id[i] = idAlphabet[bytes[i]&63]
 	}
 	return string(id[:idSize])
+}
+
+func init() {
+	DefaultClientConfig = ClientConfig{
+		Env:           os.Getenv("DD_ENV"),
+		HTTP:          &http.Client{Timeout: 10 * time.Second},
+		PollInterval:  time.Second * 1,
+		RuntimeID:     globalconfig.RuntimeID(),
+		ServiceName:   globalconfig.ServiceName(),
+		TracerVersion: version.Tag,
+		TUFRoot:       os.Getenv("DD_RC_TUF_ROOT"),
+	}
 }
