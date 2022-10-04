@@ -65,17 +65,17 @@ type ObfuscatorConfig struct {
 }
 
 // isEnabled returns true when appsec is enabled when the environment variable
+// It also returns whether the env var is actually set in the env or not
 // DD_APPSEC_ENABLED is set to true.
-func isEnabled() (bool, error) {
-	enabledStr := os.Getenv(enabledEnvVar)
+func isEnabled() (enabled bool, set bool, err error) {
+	enabledStr, set := os.LookupEnv(enabledEnvVar)
 	if enabledStr == "" {
-		return false, nil
+		return false, set, nil
+	} else if enabled, err = strconv.ParseBool(enabledStr); err != nil {
+		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", enabledEnvVar, enabledStr)
+	} else {
+		return enabled, set, nil
 	}
-	enabled, err := strconv.ParseBool(enabledStr)
-	if err != nil {
-		return false, fmt.Errorf("could not parse %s value `%s` as a boolean value", enabledEnvVar, enabledStr)
-	}
-	return enabled, nil
 }
 
 func newConfig() (*Config, error) {

@@ -9,7 +9,6 @@
 package appsec
 
 import (
-	"os"
 	"sync"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -30,12 +29,17 @@ func Enabled() bool {
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
 func Start(opts ...StartOption) {
-	enabled, err := isEnabled()
+	enabled, set, err := isEnabled()
 	if err != nil {
 		logUnexpectedStartError(err)
 		return
 	}
-
+	// Check if AppSec is explicitly disabled
+	if set && !enabled {
+		log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
+		return
+	}
+	// From this point we know that AppSec is either enabled or can be enabled through remote config
 	cfg, err := newConfig()
 	if err != nil {
 		logUnexpectedStartError(err)
@@ -46,19 +50,12 @@ func Start(opts ...StartOption) {
 	}
 	appsec := newAppSec(cfg)
 
-	if !enabled {
-		// Check if the env var is set. If it is, appsec is specifically disabled. If not, it is disabled but can be
-		// enabled through remote config, and we should start the rc client
-		if _, set := os.LookupEnv(enabledEnvVar); set {
-			log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
-			return
-		}
+	if !set {
+		// If the env var is not set AppSec is disabled but can be enabled through remote config
 		log.Debug("appsec: %s is not set. AppSec won't start until activated through remote configuration", enabledEnvVar)
-	} else { // AppSec is specifically enabled
-		if err := appsec.start(); err != nil {
-			logUnexpectedStartError(err)
-			return
-		}
+	} else if err := appsec.start(); err != nil { // AppSec is specifically enabled
+		logUnexpectedStartError(err)
+		return
 	}
 	if appsec.rc != nil {
 		// TODO: register ASM_FEATURES callback
