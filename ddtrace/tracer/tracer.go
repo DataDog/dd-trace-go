@@ -133,6 +133,7 @@ func Start(opts ...StartOption) {
 	cfg.AppVersion = t.config.version
 	cfg.Env = t.config.env
 	cfg.HTTP = t.config.httpClient
+	cfg.ServiceName = t.config.serviceName
 	appsec.Start(appsec.WithRCConfig(cfg))
 }
 
