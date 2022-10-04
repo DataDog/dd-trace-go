@@ -37,6 +37,7 @@ LD_REQUIRED_DEFINED="--require-defined=ddwaf_init \
                     --require-defined=ddwaf_context_init \
                     --require-defined=ddwaf_context_destroy \
                     --require-defined=ddwaf_required_addresses \
+                    --require-defined=ddwaf_result_free \
                     --require-defined=ddwaf_update_rule_data"
 
 run_binutils() {
