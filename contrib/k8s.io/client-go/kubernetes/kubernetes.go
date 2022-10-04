@@ -79,7 +79,7 @@ func RequestToResource(method, path string) string {
 	if c[6] != "" {
 		out.WriteString("/{name}")
 	}
-	// /{subresrouce type}
+	// /{subresource type}
 	out.WriteString(c[7])
 	// /{name} or /{path}
 	if c[8] != "" {
