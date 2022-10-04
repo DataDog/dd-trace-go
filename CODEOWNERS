@@ -1,21 +1,22 @@
 # Note: Later matches take precedence
 
 # default owner
-*                         @DataDog/apm-go
+*                               @DataDog/apm-go
 
 # tracing
-/contrib                  @DataDog/tracing-go
-/ddtrace                  @DataDog/tracing-go
-/internal                 @DataDog/tracing-go
+/contrib                        @DataDog/tracing-go
+/ddtrace                        @DataDog/tracing-go
+/internal                       @DataDog/tracing-go
 
 # profiling
-/profiler                 @DataDog/profiling-go
-/internal/traceprof       @DataDog/profiling-go
+/profiler                       @DataDog/profiling-go
+/internal/traceprof             @DataDog/profiling-go
 
 # appsec
-/appsec                   @DataDog/appsec-go
-/internal/appsec          @DataDog/appsec-go
-/contrib/**/appsec.go     @DataDog/appsec-go
+/appsec                         @DataDog/appsec-go
+/internal/appsec                @DataDog/appsec-go
+/contrib/**/appsec.go           @DataDog/appsec-go
+/.github/workflows/appsec.yml   @DataDog/appsec-go
 
 # telemetry
-/internal/telemetry       @DataDog/apm-go
+/internal/telemetry             @DataDog/apm-go
