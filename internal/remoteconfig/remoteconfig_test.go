@@ -8,10 +8,10 @@ package remoteconfig
 import (
 	"encoding/json"
 	"fmt"
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"strings"
 	"testing"
 
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/stretchr/testify/require"
 )
 
