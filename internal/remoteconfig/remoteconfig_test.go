@@ -44,21 +44,21 @@ func TestRCClient(t *testing.T) {
 		require.Equal(t, 1, len(client.callbacks))
 	})
 
-	/*
-		t.Run("apply-update", func(t *testing.T) {
-			client.Products = append(client.Products, rc.ProductASMFeatures)
-			client.RegisterCallback(func(u ProductUpdate) {
-				require.NotNil(t, u)
-				require.NotNil(t, u[rc.ProductASMFeatures])
-				require.Equal(t, string(u[rc.ProductASMFeatures]), "test")
-			}, rc.ProductASMFeatures)
+	t.Run("apply-update", func(t *testing.T) {
+		// Skip for now as this needs a valid Repository object
+		t.Skip()
+		client.Products = append(client.Products, rc.ProductASMFeatures)
+		client.RegisterCallback(func(u ProductUpdate) {
+			require.NotNil(t, u)
+			require.NotNil(t, u[rc.ProductASMFeatures])
+			require.Equal(t, string(u[rc.ProductASMFeatures]), "test")
+		}, rc.ProductASMFeatures)
 
-			client.applyUpdate(&clientGetConfigsResponse{
-				TargetFiles:   []*file{{Path: "path/to/ASM_FEATURES/config", Raw: []byte("test")}},
-				ClientConfigs: []string{rc.ProductASMFeatures},
-			})
+		client.applyUpdate(&clientGetConfigsResponse{
+			TargetFiles:   []*file{{Path: "path/to/ASM_FEATURES/config", Raw: []byte("test")}},
+			ClientConfigs: []string{rc.ProductASMFeatures},
 		})
-	*/
+	})
 }
 
 func TestPayloads(t *testing.T) {
