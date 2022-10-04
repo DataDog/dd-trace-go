@@ -56,7 +56,7 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTr
 // RequestToResource parses a Kubernetes request and extracts a resource name from it.
 func RequestToResource(method, path string) string {
 	c := apiRegexp.FindStringSubmatch(path)
-	if c == nil {
+	if c == nil || len(c) < 9 {
 		return method
 	}
 
