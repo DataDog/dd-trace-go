@@ -3,11 +3,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build appsec && cgo && !windows && amd64 && (linux || darwin)
+//go:build appsec && cgo && !windows && (amd64 || arm64) && (linux || darwin)
 // +build appsec
 // +build cgo
 // +build !windows
-// +build amd64
+// +build amd64 arm64
 // +build linux darwin
 
 package waf
@@ -22,7 +22,9 @@ package waf
 // void go_ddwaf_object_free(ddwaf_object*);
 // #cgo CFLAGS: -I${SRCDIR}/include
 // #cgo linux,amd64 LDFLAGS: -L${SRCDIR}/lib/linux-amd64 -lddwaf -lm -ldl -Wl,-rpath=/lib64:/usr/lib64:/usr/local/lib64:/lib:/usr/lib:/usr/local/lib
+// #cgo linux,arm64 LDFLAGS: -L${SRCDIR}/lib/linux-arm64 -lddwaf -lm -ldl -Wl,-rpath=/lib64:/usr/lib64:/usr/local/lib64:/lib:/usr/lib:/usr/local/lib
 // #cgo darwin,amd64 LDFLAGS: -L${SRCDIR}/lib/darwin-amd64 -lddwaf -lstdc++
+// #cgo darwin,arm64 LDFLAGS: -L${SRCDIR}/lib/darwin-arm64 -lddwaf -lstdc++
 import "C"
 
 import (
@@ -43,7 +45,9 @@ import (
 	// header file and the static libraries.
 	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/include"
 	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/darwin-amd64"
+	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/darwin-arm64"
 	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/linux-amd64"
+	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/linux-arm64"
 )
 
 var wafVersion = getWAFVersion()

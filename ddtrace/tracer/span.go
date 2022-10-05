@@ -170,33 +170,41 @@ func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.setSamplingPriorityLocked(priority, sampler)
 }
 
-// setUser sets the span user ID tag as well as some optional user monitoring tags depending on the configuration.
-// The function assumes that the span it is called on is the trace's root span.
-func (s *span) setUser(id string, cfg UserMonitoringConfig) {
-	trace := s.context.trace
-	s.Lock()
-	defer s.Unlock()
-	if cfg.propagateID {
+// SetUser associates user information to the current trace which the
+// provided span belongs to. The options can be used to tune which user
+// bit of information gets monitored. In case of distributed traces,
+// the user id can be propagated across traces using the WithPropagation() option.
+// See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
+func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
+	var cfg UserMonitoringConfig
+	for _, fn := range opts {
+		fn(&cfg)
+	}
+	root := s.context.trace.root
+	trace := root.context.trace
+	root.Lock()
+	defer root.Unlock()
+	if cfg.PropagateID {
 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
-		delete(s.Meta, keyUserID)
+		delete(root.Meta, keyUserID)
 		idenc := base64.StdEncoding.EncodeToString([]byte(id))
 		trace.setPropagatingTag(keyPropagatedUserID, idenc)
 	} else {
 		// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
 		trace.unsetPropagatingTag(keyPropagatedUserID)
-		delete(s.Meta, keyPropagatedUserID)
+		delete(root.Meta, keyPropagatedUserID)
 		// setMeta is used since the span is already locked
-		s.setMeta(keyUserID, id)
+		root.setMeta(keyUserID, id)
 	}
 	for k, v := range map[string]string{
-		keyUserEmail:     cfg.email,
-		keyUserName:      cfg.name,
-		keyUserScope:     cfg.scope,
-		keyUserRole:      cfg.role,
-		keyUserSessionID: cfg.sessionID,
+		keyUserEmail:     cfg.Email,
+		keyUserName:      cfg.Name,
+		keyUserScope:     cfg.Scope,
+		keyUserRole:      cfg.Role,
+		keyUserSessionID: cfg.SessionID,
 	} {
 		if v != "" {
-			s.setMeta(k, v)
+			root.setMeta(k, v)
 		}
 	}
 }
@@ -623,7 +631,7 @@ const (
 	keyPropagatedUserID = "_dd.p.usr.id"
 )
 
-// The following set of tags is used for user monitoring and set through calls to span.setUser().
+// The following set of tags is used for user monitoring and set through calls to span.SetUser().
 const (
 	keyUserID        = "usr.id"
 	keyUserEmail     = "usr.email"

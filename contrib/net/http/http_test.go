@@ -122,7 +122,38 @@ func TestNoStack(t *testing.T) {
 	s := spans[0]
 	assert.EqualError(spans[0].Tags()[ext.Error].(error), "500: Internal Server Error")
 	assert.Equal("<debug stack disabled>", s.Tags()[ext.ErrorStack])
+}
 
+func TestServeMuxUsesResourceNamer(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	url := "/200"
+	r := httptest.NewRequest("GET", url, nil)
+	w := httptest.NewRecorder()
+
+	resourceNamer := func(_ *http.Request) string {
+		return "custom-resource-name"
+	}
+
+	router(WithResourceNamer(resourceNamer)).ServeHTTP(w, r)
+
+	assert := assert.New(t)
+	assert.Equal(200, w.Code)
+	assert.Equal("OK\n", w.Body.String())
+
+	spans := mt.FinishedSpans()
+	assert.Equal(1, len(spans))
+
+	s := spans[0]
+	assert.Equal("http.request", s.OperationName())
+	assert.Equal("my-service", s.Tag(ext.ServiceName))
+	assert.Equal("custom-resource-name", s.Tag(ext.ResourceName))
+	assert.Equal("200", s.Tag(ext.HTTPCode))
+	assert.Equal("GET", s.Tag(ext.HTTPMethod))
+	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
+	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Equal("bar", s.Tag("foo"))
 }
 
 func TestAnalyticsSettings(t *testing.T) {
@@ -250,8 +281,12 @@ func TestIgnoreRequestOption(t *testing.T) {
 	}
 }
 
-func router() http.Handler {
-	mux := NewServeMux(WithServiceName("my-service"), WithSpanOptions(tracer.Tag("foo", "bar")))
+func router(muxOpts ...Option) http.Handler {
+	defaultOpts := []Option{
+		WithServiceName("my-service"),
+		WithSpanOptions(tracer.Tag("foo", "bar")),
+	}
+	mux := NewServeMux(append(defaultOpts, muxOpts...)...)
 	mux.HandleFunc("/200", handler200)
 	mux.HandleFunc("/500", handler500)
 	return mux
