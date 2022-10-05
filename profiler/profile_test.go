@@ -111,7 +111,7 @@ main;bar 0 0 8 16
 
 		for _, test := range tests {
 			for _, profType := range test.Types {
-				// deltaProfiler returns an unstarted profiler that is fed prof1
+				// nativeDeltaProfiler returns an unstarted profiler that is fed prof1
 				// followed by prof2 when calling runProfile().
 				deltaProfiler := func(prof1, prof2 []byte, opts ...Option) (*profiler, func()) {
 					returnProfs := [][]byte{prof1, prof2}

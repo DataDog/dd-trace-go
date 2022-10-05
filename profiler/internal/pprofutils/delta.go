@@ -18,7 +18,7 @@ type Delta struct {
 	// sample types will retain the values of profile b. The defined sample types
 	// must exist in the profile, otherwise derivation will fail with an error.
 	//
-	// The use case for this for this is to deal with the heap profile which
+	// The use case for this is to deal with the heap profile which
 	// contains alloc and inuse sample types, but delta profiling makes no sense
 	// for the latter.
 	SampleTypes []ValueType

@@ -303,16 +303,20 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	return []*profile{{name: filename, data: data}}, nil
 }
 
-type deltaProfiler struct {
+type deltaProfiler interface {
+	Delta(curData []byte) ([]byte, error)
+}
+
+type nativeDeltaProfiler struct {
 	delta pprofutils.Delta
 	prev  *pprofile.Profile
 }
 
-// newDeltaProfiler returns an initialized deltaProfiler. If value types
+// newDeltaProfiler returns an initialized nativeDeltaProfiler. If value types
 // are given (e.g. "alloc_space", "alloc_objects"), only those values will have
 // deltas computed. Otherwise, deltas will be computed for every value.
-func newDeltaProfiler(v ...pprofutils.ValueType) *deltaProfiler {
-	return &deltaProfiler{
+func newDeltaProfiler(v ...pprofutils.ValueType) deltaProfiler {
+	return &nativeDeltaProfiler{
 		delta: pprofutils.Delta{SampleTypes: v},
 	}
 }
@@ -320,7 +324,7 @@ func newDeltaProfiler(v ...pprofutils.ValueType) *deltaProfiler {
 // Delta derives the delta profile between curData and the profile passed to the
 // previous call to Delta. The first call to Delta will return the profile
 // unchanged.
-func (d *deltaProfiler) Delta(curData []byte) ([]byte, error) {
+func (d *nativeDeltaProfiler) Delta(curData []byte) ([]byte, error) {
 	curProf, err := pprofile.ParseData(curData)
 	if err != nil {
 		return nil, fmt.Errorf("delta prof parse: %v", err)
