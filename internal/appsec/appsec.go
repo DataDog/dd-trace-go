@@ -129,7 +129,9 @@ func (a *appsec) start() error {
 
 // Stop AppSec by unregistering the security protections.
 func (a *appsec) stop() {
-	a.started = false
-	a.unregisterWAF()
-	a.limiter.Stop()
+	if a.started {
+		a.started = false
+		a.unregisterWAF()
+		a.limiter.Stop()
+	}
 }

@@ -31,3 +31,16 @@ func TestEnabled(t *testing.T) {
 	tracer.Stop()
 	assert.False(t, appsec.Enabled())
 }
+
+// Test that everything goes well when simply starting and stopping appsec
+func TestStartStop(t *testing.T) {
+	env, set := os.LookupEnv("DD_APPSEC_ENABLED")
+	defer func() {
+		if set {
+			os.Setenv("DD_APPSEC_ENABLED", env)
+		}
+	}()
+	os.Unsetenv("DD_APPSEC_ENABLED")
+	appsec.Start()
+	appsec.Stop()
+}
