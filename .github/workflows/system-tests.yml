@@ -15,7 +15,7 @@ on:
 
 jobs:
   system-tests:
-    if: github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+    if: github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     strategy:
       matrix:
