@@ -58,7 +58,8 @@ func Start(opts ...StartOption) {
 		return
 	}
 	if appsec.rc != nil {
-		// TODO: register ASM_FEATURES callback
+		// Register 1-click activation callback
+		appsec.rc.RegisterCallback(asmFeaturesCallback, rc.ProductASMFeatures)
 		appsec.rc.Start()
 	}
 	setActiveAppSec(appsec)
