@@ -7,8 +7,10 @@ package profiler
 
 import (
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/fastdelta"
 	"io"
 	"runtime"
 	"time"
@@ -359,6 +361,59 @@ func (d *nativeDeltaProfiler) Delta(curData []byte) ([]byte, error) {
 	// be taken into account when enforcing memory limits going forward.
 	d.prev = curProf
 	return deltaData, nil
+}
+
+type fastDeltaProfiler struct {
+	dc  *fastdelta.DeltaComputer
+	buf bytes.Buffer
+}
+
+func newFastDeltaProfiler(v ...pprofutils.ValueType) deltaProfiler {
+	// TODO[paul]: use units not just type in fastdelta
+	var fields []string
+	for _, vt := range v {
+		fields = append(fields, vt.Type)
+	}
+	return &fastDeltaProfiler{
+		dc: fastdelta.NewDeltaComputer(fields...),
+	}
+}
+
+func (fdp *fastDeltaProfiler) Delta(curData []byte) (b []byte, err error) {
+	data := curData
+	if len(data) >= 2 && data[0] == 0x1f && data[1] == 0x8b {
+		gz, err := gzip.NewReader(bytes.NewBuffer(data))
+		if err == nil {
+			data, err = io.ReadAll(gz)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("decompressing profile: %v", err)
+		}
+	}
+
+	fdp.buf.Reset()
+	zw := gzip.NewWriter(&fdp.buf)
+
+	if err = fdp.dc.Delta(data, zw); err != nil {
+		return nil, fmt.Errorf("error computing delta: %v", err)
+	}
+	if err = zw.Close(); err != nil {
+		return nil, fmt.Errorf("error flushing gzip writer: %v", err)
+	}
+	return fdp.buf.Bytes(), nil
+}
+
+// PprofDiff computes the delta between all values b-a and returns them as a new
+// profile. Samples that end up with a delta of 0 are dropped. WARNING: Profile
+// a will be mutated by this function. You should pass a copy if that's
+// undesirable.
+func PprofDiff(a, b *pprofile.Profile) (*pprofile.Profile, error) {
+	// for b-a, we only subtract the sample types in a
+	types := make([]pprofutils.ValueType, 0, len(a.SampleType))
+	for _, t := range a.SampleType {
+		types = append(types, pprofutils.ValueType{Type: t.Type, Unit: t.Unit})
+	}
+	return pprofutils.Delta{SampleTypes: types}.Convert(a, b)
 }
 
 func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
