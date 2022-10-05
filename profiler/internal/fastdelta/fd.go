@@ -84,6 +84,8 @@ type DeltaComputer struct {
 	// last time that sample was observed.
 	sampleMap map[Hash]Value
 
+	curProfTimeNanos int64
+
 	// saves some heap allocations
 	scratch    [128]byte
 	scratchIDs []uint64
@@ -101,13 +103,14 @@ type DeltaComputer struct {
 // names (e.g. "alloc_space", "contention", ...)
 func NewDeltaComputer(fields ...string) *DeltaComputer {
 	return &DeltaComputer{
-		fields:          append([]string{}, fields...),
-		sampleMap:       make(map[Hash]Value),
-		scratchIDs:      make([]uint64, 0, 512),
-		includeMapping:  make(map[uint64]struct{}, 16),
-		includeFunction: make(map[uint64]struct{}, 1024),
-		includeLocation: make(map[uint64]struct{}, 1024),
-		includeString:   make([]bool, 0, 1024),
+		fields:           append([]string{}, fields...),
+		sampleMap:        make(map[Hash]Value),
+		scratchIDs:       make([]uint64, 0, 512),
+		includeMapping:   make(map[uint64]struct{}, 16),
+		includeFunction:  make(map[uint64]struct{}, 1024),
+		includeLocation:  make(map[uint64]struct{}, 1024),
+		includeString:    make([]bool, 0, 1024),
+		curProfTimeNanos: -1,
 	}
 }
 
@@ -320,6 +323,7 @@ func (dc *DeltaComputer) mergeSamplesPass(out io.Writer, valueTypeIndices []int,
 // Strings for the select records are collected for a later writing pass to
 // populate the string table.
 func (dc *DeltaComputer) writeAndPruneRecordsPass(out io.Writer) molecule.MessageEachFn {
+	firstPprof := dc.curProfTimeNanos < 0
 	return func(field int32, value molecule.Value) (bool, error) {
 		switch ProfileRecordNumber(field) {
 		case recProfileSample:
@@ -384,6 +388,22 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass(out io.Writer) molecule.Messag
 			if err != nil {
 				return false, fmt.Errorf("reading ValueType record: %w", err)
 			}
+		case recProfileTimeNanos:
+			curProfTimeNanos := int64(value.Number)
+			if !firstPprof {
+				prevProfTimeNanos := dc.curProfTimeNanos
+				if err := dc.writeValue(out, field, value); err != nil {
+					return false, err
+				}
+				field = int32(recProfileDurationNanos)
+				value.Number = uint64(curProfTimeNanos - prevProfTimeNanos)
+			}
+			dc.curProfTimeNanos = curProfTimeNanos
+		case recProfileDurationNanos:
+			if !firstPprof {
+				return true, nil // skip, it's written together with recProfileTimeNanos
+			}
+			// otherwise, just copy through
 		case recProfileStringTable:
 			return true, nil // will write these on the string writing pass
 		}

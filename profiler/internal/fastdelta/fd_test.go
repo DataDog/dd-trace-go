@@ -73,22 +73,25 @@ var psink *profile.Profile
 
 func TestFastDeltaComputer(t *testing.T) {
 	tests := []struct {
-		Name   string
-		Before string
-		After  string
-		Fields []string
+		Name     string
+		Before   string
+		After    string
+		Duration int64
+		Fields   []string
 	}{
 		{
-			Name:   "heap",
-			Before: "testdata/heap.before.pprof",
-			After:  "testdata/heap.after.pprof",
-			Fields: []string{"alloc_objects", "alloc_space"},
+			Name:     "heap",
+			Before:   "testdata/heap.before.pprof",
+			After:    "testdata/heap.after.pprof",
+			Duration: 5960465000,
+			Fields:   []string{"alloc_objects", "alloc_space"},
 		},
 		{
-			Name:   "block",
-			Before: "testdata/block.before.pprof",
-			After:  "testdata/block.after.pprof",
-			Fields: []string{"contentions", "delay"},
+			Name:     "block",
+			Before:   "testdata/block.before.pprof",
+			After:    "testdata/block.after.pprof",
+			Duration: 1144928000,
+			Fields:   []string{"contentions", "delay"},
 		},
 	}
 
@@ -131,6 +134,8 @@ func TestFastDeltaComputer(t *testing.T) {
 				t.Errorf("got: %v", delta)
 				t.Errorf("want: %v", golden)
 			}
+
+			require.Equal(t, tc.Duration, delta.DurationNanos)
 		})
 	}
 }
