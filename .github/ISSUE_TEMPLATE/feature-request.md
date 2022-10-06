@@ -6,6 +6,7 @@ labels: enhancement
 assignees: ''
 ---
 
-This issue tracker is primarily used to track bugs in the dd-trace-go codebase to completion. For feature requests, please contact [Datadog support](http://docs.datadoghq.com/help/) and share your ideas with them.
-
-Thanks!
+<!-- 
+Describe your desired feature below. Include any examples how you'd like to use the feature.
+We also welcome you to let [Datadog support](http://docs.datadoghq.com/help/) know of any feature requests as they may be able to provide work-arounds for specific use-cases or increase the priority of a feature request.
+-->
