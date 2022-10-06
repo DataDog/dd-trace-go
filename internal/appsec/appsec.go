@@ -59,7 +59,7 @@ func Start(opts ...StartOption) {
 	}
 	if appsec.rc != nil {
 		// TODO: register ASM_FEATURES callback
-		go appsec.rc.Start()
+		appsec.rc.Start()
 	}
 	setActiveAppSec(appsec)
 }

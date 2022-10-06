@@ -122,19 +122,21 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}, nil
 }
 
-// Start starts the client's update poll loop
+// Start starts the client's update poll loop in a fresh goroutine
 func (c *Client) Start() {
-	ticker := time.NewTicker(c.PollInterval)
-	defer ticker.Stop()
+	go func() {
+		ticker := time.NewTicker(c.PollInterval)
+		defer ticker.Stop()
 
-	for {
-		select {
-		case <-c.stop:
-			return
-		case <-ticker.C:
-			c.updateState()
+		for {
+			select {
+			case <-c.stop:
+				return
+			case <-ticker.C:
+				c.updateState()
+			}
 		}
-	}
+	}()
 }
 
 // Stop stops the client's update poll loop
