@@ -8,7 +8,7 @@ assignees: ''
 
 <!--
 If you have identified a specific bug in the dd-trace-go codebase, please describe it here. If the
-issue requires further debugging or investigation, that will be best accomplished via support. Please contact Datadog [support](http://docs.datadoghq.com/help/).
+issue requires debugging or investigation of your specific private setup, that is best accomplished via support. Please contact Datadog [support](http://docs.datadoghq.com/help/).
 -->
 
 **Version of dd-trace-go**
