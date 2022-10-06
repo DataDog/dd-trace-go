@@ -149,7 +149,7 @@ func (c *Client) updateState() {
 		return
 	}
 
-	req, err := http.NewRequest("GET", c.endpoint, &data)
+	req, err := http.NewRequest(http.MethodGet, c.endpoint, &data)
 	if err != nil {
 		c.lastError = err
 		return
