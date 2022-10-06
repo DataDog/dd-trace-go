@@ -72,15 +72,15 @@ func TestASMFeaturesCallback(t *testing.T) {
 			startedAfter: true,
 		},
 	} {
-		Start()
-		defer Stop()
-		require.NotNil(t, activeAppSec)
 		t.Run(tc.name, func(t *testing.T) {
+			Start()
+			defer Stop()
+			require.NotNil(t, activeAppSec)
 			if tc.startBefore {
 				activeAppSec.start()
 			}
 			require.Equal(t, tc.startBefore, activeAppSec.started)
-			asmFeaturesCallback(tc.update)
+			activeAppSec.asmFeaturesCallback(tc.update)
 			require.Equal(t, tc.startedAfter, activeAppSec.started)
 		})
 	}
@@ -90,9 +90,9 @@ func TestASMFeaturesCallback(t *testing.T) {
 		defer Stop()
 		update := remoteconfig.ProductUpdate{"some/path": enabledPayload}
 		require.False(t, activeAppSec.started)
-		asmFeaturesCallback(update)
+		activeAppSec.asmFeaturesCallback(update)
 		require.True(t, activeAppSec.started)
-		asmFeaturesCallback(update)
+		activeAppSec.asmFeaturesCallback(update)
 		require.True(t, activeAppSec.started)
 	})
 	t.Run("disabled-twice", func(t *testing.T) {
@@ -100,9 +100,9 @@ func TestASMFeaturesCallback(t *testing.T) {
 		defer Stop()
 		update := remoteconfig.ProductUpdate{"some/path": disabledPayload}
 		require.False(t, activeAppSec.started)
-		asmFeaturesCallback(update)
+		activeAppSec.asmFeaturesCallback(update)
 		require.False(t, activeAppSec.started)
-		asmFeaturesCallback(update)
+		activeAppSec.asmFeaturesCallback(update)
 		require.False(t, activeAppSec.started)
 	})
 }

@@ -19,9 +19,14 @@ import (
 
 // asmFeaturesCallback deserializes an ASM_FEATURES configuration received through remote config
 // and starts/stops appsec accordingly. Used as a callback for the ASM_FEATURES remote config product.
-func asmFeaturesCallback(u remoteconfig.ProductUpdate) {
+func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) {
 	if l := len(u); l > 1 {
 		log.Debug("%d configs received for ASM_FEATURES. Expected one at most, returning early", l)
+		return
+	} else if l == 0 && a.started {
+		// An empty config means ASM was disabled
+		log.Debug("Remote config: Stopping AppSec")
+		a.stop()
 		return
 	}
 
@@ -30,12 +35,12 @@ func asmFeaturesCallback(u remoteconfig.ProductUpdate) {
 		log.Debug("Remote config: processing %s", path)
 		if err := json.Unmarshal(raw, &data); err != nil {
 			log.Debug("Remote config: Error unmarshalling %s", path)
-		} else if data.ASM.Enabled && !activeAppSec.started {
+		} else if data.ASM.Enabled && !a.started {
 			log.Debug("Remote config: Starting AppSec")
-			activeAppSec.start()
-		} else if !data.ASM.Enabled && activeAppSec.started {
+			a.start()
+		} else if !data.ASM.Enabled && a.started {
 			log.Debug("Remote config: Stopping AppSec")
-			activeAppSec.stop()
+			a.stop()
 		}
 	}
 }
