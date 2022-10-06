@@ -123,6 +123,9 @@ func (a *appsec) start() error {
 	if err != nil {
 		return err
 	}
+	if a.rc != nil {
+		a.rc.RegisterCallback(asmDataCallback, rc.ProductASMData)
+	}
 	a.unregisterWAF = unregisterWAF
 	a.started = true
 	return nil
