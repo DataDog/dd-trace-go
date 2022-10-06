@@ -83,6 +83,11 @@ type DeltaComputer struct {
 	// hash of its call stack and labels, to the value of the sample for the
 	// last time that sample was observed.
 	sampleMap map[Hash]Value
+	// prevTimestamp and currTimestamp hold the previousl and currently
+	// observed time_nanos values, respectively. They're used to compute
+	// duration_nanos for the delta profile
+	prevTimestamp int64
+	currTimestamp int64
 
 	// saves some heap allocations
 	scratch    [128]byte
@@ -162,6 +167,11 @@ func (dc *DeltaComputer) Delta(p []byte, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("error in pruning pass: %w", err)
 	}
+	val := molecule.Value{WireType: codec.WireVarint, Number: uint64(dc.currTimestamp - dc.prevTimestamp)}
+	if err := dc.writeValue(out, int32(recProfileDurationNanos), val); err != nil {
+		return err
+	}
+	dc.prevTimestamp = dc.currTimestamp
 
 	err = molecule.MessageEach(codec.NewBuffer(p),
 		dc.writeStringTablePass(out))
@@ -207,6 +217,8 @@ func (dc *DeltaComputer) indexPass(valueTypeIndices *[]int, hasher murmur3.Hash1
 			// always include the zero-index empty string,
 			// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
 			dc.includeString = append(dc.includeString, len(dc.includeString) == 0)
+		case recProfileTimeNanos:
+			dc.currTimestamp = int64(value.Number)
 		}
 		return true, nil
 	}
