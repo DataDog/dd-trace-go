@@ -31,10 +31,10 @@ func asmFeaturesCallback(u remoteconfig.ProductUpdate) {
 		if err := json.Unmarshal(raw, &data); err != nil {
 			log.Debug("Remote config: Error unmarshalling %s", path)
 		} else if data.ASM.Enabled && !activeAppSec.started {
-			log.Debug("RC: Starting AppSec")
+			log.Debug("Remote config: Starting AppSec")
 			activeAppSec.start()
 		} else if !data.ASM.Enabled && activeAppSec.started {
-			log.Debug("RC: Stopping AppSec")
+			log.Debug("Remote config: Stopping AppSec")
 			activeAppSec.stop()
 		}
 	}
