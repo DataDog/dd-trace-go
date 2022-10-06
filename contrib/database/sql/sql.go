@@ -224,5 +224,12 @@ func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
 		return nil, errNotRegistered
 	}
 	d, _ := registeredDrivers.driver(driverName)
+	if driverCtx, ok := d.(driver.DriverContext); ok {
+		connector, err := driverCtx.OpenConnector(dataSourceName)
+		if err != nil {
+			return nil, err
+		}
+		return OpenDB(connector, opts...), nil
+	}
 	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: d}, opts...), nil
 }
