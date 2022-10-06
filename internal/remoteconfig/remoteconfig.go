@@ -205,9 +205,43 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		ClientConfigs: pbUpdate.ClientConfigs,
 	}
 
+	mapify := func(s *rc.RepositoryState) map[string]string {
+		m := make(map[string]string)
+		for i, _ := range s.Configs {
+			path := s.CachedFiles[i].Path
+			product := s.Configs[i].Product
+			m[path] = product
+		}
+		return m
+	}
+
+	stateBefore, _ := c.repository.CurrentState()
 	products, err := c.repository.Update(update)
-	// Performs the callbacks registered for all updated products
+	stateAfter, _ := c.repository.CurrentState()
+
+	// Create a config files diff between before/after the update to see which config files are missing
+	mBefore := mapify(&stateBefore)
+	mAfter := mapify(&stateAfter)
+	for k, _ := range mAfter {
+		delete(mBefore, k)
+	}
+
+	// Set the payload data to nil for missing config files
+	updatedProducts := make(map[string]bool)
+	for path, product := range mBefore {
+		if productUpdates[product] == nil {
+			productUpdates[product] = make(ProductUpdate)
+		}
+		productUpdates[product][path] = nil
+		updatedProducts[product] = true
+	}
+	// Aggregate updated products and missing products
 	for _, p := range products {
+		updatedProducts[p] = true
+	}
+
+	// Performs the callbacks registered for all updated products
+	for p, _ := range updatedProducts {
 		for _, c := range c.callbacks[p] {
 			c(productUpdates[p])
 		}

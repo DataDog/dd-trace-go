@@ -23,16 +23,17 @@ func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) {
 	if l := len(u); l > 1 {
 		log.Debug("%d configs received for ASM_FEATURES. Expected one at most, returning early", l)
 		return
-	} else if l == 0 && a.started {
-		// An empty config means ASM was disabled
-		log.Debug("Remote config: Stopping AppSec")
-		a.stop()
-		return
 	}
 
 	for path, raw := range u {
 		var data rc.ASMFeaturesData
 		log.Debug("Remote config: processing %s", path)
+		if raw == nil {
+			// A nil config means ASM was disabled and we stopped receiving the config file
+			log.Debug("Remote config: Stopping AppSec")
+			a.stop()
+			return
+		}
 		if err := json.Unmarshal(raw, &data); err != nil {
 			log.Debug("Remote config: Error unmarshalling %s", path)
 		} else if data.ASM.Enabled && !a.started {
