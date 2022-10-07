@@ -187,7 +187,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	}
 	for pt := range cfg.types {
 		if d := profileTypes[pt].DeltaValues; len(d) > 0 {
-			p.deltas[pt] = newDeltaProfiler(d...)
+			p.deltas[pt] = newDeltaProfiler(p.cfg, d...)
 		}
 	}
 	p.uploadFunc = p.upload
