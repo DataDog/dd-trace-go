@@ -284,8 +284,8 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 			ID:         f.ID,
 			Version:    f.Version,
 			Product:    f.Product,
-			ApplyState: f.ApplyState,
-			ApplyError: f.ApplyError,
+			ApplyState: f.ApplyStatus.State,
+			ApplyError: f.ApplyStatus.Error,
 		})
 	}
 
