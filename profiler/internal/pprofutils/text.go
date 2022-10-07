@@ -90,7 +90,6 @@ func (c Text) Convert(text io.Reader) (*profile.Profile, error) {
 
 			location := &profile.Location{
 				ID:      locationID,
-				Address: locationID,
 				Mapping: m,
 				Line:    []profile.Line{{Function: function}},
 			}

@@ -15,7 +15,6 @@ import (
 	"unicode/utf8"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 )
 
 const (
@@ -34,11 +33,8 @@ const (
 	defaultObfuscatorValueRegex = `(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|(?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)(?:\s*=[^;]|"\s*:\s*"[^"]+")|bearer\s+[a-z0-9\._\-]+|token:[a-z0-9]{13}|gh[opsu]_[0-9a-zA-Z]{36}|ey[I-L][\w=-]+\.ey[I-L][\w=-]+(?:\.[\w.+\/=-]+)?|[\-]{5}BEGIN[a-z\s]+PRIVATE\sKEY[\-]{5}[^\-]+[\-]{5}END[a-z\s]+PRIVATE\sKEY|ssh-rsa\s*[a-z0-9\/\.+]{100,}`
 )
 
-// StartOption is used to customize the AppSec configuration when invoked with appsec.Start()
-type StartOption func(c *Config)
-
-// Config is the AppSec configuration.
-type Config struct {
+// config is the AppSec configuration.
+type config struct {
 	// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used.
 	rules []byte
 	// Maximum WAF execution time
@@ -47,15 +43,6 @@ type Config struct {
 	traceRateLimit uint
 	// Obfuscator configuration parameters
 	obfuscator ObfuscatorConfig
-	// rc is the remote configuration client used to receive product configuration updates
-	rc remoteconfig.ClientConfig
-}
-
-// WithRCConfig sets the AppSec remote config client configuration to the specified cfg
-func WithRCConfig(cfg remoteconfig.ClientConfig) StartOption {
-	return func(c *Config) {
-		c.rc = cfg
-	}
 }
 
 // ObfuscatorConfig wraps the key and value regexp to be passed to the WAF to perform obfuscation.
@@ -65,25 +52,25 @@ type ObfuscatorConfig struct {
 }
 
 // isEnabled returns true when appsec is enabled when the environment variable
-// It also returns whether the env var is actually set in the env or not
 // DD_APPSEC_ENABLED is set to true.
-func isEnabled() (enabled bool, set bool, err error) {
-	enabledStr, set := os.LookupEnv(enabledEnvVar)
+func isEnabled() (bool, error) {
+	enabledStr := os.Getenv(enabledEnvVar)
 	if enabledStr == "" {
-		return false, set, nil
-	} else if enabled, err = strconv.ParseBool(enabledStr); err != nil {
-		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", enabledEnvVar, enabledStr)
-	} else {
-		return enabled, set, nil
+		return false, nil
 	}
+	enabled, err := strconv.ParseBool(enabledStr)
+	if err != nil {
+		return false, fmt.Errorf("could not parse %s value `%s` as a boolean value", enabledEnvVar, enabledStr)
+	}
+	return enabled, nil
 }
 
-func newConfig() (*Config, error) {
+func newConfig() (*config, error) {
 	rules, err := readRulesConfig()
 	if err != nil {
 		return nil, err
 	}
-	return &Config{
+	return &config{
 		rules:          rules,
 		wafTimeout:     readWAFTimeoutConfig(),
 		traceRateLimit: readRateLimitConfig(),

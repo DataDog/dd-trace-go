@@ -139,10 +139,7 @@ main;bar 0 0 8 16
 						require.NoError(t, err)
 						require.Equal(t, 1, len(profs))
 						require.Equal(t, "delta-"+profType.Filename(), profs[0].name)
-						requirePprofEqual(t, prof1, profs[0].data)
-
-						//TODO[paul] compare contents, they will not be exactly identical at the buffer level
-						//require.Equal(t, prof1, profs[0].data)
+						require.Equal(t, prof1, profs[0].data)
 
 						// second run, should produce p1 profile and delta profile
 						profs, err = p.runProfile(profType)
@@ -408,15 +405,4 @@ func TestProfileTypeSoundness(t *testing.T) {
 		_, err := unstartedProfiler(WithProfileTypes(ProfileType(-1)))
 		require.EqualError(t, err, "unknown profile type: -1")
 	})
-}
-
-func requirePprofEqual(t *testing.T, a, b []byte) {
-	t.Helper()
-	pprofA, err := pprofile.ParseData(a)
-	require.NoError(t, err)
-	pprofB, err := pprofile.ParseData(b)
-	require.NoError(t, err)
-	pprofDiff, err := PprofDiff(pprofA, pprofB)
-	require.NoError(t, err)
-	require.Len(t, pprofDiff.Sample, 0)
 }
