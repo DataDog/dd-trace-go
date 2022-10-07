@@ -229,6 +229,8 @@ func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
 		if err != nil {
 			return nil, err
 		}
+		// since we're not using the dsnConnector, we need to register the dsn manually in the config
+		opts = append(opts, WithDSN(dataSourceName))
 		return OpenDB(connector, opts...), nil
 	}
 	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: d}, opts...), nil
