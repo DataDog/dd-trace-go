@@ -27,7 +27,7 @@ import (
 // Callback represents a function that can process a remote config update.
 // A Callback function can be registered to a remote config client to automatically
 // react upon receiving updates.
-type Callback func(u ProductUpdate)
+type Callback func(u ProductUpdate) map[string]rc.ApplyStatus
 
 // Capability represents a bit index to be set in clientData.Capabilites in order to register a client
 // for a specific capability
@@ -240,10 +240,13 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		updatedProducts[p] = true
 	}
 
-	// Performs the callbacks registered for all updated products
+	// Performs the callbacks registered for all updated products and update the application status in the repository
+	// (RCTE2)
 	for p, _ := range updatedProducts {
-		for _, c := range c.callbacks[p] {
-			c(productUpdates[p])
+		for _, fn := range c.callbacks[p] {
+			for path, status := range fn(productUpdates[p]) {
+				c.repository.UpdateApplyStatus(path, status)
+			}
 		}
 	}
 
