@@ -17,31 +17,67 @@ import (
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
-// asmFeaturesCallback deserializes an ASM_FEATURES configuration received through remote config
-// and starts/stops appsec accordingly. Used as a callback for the ASM_FEATURES remote config product.
-func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) {
-	if l := len(u); l > 1 {
-		log.Debug("%d configs received for ASM_FEATURES. Expected one at most, returning early", l)
-		return
+func genApplyStatus(ack bool, err error) rc.ApplyStatus {
+	status := rc.ApplyStatus{
+		State: rc.ApplyStateUnacknowledged,
+	}
+	if err != nil {
+		status.State = rc.ApplyStateError
+		status.Error = err.Error()
+	} else if ack {
+		status.State = rc.ApplyStateAcknowledged
 	}
 
+	return status
+}
+
+func defaultStatusesFromUpdate(u remoteconfig.ProductUpdate, ack bool) map[string]rc.ApplyStatus {
+	statuses := make(map[string]rc.ApplyStatus, len(u))
+	for path := range u {
+		statuses[path] = genApplyStatus(ack, nil)
+	}
+	return statuses
+}
+
+// asmFeaturesCallback deserializes an ASM_FEATURES configuration received through remote config
+// and starts/stops appsec accordingly. Used as a callback for the ASM_FEATURES remote config product.
+func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	statuses := defaultStatusesFromUpdate(u, false)
+	if l := len(u); l > 1 {
+		log.Debug("%d configs received for ASM_FEATURES. Expected one at most, returning early", l)
+		return statuses
+	}
 	for path, raw := range u {
 		var data rc.ASMFeaturesData
+		status := rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
+		var err error = nil
 		log.Debug("Remote config: processing %s", path)
+
+		// A nil config means ASM was disabled, and we stopped receiving the config file
+		// Don't ack the config in this case and return early
 		if raw == nil {
-			// A nil config means ASM was disabled and we stopped receiving the config file
 			log.Debug("Remote config: Stopping AppSec")
 			a.stop()
-			return
+			return statuses
 		}
-		if err := json.Unmarshal(raw, &data); err != nil {
-			log.Debug("Remote config: Error unmarshalling %s", path)
+		if err = json.Unmarshal(raw, &data); err != nil {
+			log.Debug("Remote config: error while unmarshalling %s. Configuration won't be applied.", path)
 		} else if data.ASM.Enabled && !a.started {
 			log.Debug("Remote config: Starting AppSec")
-			a.start()
+			if err = a.start(); err != nil {
+				log.Debug("Remote config: error while processing %s. Configuration won't be applied.", path)
+			}
 		} else if !data.ASM.Enabled && a.started {
 			log.Debug("Remote config: Stopping AppSec")
 			a.stop()
 		}
+		if err != nil {
+			status.State = rc.ApplyStateError
+			status.Error = err.Error()
+			log.Debug("Remote config: %s", status.Error)
+		}
+		statuses[path] = status
 	}
+
+	return statuses
 }
