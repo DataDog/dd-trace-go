@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/fastdelta"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 
 	"github.com/DataDog/gostackparse"
@@ -306,14 +308,22 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 type deltaProfiler struct {
 	delta pprofutils.Delta
 	prev  *pprofile.Profile
+	fast  *fastdelta.DeltaComputer
+	gzr   gzip.Reader
+	gzw   *gzip.Writer
 }
 
 // newDeltaProfiler returns an initialized deltaProfiler. If value types
 // are given (e.g. "alloc_space", "alloc_objects"), only those values will have
 // deltas computed. Otherwise, deltas will be computed for every value.
 func newDeltaProfiler(v ...pprofutils.ValueType) *deltaProfiler {
+	var fields []string
+	for _, vt := range v {
+		fields = append(fields, vt.Type)
+	}
 	return &deltaProfiler{
 		delta: pprofutils.Delta{SampleTypes: v},
+		fast:  fastdelta.NewDeltaComputer(fields...),
 	}
 }
 
@@ -321,6 +331,53 @@ func newDeltaProfiler(v ...pprofutils.ValueType) *deltaProfiler {
 // previous call to Delta. The first call to Delta will return the profile
 // unchanged.
 func (d *deltaProfiler) Delta(curData []byte) ([]byte, error) {
+	oldOut, err := d.old(curData)
+	if err != nil {
+		return nil, fmt.Errorf("delta with old method: %w", err)
+	}
+	newOut, err := d.new(curData)
+	if err != nil {
+		return nil, fmt.Errorf("delta with new method: %w", err)
+	}
+	o, err := pprofile.ParseData(oldOut)
+	if err != nil {
+		return nil, fmt.Errorf("parsing old output: %w", err)
+	}
+	n, err := pprofile.ParseData(newOut)
+	if err != nil {
+		return nil, fmt.Errorf("parsing new output: %w", err)
+	}
+	o.Scale(-1)
+	p, err := pprofile.Merge([]*pprofile.Profile{o, n})
+	if err != nil {
+		return nil, fmt.Errorf("merging: %w", err)
+	}
+	if len(p.Sample) > 0 {
+		o.Scale(-1) // So it looks right when we print it
+		return nil, fmt.Errorf("profiles differ: old: %v\n\nnew: %v\n\ndiff:%v", o, n, p)
+	}
+	return newOut, nil
+}
+
+func (d *deltaProfiler) new(curData []byte) ([]byte, error) {
+	if err := d.gzr.Reset(bytes.NewReader(curData)); err != nil {
+		return nil, err
+	}
+	b, _ := io.ReadAll(&d.gzr)
+	buf := new(bytes.Buffer)
+	if d.gzw == nil {
+		d.gzw = gzip.NewWriter(buf)
+	} else {
+		d.gzw.Reset(buf)
+	}
+	if err := d.fast.Delta(b, d.gzw); err != nil {
+		return nil, err
+	}
+	d.gzw.Close()
+	return buf.Bytes(), nil
+}
+
+func (d *deltaProfiler) old(curData []byte) ([]byte, error) {
 	curProf, err := pprofile.ParseData(curData)
 	if err != nil {
 		return nil, fmt.Errorf("delta prof parse: %v", err)
