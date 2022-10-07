@@ -281,9 +281,11 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	pbConfigState := make([]*configState, 0, len(state.Configs))
 	for _, f := range state.Configs {
 		pbConfigState = append(pbConfigState, &configState{
-			ID:      f.ID,
-			Version: f.Version,
-			Product: f.Product,
+			ID:         f.ID,
+			Version:    f.Version,
+			Product:    f.Product,
+			ApplyState: f.ApplyState,
+			ApplyError: f.ApplyError,
 		})
 	}
 
