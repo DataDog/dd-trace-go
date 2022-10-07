@@ -91,6 +91,7 @@ func (c Text) Convert(text io.Reader) (*profile.Profile, error) {
 			location := &profile.Location{
 				ID:      locationID,
 				Mapping: m,
+				Address: locationID,
 				Line:    []profile.Line{{Function: function}},
 			}
 			p.Location = append(p.Location, location)
