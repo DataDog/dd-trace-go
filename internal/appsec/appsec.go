@@ -14,6 +14,7 @@ import (
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 )
@@ -49,6 +50,7 @@ func Start(opts ...StartOption) {
 		opt(cfg)
 	}
 	appsec := newAppSec(cfg)
+	appsec.startRC()
 
 	if !set {
 		// If the env var is not set AppSec is disabled but can be enabled through remote config
@@ -56,11 +58,6 @@ func Start(opts ...StartOption) {
 	} else if err := appsec.start(); err != nil { // AppSec is specifically enabled
 		logUnexpectedStartError(err)
 		return
-	}
-	if appsec.rc != nil {
-		// Register 1-click activation callback
-		appsec.rc.RegisterCallback(appsec.asmFeaturesCallback, rc.ProductASMFeatures)
-		appsec.rc.Start()
 	}
 	setActiveAppSec(appsec)
 }
@@ -84,9 +81,7 @@ func setActiveAppSec(a *appsec) {
 	mu.Lock()
 	defer mu.Unlock()
 	if activeAppSec != nil {
-		if activeAppSec.rc != nil {
-			activeAppSec.rc.Stop()
-		}
+		activeAppSec.stopRC()
 		activeAppSec.stop()
 	}
 	activeAppSec = a
@@ -101,12 +96,9 @@ type appsec struct {
 }
 
 func newAppSec(cfg *Config) *appsec {
-	// Set RC capabilities and products for ASM
-	cfg.rc.Capabilities = append(cfg.rc.Capabilities, remoteconfig.ASMActivation)
-	cfg.rc.Products = append(cfg.rc.Products, rc.ProductASMFeatures)
 	rc, err := remoteconfig.NewClient(cfg.rc)
 	if err != nil {
-		log.Warn("Could not create remote configuration client. Feature will be disabled.")
+		log.Warn("appsec: Remote config: Could not create client. Feature will be disabled.")
 	}
 	return &appsec{
 		cfg: cfg,
@@ -134,5 +126,29 @@ func (a *appsec) stop() {
 		a.started = false
 		a.unregisterWAF()
 		a.limiter.Stop()
+	}
+}
+
+func (a *appsec) startRC() {
+	if a.rc == nil {
+		return
+	}
+	// Set WAF-related RC capabilities and products if the WAF is in good health. We perform this check in order not to
+	// falsely "allow" users to activate ASM through remote config if activation would fail when trying to register a WAF handle
+	// (ex: if the service runs on an unsupported platform).
+	if waf.Health() == nil {
+		a.rc.Capabilities = append(a.rc.Capabilities, remoteconfig.ASMActivation)
+		a.rc.Products = append(a.rc.Products, rc.ProductASMFeatures)
+		a.rc.RegisterCallback(a.asmFeaturesCallback, rc.ProductASMFeatures)
+	} else {
+		log.Debug("appsec: Remote config: WAF health check failed, WAF-related features will be disabled.")
+	}
+	a.rc.Start()
+
+}
+
+func (a *appsec) stopRC() {
+	if a.rc != nil {
+		a.rc.Stop()
 	}
 }
