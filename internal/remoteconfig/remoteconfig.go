@@ -103,7 +103,7 @@ type Client struct {
 
 // NewClient creates a new remoteconfig Client
 func NewClient(config ClientConfig) (*Client, error) {
-	repo, err := rc.NewRepository([]byte(config.TUFRoot))
+	repo, err := rc.NewUnverifiedRepository()
 	if err != nil {
 		return nil, err
 	}
@@ -257,6 +257,10 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	state, err := c.repository.CurrentState()
 	if err != nil {
 		return bytes.Buffer{}, err
+	}
+	// Temporary check while using untrusted repo, for which no initial root file is provided
+	if state.RootsVersion < 1 {
+		state.RootsVersion = 1
 	}
 
 	pbCachedFiles := make([]*targetFileMeta, 0, len(state.CachedFiles))
