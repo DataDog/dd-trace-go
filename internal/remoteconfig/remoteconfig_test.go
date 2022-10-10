@@ -34,12 +34,13 @@ func TestRCClient(t *testing.T) {
 	}
 
 	t.Run("registerCallback", func(t *testing.T) {
+		nilCallback := func(ProductUpdate) map[string]rc.ApplyStatus { return nil }
 		defer func() { client.callbacks = map[string][]Callback{} }()
 		require.Equal(t, 0, len(client.callbacks))
-		client.RegisterCallback(func(ProductUpdate) {}, rc.ProductASMFeatures)
+		client.RegisterCallback(nilCallback, rc.ProductASMFeatures)
 		require.Equal(t, 1, len(client.callbacks[rc.ProductASMFeatures]))
 		require.Equal(t, 1, len(client.callbacks))
-		client.RegisterCallback(func(ProductUpdate) {}, rc.ProductASMFeatures)
+		client.RegisterCallback(nilCallback, rc.ProductASMFeatures)
 		require.Equal(t, 2, len(client.callbacks[rc.ProductASMFeatures]))
 		require.Equal(t, 1, len(client.callbacks))
 	})
@@ -48,10 +49,11 @@ func TestRCClient(t *testing.T) {
 		// Skip for now as this needs a valid Repository object
 		t.Skip()
 		client.Products = append(client.Products, rc.ProductASMFeatures)
-		client.RegisterCallback(func(u ProductUpdate) {
+		client.RegisterCallback(func(u ProductUpdate) map[string]rc.ApplyStatus {
 			require.NotNil(t, u)
 			require.NotNil(t, u[rc.ProductASMFeatures])
 			require.Equal(t, string(u[rc.ProductASMFeatures]), "test")
+			return nil
 		}, rc.ProductASMFeatures)
 
 		client.applyUpdate(&clientGetConfigsResponse{
