@@ -8,7 +8,9 @@ package profiler
 import (
 	"bytes"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -31,6 +33,7 @@ func TestRunProfile(t *testing.T) {
 
 		tests := []struct {
 			Types        []ProfileType
+			DeltaMethods []string
 			Prof1        textProfile
 			Prof2        textProfile
 			WantDelta    textProfile
@@ -39,7 +42,8 @@ func TestRunProfile(t *testing.T) {
 			// For the mutex and block profile, we derive the delta for all sample
 			// types, so we can test with a generic sample profile.
 			{
-				Types: []ProfileType{MutexProfile, BlockProfile},
+				Types:        []ProfileType{MutexProfile, BlockProfile},
+				DeltaMethods: []string{"pprofile", "fastdelta"},
 				Prof1: textProfile{
 					Time: timeA,
 					Text: `
@@ -75,7 +79,8 @@ main 1 0
 			// alloc_objects/count and alloc_space/bytes sample type, so we use a
 			// more realistic example and make sure it is handled accurately.
 			{
-				Types: []ProfileType{HeapProfile},
+				Types:        []ProfileType{HeapProfile},
+				DeltaMethods: []string{"pprofile", "fastdelta", "comparing"},
 				Prof1: textProfile{
 					Time: timeA,
 					Text: `
@@ -111,64 +116,71 @@ main;bar 0 0 8 16
 
 		for _, test := range tests {
 			for _, profType := range test.Types {
-				// deltaProfiler returns an unstarted profiler that is fed prof1
-				// followed by prof2 when calling runProfile().
-				deltaProfiler := func(prof1, prof2 []byte, opts ...Option) (*profiler, func()) {
-					returnProfs := [][]byte{prof1, prof2}
-					opts = append(opts, WithPeriod(5*time.Millisecond), WithProfileTypes(HeapProfile, MutexProfile, BlockProfile))
-					p, err := unstartedProfiler(opts...)
-					p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
-						_, err := w.Write(returnProfs[0])
-						returnProfs = returnProfs[1:]
-						return err
+				for _, dm := range test.DeltaMethods {
+					deltaMethod := dm
+					// deltaProfiler returns an unstarted profiler that is fed prof1
+					// followed by prof2 when calling runProfile().
+					deltaProfiler := func(prof1, prof2 []byte, opts ...Option) (*profiler, func()) {
+						returnProfs := [][]byte{prof1, prof2}
+						opts = append(opts, WithPeriod(5*time.Millisecond), WithProfileTypes(HeapProfile, MutexProfile, BlockProfile))
+						// nb: we are not running under t.Parallel(); this would yield inconsistent results otherwise
+						originalMethod := internal.StringEnv("DD_PROFILING_DELTA_METHOD", "default")
+						defer func() {
+							_ = os.Setenv("DD_PROFILING_DELTA_METHOD", originalMethod)
+						}()
+						err := os.Setenv("DD_PROFILING_DELTA_METHOD", deltaMethod)
+						require.NoError(t, err)
+						p, err := unstartedProfiler(opts...)
+						p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
+							_, err := w.Write(returnProfs[0])
+							returnProfs = returnProfs[1:]
+							return err
+						}
+						require.NoError(t, err)
+						return p, func() {}
 					}
-					require.NoError(t, err)
-					return p, func() {}
+
+					t.Run(fmt.Sprintf("%s_%s", profType.String(), deltaMethod), func(t *testing.T) {
+						t.Run("enabled", func(t *testing.T) {
+							prof1 := test.Prof1.Protobuf()
+							prof2 := test.Prof2.Protobuf()
+							p, cleanup := deltaProfiler(prof1, prof2)
+							defer cleanup()
+							// first run, should produce the current profile twice (a bit
+							// awkward, but makes sense since we try to add delta profiles as an
+							// additional profile type to ease the transition)
+							profs, err := p.runProfile(profType)
+							require.NoError(t, err)
+							require.Equal(t, 1, len(profs))
+							require.Equal(t, "delta-"+profType.Filename(), profs[0].name)
+							requirePprofEqual(t, prof1, profs[0].data)
+
+							// second run, should produce p1 profile and delta profile
+							profs, err = p.runProfile(profType)
+							require.NoError(t, err)
+							require.Equal(t, 1, len(profs))
+							require.Equal(t, "delta-"+profType.Filename(), profs[0].name)
+							require.Equal(t, test.WantDelta.String(), protobufToText(profs[0].data))
+
+							// check delta prof details like timestamps and duration
+							deltaProf, err := pprofile.ParseData(profs[0].data)
+							require.NoError(t, err)
+							require.Equal(t, test.Prof2.Time.UnixNano(), deltaProf.TimeNanos)
+							require.Equal(t, deltaPeriod.Nanoseconds(), deltaProf.DurationNanos)
+						})
+
+						t.Run("disabled", func(t *testing.T) {
+							prof1 := test.Prof1.Protobuf()
+							prof2 := test.Prof2.Protobuf()
+							p, cleanup := deltaProfiler(prof1, prof2, WithDeltaProfiles(false))
+							defer cleanup()
+
+							profs, err := p.runProfile(profType)
+							require.NoError(t, err)
+							require.Equal(t, 1, len(profs))
+						})
+					})
 				}
-
-				t.Run(profType.String(), func(t *testing.T) {
-					t.Run("enabled", func(t *testing.T) {
-						prof1 := test.Prof1.Protobuf()
-						prof2 := test.Prof2.Protobuf()
-						p, cleanup := deltaProfiler(prof1, prof2)
-						defer cleanup()
-						// first run, should produce the current profile twice (a bit
-						// awkward, but makes sense since we try to add delta profiles as an
-						// additional profile type to ease the transition)
-						profs, err := p.runProfile(profType)
-						require.NoError(t, err)
-						require.Equal(t, 1, len(profs))
-						require.Equal(t, "delta-"+profType.Filename(), profs[0].name)
-						requirePprofEqual(t, prof1, profs[0].data)
-
-						//TODO[paul] compare contents, they will not be exactly identical at the buffer level
-						//require.Equal(t, prof1, profs[0].data)
-
-						// second run, should produce p1 profile and delta profile
-						profs, err = p.runProfile(profType)
-						require.NoError(t, err)
-						require.Equal(t, 1, len(profs))
-						require.Equal(t, "delta-"+profType.Filename(), profs[0].name)
-						require.Equal(t, test.WantDelta.String(), protobufToText(profs[0].data))
-
-						// check delta prof details like timestamps and duration
-						deltaProf, err := pprofile.ParseData(profs[0].data)
-						require.NoError(t, err)
-						require.Equal(t, test.Prof2.Time.UnixNano(), deltaProf.TimeNanos)
-						require.Equal(t, deltaPeriod.Nanoseconds(), deltaProf.DurationNanos)
-					})
-
-					t.Run("disabled", func(t *testing.T) {
-						prof1 := test.Prof1.Protobuf()
-						prof2 := test.Prof2.Protobuf()
-						p, cleanup := deltaProfiler(prof1, prof2, WithDeltaProfiles(false))
-						defer cleanup()
-
-						profs, err := p.runProfile(profType)
-						require.NoError(t, err)
-						require.Equal(t, 1, len(profs))
-					})
-				})
 			}
 		}
 	})

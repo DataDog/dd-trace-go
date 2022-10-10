@@ -310,27 +310,42 @@ type deltaProfiler interface {
 	Delta(curData []byte) ([]byte, error)
 }
 
-type nativeDeltaProfiler struct {
+type pprofileDeltaProfiler struct {
 	delta pprofutils.Delta
 	prev  *pprofile.Profile
 }
 
-// newDeltaProfiler returns an initialized nativeDeltaProfiler. If value types
-// are given (e.g. "alloc_space", "alloc_objects"), only those values will have
-// deltas computed. Otherwise, deltas will be computed for every value.
+// newDeltaProfiler returns an initialized delta profiler based on cfg.deltaMethod
+//
+// - fastdelta: uses internal/fastdelta
+// - comparing: executes both pprofile and fastdelta, comparing the two with statsd metrics
+// - any other value: pprofile delta
+//
+// If value types are given (e.g. "alloc_space", "alloc_objects"),
+// only those values will have deltas computed.
+// Otherwise, deltas will be computed for every value.
 func newDeltaProfiler(cfg *config, v ...pprofutils.ValueType) deltaProfiler {
-	return newComparingDeltaProfiler(
-		cfg,
-		&nativeDeltaProfiler{
+	switch cfg.deltaMethod {
+	case "fastdelta":
+		return newFastDeltaProfiler(v...)
+	case "comparing":
+		return newComparingDeltaProfiler(
+			cfg,
+			&pprofileDeltaProfiler{
+				delta: pprofutils.Delta{SampleTypes: v},
+			},
+			newFastDeltaProfiler(v...))
+	default:
+		return &pprofileDeltaProfiler{
 			delta: pprofutils.Delta{SampleTypes: v},
-		},
-		newFastDeltaProfiler(v...))
+		}
+	}
 }
 
 // Delta derives the delta profile between curData and the profile passed to the
 // previous call to Delta. The first call to Delta will return the profile
 // unchanged.
-func (d *nativeDeltaProfiler) Delta(curData []byte) ([]byte, error) {
+func (d *pprofileDeltaProfiler) Delta(curData []byte) ([]byte, error) {
 	curProf, err := pprofile.ParseData(curData)
 	if err != nil {
 		return nil, fmt.Errorf("delta prof parse: %v", err)

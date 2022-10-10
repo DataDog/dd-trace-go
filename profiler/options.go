@@ -107,6 +107,7 @@ type config struct {
 	blockRate         int
 	outputDir         string
 	deltaProfiles     bool
+	deltaMethod       string
 	logStartup        bool
 	cmemprofEnabled   bool
 	cmemprofRate      int
@@ -213,6 +214,7 @@ func defaultConfig() (*config, error) {
 		uploadTimeout:     DefaultUploadTimeout,
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
+		deltaMethod:       internal.StringEnv("DD_PROFILING_DELTA_METHOD", "default"),
 		logStartup:        internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		cmemprofEnabled:   false,
 		cmemprofRate:      extensions.DefaultCAllocationSamplingRate,
