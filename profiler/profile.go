@@ -10,6 +10,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/fastdelta"
 	"io"
@@ -328,18 +329,13 @@ func newDeltaProfiler(cfg *config, v ...pprofutils.ValueType) deltaProfiler {
 	switch cfg.deltaMethod {
 	case "fastdelta":
 		return newFastDeltaProfiler(v...)
-	case "comparing":
-		return newComparingDeltaProfiler(
-			cfg,
-			&pprofileDeltaProfiler{
-				delta: pprofutils.Delta{SampleTypes: v},
-			},
-			newFastDeltaProfiler(v...))
-	default:
-		return &pprofileDeltaProfiler{
-			delta: pprofutils.Delta{SampleTypes: v},
-		}
 	}
+	return newComparingDeltaProfiler(
+		cfg,
+		&pprofileDeltaProfiler{
+			delta: pprofutils.Delta{SampleTypes: v},
+		},
+		newFastDeltaProfiler(v...))
 }
 
 // Delta derives the delta profile between curData and the profile passed to the
@@ -483,11 +479,13 @@ func (cdp *comparingDeltaProfiler) Delta(data []byte) (res []byte, err error) {
 
 	cdp.reportTiming("overhead", sw.Tick())
 
-	if len(pprofDiff.Sample) != 0 {
+	if len(pprofDiff.Sample) > 0 {
 		var extraTags []string
 		for _, vt := range pprofSut.SampleType {
 			extraTags = append(extraTags, "sample_type:"+vt.Type)
 		}
+		pprofSut.Scale(-1) // so it prints correctly, PprofDiff mutated it
+		log.Error("profiles differ: golden: %v\n\nsut: %v\n\ndiff:%v", pprofGolden, pprofSut, pprofDiff)
 		cdp.reportError("compare_failed", extraTags...)
 	}
 
@@ -495,7 +493,11 @@ func (cdp *comparingDeltaProfiler) Delta(data []byte) (res []byte, err error) {
 }
 
 func (cdp *comparingDeltaProfiler) reportTiming(section string, dur time.Duration) {
-	_ = cdp.statsd.Timing("datadog.profiling.go.delta_compare", dur, append(cdp.tags, "section:"+section), 1)
+	_ = cdp.statsd.Distribution(
+		"datadog.profiling.go.delta_compare.dist",
+		float64(dur.Milliseconds()),
+		append(cdp.tags, "section:"+section),
+		1)
 }
 
 func (cdp *comparingDeltaProfiler) reportError(error string, extraTags ...string) {
@@ -509,12 +511,8 @@ func (cdp *comparingDeltaProfiler) reportError(error string, extraTags ...string
 // a will be mutated by this function. You should pass a copy if that's
 // undesirable.
 func PprofDiff(a, b *pprofile.Profile) (*pprofile.Profile, error) {
-	// for b-a, we only subtract the sample types in a
-	types := make([]pprofutils.ValueType, 0, len(a.SampleType))
-	for _, t := range a.SampleType {
-		types = append(types, pprofutils.ValueType{Type: t.Type, Unit: t.Unit})
-	}
-	return pprofutils.Delta{SampleTypes: types}.Convert(a, b)
+	a.Scale(-1)
+	return pprofile.Merge([]*pprofile.Profile{a, b})
 }
 
 func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
