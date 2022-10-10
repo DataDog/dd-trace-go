@@ -1,4 +1,4 @@
-name: Parametric Tests
+name: APM Parametric Tests
 
 on:
   push:
