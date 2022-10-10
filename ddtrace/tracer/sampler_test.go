@@ -353,7 +353,12 @@ func TestRuleEnvVars(t *testing.T) {
 
 func TestRulesSampler(t *testing.T) {
 	makeSpan := func(op string, svc string) *span {
-		return newSpan(op, svc, "", 0, 0, 0)
+		return newSpan(op, svc, "", random.Uint64(), random.Uint64(), 0)
+	}
+	makeFinishedSpan := func(op string, svc string) *span {
+		s := newSpan(op, svc, "", random.Uint64(), random.Uint64(), 0)
+		s.finished = true
+		return s
 	}
 
 	t.Run("no-rules", func(t *testing.T) {
@@ -438,10 +443,9 @@ func TestRulesSampler(t *testing.T) {
 				assert := assert.New(t)
 				rs := newRulesSampler(nil, rules)
 
-				span := makeSpan(tt.spanName, tt.spanSrv)
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
 				assert.True(result)
-				assert.Equal(float64(ext.PriorityUserKeep), span.Metrics[keySamplingPriority])
 				assert.Contains(span.Metrics, keySpanSamplingMechanism)
 				assert.Contains(span.Metrics, keySingleSpanSamplingRuleRate)
 				assert.Contains(span.Metrics, keySingleSpanSamplingMPS)
@@ -480,7 +484,7 @@ func TestRulesSampler(t *testing.T) {
 				assert := assert.New(t)
 				rs := newRulesSampler(nil, rules)
 
-				span := makeSpan(tt.spanName, tt.spanSrv)
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.Metrics, keySpanSamplingMechanism)
@@ -522,7 +526,7 @@ func TestRulesSampler(t *testing.T) {
 				c := newConfig(WithSamplingRules(tt.rules))
 				rs := newRulesSampler(nil, c.spanRules)
 
-				span := makeSpan(tt.spanName, tt.spanSrv)
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.Metrics, keySpanSamplingMechanism)

@@ -270,15 +270,15 @@ func (rs *traceRulesSampler) apply(span *span) bool {
 func (rs *traceRulesSampler) applyRule(span *span, rate float64, now time.Time) {
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
-		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate, rate)
+		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
 		return
 	}
 
 	sampled, rate := rs.limiter.allowOne(now)
 	if sampled {
-		span.setSamplingPriority(ext.PriorityUserKeep, samplernames.RuleRate, rate)
+		span.setSamplingPriority(ext.PriorityUserKeep, samplernames.RuleRate)
 	} else {
-		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate, rate)
+		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
 	}
 	span.SetTag(keyRulesSamplerLimiterRate, rate)
 }
@@ -355,7 +355,6 @@ func (rs *singleSpanRulesSampler) apply(span *span) bool {
 			rate := rule.Rate
 			span.setMetric(keyRulesSamplerAppliedRate, rate)
 			if !sampledByRate(span.SpanID, rate) {
-				span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate, rate)
 				return false
 			}
 			var sampled bool
@@ -365,7 +364,6 @@ func (rs *singleSpanRulesSampler) apply(span *span) bool {
 					return false
 				}
 			}
-			span.setSamplingPriority(ext.PriorityUserKeep, samplernames.RuleRate, rate)
 			span.setMetric(keySpanSamplingMechanism, samplingMechanismSingleSpan)
 			span.setMetric(keySingleSpanSamplingRuleRate, rate)
 			if rule.MaxPerSecond != 0 {
