@@ -7,10 +7,10 @@ package ext
 
 const (
 
-	// ClickHouseQuery is the tag name used for cassandra queries.
+	// ClickHouseQuery is the tag name used for ClickHouse queries.
 	ClickHouseQuery = "clickhouse.query"
 
-	// ClickHouseBatch is the tag name used for cassandra batches.
+	// ClickHouseBatch is the tag name used for ClickHouse batches.
 	ClickHouseBatch = "clickhouse.batch"
 
 	// ClickHouseConnectionOpen specifies the tag name to use when WithStats() option is enabled.
