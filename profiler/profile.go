@@ -370,6 +370,8 @@ func (d *nativeDeltaProfiler) Delta(curData []byte) ([]byte, error) {
 type fastDeltaProfiler struct {
 	dc  *fastdelta.DeltaComputer
 	buf bytes.Buffer
+	gzr gzip.Reader
+	gzw *gzip.Writer
 }
 
 func newFastDeltaProfiler(v ...pprofutils.ValueType) deltaProfiler {
@@ -378,30 +380,31 @@ func newFastDeltaProfiler(v ...pprofutils.ValueType) deltaProfiler {
 	for _, vt := range v {
 		fields = append(fields, vt.Type)
 	}
-	return &fastDeltaProfiler{
+	fd := &fastDeltaProfiler{
 		dc: fastdelta.NewDeltaComputer(fields...),
 	}
+	fd.gzw = gzip.NewWriter(&fd.buf)
+	return fd
 }
 
-func (fdp *fastDeltaProfiler) Delta(curData []byte) (b []byte, err error) {
-	data := curData
+func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 	if len(data) >= 2 && data[0] == 0x1f && data[1] == 0x8b {
-		gz, err := gzip.NewReader(bytes.NewBuffer(data))
-		if err == nil {
-			data, err = io.ReadAll(gz)
+		if err := fdp.gzr.Reset(bytes.NewReader(data)); err != nil {
+			return nil, err
 		}
+		data, err = io.ReadAll(&fdp.gzr)
 		if err != nil {
 			return nil, fmt.Errorf("decompressing profile: %v", err)
 		}
 	}
 
 	fdp.buf.Reset()
-	zw := gzip.NewWriter(&fdp.buf)
+	fdp.gzw.Reset(&fdp.buf)
 
-	if err = fdp.dc.Delta(data, zw); err != nil {
+	if err = fdp.dc.Delta(data, fdp.gzw); err != nil {
 		return nil, fmt.Errorf("error computing delta: %v", err)
 	}
-	if err = zw.Close(); err != nil {
+	if err = fdp.gzw.Close(); err != nil {
 		return nil, fmt.Errorf("error flushing gzip writer: %v", err)
 	}
 	return fdp.buf.Bytes(), nil
