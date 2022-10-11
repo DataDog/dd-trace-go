@@ -68,9 +68,17 @@ type Handle struct {
 	// Instance of the WAF
 	handle C.ddwaf_handle
 
-	// RWMutex used as a simple reference counter implementation allowing to
-	// safely release the WAF handle when there are no more WAF contexts using it.
-	refCounter sync.RWMutex
+	// Lock-less reference counter avoiding blocking calls to the Close() method
+	// while WAF contexts are still using the WAF handle. Instead, we let the
+	// release actually happen only when the reference counter reaches 0.
+	// This can happen either from a request handler calling its WAF context's
+	// Close() method, or either from the appsec instance calling the WAF
+	// handle's Close() method when creating a new WAF handle with new rules.
+	// Note that this means several instances of the WAF can exist at the same
+	// time with their own set of rules. This choice was done to be able to
+	// efficiently update the security rules concurrently, without having to
+	// block the request handlers for the time of the security rules update.
+	refCounter atomicRefCounter
 
 	// RWMutex protecting the R/W accesses to the internal rules data (stored
 	// in the handle).
@@ -165,10 +173,34 @@ func NewHandle(jsonRule []byte, keyRegex, valueRegex string) (*Handle, error) {
 	}
 	return &Handle{
 		handle:      handle,
+		refCounter:  1,
 		encoder:     encoder,
 		addresses:   addresses,
 		rulesetInfo: rInfo,
 	}, nil
+}
+
+// Increment the ref counter and return true if the handle can be used, false
+// otherwise.
+func (h *Handle) incrementReferences() bool {
+	return h.refCounter.increment() != 0
+}
+
+// Decrement the ref counter and release the memory when 0 is reached.
+func (h *Handle) decrementReferences() {
+	if h.refCounter.decrement() == 0 {
+		h.release()
+	}
+}
+
+// Actual memory release of the WAF handle.
+func (h *Handle) release() {
+	if h.handle == nil {
+		return // already released - only happens if Close() is called more than once
+	}
+	C.ddwaf_destroy(h.handle)
+	decNbLiveCObjects()
+	h.handle = nil
 }
 
 func ruleAddresses(handle C.ddwaf_handle) ([]string, error) {
@@ -229,16 +261,11 @@ func (h *Handle) updateRuleData(data *wafObject) error {
 	return nil
 }
 
-// Close the WAF and release the underlying C memory as soon as there are
-// no more WAF contexts using the rule.
+// Close the WAF handle. Note that this call doesn't block until the handle gets
+// released but instead let WAF contexts still use it until there's no more (eg.
+// when swapping the WAF handle with a new one).
 func (h *Handle) Close() {
-	// Exclusively lock the mutex to ensure there's no other concurrent
-	// Context using the WAF handle.
-	h.refCounter.Lock()
-	defer h.refCounter.Unlock()
-	C.ddwaf_destroy(h.handle)
-	decNbLiveCObjects()
-	h.handle = nil
+	h.decrementReferences()
 }
 
 // Context is a WAF execution context. It allows to run the WAF incrementally
@@ -259,20 +286,17 @@ type Context struct {
 	mu sync.Mutex
 }
 
-// NewContext creates a new WAF context and increases the number of references to the WAF handle.
-// handle. A nil value is returned when the WAF handle can no longer be used
-// or the WAF context couldn't be created.
+// NewContext creates a new WAF context and increases the number of references
+// to the WAF handle.
+// A nil value is returned when the WAF handle can no longer be used or the
+// WAF context couldn't be created.
 func NewContext(handle *Handle) *Context {
-	// Increase the WAF handle usage count by RLock'ing the mutex.
-	// It will be RUnlock'ed in the Close method when the Context is released.
-	handle.refCounter.RLock()
-	if handle.handle == nil {
-		// The WAF waf got free'd by the time we got the lock
-		handle.refCounter.RUnlock()
-		return nil
+	if !handle.incrementReferences() {
+		return nil // The WAF handle got released
 	}
 	context := C.ddwaf_context_init(handle.handle)
 	if context == nil {
+		handle.decrementReferences()
 		return nil
 	}
 	incNbLiveCObjects()
@@ -309,7 +333,7 @@ func (c *Context) run(data *wafObject, timeout time.Duration) (matches []byte, a
 	defer c.mu.Unlock()
 
 	// RLock the handle to safely get read access to the WAF handle and prevent concurrent changes of it
-	// such as a rules-data update. 
+	// such as a rules-data update.
 	c.handle.mu.RLock()
 	defer c.handle.mu.RUnlock()
 
@@ -332,7 +356,7 @@ func (c *Context) run(data *wafObject, timeout time.Duration) (matches []byte, a
 // references to the WAF handle.
 func (c *Context) Close() {
 	// RUnlock the WAF RWMutex to decrease the count of WAF Contexts using it.
-	defer c.handle.refCounter.RUnlock()
+	defer c.handle.decrementReferences()
 	C.ddwaf_context_destroy(c.context)
 	decNbLiveCObjects()
 }
@@ -943,4 +967,42 @@ func cindexCharPtrArray(array **C.char, i int) *C.char {
 	// Go pointer arithmetic equivalent to the C expression `array[i]`
 	base := uintptr(unsafe.Pointer(array))
 	return *(**C.char)(unsafe.Pointer(base + unsafe.Sizeof((*C.char)(nil))*uintptr(i)))
+}
+
+// Atomic reference counter helper initialized at 1 so that 0 is the special
+// value meaning that the object was released and is no longer usable.
+type atomicRefCounter uint32
+
+func (c *atomicRefCounter) unwrap() *uint32 {
+	return (*uint32)(c)
+}
+
+// CAS implementation in order to avoid changing the counter when 0 has been
+// reached.
+func (c *atomicRefCounter) add(delta uint32) uint32 {
+	addr := c.unwrap()
+	for {
+		current := atomic.LoadUint32(addr)
+		if current == 0 {
+			// The object was released
+			return 0
+		}
+		new := current + delta
+		if swapped := atomic.CompareAndSwapUint32(addr, current, new); swapped {
+			return new
+		}
+	}
+}
+
+// CAS implementation in order to enforce +1 cannot happen when 0 has been
+// reached.
+func (c *atomicRefCounter) increment() uint32 {
+	return c.add(1)
+}
+
+// CAS implementation in order to enforce -1 cannot happen when 0 has been
+// reached.
+func (c *atomicRefCounter) decrement() uint32 {
+	const d = ^uint32(0)
+	return c.add(d)
 }
