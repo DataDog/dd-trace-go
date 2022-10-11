@@ -164,7 +164,7 @@ func (s *span) SetTag(key string, value interface{}) {
 
 // setSamplingPriority locks then span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
-func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerName, rate float64) {
+func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {
 	s.Lock()
 	defer s.Unlock()
 	s.setSamplingPriorityLocked(priority, sampler)
