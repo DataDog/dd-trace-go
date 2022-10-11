@@ -15,6 +15,8 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"math"
+
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"go.opentelemetry.io/otel/trace"
@@ -22,7 +24,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"math"
 )
 
 // WrapConnection wraps a native clickhouse.Connection so that all requests are traced using the
