@@ -200,9 +200,7 @@ jobs:
         command: [kafka-topics.sh, --create, --topic, gosegtest, --bootstrap-server, localhost:9092]
       - image: clickhouse/clickhouse-server:22.8.5.29-alpine
         environment:
-          ports:
-            - "8123:8123"
-            - "9000:9000"
+          http.port: 8123-9000
 
     steps:
       - checkout
