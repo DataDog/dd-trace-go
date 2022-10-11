@@ -8,8 +8,10 @@ package profiler
 import (
 	"bytes"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"io"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+
 	"os"
 	"strconv"
 	"strings"
