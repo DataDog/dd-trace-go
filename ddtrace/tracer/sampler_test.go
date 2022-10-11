@@ -288,6 +288,9 @@ func TestRuleEnvVars(t *testing.T) {
 				value: `[{"service": "abcd", "sample_rate": 1.0}]`,
 				ruleN: 1,
 			}, {
+				value: `[{"sample_rate": 1.0}]`,
+				ruleN: 1,
+			}, {
 				value: `[{"service": "abcd", "sample_rate": 1.0},{"name": "wxyz", "sample_rate": 0.9},{"service": "efgh", "name": "lmnop", "sample_rate": 0.42}]`,
 				ruleN: 3,
 			}, {
@@ -298,9 +301,6 @@ func TestRuleEnvVars(t *testing.T) {
 			}, {
 				value:  `not JSON at all`,
 				errStr: "\n\terror unmarshalling JSON: invalid character 'o' in literal null (expecting 'u')",
-			}, {
-				value:  `[{"sample_rate": 1.0}]`,
-				errStr: "\n\tat index 0: ignoring rule {Service: Name: Rate:1.0 MaxPerSecond:0}: service name and operation name are not provided",
 			},
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
@@ -315,6 +315,7 @@ func TestRuleEnvVars(t *testing.T) {
 			})
 		}
 	})
+
 	t.Run("span-sampling-rules-regex", func(t *testing.T) {
 		assert := assert.New(t)
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")

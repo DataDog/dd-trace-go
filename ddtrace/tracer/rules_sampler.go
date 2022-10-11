@@ -524,10 +524,6 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 		}
 		switch spanType {
 		case SamplingRuleSpan:
-			if v.Service == "" && v.Name == "" {
-				errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: service name and operation name are not provided", i, v))
-				continue
-			}
 			rules = append(rules, SamplingRule{
 				Service:      globMatch(v.Service),
 				Name:         globMatch(v.Name),
