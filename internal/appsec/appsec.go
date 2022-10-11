@@ -96,7 +96,11 @@ type appsec struct {
 }
 
 func newAppSec(cfg *Config) *appsec {
-	rc, err := remoteconfig.NewClient(cfg.rc)
+	var rc *remoteconfig.Client
+	var err error
+	if cfg.rc != nil {
+		rc, err = remoteconfig.NewClient(*cfg.rc)
+	}
 	if err != nil {
 		log.Warn("appsec: Remote config: Could not create client. Feature will be disabled.")
 	}
