@@ -215,6 +215,9 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		return m
 	}
 
+	// Check the repository state before and after the update to detect which configs are not being sent anymore.
+	// This is needed because some products can stop sending configurations, and we want to make sure that the subscribers
+	// are provided with this information in this case
 	stateBefore, _ := c.repository.CurrentState()
 	products, err := c.repository.Update(update)
 	stateAfter, _ := c.repository.CurrentState()
@@ -226,7 +229,8 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		delete(mBefore, k)
 	}
 
-	// Set the payload data to nil for missing config files
+	// Set the payload data to nil for missing config files. The callbacks then can handle the nil config case to detect
+	// that this config will not be updated anymore.
 	updatedProducts := make(map[string]bool)
 	for path, product := range mBefore {
 		if productUpdates[product] == nil {
@@ -235,7 +239,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		productUpdates[product][path] = nil
 		updatedProducts[product] = true
 	}
-	// Aggregate updated products and missing products
+	// Aggregate updated products and missing products so that callbacks get called for both
 	for _, p := range products {
 		updatedProducts[p] = true
 	}
