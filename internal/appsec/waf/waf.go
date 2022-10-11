@@ -977,8 +977,9 @@ func (c *atomicRefCounter) unwrap() *uint32 {
 	return (*uint32)(c)
 }
 
-// CAS implementation in order to avoid changing the counter when 0 has been
-// reached.
+// Add delta to reference counter.
+// It relies on a CAS spin-loop implementation in order to avoid changing the
+// counter when 0 has been reached.
 func (c *atomicRefCounter) add(delta uint32) uint32 {
 	addr := c.unwrap()
 	for {
@@ -994,14 +995,16 @@ func (c *atomicRefCounter) add(delta uint32) uint32 {
 	}
 }
 
-// CAS implementation in order to enforce +1 cannot happen when 0 has been
-// reached.
+// Increment the reference counter.
+// CAS spin-loop implementation in order to enforce +1 cannot happen when 0 has
+// been reached.
 func (c *atomicRefCounter) increment() uint32 {
 	return c.add(1)
 }
 
-// CAS implementation in order to enforce -1 cannot happen when 0 has been
-// reached.
+// Decrement the reference counter.
+// CAS spin-loop implementation in order to enforce +1 cannot happen when 0 has
+// been reached.
 func (c *atomicRefCounter) decrement() uint32 {
 	const d = ^uint32(0)
 	return c.add(d)
