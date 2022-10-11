@@ -5,6 +5,7 @@ on:
     - cron: "0 0 * * *"
   pull_request: # on pull requests touching appsec files
     paths:
+      - '.github/workflows/appsec.yml'
       - 'internal/appsec/**'
       - 'appsec/**'
       - 'contrib/**/appsec.go'
@@ -17,7 +18,7 @@ jobs:
   native:
     strategy:
       matrix:
-        runs-on: [ macos-latest, ubuntu-latest, windows-latest ]
+        runs-on: [ macos-12, macos-11, macos-10.15, ubuntu-22.04, ubuntu-20.04, ubuntu-18.04, windows-latest ]
         go-version: [ 1.19, 1.18, 1.17 ]
         cgo_enabled: # test it compiles with and without cgo
           - 0
@@ -97,3 +98,19 @@ jobs:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           files: ${{ env.JUNIT_REPORT }}
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+
+  linux-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Go modules cache
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-pkg-mod-
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: arm64
+      - run: docker run --platform=linux/arm64 -v $PWD:$PWD -w $PWD golang go test -v -tags appsec $TO_TEST

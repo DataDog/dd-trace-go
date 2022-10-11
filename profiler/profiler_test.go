@@ -203,7 +203,6 @@ func TestStopLatency(t *testing.T) {
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithPeriod(time.Second),
-		CPUDuration(time.Second),
 		WithUploadTimeout(time.Hour),
 	)
 
@@ -412,7 +411,6 @@ func TestCorrectTags(t *testing.T) {
 			HeapProfile,
 		),
 		WithPeriod(10*time.Millisecond),
-		CPUDuration(10*time.Millisecond),
 		WithService("xyz"),
 		WithEnv("testing"),
 		WithTags("foo:bar", "baz:bonk"),

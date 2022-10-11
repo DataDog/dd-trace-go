@@ -47,7 +47,7 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 
 var (
 	// timeMultiplicator specifies by how long to extend waiting times.
-	// It may be altered in some envinronment (like AppSec) where things
+	// It may be altered in some environments (like AppSec) where things
 	// move slower and could otherwise create flaky tests.
 	timeMultiplicator = time.Duration(1)
 
