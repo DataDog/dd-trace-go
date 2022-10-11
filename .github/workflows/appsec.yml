@@ -72,6 +72,9 @@ jobs:
         build_tags: # test it compiles with and without the appsec build tag
           - ""
           - "appsec"
+        cgo_enabled: # test it compiles with and without cgo
+          - 0
+          - 1
         appsec_enabled: # test it compiles with and without appsec enabled
           - DD_APPSEC_ENABLED=true
           - DD_APPSEC_ENABLED=false
@@ -110,9 +113,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        build_tags: # test it compiles with and without the appsec build tag
-          - ""
-          - "appsec"
+        cgo_enabled: # test it compiles with and without the cgo
+          - 0
+          - 1
         appsec_enabled: # test it compiles with and without appsec enabled
           - true
           - false
