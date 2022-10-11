@@ -259,7 +259,7 @@ type Context struct {
 	mu sync.Mutex
 }
 
-// NewContext a new WAF context and increase the number of references to the WAF
+// NewContext creates a new WAF context and increases the number of references to the WAF handle.
 // handle. A nil value is returned when the WAF handle can no longer be used
 // or the WAF context couldn't be created.
 func NewContext(handle *Handle) *Context {
@@ -308,7 +308,8 @@ func (c *Context) run(data *wafObject, timeout time.Duration) (matches []byte, a
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// RLock the handle
+	// RLock the handle to safely get read access to the WAF handle and prevent concurrent changes of it
+	// such as a rules-data update. 
 	c.handle.mu.RLock()
 	defer c.handle.mu.RUnlock()
 
