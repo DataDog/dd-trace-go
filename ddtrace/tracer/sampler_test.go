@@ -288,6 +288,9 @@ func TestRuleEnvVars(t *testing.T) {
 				value: `[{"service": "abcd", "sample_rate": 1.0}]`,
 				ruleN: 1,
 			}, {
+				value: `[{"service": "abcd", "name": "wxyz"}]`,
+				ruleN: 1,
+			}, {
 				value: `[{"sample_rate": 1.0}]`,
 				ruleN: 1,
 			}, {
