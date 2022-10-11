@@ -207,7 +207,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 
 	mapify := func(s *rc.RepositoryState) map[string]string {
 		m := make(map[string]string)
-		for i, _ := range s.Configs {
+		for i := range s.Configs {
 			path := s.CachedFiles[i].Path
 			product := s.Configs[i].Product
 			m[path] = product
@@ -225,7 +225,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	// Create a config files diff between before/after the update to see which config files are missing
 	mBefore := mapify(&stateBefore)
 	mAfter := mapify(&stateAfter)
-	for k, _ := range mAfter {
+	for k := range mAfter {
 		delete(mBefore, k)
 	}
 
@@ -246,7 +246,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 
 	// Performs the callbacks registered for all updated products and update the application status in the repository
 	// (RCTE2)
-	for p, _ := range updatedProducts {
+	for p := range updatedProducts {
 		for _, fn := range c.callbacks[p] {
 			for path, status := range fn(productUpdates[p]) {
 				c.repository.UpdateApplyStatus(path, status)
