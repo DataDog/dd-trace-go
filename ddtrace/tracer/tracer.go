@@ -336,38 +336,33 @@ type finishedTrace struct {
 
 // sampleFinishedTrace applies single-span sampling to the provided trace, which is considered to be finished.
 func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
-	// The trace is kept, no need to run single span sampling rules.
 	if len(info.spans) > 0 {
 		if p, ok := info.spans[0].context.samplingPriority(); ok && p > 0 {
-			// Trace isn't dropped, so no need to run single span sampling.
+			// The trace is kept, no need to run single span sampling rules.
 			return
 		}
 	}
-	if !t.rulesSampling.HasSpanRules() {
-		atomic.AddUint32(&t.droppedP0Spans, uint32(len(info.spans)))
-		atomic.AddUint32(&t.droppedP0Traces, 1)
-		// Trace is not sampled and will not be sent to the agent.
-		if !info.willSend {
-			info.spans = nil
-		}
-		return
-	}
 	var kept []*span
-	// Apply sampling rules to individual spans in the trace.
-	for _, span := range info.spans {
-		if t.rulesSampling.SampleSpan(span) {
-			kept = append(kept, span)
+	if t.rulesSampling.HasSpanRules() {
+		// Apply sampling rules to individual spans in the trace.
+		for _, span := range info.spans {
+			if t.rulesSampling.SampleSpan(span) {
+				kept = append(kept, span)
+			}
 		}
-	}
-	if len(kept) > 0 && len(kept) < len(info.spans) {
-		// Some spans in the trace were kept, so a partial trace will be sent.
-		atomic.AddUint32(&t.partialTraces, 1)
+		if len(kept) > 0 && len(kept) < len(info.spans) {
+			// Some spans in the trace were kept, so a partial trace will be sent.
+			atomic.AddUint32(&t.partialTraces, 1)
+		}
+
 	}
 	if len(kept) == 0 {
 		atomic.AddUint32(&t.droppedP0Traces, 1)
 	}
 	atomic.AddUint32(&t.droppedP0Spans, uint32(len(info.spans)-len(kept)))
-	info.spans = kept
+	if !info.willSend {
+		info.spans = kept
+	}
 }
 
 func (t *tracer) pushTrace(trace *finishedTrace) {
