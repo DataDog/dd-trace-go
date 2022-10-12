@@ -17,21 +17,7 @@
 <!--
 * What inspired you to submit this pull request?
 * Link any related GitHub issues or PRs here.
--->
-
-### Additional Notes
-
-<!--
-* Anything else we should know when reviewing?
-* Include benchmarking information here whenever possible.
-* Include info about alternatives that were considered and why the proposed
-  version was chosen.
--->
-
-### Possible Drawbacks / Trade-offs
-
-<!--
-* What are the possible side effects or negative impacts of the code change?
+* If this resolves a GitHub issue, include "Fixes #XXXX" to link the issue and auto-close it on merge.
 -->
 
 ### Describe how to test/QA your changes
@@ -50,4 +36,4 @@
 
 - [ ] If known, an appropriate milestone has been selected; otherwise the `Triage` milestone is set.
 - [ ] Changed code has unit tests for its functionality.
-- [ ] If relevant, new system tests have been added.
+- [ ] If this interacts with the agent in a new way, a system test has been added.
