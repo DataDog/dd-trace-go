@@ -360,9 +360,6 @@ func TestRulesSampler(t *testing.T) {
 		s.finished = true
 		return s
 	}
-	makeFinishedSpan := func(op string, svc string) *span {
-		return newSpan(op, svc, "", random.Uint64(), random.Uint64(), 0)
-	}
 	t.Run("no-rules", func(t *testing.T) {
 		assert := assert.New(t)
 		rs := newRulesSampler(nil, nil)
