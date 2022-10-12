@@ -83,6 +83,53 @@ func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc
 	return statuses
 }
 
+func asmDataCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	// Following the RFC, merging should only happen when two rules data with the same ID and same Type are received
+	// rulesData[ID][Type] will return the rules data of said id and type, if it exists
+	allRulesData := make(map[string]map[string]rc.ASMDataRuleData)
+
+	for path, raw := range u {
+		log.Debug("appsec: remoteconfig: processing %s", path)
+		var rulesData rc.ASMDataRulesData
+		if err := json.Unmarshal(raw, &rulesData); err != nil {
+			log.Debug("appsec: remoteconfig: error while unmarshalling payload for %s", path)
+			continue
+		}
+
+		for _, ruleData := range rulesData.RulesData {
+			if allRulesData[ruleData.ID] == nil {
+				allRulesData[ruleData.ID] = make(map[string]rc.ASMDataRuleData)
+			}
+			if data, ok := allRulesData[ruleData.ID][ruleData.Type]; ok {
+				allRulesData[ruleData.ID][ruleData.Type] = mergeRulesData(ruleData, data)
+			} else {
+				allRulesData[ruleData.ID][ruleData.Type] = ruleData
+			}
+		}
+	}
+
+	var rulesData []rc.ASMDataRuleData
+	for _, m := range allRulesData {
+		for _, data := range m {
+			rulesData = append(rulesData, data)
+		}
+	}
+
+	if _, err := json.Marshal(rc.ASMDataRulesData{RulesData: rulesData}); err != nil {
+		log.Debug("appsec: remoteconfig: could not marshal the merged rules data")
+	}
+
+	// TODO: pass payload to WAF using waf.Handle.UpdateRulesData()
+	return nil
+}
+
+// mergeRulesData merges two rules data files together, removing duplicates and
+// only keeping the most up-to-date values
+// It currently bypasses the second argument and returns the 1st as is
+func mergeRulesData(data1, _ rc.ASMDataRuleData) rc.ASMDataRuleData {
+	return data1
+}
+
 func (a *appsec) startRC() {
 	if a.rc != nil {
 		a.rc.Start()
