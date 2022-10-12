@@ -406,7 +406,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("client_dropped_with_single_span_rules", func(t *testing.T) {
 		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "match","name":"nothing", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
-		// Stats are enabled, rules are available, but match nothing, sample rate equals 0.
+		// Rules are available, but match nothing, sample rate equals 0.
 		// The trace should be dropped. No single spans extracted.
 		tracer, _, _, stop := startTestTracer(t)
 		defer func() {

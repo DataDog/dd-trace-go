@@ -329,8 +329,6 @@ type finishedTrace struct {
 // sampleFinishedTrace applies single-span sampling to the provided trace, which is considered to be finished.
 func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
 	// The trace is kept, no need to run single span sampling rules.
-	// It is important that to check the sampling decision before checking the
-	// availability of single span sampling rules.
 	if len(info.spans) > 0 {
 		if p, ok := info.spans[0].context.samplingPriority(); ok && p > 0 {
 			// Trace isn't dropped, so no need to run single span sampling.
