@@ -511,7 +511,7 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 	for i, v := range jsonRules {
 		if v.Rate == "" {
 			if spanType == SamplingRuleSpan {
-				v.Rate = "0"
+				v.Rate = "1"
 			} else {
 				errs = append(errs, fmt.Sprintf("at index %d: rate not provided", i))
 				continue
