@@ -24,6 +24,7 @@ func BenchmarkFastDelta(b *testing.B) {
 	for _, f := range []string{heapFile, bigHeapFile} {
 		testFile := "testdata/" + f
 		b.Run(testFile, func(b *testing.B) {
+			b.ReportAllocs()
 			before, err := os.ReadFile(testFile)
 			if err != nil {
 				b.Fatal(err)

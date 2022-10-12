@@ -596,9 +596,8 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value Va
 		}
 		return true, nil
 	})
-	sort.Slice(dc.hashes, func(i, j int) bool {
-		return bytes.Compare(dc.hashes[i][:], dc.hashes[j][:]) == -1
-	})
+	sort.Sort(ByHash(dc.hashes))
+
 	h.Reset()
 	for _, sub := range dc.hashes {
 		copy(hash[:], sub[:])
@@ -634,6 +633,13 @@ func (dc *DeltaComputer) keepLocations(locationIDs []uint64) {
 }
 
 type Hash [16]byte
+
+type ByHash []Hash
+
+func (h ByHash) Len() int           { return len(h) }
+func (h ByHash) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h ByHash) Less(i, j int) bool { return bytes.Compare(h[i][:], h[j][:]) == -1 }
+
 type Value [4]int64
 
 type StringTable struct {
