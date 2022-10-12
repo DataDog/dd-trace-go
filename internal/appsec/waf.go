@@ -256,7 +256,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 }
 
 func runWAF(wafCtx *waf.Context, values map[string]interface{}, timeout time.Duration) []byte {
-	matches, err := wafCtx.Run(values, timeout)
+	matches, _, err := wafCtx.Run(values, timeout)
 	if err != nil {
 		if err == waf.ErrTimeout {
 			log.Debug("appsec: waf timeout value of %s reached", timeout)
