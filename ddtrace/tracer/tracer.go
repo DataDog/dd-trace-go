@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -126,6 +127,14 @@ func Start(opts ...StartOption) {
 	if t.config.logStartup {
 		logStartup(t)
 	}
+	// Start AppSec with remote configuration
+	cfg := remoteconfig.DefaultClientConfig()
+	cfg.AgentAddr = t.config.agentAddr
+	cfg.AppVersion = t.config.version
+	cfg.Env = t.config.env
+	cfg.HTTP = t.config.httpClient
+	cfg.ServiceName = t.config.serviceName
+	appsec.Start(appsec.WithRCConfig(cfg))
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -251,7 +260,6 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
-	appsec.Start()
 	return t
 }
 
