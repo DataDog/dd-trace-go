@@ -963,7 +963,6 @@ func WithUserRole(role string) UserMonitoringOption {
 // WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		q
 		if scope == "" {
 			return
 		}
