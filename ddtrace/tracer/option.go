@@ -544,6 +544,9 @@ func WithPropagator(p Propagator) StartOption {
 // server and framework integrations.
 func WithServiceName(name string) StartOption {
 	return func(c *config) {
+		if name == "" {
+			return
+		}
 		c.serviceName = name
 		if globalconfig.ServiceName() != "" {
 			log.Warn("ddtrace/tracer: deprecated config WithServiceName should not be used " +
@@ -556,6 +559,9 @@ func WithServiceName(name string) StartOption {
 // WithService sets the default service name for the program.
 func WithService(name string) StartOption {
 	return func(c *config) {
+		if name == "" {
+			return
+		}
 		c.serviceName = name
 		globalconfig.SetServiceName(c.serviceName)
 	}
@@ -565,6 +571,9 @@ func WithService(name string) StartOption {
 // localhost:8126. It should contain both host and port.
 func WithAgentAddr(addr string) StartOption {
 	return func(c *config) {
+		if addr == "" {
+			return
+		}
 		c.agentAddr = addr
 	}
 }
@@ -573,6 +582,9 @@ func WithAgentAddr(addr string) StartOption {
 // The default value is the environment variable DD_ENV, if it is set.
 func WithEnv(env string) StartOption {
 	return func(c *config) {
+		if env == "" {
+			return
+		}
 		c.env = env
 	}
 }
@@ -581,6 +593,9 @@ func WithEnv(env string) StartOption {
 // This option is is case sensitive and can be used multiple times.
 func WithServiceMapping(from, to string) StartOption {
 	return func(c *config) {
+		if from == "" || to == "" {
+			return
+		}
 		if c.serviceMappings == nil {
 			c.serviceMappings = make(map[string]string)
 		}
@@ -592,6 +607,9 @@ func WithServiceMapping(from, to string) StartOption {
 // created by tracer. This option may be used multiple times.
 func WithGlobalTag(k string, v interface{}) StartOption {
 	return func(c *config) {
+		if k == "" {
+			return
+		}
 		if c.globalTags == nil {
 			c.globalTags = make(map[string]interface{})
 		}
@@ -668,6 +686,9 @@ func WithRuntimeMetrics() StartOption {
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
+		if addr == "" {
+			return
+		}
 		cfg.dogstatsdAddr = addr
 	}
 }
@@ -691,6 +712,9 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 // span service name and config service name match. Do NOT use with WithUniversalVersion.
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
+		if version == "" {
+			return
+		}
 		cfg.version = version
 		cfg.universalVersion = false
 	}
@@ -701,6 +725,9 @@ func WithServiceVersion(version string) StartOption {
 // See: WithService, WithServiceVersion. Do NOT use with WithServiceVersion.
 func WithUniversalVersion(version string) StartOption {
 	return func(c *config) {
+		if version == "" {
+			return
+		}
 		c.version = version
 		c.universalVersion = true
 	}
@@ -709,6 +736,9 @@ func WithUniversalVersion(version string) StartOption {
 // WithHostname allows specifying the hostname with which to mark outgoing traces.
 func WithHostname(name string) StartOption {
 	return func(c *config) {
+		if name == "" {
+			return
+		}
 		c.hostname = name
 	}
 }
@@ -893,6 +923,9 @@ type UserMonitoringOption func(*UserMonitoringConfig)
 // WithUserEmail returns the option setting the email of the authenticated user.
 func WithUserEmail(email string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
+		if email == "" {
+			return
+		}
 		cfg.Email = email
 	}
 }
@@ -900,6 +933,9 @@ func WithUserEmail(email string) UserMonitoringOption {
 // WithUserName returns the option setting the name of the authenticated user.
 func WithUserName(name string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
+		if name == "" {
+			return
+		}
 		cfg.Name = name
 	}
 }
@@ -907,6 +943,9 @@ func WithUserName(name string) UserMonitoringOption {
 // WithUserSessionID returns the option setting the session ID of the authenticated user.
 func WithUserSessionID(sessionID string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
+		if sessionID == "" {
+			return
+		}
 		cfg.SessionID = sessionID
 	}
 }
@@ -914,6 +953,9 @@ func WithUserSessionID(sessionID string) UserMonitoringOption {
 // WithUserRole returns the option setting the role of the authenticated user.
 func WithUserRole(role string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
+		if role == "" {
+			return
+		}
 		cfg.Role = role
 	}
 }
@@ -921,6 +963,10 @@ func WithUserRole(role string) UserMonitoringOption {
 // WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
+		q
+		if scope == "" {
+			return
+		}
 		cfg.Scope = scope
 	}
 }

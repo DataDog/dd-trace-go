@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"io"
 	"math"
 	"net"
@@ -875,6 +876,51 @@ func TestWithTraceEnabled(t *testing.T) {
 		defer os.Unsetenv("DD_TRACE_ENABLED")
 		c := newConfig(WithTraceEnabled(true))
 		assert.True(c.enabled)
+	})
+}
+
+func TestInputValidation(t *testing.T) {
+	t.Run("WithServiceName-empty", func(t *testing.T) {
+		c := newConfig(WithServiceName(""))
+		assert.Equal(t, "tracer.test", c.serviceName)
+	})
+
+	t.Run("WithService-empty", func(t *testing.T) {
+		c := newConfig(WithService(""))
+		assert.Equal(t, "tracer.test", c.serviceName)
+	})
+
+	t.Run("WithAgentAddr-empty", func(t *testing.T) {
+		c := newConfig(WithAgentAddr(""))
+		assert.Equal(t, "localhost:8126", c.agentAddr)
+	})
+
+	t.Run("WithEnv-empty", func(t *testing.T) {
+		os.Setenv("DD_ENV", "testEnv")
+		defer os.Unsetenv("DD_ENV")
+		c := newConfig(WithEnv(""))
+		assert.Equal(t, "testEnv", c.env)
+	})
+
+	t.Run("WithServiceMapping-empty", func(t *testing.T) {
+		os.Setenv("DD_SERVICE_MAPPING", "tracer.test:test2, svc:Newsvc,http.router:myRouter, noval:")
+		defer os.Unsetenv("DD_SERVICE_MAPPING")
+		c := newConfig(WithServiceMapping("", ""))
+		assert.Equal(t, "test2", c.serviceMappings["tracer.test"])
+		assert.Equal(t, "Newsvc", c.serviceMappings["svc"])
+		assert.Equal(t, "myRouter", c.serviceMappings["http.router"])
+		assert.Equal(t, "", c.serviceMappings["noval"])
+	})
+
+	t.Run("WithGlobalTag-empty", func(t *testing.T) {
+		c := newConfig(WithGlobalTag("", "tag"))
+		fmt.Println(c.globalTags)
+		assert.Equal(t, 1, len(c.globalTags)) // runtime-id key only.
+	})
+
+	t.Run("WithDogstatsdAddress-empty", func(t *testing.T) {
+		c := newConfig(WithDogstatsdAddress(""))
+		assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
 	})
 }
 
