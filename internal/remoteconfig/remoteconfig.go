@@ -26,7 +26,8 @@ import (
 
 // Callback represents a function that can process a remote config update.
 // A Callback function can be registered to a remote config client to automatically
-// react upon receiving updates.
+// react upon receiving updates. This function returns the configuration processing status
+// for each config file received through the update.
 type Callback func(u ProductUpdate) map[string]rc.ApplyStatus
 
 // Capability represents a bit index to be set in clientData.Capabilites in order to register a client
