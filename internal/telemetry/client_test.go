@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"sort"
 	"sync"
@@ -27,6 +28,9 @@ func (t *testLogger) Printf(msg string, args ...interface{}) {
 }
 
 func TestClient(t *testing.T) {
+	os.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
+	defer os.Unsetenv("DD_TELEMETRY_HEARTBEAT_INTERVAL")
+
 	heartbeat := make(chan struct{})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +60,13 @@ func TestClient(t *testing.T) {
 	client.Start(nil, nil) // test idempotence
 	defer client.Stop()
 
-	<-heartbeat
+	timeout := time.After(30 * time.Second)
+	select {
+	case <-timeout:
+		t.Fatal("Heartbeat took more than 30 seconds. Should have been ~1 second")
+	case <-heartbeat:
+	}
+
 }
 
 func TestMetrics(t *testing.T) {
