@@ -288,6 +288,15 @@ func TestRuleEnvVars(t *testing.T) {
 				value: `[{"service": "abcd", "sample_rate": 1.0}]`,
 				ruleN: 1,
 			}, {
+				value: `[{"sample_rate": 1.0}, {"service": "abcd"}, {"name": "abcd"}, {}]`,
+				ruleN: 4,
+			}, {
+				value: `[{"service": "abcd", "name": "wxyz"}]`,
+				ruleN: 1,
+			}, {
+				value: `[{"sample_rate": 1.0}]`,
+				ruleN: 1,
+			}, {
 				value: `[{"service": "abcd", "sample_rate": 1.0},{"name": "wxyz", "sample_rate": 0.9},{"service": "efgh", "name": "lmnop", "sample_rate": 0.42}]`,
 				ruleN: 3,
 			}, {
@@ -298,9 +307,6 @@ func TestRuleEnvVars(t *testing.T) {
 			}, {
 				value:  `not JSON at all`,
 				errStr: "\n\terror unmarshalling JSON: invalid character 'o' in literal null (expecting 'u')",
-			}, {
-				value:  `[{"sample_rate": 1.0}]`,
-				errStr: "\n\tat index 0: ignoring rule {Service: Name: Rate:1.0 MaxPerSecond:0}: service name and operation name are not provided",
 			},
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
@@ -315,6 +321,7 @@ func TestRuleEnvVars(t *testing.T) {
 			})
 		}
 	})
+
 	t.Run("span-sampling-rules-regex", func(t *testing.T) {
 		assert := assert.New(t)
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
@@ -323,21 +330,43 @@ func TestRuleEnvVars(t *testing.T) {
 			rules     string
 			srvRegex  string
 			nameRegex string
+			rate      float64
 		}{
 			{
 				rules:     `[{"name": "abcd?", "sample_rate": 1.0}]`,
 				srvRegex:  "^.*$",
 				nameRegex: "^abcd.$",
+				rate:      1.0,
 			},
 			{
-				rules:     `[{"service": "*abcd", "sample_rate": 1.0}]`,
+				rules:     `[{"sample_rate": 0.5}]`,
+				srvRegex:  "^.*$",
 				nameRegex: "^.*$",
-				srvRegex:  "^.*abcd$",
+				rate:      0.5,
 			},
 			{
-				rules:     `[{"service": "*abcd", "sample_rate": 1.0}]`,
+				rules:     `[{"max_per_second":100}]`,
+				srvRegex:  "^.*$",
+				nameRegex: "^.*$",
+				rate:      1,
+			},
+			{
+				rules:     `[{"name": "abcd?"}]`,
+				srvRegex:  "^.*$",
+				nameRegex: "^abcd.$",
+				rate:      1.0,
+			},
+			{
+				rules:     `[{"service": "*abcd", "sample_rate":0.5}]`,
 				nameRegex: "^.*$",
 				srvRegex:  "^.*abcd$",
+				rate:      0.5,
+			},
+			{
+				rules:     `[{"service": "*abcd", "sample_rate": 0.5}]`,
+				nameRegex: "^.*$",
+				srvRegex:  "^.*abcd$",
+				rate:      0.5,
 			},
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
@@ -346,6 +375,7 @@ func TestRuleEnvVars(t *testing.T) {
 				assert.NoError(err)
 				assert.Equal(tt.srvRegex, rules[0].Service.String())
 				assert.Equal(tt.nameRegex, rules[0].Name.String())
+				assert.Equal(tt.rate, rules[0].Rate)
 			})
 		}
 	})
