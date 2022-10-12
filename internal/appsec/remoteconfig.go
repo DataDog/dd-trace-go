@@ -44,37 +44,37 @@ func defaultStatusesFromUpdate(u remoteconfig.ProductUpdate, ack bool) map[strin
 func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 	statuses := defaultStatusesFromUpdate(u, false)
 	if l := len(u); l > 1 {
-		log.Debug("%d configs received for ASM_FEATURES. Expected one at most, returning early", l)
+		log.Debug("appsec: Remote config: %d configs received for ASM_FEATURES. Expected one at most, returning early", l)
 		return statuses
 	}
 	for path, raw := range u {
 		var data rc.ASMFeaturesData
 		status := rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
 		var err error = nil
-		log.Debug("Remote config: processing %s", path)
+		log.Debug("appsec: Remote config: processing %s", path)
 
 		// A nil config means ASM was disabled, and we stopped receiving the config file
 		// Don't ack the config in this case and return early
 		if raw == nil {
-			log.Debug("Remote config: Stopping AppSec")
+			log.Debug("appsec: Remote config: Stopping AppSec")
 			a.stop()
 			return statuses
 		}
 		if err = json.Unmarshal(raw, &data); err != nil {
-			log.Debug("Remote config: error while unmarshalling %s. Configuration won't be applied.", path)
+			log.Debug("appsec: Remote config: error while unmarshalling %s. Configuration won't be applied.", path)
 		} else if data.ASM.Enabled && !a.started {
-			log.Debug("Remote config: Starting AppSec")
+			log.Debug("appsec: Remote config: Starting AppSec")
 			if err = a.start(); err != nil {
-				log.Debug("Remote config: error while processing %s. Configuration won't be applied.", path)
+				log.Debug("appsec: Remote config: error while processing %s. Configuration won't be applied.", path)
 			}
 		} else if !data.ASM.Enabled && a.started {
-			log.Debug("Remote config: Stopping AppSec")
+			log.Debug("appsec: Remote config: Stopping AppSec")
 			a.stop()
 		}
 		if err != nil {
 			status.State = rc.ApplyStateError
 			status.Error = err.Error()
-			log.Debug("Remote config: %s", status.Error)
+			log.Debug("appsec: Remote config: %s", status.Error)
 		}
 		statuses[path] = status
 	}

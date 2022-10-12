@@ -140,12 +140,12 @@ func (a *appsec) startRC() {
 	// Set WAF-related RC capabilities and products if the WAF is in good health. We perform this check in order not to
 	// falsely "allow" users to activate ASM through remote config if activation would fail when trying to register a WAF handle
 	// (ex: if the service runs on an unsupported platform).
-	if waf.Health() == nil {
+	if err := waf.Health(); err == nil {
 		a.rc.Capabilities = append(a.rc.Capabilities, remoteconfig.ASMActivation)
 		a.rc.Products = append(a.rc.Products, rc.ProductASMFeatures)
 		a.rc.RegisterCallback(a.asmFeaturesCallback, rc.ProductASMFeatures)
 	} else {
-		log.Debug("appsec: Remote config: WAF health check failed, WAF-related features will be disabled.")
+		log.Debug("appsec: Remote config: WAF health check failed, WAF-related features will be disabled: %v", err)
 	}
 	a.rc.Start()
 
