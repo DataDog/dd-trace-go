@@ -57,6 +57,7 @@ func Start(opts ...StartOption) {
 		log.Debug("appsec: %s is not set. AppSec won't start until activated through remote configuration", enabledEnvVar)
 	} else if err := appsec.start(); err != nil { // AppSec is specifically enabled
 		logUnexpectedStartError(err)
+		appsec.stopRC()
 		return
 	}
 	setActiveAppSec(appsec)

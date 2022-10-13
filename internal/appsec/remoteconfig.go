@@ -65,7 +65,7 @@ func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc
 		} else if data.ASM.Enabled && !a.started {
 			log.Debug("appsec: Remote config: Starting AppSec")
 			if err = a.start(); err != nil {
-				log.Debug("appsec: Remote config: error while processing %s. Configuration won't be applied.", path)
+				log.Debug("appsec: Remote config: error while processing %s. Configuration won't be applied: %v", path, err)
 			}
 		} else if !data.ASM.Enabled && a.started {
 			log.Debug("appsec: Remote config: Stopping AppSec")
