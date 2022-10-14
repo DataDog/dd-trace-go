@@ -175,12 +175,12 @@ jobs:
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
       - image: elasticsearch:7.17.6
         environment:
-          http.port: 9202-9300
+          http.port: 9203-9300
           discovery.type: single-node
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
       - image: elasticsearch:8.4.3
         environment:
-          http.port: 9203-9300
+          http.port: 9204-9300
           discovery.type: single-node
           xpack.security.enabled: false
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
@@ -257,11 +257,16 @@ jobs:
           command: dockerize -wait http://localhost:9201 -timeout 1m
 
       - run:
-          name: Wait for ElasticSearch (7)
+          name: Wait for ElasticSearch (6)
           command: dockerize -wait http://localhost:9202 -timeout 1m
+
+      - run:
+          name: Wait for ElasticSearch (7)
+          command: dockerize -wait http://localhost:9203 -timeout 1m
+
       - run:
           name: Wait for ElasticSearch (8)
-          command: dockerize -wait http://localhost:9203 -timeout 1m
+          command: dockerize -wait http://localhost:9204 -timeout 1m
 
       - run:
           name: Wait for Datadog Agent
