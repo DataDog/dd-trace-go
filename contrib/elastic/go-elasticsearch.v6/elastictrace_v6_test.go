@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	elasticsearch6 "github.com/elastic/go-elasticsearch/V6"
-	esapi6 "github.com/elastic/go-elasticsearch/V6/esapi"
+	elasticsearch6 "github.com/elastic/go-elasticsearch/v6"
+	esapi6 "github.com/elastic/go-elasticsearch/v6/esapi"
 	"github.com/stretchr/testify/assert"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
