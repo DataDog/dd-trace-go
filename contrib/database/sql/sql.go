@@ -9,11 +9,10 @@
 // We start by telling the package which driver we will be using. For example, if we are using "github.com/lib/pq",
 // we would do as follows:
 //
-// 	sqltrace.Register("pq", pq.Driver{})
+//	sqltrace.Register("pq", pq.Driver{})
 //	db, err := sqltrace.Open("pq", "postgres://pqgotest:password@localhost...")
 //
 // The rest of our application would continue as usual, but with tracing enabled.
-//
 package sql
 
 import (
@@ -23,6 +22,7 @@ import (
 	"errors"
 	"math"
 	"reflect"
+	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
@@ -44,11 +44,15 @@ type driverRegistry struct {
 	drivers map[string]driver.Driver
 	// configs maps keys to their registered configuration.
 	configs map[string]*config
+	// mu protects the above maps.
+	mu sync.RWMutex
 }
 
 // isRegistered reports whether the name matches an existing entry
 // in the driver registry.
 func (d *driverRegistry) isRegistered(name string) bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	_, ok := d.configs[name]
 	return ok
 }
@@ -58,6 +62,8 @@ func (d *driverRegistry) add(name string, driver driver.Driver, cfg *config) {
 	if d.isRegistered(name) {
 		return
 	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.keys[reflect.TypeOf(driver)] = name
 	d.drivers[name] = driver
 	d.configs[name] = cfg
@@ -65,24 +71,32 @@ func (d *driverRegistry) add(name string, driver driver.Driver, cfg *config) {
 
 // name returns the name of the driver stored in the registry.
 func (d *driverRegistry) name(driver driver.Driver) (string, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	name, ok := d.keys[reflect.TypeOf(driver)]
 	return name, ok
 }
 
 // driver returns the driver stored in the registry with the provided name.
 func (d *driverRegistry) driver(name string) (driver.Driver, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	driver, ok := d.drivers[name]
 	return driver, ok
 }
 
 // config returns the config stored in the registry with the provided name.
 func (d *driverRegistry) config(name string) (*config, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	config, ok := d.configs[name]
 	return config, ok
 }
 
 // unregister is used to make tests idempotent.
 func (d *driverRegistry) unregister(name string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	driver := d.drivers[name]
 	delete(d.keys, reflect.TypeOf(driver))
 	delete(d.configs, name)
@@ -187,6 +201,9 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if math.IsNaN(cfg.analyticsRate) {
 		cfg.analyticsRate = rc.analyticsRate
 	}
+	if cfg.errCheck == nil {
+		cfg.errCheck = rc.errCheck
+	}
 	if cfg.commentInjectionMode == tracer.SQLInjectionUndefined {
 		cfg.commentInjectionMode = rc.commentInjectionMode
 	}
@@ -207,5 +224,14 @@ func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
 		return nil, errNotRegistered
 	}
 	d, _ := registeredDrivers.driver(driverName)
+	if driverCtx, ok := d.(driver.DriverContext); ok {
+		connector, err := driverCtx.OpenConnector(dataSourceName)
+		if err != nil {
+			return nil, err
+		}
+		// since we're not using the dsnConnector, we need to register the dsn manually in the config
+		opts = append(opts, WithDSN(dataSourceName))
+		return OpenDB(connector, opts...), nil
+	}
 	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: d}, opts...), nil
 }

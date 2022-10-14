@@ -27,7 +27,7 @@ func ExamplePublish() {
 	}
 }
 
-func ExampleReceive() {
+func ExampleSubscription_Receive() {
 	client, err := pubsub.NewClient(context.Background(), "project-id")
 	if err != nil {
 		log.Fatal(err)

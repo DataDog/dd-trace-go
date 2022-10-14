@@ -118,9 +118,13 @@ type config struct {
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
 
-	// samplingRules contains user-defined rules determine the sampling rate to apply
-	// to spans.
-	samplingRules []SamplingRule
+	// spanRules contains user-defined rules to determine the sampling rate to apply
+	// to trace spans.
+	spanRules []SamplingRule
+
+	// traceRules contains user-defined rules to determine the sampling rate to apply
+	// to individual spans.
+	traceRules []SamplingRule
 
 	// tickChan specifies a channel which will receive the time every time the tracer must flush.
 	// It defaults to time.Ticker; replaced in tests.
@@ -657,9 +661,10 @@ func WithRuntimeMetrics() StartOption {
 // WithDogstatsdAddress specifies the address to connect to for sending metrics to the Datadog
 // Agent. It should be a "host:port" string, or the path to a unix domain socket.If not set, it
 // attempts to determine the address of the statsd service according to the following rules:
-//   1. Look for /var/run/datadog/dsd.socket and use it if present. IF NOT, continue to #2.
-//   2. The host is determined by DD_AGENT_HOST, and defaults to "localhost"
-//   3. The port is retrieved from the agent. If not present, it is determined by DD_DOGSTATSD_PORT, and defaults to 8125
+//  1. Look for /var/run/datadog/dsd.socket and use it if present. IF NOT, continue to #2.
+//  2. The host is determined by DD_AGENT_HOST, and defaults to "localhost"
+//  3. The port is retrieved from the agent. If not present, it is determined by DD_DOGSTATSD_PORT, and defaults to 8125
+//
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
@@ -671,7 +676,13 @@ func WithDogstatsdAddress(addr string) StartOption {
 // provided rules.
 func WithSamplingRules(rules []SamplingRule) StartOption {
 	return func(cfg *config) {
-		cfg.samplingRules = rules
+		for _, rule := range rules {
+			if rule.ruleType == SamplingRuleSpan {
+				cfg.spanRules = append(cfg.spanRules, rule)
+			} else {
+				cfg.traceRules = append(cfg.traceRules, rule)
+			}
+		}
 	}
 }
 
@@ -865,40 +876,61 @@ func StackFrames(n, skip uint) FinishOption {
 	}
 }
 
+// UserMonitoringConfig is used to configure what is used to identify a user.
+// This configuration can be set by combining one or several UserMonitoringOption with a call to SetUser().
+type UserMonitoringConfig struct {
+	PropagateID bool
+	Email       string
+	Name        string
+	Role        string
+	SessionID   string
+	Scope       string
+}
+
 // UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
-type UserMonitoringOption func(Span)
+type UserMonitoringOption func(*UserMonitoringConfig)
 
 // WithUserEmail returns the option setting the email of the authenticated user.
 func WithUserEmail(email string) UserMonitoringOption {
-	return func(s Span) {
-		s.SetTag("usr.email", email)
+	return func(cfg *UserMonitoringConfig) {
+		cfg.Email = email
 	}
 }
 
 // WithUserName returns the option setting the name of the authenticated user.
 func WithUserName(name string) UserMonitoringOption {
-	return func(s Span) {
-		s.SetTag("usr.name", name)
+	return func(cfg *UserMonitoringConfig) {
+		cfg.Name = name
 	}
 }
 
 // WithUserSessionID returns the option setting the session ID of the authenticated user.
 func WithUserSessionID(sessionID string) UserMonitoringOption {
-	return func(s Span) {
-		s.SetTag("usr.session_id", sessionID)
+	return func(cfg *UserMonitoringConfig) {
+		cfg.SessionID = sessionID
 	}
 }
 
 // WithUserRole returns the option setting the role of the authenticated user.
 func WithUserRole(role string) UserMonitoringOption {
-	return func(s Span) {
-		s.SetTag("usr.role", role)
+	return func(cfg *UserMonitoringConfig) {
+		cfg.Role = role
 	}
 }
 
 // WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
-	return func(s Span) {
-		s.SetTag("usr.scope", scope)
+	return func(cfg *UserMonitoringConfig) {
+		cfg.Scope = scope
+	}
+}
+
+// WithPropagation returns the option allowing the user id to be propagated through distributed traces.
+// The user id is base64 encoded and added to the datadog propagated tags header.
+// This option should only be used if you are certain that the user id passed to `SetUser()` does not contain any
+// personal identifiable information or any kind of sensitive data, as it will be leaked to other services.
+func WithPropagation() UserMonitoringOption {
+	return func(cfg *UserMonitoringConfig) {
+		cfg.PropagateID = true
 	}
 }

@@ -15,15 +15,13 @@ import (
 	"strconv"
 	"strings"
 
-	"inet.af/netaddr"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 var (
-	ipv6SpecialNetworks = []*netaddr.IPPrefix{
+	ipv6SpecialNetworks = []*netaddrIPPrefix{
 		ippref("fec0::/10"), // site local
 	}
 	defaultIPHeaders = []string{
@@ -39,6 +37,10 @@ var (
 	}
 	cfg = newConfig()
 )
+
+// multipleIPHeaders sets the multiple ip header tag used internally to tell the backend an error occurred when
+// retrieving an HTTP request client IP.
+const multipleIPHeaders = "_dd.multiple-ip-headers"
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
@@ -83,15 +85,15 @@ func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 }
 
 // ippref returns the IP network from an IP address string s. If not possible, it returns nil.
-func ippref(s string) *netaddr.IPPrefix {
-	if prefix, err := netaddr.ParseIPPrefix(s); err == nil {
+func ippref(s string) *netaddrIPPrefix {
+	if prefix, err := netaddrParseIPPrefix(s); err == nil {
 		return &prefix
 	}
 	return nil
 }
 
 // genClientIPSpanTags generates the client IP related tags that need to be added to the span.
-// See https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2118779066/Client+IP+addresses+resolution
+// See https://docs.datadoghq.com/tracing/configure_data_security#configuring-a-client-ip-header for more information.
 func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
 	ipHeaders := defaultIPHeaders
 	if len(cfg.clientIPHeader) > 0 {
@@ -122,24 +124,24 @@ func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
 		for i := range ips {
 			opts = append(opts, tracer.Tag(ext.HTTPRequestHeaders+"."+headers[i], ips[i]))
 		}
-		opts = append(opts, tracer.Tag(ext.MultipleIPHeaders, strings.Join(headers, ",")))
+		opts = append(opts, tracer.Tag(multipleIPHeaders, strings.Join(headers, ",")))
 	}
 	return opts
 }
 
-func parseIP(s string) netaddr.IP {
-	if ip, err := netaddr.ParseIP(s); err == nil {
+func parseIP(s string) netaddrIP {
+	if ip, err := netaddrParseIP(s); err == nil {
 		return ip
 	}
 	if h, _, err := net.SplitHostPort(s); err == nil {
-		if ip, err := netaddr.ParseIP(h); err == nil {
+		if ip, err := netaddrParseIP(h); err == nil {
 			return ip
 		}
 	}
-	return netaddr.IP{}
+	return netaddrIP{}
 }
 
-func isGlobal(ip netaddr.IP) bool {
+func isGlobal(ip netaddrIP) bool {
 	// IsPrivate also checks for ipv6 ULA.
 	// We care to check for these addresses are not considered public, hence not global.
 	// See https://www.rfc-editor.org/rfc/rfc4193.txt for more details.
@@ -157,7 +159,7 @@ func isGlobal(ip netaddr.IP) bool {
 
 // urlFromRequest returns the full URL from the HTTP request. If query params are collected, they are obfuscated granted
 // obfuscation is not disabled by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
-// For more information see https://datadoghq.atlassian.net/wiki/spaces/APM/pages/2357395856/Span+attributes#http.url
+// See https://docs.datadoghq.com/tracing/configure_data_security#redacting-the-query-in-the-url for more information.
 func urlFromRequest(r *http.Request) string {
 	// Quoting net/http comments about net.Request.URL on server requests:
 	// "For most requests, fields other than Path and RawQuery will be
@@ -175,7 +177,6 @@ func urlFromRequest(r *http.Request) string {
 		url = path
 	}
 	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
-	// https://datadoghq.atlassian.net/wiki/spaces/APS/pages/2490990623/QueryString+-+Sensitive+Data+Obfuscation
 	if cfg.queryString && r.URL.RawQuery != "" {
 		query := r.URL.RawQuery
 		if cfg.queryStringRegexp != nil {
