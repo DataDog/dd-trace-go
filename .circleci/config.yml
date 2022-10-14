@@ -168,12 +168,17 @@ jobs:
       - image: elasticsearch:5
         environment:
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-      - image: elasticsearch:7.17.1
+      - image: elasticsearch:6.8.13
         environment:
           http.port: 9202-9300
           discovery.type: single-node
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
-      - image: elasticsearch:8.3.0
+      - image: elasticsearch:7.17.6
+        environment:
+          http.port: 9202-9300
+          discovery.type: single-node
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+      - image: elasticsearch:8.4.3
         environment:
           http.port: 9203-9300
           discovery.type: single-node
