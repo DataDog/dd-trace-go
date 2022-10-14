@@ -10,7 +10,9 @@ package appsec
 
 import (
 	"encoding/json"
+	"fmt"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
@@ -80,4 +82,69 @@ func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc
 	}
 
 	return statuses
+}
+
+func (a *appsec) startRC() {
+	if a.rc != nil {
+		a.rc.Start()
+	}
+}
+
+func (a *appsec) stopRC() {
+	if a.rc != nil {
+		a.rc.Stop()
+	}
+}
+
+func (a *appsec) registerRCProduct(product string) error {
+	if a.rc == nil {
+		return fmt.Errorf("no valid remote configuration client")
+	}
+	// Don't do anything if the product is already registered
+	for _, p := range a.rc.Products {
+		if p == product {
+			return nil
+		}
+	}
+	a.rc.Products = append(a.rc.Products, product)
+	return nil
+}
+func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
+	if a.rc == nil {
+		return fmt.Errorf("no valid remote configuration client")
+	}
+	// Don't do anything if the capability is already registered
+	for _, cap := range a.rc.Capabilities {
+		if cap == c {
+			return nil
+		}
+	}
+	a.rc.Capabilities = append(a.rc.Capabilities, c)
+	return nil
+}
+
+func (a *appsec) registerRCCallback(c remoteconfig.Callback, product string) error {
+	if a.rc != nil {
+		return fmt.Errorf("no valid remote configuration client")
+	}
+	a.rc.RegisterCallback(c, product)
+	return nil
+
+}
+
+func (a *appsec) enableRemoteActivation() error {
+	if a.rc == nil {
+		return fmt.Errorf("no valid remote configuration client")
+	}
+	// First verify that the WAF is in good health. We perform this check in order not to  falsely "allow" users to
+	// activate ASM through remote config if activation would fail when trying to register a WAF handle
+	// (ex: if the service runs on an unsupported platform).
+	if err := waf.Health(); err != nil {
+		log.Debug("appsec: WAF health check failed, remote activation will be disabled: %v", err)
+		return err
+	}
+	a.registerRCProduct(rc.ProductASMFeatures)
+	a.registerRCCapability(remoteconfig.ASMActivation)
+	a.registerRCCallback(a.asmFeaturesCallback, rc.ProductASMFeatures)
+	return nil
 }

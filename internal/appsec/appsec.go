@@ -11,10 +11,7 @@ package appsec
 import (
 	"sync"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 )
@@ -52,9 +49,15 @@ func Start(opts ...StartOption) {
 	appsec := newAppSec(cfg)
 	appsec.startRC()
 
+	// If the env var is not set ASM is disabled but can be enabled through remote config
 	if !set {
-		// If the env var is not set AppSec is disabled but can be enabled through remote config
 		log.Debug("appsec: %s is not set. AppSec won't start until activated through remote configuration", enabledEnvVar)
+		if err := appsec.enableRemoteActivation(); err != nil {
+			// ASM is not enabled and can't be enabled through remote configuration. Nothing more can be done.
+			log.Debug("appsec: Could not enable remote activation. Stopping: %v", err)
+			appsec.stopRC()
+			return
+		}
 	} else if err := appsec.start(); err != nil { // AppSec is specifically enabled
 		logUnexpectedStartError(err)
 		appsec.stopRC()
@@ -131,28 +134,5 @@ func (a *appsec) stop() {
 		a.started = false
 		a.unregisterWAF()
 		a.limiter.Stop()
-	}
-}
-
-func (a *appsec) startRC() {
-	if a.rc == nil {
-		return
-	}
-	defer a.rc.Start()
-	// Set WAF-related RC capabilities and products if the WAF is in good health. We perform this check in order not to
-	// falsely "allow" users to activate ASM through remote config if activation would fail when trying to register a WAF handle
-	// (ex: if the service runs on an unsupported platform).
-	if err := waf.Health(); err != nil {
-		log.Debug("appsec: Remote config: WAF health check failed, WAF-related features will be disabled: %v", err)
-		return
-	}
-	a.rc.Capabilities = append(a.rc.Capabilities, remoteconfig.ASMActivation)
-	a.rc.Products = append(a.rc.Products, rc.ProductASMFeatures)
-	a.rc.RegisterCallback(a.asmFeaturesCallback, rc.ProductASMFeatures)
-}
-
-func (a *appsec) stopRC() {
-	if a.rc != nil {
-		a.rc.Stop()
 	}
 }
