@@ -12,9 +12,10 @@ import (
 	"os"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
-
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/stretchr/testify/require"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 )
 
 func TestASMFeaturesCallback(t *testing.T) {
@@ -104,5 +105,43 @@ func TestASMFeaturesCallback(t *testing.T) {
 		require.False(t, activeAppSec.started)
 		activeAppSec.asmFeaturesCallback(update)
 		require.False(t, activeAppSec.started)
+	})
+}
+
+// This test ensures that the remote activation capabilities are only set if DD_APPSEC_ENABLED is not set in the env.
+func TestRemoteActivationScenarios(t *testing.T) {
+
+	t.Run("DD_APPSEC_ENABLED unset", func(t *testing.T) {
+		t.Setenv(enabledEnvVar, "")
+		os.Unsetenv(enabledEnvVar)
+		Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
+		defer Stop()
+
+		require.NotNil(t, activeAppSec)
+		require.False(t, Enabled())
+		client := activeAppSec.rc
+		require.NotNil(t, client)
+		require.Contains(t, client.Capabilities, remoteconfig.ASMActivation)
+		require.Contains(t, client.Products, rc.ProductASMFeatures)
+	})
+
+	t.Run("DD_APPSEC_ENABLED=true", func(t *testing.T) {
+		t.Setenv(enabledEnvVar, "true")
+		Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
+		defer Stop()
+
+		require.True(t, Enabled())
+		client := activeAppSec.rc
+		require.NotNil(t, client)
+		require.NotContains(t, client.Capabilities, remoteconfig.ASMActivation)
+		require.NotContains(t, client.Products, rc.ProductASMFeatures)
+	})
+
+	t.Run("DD_APPSEC_ENABLED=false", func(t *testing.T) {
+		t.Setenv(enabledEnvVar, "false")
+		Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
+		defer Stop()
+		require.Nil(t, activeAppSec)
+		require.False(t, Enabled())
 	})
 }
