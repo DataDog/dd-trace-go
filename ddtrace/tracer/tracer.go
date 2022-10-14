@@ -354,7 +354,6 @@ func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
 			// Some spans in the trace were kept, so a partial trace will be sent.
 			atomic.AddUint32(&t.partialTraces, 1)
 		}
-
 	}
 	if len(kept) == 0 {
 		atomic.AddUint32(&t.droppedP0Traces, 1)
