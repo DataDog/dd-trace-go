@@ -7,8 +7,8 @@ require (
 	github.com/99designs/gqlgen v0.16.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.40.0-rc.2.0.20220929172920-a43645df5cf2
-	github.com/DataDog/datadog-go/v5 v5.0.2
-	github.com/DataDog/gostackparse v0.5.0
+	github.com/DataDog/datadog-go/v5 v5.1.1
+	github.com/DataDog/gostackparse v0.6.0
 	github.com/DataDog/sketches-go v1.2.1
 	github.com/Shopify/sarama v1.22.0
 	github.com/aws/aws-sdk-go v1.34.28
@@ -36,7 +36,7 @@ require (
 	github.com/gofiber/fiber/v2 v2.11.0
 	github.com/golang/protobuf v1.5.2
 	github.com/gomodule/redigo v1.7.0
-	github.com/google/pprof v0.0.0-20210423192551-a2663126120b
+	github.com/google/pprof v0.0.0-20221010195024-131d412537ea
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.7.1
 	github.com/graph-gophers/graphql-go v1.3.0
@@ -69,7 +69,7 @@ require (
 	go.mongodb.org/mongo-driver v1.7.5
 	golang.org/x/net v0.0.0-20220722155237-a158d28d115b
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
-	golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab
+	golang.org/x/sys v0.0.0-20221013171732-95e765b1cc43
 	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 	google.golang.org/api v0.29.0
@@ -94,7 +94,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.3.0 // indirect
 	github.com/DataDog/datadog-go v4.8.2+incompatible // indirect
 	github.com/DataDog/zstd v1.3.5 // indirect
-	github.com/Microsoft/go-winio v0.5.1 // indirect
+	github.com/Microsoft/go-winio v0.6.0 // indirect
 	github.com/agnivade/levenshtein v1.1.0 // indirect
 	github.com/andybalholm/brotli v1.0.4 // indirect
 	github.com/armon/go-metrics v0.3.0 // indirect
