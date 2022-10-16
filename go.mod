@@ -183,7 +183,7 @@ require (
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/theupdateframework/go-tuf v0.5.1 // indirect
+	github.com/theupdateframework/go-tuf v0.3.0 // indirect
 	github.com/tidwall/btree v1.1.0 // indirect
 	github.com/tidwall/gjson v1.12.1 // indirect
 	github.com/tidwall/grect v0.1.4 // indirect
