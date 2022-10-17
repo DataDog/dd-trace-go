@@ -46,13 +46,13 @@ func defaultStatusesFromUpdate(u remoteconfig.ProductUpdate, ack bool) map[strin
 func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 	statuses := defaultStatusesFromUpdate(u, false)
 	if l := len(u); l > 1 {
-		log.Debug("appsec: Remote config: %d configs received for ASM_FEATURES. Expected one at most, returning early", l)
+		log.Error("appsec: Remote config: %d configs received for ASM_FEATURES. Expected one at most, returning early", l)
 		return statuses
 	}
 	for path, raw := range u {
 		var data rc.ASMFeaturesData
 		status := rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
-		var err error = nil
+		var err error
 		log.Debug("appsec: Remote config: processing %s", path)
 
 		// A nil config means ASM was disabled, and we stopped receiving the config file
@@ -63,11 +63,11 @@ func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc
 			return statuses
 		}
 		if err = json.Unmarshal(raw, &data); err != nil {
-			log.Debug("appsec: Remote config: error while unmarshalling %s. Configuration won't be applied.", path)
+			log.Error("appsec: Remote config: error while unmarshalling %s: %v. Configuration won't be applied.", path, err)
 		} else if data.ASM.Enabled && !a.started {
 			log.Debug("appsec: Remote config: Starting AppSec")
 			if err = a.start(); err != nil {
-				log.Debug("appsec: Remote config: error while processing %s. Configuration won't be applied: %v", path, err)
+				log.Error("appsec: Remote config: error while processing %s. Configuration won't be applied: %v", path, err)
 			}
 		} else if !data.ASM.Enabled && a.started {
 			log.Debug("appsec: Remote config: Stopping AppSec")
@@ -76,7 +76,6 @@ func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc
 		if err != nil {
 			status.State = rc.ApplyStateError
 			status.Error = err.Error()
-			log.Debug("appsec: Remote config: %s", status.Error)
 		}
 		statuses[path] = status
 	}

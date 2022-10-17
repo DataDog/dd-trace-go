@@ -54,7 +54,7 @@ func Start(opts ...StartOption) {
 		log.Debug("appsec: %s is not set. AppSec won't start until activated through remote configuration", enabledEnvVar)
 		if err := appsec.enableRemoteActivation(); err != nil {
 			// ASM is not enabled and can't be enabled through remote configuration. Nothing more can be done.
-			log.Debug("appsec: Could not enable remote activation. Stopping: %v", err)
+			logUnexpectedStartError(err)
 			appsec.stopRC()
 			return
 		}
@@ -106,7 +106,7 @@ func newAppSec(cfg *Config) *appsec {
 		rc, err = remoteconfig.NewClient(*cfg.rc)
 	}
 	if err != nil {
-		log.Warn("appsec: Remote config: Could not create client. Feature will be disabled.")
+		log.Error("appsec: Remote config: disabled due to a client creation error: %v", err)
 	}
 	return &appsec{
 		cfg: cfg,
