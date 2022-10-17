@@ -132,4 +132,4 @@ jobs:
         uses: docker/setup-qemu-action@v2
         with:
           platforms: arm64
-      - run: docker run --platform=linux/arm64 -v $PWD:$PWD -w $PWD -eCGO_ENABLED=${{ matrix.cgo_enabled }} -eDD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} golang go test -v -tags appsec $TO_TEST
+      - run: docker run --platform=linux/arm64 -v $PWD:$PWD -w $PWD -eCGO_ENABLED=${{ matrix.cgo_enabled }} -eDD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} -eDD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT golang go test -v -tags appsec $TO_TEST
