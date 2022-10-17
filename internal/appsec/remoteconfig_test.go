@@ -21,13 +21,11 @@ import (
 func TestASMFeaturesCallback(t *testing.T) {
 	enabledPayload := []byte(`{"asm":{"enabled":true}}`)
 	disabledPayload := []byte(`{"asm":{"enabled":false}}`)
+	cfg, err := newConfig()
+	require.NoError(t, err)
+	a := newAppSec(cfg)
 
-	env, set := os.LookupEnv(enabledEnvVar)
-	defer func() {
-		if set {
-			os.Setenv(enabledEnvVar, env)
-		}
-	}()
+	t.Setenv(enabledEnvVar, "")
 	os.Unsetenv(enabledEnvVar)
 
 	for _, tc := range []struct {
@@ -74,37 +72,34 @@ func TestASMFeaturesCallback(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			Start()
-			defer Stop()
-			require.NotNil(t, activeAppSec)
+			defer a.stop()
+			require.NotNil(t, a)
 			if tc.startBefore {
-				activeAppSec.start()
+				a.start()
 			}
-			require.Equal(t, tc.startBefore, activeAppSec.started)
-			activeAppSec.asmFeaturesCallback(tc.update)
-			require.Equal(t, tc.startedAfter, activeAppSec.started)
+			require.Equal(t, tc.startBefore, a.started)
+			a.asmFeaturesCallback(tc.update)
+			require.Equal(t, tc.startedAfter, a.started)
 		})
 	}
 
 	t.Run("enabled-twice", func(t *testing.T) {
-		Start()
-		defer Stop()
+		defer a.stop()
 		update := remoteconfig.ProductUpdate{"some/path": enabledPayload}
-		require.False(t, activeAppSec.started)
-		activeAppSec.asmFeaturesCallback(update)
-		require.True(t, activeAppSec.started)
-		activeAppSec.asmFeaturesCallback(update)
-		require.True(t, activeAppSec.started)
+		require.False(t, a.started)
+		a.asmFeaturesCallback(update)
+		require.True(t, a.started)
+		a.asmFeaturesCallback(update)
+		require.True(t, a.started)
 	})
 	t.Run("disabled-twice", func(t *testing.T) {
-		Start()
-		defer Stop()
+		defer a.stop()
 		update := remoteconfig.ProductUpdate{"some/path": disabledPayload}
-		require.False(t, activeAppSec.started)
-		activeAppSec.asmFeaturesCallback(update)
-		require.False(t, activeAppSec.started)
-		activeAppSec.asmFeaturesCallback(update)
-		require.False(t, activeAppSec.started)
+		require.False(t, a.started)
+		a.asmFeaturesCallback(update)
+		require.False(t, a.started)
+		a.asmFeaturesCallback(update)
+		require.False(t, a.started)
 	})
 }
 
