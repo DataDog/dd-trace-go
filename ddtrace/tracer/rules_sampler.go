@@ -508,8 +508,12 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 	var errs []string
 	for i, v := range jsonRules {
 		if v.Rate == "" {
-			errs = append(errs, fmt.Sprintf("at index %d: rate not provided", i))
-			continue
+			if spanType == SamplingRuleSpan {
+				v.Rate = "1"
+			} else {
+				errs = append(errs, fmt.Sprintf("at index %d: rate not provided", i))
+				continue
+			}
 		}
 		rate, err := v.Rate.Float64()
 		if err != nil {
@@ -522,10 +526,6 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 		}
 		switch spanType {
 		case SamplingRuleSpan:
-			if v.Service == "" && v.Name == "" {
-				errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: service name and operation name are not provided", i, v))
-				continue
-			}
 			rules = append(rules, SamplingRule{
 				Service:      globMatch(v.Service),
 				Name:         globMatch(v.Name),
@@ -535,6 +535,20 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 				ruleType:     SamplingRuleSpan,
 			})
 		case SamplingRuleTrace:
+			if v.Rate == "" {
+				errs = append(errs, fmt.Sprintf("at index %d: rate not provided", i))
+				continue
+			}
+			rate, err := v.Rate.Float64()
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("at index %d: %v", i, err))
+				continue
+			}
+			if rate < 0.0 || rate > 1.0 {
+				errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v))
+				continue
+			}
+
 			switch {
 			case v.Service != "" && v.Name != "":
 				rules = append(rules, NameServiceRule(v.Name, v.Service, rate))
