@@ -14,19 +14,6 @@ env:
   total-runners: 10
 
 jobs:
-  runner-indexes:
-    runs-on: ubuntu-latest
-    name: Generate runner indexes
-    outputs:
-      json: ${{ steps.generate-index-list.outputs.json }}
-    steps:
-      - id: generate-index-list
-        run: |
-          MAX_INDEX=$((${{ env.total-runners }}-1))
-          INDEX_LIST=$(seq 0 ${MAX_INDEX})
-          INDEX_JSON=$(jq --null-input --compact-output '. |= [inputs]' <<< ${INDEX_LIST})
-          echo "::set-output name=json::${INDEX_JSON}"
-
   milestone:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'pull_request' }}

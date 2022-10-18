@@ -1,4 +1,4 @@
-name: Unit and Integration Tests
+name: Multi-OS Unit and Integration Tests
 
 on:
   push:
