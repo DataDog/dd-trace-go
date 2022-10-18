@@ -105,7 +105,6 @@ func TestASMFeaturesCallback(t *testing.T) {
 
 // This test ensures that the remote activation capabilities are only set if DD_APPSEC_ENABLED is not set in the env.
 func TestRemoteActivationScenarios(t *testing.T) {
-
 	t.Run("DD_APPSEC_ENABLED unset", func(t *testing.T) {
 		t.Setenv(enabledEnvVar, "")
 		os.Unsetenv(enabledEnvVar)

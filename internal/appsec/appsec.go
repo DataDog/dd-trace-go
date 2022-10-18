@@ -49,7 +49,7 @@ func Start(opts ...StartOption) {
 	appsec := newAppSec(cfg)
 	appsec.startRC()
 
-	// If the env var is not set ASM is disabled but can be enabled through remote config
+	// If the env var is not set ASM is disabled, but can be enabled through remote config
 	if !set {
 		log.Debug("appsec: %s is not set. AppSec won't start until activated through remote configuration", enabledEnvVar)
 		if err := appsec.enableRemoteActivation(); err != nil {

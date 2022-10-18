@@ -135,7 +135,7 @@ func (a *appsec) enableRemoteActivation() error {
 	if a.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	// First verify that the WAF is in good health. We perform this check in order not to  falsely "allow" users to
+	// First verify that the WAF is in good health. We perform this check in order not to falsely "allow" users to
 	// activate ASM through remote config if activation would fail when trying to register a WAF handle
 	// (ex: if the service runs on an unsupported platform).
 	if err := waf.Health(); err != nil {
