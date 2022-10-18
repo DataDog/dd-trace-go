@@ -75,9 +75,9 @@ jobs:
 
       - name: lint
         run: |
-          go get -u golang.org/x/lint/golint
+          go install golang.org/x/lint/golint@latest
           curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
-          ./bin/gometalinter --disable-all --vendor --deadline=60s --enable=golint ./...
+          ./bin/gometalinter --disable-all --vendor --deadline=120s --enable=golint ./...
 
   test-core:
     runs-on: ubuntu-latest
