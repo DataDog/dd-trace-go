@@ -20,7 +20,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/fastdelta"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 
 	"github.com/DataDog/gostackparse"
@@ -182,29 +181,7 @@ var profileTypes = map[ProfileType]profileType{
 
 func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byte, error) {
 	return func(p *profiler) ([]byte, error) {
-		var extra *pprofile.Profile
-		cAlloc, ok := extensions.GetCAllocationProfiler()
-		switch {
-		case ok && p.cfg.cmemprofEnabled && p.cfg.deltaProfiles && pt == HeapProfile:
-			// For the heap profile, we'd also like to include C
-			// allocations if that extension is enabled and have the
-			// allocations show up in the same profile. Collect them
-			// first before getting the regular heap snapshot so
-			// that all allocations cover the same time period
-			//
-			// TODO: Support non-delta profiles for C allocations?
-			cAlloc.Start(p.cfg.cmemprofRate)
-			p.interruptibleSleep(p.cfg.period)
-			profile, err := cAlloc.Stop()
-			if err == nil {
-				extra = profile
-			}
-		default:
-			// In all cases, sleep until the end of the profile
-			// period so that all profiles cover the same period of
-			// time
-			p.interruptibleSleep(p.cfg.period)
-		}
+		p.interruptibleSleep(p.cfg.period)
 
 		var buf bytes.Buffer
 		err := p.lookupProfile(name, &buf, 0)
@@ -216,21 +193,6 @@ func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byt
 
 		start := time.Now()
 		delta, err := dp.Delta(data)
-		if err == nil && extra != nil {
-			extended, err := pprofile.ParseData(delta)
-			if err != nil {
-				return nil, err
-			}
-			extended, err = pprofile.Merge([]*pprofile.Profile{extended, extra})
-			if err != nil {
-				return nil, err
-			}
-			buf.Reset()
-			if err := extended.Write(&buf); err != nil {
-				return nil, err
-			}
-			delta = buf.Bytes()
-		}
 		tags := append(p.cfg.tags.Slice(), fmt.Sprintf("profile_type:%s", name))
 		p.cfg.statsd.Timing("datadog.profiling.go.delta_time", time.Since(start), tags, 1)
 		if err != nil {
