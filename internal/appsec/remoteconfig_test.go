@@ -15,10 +15,14 @@ import (
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/stretchr/testify/require"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 )
 
 func TestASMFeaturesCallback(t *testing.T) {
+	if waf.Health() != nil {
+		t.Skip("WAF cannot be used")
+	}
 	enabledPayload := []byte(`{"asm":{"enabled":true}}`)
 	disabledPayload := []byte(`{"asm":{"enabled":false}}`)
 	cfg, err := newConfig()
@@ -105,6 +109,10 @@ func TestASMFeaturesCallback(t *testing.T) {
 
 // This test ensures that the remote activation capabilities are only set if DD_APPSEC_ENABLED is not set in the env.
 func TestRemoteActivationScenarios(t *testing.T) {
+	if waf.Health() != nil {
+		t.Skip("WAF cannot be used")
+	}
+
 	t.Run("DD_APPSEC_ENABLED unset", func(t *testing.T) {
 		t.Setenv(enabledEnvVar, "")
 		os.Unsetenv(enabledEnvVar)
