@@ -240,84 +240,86 @@ func (dc *DeltaComputer) mergeSamplesPass(out io.Writer, valueTypeIndices []int,
 	}
 
 	return func(field int32, value molecule.Value) (bool, error) {
-		switch ProfileRecordNumber(field) {
-		case recProfileSample:
-			// readSample writes out the locations for this sample into this scratch buffer
-			// to save on allocations
-			dc.scratchIDs = dc.scratchIDs[:0]
-			val, err := dc.readSample(value.Bytes, hasher, &sampleHash)
-			if err != nil {
-				return false, fmt.Errorf("reading sample record: %w", err)
-			}
+		if ProfileRecordNumber(field) != recProfileSample {
+			return true, nil
+		}
 
-			old, ok := dc.sampleMap[sampleHash]
-			dc.sampleMap[sampleHash] = val // save for next time
-			if !ok {
-				// If this is a new sample we don't take the
-				// difference, just pass it through.
-				// but we should record the value for next time
-				if err := dc.writeProtoBytes(out, field, value.Bytes); err != nil {
-					return false, err
-				}
-				dc.keepLocations(dc.scratchIDs)
-				return true, nil
-			}
+		// readSample writes out the locations for this sample into this scratch buffer
+		// to save on allocations
+		dc.scratchIDs = dc.scratchIDs[:0]
+		val, err := dc.readSample(value.Bytes, hasher, &sampleHash)
+		if err != nil {
+			return false, fmt.Errorf("reading sample record: %w", err)
+		}
 
-			all0 := true
-			for i := 0; i < len(computeDeltaForValue); i++ {
-				if computeDeltaForValue[i] {
-					val[i] = val[i] - old[i]
-				}
-				if val[i] != 0 {
-					all0 = false
-				}
+		old, ok := dc.sampleMap[sampleHash]
+		dc.sampleMap[sampleHash] = val // save for next time
+		if !ok {
+			// If this is a new sample we don't take the
+			// difference, just pass it through.
+			// but we should record the value for next time
+			if err := dc.writeProtoBytes(out, field, value.Bytes); err != nil {
+				return false, err
 			}
-			if all0 {
-				// If the sample has all 0 values, we drop it
-				// this matches the behavior of Google's pprof library
-				// when merging profiles
-				return true, nil
-			}
-
 			dc.keepLocations(dc.scratchIDs)
+			return true, nil
+		}
 
-			// we want to write a modified version of the original record, where the only difference is
-			// the values
-			sample := make([]byte, 0, len(value.Bytes))
-			err = molecule.MessageEach(codec.NewBuffer(value.Bytes), func(field int32, value molecule.Value) (bool, error) {
-				switch SampleRecordNumber(field) {
-				case recSampleLocationID:
-					// retain the old stack
-					switch value.WireType {
-					case codec.WireBytes:
-						sample = appendProtoBytes(sample, field, value.Bytes)
-					case codec.WireVarint:
-						sample = appendProtoUvarint(sample, field, value.Number)
-					}
-				case recSampleLabel:
-					// retain the old labels
-					sample = appendProtoBytes(sample, field, value.Bytes)
-
-					// mark strings to keep in the labels structure
-					err := dc.includeStringIndexFields(value.Bytes,
-						int32(recLabelKey), int32(recLabelStr), int32(recLabelNumUnit))
-					return err == nil, err
-				}
-				return true, nil
-			})
-			if err != nil {
-				return false, err
+		all0 := true
+		for i := 0; i < len(computeDeltaForValue); i++ {
+			if computeDeltaForValue[i] {
+				val[i] = val[i] - old[i]
 			}
-			newValue := make([]byte, 0, 8*4)
-			for i := range valueTypeIndices {
-				newValue = protowire.AppendVarint(newValue, uint64(val[i]))
-			}
-			sample = appendProtoBytes(sample, int32(recSampleValue), newValue)
-
-			if err := dc.writeProtoBytes(out, field, sample); err != nil {
-				return false, err
+			if val[i] != 0 {
+				all0 = false
 			}
 		}
+		if all0 {
+			// If the sample has all 0 values, we drop it
+			// this matches the behavior of Google's pprof library
+			// when merging profiles
+			return true, nil
+		}
+
+		dc.keepLocations(dc.scratchIDs)
+
+		// we want to write a modified version of the original record, where the only difference is
+		// the values
+		sample := make([]byte, 0, len(value.Bytes))
+		err = molecule.MessageEach(codec.NewBuffer(value.Bytes), func(field int32, value molecule.Value) (bool, error) {
+			switch SampleRecordNumber(field) {
+			case recSampleLocationID:
+				// retain the old stack
+				switch value.WireType {
+				case codec.WireBytes:
+					sample = appendProtoBytes(sample, field, value.Bytes)
+				case codec.WireVarint:
+					sample = appendProtoUvarint(sample, field, value.Number)
+				}
+			case recSampleLabel:
+				// retain the old labels
+				sample = appendProtoBytes(sample, field, value.Bytes)
+
+				// mark strings to keep in the labels structure
+				err := dc.includeStringIndexFields(value.Bytes,
+					int32(recLabelKey), int32(recLabelStr), int32(recLabelNumUnit))
+				return err == nil, err
+			}
+			return true, nil
+		})
+		if err != nil {
+			return false, err
+		}
+		newValue := make([]byte, 0, 8*4)
+		for i := range valueTypeIndices {
+			newValue = protowire.AppendVarint(newValue, uint64(val[i]))
+		}
+		sample = appendProtoBytes(sample, int32(recSampleValue), newValue)
+
+		if err := dc.writeProtoBytes(out, field, sample); err != nil {
+			return false, err
+		}
+
 		return true, nil
 	}
 }
