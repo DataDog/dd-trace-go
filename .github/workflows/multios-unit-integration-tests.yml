@@ -38,8 +38,8 @@ on:
 
 jobs:
   test-multi-os:
-    needs:
-      - runner-indexes
+#    needs:
+#      - runner-indexes
 #    strategy:
 #      matrix:
 #        runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
