@@ -9,15 +9,15 @@ name: Multi-OS Unit and Integration Tests
 #  pull_request:
 #    branches:
 #      - "**"
-
-workflow_call:
-  inputs:
-    go-version:
-      required: true
-      type: string
-    runs-on:
-      required: true
-      type: string
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        required: true
+        type: string
+      runs-on:
+        required: true
+        type: string
 
 env:
   total-runners: 10

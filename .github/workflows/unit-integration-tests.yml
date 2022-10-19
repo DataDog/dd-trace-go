@@ -10,11 +10,12 @@ name: Unit and Integration Tests
 #    branches:
 #      - "**"
 
-workflow_call:
-  inputs:
-    go-version:
-      required: true
-      type: string
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        required: true
+        type: string
 
 jobs:
   milestone:
