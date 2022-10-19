@@ -8,11 +8,13 @@ comment:
 
 flags:
   core:
+    carryforward: true
     paths:
       - ddtrace/*
       - internal/*
       - profiler/*
   contrib:
+    carryforward: true
     paths:
       - contrib/*
 
