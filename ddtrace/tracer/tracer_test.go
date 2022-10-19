@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -93,6 +94,9 @@ func setLogWriter(w io.Writer) func() {
 func TestTracerCleanStop(t *testing.T) {
 	if testing.Short() {
 		return
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("This test causes windows CI to fail due to out-of-memory issues")
 	}
 	if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
 		// avoid CI timeouts due to AppSec slowing down this test
@@ -236,7 +240,7 @@ func TestTracerStartSpan(t *testing.T) {
 		assert.NotEqual(uint64(0), span.SpanID)
 		assert.Equal(uint64(0), span.ParentID)
 		assert.Equal("web.request", span.Name)
-		assert.Equal("tracer.test", span.Service)
+		assert.Regexp(`tracer\.test(\.exe)?`, span.Service)
 		assert.Contains([]float64{
 			ext.PriorityAutoReject,
 			ext.PriorityAutoKeep,
