@@ -22,7 +22,6 @@ on:
 #env:
 #  total-runners: 10
 #
-jobs:
 #  runner-indexes:
 #    runs-on: ubuntu-latest
 #    name: Generate runner indexes
@@ -36,6 +35,8 @@ jobs:
 #          INDEX_JSON=$(jq --null-input --compact-output '. |= [inputs]' <<< ${INDEX_LIST})
 #          echo "::set-output name=json::${INDEX_JSON}"
 
+
+jobs:
   test-multi-os:
     needs:
       - runner-indexes
@@ -44,7 +45,7 @@ jobs:
 #        runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
 #        go-version: [ "1.17", "1.18", "1.19"]
 #        runner-index: ${{ fromjson(needs.runner-indexes.outputs.json) }}
-      fail-fast: false
+#      fail-fast: false
     runs-on: ${{ inputs.runs-on }}
     env:
        REPORT: gotestsum-report.xml # path to where test results will be saved
