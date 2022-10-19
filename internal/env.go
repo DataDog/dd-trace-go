@@ -41,13 +41,3 @@ func IntEnv(key string, def int) int {
 	}
 	return v
 }
-
-// StringEnv returns the value of an environment variable, or
-// def otherwise.
-func StringEnv(key string, def string) string {
-	v, ok := os.LookupEnv(key)
-	if !ok {
-		return def
-	}
-	return v
-}

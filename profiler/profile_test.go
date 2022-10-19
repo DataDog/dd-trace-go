@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"io"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-
 	"os"
 	"strconv"
 	"strings"
@@ -126,7 +124,7 @@ main;bar 0 0 8 16
 						returnProfs := [][]byte{prof1, prof2}
 						opts = append(opts, WithPeriod(5*time.Millisecond), WithProfileTypes(HeapProfile, MutexProfile, BlockProfile))
 						// nb: we are not running under t.Parallel(); this would yield inconsistent results otherwise
-						originalMethod := internal.StringEnv("DD_PROFILING_DELTA_METHOD", "default")
+						originalMethod := os.Getenv("DD_PROFILING_DELTA_METHOD")
 						defer func() {
 							_ = os.Setenv("DD_PROFILING_DELTA_METHOD", originalMethod)
 						}()
