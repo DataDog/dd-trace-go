@@ -20,11 +20,13 @@ import (
 )
 
 const (
-	tagAWSAgent      = "aws.agent"
-	tagAWSOperation  = "aws.operation"
-	tagAWSRegion     = "aws.region"
-	tagAWSRetryCount = "aws.retry_count"
-	tagAWSRequestID  = "aws.request_id"
+	tagAWSAgent         = "aws.agent"
+	tagAWSOperation     = "aws.operation"
+	tagAWSRegion        = "aws.region"
+	tagAWSRetryCount    = "aws.retry_count"
+	tagAWSRequestID     = "aws.request_id"
+	SendHandlerName     = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Send"
+	CompleteHandlerName = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Complete"
 )
 
 type handlers struct {
@@ -42,11 +44,11 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	h := &handlers{cfg: cfg}
 	s = s.Copy()
 	s.Handlers.Send.PushFrontNamed(request.NamedHandler{
-		Name: "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Send",
+		Name: SendHandlerName,
 		Fn:   h.Send,
 	})
 	s.Handlers.Complete.PushBackNamed(request.NamedHandler{
-		Name: "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Complete",
+		Name: CompleteHandlerName,
 		Fn:   h.Complete,
 	})
 	return s
