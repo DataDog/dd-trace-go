@@ -45,7 +45,7 @@ jobs:
 #        go-version: [ "1.17", "1.18", "1.19"]
         runner-index: ${{ fromjson(needs.runner-indexes.outputs.json) }}
       fail-fast: false
-    runs-on: ${{ input.runs-on }}
+    runs-on: ${{ inputs.runs-on }}
     env:
        REPORT: gotestsum-report.xml # path to where test results will be saved
     steps:
@@ -55,13 +55,13 @@ jobs:
           repository: 'DataDog/dd-trace-go'
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ input.go-version }}
+          go-version: ${{ inputs.go-version }}
           check-latest: true
           cache: true
       - name: Install gotestsum
         run: go install gotest.tools/gotestsum@latest
       - name: Mac OS Coreutils
-        if: input.runs-on == 'macos-latest'
+        if: inputs.runs-on == 'macos-latest'
         run: brew install coreutils
       - name: "Runner ${{ matrix.runner-index }}: Test Core and Contrib (No Integration Tests)"
         shell: bash
@@ -81,7 +81,7 @@ jobs:
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           files: ${{ env.REPORT }}
-          tags: go:${{ input.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
       - name: Upload Coverage
         if: always()
