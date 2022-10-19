@@ -1,15 +1,5 @@
 name: Unit and Integration Tests
 
-#on:
-#  push:
-#    branches:
-#      - main
-#    tags:
-#      - "**"
-#  pull_request:
-#    branches:
-#      - "**"
-
 on:
   workflow_call:
     inputs:
@@ -72,10 +62,6 @@ jobs:
 
   test-core:
     runs-on: ubuntu-latest
-#    strategy:
-#      matrix:
-#        go-version: ["1.17", "1.18", "1.19"]
-#      fail-fast: false
     env:
        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
@@ -126,10 +112,6 @@ jobs:
 
   test-contrib:
     runs-on: ubuntu-latest
-#    strategy:
-#      matrix:
-#        go-version: [ "1.17", "1.18", "1.19"]
-#      fail-fast: false
     env:
        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
