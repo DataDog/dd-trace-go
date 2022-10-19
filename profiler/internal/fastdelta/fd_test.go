@@ -15,6 +15,8 @@ import (
 	"github.com/richardartoul/molecule"
 	"github.com/richardartoul/molecule/src/protowire"
 	"github.com/stretchr/testify/require"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 )
 
 const heapFile = "heap.pprof"
@@ -38,7 +40,10 @@ func BenchmarkFastDelta(b *testing.B) {
 			buf := new(bytes.Buffer)
 			for i := 0; i < b.N; i++ {
 				buf.Reset()
-				dc := NewDeltaComputer("alloc_objects", "alloc_space")
+				dc := NewDeltaComputer(
+					vt("alloc_objects", "count"),
+					vt("alloc_space", "bytes"),
+				)
 				err := dc.Delta(before, io.Discard)
 				if err != nil {
 					b.Fatal(err)
@@ -57,6 +62,7 @@ func BenchmarkMakeGolden(b *testing.B) {
 	for _, f := range []string{heapFile, bigHeapFile} {
 		testFile := "testdata/" + f
 		b.Run(testFile, func(b *testing.B) {
+			b.ReportAllocs()
 			before, err := os.ReadFile(testFile)
 			if err != nil {
 				b.Fatal(err)
@@ -68,7 +74,8 @@ func BenchmarkMakeGolden(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				psink = makeGolden(b, before, after, []string{"alloc_objects", "alloc_space"})
+				psink = makeGolden(b, before, after,
+					vt("alloc_objects", "count"), vt("alloc_space", "bytes"))
 			}
 		})
 	}
@@ -83,21 +90,27 @@ func TestFastDeltaComputer(t *testing.T) {
 		Before   string
 		After    string
 		Duration int64
-		Fields   []string
+		Fields   []pprofutils.ValueType
 	}{
 		{
 			Name:     "heap",
 			Before:   "testdata/heap.before.pprof",
 			After:    "testdata/heap.after.pprof",
 			Duration: 5960465000,
-			Fields:   []string{"alloc_objects", "alloc_space"},
+			Fields: []pprofutils.ValueType{
+				vt("alloc_objects", "count"),
+				vt("alloc_space", "bytes"),
+			},
 		},
 		{
 			Name:     "block",
 			Before:   "testdata/block.before.pprof",
 			After:    "testdata/block.after.pprof",
 			Duration: 1144928000,
-			Fields:   []string{"contentions", "delay"},
+			Fields: []pprofutils.ValueType{
+				vt("contentions", "count"),
+				vt("delay", "nanoseconds"),
+			},
 		},
 	}
 
@@ -128,7 +141,7 @@ func TestFastDeltaComputer(t *testing.T) {
 				t.Fatalf("parsing delta profile: %s", err)
 			}
 
-			golden := makeGolden(t, before, after, tc.Fields)
+			golden := makeGolden(t, before, after, tc.Fields...)
 
 			golden.Scale(-1)
 			diff, err := profile.Merge([]*profile.Profile{delta, golden})
@@ -146,7 +159,7 @@ func TestFastDeltaComputer(t *testing.T) {
 	}
 }
 
-func makeGolden(t testing.TB, before, after []byte, fields []string) *profile.Profile {
+func makeGolden(t testing.TB, before, after []byte, fields ...pprofutils.ValueType) *profile.Profile {
 	t.Helper()
 	b, err := profile.ParseData(before)
 	if err != nil {
@@ -160,7 +173,7 @@ func makeGolden(t testing.TB, before, after []byte, fields []string) *profile.Pr
 	ratios := make([]float64, len(b.SampleType))
 	for i, v := range b.SampleType {
 		for _, f := range fields {
-			if f == v.Type {
+			if f.Type == v.Type {
 				ratios[i] = -1
 			}
 		}
@@ -192,7 +205,12 @@ func TestCompaction(t *testing.T) {
 	zeroDeltaBuf := &bytes.Buffer{}
 	require.NoError(t, zeroDeltaPprof.WriteUncompressed(zeroDeltaBuf))
 
-	dc := NewDeltaComputer("alloc_objects", "alloc_space", "inuse_objects", "inuse_space")
+	dc := NewDeltaComputer(
+		vt("alloc_objects", "count"),
+		vt("alloc_space", "bytes"),
+		vt("inuse_objects", "count"),
+		vt("inuse_space", "bytes"),
+	)
 	buf := new(bytes.Buffer)
 	err = dc.Delta(zeroDeltaBuf.Bytes(), buf)
 	zeroDeltaBytes := buf.Bytes()
@@ -257,47 +275,68 @@ func TestSampleHashingConsistency(t *testing.T) {
 	// order. We build the profile ourselves because we can control the
 	// precise binary encoding of the profile.
 	f := func(labels ...string) []byte {
+		var err error
 		b := new(bytes.Buffer)
 		ps := molecule.NewProtoStream(b)
-		ps.Embedded(1, func(ps *molecule.ProtoStream) error {
+		err = ps.Embedded(1, func(ps *molecule.ProtoStream) error {
 			// sample_type
-			ps.Int64(1, 1) // type
-			ps.Int64(2, 2) // unit
+			err = ps.Int64(1, 1) // type
+			require.NoError(t, err)
+			err = ps.Int64(2, 2) // unit
+			require.NoError(t, err)
 			return nil
 		})
-		ps.Embedded(11, func(ps *molecule.ProtoStream) error {
+		require.NoError(t, err)
+		err = ps.Embedded(11, func(ps *molecule.ProtoStream) error {
 			// period_type
-			ps.Int64(1, 1) // type
-			ps.Int64(2, 2) // unit
+			err = ps.Int64(1, 1) // type
+			require.NoError(t, err)
+			err = ps.Int64(2, 2) // unit
+			require.NoError(t, err)
 			return nil
 		})
-		ps.Int64(12, 1) // period
-		ps.Int64(9, 1)  // time_nanos
-		ps.Embedded(4, func(ps *molecule.ProtoStream) error {
+		require.NoError(t, err)
+		err = ps.Int64(12, 1) // period
+		require.NoError(t, err)
+		err = ps.Int64(9, 1) // time_nanos
+		require.NoError(t, err)
+		err = ps.Embedded(4, func(ps *molecule.ProtoStream) error {
 			// location
-			ps.Uint64(1, 1)    // location ID
-			ps.Uint64(2, 1)    // mapping ID
-			ps.Uint64(3, 0x42) // address
+			err = ps.Uint64(1, 1) // location ID
+			require.NoError(t, err)
+			err = ps.Uint64(2, 1) // mapping ID
+			require.NoError(t, err)
+			err = ps.Uint64(3, 0x42) // address
+			require.NoError(t, err)
 			return nil
 		})
-		ps.Embedded(2, func(ps *molecule.ProtoStream) error {
+		require.NoError(t, err)
+		err = ps.Embedded(2, func(ps *molecule.ProtoStream) error {
 			// samples
-			ps.Uint64(1, 1) // location ID
-			ps.Uint64(2, 1) // value
+			err = ps.Uint64(1, 1) // location ID
+			require.NoError(t, err)
+			err = ps.Uint64(2, 1) // value
+			require.NoError(t, err)
 			for i := 0; i < len(labels); i += 2 {
-				ps.Embedded(3, func(ps *molecule.ProtoStream) error {
-					ps.Uint64(1, uint64(i)+3) // key strtab offset
-					ps.Uint64(2, uint64(i)+4) // str strtab offset
+				err = ps.Embedded(3, func(ps *molecule.ProtoStream) error {
+					err = ps.Uint64(1, uint64(i)+3) // key strtab offset
+					require.NoError(t, err)
+					err = ps.Uint64(2, uint64(i)+4) // str strtab offset
+					require.NoError(t, err)
 					return nil
 				})
+				require.NoError(t, err)
 			}
 			return nil
 		})
-		ps.Embedded(3, func(ps *molecule.ProtoStream) error {
+		require.NoError(t, err)
+		err = ps.Embedded(3, func(ps *molecule.ProtoStream) error {
 			// mapping
-			ps.Uint64(1, 1) // ID
+			err = ps.Uint64(1, 1) // ID
+			require.NoError(t, err)
 			return nil
 		})
+		require.NoError(t, err)
 		// don't need functions
 		buf := b.Bytes()
 		writeString := func(s string) {
@@ -324,7 +363,7 @@ func TestSampleHashingConsistency(t *testing.T) {
 	_, err = profile.ParseData(b)
 	require.NoError(t, err)
 
-	dc := NewDeltaComputer("type")
+	dc := NewDeltaComputer(vt("type", "unit"))
 	err = dc.Delta(a, io.Discard)
 	require.NoError(t, err)
 	buf := new(bytes.Buffer)
@@ -336,4 +375,8 @@ func TestSampleHashingConsistency(t *testing.T) {
 	// There should be no samples because we didn't actually change the
 	// profile, just the order of the labels.
 	require.Empty(t, p.Sample)
+}
+
+func vt(vtype, vunit string) pprofutils.ValueType {
+	return pprofutils.ValueType{Type: vtype, Unit: vunit}
 }
