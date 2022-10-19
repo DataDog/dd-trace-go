@@ -111,9 +111,9 @@ func NewDeltaComputer(fields ...string) *DeltaComputer {
 		fields:           append([]string{}, fields...),
 		sampleMap:        make(map[Hash]Value),
 		scratchIDs:       make([]uint64, 0, 512),
-		includeMapping:   make(map[uint64]struct{}, 16),
-		includeFunction:  make(map[uint64]struct{}, 1024),
-		includeLocation:  make(map[uint64]struct{}, 1024),
+		includeMapping:   make(map[uint64]struct{}),
+		includeFunction:  make(map[uint64]struct{}),
+		includeLocation:  make(map[uint64]struct{}),
 		includeString:    make([]bool, 0, 1024),
 		curProfTimeNanos: -1,
 	}
