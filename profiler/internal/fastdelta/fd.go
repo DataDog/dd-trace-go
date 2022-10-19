@@ -150,8 +150,7 @@ func (dc *DeltaComputer) Delta(p []byte, out io.Writer) error {
 	// valueTypeIndices are string table indices of the sample value type
 	// names (e.g.  "alloc_space", "cycles"...)
 	var valueTypeIndices []int
-	err := molecule.MessageEach(codec.NewBuffer(p),
-		dc.indexPass(&valueTypeIndices, hasher))
+	err := molecule.MessageEach(codec.NewBuffer(p), dc.indexPassFn(&valueTypeIndices, hasher))
 	if err != nil {
 		return fmt.Errorf("error in indexing pass: %w", err)
 	}
@@ -159,20 +158,17 @@ func (dc *DeltaComputer) Delta(p []byte, out io.Writer) error {
 	// TODO: first pass optimization, if this is the first profile DeltaComputer consumes,
 	// would be to compute the previous values to populate dc.sampleMap, but just return
 	// the original profile bytes rather than effectively copying them
-	err = molecule.MessageEach(codec.NewBuffer(p),
-		dc.mergeSamplesPass(out, valueTypeIndices, hasher))
+	err = molecule.MessageEach(codec.NewBuffer(p), dc.mergeSamplesPassFn(out, valueTypeIndices, hasher))
 	if err != nil {
 		return fmt.Errorf("error in merge samples pass: %w", err)
 	}
 
-	err = molecule.MessageEach(codec.NewBuffer(p),
-		dc.writeAndPruneRecordsPass(out))
+	err = molecule.MessageEach(codec.NewBuffer(p), dc.writeAndPruneRecordsPassFn(out))
 	if err != nil {
 		return fmt.Errorf("error in pruning pass: %w", err)
 	}
 
-	err = molecule.MessageEach(codec.NewBuffer(p),
-		dc.writeStringTablePass(out))
+	err = molecule.MessageEach(codec.NewBuffer(p), dc.writeStringTablePassFn(out))
 	if err != nil {
 		return fmt.Errorf("error in string table writing pass: %w", err)
 	}
@@ -180,53 +176,57 @@ func (dc *DeltaComputer) Delta(p []byte, out io.Writer) error {
 	return nil
 }
 
-// indexPass returns a molecule callback to scan a Profile protobuf
+// indexPassFn returns a molecule callback to scan a Profile protobuf
 // This pass has the side effect of populating the indices:
 //
 //	valueTypeIndices
 //	dc.locationIndex
 //	dc.stringTable
 //	dc.includeString (sizing)
-func (dc *DeltaComputer) indexPass(valueTypeIndices *[]int, hasher murmur3.Hash128) molecule.MessageEachFn {
+func (dc *DeltaComputer) indexPassFn(valueTypeIndices *[]int, hasher murmur3.Hash128) molecule.MessageEachFn {
 	return func(field int32, value molecule.Value) (bool, error) {
-		switch ProfileRecordNumber(field) {
-		case recProfileSampleType:
-			err := molecule.MessageEach(codec.NewBuffer(value.Bytes), func(field int32, value molecule.Value) (bool, error) {
-				switch ValueTypeRecordNumber(field) {
-				case recValueTypeType:
-					*valueTypeIndices = append(*valueTypeIndices, int(value.Number))
-				}
-				return true, nil
-			})
-			if err != nil {
-				return false, fmt.Errorf("reading sample_type record: %w", err)
-			}
-		case recProfileLocation:
-			// readLocation writes out function IDs for the location to this scratch buffer
-			dc.scratchIDs = dc.scratchIDs[:0]
-			address, id, mappingID, err := dc.readLocation(value.Bytes)
-			if err != nil {
-				return false, fmt.Errorf("reading location record: %w", err)
-			}
-			dc.locationIndex.insert(id, address, mappingID, dc.scratchIDs)
-		case recProfileStringTable:
-			dc.stringTable.Add(value.Bytes, hasher)
-
-			// always include the zero-index empty string,
-			// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
-			dc.includeString = append(dc.includeString, len(dc.includeString) == 0)
-		}
-		return true, nil
+		return dc.indexPass(field, value, valueTypeIndices, hasher)
 	}
 }
 
-// mergeSamplesPass returns a molecule callback to scan a Profile protobuf
+func (dc *DeltaComputer) indexPass(field int32, value molecule.Value, valueTypeIndices *[]int, hasher murmur3.Hash128) (bool, error) {
+	switch ProfileRecordNumber(field) {
+	case recProfileSampleType:
+		err := molecule.MessageEach(codec.NewBuffer(value.Bytes), func(field int32, value molecule.Value) (bool, error) {
+			switch ValueTypeRecordNumber(field) {
+			case recValueTypeType:
+				*valueTypeIndices = append(*valueTypeIndices, int(value.Number))
+			}
+			return true, nil
+		})
+		if err != nil {
+			return false, fmt.Errorf("reading sample_type record: %w", err)
+		}
+	case recProfileLocation:
+		// readLocation writes out function IDs for the location to this scratch buffer
+		dc.scratchIDs = dc.scratchIDs[:0]
+		address, id, mappingID, err := dc.readLocation(value.Bytes)
+		if err != nil {
+			return false, fmt.Errorf("reading location record: %w", err)
+		}
+		dc.locationIndex.insert(id, address, mappingID, dc.scratchIDs)
+	case recProfileStringTable:
+		dc.stringTable.Add(value.Bytes, hasher)
+
+		// always include the zero-index empty string,
+		// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
+		dc.includeString = append(dc.includeString, len(dc.includeString) == 0)
+	}
+	return true, nil
+}
+
+// mergeSamplesPassFn returns a molecule callback to scan a Profile protobuf
 // and write merged samples to the output buffer.
 // Any samples where the values are all 0 will be skipped.
 // This pass has the side effect of populating dc.include* fields so only the
 // mapping, function, location, and strings (sample labels) referenced by the kept samples
 // can be written out in a later pass.
-func (dc *DeltaComputer) mergeSamplesPass(out io.Writer, valueTypeIndices []int, hasher murmur3.Hash128) molecule.MessageEachFn {
+func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer, valueTypeIndices []int, hasher murmur3.Hash128) molecule.MessageEachFn {
 	var sampleHash Hash
 
 	computeDeltaForValue := make([]bool, len(valueTypeIndices))
@@ -240,213 +240,232 @@ func (dc *DeltaComputer) mergeSamplesPass(out io.Writer, valueTypeIndices []int,
 	}
 
 	return func(field int32, value molecule.Value) (bool, error) {
-		if ProfileRecordNumber(field) != recProfileSample {
-			return true, nil
-		}
-
-		// readSample writes out the locations for this sample into this scratch buffer
-		// to save on allocations
-		dc.scratchIDs = dc.scratchIDs[:0]
-		val, err := dc.readSample(value.Bytes, hasher, &sampleHash)
-		if err != nil {
-			return false, fmt.Errorf("reading sample record: %w", err)
-		}
-
-		old, ok := dc.sampleMap[sampleHash]
-		dc.sampleMap[sampleHash] = val // save for next time
-		if !ok {
-			// If this is a new sample we don't take the
-			// difference, just pass it through.
-			// but we should record the value for next time
-			if err := dc.writeProtoBytes(out, field, value.Bytes); err != nil {
-				return false, err
-			}
-			dc.keepLocations(dc.scratchIDs)
-			return true, nil
-		}
-
-		all0 := true
-		for i := 0; i < len(computeDeltaForValue); i++ {
-			if computeDeltaForValue[i] {
-				val[i] = val[i] - old[i]
-			}
-			if val[i] != 0 {
-				all0 = false
-			}
-		}
-		if all0 {
-			// If the sample has all 0 values, we drop it
-			// this matches the behavior of Google's pprof library
-			// when merging profiles
-			return true, nil
-		}
-
-		dc.keepLocations(dc.scratchIDs)
-
-		// we want to write a modified version of the original record, where the only difference is
-		// the values
-		sample := make([]byte, 0, len(value.Bytes))
-		err = molecule.MessageEach(codec.NewBuffer(value.Bytes), func(field int32, value molecule.Value) (bool, error) {
-			switch SampleRecordNumber(field) {
-			case recSampleLocationID:
-				// retain the old stack
-				switch value.WireType {
-				case codec.WireBytes:
-					sample = appendProtoBytes(sample, field, value.Bytes)
-				case codec.WireVarint:
-					sample = appendProtoUvarint(sample, field, value.Number)
-				}
-			case recSampleLabel:
-				// retain the old labels
-				sample = appendProtoBytes(sample, field, value.Bytes)
-
-				// mark strings to keep in the labels structure
-				err := dc.includeStringIndexFields(value.Bytes,
-					int32(recLabelKey), int32(recLabelStr), int32(recLabelNumUnit))
-				return err == nil, err
-			}
-			return true, nil
-		})
-		if err != nil {
-			return false, err
-		}
-		newValue := make([]byte, 0, 8*4)
-		for i := range valueTypeIndices {
-			newValue = protowire.AppendVarint(newValue, uint64(val[i]))
-		}
-		sample = appendProtoBytes(sample, int32(recSampleValue), newValue)
-
-		if err := dc.writeProtoBytes(out, field, sample); err != nil {
-			return false, err
-		}
-
-		return true, nil
+		return dc.mergeSamplesPass(field, value, out, hasher, &sampleHash, computeDeltaForValue, valueTypeIndices)
 	}
 }
 
-// writeAndPruneRecordsPass returns a molecule callback to scan a Profile protobuf
+func (dc *DeltaComputer) mergeSamplesPass(
+	field int32,
+	value molecule.Value,
+	out io.Writer,
+	hasher murmur3.Hash128,
+	sampleHash *Hash,
+	computeDeltaForValue []bool,
+	valueTypeIndices []int) (bool, error) {
+	if ProfileRecordNumber(field) != recProfileSample {
+		return true, nil
+	}
+
+	// readSample writes out the locations for this sample into this scratch buffer
+	// to save on allocations
+	dc.scratchIDs = dc.scratchIDs[:0]
+	val, err := dc.readSample(value.Bytes, hasher, sampleHash)
+	if err != nil {
+		return false, fmt.Errorf("reading sample record: %w", err)
+	}
+
+	old, ok := dc.sampleMap[*sampleHash]
+	dc.sampleMap[*sampleHash] = val // save for next time
+	if !ok {
+		// If this is a new sample we don't take the
+		// difference, just pass it through.
+		// but we should record the value for next time
+		if err := dc.writeProtoBytes(out, field, value.Bytes); err != nil {
+			return false, err
+		}
+		dc.keepLocations(dc.scratchIDs)
+		return true, nil
+	}
+
+	all0 := true
+	for i := 0; i < len(computeDeltaForValue); i++ {
+		if computeDeltaForValue[i] {
+			val[i] = val[i] - old[i]
+		}
+		if val[i] != 0 {
+			all0 = false
+		}
+	}
+	if all0 {
+		// If the sample has all 0 values, we drop it
+		// this matches the behavior of Google's pprof library
+		// when merging profiles
+		return true, nil
+	}
+
+	dc.keepLocations(dc.scratchIDs)
+
+	// we want to write a modified version of the original record, where the only difference is
+	// the values
+	sample := make([]byte, 0, len(value.Bytes))
+	err = molecule.MessageEach(codec.NewBuffer(value.Bytes), func(field int32, value molecule.Value) (bool, error) {
+		switch SampleRecordNumber(field) {
+		case recSampleLocationID:
+			// retain the old stack
+			switch value.WireType {
+			case codec.WireBytes:
+				sample = appendProtoBytes(sample, field, value.Bytes)
+			case codec.WireVarint:
+				sample = appendProtoUvarint(sample, field, value.Number)
+			}
+		case recSampleLabel:
+			// retain the old labels
+			sample = appendProtoBytes(sample, field, value.Bytes)
+
+			// mark strings to keep in the labels structure
+			err := dc.includeStringIndexFields(value.Bytes,
+				int32(recLabelKey), int32(recLabelStr), int32(recLabelNumUnit))
+			return err == nil, err
+		}
+		return true, nil
+	})
+	if err != nil {
+		return false, err
+	}
+	newValue := make([]byte, 0, 8*4)
+	for i := range valueTypeIndices {
+		newValue = protowire.AppendVarint(newValue, uint64(val[i]))
+	}
+	sample = appendProtoBytes(sample, int32(recSampleValue), newValue)
+
+	if err := dc.writeProtoBytes(out, field, sample); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// writeAndPruneRecordsPassFn returns a molecule callback to scan a Profile protobuf
 // and write out select mapping, location, and function records relevant to the
 // selected samples (include* fields).
 // Strings for the select records are collected for a later writing pass to
 // populate the string table.
-func (dc *DeltaComputer) writeAndPruneRecordsPass(out io.Writer) molecule.MessageEachFn {
+func (dc *DeltaComputer) writeAndPruneRecordsPassFn(out io.Writer) molecule.MessageEachFn {
 	firstPprof := dc.curProfTimeNanos < 0
 	return func(field int32, value molecule.Value) (bool, error) {
-		switch ProfileRecordNumber(field) {
-		case recProfileSample:
-			// already written these out, skip
-			return true, nil
-		case recProfileMapping:
-			id, err := dc.readUint64Field(value.Bytes, int32(recMappingID))
-			if err != nil {
-				return false, fmt.Errorf("reading mapping record: %w", err)
-			}
-			if _, ok := dc.includeMapping[id]; !ok {
-				return true, nil
-			}
-			// mark strings to keep from the mapping message
-			err = dc.includeStringIndexFields(value.Bytes,
-				int32(recMappingFilename), int32(recMappingBuildID))
-			if err != nil {
-				return false, fmt.Errorf("reading mapping record: %w", err)
-			}
-		case recProfileLocation:
-			id, err := dc.readUint64Field(value.Bytes, int32(recLocationID))
-			if err != nil {
-				return false, fmt.Errorf("reading location record: %w", err)
-			}
-			if _, ok := dc.includeLocation[id]; !ok {
-				return true, nil
-			}
-		case recProfileFunction:
-			id, err := dc.readUint64Field(value.Bytes, int32(recFunctionID))
-			if err != nil {
-				return false, fmt.Errorf("reading function record: %w", err)
-			}
-			if _, ok := dc.includeFunction[id]; !ok {
-				return true, nil
-			}
-			// mark strings to keep from the function message
-			err = dc.includeStringIndexFields(value.Bytes,
-				int32(recFunctionName), int32(recFunctionSystemName), int32(recFunctionFilename))
-			if err != nil {
-				return false, fmt.Errorf("reading function record: %w", err)
-			}
-		case recProfileComment:
-			// comment - repeated int64 indices into string table
-			// repeated fields are packed by default, but we can see both packed or single values.
-			// we need to include comment indices in dc.includeString for writeStringTablePass
-			switch value.WireType {
-			case codec.WireBytes:
-				bs := value.Bytes
-				for len(bs) > 0 {
-					index, n := binary.Varint(bs)
-					bs = bs[n:]
-					dc.includeString[index] = true
-				}
-			case codec.WireVarint:
-				dc.includeString[value.Number] = true
-			}
-		case recProfileDropFrames, recProfileKeepFrames, recProfileDefaultSampleType:
-			dc.includeString[value.Number] = true
-		case recProfileSampleType, recProfilePeriodType:
-			err := dc.includeStringIndexFields(value.Bytes,
-				int32(recValueTypeType), int32(recValueTypeUnit))
-			if err != nil {
-				return false, fmt.Errorf("reading ValueType record: %w", err)
-			}
-		case recProfileTimeNanos:
-			curProfTimeNanos := int64(value.Number)
-			if !firstPprof {
-				prevProfTimeNanos := dc.curProfTimeNanos
-				if err := dc.writeValue(out, field, value); err != nil {
-					return false, err
-				}
-				field = int32(recProfileDurationNanos)
-				value.Number = uint64(curProfTimeNanos - prevProfTimeNanos)
-			}
-			dc.curProfTimeNanos = curProfTimeNanos
-		case recProfileDurationNanos:
-			if !firstPprof {
-				return true, nil // skip, it's written together with recProfileTimeNanos
-			}
-			// otherwise, just copy through
-		case recProfileStringTable:
-			return true, nil // will write these on the string writing pass
-		}
-
-		// If it's not a sample or string, and it's not pruned just write it out
-		if err := dc.writeValue(out, field, value); err != nil {
-			return false, err
-		}
-		return true, nil
+		return dc.writeAndPruneRecordsPass(field, value, out, firstPprof)
 	}
 }
 
-// writeStringTablePass returns a molecule callback to scan a Profile protobuf
+func (dc *DeltaComputer) writeAndPruneRecordsPass(field int32, value molecule.Value, out io.Writer, firstPprof bool) (bool, error) {
+	switch ProfileRecordNumber(field) {
+	case recProfileSample:
+		// already written these out, skip
+		return true, nil
+	case recProfileMapping:
+		id, err := dc.readUint64Field(value.Bytes, int32(recMappingID))
+		if err != nil {
+			return false, fmt.Errorf("reading mapping record: %w", err)
+		}
+		if _, ok := dc.includeMapping[id]; !ok {
+			return true, nil
+		}
+		// mark strings to keep from the mapping message
+		err = dc.includeStringIndexFields(value.Bytes,
+			int32(recMappingFilename), int32(recMappingBuildID))
+		if err != nil {
+			return false, fmt.Errorf("reading mapping record: %w", err)
+		}
+	case recProfileLocation:
+		id, err := dc.readUint64Field(value.Bytes, int32(recLocationID))
+		if err != nil {
+			return false, fmt.Errorf("reading location record: %w", err)
+		}
+		if _, ok := dc.includeLocation[id]; !ok {
+			return true, nil
+		}
+	case recProfileFunction:
+		id, err := dc.readUint64Field(value.Bytes, int32(recFunctionID))
+		if err != nil {
+			return false, fmt.Errorf("reading function record: %w", err)
+		}
+		if _, ok := dc.includeFunction[id]; !ok {
+			return true, nil
+		}
+		// mark strings to keep from the function message
+		err = dc.includeStringIndexFields(value.Bytes,
+			int32(recFunctionName), int32(recFunctionSystemName), int32(recFunctionFilename))
+		if err != nil {
+			return false, fmt.Errorf("reading function record: %w", err)
+		}
+	case recProfileComment:
+		// comment - repeated int64 indices into string table
+		// repeated fields are packed by default, but we can see both packed or single values.
+		// we need to include comment indices in dc.includeString for writeStringTablePassFn
+		switch value.WireType {
+		case codec.WireBytes:
+			bs := value.Bytes
+			for len(bs) > 0 {
+				index, n := binary.Varint(bs)
+				bs = bs[n:]
+				dc.includeString[index] = true
+			}
+		case codec.WireVarint:
+			dc.includeString[value.Number] = true
+		}
+	case recProfileDropFrames, recProfileKeepFrames, recProfileDefaultSampleType:
+		dc.includeString[value.Number] = true
+	case recProfileSampleType, recProfilePeriodType:
+		err := dc.includeStringIndexFields(value.Bytes,
+			int32(recValueTypeType), int32(recValueTypeUnit))
+		if err != nil {
+			return false, fmt.Errorf("reading ValueType record: %w", err)
+		}
+	case recProfileTimeNanos:
+		curProfTimeNanos := int64(value.Number)
+		if !firstPprof {
+			prevProfTimeNanos := dc.curProfTimeNanos
+			if err := dc.writeValue(out, field, value); err != nil {
+				return false, err
+			}
+			field = int32(recProfileDurationNanos)
+			value.Number = uint64(curProfTimeNanos - prevProfTimeNanos)
+		}
+		dc.curProfTimeNanos = curProfTimeNanos
+	case recProfileDurationNanos:
+		if !firstPprof {
+			return true, nil // skip, it's written together with recProfileTimeNanos
+		}
+		// otherwise, just copy through
+	case recProfileStringTable:
+		return true, nil // will write these on the string writing pass
+	}
+
+	// If it's not a sample or string, and it's not pruned just write it out
+	if err := dc.writeValue(out, field, value); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// writeStringTablePassFn returns a molecule callback to scan a Profile protobuf
 // and write out string table messages to buf.
 // Strings marked for emission in `dc.includeString` are written to buf.
 // Strings not marked for emission are written as zero-length byte arrays
 // to preserve index offsets.
-func (dc *DeltaComputer) writeStringTablePass(out io.Writer) molecule.MessageEachFn {
+func (dc *DeltaComputer) writeStringTablePassFn(out io.Writer) molecule.MessageEachFn {
 	counter := 0
 	return func(field int32, value molecule.Value) (bool, error) {
-		var stringVal []byte
-		switch ProfileRecordNumber(field) {
-		case recProfileStringTable:
-			if dc.includeString[counter] {
-				stringVal = value.Bytes
-			}
-			counter++
-		default:
-			// everything else has already been written
-			return true, nil
+		return dc.writeStringTablePass(field, value, out, &counter)
+	}
+}
+
+func (dc *DeltaComputer) writeStringTablePass(field int32, value molecule.Value, out io.Writer, counter *int) (bool, error) {
+	var stringVal []byte
+	switch ProfileRecordNumber(field) {
+	case recProfileStringTable:
+		if dc.includeString[*counter] {
+			stringVal = value.Bytes
 		}
-		if err := dc.writeProtoBytes(out, field, stringVal); err != nil {
-			return false, err
-		}
+		*counter++
+	default:
+		// everything else has already been written
 		return true, nil
 	}
+	if err := dc.writeProtoBytes(out, field, stringVal); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (dc *DeltaComputer) writeValue(w io.Writer, field int32, value molecule.Value) error {
