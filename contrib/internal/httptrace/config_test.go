@@ -96,10 +96,10 @@ func TestIPCollection(t *testing.T) {
 			collectIP: true,
 		},
 	} {
-		for k, v := range tc.env {
-			t.Setenv(k, v)
-		}
 		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
 			c := newConfig()
 			require.Equal(t, tc.collectIP, c.clientIP)
 		})
@@ -142,10 +142,10 @@ func TestIPCollectionAppSec(t *testing.T) {
 			env:  map[string]string{"DD_APPSEC_ENABLED": "1", envClientIPHeaderDisabled: "true"},
 		},
 	} {
-		for k, v := range tc.env {
-			t.Setenv(k, v)
-		}
 		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
 			appsec.Start()
 			defer appsec.Stop()
 			c := newConfig()
