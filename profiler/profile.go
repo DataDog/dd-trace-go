@@ -460,8 +460,22 @@ func (cdp *comparingDeltaProfiler) Delta(data []byte) (res []byte, err error) {
 	return res, nil
 }
 
+// interface hack to get around limitation of public profiler.StatsdClient
+// The public interface only offers a Timing method _which_should_not_be_used_
+// because histogram aggregation math is fundamentally broken.  It's unfortunate
+// that the public interface exposed Timing instead of Distribution given
+// Distribution was available at the time.
+type statsdDistribution interface {
+	// Distribution creates a distribution metric, prefer over Timing
+	Distribution(event string, value float64, tags []string, rate float64) error
+}
+
 func (cdp *comparingDeltaProfiler) reportTiming(section string, dur time.Duration) {
-	_ = cdp.statsd.Distribution(
+	statsdClient, ok := cdp.statsd.(statsdDistribution)
+	if !ok {
+		return
+	}
+	_ = statsdClient.Distribution(
 		"datadog.profiling.go.delta_compare.dist",
 		float64(dur.Milliseconds()),
 		append(cdp.tags, "section:"+section),

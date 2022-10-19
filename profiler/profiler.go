@@ -464,6 +464,4 @@ type StatsdClient interface {
 	Count(event string, times int64, tags []string, rate float64) error
 	// Timing creates a histogram metric of the values registered as the duration of a certain event.
 	Timing(event string, duration time.Duration, tags []string, rate float64) error
-	// Distribution creates a distribution metric, prefer over Timing
-	Distribution(event string, value float64, tags []string, rate float64) error
 }
