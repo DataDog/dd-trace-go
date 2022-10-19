@@ -73,6 +73,9 @@ func MonitorParsedBody(ctx context.Context, body interface{}) {
 func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
 	SetAppSecTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if collectIP {
+			SetIPTags(span, r)
+		}
 		args := MakeHandlerOperationArgs(r, pathParams)
 		ctx, op := StartOperation(r.Context(), args)
 		r = r.WithContext(ctx)
