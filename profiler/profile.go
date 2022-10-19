@@ -10,20 +10,17 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal"
-
 	"io"
 	"runtime"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/fastdelta"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
-
 	"github.com/DataDog/gostackparse"
 	pprofile "github.com/google/pprof/profile"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/fastdelta"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 )
 
 // ProfileType represents a type of profile that the profiler is able to run.
