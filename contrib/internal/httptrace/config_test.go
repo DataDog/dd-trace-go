@@ -10,11 +10,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 )
 
 func TestConfig(t *testing.T) {
 	defaultCfg := config{
-		clientIP:          true,
+		clientIP:          false,
 		queryString:       true,
 		queryStringRegexp: defaultQueryStringRegexp,
 	}
@@ -40,16 +41,16 @@ func TestConfig(t *testing.T) {
 			name: "disable-query",
 			env:  map[string]string{envQueryStringDisabled: "true"},
 			cfg: config{
-				clientIP:          true,
 				queryStringRegexp: defaultQueryStringRegexp,
 			},
 		},
 		{
-			name: "disable-ip",
-			env:  map[string]string{envClientIPHeaderDisabled: "true"},
+			name: "enable-ip",
+			env:  map[string]string{envClientIPHeaderDisabled: "false"},
 			cfg: config{
 				queryString:       true,
 				queryStringRegexp: defaultQueryStringRegexp,
+				clientIP:          true,
 			},
 		},
 		{
@@ -57,7 +58,6 @@ func TestConfig(t *testing.T) {
 			env:  map[string]string{envQueryStringRegexp: ""},
 			cfg: config{
 				queryString: true,
-				clientIP:    true,
 			},
 		},
 	} {
@@ -71,6 +71,85 @@ func TestConfig(t *testing.T) {
 			require.Equal(t, tc.cfg.queryString, c.queryString)
 			require.Equal(t, tc.cfg.clientIPHeader, c.clientIPHeader)
 			require.Equal(t, tc.cfg.clientIP, c.clientIP)
+		})
+	}
+}
+
+func TestIPCollection(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		env       map[string]string
+		collectIP bool
+	}{
+		{
+			name:      "default-env",
+			collectIP: false,
+		},
+		{
+			name:      "disabled-collection",
+			env:       map[string]string{envClientIPHeaderDisabled: "true"},
+			collectIP: false,
+		},
+		{
+			name:      "enabled-collection",
+			env:       map[string]string{envClientIPHeaderDisabled: "false"},
+			collectIP: true,
+		},
+	} {
+		for k, v := range tc.env {
+			t.Setenv(k, v)
+		}
+		t.Run(tc.name, func(t *testing.T) {
+			c := newConfig()
+			require.Equal(t, tc.collectIP, c.clientIP)
+		})
+	}
+}
+
+func TestIPCollectionAppSec(t *testing.T) {
+	// Make sure that enabling ASM is possible to test some more IP collection cases
+	available := func() bool {
+		t.Setenv("DD_APPSEC_ENABLED", "1")
+		appsec.Start()
+		defer appsec.Stop()
+		return appsec.Enabled()
+	}()
+	if !available {
+		t.Skip("appsec needs to be available for this test")
+	}
+
+	for _, tc := range []struct {
+		name      string
+		env       map[string]string
+		collectIP bool
+	}{
+		{
+			name:      "enabled-appsec",
+			env:       map[string]string{"DD_APPSEC_ENABLED": "1"},
+			collectIP: true,
+		},
+		{
+			name: "disabled-appsec",
+			env:  map[string]string{"DD_APPSEC_ENABLED": "0"},
+		},
+		{
+			name:      "enabled-appsec-enabled-collection",
+			env:       map[string]string{"DD_APPSEC_ENABLED": "1", envClientIPHeaderDisabled: "false"},
+			collectIP: true,
+		},
+		{
+			name: "enabled-appsec-disabled-collection",
+			env:  map[string]string{"DD_APPSEC_ENABLED": "1", envClientIPHeaderDisabled: "true"},
+		},
+	} {
+		for k, v := range tc.env {
+			t.Setenv(k, v)
+		}
+		t.Run(tc.name, func(t *testing.T) {
+			appsec.Start()
+			defer appsec.Stop()
+			c := newConfig()
+			require.Equal(t, tc.collectIP, c.clientIP)
 		})
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"regexp"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -39,9 +40,15 @@ type config struct {
 func newConfig() config {
 	c := config{
 		clientIPHeader:    os.Getenv(envClientIPHeader),
-		clientIP:          !internal.BoolEnv(envClientIPHeaderDisabled, false),
+		clientIP:          !internal.BoolEnv(envClientIPHeaderDisabled, true),
 		queryString:       !internal.BoolEnv(envQueryStringDisabled, false),
 		queryStringRegexp: defaultQueryStringRegexp,
+	}
+	// IP collection is disabled by default without ASM. If ASM is enabled, only disable collection if specifically
+	// asked through the env.
+	if appsec.Enabled() {
+		_, set := os.LookupEnv(envClientIPHeaderDisabled)
+		c.clientIP = c.clientIP || !set
 	}
 	if s, ok := os.LookupEnv(envQueryStringRegexp); !ok {
 		return c
