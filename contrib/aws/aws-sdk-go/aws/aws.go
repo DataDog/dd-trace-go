@@ -20,12 +20,14 @@ import (
 )
 
 const (
-	tagAWSAgent         = "aws.agent"
-	tagAWSOperation     = "aws.operation"
-	tagAWSRegion        = "aws.region"
-	tagAWSRetryCount    = "aws.retry_count"
-	tagAWSRequestID     = "aws.request_id"
-	SendHandlerName     = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Send"
+	tagAWSAgent      = "aws.agent"
+	tagAWSOperation  = "aws.operation"
+	tagAWSRegion     = "aws.region"
+	tagAWSRetryCount = "aws.retry_count"
+	tagAWSRequestID  = "aws.request_id"
+	// SendHandlerName is the name of the Datadog NamedHandler for the Send phase of an awsv1 request
+	SendHandlerName = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Send"
+	// CompleteHandlerName is the name of the Datadog NamedHandler for the Complete phase of an awsv1 request
 	CompleteHandlerName = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Complete"
 )
 
