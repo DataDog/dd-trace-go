@@ -80,14 +80,14 @@ type DeltaComputer struct {
 	// cross-reference locations) to the actual instruction address of the
 	// location
 	locationIndex locationIndex
-	// stringTable holds (hashed) copies of every string in the string table
+	// strings holds (hashed) copies of every string in the string table
 	// of the current profile, used to hold the names of sample value types,
 	// and the keys and values of labels.
-	stringTable StringTable
+	strings stringTable
 	// sampleMap holds the value of a sample, as represented by a consistent
 	// hash of its call stack and labels, to the value of the sample for the
 	// last time that sample was observed.
-	sampleMap map[Hash]Value
+	sampleMap map[Hash]sampleValue
 
 	curProfTimeNanos int64
 
@@ -115,7 +115,7 @@ type DeltaComputer struct {
 func NewDeltaComputer(fields ...string) *DeltaComputer {
 	return &DeltaComputer{
 		fields:           append([]string{}, fields...),
-		sampleMap:        make(map[Hash]Value),
+		sampleMap:        make(map[Hash]sampleValue),
 		scratchIDs:       make([]uint64, 0, 512),
 		includeMapping:   make(map[uint64]struct{}),
 		includeFunction:  make(map[uint64]struct{}),
@@ -126,7 +126,7 @@ func NewDeltaComputer(fields ...string) *DeltaComputer {
 }
 
 func (dc *DeltaComputer) reset() {
-	dc.stringTable.h = dc.stringTable.h[:0]
+	dc.strings.h = dc.strings.h[:0]
 	dc.locationIndex.reset()
 
 	// reset bookkeeping for message pruning
@@ -185,7 +185,7 @@ func (dc *DeltaComputer) Delta(p []byte, out io.Writer) error {
 //
 //	valueTypeIndices
 //	dc.locationIndex
-//	dc.stringTable
+//	dc.strings
 //	dc.includeString (sizing)
 func (dc *DeltaComputer) indexPassFn(hasher murmur3.Hash128) molecule.MessageEachFn {
 	return func(field int32, value molecule.Value) (bool, error) {
@@ -215,7 +215,7 @@ func (dc *DeltaComputer) indexPass(field int32, value molecule.Value, hasher mur
 		}
 		dc.locationIndex.insert(id, address, mappingID, dc.scratchIDs)
 	case recProfileStringTable:
-		dc.stringTable.Add(value.Bytes, hasher)
+		dc.strings.add(value.Bytes, hasher)
 
 		// always include the zero-index empty string,
 		// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
@@ -236,7 +236,7 @@ func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer, hasher murmur3.Hash12
 	computeDeltaForValue := make([]bool, len(dc.valueTypeIndices))
 	for _, field := range dc.fields {
 		for i, j := range dc.valueTypeIndices {
-			if dc.stringTable.Equals(j, []byte(field), hasher) {
+			if dc.strings.Equals(j, []byte(field), hasher) {
 				computeDeltaForValue[i] = true
 				break
 			}
@@ -540,7 +540,7 @@ func (dc *DeltaComputer) readUint64Field(v []byte, recordNumber int32) (val uint
 	return
 }
 
-func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value Value, err error) {
+func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sampleValue, err error) {
 	values := value[:0]
 	dc.hashes = dc.hashes[:0]
 	err = molecule.MessageEach(codec.NewBuffer(v), func(field int32, value molecule.Value) (bool, error) {
@@ -608,19 +608,19 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value Va
 				return false, err
 			}
 			h.Reset()
-			h.Write(dc.stringTable.h[uint(key)][:])
-			h.Write(dc.stringTable.h[uint(unit)][:])
+			h.Write(dc.strings.h[uint(key)][:])
+			h.Write(dc.strings.h[uint(unit)][:])
 			binary.BigEndian.PutUint64(dc.scratch[:], num)
 			h.Write(dc.scratch[:8])
-			if str < uint64(len(dc.stringTable.h)) {
-				h.Write(dc.stringTable.h[uint(str)][:])
+			if str < uint64(len(dc.strings.h)) {
+				h.Write(dc.strings.h[uint(str)][:])
 			}
 			h.Sum(hash[:0])
 			dc.hashes = append(dc.hashes, *hash)
 		}
 		return true, nil
 	})
-	sort.Sort(ByHash(dc.hashes))
+	sort.Sort(byHash(dc.hashes))
 
 	h.Reset()
 	for _, sub := range dc.hashes {
@@ -656,17 +656,18 @@ func (dc *DeltaComputer) keepLocations(locationIDs []uint64) {
 	}
 }
 
+// Hash is a 128-bit hash representing sample identity
 type Hash [16]byte
 
-type ByHash []Hash
+type byHash []Hash
 
-func (h ByHash) Len() int           { return len(h) }
-func (h ByHash) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-func (h ByHash) Less(i, j int) bool { return bytes.Compare(h[i][:], h[j][:]) == -1 }
+func (h byHash) Len() int           { return len(h) }
+func (h byHash) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h byHash) Less(i, j int) bool { return bytes.Compare(h[i][:], h[j][:]) == -1 }
 
-type Value [4]int64
+type sampleValue [4]int64
 
-type StringTable struct {
+type stringTable struct {
 	// Passing a byte slice to hash.Hash causes it to escape to the heap, so
 	// we keep around a single Hash to reuse to avoid a new allocation every
 	// time we add an element to the string table
@@ -674,7 +675,7 @@ type StringTable struct {
 	h     []Hash
 }
 
-func (s *StringTable) Add(b []byte, h hash.Hash) {
+func (s *stringTable) add(b []byte, h hash.Hash) {
 	h.Reset()
 	h.Write(b)
 	h.Sum(s.reuse[:0])
@@ -682,7 +683,7 @@ func (s *StringTable) Add(b []byte, h hash.Hash) {
 }
 
 // Equals returns whether the value at index i equals the byte string b
-func (s *StringTable) Equals(i int, b []byte, h hash.Hash) bool {
+func (s *stringTable) Equals(i int, b []byte, h hash.Hash) bool {
 	h.Reset()
 	h.Write(b)
 	h.Sum(s.reuse[:0])
