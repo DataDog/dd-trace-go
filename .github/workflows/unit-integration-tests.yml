@@ -1,17 +1,20 @@
 name: Unit and Integration Tests
 
-on:
-  push:
-    branches:
-      - main
-    tags:
-      - "**"
-  pull_request:
-    branches:
-      - "**"
+#on:
+#  push:
+#    branches:
+#      - main
+#    tags:
+#      - "**"
+#  pull_request:
+#    branches:
+#      - "**"
 
-env:
-  total-runners: 10
+workflow_call:
+  inputs:
+    go-version:
+      required: true
+      type: string
 
 jobs:
   milestone:
@@ -68,10 +71,10 @@ jobs:
 
   test-core:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: ["1.17", "1.18", "1.19"]
-      fail-fast: false
+#    strategy:
+#      matrix:
+#        go-version: ["1.17", "1.18", "1.19"]
+#      fail-fast: false
     env:
        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
@@ -97,7 +100,7 @@ jobs:
           repository: 'DataDog/dd-trace-go'
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: ${{ inputs.go-version }}
           check-latest: true
           cache: true
       - name: Install gotestsum
@@ -114,7 +117,7 @@ jobs:
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml
-          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          tags: go:${{ inputs.go-version }}},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
       - name: Upload Coverage
         if: always()
         shell: bash
@@ -122,10 +125,10 @@ jobs:
 
   test-contrib:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: [ "1.17", "1.18", "1.19"]
-      fail-fast: false
+#    strategy:
+#      matrix:
+#        go-version: [ "1.17", "1.18", "1.19"]
+#      fail-fast: false
     env:
        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
@@ -238,7 +241,7 @@ jobs:
           repository: 'DataDog/dd-trace-go'
       - uses: actions/setup-go@v3
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: ${{ inputs.go-version }}
           check-latest: true
           cache: true
       - name: Install gotestsum
@@ -255,7 +258,7 @@ jobs:
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml
-          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
       - name: Upload Coverage
         if: always()
