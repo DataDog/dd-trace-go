@@ -91,6 +91,12 @@ type DeltaComputer struct {
 
 	curProfTimeNanos int64
 
+	// valueTypeIndices are string table indices of the sample value type
+	// names (e.g.  "alloc_space", "cycles"...)
+	// included in DeltaComputer as the indices are written in indexPass
+	// and read in mergeSamplesPass
+	valueTypeIndices []int
+
 	// saves some heap allocations
 	scratch    [128]byte
 	scratchIDs []uint64
@@ -135,6 +141,7 @@ func (dc *DeltaComputer) reset() {
 		delete(dc.includeLocation, k)
 	}
 	dc.includeString = dc.includeString[:0]
+	dc.valueTypeIndices = dc.valueTypeIndices[:0]
 }
 
 // Delta calculates the difference between the pprof-encoded profile p and the
@@ -147,10 +154,7 @@ func (dc *DeltaComputer) Delta(p []byte, out io.Writer) error {
 	hasher := murmur3.New128()
 	dc.reset()
 
-	// valueTypeIndices are string table indices of the sample value type
-	// names (e.g.  "alloc_space", "cycles"...)
-	var valueTypeIndices []int
-	err := molecule.MessageEach(codec.NewBuffer(p), dc.indexPassFn(&valueTypeIndices, hasher))
+	err := molecule.MessageEach(codec.NewBuffer(p), dc.indexPassFn(hasher))
 	if err != nil {
 		return fmt.Errorf("error in indexing pass: %w", err)
 	}
@@ -158,7 +162,7 @@ func (dc *DeltaComputer) Delta(p []byte, out io.Writer) error {
 	// TODO: first pass optimization, if this is the first profile DeltaComputer consumes,
 	// would be to compute the previous values to populate dc.sampleMap, but just return
 	// the original profile bytes rather than effectively copying them
-	err = molecule.MessageEach(codec.NewBuffer(p), dc.mergeSamplesPassFn(out, valueTypeIndices, hasher))
+	err = molecule.MessageEach(codec.NewBuffer(p), dc.mergeSamplesPassFn(out, hasher))
 	if err != nil {
 		return fmt.Errorf("error in merge samples pass: %w", err)
 	}
@@ -183,19 +187,19 @@ func (dc *DeltaComputer) Delta(p []byte, out io.Writer) error {
 //	dc.locationIndex
 //	dc.stringTable
 //	dc.includeString (sizing)
-func (dc *DeltaComputer) indexPassFn(valueTypeIndices *[]int, hasher murmur3.Hash128) molecule.MessageEachFn {
+func (dc *DeltaComputer) indexPassFn(hasher murmur3.Hash128) molecule.MessageEachFn {
 	return func(field int32, value molecule.Value) (bool, error) {
-		return dc.indexPass(field, value, valueTypeIndices, hasher)
+		return dc.indexPass(field, value, hasher)
 	}
 }
 
-func (dc *DeltaComputer) indexPass(field int32, value molecule.Value, valueTypeIndices *[]int, hasher murmur3.Hash128) (bool, error) {
+func (dc *DeltaComputer) indexPass(field int32, value molecule.Value, hasher murmur3.Hash128) (bool, error) {
 	switch ProfileRecordNumber(field) {
 	case recProfileSampleType:
 		err := molecule.MessageEach(codec.NewBuffer(value.Bytes), func(field int32, value molecule.Value) (bool, error) {
 			switch ValueTypeRecordNumber(field) {
 			case recValueTypeType:
-				*valueTypeIndices = append(*valueTypeIndices, int(value.Number))
+				dc.valueTypeIndices = append(dc.valueTypeIndices, int(value.Number))
 			}
 			return true, nil
 		})
@@ -226,12 +230,12 @@ func (dc *DeltaComputer) indexPass(field int32, value molecule.Value, valueTypeI
 // This pass has the side effect of populating dc.include* fields so only the
 // mapping, function, location, and strings (sample labels) referenced by the kept samples
 // can be written out in a later pass.
-func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer, valueTypeIndices []int, hasher murmur3.Hash128) molecule.MessageEachFn {
+func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer, hasher murmur3.Hash128) molecule.MessageEachFn {
 	var sampleHash Hash
 
-	computeDeltaForValue := make([]bool, len(valueTypeIndices))
+	computeDeltaForValue := make([]bool, len(dc.valueTypeIndices))
 	for _, field := range dc.fields {
-		for i, j := range valueTypeIndices {
+		for i, j := range dc.valueTypeIndices {
 			if dc.stringTable.Equals(j, []byte(field), hasher) {
 				computeDeltaForValue[i] = true
 				break
@@ -240,7 +244,7 @@ func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer, valueTypeIndices []in
 	}
 
 	return func(field int32, value molecule.Value) (bool, error) {
-		return dc.mergeSamplesPass(field, value, out, hasher, &sampleHash, computeDeltaForValue, valueTypeIndices)
+		return dc.mergeSamplesPass(field, value, out, hasher, &sampleHash, computeDeltaForValue)
 	}
 }
 
@@ -250,8 +254,7 @@ func (dc *DeltaComputer) mergeSamplesPass(
 	out io.Writer,
 	hasher murmur3.Hash128,
 	sampleHash *Hash,
-	computeDeltaForValue []bool,
-	valueTypeIndices []int) (bool, error) {
+	computeDeltaForValue []bool) (bool, error) {
 	if ProfileRecordNumber(field) != recProfileSample {
 		return true, nil
 	}
@@ -323,7 +326,7 @@ func (dc *DeltaComputer) mergeSamplesPass(
 		return false, err
 	}
 	newValue := make([]byte, 0, 8*4)
-	for i := range valueTypeIndices {
+	for i := range dc.valueTypeIndices {
 		newValue = protowire.AppendVarint(newValue, uint64(val[i]))
 	}
 	sample = appendProtoBytes(sample, int32(recSampleValue), newValue)
