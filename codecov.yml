@@ -1,10 +1,7 @@
 codecov:
   branch: main
 
-comment:
-  layout: "reach, diff, flags, files"
-  behavior: new
-  require_changes: false  # if true: only post the comment if coverage changes
+comment: false
 
 flags:
   core:
