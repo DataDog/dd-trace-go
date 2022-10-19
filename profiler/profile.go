@@ -349,13 +349,8 @@ type fastDeltaProfiler struct {
 }
 
 func newFastDeltaProfiler(v ...pprofutils.ValueType) deltaProfiler {
-	// TODO[paul]: use units not just type in fastdelta
-	var fields []string
-	for _, vt := range v {
-		fields = append(fields, vt.Type)
-	}
 	fd := &fastDeltaProfiler{
-		dc: fastdelta.NewDeltaComputer(fields...),
+		dc: fastdelta.NewDeltaComputer(v...),
 	}
 	fd.gzw = gzip.NewWriter(&fd.buf)
 	return fd

@@ -17,6 +17,8 @@ import (
 	"github.com/richardartoul/molecule/src/codec"
 	"github.com/richardartoul/molecule/src/protowire"
 	"github.com/spaolacci/murmur3"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 )
 
 /*
@@ -72,9 +74,9 @@ Pass 4 (write out string table):
 
 // DeltaComputer calculates the difference between pprof-encoded profiles
 type DeltaComputer struct {
-	// fields are the names of the values in a sample for which we should
+	// fields are the name and types of the values in a sample for which we should
 	// compute the difference.
-	fields []string
+	fields []pprofutils.ValueType
 
 	// locationIndex associates location IDs (used by the pprof format to
 	// cross-reference locations) to the actual instruction address of the
@@ -92,10 +94,10 @@ type DeltaComputer struct {
 	curProfTimeNanos int64
 
 	// valueTypeIndices are string table indices of the sample value type
-	// names (e.g.  "alloc_space", "cycles"...)
+	// names (e.g.  "alloc_space", "cycles"...) and their types ("count", "bytes")
 	// included in DeltaComputer as the indices are written in indexPass
 	// and read in mergeSamplesPass
-	valueTypeIndices []int
+	valueTypeIndices [][2]int
 
 	// saves some heap allocations
 	scratch    [128]byte
@@ -112,9 +114,9 @@ type DeltaComputer struct {
 // NewDeltaComputer initializes a DeltaComputer which will calculate the
 // difference between the values for profile samples whose fields have the given
 // names (e.g. "alloc_space", "contention", ...)
-func NewDeltaComputer(fields ...string) *DeltaComputer {
+func NewDeltaComputer(fields ...pprofutils.ValueType) *DeltaComputer {
 	return &DeltaComputer{
-		fields:           append([]string{}, fields...),
+		fields:           append([]pprofutils.ValueType{}, fields...),
 		sampleMap:        make(map[Hash]sampleValue),
 		scratchIDs:       make([]uint64, 0, 512),
 		includeMapping:   make(map[uint64]struct{}),
@@ -196,16 +198,11 @@ func (dc *DeltaComputer) indexPassFn(hasher murmur3.Hash128) molecule.MessageEac
 func (dc *DeltaComputer) indexPass(field int32, value molecule.Value, hasher murmur3.Hash128) (bool, error) {
 	switch ProfileRecordNumber(field) {
 	case recProfileSampleType:
-		err := molecule.MessageEach(codec.NewBuffer(value.Bytes), func(field int32, value molecule.Value) (bool, error) {
-			switch ValueTypeRecordNumber(field) {
-			case recValueTypeType:
-				dc.valueTypeIndices = append(dc.valueTypeIndices, int(value.Number))
-			}
-			return true, nil
-		})
+		vType, vUnit, err := dc.readValueType(value.Bytes)
 		if err != nil {
 			return false, fmt.Errorf("reading sample_type record: %w", err)
 		}
+		dc.valueTypeIndices = append(dc.valueTypeIndices, [2]int{vType, vUnit})
 	case recProfileLocation:
 		// readLocation writes out function IDs for the location to this scratch buffer
 		dc.scratchIDs = dc.scratchIDs[:0]
@@ -235,8 +232,10 @@ func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer, hasher murmur3.Hash12
 
 	computeDeltaForValue := make([]bool, len(dc.valueTypeIndices))
 	for _, field := range dc.fields {
-		for i, j := range dc.valueTypeIndices {
-			if dc.strings.Equals(j, []byte(field), hasher) {
+		for i, vtIdxs := range dc.valueTypeIndices {
+			typeMatch := dc.strings.Equals(vtIdxs[0], []byte(field.Type), hasher)
+			unitMatch := dc.strings.Equals(vtIdxs[1], []byte(field.Unit), hasher)
+			if typeMatch && unitMatch {
 				computeDeltaForValue[i] = true
 				break
 			}
@@ -498,6 +497,22 @@ func (dc *DeltaComputer) writeProtoBytes(w io.Writer, field int32, value []byte)
 func appendProtoUvarint(b []byte, field int32, value uint64) []byte {
 	b = protowire.AppendVarint(b, uint64((field<<3)|int32(codec.WireVarint)))
 	return protowire.AppendVarint(b, value)
+}
+
+func (dc *DeltaComputer) readValueType(v []byte) (vType, vUnit int, err error) {
+	err = molecule.MessageEach(codec.NewBuffer(v), func(field int32, value molecule.Value) (bool, error) {
+		switch ValueTypeRecordNumber(field) {
+		case recValueTypeType:
+			vType = int(value.Number)
+		case recValueTypeUnit:
+			vUnit = int(value.Number)
+		}
+		return true, nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return vType, vUnit, nil
 }
 
 func (dc *DeltaComputer) readLocation(v []byte) (address, id, mappingID uint64, err error) {
