@@ -26,8 +26,9 @@ import (
 
 // Callback represents a function that can process a remote config update.
 // A Callback function can be registered to a remote config client to automatically
-// react upon receiving updates.
-type Callback func(u ProductUpdate)
+// react upon receiving updates. This function returns the configuration processing status
+// for each config file received through the update.
+type Callback func(u ProductUpdate) map[string]rc.ApplyStatus
 
 // Capability represents a bit index to be set in clientData.Capabilites in order to register a client
 // for a specific capability
@@ -103,7 +104,7 @@ type Client struct {
 
 // NewClient creates a new remoteconfig Client
 func NewClient(config ClientConfig) (*Client, error) {
-	repo, err := rc.NewRepository([]byte(config.TUFRoot))
+	repo, err := rc.NewUnverifiedRepository()
 	if err != nil {
 		return nil, err
 	}
@@ -205,11 +206,52 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		ClientConfigs: pbUpdate.ClientConfigs,
 	}
 
+	mapify := func(s *rc.RepositoryState) map[string]string {
+		m := make(map[string]string)
+		for i := range s.Configs {
+			path := s.CachedFiles[i].Path
+			product := s.Configs[i].Product
+			m[path] = product
+		}
+		return m
+	}
+
+	// Check the repository state before and after the update to detect which configs are not being sent anymore.
+	// This is needed because some products can stop sending configurations, and we want to make sure that the subscribers
+	// are provided with this information in this case
+	stateBefore, _ := c.repository.CurrentState()
 	products, err := c.repository.Update(update)
-	// Performs the callbacks registered for all updated products
+	stateAfter, _ := c.repository.CurrentState()
+
+	// Create a config files diff between before/after the update to see which config files are missing
+	mBefore := mapify(&stateBefore)
+	mAfter := mapify(&stateAfter)
+	for k := range mAfter {
+		delete(mBefore, k)
+	}
+
+	// Set the payload data to nil for missing config files. The callbacks then can handle the nil config case to detect
+	// that this config will not be updated anymore.
+	updatedProducts := make(map[string]bool)
+	for path, product := range mBefore {
+		if productUpdates[product] == nil {
+			productUpdates[product] = make(ProductUpdate)
+		}
+		productUpdates[product][path] = nil
+		updatedProducts[product] = true
+	}
+	// Aggregate updated products and missing products so that callbacks get called for both
 	for _, p := range products {
-		for _, c := range c.callbacks[p] {
-			c(productUpdates[p])
+		updatedProducts[p] = true
+	}
+
+	// Performs the callbacks registered for all updated products and update the application status in the repository
+	// (RCTE2)
+	for p := range updatedProducts {
+		for _, fn := range c.callbacks[p] {
+			for path, status := range fn(productUpdates[p]) {
+				c.repository.UpdateApplyStatus(path, status)
+			}
 		}
 	}
 
@@ -220,6 +262,10 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	state, err := c.repository.CurrentState()
 	if err != nil {
 		return bytes.Buffer{}, err
+	}
+	// Temporary check while using untrusted repo, for which no initial root file is provided
+	if state.RootsVersion < 1 {
+		state.RootsVersion = 1
 	}
 
 	pbCachedFiles := make([]*targetFileMeta, 0, len(state.CachedFiles))
@@ -247,9 +293,11 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	pbConfigState := make([]*configState, 0, len(state.Configs))
 	for _, f := range state.Configs {
 		pbConfigState = append(pbConfigState, &configState{
-			ID:      f.ID,
-			Version: f.Version,
-			Product: f.Product,
+			ID:         f.ID,
+			Version:    f.Version,
+			Product:    f.Product,
+			ApplyState: f.ApplyStatus.State,
+			ApplyError: f.ApplyStatus.Error,
 		})
 	}
 
