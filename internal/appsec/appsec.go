@@ -11,6 +11,8 @@ package appsec
 import (
 	"sync"
 
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
@@ -100,17 +102,17 @@ type appsec struct {
 }
 
 func newAppSec(cfg *Config) *appsec {
-	var rc *remoteconfig.Client
+	var client *remoteconfig.Client
 	var err error
 	if cfg.rc != nil {
-		rc, err = remoteconfig.NewClient(*cfg.rc)
+		client, err = remoteconfig.NewClient(*cfg.rc)
 	}
 	if err != nil {
 		log.Error("appsec: Remote config: disabled due to a client creation error: %v", err)
 	}
 	return &appsec{
 		cfg: cfg,
-		rc:  rc,
+		rc:  client,
 	}
 }
 
