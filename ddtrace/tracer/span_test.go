@@ -69,25 +69,19 @@ func TestSpanOperationName(t *testing.T) {
 }
 
 func TestSpanFinish(t *testing.T) {
+	if strings.HasPrefix(runtime.GOOS, "windows") {
+		t.Skip("Windows' sleep is not precise enough for this test.")
+	}
+
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
-	duration := wait
 	tracer := newTracer(withTransport(newDefaultTransport()))
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-
-	if strings.HasPrefix(runtime.GOOS, "windows") {
-		// We can still run this test on windows, but unfortunately the sleep timer is not precise enough
-		// for this to always pass. This is due to the combination of time.Sleep() with the special now()
-		// function on windows in this test. In reality, the duration is accurate, but the sleep timer is
-		// not.
-		wait = 2 * time.Second
-		duration = wait - 2*time.Millisecond
-	}
 
 	// the finish should set finished and the duration
 	time.Sleep(wait)
 	span.Finish()
-	assert.Greater(span.Duration, int64(duration))
+	assert.Greater(span.Duration, int64(wait))
 	assert.True(span.finished)
 }
 
