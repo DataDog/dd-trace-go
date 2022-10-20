@@ -38,6 +38,8 @@ type (
 		Query map[string][]string
 		// PathParams corresponds to the address `server.request.path_params`
 		PathParams map[string]string
+		// ClientIP corresponds to the addres `http.client_ip`
+		ClientIP netaddrIP
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -123,6 +125,7 @@ func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) Han
 		Cookies:    cookies,
 		Query:      r.URL.Query(), // TODO(Julio-Guerra): avoid actively parsing the query values thanks to dynamic instrumentation
 		PathParams: pathParams,
+		ClientIP:   IPFromRequest(r),
 	}
 }
 
