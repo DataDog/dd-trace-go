@@ -141,6 +141,11 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 					}
 				case serverResponseStatusAddr:
 					values[serverResponseStatusAddr] = res.Status
+
+				case httpClientIP:
+					if args.ClientIP.IsValid() {
+						values[httpClientIP] = args.ClientIP.String()
+					}
 				}
 			}
 			matches := runWAF(wafCtx, values, timeout)
@@ -277,6 +282,7 @@ const (
 	serverRequestPathParams           = "server.request.path_params"
 	serverRequestBody                 = "server.request.body"
 	serverResponseStatusAddr          = "server.response.status"
+	httpClientIP                      = "http.client_ip"
 )
 
 // List of HTTP rule addresses currently supported by the WAF
@@ -288,6 +294,7 @@ var httpAddresses = []string{
 	serverRequestPathParams,
 	serverRequestBody,
 	serverResponseStatusAddr,
+	httpClientIP,
 }
 
 // gRPC rule addresses currently supported by the WAF
