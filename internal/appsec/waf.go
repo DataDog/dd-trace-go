@@ -17,6 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
@@ -79,6 +81,8 @@ func registerWAF(rules []byte, timeout time.Duration, limiter Limiter, obfCfg *O
 		log.Debug("appsec: registering grpc waf listening to addresses %v", grpcAddresses)
 		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, timeout, limiter))
 	}
+
+	activeAppSec.registerRCCallback((&wafHandleWrapper{waf}).asmDataCallback, rc.ProductASMData)
 
 	// Return an unregistration function that will also release the WAF instance.
 	return func() {

@@ -11,8 +11,6 @@ package appsec
 import (
 	"sync"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
@@ -124,9 +122,6 @@ func (a *appsec) start() error {
 	unregisterWAF, err := registerWAF(a.cfg.rules, a.cfg.wafTimeout, a.limiter, &a.cfg.obfuscator)
 	if err != nil {
 		return err
-	}
-	if a.rc != nil {
-		a.rc.RegisterCallback(asmDataCallback, rc.ProductASMData)
 	}
 	a.unregisterWAF = unregisterWAF
 	a.started = true
