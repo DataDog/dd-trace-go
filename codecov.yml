@@ -1,7 +1,14 @@
 codecov:
   branch: main
 
+# Disable PR comments
 comment: false
+
+# Disable CI status checks
+coverage:
+  status:
+    project: off
+    patch: off
 
 flags:
   core:
