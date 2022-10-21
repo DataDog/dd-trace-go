@@ -85,22 +85,33 @@ func (l *locationIndex) fallback() {
 }
 
 // get returns the address associated with the given location ID
-func (l *locationIndex) get(id uint64) uint64 {
+func (l *locationIndex) get(id uint64) (uint64, bool) {
 	if l.fallbackAddress != nil {
-		return l.fallbackAddress[id]
+		n, ok := l.fallbackAddress[id]
+		return n, ok
 	}
-	return l.fastAddress[uint(id-1)]
+	if id-1 >= uint64(len(l.fastAddress)) {
+		return 0, false
+	}
+	return l.fastAddress[uint(id-1)], true
 }
 
 // getMeta returns the mapping ID and function IDs associated with
 // the given location ID
-func (l *locationIndex) getMeta(id uint64) (mappingID uint64, functionIDs []uint64) {
+func (l *locationIndex) getMeta(id uint64) (mappingID uint64, functionIDs []uint64, ok bool) {
 	if l.fallbackAddress != nil {
-		mappingID = l.fallbackMappingID[id]
-		functionIDs = l.fallbackFunctionIDs[id]
+		mappingID, ok = l.fallbackMappingID[id]
+		if !ok {
+			return
+		}
+		functionIDs, ok = l.fallbackFunctionIDs[id]
+		return
+	}
+	if id-1 >= uint64(len(l.fastMappingID)) || id-1 >= uint64(len(l.fastFunctionIDs)) {
+		ok = false
 		return
 	}
 	mappingID = l.fastMappingID[uint(id-1)]
 	functionIDs = l.fastFunctionIDs[uint(id-1)]
-	return
+	return mappingID, functionIDs, true
 }

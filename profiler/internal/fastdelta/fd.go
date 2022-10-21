@@ -85,7 +85,7 @@ type DeltaComputer struct {
 	// strings holds (hashed) copies of every string in the string table
 	// of the current profile, used to hold the names of sample value types,
 	// and the keys and values of labels.
-	strings stringTable
+	strings *stringTable
 	// sampleMap holds the value of a sample, as represented by a consistent
 	// hash of its call stack and labels, to the value of the sample for the
 	// last time that sample was observed.
@@ -123,6 +123,7 @@ func NewDeltaComputer(fields ...pprofutils.ValueType) *DeltaComputer {
 		includeFunction:  make(map[uint64]struct{}),
 		includeLocation:  make(map[uint64]struct{}),
 		includeString:    make([]bool, 0, 1024),
+		strings:          newStringTable(murmur3.New128()),
 		curProfTimeNanos: -1,
 	}
 }
@@ -159,6 +160,10 @@ func (dc *DeltaComputer) Delta(p []byte, out io.Writer) error {
 	err := molecule.MessageEach(codec.NewBuffer(p), dc.indexPassFn(hasher))
 	if err != nil {
 		return fmt.Errorf("error in indexing pass: %w", err)
+	}
+
+	if len(dc.valueTypeIndices) > maxSampleValues {
+		return fmt.Errorf("profile has %d values per sample, exceeding the maximum %d", len(dc.valueTypeIndices), maxSampleValues)
 	}
 
 	// TODO: first pass optimization, if this is the first profile DeltaComputer consumes,
@@ -212,7 +217,7 @@ func (dc *DeltaComputer) indexPass(field int32, value molecule.Value, hasher mur
 		}
 		dc.locationIndex.insert(id, address, mappingID, dc.scratchIDs)
 	case recProfileStringTable:
-		dc.strings.add(value.Bytes, hasher)
+		dc.strings.add(value.Bytes)
 
 		// always include the zero-index empty string,
 		// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
@@ -233,8 +238,8 @@ func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer, hasher murmur3.Hash12
 	computeDeltaForValue := make([]bool, len(dc.valueTypeIndices))
 	for _, field := range dc.fields {
 		for i, vtIdxs := range dc.valueTypeIndices {
-			typeMatch := dc.strings.Equals(vtIdxs[0], []byte(field.Type), hasher)
-			unitMatch := dc.strings.Equals(vtIdxs[1], []byte(field.Unit), hasher)
+			typeMatch := dc.strings.Equals(vtIdxs[0], []byte(field.Type))
+			unitMatch := dc.strings.Equals(vtIdxs[1], []byte(field.Unit))
 			if typeMatch && unitMatch {
 				computeDeltaForValue[i] = true
 				break
@@ -396,17 +401,17 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass(field int32, value molecule.Va
 		// we need to include comment indices in dc.includeString for writeStringTablePassFn
 		switch value.WireType {
 		case codec.WireBytes:
-			bs := value.Bytes
-			for len(bs) > 0 {
-				index, n := binary.Varint(bs)
-				bs = bs[n:]
-				dc.includeString[index] = true
+			err := iterPackedVarints(value.Bytes, func(index uint64) {
+				dc.markStringIncluded(uint64(index))
+			})
+			if err != nil {
+				return false, err
 			}
 		case codec.WireVarint:
-			dc.includeString[value.Number] = true
+			dc.markStringIncluded(value.Number)
 		}
 	case recProfileDropFrames, recProfileKeepFrames, recProfileDefaultSampleType:
-		dc.includeString[value.Number] = true
+		dc.markStringIncluded(value.Number)
 	case recProfileSampleType, recProfilePeriodType:
 		err := dc.includeStringIndexFields(value.Bytes,
 			int32(recValueTypeType), int32(recValueTypeUnit))
@@ -456,7 +461,7 @@ func (dc *DeltaComputer) writeStringTablePass(field int32, value molecule.Value,
 	var stringVal []byte
 	switch ProfileRecordNumber(field) {
 	case recProfileStringTable:
-		if dc.includeString[*counter] {
+		if dc.isStringIncluded(*counter) {
 			stringVal = value.Bytes
 		}
 		*counter++
@@ -571,16 +576,24 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sa
 			h.Reset()
 			switch value.WireType {
 			case codec.WireBytes:
-				bs := value.Bytes
-				for len(bs) > 0 {
-					x, n := binary.Uvarint(bs)
-					binary.BigEndian.PutUint64(dc.scratch[:], dc.locationIndex.get(x))
+				err := iterPackedVarints(value.Bytes, func(id uint64) {
+					addr, ok := dc.locationIndex.get(id)
+					if !ok {
+						return
+					}
+					binary.BigEndian.PutUint64(dc.scratch[:], addr)
 					h.Write(dc.scratch[:8])
-					bs = bs[n:]
-					dc.scratchIDs = append(dc.scratchIDs, x)
+					dc.scratchIDs = append(dc.scratchIDs, id)
+				})
+				if err != nil {
+					return false, err
 				}
 			case codec.WireVarint:
-				binary.BigEndian.PutUint64(dc.scratch[:], dc.locationIndex.get(value.Number))
+				addr, ok := dc.locationIndex.get(value.Number)
+				if !ok {
+					return false, fmt.Errorf("invalid location index")
+				}
+				binary.BigEndian.PutUint64(dc.scratch[:], addr)
 				h.Write(dc.scratch[:8])
 				dc.scratchIDs = append(dc.scratchIDs, value.Number)
 			}
@@ -590,11 +603,11 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sa
 			// repeated int64
 			switch value.WireType {
 			case codec.WireBytes:
-				bs := value.Bytes
-				for len(bs) > 0 {
-					x, n := binary.Uvarint(bs)
-					values = append(values, int64(x))
-					bs = bs[n:]
+				err := iterPackedVarints(value.Bytes, func(n uint64) {
+					values = append(values, int64(n))
+				})
+				if err != nil {
+					return false, err
 				}
 			case codec.WireVarint:
 				values = append(values, int64(value.Number))
@@ -605,7 +618,8 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sa
 				num  uint64
 				unit uint64
 			)
-			str := uint64(0xffffffffffffffff) // sentinel for "value is numeric, not a string"
+			const sentinel = 0xffffffffffffffff
+			str := uint64(sentinel) // sentinel for "value is numeric, not a string"
 			err := molecule.MessageEach(codec.NewBuffer(value.Bytes), func(field int32, value molecule.Value) (bool, error) {
 				switch LabelRecordNumber(field) {
 				case recLabelKey:
@@ -621,6 +635,15 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sa
 			})
 			if err != nil {
 				return false, err
+			}
+			if !dc.strings.contains(key) {
+				return false, fmt.Errorf("invalid string index %d", key)
+			}
+			if str != sentinel && !dc.strings.contains(str) {
+				return false, fmt.Errorf("invalid string index %d", str)
+			}
+			if !dc.strings.contains(unit) {
+				return false, fmt.Errorf("invalid string index %d", unit)
 			}
 			h.Reset()
 			h.Write(dc.strings.h[uint(key)][:])
@@ -653,7 +676,7 @@ func (dc *DeltaComputer) includeStringIndexFields(msgBytes []byte, fieldIndexes 
 	return molecule.MessageEach(codec.NewBuffer(msgBytes), func(field int32, value molecule.Value) (bool, error) {
 		for _, fieldIdx := range fieldIndexes {
 			if field == fieldIdx {
-				dc.includeString[value.Number] = true
+				dc.markStringIncluded(value.Number)
 			}
 		}
 		return true, nil
@@ -662,13 +685,48 @@ func (dc *DeltaComputer) includeStringIndexFields(msgBytes []byte, fieldIndexes 
 
 func (dc *DeltaComputer) keepLocations(locationIDs []uint64) {
 	for _, locationID := range locationIDs {
-		mappingID, functionIDs := dc.locationIndex.getMeta(locationID)
+		mappingID, functionIDs, ok := dc.locationIndex.getMeta(locationID)
+		if !ok {
+			continue
+		}
 		dc.includeMapping[mappingID] = struct{}{}
 		dc.includeLocation[locationID] = struct{}{}
 		for _, functionID := range functionIDs {
 			dc.includeFunction[functionID] = struct{}{}
 		}
 	}
+}
+
+// isStringIncluded returns whether the string at table index i should be
+// included in the profile
+func (dc *DeltaComputer) isStringIncluded(i int) bool {
+	if i < 0 || i >= len(dc.includeString) {
+		return false
+	}
+	return dc.includeString[i]
+}
+
+// markStringIncluded records that the string at table index i should be
+// included in the profile
+func (dc *DeltaComputer) markStringIncluded(i uint64) {
+	if i < uint64(len(dc.includeString)) {
+		dc.includeString[i] = true
+	}
+	// TODO: panic otherwise?
+}
+
+// iterPackedVarints calls f for every varint packed in b.
+// Returns an error if b is malformed.
+func iterPackedVarints(b []byte, f func(n uint64)) error {
+	for len(b) > 0 {
+		v, n := binary.Uvarint(b)
+		if n <= 0 {
+			return fmt.Errorf("invalid varint")
+		}
+		f(v)
+		b = b[n:]
+	}
+	return nil
 }
 
 // Hash is a 128-bit hash representing sample identity
@@ -680,27 +738,44 @@ func (h byHash) Len() int           { return len(h) }
 func (h byHash) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 func (h byHash) Less(i, j int) bool { return bytes.Compare(h[i][:], h[j][:]) == -1 }
 
-type sampleValue [4]int64
+// As of Go 1.19, the Go heap profile has 4 values per sample. This is the most
+// for any of the Go runtime profiles. In order to make the map of samples to
+// their values more GC-friendly, we prefer to have the values for that mapping
+// be fixed-size arrays rather than slices. However, this means we can't process
+// profiles with more than this many values per sample.
+const maxSampleValues = 4
+
+type sampleValue [maxSampleValues]int64
 
 type stringTable struct {
 	// Passing a byte slice to hash.Hash causes it to escape to the heap, so
 	// we keep around a single Hash to reuse to avoid a new allocation every
 	// time we add an element to the string table
-	reuse Hash
-	h     []Hash
+	reuse  Hash
+	h      []Hash
+	hasher hash.Hash
 }
 
-func (s *stringTable) add(b []byte, h hash.Hash) {
-	h.Reset()
-	h.Write(b)
-	h.Sum(s.reuse[:0])
+func newStringTable(h hash.Hash) *stringTable {
+	return &stringTable{hasher: h}
+}
+
+// contains returns whether i is a valid index for the string table
+func (s *stringTable) contains(i uint64) bool {
+	return i < uint64(len(s.h))
+}
+
+func (s *stringTable) add(b []byte) {
+	s.hasher.Reset()
+	s.hasher.Write(b)
+	s.hasher.Sum(s.reuse[:0])
 	s.h = append(s.h, s.reuse)
 }
 
 // Equals returns whether the value at index i equals the byte string b
-func (s *stringTable) Equals(i int, b []byte, h hash.Hash) bool {
-	h.Reset()
-	h.Write(b)
-	h.Sum(s.reuse[:0])
+func (s *stringTable) Equals(i int, b []byte) bool {
+	s.hasher.Reset()
+	s.hasher.Write(b)
+	s.hasher.Sum(s.reuse[:0])
 	return s.reuse == s.h[i]
 }
