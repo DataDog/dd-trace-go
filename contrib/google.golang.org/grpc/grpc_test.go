@@ -355,24 +355,41 @@ func TestSpanTree(t *testing.T) {
 
 		assert.Empty(mt.OpenSpans())
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 7)
+		require.Len(t, spans, 7)
 
-		// Ping spans
-		rootSpan := spans[6]
-		clientStreamSpan := spans[5]
-		clientStreamSendMsgSpan := spans[4]
-		serverStreamSpan := spans[3]
-		serverStreamRecvMsgSpan := spans[2]
-		serverStreamSendMsgSpan := spans[1]
-		clientStreamRecvMsgSpan := spans[0]
+		var rootSpan, clientStreamSpan, serverStreamSpan mocktracer.Span
+		var messageSpans []mocktracer.Span
+		for _, s := range spans {
+			switch n := s.OperationName(); n {
+			case "root":
+				rootSpan = s
+			case "grpc.client":
+				clientStreamSpan = s
+			case "grpc.server":
+				serverStreamSpan = s
+			case "grpc.message":
+				messageSpans = append(messageSpans, s)
+			}
+		}
+		require.NotNil(t, rootSpan)
+		require.NotNil(t, clientStreamSpan)
+		require.NotNil(t, serverStreamSpan)
 
 		assert.Zero(rootSpan.ParentID())
 		assertSpan(t, clientStreamSpan, rootSpan, "grpc.client", "/grpc.Fixture/StreamPing")
-		assertSpan(t, clientStreamSendMsgSpan, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
 		assertSpan(t, serverStreamSpan, clientStreamSpan, "grpc.server", "/grpc.Fixture/StreamPing")
-		assertSpan(t, serverStreamRecvMsgSpan, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
-		assertSpan(t, serverStreamSendMsgSpan, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
-		assertSpan(t, clientStreamRecvMsgSpan, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+		var clientSpans, serverSpans int
+		for _, ms := range messageSpans {
+			if ms.ParentID() == clientStreamSpan.SpanID() {
+				assertSpan(t, ms, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+				clientSpans++
+			} else {
+				assertSpan(t, ms, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+				serverSpans++
+			}
+		}
+		assert.Equal(2, clientSpans)
+		assert.Equal(2, serverSpans)
 	})
 }
 

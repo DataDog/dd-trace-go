@@ -14,28 +14,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
-	"path"
 	"strconv"
 )
 
 func main() {
-	prURL, ok := os.LookupEnv("CIRCLE_PULL_REQUEST")
-	if !ok {
-		fmt.Println("CIRCLE_PULL_REQUEST not set")
-		os.Exit(0)
-	}
 	exit := func(err error) {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	u, err := url.Parse(prURL)
-	if err != nil {
-		exit(err)
-	}
-	base := path.Base(u.Path)
-	pr, err := strconv.Atoi(base)
+	pr, err := strconv.Atoi(os.Getenv("PR_NUMBER"))
 	if err != nil {
 		exit(err)
 	}
@@ -53,4 +41,5 @@ func main() {
 	if data.Milestone == nil {
 		exit(errors.New("Milestone not set."))
 	}
+	fmt.Println("Milestone check passed.")
 }
