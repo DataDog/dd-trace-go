@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -44,29 +43,29 @@ func TestRunProfile(t *testing.T) {
 				Prof1: textProfile{
 					Time: timeA,
 					Text: `
-stuff/count
-main 3
-main;bar 2
-main;foo 5
+contentions/count delay/nanoseconds
+main 3 1
+main;bar 2 1
+main;foo 5 1
 `,
 				},
 				Prof2: textProfile{
 					Time: timeB,
 					Text: `
-stuff/count
-main 4
-main;bar 2
-main;foo 8
-main;foobar 7
+contentions/count delay/nanoseconds
+main 4 1
+main;bar 2 1
+main;foo 8 1
+main;foobar 7 1
 `,
 				},
 				WantDelta: textProfile{
 					Time: timeA,
 					Text: `
-stuff/count
-main;foobar 7
-main;foo 3
-main 1
+contentions/count delay/nanoseconds
+main;foobar 7 1
+main;foo 3 0
+main 1 0
 `,
 				},
 				WantDuration: deltaPeriod,
@@ -116,7 +115,7 @@ main;bar 0 0 8 16
 				// followed by prof2 when calling runProfile().
 				deltaProfiler := func(prof1, prof2 []byte, opts ...Option) (*profiler, func()) {
 					returnProfs := [][]byte{prof1, prof2}
-					opts = append(opts, WithPeriod(5*time.Millisecond))
+					opts = append(opts, WithPeriod(5*time.Millisecond), WithProfileTypes(HeapProfile, MutexProfile, BlockProfile))
 					p, err := unstartedProfiler(opts...)
 					p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 						_, err := w.Write(returnProfs[0])
@@ -172,7 +171,7 @@ main;bar 0 0 8 16
 	})
 
 	t.Run("cpu", func(t *testing.T) {
-		p, err := unstartedProfiler(CPUDuration(10 * time.Millisecond))
+		p, err := unstartedProfiler(CPUDuration(10*time.Millisecond), WithPeriod(10*time.Millisecond))
 		p.testHooks.startCPUProfile = func(w io.Writer) error {
 			_, err := w.Write([]byte("my-cpu-profile"))
 			return err
@@ -303,10 +302,7 @@ main.main()
 
 		stop := spawnGoroutines(goroutines)
 		defer stop()
-		envVar := "DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"
-		oldVal := os.Getenv(envVar)
-		os.Setenv(envVar, strconv.Itoa(limit))
-		defer os.Setenv(envVar, oldVal)
+		t.Setenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES", strconv.Itoa(limit))
 
 		p, err := unstartedProfiler()
 		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {

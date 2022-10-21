@@ -288,6 +288,15 @@ func TestRuleEnvVars(t *testing.T) {
 				value: `[{"service": "abcd", "sample_rate": 1.0}]`,
 				ruleN: 1,
 			}, {
+				value: `[{"sample_rate": 1.0}, {"service": "abcd"}, {"name": "abcd"}, {}]`,
+				ruleN: 4,
+			}, {
+				value: `[{"service": "abcd", "name": "wxyz"}]`,
+				ruleN: 1,
+			}, {
+				value: `[{"sample_rate": 1.0}]`,
+				ruleN: 1,
+			}, {
 				value: `[{"service": "abcd", "sample_rate": 1.0},{"name": "wxyz", "sample_rate": 0.9},{"service": "efgh", "name": "lmnop", "sample_rate": 0.42}]`,
 				ruleN: 3,
 			}, {
@@ -298,9 +307,6 @@ func TestRuleEnvVars(t *testing.T) {
 			}, {
 				value:  `not JSON at all`,
 				errStr: "\n\terror unmarshalling JSON: invalid character 'o' in literal null (expecting 'u')",
-			}, {
-				value:  `[{"sample_rate": 1.0}]`,
-				errStr: "\n\tat index 0: ignoring rule {Service: Name: Rate:1.0 MaxPerSecond:0}: service name and operation name are not provided",
 			},
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
@@ -315,6 +321,7 @@ func TestRuleEnvVars(t *testing.T) {
 			})
 		}
 	})
+
 	t.Run("span-sampling-rules-regex", func(t *testing.T) {
 		assert := assert.New(t)
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
@@ -323,21 +330,43 @@ func TestRuleEnvVars(t *testing.T) {
 			rules     string
 			srvRegex  string
 			nameRegex string
+			rate      float64
 		}{
 			{
 				rules:     `[{"name": "abcd?", "sample_rate": 1.0}]`,
 				srvRegex:  "^.*$",
 				nameRegex: "^abcd.$",
+				rate:      1.0,
 			},
 			{
-				rules:     `[{"service": "*abcd", "sample_rate": 1.0}]`,
+				rules:     `[{"sample_rate": 0.5}]`,
+				srvRegex:  "^.*$",
 				nameRegex: "^.*$",
-				srvRegex:  "^.*abcd$",
+				rate:      0.5,
 			},
 			{
-				rules:     `[{"service": "*abcd", "sample_rate": 1.0}]`,
+				rules:     `[{"max_per_second":100}]`,
+				srvRegex:  "^.*$",
+				nameRegex: "^.*$",
+				rate:      1,
+			},
+			{
+				rules:     `[{"name": "abcd?"}]`,
+				srvRegex:  "^.*$",
+				nameRegex: "^abcd.$",
+				rate:      1.0,
+			},
+			{
+				rules:     `[{"service": "*abcd", "sample_rate":0.5}]`,
 				nameRegex: "^.*$",
 				srvRegex:  "^.*abcd$",
+				rate:      0.5,
+			},
+			{
+				rules:     `[{"service": "*abcd", "sample_rate": 0.5}]`,
+				nameRegex: "^.*$",
+				srvRegex:  "^.*abcd$",
+				rate:      0.5,
 			},
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
@@ -346,6 +375,7 @@ func TestRuleEnvVars(t *testing.T) {
 				assert.NoError(err)
 				assert.Equal(tt.srvRegex, rules[0].Service.String())
 				assert.Equal(tt.nameRegex, rules[0].Name.String())
+				assert.Equal(tt.rate, rules[0].Rate)
 			})
 		}
 	})
@@ -353,7 +383,12 @@ func TestRuleEnvVars(t *testing.T) {
 
 func TestRulesSampler(t *testing.T) {
 	makeSpan := func(op string, svc string) *span {
-		return newSpan(op, svc, "", 0, 0, 0)
+		return newSpan(op, svc, "", random.Uint64(), random.Uint64(), 0)
+	}
+	makeFinishedSpan := func(op string, svc string) *span {
+		s := newSpan(op, svc, "", random.Uint64(), random.Uint64(), 0)
+		s.finished = true
+		return s
 	}
 
 	t.Run("no-rules", func(t *testing.T) {
@@ -381,8 +416,8 @@ func TestRulesSampler(t *testing.T) {
 				span := makeSpan("http.request", "test-service")
 				result := rs.SampleTrace(span)
 				assert.True(result)
-				assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
-				assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
+				assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
+				assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
 			})
 		}
 	})
@@ -438,10 +473,9 @@ func TestRulesSampler(t *testing.T) {
 				assert := assert.New(t)
 				rs := newRulesSampler(nil, rules)
 
-				span := makeSpan(tt.spanName, tt.spanSrv)
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
 				assert.True(result)
-				assert.Equal(float64(ext.PriorityUserKeep), span.Metrics[keySamplingPriority])
 				assert.Contains(span.Metrics, keySpanSamplingMechanism)
 				assert.Contains(span.Metrics, keySingleSpanSamplingRuleRate)
 				assert.Contains(span.Metrics, keySingleSpanSamplingMPS)
@@ -480,7 +514,7 @@ func TestRulesSampler(t *testing.T) {
 				assert := assert.New(t)
 				rs := newRulesSampler(nil, rules)
 
-				span := makeSpan(tt.spanName, tt.spanSrv)
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.Metrics, keySpanSamplingMechanism)
@@ -522,7 +556,7 @@ func TestRulesSampler(t *testing.T) {
 				c := newConfig(WithSamplingRules(tt.rules))
 				rs := newRulesSampler(nil, c.spanRules)
 
-				span := makeSpan(tt.spanName, tt.spanSrv)
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.Metrics, keySpanSamplingMechanism)
@@ -553,9 +587,9 @@ func TestRulesSampler(t *testing.T) {
 					span := makeSpan("http.request", "test-service")
 					result := rs.SampleTrace(span)
 					assert.True(result)
-					assert.Equal(rate, span.Metrics["_dd.rule_psr"])
-					if rate > 0.0 {
-						assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
+					assert.Equal(rate, span.Metrics[keyRulesSamplerAppliedRate])
+					if rate > 0.0 && (span.Metrics[keySamplingPriority] != ext.PriorityUserReject) {
+						assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
 					}
 				})
 			}
@@ -596,8 +630,8 @@ func TestRulesSamplerInternals(t *testing.T) {
 		rs := &rulesSampler{}
 		span := makeSpanAt("http.request", "test-service", now)
 		rs.traces.applyRule(span, 0.0, now)
-		assert.Equal(0.0, span.Metrics["_dd.rule_psr"])
-		_, ok := span.Metrics["_dd.limit_psr"]
+		assert.Equal(0.0, span.Metrics[keyRulesSamplerAppliedRate])
+		_, ok := span.Metrics[keyRulesSamplerLimiterRate]
 		assert.False(ok)
 	})
 
@@ -612,8 +646,8 @@ func TestRulesSamplerInternals(t *testing.T) {
 
 		span := makeSpanAt("http.request", "test-service", now)
 		rs.traces.applyRule(span, 1.0, now)
-		assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
-		assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
+		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
+		assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
 	})
 
 	t.Run("limited-rate", func(t *testing.T) {
@@ -629,13 +663,13 @@ func TestRulesSamplerInternals(t *testing.T) {
 		span := makeSpanAt("http.request", "test-service", now)
 		rs.traces.applyRule(span, 1.0, now)
 		assert.EqualValues(ext.PriorityUserKeep, span.Metrics[keySamplingPriority])
-		assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
-		assert.Equal(1.0, span.Metrics["_dd.limit_psr"])
+		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
+		assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
 		span = makeSpanAt("http.request", "test-service", now)
 		rs.traces.applyRule(span, 1.0, now)
 		assert.EqualValues(ext.PriorityUserReject, span.Metrics[keySamplingPriority])
-		assert.Equal(1.0, span.Metrics["_dd.rule_psr"])
-		assert.Equal(0.75, span.Metrics["_dd.limit_psr"])
+		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
+		assert.Equal(0.75, span.Metrics[keyRulesSamplerLimiterRate])
 	})
 }
 

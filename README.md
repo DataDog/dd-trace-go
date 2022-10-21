@@ -1,6 +1,22 @@
-[![CircleCI](https://circleci.com/gh/DataDog/dd-trace-go/tree/v1.svg?style=svg)](https://circleci.com/gh/DataDog/dd-trace-go/tree/v1)
-[![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/ddtrace)
+[![Main Branch and Release Tests](https://github.com/DataDog/dd-trace-go/actions/workflows/main-branch-tests.yml/badge.svg)](https://github.com/DataDog/dd-trace-go/actions/workflows/main-branch-tests.yml)
+[![System Tests](https://github.com/DataDog/dd-trace-go/actions/workflows/system-tests.yml/badge.svg)](https://github.com/DataDog/dd-trace-go/actions/workflows/system-tests.yml)
+[![CodeQL](https://github.com/DataDog/dd-trace-go/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/DataDog/dd-trace-go/actions/workflows/codeql-analysis.yml)
+[![APM Parametric Tests](https://github.com/DataDog/dd-trace-go/actions/workflows/parametric-tests.yml/badge.svg)](https://github.com/DataDog/dd-trace-go/actions/workflows/parametric-tests.yml)
 [![codecov](https://codecov.io/gh/DataDog/dd-trace-go/branch/v1/graph/badge.svg?token=jGG20Xhv8i)](https://codecov.io/gh/DataDog/dd-trace-go)
+
+[![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1)
+
+### Datadog Client Libraries for Go
+
+This repository contains Go packages for the client-side components of the Datadog product suite for Application Performance Monitoring, Continuous Profiling and Application Security Monitoring of Go applications.
+
+- [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases and microservices so that developers have great visiblity into bottlenecks and troublesome requests.  
+The package [`gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer`](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer) allows you to trace any piece of your Go code, and commonly used Go libraries can be automatically traced thanks to our out-of-the-box integrations which can be found in the package [`gopkg.in/DataDog/dd-trace-go.v1/ddtrace/contrib`](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib).
+
+- [Datadog Go Continuous Profiler](https://docs.datadoghq.com/profiler/): Continuously profile your Go apps to find CPU, memory, and synchronization bottlenecks, broken down by function name, and line number, to significantly reduce end-user latency and infrastructure costs.  
+The package [`gopkg.in/DataDog/dd-trace-go.v1/profiler`](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/profiler) allows you to periodically collect and send Go profiles to the Datadog API.
+
+- [Datadog Application Security Monitoring (ASM)](https://docs.datadoghq.com/security_platform/application_security/): Get observability into your Go apps attacks that aim to exploit code-level vulnerabilities, such as Server-Side-Request-Forgery (SSRF), SQL injection, Log4Shell, and Reflected Cross-Site-Scripting (XSS). ASM is not a standalone Go package and is transparently integrated into the APM tracer. Simply [enable it](https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?code-lang=go) to benefit from the security monitoring.
 
 ### Installing
 
@@ -11,7 +27,7 @@ go get gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
 go get gopkg.in/DataDog/dd-trace-go.v1/profiler
 ```
 
-Additionally there are many [contrib](./contrib) packages that can be installed as needed like this:
+Additionally there are many [contrib](./contrib) packages that can be installed to automatically instrument and trace commonly used Go libraries such as [net/http](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http), [gorilla/mux](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux) or [database/sql](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql):
 
 ```
 go get gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux
@@ -21,9 +37,10 @@ If you installed more packages than you intended, you can use `go mod tidy` to r
 
 ### Documentation
 
- - [API](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/ddtrace)
- - [Tracing Go Applications](https://docs.datadoghq.com/tracing/setup/go/)
- - [Continuous Go Profiler](https://docs.datadoghq.com/tracing/profiler/enabling/go).
+ - [APM Tracing API](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/ddtrace)
+ - [APM Tracing Go Applications](https://docs.datadoghq.com/tracing/setup/go/)
+ - [Continuous Go Profiler](https://docs.datadoghq.com/tracing/profiler/enabling/go)
+ - [Application Security Monitoring](https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?code-lang=go)
  - If you are migrating from an older version of the tracer (e.g. 0.6.x) you may also find the [migration document](MIGRATING.md) we've put together helpful.
 
 ### Support Policy

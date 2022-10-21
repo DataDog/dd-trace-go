@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -70,13 +71,13 @@ type tracer struct {
 
 	// These integers track metrics about spans and traces as they are started,
 	// finished, and dropped
-	spansStarted, spansFinished, tracesDropped int64
+	spansStarted, spansFinished, tracesDropped uint32
 
 	// Records the number of dropped P0 traces and spans.
-	droppedP0Traces, droppedP0Spans uint64
+	droppedP0Traces, droppedP0Spans uint32
 
 	// partialTrace the number of partially dropped traces.
-	partialTraces uint64
+	partialTraces uint32
 
 	// rulesSampling holds an instance of the rules sampler used to apply either trace sampling,
 	// or single span sampling rules on spans. These are user-defined
@@ -126,6 +127,14 @@ func Start(opts ...StartOption) {
 	if t.config.logStartup {
 		logStartup(t)
 	}
+	// Start AppSec with remote configuration
+	cfg := remoteconfig.DefaultClientConfig()
+	cfg.AgentAddr = t.config.agentAddr
+	cfg.AppVersion = t.config.version
+	cfg.Env = t.config.env
+	cfg.HTTP = t.config.httpClient
+	cfg.ServiceName = t.config.serviceName
+	appsec.Start(appsec.WithRCConfig(cfg))
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -168,16 +177,13 @@ func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 	if s == nil {
 		return
 	}
-	sp, ok := s.(*span)
-	if !ok || sp.context == nil {
+	sp, ok := s.(interface {
+		SetUser(string, ...UserMonitoringOption)
+	})
+	if !ok {
 		return
 	}
-	sp = sp.context.trace.root
-	var cfg UserMonitoringConfig
-	for _, fn := range opts {
-		fn(&cfg)
-	}
-	sp.setUser(id, cfg)
+	sp.SetUser(id, opts...)
 }
 
 // payloadQueueSize is the buffer size of the trace channel.
@@ -254,7 +260,6 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
-	appsec.Start()
 	return t
 }
 
@@ -334,25 +339,24 @@ func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
 	if info.decision == decisionKeep {
 		return
 	}
-	if !t.rulesSampling.HasSpanRules() {
-		info.spans = nil
-		return
-	}
-	// if trace sampling decision is drop, we still want to send single spans
-	// unless there are no single span sampling rules defined
 	var kept []*span
-	for _, span := range info.spans {
-		if t.rulesSampling.SampleSpan(span) {
-			kept = append(kept, span)
+	if t.rulesSampling.HasSpanRules() {
+		// Apply sampling rules to individual spans in the trace.
+		for _, span := range info.spans {
+			if t.rulesSampling.SampleSpan(span) {
+				kept = append(kept, span)
+			}
+		}
+		if len(kept) > 0 && len(kept) < len(info.spans) {
+			// Some spans in the trace were kept, so a partial trace will be sent.
+			atomic.AddUint32(&t.partialTraces, 1)
 		}
 	}
-	atomic.AddUint64(&t.droppedP0Spans, uint64(len(info.spans)-len(kept)))
-	info.spans = kept
 	if len(kept) == 0 {
-		atomic.AddUint64(&t.droppedP0Traces, 1)
-		return // no spans matched the rules and were sampled
+		atomic.AddUint32(&t.droppedP0Traces, 1)
 	}
-	atomic.AddUint64(&t.partialTraces, 1)
+	atomic.AddUint32(&t.droppedP0Spans, uint32(len(info.spans)-len(kept)))
+	info.spans = kept
 }
 
 func (t *tracer) pushTrace(trace *finishedTrace) {
@@ -407,7 +411,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	id := opts.SpanID
 	if id == 0 {
-		id = random.Uint64()
+		id = generateSpanID(startTime)
 	}
 	// span defaults
 	span := &span{
@@ -499,12 +503,21 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	return span
 }
 
+// generateSpanID returns a random uint64 that has been XORd with the startTime.
+// This is done to get around the 32-bit random seed limitation that may create collisions if there is a large number
+// of go services all generating spans.
+func generateSpanID(startTime int64) uint64 {
+	return random.Uint64() ^ uint64(startTime)
+}
+
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
 	if t.config.profilerHotspots {
+		// allocate the max-length slice to avoid growing it later
+		labels = make([]string, 0, 6)
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
 	}
 	// nil checks might not be needed, but better be safe than sorry

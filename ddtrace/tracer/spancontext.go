@@ -27,7 +27,7 @@ type spanContext struct {
 
 	trace  *trace // reference to the trace that this span belongs too
 	span   *span  // reference to the span that hosts this context
-	errors int64  // number of spans with errors in this trace
+	errors int32  // number of spans with errors in this trace
 
 	// the below group should propagate cross-process
 
@@ -36,7 +36,7 @@ type spanContext struct {
 
 	mu         sync.RWMutex // guards below fields
 	baggage    map[string]string
-	hasBaggage int32  // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
+	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	origin     string // e.g. "synthetics"
 }
 
@@ -80,7 +80,7 @@ func (c *spanContext) TraceID() uint64 { return c.traceID }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
-	if atomic.LoadInt32(&c.hasBaggage) == 0 {
+	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return
 	}
 	c.mu.RLock()
@@ -92,11 +92,11 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
-func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName, rate float64) {
+func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	c.trace.setSamplingPriority(p, sampler, rate, c.span)
+	c.trace.setSamplingPriority(p, sampler)
 }
 
 func (c *spanContext) samplingPriority() (p int, ok bool) {
@@ -110,14 +110,14 @@ func (c *spanContext) setBaggageItem(key, val string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.baggage == nil {
-		atomic.StoreInt32(&c.hasBaggage, 1)
+		atomic.StoreUint32(&c.hasBaggage, 1)
 		c.baggage = make(map[string]string, 1)
 	}
 	c.baggage[key] = val
 }
 
 func (c *spanContext) baggageItem(key string) string {
-	if atomic.LoadInt32(&c.hasBaggage) == 0 {
+	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return ""
 	}
 	c.mu.RLock()
@@ -136,7 +136,7 @@ func (c *spanContext) meta(key string) (val string, ok bool) {
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
 // samplingDecision is the decision to send a trace to the agent or not.
-type samplingDecision int64
+type samplingDecision uint32
 
 const (
 	// decisionNone is the default state of a trace.
@@ -201,18 +201,18 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName, rate float64, span *span) {
+func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.setSamplingPriorityLocked(p, sampler)
 }
 
 func (t *trace) keep() {
-	atomic.CompareAndSwapInt64((*int64)(&t.samplingDecision), int64(decisionNone), int64(decisionKeep))
+	atomic.CompareAndSwapUint32((*uint32)(&t.samplingDecision), uint32(decisionNone), uint32(decisionKeep))
 }
 
 func (t *trace) drop() {
-	atomic.CompareAndSwapInt64((*int64)(&t.samplingDecision), int64(decisionNone), int64(decisionDrop))
+	atomic.CompareAndSwapUint32((*uint32)(&t.samplingDecision), uint32(decisionNone), uint32(decisionDrop))
 }
 
 func (t *trace) setTag(key, value string) {
@@ -279,7 +279,7 @@ func (t *trace) push(sp *span) {
 		t.spans = nil // GC
 		log.Error("trace buffer full (%d), dropping trace", traceMaxSize)
 		if haveTracer {
-			atomic.AddInt64(&tr.tracesDropped, 1)
+			atomic.AddUint32(&tr.tracesDropped, 1)
 		}
 		return
 	}
@@ -288,7 +288,7 @@ func (t *trace) push(sp *span) {
 	}
 	t.spans = append(t.spans, sp)
 	if haveTracer {
-		atomic.AddInt64(&tr.spansStarted, 1)
+		atomic.AddUint32(&tr.spansStarted, 1)
 	}
 }
 
@@ -338,9 +338,9 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 	// we have a tracer that can receive completed traces.
-	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
+	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
 	tr.pushTrace(&finishedTrace{
 		spans:    t.spans,
-		decision: samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision))),
+		decision: samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
 }

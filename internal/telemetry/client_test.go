@@ -20,6 +20,9 @@ import (
 )
 
 func TestClient(t *testing.T) {
+	os.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
+	defer os.Unsetenv("DD_TELEMETRY_HEARTBEAT_INTERVAL")
+
 	heartbeat := make(chan struct{})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +47,13 @@ func TestClient(t *testing.T) {
 	client.Start(nil, nil) // test idempotence
 	defer client.Stop()
 
-	<-heartbeat
+	timeout := time.After(30 * time.Second)
+	select {
+	case <-timeout:
+		t.Fatal("Heartbeat took more than 30 seconds. Should have been ~1 second")
+	case <-heartbeat:
+	}
+
 }
 
 func TestMetrics(t *testing.T) {
@@ -121,24 +130,12 @@ func TestMetrics(t *testing.T) {
 	}
 }
 
-// testSetEnv is a copy of testing.T.Setenv so we can build this library
-// for Go versions prior to 1.17
-func testSetEnv(t *testing.T, key, val string) {
-	prev, ok := os.LookupEnv(key)
-	if ok {
-		t.Cleanup(func() { os.Setenv(key, prev) })
-	} else {
-		t.Cleanup(func() { os.Unsetenv(key) })
-	}
-	os.Setenv(key, val)
-}
-
 func TestDisabledClient(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("shouldn't have got any requests")
 	}))
 	defer server.Close()
-	testSetEnv(t, "DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
 
 	client := &telemetry.Client{
 		URL:                server.URL,

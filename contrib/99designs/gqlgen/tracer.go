@@ -11,6 +11,32 @@
 // any sensitive data in the query will be sent to Datadog as the resource name
 // of the span. To ensure no sensitive data is included in your spans, always
 // use parameterized graphql queries with sensitive data in variables.
+//
+// Usage example:
+//		import (
+//			"log"
+//			"net/http"
+//
+//			"github.com/99designs/gqlgen/_examples/todo"
+//			"github.com/99designs/gqlgen/graphql/handler"
+//
+//			"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+//			gqlgentrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/99designs/gqlgen"
+//		)
+//
+//		func Example() {
+//			tracer.Start()
+//			defer tracer.Stop()
+//
+//			t := gqlgentrace.NewTracer(
+//				gqlgentrace.WithAnalytics(true),
+//				gqlgentrace.WithServiceName("todo.server"),
+//			)
+//			h := handler.NewDefaultServer(todo.NewExecutableSchema(todo.New()))
+//			h.Use(t)
+//			http.Handle("/query", h)
+//			log.Fatal(http.ListenAndServe(":8080", nil))
+//		}
 package gqlgen
 
 import (

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,7 +48,7 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 
 var (
 	// timeMultiplicator specifies by how long to extend waiting times.
-	// It may be altered in some envinronment (like AppSec) where things
+	// It may be altered in some environments (like AppSec) where things
 	// move slower and could otherwise create flaky tests.
 	timeMultiplicator = time.Duration(1)
 
@@ -93,6 +94,9 @@ func setLogWriter(w io.Writer) func() {
 func TestTracerCleanStop(t *testing.T) {
 	if testing.Short() {
 		return
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("This test causes windows CI to fail due to out-of-memory issues")
 	}
 	if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
 		// avoid CI timeouts due to AppSec slowing down this test
@@ -236,7 +240,7 @@ func TestTracerStartSpan(t *testing.T) {
 		assert.NotEqual(uint64(0), span.SpanID)
 		assert.Equal(uint64(0), span.ParentID)
 		assert.Equal("web.request", span.Name)
-		assert.Equal("tracer.test", span.Service)
+		assert.Regexp(`tracer\.test(\.exe)?`, span.Service)
 		assert.Contains([]float64{
 			ext.PriorityAutoReject,
 			ext.PriorityAutoKeep,
@@ -351,6 +355,11 @@ func TestSamplingDecision(t *testing.T) {
 
 	t.Run("client_dropped", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
+		defer func() {
+			// Must check these after tracer is stopped to avoid flakiness
+			assert.Equal(t, uint32(1), tracer.droppedP0Traces)
+			assert.Equal(t, uint32(2), tracer.droppedP0Spans)
+		}()
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.config.sampler = NewRateSampler(0)
