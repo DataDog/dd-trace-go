@@ -74,6 +74,11 @@ Pass 4 (write out string table):
 
 // DeltaComputer calculates the difference between pprof-encoded profiles
 type DeltaComputer struct {
+	// poisoned indicates that the previous delta computation ended
+	// prematurely due to an error. This means the state of the
+	// DeltaComputer is invalid, and the delta computer needs to be re-set
+	poisoned bool
+
 	// fields are the name and types of the values in a sample for which we should
 	// compute the difference.
 	fields []pprofutils.ValueType
@@ -115,17 +120,22 @@ type DeltaComputer struct {
 // difference between the values for profile samples whose fields have the given
 // names (e.g. "alloc_space", "contention", ...)
 func NewDeltaComputer(fields ...pprofutils.ValueType) *DeltaComputer {
-	return &DeltaComputer{
-		fields:           append([]pprofutils.ValueType{}, fields...),
-		sampleMap:        make(map[Hash]sampleValue),
-		scratchIDs:       make([]uint64, 0, 512),
-		includeMapping:   make(map[uint64]struct{}),
-		includeFunction:  make(map[uint64]struct{}),
-		includeLocation:  make(map[uint64]struct{}),
-		includeString:    make([]bool, 0, 1024),
-		strings:          newStringTable(murmur3.New128()),
-		curProfTimeNanos: -1,
+	dc := &DeltaComputer{
+		fields: append([]pprofutils.ValueType{}, fields...),
 	}
+	dc.initialize()
+	return dc
+}
+
+func (dc *DeltaComputer) initialize() {
+	dc.sampleMap = make(map[Hash]sampleValue)
+	dc.scratchIDs = make([]uint64, 0, 512)
+	dc.includeMapping = make(map[uint64]struct{})
+	dc.includeFunction = make(map[uint64]struct{})
+	dc.includeLocation = make(map[uint64]struct{})
+	dc.includeString = make([]bool, 0, 1024)
+	dc.strings = newStringTable(murmur3.New128())
+	dc.curProfTimeNanos = -1
 }
 
 func (dc *DeltaComputer) reset() {
@@ -154,10 +164,36 @@ func (dc *DeltaComputer) reset() {
 // The first time Delta is called, the internal state of the DeltaComputer will
 // be updated and the profile will be written unchanged.
 func (dc *DeltaComputer) Delta(p []byte, out io.Writer) error {
+	if err := dc.delta(p, out); err != nil {
+		dc.poisoned = true
+		return err
+	}
+	if dc.poisoned {
+		// If we're recovering from a bad state, we'll use the first
+		// profile to re-set the state. Technically the profile has
+		// already been written to out, but we return an error to
+		// indicate that the profile shouldn't be used.
+		dc.poisoned = false
+		return fmt.Errorf("delta profiler recovering from bad state, skipping this profile")
+	}
+	return nil
+}
+
+func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = fmt.Errorf("internal panic during delta profiling: %v", e)
+		}
+	}()
 	hasher := murmur3.New128()
 	dc.reset()
 
-	err := molecule.MessageEach(codec.NewBuffer(p), dc.indexPassFn(hasher))
+	if dc.poisoned {
+		// If the last round failed, start fresh
+		dc.initialize()
+	}
+
+	err = molecule.MessageEach(codec.NewBuffer(p), dc.indexPassFn(hasher))
 	if err != nil {
 		return fmt.Errorf("error in indexing pass: %w", err)
 	}
