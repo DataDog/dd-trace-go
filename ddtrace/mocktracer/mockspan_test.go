@@ -174,7 +174,7 @@ func TestSpanFinish(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.False(s.FinishTime().IsZero())
-	assert.True(s.FinishTime().Before(time.Now()))
+	assert.True(s.FinishTime().Before(time.Now().Add(1 * time.Nanosecond)))
 	assert.Equal(want, s.Tag(ext.Error))
 }
 
