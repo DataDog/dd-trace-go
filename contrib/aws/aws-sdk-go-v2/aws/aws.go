@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+// Package aws provides functions to trace aws/aws-sdk-go-v2 (https://github.com/aws/aws-sdk-go-v2).
+//
 // Usage Example:
 //		import (
 //			"context"
