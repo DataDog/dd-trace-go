@@ -13,7 +13,6 @@ import (
 	"runtime"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 
 	"github.com/DataDog/gostackparse"
@@ -64,21 +63,25 @@ type profileType struct {
 	// this isn't done due to idiosyncratic filename used by the
 	// GoroutineProfile.
 	Filename string
-	// SupportsDelta indicates whether delta profiles can be computed for
-	// this profile type, which is used to determine the final filename
-	SupportsDelta bool
 	// Collect collects the given profile and returns the data for it. Most
 	// profiles will be in pprof format, i.e. gzip compressed proto buf data.
 	Collect func(p *profiler) ([]byte, error)
+	// DeltaValues identifies which values in profile samples should be modified
+	// when delta profiling is enabled. Empty DeltaValues means delta profiling is
+	// not supported for this profile type
+	DeltaValues []pprofutils.ValueType
 }
 
 // profileTypes maps every ProfileType to its implementation.
 var profileTypes = map[ProfileType]profileType{
 	CPUProfile: {
-		Name:     "cpu",
 		Filename: "cpu.pprof",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
+			// Start the CPU profiler at the end of the profiling
+			// period so that we're sure to capture the CPU usage of
+			// this library, which mostly happens at the end
+			p.interruptibleSleep(p.cfg.period - p.cfg.cpuDuration)
 			if p.cfg.cpuProfileRate != 0 {
 				// The profile has to be set each time before
 				// profiling is started. Otherwise,
@@ -90,6 +93,10 @@ var profileTypes = map[ProfileType]profileType{
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
+			// We want the CPU profiler to finish last so that it can
+			// properly record all of our profile processing work for
+			// the other profile types
+			p.pendingProfiles.Wait()
 			p.stopCPUProfile()
 			return buf.Bytes(), nil
 		},
@@ -102,28 +109,34 @@ var profileTypes = map[ProfileType]profileType{
 	HeapProfile: {
 		Name:     "heap",
 		Filename: "heap.pprof",
-		Collect: collectGenericProfile("heap", &pprofutils.Delta{SampleTypes: []pprofutils.ValueType{
+		Collect:  collectGenericProfile("heap", HeapProfile),
+		DeltaValues: []pprofutils.ValueType{
 			{Type: "alloc_objects", Unit: "count"},
 			{Type: "alloc_space", Unit: "bytes"},
-		}}),
-		SupportsDelta: true,
+		},
 	},
 	MutexProfile: {
-		Name:          "mutex",
-		Filename:      "mutex.pprof",
-		Collect:       collectGenericProfile("mutex", &pprofutils.Delta{}),
-		SupportsDelta: true,
+		Name:     "mutex",
+		Filename: "mutex.pprof",
+		Collect:  collectGenericProfile("mutex", MutexProfile),
+		DeltaValues: []pprofutils.ValueType{
+			{Type: "contentions", Unit: "count"},
+			{Type: "delay", Unit: "nanoseconds"},
+		},
 	},
 	BlockProfile: {
-		Name:          "block",
-		Filename:      "block.pprof",
-		Collect:       collectGenericProfile("block", &pprofutils.Delta{}),
-		SupportsDelta: true,
+		Name:     "block",
+		Filename: "block.pprof",
+		Collect:  collectGenericProfile("block", BlockProfile),
+		DeltaValues: []pprofutils.ValueType{
+			{Type: "contentions", Unit: "count"},
+			{Type: "delay", Unit: "nanoseconds"},
+		},
 	},
 	GoroutineProfile: {
 		Name:     "goroutine",
 		Filename: "goroutines.pprof",
-		Collect:  collectGenericProfile("goroutine", nil),
+		Collect:  collectGenericProfile("goroutine", GoroutineProfile),
 	},
 	expGoroutineWaitProfile: {
 		Name:     "goroutinewait",
@@ -159,48 +172,26 @@ var profileTypes = map[ProfileType]profileType{
 	},
 }
 
-func collectGenericProfile(name string, delta *pprofutils.Delta) func(p *profiler) ([]byte, error) {
+func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byte, error) {
 	return func(p *profiler) ([]byte, error) {
-		var extra []*pprofile.Profile
-		// TODO: add type safety for name == "heap" check and remove redunancy with profileType.Name.
-		cAlloc, ok := extensions.GetCAllocationProfiler()
-		switch {
-		case ok && p.cfg.cmemprofEnabled && p.cfg.deltaProfiles && name == "heap":
-			// For the heap profile, we'd also like to include C
-			// allocations if that extension is enabled and have the
-			// allocations show up in the same profile. Collect them
-			// first before getting the regular heap snapshot so
-			// that all allocations cover the same time period
-			//
-			// TODO: Support non-delta profiles for C allocations?
-			cAlloc.Start(p.cfg.cmemprofRate)
-			p.interruptibleSleep(p.cfg.period)
-			profile, err := cAlloc.Stop()
-			if err == nil {
-				extra = append(extra, profile)
-			}
-		default:
-			// In all cases, sleep until the end of the profile
-			// period so that all profiles cover the same period of
-			// time
-			p.interruptibleSleep(p.cfg.period)
-		}
+		p.interruptibleSleep(p.cfg.period)
 
 		var buf bytes.Buffer
 		err := p.lookupProfile(name, &buf, 0)
 		data := buf.Bytes()
-		if delta == nil || !p.cfg.deltaProfiles {
+		dp, ok := p.deltas[pt]
+		if !ok || !p.cfg.deltaProfiles {
 			return data, err
 		}
 
 		start := time.Now()
-		delta, err := p.deltaProfile(name, delta, data, extra...)
+		delta, err := dp.Delta(data)
 		tags := append(p.cfg.tags.Slice(), fmt.Sprintf("profile_type:%s", name))
 		p.cfg.statsd.Timing("datadog.profiling.go.delta_time", time.Since(start), tags, 1)
 		if err != nil {
 			return nil, fmt.Errorf("delta profile error: %s", err)
 		}
-		return delta.data, err
+		return delta, err
 	}
 }
 
@@ -267,25 +258,37 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	tags := append(p.cfg.tags.Slice(), pt.Tag())
 	filename := t.Filename
 	// TODO(fg): Consider making Collect() return the filename.
-	if p.cfg.deltaProfiles && t.SupportsDelta {
+	if p.cfg.deltaProfiles && len(t.DeltaValues) > 0 {
 		filename = "delta-" + filename
 	}
 	p.cfg.statsd.Timing("datadog.profiling.go.collect_time", end.Sub(start), tags, 1)
 	return []*profile{{name: filename, data: data}}, nil
 }
 
-// deltaProfile derives the delta profile between curData and the previous
-// profile. If extra profiles are provided, they will be merged into the final
-// profile after computing the delta profile.
-func (p *profiler) deltaProfile(name string, delta *pprofutils.Delta, curData []byte, extra ...*pprofile.Profile) (*profile, error) {
+type deltaProfiler struct {
+	delta pprofutils.Delta
+	prev  *pprofile.Profile
+}
+
+// newDeltaProfiler returns an initialized deltaProfiler. If value types
+// are given (e.g. "alloc_space", "alloc_objects"), only those values will have
+// deltas computed. Otherwise, deltas will be computed for every value.
+func newDeltaProfiler(v ...pprofutils.ValueType) *deltaProfiler {
+	return &deltaProfiler{
+		delta: pprofutils.Delta{SampleTypes: v},
+	}
+}
+
+// Delta derives the delta profile between curData and the profile passed to the
+// previous call to Delta. The first call to Delta will return the profile
+// unchanged.
+func (d *deltaProfiler) Delta(curData []byte) ([]byte, error) {
 	curProf, err := pprofile.ParseData(curData)
 	if err != nil {
 		return nil, fmt.Errorf("delta prof parse: %v", err)
 	}
 	var deltaData []byte
-	p.mu.Lock()
-	prevProf := p.prev[name]
-	p.mu.Unlock()
+	prevProf := d.prev
 	if prevProf == nil {
 		// First time deltaProfile gets called for a type, there is no prevProf. In
 		// this case we emit the current profile as a delta profile.
@@ -295,7 +298,7 @@ func (p *profiler) deltaProfile(name string, delta *pprofutils.Delta, curData []
 		// Unfortunately the core implementation isn't resuable via a API, so we do
 		// our own delta calculation below.
 		// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
-		deltaProf, err := delta.Convert(prevProf, curProf, extra...)
+		deltaProf, err := d.delta.Convert(prevProf, curProf)
 		if err != nil {
 			return nil, fmt.Errorf("delta prof merge: %v", err)
 		}
@@ -312,10 +315,8 @@ func (p *profiler) deltaProfile(name string, delta *pprofutils.Delta, curData []
 	}
 	// Keep the most recent profiles in memory for future diffing. This needs to
 	// be taken into account when enforcing memory limits going forward.
-	p.mu.Lock()
-	p.prev[name] = curProf
-	p.mu.Unlock()
-	return &profile{data: deltaData}, nil
+	d.prev = curProf
+	return deltaData, nil
 }
 
 func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
