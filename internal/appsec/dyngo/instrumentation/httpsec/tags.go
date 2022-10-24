@@ -13,17 +13,14 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
 	// envClientIPHeader is the name of the env var used to specify the IP header to be used for client IP collection.
 	envClientIPHeader = "DD_TRACE_CLIENT_IP_HEADER"
-	// envClientIPHeader is the name of the env var used to disable client IP tag collection.
-	envClientIPHeaderDisabled = "DD_TRACE_CLIENT_IP_HEADER_DISABLED"
 	// multipleIPHeaders sets the multiple ip header tag used internally to tell the backend an error occurred when
 	// retrieving an HTTP request client IP.
 	multipleIPHeaders = "_dd.multiple-ip-headers"
@@ -56,20 +53,20 @@ var (
 		"accept",
 		"accept-encoding",
 		"accept-language")
-	collectIP      = true
 	clientIPHeader string
 )
 
-// SetAppSecTags sets the AppSec-specific span tags that are expected to be in
-// the web service entry span (span of type `web`) when AppSec is enabled.
-func SetAppSecTags(span ddtrace.Span) {
-	span.SetTag("_dd.appsec.enabled", 1)
-	span.SetTag("_dd.runtime_family", "go")
+func init() {
+	// Required by sort.SearchStrings
+	sort.Strings(collectedHTTPHeaders[:])
+	clientIPHeader = os.Getenv(envClientIPHeader)
 }
 
 // SetSecurityEventTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
-func SetSecurityEventTags(span ddtrace.Span, events []json.RawMessage, remoteIP string, headers, respHeaders map[string][]string) {
-	instrumentation.SetEventSpanTags(span, events)
+func SetSecurityEventTags(span instrumentation.TagSetter, events []json.RawMessage, remoteIP string, headers, respHeaders map[string][]string) {
+	if err := instrumentation.SetEventSpanTags(span, events); err != nil {
+		log.Error("appsec: unexpected error while creating the appsec event tags: %v", err)
+	}
 	span.SetTag("network.client.ip", remoteIP)
 	for h, v := range NormalizeHTTPHeaders(headers) {
 		span.SetTag("http.request.headers."+h, v)
@@ -108,24 +105,28 @@ func ippref(s string) *netaddrIPPrefix {
 
 // SetIPTags sets the IP related span tags for a given request
 // See https://docs.datadoghq.com/tracing/configure_data_security#configuring-a-client-ip-header for more information.
-func SetIPTags(span ddtrace.Span, r *http.Request) {
+func SetIPTags(span instrumentation.TagSetter, r *http.Request) {
 	ipHeaders := defaultIPHeaders
 	if len(clientIPHeader) > 0 {
 		ipHeaders = []string{clientIPHeader}
 	}
-	var headers []string
-	var ips []string
+
+	var (
+		headers []string
+		ips     []string
+	)
 	for _, hdr := range ipHeaders {
 		if v := r.Header.Get(hdr); v != "" {
 			headers = append(headers, hdr)
 			ips = append(ips, v)
 		}
 	}
-	if len(ips) == 0 {
+
+	if l := len(ips); l == 0 {
 		if remoteIP := parseIP(r.RemoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
 			span.SetTag(ext.HTTPClientIP, remoteIP.String())
 		}
-	} else if len(ips) == 1 {
+	} else if l == 1 {
 		for _, ipstr := range strings.Split(ips[0], ",") {
 			ip := parseIP(strings.TrimSpace(ipstr))
 			if ip.IsValid() && isGlobal(ip) {
@@ -167,10 +168,4 @@ func isGlobal(ip netaddrIP) bool {
 		}
 	}
 	return isGlobal
-}
-func init() {
-	// Required by sort.SearchStrings
-	sort.Strings(collectedHTTPHeaders[:])
-	collectIP = collectIP && !internal.BoolEnv(envClientIPHeaderDisabled, false)
-	clientIPHeader = os.Getenv(envClientIPHeader)
 }

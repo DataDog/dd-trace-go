@@ -71,8 +71,11 @@ func MonitorParsedBody(ctx context.Context, body interface{}) {
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
-	SetAppSecTags(span)
+	instrumentation.SetAppSecEnabledTags(span)
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		SetIPTags(span, r)
+
 		args := MakeHandlerOperationArgs(r, pathParams)
 		ctx, op := StartOperation(r.Context(), args)
 		r = r.WithContext(ctx)
@@ -81,6 +84,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			if mw, ok := w.(interface{ Status() int }); ok {
 				status = mw.Status()
 			}
+
 			events := op.Finish(HandlerOperationRes{Status: status})
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
@@ -93,6 +97,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			}
 			SetSecurityEventTags(span, events, remoteIP, args.Headers, w.Header())
 		}()
+
 		handler.ServeHTTP(w, r)
 	})
 }
@@ -255,34 +260,4 @@ func (OnSDKBodyOperationFinish) ListenedType() reflect.Type { return sdkBodyOper
 // type-assertion on v whose type is the one returned by ListenedType().
 func (f OnSDKBodyOperationFinish) Call(op dyngo.Operation, v interface{}) {
 	f(op.(*SDKBodyOperation), v.(SDKBodyOperationRes))
-}
-
-// IPFromRequest returns the resolved client IP for a specific request. The returned IP can be invalid.
-func IPFromRequest(r *http.Request) netaddrIP {
-	ipHeaders := defaultIPHeaders
-	if len(clientIPHeader) > 0 {
-		ipHeaders = []string{clientIPHeader}
-	}
-	var headers []string
-	var ips []string
-	for _, hdr := range ipHeaders {
-		if v := r.Header.Get(hdr); v != "" {
-			headers = append(headers, hdr)
-			ips = append(ips, v)
-		}
-	}
-	if len(ips) == 0 {
-		if remoteIP := parseIP(r.RemoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
-			return remoteIP
-		}
-	} else if len(ips) == 1 {
-		for _, ipstr := range strings.Split(ips[0], ",") {
-			ip := parseIP(strings.TrimSpace(ipstr))
-			if ip.IsValid() && isGlobal(ip) {
-				return ip
-			}
-		}
-	}
-
-	return netaddrIP{}
 }

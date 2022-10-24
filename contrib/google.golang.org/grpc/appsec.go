@@ -9,20 +9,19 @@ import (
 	"encoding/json"
 	"net"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
-
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 )
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
 func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
-	httpsec.SetAppSecTags(span)
+	instrumentation.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
 		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
@@ -41,7 +40,7 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 
 // StreamHandler wrapper to use when AppSec is enabled to monitor its execution.
 func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
-	httpsec.SetAppSecTags(span)
+	instrumentation.SetAppSecEnabledTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
 		md, _ := metadata.FromIncomingContext(stream.Context())
 		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
