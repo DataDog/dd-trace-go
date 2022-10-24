@@ -7,6 +7,7 @@ package fastdelta
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"testing"
@@ -379,4 +380,61 @@ func TestSampleHashingConsistency(t *testing.T) {
 
 func vt(vtype, vunit string) pprofutils.ValueType {
 	return pprofutils.ValueType{Type: vtype, Unit: vunit}
+}
+
+type badWriter struct{}
+
+func (badWriter) Write(p []byte) (int, error) {
+	return 0, errors.New("fail")
+}
+
+func TestRecovery(t *testing.T) {
+	before, err := os.ReadFile("testdata/heap.before.pprof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile("testdata/heap.after.pprof")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := []pprofutils.ValueType{
+		vt("alloc_objects", "count"),
+		vt("alloc_space", "bytes"),
+	}
+
+	dc := NewDeltaComputer(fields...)
+	if err := dc.Delta(before, badWriter{}); err == nil {
+		t.Fatal("delta out to bad writer spuriously succeeded")
+	}
+
+	// dc is now in a bad state, and needs to recover. The next write should
+	// accept the input to re-set its state, but shouldn't claim to have
+	// successfully computed a delta profile
+	if err := dc.Delta(before, io.Discard); err == nil {
+		t.Fatal("delta after bad state spuriously succeeded")
+	}
+
+	data := new(bytes.Buffer)
+	if err := dc.Delta(after, data); err != nil {
+		t.Fatal(err)
+	}
+
+	delta, err := profile.ParseData(data.Bytes())
+	if err != nil {
+		t.Fatalf("parsing delta profile: %s", err)
+	}
+
+	golden := makeGolden(t, before, after, fields...)
+
+	golden.Scale(-1)
+	diff, err := profile.Merge([]*profile.Profile{delta, golden})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diff.Sample) != 0 {
+		t.Errorf("non-empty diff from golden vs delta: %v", diff)
+		t.Errorf("got: %v", delta)
+		t.Errorf("want: %v", golden)
+	}
 }
