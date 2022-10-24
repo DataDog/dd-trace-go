@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -284,6 +285,7 @@ func TestTracerStartSpan(t *testing.T) {
 }
 
 func TestSamplingDecision(t *testing.T) {
+
 	t.Run("sampled", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
@@ -490,35 +492,41 @@ func TestSamplingDecision(t *testing.T) {
 		os.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
 		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
 		tracer, _, _, stop := startTestTracer(t)
-		tracer.rulesSampling.traces.limiter.prevTime = time.Now().Add(10 * time.Second)
+		// Don't allow the rate limiter to reset while the test is running.
+		current := time.Now()
+		nowTime = func() time.Time { return current }
+		defer func() {
+			nowTime = func() time.Time { return time.Now() }
+		}()
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
-		spans := []*span{}
+		var spans []*span
 		for i := 0; i < 100; i++ {
-			s := tracer.StartSpan("name_1").(*span)
+			s := tracer.StartSpan(fmt.Sprintf("name_%d", i)).(*span)
 			for j := 0; j < 9; j++ {
-				child := tracer.StartSpan("name_2", ChildOf(s.context))
+				child := tracer.newChildSpan(fmt.Sprintf("name_%d_%d", i, j), s)
 				child.Finish()
-				spans = append(spans, child.(*span))
+				spans = append(spans, child)
 			}
-			spans = append(spans, s)
 			s.Finish()
+			spans = append(spans, s)
 		}
 		tracer.Stop()
 
-		singleSpans, keptSpans := 0, 0
+		var singleSpans, keptSpans int
 		for _, s := range spans {
 			if _, ok := s.Metrics[keySpanSamplingMechanism]; ok {
 				singleSpans++
-				continue
+				assert.Equal(t, 1.0, s.Metrics[keySingleSpanSamplingRuleRate])
+				assert.Equal(t, 50.0, s.Metrics[keySingleSpanSamplingMPS])
 			}
 			if s.Metrics[keySamplingPriority] == ext.PriorityUserKeep {
 				keptSpans++
 			}
 		}
 		assert.Equal(t, 50, singleSpans)
-		assert.InDelta(t, 0.8, float64(keptSpans)/float64(len(spans)), 0.15)
+		assert.InDelta(t, 0.8, float64(keptSpans)/float64(len(spans)), 0.19)
 	})
 
 	t.Run("single_spans_without_max_per_second:rate_1.0", func(t *testing.T) {
