@@ -483,7 +483,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.NotContains(t, parent.Metrics, keySingleSpanSamplingMPS)
 	})
 
-	t.Run("single_spans_with_max_per_second", func(t *testing.T) {
+	t.Run("single_spans_with_max_per_second:rate_1.0", func(t *testing.T) {
 		os.Setenv("DD_SPAN_SAMPLING_RULES",
 			`[{"service": "test_*","name":"name_*", "sample_rate": 1.0,"max_per_second":50}]`)
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
