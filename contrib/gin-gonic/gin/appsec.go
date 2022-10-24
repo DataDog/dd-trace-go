@@ -19,7 +19,7 @@ import (
 // returns the  function to be executed upon finishing the operation
 func useAppSec(c *gin.Context, span tracer.Span) func() {
 	req := c.Request
-	httpsec.SetAppSecTags(span)
+	instrumentation.SetAppSecEnabledTags(span)
 	var params map[string]string
 	if l := len(c.Params); l > 0 {
 		params = make(map[string]string, l)
