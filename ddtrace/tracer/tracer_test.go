@@ -490,13 +490,14 @@ func TestSamplingDecision(t *testing.T) {
 		os.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
 		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
 		tracer, _, _, stop := startTestTracer(t)
+		tracer.rulesSampling.traces.limiter.prevTime = time.Now().Add(10 * time.Second)
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
 		spans := []*span{}
 		for i := 0; i < 100; i++ {
 			s := tracer.StartSpan("name_1").(*span)
-			for i := 0; i < 9; i++ {
+			for j := 0; j < 9; j++ {
 				child := tracer.StartSpan("name_2", ChildOf(s.context))
 				child.Finish()
 				spans = append(spans, child.(*span))
@@ -517,7 +518,7 @@ func TestSamplingDecision(t *testing.T) {
 			}
 		}
 		assert.Equal(t, 50, singleSpans)
-		assert.InDelta(t, 0.8, float64(keptSpans)/1000.0, 0.15)
+		assert.InDelta(t, 0.8, float64(keptSpans)/float64(len(spans)), 0.15)
 	})
 
 	t.Run("single_spans_without_max_per_second:rate_1.0", func(t *testing.T) {
