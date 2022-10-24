@@ -26,7 +26,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -119,8 +118,6 @@ func logStartup(c *config) {
 		MutexProfileFraction int      `json:"mutex_profile_fraction"`
 		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
 		UploadTimeout        string   `json:"upload_timeout"`
-		CmemprofEnabled      bool     `json:"cmemprof_enabled"`
-		CmemprofRate         int      `json:"cmemprof_rate"`
 	}{
 		Date:                 time.Now().Format(time.RFC3339),
 		OSName:               osinfo.OSName(),
@@ -142,8 +139,6 @@ func logStartup(c *config) {
 		MutexProfileFraction: c.mutexFraction,
 		MaxGoroutinesWait:    c.maxGoroutinesWait,
 		UploadTimeout:        c.uploadTimeout.String(),
-		CmemprofEnabled:      c.cmemprofEnabled,
-		CmemprofRate:         c.cmemprofRate,
 	}
 	for t := range c.types {
 		info.EnabledProfiles = append(info.EnabledProfiles, t.String())
@@ -196,8 +191,6 @@ func defaultConfig() (*config, error) {
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:        internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
-		cmemprofEnabled:   false,
-		cmemprofRate:      extensions.DefaultCAllocationSamplingRate,
 	}
 	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
 	for _, t := range defaultProfileTypes {

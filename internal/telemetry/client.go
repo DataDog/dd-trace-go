@@ -420,7 +420,7 @@ func getOSVersion() string {
 // newRequests populates a request with the common fields shared by all requests
 // sent through this Client
 func (c *Client) newRequest(t RequestType) *Request {
-	c.seqID += 1
+	c.seqID++
 	return &Request{
 		APIVersion:  "v1",
 		RequestType: t,
