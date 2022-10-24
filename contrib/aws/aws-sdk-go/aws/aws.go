@@ -25,6 +25,10 @@ const (
 	tagAWSRegion     = "aws.region"
 	tagAWSRetryCount = "aws.retry_count"
 	tagAWSRequestID  = "aws.request_id"
+	// SendHandlerName is the name of the Datadog NamedHandler for the Send phase of an awsv1 request
+	SendHandlerName = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Send"
+	// CompleteHandlerName is the name of the Datadog NamedHandler for the Complete phase of an awsv1 request
+	CompleteHandlerName = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Complete"
 )
 
 type handlers struct {
@@ -42,11 +46,11 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	h := &handlers{cfg: cfg}
 	s = s.Copy()
 	s.Handlers.Send.PushFrontNamed(request.NamedHandler{
-		Name: "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Send",
+		Name: SendHandlerName,
 		Fn:   h.Send,
 	})
 	s.Handlers.Complete.PushBackNamed(request.NamedHandler{
-		Name: "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Complete",
+		Name: CompleteHandlerName,
 		Fn:   h.Complete,
 	})
 	return s
