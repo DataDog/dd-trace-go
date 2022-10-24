@@ -17,7 +17,7 @@ import (
 
 func useAppSec(c echo.Context, span tracer.Span) func() {
 	req := c.Request()
-	httpsec.SetAppSecEnabledTags(span)
+	instrumentation.SetAppSecEnabledTags(span)
 	params := make(map[string]string)
 	for _, n := range c.ParamNames() {
 		params[n] = c.Param(n)
