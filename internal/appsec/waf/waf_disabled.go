@@ -4,8 +4,8 @@
 // Copyright 2016 Datadog, Inc.
 
 // Build when CGO is disabled or the target OS or Arch are not supported
-//go:build !appsec || !cgo || windows || !amd64
-// +build !appsec !cgo windows !amd64
+//go:build !appsec || !cgo || windows || !(amd64 || arm64)
+// +build !appsec !cgo windows !amd64,!arm64
 
 package waf
 
@@ -37,7 +37,12 @@ func NewHandle([]byte, string, string) (*Handle, error) { return nil, errDisable
 func (*Handle) Addresses() []string { return nil }
 
 // RulesetInfo returns the rules initialization metrics for the current WAF handle
-func (waf *Handle) RulesetInfo() RulesetInfo { return RulesetInfo{} }
+func (*Handle) RulesetInfo() RulesetInfo { return RulesetInfo{} }
+
+// UpdateRuleData updates the data that some rules reference to.
+// The given rule data must be a raw JSON string of the form
+// [ {rule data #1}, ... {rule data #2} ]
+func (*Handle) UpdateRuleData([]byte) error { return errDisabledReason }
 
 // Close the WAF and release the underlying C memory as soon as there are
 // no more WAF contexts using the rule.
@@ -49,11 +54,11 @@ func (*Handle) Close() {}
 func NewContext(*Handle) *Context { return nil }
 
 // Run the WAF with the given Go values and timeout.
-func (*Context) Run(map[string]interface{}, time.Duration) ([]byte, error) {
-	return nil, errDisabledReason
+func (*Context) Run(map[string]interface{}, time.Duration) ([]byte, []string, error) {
+	return nil, nil, errDisabledReason
 }
 
-// TotalRuntime returns the cumulated waf runtime across various run calls within the same WAF context.
+// TotalRuntime returns the cumulated WAF runtime across various run calls within the same WAF context.
 // Returned time is in nanoseconds.
 func (*Context) TotalRuntime() (uint64, uint64) { return 0, 0 }
 

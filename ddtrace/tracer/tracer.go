@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -126,6 +127,14 @@ func Start(opts ...StartOption) {
 	if t.config.logStartup {
 		logStartup(t)
 	}
+	// Start AppSec with remote configuration
+	cfg := remoteconfig.DefaultClientConfig()
+	cfg.AgentAddr = t.config.agentAddr
+	cfg.AppVersion = t.config.version
+	cfg.Env = t.config.env
+	cfg.HTTP = t.config.httpClient
+	cfg.ServiceName = t.config.serviceName
+	appsec.Start(appsec.WithRCConfig(cfg))
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -251,7 +260,6 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
-	appsec.Start()
 	return t
 }
 
@@ -323,13 +331,16 @@ func (t *tracer) worker(tick <-chan time.Time) {
 // finishedTrace holds information about a trace that has finished, including its spans.
 type finishedTrace struct {
 	spans    []*span
-	decision samplingDecision
+	willSend bool // willSend indicates whether the trace will be sent to the agent.
 }
 
 // sampleFinishedTrace applies single-span sampling to the provided trace, which is considered to be finished.
 func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
-	if info.decision == decisionKeep {
-		return
+	if len(info.spans) > 0 {
+		if p, ok := info.spans[0].context.samplingPriority(); ok && p > 0 {
+			// The trace is kept, no need to run single span sampling rules.
+			return
+		}
 	}
 	var kept []*span
 	if t.rulesSampling.HasSpanRules() {
@@ -348,7 +359,9 @@ func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
 		atomic.AddUint32(&t.droppedP0Traces, 1)
 	}
 	atomic.AddUint32(&t.droppedP0Spans, uint32(len(info.spans)-len(kept)))
-	info.spans = kept
+	if !info.willSend {
+		info.spans = kept
+	}
 }
 
 func (t *tracer) pushTrace(trace *finishedTrace) {
