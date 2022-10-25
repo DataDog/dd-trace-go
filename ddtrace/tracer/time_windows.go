@@ -37,3 +37,12 @@ var now func() int64 = func() func() int64 {
 		return highPrecisionNow
 	}
 }()
+
+var nowTime func() time.Time = func() func() time.Time {
+	if err := windows.LoadGetSystemTimePreciseAsFileTime(); err != nil {
+		log.Warn("Unable to load high precison timer, defaulting to time.Now()")
+		return func() time.Time { return time.Unix(0, lowPrecisionNow()) }
+	} else {
+		return func() time.Time { return time.Unix(0, highPrecisionNow()) }
+	}
+}()
