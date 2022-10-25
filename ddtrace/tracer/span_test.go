@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -68,6 +69,10 @@ func TestSpanOperationName(t *testing.T) {
 }
 
 func TestSpanFinish(t *testing.T) {
+	if strings.HasPrefix(runtime.GOOS, "windows") {
+		t.Skip("Windows' sleep is not precise enough for this test.")
+	}
+
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
 	tracer := newTracer(withTransport(newDefaultTransport()))
@@ -76,7 +81,7 @@ func TestSpanFinish(t *testing.T) {
 	// the finish should set finished and the duration
 	time.Sleep(wait)
 	span.Finish()
-	assert.True(span.Duration > int64(wait))
+	assert.Greater(span.Duration, int64(wait))
 	assert.True(span.finished)
 }
 
