@@ -1,6 +1,14 @@
 name: Multi-OS Unit and Integration Tests
 
 on:
+  workflow_dispatch: # manually
+    inputs:
+      go-version:
+        required: true
+        type: string
+      runs-on:
+        required: true
+        type: string
   workflow_call:
     inputs:
       go-version:
