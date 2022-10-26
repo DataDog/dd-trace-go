@@ -26,6 +26,7 @@ type config struct {
 	traceStreamMessages bool
 	noDebugStack        bool
 	ignoredMethods      map[string]struct{}
+	untracedMethods     map[string]struct{}
 	withMetadataTags    bool
 	ignoredMetadata     map[string]struct{}
 	withRequestTags     bool
@@ -139,6 +140,9 @@ func WithAnalyticsRate(rate float64) Option {
 
 // WithIgnoredMethods specifies full methods to be ignored by the server side interceptor.
 // When an incoming request's full method is in ms, no spans will be created.
+//
+// Deprecated: This is deprecated in favor of WithUntracedMethods which applies to both
+// the server side and client side interceptors.
 func WithIgnoredMethods(ms ...string) Option {
 	ims := make(map[string]struct{}, len(ms))
 	for _, e := range ms {
@@ -146,6 +150,18 @@ func WithIgnoredMethods(ms ...string) Option {
 	}
 	return func(cfg *config) {
 		cfg.ignoredMethods = ims
+	}
+}
+
+// WithUntracedMethods specifies full methods to be ignored by the server side and client
+// side interceptors. When a request's full method is in ms, no spans will be created.
+func WithUntracedMethods(ms ...string) Option {
+	ums := make(map[string]struct{}, len(ms))
+	for _, e := range ms {
+		ums[e] = struct{}{}
+	}
+	return func(cfg *config) {
+		cfg.untracedMethods = ums
 	}
 }
 
