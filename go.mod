@@ -93,6 +93,7 @@ require (
 	github.com/DataDog/datadog-go v4.8.2+incompatible // indirect
 	github.com/DataDog/zstd v1.3.5 // indirect
 	github.com/Microsoft/go-winio v0.5.1 // indirect
+	github.com/PhilipJovanovic/phi v0.0.5
 	github.com/agnivade/levenshtein v1.1.0 // indirect
 	github.com/andybalholm/brotli v1.0.4 // indirect
 	github.com/armon/go-metrics v0.3.0 // indirect
