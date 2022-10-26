@@ -390,7 +390,6 @@ func TestRulesSampler(t *testing.T) {
 		s.finished = true
 		return s
 	}
-
 	t.Run("no-rules", func(t *testing.T) {
 		assert := assert.New(t)
 		rs := newRulesSampler(nil, nil)
@@ -444,6 +443,46 @@ func TestRulesSampler(t *testing.T) {
 	})
 
 	t.Run("matching-span-rules-from-env", func(t *testing.T) {
+		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		for _, tt := range []struct {
+			rules    string
+			spanSrv  string
+			spanName string
+		}{
+			{
+				rules:    `[{"name": "abcd?", "sample_rate": 1.0, "max_per_second":100}]`,
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    `[{"service": "*abcd","max_per_second":100, "sample_rate": 1.0}]`,
+				spanSrv:  "xyzabcd",
+				spanName: "abcde",
+			},
+			{
+				rules:    `[{"service": "?*", "sample_rate": 1.0, "max_per_second":100}]`,
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+		} {
+			t.Run("", func(t *testing.T) {
+				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
+				_, rules, _ := samplingRulesFromEnv()
+
+				assert := assert.New(t)
+				rs := newRulesSampler(nil, rules)
+
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
+				result := rs.SampleSpan(span)
+				assert.True(result)
+				assert.Contains(span.Metrics, keySpanSamplingMechanism)
+				assert.Contains(span.Metrics, keySingleSpanSamplingRuleRate)
+				assert.Contains(span.Metrics, keySingleSpanSamplingMPS)
+			})
+		}
+	})
+
+	t.Run("matching-span-rules", func(t *testing.T) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		for _, tt := range []struct {
 			rules    string
