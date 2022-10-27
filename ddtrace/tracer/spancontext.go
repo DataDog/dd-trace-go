@@ -341,6 +341,6 @@ func (t *trace) finishedOne(s *span) {
 	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
 	tr.pushTrace(&finishedTrace{
 		spans:    t.spans,
-		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+		decision: samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
 }

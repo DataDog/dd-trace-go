@@ -360,7 +360,7 @@ func (rs *singleSpanRulesSampler) apply(span *span) bool {
 			}
 			var sampled bool
 			if rule.limiter != nil {
-				sampled, rate = rule.limiter.allowOne(nowTime())
+				sampled, rate = rule.limiter.allowOne(time.Now())
 				if !sampled {
 					return false
 				}
