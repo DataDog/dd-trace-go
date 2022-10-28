@@ -19,7 +19,7 @@ type locationIndex struct {
 	fallbackFunctionIDs map[uint64][]uint64
 }
 
-func (l *locationIndex) reset() {
+func (l *locationIndex) Reset() {
 	l.fastAddress = l.fastAddress[:0]
 	l.fastMappingID = l.fastMappingID[:0]
 	l.fastFunctionIdx = 0
@@ -29,9 +29,9 @@ func (l *locationIndex) reset() {
 	l.fallbackFunctionIDs = nil
 }
 
-// insert associates the given address, mapping ID, and function IDs with the
+// Insert associates the given address, mapping ID, and function IDs with the
 // given location ID
-func (l *locationIndex) insert(id, address, mappingID uint64, functionIDs []uint64) {
+func (l *locationIndex) Insert(id, address, mappingID uint64, functionIDs []uint64) {
 	if l.fallbackAddress != nil {
 		// we're already on the slow path
 		l.insertSlow(id, address, mappingID, functionIDs)
@@ -84,8 +84,8 @@ func (l *locationIndex) fallback() {
 	l.fastFunctionIdx = 0
 }
 
-// get returns the address associated with the given location ID
-func (l *locationIndex) get(id uint64) (uint64, bool) {
+// Get returns the address associated with the given location ID
+func (l *locationIndex) Get(id uint64) (uint64, bool) {
 	if l.fallbackAddress != nil {
 		n, ok := l.fallbackAddress[id]
 		return n, ok
@@ -96,9 +96,9 @@ func (l *locationIndex) get(id uint64) (uint64, bool) {
 	return l.fastAddress[uint(id-1)], true
 }
 
-// getMeta returns the mapping ID and function IDs associated with
+// GetMeta returns the mapping ID and function IDs associated with
 // the given location ID
-func (l *locationIndex) getMeta(id uint64) (mappingID uint64, functionIDs []uint64, ok bool) {
+func (l *locationIndex) GetMeta(id uint64) (mappingID uint64, functionIDs []uint64, ok bool) {
 	if l.fallbackAddress != nil {
 		mappingID, ok = l.fallbackMappingID[id]
 		if !ok {

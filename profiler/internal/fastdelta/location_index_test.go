@@ -29,11 +29,11 @@ func TestLocationIndex(t *testing.T) {
 	}
 
 	for _, l := range tests {
-		loc.insert(l.ID, l.Address, l.Mapping, l.FunctionIDs)
-		addr, ok := loc.get(l.ID)
+		loc.Insert(l.ID, l.Address, l.Mapping, l.FunctionIDs)
+		addr, ok := loc.Get(l.ID)
 		require.True(t, ok)
 		require.Equal(t, l.Address, addr)
-		mapping, functionIDs, ok := loc.getMeta(l.ID)
+		mapping, functionIDs, ok := loc.GetMeta(l.ID)
 		require.True(t, ok)
 		require.Equal(t, l.Mapping, mapping)
 		require.Equal(t, l.FunctionIDs, functionIDs)
@@ -41,10 +41,10 @@ func TestLocationIndex(t *testing.T) {
 
 	// Check that the original things are still valid
 	for _, l := range tests {
-		addr, ok := loc.get(l.ID)
+		addr, ok := loc.Get(l.ID)
 		require.True(t, ok)
 		require.Equal(t, l.Address, addr)
-		mapping, functionIDs, ok := loc.getMeta(l.ID)
+		mapping, functionIDs, ok := loc.GetMeta(l.ID)
 		require.True(t, ok)
 		require.Equal(t, l.Mapping, mapping)
 		require.Equal(t, l.FunctionIDs, functionIDs)
