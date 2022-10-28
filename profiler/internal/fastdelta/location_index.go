@@ -8,110 +8,75 @@ package fastdelta
 // locationIndex links location IDs to the addresses, mappings, and function
 // IDs referenced by the location
 type locationIndex struct {
-	// fastpath bookkeeping when locations have 1-up identifiers
-	fastAddress     []uint64
-	fastMappingID   []uint64
-	fastFunctionIDs [][]uint64
-	fastFunctionIdx int
+	fastTable   []location
+	slowTable   map[uint64]location
+	functionIDs []uint64
+}
 
-	fallbackAddress     map[uint64]uint64
-	fallbackMappingID   map[uint64]uint64
-	fallbackFunctionIDs map[uint64][]uint64
+type location struct {
+	address     uint64
+	mappingID   uint64
+	functionIDs funcIDSlice
+}
+
+// funcIDSlice describes a sub-slice of locationIndex.functionIds. It's 1/3
+// more compact than a real slice because we don't need a capacity field.
+type funcIDSlice struct {
+	start int
+	end   int
 }
 
 func (l *locationIndex) Reset() {
-	l.fastAddress = l.fastAddress[:0]
-	l.fastMappingID = l.fastMappingID[:0]
-	l.fastFunctionIdx = 0
-
-	l.fallbackAddress = nil
-	l.fallbackMappingID = nil
-	l.fallbackFunctionIDs = nil
+	l.fastTable = l.fastTable[:0]
+	l.functionIDs = l.functionIDs[:0]
+	for k := range l.slowTable {
+		delete(l.slowTable, k)
+	}
 }
 
 // Insert associates the given address, mapping ID, and function IDs with the
 // given location ID
 func (l *locationIndex) Insert(id, address, mappingID uint64, functionIDs []uint64) {
-	if l.fallbackAddress != nil {
-		// we're already on the slow path
-		l.insertSlow(id, address, mappingID, functionIDs)
-		return
-	}
-	if id != uint64(len(l.fastAddress)+1) {
-		// Locations don't have 1-up IDs, we have to fall back to a map
-		l.fallback()
-		l.insertSlow(id, address, mappingID, functionIDs)
-		return
-	}
-	l.insertFast(address, mappingID, functionIDs)
-}
-
-func (l *locationIndex) insertFast(address uint64, mappingID uint64, functionIDs []uint64) {
-	l.fastAddress = append(l.fastAddress, address)
-	l.fastMappingID = append(l.fastMappingID, mappingID)
-
-	// re-use [][]uint64 allocations
-	if len(l.fastFunctionIDs) > l.fastFunctionIdx {
-		l.fastFunctionIDs[l.fastFunctionIdx] = l.fastFunctionIDs[l.fastFunctionIdx][:0]
+	loc := location{address: address, mappingID: mappingID}
+	loc.functionIDs.start = len(l.functionIDs)
+	l.functionIDs = append(l.functionIDs, functionIDs...)
+	loc.functionIDs.end = len(l.functionIDs)
+	if l.slowTable == nil && id == uint64(len(l.fastTable)+1) {
+		l.fastTable = append(l.fastTable, loc)
 	} else {
-		l.fastFunctionIDs = append(l.fastFunctionIDs, make([]uint64, 0, len(functionIDs)))
+		if l.slowTable == nil {
+			l.slowTable = make(map[uint64]location, len(l.fastTable))
+			for i, oldLoc := range l.fastTable {
+				l.slowTable[uint64(i)+1] = oldLoc
+			}
+		}
+		l.slowTable[id] = loc
 	}
-	l.fastFunctionIDs[l.fastFunctionIdx] = append(l.fastFunctionIDs[l.fastFunctionIdx], functionIDs...)
-	l.fastFunctionIdx++
-}
-
-func (l *locationIndex) insertSlow(id uint64, address uint64, mappingID uint64, functionIDs []uint64) {
-	l.fallbackAddress[id] = address
-	l.fallbackMappingID[id] = mappingID
-	l.fallbackFunctionIDs[id] = append(l.fallbackFunctionIDs[id], functionIDs...)
-}
-
-// fallback moves location data from the faster storage (when IDs are assigned
-// 1-up) to the slower storage
-func (l *locationIndex) fallback() {
-	l.fallbackAddress = make(map[uint64]uint64)
-	l.fallbackMappingID = make(map[uint64]uint64)
-	l.fallbackFunctionIDs = make(map[uint64][]uint64)
-	for i, addr := range l.fastAddress {
-		id := uint64(i) + 1
-		l.fallbackAddress[id] = addr
-		l.fallbackMappingID[id] = l.fastMappingID[i]
-		l.fallbackFunctionIDs[id] = l.fastFunctionIDs[i]
-	}
-
-	l.fastAddress = l.fastAddress[:0]
-	l.fastMappingID = l.fastMappingID[:0]
-	l.fastFunctionIdx = 0
 }
 
 // Get returns the address associated with the given location ID
 func (l *locationIndex) Get(id uint64) (uint64, bool) {
-	if l.fallbackAddress != nil {
-		n, ok := l.fallbackAddress[id]
-		return n, ok
-	}
-	if id-1 >= uint64(len(l.fastAddress)) {
-		return 0, false
-	}
-	return l.fastAddress[uint(id-1)], true
+	loc, ok := l.get(id)
+	return loc.address, ok
 }
 
 // GetMeta returns the mapping ID and function IDs associated with
 // the given location ID
 func (l *locationIndex) GetMeta(id uint64) (mappingID uint64, functionIDs []uint64, ok bool) {
-	if l.fallbackAddress != nil {
-		mappingID, ok = l.fallbackMappingID[id]
-		if !ok {
+	loc, ok := l.get(id)
+	return loc.mappingID, l.functionIDs[loc.functionIDs.start:loc.functionIDs.end], ok
+}
+
+func (l *locationIndex) get(id uint64) (loc location, ok bool) {
+	if l.slowTable == nil {
+		id--
+		if id >= uint64(len(l.fastTable)) {
 			return
 		}
-		functionIDs, ok = l.fallbackFunctionIDs[id]
-		return
+		ok = true
+		loc = l.fastTable[id]
+	} else {
+		loc, ok = l.slowTable[id]
 	}
-	if id-1 >= uint64(len(l.fastMappingID)) || id-1 >= uint64(len(l.fastFunctionIDs)) {
-		ok = false
-		return
-	}
-	mappingID = l.fastMappingID[uint(id-1)]
-	functionIDs = l.fastFunctionIDs[uint(id-1)]
-	return mappingID, functionIDs, true
+	return
 }
