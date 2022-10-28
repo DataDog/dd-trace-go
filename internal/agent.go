@@ -13,10 +13,9 @@ import (
 )
 
 // AgentURLFromEnv determines the trace agent URL from environment variable
-// DD_TRACE_AGENT_URL. If the determined value is valid and not a UDS socket,
-// it returns the value and false. If the determined value is valid and a UDS
-// socket, it returns the UDS path and true. If the value is not valid, it returns
-// an empty string and false.
+// DD_TRACE_AGENT_URL. If the determined value is valid and the scheme is
+// supported (unix, http or https), it will return an *url.URL. Otherwise,
+// it returns nil.
 func AgentURLFromEnv() *url.URL {
 	agentURL := os.Getenv("DD_TRACE_AGENT_URL")
 	if agentURL == "" {
