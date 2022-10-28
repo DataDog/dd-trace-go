@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -320,6 +321,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				p.pendingProfiles.Add(1)
 			}
 		}
+		traceprof.GlobalEndpointCounter().GetAndReset() // reset endpoint hit counters
 		for _, t := range p.enabledProfileTypes() {
 			wg.Add(1)
 			go func(t ProfileType) {
@@ -342,6 +344,12 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		for _, prof := range completed {
 			bat.addProfile(prof)
 		}
+		// TODO(fg) this should be done inside of the CPUProfile.Collect() method,
+		// otherwise we'll get the wrong numbers when the CPU duration is different
+		// from the profile duration. Fixing this will require a larger refactor
+		// Meanwhile the incorrect implementation here is okay for customers using
+		// the default profiler settings.
+		bat.endpointCounts = traceprof.GlobalEndpointCounter().GetAndReset()
 		p.enqueueUpload(bat)
 		select {
 		case <-ticker:
