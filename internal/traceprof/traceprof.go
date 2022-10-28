@@ -21,31 +21,36 @@ const (
 	CodeHotspotsEnvVar = "DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED"
 )
 
-var counts = &EndpointCounter{counts: map[string]int64{}}
+var counts = NewEndpointCounter()
 
 func GlobalEndpointCounter() *EndpointCounter {
 	return counts
 }
 
 func NewEndpointCounter() *EndpointCounter {
-	return &EndpointCounter{counts: map[string]int64{}}
+	return &EndpointCounter{}
 }
 
 type EndpointCounter struct {
-	lock   sync.Mutex
-	counts map[string]int64
+	m sync.Map
 }
 
 func (e *EndpointCounter) Inc(endpoint string) {
-	e.lock.Lock()
-	defer e.lock.Unlock()
-	e.counts[endpoint]++
+	valI, ok := e.m.Load(endpoint)
+	var val int64
+	if ok {
+		val = valI.(int64)
+	}
+	val++
+	e.m.Store(endpoint, val)
 }
 
 func (e *EndpointCounter) GetAndReset() map[string]int64 {
-	e.lock.Lock()
-	defer e.lock.Unlock()
-	counts := e.counts
-	e.counts = make(map[string]int64, len(e.counts))
-	return counts
+	m := map[string]int64{}
+	e.m.Range(func(key, value interface{}) bool {
+		m[key.(string)] = value.(int64)
+		e.m.Delete(key)
+		return true
+	})
+	return m
 }

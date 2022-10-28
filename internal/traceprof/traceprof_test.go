@@ -9,6 +9,8 @@ package traceprof
 import (
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func BenchmarkEndpointCounter(b *testing.B) {
@@ -37,4 +39,13 @@ func BenchmarkEndpointCounter(b *testing.B) {
 			b.Fatalf("%q: %d > %q:%d", endpoint, counts[endpoint], prevEndpoint, counts[prevEndpoint])
 		}
 	}
+}
+
+func TestEndpointCounter(t *testing.T) {
+	ec := NewEndpointCounter()
+	ec.Inc("foo")
+	ec.Inc("foo")
+	ec.Inc("bar")
+	require.Equal(t, map[string]int64{"foo": 2, "bar": 1}, ec.GetAndReset())
+	require.Equal(t, map[string]int64{}, ec.GetAndReset())
 }
