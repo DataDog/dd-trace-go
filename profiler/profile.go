@@ -357,8 +357,7 @@ func newFastDeltaProfiler(v ...pprofutils.ValueType) deltaProfiler {
 }
 
 func isGzipData(data []byte) bool {
-	// the first two bytes of gzip data are 0x1f8b
-	return len(data) >= 2 && (data[0] == 0x1f && data[1] == 0x8b)
+	return bytes.HasPrefix(data, []byte{0x1f, 0x8b})
 }
 
 func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
