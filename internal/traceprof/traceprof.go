@@ -6,7 +6,10 @@
 // Package traceprof contains shared logic for cross-cutting tracer/profiler features.
 package traceprof
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // pprof labels applied by the tracer to show up in the profiler's profiles.
 const (
@@ -28,29 +31,36 @@ func GlobalEndpointCounter() *EndpointCounter {
 }
 
 func NewEndpointCounter() *EndpointCounter {
-	return &EndpointCounter{}
+	return &EndpointCounter{counts: map[string]*atomic.Int64{}}
 }
 
 type EndpointCounter struct {
-	m sync.Map
+	lock   sync.RWMutex
+	counts map[string]*atomic.Int64
 }
 
 func (e *EndpointCounter) Inc(endpoint string) {
-	valI, ok := e.m.Load(endpoint)
-	var val int64
-	if ok {
-		val = valI.(int64)
+	e.lock.RLock()
+	val, ok := e.counts[endpoint]
+	e.lock.RUnlock()
+
+	if !ok {
+		e.lock.Lock()
+		defer e.lock.Unlock()
+		val = &atomic.Int64{}
+		e.counts[endpoint] = val
 	}
-	val++
-	e.m.Store(endpoint, val)
+
+	val.Add(1)
 }
 
 func (e *EndpointCounter) GetAndReset() map[string]int64 {
-	m := map[string]int64{}
-	e.m.Range(func(key, value interface{}) bool {
-		m[key.(string)] = value.(int64)
-		e.m.Delete(key)
-		return true
-	})
-	return m
+	counts := map[string]int64{}
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	for k, v := range e.counts {
+		counts[k] = v.Load()
+	}
+	e.counts = make(map[string]*atomic.Int64)
+	return counts
 }
