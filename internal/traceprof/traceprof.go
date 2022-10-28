@@ -31,36 +31,48 @@ func GlobalEndpointCounter() *EndpointCounter {
 }
 
 func NewEndpointCounter() *EndpointCounter {
-	return &EndpointCounter{counts: map[string]*atomic.Int64{}}
+	counts := map[string]*atomic.Int64{}
+	ec := &EndpointCounter{}
+	ec.counts.Store(counts)
+	return ec
 }
 
 type EndpointCounter struct {
 	lock   sync.RWMutex
-	counts map[string]*atomic.Int64
+	counts atomic.Value
 }
 
 func (e *EndpointCounter) Inc(endpoint string) {
-	e.lock.RLock()
-	val, ok := e.counts[endpoint]
-	e.lock.RUnlock()
-
-	if !ok {
-		e.lock.Lock()
-		defer e.lock.Unlock()
-		val = &atomic.Int64{}
-		e.counts[endpoint] = val
+	counts := e.counts.Load().(map[string]*atomic.Int64)
+	val, ok := counts[endpoint]
+	if ok {
+		val.Add(1)
+		return
 	}
 
+	e.lock.Lock()
+	defer e.lock.Unlock()
+
+	newCounts := make(map[string]*atomic.Int64)
+	for k, v := range counts {
+		newCounts[k] = v
+	}
+	val = &atomic.Int64{}
 	val.Add(1)
+	newCounts[endpoint] = val
+	e.counts.Store(newCounts)
 }
 
 func (e *EndpointCounter) GetAndReset() map[string]int64 {
-	counts := map[string]int64{}
 	e.lock.Lock()
 	defer e.lock.Unlock()
-	for k, v := range e.counts {
-		counts[k] = v.Load()
+
+	counts := e.counts.Load().(map[string]*atomic.Int64)
+	retCounts := map[string]int64{}
+	for k, v := range counts {
+		retCounts[k] = v.Load()
 	}
-	e.counts = make(map[string]*atomic.Int64)
-	return counts
+
+	e.counts.Store(map[string]*atomic.Int64{})
+	return retCounts
 }

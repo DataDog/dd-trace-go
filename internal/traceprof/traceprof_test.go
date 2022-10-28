@@ -47,5 +47,7 @@ func TestEndpointCounter(t *testing.T) {
 	ec.Inc("foo")
 	ec.Inc("bar")
 	require.Equal(t, map[string]int64{"foo": 2, "bar": 1}, ec.GetAndReset())
+	ec.Inc("foobar")
+	require.Equal(t, map[string]int64{"foobar": 1}, ec.GetAndReset())
 	require.Equal(t, map[string]int64{}, ec.GetAndReset())
 }
