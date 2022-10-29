@@ -7,7 +7,7 @@
 package traceprof
 
 import (
-	"sync/atomic"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/atomic" // polyfill for sync/atomic
 )
 
 // pprof labels applied by the tracer to show up in the profiler's profiles.
