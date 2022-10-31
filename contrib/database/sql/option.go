@@ -116,15 +116,19 @@ func WithCustomTag(key string, value interface{}) Option {
 
 // WithSQLCommentInjection enables injection of tags as sql comments on traced queries.
 // This includes dynamic values like span id, trace id and sampling priority which can make queries
-// unique for some cache implementations. Use WithStaticTagsCommentInjection if this is a concern.
+// unique for some cache implementations.
 // Deprecated: use WithDBMPropagation
 func WithSQLCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
 	return WithDBMPropagation(tracer.DBMPropagationMode(mode))
 }
 
 // WithDBMPropagation enables injection of tags as sql comments on traced queries.
-// This includes dynamic values like span id, trace id and sampling priority which can make queries
-// unique for some cache implementations. Use WithStaticTagsCommentInjection if this is a concern.
+// This includes dynamic values like span id, trace id and the sampled flag which can make queries
+// unique for some cache implementations. Use DBMPropagationModeService if this is a concern.
+//
+// Note that enabling sql comment propagation results in potentially confidential data (service names)
+// being stored in the databases which can then be accessed by other 3rd parties that have been granted
+// access to the database.
 func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 	return func(cfg *config) {
 		cfg.commentInjectionMode = mode

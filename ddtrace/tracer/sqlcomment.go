@@ -19,9 +19,6 @@ import (
 // Deprecated: use DBMPropagationMode instead
 type SQLCommentInjectionMode DBMPropagationMode
 
-// DBMPropagationMode represents the mode of dbm propagation.
-type DBMPropagationMode string
-
 const (
 	// SQLInjectionUndefined represents the comment injection mode is not set. This is the same as SQLInjectionDisabled.
 	SQLInjectionUndefined SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeDisabled)
@@ -32,6 +29,13 @@ const (
 	// SQLInjectionModeFull represents the comment injection mode where both service tags and tracing tags. Tracing tags include span id, trace id and sampling priority.
 	SQLInjectionModeFull SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeFull)
 )
+
+// DBMPropagationMode represents the mode of dbm propagation.
+//
+// Note that enabling sql comment propagation results in potentially confidential data (service names)
+// being stored in the databases which can then be accessed by other 3rd parties that have been granted
+// access to the database.
+type DBMPropagationMode string
 
 const (
 	// DBMPropagationModeUndefined represents the dbm propagation mode not being set. This is the same as DBMPropagationModeDisabled.
