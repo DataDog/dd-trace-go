@@ -11,10 +11,14 @@ import (
 	"fmt"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
+
+// TagSetter is the interface needed to set a span tag.
+type TagSetter interface {
+	SetTag(string, interface{})
+}
 
 // TagsHolder wraps a map holding tags. The purpose of this struct is to be used by composition in an Operation
 // to allow said operation to handle tags addition/retrieval. See httpsec/http.go and grpcsec/grpc.go.
@@ -62,14 +66,21 @@ func (s *SecurityEventsHolder) Events() []json.RawMessage {
 }
 
 // SetTags fills the span tags using the key/value pairs found in `tags`
-func SetTags(span ddtrace.Span, tags map[string]interface{}) {
+func SetTags(span TagSetter, tags map[string]interface{}) {
 	for k, v := range tags {
 		span.SetTag(k, v)
 	}
 }
 
+// SetAppSecEnabledTags sets the AppSec-specific span tags that are expected to be in
+// the web service entry span (span of type `web`) when AppSec is enabled.
+func SetAppSecEnabledTags(span TagSetter) {
+	span.SetTag("_dd.appsec.enabled", 1)
+	span.SetTag("_dd.runtime_family", "go")
+}
+
 // SetEventSpanTags sets the security event span tags into the service entry span.
-func SetEventSpanTags(span ddtrace.Span, events []json.RawMessage) error {
+func SetEventSpanTags(span TagSetter, events []json.RawMessage) error {
 	// Set the appsec event span tag
 	val, err := makeEventTagValue(events)
 	if err != nil {
