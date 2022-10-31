@@ -117,7 +117,7 @@ func WithCustomTag(key string, value interface{}) Option {
 // WithSQLCommentInjection enables injection of tags as sql comments on traced queries.
 // This includes dynamic values like span id, trace id and sampling priority which can make queries
 // unique for some cache implementations.
-// Deprecated: use WithDBMPropagation
+// Deprecated: Use WithDBMPropagation instead.
 func WithSQLCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
 	return WithDBMPropagation(tracer.DBMPropagationMode(mode))
 }

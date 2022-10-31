@@ -206,7 +206,6 @@ func withDBMTraceInjectedTag(mode tracer.DBMPropagationMode) []tracer.StartSpanO
 	if mode == tracer.DBMPropagationModeFull {
 		return []tracer.StartSpanOption{tracer.Tag(keyDBMTraceInjected, true)}
 	}
-
 	return nil
 }
 
