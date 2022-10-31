@@ -20,7 +20,7 @@ type config struct {
 	childSpansOnly       bool
 	errCheck             func(err error) bool
 	tags                 map[string]interface{}
-	commentInjectionMode tracer.SQLCommentInjectionMode
+	commentInjectionMode tracer.DBMPropagationMode
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -39,7 +39,12 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
-	cfg.commentInjectionMode = tracer.SQLCommentInjectionMode(os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE"))
+	mode := os.Getenv("DD_DBM_PROPAGATION_MODE")
+	if mode == "" {
+		// this is the deprecated environment variable name
+		mode = os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
+	}
+	cfg.commentInjectionMode = tracer.DBMPropagationMode(mode)
 }
 
 // WithServiceName sets the given service name when registering a driver,
@@ -112,7 +117,15 @@ func WithCustomTag(key string, value interface{}) Option {
 // WithSQLCommentInjection enables injection of tags as sql comments on traced queries.
 // This includes dynamic values like span id, trace id and sampling priority which can make queries
 // unique for some cache implementations. Use WithStaticTagsCommentInjection if this is a concern.
+// Deprecated: use WithDBMPropagation
 func WithSQLCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
+	return WithDBMPropagation(tracer.DBMPropagationMode(mode))
+}
+
+// WithDBMPropagation enables injection of tags as sql comments on traced queries.
+// This includes dynamic values like span id, trace id and sampling priority which can make queries
+// unique for some cache implementations. Use WithStaticTagsCommentInjection if this is a concern.
+func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 	return func(cfg *config) {
 		cfg.commentInjectionMode = mode
 	}

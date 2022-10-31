@@ -64,9 +64,9 @@ func (tc *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
 	start := time.Now()
 	mode := tc.cfg.commentInjectionMode
-	if mode == tracer.SQLInjectionModeFull {
+	if mode == tracer.DBMPropagationModeFull {
 		// no context other than service in prepared statements
-		mode = tracer.SQLInjectionModeService
+		mode = tracer.DBMPropagationModeService
 	}
 	cquery, spanID := tc.injectComments(ctx, query, mode)
 	if connPrepareCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
@@ -185,7 +185,7 @@ func WithSpanTags(ctx context.Context, tags map[string]string) context.Context {
 // injectComments returns the query with SQL comments injected according to the comment injection mode along
 // with a span ID injected into SQL comments. The returned span ID should be used when the SQL span is created
 // following the traced database call.
-func (tc *tracedConn) injectComments(ctx context.Context, query string, mode tracer.SQLCommentInjectionMode) (cquery string, spanID uint64) {
+func (tc *tracedConn) injectComments(ctx context.Context, query string, mode tracer.DBMPropagationMode) (cquery string, spanID uint64) {
 	// The sql span only gets created after the call to the database because we need to be able to skip spans
 	// when a driver returns driver.ErrSkip. In order to work with those constraints, a new span id is generated and
 	// used during SQL comment injection and returned for the sql span to be used later when/if the span
@@ -202,8 +202,8 @@ func (tc *tracedConn) injectComments(ctx context.Context, query string, mode tra
 	return carrier.Query, carrier.SpanID
 }
 
-func withDBMTraceInjectedTag(mode tracer.SQLCommentInjectionMode) []tracer.StartSpanOption {
-	if mode == tracer.SQLInjectionModeFull {
+func withDBMTraceInjectedTag(mode tracer.DBMPropagationMode) []tracer.StartSpanOption {
+	if mode == tracer.DBMPropagationModeFull {
 		return []tracer.StartSpanOption{tracer.Tag(keyDBMTraceInjected, true)}
 	}
 
