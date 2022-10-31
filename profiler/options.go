@@ -223,6 +223,13 @@ func defaultConfig() (*config, error) {
 		agentPort = v
 	}
 	WithAgentAddr(net.JoinHostPort(agentHost, agentPort))(&c)
+	if url := internal.AgentURLFromEnv(); url != nil {
+		if url.Scheme == "unix" {
+			WithUDS(url.Path)(&c)
+		} else {
+			c.agentURL = url.String() + "/profiling/v1/input"
+		}
+	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
