@@ -329,28 +329,23 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 	t.Run("env-agentURL", func(t *testing.T) {
 		t.Run("env", func(t *testing.T) {
-			os.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
-			defer os.Unsetenv("DD_TRACE_AGENT_URL")
+			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
 			tracer := newTracer()
 			c := tracer.config
 			assert.Equal(t, "https://custom:1234", c.agentURL)
 		})
 
 		t.Run("override-env", func(t *testing.T) {
-			os.Setenv("DD_AGENT_HOST", "testhost")
-			defer os.Unsetenv("DD_AGENT_HOST")
-			os.Setenv("DD_TRACE_AGENT_PORT", "3333")
-			defer os.Unsetenv("DD_TRACE_AGENT_PORT")
-			os.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
-			defer os.Unsetenv("DD_TRACE_AGENT_URL")
+			t.Setenv("DD_AGENT_HOST", "testhost")
+			t.Setenv("DD_TRACE_AGENT_PORT", "3333")
+			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
 			tracer := newTracer()
 			c := tracer.config
 			assert.Equal(t, "https://custom:1234", c.agentURL)
 		})
 
 		t.Run("code-override", func(t *testing.T) {
-			os.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
-			defer os.Unsetenv("DD_TRACE_AGENT_URL")
+			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
 			tracer := newTracer(WithAgentAddr("testhost:3333"))
 			c := tracer.config
 			assert.Equal(t, "http://testhost:3333", c.agentURL)

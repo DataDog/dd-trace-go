@@ -6,7 +6,6 @@
 package internal
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,8 +24,7 @@ func TestAgentURLFromEnv2(t *testing.T) {
 		"unix":     {input: "unix:///path/to/custom.socket", want: "unix:///path/to/custom.socket"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			os.Setenv("DD_TRACE_AGENT_URL", tc.input)
-			defer os.Unsetenv("DD_TRACE_AGENT_URL")
+			t.Setenv("DD_TRACE_AGENT_URL", tc.input)
 			url := AgentURLFromEnv()
 			if tc.want == "" {
 				assert.Nil(t, url)
