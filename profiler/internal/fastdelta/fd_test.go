@@ -532,7 +532,6 @@ func TestRepeatedHeapProfile(t *testing.T) {
 		}
 
 		golden := makeGolden(t, before, after, fields...)
-		before = after
 
 		golden.Scale(-1)
 		diff, err := profile.Merge([]*profile.Profile{delta, golden})
@@ -548,5 +547,6 @@ func TestRepeatedHeapProfile(t *testing.T) {
 			os.WriteFile(fmt.Sprintf("failure-after-%s", now), after, 0660)
 			t.FailNow()
 		}
+		before = after
 	}
 }
