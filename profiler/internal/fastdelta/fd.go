@@ -105,9 +105,10 @@ type DeltaComputer struct {
 	valueTypeIndices [][2]int
 
 	// saves some heap allocations
-	scratch    [128]byte
-	scratchIDs []uint64
-	hashes     []Hash
+	scratch          [128]byte
+	scratchIDs       []uint64
+	scratchAddresses []uint64
+	hashes           []Hash
 
 	// include* is for pruning the delta output, populated on merge pass
 	includeMapping  map[uint64]struct{}
@@ -599,6 +600,7 @@ func (dc *DeltaComputer) readUint64Field(v []byte, recordNumber int32) (val uint
 func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sampleValue, err error) {
 	values := value[:0]
 	dc.hashes = dc.hashes[:0]
+	dc.scratchAddresses = dc.scratchAddresses[:0]
 	err = molecule.MessageEach(codec.NewBuffer(v), func(field int32, value molecule.Value) (bool, error) {
 		switch SampleRecordNumber(field) {
 		case recSampleLocationID:
@@ -609,7 +611,6 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sa
 			// or one/two single values. The Go runtime pprof encoding implementation
 			// will only pack when there are more than 2 locations for a sample
 			// (ref: https://cs.opensource.google/go/go/+/master:src/runtime/pprof/proto.go;l=527;drc=403f91c24430213b6a8efb3d143b6eae08b02ec2;bpv=1;bpt=1)
-			h.Reset()
 			switch value.WireType {
 			case codec.WireBytes:
 				err := iterPackedVarints(value.Bytes, func(id uint64) {
@@ -617,8 +618,7 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sa
 					if !ok {
 						return
 					}
-					binary.BigEndian.PutUint64(dc.scratch[:], addr)
-					h.Write(dc.scratch[:8])
+					dc.scratchAddresses = append(dc.scratchAddresses, addr)
 					dc.scratchIDs = append(dc.scratchIDs, id)
 				})
 				if err != nil {
@@ -629,12 +629,9 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sa
 				if !ok {
 					return false, fmt.Errorf("invalid location index")
 				}
-				binary.BigEndian.PutUint64(dc.scratch[:], addr)
-				h.Write(dc.scratch[:8])
+				dc.scratchAddresses = append(dc.scratchAddresses, addr)
 				dc.scratchIDs = append(dc.scratchIDs, value.Number)
 			}
-			h.Sum(hash[:0])
-			dc.hashes = append(dc.hashes, *hash)
 		case recSampleValue:
 			// repeated int64
 			switch value.WireType {
@@ -694,6 +691,14 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sa
 		}
 		return true, nil
 	})
+	h.Reset()
+	for _, addr := range dc.scratchAddresses {
+		binary.LittleEndian.PutUint64(dc.scratch[:], addr)
+		h.Write(dc.scratch[:8])
+	}
+	h.Sum(hash[:0])
+	dc.hashes = append(dc.hashes, *hash)
+
 	sort.Sort(byHash(dc.hashes))
 
 	h.Reset()
