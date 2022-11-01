@@ -16,6 +16,7 @@ import (
 )
 
 // SQLCommentInjectionMode represents the mode of SQL comment injection.
+//
 // Deprecated: Use DBMPropagationMode instead.
 type SQLCommentInjectionMode DBMPropagationMode
 
