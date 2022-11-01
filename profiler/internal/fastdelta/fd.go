@@ -691,19 +691,22 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sa
 		}
 		return true, nil
 	})
+
 	h.Reset()
 	for _, addr := range dc.scratchAddresses {
 		binary.LittleEndian.PutUint64(dc.scratch[:], addr)
 		h.Write(dc.scratch[:8])
 	}
-	h.Sum(hash[:0])
-	dc.hashes = append(dc.hashes, *hash)
 
-	sort.Sort(byHash(dc.hashes))
-
-	h.Reset()
+	// sort.Sort allocates [1] which very bad here! But luckily len(dc.hashes) is
+	// expected to be 1 for memory profiles (only a single "bytes" label), so we
+	// can skip sorting.
+	// [1] https://github.com/golang/go/issues/17332
+	if len(dc.hashes) > 1 {
+		sort.Sort(byHash(dc.hashes))
+	}
 	for _, sub := range dc.hashes {
-		copy(hash[:], sub[:])
+		copy(hash[:], sub[:]) // avoid sub escape to heap
 		h.Write(hash[:])
 	}
 	h.Sum(hash[:0])
