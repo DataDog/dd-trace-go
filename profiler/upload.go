@@ -156,6 +156,8 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 		EndpointCounts: bat.endpointCounts,
 	}
 
+	fmt.Printf("DEBUG: uploadEvent: %#v\n", event)
+
 	for _, p := range bat.profiles {
 		event.Attachments = append(event.Attachments, p.name)
 		f, err := mw.CreateFormFile(p.name, p.name)
