@@ -14,13 +14,13 @@ import (
 )
 
 type config struct {
-	serviceName          string
-	analyticsRate        float64
-	dsn                  string
-	childSpansOnly       bool
-	errCheck             func(err error) bool
-	tags                 map[string]interface{}
-	commentInjectionMode tracer.DBMPropagationMode
+	serviceName        string
+	analyticsRate      float64
+	dsn                string
+	childSpansOnly     bool
+	errCheck           func(err error) bool
+	tags               map[string]interface{}
+	dbmPropagationMode tracer.DBMPropagationMode
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -44,7 +44,7 @@ func defaults(cfg *config) {
 		// this is the deprecated environment variable name
 		mode = os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
-	cfg.commentInjectionMode = tracer.DBMPropagationMode(mode)
+	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
 }
 
 // WithServiceName sets the given service name when registering a driver,
@@ -131,6 +131,6 @@ func WithSQLCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
 // access to the database.
 func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 	return func(cfg *config) {
-		cfg.commentInjectionMode = mode
+		cfg.dbmPropagationMode = mode
 	}
 }

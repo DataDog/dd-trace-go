@@ -272,7 +272,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 			for _, s := range sps {
 				tags := s.Tags()
 				if tc.traceContextInjectedTag {
-					assert.Equal(t, tags[keyDBMTraceInjected], true)
+					assert.Equal(t, true, tags[keyDBMTraceInjected])
 				} else {
 					_, ok := tags[keyDBMTraceInjected]
 					assert.False(t, ok)

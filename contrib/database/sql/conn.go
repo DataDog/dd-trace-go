@@ -63,7 +63,7 @@ func (tc *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 
 func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
 	start := time.Now()
-	mode := tc.cfg.commentInjectionMode
+	mode := tc.cfg.dbmPropagationMode
 	if mode == tracer.DBMPropagationModeFull {
 		// no context other than service in prepared statements
 		mode = tracer.DBMPropagationModeService
@@ -88,9 +88,9 @@ func (tc *tracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
 	start := time.Now()
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
-		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.commentInjectionMode)
+		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		r, err := execContext.ExecContext(ctx, cquery, args)
-		tc.tryTrace(ctx, queryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.commentInjectionMode), tracer.WithSpanID(spanID))...)
+		tc.tryTrace(ctx, queryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
 	}
 	if execer, ok := tc.Conn.(driver.Execer); ok {
@@ -103,9 +103,9 @@ func (tc *tracedConn) ExecContext(ctx context.Context, query string, args []driv
 			return nil, ctx.Err()
 		default:
 		}
-		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.commentInjectionMode)
+		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		r, err = execer.Exec(cquery, dargs)
-		tc.tryTrace(ctx, queryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.commentInjectionMode), tracer.WithSpanID(spanID))...)
+		tc.tryTrace(ctx, queryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
 	}
 	return nil, driver.ErrSkip
@@ -124,9 +124,9 @@ func (tc *tracedConn) Ping(ctx context.Context) (err error) {
 func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
 	start := time.Now()
 	if queryerContext, ok := tc.Conn.(driver.QueryerContext); ok {
-		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.commentInjectionMode)
+		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		rows, err := queryerContext.QueryContext(ctx, cquery, args)
-		tc.tryTrace(ctx, queryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.commentInjectionMode), tracer.WithSpanID(spanID))...)
+		tc.tryTrace(ctx, queryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
 	}
 	if queryer, ok := tc.Conn.(driver.Queryer); ok {
@@ -139,9 +139,9 @@ func (tc *tracedConn) QueryContext(ctx context.Context, query string, args []dri
 			return nil, ctx.Err()
 		default:
 		}
-		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.commentInjectionMode)
+		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		rows, err = queryer.Query(cquery, dargs)
-		tc.tryTrace(ctx, queryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.commentInjectionMode), tracer.WithSpanID(spanID))...)
+		tc.tryTrace(ctx, queryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
 	}
 	return nil, driver.ErrSkip

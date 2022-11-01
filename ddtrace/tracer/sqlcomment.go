@@ -21,7 +21,7 @@ type SQLCommentInjectionMode DBMPropagationMode
 
 const (
 	// SQLInjectionUndefined represents the comment injection mode is not set. This is the same as SQLInjectionDisabled.
-	SQLInjectionUndefined SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeDisabled)
+	SQLInjectionUndefined SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeUndefined)
 	// SQLInjectionDisabled represents the comment injection mode where all injection is disabled.
 	SQLInjectionDisabled SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeDisabled)
 	// SQLInjectionModeService represents the comment injection mode where only service tags (name, env, version) are injected.
