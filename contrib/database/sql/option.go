@@ -41,7 +41,6 @@ func defaults(cfg *config) {
 	}
 	mode := os.Getenv("DD_DBM_PROPAGATION_MODE")
 	if mode == "" {
-		// this is the deprecated environment variable name
 		mode = os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
