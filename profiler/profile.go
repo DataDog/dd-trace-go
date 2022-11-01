@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 
 	"github.com/DataDog/gostackparse"
@@ -89,6 +90,8 @@ var profileTypes = map[ProfileType]profileType{
 				// rate itself.
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
+
+			traceprof.GlobalEndpointCounter().GetAndReset() // reset endpoint hit counter
 			if err := p.startCPUProfile(&buf); err != nil {
 				return nil, err
 			}
@@ -98,6 +101,9 @@ var profileTypes = map[ProfileType]profileType{
 			// the other profile types
 			p.pendingProfiles.Wait()
 			p.stopCPUProfile()
+			// TODO(fg) ideally we'd return the value of
+			// traceprof.GlobalEndpointCounter().GetAndReset() here, but this would
+			// require some refactoring, so we handle this in profiler.collect().
 			return buf.Bytes(), nil
 		},
 	},
