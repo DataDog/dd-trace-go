@@ -140,7 +140,7 @@ func (dc *DeltaComputer) initialize() {
 
 func (dc *DeltaComputer) reset() {
 	dc.strings.h = dc.strings.h[:0]
-	dc.locationIndex.reset()
+	dc.locationIndex.Reset()
 
 	// reset bookkeeping for message pruning
 	// go compiler should convert these to single runtime.mapclear calls
@@ -251,7 +251,7 @@ func (dc *DeltaComputer) indexPass(field int32, value molecule.Value, hasher mur
 		if err != nil {
 			return false, fmt.Errorf("reading location record: %w", err)
 		}
-		dc.locationIndex.insert(id, address, mappingID, dc.scratchIDs)
+		dc.locationIndex.Insert(id, address, mappingID, dc.scratchIDs)
 	case recProfileStringTable:
 		dc.strings.add(value.Bytes)
 
@@ -613,7 +613,7 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sa
 			switch value.WireType {
 			case codec.WireBytes:
 				err := iterPackedVarints(value.Bytes, func(id uint64) {
-					addr, ok := dc.locationIndex.get(id)
+					addr, ok := dc.locationIndex.Get(id)
 					if !ok {
 						return
 					}
@@ -625,7 +625,7 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sa
 					return false, err
 				}
 			case codec.WireVarint:
-				addr, ok := dc.locationIndex.get(value.Number)
+				addr, ok := dc.locationIndex.Get(value.Number)
 				if !ok {
 					return false, fmt.Errorf("invalid location index")
 				}
@@ -721,7 +721,7 @@ func (dc *DeltaComputer) includeStringIndexFields(msgBytes []byte, fieldIndexes 
 
 func (dc *DeltaComputer) keepLocations(locationIDs []uint64) {
 	for _, locationID := range locationIDs {
-		mappingID, functionIDs, ok := dc.locationIndex.getMeta(locationID)
+		mappingID, functionIDs, ok := dc.locationIndex.GetMeta(locationID)
 		if !ok {
 			continue
 		}
