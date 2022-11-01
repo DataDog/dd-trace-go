@@ -108,7 +108,7 @@ type DeltaComputer struct {
 	scratch          [128]byte
 	scratchIDs       []uint64
 	scratchAddresses []uint64
-	hashes           []Hash
+	hashes           byHash
 
 	// include* is for pruning the delta output, populated on merge pass
 	includeMapping  map[uint64]struct{}
@@ -698,13 +698,12 @@ func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sa
 		h.Write(dc.scratch[:8])
 	}
 
-	// sort.Sort allocates [1] which very bad here! But luckily len(dc.hashes) is
-	// expected to be 1 for memory profiles (only a single "bytes" label), so we
-	// can skip sorting.
-	// [1] https://github.com/golang/go/issues/17332
+	// Memory profiles current have exactly one label ("bytes"), so there is no
+	// need to sort. This saves ~0.5% of CPU time in our benchmarks.
 	if len(dc.hashes) > 1 {
-		sort.Sort(byHash(dc.hashes))
+		sort.Sort(&dc.hashes) // passing &dc.hashes vs dc.hashes avoids an alloc here
 	}
+
 	for _, sub := range dc.hashes {
 		copy(hash[:], sub[:]) // avoid sub escape to heap
 		h.Write(hash[:])
