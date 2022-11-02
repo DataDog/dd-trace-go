@@ -90,6 +90,8 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeGraphQL),
 		tracer.ServiceName(t.cfg.serviceName),
+		tracer.Tag(ext.Component, "gqlgen"),
+		tracer.Tag(ext.SpanKind, "server"),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
@@ -136,6 +138,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 			var childOpts []ddtrace.StartSpanOption
 			childOpts = append(childOpts, tracer.StartTime(start))
 			childOpts = append(childOpts, tracer.ResourceName(name))
+			childOpts = append(childOpts, tracer.Tag(ext.Component, "gqlgen"))
 			var childSpan ddtrace.Span
 			childSpan, _ = tracer.StartSpanFromContext(ctx, name, childOpts...)
 			childSpan.Finish(tracer.FinishTime(finish))
