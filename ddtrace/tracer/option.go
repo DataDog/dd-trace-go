@@ -79,9 +79,8 @@ type config struct {
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler Sampler
 
-	// agentAddr specifies the hostname and port of the agent where the traces
-	// are sent to.
-	agentAddr string
+	// agentURL is the agent URL that receives traces from the tracer.
+	agentURL string
 
 	// serviceMappings holds a set of service mappings to dynamically rename services
 	serviceMappings map[string]string
@@ -188,9 +187,15 @@ const maxPropagatedTagsLength = 512
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
-	c.agentAddr = resolveAgentAddr()
+	c.agentURL = "http://" + resolveAgentAddr()
 	c.httpClient = defaultHTTPClient()
-
+	if url := internal.AgentURLFromEnv(); url != nil {
+		if url.Scheme == "unix" {
+			c.httpClient = udsClient(url.Path)
+		} else {
+			c.agentURL = url.String()
+		}
+	}
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
@@ -266,7 +271,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	if c.transport == nil {
-		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
+		c.transport = newHTTPTransport(c.agentURL, c.httpClient)
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
@@ -402,7 +407,7 @@ func (c *config) loadAgentFeatures() {
 		// there is no agent; all features off
 		return
 	}
-	resp, err := c.httpClient.Get(fmt.Sprintf("http://%s/info", c.agentAddr))
+	resp, err := c.httpClient.Get(fmt.Sprintf("%s/info", c.agentURL))
 	if err != nil {
 		log.Error("Loading features: %v", err)
 		return
@@ -565,7 +570,7 @@ func WithService(name string) StartOption {
 // localhost:8126. It should contain both host and port.
 func WithAgentAddr(addr string) StartOption {
 	return func(c *config) {
-		c.agentAddr = addr
+		c.agentURL = "http://" + addr
 	}
 }
 
