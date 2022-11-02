@@ -3,11 +3,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build appsec && cgo && !windows && amd64 && (linux || darwin)
+//go:build appsec && cgo && !windows && (amd64 || arm64) && (linux || darwin)
 // +build appsec
 // +build cgo
 // +build !windows
-// +build amd64
+// +build amd64 arm64
 // +build linux darwin
 
 package waf
@@ -22,7 +22,9 @@ package waf
 // void go_ddwaf_object_free(ddwaf_object*);
 // #cgo CFLAGS: -I${SRCDIR}/include
 // #cgo linux,amd64 LDFLAGS: -L${SRCDIR}/lib/linux-amd64 -lddwaf -lm -ldl -Wl,-rpath=/lib64:/usr/lib64:/usr/local/lib64:/lib:/usr/lib:/usr/local/lib
+// #cgo linux,arm64 LDFLAGS: -L${SRCDIR}/lib/linux-arm64 -lddwaf -lm -ldl -Wl,-rpath=/lib64:/usr/lib64:/usr/local/lib64:/lib:/usr/lib:/usr/local/lib
 // #cgo darwin,amd64 LDFLAGS: -L${SRCDIR}/lib/darwin-amd64 -lddwaf -lstdc++
+// #cgo darwin,arm64 LDFLAGS: -L${SRCDIR}/lib/darwin-arm64 -lddwaf -lstdc++
 import "C"
 
 import (
@@ -43,7 +45,9 @@ import (
 	// header file and the static libraries.
 	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/include"
 	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/darwin-amd64"
+	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/darwin-arm64"
 	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/linux-amd64"
+	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf/lib/linux-arm64"
 )
 
 var wafVersion = getWAFVersion()
@@ -61,9 +65,23 @@ func Version() string {
 
 // Handle represents an instance of the WAF for a given ruleset.
 type Handle struct {
+	// Instance of the WAF
 	handle C.ddwaf_handle
-	// RWMutex used as a simple reference counter implementation allowing to
-	// safely release the WAF handle only when there are no Context using it.
+
+	// Lock-less reference counter avoiding blocking calls to the Close() method
+	// while WAF contexts are still using the WAF handle. Instead, we let the
+	// release actually happen only when the reference counter reaches 0.
+	// This can happen either from a request handler calling its WAF context's
+	// Close() method, or either from the appsec instance calling the WAF
+	// handle's Close() method when creating a new WAF handle with new rules.
+	// Note that this means several instances of the WAF can exist at the same
+	// time with their own set of rules. This choice was done to be able to
+	// efficiently update the security rules concurrently, without having to
+	// block the request handlers for the time of the security rules update.
+	refCounter atomicRefCounter
+
+	// RWMutex protecting the R/W accesses to the internal rules data (stored
+	// in the handle).
 	mu sync.RWMutex
 
 	// encoder of Go values into ddwaf objects.
@@ -124,6 +142,7 @@ func NewHandle(jsonRule []byte, keyRegex, valueRegex string) (*Handle, error) {
 			key_regex:   keyRegexC,
 			value_regex: valueRegexC,
 		},
+		free_fn: C.ddwaf_object_free_fn(C.go_ddwaf_object_free),
 	}
 	defer C.ddwaf_ruleset_info_free(&wafRInfo)
 	handle := C.ddwaf_init(wafRule.ctype(), &wafCfg, &wafRInfo)
@@ -154,10 +173,34 @@ func NewHandle(jsonRule []byte, keyRegex, valueRegex string) (*Handle, error) {
 	}
 	return &Handle{
 		handle:      handle,
+		refCounter:  1,
 		encoder:     encoder,
 		addresses:   addresses,
 		rulesetInfo: rInfo,
 	}, nil
+}
+
+// Increment the ref counter and return true if the handle can be used, false
+// otherwise.
+func (h *Handle) incrementReferences() bool {
+	return h.refCounter.increment() != 0
+}
+
+// Decrement the ref counter and release the memory when 0 is reached.
+func (h *Handle) decrementReferences() {
+	if h.refCounter.decrement() == 0 {
+		h.release()
+	}
+}
+
+// Actual memory release of the WAF handle.
+func (h *Handle) release() {
+	if h.handle == nil {
+		return // already released - only happens if Close() is called more than once
+	}
+	C.ddwaf_destroy(h.handle)
+	decNbLiveCObjects()
+	h.handle = nil
 }
 
 func ruleAddresses(handle C.ddwaf_handle) ([]string, error) {
@@ -167,42 +210,70 @@ func ruleAddresses(handle C.ddwaf_handle) ([]string, error) {
 		return nil, ErrEmptyRuleAddresses
 	}
 	addresses := make([]string, int(nbAddresses))
-	base := uintptr(unsafe.Pointer(caddresses))
 	for i := 0; i < len(addresses); i++ {
-		// Go pointer arithmetic equivalent to the C expression `caddresses[i]`
-		caddress := (**C.char)(unsafe.Pointer(base + unsafe.Sizeof((*C.char)(nil))*uintptr(i)))
-		addresses[i] = C.GoString(*caddress)
+		addresses[i] = C.GoString(cindexCharPtrArray(caddresses, i))
 	}
 	return addresses, nil
 }
 
 // Addresses returns the list of addresses the WAF rule is expecting.
-func (waf *Handle) Addresses() []string {
-	return waf.addresses
+func (h *Handle) Addresses() []string {
+	return h.addresses
 }
 
 // RulesetInfo returns the rules initialization metrics for the current WAF handle
-func (waf *Handle) RulesetInfo() RulesetInfo {
-	return waf.rulesetInfo
+func (h *Handle) RulesetInfo() RulesetInfo {
+	return h.rulesetInfo
 }
 
-// Close the WAF and release the underlying C memory as soon as there are
-// no more WAF contexts using the rule.
-func (waf *Handle) Close() {
-	// Exclusively lock the mutex to ensure there's no other concurrent
-	// Context using the WAF handle.
-	waf.mu.Lock()
-	defer waf.mu.Unlock()
-	C.ddwaf_destroy(waf.handle)
-	decNbLiveCObjects()
-	waf.handle = nil
+// UpdateRuleData updates the data that some rules reference to.
+// The given rule data must be a raw JSON string of the form
+// [ {rule data #1}, ... {rule data #2} ]
+func (h *Handle) UpdateRuleData(jsonData []byte) error {
+	var data []interface{}
+	if err := json.Unmarshal(jsonData, &data); err != nil {
+		return fmt.Errorf("could not parse the WAF rule data: %v", err)
+	}
+
+	encoded, err := h.encoder.encode(data) // FIXME: double-check with Anil that we are good with the current conversion of integers into strings here
+	if err != nil {
+		return fmt.Errorf("could not encode the JSON WAF rule data into a WAF object: %v", err)
+	}
+	defer freeWO(encoded)
+
+	return h.updateRuleData(encoded)
+}
+
+// updateRuleData is the critical section of UpdateRuleData
+func (h *Handle) updateRuleData(data *wafObject) error {
+	// Note about this lock: ddwaf_update_rule_data already is thread-safe to
+	// use, but we chose to lock at the goroutine-level instead in order to
+	// avoid locking OS threads and therefore prevent many other goroutines from
+	// executing during that OS lock. If a goroutine locks due to this handle's
+	// RWMutex, another goroutine gets executed on its OS thread.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	rc := C.ddwaf_update_rule_data(h.handle, data.ctype())
+	if rc != C.DDWAF_OK {
+		return fmt.Errorf("unexpected error number `%d` while updating the WAF rule data", rc)
+	}
+	return nil
+}
+
+// Close the WAF handle. Note that this call doesn't block until the handle gets
+// released but instead let WAF contexts still use it until there's no more (eg.
+// when swapping the WAF handle with a new one).
+func (h *Handle) Close() {
+	h.decrementReferences()
 }
 
 // Context is a WAF execution context. It allows to run the WAF incrementally
 // by calling it multiple times to run its rules every time new addresses
 // become available. Each request must have its own Context.
 type Context struct {
-	waf *Handle
+	// Instance of the WAF
+	handle *Handle
 	// Cumulated internal WAF run time - in nanoseconds - for this context.
 	totalRuntimeNs AtomicU64
 	// Cumulated overall run time - in nanoseconds - for this context.
@@ -215,76 +286,82 @@ type Context struct {
 	mu sync.Mutex
 }
 
-// NewContext a new WAF context and increase the number of references to the WAF
-// handle. A nil value is returned when the WAF handle can no longer be used
-// or the WAF context couldn't be created.
-func NewContext(waf *Handle) *Context {
-	// Increase the WAF handle usage count by RLock'ing the mutex.
-	// It will be RUnlock'ed in the Close method when the Context is released.
-	waf.mu.RLock()
-	if waf.handle == nil {
-		// The WAF handle got free'd by the time we got the lock
-		waf.mu.RUnlock()
-		return nil
+// NewContext creates a new WAF context and increases the number of references
+// to the WAF handle.
+// A nil value is returned when the WAF handle can no longer be used or the
+// WAF context couldn't be created.
+func NewContext(handle *Handle) *Context {
+	if !handle.incrementReferences() {
+		return nil // The WAF handle got released
 	}
-	context := C.ddwaf_context_init(waf.handle, C.ddwaf_object_free_fn(C.go_ddwaf_object_free))
+	context := C.ddwaf_context_init(handle.handle)
 	if context == nil {
+		handle.decrementReferences()
 		return nil
 	}
 	incNbLiveCObjects()
 	return &Context{
-		waf:     waf,
+		handle:  handle,
 		context: context,
 	}
 }
 
 // Run the WAF with the given Go values and timeout.
-func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (matches []byte, err error) {
+func (c *Context) Run(values map[string]interface{}, timeout time.Duration) (matches []byte, actions []string, err error) {
 	now := time.Now()
 	defer func() {
 		dt := time.Since(now)
 		c.totalOverallRuntimeNs.Add(uint64(dt.Nanoseconds()))
 	}()
-	return c.run(values, timeout)
-}
 
-func (c *Context) run(values map[string]interface{}, timeout time.Duration) (matches []byte, err error) {
 	if len(values) == 0 {
 		return
 	}
-	wafValue, err := c.waf.encoder.encode(values)
+
+	wafValue, err := c.handle.encoder.encode(values)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return c.runWAF(wafValue, timeout)
+
+	return c.run(wafValue, timeout)
 }
 
-func (c *Context) runWAF(data *wafObject, timeout time.Duration) (matches []byte, err error) {
+// run is the critical section of Run
+func (c *Context) run(data *wafObject, timeout time.Duration) (matches []byte, actions []string, err error) {
+	// Exclusively lock this WAF context for the time of this run
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// RLock the handle to safely get read access to the WAF handle and prevent concurrent changes of it
+	// such as a rules-data update.
+	c.handle.mu.RLock()
+	defer c.handle.mu.RUnlock()
+
 	var result C.ddwaf_result
-	// TODO(Julio-Guerra): avoid calling result_free when there's no result
-	defer C.ddwaf_result_free(&result)
+	defer freeWAFResult(&result)
+
 	rc := C.ddwaf_run(c.context, data.ctype(), &result, C.uint64_t(timeout/time.Microsecond))
+
 	c.totalRuntimeNs.Add(uint64(result.total_runtime))
-	matches, err = goReturnValues(rc, &result)
+
+	matches, actions, err = goReturnValues(rc, &result)
 	if err == ErrTimeout {
 		c.timeoutCount.Inc()
 	}
 
-	return matches, err
+	return matches, actions, err
 }
 
 // Close the WAF context by releasing its C memory and decreasing the number of
 // references to the WAF handle.
 func (c *Context) Close() {
 	// RUnlock the WAF RWMutex to decrease the count of WAF Contexts using it.
-	defer c.waf.mu.RUnlock()
+	defer c.handle.decrementReferences()
 	C.ddwaf_context_destroy(c.context)
 	decNbLiveCObjects()
 }
 
-// TotalRuntime returns the cumulated waf runtime across various run calls within the same WAF context.
+// TotalRuntime returns the cumulated WAF runtime across various run calls within the same WAF context.
 // Returned time is in nanoseconds.
 func (c *Context) TotalRuntime() (overallRuntimeNs, internalRuntimeNs uint64) {
 	return c.totalOverallRuntimeNs.Load(), c.totalRuntimeNs.Load()
@@ -296,20 +373,33 @@ func (c *Context) TotalTimeouts() uint64 {
 }
 
 // Translate libddwaf return values into return values suitable to a Go program.
-// Note that it is possible to have matches != nil && err != nil in case of a
-// timeout during the WAF call.
-func goReturnValues(rc C.DDWAF_RET_CODE, result *C.ddwaf_result) (matches []byte, err error) {
-	if rc < 0 {
-		return nil, goRunError(rc)
-	}
-	if result.data != nil {
-		matches = C.GoBytes(unsafe.Pointer(result.data), C.int(C.strlen(result.data)))
-	}
-	// There could have been a timeout during the call
+// Note that it is possible to have matches or actions even if err is not nil in
+// case of a timeout during the WAF call.
+func goReturnValues(rc C.DDWAF_RET_CODE, result *C.ddwaf_result) (matches []byte, actions []string, err error) {
 	if bool(result.timeout) {
 		err = ErrTimeout
 	}
-	return matches, err
+
+	switch rc {
+	case C.DDWAF_OK:
+		return nil, nil, err
+
+	case C.DDWAF_MATCH:
+		if result.data != nil {
+			matches = C.GoBytes(unsafe.Pointer(result.data), C.int(C.strlen(result.data)))
+		}
+		if size := result.actions.size; size > 0 {
+			cactions := result.actions.array
+			actions = make([]string, size)
+			for i := 0; i < int(size); i++ {
+				actions[i] = C.GoString(cindexCharPtrArray(cactions, i))
+			}
+		}
+		return matches, actions, err
+
+	default:
+		return nil, nil, goRunError(rc)
+	}
 }
 
 func goRunError(rc C.DDWAF_RET_CODE) error {
@@ -326,12 +416,8 @@ func goRunError(rc C.DDWAF_RET_CODE) error {
 }
 
 func getWAFVersion() string {
-	var v C.ddwaf_version
-	C.ddwaf_get_version(&v)
-	major := uint16(v.major)
-	minor := uint16(v.minor)
-	patch := uint16(v.patch)
-	return fmt.Sprintf("%d.%d.%d", major, minor, patch)
+	cversion := C.ddwaf_get_version() // static mem pointer returned - no need to free it
+	return C.GoString(cversion)
 }
 
 // Errors the encoder and decoder can return.
@@ -858,4 +944,68 @@ func cFree(ptr unsafe.Pointer) {
 //export go_ddwaf_object_free
 func go_ddwaf_object_free(v *C.ddwaf_object) {
 	freeWO((*wafObject)(v))
+}
+
+// Go reimplementation of ddwaf_result_free to avoid yet another CGO call in the
+// request hot-path and avoiding it when there are no results to free.
+func freeWAFResult(result *C.ddwaf_result) {
+	if result.data == nil || result.actions.array == nil {
+		return
+	}
+
+	C.free(unsafe.Pointer(result.data))
+
+	array := result.actions.array
+	for i := 0; i < int(result.actions.size); i++ {
+		C.free(unsafe.Pointer(cindexCharPtrArray(array, i)))
+	}
+	C.free(unsafe.Pointer(array))
+}
+
+// Helper function to access to i-th element of the given **C.char array.
+func cindexCharPtrArray(array **C.char, i int) *C.char {
+	// Go pointer arithmetic equivalent to the C expression `array[i]`
+	base := uintptr(unsafe.Pointer(array))
+	return *(**C.char)(unsafe.Pointer(base + unsafe.Sizeof((*C.char)(nil))*uintptr(i)))
+}
+
+// Atomic reference counter helper initialized at 1 so that 0 is the special
+// value meaning that the object was released and is no longer usable.
+type atomicRefCounter uint32
+
+func (c *atomicRefCounter) unwrap() *uint32 {
+	return (*uint32)(c)
+}
+
+// Add delta to reference counter.
+// It relies on a CAS spin-loop implementation in order to avoid changing the
+// counter when 0 has been reached.
+func (c *atomicRefCounter) add(delta uint32) uint32 {
+	addr := c.unwrap()
+	for {
+		current := atomic.LoadUint32(addr)
+		if current == 0 {
+			// The object was released
+			return 0
+		}
+		new := current + delta
+		if swapped := atomic.CompareAndSwapUint32(addr, current, new); swapped {
+			return new
+		}
+	}
+}
+
+// Increment the reference counter.
+// CAS spin-loop implementation in order to enforce +1 cannot happen when 0 has
+// been reached.
+func (c *atomicRefCounter) increment() uint32 {
+	return c.add(1)
+}
+
+// Decrement the reference counter.
+// CAS spin-loop implementation in order to enforce +1 cannot happen when 0 has
+// been reached.
+func (c *atomicRefCounter) decrement() uint32 {
+	const d = ^uint32(0)
+	return c.add(d)
 }

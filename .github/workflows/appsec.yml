@@ -5,6 +5,7 @@ on:
     - cron: "0 0 * * *"
   pull_request: # on pull requests touching appsec files
     paths:
+      - '.github/workflows/appsec.yml'
       - 'internal/appsec/**'
       - 'appsec/**'
       - 'contrib/**/appsec.go'
@@ -17,7 +18,7 @@ jobs:
   native:
     strategy:
       matrix:
-        runs-on: [ macos-latest, ubuntu-latest, windows-latest ]
+        runs-on: [ macos-12, macos-11, macos-10.15, ubuntu-22.04, ubuntu-20.04, ubuntu-18.04, windows-latest ]
         go-version: [ 1.19, 1.18, 1.17 ]
         cgo_enabled: # test it compiles with and without cgo
           - 0
@@ -49,8 +50,7 @@ jobs:
           # Install gotestsum to get the results in a junit file 
           env GOBIN=$PWD go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }}
-          ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST || true
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST || true
 
       - name: Upload the results to Datadog CI App
         uses: ./.github/actions/dd-ci-upload
@@ -68,6 +68,16 @@ jobs:
       matrix:
         go-version: [ 1.19, 1.18, 1.17 ]
         distribution: [ bullseye, buster, alpine ]
+        build_tags: # test it compiles with and without the appsec build tag
+          - ""
+          - "appsec"
+        cgo_enabled: # test it compiles with and without cgo
+          - 0
+          - 1
+        appsec_enabled: # test it compiles with and without appsec enabled
+          - DD_APPSEC_ENABLED=true
+          - DD_APPSEC_ENABLED=false
+          - "" # the env var is not defined so that the remote-config path can be taken
       fail-fast: false
     steps:
       - uses: actions/checkout@v3
@@ -87,8 +97,7 @@ jobs:
           # Install gotestsum to get the results in a junit file 
           env GOBIN=$PWD go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }}
-          ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST || true
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST || true
 
       - name: Upload the results to Datadog CI App
         if: matrix.distribution != 'alpine' # datadog-ci CLI doesn't work on alpine
@@ -97,3 +106,28 @@ jobs:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           files: ${{ env.JUNIT_REPORT }}
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+
+  linux-arm64:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cgo_enabled: # test it compiles with and without the cgo
+          - 0
+          - 1
+        appsec_enabled: # test it compiles with and without appsec enabled
+          - true
+          - false
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v3
+      - name: Go modules cache
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-pkg-mod-
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: arm64
+      - run: docker run --platform=linux/arm64 -v $PWD:$PWD -w $PWD -eCGO_ENABLED=${{ matrix.cgo_enabled }} -eDD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} -eDD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT golang go test -v -tags appsec $TO_TEST

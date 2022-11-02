@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"io"
+	"io/ioutil"
 	"math"
 	"net"
 	"net/http"
@@ -40,6 +41,22 @@ func withTickChan(ch <-chan time.Time) StartOption {
 // testStatsd asserts that the given statsd.Client can successfully send metrics
 // to a UDP listener located at addr.
 func testStatsd(t *testing.T, cfg *config, addr string) {
+	client := cfg.statsd
+	require.Equal(t, addr, cfg.dogstatsdAddr)
+	_, err := net.ResolveUDPAddr("udp", addr)
+	require.NoError(t, err)
+
+	client.Count("name", 1, []string{"tag"}, 1)
+	require.NoError(t, client.Close())
+}
+
+func TestStatsdUDPConnect(t *testing.T) {
+	defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
+	os.Setenv("DD_DOGSTATSD_PORT", "8111")
+	testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8111"))
+	cfg := newConfig()
+	addr := net.JoinHostPort(defaultHostname, "8111")
+
 	client := cfg.statsd
 	require.Equal(t, addr, cfg.dogstatsdAddr)
 	udpaddr, err := net.ResolveUDPAddr("udp", addr)
@@ -80,7 +97,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 		if testing.Short() {
 			return
 		}
-		dir, err := os.MkdirTemp("", "socket")
+		dir, err := ioutil.TempDir("", "socket")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -209,8 +226,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig()
 		assert.Equal(float64(1), c.sampler.(RateSampler).Rate())
-		assert.Equal("tracer.test", c.serviceName)
-		assert.Equal("localhost:8126", c.agentAddr)
+		assert.Regexp(`tracer\.test(\.exe)?`, c.serviceName)
+		assert.Equal("http://localhost:8126", c.agentURL)
 		assert.Equal("localhost:8125", c.dogstatsdAddr)
 		assert.Nil(nil, c.httpClient)
 		assert.Equal(defaultClient, c.httpClient)
@@ -307,7 +324,32 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		defer os.Unsetenv("DD_AGENT_HOST")
 		tracer := newTracer()
 		c := tracer.config
-		assert.Equal(t, "trace-agent:8126", c.agentAddr)
+		assert.Equal(t, "http://trace-agent:8126", c.agentURL)
+	})
+
+	t.Run("env-agentURL", func(t *testing.T) {
+		t.Run("env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+			tracer := newTracer()
+			c := tracer.config
+			assert.Equal(t, "https://custom:1234", c.agentURL)
+		})
+
+		t.Run("override-env", func(t *testing.T) {
+			t.Setenv("DD_AGENT_HOST", "testhost")
+			t.Setenv("DD_TRACE_AGENT_PORT", "3333")
+			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+			tracer := newTracer()
+			c := tracer.config
+			assert.Equal(t, "https://custom:1234", c.agentURL)
+		})
+
+		t.Run("code-override", func(t *testing.T) {
+			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+			tracer := newTracer(WithAgentAddr("testhost:3333"))
+			c := tracer.config
+			assert.Equal(t, "http://testhost:3333", c.agentURL)
+		})
 	})
 
 	t.Run("override", func(t *testing.T) {
@@ -347,7 +389,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		)
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
-		assert.Equal("ddagent.consul.local:58126", c.agentAddr)
+		assert.Equal("http://ddagent.consul.local:58126", c.agentURL)
 		assert.NotNil(c.globalTags)
 		assert.Equal("v", c.globalTags["k"])
 		assert.Equal("testEnv", c.env)
@@ -458,7 +500,7 @@ func TestDefaultHTTPClient(t *testing.T) {
 	})
 
 	t.Run("socket", func(t *testing.T) {
-		f, err := os.CreateTemp("", "apm.socket")
+		f, err := ioutil.TempFile("", "apm.socket")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -487,7 +529,7 @@ func TestDefaultDogstatsdAddr(t *testing.T) {
 		defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
 		os.Setenv("DD_DOGSTATSD_PORT", "8111")
 		assert.Equal(t, defaultDogstatsdAddr(), "localhost:8111")
-		f, err := os.CreateTemp("", "dsd.socket")
+		f, err := ioutil.TempFile("", "dsd.socket")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -505,7 +547,7 @@ func TestDefaultDogstatsdAddr(t *testing.T) {
 		defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
 		os.Unsetenv("DD_AGENT_HOST")
 		os.Unsetenv("DD_DOGSTATSD_PORT")
-		f, err := os.CreateTemp("", "dsd.socket")
+		f, err := ioutil.TempFile("", "dsd.socket")
 		if err != nil {
 			t.Fatal(err)
 		}

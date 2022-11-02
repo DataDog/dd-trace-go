@@ -22,6 +22,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
@@ -48,6 +49,8 @@ var (
 	}
 	// TODO: Default telemetry URL?
 	hostname string
+
+	defaultHeartbeatInterval = 60 // seconds
 )
 
 func init() {
@@ -72,6 +75,10 @@ type Client struct {
 	APIKey string
 	// How often to send batched requests. Defaults to 60s
 	SubmissionInterval time.Duration
+
+	// The interval for sending a heartbeat signal to the backend.
+	// Configurable with DD_TELEMETRY_HEARTBEAT_INTERVAL. Default 60s.
+	heartbeatInterval time.Duration
 
 	// e.g. "tracers", "profilers", "appsec"
 	Namespace Namespace
@@ -114,8 +121,10 @@ type Client struct {
 	// seqID is a sequence number used to order telemetry messages by
 	// the back end.
 	seqID int64
-	// t is used to schedule flushing outstanding messages
-	t *time.Timer
+	// flushT is used to schedule flushing outstanding messages
+	flushT *time.Timer
+	// heartbeatT is used to schedule heartbeat messages
+	heartbeatT *time.Timer
 	// requests hold all messages which don't need to be immediately sent
 	requests []*Request
 	// metrics holds un-sent metrics that will be aggregated the next time
@@ -195,7 +204,15 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 	if c.SubmissionInterval == 0 {
 		c.SubmissionInterval = 60 * time.Second
 	}
-	c.t = time.AfterFunc(c.SubmissionInterval, c.backgroundFlush)
+	c.flushT = time.AfterFunc(c.SubmissionInterval, c.backgroundFlush)
+
+	heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
+	if heartbeat < 1 || heartbeat > 3600 {
+		log.Warn("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
+		heartbeat = defaultHeartbeatInterval
+	}
+	c.heartbeatInterval = time.Duration(heartbeat) * time.Second
+	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
 }
 
 // Stop notifies the telemetry endpoint that the app is closing. All outstanding
@@ -208,7 +225,8 @@ func (c *Client) Stop() {
 		return
 	}
 	c.started = false
-	c.t.Stop()
+	c.flushT.Stop()
+	c.heartbeatT.Stop()
 	// close request types have no body
 	r := c.newRequest(RequestTypeAppClosing)
 	c.scheduleSubmit(r)
@@ -354,7 +372,7 @@ func getOSVersion() string {
 // newRequests populates a request with the common fields shared by all requests
 // sent through this Client
 func (c *Client) newRequest(t RequestType) *Request {
-	c.seqID += 1
+	c.seqID++
 	return &Request{
 		APIVersion:  "v1",
 		RequestType: t,
@@ -425,14 +443,25 @@ func (c *Client) scheduleSubmit(r *Request) {
 	c.requests = append(c.requests, r)
 }
 
+func (c *Client) backgroundHeartbeat() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.started {
+		return
+	}
+	err := c.submit(c.newRequest(RequestTypeAppHeartbeat))
+	if err != nil {
+		c.log("heartbeat failed: %s", err)
+	}
+	c.heartbeatT.Reset(c.heartbeatInterval)
+}
+
 func (c *Client) backgroundFlush() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {
 		return
 	}
-	r := c.newRequest(RequestTypeAppHeartbeat)
-	c.scheduleSubmit(r)
 	c.flush()
-	c.t.Reset(c.SubmissionInterval)
+	c.flushT.Reset(c.SubmissionInterval)
 }

@@ -91,6 +91,9 @@ func TestTryUpload(t *testing.T) {
 }
 
 func TestTryUploadUDS(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix domain sockets are non-functional on windows.")
+	}
 	profiles := make(chan profileMeta, 1)
 	server := httptest.NewUnstartedServer(&mockBackend{t: t, profiles: profiles})
 	udsPath := "/tmp/com.datadoghq.dd-trace-go.profiler.test.sock"

@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // basicSpan returns a span with no configuration, having the set operation name.
@@ -173,7 +174,7 @@ func TestSpanFinish(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.False(s.FinishTime().IsZero())
-	assert.True(s.FinishTime().Before(time.Now()))
+	assert.True(s.FinishTime().Before(time.Now().Add(1 * time.Nanosecond)))
 	assert.Equal(want, s.Tag(ext.Error))
 }
 
@@ -197,4 +198,63 @@ func TestSpanWithID(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Equal(spanID, span.Context().SpanID())
+}
+
+func TestSetUser(t *testing.T) {
+	const (
+		id        = "john.doe#12345"
+		name      = "John Doe"
+		email     = "john.doe@hostname.com"
+		scope     = "read:message, write:files"
+		role      = "admin"
+		sessionID = "session#12345"
+	)
+	expected := []struct{ key, value string }{
+		{key: "usr.id", value: id},
+		{key: "usr.name", value: name},
+		{key: "usr.email", value: email},
+		{key: "usr.scope", value: scope},
+		{key: "usr.role", value: role},
+		{key: "usr.session_id", value: sessionID},
+	}
+
+	t.Run("root", func(t *testing.T) {
+		s := basicSpan("root operation")
+		tracer.SetUser(s,
+			id,
+			tracer.WithUserEmail(email),
+			tracer.WithUserName(name),
+			tracer.WithUserScope(scope),
+			tracer.WithUserRole(role),
+			tracer.WithUserSessionID(sessionID))
+		s.Finish()
+		for _, pair := range expected {
+			assert.Equal(t, pair.value, s.Tag(pair.key))
+		}
+	})
+
+	t.Run("nested", func(t *testing.T) {
+		tr := newMockTracer()
+		s0 := tr.StartSpan("root operation")
+		s1 := tr.StartSpan("nested operation", tracer.ChildOf(s0.Context()))
+		s2 := tr.StartSpan("nested nested operation", tracer.ChildOf(s1.Context()))
+		tracer.SetUser(s2,
+			id,
+			tracer.WithUserEmail(email),
+			tracer.WithUserName(name),
+			tracer.WithUserScope(scope),
+			tracer.WithUserRole(role),
+			tracer.WithUserSessionID(sessionID))
+		s2.Finish()
+		s1.Finish()
+		s0.Finish()
+		finished := tr.FinishedSpans()
+		require.Len(t, finished, 3)
+		for _, pair := range expected {
+			assert.Equal(t, pair.value, finished[2].Tag(pair.key))
+			assert.Nil(t, finished[1].Tag(pair.key))
+			assert.Nil(t, finished[0].Tag(pair.key))
+		}
+	})
+
 }

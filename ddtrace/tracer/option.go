@@ -79,9 +79,8 @@ type config struct {
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler Sampler
 
-	// agentAddr specifies the hostname and port of the agent where the traces
-	// are sent to.
-	agentAddr string
+	// agentURL is the agent URL that receives traces from the tracer.
+	agentURL string
 
 	// serviceMappings holds a set of service mappings to dynamically rename services
 	serviceMappings map[string]string
@@ -188,9 +187,15 @@ const maxPropagatedTagsLength = 512
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
-	c.agentAddr = resolveAgentAddr()
+	c.agentURL = "http://" + resolveAgentAddr()
 	c.httpClient = defaultHTTPClient()
-
+	if url := internal.AgentURLFromEnv(); url != nil {
+		if url.Scheme == "unix" {
+			c.httpClient = udsClient(url.Path)
+		} else {
+			c.agentURL = url.String()
+		}
+	}
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
@@ -266,7 +271,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	if c.transport == nil {
-		c.transport = newHTTPTransport(c.agentAddr, c.httpClient)
+		c.transport = newHTTPTransport(c.agentURL, c.httpClient)
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
@@ -402,7 +407,7 @@ func (c *config) loadAgentFeatures() {
 		// there is no agent; all features off
 		return
 	}
-	resp, err := c.httpClient.Get(fmt.Sprintf("http://%s/info", c.agentAddr))
+	resp, err := c.httpClient.Get(fmt.Sprintf("%s/info", c.agentURL))
 	if err != nil {
 		log.Error("Loading features: %v", err)
 		return
@@ -565,7 +570,7 @@ func WithService(name string) StartOption {
 // localhost:8126. It should contain both host and port.
 func WithAgentAddr(addr string) StartOption {
 	return func(c *config) {
-		c.agentAddr = addr
+		c.agentURL = "http://" + addr
 	}
 }
 
@@ -661,9 +666,10 @@ func WithRuntimeMetrics() StartOption {
 // WithDogstatsdAddress specifies the address to connect to for sending metrics to the Datadog
 // Agent. It should be a "host:port" string, or the path to a unix domain socket.If not set, it
 // attempts to determine the address of the statsd service according to the following rules:
-//   1. Look for /var/run/datadog/dsd.socket and use it if present. IF NOT, continue to #2.
-//   2. The host is determined by DD_AGENT_HOST, and defaults to "localhost"
-//   3. The port is retrieved from the agent. If not present, it is determined by DD_DOGSTATSD_PORT, and defaults to 8125
+//  1. Look for /var/run/datadog/dsd.socket and use it if present. IF NOT, continue to #2.
+//  2. The host is determined by DD_AGENT_HOST, and defaults to "localhost"
+//  3. The port is retrieved from the agent. If not present, it is determined by DD_DOGSTATSD_PORT, and defaults to 8125
+//
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddress(addr string) StartOption {
 	return func(cfg *config) {
@@ -878,12 +884,12 @@ func StackFrames(n, skip uint) FinishOption {
 // UserMonitoringConfig is used to configure what is used to identify a user.
 // This configuration can be set by combining one or several UserMonitoringOption with a call to SetUser().
 type UserMonitoringConfig struct {
-	propagateID bool
-	email       string
-	name        string
-	role        string
-	sessionID   string
-	scope       string
+	PropagateID bool
+	Email       string
+	Name        string
+	Role        string
+	SessionID   string
+	Scope       string
 }
 
 // UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
@@ -892,35 +898,35 @@ type UserMonitoringOption func(*UserMonitoringConfig)
 // WithUserEmail returns the option setting the email of the authenticated user.
 func WithUserEmail(email string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		cfg.email = email
+		cfg.Email = email
 	}
 }
 
 // WithUserName returns the option setting the name of the authenticated user.
 func WithUserName(name string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		cfg.name = name
+		cfg.Name = name
 	}
 }
 
 // WithUserSessionID returns the option setting the session ID of the authenticated user.
 func WithUserSessionID(sessionID string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		cfg.sessionID = sessionID
+		cfg.SessionID = sessionID
 	}
 }
 
 // WithUserRole returns the option setting the role of the authenticated user.
 func WithUserRole(role string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		cfg.role = role
+		cfg.Role = role
 	}
 }
 
 // WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		cfg.scope = scope
+		cfg.Scope = scope
 	}
 }
 
@@ -930,6 +936,6 @@ func WithUserScope(scope string) UserMonitoringOption {
 // personal identifiable information or any kind of sensitive data, as it will be leaked to other services.
 func WithPropagation() UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
-		cfg.propagateID = true
+		cfg.PropagateID = true
 	}
 }
