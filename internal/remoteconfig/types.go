@@ -5,6 +5,8 @@
 
 package remoteconfig
 
+import rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+
 type clientData struct {
 	State        *clientState  `json:"state,omitempty"`
 	ID           string        `json:"id,omitempty"`
@@ -31,9 +33,11 @@ type clientAgent struct {
 }
 
 type configState struct {
-	ID      string `json:"id,omitempty"`
-	Version uint64 `json:"version,omitempty"`
-	Product string `json:"product,omitempty"`
+	ID         string        `json:"id,omitempty"`
+	Version    uint64        `json:"version,omitempty"`
+	Product    string        `json:"product,omitempty"`
+	ApplyState rc.ApplyState `json:"apply_state,omitempty"`
+	ApplyError string        `json:"apply_error,omitempty"`
 }
 
 type clientState struct {
