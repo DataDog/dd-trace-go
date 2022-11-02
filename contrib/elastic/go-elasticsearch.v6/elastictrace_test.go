@@ -42,6 +42,8 @@ func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
 	assert.Equal("PUT", span.Tag("elasticsearch.method"))
 	assert.Equal(`{"user": "test", "message": "hello"}`, span.Tag("elasticsearch.body"))
+	assert.Equal("go-elasticsearch", span.Tag("component"))
+	assert.Equal("client", span.Tag("span.kind"))
 }
 
 func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
@@ -50,6 +52,8 @@ func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("GET /twitter/tweet/?", span.Tag(ext.ResourceName))
 	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
 	assert.Equal("GET", span.Tag("elasticsearch.method"))
+	assert.Equal("go-elasticsearch", span.Tag("component"))
+	assert.Equal("client", span.Tag("span.kind"))
 }
 
 func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
@@ -59,6 +63,8 @@ func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("/not-real-index/_doc/1", span.Tag("elasticsearch.url"))
 	assert.NotEmpty(span.Tag(ext.Error))
 	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
+	assert.Equal("go-elasticsearch", span.Tag("component"))
+	assert.Equal("client", span.Tag("span.kind"))
 }
 
 func TestQuantize(t *testing.T) {
