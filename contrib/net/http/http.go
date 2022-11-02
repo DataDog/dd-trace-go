@@ -7,6 +7,7 @@
 package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -48,6 +49,10 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if resource == "" {
 		resource = r.Method + " " + route
 	}
+
+	mux.cfg.spanOpts = append(mux.cfg.spanOpts, tracer.Tag("span.kind", "server"))
+	mux.cfg.spanOpts = append(mux.cfg.spanOpts, tracer.Tag("component", "net/http"))
+
 	TraceAndServe(mux.ServeMux, w, r, &ServeConfig{
 		Service:  mux.cfg.serviceName,
 		Resource: resource,
@@ -73,6 +78,10 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 		if r := cfg.resourceNamer(req); r != "" {
 			resource = r
 		}
+
+		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag("span.kind", "server"))
+		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag("component", "net/http"))
+
 		TraceAndServe(h, w, req, &ServeConfig{
 			Service:    service,
 			Resource:   resource,
