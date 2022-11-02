@@ -7,6 +7,7 @@
 package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"net/http"
 	"strings"
 
@@ -99,6 +100,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
+	spanopts = append(spanopts, tracer.Tag(ext.SpanKind, "server"))
+	spanopts = append(spanopts, tracer.Tag(ext.Component, "gorilla/mux"))
+
 	if r.config.headerTags {
 		spanopts = append(spanopts, headerTagsFromRequest(req))
 	}
