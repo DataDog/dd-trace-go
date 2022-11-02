@@ -109,6 +109,7 @@ type DeltaComputer struct {
 	scratchIDs    []uint64
 	hashes        byHash
 	scratchSample Sample
+	outStream     *molecule.ProtoStream
 
 	// include* is for pruning the delta output, populated on merge pass
 	includeMapping  map[uint64]struct{}
@@ -137,6 +138,7 @@ func (dc *DeltaComputer) initialize() {
 	dc.includeString = make([]bool, 0, 1024)
 	dc.strings = newStringTable(murmur3.New128())
 	dc.curProfTimeNanos = -1
+	dc.outStream = molecule.NewProtoStream(nil)
 }
 
 func (dc *DeltaComputer) reset() {
@@ -186,6 +188,7 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 			err = fmt.Errorf("internal panic during delta profiling: %v", e)
 		}
 	}()
+	dc.outStream.Reset(out)
 	hasher := murmur3.New128()
 	dc.reset()
 
@@ -345,17 +348,8 @@ func (dc *DeltaComputer) mergeSamplesPass(
 	}
 	hasher.Sum(sampleHash[:0])
 
-	// readSample writes out the locations for this sample into this scratch buffer
-	// to save on allocations
-	// dc.scratchIDs = dc.scratchIDs[:0]
-	// val, err := dc.readSample(value.Bytes, hasher, sampleHash)
-	// if err != nil {
-	// 	return false, fmt.Errorf("reading sample record: %w", err)
-	// }
-
 	var val sampleValue
 	copy(val[:], dc.scratchSample.Value)
-	var err error
 
 	old, ok := dc.sampleMap[*sampleHash]
 	dc.sampleMap[*sampleHash] = val // save for next time
@@ -388,44 +382,16 @@ func (dc *DeltaComputer) mergeSamplesPass(
 
 	dc.keepLocations(dc.scratchSample.LocationID)
 
-	// we want to write a modified version of the original record, where the only difference is
-	// the values
-	sample := make([]byte, 0, len(value.Bytes))
-	err = molecule.MessageEach(codec.NewBuffer(value.Bytes), func(field int32, value molecule.Value) (bool, error) {
-		switch SampleRecordNumber(field) {
-		case recSampleLocationID:
-			// retain the old stack
-			switch value.WireType {
-			case codec.WireBytes:
-				sample = appendProtoBytes(sample, field, value.Bytes)
-			case codec.WireVarint:
-				sample = appendProtoUvarint(sample, field, value.Number)
-			}
-		case recSampleLabel:
-			// retain the old labels
-			sample = appendProtoBytes(sample, field, value.Bytes)
-
-			// mark strings to keep in the labels structure
-			err := dc.includeStringIndexFields(value.Bytes,
-				int32(recLabelKey), int32(recLabelStr), int32(recLabelNumUnit))
-			return err == nil, err
-		}
-		return true, nil
+	// TODO(fg) we probably also need to do this for the fast-path above (if !ok)
+	for _, l := range dc.scratchSample.Label {
+		dc.markStringIncluded(uint64(l.Key))
+		dc.markStringIncluded(uint64(l.Str))
+		dc.markStringIncluded(uint64(l.NumUnit))
+	}
+	copy(dc.scratchSample.Value, val[:])
+	return true, dc.outStream.Embedded(int(recProfileSample), func(ps *molecule.ProtoStream) error {
+		return dc.scratchSample.Encode(ps)
 	})
-	if err != nil {
-		return false, err
-	}
-	newValue := make([]byte, 0, 8*4)
-	for i := range dc.valueTypeIndices {
-		newValue = protowire.AppendVarint(newValue, uint64(val[i]))
-	}
-	sample = appendProtoBytes(sample, int32(recSampleValue), newValue)
-
-	if err := dc.writeProtoBytes(out, field, sample); err != nil {
-		return false, err
-	}
-
-	return true, nil
 }
 
 // writeAndPruneRecordsPassFn returns a molecule callback to scan a Profile protobuf
