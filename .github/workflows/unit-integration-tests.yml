@@ -69,6 +69,7 @@ jobs:
       datadog-agent:
         image: datadog/agent:latest
         env:
+          DD_HOSTNAME: "github-actions-worker"
           DD_APM_ENABLED: true
           DD_BIND_HOST: "0.0.0.0"
           DD_API_KEY: "invalid_key_but_this_is_fine"
@@ -120,6 +121,7 @@ jobs:
       datadog-agent:
         image: datadog/agent:latest
         env:
+          DD_HOSTNAME: "github-actions-worker"
           DD_APM_ENABLED: true
           DD_BIND_HOST: "0.0.0.0"
           DD_API_KEY: "invalid_key_but_this_is_fine"
