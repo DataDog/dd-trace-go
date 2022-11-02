@@ -105,10 +105,10 @@ type DeltaComputer struct {
 	valueTypeIndices [][2]int
 
 	// saves some heap allocations
-	scratch          [128]byte
-	scratchIDs       []uint64
-	scratchAddresses []uint64
-	hashes           byHash
+	scratch       [128]byte
+	scratchIDs    []uint64
+	hashes        byHash
+	scratchSample Sample
 
 	// include* is for pruning the delta output, populated on merge pass
 	includeMapping  map[uint64]struct{}
@@ -300,13 +300,62 @@ func (dc *DeltaComputer) mergeSamplesPass(
 		return true, nil
 	}
 
+	dc.scratchSample.Reset()
+	if err := dc.scratchSample.Decode(codec.NewBuffer(value.Bytes)); err != nil {
+		return false, err
+	} else if err := dc.scratchSample.ValidStrings(dc.strings); err != nil {
+		return false, err
+	}
+	dc.hashes = dc.hashes[:0]
+
+	// TODO remove hashing from here
+	for _, l := range dc.scratchSample.Label {
+		hasher.Reset()
+		hasher.Write(dc.strings.h[l.Key][:])
+		hasher.Write(dc.strings.h[l.NumUnit][:])
+		binary.BigEndian.PutUint64(dc.scratch[:], uint64(l.Num))
+		hasher.Write(dc.scratch[:8])
+		// TODO: do we need an if here?
+		if uint64(l.Str) < uint64(len(dc.strings.h)) {
+			hasher.Write(dc.strings.h[l.Str][:])
+		}
+		hasher.Sum(sampleHash[:0])
+		dc.hashes = append(dc.hashes, *sampleHash)
+	}
+
+	hasher.Reset()
+	for _, id := range dc.scratchSample.LocationID {
+		addr, ok := dc.locationIndex.Get(id)
+		if !ok {
+			return false, fmt.Errorf("invalid location index")
+		}
+		binary.LittleEndian.PutUint64(dc.scratch[:], addr)
+		hasher.Write(dc.scratch[:8])
+	}
+
+	// Memory profiles current have exactly one label ("bytes"), so there is no
+	// need to sort. This saves ~0.5% of CPU time in our benchmarks.
+	if len(dc.hashes) > 1 {
+		sort.Sort(&dc.hashes) // passing &dc.hashes vs dc.hashes avoids an alloc here
+	}
+
+	for _, sub := range dc.hashes {
+		copy(sampleHash[:], sub[:]) // avoid sub escape to heap
+		hasher.Write(sampleHash[:])
+	}
+	hasher.Sum(sampleHash[:0])
+
 	// readSample writes out the locations for this sample into this scratch buffer
 	// to save on allocations
-	dc.scratchIDs = dc.scratchIDs[:0]
-	val, err := dc.readSample(value.Bytes, hasher, sampleHash)
-	if err != nil {
-		return false, fmt.Errorf("reading sample record: %w", err)
-	}
+	// dc.scratchIDs = dc.scratchIDs[:0]
+	// val, err := dc.readSample(value.Bytes, hasher, sampleHash)
+	// if err != nil {
+	// 	return false, fmt.Errorf("reading sample record: %w", err)
+	// }
+
+	var val sampleValue
+	copy(val[:], dc.scratchSample.Value)
+	var err error
 
 	old, ok := dc.sampleMap[*sampleHash]
 	dc.sampleMap[*sampleHash] = val // save for next time
@@ -317,7 +366,7 @@ func (dc *DeltaComputer) mergeSamplesPass(
 		if err := dc.writeProtoBytes(out, field, value.Bytes); err != nil {
 			return false, err
 		}
-		dc.keepLocations(dc.scratchIDs)
+		dc.keepLocations(dc.scratchSample.LocationID)
 		return true, nil
 	}
 
@@ -337,7 +386,7 @@ func (dc *DeltaComputer) mergeSamplesPass(
 		return true, nil
 	}
 
-	dc.keepLocations(dc.scratchIDs)
+	dc.keepLocations(dc.scratchSample.LocationID)
 
 	// we want to write a modified version of the original record, where the only difference is
 	// the values
@@ -594,121 +643,6 @@ func (dc *DeltaComputer) readUint64Field(v []byte, recordNumber int32) (val uint
 		}
 		return true, nil
 	})
-	return
-}
-
-func (dc *DeltaComputer) readSample(v []byte, h hash.Hash, hash *Hash) (value sampleValue, err error) {
-	values := value[:0]
-	dc.hashes = dc.hashes[:0]
-	dc.scratchAddresses = dc.scratchAddresses[:0]
-	err = molecule.MessageEach(codec.NewBuffer(v), func(field int32, value molecule.Value) (bool, error) {
-		switch SampleRecordNumber(field) {
-		case recSampleLocationID:
-			// location ID - repeated uint64
-			// repeated fields are packed by default
-			// see https://developers.google.com/protocol-buffers/docs/encoding#packed,
-			// but we can see both packed (bytes of concatenated PCs)
-			// or one/two single values. The Go runtime pprof encoding implementation
-			// will only pack when there are more than 2 locations for a sample
-			// (ref: https://cs.opensource.google/go/go/+/master:src/runtime/pprof/proto.go;l=527;drc=403f91c24430213b6a8efb3d143b6eae08b02ec2;bpv=1;bpt=1)
-			switch value.WireType {
-			case codec.WireBytes:
-				err := iterPackedVarints(value.Bytes, func(id uint64) {
-					addr, ok := dc.locationIndex.Get(id)
-					if !ok {
-						return
-					}
-					dc.scratchAddresses = append(dc.scratchAddresses, addr)
-					dc.scratchIDs = append(dc.scratchIDs, id)
-				})
-				if err != nil {
-					return false, err
-				}
-			case codec.WireVarint:
-				addr, ok := dc.locationIndex.Get(value.Number)
-				if !ok {
-					return false, fmt.Errorf("invalid location index")
-				}
-				dc.scratchAddresses = append(dc.scratchAddresses, addr)
-				dc.scratchIDs = append(dc.scratchIDs, value.Number)
-			}
-		case recSampleValue:
-			// repeated int64
-			switch value.WireType {
-			case codec.WireBytes:
-				err := iterPackedVarints(value.Bytes, func(n uint64) {
-					values = append(values, int64(n))
-				})
-				if err != nil {
-					return false, err
-				}
-			case codec.WireVarint:
-				values = append(values, int64(value.Number))
-			}
-		case recSampleLabel:
-			var (
-				key  uint64
-				num  uint64
-				unit uint64
-			)
-			const sentinel = 0xffffffffffffffff
-			str := uint64(sentinel) // sentinel for "value is numeric, not a string"
-			err := molecule.MessageEach(codec.NewBuffer(value.Bytes), func(field int32, value molecule.Value) (bool, error) {
-				switch LabelRecordNumber(field) {
-				case recLabelKey:
-					key = value.Number
-				case recLabelStr:
-					str = value.Number
-				case recLabelNum:
-					num = value.Number
-				case recLabelNumUnit:
-					unit = value.Number
-				}
-				return true, nil
-			})
-			if err != nil {
-				return false, err
-			}
-			if !dc.strings.contains(key) {
-				return false, fmt.Errorf("invalid string index %d", key)
-			}
-			if str != sentinel && !dc.strings.contains(str) {
-				return false, fmt.Errorf("invalid string index %d", str)
-			}
-			if !dc.strings.contains(unit) {
-				return false, fmt.Errorf("invalid string index %d", unit)
-			}
-			h.Reset()
-			h.Write(dc.strings.h[uint(key)][:])
-			h.Write(dc.strings.h[uint(unit)][:])
-			binary.BigEndian.PutUint64(dc.scratch[:], num)
-			h.Write(dc.scratch[:8])
-			if str < uint64(len(dc.strings.h)) {
-				h.Write(dc.strings.h[uint(str)][:])
-			}
-			h.Sum(hash[:0])
-			dc.hashes = append(dc.hashes, *hash)
-		}
-		return true, nil
-	})
-
-	h.Reset()
-	for _, addr := range dc.scratchAddresses {
-		binary.LittleEndian.PutUint64(dc.scratch[:], addr)
-		h.Write(dc.scratch[:8])
-	}
-
-	// Memory profiles current have exactly one label ("bytes"), so there is no
-	// need to sort. This saves ~0.5% of CPU time in our benchmarks.
-	if len(dc.hashes) > 1 {
-		sort.Sort(&dc.hashes) // passing &dc.hashes vs dc.hashes avoids an alloc here
-	}
-
-	for _, sub := range dc.hashes {
-		copy(hash[:], sub[:]) // avoid sub escape to heap
-		h.Write(hash[:])
-	}
-	h.Sum(hash[:0])
 	return
 }
 
