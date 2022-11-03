@@ -55,6 +55,7 @@ func BenchmarkFastDelta(b *testing.B) {
 				}
 				sink = buf.Bytes()
 			}
+			b.SetBytes(int64(len(before)))
 		})
 	}
 }
