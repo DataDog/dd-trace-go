@@ -340,7 +340,7 @@ func TestDefaultConfig(t *testing.T) {
 		assert := assert.New(t)
 		assert.Equal(defaultAPIURL, cfg.apiURL)
 		assert.Equal(defaultAgentURL, cfg.agentURL)
-		assert.Equal(defaultEnv, cfg.env)
+		assert.Equal("", cfg.env)
 		assert.Equal(filepath.Base(os.Args[0]), cfg.service)
 		assert.Equal(len(defaultProfileTypes), len(cfg.types))
 		for _, pt := range defaultProfileTypes {
