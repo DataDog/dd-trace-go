@@ -95,9 +95,35 @@ func registerWAF(rules []byte, timeout time.Duration, limiter Limiter, obfCfg *O
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
 func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration, limiter Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
+	actionHandler := httpsec.NewActionsHandler()
 
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
 		var body interface{}
+		wafCtx := waf.NewContext(handle)
+		if wafCtx == nil {
+			// The WAF event listener got concurrently released
+			return
+		}
+
+		values := map[string]interface{}{}
+		for _, addr := range addresses {
+			if addr == httpClientIP && args.ClientIP.IsValid() {
+				values[httpClientIP] = args.ClientIP.String()
+			}
+		}
+
+		matches, actionIds := runWAF(wafCtx, values, timeout)
+		actionIds = append(actionIds, "block")
+		if len(matches) > 0 {
+			for _, id := range actionIds {
+				actionHandler.Apply(id, op)
+			}
+			op.AddSecurityEvents(matches)
+			log.Debug("appsec: WAF detected an attack before executing the request")
+			if len(actionIds) > 0 {
+				return
+			}
+		}
 
 		op.On(httpsec.OnSDKBodyOperationStart(func(op *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
 			body = args.Body
@@ -106,13 +132,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 		// At the moment, AppSec doesn't block the requests, and so we can use the fact we are in monitoring-only mode
 		// to call the WAF only once at the end of the handler operation.
 		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
-			wafCtx := waf.NewContext(handle)
-			if wafCtx == nil {
-				// The WAF event listener got concurrently released
-				return
-			}
 			defer wafCtx.Close()
-
 			// Run the WAF on the rule addresses available in the request args
 			values := make(map[string]interface{}, len(addresses))
 			for _, addr := range addresses {
@@ -141,14 +161,9 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 					}
 				case serverResponseStatusAddr:
 					values[serverResponseStatusAddr] = res.Status
-
-				case httpClientIP:
-					if args.ClientIP.IsValid() {
-						values[httpClientIP] = args.ClientIP.String()
-					}
 				}
 			}
-			matches := runWAF(wafCtx, values, timeout)
+			matches, _ := runWAF(wafCtx, values, timeout)
 
 			// Add WAF metrics.
 			rInfo := handle.RulesetInfo()
@@ -222,7 +237,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			if md := handlerArgs.Metadata; len(md) > 0 {
 				values[grpcServerRequestMetadata] = md
 			}
-			event := runWAF(wafCtx, values, timeout)
+			event, _ := runWAF(wafCtx, values, timeout)
 
 			// WAF run durations are WAF context bound. As of now we need to keep track of those externally since
 			// we use a new WAF context for each callback. When we are able to re-use the same WAF context across
@@ -260,17 +275,17 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 	})
 }
 
-func runWAF(wafCtx *waf.Context, values map[string]interface{}, timeout time.Duration) []byte {
-	matches, _, err := wafCtx.Run(values, timeout)
+func runWAF(wafCtx *waf.Context, values map[string]interface{}, timeout time.Duration) ([]byte, []string) {
+	matches, actions, err := wafCtx.Run(values, timeout)
 	if err != nil {
 		if err == waf.ErrTimeout {
 			log.Debug("appsec: waf timeout value of %s reached", timeout)
 		} else {
 			log.Error("appsec: unexpected waf error: %v", err)
-			return nil
+			return nil, nil
 		}
 	}
-	return matches
+	return matches, actions
 }
 
 // HTTP rule addresses currently supported by the WAF

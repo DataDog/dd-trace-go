@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"os"
 	"reflect"
 	"strings"
 
@@ -74,6 +75,17 @@ func MonitorParsedBody(ctx context.Context, body interface{}) {
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
 	instrumentation.SetAppSecEnabledTags(span)
+	applyActions := func(op *Operation) {
+		for _, action := range op.Actions() {
+			switch a := action.(type) {
+			case *BlockRequestAction:
+				handler = a.handler
+				op.AddTag("appsec.blocked", true)
+			default:
+				log.Warn("appsec: unsupported action %v. Ignoring.", a)
+			}
+		}
+	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		SetIPTags(span, r)
@@ -81,18 +93,24 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		args := MakeHandlerOperationArgs(r, pathParams)
 		ctx, op := StartOperation(r.Context(), args)
 		r = r.WithContext(ctx)
+
+		events := op.Events()
+		if len(events) > 0 {
+			applyActions(op)
+		}
 		defer func() {
 			var status int
 			if mw, ok := w.(interface{ Status() int }); ok {
 				status = mw.Status()
 			}
 
-			events := op.Finish(HandlerOperationRes{Status: status})
+			events = append(events, op.Finish(HandlerOperationRes{Status: status})...)
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
 			}
 
+			applyActions(op)
 			remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
 			if err != nil {
 				remoteIP = r.RemoteAddr
@@ -101,6 +119,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		}()
 
 		handler.ServeHTTP(w, r)
+
 	})
 }
 
@@ -152,6 +171,7 @@ type (
 		dyngo.Operation
 		instrumentation.TagsHolder
 		instrumentation.SecurityEventsHolder
+		actions []Action
 	}
 
 	// SDKBodyOperation type representing an SDK body. It must be created with
@@ -188,6 +208,10 @@ func fromContext(ctx context.Context) *Operation {
 func (op *Operation) Finish(res HandlerOperationRes) []json.RawMessage {
 	dyngo.FinishOperation(op, res)
 	return op.Events()
+}
+
+func (op *Operation) Actions() []Action {
+	return op.actions
 }
 
 // StartSDKBodyOperation starts the SDKBody operation and emits a start event
@@ -293,4 +317,29 @@ func IPFromRequest(r *http.Request) netaddrIP {
 	}
 
 	return netaddrIP{}
+}
+
+var (
+	// BlockedTemplateJSON is the default JSON template used to write responses for blocked requests
+	BlockedTemplateJSON = []byte(`{"errors": [{"title": "You've been blocked", "detail": "Sorry, you cannot access this page. Please contact the customer service team. Security provided by Datadog."}]}`)
+	// BlockedTemplateHTML is the default HTML template used to write responses for blocked requests
+	BlockedTemplateHTML = []byte(`<!DOCTYPE html><html lang="en"><head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width,initial-scale=1"> <title>You've been blocked</title> <style>a, body, div, html, span{margin: 0; padding: 0; border: 0; font-size: 100%; font: inherit; vertical-align: baseline}body{background: -webkit-radial-gradient(26% 19%, circle, #fff, #f4f7f9); background: radial-gradient(circle at 26% 19%, #fff, #f4f7f9); display: -webkit-box; display: -ms-flexbox; display: flex; -webkit-box-pack: center; -ms-flex-pack: center; justify-content: center; -webkit-box-align: center; -ms-flex-align: center; align-items: center; -ms-flex-line-pack: center; align-content: center; width: 100%; min-height: 100vh; line-height: 1; flex-direction: column}p{display: block}main{text-align: center; flex: 1; display: -webkit-box; display: -ms-flexbox; display: flex; -webkit-box-pack: center; -ms-flex-pack: center; justify-content: center; -webkit-box-align: center; -ms-flex-align: center; align-items: center; -ms-flex-line-pack: center; align-content: center; flex-direction: column}p{font-size: 18px; line-height: normal; color: #646464; font-family: sans-serif; font-weight: 400}a{color: #4842b7}footer{width: 100%; text-align: center}footer p{font-size: 16px}</style></head><body> <main> <p>Sorry, you cannot access this page. Please contact the customer service team.</p></main> <footer> <p>Security provided by <a href="https://www.datadoghq.com/product/security-platform/application-security-monitoring/" target="_blank">Datadog</a></p></footer></body></html>`)
+)
+
+const (
+	envBlockedTemplateHTML = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML"
+	envBlockedTemplateJSON = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON"
+)
+
+func init() {
+	for env, template := range map[string]*[]byte{envBlockedTemplateJSON: &BlockedTemplateJSON, envBlockedTemplateHTML: &BlockedTemplateHTML} {
+		if path, ok := os.LookupEnv(env); ok {
+			if t, err := os.ReadFile(path); err != nil {
+				log.Warn("Could not read template at %s: %v", path, err)
+			} else {
+				*template = t
+			}
+		}
+
+	}
 }

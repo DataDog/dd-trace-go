@@ -25,6 +25,9 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
 		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
+		if op.UnaryHandler != nil {
+			return op.UnaryHandler(ctx, req)
+		}
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
@@ -44,6 +47,9 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 	return func(srv interface{}, stream grpc.ServerStream) error {
 		md, _ := metadata.FromIncomingContext(stream.Context())
 		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
+		if op.StreamHandler != nil {
+			return op.StreamHandler(srv, stream)
+		}
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
