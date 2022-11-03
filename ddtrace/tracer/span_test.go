@@ -557,6 +557,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		span.SetTag("race_test2", 133.7)
 		span.SetTag("race_test3", 133.7)
 		span.SetTag(ext.Error, errors.New("t"))
+		span.SetUser("race_test_user_1")
 		done <- struct{}{}
 	}()
 
