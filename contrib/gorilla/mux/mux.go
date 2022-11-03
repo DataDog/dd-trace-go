@@ -100,8 +100,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
-	spanopts = append(spanopts, tracer.Tag(ext.SpanKind, "server"))
 	spanopts = append(spanopts, tracer.Tag(ext.Component, "gorilla/mux"))
+	spanopts = append(spanopts, tracer.Tag(ext.SpanKind, ext.SpanKind_Server))
 
 	if r.config.headerTags {
 		spanopts = append(spanopts, headerTagsFromRequest(req))

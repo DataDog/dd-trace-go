@@ -52,7 +52,7 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		tracer.Tag("partition", msg.Partition),
 		tracer.Tag("offset", msg.Offset),
 		tracer.Tag(ext.Component, "kafka-go"),
-		tracer.Tag(ext.SpanKind, "consumer"),
+		tracer.Tag(ext.SpanKind, ext.SpanKind_Consumer),
 		tracer.Measured(),
 	}
 	if !math.IsNaN(r.cfg.analyticsRate) {
@@ -131,7 +131,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		tracer.ServiceName(w.cfg.producerServiceName),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, "kafka-go"),
-		tracer.Tag(ext.SpanKind, "producer"),
+		tracer.Tag(ext.SpanKind, ext.SpanKind_Consumer),
 	}
 	if w.Writer.Topic != "" {
 		opts = append(opts, tracer.ResourceName("Produce Topic "+w.Writer.Topic))

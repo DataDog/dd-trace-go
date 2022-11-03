@@ -228,7 +228,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query stri
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.StartTime(startTime),
 		tracer.Tag(ext.Component, "database/sql"),
-		tracer.Tag(ext.SpanKind, "client"),
+		tracer.Tag(ext.SpanKind, ext.SpanKind_Client),
 	)
 	if tp.cfg.tags != nil {
 		for key, tag := range tp.cfg.tags {
