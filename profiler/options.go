@@ -60,7 +60,6 @@ const (
 	defaultAPIURL    = "https://intake.profile.datadoghq.com/v1/input"
 	defaultAgentHost = "localhost"
 	defaultAgentPort = "8126"
-	defaultEnv       = "none"
 )
 
 var defaultClient = &http.Client{
@@ -196,7 +195,6 @@ func (c *config) addProfileType(t ProfileType) {
 
 func defaultConfig() (*config, error) {
 	c := config{
-		env:               defaultEnv,
 		apiURL:            defaultAPIURL,
 		service:           filepath.Base(os.Args[0]),
 		statsd:            &statsd.NoOpClient{},
