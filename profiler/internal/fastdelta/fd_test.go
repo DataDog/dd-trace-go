@@ -216,7 +216,7 @@ func TestCompaction(t *testing.T) {
 	err = dc.Delta(zeroDeltaBuf.Bytes(), buf)
 	zeroDeltaBytes := buf.Bytes()
 	require.NoError(t, err)
-	require.Equal(t, len(zeroDeltaBytes), zeroDeltaBuf.Len())
+	require.Equal(t, zeroDeltaBuf.Len(), len(zeroDeltaBytes))
 
 	// when
 
