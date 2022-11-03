@@ -7,16 +7,16 @@
 package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"net/http"
 	"strings"
 
+	"github.com/gorilla/mux"
+
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"github.com/gorilla/mux"
 )
 
 // Router registers routes to be matched and dispatches a handler.

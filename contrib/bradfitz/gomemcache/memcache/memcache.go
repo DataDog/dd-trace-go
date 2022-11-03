@@ -69,6 +69,8 @@ func (c *Client) startSpan(resourceName string) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeMemcached),
 		tracer.ServiceName(c.cfg.serviceName),
 		tracer.ResourceName(resourceName),
+		tracer.Tag(ext.Component, "gomemcache"),
+		tracer.Tag(ext.SpanKind, "client"),
 	}
 	if !math.IsNaN(c.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, c.cfg.analyticsRate))
