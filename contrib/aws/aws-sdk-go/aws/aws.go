@@ -70,7 +70,7 @@ func (h *handlers) Send(req *request.Request) {
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
 		tracer.Tag(ext.HTTPURL, req.HTTPRequest.URL.String()),
 		tracer.Tag(ext.Component, "aws-sdk-go"),
-		tracer.Tag(ext.SpanKind, ext.SpanKind_Client),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}
 	if !math.IsNaN(h.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))

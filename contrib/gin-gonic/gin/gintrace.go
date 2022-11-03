@@ -41,7 +41,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		}
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, c.FullPath()))
 		opts = append(opts, tracer.Tag(ext.Component, "gin"))
-		opts = append(opts, tracer.Tag(ext.SpanKind, ext.SpanKind_Client))
+		opts = append(opts, tracer.Tag(ext.SpanKind, ext.SpanKindClient))
 
 		span, ctx := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {

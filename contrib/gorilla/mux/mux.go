@@ -101,7 +101,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
 	spanopts = append(spanopts, tracer.Tag(ext.Component, "gorilla/mux"))
-	spanopts = append(spanopts, tracer.Tag(ext.SpanKind, ext.SpanKind_Server))
+	spanopts = append(spanopts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 
 	if r.config.headerTags {
 		spanopts = append(spanopts, headerTagsFromRequest(req))

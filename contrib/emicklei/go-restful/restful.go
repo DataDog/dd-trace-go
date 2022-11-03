@@ -29,7 +29,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 	return func(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
 		spanOpts := append(spanOpts, tracer.ResourceName(req.SelectedRoutePath()))
 		spanOpts = append(spanOpts, tracer.Tag(ext.Component, "go-restful"))
-		spanOpts = append(spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKind_Server))
+		spanOpts = append(spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 
 		if !math.IsNaN(cfg.analyticsRate) {
 			spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

@@ -97,7 +97,7 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.Tag("partition", msg.TopicPartition.Partition),
 		tracer.Tag("offset", msg.TopicPartition.Offset),
 		tracer.Tag(ext.Component, "confluent-kafka-go"),
-		tracer.Tag(ext.SpanKind, ext.SpanKind_Consumer),
+		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Measured(),
 	}
 	if c.cfg.tagFns != nil {
@@ -208,7 +208,7 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.ResourceName("Produce Topic " + *msg.TopicPartition.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, "confluent-kafka-go"),
-		tracer.Tag(ext.SpanKind, ext.SpanKind_Producer),
+		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag("partition", msg.TopicPartition.Partition),
 	}
 	if !math.IsNaN(p.cfg.analyticsRate) {

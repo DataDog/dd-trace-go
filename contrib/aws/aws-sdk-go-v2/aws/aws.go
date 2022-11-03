@@ -79,7 +79,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(tagAWSService, serviceID),
 			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
 			tracer.Tag(ext.Component, "aws-sdk-go-v2"),
-			tracer.Tag(ext.SpanKind, ext.SpanKind_Client),
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))

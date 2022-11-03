@@ -49,7 +49,7 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 		tracer.Tag(ext.PeerHostname, hostname),
 		tracer.Tag(ext.PeerPort, port),
 		tracer.Tag(ext.Component, "mongo-go-driver"),
-		tracer.Tag(ext.SpanKind, ext.SpanKind_Client),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))

@@ -104,7 +104,7 @@ func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.Tag(ext.Component, "redigo"),
-		tracer.Tag(ext.SpanKind, ext.SpanKind_Client),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
