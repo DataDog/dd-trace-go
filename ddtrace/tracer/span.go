@@ -184,6 +184,12 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 	trace := root.context.trace
 	root.Lock()
 	defer root.Unlock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if root.finished {
+		return
+	}
 	if cfg.PropagateID {
 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
 		delete(root.Meta, keyUserID)
