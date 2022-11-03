@@ -73,7 +73,13 @@ func (s *Sample) Reset() {
 
 func (s *Sample) Encode(ps *molecule.ProtoStream) error {
 	var fe firstErr
-	fe.Add(ps.Uint64Packed(int(recSampleLocationID), s.LocationID))
+	if len(s.LocationID) == 1 {
+		// Produces slightly more compact output, but we mostly do this so that
+		// TestCompaction passes.
+		fe.Add(ps.Uint64(int(recSampleLocationID), s.LocationID[0]))
+	} else {
+		fe.Add(ps.Uint64Packed(int(recSampleLocationID), s.LocationID))
+	}
 	fe.Add(ps.Int64Packed(int(recSampleValue), s.Value))
 	for _, l := range s.Label {
 		fe.Add(ps.Embedded(int(recSampleLabel), func(ps *molecule.ProtoStream) error {

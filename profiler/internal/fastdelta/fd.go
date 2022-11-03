@@ -188,13 +188,13 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 			err = fmt.Errorf("internal panic during delta profiling: %v", e)
 		}
 	}()
-	dc.outStream.Reset(out)
 	dc.reset()
 
 	if dc.poisoned {
 		// If the last round failed, start fresh
 		dc.initialize()
 	}
+	dc.outStream.Reset(out)
 
 	err = molecule.MessageEach(codec.NewBuffer(p), dc.indexPass)
 	if err != nil {
@@ -309,31 +309,23 @@ func (dc *DeltaComputer) mergeSamplesPass(
 
 	old, ok := dc.sampleMap[sampleHash]
 	dc.sampleMap[sampleHash] = val // save for next time
-	if !ok {
-		// If this is a new sample we don't take the
-		// difference, just pass it through.
-		// but we should record the value for next time
-		if err := dc.writeProtoBytes(out, field, value.Bytes); err != nil {
-			return false, err
+	if ok {
+		all0 := true
+		for i := 0; i < len(computeDeltaForValue); i++ {
+			if computeDeltaForValue[i] {
+				val[i] = val[i] - old[i]
+			}
+			if val[i] != 0 {
+				all0 = false
+			}
 		}
-		dc.keepLocations(dc.scratchSample.LocationID)
-		return true, nil
-	}
+		if all0 {
+			// If the sample has all 0 values, we drop it
+			// this matches the behavior of Google's pprof library
+			// when merging profiles
+			return true, nil
+		}
 
-	all0 := true
-	for i := 0; i < len(computeDeltaForValue); i++ {
-		if computeDeltaForValue[i] {
-			val[i] = val[i] - old[i]
-		}
-		if val[i] != 0 {
-			all0 = false
-		}
-	}
-	if all0 {
-		// If the sample has all 0 values, we drop it
-		// this matches the behavior of Google's pprof library
-		// when merging profiles
-		return true, nil
 	}
 
 	dc.keepLocations(dc.scratchSample.LocationID)
