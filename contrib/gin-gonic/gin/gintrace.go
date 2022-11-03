@@ -40,6 +40,9 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, c.FullPath()))
+		opts = append(opts, tracer.Tag(ext.Component, "gin"))
+		opts = append(opts, tracer.Tag(ext.SpanKind, "client"))
+
 		span, ctx := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
 			httptrace.FinishRequestSpan(span, c.Writer.Status())
@@ -67,6 +70,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 func HTML(c *gin.Context, code int, name string, obj interface{}) {
 	span, _ := tracer.StartSpanFromContext(c.Request.Context(), "gin.render.html")
 	span.SetTag("go.template", name)
+	span.SetTag(ext.Component, "gin")
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("error rendering tmpl:%s: %s", name, r)
