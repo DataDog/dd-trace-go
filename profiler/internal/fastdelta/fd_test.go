@@ -489,6 +489,9 @@ func right(n int) {
 }
 
 func TestRepeatedHeapProfile(t *testing.T) {
+	if os.Getenv("DELTA_PROFILE_HEAP_STRESS_TEST") == "" {
+		t.Skip("This test is resource-intensive. To run it, set the DELTA_PROFILE_HEAP_STRESS_TEST environment variable")
+	}
 	readProfile := func(name string) []byte {
 		b := new(bytes.Buffer)
 		if err := pprof.Lookup(name).WriteTo(b, 0); err != nil {
