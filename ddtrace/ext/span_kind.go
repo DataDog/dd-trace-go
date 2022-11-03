@@ -10,24 +10,24 @@ package ext
 
 const (
 
-	// SpanKind_Server Server indicates that the span covers server-side handling of a synchronous RPC or other remote request
+	// SpanKindServer indicates that the span covers server-side handling of a synchronous RPC or other remote request
 	// This span should not have any local parents but can have other distributed parents
-	SpanKind_Server = "server"
+	SpanKindServer = "server"
 
-	// SpanKind_Client Client indicates that the span describes a request to some remote service.
+	// SpanKindClient indicates that the span describes a request to some remote service.
 	// This span should not have any local children but can have other distributed children
-	SpanKind_Client = "client"
+	SpanKindClient = "client"
 
-	// SpanKind_Consumer Consumer Indicates that the span describes the initiators of an asynchronous request.
+	// SpanKindConsumer indicates that the span describes the initiators of an asynchronous request.
 	// This span should not have any local parents but can have other distributed parents
-	SpanKind_Consumer = "consumer"
+	SpanKindConsumer = "consumer"
 
-	// SpanKind_Producer Producer Indicates that the span describes a child of an asynchronous producer request.
+	// SpanKindProducer indicates that the span describes a child of an asynchronous producer request.
 	// This span should not have any local children but can have other distributed children
-	SpanKind_Producer = "producer"
+	SpanKindProducer = "producer"
 
-	// SpanKind_Internal Internal indicates that the span represents an internal operation within an application,
+	// SpanKindInternal indicates that the span represents an internal operation within an application,
 	// as opposed to an operations with remote parents or children.
 	// This is the default value and not explicitly set to save memory
-	SpanKind_Internal = "internal"
+	SpanKindInternal = "internal"
 )
