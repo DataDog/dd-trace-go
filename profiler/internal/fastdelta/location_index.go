@@ -17,6 +17,7 @@ type location struct {
 	address     uint64
 	mappingID   uint64
 	functionIDs funcIDSlice
+	included    bool
 }
 
 // funcIDSlice describes a sub-slice of locationIndex.functionIds. It's 1/3
@@ -52,6 +53,28 @@ func (l *locationIndex) Insert(id, address, mappingID uint64, functionIDs []uint
 		}
 		l.slowTable[id] = loc
 	}
+}
+
+func (l *locationIndex) MarkIncluded(id uint64) {
+	// TODO(fg) duplicated with get() function below
+	if l.slowTable == nil {
+		id--
+		if id >= uint64(len(l.fastTable)) {
+			return
+		}
+		l.fastTable[id].included = true
+	} else {
+		loc, ok := l.slowTable[id]
+		if ok {
+			loc.included = true
+			l.slowTable[id] = loc
+		}
+	}
+}
+
+func (l *locationIndex) Included(id uint64) bool {
+	loc, _ := l.get(id)
+	return loc.included
 }
 
 // Get returns the address associated with the given location ID

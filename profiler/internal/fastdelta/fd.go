@@ -114,7 +114,6 @@ type DeltaComputer struct {
 	// include* is for pruning the delta output, populated on merge pass
 	includeMapping  map[uint64]struct{}
 	includeFunction map[uint64]struct{}
-	includeLocation map[uint64]struct{}
 	includeString   []bool
 }
 
@@ -134,7 +133,6 @@ func (dc *DeltaComputer) initialize() {
 	dc.scratchIDs = make([]uint64, 0, 512)
 	dc.includeMapping = make(map[uint64]struct{})
 	dc.includeFunction = make(map[uint64]struct{})
-	dc.includeLocation = make(map[uint64]struct{})
 	dc.includeString = make([]bool, 0, 1024)
 	dc.strings = newStringTable(murmur3.New128())
 	dc.curProfTimeNanos = -1
@@ -157,9 +155,6 @@ func (dc *DeltaComputer) reset() {
 	}
 	for k := range dc.includeFunction {
 		delete(dc.includeFunction, k)
-	}
-	for k := range dc.includeLocation {
-		delete(dc.includeLocation, k)
 	}
 	dc.includeString = dc.includeString[:0]
 	dc.valueTypeIndices = dc.valueTypeIndices[:0]
@@ -398,7 +393,7 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass(field int32, value molecule.Va
 		if err != nil {
 			return false, fmt.Errorf("reading location record: %w", err)
 		}
-		if _, ok := dc.includeLocation[id]; !ok {
+		if !dc.locationIndex.Included(id) {
 			return true, nil
 		}
 	case recProfileFunction:
@@ -573,7 +568,7 @@ func (dc *DeltaComputer) keepLocations(locationIDs []uint64) {
 			continue
 		}
 		dc.includeMapping[mappingID] = struct{}{}
-		dc.includeLocation[locationID] = struct{}{}
+		dc.locationIndex.MarkIncluded(locationID)
 		for _, functionID := range functionIDs {
 			dc.includeFunction[functionID] = struct{}{}
 		}
