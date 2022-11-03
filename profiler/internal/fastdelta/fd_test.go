@@ -39,16 +39,15 @@ func BenchmarkFastDelta(b *testing.B) {
 			b.ResetTimer()
 
 			buf := new(bytes.Buffer)
+			dc := NewDeltaComputer(
+				vt("alloc_objects", "count"),
+				vt("alloc_space", "bytes"),
+			)
+			if err := dc.Delta(before, io.Discard); err != nil {
+				b.Fatal(err)
+			}
 			for i := 0; i < b.N; i++ {
 				buf.Reset()
-				dc := NewDeltaComputer(
-					vt("alloc_objects", "count"),
-					vt("alloc_space", "bytes"),
-				)
-				err := dc.Delta(before, io.Discard)
-				if err != nil {
-					b.Fatal(err)
-				}
 				err = dc.Delta(after, buf)
 				if err != nil {
 					b.Fatal(err)
