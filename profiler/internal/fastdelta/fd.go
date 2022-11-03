@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"sort"
 
 	"github.com/richardartoul/molecule"
 	"github.com/richardartoul/molecule/src/codec"
@@ -107,9 +106,9 @@ type DeltaComputer struct {
 	// saves some heap allocations
 	scratch       [128]byte
 	scratchIDs    []uint64
-	hashes        byHash
 	scratchSample Sample
 	outStream     *molecule.ProtoStream
+	hasher        Hasher
 
 	// include* is for pruning the delta output, populated on merge pass
 	includeMapping  map[uint64]struct{}
@@ -139,6 +138,11 @@ func (dc *DeltaComputer) initialize() {
 	dc.strings = newStringTable(murmur3.New128())
 	dc.curProfTimeNanos = -1
 	dc.outStream = molecule.NewProtoStream(nil)
+
+	dc.hasher.st = dc.strings
+	dc.hasher.alg = murmur3.New128()
+	dc.hasher.lx = &dc.locationIndex
+
 }
 
 func (dc *DeltaComputer) reset() {
@@ -273,8 +277,6 @@ func (dc *DeltaComputer) indexPass(field int32, value molecule.Value, hasher mur
 // mapping, function, location, and strings (sample labels) referenced by the kept samples
 // can be written out in a later pass.
 func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer, hasher murmur3.Hash128) molecule.MessageEachFn {
-	var sampleHash Hash
-
 	computeDeltaForValue := make([]bool, len(dc.valueTypeIndices))
 	for _, field := range dc.fields {
 		for i, vtIdxs := range dc.valueTypeIndices {
@@ -288,7 +290,7 @@ func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer, hasher murmur3.Hash12
 	}
 
 	return func(field int32, value molecule.Value) (bool, error) {
-		return dc.mergeSamplesPass(field, value, out, hasher, &sampleHash, computeDeltaForValue)
+		return dc.mergeSamplesPass(field, value, out, hasher, computeDeltaForValue)
 	}
 }
 
@@ -297,7 +299,6 @@ func (dc *DeltaComputer) mergeSamplesPass(
 	value molecule.Value,
 	out io.Writer,
 	hasher murmur3.Hash128,
-	sampleHash *Hash,
 	computeDeltaForValue []bool) (bool, error) {
 	if ProfileRecordNumber(field) != recProfileSample {
 		return true, nil
@@ -309,50 +310,16 @@ func (dc *DeltaComputer) mergeSamplesPass(
 	} else if err := dc.scratchSample.ValidStrings(dc.strings); err != nil {
 		return false, err
 	}
-	dc.hashes = dc.hashes[:0]
-
-	// TODO remove hashing from here
-	for _, l := range dc.scratchSample.Label {
-		hasher.Reset()
-		hasher.Write(dc.strings.h[l.Key][:])
-		hasher.Write(dc.strings.h[l.NumUnit][:])
-		binary.BigEndian.PutUint64(dc.scratch[:], uint64(l.Num))
-		hasher.Write(dc.scratch[:8])
-		// TODO: do we need an if here?
-		if uint64(l.Str) < uint64(len(dc.strings.h)) {
-			hasher.Write(dc.strings.h[l.Str][:])
-		}
-		hasher.Sum(sampleHash[:0])
-		dc.hashes = append(dc.hashes, *sampleHash)
+	sampleHash, err := dc.hasher.Sample(&dc.scratchSample)
+	if err != nil {
+		return false, err
 	}
-
-	hasher.Reset()
-	for _, id := range dc.scratchSample.LocationID {
-		addr, ok := dc.locationIndex.Get(id)
-		if !ok {
-			return false, fmt.Errorf("invalid location index")
-		}
-		binary.LittleEndian.PutUint64(dc.scratch[:], addr)
-		hasher.Write(dc.scratch[:8])
-	}
-
-	// Memory profiles current have exactly one label ("bytes"), so there is no
-	// need to sort. This saves ~0.5% of CPU time in our benchmarks.
-	if len(dc.hashes) > 1 {
-		sort.Sort(&dc.hashes) // passing &dc.hashes vs dc.hashes avoids an alloc here
-	}
-
-	for _, sub := range dc.hashes {
-		copy(sampleHash[:], sub[:]) // avoid sub escape to heap
-		hasher.Write(sampleHash[:])
-	}
-	hasher.Sum(sampleHash[:0])
 
 	var val sampleValue
 	copy(val[:], dc.scratchSample.Value)
 
-	old, ok := dc.sampleMap[*sampleHash]
-	dc.sampleMap[*sampleHash] = val // save for next time
+	old, ok := dc.sampleMap[sampleHash]
+	dc.sampleMap[sampleHash] = val // save for next time
 	if !ok {
 		// If this is a new sample we don't take the
 		// difference, just pass it through.

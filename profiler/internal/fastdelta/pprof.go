@@ -56,10 +56,6 @@ func (s *Sample) ValidStrings(st *stringTable) error {
 	return nil
 }
 
-func (s *Sample) Hash() Hash {
-	return Hash{}
-}
-
 type Label struct {
 	Key     int64
 	Str     int64
