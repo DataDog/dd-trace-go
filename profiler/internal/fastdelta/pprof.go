@@ -8,6 +8,57 @@ import (
 	"github.com/richardartoul/molecule/src/codec"
 )
 
+type Location struct {
+	ID        uint64
+	MappingID uint64
+	Address   uint64
+	Line      []Line
+	IsFolded  bool
+}
+
+func (l *Location) Reset() {
+	l.ID = 0
+	l.MappingID = 0
+	l.Address = 0
+	l.IsFolded = false
+	l.Line = l.Line[:0]
+}
+
+func (l *Location) Decode(buf *codec.Buffer) error {
+	return molecule.MessageEach(buf, func(field int32, value molecule.Value) (bool, error) {
+		switch LocationRecordNumber(field) {
+		case recLocationID:
+			l.ID = value.Number
+		case recLocationMappingID:
+			l.MappingID = value.Number
+		case recLocationAddress:
+			l.Address = value.Number
+		case recLocationLine:
+			l.Line = append(l.Line, Line{})
+			l.Line[len(l.Line)-1].Decode(codec.NewBuffer(value.Bytes))
+			// TODO: parse IsFolded?
+		}
+		return true, nil
+	})
+}
+
+type Line struct {
+	FunctionID uint64
+	Line       int64
+}
+
+func (l *Line) Decode(buf *codec.Buffer) error {
+	return molecule.MessageEach(buf, func(field int32, value molecule.Value) (bool, error) {
+		switch LineRecordNumber(field) {
+		case recLineFunctionID:
+			l.FunctionID = value.Number
+			return false, nil
+			// TODO: parse Line?
+		}
+		return true, nil
+	})
+}
+
 type Sample struct {
 	LocationID []uint64
 	Value      []int64

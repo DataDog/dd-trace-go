@@ -104,11 +104,12 @@ type DeltaComputer struct {
 	valueTypeIndices [][2]int
 
 	// saves some heap allocations
-	scratch       [128]byte
-	scratchIDs    []uint64
-	scratchSample Sample
-	outStream     *molecule.ProtoStream
-	hasher        Hasher
+	scratch         [128]byte
+	scratchIDs      []uint64
+	scratchSample   Sample
+	scratchLocation Location
+	outStream       *molecule.ProtoStream
+	hasher          Hasher
 
 	// include* is for pruning the delta output, populated on merge pass
 	includeMapping  map[uint64]struct{}
@@ -193,7 +194,6 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 		}
 	}()
 	dc.outStream.Reset(out)
-	hasher := murmur3.New128()
 	dc.reset()
 
 	if dc.poisoned {
@@ -201,7 +201,7 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 		dc.initialize()
 	}
 
-	err = molecule.MessageEach(codec.NewBuffer(p), dc.indexPassFn(hasher))
+	err = molecule.MessageEach(codec.NewBuffer(p), dc.indexPassFn())
 	if err != nil {
 		return fmt.Errorf("error in indexing pass: %w", err)
 	}
@@ -213,7 +213,7 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 	// TODO: first pass optimization, if this is the first profile DeltaComputer consumes,
 	// would be to compute the previous values to populate dc.sampleMap, but just return
 	// the original profile bytes rather than effectively copying them
-	err = molecule.MessageEach(codec.NewBuffer(p), dc.mergeSamplesPassFn(out, hasher))
+	err = molecule.MessageEach(codec.NewBuffer(p), dc.mergeSamplesPassFn(out))
 	if err != nil {
 		return fmt.Errorf("error in merge samples pass: %w", err)
 	}
@@ -238,13 +238,13 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 //	dc.locationIndex
 //	dc.strings
 //	dc.includeString (sizing)
-func (dc *DeltaComputer) indexPassFn(hasher murmur3.Hash128) molecule.MessageEachFn {
+func (dc *DeltaComputer) indexPassFn() molecule.MessageEachFn {
 	return func(field int32, value molecule.Value) (bool, error) {
-		return dc.indexPass(field, value, hasher)
+		return dc.indexPass(field, value)
 	}
 }
 
-func (dc *DeltaComputer) indexPass(field int32, value molecule.Value, hasher murmur3.Hash128) (bool, error) {
+func (dc *DeltaComputer) indexPass(field int32, value molecule.Value) (bool, error) {
 	switch ProfileRecordNumber(field) {
 	case recProfileSampleType:
 		vType, vUnit, err := dc.readValueType(value.Bytes)
@@ -253,13 +253,15 @@ func (dc *DeltaComputer) indexPass(field int32, value molecule.Value, hasher mur
 		}
 		dc.valueTypeIndices = append(dc.valueTypeIndices, [2]int{vType, vUnit})
 	case recProfileLocation:
-		// readLocation writes out function IDs for the location to this scratch buffer
-		dc.scratchIDs = dc.scratchIDs[:0]
-		address, id, mappingID, err := dc.readLocation(value.Bytes)
-		if err != nil {
-			return false, fmt.Errorf("reading location record: %w", err)
+		dc.scratchLocation.Reset()
+		if err := dc.scratchLocation.Decode(codec.NewBuffer(value.Bytes)); err != nil {
+			return false, err
 		}
-		dc.locationIndex.Insert(id, address, mappingID, dc.scratchIDs)
+		dc.scratchIDs = dc.scratchIDs[:0]
+		for _, l := range dc.scratchLocation.Line {
+			dc.scratchIDs = append(dc.scratchIDs, l.FunctionID)
+		}
+		dc.locationIndex.Insert(dc.scratchLocation.ID, dc.scratchLocation.Address, dc.scratchLocation.MappingID, dc.scratchIDs)
 	case recProfileStringTable:
 		dc.strings.add(value.Bytes)
 
@@ -276,7 +278,7 @@ func (dc *DeltaComputer) indexPass(field int32, value molecule.Value, hasher mur
 // This pass has the side effect of populating dc.include* fields so only the
 // mapping, function, location, and strings (sample labels) referenced by the kept samples
 // can be written out in a later pass.
-func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer, hasher murmur3.Hash128) molecule.MessageEachFn {
+func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer) molecule.MessageEachFn {
 	computeDeltaForValue := make([]bool, len(dc.valueTypeIndices))
 	for _, field := range dc.fields {
 		for i, vtIdxs := range dc.valueTypeIndices {
@@ -290,7 +292,7 @@ func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer, hasher murmur3.Hash12
 	}
 
 	return func(field int32, value molecule.Value) (bool, error) {
-		return dc.mergeSamplesPass(field, value, out, hasher, computeDeltaForValue)
+		return dc.mergeSamplesPass(field, value, out, computeDeltaForValue)
 	}
 }
 
@@ -298,7 +300,6 @@ func (dc *DeltaComputer) mergeSamplesPass(
 	field int32,
 	value molecule.Value,
 	out io.Writer,
-	hasher murmur3.Hash128,
 	computeDeltaForValue []bool) (bool, error) {
 	if ProfileRecordNumber(field) != recProfileSample {
 		return true, nil
@@ -537,34 +538,6 @@ func (dc *DeltaComputer) readValueType(v []byte) (vType, vUnit int, err error) {
 		return 0, 0, err
 	}
 	return vType, vUnit, nil
-}
-
-func (dc *DeltaComputer) readLocation(v []byte) (address, id, mappingID uint64, err error) {
-	err = molecule.MessageEach(codec.NewBuffer(v), func(field int32, value molecule.Value) (bool, error) {
-		switch LocationRecordNumber(field) {
-		case recLocationID:
-			id = value.Number
-		case recLocationMappingID:
-			mappingID = value.Number
-		case recLocationAddress:
-			address = value.Number
-		case recLocationLine:
-			// collect function_id from repeated Line
-			err := molecule.MessageEach(codec.NewBuffer(value.Bytes), func(field int32, value molecule.Value) (bool, error) {
-				switch LineRecordNumber(field) {
-				case recLineFunctionID:
-					dc.scratchIDs = append(dc.scratchIDs, value.Number)
-					return false, nil
-				}
-				return true, nil
-			})
-			if err != nil {
-				return false, err
-			}
-		}
-		return true, nil
-	})
-	return
 }
 
 func (dc *DeltaComputer) readUint64Field(v []byte, recordNumber int32) (val uint64, err error) {
