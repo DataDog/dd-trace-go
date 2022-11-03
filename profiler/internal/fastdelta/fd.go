@@ -196,7 +196,7 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 		dc.initialize()
 	}
 
-	err = molecule.MessageEach(codec.NewBuffer(p), dc.indexPassFn())
+	err = molecule.MessageEach(codec.NewBuffer(p), dc.indexPass)
 	if err != nil {
 		return fmt.Errorf("error in indexing pass: %w", err)
 	}
@@ -226,19 +226,12 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 	return nil
 }
 
-// indexPassFn returns a molecule callback to scan a Profile protobuf
 // This pass has the side effect of populating the indices:
 //
 //	valueTypeIndices
 //	dc.locationIndex
 //	dc.strings
 //	dc.includeString (sizing)
-func (dc *DeltaComputer) indexPassFn() molecule.MessageEachFn {
-	return func(field int32, value molecule.Value) (bool, error) {
-		return dc.indexPass(field, value)
-	}
-}
-
 func (dc *DeltaComputer) indexPass(field int32, value molecule.Value) (bool, error) {
 	switch ProfileRecordNumber(field) {
 	case recProfileSampleType:
