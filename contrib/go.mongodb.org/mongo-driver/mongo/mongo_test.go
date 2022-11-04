@@ -77,7 +77,7 @@ func Test(t *testing.T) {
 	assert.Equal(t, "test-database", s.Tag(ext.DBInstance))
 	assert.Equal(t, "mongo", s.Tag(ext.DBType))
 	assert.Equal(t, "mongo-go-driver", s.Tag(ext.Component))
-	assert.Equal(t, "client", s.Tag(ext.SpanKind))
+	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 }
 
 func TestAnalyticsSettings(t *testing.T) {

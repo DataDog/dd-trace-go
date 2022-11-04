@@ -58,7 +58,7 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "PUT", s.Tag(ext.HTTPMethod))
 		assert.Equal(t, "http://s3.us-west-2.amazonaws.com/BUCKET", s.Tag(ext.HTTPURL))
 		assert.Equal(t, "aws-sdk-go", s.Tag(ext.Component))
-		assert.Equal(t, "client", s.Tag(ext.SpanKind))
+		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 		assert.NotNil(t, s.Tag(tagAWSRequestID))
 	})
 
@@ -86,7 +86,7 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 		assert.Equal(t, "http://ec2.us-west-2.amazonaws.com/", s.Tag(ext.HTTPURL))
 		assert.Equal(t, "aws-sdk-go", s.Tag(ext.Component))
-		assert.Equal(t, "client", s.Tag(ext.SpanKind))
+		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 	})
 }
 

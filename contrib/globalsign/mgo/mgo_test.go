@@ -88,7 +88,7 @@ func TestIter_NoSpanKind(t *testing.T) {
 	numSpanKindClient := 0
 	for _, val := range spans {
 		if val.OperationName() != "mgo-unittest" {
-			if val, ok := val.Tags()[ext.SpanKind]; ok && val == "client" {
+			if val, ok := val.Tags()[ext.SpanKind]; ok && val == ext.SpanKindClient {
 				numSpanKindClient++
 			}
 		}
@@ -114,7 +114,7 @@ func TestCollection_Insert(t *testing.T) {
 	spans := testMongoCollectionCommand(assert, insert)
 	assert.Equal(2, len(spans))
 	assert.Equal("mongodb.query", spans[0].OperationName())
-	assert.Equal("client", spans[0].Tag(ext.SpanKind))
+	assert.Equal(ext.SpanKindClient, spans[0].Tag(ext.SpanKind))
 }
 
 func TestCollection_Update(t *testing.T) {
@@ -135,7 +135,7 @@ func TestCollection_Update(t *testing.T) {
 	spans := testMongoCollectionCommand(assert, insert)
 	assert.Equal(3, len(spans))
 	assert.Equal("mongodb.query", spans[1].OperationName())
-	assert.Equal("client", spans[1].Tag(ext.SpanKind))
+	assert.Equal(ext.SpanKindClient, spans[1].Tag(ext.SpanKind))
 
 }
 

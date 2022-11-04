@@ -82,7 +82,7 @@ func TestHttpTracer(t *testing.T) {
 			assert.Equal(ht.method, s.Tag(ext.HTTPMethod))
 			assert.Equal("http://example.com"+ht.url, s.Tag(ext.HTTPURL))
 			assert.Equal(ht.resourceName, s.Tag(ext.ResourceName))
-			assert.Equal("server", s.Tag(ext.SpanKind))
+			assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 			assert.Equal("gorilla/mux", s.Tag(ext.Component))
 
 			if ht.errorStr != "" {

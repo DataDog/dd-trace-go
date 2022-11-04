@@ -102,7 +102,7 @@ func TestWithSpanTags(t *testing.T) {
 			for k, v := range tt.want.ctxTags {
 				assert.Equal(t, v, connectSpan.Tag(k), "Value mismatch on tag %s", k)
 			}
-			assert.Equal(t, "client", connectSpan.Tag(ext.SpanKind))
+			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
 			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
 
 			span := spans[1]
@@ -110,7 +110,7 @@ func TestWithSpanTags(t *testing.T) {
 			for k, v := range tt.want.ctxTags {
 				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
-			assert.Equal(t, "client", span.Tag(ext.SpanKind))
+			assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
 			assert.Equal(t, "database/sql", span.Tag(ext.Component))
 		})
 	}
@@ -288,7 +288,7 @@ func TestWithCustomTag(t *testing.T) {
 			for k, v := range tt.want.customTags {
 				assert.Equal(t, v, connectSpan.Tag(k), "Value mismatch on tag %s", k)
 			}
-			assert.Equal(t, "client", connectSpan.Tag(ext.SpanKind))
+			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
 			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
 
 			span := spans[1]
@@ -296,7 +296,7 @@ func TestWithCustomTag(t *testing.T) {
 			for k, v := range tt.want.customTags {
 				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
-			assert.Equal(t, "client", connectSpan.Tag(ext.SpanKind))
+			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
 			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
 		})
 	}

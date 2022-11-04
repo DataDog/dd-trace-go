@@ -80,7 +80,7 @@ func TestAppendMiddleware(t *testing.T) {
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws-sdk-go-v2", s.Tag(ext.Component))
-			assert.Equal(t, "client", s.Tag(ext.SpanKind))
+			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 		})
 	}
 }

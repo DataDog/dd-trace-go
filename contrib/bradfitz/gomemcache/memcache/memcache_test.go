@@ -51,7 +51,7 @@ func testMemcache(t *testing.T, addr string) {
 			"resource name should be set to the memcache command")
 		assert.Equal(t, "gomemcache", span.Tag(ext.Component),
 			"component should be set to gomemcache")
-		assert.Equal(t, "client", span.Tag(ext.SpanKind),
+		assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind),
 			"span.kind should be set to client")
 	}
 

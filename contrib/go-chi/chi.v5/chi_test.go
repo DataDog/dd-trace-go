@@ -69,7 +69,7 @@ func TestTrace200(t *testing.T) {
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 		assert.Equal("chi.v5", span.Tag(ext.Component))
-		assert.Equal("server", span.Tag(ext.SpanKind))
+		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	}
 
 	t.Run("response written", func(t *testing.T) {
