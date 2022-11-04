@@ -82,8 +82,8 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 	assert.Equal(t, 0, s0.Tag("partition"))
-	assert.Equal(t, "kafka-go", s0.Tag("component"))
-	assert.Equal(t, "producer", s0.Tag("span.kind"))
+	assert.Equal(t, "kafka-go", s0.Tag(ext.Component))
+	assert.Equal(t, "producer", s0.Tag(ext.SpanKind))
 
 	s1 := spans[1] // consume
 	assert.Equal(t, "kafka.consume", s1.OperationName())
@@ -92,8 +92,8 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 	assert.Equal(t, 0, s1.Tag("partition"))
-	assert.Equal(t, "kafka-go", s1.Tag("component"))
-	assert.Equal(t, "consumer", s1.Tag("span.kind"))
+	assert.Equal(t, "kafka-go", s1.Tag(ext.Component))
+	assert.Equal(t, "consumer", s1.Tag(ext.SpanKind))
 }
 
 func TestFetchMessageFunctional(t *testing.T) {
@@ -148,8 +148,8 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 	assert.Equal(t, 0, s0.Tag("partition"))
-	assert.Equal(t, "kafka-go", s0.Tag("component"))
-	assert.Equal(t, "producer", s0.Tag("span.kind"))
+	assert.Equal(t, "kafka-go", s0.Tag(ext.Component))
+	assert.Equal(t, "producer", s0.Tag(ext.SpanKind))
 
 	s1 := spans[1] // consume
 	assert.Equal(t, "kafka.consume", s1.OperationName())
@@ -158,6 +158,6 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 	assert.Equal(t, 0, s1.Tag("partition"))
-	assert.Equal(t, "kafka-go", s1.Tag("component"))
-	assert.Equal(t, "consumer", s1.Tag("span.kind"))
+	assert.Equal(t, "kafka-go", s1.Tag(ext.Component))
+	assert.Equal(t, "consumer", s1.Tag(ext.SpanKind))
 }

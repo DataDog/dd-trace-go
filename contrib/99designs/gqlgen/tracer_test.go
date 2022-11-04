@@ -30,8 +30,8 @@ func TestOptions(t *testing.T) {
 				assert.Equal(query, root.Tag(ext.ResourceName))
 				assert.Equal(defaultServiceName, root.Tag(ext.ServiceName))
 				assert.Equal(ext.SpanTypeGraphQL, root.Tag(ext.SpanType))
-				assert.Equal("gqlgen", root.Tag("component"))
-				assert.Equal("server", root.Tag("span.kind"))
+				assert.Equal("gqlgen", root.Tag(ext.Component))
+				assert.Equal("server", root.Tag(ext.SpanKind))
 				assert.Nil(root.Tag(ext.EventSampleRate))
 			},
 		},
@@ -142,11 +142,11 @@ func TestChildSpans(t *testing.T) {
 	for _, span := range allSpans {
 		if span.ParentID() == 0 {
 			root = span
-			assert.Equal("gqlgen", span.Tag("component"))
-			assert.Equal("server", span.Tag("span.kind"))
+			assert.Equal("gqlgen", span.Tag(ext.Component))
+			assert.Equal("server", span.Tag(ext.SpanKind))
 		} else {
-			assert.Equal("gqlgen", span.Tag("component"))
-			assert.Equal(nil, span.Tag("span.kind")) //no tag implies internal
+			assert.Equal("gqlgen", span.Tag(ext.Component))
+			assert.Equal(nil, span.Tag(ext.SpanKind)) //no tag implies internal
 		}
 		resNames = append(resNames, span.Tag(ext.ResourceName).(string))
 		opNames = append(opNames, span.OperationName())

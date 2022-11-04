@@ -86,8 +86,8 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
-	assert.Equal("client", span.Tag("span.kind"))
-	assert.Equal("gin", span.Tag("component"))
+	assert.Equal("client", span.Tag(ext.SpanKind))
+	assert.Equal("gin", span.Tag(ext.Component))
 }
 
 func TestTraceDefaultResponse(t *testing.T) {
@@ -124,8 +124,8 @@ func TestTraceDefaultResponse(t *testing.T) {
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
-	assert.Equal("client", span.Tag("span.kind"))
-	assert.Equal("gin", span.Tag("component"))
+	assert.Equal("client", span.Tag(ext.SpanKind))
+	assert.Equal("gin", span.Tag(ext.Component))
 }
 
 func TestTraceMultipleResponses(t *testing.T) {
@@ -165,8 +165,8 @@ func TestTraceMultipleResponses(t *testing.T) {
 	assert.Equal("133", span.Tag(ext.HTTPCode)) // Will be fixed by https://github.com/gin-gonic/gin/pull/2627 once merged and released
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
-	assert.Equal("client", span.Tag("span.kind"))
-	assert.Equal("gin", span.Tag("component"))
+	assert.Equal("client", span.Tag(ext.SpanKind))
+	assert.Equal("gin", span.Tag(ext.Component))
 }
 
 func TestError(t *testing.T) {
@@ -205,8 +205,8 @@ func TestError(t *testing.T) {
 		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag("gin.errors"))
 		// server errors set the ext.Error tag
 		assert.Equal("500: Internal Server Error", span.Tag(ext.Error).(error).Error())
-		assert.Equal("client", span.Tag("span.kind"))
-		assert.Equal("gin", span.Tag("component"))
+		assert.Equal("client", span.Tag(ext.SpanKind))
+		assert.Equal("gin", span.Tag(ext.Component))
 	})
 
 	t.Run("client error", func(*testing.T) {
@@ -235,8 +235,8 @@ func TestError(t *testing.T) {
 		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag("gin.errors"))
 		// client errors do not set the ext.Error tag
 		assert.Equal(nil, span.Tag(ext.Error))
-		assert.Equal("client", span.Tag("span.kind"))
-		assert.Equal("gin", span.Tag("component"))
+		assert.Equal("client", span.Tag(ext.SpanKind))
+		assert.Equal("gin", span.Tag(ext.Component))
 	})
 }
 
@@ -269,7 +269,7 @@ func TestHTML(t *testing.T) {
 	assert.Len(spans, 2)
 	for _, s := range spans {
 		assert.Equal("foobar", s.Tag(ext.ServiceName), s.String())
-		assert.Equal("gin", s.Tag("component"))
+		assert.Equal("gin", s.Tag(ext.Component))
 	}
 
 	var tspan mocktracer.Span
@@ -283,7 +283,7 @@ func TestHTML(t *testing.T) {
 	assert.NotNil(tspan)
 	assert.Equal("hello", tspan.Tag("go.template"))
 
-	_, ok := tspan.Tags()["span.kind"]
+	_, ok := tspan.Tags()[ext.SpanKind]
 	assert.Equal(false, ok)
 }
 

@@ -49,9 +49,9 @@ func testMemcache(t *testing.T, addr string) {
 			"operation name should be set to memcached.query")
 		assert.Equal(t, resourceName, span.Tag(ext.ResourceName),
 			"resource name should be set to the memcache command")
-		assert.Equal(t, "gomemcache", span.Tag("component"),
+		assert.Equal(t, "gomemcache", span.Tag(ext.Component),
 			"component should be set to gomemcache")
-		assert.Equal(t, "client", span.Tag("span.kind"),
+		assert.Equal(t, "client", span.Tag(ext.SpanKind),
 			"span.kind should be set to client")
 	}
 

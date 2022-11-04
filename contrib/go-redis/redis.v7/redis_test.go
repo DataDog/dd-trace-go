@@ -59,8 +59,8 @@ func TestClientEvalSha(t *testing.T) {
 	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("evalsha", span.Tag(ext.ResourceName))
-	assert.Equal("go-redis.v7", span.Tag("component"))
-	assert.Equal("client", span.Tag("span.kind"))
+	assert.Equal("go-redis.v7", span.Tag(ext.Component))
+	assert.Equal("client", span.Tag(ext.SpanKind))
 }
 
 func TestClient(t *testing.T) {
@@ -83,8 +83,8 @@ func TestClient(t *testing.T) {
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
 	assert.Equal("3", span.Tag("redis.args_length"))
-	assert.Equal("go-redis.v7", span.Tag("component"))
-	assert.Equal("client", span.Tag("span.kind"))
+	assert.Equal("go-redis.v7", span.Tag(ext.Component))
+	assert.Equal("client", span.Tag(ext.SpanKind))
 }
 
 func TestWrapClient(t *testing.T) {
@@ -142,8 +142,8 @@ func TestWrapClient(t *testing.T) {
 			assert.Equal("my-redis", span.Tag(ext.ServiceName))
 			assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
 			assert.Equal("3", span.Tag("redis.args_length"))
-			assert.Equal("go-redis.v7", span.Tag("component"))
-			assert.Equal("client", span.Tag("span.kind"))
+			assert.Equal("go-redis.v7", span.Tag(ext.Component))
+			assert.Equal("client", span.Tag(ext.SpanKind))
 		})
 	}
 }
@@ -231,8 +231,8 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("1", span.Tag("redis.pipeline_length"))
-	assert.Equal("go-redis.v7", span.Tag("component"))
-	assert.Equal("client", span.Tag("span.kind"))
+	assert.Equal("go-redis.v7", span.Tag(ext.Component))
+	assert.Equal("client", span.Tag(ext.SpanKind))
 
 	mt.Reset()
 	pipeline.Expire("pipeline_counter", time.Hour)
@@ -250,8 +250,8 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("my-redis", span.Tag(ext.ServiceName))
 	assert.Equal("expire pipeline_counter 3600: false\nexpire pipeline_counter_1 60: false\n", span.Tag(ext.ResourceName))
 	assert.Equal("2", span.Tag("redis.pipeline_length"))
-	assert.Equal("go-redis.v7", span.Tag("component"))
-	assert.Equal("client", span.Tag("span.kind"))
+	assert.Equal("go-redis.v7", span.Tag(ext.Component))
+	assert.Equal("client", span.Tag(ext.SpanKind))
 }
 
 func TestChildSpan(t *testing.T) {
@@ -333,8 +333,8 @@ func TestError(t *testing.T) {
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6378", span.Tag(ext.TargetPort))
 		assert.Equal("get key: ", span.Tag("redis.raw_command"))
-		assert.Equal("go-redis.v7", span.Tag("component"))
-		assert.Equal("client", span.Tag("span.kind"))
+		assert.Equal("go-redis.v7", span.Tag(ext.Component))
+		assert.Equal("client", span.Tag(ext.SpanKind))
 	})
 
 	t.Run("nil", func(t *testing.T) {
@@ -356,8 +356,8 @@ func TestError(t *testing.T) {
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6379", span.Tag(ext.TargetPort))
 		assert.Equal("get non_existent_key: ", span.Tag("redis.raw_command"))
-		assert.Equal("go-redis.v7", span.Tag("component"))
-		assert.Equal("client", span.Tag("span.kind"))
+		assert.Equal("go-redis.v7", span.Tag(ext.Component))
+		assert.Equal("client", span.Tag(ext.SpanKind))
 	})
 }
 func TestAnalyticsSettings(t *testing.T) {

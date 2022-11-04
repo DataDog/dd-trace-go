@@ -55,8 +55,8 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
-	assert.Equal("server", span.Tag("span.kind"))
-	assert.Equal("go-restful", span.Tag("component"))
+	assert.Equal("server", span.Tag(ext.SpanKind))
+	assert.Equal("go-restful", span.Tag(ext.Component))
 }
 
 func TestError(t *testing.T) {
@@ -88,8 +88,8 @@ func TestError(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("500", span.Tag(ext.HTTPCode))
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
-	assert.Equal("server", span.Tag("span.kind"))
-	assert.Equal("go-restful", span.Tag("component"))
+	assert.Equal("server", span.Tag(ext.SpanKind))
+	assert.Equal("go-restful", span.Tag(ext.Component))
 }
 
 func TestPropagation(t *testing.T) {

@@ -70,8 +70,8 @@ func TestPropagation(t *testing.T) {
 		ext.SpanType:     ext.SpanTypeMessageProducer,
 		"server_id":      srvID,
 		ext.ServiceName:  nil,
-		"component":      "google-cloud-go/pubsub",
-		"span.kind":      "producer",
+		ext.Component:    "google-cloud-go/pubsub",
+		ext.SpanKind:     "producer",
 	}, spans[0].Tags())
 
 	assert.Equal(spans[0].SpanID(), spans[2].ParentID())
@@ -85,8 +85,8 @@ func TestPropagation(t *testing.T) {
 		ext.SpanType:     ext.SpanTypeMessageConsumer,
 		"message_id":     msgID,
 		"publish_time":   pubTime,
-		"component":      "google-cloud-go/pubsub",
-		"span.kind":      "consumer",
+		ext.Component:    "google-cloud-go/pubsub",
+		ext.SpanKind:     "consumer",
 	}, spans[2].Tags())
 }
 
@@ -159,8 +159,8 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		ext.ResourceName: "projects/project/topics/topic",
 		ext.SpanType:     ext.SpanTypeMessageProducer,
 		"server_id":      srvID,
-		"component":      "google-cloud-go/pubsub",
-		"span.kind":      "producer",
+		ext.Component:    "google-cloud-go/pubsub",
+		ext.SpanKind:     "producer",
 	}, spans[0].Tags())
 
 	assert.Equal(spans[0].SpanID(), spans[1].ParentID())
@@ -174,8 +174,8 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		ext.SpanType:     ext.SpanTypeMessageConsumer,
 		"message_id":     msgID,
 		"publish_time":   pubTime,
-		"component":      "google-cloud-go/pubsub",
-		"span.kind":      "consumer",
+		ext.Component:    "google-cloud-go/pubsub",
+		ext.SpanKind:     "consumer",
 	}, spans[1].Tags())
 }
 
@@ -226,8 +226,8 @@ func TestPropagationNoPubsliherSpan(t *testing.T) {
 		ext.SpanType:     ext.SpanTypeMessageConsumer,
 		"message_id":     msgID,
 		"publish_time":   pubTime,
-		"component":      "google-cloud-go/pubsub",
-		"span.kind":      "consumer",
+		ext.Component:    "google-cloud-go/pubsub",
+		ext.SpanKind:     "consumer",
 	}, spans[0].Tags())
 }
 
