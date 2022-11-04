@@ -40,14 +40,14 @@ const (
 )
 
 // Register the WAF event listener.
-func registerWAF(rules []byte, timeout time.Duration, limiter Limiter, obfCfg *ObfuscatorConfig) (unreg dyngo.UnregisterFunc, err error) {
+func (a *appsec) registerWAF() (unreg dyngo.UnregisterFunc, err error) {
 	// Check the WAF is healthy
 	if err := waf.Health(); err != nil {
 		return nil, err
 	}
 
 	// Instantiate the WAF
-	waf, err := waf.NewHandle(rules, obfCfg.KeyRegex, obfCfg.ValueRegex)
+	waf, err := waf.NewHandle(a.cfg.rules, a.cfg.obfuscator.KeyRegex, a.cfg.obfuscator.ValueRegex)
 	if err != nil {
 		return nil, err
 	}
@@ -75,14 +75,14 @@ func registerWAF(rules []byte, timeout time.Duration, limiter Limiter, obfCfg *O
 	var unregisterHTTP, unregisterGRPC dyngo.UnregisterFunc
 	if len(httpAddresses) > 0 {
 		log.Debug("appsec: registering http waf listening to addresses %v", httpAddresses)
-		unregisterHTTP = dyngo.Register(newHTTPWAFEventListener(waf, httpAddresses, timeout, limiter))
+		unregisterHTTP = dyngo.Register(newHTTPWAFEventListener(waf, httpAddresses, a.cfg.wafTimeout, a.limiter))
 	}
 	if len(grpcAddresses) > 0 {
 		log.Debug("appsec: registering grpc waf listening to addresses %v", grpcAddresses)
-		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, timeout, limiter))
+		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, a.cfg.wafTimeout, a.limiter))
 	}
 
-	activeAppSec.registerRCCallback((&wafHandleWrapper{waf}).asmDataCallback, rc.ProductASMData)
+	a.registerRCCallback((&wafHandleWrapper{waf}).asmDataCallback, rc.ProductASMData)
 
 	// Return an unregistration function that will also release the WAF instance.
 	return func() {
