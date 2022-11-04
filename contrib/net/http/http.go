@@ -52,7 +52,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resource = r.Method + " " + route
 	}
 
-	mux.cfg.spanOpts = append(mux.cfg.spanOpts, tracer.Tag(ext.SpanKind, "server"))
+	mux.cfg.spanOpts = append(mux.cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	mux.cfg.spanOpts = append(mux.cfg.spanOpts, tracer.Tag(ext.Component, "net/http"))
 
 	TraceAndServe(mux.ServeMux, w, r, &ServeConfig{
@@ -81,7 +81,7 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 			resource = r
 		}
 
-		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, "server"))
+		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "net/http"))
 
 		TraceAndServe(h, w, req, &ServeConfig{
