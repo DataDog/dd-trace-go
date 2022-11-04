@@ -55,7 +55,46 @@ func testMongoCollectionCommand(assert *assert.Assertions, command func(*Collect
 	parentSpan.Finish()
 
 	spans := mt.FinishedSpans()
+
+	for _, val := range spans {
+		if val.OperationName() == "mongodb.query" {
+			assert.Equal("mgo", val.Tag(ext.Component))
+		}
+	}
+
 	return spans
+}
+
+func TestIter_NoSpanKind(t *testing.T) {
+	assert := assert.New(t)
+
+	entity := bson.D{
+		bson.DocElem{
+			Name: "entity",
+			Value: bson.DocElem{
+				Name:  "index",
+				Value: 0}}}
+
+	insert := func(collection *Collection) {
+		collection.Insert(entity)
+		var r bson.D
+		collection.Find(entity).Iter().Next(&r)
+		collection.UpdateId(r.Map()["_id"], entity)
+	}
+
+	spans := testMongoCollectionCommand(assert, insert)
+	assert.Equal(5, len(spans))
+
+	numSpanKindClient := 0
+	for _, val := range spans {
+		if val.OperationName() != "mgo-unittest" {
+			if val, ok := val.Tags()[ext.SpanKind]; ok && val == "client" {
+				numSpanKindClient++
+			}
+		}
+	}
+	assert.Equal(3, numSpanKindClient, "Iter() should not get span.kind tag")
+
 }
 
 func TestCollection_Insert(t *testing.T) {
@@ -75,6 +114,7 @@ func TestCollection_Insert(t *testing.T) {
 	spans := testMongoCollectionCommand(assert, insert)
 	assert.Equal(2, len(spans))
 	assert.Equal("mongodb.query", spans[0].OperationName())
+	assert.Equal("client", spans[0].Tag(ext.SpanKind))
 }
 
 func TestCollection_Update(t *testing.T) {
@@ -95,6 +135,8 @@ func TestCollection_Update(t *testing.T) {
 	spans := testMongoCollectionCommand(assert, insert)
 	assert.Equal(3, len(spans))
 	assert.Equal("mongodb.query", spans[1].OperationName())
+	assert.Equal("client", spans[1].Tag(ext.SpanKind))
+
 }
 
 func TestCollection_UpdateId(t *testing.T) {
@@ -168,6 +210,7 @@ func TestCollection_Upsert(t *testing.T) {
 	assert.Equal(6, len(spans))
 	assert.Equal("mongodb.query", spans[1].OperationName())
 	assert.Equal("mongodb.query", spans[4].OperationName())
+
 }
 
 func TestCollection_UpdateAll(t *testing.T) {
@@ -210,6 +253,7 @@ func TestCollection_FindId(t *testing.T) {
 
 	spans := testMongoCollectionCommand(assert, insert)
 	assert.Equal(6, len(spans))
+
 }
 
 func TestCollection_Remove(t *testing.T) {
