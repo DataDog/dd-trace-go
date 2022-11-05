@@ -17,6 +17,7 @@ import (
 	"github.com/richardartoul/molecule/src/protowire"
 	"github.com/spaolacci/murmur3"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 )
 
@@ -110,6 +111,7 @@ type DeltaComputer struct {
 	scratchLocation  Location
 	scratchString    StringTable
 	scratchValueType ValueType
+	decoder          pproflite.Decoder
 	outStream        *molecule.ProtoStream
 	hasher           Hasher
 
@@ -198,8 +200,13 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 	}
 	dc.outStream.Reset(out)
 
-	d := NewPPROFDecoder()
-	if err := d.Decode(p, []Decoder{&dc.scratchLocation, &dc.scratchValueType, &dc.scratchString}, dc.indexPass); err != nil {
+	dc.decoder.Reset(p)
+
+	if err := dc.decoder.Filter(
+		pproflite.ValueType{},
+		pproflite.Location{},
+		pproflite.StringTable{},
+	).FieldEach(dc.indexPass); err != nil {
 		return fmt.Errorf("error in indexing pass: %w", err)
 	}
 
@@ -234,21 +241,23 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 //	dc.locationIndex
 //	dc.strings
 //	dc.includeString (sizing)
-func (dc *DeltaComputer) indexPass(m Decoder) error {
+func (dc *DeltaComputer) indexPass(m pproflite.Field) error {
 	switch t := m.(type) {
-	case *ValueType:
+	case *pproflite.SampleType:
 		dc.valueTypeIndices = append(dc.valueTypeIndices, [2]int{int(t.Type), int(t.Unit)})
-	case *Location:
+	case *pproflite.Location:
 		dc.scratchIDs = dc.scratchIDs[:0]
 		for _, l := range t.Line {
 			dc.scratchIDs = append(dc.scratchIDs, l.FunctionID)
 		}
-		dc.locationIndex.Insert(dc.scratchLocation.ID, dc.scratchLocation.Address, dc.scratchLocation.MappingID, dc.scratchIDs)
-	case *StringTable:
-		dc.strings.add(t.Bytes)
+		dc.locationIndex.Insert(t.ID, t.Address, t.MappingID, dc.scratchIDs)
+	case *pproflite.StringTable:
+		dc.strings.add(t.Value)
 		// always include the zero-index empty string,
 		// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
 		dc.includeString = append(dc.includeString, len(dc.includeString) == 0)
+	default:
+		return fmt.Errorf("indexPass: unexpected field: %T", m)
 	}
 	return nil
 }
