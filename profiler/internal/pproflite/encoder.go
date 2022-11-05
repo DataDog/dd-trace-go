@@ -12,6 +12,17 @@ type encoder interface {
 	encode(*molecule.ProtoStream) error
 }
 
+type primtiveEncoder interface {
+	Field
+	encodePrimitive(*molecule.ProtoStream) error
+}
+
+func NewEncoder(w io.Writer) *Encoder {
+	e := &Encoder{}
+	e.Reset(w)
+	return e
+}
+
 type Encoder struct {
 	outWriter io.Writer
 	outStream *molecule.ProtoStream
@@ -27,12 +38,14 @@ func (e *Encoder) Reset(w io.Writer) {
 }
 
 func (e *Encoder) Encode(f Field) error {
-	// TODO(fg) type safety? make encode() part of Field interface?
-	encoder, ok := f.(encoder)
-	if !ok {
+	switch t := f.(type) {
+	case encoder:
+		return e.outStream.Embedded(f.field(), t.encode)
+	case primtiveEncoder:
+		return t.encodePrimitive(e.outStream)
+	default:
 		return fmt.Errorf("field %T does not support encoder interface", f)
 	}
-	return e.outStream.Embedded(f.field(), encoder.encode)
 }
 
 func encodeFields(ps *molecule.ProtoStream, fields []interface{}) error {
@@ -43,6 +56,8 @@ func encodeFields(ps *molecule.ProtoStream, fields []interface{}) error {
 
 		var err error
 		switch t := f.(type) {
+		case *bool:
+			ps.Bool(i, *t)
 		case *int64:
 			ps.Int64(i, *t)
 		case *uint64:
@@ -60,6 +75,10 @@ func encodeFields(ps *molecule.ProtoStream, fields []interface{}) error {
 				err = ps.Int64Packed(i, *t)
 			}
 		case *[]Label:
+			for j := range *t {
+				err = ps.Embedded(i, (*t)[j].encode)
+			}
+		case *[]Line:
 			for j := range *t {
 				err = ps.Embedded(i, (*t)[j].encode)
 			}

@@ -23,13 +23,20 @@ type Decoder struct {
 	decoders []decoder
 	input    []byte
 
-	sampleType SampleType // 1
-	sample     Sample     // 2
-	//mapping    Mapping    // 3
-	location Location // 4
-	function Function // 5
-	// 5
-	stringTable StringTable //6
+	sampleType        SampleType        // 1
+	sample            Sample            // 2
+	mapping           Mapping           // 3
+	location          Location          // 4
+	function          Function          // 5
+	stringTable       StringTable       // 6
+	dropFrames        DropFrames        // 7
+	keepFrames        KeepFrames        // 8
+	timeNanos         TimeNanos         // 9
+	durationNanos     DurationNanos     // 10
+	periodType        PeriodType        // 11
+	period            Period            // 12
+	comment           Comment           // 13
+	defaultSampleType DefaultSampleType // 14
 }
 
 func (d *Decoder) Reset(input []byte) {
@@ -39,21 +46,21 @@ func (d *Decoder) Reset(input []byte) {
 
 func (d *Decoder) filter(fields ...Field) *Decoder {
 	d.decoders = append(d.decoders[:0],
-		nil,            // field 0
-		&d.sampleType,  // field 1
-		&d.sample,      // field 2
-		nil,            // field 3
-		&d.location,    // field 4
-		&d.function,    // field 5
-		&d.stringTable, // field 6
-		nil,            // field 7
-		nil,            // field 8
-		nil,            // field 9
-		nil,            // field 10
-		nil,            // field 11
-		nil,            // field 12
-		nil,            // field 13
-		nil,            // field 14
+		nil,                  // field 0
+		&d.sampleType,        // field 1
+		&d.sample,            // field 2
+		&d.mapping,           // field 3
+		&d.location,          // field 4
+		&d.function,          // field 5
+		&d.stringTable,       // field 6
+		&d.dropFrames,        // field 7
+		&d.keepFrames,        // field 8
+		&d.timeNanos,         // field 9
+		&d.durationNanos,     // field 10
+		&d.periodType,        // field 11
+		&d.period,            // field 12
+		&d.comment,           // field 13
+		&d.defaultSampleType, // field 14
 	)
 
 	if len(fields) > 0 {
@@ -107,6 +114,8 @@ func decodeFields(val molecule.Value, fields []interface{}) error {
 			return true, nil
 		} else {
 			switch t := field.(type) {
+			case *bool:
+				*t = val.Number == 1
 			case *int64:
 				*t = int64(val.Number)
 			case *uint64:
