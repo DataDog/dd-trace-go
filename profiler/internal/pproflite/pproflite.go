@@ -152,6 +152,11 @@ func (f *StringTable) decode(val molecule.Value) error {
 	return nil
 }
 
+func (f *StringTable) encode(ps *molecule.ProtoStream) error {
+	_, err := ps.Write(f.Value)
+	return err
+}
+
 // PeriodType is field 11.
 type PeriodType struct {
 	ValueType

@@ -228,11 +228,12 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 		return fmt.Errorf("error in pruning pass: %w", err)
 	}
 
-	err = molecule.MessageEach(codec.NewBuffer(p), dc.writeStringTablePassFn(out))
-	if err != nil {
-		return fmt.Errorf("error in string table writing pass: %w", err)
+	if err := dc.decoder.FieldEachFilter(
+		dc.writeStringTablePass(),
+		pproflite.StringTable{},
+	); err != nil {
+		return err
 	}
-
 	return nil
 }
 
@@ -464,29 +465,19 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass(field int32, value molecule.Va
 // Strings marked for emission in `dc.includeString` are written to buf.
 // Strings not marked for emission are written as zero-length byte arrays
 // to preserve index offsets.
-func (dc *DeltaComputer) writeStringTablePassFn(out io.Writer) molecule.MessageEachFn {
+func (dc *DeltaComputer) writeStringTablePass() func(pproflite.Field) error {
 	counter := 0
-	return func(field int32, value molecule.Value) (bool, error) {
-		return dc.writeStringTablePass(field, value, out, &counter)
-	}
-}
-
-func (dc *DeltaComputer) writeStringTablePass(field int32, value molecule.Value, out io.Writer, counter *int) (bool, error) {
-	var stringVal []byte
-	switch ProfileRecordNumber(field) {
-	case recProfileStringTable:
-		if dc.isStringIncluded(*counter) {
-			stringVal = value.Bytes
+	return func(f pproflite.Field) error {
+		str, ok := f.(*pproflite.StringTable)
+		if !ok {
+			return fmt.Errorf("stringTablePass: unexpected field: %T", f)
 		}
-		*counter++
-	default:
-		// everything else has already been written
-		return true, nil
+		if !dc.isStringIncluded(counter) {
+			str.Value = nil
+		}
+		counter++
+		return dc.encoder.Encode(str)
 	}
-	if err := dc.writeProtoBytes(out, field, stringVal); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 func (dc *DeltaComputer) writeValue(w io.Writer, field int32, value molecule.Value) error {

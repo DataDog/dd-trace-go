@@ -219,3 +219,6 @@ require (
 	mellium.im/sasl v0.2.1 // indirect
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )
+
+// until https://github.com/richardartoul/molecule/pull/16 is merged
+replace github.com/richardartoul/molecule => github.com/felixge/molecule v0.0.0-20221105222335-7d477a7e3ef1
