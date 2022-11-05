@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/spaolacci/murmur3"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
 )
 
 type Hasher struct {
@@ -18,7 +19,7 @@ type Hasher struct {
 	scratchHash   Hash
 }
 
-func (h *Hasher) Sample(s *Sample) (Hash, error) {
+func (h *Hasher) Sample(s *pproflite.Sample) (Hash, error) {
 	h.scratchHashes = h.scratchHashes[:0]
 	for _, l := range s.Label {
 		h.alg.Reset()

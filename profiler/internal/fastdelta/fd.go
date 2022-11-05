@@ -105,15 +105,12 @@ type DeltaComputer struct {
 	valueTypeIndices [][2]int
 
 	// saves some heap allocations
-	scratch          [128]byte
-	scratchIDs       []uint64
-	scratchSample    Sample
-	scratchLocation  Location
-	scratchString    StringTable
-	scratchValueType ValueType
-	decoder          pproflite.Decoder
-	outStream        *molecule.ProtoStream
-	hasher           Hasher
+	scratch    [128]byte
+	scratchIDs []uint64
+	decoder    pproflite.Decoder
+	encoder    pproflite.Encoder
+	outStream  *molecule.ProtoStream
+	hasher     Hasher
 
 	// include* is for pruning the delta output, populated on merge pass
 	includeMapping  map[uint64]struct{}
@@ -199,14 +196,16 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 		dc.initialize()
 	}
 	dc.outStream.Reset(out)
+	dc.encoder.Reset(out)
 
 	dc.decoder.Reset(p)
 
-	if err := dc.decoder.Filter(
-		pproflite.ValueType{},
+	if err := dc.decoder.FieldEachFilter(
+		dc.indexPass,
+		pproflite.SampleType{},
 		pproflite.Location{},
 		pproflite.StringTable{},
-	).FieldEach(dc.indexPass); err != nil {
+	); err != nil {
 		return fmt.Errorf("error in indexing pass: %w", err)
 	}
 
@@ -217,9 +216,11 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 	// TODO: first pass optimization, if this is the first profile DeltaComputer consumes,
 	// would be to compute the previous values to populate dc.sampleMap, but just return
 	// the original profile bytes rather than effectively copying them
-	err = molecule.MessageEach(codec.NewBuffer(p), dc.mergeSamplesPassFn(out))
-	if err != nil {
-		return fmt.Errorf("error in merge samples pass: %w", err)
+	if err := dc.decoder.FieldEachFilter(
+		dc.mergeSamplePassFn(),
+		pproflite.Sample{},
+	); err != nil {
+		return err
 	}
 
 	err = molecule.MessageEach(codec.NewBuffer(p), dc.writeAndPruneRecordsPassFn(out))
@@ -268,7 +269,13 @@ func (dc *DeltaComputer) indexPass(m pproflite.Field) error {
 // This pass has the side effect of populating dc.include* fields so only the
 // mapping, function, location, and strings (sample labels) referenced by the kept samples
 // can be written out in a later pass.
-func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer) molecule.MessageEachFn {
+// mergeSamplesPassFn returns a molecule callback to scan a Profile protobuf
+// and write merged samples to the output buffer.
+// Any samples where the values are all 0 will be skipped.
+// This pass has the side effect of populating dc.include* fields so only the
+// mapping, function, location, and strings (sample labels) referenced by the kept samples
+// can be written out in a later pass.
+func (dc *DeltaComputer) mergeSamplePassFn() func(pproflite.Field) error {
 	computeDeltaForValue := make([]bool, len(dc.valueTypeIndices))
 	for _, field := range dc.fields {
 		for i, vtIdxs := range dc.valueTypeIndices {
@@ -281,66 +288,72 @@ func (dc *DeltaComputer) mergeSamplesPassFn(out io.Writer) molecule.MessageEachF
 		}
 	}
 
-	return func(field int32, value molecule.Value) (bool, error) {
-		return dc.mergeSamplesPass(field, value, out, computeDeltaForValue)
+	return func(f pproflite.Field) error {
+		sample, ok := f.(*pproflite.Sample)
+		if !ok {
+			return fmt.Errorf("indexPass: unexpected field: %T", f)
+		}
+
+		if err := validStrings(sample, dc.strings); err != nil {
+			return err
+		}
+
+		sampleHash, err := dc.hasher.Sample(sample)
+		if err != nil {
+			return err
+		}
+
+		// TODO(fg) get rid of this
+		var val sampleValue
+		copy(val[:], sample.Value)
+
+		old, ok := dc.sampleMap[sampleHash]
+		dc.sampleMap[sampleHash] = val // save for next time
+		if ok {
+			all0 := true
+			for i := 0; i < len(computeDeltaForValue); i++ {
+				if computeDeltaForValue[i] {
+					val[i] = val[i] - old[i]
+				}
+				if val[i] != 0 {
+					all0 = false
+				}
+			}
+			if all0 {
+				// If the sample has all 0 values, we drop it
+				// this matches the behavior of Google's pprof library
+				// when merging profiles
+				return nil
+			}
+
+		}
+
+		dc.keepLocations(sample.LocationID)
+
+		// TODO(fg) we probably also need to do this for the fast-path above (if !ok)
+		for _, l := range sample.Label {
+			dc.markStringIncluded(uint64(l.Key))
+			dc.markStringIncluded(uint64(l.Str))
+			dc.markStringIncluded(uint64(l.NumUnit))
+		}
+		copy(sample.Value, val[:])
+		return dc.encoder.Encode(sample)
 	}
 }
 
-func (dc *DeltaComputer) mergeSamplesPass(
-	field int32,
-	value molecule.Value,
-	out io.Writer,
-	computeDeltaForValue []bool) (bool, error) {
-	if ProfileRecordNumber(field) != recProfileSample {
-		return true, nil
-	}
-
-	if err := dc.scratchSample.Decode(value); err != nil {
-		return false, err
-	} else if err := dc.scratchSample.ValidStrings(dc.strings); err != nil {
-		return false, err
-	}
-	sampleHash, err := dc.hasher.Sample(&dc.scratchSample)
-	if err != nil {
-		return false, err
-	}
-
-	var val sampleValue
-	copy(val[:], dc.scratchSample.Value)
-
-	old, ok := dc.sampleMap[sampleHash]
-	dc.sampleMap[sampleHash] = val // save for next time
-	if ok {
-		all0 := true
-		for i := 0; i < len(computeDeltaForValue); i++ {
-			if computeDeltaForValue[i] {
-				val[i] = val[i] - old[i]
-			}
-			if val[i] != 0 {
-				all0 = false
-			}
+func validStrings(s *pproflite.Sample, st *stringTable) error {
+	for _, l := range s.Label {
+		if !st.contains(uint64(l.Key)) {
+			return fmt.Errorf("invalid string index %d", l.Key)
 		}
-		if all0 {
-			// If the sample has all 0 values, we drop it
-			// this matches the behavior of Google's pprof library
-			// when merging profiles
-			return true, nil
+		if !st.contains(uint64(l.Str)) {
+			return fmt.Errorf("invalid string index %d", l.Str)
 		}
-
+		if !st.contains(uint64(l.NumUnit)) {
+			return fmt.Errorf("invalid string index %d", l.NumUnit)
+		}
 	}
-
-	dc.keepLocations(dc.scratchSample.LocationID)
-
-	// TODO(fg) we probably also need to do this for the fast-path above (if !ok)
-	for _, l := range dc.scratchSample.Label {
-		dc.markStringIncluded(uint64(l.Key))
-		dc.markStringIncluded(uint64(l.Str))
-		dc.markStringIncluded(uint64(l.NumUnit))
-	}
-	copy(dc.scratchSample.Value, val[:])
-	return true, dc.outStream.Embedded(int(recProfileSample), func(ps *molecule.ProtoStream) error {
-		return dc.scratchSample.Encode(ps)
-	})
+	return nil
 }
 
 // writeAndPruneRecordsPassFn returns a molecule callback to scan a Profile protobuf

@@ -46,6 +46,7 @@ func BenchmarkFastDelta(b *testing.B) {
 			if err := dc.Delta(before, io.Discard); err != nil {
 				b.Fatal(err)
 			}
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				buf.Reset()
 				err = dc.Delta(after, buf)

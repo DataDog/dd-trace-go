@@ -27,18 +27,24 @@ type Decoder struct {
 	sample     Sample     // 2
 	//mapping    Mapping    // 3
 	location Location // 4
+	function Function // 5
 	// 5
 	stringTable StringTable //6
 }
 
 func (d *Decoder) Reset(input []byte) {
+	d.filter()
+	d.input = input
+}
+
+func (d *Decoder) filter(fields ...Field) *Decoder {
 	d.decoders = append(d.decoders[:0],
 		nil,            // field 0
 		&d.sampleType,  // field 1
-		nil,            //&d.sample,      // field 2
+		&d.sample,      // field 2
 		nil,            // field 3
 		&d.location,    // field 4
-		nil,            // field 5
+		&d.function,    // field 5
 		&d.stringTable, // field 6
 		nil,            // field 7
 		nil,            // field 8
@@ -48,24 +54,34 @@ func (d *Decoder) Reset(input []byte) {
 		nil,            // field 12
 		nil,            // field 13
 		nil,            // field 14
-		// &d.mapping,
-		// &d.location,
 	)
-	d.input = input
-}
 
-func (d *Decoder) Filter(messages ...Field) *Decoder {
-	// 	for _, m := range messages {
-	// 		switch m.(type) {
-	// 		case SampleType:
-	// 		}
-	// 	}
-	// 	// for _, m := range messages {
+	if len(fields) > 0 {
+		for i := range d.decoders {
+			include := false
+			for _, f := range fields {
+				if f.field() == i {
+					include = true
+					break
+				}
+			}
+			if !include {
+				d.decoders[i] = nil
+			}
+		}
 
-	// // }
+	}
+
 	return d
 }
 
+func (d *Decoder) FieldEachFilter(fn func(Field) error, filter ...Field) error {
+	defer d.filter() // reset
+	d.filter(filter...)
+	return d.FieldEach(fn)
+}
+
+// FieldEach invokes fn for every decoded Field and resets any applied Filter.
 func (d *Decoder) FieldEach(fn func(Field) error) error {
 	return molecule.MessageEach(codec.NewBuffer(d.input), func(field int32, value molecule.Value) (bool, error) {
 		if int(field) >= len(d.decoders) {
@@ -74,8 +90,10 @@ func (d *Decoder) FieldEach(fn func(Field) error) error {
 			return true, nil
 		} else if err := decoder.decode(value); err != nil {
 			return false, err
+		} else if err := fn(decoder); err != nil {
+			return false, err
 		} else {
-			return true, fn(decoder)
+			return true, nil
 		}
 	})
 }
