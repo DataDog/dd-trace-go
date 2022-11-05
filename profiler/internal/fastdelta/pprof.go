@@ -16,7 +16,7 @@ type Location struct {
 	IsFolded  bool
 }
 
-func (l *Location) Reset() {
+func (l *Location) reset() {
 	l.ID = 0
 	l.MappingID = 0
 	l.Address = 0
@@ -25,6 +25,7 @@ func (l *Location) Reset() {
 }
 
 func (l *Location) Decode(buf *codec.Buffer) error {
+	l.reset()
 	return molecule.MessageEach(buf, func(field int32, value molecule.Value) (bool, error) {
 		switch LocationRecordNumber(field) {
 		case recLocationID:
@@ -65,7 +66,7 @@ type Sample struct {
 	Label      []Label
 }
 
-func (s *Sample) Reset() {
+func (s *Sample) reset() {
 	s.LocationID = s.LocationID[:0]
 	s.Value = s.Value[:0]
 	s.Label = s.Label[:0]
@@ -90,6 +91,7 @@ func (s *Sample) Encode(ps *molecule.ProtoStream) error {
 }
 
 func (s *Sample) Decode(buf *codec.Buffer) error {
+	s.reset()
 	return molecule.MessageEach(buf, func(field int32, value molecule.Value) (bool, error) {
 		switch SampleRecordNumber(field) {
 		case recSampleLocationID:

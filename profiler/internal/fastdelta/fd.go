@@ -241,7 +241,6 @@ func (dc *DeltaComputer) indexPass(field int32, value molecule.Value) (bool, err
 		}
 		dc.valueTypeIndices = append(dc.valueTypeIndices, [2]int{vType, vUnit})
 	case recProfileLocation:
-		dc.scratchLocation.Reset()
 		if err := dc.scratchLocation.Decode(codec.NewBuffer(value.Bytes)); err != nil {
 			return false, err
 		}
@@ -293,7 +292,6 @@ func (dc *DeltaComputer) mergeSamplesPass(
 		return true, nil
 	}
 
-	dc.scratchSample.Reset()
 	if err := dc.scratchSample.Decode(codec.NewBuffer(value.Bytes)); err != nil {
 		return false, err
 	} else if err := dc.scratchSample.ValidStrings(dc.strings); err != nil {
