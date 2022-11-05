@@ -104,12 +104,14 @@ type DeltaComputer struct {
 	valueTypeIndices [][2]int
 
 	// saves some heap allocations
-	scratch         [128]byte
-	scratchIDs      []uint64
-	scratchSample   Sample
-	scratchLocation Location
-	outStream       *molecule.ProtoStream
-	hasher          Hasher
+	scratch          [128]byte
+	scratchIDs       []uint64
+	scratchSample    Sample
+	scratchLocation  Location
+	scratchString    StringTable
+	scratchValueType ValueType
+	outStream        *molecule.ProtoStream
+	hasher           Hasher
 
 	// include* is for pruning the delta output, populated on merge pass
 	includeMapping  map[uint64]struct{}
@@ -196,8 +198,8 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 	}
 	dc.outStream.Reset(out)
 
-	err = molecule.MessageEach(codec.NewBuffer(p), dc.indexPass)
-	if err != nil {
+	d := NewPPROFDecoder()
+	if err := d.Decode(p, []Decoder{&dc.scratchLocation, &dc.scratchValueType, &dc.scratchString}, dc.indexPass); err != nil {
 		return fmt.Errorf("error in indexing pass: %w", err)
 	}
 
@@ -232,31 +234,23 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 //	dc.locationIndex
 //	dc.strings
 //	dc.includeString (sizing)
-func (dc *DeltaComputer) indexPass(field int32, value molecule.Value) (bool, error) {
-	switch ProfileRecordNumber(field) {
-	case recProfileSampleType:
-		vType, vUnit, err := dc.readValueType(value.Bytes)
-		if err != nil {
-			return false, fmt.Errorf("reading sample_type record: %w", err)
-		}
-		dc.valueTypeIndices = append(dc.valueTypeIndices, [2]int{vType, vUnit})
-	case recProfileLocation:
-		if err := dc.scratchLocation.Decode(codec.NewBuffer(value.Bytes)); err != nil {
-			return false, err
-		}
+func (dc *DeltaComputer) indexPass(m Decoder) error {
+	switch t := m.(type) {
+	case *ValueType:
+		dc.valueTypeIndices = append(dc.valueTypeIndices, [2]int{int(t.Type), int(t.Unit)})
+	case *Location:
 		dc.scratchIDs = dc.scratchIDs[:0]
-		for _, l := range dc.scratchLocation.Line {
+		for _, l := range t.Line {
 			dc.scratchIDs = append(dc.scratchIDs, l.FunctionID)
 		}
 		dc.locationIndex.Insert(dc.scratchLocation.ID, dc.scratchLocation.Address, dc.scratchLocation.MappingID, dc.scratchIDs)
-	case recProfileStringTable:
-		dc.strings.add(value.Bytes)
-
+	case *StringTable:
+		dc.strings.add(t.Bytes)
 		// always include the zero-index empty string,
 		// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
 		dc.includeString = append(dc.includeString, len(dc.includeString) == 0)
 	}
-	return true, nil
+	return nil
 }
 
 // mergeSamplesPassFn returns a molecule callback to scan a Profile protobuf
@@ -292,7 +286,7 @@ func (dc *DeltaComputer) mergeSamplesPass(
 		return true, nil
 	}
 
-	if err := dc.scratchSample.Decode(codec.NewBuffer(value.Bytes)); err != nil {
+	if err := dc.scratchSample.Decode(value); err != nil {
 		return false, err
 	} else if err := dc.scratchSample.ValidStrings(dc.strings); err != nil {
 		return false, err
@@ -500,22 +494,6 @@ func (dc *DeltaComputer) writeProtoBytes(w io.Writer, field int32, value []byte)
 func appendProtoUvarint(b []byte, field int32, value uint64) []byte {
 	b = protowire.AppendVarint(b, uint64((field<<3)|int32(codec.WireVarint)))
 	return protowire.AppendVarint(b, value)
-}
-
-func (dc *DeltaComputer) readValueType(v []byte) (vType, vUnit int, err error) {
-	err = molecule.MessageEach(codec.NewBuffer(v), func(field int32, value molecule.Value) (bool, error) {
-		switch ValueTypeRecordNumber(field) {
-		case recValueTypeType:
-			vType = int(value.Number)
-		case recValueTypeUnit:
-			vUnit = int(value.Number)
-		}
-		return true, nil
-	})
-	if err != nil {
-		return 0, 0, err
-	}
-	return vType, vUnit, nil
 }
 
 func (dc *DeltaComputer) readUint64Field(v []byte, recordNumber int32) (val uint64, err error) {

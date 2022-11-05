@@ -8,6 +8,46 @@ import (
 	"github.com/richardartoul/molecule/src/codec"
 )
 
+type Decoder interface {
+	Decode(molecule.Value) error
+}
+
+func NewPPROFDecoder() *PPROFDecoder {
+	return &PPROFDecoder{decoders: make([]Decoder, recProfileDefaultSampleType+1)}
+}
+
+type PPROFDecoder struct {
+	decoders []Decoder
+}
+
+func (p *PPROFDecoder) Decode(buf []byte, messages []Decoder, fn func(m Decoder) error) error {
+	for i := range p.decoders {
+		p.decoders[i] = nil
+	}
+	for _, m := range messages {
+		switch m.(type) {
+		case *StringTable:
+			p.decoders[recProfileStringTable] = m
+		case *ValueType:
+			p.decoders[recValueTypeType] = m
+		case *Sample:
+			p.decoders[recProfileSample] = m
+		case *Location:
+			p.decoders[recProfileLocation] = m
+		}
+	}
+
+	return molecule.MessageEach(codec.NewBuffer(buf), func(field int32, value molecule.Value) (bool, error) {
+		decoder := p.decoders[field]
+		if decoder == nil {
+			return true, nil
+		} else if err := decoder.Decode(value); err != nil {
+			return false, err
+		}
+		return true, fn(decoder)
+	})
+}
+
 type ValueType struct {
 	Type int64
 	Unit int64
@@ -17,8 +57,8 @@ func (v *ValueType) reset() {
 	*v = ValueType{}
 }
 
-func (v *ValueType) Decode(buf *codec.Buffer) error {
-	return molecule.MessageEach(buf, func(field int32, value molecule.Value) (bool, error) {
+func (v *ValueType) Decode(val molecule.Value) error {
+	return molecule.MessageEach(codec.NewBuffer(val.Bytes), func(field int32, value molecule.Value) (bool, error) {
 		switch ValueTypeRecordNumber(field) {
 		case recValueTypeType:
 			v.Type = int64(value.Number)
@@ -41,9 +81,9 @@ func (l *Location) reset() {
 	*l = Location{Line: l.Line[:0]}
 }
 
-func (l *Location) Decode(buf *codec.Buffer) error {
+func (l *Location) Decode(val molecule.Value) error {
 	l.reset()
-	return molecule.MessageEach(buf, func(field int32, value molecule.Value) (bool, error) {
+	return molecule.MessageEach(codec.NewBuffer(val.Bytes), func(field int32, value molecule.Value) (bool, error) {
 		switch LocationRecordNumber(field) {
 		case recLocationID:
 			l.ID = value.Number
@@ -109,9 +149,9 @@ func (s *Sample) Encode(ps *molecule.ProtoStream) error {
 	return fe.Err()
 }
 
-func (s *Sample) Decode(buf *codec.Buffer) error {
+func (s *Sample) Decode(val molecule.Value) error {
 	s.reset()
-	return molecule.MessageEach(buf, func(field int32, value molecule.Value) (bool, error) {
+	return molecule.MessageEach(codec.NewBuffer(val.Bytes), func(field int32, value molecule.Value) (bool, error) {
 		switch SampleRecordNumber(field) {
 		case recSampleLocationID:
 			return true, decodePackedUint64(value, &s.LocationID)
@@ -176,6 +216,15 @@ func (l *Label) ValidStrings(st *stringTable) error {
 	if !st.contains(uint64(l.NumUnit)) {
 		return fmt.Errorf("invalid string index %d", l.NumUnit)
 	}
+	return nil
+}
+
+type StringTable struct {
+	Bytes []byte
+}
+
+func (l *StringTable) Decode(val molecule.Value) error {
+	l.Bytes = val.Bytes
 	return nil
 }
 
