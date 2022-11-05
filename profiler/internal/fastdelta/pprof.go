@@ -8,6 +8,27 @@ import (
 	"github.com/richardartoul/molecule/src/codec"
 )
 
+type ValueType struct {
+	Type int64
+	Unit int64
+}
+
+func (v *ValueType) reset() {
+	*v = ValueType{}
+}
+
+func (v *ValueType) Decode(buf *codec.Buffer) error {
+	return molecule.MessageEach(buf, func(field int32, value molecule.Value) (bool, error) {
+		switch ValueTypeRecordNumber(field) {
+		case recValueTypeType:
+			v.Type = int64(value.Number)
+		case recValueTypeUnit:
+			v.Unit = int64(value.Number)
+		}
+		return true, nil
+	})
+}
+
 type Location struct {
 	ID        uint64
 	MappingID uint64
@@ -17,11 +38,7 @@ type Location struct {
 }
 
 func (l *Location) reset() {
-	l.ID = 0
-	l.MappingID = 0
-	l.Address = 0
-	l.IsFolded = false
-	l.Line = l.Line[:0]
+	*l = Location{Line: l.Line[:0]}
 }
 
 func (l *Location) Decode(buf *codec.Buffer) error {
@@ -67,9 +84,11 @@ type Sample struct {
 }
 
 func (s *Sample) reset() {
-	s.LocationID = s.LocationID[:0]
-	s.Value = s.Value[:0]
-	s.Label = s.Label[:0]
+	*s = Sample{
+		LocationID: s.LocationID[:0],
+		Value:      s.Value[:0],
+		Label:      s.Label[:0],
+	}
 }
 
 func (s *Sample) Encode(ps *molecule.ProtoStream) error {
