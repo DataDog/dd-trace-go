@@ -7,14 +7,10 @@ package fastdelta
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"hash"
 	"io"
 
-	"github.com/richardartoul/molecule"
-	"github.com/richardartoul/molecule/src/codec"
-	"github.com/richardartoul/molecule/src/protowire"
 	"github.com/spaolacci/murmur3"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
@@ -109,7 +105,6 @@ type DeltaComputer struct {
 	scratchIDs []uint64
 	decoder    pproflite.Decoder
 	encoder    pproflite.Encoder
-	outStream  *molecule.ProtoStream
 	hasher     Hasher
 
 	// include* is for pruning the delta output, populated on merge pass
@@ -137,7 +132,6 @@ func (dc *DeltaComputer) initialize() {
 	dc.includeString = make([]bool, 0, 1024)
 	dc.strings = newStringTable(murmur3.New128())
 	dc.curProfTimeNanos = -1
-	dc.outStream = molecule.NewProtoStream(nil)
 
 	dc.hasher.st = dc.strings
 	dc.hasher.alg = murmur3.New128()
@@ -195,9 +189,7 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 		// If the last round failed, start fresh
 		dc.initialize()
 	}
-	dc.outStream.Reset(out)
 	dc.encoder.Reset(out)
-
 	dc.decoder.Reset(p)
 
 	if err := dc.decoder.FieldEachFilter(
@@ -220,11 +212,24 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 		dc.mergeSamplePassFn(),
 		pproflite.Sample{},
 	); err != nil {
-		return err
+		return fmt.Errorf("error in merge sample pass: %w", err)
 	}
 
-	err = molecule.MessageEach(codec.NewBuffer(p), dc.writeAndPruneRecordsPassFn(out))
-	if err != nil {
+	if err := dc.decoder.FieldEachFilter(
+		dc.writeAndPruneRecordsPassFn(),
+		pproflite.SampleType{},
+		pproflite.Mapping{},
+		pproflite.Location{},
+		pproflite.Function{},
+		pproflite.DropFrames{},
+		pproflite.KeepFrames{},
+		pproflite.TimeNanos{},
+		pproflite.DurationNanos{},
+		pproflite.PeriodType{},
+		pproflite.Period{},
+		pproflite.Comment{},
+		pproflite.DefaultSampleType{},
+	); err != nil {
 		return fmt.Errorf("error in pruning pass: %w", err)
 	}
 
@@ -280,6 +285,7 @@ func (dc *DeltaComputer) mergeSamplePassFn() func(pproflite.Field) error {
 	computeDeltaForValue := make([]bool, len(dc.valueTypeIndices))
 	for _, field := range dc.fields {
 		for i, vtIdxs := range dc.valueTypeIndices {
+			// TODO(fg) []byte() cast seems to allocate
 			typeMatch := dc.strings.Equals(vtIdxs[0], []byte(field.Type))
 			unitMatch := dc.strings.Equals(vtIdxs[1], []byte(field.Unit))
 			if typeMatch && unitMatch {
@@ -362,102 +368,62 @@ func validStrings(s *pproflite.Sample, st *stringTable) error {
 // selected samples (include* fields).
 // Strings for the select records are collected for a later writing pass to
 // populate the string table.
-func (dc *DeltaComputer) writeAndPruneRecordsPassFn(out io.Writer) molecule.MessageEachFn {
+func (dc *DeltaComputer) writeAndPruneRecordsPassFn() func(pproflite.Field) error {
 	firstPprof := dc.curProfTimeNanos < 0
-	return func(field int32, value molecule.Value) (bool, error) {
-		return dc.writeAndPruneRecordsPass(field, value, out, firstPprof)
-	}
-}
-
-func (dc *DeltaComputer) writeAndPruneRecordsPass(field int32, value molecule.Value, out io.Writer, firstPprof bool) (bool, error) {
-	switch ProfileRecordNumber(field) {
-	case recProfileSample:
-		// already written these out, skip
-		return true, nil
-	case recProfileMapping:
-		id, err := dc.readUint64Field(value.Bytes, int32(recMappingID))
-		if err != nil {
-			return false, fmt.Errorf("reading mapping record: %w", err)
-		}
-		if _, ok := dc.includeMapping[id]; !ok {
-			return true, nil
-		}
-		// mark strings to keep from the mapping message
-		err = dc.includeStringIndexFields(value.Bytes,
-			int32(recMappingFilename), int32(recMappingBuildID))
-		if err != nil {
-			return false, fmt.Errorf("reading mapping record: %w", err)
-		}
-	case recProfileLocation:
-		id, err := dc.readUint64Field(value.Bytes, int32(recLocationID))
-		if err != nil {
-			return false, fmt.Errorf("reading location record: %w", err)
-		}
-		if !dc.locationIndex.Included(id) {
-			return true, nil
-		}
-	case recProfileFunction:
-		id, err := dc.readUint64Field(value.Bytes, int32(recFunctionID))
-		if err != nil {
-			return false, fmt.Errorf("reading function record: %w", err)
-		}
-		if _, ok := dc.includeFunction[id]; !ok {
-			return true, nil
-		}
-		// mark strings to keep from the function message
-		err = dc.includeStringIndexFields(value.Bytes,
-			int32(recFunctionName), int32(recFunctionSystemName), int32(recFunctionFilename))
-		if err != nil {
-			return false, fmt.Errorf("reading function record: %w", err)
-		}
-	case recProfileComment:
-		// comment - repeated int64 indices into string table
-		// repeated fields are packed by default, but we can see both packed or single values.
-		// we need to include comment indices in dc.includeString for writeStringTablePassFn
-		switch value.WireType {
-		case codec.WireBytes:
-			err := iterPackedVarints(value.Bytes, func(index uint64) {
-				dc.markStringIncluded(uint64(index))
-			})
-			if err != nil {
-				return false, err
+	return func(f pproflite.Field) error {
+		switch t := f.(type) {
+		case *pproflite.SampleType:
+			dc.markStringIncluded(uint64(t.Unit))
+			dc.markStringIncluded(uint64(t.Type))
+		case *pproflite.Mapping:
+			if _, ok := dc.includeMapping[t.ID]; !ok {
+				return nil
 			}
-		case codec.WireVarint:
-			dc.markStringIncluded(value.Number)
-		}
-	case recProfileDropFrames, recProfileKeepFrames, recProfileDefaultSampleType:
-		dc.markStringIncluded(value.Number)
-	case recProfileSampleType, recProfilePeriodType:
-		err := dc.includeStringIndexFields(value.Bytes,
-			int32(recValueTypeType), int32(recValueTypeUnit))
-		if err != nil {
-			return false, fmt.Errorf("reading ValueType record: %w", err)
-		}
-	case recProfileTimeNanos:
-		curProfTimeNanos := int64(value.Number)
-		if !firstPprof {
-			prevProfTimeNanos := dc.curProfTimeNanos
-			if err := dc.writeValue(out, field, value); err != nil {
-				return false, err
+			dc.markStringIncluded(uint64(t.Filename))
+			dc.markStringIncluded(uint64(t.BuildID))
+		case *pproflite.Location:
+			if !dc.locationIndex.Included(t.ID) {
+				return nil
 			}
-			field = int32(recProfileDurationNanos)
-			value.Number = uint64(curProfTimeNanos - prevProfTimeNanos)
+		case *pproflite.Function:
+			if _, ok := dc.includeFunction[t.ID]; !ok {
+				return nil
+			}
+			dc.markStringIncluded(uint64(t.Name))
+			dc.markStringIncluded(uint64(t.SystemName))
+			dc.markStringIncluded(uint64(t.FileName))
+		case *pproflite.DropFrames:
+			dc.markStringIncluded(uint64(t.Value))
+		case *pproflite.KeepFrames:
+			dc.markStringIncluded(uint64(t.Value))
+		case *pproflite.TimeNanos:
+			curProfTimeNanos := int64(t.Value)
+			if !firstPprof {
+				prevProfTimeNanos := dc.curProfTimeNanos
+				if err := dc.encoder.Encode(t); err != nil {
+					return err
+				}
+				// TODO(fg) alloc?
+				return dc.encoder.Encode(&pproflite.DurationNanos{Value: curProfTimeNanos - prevProfTimeNanos})
+			}
+			dc.curProfTimeNanos = curProfTimeNanos
+		case *pproflite.DurationNanos:
+			if !firstPprof {
+				return nil
+			}
+		case *pproflite.PeriodType:
+			dc.markStringIncluded(uint64(t.Unit))
+			dc.markStringIncluded(uint64(t.Type))
+		case *pproflite.Period:
+		case *pproflite.Comment:
+			dc.markStringIncluded(uint64(t.Value))
+		case *pproflite.DefaultSampleType:
+			dc.markStringIncluded(uint64(t.Value))
+		default:
+			return fmt.Errorf("unexpected field: %T", f)
 		}
-		dc.curProfTimeNanos = curProfTimeNanos
-	case recProfileDurationNanos:
-		if !firstPprof {
-			return true, nil // skip, it's written together with recProfileTimeNanos
-		}
-		// otherwise, just copy through
-	case recProfileStringTable:
-		return true, nil // will write these on the string writing pass
+		return dc.encoder.Encode(f)
 	}
-
-	// If it's not a sample or string, and it's not pruned just write it out
-	if err := dc.writeValue(out, field, value); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 // writeStringTablePassFn returns a molecule callback to scan a Profile protobuf
@@ -478,61 +444,6 @@ func (dc *DeltaComputer) writeStringTablePass() func(pproflite.Field) error {
 		counter++
 		return dc.encoder.Encode(str)
 	}
-}
-
-func (dc *DeltaComputer) writeValue(w io.Writer, field int32, value molecule.Value) error {
-	buf := dc.scratch[:0]
-	switch value.WireType {
-	case codec.WireVarint:
-		buf = appendProtoUvarint(buf, field, value.Number)
-	case codec.WireBytes:
-		buf = appendProtoBytes(buf, field, value.Bytes)
-	}
-	_, err := w.Write(buf)
-	return err
-}
-
-func appendProtoBytes(b []byte, field int32, value []byte) []byte {
-	b = protowire.AppendVarint(b, uint64((field<<3)|int32(codec.WireBytes)))
-	b = protowire.AppendVarint(b, uint64(len(value)))
-	return append(b, value...)
-}
-
-func (dc *DeltaComputer) writeProtoBytes(w io.Writer, field int32, value []byte) error {
-	b := appendProtoBytes(dc.scratch[:0], field, value)
-	_, err := w.Write(b)
-	return err
-}
-
-func appendProtoUvarint(b []byte, field int32, value uint64) []byte {
-	b = protowire.AppendVarint(b, uint64((field<<3)|int32(codec.WireVarint)))
-	return protowire.AppendVarint(b, value)
-}
-
-func (dc *DeltaComputer) readUint64Field(v []byte, recordNumber int32) (val uint64, err error) {
-	err = molecule.MessageEach(codec.NewBuffer(v), func(field int32, value molecule.Value) (bool, error) {
-		switch field {
-		case recordNumber:
-			val = value.Number
-			return false, nil
-		}
-		return true, nil
-	})
-	return
-}
-
-// includeStringIndexFields marks strings for inclusion from a message's fields.
-// `fieldIndexes` specifies which field offsets in the message have indexes
-// into the Profile string table.
-func (dc *DeltaComputer) includeStringIndexFields(msgBytes []byte, fieldIndexes ...int32) error {
-	return molecule.MessageEach(codec.NewBuffer(msgBytes), func(field int32, value molecule.Value) (bool, error) {
-		for _, fieldIdx := range fieldIndexes {
-			if field == fieldIdx {
-				dc.markStringIncluded(value.Number)
-			}
-		}
-		return true, nil
-	})
 }
 
 func (dc *DeltaComputer) keepLocations(locationIDs []uint64) {
@@ -565,20 +476,6 @@ func (dc *DeltaComputer) markStringIncluded(i uint64) {
 		dc.includeString[i] = true
 	}
 	// TODO: panic otherwise?
-}
-
-// iterPackedVarints calls f for every varint packed in b.
-// Returns an error if b is malformed.
-func iterPackedVarints(b []byte, f func(n uint64)) error {
-	for len(b) > 0 {
-		v, n := binary.Uvarint(b)
-		if n <= 0 {
-			return fmt.Errorf("invalid varint")
-		}
-		f(v)
-		b = b[n:]
-	}
-	return nil
 }
 
 // Hash is a 128-bit hash representing sample identity
