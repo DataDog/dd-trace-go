@@ -1,4 +1,4 @@
-package pproflite
+package pproflite_test
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/pprof/profile"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
 )
 
 func TestDecoderEncoder(t *testing.T) {
@@ -24,14 +25,12 @@ func TestDecoderEncoder(t *testing.T) {
 
 	var inBuf bytes.Buffer
 	require.NoError(t, inProf.WriteUncompressed(&inBuf))
-	d := NewDecoder(inBuf.Bytes())
+	d := pproflite.NewDecoder(inBuf.Bytes())
 
 	var outBuf bytes.Buffer
-	e := NewEncoder(&outBuf)
+	e := pproflite.NewEncoder(&outBuf)
 
-	require.NoError(t, d.FieldEach(func(f Field) error {
-		return e.Encode(f)
-	}))
+	require.NoError(t, d.FieldEach(e.Encode))
 
 	outProf, err := profile.ParseData(outBuf.Bytes())
 	require.NoError(t, err)
@@ -59,8 +58,8 @@ func BenchmarkEncodeDecode(b *testing.B) {
 	data, err := ioutil.ReadFile(filepath.Join("testdata", "heap.pprof"))
 	require.NoError(b, err)
 
-	d := NewDecoder(data)
-	e := NewEncoder(ioutil.Discard)
+	d := pproflite.NewDecoder(data)
+	e := pproflite.NewEncoder(ioutil.Discard)
 	b.ReportAllocs()
 	b.ResetTimer()
 	b.SetBytes(int64(len(data)))
