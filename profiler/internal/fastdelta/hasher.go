@@ -1,6 +1,7 @@
 package fastdelta
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"sort"
@@ -8,6 +9,15 @@ import (
 	"github.com/spaolacci/murmur3"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
 )
+
+// Hash is a 128-bit hash representing sample identity
+type Hash [16]byte
+
+type byHash []Hash
+
+func (h byHash) Len() int           { return len(h) }
+func (h byHash) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h byHash) Less(i, j int) bool { return bytes.Compare(h[i][:], h[j][:]) == -1 }
 
 type Hasher struct {
 	alg murmur3.Hash128
