@@ -100,7 +100,6 @@ type DeltaComputer struct {
 	valueTypeIndices [][2]int
 
 	// saves some heap allocations
-	scratch    [128]byte
 	scratchIDs []uint64
 	decoder    pproflite.Decoder
 	encoder    pproflite.Encoder
