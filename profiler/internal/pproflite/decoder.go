@@ -87,6 +87,44 @@ func (d *Decoder) filter(fields ...Field) *Decoder {
 	return d
 }
 
+func (d *Decoder) FieldEachFilter2(fn func(Field) error, fields ...int) error {
+	defer d.filter() // reset
+	d.decoders = append(d.decoders[:0],
+		nil,                  // field 0
+		&d.sampleType,        // field 1
+		&d.sample,            // field 2
+		&d.mapping,           // field 3
+		&d.location,          // field 4
+		&d.function,          // field 5
+		&d.stringTable,       // field 6
+		&d.dropFrames,        // field 7
+		&d.keepFrames,        // field 8
+		&d.timeNanos,         // field 9
+		&d.durationNanos,     // field 10
+		&d.periodType,        // field 11
+		&d.period,            // field 12
+		&d.comment,           // field 13
+		&d.defaultSampleType, // field 14
+	)
+
+	if len(fields) > 0 {
+		for i := range d.decoders {
+			include := false
+			for _, f := range fields {
+				if f == i {
+					include = true
+					break
+				}
+			}
+			if !include {
+				d.decoders[i] = nil
+			}
+		}
+	}
+
+	return d.FieldEach(fn)
+}
+
 func (d *Decoder) FieldEachFilter(fn func(Field) error, filter ...Field) error {
 	defer d.filter() // reset
 	d.filter(filter...)

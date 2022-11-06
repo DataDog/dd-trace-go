@@ -76,7 +76,7 @@ type DeltaComputer struct {
 
 	// fields are the name and types of the values in a sample for which we should
 	// compute the difference.
-	fields []pprofutils.ValueType
+	fields []valueType
 
 	// locationIndex associates location IDs (used by the pprof format to
 	// cross-reference locations) to the actual instruction address of the
@@ -91,7 +91,9 @@ type DeltaComputer struct {
 	// last time that sample was observed.
 	sampleMap map[Hash]sampleValue
 
-	curProfTimeNanos int64
+	curProfTimeNanos     int64
+	durationNanos        pproflite.DurationNanos
+	computeDeltaForValue []bool
 
 	// valueTypeIndices are string table indices of the sample value type
 	// names (e.g.  "alloc_space", "cycles"...) and their types ("count", "bytes")
@@ -111,13 +113,23 @@ type DeltaComputer struct {
 	includeString   []bool
 }
 
+func newValueTypes(vts []pprofutils.ValueType) (ret []valueType) {
+	for _, vt := range vts {
+		ret = append(ret, valueType{Type: []byte(vt.Type), Unit: []byte(vt.Unit)})
+	}
+	return
+}
+
+type valueType struct {
+	Type []byte
+	Unit []byte
+}
+
 // NewDeltaComputer initializes a DeltaComputer which will calculate the
 // difference between the values for profile samples whose fields have the given
 // names (e.g. "alloc_space", "contention", ...)
 func NewDeltaComputer(fields ...pprofutils.ValueType) *DeltaComputer {
-	dc := &DeltaComputer{
-		fields: append([]pprofutils.ValueType{}, fields...),
-	}
+	dc := &DeltaComputer{fields: newValueTypes(fields)}
 	dc.initialize()
 	return dc
 }
@@ -130,6 +142,7 @@ func (dc *DeltaComputer) initialize() {
 	dc.includeString = make([]bool, 0, 1024)
 	dc.strings = newStringTable(murmur3.New128())
 	dc.curProfTimeNanos = -1
+	dc.computeDeltaForValue = make([]bool, 0, 4)
 
 	dc.hasher.st = dc.strings
 	dc.hasher.alg = murmur3.New128()
@@ -151,6 +164,7 @@ func (dc *DeltaComputer) reset() {
 	}
 	dc.includeString = dc.includeString[:0]
 	dc.valueTypeIndices = dc.valueTypeIndices[:0]
+	dc.computeDeltaForValue = dc.computeDeltaForValue[:0]
 }
 
 // Delta calculates the difference between the pprof-encoded profile p and the
@@ -211,7 +225,7 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 //	dc.strings
 //	dc.includeString (sizing)
 func (dc *DeltaComputer) indexPass() error {
-	return dc.decoder.FieldEachFilter(
+	return dc.decoder.FieldEachFilter2(
 		func(f pproflite.Field) error {
 			switch t := f.(type) {
 			case *pproflite.SampleType:
@@ -232,9 +246,9 @@ func (dc *DeltaComputer) indexPass() error {
 			}
 			return nil
 		},
-		pproflite.SampleType{},
-		pproflite.Location{},
-		pproflite.StringTable{},
+		1,
+		4,
+		6,
 	)
 }
 
@@ -251,20 +265,21 @@ func (dc *DeltaComputer) indexPass() error {
 // mapping, function, location, and strings (sample labels) referenced by the kept samples
 // can be written out in a later pass.
 func (dc *DeltaComputer) mergeSamplePass() error {
-	computeDeltaForValue := make([]bool, len(dc.valueTypeIndices))
+	for len(dc.computeDeltaForValue) < len(dc.valueTypeIndices) {
+		dc.computeDeltaForValue = append(dc.computeDeltaForValue, false)
+	}
 	for _, field := range dc.fields {
 		for i, vtIdxs := range dc.valueTypeIndices {
-			// TODO(fg) []byte() cast seems to allocate
-			typeMatch := dc.strings.Equals(vtIdxs[0], []byte(field.Type))
-			unitMatch := dc.strings.Equals(vtIdxs[1], []byte(field.Unit))
+			typeMatch := dc.strings.Equals(vtIdxs[0], field.Type)
+			unitMatch := dc.strings.Equals(vtIdxs[1], field.Unit)
 			if typeMatch && unitMatch {
-				computeDeltaForValue[i] = true
+				dc.computeDeltaForValue[i] = true
 				break
 			}
 		}
 	}
 
-	return dc.decoder.FieldEachFilter(
+	return dc.decoder.FieldEachFilter2(
 		func(f pproflite.Field) error {
 			sample, ok := f.(*pproflite.Sample)
 			if !ok {
@@ -288,8 +303,8 @@ func (dc *DeltaComputer) mergeSamplePass() error {
 			dc.sampleMap[sampleHash] = val // save for next time
 			if ok {
 				all0 := true
-				for i := 0; i < len(computeDeltaForValue); i++ {
-					if computeDeltaForValue[i] {
+				for i := 0; i < len(dc.computeDeltaForValue); i++ {
+					if dc.computeDeltaForValue[i] {
 						val[i] = val[i] - old[i]
 					}
 					if val[i] != 0 {
@@ -316,7 +331,7 @@ func (dc *DeltaComputer) mergeSamplePass() error {
 			copy(sample.Value, val[:])
 			return dc.encoder.Encode(sample)
 		},
-		pproflite.Sample{},
+		2,
 	)
 }
 
@@ -327,7 +342,7 @@ func (dc *DeltaComputer) mergeSamplePass() error {
 // populate the string table.
 func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 	firstPprof := dc.curProfTimeNanos < 0
-	return dc.decoder.FieldEachFilter(
+	return dc.decoder.FieldEachFilter2(
 		func(f pproflite.Field) error {
 			switch t := f.(type) {
 			case *pproflite.SampleType:
@@ -339,7 +354,7 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 				}
 				dc.markStringIncluded(uint64(t.Filename))
 				dc.markStringIncluded(uint64(t.BuildID))
-			case *pproflite.LocationID:
+			case *pproflite.Location:
 				if !dc.locationIndex.Included(t.ID) {
 					return nil
 				}
@@ -361,8 +376,8 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 					if err := dc.encoder.Encode(t); err != nil {
 						return err
 					}
-					// TODO(fg) alloc?
-					return dc.encoder.Encode(&pproflite.DurationNanos{Value: curProfTimeNanos - prevProfTimeNanos})
+					dc.durationNanos.Value = curProfTimeNanos - prevProfTimeNanos
+					return dc.encoder.Encode(&dc.durationNanos)
 				}
 				dc.curProfTimeNanos = curProfTimeNanos
 			case *pproflite.DurationNanos:
@@ -382,18 +397,18 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 			}
 			return dc.encoder.Encode(f)
 		},
-		pproflite.SampleType{},
-		pproflite.Mapping{},
-		pproflite.LocationID{},
-		pproflite.Function{},
-		pproflite.DropFrames{},
-		pproflite.KeepFrames{},
-		pproflite.TimeNanos{},
-		pproflite.DurationNanos{},
-		pproflite.PeriodType{},
-		pproflite.Period{},
-		pproflite.Comment{},
-		pproflite.DefaultSampleType{},
+		1,
+		3,
+		4,
+		5,
+		7,
+		8,
+		9,
+		10,
+		11,
+		12,
+		13,
+		14,
 	)
 }
 
@@ -404,7 +419,7 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 // to preserve index offsets.
 func (dc *DeltaComputer) writeStringTablePass() error {
 	counter := 0
-	return dc.decoder.FieldEachFilter(
+	return dc.decoder.FieldEachFilter2(
 		func(f pproflite.Field) error {
 			str, ok := f.(*pproflite.StringTable)
 			if !ok {
@@ -416,7 +431,7 @@ func (dc *DeltaComputer) writeStringTablePass() error {
 			counter++
 			return dc.encoder.Encode(str)
 		},
-		pproflite.StringTable{},
+		6,
 	)
 }
 
