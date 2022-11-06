@@ -192,12 +192,7 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 	dc.encoder.Reset(out)
 	dc.decoder.Reset(p)
 
-	if err := dc.decoder.FieldEachFilter(
-		dc.indexPass,
-		pproflite.SampleType{},
-		pproflite.Location{},
-		pproflite.StringTable{},
-	); err != nil {
+	if err := dc.indexPass(); err != nil {
 		return fmt.Errorf("error in indexing pass: %w", err)
 	}
 
@@ -219,7 +214,7 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 		dc.writeAndPruneRecordsPassFn(),
 		pproflite.SampleType{},
 		pproflite.Mapping{},
-		pproflite.Location{},
+		pproflite.LocationID{},
 		pproflite.Function{},
 		pproflite.DropFrames{},
 		pproflite.KeepFrames{},
@@ -248,25 +243,32 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 //	dc.locationIndex
 //	dc.strings
 //	dc.includeString (sizing)
-func (dc *DeltaComputer) indexPass(m pproflite.Field) error {
-	switch t := m.(type) {
-	case *pproflite.SampleType:
-		dc.valueTypeIndices = append(dc.valueTypeIndices, [2]int{int(t.Type), int(t.Unit)})
-	case *pproflite.Location:
-		dc.scratchIDs = dc.scratchIDs[:0]
-		for _, l := range t.Line {
-			dc.scratchIDs = append(dc.scratchIDs, l.FunctionID)
-		}
-		dc.locationIndex.Insert(t.ID, t.Address, t.MappingID, dc.scratchIDs)
-	case *pproflite.StringTable:
-		dc.strings.add(t.Value)
-		// always include the zero-index empty string,
-		// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
-		dc.includeString = append(dc.includeString, len(dc.includeString) == 0)
-	default:
-		return fmt.Errorf("indexPass: unexpected field: %T", m)
-	}
-	return nil
+func (dc *DeltaComputer) indexPass() error {
+	return dc.decoder.FieldEachFilter(
+		func(f pproflite.Field) error {
+			switch t := f.(type) {
+			case *pproflite.SampleType:
+				dc.valueTypeIndices = append(dc.valueTypeIndices, [2]int{int(t.Type), int(t.Unit)})
+			case *pproflite.Location:
+				dc.scratchIDs = dc.scratchIDs[:0]
+				for _, l := range t.Line {
+					dc.scratchIDs = append(dc.scratchIDs, l.FunctionID)
+				}
+				dc.locationIndex.Insert(t.ID, t.Address, t.MappingID, dc.scratchIDs)
+			case *pproflite.StringTable:
+				dc.strings.add(t.Value)
+				// always include the zero-index empty string,
+				// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
+				dc.includeString = append(dc.includeString, len(dc.includeString) == 0)
+			default:
+				return fmt.Errorf("indexPass: unexpected field: %T", f)
+			}
+			return nil
+		},
+		pproflite.SampleType{},
+		pproflite.Location{},
+		pproflite.StringTable{},
+	)
 }
 
 // mergeSamplesPassFn returns a molecule callback to scan a Profile protobuf
@@ -381,7 +383,7 @@ func (dc *DeltaComputer) writeAndPruneRecordsPassFn() func(pproflite.Field) erro
 			}
 			dc.markStringIncluded(uint64(t.Filename))
 			dc.markStringIncluded(uint64(t.BuildID))
-		case *pproflite.Location:
+		case *pproflite.LocationID:
 			if !dc.locationIndex.Included(t.ID) {
 				return nil
 			}

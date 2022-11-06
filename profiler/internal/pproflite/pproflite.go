@@ -3,6 +3,7 @@ package pproflite
 
 import (
 	"github.com/richardartoul/molecule"
+	"github.com/richardartoul/molecule/src/codec"
 )
 
 // Field holds the value of a top-level profile.proto Profile.* field.
@@ -26,22 +27,33 @@ type Sample struct {
 
 func (f Sample) field() int { return 2 }
 
-func (f *Sample) fields() []interface{} {
-	return []interface{}{
-		nil,
-		&f.LocationID,
-		&f.Value,
-		&f.Label,
-	}
-}
-
 func (f *Sample) decode(val molecule.Value) error {
 	*f = Sample{LocationID: f.LocationID[:0], Value: f.Value[:0], Label: f.Label[:0]}
-	return decodeFields(val, f.fields())
+	// Not using decodeFields() to squeeze out a little more performance.
+	return molecule.MessageEach(codec.NewBuffer(val.Bytes), func(field int32, val molecule.Value) (bool, error) {
+		switch field {
+		case 1:
+			return true, decodePackedUint64(val, &f.LocationID)
+		case 2:
+			return true, decodePackedInt64(val, &f.Value)
+		case 3:
+			f.Label = append(f.Label, Label{})
+			f.Label[len(f.Label)-1].decode(val)
+		}
+		return true, nil
+	})
 }
 
 func (f *Sample) encode(ps *molecule.ProtoStream) error {
-	return encodeFields(ps, f.fields())
+	if err := encodePackedUint64(ps, 1, f.LocationID); err != nil {
+		return err
+	} else if err := encodePackedInt64(ps, 2, f.Value); err != nil {
+		return err
+	}
+	for i := range f.Label {
+		ps.Embedded(3, f.Label[i].encode)
+	}
+	return nil
 }
 
 // Label is part of Sample.
@@ -58,7 +70,20 @@ func (f *Label) fields() []interface{} {
 
 func (f *Label) decode(val molecule.Value) error {
 	*f = Label{}
-	return decodeFields(val, f.fields())
+	// Not using decodeFields() to squeeze out a little more performance.
+	return molecule.MessageEach(codec.NewBuffer(val.Bytes), func(field int32, val molecule.Value) (bool, error) {
+		switch field {
+		case 1:
+			f.Key = int64(val.Number)
+		case 2:
+			f.Str = int64(val.Number)
+		case 3:
+			f.Num = int64(val.Number)
+		case 4:
+			f.NumUnit = int64(val.Number)
+		}
+		return true, nil
+	})
 }
 
 func (f *Label) encode(ps *molecule.ProtoStream) error {
@@ -130,11 +155,48 @@ func (f *Location) fields() []interface{} {
 
 func (f *Location) decode(val molecule.Value) error {
 	*f = Location{Line: f.Line[:0]}
-	return decodeFields(val, f.fields())
+	// Not using decodeFields() to squeeze out a little more performance.
+	return molecule.MessageEach(codec.NewBuffer(val.Bytes), func(field int32, val molecule.Value) (bool, error) {
+		switch field {
+		case 1:
+			f.ID = val.Number
+		case 2:
+			f.MappingID = val.Number
+		case 3:
+			f.Address = val.Number
+		case 4:
+			f.Line = append(f.Line, Line{})
+			f.Line[len(f.Line)-1].decode(val)
+		case 5:
+			f.IsFolded = val.Number == 1
+		}
+		return true, nil
+	})
 }
 
 func (f *Location) encode(ps *molecule.ProtoStream) error {
 	return encodeFields(ps, f.fields())
+}
+
+// LocationID is field 4. Unlike Location it only decodes the ID of the
+// location and stores its raw protobuf message. When encoding a LocationID,
+// the Data value gets written and changes to the ID field are ignored.
+type LocationID struct {
+	ID   uint64
+	Data []byte
+}
+
+func (l LocationID) field() int { return 4 }
+
+func (f *LocationID) decode(val molecule.Value) error {
+	*f = LocationID{}
+	f.Data = val.Bytes
+	return decodeFields(val, []interface{}{nil, &f.ID})
+}
+
+func (f *LocationID) encode(ps *molecule.ProtoStream) error {
+	_, err := ps.Write(f.Data)
+	return err
 }
 
 // Line is part of Location.
@@ -149,7 +211,16 @@ func (f *Line) fields() []interface{} {
 
 func (f *Line) decode(val molecule.Value) error {
 	*f = Line{}
-	return decodeFields(val, f.fields())
+	// Not using decodeFields() to squeeze out a little more performance.
+	return molecule.MessageEach(codec.NewBuffer(val.Bytes), func(field int32, val molecule.Value) (bool, error) {
+		switch field {
+		case 1:
+			f.FunctionID = val.Number
+		case 2:
+			f.Line = int64(val.Number)
+		}
+		return true, nil
+	})
 }
 
 func (f *Line) encode(ps *molecule.ProtoStream) error {

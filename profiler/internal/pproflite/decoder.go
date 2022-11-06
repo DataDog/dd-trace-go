@@ -27,6 +27,7 @@ type Decoder struct {
 	sample            Sample            // 2
 	mapping           Mapping           // 3
 	location          Location          // 4
+	locationID        LocationID        // 4 ID only optimization
 	function          Function          // 5
 	stringTable       StringTable       // 6
 	dropFrames        DropFrames        // 7
@@ -69,6 +70,10 @@ func (d *Decoder) filter(fields ...Field) *Decoder {
 			for _, f := range fields {
 				if f.field() == i {
 					include = true
+					switch f.(type) {
+					case LocationID:
+						d.decoders[i] = &d.locationID
+					}
 					break
 				}
 			}
@@ -114,8 +119,6 @@ func decodeFields(val molecule.Value, fields []interface{}) error {
 			return true, nil
 		} else {
 			switch t := field.(type) {
-			case *bool:
-				*t = val.Number == 1
 			case *int64:
 				*t = int64(val.Number)
 			case *uint64:
@@ -124,14 +127,10 @@ func decodeFields(val molecule.Value, fields []interface{}) error {
 				err = decodePackedInt64(val, t)
 			case *[]uint64:
 				err = decodePackedUint64(val, t)
-			// TODO(fg) would be nice to put this logic into Sample.decode(), but
-			// couldn't figure out how to do this without allocating.
-			case *[]Label:
-				*t = append(*t, Label{})
-				err = (*t)[len(*t)-1].decode(val)
-			case *[]Line:
-				*t = append(*t, Line{})
-				err = (*t)[len(*t)-1].decode(val)
+			case *bool:
+				*t = val.Number == 1
+			// NOTE: *[]Label and *[]Line used to be handled here before hand-rolling
+			// the decoding of their parent messages.
 			default:
 				return false, fmt.Errorf("decodeFields: unknown type: %T", t)
 			}

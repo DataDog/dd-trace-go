@@ -57,30 +57,26 @@ func encodeFields(ps *molecule.ProtoStream, fields []interface{}) error {
 		var err error
 		switch t := f.(type) {
 		case *bool:
-			ps.Bool(i, *t)
+			err = ps.Bool(i, *t)
 		case *int64:
-			ps.Int64(i, *t)
+			err = ps.Int64(i, *t)
 		case *uint64:
-			ps.Uint64(i, *t)
+			err = ps.Uint64(i, *t)
 		case *[]uint64:
-			if len(*t) == 1 {
-				err = ps.Uint64(i, (*t)[0])
-			} else {
-				err = ps.Uint64Packed(i, *t)
-			}
+			err = encodePackedUint64(ps, i, *t)
 		case *[]int64:
-			if len(*t) == 1 {
-				err = ps.Int64(i, (*t)[0])
-			} else {
-				err = ps.Int64Packed(i, *t)
-			}
+			err = encodePackedInt64(ps, i, *t)
 		case *[]Label:
 			for j := range *t {
-				err = ps.Embedded(i, (*t)[j].encode)
+				if err = ps.Embedded(i, (*t)[j].encode); err != nil {
+					break
+				}
 			}
 		case *[]Line:
 			for j := range *t {
-				err = ps.Embedded(i, (*t)[j].encode)
+				if err = ps.Embedded(i, (*t)[j].encode); err != nil {
+					break
+				}
 			}
 		default:
 			err = fmt.Errorf("encodeFields: unknown type: %T", t)
@@ -90,4 +86,18 @@ func encodeFields(ps *molecule.ProtoStream, fields []interface{}) error {
 		}
 	}
 	return nil
+}
+
+func encodePackedInt64(ps *molecule.ProtoStream, field int, vals []int64) error {
+	if len(vals) == 1 {
+		return ps.Int64(field, vals[0])
+	}
+	return ps.Int64Packed(field, vals)
+}
+
+func encodePackedUint64(ps *molecule.ProtoStream, field int, vals []uint64) error {
+	if len(vals) == 1 {
+		return ps.Uint64(field, vals[0])
+	}
+	return ps.Uint64Packed(field, vals)
 }
