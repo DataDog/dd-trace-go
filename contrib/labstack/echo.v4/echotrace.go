@@ -83,6 +83,11 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			// serve the request to the next middleware
 			err := next(c)
 			if err != nil {
+				// if ignoreError is not set, or if error should not be ignored,
+				// tag the span with error
+				if cfg.errCheck == nil || !cfg.errCheck(err) {
+					finishOpts = append(finishOpts, tracer.WithError(err))
+				}
 				// invokes the registered HTTP error handler
 				c.Error(err)
 

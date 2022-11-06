@@ -536,3 +536,99 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.NotContains(s.Tags(), globalT)
 	})
 }
+
+func TestWithErrorCheck(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		errCheck func(error) bool
+		wantErr  error
+	}{
+		{
+			name: "echo 404 error",
+			err: &echo.HTTPError{
+				Code:     http.StatusNotFound,
+				Message:  "not found",
+				Internal: errors.New("not found"),
+			},
+			errCheck: func(err error) bool { // do not tag 4xx
+				var he *echo.HTTPError
+				if errors.As(err, &he) {
+					return he.Code < 500 && he.Code >= 400
+				}
+				return false
+			},
+			wantErr: nil, // 404 is returned, hence not tagged
+		},
+		{
+			name: "echo 500 error",
+			err: &echo.HTTPError{
+				Code:     http.StatusInternalServerError,
+				Message:  "internal error",
+				Internal: errors.New("internal error"),
+			},
+			errCheck: func(err error) bool { // do not tag 4xx
+				var he *echo.HTTPError
+				if errors.As(err, &he) {
+					return he.Code < 500 && he.Code >= 400
+				}
+				return false
+			},
+			wantErr: &echo.HTTPError{
+				Code:     http.StatusInternalServerError,
+				Message:  "internal error",
+				Internal: errors.New("internal error"),
+			}, // this is 500, tagged
+		},
+		{
+			name: "any error",
+			err:  errors.New("any error"),
+			errCheck: func(err error) bool { // do not tag *echo.HTTPError
+				var he *echo.HTTPError
+				return errors.As(err, &he)
+			},
+			wantErr: errors.New("any error"),
+		},
+		{
+			name: "no error",
+			err:  nil,
+			errCheck: func(err error) bool { // do not tag *echo.HTTPError
+				var he *echo.HTTPError
+				return errors.As(err, &he)
+			},
+			wantErr: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			router := echo.New()
+			router.Use(Middleware(WithErrorCheck(tt.errCheck)))
+			var called, traced bool
+
+			// always return the specified error
+			router.GET("/err", func(c echo.Context) error {
+				_, traced = tracer.SpanFromContext(c.Request().Context())
+				called = true
+				return tt.err
+			})
+			r := httptest.NewRequest(http.MethodGet, "/err", nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+
+			assert.True(t, called)
+			assert.True(t, traced)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1) // fail at once if there is no span
+
+			span := spans[0]
+			if tt.wantErr == nil {
+				assert.Nil(t, span.Tag(ext.Error))
+				return
+			}
+			assert.Equal(t, tt.wantErr, span.Tag(ext.Error).(error))
+		})
+	}
+}

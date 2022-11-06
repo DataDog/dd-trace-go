@@ -25,6 +25,7 @@ type config struct {
 	ignoreRequestFunc IgnoreRequestFunc
 	isStatusError     func(statusCode int) bool
 	headerTags        *internal.LockMap
+	errCheck          func(error) bool
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -107,5 +108,12 @@ func WithHeaderTags(headers []string) Option {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
 		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+	}
+}
+
+// WithErrorCheck sets the func which determines if err would be ignored (if it returns true, the error is not tagged)
+func WithErrorCheck(errCheck func(error) bool) Option {
+	return func(cfg *config) {
+		cfg.errCheck = errCheck
 	}
 }
