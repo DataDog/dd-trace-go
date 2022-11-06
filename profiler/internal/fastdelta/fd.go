@@ -193,46 +193,15 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 	dc.decoder.Reset(p)
 
 	if err := dc.indexPass(); err != nil {
-		return fmt.Errorf("error in indexing pass: %w", err)
-	}
-
-	if len(dc.valueTypeIndices) > maxSampleValues {
+		return fmt.Errorf("indexPass: %w", err)
+	} else if len(dc.valueTypeIndices) > maxSampleValues {
 		return fmt.Errorf("profile has %d values per sample, exceeding the maximum %d", len(dc.valueTypeIndices), maxSampleValues)
-	}
-
-	// TODO: first pass optimization, if this is the first profile DeltaComputer consumes,
-	// would be to compute the previous values to populate dc.sampleMap, but just return
-	// the original profile bytes rather than effectively copying them
-	if err := dc.decoder.FieldEachFilter(
-		dc.mergeSamplePassFn(),
-		pproflite.Sample{},
-	); err != nil {
-		return fmt.Errorf("error in merge sample pass: %w", err)
-	}
-
-	if err := dc.decoder.FieldEachFilter(
-		dc.writeAndPruneRecordsPassFn(),
-		pproflite.SampleType{},
-		pproflite.Mapping{},
-		pproflite.LocationID{},
-		pproflite.Function{},
-		pproflite.DropFrames{},
-		pproflite.KeepFrames{},
-		pproflite.TimeNanos{},
-		pproflite.DurationNanos{},
-		pproflite.PeriodType{},
-		pproflite.Period{},
-		pproflite.Comment{},
-		pproflite.DefaultSampleType{},
-	); err != nil {
-		return fmt.Errorf("error in pruning pass: %w", err)
-	}
-
-	if err := dc.decoder.FieldEachFilter(
-		dc.writeStringTablePass(),
-		pproflite.StringTable{},
-	); err != nil {
-		return err
+	} else if err := dc.mergeSamplePass(); err != nil {
+		return fmt.Errorf("mergeSamplePass: %w", err)
+	} else if err := dc.writeAndPruneRecordsPass(); err != nil {
+		return fmt.Errorf("writeAndPruneRecordsPass: %w", err)
+	} else if err := dc.writeStringTablePass(); err != nil {
+		return fmt.Errorf("writeStringTablePass: %w", err)
 	}
 	return nil
 }
@@ -283,7 +252,7 @@ func (dc *DeltaComputer) indexPass() error {
 // This pass has the side effect of populating dc.include* fields so only the
 // mapping, function, location, and strings (sample labels) referenced by the kept samples
 // can be written out in a later pass.
-func (dc *DeltaComputer) mergeSamplePassFn() func(pproflite.Field) error {
+func (dc *DeltaComputer) mergeSamplePass() error {
 	computeDeltaForValue := make([]bool, len(dc.valueTypeIndices))
 	for _, field := range dc.fields {
 		for i, vtIdxs := range dc.valueTypeIndices {
@@ -297,72 +266,60 @@ func (dc *DeltaComputer) mergeSamplePassFn() func(pproflite.Field) error {
 		}
 	}
 
-	return func(f pproflite.Field) error {
-		sample, ok := f.(*pproflite.Sample)
-		if !ok {
-			return fmt.Errorf("indexPass: unexpected field: %T", f)
-		}
-
-		if err := validStrings(sample, dc.strings); err != nil {
-			return err
-		}
-
-		sampleHash, err := dc.hasher.Sample(sample)
-		if err != nil {
-			return err
-		}
-
-		// TODO(fg) get rid of this
-		var val sampleValue
-		copy(val[:], sample.Value)
-
-		old, ok := dc.sampleMap[sampleHash]
-		dc.sampleMap[sampleHash] = val // save for next time
-		if ok {
-			all0 := true
-			for i := 0; i < len(computeDeltaForValue); i++ {
-				if computeDeltaForValue[i] {
-					val[i] = val[i] - old[i]
-				}
-				if val[i] != 0 {
-					all0 = false
-				}
-			}
-			if all0 {
-				// If the sample has all 0 values, we drop it
-				// this matches the behavior of Google's pprof library
-				// when merging profiles
-				return nil
+	return dc.decoder.FieldEachFilter(
+		func(f pproflite.Field) error {
+			sample, ok := f.(*pproflite.Sample)
+			if !ok {
+				return fmt.Errorf("indexPass: unexpected field: %T", f)
 			}
 
-		}
+			if err := validStrings(sample, dc.strings); err != nil {
+				return err
+			}
 
-		dc.keepLocations(sample.LocationID)
+			sampleHash, err := dc.hasher.Sample(sample)
+			if err != nil {
+				return err
+			}
 
-		// TODO(fg) we probably also need to do this for the fast-path above (if !ok)
-		for _, l := range sample.Label {
-			dc.markStringIncluded(uint64(l.Key))
-			dc.markStringIncluded(uint64(l.Str))
-			dc.markStringIncluded(uint64(l.NumUnit))
-		}
-		copy(sample.Value, val[:])
-		return dc.encoder.Encode(sample)
-	}
-}
+			// TODO(fg) get rid of this
+			var val sampleValue
+			copy(val[:], sample.Value)
 
-func validStrings(s *pproflite.Sample, st *stringTable) error {
-	for _, l := range s.Label {
-		if !st.contains(uint64(l.Key)) {
-			return fmt.Errorf("invalid string index %d", l.Key)
-		}
-		if !st.contains(uint64(l.Str)) {
-			return fmt.Errorf("invalid string index %d", l.Str)
-		}
-		if !st.contains(uint64(l.NumUnit)) {
-			return fmt.Errorf("invalid string index %d", l.NumUnit)
-		}
-	}
-	return nil
+			old, ok := dc.sampleMap[sampleHash]
+			dc.sampleMap[sampleHash] = val // save for next time
+			if ok {
+				all0 := true
+				for i := 0; i < len(computeDeltaForValue); i++ {
+					if computeDeltaForValue[i] {
+						val[i] = val[i] - old[i]
+					}
+					if val[i] != 0 {
+						all0 = false
+					}
+				}
+				if all0 {
+					// If the sample has all 0 values, we drop it
+					// this matches the behavior of Google's pprof library
+					// when merging profiles
+					return nil
+				}
+
+			}
+
+			dc.keepLocations(sample.LocationID)
+
+			// TODO(fg) we probably also need to do this for the fast-path above (if !ok)
+			for _, l := range sample.Label {
+				dc.markStringIncluded(uint64(l.Key))
+				dc.markStringIncluded(uint64(l.Str))
+				dc.markStringIncluded(uint64(l.NumUnit))
+			}
+			copy(sample.Value, val[:])
+			return dc.encoder.Encode(sample)
+		},
+		pproflite.Sample{},
+	)
 }
 
 // writeAndPruneRecordsPassFn returns a molecule callback to scan a Profile protobuf
@@ -370,62 +327,76 @@ func validStrings(s *pproflite.Sample, st *stringTable) error {
 // selected samples (include* fields).
 // Strings for the select records are collected for a later writing pass to
 // populate the string table.
-func (dc *DeltaComputer) writeAndPruneRecordsPassFn() func(pproflite.Field) error {
+func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 	firstPprof := dc.curProfTimeNanos < 0
-	return func(f pproflite.Field) error {
-		switch t := f.(type) {
-		case *pproflite.SampleType:
-			dc.markStringIncluded(uint64(t.Unit))
-			dc.markStringIncluded(uint64(t.Type))
-		case *pproflite.Mapping:
-			if _, ok := dc.includeMapping[t.ID]; !ok {
-				return nil
-			}
-			dc.markStringIncluded(uint64(t.Filename))
-			dc.markStringIncluded(uint64(t.BuildID))
-		case *pproflite.LocationID:
-			if !dc.locationIndex.Included(t.ID) {
-				return nil
-			}
-		case *pproflite.Function:
-			if _, ok := dc.includeFunction[t.ID]; !ok {
-				return nil
-			}
-			dc.markStringIncluded(uint64(t.Name))
-			dc.markStringIncluded(uint64(t.SystemName))
-			dc.markStringIncluded(uint64(t.FileName))
-		case *pproflite.DropFrames:
-			dc.markStringIncluded(uint64(t.Value))
-		case *pproflite.KeepFrames:
-			dc.markStringIncluded(uint64(t.Value))
-		case *pproflite.TimeNanos:
-			curProfTimeNanos := int64(t.Value)
-			if !firstPprof {
-				prevProfTimeNanos := dc.curProfTimeNanos
-				if err := dc.encoder.Encode(t); err != nil {
-					return err
+	return dc.decoder.FieldEachFilter(
+		func(f pproflite.Field) error {
+			switch t := f.(type) {
+			case *pproflite.SampleType:
+				dc.markStringIncluded(uint64(t.Unit))
+				dc.markStringIncluded(uint64(t.Type))
+			case *pproflite.Mapping:
+				if _, ok := dc.includeMapping[t.ID]; !ok {
+					return nil
 				}
-				// TODO(fg) alloc?
-				return dc.encoder.Encode(&pproflite.DurationNanos{Value: curProfTimeNanos - prevProfTimeNanos})
+				dc.markStringIncluded(uint64(t.Filename))
+				dc.markStringIncluded(uint64(t.BuildID))
+			case *pproflite.LocationID:
+				if !dc.locationIndex.Included(t.ID) {
+					return nil
+				}
+			case *pproflite.Function:
+				if _, ok := dc.includeFunction[t.ID]; !ok {
+					return nil
+				}
+				dc.markStringIncluded(uint64(t.Name))
+				dc.markStringIncluded(uint64(t.SystemName))
+				dc.markStringIncluded(uint64(t.FileName))
+			case *pproflite.DropFrames:
+				dc.markStringIncluded(uint64(t.Value))
+			case *pproflite.KeepFrames:
+				dc.markStringIncluded(uint64(t.Value))
+			case *pproflite.TimeNanos:
+				curProfTimeNanos := int64(t.Value)
+				if !firstPprof {
+					prevProfTimeNanos := dc.curProfTimeNanos
+					if err := dc.encoder.Encode(t); err != nil {
+						return err
+					}
+					// TODO(fg) alloc?
+					return dc.encoder.Encode(&pproflite.DurationNanos{Value: curProfTimeNanos - prevProfTimeNanos})
+				}
+				dc.curProfTimeNanos = curProfTimeNanos
+			case *pproflite.DurationNanos:
+				if !firstPprof {
+					return nil
+				}
+			case *pproflite.PeriodType:
+				dc.markStringIncluded(uint64(t.Unit))
+				dc.markStringIncluded(uint64(t.Type))
+			case *pproflite.Period:
+			case *pproflite.Comment:
+				dc.markStringIncluded(uint64(t.Value))
+			case *pproflite.DefaultSampleType:
+				dc.markStringIncluded(uint64(t.Value))
+			default:
+				return fmt.Errorf("unexpected field: %T", f)
 			}
-			dc.curProfTimeNanos = curProfTimeNanos
-		case *pproflite.DurationNanos:
-			if !firstPprof {
-				return nil
-			}
-		case *pproflite.PeriodType:
-			dc.markStringIncluded(uint64(t.Unit))
-			dc.markStringIncluded(uint64(t.Type))
-		case *pproflite.Period:
-		case *pproflite.Comment:
-			dc.markStringIncluded(uint64(t.Value))
-		case *pproflite.DefaultSampleType:
-			dc.markStringIncluded(uint64(t.Value))
-		default:
-			return fmt.Errorf("unexpected field: %T", f)
-		}
-		return dc.encoder.Encode(f)
-	}
+			return dc.encoder.Encode(f)
+		},
+		pproflite.SampleType{},
+		pproflite.Mapping{},
+		pproflite.LocationID{},
+		pproflite.Function{},
+		pproflite.DropFrames{},
+		pproflite.KeepFrames{},
+		pproflite.TimeNanos{},
+		pproflite.DurationNanos{},
+		pproflite.PeriodType{},
+		pproflite.Period{},
+		pproflite.Comment{},
+		pproflite.DefaultSampleType{},
+	)
 }
 
 // writeStringTablePassFn returns a molecule callback to scan a Profile protobuf
@@ -433,19 +404,22 @@ func (dc *DeltaComputer) writeAndPruneRecordsPassFn() func(pproflite.Field) erro
 // Strings marked for emission in `dc.includeString` are written to buf.
 // Strings not marked for emission are written as zero-length byte arrays
 // to preserve index offsets.
-func (dc *DeltaComputer) writeStringTablePass() func(pproflite.Field) error {
+func (dc *DeltaComputer) writeStringTablePass() error {
 	counter := 0
-	return func(f pproflite.Field) error {
-		str, ok := f.(*pproflite.StringTable)
-		if !ok {
-			return fmt.Errorf("stringTablePass: unexpected field: %T", f)
-		}
-		if !dc.isStringIncluded(counter) {
-			str.Value = nil
-		}
-		counter++
-		return dc.encoder.Encode(str)
-	}
+	return dc.decoder.FieldEachFilter(
+		func(f pproflite.Field) error {
+			str, ok := f.(*pproflite.StringTable)
+			if !ok {
+				return fmt.Errorf("stringTablePass: unexpected field: %T", f)
+			}
+			if !dc.isStringIncluded(counter) {
+				str.Value = nil
+			}
+			counter++
+			return dc.encoder.Encode(str)
+		},
+		pproflite.StringTable{},
+	)
 }
 
 func (dc *DeltaComputer) keepLocations(locationIDs []uint64) {
@@ -478,6 +452,21 @@ func (dc *DeltaComputer) markStringIncluded(i uint64) {
 		dc.includeString[i] = true
 	}
 	// TODO: panic otherwise?
+}
+
+func validStrings(s *pproflite.Sample, st *stringTable) error {
+	for _, l := range s.Label {
+		if !st.contains(uint64(l.Key)) {
+			return fmt.Errorf("invalid string index %d", l.Key)
+		}
+		if !st.contains(uint64(l.Str)) {
+			return fmt.Errorf("invalid string index %d", l.Str)
+		}
+		if !st.contains(uint64(l.NumUnit)) {
+			return fmt.Errorf("invalid string index %d", l.NumUnit)
+		}
+	}
+	return nil
 }
 
 // Hash is a 128-bit hash representing sample identity
