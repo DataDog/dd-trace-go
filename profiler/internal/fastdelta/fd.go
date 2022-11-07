@@ -72,11 +72,15 @@ type DeltaComputer struct {
 	// prematurely due to an error. This means the state of the
 	// DeltaComputer is invalid, and the delta computer needs to be re-set
 	poisoned bool
-
 	// fields are the name and types of the values in a sample for which we should
 	// compute the difference.
 	fields []valueType // TODO(fg) refactor and remove
 
+	decoder           pproflite.Decoder
+	encoder           pproflite.Encoder
+	deltaMap          *DeltaMap
+	includedFunctions SparseIntSet
+	includedStrings   DenseIntSet
 	// locationIndex associates location IDs (used by the pprof format to
 	// cross-reference locations) to the actual instruction address of the
 	// location
@@ -84,18 +88,9 @@ type DeltaComputer struct {
 	// strings holds (hashed) copies of every string in the string table
 	// of the current profile, used to hold the names of sample value types,
 	// and the keys and values of labels.
-	strings *stringTable
-
+	strings          *stringTable
 	curProfTimeNanos int64
 	durationNanos    pproflite.DurationNanos
-
-	decoder  pproflite.Decoder
-	encoder  pproflite.Encoder
-	deltaMap *DeltaMap
-
-	// @TODO(fg) refactor and remove
-	includeFunction SparseIntSet
-	includeString   DenseIntSet
 }
 
 func newValueTypes(vts []pprofutils.ValueType) (ret []valueType) {
@@ -130,8 +125,8 @@ func (dc *DeltaComputer) reset() {
 	dc.locationIndex.Reset()
 	dc.deltaMap.Reset()
 
-	dc.includeFunction.Reset()
-	dc.includeString.Reset()
+	dc.includedFunctions.Reset()
+	dc.includedStrings.Reset()
 }
 
 // Delta calculates the difference between the pprof-encoded profile p and the
@@ -207,7 +202,7 @@ func (dc *DeltaComputer) indexPass() error {
 				dc.strings.Add(t.Value)
 				// always include the zero-index empty string,
 				// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
-				dc.includeString.Append(strIdx == 0)
+				dc.includedStrings.Append(strIdx == 0)
 				strIdx++
 			default:
 				return fmt.Errorf("indexPass: unexpected field: %T", f)
@@ -254,7 +249,7 @@ func (dc *DeltaComputer) mergeSamplePass() error {
 				dc.locationIndex.MarkIncluded(locationID)
 			}
 			for _, l := range sample.Label {
-				dc.includeString.Add(int(l.Key), int(l.Str), int(l.NumUnit))
+				dc.includedStrings.Add(int(l.Key), int(l.Str), int(l.NumUnit))
 			}
 			return dc.encoder.Encode(sample)
 		},
@@ -273,20 +268,20 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 		func(f pproflite.Field) error {
 			switch t := f.(type) {
 			case *pproflite.SampleType:
-				dc.includeString.Add(int(t.Unit), int(t.Type))
+				dc.includedStrings.Add(int(t.Unit), int(t.Type))
 			case *pproflite.Mapping:
-				dc.includeString.Add(int(t.Filename), int(t.BuildID))
+				dc.includedStrings.Add(int(t.Filename), int(t.BuildID))
 			case *pproflite.LocationFast:
 				if !dc.locationIndex.Included(t.ID) {
 					return nil
 				}
 				for _, funcID := range t.FunctionID {
-					dc.includeFunction.Add(int(funcID))
+					dc.includedFunctions.Add(int(funcID))
 				}
 			case *pproflite.DropFrames:
-				dc.includeString.Add(int(t.Value))
+				dc.includedStrings.Add(int(t.Value))
 			case *pproflite.KeepFrames:
-				dc.includeString.Add(int(t.Value))
+				dc.includedStrings.Add(int(t.Value))
 			case *pproflite.TimeNanos:
 				curProfTimeNanos := int64(t.Value)
 				if !firstPprof {
@@ -303,12 +298,12 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 					return nil
 				}
 			case *pproflite.PeriodType:
-				dc.includeString.Add(int(t.Unit), int(t.Type))
+				dc.includedStrings.Add(int(t.Unit), int(t.Type))
 			case *pproflite.Period:
 			case *pproflite.Comment:
-				dc.includeString.Add(int(t.Value))
+				dc.includedStrings.Add(int(t.Value))
 			case *pproflite.DefaultSampleType:
-				dc.includeString.Add(int(t.Value))
+				dc.includedStrings.Add(int(t.Value))
 			default:
 				return fmt.Errorf("unexpected field: %T", f)
 			}
@@ -333,10 +328,10 @@ func (dc *DeltaComputer) functionPass() error {
 		func(f pproflite.Field) error {
 			switch t := f.(type) {
 			case *pproflite.Function:
-				if !dc.includeFunction.Contains(int(t.ID)) {
+				if !dc.includedFunctions.Contains(int(t.ID)) {
 					return nil
 				}
-				dc.includeString.Add(int(t.Name), int(t.SystemName), int(t.FileName))
+				dc.includedStrings.Add(int(t.Name), int(t.SystemName), int(t.FileName))
 			default:
 				return fmt.Errorf("unexpected field: %T", f)
 			}
@@ -359,7 +354,7 @@ func (dc *DeltaComputer) writeStringTablePass() error {
 			if !ok {
 				return fmt.Errorf("stringTablePass: unexpected field: %T", f)
 			}
-			if !dc.includeString.Contains(counter) {
+			if !dc.includedStrings.Contains(counter) {
 				str.Value = nil
 			}
 			counter++
@@ -369,7 +364,7 @@ func (dc *DeltaComputer) writeStringTablePass() error {
 	)
 }
 
-// TODO(fg) we should probably validate all strings?
+// TODO(fg) we should probably validate all strings? not just label strings?
 func validStrings(s *pproflite.Sample, st *stringTable) error {
 	for _, l := range s.Label {
 		if !st.Contains(uint64(l.Key)) {
