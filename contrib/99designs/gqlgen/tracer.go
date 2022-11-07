@@ -91,7 +91,6 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 		tracer.SpanType(ext.SpanTypeGraphQL),
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(ext.Component, "gqlgen"),
-		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
