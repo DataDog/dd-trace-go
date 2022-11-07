@@ -18,52 +18,43 @@ import (
 /*
 # Outline
 
-The end goal is to match up samples between the two profiles and take their
-difference. A sample is a unique (call stack, labels) pair with an associated
-sequence of values, where "call stack" refers to a sequence of program
-counters/instruction addresses, and labels are key/value pairs associated with a
-stack (so we can have the same call stack appear in two different samples if the
-labels are different)
+The end goal is to match up samples between the two profiles and take
+their difference. A sample is a unique (call stack, labels) pair with an
+associated sequence of values, where "call stack" refers to a sequence of
+program counters/instruction addresses, and labels are key/value pairs
+associated with a stack (so we can have the same call stack appear in two
+different samples if the labels are different)
 
 # Implementation
 
-Computing the delta profile takes four passes over the input:
+Computing the delta profile takes five passes over the input:
 
-Pass 1 (gathering information about location IDs):
-	* Build a mapping of location IDs to instruction addresses,
-	  mappings, and function IDs.
-	* Build the string table, so we can resolve label keys and values
-	* Find the value types by name, so we know which sample values to
-	  compute differences for
+Pass 1
+* Build a mapping of location IDs to instruction addresses
+* Build the string table, so we can resolve label keys and values
+* Find the sample types by name, so we know which sample values to
+compute differences for
 
-Pass 2 (Computing deltas for each sample):
-	* Create a new buffer where we'll write the pprof-encoded profile
-	* For each sample, use the location mapping and string table to
-	  map the sample to its current value. We store this mapping, but first
-	  look up any previous value we may have stored for that sample, so we can
-	  compute the difference between the values.
-	* If the difference is all 0s, the sample is unchanged, so we don't
-	  emit it
-	* Otherwise, we write a new sample record to the output. It will have
-	  the same sequence of locations IDs and labels as the original, and will
-	  have updated values.
-	* If we keep a sample, record the location ID and the mapping and function
-	  IDs associated with that location ID, so that we know to retain those
-	  records.
+Pass 2
+* Compute the delta values for each sample usings its previous values
+and write them out if this leaves us with at least one non-zero
+values.
+* Update the previous sample values for the next round.
+* Keep track of the locations and strings we need given the samples we
+wrote out.
 
-Pass 3 (dropping un-needed records):
-	* We copy every location, mapping, and function entry which we marked as
-	  used in pass 2, from the original profile to the new profile.
-	* For every other kind of record (besides samples, which we have already
-	  written) copy from the original to the new profile unchanged.
-    * Record string indices we need to write in Pass 4
+Pass 3
+* Write out all fields that were referenced by the samples in Pass 2.
+3
+* Write out all fields that were referenced by the samples in Pass 2.
+* Keep track of strings and function ids we need to emit in the next pass.
+Pass 4:
+* Write out the functions we need and keep track of their strings.
 
-Pass 4 (write out string table):
-    * for strings referenced in the included messages
-      (profile, function, mapping, value types, labels) write out to the
- 	  delta buffer
-    * for strings not referenced, write out a zero-length byte to save space
-      while preserving index references in the included messages
+Pass 5
+* Write out all the strings that were referenced by previous passes.
+* For strings not referenced, write out a zero-length byte to save space
+while preserving index references in the included messages
 */
 
 // DeltaComputer calculates the difference between pprof-encoded profiles
@@ -155,27 +146,21 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 	dc.encoder.Reset(out)
 	dc.decoder.Reset(p)
 
-	if err := dc.indexPass(); err != nil {
+	if err := dc.pass1Index(); err != nil {
 		return fmt.Errorf("indexPass: %w", err)
-	} else if err := dc.mergeSamplePass(); err != nil {
+	} else if err := dc.pass2MergeSamples(); err != nil {
 		return fmt.Errorf("mergeSamplePass: %w", err)
-	} else if err := dc.writeAndPruneRecordsPass(); err != nil {
+	} else if err := dc.pass3WriteAndPruneRecords(); err != nil {
 		return fmt.Errorf("writeAndPruneRecordsPass: %w", err)
-	} else if err := dc.functionPass(); err != nil {
+	} else if err := dc.pass4WriteFunctions(); err != nil {
 		return fmt.Errorf("functionPass: %w", err)
-	} else if err := dc.writeStringTablePass(); err != nil {
+	} else if err := dc.pass5WriteStringTable(); err != nil {
 		return fmt.Errorf("writeStringTablePass: %w", err)
 	}
 	return nil
 }
 
-// This pass has the side effect of populating the indices:
-//
-//	valueTypeIndices
-//	dc.locationIndex
-//	dc.strings
-//	dc.includeString (sizing)
-func (dc *DeltaComputer) indexPass() error {
+func (dc *DeltaComputer) pass1Index() error {
 	strIdx := 0
 	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
@@ -203,19 +188,7 @@ func (dc *DeltaComputer) indexPass() error {
 	)
 }
 
-// mergeSamplesPassFn returns a molecule callback to scan a Profile protobuf
-// and write merged samples to the output buffer.
-// Any samples where the values are all 0 will be skipped.
-// This pass has the side effect of populating dc.include* fields so only the
-// mapping, function, location, and strings (sample labels) referenced by the kept samples
-// can be written out in a later pass.
-// mergeSamplesPassFn returns a molecule callback to scan a Profile protobuf
-// and write merged samples to the output buffer.
-// Any samples where the values are all 0 will be skipped.
-// This pass has the side effect of populating dc.include* fields so only the
-// mapping, function, location, and strings (sample labels) referenced by the kept samples
-// can be written out in a later pass.
-func (dc *DeltaComputer) mergeSamplePass() error {
+func (dc *DeltaComputer) pass2MergeSamples() error {
 	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
 			sample, ok := f.(*pproflite.Sample)
@@ -245,12 +218,7 @@ func (dc *DeltaComputer) mergeSamplePass() error {
 	)
 }
 
-// writeAndPruneRecordsPassFn returns a molecule callback to scan a Profile protobuf
-// and write out select mapping, location, and function records relevant to the
-// selected samples (include* fields).
-// Strings for the select records are collected for a later writing pass to
-// populate the string table.
-func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
+func (dc *DeltaComputer) pass3WriteAndPruneRecords() error {
 	firstPprof := dc.curProfTimeNanos < 0
 	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
@@ -311,7 +279,7 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 	)
 }
 
-func (dc *DeltaComputer) functionPass() error {
+func (dc *DeltaComputer) pass4WriteFunctions() error {
 	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
 			fn, ok := f.(*pproflite.Function)
@@ -329,12 +297,7 @@ func (dc *DeltaComputer) functionPass() error {
 	)
 }
 
-// writeStringTablePassFn returns a molecule callback to scan a Profile protobuf
-// and write out string table messages to buf.
-// Strings marked for emission in `dc.includeString` are written to buf.
-// Strings not marked for emission are written as zero-length byte arrays
-// to preserve index offsets.
-func (dc *DeltaComputer) writeStringTablePass() error {
+func (dc *DeltaComputer) pass5WriteStringTable() error {
 	counter := 0
 	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
