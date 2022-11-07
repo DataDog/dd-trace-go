@@ -1,7 +1,6 @@
 package pproflite
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"github.com/richardartoul/molecule"
@@ -185,26 +184,36 @@ func decodeFields(val molecule.Value, fields []interface{}) error {
 }
 
 func decodePackedInt64(value molecule.Value, dst *[]int64) error {
-	return decodePackedVarint(value, func(u uint64) { *dst = append(*dst, int64(u)) })
+	switch value.WireType {
+	case codec.WireVarint:
+		*dst = append(*dst, int64(value.Number))
+	case codec.WireBytes:
+		buf := codec.NewBuffer(value.Bytes)
+		for buf.Len() > 0 {
+			val, err := buf.DecodeVarint()
+			if err != nil {
+				return err
+			}
+			*dst = append(*dst, int64(val))
+		}
+	default:
+		return fmt.Errorf("bad wire type for DecodePackedVarint: %#v", value.WireType)
+	}
+	return nil
 }
 
 func decodePackedUint64(value molecule.Value, dst *[]uint64) error {
-	return decodePackedVarint(value, func(u uint64) { *dst = append(*dst, u) })
-}
-
-func decodePackedVarint(value molecule.Value, f func(uint64)) error {
 	switch value.WireType {
 	case codec.WireVarint:
-		f(value.Number)
+		*dst = append(*dst, value.Number)
 	case codec.WireBytes:
-		b := value.Bytes
-		for len(b) > 0 {
-			v, n := binary.Uvarint(b)
-			if n <= 0 {
-				return fmt.Errorf("invalid varint")
+		buf := codec.NewBuffer(value.Bytes)
+		for buf.Len() > 0 {
+			val, err := buf.DecodeVarint()
+			if err != nil {
+				return err
 			}
-			f(v)
-			b = b[n:]
+			*dst = append(*dst, val)
 		}
 	default:
 		return fmt.Errorf("bad wire type for DecodePackedVarint: %#v", value.WireType)
