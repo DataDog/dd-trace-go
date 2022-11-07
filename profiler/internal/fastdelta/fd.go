@@ -74,7 +74,7 @@ type DeltaComputer struct {
 	poisoned bool
 	// fields are the name and types of the values in a sample for which we should
 	// compute the difference.
-	fields []valueType // TODO(fg) refactor and remove
+	fields []valueType // TODO(fg) would be nice to push this into deltaMap
 
 	decoder           pproflite.Decoder
 	encoder           pproflite.Encoder
@@ -91,18 +91,6 @@ type DeltaComputer struct {
 	strings          *stringTable
 	curProfTimeNanos int64
 	durationNanos    pproflite.DurationNanos
-}
-
-func newValueTypes(vts []pprofutils.ValueType) (ret []valueType) {
-	for _, vt := range vts {
-		ret = append(ret, valueType{Type: []byte(vt.Type), Unit: []byte(vt.Unit)})
-	}
-	return
-}
-
-type valueType struct {
-	Type []byte
-	Unit []byte
 }
 
 // NewDeltaComputer initializes a DeltaComputer which will calculate the
@@ -326,15 +314,15 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 func (dc *DeltaComputer) functionPass() error {
 	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
-			switch t := f.(type) {
-			case *pproflite.Function:
-				if !dc.includedFunctions.Contains(int(t.ID)) {
-					return nil
-				}
-				dc.includedStrings.Add(int(t.Name), int(t.SystemName), int(t.FileName))
-			default:
-				return fmt.Errorf("unexpected field: %T", f)
+			fn, ok := f.(*pproflite.Function)
+			if !ok {
+				return fmt.Errorf("functionPass: unexpected field: %T", f)
 			}
+
+			if !dc.includedFunctions.Contains(int(fn.ID)) {
+				return nil
+			}
+			dc.includedStrings.Add(int(fn.Name), int(fn.SystemName), int(fn.FileName))
 			return dc.encoder.Encode(f)
 		},
 		pproflite.FunctionDecoder,
@@ -378,4 +366,17 @@ func validStrings(s *pproflite.Sample, st *stringTable) error {
 		}
 	}
 	return nil
+}
+
+// newValueTypes is needed to avoid allocating DeltaMap.prepare.
+func newValueTypes(vts []pprofutils.ValueType) (ret []valueType) {
+	for _, vt := range vts {
+		ret = append(ret, valueType{Type: []byte(vt.Type), Unit: []byte(vt.Unit)})
+	}
+	return
+}
+
+type valueType struct {
+	Type []byte
+	Unit []byte
 }

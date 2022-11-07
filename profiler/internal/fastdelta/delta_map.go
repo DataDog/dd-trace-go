@@ -35,10 +35,8 @@ type DeltaMap struct {
 	// compute the difference.
 	fields               []valueType
 	computeDeltaForValue []bool
-	// valueTypeIndices are string table indices of the sample value type
-	// names (e.g.  "alloc_space", "cycles"...) and their types ("count", "bytes")
-	// included in DeltaComputer as the indices are written in indexPass
-	// and read in mergeSamplesPass
+	// valueTypeIndices are string table indices of the sample value type names
+	// (e.g.  "alloc_space", "cycles"...) and their types ("count", "bytes")
 	valueTypeIndices [][2]int
 }
 
