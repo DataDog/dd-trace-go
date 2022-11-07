@@ -272,8 +272,6 @@ func TestCompaction(t *testing.T) {
 	dc := NewDeltaComputer(
 		vt("alloc_objects", "count"),
 		vt("alloc_space", "bytes"),
-		vt("inuse_objects", "count"),
-		vt("inuse_space", "bytes"),
 	)
 	buf := new(bytes.Buffer)
 	err = dc.Delta(zeroDeltaBuf.Bytes(), buf)
@@ -285,6 +283,10 @@ func TestCompaction(t *testing.T) {
 
 	// create a value delta
 	require.NoError(t, err)
+	for _, s := range zeroDeltaPprof.Sample {
+		s.Value[2] = 0
+		s.Value[3] = 0
+	}
 	zeroDeltaPprof.Sample[0].Value[0] += 42
 	bufNext := &bytes.Buffer{}
 	require.NoError(t, zeroDeltaPprof.WriteUncompressed(bufNext))
