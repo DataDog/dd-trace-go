@@ -225,7 +225,7 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 //	dc.strings
 //	dc.includeString (sizing)
 func (dc *DeltaComputer) indexPass() error {
-	return dc.decoder.FieldEachFilter2(
+	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
 			switch t := f.(type) {
 			case *pproflite.SampleType:
@@ -246,9 +246,9 @@ func (dc *DeltaComputer) indexPass() error {
 			}
 			return nil
 		},
-		1,
-		4,
-		6,
+		pproflite.SampleTypeDecoder,
+		pproflite.LocationDecoder,
+		pproflite.StringTableDecoder,
 	)
 }
 
@@ -279,7 +279,7 @@ func (dc *DeltaComputer) mergeSamplePass() error {
 		}
 	}
 
-	return dc.decoder.FieldEachFilter2(
+	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
 			sample, ok := f.(*pproflite.Sample)
 			if !ok {
@@ -331,7 +331,7 @@ func (dc *DeltaComputer) mergeSamplePass() error {
 			copy(sample.Value, val[:])
 			return dc.encoder.Encode(sample)
 		},
-		2,
+		pproflite.SampleDecoder,
 	)
 }
 
@@ -342,7 +342,7 @@ func (dc *DeltaComputer) mergeSamplePass() error {
 // populate the string table.
 func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 	firstPprof := dc.curProfTimeNanos < 0
-	return dc.decoder.FieldEachFilter2(
+	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
 			switch t := f.(type) {
 			case *pproflite.SampleType:
@@ -354,7 +354,7 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 				}
 				dc.markStringIncluded(uint64(t.Filename))
 				dc.markStringIncluded(uint64(t.BuildID))
-			case *pproflite.Location:
+			case *pproflite.LocationID:
 				if !dc.locationIndex.Included(t.ID) {
 					return nil
 				}
@@ -397,18 +397,18 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 			}
 			return dc.encoder.Encode(f)
 		},
-		1,
-		3,
-		4,
-		5,
-		7,
-		8,
-		9,
-		10,
-		11,
-		12,
-		13,
-		14,
+		pproflite.SampleTypeDecoder,
+		pproflite.MappingDecoder,
+		pproflite.LocationIDDecoder,
+		pproflite.FunctionDecoder,
+		pproflite.DropFramesDecoder,
+		pproflite.KeepFramesDecoder,
+		pproflite.TimeNanosDecoder,
+		pproflite.DurationNanosDecoder,
+		pproflite.PeriodTypeDecoder,
+		pproflite.PeriodDecoder,
+		pproflite.CommentDecoder,
+		pproflite.DefaultSampleTypeDecoder,
 	)
 }
 
@@ -419,7 +419,7 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 // to preserve index offsets.
 func (dc *DeltaComputer) writeStringTablePass() error {
 	counter := 0
-	return dc.decoder.FieldEachFilter2(
+	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
 			str, ok := f.(*pproflite.StringTable)
 			if !ok {
@@ -431,7 +431,7 @@ func (dc *DeltaComputer) writeStringTablePass() error {
 			counter++
 			return dc.encoder.Encode(str)
 		},
-		6,
+		pproflite.StringTableDecoder,
 	)
 }
 

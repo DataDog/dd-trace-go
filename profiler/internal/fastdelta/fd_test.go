@@ -36,7 +36,6 @@ func BenchmarkFastDelta(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			b.ResetTimer()
 
 			buf := new(bytes.Buffer)
 			dc := NewDeltaComputer(

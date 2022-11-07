@@ -8,6 +8,29 @@ import (
 	"github.com/richardartoul/molecule/src/codec"
 )
 
+type FieldDecoder int
+
+// Important: For fields with multiple decoders, list the default
+// decoder first here (e.g. Location before LocationID).
+const (
+	SampleTypeDecoder FieldDecoder = iota
+	SampleDecoder
+	MappingDecoder
+	LocationDecoder
+	LocationIDDecoder
+	FunctionDecoder
+	StringTableDecoder
+	DropFramesDecoder
+	KeepFramesDecoder
+	TimeNanosDecoder
+	DurationNanosDecoder
+	PeriodTypeDecoder
+	PeriodDecoder
+	CommentDecoder
+	DefaultSampleTypeDecoder
+	sampleTypeLast
+)
+
 type decoder interface {
 	Field
 	decode(molecule.Value) error
@@ -41,98 +64,15 @@ type Decoder struct {
 }
 
 func (d *Decoder) Reset(input []byte) {
-	d.filter()
 	d.input = input
 }
 
-func (d *Decoder) filter(fields ...Field) *Decoder {
-	d.decoders = append(d.decoders[:0],
-		nil,                  // field 0
-		&d.sampleType,        // field 1
-		&d.sample,            // field 2
-		&d.mapping,           // field 3
-		&d.location,          // field 4
-		&d.function,          // field 5
-		&d.stringTable,       // field 6
-		&d.dropFrames,        // field 7
-		&d.keepFrames,        // field 8
-		&d.timeNanos,         // field 9
-		&d.durationNanos,     // field 10
-		&d.periodType,        // field 11
-		&d.period,            // field 12
-		&d.comment,           // field 13
-		&d.defaultSampleType, // field 14
-	)
-
-	if len(fields) > 0 {
-		for i := range d.decoders {
-			include := false
-			for _, f := range fields {
-				if f.field() == i {
-					include = true
-					switch f.(type) {
-					case LocationID:
-						d.decoders[i] = &d.locationID
-					}
-					break
-				}
-			}
-			if !include {
-				d.decoders[i] = nil
-			}
-		}
-
+// FieldEachOld invokes fn for every decoded Field. If filters are provided,
+// only fields matching the filters will be decoded.
+func (d *Decoder) FieldEach(fn func(Field) error, filter ...FieldDecoder) error {
+	if err := d.applyFilter(filter...); err != nil {
+		return err
 	}
-
-	return d
-}
-
-func (d *Decoder) FieldEachFilter2(fn func(Field) error, fields ...int) error {
-	defer d.filter() // reset
-	d.decoders = append(d.decoders[:0],
-		nil,                  // field 0
-		&d.sampleType,        // field 1
-		&d.sample,            // field 2
-		&d.mapping,           // field 3
-		&d.location,          // field 4
-		&d.function,          // field 5
-		&d.stringTable,       // field 6
-		&d.dropFrames,        // field 7
-		&d.keepFrames,        // field 8
-		&d.timeNanos,         // field 9
-		&d.durationNanos,     // field 10
-		&d.periodType,        // field 11
-		&d.period,            // field 12
-		&d.comment,           // field 13
-		&d.defaultSampleType, // field 14
-	)
-
-	if len(fields) > 0 {
-		for i := range d.decoders {
-			include := false
-			for _, f := range fields {
-				if f == i {
-					include = true
-					break
-				}
-			}
-			if !include {
-				d.decoders[i] = nil
-			}
-		}
-	}
-
-	return d.FieldEach(fn)
-}
-
-func (d *Decoder) FieldEachFilter(fn func(Field) error, filter ...Field) error {
-	defer d.filter() // reset
-	d.filter(filter...)
-	return d.FieldEach(fn)
-}
-
-// FieldEach invokes fn for every decoded Field and resets any applied Filter.
-func (d *Decoder) FieldEach(fn func(Field) error) error {
 	return molecule.MessageEach(codec.NewBuffer(d.input), func(field int32, value molecule.Value) (bool, error) {
 		if int(field) >= len(d.decoders) {
 			return true, nil
@@ -146,6 +86,72 @@ func (d *Decoder) FieldEach(fn func(Field) error) error {
 			return true, nil
 		}
 	})
+}
+
+func (d *Decoder) applyFilter(fields ...FieldDecoder) error {
+	lookupDecoder := func(fd FieldDecoder) (decoder, error) {
+		switch fd {
+		case SampleTypeDecoder:
+			return &d.sampleType, nil
+		case SampleDecoder:
+			return &d.sample, nil
+		case MappingDecoder:
+			return &d.mapping, nil
+		case LocationDecoder:
+			return &d.location, nil
+		case LocationIDDecoder:
+			return &d.locationID, nil
+		case FunctionDecoder:
+			return &d.function, nil
+		case StringTableDecoder:
+			return &d.stringTable, nil
+		case DropFramesDecoder:
+			return &d.dropFrames, nil
+		case KeepFramesDecoder:
+			return &d.keepFrames, nil
+		case TimeNanosDecoder:
+			return &d.timeNanos, nil
+		case DurationNanosDecoder:
+			return &d.durationNanos, nil
+		case PeriodTypeDecoder:
+			return &d.periodType, nil
+		case PeriodDecoder:
+			return &d.period, nil
+		case CommentDecoder:
+			return &d.comment, nil
+		case DefaultSampleTypeDecoder:
+			return &d.defaultSampleType, nil
+		}
+		return nil, fmt.Errorf("applyFilter: unknown filter: %#v", fd)
+	}
+
+	d.decoders = d.decoders[:0]
+
+	if len(fields) == 0 {
+		// Reverse order to default to Location instead of LocationID decoder.
+		for fd := sampleTypeLast - 1; fd >= 0; fd-- {
+			decoder, err := lookupDecoder(fd)
+			if err != nil {
+				return err
+			}
+			for len(d.decoders) <= decoder.field() {
+				d.decoders = append(d.decoders, nil)
+			}
+			d.decoders[decoder.field()] = decoder
+		}
+	}
+
+	for _, fd := range fields {
+		decoder, err := lookupDecoder(fd)
+		if err != nil {
+			return err
+		}
+		for len(d.decoders) <= decoder.field() {
+			d.decoders = append(d.decoders, nil)
+		}
+		d.decoders[decoder.field()] = decoder
+	}
+	return nil
 }
 
 func decodeFields(val molecule.Value, fields []interface{}) error {
