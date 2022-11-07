@@ -1,6 +1,9 @@
 package fastdelta
 
-import "hash"
+import (
+	"hash"
+	"io"
+)
 
 type stringTable struct {
 	// Passing a byte slice to hash.Hash causes it to escape to the heap, so
@@ -15,12 +18,21 @@ func newStringTable(h hash.Hash) *stringTable {
 	return &stringTable{hasher: h}
 }
 
-// contains returns whether i is a valid index for the string table
-func (s *stringTable) contains(i uint64) bool {
+func (s *stringTable) Reset() {
+	s.h = s.h[:0]
+}
+
+func (s *stringTable) WriteTo(w io.Writer, i int) error {
+	_, err := w.Write(s.h[i][:])
+	return err
+}
+
+// Contains returns whether i is a valid index for the string table
+func (s *stringTable) Contains(i uint64) bool {
 	return i < uint64(len(s.h))
 }
 
-func (s *stringTable) add(b []byte) {
+func (s *stringTable) Add(b []byte) {
 	s.hasher.Reset()
 	s.hasher.Write(b)
 	s.hasher.Sum(s.reuse[:0])

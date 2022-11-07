@@ -138,7 +138,7 @@ func (dc *DeltaComputer) initialize() {
 }
 
 func (dc *DeltaComputer) reset() {
-	dc.strings.h = dc.strings.h[:0]
+	dc.strings.Reset()
 	dc.locationIndex.Reset()
 	dc.deltaMap.Reset()
 
@@ -223,7 +223,7 @@ func (dc *DeltaComputer) indexPass() error {
 				}
 				dc.locationIndex.Insert(t.ID, t.Address, t.MappingID, dc.scratchIDs)
 			case *pproflite.StringTable:
-				dc.strings.add(t.Value)
+				dc.strings.Add(t.Value)
 				// always include the zero-index empty string,
 				// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
 				dc.includeString = append(dc.includeString, len(dc.includeString) == 0)
@@ -416,13 +416,13 @@ func (dc *DeltaComputer) markStringIncluded(i uint64) {
 // TODO(fg) we should probably validate all strings?
 func validStrings(s *pproflite.Sample, st *stringTable) error {
 	for _, l := range s.Label {
-		if !st.contains(uint64(l.Key)) {
+		if !st.Contains(uint64(l.Key)) {
 			return fmt.Errorf("invalid string index %d", l.Key)
 		}
-		if !st.contains(uint64(l.Str)) {
+		if !st.Contains(uint64(l.Str)) {
 			return fmt.Errorf("invalid string index %d", l.Str)
 		}
-		if !st.contains(uint64(l.NumUnit)) {
+		if !st.Contains(uint64(l.NumUnit)) {
 			return fmt.Errorf("invalid string index %d", l.NumUnit)
 		}
 	}

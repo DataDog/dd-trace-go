@@ -24,25 +24,15 @@ type Hasher struct {
 	st  *stringTable
 	lx  *locationIndex
 
-	scratch       [8]byte
-	scratchHashes byHash
-	scratchHash   Hash
+	scratch     [8]byte
+	labelHashes byHash
+	scratchHash Hash
 }
 
 func (h *Hasher) Sample(s *pproflite.Sample) (Hash, error) {
-	h.scratchHashes = h.scratchHashes[:0]
-	for _, l := range s.Label {
-		h.alg.Reset()
-		h.alg.Write(h.st.h[l.Key][:])
-		h.alg.Write(h.st.h[l.NumUnit][:])
-		binary.BigEndian.PutUint64(h.scratch[:], uint64(l.Num))
-		h.alg.Write(h.scratch[0:8])
-		// TODO: do we need an if here?
-		if uint64(l.Str) < uint64(len(h.st.h)) {
-			h.alg.Write(h.st.h[l.Str][:])
-		}
-		h.alg.Sum(h.scratchHash[:0])
-		h.scratchHashes = append(h.scratchHashes, h.scratchHash)
+	h.labelHashes = h.labelHashes[:0]
+	for i := range s.Label {
+		h.labelHashes = append(h.labelHashes, h.label(&s.Label[i]))
 	}
 
 	h.alg.Reset()
@@ -57,14 +47,25 @@ func (h *Hasher) Sample(s *pproflite.Sample) (Hash, error) {
 
 	// Memory profiles current have exactly one label ("bytes"), so there is no
 	// need to sort. This saves ~0.5% of CPU time in our benchmarks.
-	if len(h.scratchHashes) > 1 {
-		sort.Sort(&h.scratchHashes) // passing &dc.hashes vs dc.hashes avoids an alloc here
+	if len(h.labelHashes) > 1 {
+		sort.Sort(&h.labelHashes) // passing &dc.hashes vs dc.hashes avoids an alloc here
 	}
 
-	for _, sub := range h.scratchHashes {
+	for _, sub := range h.labelHashes {
 		copy(h.scratchHash[:], sub[:]) // avoid sub escape to heap
 		h.alg.Write(h.scratchHash[:])
 	}
 	h.alg.Sum(h.scratchHash[:0])
 	return h.scratchHash, nil
+}
+
+func (h *Hasher) label(l *pproflite.Label) Hash {
+	h.alg.Reset()
+	h.st.WriteTo(h.alg, int(l.Key))
+	h.st.WriteTo(h.alg, int(l.NumUnit))
+	binary.BigEndian.PutUint64(h.scratch[:], uint64(l.Num))
+	h.alg.Write(h.scratch[0:8])
+	h.st.WriteTo(h.alg, int(l.Str))
+	h.alg.Sum(h.scratchHash[:0])
+	return h.scratchHash
 }
