@@ -81,6 +81,7 @@ func BenchmarkFastDelta(b *testing.B) {
 						b.Fatal(err)
 					}
 				}
+				b.StopTimer()
 				reportHeapUsage(b)
 			})
 		})
