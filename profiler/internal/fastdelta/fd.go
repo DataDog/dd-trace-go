@@ -85,10 +85,6 @@ type DeltaComputer struct {
 	// of the current profile, used to hold the names of sample value types,
 	// and the keys and values of labels.
 	strings *stringTable
-	// sampleMap holds the value of a sample, as represented by a consistent
-	// hash of its call stack and labels, to the value of the sample for the
-	// last time that sample was observed.
-	sampleMap map[Hash]sampleValue
 
 	curProfTimeNanos int64
 	durationNanos    pproflite.DurationNanos
@@ -127,7 +123,6 @@ func NewDeltaComputer(fields ...pprofutils.ValueType) *DeltaComputer {
 }
 
 func (dc *DeltaComputer) initialize() {
-	dc.sampleMap = make(map[Hash]sampleValue)
 	dc.scratchIDs = make([]uint64, 0, 512)
 	dc.includeMapping = make(map[uint64]struct{})
 	dc.includeFunction = make(map[uint64]struct{})
