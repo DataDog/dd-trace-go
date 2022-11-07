@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/spaolacci/murmur3"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
 )
 
@@ -50,7 +51,6 @@ func (dm *DeltaMap) Reset() {
 	dm.computeDeltaForValue = dm.computeDeltaForValue[:0]
 }
 
-// TODO(fg) get rid of this?
 func (dm *DeltaMap) AddSampleType(st *pproflite.SampleType) error {
 	dm.valueTypeIndices = append(dm.valueTypeIndices, [2]int{int(st.Type), int(st.Unit)})
 	return nil

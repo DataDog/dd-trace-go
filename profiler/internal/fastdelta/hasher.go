@@ -12,6 +12,7 @@ import (
 	"sort"
 
 	"github.com/spaolacci/murmur3"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
 )
 
