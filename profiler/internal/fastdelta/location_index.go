@@ -8,9 +8,8 @@ package fastdelta
 // locationIndex links location IDs to the addresses, mappings, and function
 // IDs referenced by the location
 type locationIndex struct {
-	fastTable   []location
-	slowTable   map[uint64]location
-	functionIDs []uint64
+	fastTable []location
+	slowTable map[uint64]location
 }
 
 type location struct {
@@ -20,7 +19,6 @@ type location struct {
 
 func (l *locationIndex) Reset() {
 	l.fastTable = l.fastTable[:0]
-	l.functionIDs = l.functionIDs[:0]
 	for k := range l.slowTable {
 		delete(l.slowTable, k)
 	}
