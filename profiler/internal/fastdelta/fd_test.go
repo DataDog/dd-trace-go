@@ -9,7 +9,9 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/pprof/profile"
@@ -25,9 +27,8 @@ const bigHeapFile = "big-heap.pprof"
 
 func BenchmarkFastDelta(b *testing.B) {
 	for _, f := range []string{heapFile, bigHeapFile} {
-		testFile := "testdata/" + f
+		testFile := filepath.Join("testdata", f)
 		b.Run(testFile, func(b *testing.B) {
-			b.ReportAllocs()
 			before, err := os.ReadFile(testFile)
 			if err != nil {
 				b.Fatal(err)
@@ -37,24 +38,43 @@ func BenchmarkFastDelta(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			buf := new(bytes.Buffer)
-			dc := NewDeltaComputer(
-				vt("alloc_objects", "count"),
-				vt("alloc_space", "bytes"),
-			)
-			if err := dc.Delta(before, io.Discard); err != nil {
-				b.Fatal(err)
-			}
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				buf.Reset()
-				err = dc.Delta(after, buf)
-				if err != nil {
+			b.Run("setup", func(b *testing.B) {
+				b.SetBytes(int64(len(before)))
+				b.ReportAllocs()
+
+				for i := 0; i < b.N; i++ {
+					dc := NewDeltaComputer(
+						vt("alloc_objects", "count"),
+						vt("alloc_space", "bytes"),
+					)
+					if err := dc.Delta(before, io.Discard); err != nil {
+						b.Fatal(err)
+					} else if err = dc.Delta(after, ioutil.Discard); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+
+			b.Run("steady-state", func(b *testing.B) {
+				b.SetBytes(int64(len(before)))
+				b.ReportAllocs()
+
+				dc := NewDeltaComputer(
+					vt("alloc_objects", "count"),
+					vt("alloc_space", "bytes"),
+				)
+				if err := dc.Delta(before, io.Discard); err != nil {
 					b.Fatal(err)
 				}
-				sink = buf.Bytes()
-			}
-			b.SetBytes(int64(len(before)))
+
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if err := dc.Delta(after, ioutil.Discard); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+
 		})
 	}
 }
