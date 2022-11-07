@@ -12,6 +12,9 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/pprof"
+	"strings"
 	"testing"
 
 	"github.com/google/pprof/profile"
@@ -24,6 +27,11 @@ import (
 
 const heapFile = "heap.pprof"
 const bigHeapFile = "big-heap.pprof"
+
+// dc is a package var so we can look at the heap profile after benchmarking to
+// understand heap in-use.
+// IMPORTANT: Use with -memprofilerate=1 to get useful values.
+var dc *DeltaComputer
 
 func BenchmarkFastDelta(b *testing.B) {
 	for _, f := range []string{heapFile, bigHeapFile} {
@@ -59,7 +67,7 @@ func BenchmarkFastDelta(b *testing.B) {
 				b.SetBytes(int64(len(before)))
 				b.ReportAllocs()
 
-				dc := NewDeltaComputer(
+				dc = NewDeltaComputer(
 					vt("alloc_objects", "count"),
 					vt("alloc_space", "bytes"),
 				)
@@ -73,10 +81,44 @@ func BenchmarkFastDelta(b *testing.B) {
 						b.Fatal(err)
 					}
 				}
+				reportHeapUsage(b)
 			})
-
 		})
 	}
+}
+
+// reportHeapUsage reports how much heap memory is used by the fastdelta
+// implementation.
+// IMPORTANT: Use with -memprofilerate=1 to get useful values.
+func reportHeapUsage(b *testing.B) {
+	// force GC often enough so that our heap profile is up-to-date.
+	// TODO(fg) not sure if this needs to be 2 or 3 times ...
+	runtime.GC()
+	runtime.GC()
+	runtime.GC()
+
+	var buf bytes.Buffer
+	pprof.Lookup("heap").WriteTo(&buf, 0)
+	profile, err := profile.Parse(&buf)
+	require.NoError(b, err)
+
+	var sum float64
+nextSample:
+	for _, s := range profile.Sample {
+		if s.Value[3] == 0 {
+			continue
+		}
+		for _, loc := range s.Location {
+			for _, line := range loc.Line {
+				if strings.Contains(line.Function.Name, "profiler/internal/fastdelta.(*DeltaComputer)") {
+					sum += float64(s.Value[3])
+					continue nextSample
+				}
+			}
+		}
+	}
+
+	b.ReportMetric(sum, "heap-B/op")
 }
 
 func BenchmarkMakeGolden(b *testing.B) {
