@@ -2,7 +2,6 @@ package fastdelta
 
 import (
 	"hash"
-	"io"
 )
 
 type stringTable struct {
@@ -22,9 +21,8 @@ func (s *stringTable) Reset() {
 	s.h = s.h[:0]
 }
 
-func (s *stringTable) WriteTo(w io.Writer, i int) error {
-	_, err := w.Write(s.h[i][:])
-	return err
+func (s *stringTable) GetBytes(i int) []byte {
+	return s.h[i][:]
 }
 
 // Contains returns whether i is a valid index for the string table

@@ -61,11 +61,11 @@ func (h *Hasher) Sample(s *pproflite.Sample) (Hash, error) {
 
 func (h *Hasher) label(l *pproflite.Label) Hash {
 	h.alg.Reset()
-	h.st.WriteTo(h.alg, int(l.Key))
-	h.st.WriteTo(h.alg, int(l.NumUnit))
+	h.alg.Write(h.st.GetBytes(int(l.Key)))
+	h.alg.Write(h.st.GetBytes(int(l.NumUnit)))
 	binary.BigEndian.PutUint64(h.scratch[:], uint64(l.Num))
 	h.alg.Write(h.scratch[0:8])
-	h.st.WriteTo(h.alg, int(l.Str))
+	h.alg.Write(h.st.GetBytes(int(l.Str)))
 	h.alg.Sum(h.scratchHash[:0])
 	return h.scratchHash
 }
