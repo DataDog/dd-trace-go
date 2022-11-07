@@ -90,21 +90,14 @@ type DeltaComputer struct {
 	// last time that sample was observed.
 	sampleMap map[Hash]sampleValue
 
-	curProfTimeNanos     int64
-	durationNanos        pproflite.DurationNanos
-	computeDeltaForValue []bool
-
-	// valueTypeIndices are string table indices of the sample value type
-	// names (e.g.  "alloc_space", "cycles"...) and their types ("count", "bytes")
-	// included in DeltaComputer as the indices are written in indexPass
-	// and read in mergeSamplesPass
-	valueTypeIndices [][2]int
+	curProfTimeNanos int64
+	durationNanos    pproflite.DurationNanos
 
 	// saves some heap allocations
 	scratchIDs []uint64
 	decoder    pproflite.Decoder
 	encoder    pproflite.Encoder
-	hasher     Hasher
+	deltaMap   *DeltaMap
 
 	// include* is for pruning the delta output, populated on merge pass
 	includeMapping  map[uint64]struct{}
@@ -141,17 +134,13 @@ func (dc *DeltaComputer) initialize() {
 	dc.includeString = make([]bool, 0, 1024)
 	dc.strings = newStringTable(murmur3.New128())
 	dc.curProfTimeNanos = -1
-	dc.computeDeltaForValue = make([]bool, 0, 4)
-
-	dc.hasher.st = dc.strings
-	dc.hasher.alg = murmur3.New128()
-	dc.hasher.lx = &dc.locationIndex
-
+	dc.deltaMap = NewDeltaMap(dc.strings, &dc.locationIndex, dc.fields)
 }
 
 func (dc *DeltaComputer) reset() {
 	dc.strings.h = dc.strings.h[:0]
 	dc.locationIndex.Reset()
+	dc.deltaMap.Reset()
 
 	// reset bookkeeping for message pruning
 	// go compiler should convert these to single runtime.mapclear calls
@@ -162,8 +151,6 @@ func (dc *DeltaComputer) reset() {
 		delete(dc.includeFunction, k)
 	}
 	dc.includeString = dc.includeString[:0]
-	dc.valueTypeIndices = dc.valueTypeIndices[:0]
-	dc.computeDeltaForValue = dc.computeDeltaForValue[:0]
 }
 
 // Delta calculates the difference between the pprof-encoded profile p and the
@@ -205,8 +192,6 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 
 	if err := dc.indexPass(); err != nil {
 		return fmt.Errorf("indexPass: %w", err)
-	} else if len(dc.valueTypeIndices) > maxSampleValues {
-		return fmt.Errorf("profile has %d values per sample, exceeding the maximum %d", len(dc.valueTypeIndices), maxSampleValues)
 	} else if err := dc.mergeSamplePass(); err != nil {
 		return fmt.Errorf("mergeSamplePass: %w", err)
 	} else if err := dc.writeAndPruneRecordsPass(); err != nil {
@@ -228,7 +213,9 @@ func (dc *DeltaComputer) indexPass() error {
 		func(f pproflite.Field) error {
 			switch t := f.(type) {
 			case *pproflite.SampleType:
-				dc.valueTypeIndices = append(dc.valueTypeIndices, [2]int{int(t.Type), int(t.Unit)})
+				if err := dc.deltaMap.AddSampleType(t); err != nil {
+					return err
+				}
 			case *pproflite.Location:
 				dc.scratchIDs = dc.scratchIDs[:0]
 				for _, l := range t.Line {
@@ -264,20 +251,6 @@ func (dc *DeltaComputer) indexPass() error {
 // mapping, function, location, and strings (sample labels) referenced by the kept samples
 // can be written out in a later pass.
 func (dc *DeltaComputer) mergeSamplePass() error {
-	for len(dc.computeDeltaForValue) < len(dc.valueTypeIndices) {
-		dc.computeDeltaForValue = append(dc.computeDeltaForValue, false)
-	}
-	for _, field := range dc.fields {
-		for i, vtIdxs := range dc.valueTypeIndices {
-			typeMatch := dc.strings.Equals(vtIdxs[0], field.Type)
-			unitMatch := dc.strings.Equals(vtIdxs[1], field.Unit)
-			if typeMatch && unitMatch {
-				dc.computeDeltaForValue[i] = true
-				break
-			}
-		}
-	}
-
 	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
 			sample, ok := f.(*pproflite.Sample)
@@ -289,45 +262,19 @@ func (dc *DeltaComputer) mergeSamplePass() error {
 				return err
 			}
 
-			sampleHash, err := dc.hasher.Sample(sample)
-			if err != nil {
+			if hasNonZeroValues, err := dc.deltaMap.Delta(sample); err != nil {
 				return err
-			}
-
-			// TODO(fg) get rid of this
-			var val sampleValue
-			copy(val[:], sample.Value)
-
-			old, ok := dc.sampleMap[sampleHash]
-			dc.sampleMap[sampleHash] = val // save for next time
-			if ok {
-				all0 := true
-				for i := 0; i < len(dc.computeDeltaForValue); i++ {
-					if dc.computeDeltaForValue[i] {
-						val[i] = val[i] - old[i]
-					}
-					if val[i] != 0 {
-						all0 = false
-					}
-				}
-				if all0 {
-					// If the sample has all 0 values, we drop it
-					// this matches the behavior of Google's pprof library
-					// when merging profiles
-					return nil
-				}
-
+			} else if !hasNonZeroValues {
+				return nil
 			}
 
 			dc.keepLocations(sample.LocationID)
-
 			// TODO(fg) we probably also need to do this for the fast-path above (if !ok)
 			for _, l := range sample.Label {
 				dc.markStringIncluded(uint64(l.Key))
 				dc.markStringIncluded(uint64(l.Str))
 				dc.markStringIncluded(uint64(l.NumUnit))
 			}
-			copy(sample.Value, val[:])
 			return dc.encoder.Encode(sample)
 		},
 		pproflite.SampleDecoder,
@@ -481,12 +428,3 @@ func validStrings(s *pproflite.Sample, st *stringTable) error {
 	}
 	return nil
 }
-
-// As of Go 1.19, the Go heap profile has 4 values per sample. This is the most
-// for any of the Go runtime profiles. In order to make the map of samples to
-// their values more GC-friendly, we prefer to have the values for that mapping
-// be fixed-size arrays rather than slices. However, this means we can't process
-// profiles with more than this many values per sample.
-const maxSampleValues = 4
-
-type sampleValue [maxSampleValues]int64
