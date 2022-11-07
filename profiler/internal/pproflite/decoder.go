@@ -168,6 +168,7 @@ func decodeFields(val molecule.Value, fields []interface{}) error {
 			case *uint64:
 				*t = val.Number
 			case *[]int64:
+				// note: might be worth optimizing this and the function below
 				err = decodePackedInt64(val, t)
 			case *[]uint64:
 				err = decodePackedUint64(val, t)
