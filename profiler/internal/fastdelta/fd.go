@@ -95,7 +95,6 @@ type DeltaComputer struct {
 	deltaMap   *DeltaMap
 
 	// @TODO(fg) refactor and remove
-	includeMapping  SparseIntSet
 	includeFunction SparseIntSet
 	includeString   DenseIntSet
 }
@@ -133,7 +132,6 @@ func (dc *DeltaComputer) reset() {
 	dc.locationIndex.Reset()
 	dc.deltaMap.Reset()
 
-	dc.includeMapping.Reset()
 	dc.includeFunction.Reset()
 	dc.includeString.Reset()
 }
@@ -208,7 +206,7 @@ func (dc *DeltaComputer) indexPass() error {
 				for _, l := range t.Line {
 					dc.scratchIDs = append(dc.scratchIDs, l.FunctionID)
 				}
-				dc.locationIndex.Insert(t.ID, t.Address, t.MappingID, dc.scratchIDs)
+				dc.locationIndex.Insert(t.ID, t.Address, dc.scratchIDs)
 			case *pproflite.StringTable:
 				dc.strings.Add(t.Value)
 				// always include the zero-index empty string,
@@ -279,9 +277,6 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 			case *pproflite.SampleType:
 				dc.includeString.Add(int(t.Unit), int(t.Type))
 			case *pproflite.Mapping:
-				if !dc.includeMapping.Contains(int(t.ID)) {
-					return nil
-				}
 				dc.includeString.Add(int(t.Filename), int(t.BuildID))
 			case *pproflite.LocationID:
 				if !dc.locationIndex.Included(t.ID) {
@@ -363,11 +358,10 @@ func (dc *DeltaComputer) writeStringTablePass() error {
 
 func (dc *DeltaComputer) keepLocations(locationIDs []uint64) {
 	for _, locationID := range locationIDs {
-		mappingID, functionIDs, ok := dc.locationIndex.GetMeta(locationID)
+		functionIDs, ok := dc.locationIndex.GetMeta(locationID)
 		if !ok {
 			continue
 		}
-		dc.includeMapping.Add(int(mappingID))
 		dc.locationIndex.MarkIncluded(locationID)
 		for _, functionID := range functionIDs {
 			dc.includeFunction.Add(int(functionID))

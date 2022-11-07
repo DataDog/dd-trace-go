@@ -15,7 +15,6 @@ type locationIndex struct {
 
 type location struct {
 	address     uint64
-	mappingID   uint64
 	functionIDs funcIDSlice
 	included    bool
 }
@@ -37,8 +36,8 @@ func (l *locationIndex) Reset() {
 
 // Insert associates the given address, mapping ID, and function IDs with the
 // given location ID
-func (l *locationIndex) Insert(id, address, mappingID uint64, functionIDs []uint64) {
-	loc := location{address: address, mappingID: mappingID}
+func (l *locationIndex) Insert(id, address uint64, functionIDs []uint64) {
+	loc := location{address: address}
 	loc.functionIDs.start = len(l.functionIDs)
 	l.functionIDs = append(l.functionIDs, functionIDs...)
 	loc.functionIDs.end = len(l.functionIDs)
@@ -85,9 +84,9 @@ func (l *locationIndex) Get(id uint64) (uint64, bool) {
 
 // GetMeta returns the mapping ID and function IDs associated with
 // the given location ID
-func (l *locationIndex) GetMeta(id uint64) (mappingID uint64, functionIDs []uint64, ok bool) {
+func (l *locationIndex) GetMeta(id uint64) (functionIDs []uint64, ok bool) {
 	loc, ok := l.get(id)
-	return loc.mappingID, l.functionIDs[loc.functionIDs.start:loc.functionIDs.end], ok
+	return l.functionIDs[loc.functionIDs.start:loc.functionIDs.end], ok
 }
 
 func (l *locationIndex) get(id uint64) (loc location, ok bool) {
