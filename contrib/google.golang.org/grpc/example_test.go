@@ -38,8 +38,8 @@ func Example_server() {
 	}
 
 	// Create the server interceptor using the grpc trace package.
-	si := grpctrace.StreamServerInterceptor(grpctrace.WithServiceName("my-grpc-client"))
-	ui := grpctrace.UnaryServerInterceptor(grpctrace.WithServiceName("my-grpc-client"))
+	si := grpctrace.StreamServerInterceptor(grpctrace.WithServiceName("my-grpc-server"))
+	ui := grpctrace.UnaryServerInterceptor(grpctrace.WithServiceName("my-grpc-server"))
 
 	// Initialize the grpc server as normal, using the tracing interceptor.
 	s := grpc.NewServer(grpc.StreamInterceptor(si), grpc.UnaryInterceptor(ui))

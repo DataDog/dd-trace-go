@@ -19,7 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-func TestCommentInjection(t *testing.T) {
+func TestDBMPropagation(t *testing.T) {
 	testCases := []struct {
 		name     string
 		opts     []RegisterOption
@@ -29,7 +29,7 @@ func TestCommentInjection(t *testing.T) {
 	}{
 		{
 			name: "prepare",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -38,7 +38,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "prepare-disabled",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -47,7 +47,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "prepare-service",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeService)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -56,7 +56,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "prepare-full",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeFull)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -65,7 +65,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "query",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -74,7 +74,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "query-disabled",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -83,7 +83,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "query-service",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeService)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -92,7 +92,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "query-full",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeFull)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -101,7 +101,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "exec",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -110,7 +110,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "exec-disabled",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -119,7 +119,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "exec-service",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeService)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -128,7 +128,7 @@ func TestCommentInjection(t *testing.T) {
 		},
 		{
 			name: "exec-full",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeFull)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -179,7 +179,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 	}{
 		{
 			name: "prepare",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeFull)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -189,7 +189,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 		},
 		{
 			name: "query-disabled",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -199,7 +199,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 		},
 		{
 			name: "query-service",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeService)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -209,7 +209,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 		},
 		{
 			name: "query-full",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeFull)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -219,7 +219,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 		},
 		{
 			name: "exec-disabled",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionDisabled)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -229,7 +229,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 		},
 		{
 			name: "exec-service",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeService)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -239,7 +239,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 		},
 		{
 			name: "exec-full",
-			opts: []RegisterOption{WithSQLCommentInjection(tracer.SQLInjectionModeFull)},
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -272,7 +272,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 			for _, s := range sps {
 				tags := s.Tags()
 				if tc.traceContextInjectedTag {
-					assert.Equal(t, tags[keyDBMTraceInjected], true)
+					assert.Equal(t, true, tags[keyDBMTraceInjected])
 				} else {
 					_, ok := tags[keyDBMTraceInjected]
 					assert.False(t, ok)

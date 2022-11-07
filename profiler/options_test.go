@@ -62,6 +62,33 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, expectedURL, cfg.agentURL)
 	})
 
+	t.Run("AgentURL", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		expectedURL := "https://custom:1234/profiling/v1/input"
+		assert.Equal(t, expectedURL, cfg.agentURL)
+	})
+
+	t.Run("AgentURL/override-env", func(t *testing.T) {
+		t.Setenv("DD_AGENT_HOST", "testhost")
+		t.Setenv("DD_TRACE_AGENT_PORT", "3333")
+		t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		expectedURL := "https://custom:1234/profiling/v1/input"
+		assert.Equal(t, expectedURL, cfg.agentURL)
+	})
+
+	t.Run("AgentURL/code-override", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		WithAgentAddr("test:1234")(cfg)
+		expectedURL := "http://test:1234/profiling/v1/input"
+		assert.Equal(t, expectedURL, cfg.agentURL)
+	})
+
 	t.Run("WithUploadTimeout", func(t *testing.T) {
 		var cfg config
 		WithUploadTimeout(5 * time.Second)(&cfg)
@@ -313,7 +340,7 @@ func TestDefaultConfig(t *testing.T) {
 		assert := assert.New(t)
 		assert.Equal(defaultAPIURL, cfg.apiURL)
 		assert.Equal(defaultAgentURL, cfg.agentURL)
-		assert.Equal(defaultEnv, cfg.env)
+		assert.Equal("", cfg.env)
 		assert.Equal(filepath.Base(os.Args[0]), cfg.service)
 		assert.Equal(len(defaultProfileTypes), len(cfg.types))
 		for _, pt := range defaultProfileTypes {
