@@ -60,7 +60,6 @@ const (
 	defaultAPIURL    = "https://intake.profile.datadoghq.com/v1/input"
 	defaultAgentHost = "localhost"
 	defaultAgentPort = "8126"
-	defaultEnv       = "none"
 )
 
 var defaultClient = &http.Client{
@@ -199,7 +198,6 @@ func (c *config) addProfileType(t ProfileType) {
 
 func defaultConfig() (*config, error) {
 	c := config{
-		env:               defaultEnv,
 		apiURL:            defaultAPIURL,
 		service:           filepath.Base(os.Args[0]),
 		statsd:            &statsd.NoOpClient{},
@@ -227,6 +225,13 @@ func defaultConfig() (*config, error) {
 		agentPort = v
 	}
 	WithAgentAddr(net.JoinHostPort(agentHost, agentPort))(&c)
+	if url := internal.AgentURLFromEnv(); url != nil {
+		if url.Scheme == "unix" {
+			WithUDS(url.Path)(&c)
+		} else {
+			c.agentURL = url.String() + "/profiling/v1/input"
+		}
+	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {

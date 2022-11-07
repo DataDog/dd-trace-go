@@ -7,15 +7,20 @@ package fastdelta
 
 import (
 	"bytes"
+	"compress/gzip"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
-	"strings"
+  "strings"
+
 	"testing"
+	"time"
 
 	"github.com/google/pprof/profile"
 	"github.com/richardartoul/molecule"
@@ -501,5 +506,113 @@ func TestRecovery(t *testing.T) {
 		t.Errorf("non-empty diff from golden vs delta: %v", diff)
 		t.Errorf("got: %v", delta)
 		t.Errorf("want: %v", golden)
+	}
+}
+
+//go:noinline
+func makeGarbage() {
+	x := make([]int, rand.Intn(10000)+1)
+	b, _ := json.Marshal(x)
+	json.NewDecoder(bytes.NewReader(b)).Decode(&x)
+	// Force GC so that we clean up the allocations and they show up
+	// in the profile.
+	runtime.GC()
+}
+
+// left & right are recursive functions which call one another randomly,
+// and eventually call makeGarbage. We get 2^N possible combinations of
+// left and right in the stacks for a depth-N recursion. This lets us
+// artificially inflate the size of the profile. This is inspired by seeing
+// something similar in a profile where a program did a lot of sorting.
+
+//go:noinline
+func left(n int) {
+	if n <= 0 {
+		makeGarbage()
+		return
+	}
+	if rand.Intn(2) == 0 {
+		left(n - 1)
+	} else {
+		right(n - 1)
+	}
+}
+
+//go:noinline
+func right(n int) {
+	if n <= 0 {
+		makeGarbage()
+		return
+	}
+	if rand.Intn(2) == 0 {
+		left(n - 1)
+	} else {
+		right(n - 1)
+	}
+}
+
+func TestRepeatedHeapProfile(t *testing.T) {
+	if os.Getenv("DELTA_PROFILE_HEAP_STRESS_TEST") == "" {
+		t.Skip("This test is resource-intensive. To run it, set the DELTA_PROFILE_HEAP_STRESS_TEST environment variable")
+	}
+	readProfile := func(name string) []byte {
+		b := new(bytes.Buffer)
+		if err := pprof.Lookup(name).WriteTo(b, 0); err != nil {
+			t.Fatal(err)
+		}
+		r, _ := gzip.NewReader(b)
+		p, _ := io.ReadAll(r)
+		return p
+	}
+
+	fields := []pprofutils.ValueType{
+		vt("alloc_objects", "count"),
+		vt("alloc_space", "bytes"),
+	}
+
+	dc := NewDeltaComputer(fields...)
+
+	before := readProfile("heap")
+	if err := dc.Delta(before, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+
+	iters := 100
+	if testing.Short() {
+		iters = 10
+	}
+	for i := 0; i < iters; i++ {
+		// Create a bunch of new allocations so there's something to diff.
+		for j := 0; j < 200; j++ {
+			left(10)
+		}
+		after := readProfile("heap")
+
+		data := new(bytes.Buffer)
+		if err := dc.Delta(after, data); err != nil {
+			t.Fatal(err)
+		}
+		delta, err := profile.ParseData(data.Bytes())
+		if err != nil {
+			t.Fatalf("parsing delta profile: %s", err)
+		}
+
+		golden := makeGolden(t, before, after, fields...)
+
+		golden.Scale(-1)
+		diff, err := profile.Merge([]*profile.Profile{delta, golden})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(diff.Sample) != 0 {
+			t.Errorf("non-empty diff from golden vs delta: %v", diff)
+			t.Errorf("got: %v", delta)
+			t.Errorf("want: %v", golden)
+			now := time.Now().Format(time.RFC3339)
+			os.WriteFile(fmt.Sprintf("failure-before-%s", now), before, 0660)
+			os.WriteFile(fmt.Sprintf("failure-after-%s", now), after, 0660)
+			t.FailNow()
+		}
+		before = after
 	}
 }

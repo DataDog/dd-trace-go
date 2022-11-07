@@ -38,7 +38,9 @@ func (ss *serverStream) Context() context.Context {
 }
 
 func (ss *serverStream) RecvMsg(m interface{}) (err error) {
-	if _, ok := ss.cfg.ignoredMethods[ss.method]; ss.cfg.traceStreamMessages && !ok {
+	_, im := ss.cfg.ignoredMethods[ss.method]
+	_, um := ss.cfg.untracedMethods[ss.method]
+	if ss.cfg.traceStreamMessages && !im && !um {
 		span, _ := startSpanFromContext(
 			ss.ctx,
 			ss.method,
@@ -53,7 +55,9 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 }
 
 func (ss *serverStream) SendMsg(m interface{}) (err error) {
-	if _, ok := ss.cfg.ignoredMethods[ss.method]; ss.cfg.traceStreamMessages && !ok {
+	_, im := ss.cfg.ignoredMethods[ss.method]
+	_, um := ss.cfg.untracedMethods[ss.method]
+	if ss.cfg.traceStreamMessages && !im && !um {
 		span, _ := startSpanFromContext(
 			ss.ctx,
 			ss.method,
@@ -78,7 +82,9 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		ctx := ss.Context()
 		// if we've enabled call tracing, create a span
-		if _, ok := cfg.ignoredMethods[info.FullMethod]; cfg.traceStreamCalls && !ok {
+		_, im := cfg.ignoredMethods[info.FullMethod]
+		_, um := cfg.untracedMethods[info.FullMethod]
+		if cfg.traceStreamCalls && !im && !um {
 			var span ddtrace.Span
 			span, ctx = startSpanFromContext(
 				ctx,
@@ -121,7 +127,9 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	}
 	log.Debug("contrib/google.golang.org/grpc: Configuring UnaryServerInterceptor: %#v", cfg)
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if _, ok := cfg.ignoredMethods[info.FullMethod]; ok {
+		_, im := cfg.ignoredMethods[info.FullMethod]
+		_, um := cfg.untracedMethods[info.FullMethod]
+		if im || um {
 			return handler(ctx, req)
 		}
 		span, ctx := startSpanFromContext(
