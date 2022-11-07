@@ -23,32 +23,43 @@ func (s *SparseIntSet) Contains(i int) bool {
 }
 
 type DenseIntSet struct {
-	members []bool
+	index   int
+	members []uint64
 }
 
 func (d *DenseIntSet) Reset() {
+	d.index = 0
 	d.members = d.members[:0]
 }
 
 func (d *DenseIntSet) Append(val bool) {
-	d.members = append(d.members, val)
+	i := d.index / 64
+	if i >= len(d.members) {
+		d.members = append(d.members, 0)
+	}
+	if val {
+		d.members[i] |= (1 << (d.index % 64))
+	}
+	d.index++
 }
 
 func (d *DenseIntSet) Add(vals ...int) bool {
 	var fail bool
-	for _, v := range vals {
-		if v < 0 || v >= len(d.members) {
+	for _, val := range vals {
+		i := val / 64
+		if i < 0 || i >= len(d.members) {
 			fail = true
 		} else {
-			d.members[v] = true
+			d.members[i] |= (1 << (val % 64))
 		}
 	}
 	return !fail
 }
 
-func (d *DenseIntSet) Contains(i int) bool {
+func (d *DenseIntSet) Contains(val int) bool {
+	i := val / 64
 	if i < 0 || i >= len(d.members) {
 		return false
 	}
-	return d.members[i]
+	return (d.members[i] & (1 << (val % 64))) != 0
 }
