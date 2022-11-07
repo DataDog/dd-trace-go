@@ -75,7 +75,7 @@ type DeltaComputer struct {
 
 	// fields are the name and types of the values in a sample for which we should
 	// compute the difference.
-	fields []valueType
+	fields []valueType // TODO(fg) refactor and remove
 
 	// locationIndex associates location IDs (used by the pprof format to
 	// cross-reference locations) to the actual instruction address of the
@@ -89,15 +89,14 @@ type DeltaComputer struct {
 	curProfTimeNanos int64
 	durationNanos    pproflite.DurationNanos
 
-	// saves some heap allocations
-	scratchIDs []uint64
+	scratchIDs []uint64 // @TODO(fg) refactor and remove
 	decoder    pproflite.Decoder
 	encoder    pproflite.Encoder
 	deltaMap   *DeltaMap
 
-	// include* is for pruning the delta output, populated on merge pass
-	includeMapping  map[uint64]struct{}
-	includeFunction map[uint64]struct{}
+	// @TODO(fg) refactor and remove
+	includeMapping  IntSet
+	includeFunction IntSet
 	includeString   []bool
 }
 
@@ -124,8 +123,6 @@ func NewDeltaComputer(fields ...pprofutils.ValueType) *DeltaComputer {
 
 func (dc *DeltaComputer) initialize() {
 	dc.scratchIDs = make([]uint64, 0, 512)
-	dc.includeMapping = make(map[uint64]struct{})
-	dc.includeFunction = make(map[uint64]struct{})
 	dc.includeString = make([]bool, 0, 1024)
 	dc.strings = newStringTable(murmur3.New128())
 	dc.curProfTimeNanos = -1
@@ -137,14 +134,8 @@ func (dc *DeltaComputer) reset() {
 	dc.locationIndex.Reset()
 	dc.deltaMap.Reset()
 
-	// reset bookkeeping for message pruning
-	// go compiler should convert these to single runtime.mapclear calls
-	for k := range dc.includeMapping {
-		delete(dc.includeMapping, k)
-	}
-	for k := range dc.includeFunction {
-		delete(dc.includeFunction, k)
-	}
+	dc.includeMapping.Reset()
+	dc.includeFunction.Reset()
 	dc.includeString = dc.includeString[:0]
 }
 
@@ -176,12 +167,13 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 			err = fmt.Errorf("internal panic during delta profiling: %v", e)
 		}
 	}()
-	dc.reset()
 
 	if dc.poisoned {
 		// If the last round failed, start fresh
 		dc.initialize()
 	}
+	dc.reset()
+
 	dc.encoder.Reset(out)
 	dc.decoder.Reset(p)
 
@@ -290,7 +282,7 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 				dc.markStringIncluded(uint64(t.Unit))
 				dc.markStringIncluded(uint64(t.Type))
 			case *pproflite.Mapping:
-				if _, ok := dc.includeMapping[t.ID]; !ok {
+				if !dc.includeMapping.Contains(int(t.ID)) {
 					return nil
 				}
 				dc.markStringIncluded(uint64(t.Filename))
@@ -300,7 +292,7 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 					return nil
 				}
 			case *pproflite.Function:
-				if _, ok := dc.includeFunction[t.ID]; !ok {
+				if !dc.includeFunction.Contains(int(t.ID)) {
 					return nil
 				}
 				dc.markStringIncluded(uint64(t.Name))
@@ -382,10 +374,10 @@ func (dc *DeltaComputer) keepLocations(locationIDs []uint64) {
 		if !ok {
 			continue
 		}
-		dc.includeMapping[mappingID] = struct{}{}
+		dc.includeMapping.Add(int(mappingID))
 		dc.locationIndex.MarkIncluded(locationID)
 		for _, functionID := range functionIDs {
-			dc.includeFunction[functionID] = struct{}{}
+			dc.includeFunction.Add(int(functionID))
 		}
 	}
 }
