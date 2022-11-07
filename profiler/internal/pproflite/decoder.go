@@ -17,7 +17,7 @@ const (
 	SampleDecoder
 	MappingDecoder
 	LocationDecoder
-	LocationIDDecoder
+	LocationFastDecoder
 	FunctionDecoder
 	StringTableDecoder
 	DropFramesDecoder
@@ -50,7 +50,7 @@ type Decoder struct {
 	sample            Sample            // 2
 	mapping           Mapping           // 3
 	location          Location          // 4
-	locationID        LocationID        // 4 ID only optimization
+	locationFast      LocationFast      // 4
 	function          Function          // 5
 	stringTable       StringTable       // 6
 	dropFrames        DropFrames        // 7
@@ -99,8 +99,8 @@ func (d *Decoder) applyFilter(fields ...FieldDecoder) error {
 			return &d.mapping, nil
 		case LocationDecoder:
 			return &d.location, nil
-		case LocationIDDecoder:
-			return &d.locationID, nil
+		case LocationFastDecoder:
+			return &d.locationFast, nil
 		case FunctionDecoder:
 			return &d.function, nil
 		case StringTableDecoder:

@@ -89,10 +89,9 @@ type DeltaComputer struct {
 	curProfTimeNanos int64
 	durationNanos    pproflite.DurationNanos
 
-	scratchIDs []uint64 // @TODO(fg) refactor and remove
-	decoder    pproflite.Decoder
-	encoder    pproflite.Encoder
-	deltaMap   *DeltaMap
+	decoder  pproflite.Decoder
+	encoder  pproflite.Encoder
+	deltaMap *DeltaMap
 
 	// @TODO(fg) refactor and remove
 	includeFunction SparseIntSet
@@ -121,7 +120,6 @@ func NewDeltaComputer(fields ...pprofutils.ValueType) *DeltaComputer {
 }
 
 func (dc *DeltaComputer) initialize() {
-	dc.scratchIDs = make([]uint64, 0, 512)
 	dc.strings = newStringTable(murmur3.New128())
 	dc.curProfTimeNanos = -1
 	dc.deltaMap = NewDeltaMap(dc.strings, &dc.locationIndex, dc.fields)
@@ -180,6 +178,8 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 		return fmt.Errorf("mergeSamplePass: %w", err)
 	} else if err := dc.writeAndPruneRecordsPass(); err != nil {
 		return fmt.Errorf("writeAndPruneRecordsPass: %w", err)
+	} else if err := dc.functionPass(); err != nil {
+		return fmt.Errorf("functionPass: %w", err)
 	} else if err := dc.writeStringTablePass(); err != nil {
 		return fmt.Errorf("writeStringTablePass: %w", err)
 	}
@@ -202,11 +202,7 @@ func (dc *DeltaComputer) indexPass() error {
 					return err
 				}
 			case *pproflite.Location:
-				dc.scratchIDs = dc.scratchIDs[:0]
-				for _, l := range t.Line {
-					dc.scratchIDs = append(dc.scratchIDs, l.FunctionID)
-				}
-				dc.locationIndex.Insert(t.ID, t.Address, dc.scratchIDs)
+				dc.locationIndex.Insert(t.ID, t.Address)
 			case *pproflite.StringTable:
 				dc.strings.Add(t.Value)
 				// always include the zero-index empty string,
@@ -254,7 +250,9 @@ func (dc *DeltaComputer) mergeSamplePass() error {
 				return nil
 			}
 
-			dc.keepLocations(sample.LocationID)
+			for _, locationID := range sample.LocationID {
+				dc.locationIndex.MarkIncluded(locationID)
+			}
 			for _, l := range sample.Label {
 				dc.includeString.Add(int(l.Key), int(l.Str), int(l.NumUnit))
 			}
@@ -278,15 +276,13 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 				dc.includeString.Add(int(t.Unit), int(t.Type))
 			case *pproflite.Mapping:
 				dc.includeString.Add(int(t.Filename), int(t.BuildID))
-			case *pproflite.LocationID:
+			case *pproflite.LocationFast:
 				if !dc.locationIndex.Included(t.ID) {
 					return nil
 				}
-			case *pproflite.Function:
-				if !dc.includeFunction.Contains(int(t.ID)) {
-					return nil
+				for _, funcID := range t.FunctionID {
+					dc.includeFunction.Add(int(funcID))
 				}
-				dc.includeString.Add(int(t.Name), int(t.SystemName), int(t.FileName))
 			case *pproflite.DropFrames:
 				dc.includeString.Add(int(t.Value))
 			case *pproflite.KeepFrames:
@@ -320,8 +316,7 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 		},
 		pproflite.SampleTypeDecoder,
 		pproflite.MappingDecoder,
-		pproflite.LocationIDDecoder,
-		pproflite.FunctionDecoder,
+		pproflite.LocationFastDecoder,
 		pproflite.DropFramesDecoder,
 		pproflite.KeepFramesDecoder,
 		pproflite.TimeNanosDecoder,
@@ -330,6 +325,24 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 		pproflite.PeriodDecoder,
 		pproflite.CommentDecoder,
 		pproflite.DefaultSampleTypeDecoder,
+	)
+}
+
+func (dc *DeltaComputer) functionPass() error {
+	return dc.decoder.FieldEach(
+		func(f pproflite.Field) error {
+			switch t := f.(type) {
+			case *pproflite.Function:
+				if !dc.includeFunction.Contains(int(t.ID)) {
+					return nil
+				}
+				dc.includeString.Add(int(t.Name), int(t.SystemName), int(t.FileName))
+			default:
+				return fmt.Errorf("unexpected field: %T", f)
+			}
+			return dc.encoder.Encode(f)
+		},
+		pproflite.FunctionDecoder,
 	)
 }
 
@@ -354,19 +367,6 @@ func (dc *DeltaComputer) writeStringTablePass() error {
 		},
 		pproflite.StringTableDecoder,
 	)
-}
-
-func (dc *DeltaComputer) keepLocations(locationIDs []uint64) {
-	for _, locationID := range locationIDs {
-		functionIDs, ok := dc.locationIndex.GetMeta(locationID)
-		if !ok {
-			continue
-		}
-		dc.locationIndex.MarkIncluded(locationID)
-		for _, functionID := range functionIDs {
-			dc.includeFunction.Add(int(functionID))
-		}
-	}
 }
 
 // TODO(fg) we should probably validate all strings?

@@ -14,16 +14,8 @@ type locationIndex struct {
 }
 
 type location struct {
-	address     uint64
-	functionIDs funcIDSlice
-	included    bool
-}
-
-// funcIDSlice describes a sub-slice of locationIndex.functionIds. It's 1/3
-// more compact than a real slice because we don't need a capacity field.
-type funcIDSlice struct {
-	start int
-	end   int
+	address  uint64
+	included bool
 }
 
 func (l *locationIndex) Reset() {
@@ -36,11 +28,8 @@ func (l *locationIndex) Reset() {
 
 // Insert associates the given address, mapping ID, and function IDs with the
 // given location ID
-func (l *locationIndex) Insert(id, address uint64, functionIDs []uint64) {
+func (l *locationIndex) Insert(id, address uint64) {
 	loc := location{address: address}
-	loc.functionIDs.start = len(l.functionIDs)
-	l.functionIDs = append(l.functionIDs, functionIDs...)
-	loc.functionIDs.end = len(l.functionIDs)
 	if l.slowTable == nil && id == uint64(len(l.fastTable)+1) {
 		l.fastTable = append(l.fastTable, loc)
 	} else {
@@ -80,13 +69,6 @@ func (l *locationIndex) Included(id uint64) bool {
 func (l *locationIndex) Get(id uint64) (uint64, bool) {
 	loc, ok := l.get(id)
 	return loc.address, ok
-}
-
-// GetMeta returns the mapping ID and function IDs associated with
-// the given location ID
-func (l *locationIndex) GetMeta(id uint64) (functionIDs []uint64, ok bool) {
-	loc, ok := l.get(id)
-	return l.functionIDs[loc.functionIDs.start:loc.functionIDs.end], ok
 }
 
 func (l *locationIndex) get(id uint64) (loc location, ok bool) {

@@ -178,23 +178,38 @@ func (f *Location) encode(ps *molecule.ProtoStream) error {
 	return encodeFields(ps, f.fields())
 }
 
-// LocationID is field 4. Unlike Location it only decodes the ID of the
-// location and stores its raw protobuf message. When encoding a LocationID,
-// the Data value gets written and changes to the ID field are ignored.
-type LocationID struct {
-	ID   uint64
-	Data []byte
+// LocationFast is field 4. Unlike Location it only decodes the id and function
+// ids of the location and stores its raw protobuf message. When encoding a
+// LocationFast, the Data value gets written and changes to its other fields
+// are ignored.
+type LocationFast struct {
+	ID         uint64
+	FunctionID []uint64
+	Data       []byte
 }
 
-func (l LocationID) field() int { return 4 }
+func (l LocationFast) field() int { return 4 }
 
-func (f *LocationID) decode(val molecule.Value) error {
-	*f = LocationID{}
+func (f *LocationFast) decode(val molecule.Value) error {
+	*f = LocationFast{FunctionID: f.FunctionID[:0]}
 	f.Data = val.Bytes
-	return decodeFields(val, []interface{}{nil, &f.ID})
+	return molecule.MessageEach(codec.NewBuffer(val.Bytes), func(field int32, val molecule.Value) (bool, error) {
+		switch field {
+		case 1:
+			f.ID = val.Number
+		case 4: // Line
+			molecule.MessageEach(codec.NewBuffer(val.Bytes), func(field int32, val molecule.Value) (bool, error) {
+				if field == 1 {
+					f.FunctionID = append(f.FunctionID, val.Number)
+				}
+				return true, nil
+			})
+		}
+		return true, nil
+	})
 }
 
-func (f *LocationID) encode(ps *molecule.ProtoStream) error {
+func (f *LocationFast) encode(ps *molecule.ProtoStream) error {
 	_, err := ps.Write(f.Data)
 	return err
 }
