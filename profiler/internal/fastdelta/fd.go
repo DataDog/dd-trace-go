@@ -257,11 +257,8 @@ func (dc *DeltaComputer) mergeSamplePass() error {
 			}
 
 			dc.keepLocations(sample.LocationID)
-			// TODO(fg) we probably also need to do this for the fast-path above (if !ok)
 			for _, l := range sample.Label {
-				dc.includeString.Add(int(l.Key))
-				dc.includeString.Add(int(l.Str))
-				dc.includeString.Add(int(l.NumUnit))
+				dc.includeString.Add(int(l.Key), int(l.Str), int(l.NumUnit))
 			}
 			return dc.encoder.Encode(sample)
 		},
@@ -280,14 +277,12 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 		func(f pproflite.Field) error {
 			switch t := f.(type) {
 			case *pproflite.SampleType:
-				dc.includeString.Add(int(t.Unit))
-				dc.includeString.Add(int(t.Type))
+				dc.includeString.Add(int(t.Unit), int(t.Type))
 			case *pproflite.Mapping:
 				if !dc.includeMapping.Contains(int(t.ID)) {
 					return nil
 				}
-				dc.includeString.Add(int(t.Filename))
-				dc.includeString.Add(int(t.BuildID))
+				dc.includeString.Add(int(t.Filename), int(t.BuildID))
 			case *pproflite.LocationID:
 				if !dc.locationIndex.Included(t.ID) {
 					return nil
@@ -296,9 +291,7 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 				if !dc.includeFunction.Contains(int(t.ID)) {
 					return nil
 				}
-				dc.includeString.Add(int(t.Name))
-				dc.includeString.Add(int(t.SystemName))
-				dc.includeString.Add(int(t.FileName))
+				dc.includeString.Add(int(t.Name), int(t.SystemName), int(t.FileName))
 			case *pproflite.DropFrames:
 				dc.includeString.Add(int(t.Value))
 			case *pproflite.KeepFrames:
@@ -319,8 +312,7 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 					return nil
 				}
 			case *pproflite.PeriodType:
-				dc.includeString.Add(int(t.Unit))
-				dc.includeString.Add(int(t.Type))
+				dc.includeString.Add(int(t.Unit), int(t.Type))
 			case *pproflite.Period:
 			case *pproflite.Comment:
 				dc.includeString.Add(int(t.Value))

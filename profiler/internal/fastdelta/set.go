@@ -34,12 +34,16 @@ func (d *DenseIntSet) Append(val bool) {
 	d.members = append(d.members, val)
 }
 
-func (d *DenseIntSet) Add(i int) bool {
-	if i < 0 || i >= len(d.members) {
-		return false
+func (d *DenseIntSet) Add(vals ...int) bool {
+	var fail bool
+	for _, v := range vals {
+		if v < 0 || v >= len(d.members) {
+			fail = true
+		} else {
+			d.members[v] = true
+		}
 	}
-	d.members[i] = true
-	return true
+	return !fail
 }
 
 func (d *DenseIntSet) Contains(i int) bool {
