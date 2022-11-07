@@ -1,25 +1,50 @@
 package fastdelta
 
-type IntSet struct {
-	sparse map[int]struct{}
+type SparseIntSet struct {
+	members map[int]struct{}
 }
 
-const maxGap = 2
-
-func (s *IntSet) Reset() {
-	if s.sparse == nil {
-		s.sparse = make(map[int]struct{})
+func (s *SparseIntSet) Reset() {
+	if s.members == nil {
+		s.members = make(map[int]struct{})
 	}
-	for k := range s.sparse {
-		delete(s.sparse, k)
+	for k := range s.members {
+		delete(s.members, k)
 	}
 }
 
-func (s *IntSet) Add(i int) {
-	s.sparse[i] = struct{}{}
+func (s *SparseIntSet) Add(i int) {
+	s.members[i] = struct{}{}
 }
 
-func (s *IntSet) Contains(i int) bool {
-	_, ok := s.sparse[i]
+func (s *SparseIntSet) Contains(i int) bool {
+	_, ok := s.members[i]
 	return ok
+}
+
+type DenseIntSet struct {
+	members []bool
+}
+
+func (d *DenseIntSet) Reset() {
+	d.members = d.members[:0]
+}
+
+func (d *DenseIntSet) Append(val bool) {
+	d.members = append(d.members, val)
+}
+
+func (d *DenseIntSet) Add(i int) bool {
+	if i < 0 || i >= len(d.members) {
+		return false
+	}
+	d.members[i] = true
+	return true
+}
+
+func (d *DenseIntSet) Contains(i int) bool {
+	if i < 0 || i >= len(d.members) {
+		return false
+	}
+	return d.members[i]
 }

@@ -95,9 +95,9 @@ type DeltaComputer struct {
 	deltaMap   *DeltaMap
 
 	// @TODO(fg) refactor and remove
-	includeMapping  IntSet
-	includeFunction IntSet
-	includeString   []bool
+	includeMapping  SparseIntSet
+	includeFunction SparseIntSet
+	includeString   DenseIntSet
 }
 
 func newValueTypes(vts []pprofutils.ValueType) (ret []valueType) {
@@ -123,7 +123,6 @@ func NewDeltaComputer(fields ...pprofutils.ValueType) *DeltaComputer {
 
 func (dc *DeltaComputer) initialize() {
 	dc.scratchIDs = make([]uint64, 0, 512)
-	dc.includeString = make([]bool, 0, 1024)
 	dc.strings = newStringTable(murmur3.New128())
 	dc.curProfTimeNanos = -1
 	dc.deltaMap = NewDeltaMap(dc.strings, &dc.locationIndex, dc.fields)
@@ -136,7 +135,7 @@ func (dc *DeltaComputer) reset() {
 
 	dc.includeMapping.Reset()
 	dc.includeFunction.Reset()
-	dc.includeString = dc.includeString[:0]
+	dc.includeString.Reset()
 }
 
 // Delta calculates the difference between the pprof-encoded profile p and the
@@ -196,6 +195,7 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 //	dc.strings
 //	dc.includeString (sizing)
 func (dc *DeltaComputer) indexPass() error {
+	strIdx := 0
 	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
 			switch t := f.(type) {
@@ -213,7 +213,8 @@ func (dc *DeltaComputer) indexPass() error {
 				dc.strings.Add(t.Value)
 				// always include the zero-index empty string,
 				// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
-				dc.includeString = append(dc.includeString, len(dc.includeString) == 0)
+				dc.includeString.Append(strIdx == 0)
+				strIdx++
 			default:
 				return fmt.Errorf("indexPass: unexpected field: %T", f)
 			}
@@ -258,9 +259,9 @@ func (dc *DeltaComputer) mergeSamplePass() error {
 			dc.keepLocations(sample.LocationID)
 			// TODO(fg) we probably also need to do this for the fast-path above (if !ok)
 			for _, l := range sample.Label {
-				dc.markStringIncluded(uint64(l.Key))
-				dc.markStringIncluded(uint64(l.Str))
-				dc.markStringIncluded(uint64(l.NumUnit))
+				dc.includeString.Add(int(l.Key))
+				dc.includeString.Add(int(l.Str))
+				dc.includeString.Add(int(l.NumUnit))
 			}
 			return dc.encoder.Encode(sample)
 		},
@@ -279,14 +280,14 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 		func(f pproflite.Field) error {
 			switch t := f.(type) {
 			case *pproflite.SampleType:
-				dc.markStringIncluded(uint64(t.Unit))
-				dc.markStringIncluded(uint64(t.Type))
+				dc.includeString.Add(int(t.Unit))
+				dc.includeString.Add(int(t.Type))
 			case *pproflite.Mapping:
 				if !dc.includeMapping.Contains(int(t.ID)) {
 					return nil
 				}
-				dc.markStringIncluded(uint64(t.Filename))
-				dc.markStringIncluded(uint64(t.BuildID))
+				dc.includeString.Add(int(t.Filename))
+				dc.includeString.Add(int(t.BuildID))
 			case *pproflite.LocationID:
 				if !dc.locationIndex.Included(t.ID) {
 					return nil
@@ -295,13 +296,13 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 				if !dc.includeFunction.Contains(int(t.ID)) {
 					return nil
 				}
-				dc.markStringIncluded(uint64(t.Name))
-				dc.markStringIncluded(uint64(t.SystemName))
-				dc.markStringIncluded(uint64(t.FileName))
+				dc.includeString.Add(int(t.Name))
+				dc.includeString.Add(int(t.SystemName))
+				dc.includeString.Add(int(t.FileName))
 			case *pproflite.DropFrames:
-				dc.markStringIncluded(uint64(t.Value))
+				dc.includeString.Add(int(t.Value))
 			case *pproflite.KeepFrames:
-				dc.markStringIncluded(uint64(t.Value))
+				dc.includeString.Add(int(t.Value))
 			case *pproflite.TimeNanos:
 				curProfTimeNanos := int64(t.Value)
 				if !firstPprof {
@@ -318,13 +319,13 @@ func (dc *DeltaComputer) writeAndPruneRecordsPass() error {
 					return nil
 				}
 			case *pproflite.PeriodType:
-				dc.markStringIncluded(uint64(t.Unit))
-				dc.markStringIncluded(uint64(t.Type))
+				dc.includeString.Add(int(t.Unit))
+				dc.includeString.Add(int(t.Type))
 			case *pproflite.Period:
 			case *pproflite.Comment:
-				dc.markStringIncluded(uint64(t.Value))
+				dc.includeString.Add(int(t.Value))
 			case *pproflite.DefaultSampleType:
-				dc.markStringIncluded(uint64(t.Value))
+				dc.includeString.Add(int(t.Value))
 			default:
 				return fmt.Errorf("unexpected field: %T", f)
 			}
@@ -358,7 +359,7 @@ func (dc *DeltaComputer) writeStringTablePass() error {
 			if !ok {
 				return fmt.Errorf("stringTablePass: unexpected field: %T", f)
 			}
-			if !dc.isStringIncluded(counter) {
+			if !dc.includeString.Contains(counter) {
 				str.Value = nil
 			}
 			counter++
@@ -380,24 +381,6 @@ func (dc *DeltaComputer) keepLocations(locationIDs []uint64) {
 			dc.includeFunction.Add(int(functionID))
 		}
 	}
-}
-
-// isStringIncluded returns whether the string at table index i should be
-// included in the profile
-func (dc *DeltaComputer) isStringIncluded(i int) bool {
-	if i < 0 || i >= len(dc.includeString) {
-		return false
-	}
-	return dc.includeString[i]
-}
-
-// markStringIncluded records that the string at table index i should be
-// included in the profile
-func (dc *DeltaComputer) markStringIncluded(i uint64) {
-	if i < uint64(len(dc.includeString)) {
-		dc.includeString[i] = true
-	}
-	// TODO: panic otherwise?
 }
 
 // TODO(fg) we should probably validate all strings?
