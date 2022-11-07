@@ -3,27 +3,20 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-package fastdelta
-
-import (
-	"fmt"
-	"io"
-
-	"github.com/spaolacci/murmur3"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
-)
-
 /*
-# Outline
-
-The end goal is to match up samples between the two profiles and take
+Package fastdelta tries to match up samples between two pprof profiles and take
 their difference. A sample is a unique (call stack, labels) pair with an
 associated sequence of values, where "call stack" refers to a sequence of
 program counters/instruction addresses, and labels are key/value pairs
 associated with a stack (so we can have the same call stack appear in two
 different samples if the labels are different)
+
+The github.com/google/pprof already implements this functionality as
+profile.Merge, but unfortunately it's causing an extreme amount of allocations
+and memory usage. This package provides an alternative implementation that has
+been highly optimized to be allocation free once steady-state is reached (no
+more new samples are added) and to also use a minimum amount of memory and
+allocations while growing.
 
 # Implementation
 
@@ -48,6 +41,7 @@ Pass 3
 3
 * Write out all fields that were referenced by the samples in Pass 2.
 * Keep track of strings and function ids we need to emit in the next pass.
+
 Pass 4:
 * Write out the functions we need and keep track of their strings.
 
@@ -55,7 +49,24 @@ Pass 5
 * Write out all the strings that were referenced by previous passes.
 * For strings not referenced, write out a zero-length byte to save space
 while preserving index references in the included messages
+
+Note: It's possible to do all of the above with less passes, but doing so
+requires keeping more stuff in memory. Since extra passes are relatively cheap
+and our CPU usage is pretty low (~100ms for a 10MB heap profile), we prefer
+optimizing for lower memory usage as there is a larger chance that customers
+will complain about it.
 */
+package fastdelta
+
+import (
+	"fmt"
+	"io"
+
+	"github.com/spaolacci/murmur3"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
+)
 
 // DeltaComputer calculates the difference between pprof-encoded profiles
 type DeltaComputer struct {
