@@ -188,13 +188,14 @@ func decodePackedInt64(value molecule.Value, dst *[]int64) error {
 	case codec.WireVarint:
 		*dst = append(*dst, int64(value.Number))
 	case codec.WireBytes:
-		buf := codec.NewBuffer(value.Bytes)
-		for buf.Len() > 0 {
-			val, err := buf.DecodeVarint()
-			if err != nil {
-				return err
+		i := 0
+		for i < len(value.Bytes) {
+			val, n := unmarshalVarint(value.Bytes[i:])
+			if n == 0 {
+				return fmt.Errorf("decodePackedInt64: bad varint: %v", value.Bytes[i:])
 			}
 			*dst = append(*dst, int64(val))
+			i += n
 		}
 	default:
 		return fmt.Errorf("bad wire type for DecodePackedVarint: %#v", value.WireType)
@@ -207,16 +208,30 @@ func decodePackedUint64(value molecule.Value, dst *[]uint64) error {
 	case codec.WireVarint:
 		*dst = append(*dst, value.Number)
 	case codec.WireBytes:
-		buf := codec.NewBuffer(value.Bytes)
-		for buf.Len() > 0 {
-			val, err := buf.DecodeVarint()
-			if err != nil {
-				return err
+		i := 0
+		for i < len(value.Bytes) {
+			val, n := unmarshalVarint(value.Bytes[i:])
+			if n == 0 {
+				return fmt.Errorf("decodePackedUint64: bad varint: %v", value.Bytes[i:])
 			}
 			*dst = append(*dst, val)
+			i += n
 		}
 	default:
 		return fmt.Errorf("bad wire type for DecodePackedVarint: %#v", value.WireType)
 	}
 	return nil
+}
+
+// unmarshalVarint is a little faster than molecule's codec.Buffer.DecodeVarint.
+func unmarshalVarint(data []byte) (val uint64, i int) {
+	for ; i < len(data) && i < 10; i++ {
+		b := data[i]
+		val += (uint64(b&0b01111111) << uint64(7*i))
+		if b&0b10000000 == 0 {
+			i++
+			return
+		}
+	}
+	return 0, 0
 }
