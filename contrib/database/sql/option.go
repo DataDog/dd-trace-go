@@ -14,13 +14,13 @@ import (
 )
 
 type config struct {
-	serviceName          string
-	analyticsRate        float64
-	dsn                  string
-	childSpansOnly       bool
-	errCheck             func(err error) bool
-	tags                 map[string]interface{}
-	commentInjectionMode tracer.SQLCommentInjectionMode
+	serviceName        string
+	analyticsRate      float64
+	dsn                string
+	childSpansOnly     bool
+	errCheck           func(err error) bool
+	tags               map[string]interface{}
+	dbmPropagationMode tracer.DBMPropagationMode
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -39,7 +39,11 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
-	cfg.commentInjectionMode = tracer.SQLCommentInjectionMode(os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE"))
+	mode := os.Getenv("DD_DBM_PROPAGATION_MODE")
+	if mode == "" {
+		mode = os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
+	}
+	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
 }
 
 // WithServiceName sets the given service name when registering a driver,
@@ -111,9 +115,22 @@ func WithCustomTag(key string, value interface{}) Option {
 
 // WithSQLCommentInjection enables injection of tags as sql comments on traced queries.
 // This includes dynamic values like span id, trace id and sampling priority which can make queries
-// unique for some cache implementations. Use WithStaticTagsCommentInjection if this is a concern.
+// unique for some cache implementations.
+//
+// Deprecated: Use WithDBMPropagation instead.
 func WithSQLCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
+	return WithDBMPropagation(tracer.DBMPropagationMode(mode))
+}
+
+// WithDBMPropagation enables injection of tags as sql comments on traced queries.
+// This includes dynamic values like span id, trace id and the sampled flag which can make queries
+// unique for some cache implementations. Use DBMPropagationModeService if this is a concern.
+//
+// Note that enabling sql comment propagation results in potentially confidential data (service names)
+// being stored in the databases which can then be accessed by other 3rd parties that have been granted
+// access to the database.
+func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 	return func(cfg *config) {
-		cfg.commentInjectionMode = mode
+		cfg.dbmPropagationMode = mode
 	}
 }
