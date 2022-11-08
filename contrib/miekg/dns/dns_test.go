@@ -61,6 +61,8 @@ func TestDNS(t *testing.T) {
 		assert.Equal(t, "dns", s.Tag(ext.SpanType))
 		assert.Equal(t, "dns", s.Tag(ext.ServiceName))
 		assert.Equal(t, "QUERY", s.Tag(ext.ResourceName))
+		assert.Equal(t, "miekg/dns", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 	}
 }
 
