@@ -14,12 +14,11 @@ import (
 	"os"
 
 	"github.com/stretchr/testify/assert"
-	elasticv3 "gopkg.in/olivere/elastic.v3"
-	elasticv5 "gopkg.in/olivere/elastic.v5"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	elasticv3 "gopkg.in/olivere/elastic.v3"
+	elasticv5 "gopkg.in/olivere/elastic.v5"
 
 	"testing"
 )
@@ -263,6 +262,8 @@ func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
 	assert.Equal("PUT", span.Tag("elasticsearch.method"))
 	assert.Equal(`{"user": "test", "message": "hello"}`, span.Tag("elasticsearch.body"))
+	assert.Equal("olivere/elastic", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 }
 
 func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
@@ -271,6 +272,8 @@ func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("GET /twitter/tweet/?", span.Tag(ext.ResourceName))
 	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
 	assert.Equal("GET", span.Tag("elasticsearch.method"))
+	assert.Equal("olivere/elastic", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 }
 
 func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
@@ -280,6 +283,8 @@ func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("/not-real-index/_all/1", span.Tag("elasticsearch.url"))
 	assert.NotEmpty(span.Tag(ext.Error))
 	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
+	assert.Equal("olivere/elastic", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 }
 
 func TestQuantize(t *testing.T) {
