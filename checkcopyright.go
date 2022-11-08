@@ -56,4 +56,5 @@ func main() {
 		// some files are missing the header, exit code 1 to fail CI
 		os.Exit(1)
 	}
+	log.Printf("All files satisfied the copyright check.")
 }

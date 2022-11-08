@@ -22,7 +22,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 	testCases := []struct {
 		name              string
 		query             string
-		mode              SQLCommentInjectionMode
+		mode              DBMPropagationMode
 		injectSpan        bool
 		samplingPriority  int
 		expectedQuery     string
@@ -31,7 +31,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 		{
 			name:              "default",
 			query:             "SELECT * from FOO",
-			mode:              SQLInjectionModeFull,
+			mode:              DBMPropagationModeFull,
 			injectSpan:        true,
 			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-00'*/ SELECT * from FOO",
 			expectedSpanIDGen: true,
@@ -39,7 +39,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 		{
 			name:              "service",
 			query:             "SELECT * from FOO",
-			mode:              SQLInjectionModeService,
+			mode:              DBMPropagationModeService,
 			injectSpan:        true,
 			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0'*/ SELECT * from FOO",
 			expectedSpanIDGen: false,
@@ -47,14 +47,14 @@ func TestSQLCommentCarrier(t *testing.T) {
 		{
 			name:              "no-trace",
 			query:             "SELECT * from FOO",
-			mode:              SQLInjectionModeFull,
+			mode:              DBMPropagationModeFull,
 			expectedQuery:     "/*dddbs='whiskey-db',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',traceparent='00-0000000000000000<span_id>-<span_id>-00'*/ SELECT * from FOO",
 			expectedSpanIDGen: true,
 		},
 		{
 			name:              "no-query",
 			query:             "",
-			mode:              SQLInjectionModeFull,
+			mode:              DBMPropagationModeFull,
 			injectSpan:        true,
 			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-00'*/",
 			expectedSpanIDGen: true,
@@ -62,7 +62,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 		{
 			name:              "commented",
 			query:             "SELECT * from FOO -- test query",
-			mode:              SQLInjectionModeFull,
+			mode:              DBMPropagationModeFull,
 			injectSpan:        true,
 			samplingPriority:  1,
 			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-01'*/ SELECT * from FOO -- test query",
@@ -99,7 +99,7 @@ func BenchmarkSQLCommentInjection(b *testing.B) {
 	root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*span)
 	root.SetTag(ext.SamplingPriority, 2)
 	spanCtx := root.Context()
-	carrier := SQLCommentCarrier{Query: "SELECT 1 FROM dual", Mode: SQLInjectionModeFull, DBServiceName: "whiskey-db"}
+	carrier := SQLCommentCarrier{Query: "SELECT 1 FROM dual", Mode: DBMPropagationModeFull, DBServiceName: "whiskey-db"}
 
 	b.ReportAllocs()
 	for n := 0; n < b.N; n++ {

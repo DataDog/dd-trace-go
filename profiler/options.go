@@ -25,7 +25,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -61,7 +60,6 @@ const (
 	defaultAPIURL    = "https://intake.profile.datadoghq.com/v1/input"
 	defaultAgentHost = "localhost"
 	defaultAgentPort = "8126"
-	defaultEnv       = "none"
 )
 
 var defaultClient = &http.Client{
@@ -136,8 +134,6 @@ func logStartup(c *config) {
 		MutexProfileFraction int      `json:"mutex_profile_fraction"`
 		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
 		UploadTimeout        string   `json:"upload_timeout"`
-		CmemprofEnabled      bool     `json:"cmemprof_enabled"`
-		CmemprofRate         int      `json:"cmemprof_rate"`
 	}{
 		Date:                 time.Now().Format(time.RFC3339),
 		OSName:               osinfo.OSName(),
@@ -159,8 +155,6 @@ func logStartup(c *config) {
 		MutexProfileFraction: c.mutexFraction,
 		MaxGoroutinesWait:    c.maxGoroutinesWait,
 		UploadTimeout:        c.uploadTimeout.String(),
-		CmemprofEnabled:      c.cmemprofEnabled,
-		CmemprofRate:         c.cmemprofRate,
 	}
 	for t := range c.types {
 		info.EnabledProfiles = append(info.EnabledProfiles, t.String())
@@ -201,7 +195,6 @@ func (c *config) addProfileType(t ProfileType) {
 
 func defaultConfig() (*config, error) {
 	c := config{
-		env:               defaultEnv,
 		apiURL:            defaultAPIURL,
 		service:           filepath.Base(os.Args[0]),
 		statsd:            &statsd.NoOpClient{},
@@ -214,8 +207,6 @@ func defaultConfig() (*config, error) {
 		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
 		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:        internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
-		cmemprofEnabled:   false,
-		cmemprofRate:      extensions.DefaultCAllocationSamplingRate,
 	}
 	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
 	for _, t := range defaultProfileTypes {
@@ -230,6 +221,13 @@ func defaultConfig() (*config, error) {
 		agentPort = v
 	}
 	WithAgentAddr(net.JoinHostPort(agentHost, agentPort))(&c)
+	if url := internal.AgentURLFromEnv(); url != nil {
+		if url.Scheme == "unix" {
+			WithUDS(url.Path)(&c)
+		} else {
+			c.agentURL = url.String() + "/profiling/v1/input"
+		}
+	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
