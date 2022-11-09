@@ -20,7 +20,7 @@ allocations while growing.
 
 # Implementation
 
-Computing the delta profile takes five passes over the input:
+Computing the delta profile takes six passes over the input:
 
 Pass 1
 * Build a mapping of location IDs to instruction addresses
@@ -29,6 +29,11 @@ Pass 1
 compute differences for
 
 Pass 2
+* For each sample, aggregate the value for the sample. The Go runtime
+heap profile can sometimes contain multiple samples with the same call stack and
+labels, which should actually be aggregated into one sample.
+
+Pass 3
 * Compute the delta values for each sample usings its previous values
 and write them out if this leaves us with at least one non-zero
 values.
@@ -36,16 +41,15 @@ values.
 * Keep track of the locations and strings we need given the samples we
 wrote out.
 
-Pass 3
-* Write out all fields that were referenced by the samples in Pass 2.
-3
-* Write out all fields that were referenced by the samples in Pass 2.
+Pass 4
+* Write out all fields that were referenced by the samples in Pass 3.
+* Write out all fields that were referenced by the samples in Pass 3.
 * Keep track of strings and function ids we need to emit in the next pass.
 
-Pass 4:
+Pass 5
 * Write out the functions we need and keep track of their strings.
 
-Pass 5
+Pass 6
 * Write out all the strings that were referenced by previous passes.
 * For strings not referenced, write out a zero-length byte to save space
 while preserving index references in the included messages
@@ -159,13 +163,15 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 
 	if err := dc.pass1Index(); err != nil {
 		return fmt.Errorf("indexPass: %w", err)
-	} else if err := dc.pass2MergeSamples(); err != nil {
+	} else if err := dc.pass2AggregateSamples(); err != nil {
+		return fmt.Errorf("aggregating samples pass: %w", err)
+	} else if err := dc.pass3MergeSamples(); err != nil {
 		return fmt.Errorf("mergeSamplePass: %w", err)
-	} else if err := dc.pass3WriteAndPruneRecords(); err != nil {
+	} else if err := dc.pass4WriteAndPruneRecords(); err != nil {
 		return fmt.Errorf("writeAndPruneRecordsPass: %w", err)
-	} else if err := dc.pass4WriteFunctions(); err != nil {
+	} else if err := dc.pass5WriteFunctions(); err != nil {
 		return fmt.Errorf("functionPass: %w", err)
-	} else if err := dc.pass5WriteStringTable(); err != nil {
+	} else if err := dc.pass6WriteStringTable(); err != nil {
 		return fmt.Errorf("writeStringTablePass: %w", err)
 	}
 	return nil
@@ -199,7 +205,25 @@ func (dc *DeltaComputer) pass1Index() error {
 	)
 }
 
-func (dc *DeltaComputer) pass2MergeSamples() error {
+func (dc *DeltaComputer) pass2AggregateSamples() error {
+	return dc.decoder.FieldEach(
+		func(f pproflite.Field) error {
+			sample, ok := f.(*pproflite.Sample)
+			if !ok {
+				return fmt.Errorf("indexPass: unexpected field: %T", f)
+			}
+
+			if err := validStrings(sample, dc.strings); err != nil {
+				return err
+			}
+
+			return dc.deltaMap.UpdateSample(sample)
+		},
+		pproflite.SampleDecoder,
+	)
+}
+
+func (dc *DeltaComputer) pass3MergeSamples() error {
 	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
 			sample, ok := f.(*pproflite.Sample)
@@ -229,7 +253,7 @@ func (dc *DeltaComputer) pass2MergeSamples() error {
 	)
 }
 
-func (dc *DeltaComputer) pass3WriteAndPruneRecords() error {
+func (dc *DeltaComputer) pass4WriteAndPruneRecords() error {
 	firstPprof := dc.curProfTimeNanos < 0
 	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
@@ -290,7 +314,7 @@ func (dc *DeltaComputer) pass3WriteAndPruneRecords() error {
 	)
 }
 
-func (dc *DeltaComputer) pass4WriteFunctions() error {
+func (dc *DeltaComputer) pass5WriteFunctions() error {
 	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {
 			fn, ok := f.(*pproflite.Function)
@@ -308,7 +332,7 @@ func (dc *DeltaComputer) pass4WriteFunctions() error {
 	)
 }
 
-func (dc *DeltaComputer) pass5WriteStringTable() error {
+func (dc *DeltaComputer) pass6WriteStringTable() error {
 	counter := 0
 	return dc.decoder.FieldEach(
 		func(f pproflite.Field) error {

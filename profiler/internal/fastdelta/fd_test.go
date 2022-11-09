@@ -25,6 +25,7 @@ import (
 	"github.com/google/pprof/profile"
 	"github.com/richardartoul/molecule"
 	"github.com/richardartoul/molecule/src/protowire"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
@@ -196,6 +197,15 @@ func TestFastDeltaComputer(t *testing.T) {
 			Name:   "heap stress 2",
 			Before: "testdata/stress-failure.2.before.pprof",
 			After:  "testdata/stress-failure.2.after.pprof",
+			Fields: []pprofutils.ValueType{
+				vt("alloc_objects", "count"),
+				vt("alloc_space", "bytes"),
+			},
+		},
+		{
+			Name:   "heap stress 3",
+			Before: "testdata/stress-failure.3.before.pprof",
+			After:  "testdata/stress-failure.3.after.pprof",
 			Fields: []pprofutils.ValueType{
 				vt("alloc_objects", "count"),
 				vt("alloc_space", "bytes"),
@@ -738,30 +748,25 @@ func TestDuplicateSample(t *testing.T) {
 		return buf
 	}
 	a := f("foo", "bar", "abc", "123")
-	b := f("foo", "bar", "abc", "123")
-	c := f("foo", "bar", "abc", "123")
 
 	// double-checks that our generated profiles are valid
 	_, err := profile.ParseData(a)
 	require.NoError(t, err)
-	_, err = profile.ParseData(b)
-	require.NoError(t, err)
-	_, err = profile.ParseData(c)
-	require.NoError(t, err)
 
 	dc := NewDeltaComputer(vt("type", "unit"))
+
 	err = dc.Delta(a, io.Discard)
 	require.NoError(t, err)
-	err = dc.Delta(b, io.Discard)
-	require.NoError(t, err)
-	buf := new(bytes.Buffer)
-	err = dc.Delta(c, buf)
-	require.NoError(t, err)
+	for i := 0; i < 10; i++ {
+		buf := new(bytes.Buffer)
+		err = dc.Delta(a, buf)
+		require.NoError(t, err)
 
-	p, err := profile.ParseData(buf.Bytes())
-	require.NoError(t, err)
-	t.Logf("%v", p)
-	// There should be no samples because we didn't actually change the
-	// profile, just the order of the labels.
-	require.Empty(t, p.Sample)
+		p, err := profile.ParseData(buf.Bytes())
+		require.NoError(t, err)
+		t.Logf("%v", p)
+		// There should be no samples because we didn't actually change the
+		// profile, just the order of the labels.
+		assert.Empty(t, p.Sample)
+	}
 }
