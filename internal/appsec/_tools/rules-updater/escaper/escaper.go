@@ -9,12 +9,8 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
-	"strconv"
 	"text/template"
 )
-
-//go:embed rules.json
-var jsonStr string
 
 //go:embed template.txt
 var ruleGoTemplate string
@@ -32,10 +28,8 @@ func main() {
 	}
 	err = tmpl.Execute(os.Stdout, struct {
 		Version string
-		Rules   string
 	}{
 		Version: os.Args[1],
-		Rules:   strconv.Quote(jsonStr),
 	})
 
 	if err != nil {

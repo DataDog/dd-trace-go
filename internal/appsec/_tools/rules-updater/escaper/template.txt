@@ -8,6 +8,9 @@
 
 package appsec
 
+import _ "embed"
+
 // Static recommended AppSec rule {{.Version}}
 // Source: https://github.com/DataDog/appsec-event-rules/blob/{{.Version}}/build/recommended.json
-const staticRecommendedRule = {{.Rules}}
+//go:embed rules.json
+var staticRecommendedRule string
