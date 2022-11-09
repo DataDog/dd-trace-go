@@ -22,6 +22,7 @@ import (
 const maxSampleValues = 2
 
 type sampleValue [maxSampleValues]int64
+type fullSampleValue [maxSampleValues + 2]int64
 
 func NewDeltaMap(st *stringTable, lx *locationIndex, fields []valueType) *DeltaMap {
 	return &DeltaMap{
@@ -34,8 +35,13 @@ func NewDeltaMap(st *stringTable, lx *locationIndex, fields []valueType) *DeltaM
 }
 
 type combinedSampleValue struct {
-	old     sampleValue
-	new     sampleValue
+	// old tracks the previously observed value for a sample, restricted to
+	// the values for which we want to compute deltas
+	old sampleValue
+	// newFull aggregates the full current value for the sample, as we may
+	// have non-zero values for the non-delta fields in a duplicated sample.
+	// At the very least, we haven't ruled out that possibilty.
+	newFull fullSampleValue
 	written bool
 }
 
@@ -72,22 +78,14 @@ func (dm *DeltaMap) UpdateSample(sample *pproflite.Sample) error {
 		return err
 	}
 
-	var val sampleValue
-	n := 0
-	for i := range sample.Value {
-		if dm.computeDeltaForValue[i] {
-			val[n] = sample.Value[i]
-			n++
-		}
-	}
-
 	var c combinedSampleValue
 	old := dm.m[hash]
 	c.old = old.old
-	for i, v := range old.new {
-		val[i] += v
+	// With duplicate samples, we want to aggregate all of the values,
+	// even the ones we aren't taking deltas for.
+	for i, v := range sample.Value {
+		c.newFull[i] = old.newFull[i] + v
 	}
-	c.new = val
 	dm.m[hash] = c
 	return nil
 }
@@ -117,8 +115,11 @@ func (dm *DeltaMap) Delta(sample *pproflite.Sample) (bool, error) {
 	n := 0
 	for i := range sample.Value {
 		if dm.computeDeltaForValue[i] {
-			sample.Value[i] = c.new[n] - c.old[n]
+			sample.Value[i] = c.newFull[i] - c.old[n]
+			c.old[n] = c.newFull[i]
 			n++
+		} else {
+			sample.Value[i] = c.newFull[i]
 		}
 		if sample.Value[i] != 0 {
 			all0 = false
@@ -126,8 +127,7 @@ func (dm *DeltaMap) Delta(sample *pproflite.Sample) (bool, error) {
 	}
 
 	c.written = true
-	c.old = c.new
-	c.new = sampleValue{}
+	c.newFull = fullSampleValue{}
 	dm.m[hash] = c
 
 	// If the sample has all 0 values, we drop it
