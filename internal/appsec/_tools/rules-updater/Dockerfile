@@ -7,6 +7,5 @@ WORKDIR /home/
 RUN go run writer.go ${VERSION} > rules.go
 
 FROM scratch
-ARG version=1.2.5
 COPY --from=go-format /home/rules.go rules.go
 COPY --from=go-format /home/rules.json rules.json
