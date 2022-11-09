@@ -1,9 +1,34 @@
 {
   "version": "2.2",
   "metadata": {
-    "rules_version": "1.4.0"
+    "rules_version": "1.4.2"
   },
   "rules": [
+    {
+      "id": "blk-001-001",
+      "name": "Block IP Addresses",
+      "tags": {
+        "type": "block_ip",
+        "category": "security_response"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "http.client_ip"
+              }
+            ],
+            "data": "blocked_ips"
+          },
+          "operator": "ip_match"
+        }
+      ],
+      "transformers": [],
+      "on_match": [
+        "block"
+      ]
+    },
     {
       "id": "crs-913-110",
       "name": "Acunetix",
@@ -2829,51 +2854,6 @@
       "transformers": []
     },
     {
-      "id": "crs-941-100",
-      "name": "XSS Attack Detected via libinjection",
-      "tags": {
-        "type": "xss",
-        "crs_id": "941100",
-        "category": "attack_attempt"
-      },
-      "conditions": [
-        {
-          "parameters": {
-            "inputs": [
-              {
-                "address": "server.request.headers.no_cookies",
-                "key_path": [
-                  "user-agent"
-                ]
-              },
-              {
-                "address": "server.request.headers.no_cookies",
-                "key_path": [
-                  "referer"
-                ]
-              },
-              {
-                "address": "server.request.query"
-              },
-              {
-                "address": "server.request.body"
-              },
-              {
-                "address": "server.request.path_params"
-              },
-              {
-                "address": "grpc.server.request.message"
-              }
-            ]
-          },
-          "operator": "is_xss"
-        }
-      ],
-      "transformers": [
-        "removeNulls"
-      ]
-    },
-    {
       "id": "crs-941-110",
       "name": "XSS Filter - Category 1: Script Tag Vector",
       "tags": {
@@ -4337,6 +4317,40 @@
       "transformers": [
         "keys_only"
       ]
+    },
+    {
+      "id": "dog-000-007",
+      "name": "Server side template injection: Velocity & Freemarker",
+      "tags": {
+        "type": "java_code_injection",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "server.request.headers.no_cookies"
+              },
+              {
+                "address": "grpc.server.request.message"
+              }
+            ],
+            "regex": "#(?:set|foreach|macro|parse|if)\\(.*\\)|<#assign.*>"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
     },
     {
       "id": "nfd-000-001",
