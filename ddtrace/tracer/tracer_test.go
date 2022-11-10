@@ -633,28 +633,6 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		defer tracer.Stop()
 		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
 	})
-
-	t.Run("off", func(t *testing.T) {
-		tp := new(testLogger)
-		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
-		defer tracer.Stop()
-		assert.Len(t, removeAppSec(tp.Lines()), 0)
-		s := tracer.StartSpan("op").(*span)
-		_, ok := s.Meta["language"]
-		assert.False(t, ok)
-	})
-
-	t.Run("spans", func(t *testing.T) {
-		tracer := newTracer(WithRuntimeMetrics(), WithServiceName("main"))
-		defer tracer.Stop()
-
-		s := tracer.StartSpan("op").(*span)
-		assert.Equal(t, s.Meta["language"], "go")
-
-		s = tracer.StartSpan("op", ServiceName("secondary")).(*span)
-		_, ok := s.Meta["language"]
-		assert.False(t, ok)
-	})
 }
 
 func TestTracerStartSpanOptions(t *testing.T) {
@@ -987,7 +965,7 @@ func TestNewRootSpanHasPid(t *testing.T) {
 	defer tracer.Stop()
 	root := tracer.newRootSpan("pylons.request", "pylons", "/")
 
-	assert.Equal(strconv.Itoa(os.Getpid()), root.Meta[ext.Pid])
+	assert.Equal(float64(os.Getpid()), root.Metrics[ext.Pid])
 }
 
 func TestNewChildHasNoPid(t *testing.T) {
