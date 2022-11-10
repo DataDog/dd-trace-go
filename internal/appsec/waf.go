@@ -25,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
@@ -82,7 +83,15 @@ func (a *appsec) registerWAF() (unreg dyngo.UnregisterFunc, err error) {
 		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, a.cfg.wafTimeout, a.limiter))
 	}
 
-	a.registerRCCallback((&wafHandleWrapper{waf}).asmDataCallback, rc.ProductASMData)
+	if err := a.registerRCProduct(rc.ProductASMData); err != nil {
+		log.Error("appsec: remoteconfig: cannot register ASM_DATA product: %v", err)
+	}
+	if err := a.registerRCCapability(remoteconfig.ASMIPBlocking); err != nil {
+		log.Error("appsec: remoteconfig: cannot register ip blocking capability: %v", err)
+	}
+	if err := a.registerRCCallback((&wafHandleWrapper{waf}).asmDataCallback, rc.ProductASMData); err != nil {
+		log.Error("appsec: remoteconfig: cannot register ASM_DATA callback: %v", err)
+	}
 
 	// Return an unregistration function that will also release the WAF instance.
 	return func() {
