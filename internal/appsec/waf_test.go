@@ -133,7 +133,7 @@ func TestWAF(t *testing.T) {
                            ,"scores":[]
                        },
                    "additionalInfo":{
-                       "codeSnippetValue":"<!-- Google Tag Manager (noscript) -->\r\n<iframe src=\"https://www.googletagmanager.com/ns.html?id=GTM-PCVXQNM\"\r\nheight=\"0\" width=\"0\" style=\"display:none"
+                       "codeSnippetValue":"<!-- Google Tag Manager (noscript) -->\r\n<embed src=\"https://www.googletagmanager.com/ns.html?id=GTM-PCVXQNM\"\r\nheight=\"0\" width=\"0\" style=\"display:none"
                    }
                }
            }
@@ -167,7 +167,7 @@ func TestWAF(t *testing.T) {
 		event := finished[0].Tag("_dd.appsec.json")
 		require.NotNil(t, event)
 		require.Contains(t, event, "crs-942-270") // SQLi
-		require.Contains(t, event, "crs-941-100") // XSS
+		require.Contains(t, event, "crs-941-230") // XSS
 		require.NotContains(t, event, sensitiveParamKeyValue)
 		require.NotContains(t, event, sensitivePayloadValue)
 	})
