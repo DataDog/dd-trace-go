@@ -102,12 +102,17 @@ func TestUnary(t *testing.T) {
 			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
 			assert.Equal(clientSpan.Tag(tagMethodKind), methodKindUnary)
+			assert.Equal(clientSpan.Tag(ext.Component), "grpc-go")
+			assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 			assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
 			assert.Equal(serverSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
 			assert.Equal(serverSpan.Tag(tagMethodKind), methodKindUnary)
 			assert.Equal(serverSpan.Tag(tagRequest), tt.wantReqTag)
+			assert.Equal(serverSpan.Tag(ext.Component), "grpc-go")
+			assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
+
 		})
 	}
 }
@@ -140,6 +145,8 @@ func TestStreaming(t *testing.T) {
 		}
 		assert.NotNil(t, rootSpan)
 		for _, span := range spans {
+			//assert.Equal(t, 1, 2,
+			//	"expected span to to have its trace id set to the root trace id %v", span)
 			if span != rootSpan {
 				assert.Equal(t, rootSpan.TraceID(), span.TraceID(),
 					"expected span to to have its trace id set to the root trace id (%d): %v",
@@ -151,7 +158,6 @@ func TestStreaming(t *testing.T) {
 					"expected service name to be grpc in span: %v",
 					span)
 			}
-
 			switch span.OperationName() {
 			case "grpc.client":
 				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost),
@@ -178,6 +184,25 @@ func TestStreaming(t *testing.T) {
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethodName),
 					"expected grpc method name to be set in span: %v", span)
 			}
+
+			switch span.OperationName() { //checks spankind and component without fallthrough
+			case "grpc.client":
+				assert.Equal(t, "grpc-go", span.Tag(ext.Component),
+					" expected component to be grpc-go in span %v", span)
+				assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind),
+					" expected spankind to be client in span %v", span)
+			case "grpc.server":
+				assert.Equal(t, "grpc-go", span.Tag(ext.Component),
+					" expected component to be grpc-go in span %v", span)
+				assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind),
+					" expected spankind to be server in span %v, %v", span, span.OperationName())
+			case "grpc.message":
+				assert.Equal(t, "grpc-go", span.Tag(ext.Component),
+					" expected component to be grpc-go in span %v", span)
+				assert.NotContains(t, span.Tags(), ext.SpanKind,
+					" expected no spankind tag to be in span %v", span)
+			}
+
 		}
 	}
 
