@@ -43,7 +43,6 @@ wrote out.
 
 Pass 4
 * Write out all fields that were referenced by the samples in Pass 3.
-* Write out all fields that were referenced by the samples in Pass 3.
 * Keep track of strings and function ids we need to emit in the next pass.
 
 Pass 5
