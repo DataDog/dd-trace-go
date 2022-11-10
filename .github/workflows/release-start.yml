@@ -1,4 +1,4 @@
-name: Release / Start a new release
+name: Release / Start a new minor release
 
 on:
   workflow_dispatch:
@@ -40,7 +40,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.current }}
           BRANCH: release-${{ steps.version.outputs.current_without_patch}}
         run: |
-          url=$(gh release create $VERSION --title $VERSION --draft --generate-notes --target $BRANCH)
+          url=$(gh release create $VERSION --title="$VERSION" --draft --generate-notes --target="$BRANCH" --notes-start-tag="${{ steps.version.outputs.current }}")
           echo $url
           echo "::set-output name=url::$url"
 
