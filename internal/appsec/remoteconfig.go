@@ -120,7 +120,7 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 		}
 	}
 
-	payload, err := json.Marshal(rc.ASMDataRulesData{RulesData: rulesData})
+	payload, err := json.Marshal(rulesData)
 	if err != nil {
 		log.Debug("appsec: remoteconfig: could not marshal the merged rules data")
 	} else if err := h.UpdateRuleData(payload); err != nil {
@@ -176,7 +176,7 @@ func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
 }
 
 func (a *appsec) registerRCCallback(c remoteconfig.Callback, product string) error {
-	if a.rc != nil {
+	if a.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
 	a.rc.RegisterCallback(c, product)
