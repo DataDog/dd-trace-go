@@ -21,7 +21,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
-func TestWrapRoundTripper_allow_nil_transport(t *testing.T) {
+func TestWrapRoundTripperAllowNilTransport(t *testing.T) {
 	assert := assert.New(t)
 
 	httpClient := &http.Client{}
