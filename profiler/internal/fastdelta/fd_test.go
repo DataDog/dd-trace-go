@@ -19,13 +19,13 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"strings"
-
 	"testing"
 	"time"
 
 	"github.com/google/pprof/profile"
 	"github.com/richardartoul/molecule"
 	"github.com/richardartoul/molecule/src/protowire"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
@@ -182,6 +182,35 @@ func TestFastDeltaComputer(t *testing.T) {
 				vt("delay", "nanoseconds"),
 			},
 		},
+		// The following tests were generated through
+		// TestRepeatedHeapProfile failures.
+		{
+			Name:   "heap stress",
+			Before: "testdata/stress-failure.before.pprof",
+			After:  "testdata/stress-failure.after.pprof",
+			Fields: []pprofutils.ValueType{
+				vt("alloc_objects", "count"),
+				vt("alloc_space", "bytes"),
+			},
+		},
+		{
+			Name:   "heap stress 2",
+			Before: "testdata/stress-failure.2.before.pprof",
+			After:  "testdata/stress-failure.2.after.pprof",
+			Fields: []pprofutils.ValueType{
+				vt("alloc_objects", "count"),
+				vt("alloc_space", "bytes"),
+			},
+		},
+		{
+			Name:   "heap stress 3",
+			Before: "testdata/stress-failure.3.before.pprof",
+			After:  "testdata/stress-failure.3.after.pprof",
+			Fields: []pprofutils.ValueType{
+				vt("alloc_objects", "count"),
+				vt("alloc_space", "bytes"),
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -224,7 +253,9 @@ func TestFastDeltaComputer(t *testing.T) {
 				t.Errorf("want: %v", golden)
 			}
 
-			require.Equal(t, tc.Duration, delta.DurationNanos)
+			if tc.Duration != 0 {
+				require.Equal(t, tc.Duration, delta.DurationNanos)
+			}
 		})
 	}
 }
@@ -612,8 +643,130 @@ func TestRepeatedHeapProfile(t *testing.T) {
 			now := time.Now().Format(time.RFC3339)
 			os.WriteFile(fmt.Sprintf("failure-before-%s", now), before, 0660)
 			os.WriteFile(fmt.Sprintf("failure-after-%s", now), after, 0660)
-			t.FailNow()
 		}
 		before = after
+	}
+}
+
+func TestDuplicateSample(t *testing.T) {
+	f := func(labels ...string) []byte {
+		var err error
+		b := new(bytes.Buffer)
+		ps := molecule.NewProtoStream(b)
+		err = ps.Embedded(1, func(ps *molecule.ProtoStream) error {
+			// sample_type
+			err = ps.Int64(1, 1) // type
+			require.NoError(t, err)
+			err = ps.Int64(2, 2) // unit
+			require.NoError(t, err)
+			return nil
+		})
+		require.NoError(t, err)
+		err = ps.Embedded(11, func(ps *molecule.ProtoStream) error {
+			// period_type
+			err = ps.Int64(1, 1) // type
+			require.NoError(t, err)
+			err = ps.Int64(2, 2) // unit
+			require.NoError(t, err)
+			return nil
+		})
+		require.NoError(t, err)
+		err = ps.Int64(12, 1) // period
+		require.NoError(t, err)
+		err = ps.Int64(9, 1) // time_nanos
+		require.NoError(t, err)
+		err = ps.Embedded(4, func(ps *molecule.ProtoStream) error {
+			// location
+			err = ps.Uint64(1, 1) // location ID
+			require.NoError(t, err)
+			err = ps.Uint64(2, 1) // mapping ID
+			require.NoError(t, err)
+			err = ps.Uint64(3, 0x42) // address
+			require.NoError(t, err)
+			return nil
+		})
+		require.NoError(t, err)
+		err = ps.Embedded(2, func(ps *molecule.ProtoStream) error {
+			// samples
+			err = ps.Uint64(1, 1) // location ID
+			require.NoError(t, err)
+			err = ps.Uint64(2, 1) // value
+			require.NoError(t, err)
+			for i := 0; i < len(labels); i += 2 {
+				err = ps.Embedded(3, func(ps *molecule.ProtoStream) error {
+					err = ps.Uint64(1, uint64(i)+3) // key strtab offset
+					require.NoError(t, err)
+					err = ps.Uint64(2, uint64(i)+4) // str strtab offset
+					require.NoError(t, err)
+					return nil
+				})
+				require.NoError(t, err)
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		err = ps.Embedded(2, func(ps *molecule.ProtoStream) error {
+			// samples
+			err = ps.Uint64(1, 1) // location ID
+			require.NoError(t, err)
+			err = ps.Uint64(2, 1) // value
+			require.NoError(t, err)
+			for i := 0; i < len(labels); i += 2 {
+				err = ps.Embedded(3, func(ps *molecule.ProtoStream) error {
+					err = ps.Uint64(1, uint64(i)+3) // key strtab offset
+					require.NoError(t, err)
+					err = ps.Uint64(2, uint64(i)+4) // str strtab offset
+					require.NoError(t, err)
+					return nil
+				})
+				require.NoError(t, err)
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		err = ps.Embedded(3, func(ps *molecule.ProtoStream) error {
+			// mapping
+			err = ps.Uint64(1, 1) // ID
+			require.NoError(t, err)
+			return nil
+		})
+		require.NoError(t, err)
+		// don't need functions
+		buf := b.Bytes()
+		writeString := func(s string) {
+			buf = protowire.AppendVarint(buf, (6<<3)|2)
+			buf = protowire.AppendVarint(buf, uint64(len(s)))
+			buf = append(buf, s...)
+		}
+		writeString("")     // 0 -- molecule doesn't let you write 0-length with ProtoStream
+		writeString("type") // 1
+		writeString("unit") // 2
+		for i := 0; i < len(labels); i += 2 {
+			writeString(labels[i])
+			writeString(labels[i+1])
+		}
+		return buf
+	}
+	a := f("foo", "bar", "abc", "123")
+
+	// double-checks that our generated profiles are valid
+	_, err := profile.ParseData(a)
+	require.NoError(t, err)
+
+	dc := NewDeltaComputer(vt("type", "unit"))
+
+	err = dc.Delta(a, io.Discard)
+	require.NoError(t, err)
+	for i := 0; i < 10; i++ {
+		buf := new(bytes.Buffer)
+		err = dc.Delta(a, buf)
+		require.NoError(t, err)
+
+		p, err := profile.ParseData(buf.Bytes())
+		require.NoError(t, err)
+		t.Logf("%v", p)
+		// There should be no samples because we didn't actually change the
+		// profile, just the order of the labels.
+		assert.Empty(t, p.Sample)
 	}
 }
