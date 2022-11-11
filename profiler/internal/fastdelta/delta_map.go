@@ -24,6 +24,7 @@ const maxSampleValues = 2
 type sampleValue [maxSampleValues]int64
 type fullSampleValue [maxSampleValues + 2]int64
 
+// NewDeltaMap ...
 func NewDeltaMap(st *stringTable, lx *locationIndex, fields []valueType) *DeltaMap {
 	return &DeltaMap{
 		h:                    Hasher{alg: murmur3.New128(), st: st, lx: lx},
@@ -45,6 +46,7 @@ type combinedSampleValue struct {
 	written bool
 }
 
+// DeltaMap ...
 type DeltaMap struct {
 	h  Hasher
 	m  map[Hash]combinedSampleValue
@@ -58,16 +60,19 @@ type DeltaMap struct {
 	valueTypeIndices [][2]int
 }
 
+// Reset ...
 func (dm *DeltaMap) Reset() {
 	dm.valueTypeIndices = dm.valueTypeIndices[:0]
 	dm.computeDeltaForValue = dm.computeDeltaForValue[:0]
 }
 
+// AddSampleType ...
 func (dm *DeltaMap) AddSampleType(st *pproflite.SampleType) error {
 	dm.valueTypeIndices = append(dm.valueTypeIndices, [2]int{int(st.Type), int(st.Unit)})
 	return nil
 }
 
+// UpdateSample ...
 func (dm *DeltaMap) UpdateSample(sample *pproflite.Sample) error {
 	if err := dm.prepare(); err != nil {
 		return err

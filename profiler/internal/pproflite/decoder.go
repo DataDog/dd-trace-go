@@ -12,6 +12,7 @@ import (
 	"github.com/richardartoul/molecule/src/codec"
 )
 
+// FieldDecoder ...
 type FieldDecoder int
 
 // Important: For fields with multiple decoders, list the default
@@ -40,12 +41,14 @@ type decoder interface {
 	decode(molecule.Value) error
 }
 
+// NewDecoder ...
 func NewDecoder(input []byte) *Decoder {
 	d := &Decoder{}
 	d.Reset(input)
 	return d
 }
 
+// Decoder ...
 type Decoder struct {
 	decoders []decoder
 	input    []byte
@@ -67,12 +70,13 @@ type Decoder struct {
 	defaultSampleType DefaultSampleType // 14
 }
 
+// Reset ...
 func (d *Decoder) Reset(input []byte) {
 	d.input = input
 }
 
-// FieldEachOld invokes fn for every decoded Field. If filters are provided,
-// only fields matching the filters will be decoded.
+// FieldEach invokes fn for every decoded Field. If filters are provided, only
+// fields matching the filters will be decoded.
 func (d *Decoder) FieldEach(fn func(Field) error, filter ...FieldDecoder) error {
 	if err := d.applyFilter(filter...); err != nil {
 		return err

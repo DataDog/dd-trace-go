@@ -22,17 +22,20 @@ type primtiveEncoder interface {
 	encodePrimitive(*molecule.ProtoStream) error
 }
 
+// NewEncoder ...
 func NewEncoder(w io.Writer) *Encoder {
 	e := &Encoder{}
 	e.Reset(w)
 	return e
 }
 
+// Encoder ...
 type Encoder struct {
 	outWriter io.Writer
 	outStream *molecule.ProtoStream
 }
 
+// Reset ...
 func (e *Encoder) Reset(w io.Writer) {
 	e.outWriter = w
 	if e.outStream == nil {
@@ -42,6 +45,7 @@ func (e *Encoder) Reset(w io.Writer) {
 	}
 }
 
+// Encode ...
 func (e *Encoder) Encode(f Field) error {
 	switch t := f.(type) {
 	case encoder:

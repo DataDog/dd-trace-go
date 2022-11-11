@@ -25,6 +25,7 @@ func (h byHash) Len() int           { return len(h) }
 func (h byHash) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 func (h byHash) Less(i, j int) bool { return bytes.Compare(h[i][:], h[j][:]) == -1 }
 
+// Hasher ...
 type Hasher struct {
 	alg murmur3.Hash128
 	st  *stringTable
@@ -35,6 +36,7 @@ type Hasher struct {
 	scratchHash Hash
 }
 
+// Sample ...
 func (h *Hasher) Sample(s *pproflite.Sample) (Hash, error) {
 	h.labelHashes = h.labelHashes[:0]
 	for i := range s.Label {

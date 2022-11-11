@@ -105,7 +105,7 @@ type Mapping struct {
 	BuildID         int64
 	HasFunctions    bool
 	HasFilenames    bool
-	HasLine_numbers bool
+	HasLineNumbers  bool
 	HasInlineFrames bool
 }
 
@@ -122,7 +122,7 @@ func (f *Mapping) fields() []interface{} {
 		&f.BuildID,
 		&f.HasFunctions,
 		&f.HasFilenames,
-		&f.HasLine_numbers,
+		&f.HasLineNumbers,
 		&f.HasInlineFrames,
 	}
 }
@@ -193,7 +193,7 @@ type LocationFast struct {
 	Data       []byte
 }
 
-func (l LocationFast) field() int { return 4 }
+func (f LocationFast) field() int { return 4 }
 
 func (f *LocationFast) decode(val molecule.Value) error {
 	*f = LocationFast{FunctionID: f.FunctionID[:0]}
