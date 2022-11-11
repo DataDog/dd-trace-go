@@ -12,16 +12,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/pprof/profile"
 	"github.com/richardartoul/molecule"
 	"github.com/richardartoul/molecule/src/protowire"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
@@ -30,40 +34,151 @@ import (
 const heapFile = "heap.pprof"
 const bigHeapFile = "big-heap.pprof"
 
-func BenchmarkFastDelta(b *testing.B) {
-	for _, f := range []string{heapFile, bigHeapFile} {
-		testFile := "testdata/" + f
-		b.Run(testFile, func(b *testing.B) {
-			b.ReportAllocs()
-			before, err := os.ReadFile(testFile)
-			if err != nil {
-				b.Fatal(err)
-			}
-			after, err := os.ReadFile(testFile)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.ResetTimer()
+// retain prevents GC-collection of the data structures used during
+// benchmarking. This is allows us to report heap-inuse-B/op and to take
+// useful -memprofile=mem.pprof profiles.
+var retain struct {
+	DC   *DeltaComputer
+	Prev *profile.Profile
+}
 
-			buf := new(bytes.Buffer)
-			for i := 0; i < b.N; i++ {
-				buf.Reset()
-				dc := NewDeltaComputer(
-					vt("alloc_objects", "count"),
-					vt("alloc_space", "bytes"),
-				)
-				err := dc.Delta(before, io.Discard)
+var implementations = []struct {
+	Name string
+	Func func() func([]byte, io.Writer) error
+}{
+	{
+		Name: "fastdelta",
+		Func: func() func([]byte, io.Writer) error {
+			dc := NewDeltaComputer(
+				vt("alloc_objects", "count"),
+				vt("alloc_space", "bytes"),
+			)
+			retain.DC = dc
+			return func(prof []byte, w io.Writer) error {
+				return dc.Delta(prof, w)
+			}
+		},
+	},
+	{
+		Name: "pprof",
+		Func: func() func([]byte, io.Writer) error {
+			var prev *profile.Profile
+			return func(b []byte, w io.Writer) error {
+				prof, err := profile.ParseData(b)
 				if err != nil {
-					b.Fatal(err)
+					return err
 				}
-				err = dc.Delta(after, buf)
-				if err != nil {
-					b.Fatal(err)
+				delta := prof
+				if prev != nil {
+					if err := prev.ScaleN([]float64{-1, -1, 0, 0}); err != nil {
+						return err
+					} else if delta, err = profile.Merge([]*profile.Profile{prev, prof}); err != nil {
+						return err
+					} else if err := delta.WriteUncompressed(w); err != nil {
+						return err
+					}
+				} else if _, err := w.Write(b); err != nil {
+					return err
 				}
-				sink = buf.Bytes()
+				prev = prof
+				retain.Prev = prev
+				return nil
+			}
+		},
+	},
+}
+
+// dc is a package var so we can look at the heap profile after benchmarking to
+// understand heap in-use.
+// IMPORTANT: Use with -memprofilerate=1 to get useful values.
+var dc *DeltaComputer
+
+func BenchmarkDelta(b *testing.B) {
+	for _, impl := range implementations {
+		b.Run(impl.Name, func(b *testing.B) {
+			for _, f := range []string{heapFile, bigHeapFile} {
+				testFile := filepath.Join("testdata", f)
+				b.Run(f, func(b *testing.B) {
+					before, err := os.ReadFile(testFile)
+					if err != nil {
+						b.Fatal(err)
+					}
+					after, err := os.ReadFile(testFile)
+					if err != nil {
+						b.Fatal(err)
+					}
+
+					b.Run("setup", func(b *testing.B) {
+						b.SetBytes(int64(len(before)))
+						b.ReportAllocs()
+
+						for i := 0; i < b.N; i++ {
+							deltaFn := impl.Func()
+							if err := deltaFn(before, io.Discard); err != nil {
+								b.Fatal(err)
+							} else if err := deltaFn(after, io.Discard); err != nil {
+								b.Fatal(err)
+							}
+						}
+					})
+
+					b.Run("steady-state", func(b *testing.B) {
+						b.SetBytes(int64(len(before)))
+						b.ReportAllocs()
+
+						deltaFn := impl.Func()
+						if err := deltaFn(before, io.Discard); err != nil {
+							b.Fatal(err)
+						}
+
+						b.ResetTimer()
+						for i := 0; i < b.N; i++ {
+							if err := deltaFn(after, ioutil.Discard); err != nil {
+								b.Fatal(err)
+							}
+						}
+						b.StopTimer()
+						reportHeapUsage(b)
+					})
+				})
 			}
 		})
 	}
+}
+
+// reportHeapUsage reports how much heap memory is used by the fastdelta
+// implementation.
+// IMPORTANT: Use with -memprofilerate=1 to get useful values.
+func reportHeapUsage(b *testing.B) {
+	// force GC often enough so that our heap profile is up-to-date.
+	// TODO(fg) not sure if this needs to be 2 or 3 times ...
+	runtime.GC()
+	runtime.GC()
+	runtime.GC()
+
+	var buf bytes.Buffer
+	pprof.Lookup("heap").WriteTo(&buf, 0)
+	profile, err := profile.Parse(&buf)
+	require.NoError(b, err)
+
+	var sum float64
+nextSample:
+	for _, s := range profile.Sample {
+		if s.Value[3] == 0 {
+			continue
+		}
+		for _, loc := range s.Location {
+			for _, line := range loc.Line {
+				if strings.Contains(line.Function.Name, "profiler/internal/fastdelta.(*DeltaComputer)") ||
+					strings.Contains(line.Function.Name, "github.com/google/pprof") {
+					sum += float64(s.Value[3])
+					continue nextSample
+				}
+			}
+		}
+	}
+
+	b.ReportMetric(sum, "heap-inuse-B/op")
 }
 
 func BenchmarkMakeGolden(b *testing.B) {
@@ -120,6 +235,35 @@ func TestFastDeltaComputer(t *testing.T) {
 				vt("delay", "nanoseconds"),
 			},
 		},
+		// The following tests were generated through
+		// TestRepeatedHeapProfile failures.
+		{
+			Name:   "heap stress",
+			Before: "testdata/stress-failure.before.pprof",
+			After:  "testdata/stress-failure.after.pprof",
+			Fields: []pprofutils.ValueType{
+				vt("alloc_objects", "count"),
+				vt("alloc_space", "bytes"),
+			},
+		},
+		{
+			Name:   "heap stress 2",
+			Before: "testdata/stress-failure.2.before.pprof",
+			After:  "testdata/stress-failure.2.after.pprof",
+			Fields: []pprofutils.ValueType{
+				vt("alloc_objects", "count"),
+				vt("alloc_space", "bytes"),
+			},
+		},
+		{
+			Name:   "heap stress 3",
+			Before: "testdata/stress-failure.3.before.pprof",
+			After:  "testdata/stress-failure.3.after.pprof",
+			Fields: []pprofutils.ValueType{
+				vt("alloc_objects", "count"),
+				vt("alloc_space", "bytes"),
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -162,7 +306,9 @@ func TestFastDeltaComputer(t *testing.T) {
 				t.Errorf("want: %v", golden)
 			}
 
-			require.Equal(t, tc.Duration, delta.DurationNanos)
+			if tc.Duration != 0 {
+				require.Equal(t, tc.Duration, delta.DurationNanos)
+			}
 		})
 	}
 }
@@ -216,19 +362,21 @@ func TestCompaction(t *testing.T) {
 	dc := NewDeltaComputer(
 		vt("alloc_objects", "count"),
 		vt("alloc_space", "bytes"),
-		vt("inuse_objects", "count"),
-		vt("inuse_space", "bytes"),
 	)
 	buf := new(bytes.Buffer)
 	err = dc.Delta(zeroDeltaBuf.Bytes(), buf)
 	zeroDeltaBytes := buf.Bytes()
 	require.NoError(t, err)
-	require.Len(t, zeroDeltaBytes, zeroDeltaBuf.Len())
+	require.Equal(t, zeroDeltaBuf.Len(), len(zeroDeltaBytes))
 
 	// when
 
 	// create a value delta
 	require.NoError(t, err)
+	for _, s := range zeroDeltaPprof.Sample {
+		s.Value[2] = 0
+		s.Value[3] = 0
+	}
 	zeroDeltaPprof.Sample[0].Value[0] += 42
 	bufNext := &bytes.Buffer{}
 	require.NoError(t, zeroDeltaPprof.WriteUncompressed(bufNext))
@@ -548,8 +696,130 @@ func TestRepeatedHeapProfile(t *testing.T) {
 			now := time.Now().Format(time.RFC3339)
 			os.WriteFile(fmt.Sprintf("failure-before-%s", now), before, 0660)
 			os.WriteFile(fmt.Sprintf("failure-after-%s", now), after, 0660)
-			t.FailNow()
 		}
 		before = after
+	}
+}
+
+func TestDuplicateSample(t *testing.T) {
+	f := func(labels ...string) []byte {
+		var err error
+		b := new(bytes.Buffer)
+		ps := molecule.NewProtoStream(b)
+		err = ps.Embedded(1, func(ps *molecule.ProtoStream) error {
+			// sample_type
+			err = ps.Int64(1, 1) // type
+			require.NoError(t, err)
+			err = ps.Int64(2, 2) // unit
+			require.NoError(t, err)
+			return nil
+		})
+		require.NoError(t, err)
+		err = ps.Embedded(11, func(ps *molecule.ProtoStream) error {
+			// period_type
+			err = ps.Int64(1, 1) // type
+			require.NoError(t, err)
+			err = ps.Int64(2, 2) // unit
+			require.NoError(t, err)
+			return nil
+		})
+		require.NoError(t, err)
+		err = ps.Int64(12, 1) // period
+		require.NoError(t, err)
+		err = ps.Int64(9, 1) // time_nanos
+		require.NoError(t, err)
+		err = ps.Embedded(4, func(ps *molecule.ProtoStream) error {
+			// location
+			err = ps.Uint64(1, 1) // location ID
+			require.NoError(t, err)
+			err = ps.Uint64(2, 1) // mapping ID
+			require.NoError(t, err)
+			err = ps.Uint64(3, 0x42) // address
+			require.NoError(t, err)
+			return nil
+		})
+		require.NoError(t, err)
+		err = ps.Embedded(2, func(ps *molecule.ProtoStream) error {
+			// samples
+			err = ps.Uint64(1, 1) // location ID
+			require.NoError(t, err)
+			err = ps.Uint64(2, 1) // value
+			require.NoError(t, err)
+			for i := 0; i < len(labels); i += 2 {
+				err = ps.Embedded(3, func(ps *molecule.ProtoStream) error {
+					err = ps.Uint64(1, uint64(i)+3) // key strtab offset
+					require.NoError(t, err)
+					err = ps.Uint64(2, uint64(i)+4) // str strtab offset
+					require.NoError(t, err)
+					return nil
+				})
+				require.NoError(t, err)
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		err = ps.Embedded(2, func(ps *molecule.ProtoStream) error {
+			// samples
+			err = ps.Uint64(1, 1) // location ID
+			require.NoError(t, err)
+			err = ps.Uint64(2, 1) // value
+			require.NoError(t, err)
+			for i := 0; i < len(labels); i += 2 {
+				err = ps.Embedded(3, func(ps *molecule.ProtoStream) error {
+					err = ps.Uint64(1, uint64(i)+3) // key strtab offset
+					require.NoError(t, err)
+					err = ps.Uint64(2, uint64(i)+4) // str strtab offset
+					require.NoError(t, err)
+					return nil
+				})
+				require.NoError(t, err)
+			}
+			return nil
+		})
+		require.NoError(t, err)
+		err = ps.Embedded(3, func(ps *molecule.ProtoStream) error {
+			// mapping
+			err = ps.Uint64(1, 1) // ID
+			require.NoError(t, err)
+			return nil
+		})
+		require.NoError(t, err)
+		// don't need functions
+		buf := b.Bytes()
+		writeString := func(s string) {
+			buf = protowire.AppendVarint(buf, (6<<3)|2)
+			buf = protowire.AppendVarint(buf, uint64(len(s)))
+			buf = append(buf, s...)
+		}
+		writeString("")     // 0 -- molecule doesn't let you write 0-length with ProtoStream
+		writeString("type") // 1
+		writeString("unit") // 2
+		for i := 0; i < len(labels); i += 2 {
+			writeString(labels[i])
+			writeString(labels[i+1])
+		}
+		return buf
+	}
+	a := f("foo", "bar", "abc", "123")
+
+	// double-checks that our generated profiles are valid
+	_, err := profile.ParseData(a)
+	require.NoError(t, err)
+
+	dc := NewDeltaComputer(vt("type", "unit"))
+
+	err = dc.Delta(a, io.Discard)
+	require.NoError(t, err)
+	for i := 0; i < 10; i++ {
+		buf := new(bytes.Buffer)
+		err = dc.Delta(a, buf)
+		require.NoError(t, err)
+
+		p, err := profile.ParseData(buf.Bytes())
+		require.NoError(t, err)
+		t.Logf("%v", p)
+		// There should be no samples because we didn't actually change the
+		// profile, just the order of the labels.
+		assert.Empty(t, p.Sample)
 	}
 }

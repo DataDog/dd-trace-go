@@ -8,27 +8,17 @@ package fastdelta
 // locationIndex links location IDs to the addresses, mappings, and function
 // IDs referenced by the location
 type locationIndex struct {
-	fastTable   []location
-	slowTable   map[uint64]location
-	functionIDs []uint64
+	fastTable []location
+	slowTable map[uint64]location
 }
 
 type location struct {
-	address     uint64
-	mappingID   uint64
-	functionIDs funcIDSlice
-}
-
-// funcIDSlice describes a sub-slice of locationIndex.functionIds. It's 1/3
-// more compact than a real slice because we don't need a capacity field.
-type funcIDSlice struct {
-	start int
-	end   int
+	address  uint64
+	included bool
 }
 
 func (l *locationIndex) Reset() {
 	l.fastTable = l.fastTable[:0]
-	l.functionIDs = l.functionIDs[:0]
 	for k := range l.slowTable {
 		delete(l.slowTable, k)
 	}
@@ -36,11 +26,8 @@ func (l *locationIndex) Reset() {
 
 // Insert associates the given address, mapping ID, and function IDs with the
 // given location ID
-func (l *locationIndex) Insert(id, address, mappingID uint64, functionIDs []uint64) {
-	loc := location{address: address, mappingID: mappingID}
-	loc.functionIDs.start = len(l.functionIDs)
-	l.functionIDs = append(l.functionIDs, functionIDs...)
-	loc.functionIDs.end = len(l.functionIDs)
+func (l *locationIndex) Insert(id, address uint64) {
+	loc := location{address: address}
 	if l.slowTable == nil && id == uint64(len(l.fastTable)+1) {
 		l.fastTable = append(l.fastTable, loc)
 	} else {
@@ -54,17 +41,32 @@ func (l *locationIndex) Insert(id, address, mappingID uint64, functionIDs []uint
 	}
 }
 
+func (l *locationIndex) MarkIncluded(id uint64) {
+	// TODO(fg) duplicated with get() function below
+	if l.slowTable == nil {
+		id--
+		if id >= uint64(len(l.fastTable)) {
+			return
+		}
+		l.fastTable[id].included = true
+	} else {
+		loc, ok := l.slowTable[id]
+		if ok {
+			loc.included = true
+			l.slowTable[id] = loc
+		}
+	}
+}
+
+func (l *locationIndex) Included(id uint64) bool {
+	loc, _ := l.get(id)
+	return loc.included
+}
+
 // Get returns the address associated with the given location ID
 func (l *locationIndex) Get(id uint64) (uint64, bool) {
 	loc, ok := l.get(id)
 	return loc.address, ok
-}
-
-// GetMeta returns the mapping ID and function IDs associated with
-// the given location ID
-func (l *locationIndex) GetMeta(id uint64) (mappingID uint64, functionIDs []uint64, ok bool) {
-	loc, ok := l.get(id)
-	return loc.mappingID, l.functionIDs[loc.functionIDs.start:loc.functionIDs.end], ok
 }
 
 func (l *locationIndex) get(id uint64) (loc location, ok bool) {
