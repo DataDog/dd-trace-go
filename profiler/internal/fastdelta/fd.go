@@ -189,8 +189,8 @@ func (dc *DeltaComputer) pass1Index() error {
 				dc.locationIndex.Insert(t.ID, t.Address)
 			case *pproflite.StringTable:
 				dc.strings.Add(t.Value)
-				// always include the zero-index empty string,
-				// otherwise exclude by default unless used by a kept sample in mergeSamplesPass
+				// always include the zero-index empty string, otherwise exclude by
+				// default unless used by a kept sample in pass3MergeSamples
 				dc.includedStrings.Append(strIdx == 0)
 				strIdx++
 			default:
