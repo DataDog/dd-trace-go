@@ -34,62 +34,114 @@ import (
 const heapFile = "heap.pprof"
 const bigHeapFile = "big-heap.pprof"
 
+// retain prevents GC-collection of the data structures used during
+// benchmarking. This is allows us to report heap-inuse-B/op and to take
+// useful -memprofile=mem.pprof profiles.
+var retain struct {
+	DC   *DeltaComputer
+	Prev *profile.Profile
+}
+
+var implementations = []struct {
+	Name string
+	Func func() func([]byte, io.Writer) error
+}{
+	{
+		Name: "fastdelta",
+		Func: func() func([]byte, io.Writer) error {
+			dc := NewDeltaComputer(
+				vt("alloc_objects", "count"),
+				vt("alloc_space", "bytes"),
+			)
+			retain.DC = dc
+			return func(prof []byte, w io.Writer) error {
+				return dc.Delta(prof, w)
+			}
+		},
+	},
+	{
+		Name: "pprof",
+		Func: func() func([]byte, io.Writer) error {
+			var prev *profile.Profile
+			return func(b []byte, w io.Writer) error {
+				prof, err := profile.ParseData(b)
+				if err != nil {
+					return err
+				}
+				delta := prof
+				if prev != nil {
+					if err := prev.ScaleN([]float64{-1, -1, 0, 0}); err != nil {
+						return err
+					} else if delta, err = profile.Merge([]*profile.Profile{prev, prof}); err != nil {
+						return err
+					} else if err := delta.WriteUncompressed(w); err != nil {
+						return err
+					}
+				} else if _, err := w.Write(b); err != nil {
+					return err
+				}
+				prev = prof
+				retain.Prev = prev
+				return nil
+			}
+		},
+	},
+}
+
 // dc is a package var so we can look at the heap profile after benchmarking to
 // understand heap in-use.
 // IMPORTANT: Use with -memprofilerate=1 to get useful values.
 var dc *DeltaComputer
 
-func BenchmarkFastDelta(b *testing.B) {
-	for _, f := range []string{heapFile, bigHeapFile} {
-		testFile := filepath.Join("testdata", f)
-		b.Run(testFile, func(b *testing.B) {
-			before, err := os.ReadFile(testFile)
-			if err != nil {
-				b.Fatal(err)
-			}
-			after, err := os.ReadFile(testFile)
-			if err != nil {
-				b.Fatal(err)
-			}
-
-			b.Run("setup", func(b *testing.B) {
-				b.SetBytes(int64(len(before)))
-				b.ReportAllocs()
-
-				for i := 0; i < b.N; i++ {
-					dc := NewDeltaComputer(
-						vt("alloc_objects", "count"),
-						vt("alloc_space", "bytes"),
-					)
-					if err := dc.Delta(before, io.Discard); err != nil {
-						b.Fatal(err)
-					} else if err = dc.Delta(after, ioutil.Discard); err != nil {
+func BenchmarkDelta(b *testing.B) {
+	for _, impl := range implementations {
+		b.Run(impl.Name, func(b *testing.B) {
+			for _, f := range []string{heapFile, bigHeapFile} {
+				testFile := filepath.Join("testdata", f)
+				b.Run(f, func(b *testing.B) {
+					before, err := os.ReadFile(testFile)
+					if err != nil {
 						b.Fatal(err)
 					}
-				}
-			})
-
-			b.Run("steady-state", func(b *testing.B) {
-				b.SetBytes(int64(len(before)))
-				b.ReportAllocs()
-
-				dc = NewDeltaComputer(
-					vt("alloc_objects", "count"),
-					vt("alloc_space", "bytes"),
-				)
-				if err := dc.Delta(before, io.Discard); err != nil {
-					b.Fatal(err)
-				}
-
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					if err := dc.Delta(after, ioutil.Discard); err != nil {
+					after, err := os.ReadFile(testFile)
+					if err != nil {
 						b.Fatal(err)
 					}
-				}
-				b.StopTimer()
-				reportHeapUsage(b)
-			})
+
+					b.Run("setup", func(b *testing.B) {
+						b.SetBytes(int64(len(before)))
+						b.ReportAllocs()
+
+						for i := 0; i < b.N; i++ {
+							deltaFn := impl.Func()
+							if err := deltaFn(before, io.Discard); err != nil {
+								b.Fatal(err)
+							} else if err := deltaFn(after, io.Discard); err != nil {
+								b.Fatal(err)
+							}
+						}
+					})
+
+					b.Run("steady-state", func(b *testing.B) {
+						b.SetBytes(int64(len(before)))
+						b.ReportAllocs()
+
+						deltaFn := impl.Func()
+						if err := deltaFn(before, io.Discard); err != nil {
+							b.Fatal(err)
+						}
+
+						b.ResetTimer()
+						for i := 0; i < b.N; i++ {
+							if err := deltaFn(after, ioutil.Discard); err != nil {
+								b.Fatal(err)
+							}
+						}
+						b.StopTimer()
+						reportHeapUsage(b)
+					})
+				})
+			}
 		})
 	}
 }
@@ -117,7 +169,8 @@ nextSample:
 		}
 		for _, loc := range s.Location {
 			for _, line := range loc.Line {
-				if strings.Contains(line.Function.Name, "profiler/internal/fastdelta.(*DeltaComputer)") {
+				if strings.Contains(line.Function.Name, "profiler/internal/fastdelta.(*DeltaComputer)") ||
+					strings.Contains(line.Function.Name, "github.com/google/pprof") {
 					sum += float64(s.Value[3])
 					continue nextSample
 				}
@@ -125,7 +178,7 @@ nextSample:
 		}
 	}
 
-	b.ReportMetric(sum, "heap-B/op")
+	b.ReportMetric(sum, "heap-inuse-B/op")
 }
 
 func BenchmarkMakeGolden(b *testing.B) {
