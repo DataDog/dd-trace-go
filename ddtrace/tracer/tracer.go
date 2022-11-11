@@ -454,10 +454,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	span.context = newSpanContext(span, context)
 	span.setMetric(ext.Pid, float64(t.pid))
-	if spanKind, ok := opts.Tags[ext.SpanKind]; !ok || spanKind.(string) != ext.SpanKindClient && spanKind.(string) != ext.SpanKindProducer {
-		// Only set language in spans that are not client or producer or none (defaults to internal):
-		span.setMeta("language", "go")
-	}
+	span.setMeta("language", "go")
 
 	// add tags from options
 	for k, v := range opts.Tags {
