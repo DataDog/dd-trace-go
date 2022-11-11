@@ -161,17 +161,17 @@ func (dc *DeltaComputer) delta(p []byte, out io.Writer) (err error) {
 	dc.decoder.Reset(p)
 
 	if err := dc.pass1Index(); err != nil {
-		return fmt.Errorf("indexPass: %w", err)
+		return fmt.Errorf("pass1Index: %w", err)
 	} else if err := dc.pass2AggregateSamples(); err != nil {
-		return fmt.Errorf("aggregating samples pass: %w", err)
+		return fmt.Errorf("pass2AggregateSamples: %w", err)
 	} else if err := dc.pass3MergeSamples(); err != nil {
-		return fmt.Errorf("mergeSamplePass: %w", err)
+		return fmt.Errorf("pass3MergeSamples: %w", err)
 	} else if err := dc.pass4WriteAndPruneRecords(); err != nil {
-		return fmt.Errorf("writeAndPruneRecordsPass: %w", err)
+		return fmt.Errorf("pass4WriteAndPruneRecords: %w", err)
 	} else if err := dc.pass5WriteFunctions(); err != nil {
-		return fmt.Errorf("functionPass: %w", err)
+		return fmt.Errorf("pass5WriteFunctions: %w", err)
 	} else if err := dc.pass6WriteStringTable(); err != nil {
-		return fmt.Errorf("writeStringTablePass: %w", err)
+		return fmt.Errorf("pass6WriteStringTable: %w", err)
 	}
 	return nil
 }
