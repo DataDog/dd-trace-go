@@ -318,7 +318,7 @@ func (dc *DeltaComputer) pass5WriteFunctions() error {
 		func(f pproflite.Field) error {
 			fn, ok := f.(*pproflite.Function)
 			if !ok {
-				return fmt.Errorf("functionPass: unexpected field: %T", f)
+				return fmt.Errorf("unexpected field: %T", f)
 			}
 
 			if !dc.includedFunctions.Contains(int(fn.ID)) {
@@ -337,7 +337,7 @@ func (dc *DeltaComputer) pass6WriteStringTable() error {
 		func(f pproflite.Field) error {
 			str, ok := f.(*pproflite.StringTable)
 			if !ok {
-				return fmt.Errorf("stringTablePass: unexpected field: %T", f)
+				return fmt.Errorf("unexpected field: %T", f)
 			}
 			if !dc.includedStrings.Contains(counter) {
 				str.Value = nil
