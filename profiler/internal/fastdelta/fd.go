@@ -194,7 +194,7 @@ func (dc *DeltaComputer) pass1Index() error {
 				dc.includedStrings.Append(strIdx == 0)
 				strIdx++
 			default:
-				return fmt.Errorf("indexPass: unexpected field: %T", f)
+				return fmt.Errorf("unexpected field: %T", f)
 			}
 			return nil
 		},
@@ -209,7 +209,7 @@ func (dc *DeltaComputer) pass2AggregateSamples() error {
 		func(f pproflite.Field) error {
 			sample, ok := f.(*pproflite.Sample)
 			if !ok {
-				return fmt.Errorf("indexPass: unexpected field: %T", f)
+				return fmt.Errorf("unexpected field: %T", f)
 			}
 
 			if err := validStrings(sample, dc.strings); err != nil {
@@ -227,7 +227,7 @@ func (dc *DeltaComputer) pass3MergeSamples() error {
 		func(f pproflite.Field) error {
 			sample, ok := f.(*pproflite.Sample)
 			if !ok {
-				return fmt.Errorf("indexPass: unexpected field: %T", f)
+				return fmt.Errorf("unexpected field: %T", f)
 			}
 
 			if err := validStrings(sample, dc.strings); err != nil {
