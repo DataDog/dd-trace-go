@@ -1,0 +1,17 @@
+trigger_internal_build:
+  variables:
+    DD_TRACE_GO_COMMIT: $CI_COMMIT_SHA
+    DD_TRACE_GO_BRANCH: $CI_COMMIT_REF_NAME
+    TEST_APP_IMAGE: "golang:1.19"
+    TEST_APP: "basic"
+    TEST_DURATION_HOURS: "1"
+    # Given the above env vars, dd-trace-go-build will run something roughly
+    # analogous to `docker run golang:1.19 sh -c "cd test-apps/basic && run.sh"`
+    # and terminate it after 1 hour.
+  trigger:
+    project: DataDog/dd-trace-go-build
+    strategy: depend
+    # The branch param controls what branch will be used in the
+    # dd-trace-go-build repo for downstream jobs. You can temporarily change
+    # it to test changes in dd-trace-go-build.
+    branch: main
