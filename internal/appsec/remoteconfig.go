@@ -33,10 +33,10 @@ func genApplyStatus(ack bool, err error) rc.ApplyStatus {
 	return status
 }
 
-func defaultStatusesFromUpdate(u remoteconfig.ProductUpdate, ack bool) map[string]rc.ApplyStatus {
+func statusesFromUpdate(u remoteconfig.ProductUpdate, ack bool, err error) map[string]rc.ApplyStatus {
 	statuses := make(map[string]rc.ApplyStatus, len(u))
 	for path := range u {
-		statuses[path] = genApplyStatus(ack, nil)
+		statuses[path] = genApplyStatus(ack, err)
 	}
 	return statuses
 }
@@ -44,7 +44,7 @@ func defaultStatusesFromUpdate(u remoteconfig.ProductUpdate, ack bool) map[strin
 // asmFeaturesCallback deserializes an ASM_FEATURES configuration received through remote config
 // and starts/stops appsec accordingly. Used as a callback for the ASM_FEATURES remote config product.
 func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
-	statuses := defaultStatusesFromUpdate(u, false)
+	statuses := statusesFromUpdate(u, false, nil)
 	if l := len(u); l > 1 {
 		log.Error("appsec: Remote config: %d configs received for ASM_FEATURES. Expected one at most, returning early", l)
 		return statuses
@@ -91,13 +91,14 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 	// Following the RFC, merging should only happen when two rules data with the same ID and same Type are received
 	// rulesData[ID][Type] will return the rules data of said id and type, if it exists
 	allRulesData := make(map[string]map[string]rc.ASMDataRuleData)
-	statuses := defaultStatusesFromUpdate(u, true)
+	statuses := statusesFromUpdate(u, true, nil)
 
 	for path, raw := range u {
 		log.Debug("appsec: remoteconfig: processing %s", path)
 		var rulesData rc.ASMDataRulesData
 		if err := json.Unmarshal(raw, &rulesData); err != nil {
 			log.Debug("appsec: remoteconfig: error while unmarshalling payload for %s", path)
+			statuses[path] = genApplyStatus(false, err)
 			continue
 		}
 
@@ -123,8 +124,10 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 	payload, err := json.Marshal(rulesData)
 	if err != nil {
 		log.Debug("appsec: remoteconfig: could not marshal the merged rules data")
+		statuses = statusesFromUpdate(u, false, err)
 	} else if err := h.UpdateRuleData(payload); err != nil {
 		log.Debug("appsec: remoteconfig: could not update WAF rule data")
+		statuses = statusesFromUpdate(u, false, err)
 	}
 	return statuses
 }
@@ -132,6 +135,7 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 // mergeRulesData merges two rules data files together, removing duplicates and
 // only keeping the most up-to-date values
 // It currently bypasses the second argument and returns the 1st as is
+// TODO (francois.mazeau): implement merging
 func mergeRulesData(data1, _ rc.ASMDataRuleData) rc.ASMDataRuleData {
 	return data1
 }

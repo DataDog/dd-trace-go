@@ -107,6 +107,69 @@ func TestASMFeaturesCallback(t *testing.T) {
 	})
 }
 
+func TestASMDataCallback(t *testing.T) {
+	cfg, err := newConfig()
+	require.NoError(t, err)
+	waf, err := waf.NewHandle(cfg.rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+	if err != nil {
+		t.Skip("WAF needs to be available for this test")
+	}
+	defer waf.Close()
+	handle := wafHandleWrapper{waf}
+
+	for _, tc := range []struct {
+		name     string
+		update   remoteconfig.ProductUpdate
+		statuses map[string]rc.ApplyStatus
+	}{
+		{
+			name:     "empty-rule-data",
+			update:   map[string][]byte{},
+			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
+		},
+		{
+			name: "bad-json",
+			update: map[string][]byte{
+				"some/path": []byte(`[}]`),
+			},
+			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateError}},
+		},
+		{
+			name: "single-value",
+			update: map[string][]byte{
+				"some/path": []byte(`{"rules_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"}]}]}`),
+			},
+			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
+		},
+		{
+			name: "multiple-values",
+			update: map[string][]byte{
+				"some/path": []byte(`{"rules_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"},{"expiration":3494138441,"value":"user2"}]}]}`),
+			},
+			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
+		},
+		{
+			name: "multiple-entries",
+			update: map[string][]byte{
+				"some/path": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
+			},
+			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			statuses := handle.asmDataCallback(tc.update)
+			for k, _ := range statuses {
+				require.Equal(t, tc.statuses[k].State, statuses[k].State)
+				if statuses[k].State == rc.ApplyStateError {
+					require.NotEmpty(t, statuses[k].Error)
+				} else {
+					require.Empty(t, statuses[k].Error)
+				}
+			}
+		})
+	}
+}
+
 // This test ensures that the remote activation capabilities are only set if DD_APPSEC_ENABLED is not set in the env.
 func TestRemoteActivationScenarios(t *testing.T) {
 	if waf.Health() != nil {
