@@ -55,10 +55,11 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	mux.cfg.spanOpts = append(mux.cfg.spanOpts, httptrace.HeaderTagsFromRequest(r, mux.cfg.headerTags))
 	TraceAndServe(mux.ServeMux, w, r, &ServeConfig{
-		Service:  mux.cfg.serviceName,
-		Resource: resource,
-		SpanOpts: mux.cfg.spanOpts,
-		Route:    route,
+		Service:     mux.cfg.serviceName,
+		Resource:    resource,
+		SpanOpts:    mux.cfg.spanOpts,
+		Route:       route,
+		QueryParams: mux.cgf.queryParams,
 	})
 }
 
@@ -83,10 +84,11 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 		}
 
 		TraceAndServe(h, w, req, &ServeConfig{
-			Service:    service,
-			Resource:   resource,
-			FinishOpts: cfg.finishOpts,
-			SpanOpts:   cfg.spanOpts,
+			Service:     service,
+			Resource:    resource,
+			FinishOpts:  cfg.finishOpts,
+			SpanOpts:    cfg.spanOpts,
+			QueryParams: cfg.queryParams,
 		})
 	})
 }

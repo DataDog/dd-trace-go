@@ -398,6 +398,58 @@ func TestServerNamingSchema(t *testing.T) {
 	namingschematest.NewHTTPServerTest(genSpans, "http.router")(t)
 }
 
+func TestWithQueryParamsOption(t *testing.T) {
+	endpointURLWithQueryParams := "http://localhost/endpoint?key=value&otherKey=1"
+	tests := []struct{
+		queryParamsEnabled bool
+		expectedURLTag string
+	}{
+		{
+			queryParamsEnabled: true,
+			expectedURLTag: endpointURLWithQueryParams
+		},
+		{
+			queryParamsEnabled: false,
+			expectedURLTag: "http://localhost/endpoint"
+		}
+	}
+	
+
+	for _, test := range tests {
+		t.Run("servemux"+test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			r := httptest.NewRequest("GET", endpointURLWithQueryParams, nil)
+			w := httptest.NewRecorder()
+			mux := NewServeMux(WithQueryParams(test.queryParamsEnabled))
+			mux.HandleFunc("/endpoint", handler200)
+			mux.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, 1, len(spans))
+
+			s := spans[0]
+			assert.Equal(t, test.expectedURLTag, s.Tag(ext.HTTPURL))
+		})
+
+		t.Run("wraphandler"+test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			r := httptest.NewRequest("GET", endpointURLWithQueryParams, nil)
+			w := httptest.NewRecorder()
+			f := http.HandlerFunc(handler200)
+			handler := WrapHandler(f, "my-service", "my-resource", WithQueryParams(test.queryParamsEnabled))
+			handler.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, 1, len(spans))
+			
+			s := spans[0]
+			assert.Equal(t, test.expectedURLTag, s.Tag(ext.HTTPURL))
+		})
+	}
+}
+
 func router(muxOpts ...Option) http.Handler {
 	defaultOpts := []Option{
 		WithServiceName("my-service"),

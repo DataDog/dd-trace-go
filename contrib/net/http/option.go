@@ -21,6 +21,7 @@ import (
 const defaultServiceName = "http.router"
 
 type config struct {
+	queryParams   bool
 	serviceName   string
 	analyticsRate float64
 	spanOpts      []ddtrace.StartSpanOption
@@ -131,6 +132,14 @@ func WithResourceNamer(namer func(req *http.Request) string) Option {
 func NoDebugStack() Option {
 	return func(cfg *config) {
 		cfg.finishOpts = append(cfg.finishOpts, tracer.NoDebugStack())
+	}
+}
+
+// WithQueryParams set if request query parameters should be appended to http.url tag.
+// default is false.
+func WithQueryParams(enabled bool) Option {
+	return func(cfg *config) {
+		cfg.queryParams = enabled
 	}
 }
 
