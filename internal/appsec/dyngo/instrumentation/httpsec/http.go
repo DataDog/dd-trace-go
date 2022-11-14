@@ -71,8 +71,11 @@ func MonitorParsedBody(ctx context.Context, body interface{}) {
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
-	SetAppSecTags(span)
+	instrumentation.SetAppSecEnabledTags(span)
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		SetIPTags(span, r)
+
 		args := MakeHandlerOperationArgs(r, pathParams)
 		ctx, op := StartOperation(r.Context(), args)
 		r = r.WithContext(ctx)
@@ -81,6 +84,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			if mw, ok := w.(interface{ Status() int }); ok {
 				status = mw.Status()
 			}
+
 			events := op.Finish(HandlerOperationRes{Status: status})
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
@@ -93,6 +97,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			}
 			SetSecurityEventTags(span, events, remoteIP, args.Headers, w.Header())
 		}()
+
 		handler.ServeHTTP(w, r)
 	})
 }

@@ -69,7 +69,7 @@ type profiler struct {
 	stopOnce        sync.Once         // stopOnce ensures the profiler is stopped exactly once.
 	wg              sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
 	met             *metrics          // metric collector state
-	deltas          map[ProfileType]*deltaProfiler
+	deltas          map[ProfileType]deltaProfiler
 	telemetry       *telemetry.Client
 	seq             uint64         // seq is the value of the profile_seq tag
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
@@ -183,11 +183,11 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		out:    make(chan batch, outChannelSize),
 		exit:   make(chan struct{}),
 		met:    newMetrics(),
-		deltas: make(map[ProfileType]*deltaProfiler),
+		deltas: make(map[ProfileType]deltaProfiler),
 	}
 	for pt := range cfg.types {
 		if d := profileTypes[pt].DeltaValues; len(d) > 0 {
-			p.deltas[pt] = newDeltaProfiler(d...)
+			p.deltas[pt] = newDeltaProfiler(p.cfg, d...)
 		}
 	}
 	p.uploadFunc = p.upload
@@ -462,6 +462,6 @@ func (p *profiler) stop() {
 type StatsdClient interface {
 	// Count counts how many times an event happened, at the given rate using the given tags.
 	Count(event string, times int64, tags []string, rate float64) error
-	// Timing creates a distribution of the values registered as the duration of a certain event.
+	// Timing creates a histogram metric of the values registered as the duration of a certain event.
 	Timing(event string, duration time.Duration, tags []string, rate float64) error
 }
