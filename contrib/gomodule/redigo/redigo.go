@@ -36,6 +36,12 @@ type ConnWithTimeout struct {
 	*params
 }
 
+// ConnWithContext is an implementation of the redis.ConnWithContext interface that supports tracing
+type ConnWithContext struct {
+	redis.ConnWithContext
+	*params
+}
+
 // params contains fields and metadata useful for command tracing
 type params struct {
 	config  *dialConfig
@@ -63,8 +69,17 @@ func parseOptions(options ...interface{}) ([]redis.DialOption, *dialConfig) {
 }
 
 func wrapConn(c redis.Conn, p *params) redis.Conn {
-	if connWithTimeout, ok := c.(redis.ConnWithTimeout); ok {
-		return ConnWithTimeout{connWithTimeout, p}
+	switch p.config.connectionType {
+	case connectionTypeWithTimeout:
+		if connWithTimeout, ok := c.(redis.ConnWithTimeout); ok {
+			return ConnWithTimeout{connWithTimeout, p}
+		}
+	case connectionTypeWithContext:
+		if connWithContext, ok := c.(redis.ConnWithContext); ok {
+			return ConnWithContext{connWithContext, p}
+		}
+	case connectionTypeDefault:
+		// Fall through.
 	}
 
 	return Conn{c, p}
@@ -76,6 +91,23 @@ func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
 	log.Debug("contrib/gomodule/redigo: Dialing %s %s, %#v", network, address, cfg)
 	c, err := redis.Dial(network, address, dialOpts...)
+	if err != nil {
+		return nil, err
+	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	tc := wrapConn(c, &params{cfg, network, host, port})
+	return tc, nil
+}
+
+// DialContext dials into the network address using redis.DialContext and returns a traced redis.Conn.
+// The set of supported options must be either of type redis.DialOption or this package's DialOption.
+func DialContext(ctx context.Context, network, address string, options ...interface{}) (redis.Conn, error) {
+	dialOpts, cfg := parseOptions(options...)
+	log.Debug("contrib/gomodule/redigo: Dialing with context %s %s, %#v", network, address, cfg)
+	c, err := redis.DialContext(ctx, network, address, dialOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -128,11 +160,9 @@ func newChildSpan(ctx context.Context, p *params) ddtrace.Span {
 	return span
 }
 
-func withSpan(do func(commandName string, args ...interface{}) (interface{}, error), p *params, commandName string, args ...interface{}) (reply interface{}, err error) {
-	var (
-		ctx context.Context
-		ok  bool
-	)
+func withSpan(ctx context.Context, do func(commandName string, args ...interface{}) (interface{}, error), p *params, commandName string, args ...interface{}) (reply interface{}, err error) {
+	// When a context exists in the args, it takes precedence over the passed ctx.
+	var ok bool
 	if n := len(args); n > 0 {
 		ctx, ok = args[n-1].(context.Context)
 		if ok {
@@ -140,11 +170,6 @@ func withSpan(do func(commandName string, args ...interface{}) (interface{}, err
 		}
 	}
 
-	if ctx == nil {
-		// Passing a nil context was working up to Go 1.15, where issue #37908
-		// was closed.
-		ctx = context.Background()
-	}
 	span := newChildSpan(ctx, p)
 	defer func() {
 		span.Finish(tracer.WithError(err))
@@ -186,6 +211,7 @@ func withSpan(do func(commandName string, args ...interface{}) (interface{}, err
 // inherits from this context. The rest of the arguments are passed through to the Redis server unchanged.
 func (tc Conn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
 	return withSpan(
+		context.Background(),
 		tc.Conn.Do,
 		tc.params,
 		commandName,
@@ -199,6 +225,7 @@ func (tc Conn) Do(commandName string, args ...interface{}) (reply interface{}, e
 // inherits from this context. The rest of the arguments are passed through to the Redis server unchanged.
 func (tc ConnWithTimeout) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
 	return withSpan(
+		context.Background(),
 		tc.ConnWithTimeout.Do,
 		tc.params,
 		commandName,
@@ -212,8 +239,39 @@ func (tc ConnWithTimeout) Do(commandName string, args ...interface{}) (reply int
 // inherits from this context. The rest of the arguments are passed through to the Redis server unchanged.
 func (tc ConnWithTimeout) DoWithTimeout(readTimeout time.Duration, commandName string, args ...interface{}) (reply interface{}, err error) {
 	return withSpan(
+		context.Background(),
 		func(commandName string, args ...interface{}) (interface{}, error) {
 			return tc.ConnWithTimeout.DoWithTimeout(readTimeout, commandName, args...)
+		},
+		tc.params,
+		commandName,
+		args...,
+	)
+}
+
+// Do wraps redis.Conn.Do. It sends a command to the Redis server and returns the received reply.
+// In the process it emits a span containing key information about the command sent.
+// Do will ensure that any span created inherits from the context passed as argument.
+// The rest of the arguments are passed through to the Redis server unchanged.
+func (tc ConnWithContext) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
+	return withSpan(
+		context.Background(),
+		tc.ConnWithContext.Do,
+		tc.params,
+		commandName,
+		args...,
+	)
+}
+
+// DoContext wraps redis.Conn.DoContext. It sends a command to the Redis server and returns the received reply.
+// In the process it emits a span containing key information about the command sent.
+// Do will ensure that any span created inherits from the context passed as argument.
+// The rest of the arguments are passed through to the Redis server unchanged.
+func (tc ConnWithContext) DoContext(ctx context.Context, commandName string, args ...interface{}) (reply interface{}, err error) {
+	return withSpan(
+		ctx,
+		func(commandName string, args ...interface{}) (interface{}, error) {
+			return tc.ConnWithContext.DoContext(ctx, commandName, args...)
 		},
 		tc.params,
 		commandName,

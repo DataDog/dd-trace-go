@@ -35,7 +35,7 @@ require (
 	github.com/gocql/gocql v0.0.0-20220224095938-0eacd3183625
 	github.com/gofiber/fiber/v2 v2.11.0
 	github.com/golang/protobuf v1.5.2
-	github.com/gomodule/redigo v1.7.0
+	github.com/gomodule/redigo v1.8.9
 	github.com/google/pprof v0.0.0-20210423192551-a2663126120b
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.7.1
@@ -170,8 +170,10 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a // indirect
+	github.com/richardartoul/molecule v1.0.1-0.20221107223329-32cfee06a052
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	github.com/secure-systems-lab/go-securesystemslib v0.3.1 // indirect
+	github.com/secure-systems-lab/go-securesystemslib v0.4.0 // indirect
+	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/theupdateframework/go-tuf v0.3.0 // indirect
 	github.com/tidwall/btree v1.1.0 // indirect
