@@ -34,11 +34,14 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unicode"
 	"unsafe"
+
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
 	// Do not remove the following imports which allow supporting package
 	// vendoring by properly copying all the files needed by CGO: the libddwaf
@@ -227,14 +230,7 @@ func (h *Handle) RulesetInfo() RulesetInfo {
 }
 
 // UpdateRuleData updates the data that some rules reference to.
-// The given rule data must be a raw JSON string of the form
-// [ {rule data #1}, ... {rule data #2} ]
-func (h *Handle) UpdateRuleData(jsonData []byte) error {
-	var data []interface{}
-	if err := json.Unmarshal(jsonData, &data); err != nil {
-		return fmt.Errorf("could not parse the WAF rule data: %v", err)
-	}
-
+func (h *Handle) UpdateRuleData(data []rc.ASMDataRuleData) error {
 	encoded, err := h.encoder.encode(data) // FIXME: double-check with Anil that we are good with the current conversion of integers into strings here
 	if err != nil {
 		return fmt.Errorf("could not encode the JSON WAF rule data into a WAF object: %v", err)
@@ -542,6 +538,14 @@ func (e *encoder) encodeStruct(v reflect.Value, wo *wafObject, depth int) error 
 		fieldName := field.Name
 		if len(fieldName) < 1 || unicode.IsLower(rune(fieldName[0])) {
 			continue
+		}
+
+		// Use the json tag name as field name if present
+		if tag, ok := field.Tag.Lookup("json"); ok {
+			name := strings.Split(tag, ",")[0]
+			if len(name) > 0 {
+				fieldName = name
+			}
 		}
 
 		mapEntry := wo.index(C.uint64_t(length))
@@ -941,6 +945,7 @@ func cFree(ptr unsafe.Pointer) {
 
 // Exported Go function to free ddwaf objects by using freeWO in order to keep
 // its dummy but efficient memory kallocation monitoring.
+//
 //export go_ddwaf_object_free
 func go_ddwaf_object_free(v *C.ddwaf_object) {
 	freeWO((*wafObject)(v))

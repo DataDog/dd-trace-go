@@ -124,12 +124,7 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 			rulesData = append(rulesData, data)
 		}
 	}
-
-	payload, err := json.Marshal(rulesData)
-	if err != nil {
-		log.Debug("appsec: Remote config: could not marshal the merged rules data: %v.", err)
-		statuses = statusesFromUpdate(u, false, err)
-	} else if err := h.UpdateRuleData(payload); err != nil {
+	if err := h.UpdateRuleData(rulesData); err != nil {
 		log.Debug("appsec: Remote config: could not update WAF rule data: %v.", err)
 		statuses = statusesFromUpdate(u, false, err)
 	}
