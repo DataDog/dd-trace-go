@@ -17,15 +17,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
@@ -83,14 +80,8 @@ func (a *appsec) registerWAF() (unreg dyngo.UnregisterFunc, err error) {
 		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, a.cfg.wafTimeout, a.limiter))
 	}
 
-	if err := a.registerRCProduct(rc.ProductASMData); err != nil {
-		log.Error("appsec: remoteconfig: cannot register ASM_DATA product: %v", err)
-	}
-	if err := a.registerRCCapability(remoteconfig.ASMIPBlocking); err != nil {
-		log.Error("appsec: remoteconfig: cannot register ip blocking capability: %v", err)
-	}
-	if err := a.registerRCCallback((&wafHandleWrapper{waf}).asmDataCallback, rc.ProductASMData); err != nil {
-		log.Error("appsec: remoteconfig: cannot register ASM_DATA callback: %v", err)
+	if err := a.enableRCBlocking(&wafHandleWrapper{waf}); err != nil {
+		log.Error("appsec: Remote config: cannot enable blocking, rules data won't be updated: %v", err)
 	}
 
 	// Return an unregistration function that will also release the WAF instance.

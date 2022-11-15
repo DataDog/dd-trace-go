@@ -204,3 +204,13 @@ func (a *appsec) enableRemoteActivation() error {
 	a.registerRCCallback(a.asmFeaturesCallback, rc.ProductASMFeatures)
 	return nil
 }
+
+func (a *appsec) enableRCBlocking(handle *wafHandleWrapper) error {
+	if a.rc == nil {
+		return fmt.Errorf("no valid remote configuration client")
+	}
+	a.registerRCProduct(rc.ProductASMData)
+	a.registerRCCapability(remoteconfig.ASMIPBlocking)
+	a.registerRCCallback(handle.asmDataCallback, rc.ProductASMData)
+	return nil
+}
