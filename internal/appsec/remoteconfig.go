@@ -94,10 +94,10 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 	statuses := statusesFromUpdate(u, true, nil)
 
 	for path, raw := range u {
-		log.Debug("appsec: remoteconfig: processing %s", path)
+		log.Debug("appsec: Remote config: processing %s", path)
 		var rulesData rc.ASMDataRulesData
 		if err := json.Unmarshal(raw, &rulesData); err != nil {
-			log.Debug("appsec: remoteconfig: error while unmarshalling payload for %s", path)
+			log.Debug("appsec: Remote config: error while unmarshalling payload for %s: %v. Configuration won't be applied.", path, err)
 			statuses[path] = genApplyStatus(false, err)
 			continue
 		}
@@ -123,10 +123,10 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 
 	payload, err := json.Marshal(rulesData)
 	if err != nil {
-		log.Debug("appsec: remoteconfig: could not marshal the merged rules data")
+		log.Debug("appsec: Remote config: could not marshal the merged rules data: %v.", err)
 		statuses = statusesFromUpdate(u, false, err)
 	} else if err := h.UpdateRuleData(payload); err != nil {
-		log.Debug("appsec: remoteconfig: could not update WAF rule data")
+		log.Debug("appsec: Remote config: could not update WAF rule data: %v.", err)
 		statuses = statusesFromUpdate(u, false, err)
 	}
 	return statuses
