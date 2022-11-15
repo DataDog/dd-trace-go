@@ -21,7 +21,7 @@ func TestStaticRule(t *testing.T) {
 		t.Skip("waf disabled")
 		return
 	}
-	waf, err := waf.NewHandle([]byte(staticRecommendedRule), "", "")
+	waf, err := waf.NewHandle([]byte(staticRecommendedRules), "", "")
 	require.NoError(t, err)
 	waf.Close()
 }

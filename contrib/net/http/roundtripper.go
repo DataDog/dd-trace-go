@@ -82,6 +82,9 @@ func (rt *roundTripper) Unwrap() http.RoundTripper {
 // WrapRoundTripper returns a new RoundTripper which traces all requests sent
 // over the transport.
 func WrapRoundTripper(rt http.RoundTripper, opts ...RoundTripperOption) http.RoundTripper {
+	if rt == nil {
+		rt = http.DefaultTransport
+	}
 	cfg := newRoundTripperConfig()
 	for _, opt := range opts {
 		opt(cfg)

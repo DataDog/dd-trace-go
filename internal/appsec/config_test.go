@@ -17,8 +17,8 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	expectedDefaultConfig := &config{
-		rules:          []byte(staticRecommendedRule),
+	expectedDefaultConfig := &Config{
+		rules:          []byte(staticRecommendedRules),
 		wafTimeout:     defaultWAFTimeout,
 		traceRateLimit: defaultTraceRate,
 		obfuscator: ObfuscatorConfig{

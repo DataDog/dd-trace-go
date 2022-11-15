@@ -204,8 +204,8 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if cfg.errCheck == nil {
 		cfg.errCheck = rc.errCheck
 	}
-	if cfg.commentInjectionMode == tracer.SQLInjectionUndefined {
-		cfg.commentInjectionMode = rc.commentInjectionMode
+	if cfg.dbmPropagationMode == tracer.DBMPropagationModeUndefined {
+		cfg.dbmPropagationMode = rc.dbmPropagationMode
 	}
 	cfg.childSpansOnly = rc.childSpansOnly
 	tc := &tracedConnector{
@@ -224,5 +224,14 @@ func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
 		return nil, errNotRegistered
 	}
 	d, _ := registeredDrivers.driver(driverName)
+	if driverCtx, ok := d.(driver.DriverContext); ok {
+		connector, err := driverCtx.OpenConnector(dataSourceName)
+		if err != nil {
+			return nil, err
+		}
+		// since we're not using the dsnConnector, we need to register the dsn manually in the config
+		opts = append(opts, WithDSN(dataSourceName))
+		return OpenDB(connector, opts...), nil
+	}
 	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: d}, opts...), nil
 }

@@ -182,6 +182,21 @@ func TestTracingDialUrl(t *testing.T) {
 	assert.True(len(spans) > 0)
 }
 
+func TestTracingDialContext(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	ctx := context.Background()
+	client, err := DialContext(ctx, "tcp", "127.0.0.1:6379", WithServiceName("my-service"))
+	assert.Nil(err)
+
+	_, _ = client.Do("SET", "ONE", " TWO", ctx)
+
+	spans := mt.FinishedSpans()
+	assert.True(len(spans) > 0)
+}
+
 func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...interface{}) {
 		c, err := Dial("tcp", "127.0.0.1:6379", opts...)
@@ -237,6 +252,17 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+
+	t.Run("out of bounds", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rate := globalconfig.AnalyticsRate()
+		defer globalconfig.SetAnalyticsRate(rate)
+		globalconfig.SetAnalyticsRate(0.4)
+
+		assertRate(t, mt, nil, WithAnalyticsRate(1.23))
+	})
 }
 
 func TestDoWithTimeout(t *testing.T) {
@@ -245,11 +271,111 @@ func TestDoWithTimeout(t *testing.T) {
 	defer mt.Stop()
 
 	url := "redis://127.0.0.1:6379"
-	client, err := DialURL(url, WithServiceName("redis-service"))
+	client, err := DialURL(url, WithServiceName("redis-service"), WithTimeoutConnection())
 	assert.Nil(err)
 	_, err = redis.DoWithTimeout(client, time.Second, "SET", "ONE", " TWO")
 	assert.NoError(err)
 
 	spans := mt.FinishedSpans()
 	assert.True(len(spans) > 0)
+}
+
+func TestDo(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("do", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"), WithContextConnection())
+		assert.Nil(err)
+		_, err = client.Do("SET", "ONE", " TWO")
+		assert.NoError(err)
+
+		spans := mt.FinishedSpans()
+		assert.True(len(spans) > 0)
+	})
+
+	t.Run("do", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"), WithDefaultConnection())
+		assert.Nil(err)
+		_, err = client.Do("SET", "ONE", " TWO")
+		assert.NoError(err)
+
+		spans := mt.FinishedSpans()
+		assert.True(len(spans) > 0)
+	})
+}
+
+func TestDoContext(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("do context", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"), WithContextConnection())
+		assert.Nil(err)
+		_, err = redis.DoContext(client, context.Background(), "SET", "ONE", " TWO")
+		assert.NoError(err)
+
+		spans := mt.FinishedSpans()
+		assert.True(len(spans) > 0)
+	})
+
+	t.Run("do context with timeout", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		url := "redis://127.0.0.1:6379"
+		client, err := DialURL(url, WithServiceName("redis-service"), WithContextConnection())
+		assert.Nil(err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
+
+		// No cmd will trigger flush.
+		_, err = redis.DoContext(client, ctx, "", "ONE", " TWO")
+		assert.NoError(err)
+
+		spans := mt.FinishedSpans()
+		assert.True(len(spans) > 0)
+	})
+
+	t.Run("do context with timeout - canceled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client, err := DialContext(context.Background(), "tcp", "127.0.0.1:6379", WithServiceName("my-service"), WithContextConnection())
+		assert.Nil(err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+		cancel()
+
+		_, err = redis.DoContext(client, ctx, "SET", "ONE", " TWO")
+		assert.Equal(context.Canceled, err)
+
+		spans := mt.FinishedSpans()
+		assert.True(len(spans) > 0)
+	})
+
+	t.Run("do context with timeout - deadline exceeded", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client, err := DialContext(context.Background(), "tcp", "127.0.0.1:6379", WithServiceName("my-service"), WithContextConnection())
+		assert.Nil(err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+		defer cancel()
+
+		_, err = redis.DoContext(client, ctx, "SET", "ONE", " TWO")
+		assert.Equal(context.DeadlineExceeded, err)
+
+		spans := mt.FinishedSpans()
+		assert.True(len(spans) > 0)
+	})
 }
