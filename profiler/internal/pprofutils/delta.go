@@ -7,6 +7,7 @@ package pprofutils
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/google/pprof/profile"
 )
@@ -18,7 +19,7 @@ type Delta struct {
 	// sample types will retain the values of profile b. The defined sample types
 	// must exist in the profile, otherwise derivation will fail with an error.
 	//
-	// The use case for this for this is to deal with the heap profile which
+	// The use case for this is to deal with the heap profile which
 	// contains alloc and inuse sample types, but delta profiling makes no sense
 	// for the latter.
 	SampleTypes []ValueType
@@ -33,7 +34,7 @@ func (d Delta) Convert(a, b *profile.Profile) (*profile.Profile, error) {
 
 	found := 0
 	for i, st := range a.SampleType {
-		// We only calcuate the delta for any st that is listed in
+		// We only calculate the delta for any st that is listed in
 		// c.SampleTypes. st's not listed in there will default to ratio 0, which
 		// means we delete them from pa, so only the pb values remain in the final
 		// profile.
@@ -48,7 +49,9 @@ func (d Delta) Convert(a, b *profile.Profile) (*profile.Profile, error) {
 		return nil, errors.New("one or more sample type(s) was not found in the profile")
 	}
 
-	a.ScaleN(ratios)
+	if err := a.ScaleN(ratios); err != nil {
+		return nil, fmt.Errorf("failed scaling profile a %v", err)
+	}
 
 	delta, err := profile.Merge([]*profile.Profile{a, b})
 	if err != nil {

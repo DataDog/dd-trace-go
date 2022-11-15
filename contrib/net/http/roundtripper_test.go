@@ -21,6 +21,18 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
+func TestWrapRoundTripperAllowNilTransport(t *testing.T) {
+	assert := assert.New(t)
+
+	httpClient := &http.Client{}
+	httpClient.Transport = WrapRoundTripper(httpClient.Transport)
+
+	wrapped, ok := httpClient.Transport.(*roundTripper)
+	assert.True(ok)
+
+	assert.Equal(http.DefaultTransport, wrapped.base)
+}
+
 func TestRoundTripper(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()

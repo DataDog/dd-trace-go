@@ -156,7 +156,7 @@ func readObfuscatorConfigRegexp(name, defaultValue string) string {
 }
 
 func readRulesConfig() (rules []byte, err error) {
-	rules = []byte(staticRecommendedRule)
+	rules = []byte(staticRecommendedRules)
 	filepath := os.Getenv(rulesEnvVar)
 	if filepath == "" {
 		log.Info("appsec: starting with the default recommended security rules")
