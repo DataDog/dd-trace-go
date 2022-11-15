@@ -257,7 +257,7 @@ func TestActions(t *testing.T) {
 	t.Run("multiple-actions", testActions([]string{"action 1", "action 2", "action 3"}))
 }
 
-func TestUpdateRuleData(t *testing.T) {
+func TestUpdateRulesData(t *testing.T) {
 	defer requireZeroNBLiveCObjects(t)
 
 	var (
@@ -409,7 +409,7 @@ func TestUpdateRuleData(t *testing.T) {
 	}, []string{"block_user", "block_ip"})
 
 	// Update the rules' data
-	err = waf.UpdateRuleData(testBlockingRulesData)
+	err = waf.UpdateRulesData(testBlockingRulesData)
 	require.NoError(t, err)
 
 	// Not matching because the address values match the updated rules data
@@ -425,7 +425,7 @@ func TestUpdateRuleData(t *testing.T) {
 	}, []string{"block_user", "block_ip"})
 
 	// Empty the rules data so that nothing matches anymore
-	err = waf.UpdateRuleData(testEmptyRulesData)
+	err = waf.UpdateRulesData(testEmptyRulesData)
 	require.NoError(t, err)
 
 	test(map[string]interface{}{
@@ -439,7 +439,7 @@ func TestUpdateRuleData(t *testing.T) {
 	}, nil)
 
 	// Update the rules' data again
-	err = waf.UpdateRuleData(testBlockingRulesData)
+	err = waf.UpdateRulesData(testBlockingRulesData)
 	require.NoError(t, err)
 
 	// Matching because the address values don't match the updated rules data
@@ -545,7 +545,7 @@ func TestConcurrency(t *testing.T) {
 			defer stopBarrier.Done() // Signal we are done when returning
 
 			for c := 0; c < nbRun; c++ {
-				if err := waf.UpdateRuleData([]rc.ASMDataRuleData{}); err != nil {
+				if err := waf.UpdateRulesData([]rc.ASMDataRuleData{}); err != nil {
 					panic(err)
 				}
 				time.Sleep(time.Microsecond) // This is going to be more than this when under pressure

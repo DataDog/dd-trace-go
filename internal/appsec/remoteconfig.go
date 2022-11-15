@@ -89,7 +89,7 @@ type wafHandleWrapper struct {
 
 func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 	// Following the RFC, merging should only happen when two rules data with the same ID and same Type are received
-	// rulesData[ID][Type] will return the rules data of said id and type, if it exists
+	// allRulesData[ID][Type] will return the rules data of said id and type, if it exists
 	allRulesData := make(map[string]map[string]rc.ASMDataRuleData)
 	statuses := statusesFromUpdate(u, true, nil)
 
@@ -124,7 +124,7 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 			rulesData = append(rulesData, data)
 		}
 	}
-	if err := h.UpdateRuleData(rulesData); err != nil {
+	if err := h.UpdateRulesData(rulesData); err != nil {
 		log.Debug("appsec: Remote config: could not update WAF rule data: %v.", err)
 		statuses = statusesFromUpdate(u, false, err)
 	}

@@ -229,19 +229,19 @@ func (h *Handle) RulesetInfo() RulesetInfo {
 	return h.rulesetInfo
 }
 
-// UpdateRuleData updates the data that some rules reference to.
-func (h *Handle) UpdateRuleData(data []rc.ASMDataRuleData) error {
+// UpdateRulesData updates the data that some rules reference to.
+func (h *Handle) UpdateRulesData(data []rc.ASMDataRuleData) error {
 	encoded, err := h.encoder.encode(data) // FIXME: double-check with Anil that we are good with the current conversion of integers into strings here
 	if err != nil {
 		return fmt.Errorf("could not encode the JSON WAF rule data into a WAF object: %v", err)
 	}
 	defer freeWO(encoded)
 
-	return h.updateRuleData(encoded)
+	return h.updateRulesData(encoded)
 }
 
-// updateRuleData is the critical section of UpdateRuleData
-func (h *Handle) updateRuleData(data *wafObject) error {
+// updateRulesData is the critical section of UpdateRulesData
+func (h *Handle) updateRulesData(data *wafObject) error {
 	// Note about this lock: ddwaf_update_rule_data already is thread-safe to
 	// use, but we chose to lock at the goroutine-level instead in order to
 	// avoid locking OS threads and therefore prevent many other goroutines from
