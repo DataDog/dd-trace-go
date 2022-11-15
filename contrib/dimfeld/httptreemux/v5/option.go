@@ -24,7 +24,7 @@ type routerConfig struct {
 type RouterOption func(*routerConfig)
 
 func defaults(cfg *routerConfig) {
-	if internal.BoolEnv("DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED", false) {
+	if internal.BoolEnv("DD_TRACE_HTTPTREEMUX_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
