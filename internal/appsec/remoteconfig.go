@@ -102,6 +102,7 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 			continue
 		}
 
+		// Check each entry against allRulesData to see if merging is necessary
 		for _, ruleData := range rulesData.RulesData {
 			if allRulesData[ruleData.ID] == nil {
 				allRulesData[ruleData.ID] = make(map[string]rc.ASMDataRuleData)
@@ -114,6 +115,7 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 		}
 	}
 
+	// Aggregate all the rules data before passing it over to the WAF
 	var rulesData []rc.ASMDataRuleData
 	for _, m := range allRulesData {
 		for _, data := range m {
