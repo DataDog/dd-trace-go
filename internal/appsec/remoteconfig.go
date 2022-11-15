@@ -108,7 +108,9 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 				allRulesData[ruleData.ID] = make(map[string]rc.ASMDataRuleData)
 			}
 			if data, ok := allRulesData[ruleData.ID][ruleData.Type]; ok {
-				allRulesData[ruleData.ID][ruleData.Type] = mergeRulesData(ruleData, data)
+				// Merge rules data entries with the same ID and Type
+				data.Data = mergeRulesDataEntries(data.Data, ruleData.Data)
+				allRulesData[ruleData.ID][ruleData.Type] = data
 			} else {
 				allRulesData[ruleData.ID][ruleData.Type] = ruleData
 			}
@@ -134,12 +136,30 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 	return statuses
 }
 
-// mergeRulesData merges two rules data files together, removing duplicates and
-// only keeping the most up-to-date values
-// It currently bypasses the second argument and returns the 1st as is
-// TODO (francois.mazeau): implement merging
-func mergeRulesData(data1, _ rc.ASMDataRuleData) rc.ASMDataRuleData {
-	return data1
+// mergeRulesDataEntries merges two slices of rules data entries together, removing duplicates and
+// only keeping the longest expiration values for similar entries.
+func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.ASMDataRuleDataEntry {
+	mergeMap := map[string]int{}
+
+	for _, entry := range entries1 {
+		mergeMap[entry.Value] = entry.Expiration
+	}
+	// Replace the entry only if the new expiration timestamp goes later than the current one
+	// If no expiration timestamp was provided (default to 0), then the data doesn't expire
+	for _, entry := range entries2 {
+		if exp, ok := mergeMap[entry.Value]; !ok || entry.Expiration == 0 || entry.Expiration > exp {
+			mergeMap[entry.Value] = entry.Expiration
+		}
+	}
+	// Create the final slice and return it
+	entries := make([]rc.ASMDataRuleDataEntry, 0, len(mergeMap))
+	for val, exp := range mergeMap {
+		entries = append(entries, rc.ASMDataRuleDataEntry{
+			Value:      val,
+			Expiration: exp,
+		})
+	}
+	return entries
 }
 
 func (a *appsec) startRC() {

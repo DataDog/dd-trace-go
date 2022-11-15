@@ -170,6 +170,109 @@ func TestASMDataCallback(t *testing.T) {
 	}
 }
 
+// This test makes sure that the merging behavior follows what is described in the ASM blocking RFC
+func TestRuleDataMerging(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in1  []rc.ASMDataRuleDataEntry
+		in2  []rc.ASMDataRuleDataEntry
+		out  []rc.ASMDataRuleDataEntry
+	}{
+		{
+			name: "empty",
+			out:  []rc.ASMDataRuleDataEntry{},
+		},
+		{
+			name: "no-collision-1",
+			in1: []rc.ASMDataRuleDataEntry{
+				{
+					Value:      "127.0.0.1",
+					Expiration: 1,
+				},
+			},
+			out: []rc.ASMDataRuleDataEntry{
+				{
+					Value:      "127.0.0.1",
+					Expiration: 1,
+				},
+			},
+		},
+		{
+			name: "no-collision-2",
+			in1: []rc.ASMDataRuleDataEntry{
+				{
+					Value:      "127.0.0.1",
+					Expiration: 1,
+				},
+			},
+			in2: []rc.ASMDataRuleDataEntry{
+				{
+					Value:      "127.0.0.8",
+					Expiration: 1,
+				},
+			},
+			out: []rc.ASMDataRuleDataEntry{
+				{
+					Value:      "127.0.0.1",
+					Expiration: 1,
+				},
+				{
+					Value:      "127.0.0.8",
+					Expiration: 1,
+				},
+			},
+		},
+		{
+			name: "collision",
+			in1: []rc.ASMDataRuleDataEntry{
+				{
+					Value:      "127.0.0.1",
+					Expiration: 1,
+				},
+			},
+			in2: []rc.ASMDataRuleDataEntry{
+				{
+					Value:      "127.0.0.1",
+					Expiration: 2,
+				},
+			},
+			out: []rc.ASMDataRuleDataEntry{
+				{
+					Value:      "127.0.0.1",
+					Expiration: 2,
+				},
+			},
+		},
+		{
+			name: "collision-no-expiration",
+			in1: []rc.ASMDataRuleDataEntry{
+				{
+					Value:      "127.0.0.1",
+					Expiration: 1,
+				},
+			},
+			in2: []rc.ASMDataRuleDataEntry{
+				{
+					Value:      "127.0.0.1",
+					Expiration: 0,
+				},
+			},
+			out: []rc.ASMDataRuleDataEntry{
+				{
+					Value:      "127.0.0.1",
+					Expiration: 0,
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := mergeRulesDataEntries(tc.in1, tc.in2)
+			require.Equal(t, tc.out, res)
+		})
+	}
+
+}
+
 // This test ensures that the remote activation capabilities are only set if DD_APPSEC_ENABLED is not set in the env.
 func TestRemoteActivationScenarios(t *testing.T) {
 	if waf.Health() != nil {

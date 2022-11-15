@@ -48,8 +48,10 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583 h1:3nVO1nQyh64IUY6BPZUpMYMZ738Pu+LsMt3E0eqqIYw=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583/go.mod h1:EP9f4GqaDJyP1F5jTNMtzdIpw3JpNs3rMSJOnYywCiw=
-github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.41.0-rc.3.0.20221115082921-18d158b84250 h1:WWn5Fll986qM8WNl3D32WFTPANUKkHiXL8ZKAH24Vq4=
-github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.41.0-rc.3.0.20221115082921-18d158b84250/go.mod h1:dyOW1OoE1/nZrJx45c4KL1v078cfRtC0DFDMIxNrLDQ=
+github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.41.0-rc.3.0.20221115135552-46029c912b2c h1:2I0qADCUij7p3UkgABqZn3CO2yJ7tcSJ9WnR4SGL/JE=
+github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.41.0-rc.3.0.20221115135552-46029c912b2c/go.mod h1:dyOW1OoE1/nZrJx45c4KL1v078cfRtC0DFDMIxNrLDQ=
+github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.41.0-rc.3.0.20221115161840-e07b3fdd31c8 h1:vCDWd+lMAixtzEBRizgZlDZvCe1RM8rmceWTYOQA+1M=
+github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.41.0-rc.3.0.20221115161840-e07b3fdd31c8/go.mod h1:dyOW1OoE1/nZrJx45c4KL1v078cfRtC0DFDMIxNrLDQ=
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
 github.com/DataDog/datadog-go v4.8.2+incompatible h1:qbcKSx29aBLD+5QLvlQZlGmRMF/FfGqFLFev/1TDzRo=
 github.com/DataDog/datadog-go v4.8.2+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
