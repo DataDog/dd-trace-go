@@ -42,18 +42,28 @@ func New(opts ...RouterOption) *Router {
 
 // ServeHTTP implements http.Handler.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	// get the resource associated to this request
-	route := req.URL.Path
-	lr, _ := r.Lookup(w, req)
-	for k, v := range lr.Params {
-		// replace parameter values in URL path with their names
-		route = strings.Replace(route, v, ":"+k, 1)
-	}
-	resource := req.Method + " " + route
+	resource := r.config.resourceNamer(r, w, req)
 	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
 	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
 		Resource: resource,
 		SpanOpts: r.config.spanOpts,
 	})
+}
+
+// defaultResourceNamer attempts to determine the resource name for an HTTP
+// request by performing a lookup using the path template associated with the
+// route from the request. If the lookup fails to find a match the route is set
+// to "unknown".
+func defaultResourceNamer(router *Router, w http.ResponseWriter, req *http.Request) string {
+	route := req.URL.Path
+	lr, found := router.Lookup(w, req)
+	for k, v := range lr.Params {
+		// replace parameter values in URL path with their names
+		route = strings.Replace(route, v, ":"+k, 1)
+	}
+	if found {
+		return req.Method + " " + route
+	}
+	return req.Method + " unknown"
 }
