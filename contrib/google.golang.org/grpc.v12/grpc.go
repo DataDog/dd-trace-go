@@ -55,7 +55,7 @@ func startSpanFromContext(ctx context.Context, method, service string, rate floa
 		tracer.Tag(tagMethod, method),
 		tracer.SpanType(ext.AppTypeRPC),
 		tracer.Measured(),
-		tracer.Tag(ext.Component, "grpc-go.v12"),
+		tracer.Tag(ext.Component, "google.golang.org/grpc.v12"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}
 	if !math.IsNaN(rate) {
@@ -91,7 +91,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 		if !math.IsNaN(cfg.analyticsRate) {
 			spanopts = append(spanopts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		spanopts = append(spanopts, tracer.Tag(ext.Component, "grpc-go.v12"))
+		spanopts = append(spanopts, tracer.Tag(ext.Component, "google.golang.org/grpc.v12"))
 		spanopts = append(spanopts, tracer.Tag(ext.SpanKind, ext.SpanKindClient))
 		span, ctx = tracer.StartSpanFromContext(ctx, "grpc.client", spanopts...)
 

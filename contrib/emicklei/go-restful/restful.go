@@ -28,7 +28,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 	spanOpts := []ddtrace.StartSpanOption{tracer.ServiceName(cfg.serviceName)}
 	return func(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
 		spanOpts := append(spanOpts, tracer.ResourceName(req.SelectedRoutePath()))
-		spanOpts = append(spanOpts, tracer.Tag(ext.Component, "go-restful"))
+		spanOpts = append(spanOpts, tracer.Tag(ext.Component, "emicklei/go-restful"))
 		spanOpts = append(spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 
 		if !math.IsNaN(cfg.analyticsRate) {

@@ -69,7 +69,7 @@ func (h *handlers) Send(req *request.Request) {
 		tracer.Tag(tagAWSRegion, h.awsRegion(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
 		tracer.Tag(ext.HTTPURL, req.HTTPRequest.URL.String()),
-		tracer.Tag(ext.Component, "aws-sdk-go"),
+		tracer.Tag(ext.Component, "aws/aws-sdk-go/aws"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}
 	if !math.IsNaN(h.cfg.analyticsRate) {

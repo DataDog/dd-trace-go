@@ -76,7 +76,7 @@ func Test(t *testing.T) {
 			assert.Equal(t, "Query", s.Tag(tagGraphqlType))
 			assert.Equal(t, "graphql.field", s.OperationName())
 			assert.Equal(t, "graphql.field", s.Tag(ext.ResourceName))
-			assert.Equal(t, "graphql-go", s.Tag(ext.Component))
+			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
 		}
 
 		{
@@ -87,7 +87,7 @@ func Test(t *testing.T) {
 			assert.Equal(t, "Query", s.Tag(tagGraphqlType))
 			assert.Equal(t, "graphql.field", s.OperationName())
 			assert.Equal(t, "graphql.field", s.Tag(ext.ResourceName))
-			assert.Equal(t, "graphql-go", s.Tag(ext.Component))
+			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
 
 		}
 
@@ -99,7 +99,7 @@ func Test(t *testing.T) {
 			assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
 			assert.Equal(t, "graphql.request", s.OperationName())
 			assert.Equal(t, "graphql.request", s.Tag(ext.ResourceName))
-			assert.Equal(t, "graphql-go", s.Tag(ext.Component))
+			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
 
 		}
 	})
@@ -122,7 +122,7 @@ func Test(t *testing.T) {
 			assert.Equal(t, "Query", s.Tag(tagGraphqlType))
 			assert.Equal(t, "graphql.field", s.OperationName())
 			assert.Equal(t, "graphql.field", s.Tag(ext.ResourceName))
-			assert.Equal(t, "graphql-go", s.Tag(ext.Component))
+			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
 
 		}
 
@@ -134,7 +134,7 @@ func Test(t *testing.T) {
 			assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
 			assert.Equal(t, "graphql.request", s.OperationName())
 			assert.Equal(t, "graphql.request", s.Tag(ext.ResourceName))
-			assert.Equal(t, "graphql-go", s.Tag(ext.Component))
+			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
 
 		}
 	})

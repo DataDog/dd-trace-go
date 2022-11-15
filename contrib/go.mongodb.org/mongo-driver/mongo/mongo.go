@@ -48,7 +48,7 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 		tracer.Tag(ext.DBType, "mongo"),
 		tracer.Tag(ext.PeerHostname, hostname),
 		tracer.Tag(ext.PeerPort, port),
-		tracer.Tag(ext.Component, "mongo-go-driver"),
+		tracer.Tag(ext.Component, "go.mongodb.org/mongo-driver/mongo"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}
 	if !math.IsNaN(m.cfg.analyticsRate) {

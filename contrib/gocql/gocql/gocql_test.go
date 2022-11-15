@@ -85,7 +85,7 @@ func TestErrorWrapper(t *testing.T) {
 	assert.Equal(span.Tag(ext.ServiceName), "ServiceName")
 	assert.Equal(span.Tag(ext.CassandraConsistencyLevel), "QUORUM")
 	assert.Equal(span.Tag(ext.CassandraPaginated), "false")
-	assert.Equal(span.Tag(ext.Component), "gocql")
+	assert.Equal(span.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(span.Tag(ext.SpanKind), ext.SpanKindClient)
 
 	if iter.Host() != nil {
@@ -130,7 +130,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Equal(childSpan.OperationName(), ext.CassandraQuery)
 	assert.Equal(childSpan.Tag(ext.ResourceName), "SELECT * FROM trace.person")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
-	assert.Equal(childSpan.Tag(ext.Component), "gocql")
+	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	if iter.Host() != nil {
 		assert.Equal(childSpan.Tag(ext.TargetPort), "9042")
@@ -309,7 +309,7 @@ func TestIterScanner(t *testing.T) {
 	assert.Equal(childSpan.OperationName(), ext.CassandraQuery)
 	assert.Equal(childSpan.Tag(ext.ResourceName), "SELECT * from trace.person")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
-	assert.Equal(childSpan.Tag(ext.Component), "gocql")
+	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 
 }
@@ -354,6 +354,6 @@ func TestBatch(t *testing.T) {
 	assert.Equal(childSpan.OperationName(), ext.CassandraBatch)
 	assert.Equal(childSpan.Tag(ext.ResourceName), "BatchInsert")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
-	assert.Equal(childSpan.Tag(ext.Component), "gocql")
+	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 }

@@ -37,7 +37,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				return
 			}
 			opts := spanOpts
-			opts = append(opts, tracer.Tag(ext.Component, "chi"))
+			opts = append(opts, tracer.Tag(ext.Component, "go-chi/chi"))
 			opts = append(opts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

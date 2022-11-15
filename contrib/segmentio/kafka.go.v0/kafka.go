@@ -51,7 +51,7 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag("partition", msg.Partition),
 		tracer.Tag("offset", msg.Offset),
-		tracer.Tag(ext.Component, "kafka-go"),
+		tracer.Tag(ext.Component, "segmentio/kafka.go.v0"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Measured(),
 	}
@@ -130,7 +130,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(w.cfg.producerServiceName),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag(ext.Component, "kafka-go"),
+		tracer.Tag(ext.Component, "segmentio/kafka.go.v0"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 	}
 	if w.Writer.Topic != "" {

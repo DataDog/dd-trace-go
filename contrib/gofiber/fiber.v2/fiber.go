@@ -41,7 +41,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		}
 
 		opts = append(opts, cfg.spanOpts...)
-		opts = append(opts, tracer.Tag(ext.Component, "fiber.v2"))
+		opts = append(opts, tracer.Tag(ext.Component, "gofiber/fiber.v2"))
 		opts = append(opts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 		span, ctx := tracer.StartSpanFromContext(c.Context(), "http.request", opts...)
 

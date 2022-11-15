@@ -65,7 +65,7 @@ func TestTrace200(t *testing.T) {
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/user/123", span.Tag(ext.HTTPURL))
 		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
-		assert.Equal("fiber.v2", span.Tag(ext.Component))
+		assert.Equal("gofiber/fiber.v2", span.Tag(ext.Component))
 	}
 
 	t.Run("response", func(t *testing.T) {
@@ -159,7 +159,7 @@ func TestCustomError(t *testing.T) {
 	assert.Equal("400", span.Tag(ext.HTTPCode))
 	assert.Equal(fiber.ErrBadRequest, span.Tag(ext.Error).(*fiber.Error))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
-	assert.Equal("fiber.v2", span.Tag(ext.Component))
+	assert.Equal("gofiber/fiber.v2", span.Tag(ext.Component))
 }
 
 func TestUserContext(t *testing.T) {

@@ -58,7 +58,7 @@ func testMongoCollectionCommand(assert *assert.Assertions, command func(*Collect
 
 	for _, val := range spans {
 		if val.OperationName() == "mongodb.query" {
-			assert.Equal("mgo", val.Tag(ext.Component))
+			assert.Equal("globalsign/mgo", val.Tag(ext.Component))
 		}
 	}
 

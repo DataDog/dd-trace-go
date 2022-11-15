@@ -80,7 +80,7 @@ func TestClient(t *testing.T) {
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
-		assert.Equal("twirp", span.Tag(ext.Component))
+		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	})
 
@@ -109,7 +109,7 @@ func TestClient(t *testing.T) {
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal(true, span.Tag(ext.Error).(bool))
-		assert.Equal("twirp", span.Tag(ext.Component))
+		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	})
 
@@ -137,7 +137,7 @@ func TestClient(t *testing.T) {
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal(context.DeadlineExceeded, span.Tag(ext.Error))
-		assert.Equal("twirp", span.Tag(ext.Component))
+		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	})
 }
@@ -185,7 +185,7 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
-		assert.Equal("twirp", span.Tag(ext.Component))
+		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 	})
 
 	t.Run("error", func(t *testing.T) {
@@ -205,7 +205,7 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.Error).(error).Error())
-		assert.Equal("twirp", span.Tag(ext.Component))
+		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 	})
 
 	t.Run("chained", func(t *testing.T) {
@@ -238,7 +238,7 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.Error).(error).Error())
-		assert.Equal("twirp", span.Tag(ext.Component))
+		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 
 		span = spans[1]
 		assert.Equal("other.span.name", span.OperationName())

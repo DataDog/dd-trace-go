@@ -43,7 +43,7 @@ func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(string(query)),
 		tracer.ServiceName(h.cfg.serviceName),
-		tracer.Tag(ext.Component, "pg.v10"),
+		tracer.Tag(ext.Component, "go-pg/pg.v10"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}
 	if !math.IsNaN(h.cfg.analyticsRate) {

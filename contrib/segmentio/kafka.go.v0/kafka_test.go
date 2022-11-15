@@ -82,7 +82,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 	assert.Equal(t, 0, s0.Tag("partition"))
-	assert.Equal(t, "kafka-go", s0.Tag(ext.Component))
+	assert.Equal(t, "segmentio/kafka.go.v0", s0.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 
 	s1 := spans[1] // consume
@@ -92,7 +92,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 	assert.Equal(t, 0, s1.Tag("partition"))
-	assert.Equal(t, "kafka-go", s1.Tag(ext.Component))
+	assert.Equal(t, "segmentio/kafka.go.v0", s1.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 }
 
@@ -148,7 +148,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 	assert.Equal(t, 0, s0.Tag("partition"))
-	assert.Equal(t, "kafka-go", s0.Tag(ext.Component))
+	assert.Equal(t, "segmentio/kafka.go.v0", s0.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 
 	s1 := spans[1] // consume
@@ -158,6 +158,6 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 	assert.Equal(t, 0, s1.Tag("partition"))
-	assert.Equal(t, "kafka-go", s1.Tag(ext.Component))
+	assert.Equal(t, "segmentio/kafka.go.v0", s1.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 }

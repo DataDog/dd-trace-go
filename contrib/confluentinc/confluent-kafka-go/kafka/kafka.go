@@ -96,7 +96,7 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag("partition", msg.TopicPartition.Partition),
 		tracer.Tag("offset", msg.TopicPartition.Offset),
-		tracer.Tag(ext.Component, "confluent-kafka-go"),
+		tracer.Tag(ext.Component, "confluentinc/confluent-kafka-go/kafka"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Measured(),
 	}
@@ -207,7 +207,7 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.ServiceName(p.cfg.producerServiceName),
 		tracer.ResourceName("Produce Topic " + *msg.TopicPartition.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag(ext.Component, "confluent-kafka-go"),
+		tracer.Tag(ext.Component, "confluentinc/confluent-kafka-go/kafka"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag("partition", msg.TopicPartition.Partition),
 	}

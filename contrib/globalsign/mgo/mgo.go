@@ -56,7 +56,7 @@ func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.S
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName("mongodb.query"),
-		tracer.Tag(ext.Component, "mgo"),
+		tracer.Tag(ext.Component, "globalsign/mgo"),
 	}
 
 	if _, ok := tags["createChild"]; !ok {
