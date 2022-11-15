@@ -7,7 +7,6 @@ package ext
 
 // span_kind values are set per span following the opentelemetry standard
 // falls under the values of client, server, producer, consumer, and internal
-
 const (
 
 	// SpanKindServer indicates that the span covers server-side handling of a synchronous RPC or other remote request
