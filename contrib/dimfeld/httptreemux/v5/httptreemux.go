@@ -58,12 +58,12 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func defaultResourceNamer(router *Router, w http.ResponseWriter, req *http.Request) string {
 	route := req.URL.Path
 	lr, found := router.Lookup(w, req)
+	if !found {
+		return req.Method + " unknown"
+	}
 	for k, v := range lr.Params {
 		// replace parameter values in URL path with their names
 		route = strings.Replace(route, v, ":"+k, 1)
 	}
-	if found {
-		return req.Method + " " + route
-	}
-	return req.Method + " unknown"
+	return req.Method + " " + route
 }

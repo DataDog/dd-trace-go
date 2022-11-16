@@ -176,7 +176,7 @@ func TestResourceNamer(t *testing.T) {
 	// Note that the router has no handlers since we expect a 404
 
 	// Send and verify a request without a handler
-	url := "/unknown/path"
+	url := "/path/that/does/not/exist"
 	r := httptest.NewRequest("GET", url, nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)
