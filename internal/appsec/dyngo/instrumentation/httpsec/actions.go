@@ -65,8 +65,8 @@ func (h *ActionsHandler) RegisterAction(id string, action Action) {
 	case *BlockRequestAction:
 		payload := blockedPayload(a)
 		a.handler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			writer.Write(payload)
 			writer.WriteHeader(a.Status)
+			writer.Write(payload)
 		})
 		h.actions[id] = a
 	default:
