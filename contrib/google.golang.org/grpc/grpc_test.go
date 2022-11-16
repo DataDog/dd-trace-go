@@ -145,8 +145,6 @@ func TestStreaming(t *testing.T) {
 		}
 		assert.NotNil(t, rootSpan)
 		for _, span := range spans {
-			//assert.Equal(t, 1, 2,
-			//	"expected span to to have its trace id set to the root trace id %v", span)
 			if span != rootSpan {
 				assert.Equal(t, rootSpan.TraceID(), span.TraceID(),
 					"expected span to to have its trace id set to the root trace id (%d): %v",

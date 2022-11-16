@@ -136,7 +136,6 @@ func TestCollection_Update(t *testing.T) {
 	assert.Equal(3, len(spans))
 	assert.Equal("mongodb.query", spans[1].OperationName())
 	assert.Equal(ext.SpanKindClient, spans[1].Tag(ext.SpanKind))
-
 }
 
 func TestCollection_UpdateId(t *testing.T) {
@@ -210,7 +209,6 @@ func TestCollection_Upsert(t *testing.T) {
 	assert.Equal(6, len(spans))
 	assert.Equal("mongodb.query", spans[1].OperationName())
 	assert.Equal("mongodb.query", spans[4].OperationName())
-
 }
 
 func TestCollection_UpdateAll(t *testing.T) {
@@ -253,7 +251,6 @@ func TestCollection_FindId(t *testing.T) {
 
 	spans := testMongoCollectionCommand(assert, insert)
 	assert.Equal(6, len(spans))
-
 }
 
 func TestCollection_Remove(t *testing.T) {
