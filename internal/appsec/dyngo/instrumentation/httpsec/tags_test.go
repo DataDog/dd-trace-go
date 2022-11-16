@@ -225,11 +225,11 @@ func TestIPHeaders(t *testing.T) {
 			SetIPTags(&span, &r)
 			if tc.expectedIP.IsValid() {
 				require.Equal(t, tc.expectedIP.String(), span.Tag(ext.HTTPClientIP))
-				require.Nil(t, span.Tag(multipleIPHeaders))
+				require.Nil(t, span.Tag(tagMultipleIPHeaders))
 			} else {
 				require.Nil(t, span.Tag(ext.HTTPClientIP))
 				if tc.multiHeaders != "" {
-					require.Equal(t, tc.multiHeaders, span.Tag(multipleIPHeaders))
+					require.Equal(t, tc.multiHeaders, span.Tag(tagMultipleIPHeaders))
 					for hdr, ip := range tc.headers {
 						require.Equal(t, ip, span.Tag(ext.HTTPRequestHeaders+"."+hdr))
 					}

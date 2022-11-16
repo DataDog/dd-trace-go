@@ -65,6 +65,13 @@ func (s *SecurityEventsHolder) Events() []json.RawMessage {
 	return s.events
 }
 
+// ClearEvents clears the list of stored events
+func (s *SecurityEventsHolder) ClearEvents() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = []json.RawMessage{}
+}
+
 // SetTags fills the span tags using the key/value pairs found in `tags`
 func SetTags(span TagSetter, tags map[string]interface{}) {
 	for k, v := range tags {
@@ -102,9 +109,11 @@ func SetEventSpanTags(span TagSetter, events []json.RawMessage) error {
 
 // Create the value of the security event tag.
 // TODO(Julio-Guerra): a future libddwaf version should return something
-//   avoiding us the following events concatenation logic which currently
-//   involves unserializing the top-level JSON arrays to concatenate them
-//   together.
+//
+//	avoiding us the following events concatenation logic which currently
+//	involves unserializing the top-level JSON arrays to concatenate them
+//	together.
+//
 // TODO(Julio-Guerra): avoid serializing the json in the request hot path
 func makeEventTagValue(events []json.RawMessage) (json.RawMessage, error) {
 	var v interface{}

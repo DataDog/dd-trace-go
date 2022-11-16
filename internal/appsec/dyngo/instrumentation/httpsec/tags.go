@@ -21,9 +21,11 @@ import (
 const (
 	// envClientIPHeader is the name of the env var used to specify the IP header to be used for client IP collection.
 	envClientIPHeader = "DD_TRACE_CLIENT_IP_HEADER"
-	// multipleIPHeaders sets the multiple ip header tag used internally to tell the backend an error occurred when
+	// tagMultipleIPHeaders sets the multiple ip header tag used internally to tell the backend an error occurred when
 	// retrieving an HTTP request client IP.
-	multipleIPHeaders = "_dd.multiple-ip-headers"
+	tagMultipleIPHeaders = "_dd.multiple-ip-headers"
+	// tagBlockedRequest used to convey whether a request is blocked
+	tagBlockedRequest = "appsec.blocked"
 )
 
 var (
@@ -138,7 +140,7 @@ func SetIPTags(span instrumentation.TagSetter, r *http.Request) {
 		for i := range ips {
 			span.SetTag(ext.HTTPRequestHeaders+"."+headers[i], ips[i])
 		}
-		span.SetTag(multipleIPHeaders, strings.Join(headers, ","))
+		span.SetTag(tagMultipleIPHeaders, strings.Join(headers, ","))
 	}
 }
 

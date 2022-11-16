@@ -80,7 +80,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			switch a := action.(type) {
 			case *BlockRequestAction:
 				handler = a.handler
-				op.AddTag("appsec.blocked", true)
+				op.AddTag(tagBlockedRequest, true)
 			default:
 				log.Warn("appsec: unsupported action %v. Ignoring.", a)
 			}
@@ -97,6 +97,8 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		events := op.Events()
 		if len(events) > 0 {
 			applyActions(op)
+			op.ClearEvents()
+			op.ClearActions()
 		}
 		defer func() {
 			var status int
@@ -210,8 +212,14 @@ func (op *Operation) Finish(res HandlerOperationRes) []json.RawMessage {
 	return op.Events()
 }
 
+// Actions returns the actions linked to the operation
 func (op *Operation) Actions() []Action {
 	return op.actions
+}
+
+// ClearActions clears all the actions linked to the operation
+func (op *Operation) ClearActions() {
+	op.actions = []Action{}
 }
 
 // StartSDKBodyOperation starts the SDKBody operation and emits a start event
