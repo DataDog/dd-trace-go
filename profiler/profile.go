@@ -102,7 +102,10 @@ var profileTypes = map[ProfileType]profileType{
 			// the other profile types
 			p.pendingProfiles.Wait()
 			p.stopCPUProfile()
-			return buf.Bytes(), nil
+			if !p.cfg.demangle {
+				return buf.Bytes(), nil
+			}
+			return demangleCPUProfile(buf.Bytes())
 		},
 	},
 	// HeapProfile is complex due to how the Go runtime exposes it. It contains 4

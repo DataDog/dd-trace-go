@@ -107,6 +107,7 @@ type config struct {
 	deltaProfiles     bool
 	deltaMethod       string
 	logStartup        bool
+	demangle          bool
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -513,5 +514,13 @@ func WithLogStartup(enabled bool) Option {
 func WithHostname(hostname string) Option {
 	return func(cfg *config) {
 		cfg.hostname = hostname
+	}
+}
+
+// WithDemangledSymbols will demangle symbol names which are mangled, such as those
+// coming from C++ or Rust libraries. Defaults to false.
+func WithDemangledSymbols(enabled bool) Option {
+	return func(c *config) {
+		c.demangle = enabled
 	}
 }

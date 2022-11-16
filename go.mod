@@ -219,3 +219,5 @@ require (
 	mellium.im/sasl v0.2.1 // indirect
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )
+
+require github.com/ianlancetaylor/demangle v0.0.0-20200824232613-28f6c0f3b639
