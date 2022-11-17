@@ -1,12 +1,8 @@
 stages:
   - deploy
-  - benchmarks
 
 variables:
   INDEX_FILE: index.txt
-  DOWNSTREAM_BENCHMARKING_PLATFORM_BRANCH:
-    value: "knusbaum/dd-trace-go"
-    description: "Run a specific relenv-microbenchmarking-platform branch downstream"
 
 .common: &common
   tags: [ "runner:main", "size:large" ]
@@ -27,15 +23,3 @@ copy_to_s3:
     - echo $CI_COMMIT_SHA >> $INDEX_FILE
     - echo $GITLAB_USER_NAME >> $INDEX_FILE
     - aws s3 cp $INDEX_FILE s3://datadog-reliability-env/go/$INDEX_FILE
-
-trigger_benchmarking_platform:
-  stage: deploy
-  when: manual
-  trigger:
-    project: DataDog/apm-reliability/relenv-microbenchmarking-platform
-    branch: $DOWNSTREAM_BENCHMARKING_PLATFORM_BRANCH
-  variables:
-    UPSTREAM_PROJECT_ID: $CI_PROJECT_ID
-    UPSTREAM_PROJECT_NAME: $CI_PROJECT_NAME
-    UPSTREAM_BRANCH: $CI_COMMIT_REF_NAME
-    UPSTREAM_COMMIT_SHA: $CI_COMMIT_SHA

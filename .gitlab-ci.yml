@@ -1,0 +1,20 @@
+stages:
+  - benchmarks
+
+variables:
+  INDEX_FILE: index.txt
+  DOWNSTREAM_BENCHMARKING_PLATFORM_BRANCH:
+    value: "knusbaum/dd-trace-go"
+    description: "Run a specific relenv-microbenchmarking-platform branch downstream"
+
+trigger_benchmarking_platform:
+  stage: deploy
+  when: manual
+  trigger:
+    project: DataDog/apm-reliability/relenv-microbenchmarking-platform
+    branch: $DOWNSTREAM_BENCHMARKING_PLATFORM_BRANCH
+  variables:
+    UPSTREAM_PROJECT_ID: $CI_PROJECT_ID
+    UPSTREAM_PROJECT_NAME: $CI_PROJECT_NAME
+    UPSTREAM_BRANCH: $CI_COMMIT_REF_NAME
+    UPSTREAM_COMMIT_SHA: $CI_COMMIT_SHA
