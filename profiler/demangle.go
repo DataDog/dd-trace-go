@@ -22,20 +22,18 @@ func demangleCPUProfile(p []byte) ([]byte, error) {
 	}
 	out := new(bytes.Buffer)
 	w := gzip.NewWriter(out)
-	defer w.Close()
 	enc := pproflite.NewEncoder(w)
 
-	pproflite.NewDecoder(p).FieldEach(func(field pproflite.Field) error {
+	err = pproflite.NewDecoder(p).FieldEach(func(field pproflite.Field) error {
 		switch t := field.(type) {
 		case *pproflite.StringTable:
 			demangled := demangle.Filter(string(t.Value))
-			v := pproflite.StringTable{Value: []byte(demangled)}
-			enc.Encode(v)
-		default:
-			enc.Encode(field)
+			v := &pproflite.StringTable{Value: []byte(demangled)}
+			return enc.Encode(v)
 		}
-		return nil
+		return enc.Encode(field)
 	})
+	w.Close()
 
-	return out.Bytes(), nil
+	return out.Bytes(), err
 }
