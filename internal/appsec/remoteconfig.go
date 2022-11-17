@@ -134,7 +134,7 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 // mergeRulesDataEntries merges two slices of rules data entries together, removing duplicates and
 // only keeping the longest expiration values for similar entries.
 func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.ASMDataRuleDataEntry {
-	mergeMap := map[string]int{}
+	mergeMap := map[string]int64{}
 
 	for _, entry := range entries1 {
 		mergeMap[entry.Value] = entry.Expiration
