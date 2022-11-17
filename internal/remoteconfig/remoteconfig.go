@@ -64,7 +64,7 @@ type ProductUpdate map[string][]byte
 // ClientConfig contains the required values to configure a remoteconfig client
 type ClientConfig struct {
 	// The address at which the agent is listening for remoteconfig update requests on
-	AgentAddr string
+	AgentURL string
 	// The semantic version of the user's application
 	AppVersion string
 	// The env this tracer is running in
@@ -115,7 +115,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	return &Client{
 		ClientConfig: config,
 		clientID:     generateID(),
-		endpoint:     fmt.Sprintf("http://%s/v0.7/config", config.AgentAddr),
+		endpoint:     fmt.Sprintf("%s/v0.7/config", config.AgentURL),
 		repository:   repo,
 		stop:         make(chan struct{}),
 		lastError:    nil,

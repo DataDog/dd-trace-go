@@ -73,12 +73,17 @@ func (e retriableError) Error() string { return e.err.Error() }
 func (p *profiler) doRequest(bat batch) error {
 	tags := append(p.cfg.tags.Slice(),
 		fmt.Sprintf("service:%s", p.cfg.service),
-		fmt.Sprintf("env:%s", p.cfg.env),
 		// The profile_seq tag can be used to identify the first profile
 		// uploaded by a given runtime-id, identify missing profiles, etc.. See
 		// PROF-5612 (internal) for more details.
 		fmt.Sprintf("profile_seq:%d", bat.seq),
 	)
+	// If the user did not configure an "env" in the client, we should omit
+	// the tag so that the agent has a chance to supply a default tag.
+	// Otherwise, the tag supplied by the client will have priority.
+	if p.cfg.env != "" {
+		tags = append(tags, fmt.Sprintf("env:%s", p.cfg.env))
+	}
 	contentType, body, err := encode(bat, tags)
 	if err != nil {
 		return err
