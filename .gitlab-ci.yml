@@ -8,7 +8,7 @@ variables:
     description: "Run a specific relenv-microbenchmarking-platform branch downstream"
 
 trigger_benchmarking_platform:
-  stage: deploy
+  stage: benchmarks
   when: manual
   trigger:
     project: DataDog/apm-reliability/relenv-microbenchmarking-platform
