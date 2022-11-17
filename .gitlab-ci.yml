@@ -9,7 +9,6 @@ variables:
 
 trigger_benchmarking_platform:
   stage: benchmarks
-  when: manual
   trigger:
     project: DataDog/apm-reliability/relenv-microbenchmarking-platform
     branch: $DOWNSTREAM_BENCHMARKING_PLATFORM_BRANCH

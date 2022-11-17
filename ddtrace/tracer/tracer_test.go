@@ -1699,7 +1699,7 @@ func TestEnvironment(t *testing.T) {
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
-	tracer, _, _, stop := startTestTracer(b, WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	defer stop()
 
 	b.ResetTimer()
@@ -1718,7 +1718,7 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 // BenchmarkTracerAddSpans tests the performance of creating and finishing a root
 // span. It should include the encoding overhead.
 func BenchmarkTracerAddSpans(b *testing.B) {
-	tracer, _, _, stop := startTestTracer(b, WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	defer stop()
 
 	for n := 0; n < b.N; n++ {
@@ -1728,8 +1728,9 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 }
 
 func BenchmarkStartSpan(b *testing.B) {
-	tracer, _, _, stop := startTestTracer(b, WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	defer stop()
+
 	root := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 	ctx := ContextWithSpan(context.TODO(), root)
 
