@@ -3,7 +3,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-go install github.com/tsenart/vegeta@12.8.4
+go install github.com/tsenart/vegeta@latest
 
 go build
 ./cgo-profiling-test &
