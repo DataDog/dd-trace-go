@@ -21,6 +21,6 @@ cd /benchmark-analyzer
   --extra-params="{\"dd_trace_go\":\"main\"}" \
   "${ARTIFACTS_DIR}/main_bench.txt"
 
-./benchmark_analyzer compare pairwise --outpath ${REPORTS_DIR}/report.md --format md-nodejs pr.json main.json
-./benchmark_analyzer compare pairwise --outpath ${REPORTS_DIR}/report_full.html --format html pr.json main.json
+./benchmark_analyzer compare pairwise --outpath ${REPORTS_DIR}/report.md --format md-nodejs main.json pr.json
+./benchmark_analyzer compare pairwise --outpath ${REPORTS_DIR}/report_full.html --format html main.json pr.json
 

@@ -1704,14 +1704,20 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		go func() {
-			parent := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
-			defer parent.Finish()
+		wg := sync.WaitGroup{}
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				parent := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+				defer parent.Finish()
 
-			for i := 0; i < 10; i++ {
-				tracer.StartSpan("redis.command", ChildOf(parent.Context())).Finish()
-			}
-		}()
+				for i := 0; i < 10; i++ {
+					tracer.StartSpan("redis.command", ChildOf(parent.Context())).Finish()
+				}
+			}()
+		}
+		wg.Wait()
 	}
 }
 
