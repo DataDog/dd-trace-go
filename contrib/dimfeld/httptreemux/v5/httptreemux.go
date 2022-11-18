@@ -62,9 +62,16 @@ func defaultResourceNamer(router *Router, w http.ResponseWriter, req *http.Reque
 		return req.Method + " unknown"
 	}
 	for k, v := range lr.Params {
-		// replace parameter values in URL path with their names
-		old := "/" + v
-		new := "/" + ":" + k
+		// replace parameter surrounded by a set of "/", i.e. ".../:param/..."
+		old := "/" + v + "/"
+		new := "/" + ":" + k + "/"
+		if strings.Contains(route, old) {
+			route = strings.Replace(route, old, new, 1)
+			continue
+		}
+		// replace parameter at end of the path, i.e. "../:param"
+		old = "/" + v
+		new = "/" + ":" + k
 		route = strings.Replace(route, old, new, 1)
 	}
 	return req.Method + " " + route
