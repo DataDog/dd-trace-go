@@ -1,0 +1,27 @@
+variables:
+  BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/relenv-microbenchmarking-platform:dd-trace-go_knusbaum_test
+  INDEX_FILE: index.txt
+
+benchmark:
+  stage: benchmarks
+  image: $BASE_CI_IMAGE
+  timeout: 1h
+  interruptible: true
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  script:
+    #    - source ./steps/install-base-deps.sh
+    #    - ./steps/install-benchmark-analyzer.sh
+    #    - ./steps/install-pr-commenter.sh
+    - ./capture-hardware-software-info.sh
+    - ./run-benchmarks.sh
+    - ./upload-results-to-s3.sh
+    - ./analyze-results.sh
+    - ./post-pr-comment.sh
+  artifacts:
+    name: "reports"
+    paths:
+      - reports/
+    expire_in: 3 months
+  variables:
+    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
+    FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
