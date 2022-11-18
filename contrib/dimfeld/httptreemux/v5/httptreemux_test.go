@@ -157,6 +157,80 @@ func TestAnalyticsSettings(t *testing.T) {
 	})
 }
 
+func TestDefaultResourceNamer(t *testing.T) {
+	tests := map[string]struct {
+		method string
+		path   string
+		url    string
+	}{
+		"GET /things": {
+			method: http.MethodGet,
+			path:   "/things",
+			url:    "/things"},
+		"GET /things?a=b": {
+			method: http.MethodGet,
+			path:   "/things",
+			url:    "/things?a=b"},
+		"GET /thing/:a": {
+			method: http.MethodGet,
+			path:   "/thing/:a",
+			url:    "/thing/123"},
+		"PUT /thing/:a": {
+			method: http.MethodPut,
+			path:   "/thing/:a",
+			url:    "/thing/123"},
+		"GET /thing/:a/:b/:c": {
+			method: http.MethodGet,
+			path:   "/thing/:a/:b/:c",
+			url:    "/thing/zyx/321/cba"},
+		"GET /thing/:a/details": {
+			method: http.MethodGet,
+			path:   "/thing/:a/details",
+			url:    "/thing/123/details"},
+		"GET /thing/:a/:version/details": {
+			method: http.MethodGet,
+			path:   "/thing/:a/:version/details",
+			url:    "/thing/123/2/details"},
+		"GET /thing/:a/:b/details": {
+			method: http.MethodGet,
+			path:   "/thing/:a/:b/details",
+			url:    "/thing/123/2/details"},
+		"GET /thing/:a/:b/:c/details": {
+			method: http.MethodGet,
+			path:   "/thing/:a/:b/:c/details",
+			url:    "/thing/123/2/1/details"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			r := httptest.NewRequest(tc.method, tc.url, nil)
+			w := httptest.NewRecorder()
+
+			router := New()
+			router.Handle(tc.method, tc.path, handler200)
+			router.ServeHTTP(w, r)
+
+			assert.Equal(http.StatusOK, w.Code)
+			assert.Equal("OK\n", w.Body.String())
+
+			spans := mt.FinishedSpans()
+			assert.Equal(1, len(spans))
+
+			s := spans[0]
+			resourceName := tc.method + " " + tc.path
+			assert.Equal(resourceName, s.Tag(ext.ResourceName))
+			assert.Equal("200", s.Tag(ext.HTTPCode))
+			assert.Equal(tc.method, s.Tag(ext.HTTPMethod))
+			assert.Equal("http://example.com"+tc.url, s.Tag(ext.HTTPURL))
+			assert.Equal(nil, s.Tag(ext.Error))
+		})
+	}
+}
+
 func TestResourceNamer(t *testing.T) {
 	staticName := "static resource name"
 	staticNamer := func(*Router, http.ResponseWriter, *http.Request) string {
