@@ -379,6 +379,7 @@ func (t *tracer) pushTrace(trace *finishedTrace) {
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+	time.Sleep(5 * time.Millisecond)
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
