@@ -4,8 +4,6 @@ ARTIFACTS_DIR="/artifacts/${CI_JOB_ID}"
 REPORTS_DIR="$(pwd)/reports/"
 mkdir "${REPORTS_DIR}" || :
 
-echo "Insert code for analyzing your benchmarks here. The output of analysis must be saved into reports/ directory."
-
 BASELINE_BRANCH=$(github-find-merge-into-branch --for-repo="$CI_PROJECT_NAME" --for-pr="$CI_COMMIT_REF_NAME" || :)
 
 source /benchmark-analyzer/.venv/bin/activate
