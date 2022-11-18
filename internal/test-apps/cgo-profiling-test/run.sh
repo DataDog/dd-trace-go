@@ -10,7 +10,7 @@ go build
 sleep 1 # wait for startup
 
 # Generate some load
-~/go/bin/vegeta attack -connections 10 -rate 1000 -output vegeta.bin << EOF 
+$(go env GOPATH)/bin/vegeta attack -connections 10 -rate 1000 -output vegeta.bin << EOF 
 POST http://localhost:8765/update?name=foo&color=blue
 POST http://localhost:8765/update?name=bar&color=green
 POST http://localhost:8765/update?name=baz&color=purple
