@@ -107,8 +107,6 @@ type config struct {
 	deltaProfiles     bool
 	deltaMethod       string
 	logStartup        bool
-	cmemprofEnabled   bool
-	cmemprofRate      int
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -293,14 +291,6 @@ func defaultConfig() (*config, error) {
 			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
 		}
 		c.maxGoroutinesWait = n
-	}
-	c.cmemprofEnabled = internal.BoolEnv("DD_PROFILING_CMEMPROF_ENABLED", false)
-	if v := os.Getenv("DD_PROFILING_CMEMPROF_SAMPLING_RATE"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_CMEMPROF_SAMPLING_RATE: %s", err)
-		}
-		c.cmemprofRate = n
 	}
 	return &c, nil
 }
