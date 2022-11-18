@@ -1730,6 +1730,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 func BenchmarkStartSpan(b *testing.B) {
 	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	defer stop()
+
 	root := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 	ctx := ContextWithSpan(context.TODO(), root)
 
