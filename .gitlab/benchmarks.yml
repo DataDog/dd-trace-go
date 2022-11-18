@@ -14,7 +14,7 @@ benchmark:
     #    - ./steps/install-pr-commenter.sh
     - /scripts/capture-hardware-software-info.sh
     - /scripts/run-benchmarks.sh
-    - /scripts/upload-results-to-s3.sh
+    # - /scripts/upload-results-to-s3.sh #commented out until we have merged our permissions changes
     - /scripts/analyze-results.sh
     - /scripts/post-pr-comment.sh
   artifacts:
