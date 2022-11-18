@@ -12,11 +12,11 @@ benchmark:
     #    - source ./steps/install-base-deps.sh
     #    - ./steps/install-benchmark-analyzer.sh
     #    - ./steps/install-pr-commenter.sh
-    - ./capture-hardware-software-info.sh
-    - ./run-benchmarks.sh
-    - ./upload-results-to-s3.sh
-    - ./analyze-results.sh
-    - ./post-pr-comment.sh
+    - /scripts/capture-hardware-software-info.sh
+    - /scripts/run-benchmarks.sh
+    - /scripts/upload-results-to-s3.sh
+    - /scripts/analyze-results.sh
+    - /scripts/post-pr-comment.sh
   artifacts:
     name: "reports"
     paths:
