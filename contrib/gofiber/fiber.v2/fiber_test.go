@@ -7,17 +7,15 @@ package fiber
 
 import (
 	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"testing"
-
+	"github.com/gofiber/fiber/v2"
+	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
-	"github.com/gofiber/fiber/v2"
-	"github.com/stretchr/testify/assert"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 )
 
 func TestChildSpan(t *testing.T) {
@@ -218,7 +216,7 @@ func TestPropagation(t *testing.T) {
 	router.Get("/span/exists/false", func(c *fiber.Ctx) error {
 		s, _ := tracer.SpanFromContext(c.UserContext())
 		assert.Equal(s.Context().TraceID() == pspan.Context().TraceID(), false)
-		return c.SendString(c.Params("span exists"))
+		return c.SendString(c.Params("span does not exist"))
 	})
 
 	_, withoutErr := router.Test(requestWithoutSpan)
