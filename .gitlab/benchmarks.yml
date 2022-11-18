@@ -7,6 +7,9 @@ benchmark:
   stage: benchmarks
   image: $BASE_CI_IMAGE
   timeout: 1h
+  only:
+    refs:
+      - branches
   interruptible: true
   tags: ["runner:apm-k8s-tweaked-metal"]
   script:
