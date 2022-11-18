@@ -8,6 +8,7 @@ package fiber // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gofiber/fiber.v
 
 import (
 	"fmt"
+	"github.com/gofiber/fiber/v2"
 	"math"
 	"net/http"
 	"strconv"
@@ -16,8 +17,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"github.com/gofiber/fiber/v2"
 )
 
 // Middleware returns middleware that will trace incoming requests.
@@ -40,11 +39,11 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		// Create a http.Header object so that a parent trace can be extracted. Fiber uses a non-standard header carrier
-		prettyHeader := http.Header{}
+		h := http.Header{}
 		for k, v := range c.GetReqHeaders() {
-			prettyHeader.Add(k, v)
+			h.Add(k, v)
 		}
-		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(prettyHeader)); err == nil {
+		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(h)); err == nil {
 			opts = append(opts, tracer.ChildOf(spanctx))
 		}
 		opts = append(opts, cfg.spanOpts...)
