@@ -23,8 +23,8 @@ package waf
 // #cgo CFLAGS: -I${SRCDIR}/include
 // #cgo linux,amd64 LDFLAGS: -L${SRCDIR}/lib/linux-amd64 -lddwaf -lm -ldl -Wl,-rpath=/lib64:/usr/lib64:/usr/local/lib64:/lib:/usr/lib:/usr/local/lib
 // #cgo linux,arm64 LDFLAGS: -L${SRCDIR}/lib/linux-arm64 -lddwaf -lm -ldl -Wl,-rpath=/lib64:/usr/lib64:/usr/local/lib64:/lib:/usr/lib:/usr/local/lib
-// #cgo darwin,amd64 LDFLAGS: -L${SRCDIR}/lib/darwin-amd64 -lddwaf -lstdc++
-// #cgo darwin,arm64 LDFLAGS: -L${SRCDIR}/lib/darwin-arm64 -lddwaf -lstdc++
+// #cgo darwin,amd64 LDFLAGS: -L${SRCDIR}/lib/darwin-amd64 -lddwaf -lc++
+// #cgo darwin,arm64 LDFLAGS: -L${SRCDIR}/lib/darwin-arm64 -lddwaf -lc++
 import "C"
 
 import (
@@ -941,6 +941,7 @@ func cFree(ptr unsafe.Pointer) {
 
 // Exported Go function to free ddwaf objects by using freeWO in order to keep
 // its dummy but efficient memory kallocation monitoring.
+//
 //export go_ddwaf_object_free
 func go_ddwaf_object_free(v *C.ddwaf_object) {
 	freeWO((*wafObject)(v))
@@ -949,17 +950,16 @@ func go_ddwaf_object_free(v *C.ddwaf_object) {
 // Go reimplementation of ddwaf_result_free to avoid yet another CGO call in the
 // request hot-path and avoiding it when there are no results to free.
 func freeWAFResult(result *C.ddwaf_result) {
-	if result.data == nil || result.actions.array == nil {
-		return
+	if data := result.data; data != nil {
+		C.free(unsafe.Pointer(data))
 	}
 
-	C.free(unsafe.Pointer(result.data))
-
-	array := result.actions.array
-	for i := 0; i < int(result.actions.size); i++ {
-		C.free(unsafe.Pointer(cindexCharPtrArray(array, i)))
+	if array := result.actions.array; array != nil {
+		for i := 0; i < int(result.actions.size); i++ {
+			C.free(unsafe.Pointer(cindexCharPtrArray(array, i)))
+		}
+		C.free(unsafe.Pointer(array))
 	}
-	C.free(unsafe.Pointer(array))
 }
 
 // Helper function to access to i-th element of the given **C.char array.
