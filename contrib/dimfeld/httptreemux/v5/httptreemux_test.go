@@ -45,6 +45,33 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal(nil, s.Tag(ext.Error))
 }
 
+func TestHttpTracer404(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// Send and verify a request without a handler
+	url := "/unknown/path"
+	r := httptest.NewRequest("GET", url, nil)
+	w := httptest.NewRecorder()
+	router().ServeHTTP(w, r)
+	assert.Equal(404, w.Code)
+	assert.Equal("404 page not found\n", w.Body.String())
+
+	spans := mt.FinishedSpans()
+	assert.Equal(1, len(spans))
+
+	s := spans[0]
+	assert.Equal("http.request", s.OperationName())
+	assert.Equal("my-service", s.Tag(ext.ServiceName))
+	assert.Equal("GET unknown", s.Tag(ext.ResourceName))
+	assert.Equal("404", s.Tag(ext.HTTPCode))
+	assert.Equal("GET", s.Tag(ext.HTTPMethod))
+	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
+	assert.Equal("testvalue", s.Tag("testkey"))
+	assert.Equal(nil, s.Tag(ext.Error))
+}
+
 func TestHttpTracer500(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -128,33 +155,6 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
-}
-
-func TestDefaultResourceNamer(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	// Send and verify a request without a handler
-	url := "/unknown/path"
-	r := httptest.NewRequest("GET", url, nil)
-	w := httptest.NewRecorder()
-	router().ServeHTTP(w, r)
-	assert.Equal(404, w.Code)
-	assert.Equal("404 page not found\n", w.Body.String())
-
-	spans := mt.FinishedSpans()
-	assert.Equal(1, len(spans))
-
-	s := spans[0]
-	assert.Equal("http.request", s.OperationName())
-	assert.Equal("my-service", s.Tag(ext.ServiceName))
-	assert.Equal("GET unknown", s.Tag(ext.ResourceName))
-	assert.Equal("404", s.Tag(ext.HTTPCode))
-	assert.Equal("GET", s.Tag(ext.HTTPMethod))
-	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
-	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal(nil, s.Tag(ext.Error))
 }
 
 func TestResourceNamer(t *testing.T) {
