@@ -58,3 +58,7 @@ git update-index --no-assume-unchanged go.*
 ### Milestones
 
 The maintainers of this repository assign milestones to pull requests to classify them. `Triage` indicates that it is yet to be decided which version the change will go into. Pull requests that are ready get the upcoming release version assigned.
+
+### Benchmarks
+
+Some benchmarks will run on any new PR commits, the results will be commented into the PR on completion. To see the list of benchmarks or to add additional benchmarks run go to `.gitlab/scripts/run-benchmarks.sh`.
