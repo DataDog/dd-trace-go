@@ -8,10 +8,11 @@ package fiber // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gofiber/fiber.v
 
 import (
 	"fmt"
-	"github.com/gofiber/fiber/v2"
 	"math"
 	"net/http"
 	"strconv"
+
+	"github.com/gofiber/fiber/v2"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
