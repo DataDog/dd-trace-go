@@ -27,13 +27,33 @@ func demangleCPUProfile(p []byte) ([]byte, error) {
 	err = pproflite.NewDecoder(p).FieldEach(func(field pproflite.Field) error {
 		switch t := field.(type) {
 		case *pproflite.StringTable:
-			demangled := demangle.Filter(string(t.Value))
-			v := &pproflite.StringTable{Value: []byte(demangled)}
-			return enc.Encode(v)
+			if maybeMangled(t.Value) {
+				demangled := demangle.Filter(string(t.Value))
+				t.Value = []byte(demangled)
+			}
 		}
 		return enc.Encode(field)
 	})
 	w.Close()
 
 	return out.Bytes(), err
+}
+
+// manglePrefixes are the prefixes that github.com/ianlancetaylor/demangle checks
+// to see if a symbol name might be mangled
+var manglePrefixes = [][]byte{
+	[]byte(`_R`),   // Rust
+	[]byte(`_Z`),   // Itanium
+	[]byte(`___Z`), // Clang extensions
+	[]byte(`_GLOBAL_`),
+}
+
+// maybeMangled returns whether b might be a mangled symbol, based on its prefix
+func maybeMangled(b []byte) bool {
+	for _, p := range manglePrefixes {
+		if bytes.HasPrefix(b, p) {
+			return true
+		}
+	}
+	return false
 }
