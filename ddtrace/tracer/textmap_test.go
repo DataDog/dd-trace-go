@@ -455,7 +455,7 @@ func testB3(t *testing.T, b3Header string) {
 	})
 
 	t.Run("multiple", func(t *testing.T) {
-		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", fmt.Sprintf("Datadog,%v", b3Header))
+		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", fmt.Sprintf("Datadog,%s", b3Header))
 		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
 
 		b3Headers := TextMapCarrier(map[string]string{
