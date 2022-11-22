@@ -355,9 +355,9 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 }
 
-func TestB3(t *testing.T) {
+func testB3(t *testing.T, b3Header string) {
 	t.Run("inject", func(t *testing.T) {
-		os.Setenv("DD_PROPAGATION_STYLE_INJECT", "B3")
+		os.Setenv("DD_PROPAGATION_STYLE_INJECT", b3Header)
 		defer os.Unsetenv("DD_PROPAGATION_STYLE_INJECT")
 
 		var tests = []struct {
@@ -409,7 +409,7 @@ func TestB3(t *testing.T) {
 	})
 
 	t.Run("extract", func(t *testing.T) {
-		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "b3")
+		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", b3Header)
 		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
 
 		var tests = []struct {
@@ -455,7 +455,7 @@ func TestB3(t *testing.T) {
 	})
 
 	t.Run("multiple", func(t *testing.T) {
-		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "Datadog,B3")
+		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", fmt.Sprintf("Datadog,%v", b3Header))
 		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
 
 		b3Headers := TextMapCarrier(map[string]string{
@@ -495,6 +495,12 @@ func TestB3(t *testing.T) {
 		assert.True(ok)
 		assert.Equal(2, p)
 	})
+
+}
+
+func TestB3(t *testing.T) {
+	testB3(t, "b3")
+	testB3(t, "b3multi")
 
 	t.Run("config", func(t *testing.T) {
 		os.Setenv("DD_PROPAGATION_STYLE_INJECT", "datadog")
