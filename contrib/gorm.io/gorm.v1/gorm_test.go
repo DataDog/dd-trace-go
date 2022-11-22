@@ -199,6 +199,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.create", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
+		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
 	})
 
 	t.Run("query", func(t *testing.T) {
@@ -224,6 +225,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.query", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
+		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
 	})
 
 	t.Run("update", func(t *testing.T) {
@@ -250,6 +252,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.update", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
+		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -276,6 +279,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.delete", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
+		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
 	})
 }
 

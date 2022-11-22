@@ -34,6 +34,8 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag("message_size", len(msg.Data)),
 		tracer.Tag("ordering_key", msg.OrderingKey),
+		tracer.Tag(ext.Component, "cloud.google.com/go/pubsub.v1"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 	}
 	if cfg.serviceName != "" {
 		spanOpts = append(spanOpts, tracer.ServiceName(cfg.serviceName))
@@ -96,6 +98,8 @@ func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.
 			tracer.Tag("ordering_key", msg.OrderingKey),
 			tracer.Tag("message_id", msg.ID),
 			tracer.Tag("publish_time", msg.PublishTime.String()),
+			tracer.Tag(ext.Component, "cloud.google.com/go/pubsub.v1"),
+			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 			tracer.ChildOf(parentSpanCtx),
 		}
 		if cfg.serviceName != "" {

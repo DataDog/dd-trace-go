@@ -201,7 +201,9 @@ func (c *Collection) RemoveAll(selector interface{}) (info *mgo.ChangeInfo, err 
 
 // Repair invokes and traces Collection.Repair
 func (c *Collection) Repair() *Iter {
+	c.tags["createChild"] = "true" // flag to tell newChildSpanFromContext not to set span.kind
 	span := newChildSpanFromContext(c.cfg, c.tags)
+	delete(c.tags, "createChild") // removes flag after creating span
 	iter := c.Collection.Repair()
 	span.Finish()
 	return &Iter{

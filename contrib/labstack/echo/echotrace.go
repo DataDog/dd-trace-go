@@ -28,6 +28,8 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	log.Debug("contrib/labstack/echo: Configuring Middleware: %#v", cfg)
 	spanOpts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
+		tracer.Tag(ext.Component, "labstack/echo"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
