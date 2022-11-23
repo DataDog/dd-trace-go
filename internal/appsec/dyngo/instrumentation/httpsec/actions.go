@@ -7,6 +7,7 @@ package httpsec
 
 import (
 	"net/http"
+	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -62,6 +63,7 @@ func newBlockRequestHandler(status int, ct string, payload []byte) http.Handler 
 
 // ActionsHandler handles actions registration and their application to operations
 type ActionsHandler struct {
+	mu      sync.RWMutex
 	actions map[string]Action
 }
 
@@ -81,13 +83,17 @@ func NewActionsHandler() *ActionsHandler {
 // RegisterAction registers a specific action to the handler. If the action kind is unknown
 // the action will not be registered
 func (h *ActionsHandler) RegisterAction(id string, a Action) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.actions[id] = a
 }
 
 // Apply applies the action identified by `id` for the given operation
 // Returns true if the applied action will interrupt the request flow (block, redirect, etc...)
 func (h *ActionsHandler) Apply(id string, op *Operation) bool {
+	h.mu.RLock()
 	a, ok := h.actions[id]
+	h.mu.RUnlock()
 	if !ok {
 		log.Debug("appsec: ignoring the returned waf action: unknown action id `%s`", id)
 		return false
