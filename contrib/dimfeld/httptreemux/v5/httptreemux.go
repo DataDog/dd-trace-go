@@ -51,7 +51,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// Router is a traced version of httptreemux.ContextMux.
+// ContextRouter is a traced version of httptreemux.ContextMux.
 type ContextRouter struct {
 	*httptreemux.ContextMux
 	config *routerConfig
