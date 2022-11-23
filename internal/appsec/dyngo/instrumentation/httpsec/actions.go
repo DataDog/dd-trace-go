@@ -16,24 +16,48 @@ type Action interface {
 	isAction()
 }
 
-// BlockRequestAction is the parameter struct used to perform actions of kind ActionBlockRequest
+// BlockRequestAction is the action that holds the HTTP handler to use to block the request
 type BlockRequestAction struct {
-	// Status is the return code to use when blocking the request
-	Status int
-	// Template is the payload template to use to write the response (html or json)
-	Template string
 	// handler is the http handler to use to block the request
 	handler http.Handler
 }
 
 func (*BlockRequestAction) isAction() {}
 
-func blockedPayload(a *BlockRequestAction) []byte {
-	payload := BlockedTemplateJSON
-	if a.Template == "html" {
-		payload = BlockedTemplateHTML
+func NewBlockRequestAction(status int, template string) BlockRequestAction {
+	htmlHandler := newBlockRequestHandler(status, "application/html", BlockedTemplateHTML)
+	jsonHandler := newBlockRequestHandler(status, "application/json", BlockedTemplateJSON)
+	var action BlockRequestAction
+	switch template {
+	case "json":
+		action.handler = newBlockRequestHandler(status, "application/json", BlockedTemplateJSON)
+		break
+	case "html":
+		action.handler = newBlockRequestHandler(status, "application/html", BlockedTemplateHTML)
+		break
+	default:
+		action.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := jsonHandler
+			for _, value := range r.Header.Values("Accept") {
+				if value == "application/html" {
+					h = htmlHandler
+					break
+				}
+			}
+			h.ServeHTTP(w, r)
+		})
+		break
 	}
-	return payload
+	return action
+
+}
+
+func newBlockRequestHandler(status int, ct string, payload []byte) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", ct)
+		w.WriteHeader(status)
+		w.Write(payload)
+	})
 }
 
 // ActionsHandler handles actions registration and their application to operations
@@ -48,28 +72,16 @@ func NewActionsHandler() *ActionsHandler {
 		actions: map[string]Action{},
 	}
 	// Register the default "block" action as specified in the RFC for HTTP blocking
-	handler.RegisterAction("block", &BlockRequestAction{
-		Status:   403,
-		Template: "html",
-	})
+	block := NewBlockRequestAction(403, "auto")
+	handler.RegisterAction("block", &block)
 
 	return &handler
 }
 
 // RegisterAction registers a specific action to the handler. If the action kind is unknown
 // the action will not be registered
-func (h *ActionsHandler) RegisterAction(id string, action Action) {
-	switch a := action.(type) {
-	case *BlockRequestAction:
-		payload := blockedPayload(a)
-		a.handler = http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			writer.WriteHeader(a.Status)
-			writer.Write(payload)
-		})
-		h.actions[id] = a
-	default:
-		break
-	}
+func (h *ActionsHandler) RegisterAction(id string, a Action) {
+	h.actions[id] = a
 }
 
 // Apply applies the action identified by `id` for the given operation
