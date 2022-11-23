@@ -7,6 +7,8 @@ package httpsec
 
 import (
 	"net/http"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // Action is used to identify any action kind
@@ -16,12 +18,11 @@ type Action interface {
 
 // BlockRequestAction is the parameter struct used to perform actions of kind ActionBlockRequest
 type BlockRequestAction struct {
-	Action
 	// Status is the return code to use when blocking the request
 	Status int
 	// Template is the payload template to use to write the response (html or json)
 	Template string
-	// handler is the http handler be used to block the request (see wrap())
+	// handler is the http handler to use to block the request
 	handler http.Handler
 }
 
@@ -75,6 +76,7 @@ func (h *ActionsHandler) RegisterAction(id string, action Action) {
 func (h *ActionsHandler) Apply(id string, op *Operation) {
 	a, ok := h.actions[id]
 	if !ok {
+		log.Debug("appsec: ignoring the returned waf action: unknown action id `%s`", id)
 		return
 	}
 	op.actions = append(op.actions, a)

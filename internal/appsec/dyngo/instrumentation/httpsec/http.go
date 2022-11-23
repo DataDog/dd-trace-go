@@ -82,7 +82,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				handler = a.handler
 				op.AddTag(tagBlockedRequest, true)
 			default:
-				log.Warn("appsec: unsupported action %v. Ignoring.", a)
+				log.Error("appsec: ignoring security action: unexpected action type %T", a)
 			}
 		}
 	}
@@ -219,7 +219,7 @@ func (op *Operation) Actions() []Action {
 
 // ClearActions clears all the actions linked to the operation
 func (op *Operation) ClearActions() {
-	op.actions = []Action{}
+	op.actions = op.actions[0:0]
 }
 
 // StartSDKBodyOperation starts the SDKBody operation and emits a start event

@@ -107,13 +107,13 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 
 		values := map[string]interface{}{}
 		for _, addr := range addresses {
-			if addr == httpClientIP && args.ClientIP.IsValid() {
-				values[httpClientIP] = args.ClientIP.String()
+			if addr == httpClientIPAddr && args.ClientIP.IsValid() {
+				values[httpClientIPAddr] = args.ClientIP.String()
 			}
 		}
+		// TODO: suspicious request blocking by moving here all the addresses available when the request begins
 
 		matches, actionIds := runWAF(wafCtx, values, timeout)
-		actionIds = append(actionIds, "block")
 		if len(matches) > 0 {
 			for _, id := range actionIds {
 				actionHandler.Apply(id, op)
@@ -151,18 +151,20 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 					if query := args.Query; query != nil {
 						values[serverRequestQueryAddr] = query
 					}
-				case serverRequestPathParams:
+				case serverRequestPathParamsAddr:
 					if pathParams := args.PathParams; pathParams != nil {
-						values[serverRequestPathParams] = pathParams
+						values[serverRequestPathParamsAddr] = pathParams
 					}
-				case serverRequestBody:
+				case serverRequestBodyAddr:
 					if body != nil {
-						values[serverRequestBody] = body
+						values[serverRequestBodyAddr] = body
 					}
 				case serverResponseStatusAddr:
 					values[serverResponseStatusAddr] = res.Status
 				}
 			}
+			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
+			// response is not supported at the moment.
 			matches, _ := runWAF(wafCtx, values, timeout)
 
 			// Add WAF metrics.
@@ -237,6 +239,8 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			if md := handlerArgs.Metadata; len(md) > 0 {
 				values[grpcServerRequestMetadata] = md
 			}
+			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
+			// response is not supported at the moment.
 			event, _ := runWAF(wafCtx, values, timeout)
 
 			// WAF run durations are WAF context bound. As of now we need to keep track of those externally since
@@ -294,10 +298,10 @@ const (
 	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
 	serverRequestCookiesAddr          = "server.request.cookies"
 	serverRequestQueryAddr            = "server.request.query"
-	serverRequestPathParams           = "server.request.path_params"
-	serverRequestBody                 = "server.request.body"
+	serverRequestPathParamsAddr       = "server.request.path_params"
+	serverRequestBodyAddr             = "server.request.body"
 	serverResponseStatusAddr          = "server.response.status"
-	httpClientIP                      = "http.client_ip"
+	httpClientIPAddr                  = "http.client_ip"
 )
 
 // List of HTTP rule addresses currently supported by the WAF
@@ -306,10 +310,10 @@ var httpAddresses = []string{
 	serverRequestHeadersNoCookiesAddr,
 	serverRequestCookiesAddr,
 	serverRequestQueryAddr,
-	serverRequestPathParams,
-	serverRequestBody,
+	serverRequestPathParamsAddr,
+	serverRequestBodyAddr,
 	serverResponseStatusAddr,
-	httpClientIP,
+	httpClientIPAddr,
 }
 
 // gRPC rule addresses currently supported by the WAF

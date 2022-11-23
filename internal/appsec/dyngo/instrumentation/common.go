@@ -69,7 +69,7 @@ func (s *SecurityEventsHolder) Events() []json.RawMessage {
 func (s *SecurityEventsHolder) ClearEvents() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.events = []json.RawMessage{}
+	s.events = s.events[0:0]
 }
 
 // SetTags fills the span tags using the key/value pairs found in `tags`
