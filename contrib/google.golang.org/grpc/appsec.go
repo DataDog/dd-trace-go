@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
@@ -25,9 +26,6 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
 		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
-		if op.UnaryHandler != nil {
-			return op.UnaryHandler(ctx, req)
-		}
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
@@ -36,6 +34,10 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 			}
 			setAppSecTags(ctx, span, events)
 		}()
+		if op.BlockedCode != nil {
+			op.AddTag("appsec.blocked", true)
+			return nil, status.Errorf(*op.BlockedCode, "Request blocked")
+		}
 		defer grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
 		return handler(ctx, req)
 	}
@@ -47,9 +49,6 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 	return func(srv interface{}, stream grpc.ServerStream) error {
 		md, _ := metadata.FromIncomingContext(stream.Context())
 		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
-		if op.StreamHandler != nil {
-			return op.StreamHandler(srv, stream)
-		}
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
@@ -58,6 +57,10 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 			}
 			setAppSecTags(stream.Context(), span, events)
 		}()
+		if op.BlockedCode != nil {
+			op.AddTag("appsec.blocked", true)
+			return status.Error(*op.BlockedCode, "Request blocked")
+		}
 		return handler(srv, appsecServerStream{ServerStream: stream, handlerOperation: op})
 	}
 }

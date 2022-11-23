@@ -9,11 +9,7 @@
 package grpcsec
 
 import (
-	"context"
-
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type ActionParam interface{}
@@ -67,13 +63,7 @@ func (h *actionsHandler) Exec(id string, op *HandlerOperation) {
 	}
 	// Currently, only the "block_request" type is supported, so we only need to check for blockRequestParams
 	if p, ok := a.params.(BlockRequestParams); ok {
-		err := status.Error(p.Status, "Request blocked")
-		op.UnaryHandler = func(ctx context.Context, req interface{}) (interface{}, error) {
-			return nil, err
-		}
-		op.StreamHandler = func(srv interface{}, stream grpc.ServerStream) error {
-			return err
-		}
+		op.BlockedCode = &p.Status
 	}
 }
 

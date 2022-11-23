@@ -16,7 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 
-	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 )
 
 // Abstract gRPC server handler operation definitions. It is based on two
@@ -41,8 +41,7 @@ type (
 		dyngo.Operation
 		instrumentation.TagsHolder
 		instrumentation.SecurityEventsHolder
-		UnaryHandler  grpc.UnaryHandler
-		StreamHandler grpc.StreamHandler
+		BlockedCode *codes.Code
 	}
 	// HandlerOperationArgs is the grpc handler arguments.
 	HandlerOperationArgs struct {
