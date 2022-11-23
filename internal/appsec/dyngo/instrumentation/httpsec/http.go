@@ -85,6 +85,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				log.Error("appsec: ignoring security action: unexpected action type %T", a)
 			}
 		}
+		op.ClearActions()
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,19 +95,14 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		ctx, op := StartOperation(r.Context(), args)
 		r = r.WithContext(ctx)
 
-		events := op.Events()
-		if len(events) > 0 {
-			applyActions(op)
-			op.ClearEvents()
-			op.ClearActions()
-		}
+		applyActions(op)
 		defer func() {
 			var status int
 			if mw, ok := w.(interface{ Status() int }); ok {
 				status = mw.Status()
 			}
 
-			events = append(events, op.Finish(HandlerOperationRes{Status: status})...)
+			events := op.Finish(HandlerOperationRes{Status: status})
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
@@ -215,6 +211,10 @@ func (op *Operation) Finish(res HandlerOperationRes) []json.RawMessage {
 // Actions returns the actions linked to the operation
 func (op *Operation) Actions() []Action {
 	return op.actions
+}
+
+func (op *Operation) AddAction(a Action) {
+	op.actions = append(op.actions, a)
 }
 
 // ClearActions clears all the actions linked to the operation

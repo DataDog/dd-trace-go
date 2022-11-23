@@ -115,12 +115,13 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 
 		matches, actionIds := runWAF(wafCtx, values, timeout)
 		if len(matches) > 0 {
+			interrupt := false
 			for _, id := range actionIds {
-				actionHandler.Apply(id, op)
+				interrupt = actionHandler.Apply(id, op) || interrupt
 			}
 			op.AddSecurityEvents(matches)
 			log.Debug("appsec: WAF detected an attack before executing the request")
-			if len(actionIds) > 0 {
+			if interrupt {
 				return
 			}
 		}

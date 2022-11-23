@@ -85,11 +85,19 @@ func (h *ActionsHandler) RegisterAction(id string, a Action) {
 }
 
 // Apply applies the action identified by `id` for the given operation
-func (h *ActionsHandler) Apply(id string, op *Operation) {
+// Returns true if the applied action will interrupt the request flow (block, redirect, etc...)
+func (h *ActionsHandler) Apply(id string, op *Operation) bool {
 	a, ok := h.actions[id]
 	if !ok {
 		log.Debug("appsec: ignoring the returned waf action: unknown action id `%s`", id)
-		return
+		return false
 	}
-	op.actions = append(op.actions, a)
+	op.AddAction(a)
+
+	switch a.(type) {
+	case *BlockRequestAction:
+		return true
+	default:
+		return false
+	}
 }
