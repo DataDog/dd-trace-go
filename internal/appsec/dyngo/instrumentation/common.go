@@ -49,7 +49,7 @@ func (m *TagsHolder) Tags() map[string]interface{} {
 // See httpsec/http.go and grpcsec/grpc.go.
 type SecurityEventsHolder struct {
 	events []json.RawMessage
-	mu     sync.Mutex
+	mu     sync.RWMutex
 }
 
 // AddSecurityEvents adds the security events to the collected events list.
@@ -62,6 +62,8 @@ func (s *SecurityEventsHolder) AddSecurityEvents(events ...json.RawMessage) {
 
 // Events returns the list of stored events.
 func (s *SecurityEventsHolder) Events() []json.RawMessage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.events
 }
 
