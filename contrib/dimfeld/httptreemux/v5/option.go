@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 
+	"github.com/dimfeld/httptreemux/v5"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -19,7 +20,7 @@ type routerConfig struct {
 	serviceName   string
 	spanOpts      []ddtrace.StartSpanOption
 	analyticsRate float64
-	resourceNamer func(*Router, http.ResponseWriter, *http.Request) string
+	resourceNamer func(*httptreemux.TreeMux, http.ResponseWriter, *http.Request) string
 }
 
 // RouterOption represents an option that can be passed to New.
@@ -77,7 +78,7 @@ func WithAnalyticsRate(rate float64) RouterOption {
 
 // WithResourceNamer specifies a function which will be used to obtain the
 // resource name for a given request.
-func WithResourceNamer(namer func(router *Router, w http.ResponseWriter, req *http.Request) string) RouterOption {
+func WithResourceNamer(namer func(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Request) string) RouterOption {
 	return func(cfg *routerConfig) {
 		cfg.resourceNamer = namer
 	}

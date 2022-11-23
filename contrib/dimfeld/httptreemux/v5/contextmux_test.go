@@ -13,22 +13,28 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/dimfeld/httptreemux/v5"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHttpTracer200(t *testing.T) {
+func TestContextMux200(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	// Send and verify a 200 request
+	router := NewWithContext(
+		WithServiceName("my-service"),
+		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
+	)
+
 	url := "/200"
+	router.GET(url, handlerWithContext200(t, url, nil))
+
 	r := httptest.NewRequest("GET", url, nil)
 	w := httptest.NewRecorder()
-	router().ServeHTTP(w, r)
+	router.ServeHTTP(w, r)
+
 	assert.Equal(200, w.Code)
 	assert.Equal("OK\n", w.Body.String())
 
@@ -46,7 +52,7 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal(nil, s.Tag(ext.Error))
 }
 
-func TestHttpTracer404(t *testing.T) {
+func TestContextMux404(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -55,7 +61,10 @@ func TestHttpTracer404(t *testing.T) {
 	url := "/unknown/path"
 	r := httptest.NewRequest("GET", url, nil)
 	w := httptest.NewRecorder()
-	router().ServeHTTP(w, r)
+	NewWithContext(
+		WithServiceName("my-service"),
+		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
+	).ServeHTTP(w, r)
 	assert.Equal(404, w.Code)
 	assert.Equal("404 page not found\n", w.Body.String())
 
@@ -73,16 +82,22 @@ func TestHttpTracer404(t *testing.T) {
 	assert.Equal(nil, s.Tag(ext.Error))
 }
 
-func TestHttpTracer500(t *testing.T) {
+func TestContextMux500(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	// Send and verify a 500 request
+	router := NewWithContext(
+		WithServiceName("my-service"),
+		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
+	)
+
 	url := "/500"
+	router.GET(url, handlerWithContext500(t, url, nil))
+
 	r := httptest.NewRequest("GET", url, nil)
 	w := httptest.NewRecorder()
-	router().ServeHTTP(w, r)
+	router.ServeHTTP(w, r)
 	assert.Equal(500, w.Code)
 	assert.Equal("500!\n", w.Body.String())
 
@@ -100,106 +115,65 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
 }
 
-func TestAnalyticsSettings(t *testing.T) {
-	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...RouterOption) {
-		router := New(opts...)
-		router.GET("/200", handler200)
-		r := httptest.NewRequest("GET", "/200", nil)
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, r)
-
-		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 1)
-		s := spans[0]
-		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
-	}
-
-	t.Run("defaults", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		assertRate(t, mt, nil)
-	})
-
-	t.Run("global", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.4)
-	})
-
-	t.Run("enabled", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		assertRate(t, mt, 1.0, WithAnalytics(true))
-	})
-
-	t.Run("disabled", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		assertRate(t, mt, nil, WithAnalytics(false))
-	})
-
-	t.Run("override", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
-	})
-}
-
-func TestDefaultResourceNamer(t *testing.T) {
+func TestContextMuxDefaultResourceNamer(t *testing.T) {
 	tests := map[string]struct {
 		method string
-		path   string
+		route  string
 		url    string
+		params map[string]string
 	}{
 		"GET /things": {
 			method: http.MethodGet,
-			path:   "/things",
-			url:    "/things"},
+			route:  "/things",
+			url:    "/things",
+		},
 		"GET /things?a=b": {
 			method: http.MethodGet,
-			path:   "/things",
-			url:    "/things?a=b"},
+			route:  "/things",
+			url:    "/things?a=b",
+		},
 		"GET /thing/:a": {
 			method: http.MethodGet,
-			path:   "/thing/:a",
-			url:    "/thing/123"},
+			route:  "/thing/:a",
+			url:    "/thing/123",
+			params: map[string]string{"a": "123"},
+		},
 		"PUT /thing/:a": {
 			method: http.MethodPut,
-			path:   "/thing/:a",
-			url:    "/thing/123"},
+			route:  "/thing/:a",
+			url:    "/thing/123",
+			params: map[string]string{"a": "123"},
+		},
 		"GET /thing/:a/:b/:c": {
 			method: http.MethodGet,
-			path:   "/thing/:a/:b/:c",
-			url:    "/thing/zyx/321/cba"},
+			route:  "/thing/:a/:b/:c",
+			url:    "/thing/zyx/321/cba",
+			params: map[string]string{"a": "zyx", "b": "321", "c": "cba"},
+		},
 		"GET /thing/:a/details": {
 			method: http.MethodGet,
-			path:   "/thing/:a/details",
-			url:    "/thing/123/details"},
+			route:  "/thing/:a/details",
+			url:    "/thing/123/details",
+			params: map[string]string{"a": "123"},
+		},
 		"GET /thing/:a/:version/details": {
 			method: http.MethodGet,
-			path:   "/thing/:a/:version/details",
-			url:    "/thing/123/2/details"},
+			route:  "/thing/:a/:version/details",
+			url:    "/thing/123/2/details",
+			params: map[string]string{"a": "123", "version": "2"},
+		},
 		"GET /thing/:a/:b/details": {
 			method: http.MethodGet,
-			path:   "/thing/:a/:b/details",
-			url:    "/thing/123/2/details"},
+			route:  "/thing/:a/:b/details",
+			url:    "/thing/123/2/details",
+			params: map[string]string{"a": "123", "b": "2"},
+		},
 		"GET /thing/:a/:b/:c/details": {
 			method: http.MethodGet,
-			path:   "/thing/:a/:b/:c/details",
-			url:    "/thing/123/2/1/details"},
+			route:  "/thing/:a/:b/:c/details",
+			url:    "/thing/123/2/1/details",
+			params: map[string]string{"a": "123", "b": "2", "c": "1"},
+		},
 	}
 
 	for name, tc := range tests {
@@ -211,8 +185,8 @@ func TestDefaultResourceNamer(t *testing.T) {
 			r := httptest.NewRequest(tc.method, tc.url, nil)
 			w := httptest.NewRecorder()
 
-			router := New()
-			router.Handle(tc.method, tc.path, handler200)
+			router := NewWithContext()
+			router.Handle(tc.method, tc.route, handlerWithContext200(t, tc.route, tc.params))
 			router.ServeHTTP(w, r)
 
 			assert.Equal(http.StatusOK, w.Code)
@@ -222,7 +196,7 @@ func TestDefaultResourceNamer(t *testing.T) {
 			assert.Equal(1, len(spans))
 
 			s := spans[0]
-			resourceName := tc.method + " " + tc.path
+			resourceName := tc.method + " " + tc.route
 			assert.Equal(resourceName, s.Tag(ext.ResourceName))
 			assert.Equal("200", s.Tag(ext.HTTPCode))
 			assert.Equal(tc.method, s.Tag(ext.HTTPMethod))
@@ -232,7 +206,7 @@ func TestDefaultResourceNamer(t *testing.T) {
 	}
 }
 
-func TestResourceNamer(t *testing.T) {
+func TestContextMuxResourceNamer(t *testing.T) {
 	staticName := "static resource name"
 	staticNamer := func(*httptreemux.TreeMux, http.ResponseWriter, *http.Request) string {
 		return staticName
@@ -242,21 +216,21 @@ func TestResourceNamer(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	router := New(
+	router := NewWithContext(
 		WithServiceName("my-service"),
 		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		WithResourceNamer(staticNamer),
 	)
 
-	// Note that the router has no handlers since we expect a 404
+	url := "/200"
+	router.GET(url, handlerWithContext200(t, url, nil))
 
-	// Send and verify a request without a handler
-	url := "/path/that/does/not/exist"
 	r := httptest.NewRequest("GET", url, nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)
-	assert.Equal(404, w.Code)
-	assert.Equal("404 page not found\n", w.Body.String())
+
+	assert.Equal(200, w.Code)
+	assert.Equal("OK\n", w.Body.String())
 
 	spans := mt.FinishedSpans()
 	assert.Equal(1, len(spans))
@@ -265,29 +239,41 @@ func TestResourceNamer(t *testing.T) {
 	assert.Equal("http.request", s.OperationName())
 	assert.Equal("my-service", s.Tag(ext.ServiceName))
 	assert.Equal(staticName, s.Tag(ext.ResourceName))
-	assert.Equal("404", s.Tag(ext.HTTPCode))
+	assert.Equal("200", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
 	assert.Equal(nil, s.Tag(ext.Error))
 }
 
-func router() http.Handler {
-	router := New(
-		WithServiceName("my-service"),
-		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
-	)
+func handlerWithContext200(t *testing.T, route string, params map[string]string) http.HandlerFunc {
+	assert := assert.New(t)
+	return func(w http.ResponseWriter, r *http.Request) {
+		crd := httptreemux.ContextData(r.Context())
+		assert.Equal(route, crd.Route(), "unexpected route")
+		assert.Len(params, len(crd.Params()), "unexpected number of params")
+		for k, v := range params {
+			if assert.Contains(crd.Params(), k, "expected param not found") {
+				assert.Equal(v, crd.Params()[k], "unexpected param value")
+			}
+		}
 
-	router.GET("/200", handler200)
-	router.GET("/500", handler500)
-
-	return router
+		w.Write([]byte("OK\n"))
+	}
 }
 
-func handler200(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-	w.Write([]byte("OK\n"))
-}
+func handlerWithContext500(t *testing.T, route string, params map[string]string) http.HandlerFunc {
+	assert := assert.New(t)
+	return func(w http.ResponseWriter, r *http.Request) {
+		crd := httptreemux.ContextData(r.Context())
+		assert.Equal(route, crd.Route(), "unexpected route")
+		assert.Len(params, len(crd.Params()), "unexpected number of params")
+		for k, v := range params {
+			if assert.Contains(crd.Params(), k, "expected param not found") {
+				assert.Equal(v, crd.Params()[k], "unexpected param value")
+			}
+		}
 
-func handler500(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-	http.Error(w, "500!", http.StatusInternalServerError)
+		http.Error(w, "500!", http.StatusInternalServerError)
+	}
 }

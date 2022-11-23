@@ -42,7 +42,41 @@ func New(opts ...RouterOption) *Router {
 
 // ServeHTTP implements http.Handler.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	resource := r.config.resourceNamer(r, w, req)
+	resource := r.config.resourceNamer(r.TreeMux, w, req)
+	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
+	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
+		Service:  r.config.serviceName,
+		Resource: resource,
+		SpanOpts: r.config.spanOpts,
+	})
+}
+
+// Router is a traced version of httptreemux.ContextMux.
+type ContextRouter struct {
+	*httptreemux.ContextMux
+	config *routerConfig
+}
+
+// NewWithContext returns a new router augmented with tracing and preconfigured
+// to work with context objects. The matched route and parameters are added to
+// the context.
+func NewWithContext(opts ...RouterOption) *ContextRouter {
+	cfg := new(routerConfig)
+	defaults(cfg)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	if !math.IsNaN(cfg.analyticsRate) {
+		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
+	log.Debug("contrib/dimfeld/httptreemux/v5: Configuring Router: %#v", cfg)
+	return &ContextRouter{httptreemux.NewContextMux(), cfg}
+}
+
+// ServeHTTP implements http.Handler.
+func (r *ContextRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	resource := r.config.resourceNamer(r.TreeMux, w, req)
 	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
 	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
@@ -55,7 +89,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // request by performing a lookup using the path template associated with the
 // route from the request. If the lookup fails to find a match the route is set
 // to "unknown".
-func defaultResourceNamer(router *Router, w http.ResponseWriter, req *http.Request) string {
+func defaultResourceNamer(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Request) string {
 	route := req.URL.Path
 	lr, found := router.Lookup(w, req)
 	if !found {
