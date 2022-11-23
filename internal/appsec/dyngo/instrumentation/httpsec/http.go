@@ -18,6 +18,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -169,6 +170,7 @@ type (
 		dyngo.Operation
 		instrumentation.TagsHolder
 		instrumentation.SecurityEventsHolder
+		mu      sync.RWMutex
 		actions []Action
 	}
 
@@ -210,15 +212,21 @@ func (op *Operation) Finish(res HandlerOperationRes) []json.RawMessage {
 
 // Actions returns the actions linked to the operation
 func (op *Operation) Actions() []Action {
+	op.mu.RLock()
+	defer op.mu.RUnlock()
 	return op.actions
 }
 
 func (op *Operation) AddAction(a Action) {
+	op.mu.Lock()
+	defer op.mu.Unlock()
 	op.actions = append(op.actions, a)
 }
 
 // ClearActions clears all the actions linked to the operation
 func (op *Operation) ClearActions() {
+	op.mu.Lock()
+	defer op.mu.Unlock()
 	op.actions = op.actions[0:0]
 }
 
