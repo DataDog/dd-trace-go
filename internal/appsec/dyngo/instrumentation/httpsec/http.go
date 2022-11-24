@@ -217,6 +217,7 @@ func (op *Operation) Actions() []Action {
 	return op.actions
 }
 
+// AddAction adds an action to the operation
 func (op *Operation) AddAction(a Action) {
 	op.mu.Lock()
 	defer op.mu.Unlock()

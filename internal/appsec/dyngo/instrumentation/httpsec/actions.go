@@ -25,6 +25,7 @@ type BlockRequestAction struct {
 
 func (*BlockRequestAction) isAction() {}
 
+// NewBlockRequestAction creates, initializes and returns a new BlockRequestAction
 func NewBlockRequestAction(status int, template string) BlockRequestAction {
 	htmlHandler := newBlockRequestHandler(status, "application/html", BlockedTemplateHTML)
 	jsonHandler := newBlockRequestHandler(status, "application/json", BlockedTemplateJSON)
