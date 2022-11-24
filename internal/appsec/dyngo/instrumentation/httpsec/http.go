@@ -72,23 +72,25 @@ func MonitorParsedBody(ctx context.Context, body interface{}) {
 	}
 }
 
+// applyActions executes the operation's actions and returns the resulting http handler
+func applyActions(op *Operation) http.Handler {
+	defer op.ClearActions()
+	for _, action := range op.Actions() {
+		switch a := action.(type) {
+		case *BlockRequestAction:
+			op.AddTag(tagBlockedRequest, true)
+			return a.handler
+		default:
+			log.Error("appsec: ignoring security action: unexpected action type %T", a)
+		}
+	}
+	return nil
+}
+
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
 	instrumentation.SetAppSecEnabledTags(span)
-	applyActions := func(op *Operation) {
-		for _, action := range op.Actions() {
-			switch a := action.(type) {
-			case *BlockRequestAction:
-				handler = a.handler
-				op.AddTag(tagBlockedRequest, true)
-			default:
-				log.Error("appsec: ignoring security action: unexpected action type %T", a)
-			}
-		}
-		op.ClearActions()
-	}
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		SetIPTags(span, r)
 
@@ -96,7 +98,9 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		ctx, op := StartOperation(r.Context(), args)
 		r = r.WithContext(ctx)
 
-		applyActions(op)
+		if h := applyActions(op); h != nil {
+			handler = h
+		}
 		defer func() {
 			var status int
 			if mw, ok := w.(interface{ Status() int }); ok {
