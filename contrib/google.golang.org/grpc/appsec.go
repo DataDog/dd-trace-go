@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -25,7 +26,8 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
+		ip := httpsec.IPFromHeaders(httpsec.NormalizeHTTPHeaders(md), "")
+		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: ip}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
@@ -48,7 +50,8 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
 		md, _ := metadata.FromIncomingContext(stream.Context())
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
+		ip := httpsec.IPFromHeaders(httpsec.NormalizeHTTPHeaders(md), "")
+		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: ip}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())

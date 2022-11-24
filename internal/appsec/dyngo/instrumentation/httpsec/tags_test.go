@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 
 	"github.com/stretchr/testify/require"
 )
@@ -58,7 +59,7 @@ type ipTestCase struct {
 	name           string
 	remoteAddr     string
 	headers        map[string]string
-	expectedIP     netaddrIP
+	expectedIP     instrumentation.NetaddrIP
 	multiHeaders   string
 	clientIPHeader string
 }
@@ -74,12 +75,12 @@ func genIPTestCases() []ipTestCase {
 		tcs = append(tcs, ipTestCase{
 			name:       "ipv4-global." + header,
 			headers:    map[string]string{header: ipv4Global},
-			expectedIP: netaddrMustParseIP(ipv4Global),
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
 		})
 		tcs = append(tcs, ipTestCase{
 			name:       "ipv4-private." + header,
 			headers:    map[string]string{header: ipv4Private},
-			expectedIP: netaddrIP{},
+			expectedIP: instrumentation.NetaddrIP{},
 		})
 	}
 	// Simple ipv6 test cases over all headers
@@ -87,12 +88,12 @@ func genIPTestCases() []ipTestCase {
 		tcs = append(tcs, ipTestCase{
 			name:       "ipv6-global." + header,
 			headers:    map[string]string{header: ipv6Global},
-			expectedIP: netaddrMustParseIP(ipv6Global),
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
 		})
 		tcs = append(tcs, ipTestCase{
 			name:       "ipv6-private." + header,
 			headers:    map[string]string{header: ipv6Private},
-			expectedIP: netaddrIP{},
+			expectedIP: instrumentation.NetaddrIP{},
 		})
 	}
 	// private and global in same header
@@ -100,22 +101,22 @@ func genIPTestCases() []ipTestCase {
 		{
 			name:       "ipv4-private+global",
 			headers:    map[string]string{"x-forwarded-for": ipv4Private + "," + ipv4Global},
-			expectedIP: netaddrMustParseIP(ipv4Global),
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
 		},
 		{
 			name:       "ipv4-global+private",
 			headers:    map[string]string{"x-forwarded-for": ipv4Global + "," + ipv4Private},
-			expectedIP: netaddrMustParseIP(ipv4Global),
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
 		},
 		{
 			name:       "ipv6-private+global",
 			headers:    map[string]string{"x-forwarded-for": ipv6Private + "," + ipv6Global},
-			expectedIP: netaddrMustParseIP(ipv6Global),
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
 		},
 		{
 			name:       "ipv6-global+private",
 			headers:    map[string]string{"x-forwarded-for": ipv6Global + "," + ipv6Private},
-			expectedIP: netaddrMustParseIP(ipv6Global),
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
 		},
 	}, tcs...)
 	// Invalid IPs (or a mix of valid/invalid over a single or multiple headers)
@@ -123,67 +124,67 @@ func genIPTestCases() []ipTestCase {
 		{
 			name:       "invalid-ipv4",
 			headers:    map[string]string{"x-forwarded-for": "127..0.0.1"},
-			expectedIP: netaddrIP{},
+			expectedIP: instrumentation.NetaddrIP{},
 		},
 		{
 			name:       "invalid-ipv4-recover",
 			headers:    map[string]string{"x-forwarded-for": "127..0.0.1, " + ipv4Global},
-			expectedIP: netaddrMustParseIP(ipv4Global),
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
 		},
 		{
 			name:         "ipv4-multi-header-1",
 			headers:      map[string]string{"x-forwarded-for": "127.0.0.1", "forwarded-for": ipv4Global},
-			expectedIP:   netaddrIP{},
+			expectedIP:   instrumentation.NetaddrIP{},
 			multiHeaders: "x-forwarded-for,forwarded-for",
 		},
 		{
 			name:         "ipv4-multi-header-2",
 			headers:      map[string]string{"forwarded-for": ipv4Global, "x-forwarded-for": "127.0.0.1"},
-			expectedIP:   netaddrIP{},
+			expectedIP:   instrumentation.NetaddrIP{},
 			multiHeaders: "x-forwarded-for,forwarded-for",
 		},
 		{
 			name:       "invalid-ipv6",
 			headers:    map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::"},
-			expectedIP: netaddrIP{},
+			expectedIP: instrumentation.NetaddrIP{},
 		},
 		{
 			name:       "invalid-ipv6-recover",
 			headers:    map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::, " + ipv6Global},
-			expectedIP: netaddrMustParseIP(ipv6Global),
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
 		},
 		{
 			name:         "ipv6-multi-header-1",
 			headers:      map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::", "forwarded-for": ipv6Global},
-			expectedIP:   netaddrIP{},
+			expectedIP:   instrumentation.NetaddrIP{},
 			multiHeaders: "x-forwarded-for,forwarded-for",
 		},
 		{
 			name:         "ipv6-multi-header-2",
 			headers:      map[string]string{"forwarded-for": ipv6Global, "x-forwarded-for": "2001:0db8:2001:zzzz::"},
-			expectedIP:   netaddrIP{},
+			expectedIP:   instrumentation.NetaddrIP{},
 			multiHeaders: "x-forwarded-for,forwarded-for",
 		},
 	}, tcs...)
 	tcs = append([]ipTestCase{
 		{
 			name:       "no-headers",
-			expectedIP: netaddrIP{},
+			expectedIP: instrumentation.NetaddrIP{},
 		},
 		{
 			name:       "header-case",
-			expectedIP: netaddrMustParseIP(ipv4Global),
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
 			headers:    map[string]string{"X-fOrWaRdEd-FoR": ipv4Global},
 		},
 		{
 			name:           "user-header",
-			expectedIP:     netaddrMustParseIP(ipv4Global),
+			expectedIP:     instrumentation.NetaddrMustParseIP(ipv4Global),
 			headers:        map[string]string{"x-forwarded-for": ipv6Global, "custom-header": ipv4Global},
 			clientIPHeader: "custom-header",
 		},
 		{
 			name:           "user-header-not-found",
-			expectedIP:     netaddrIP{},
+			expectedIP:     instrumentation.NetaddrIP{},
 			headers:        map[string]string{"x-forwarded-for": ipv4Global},
 			clientIPHeader: "custom-header",
 		},
@@ -239,12 +240,12 @@ func TestIPHeaders(t *testing.T) {
 	}
 }
 
-func randIPv4() netaddrIP {
-	return netaddrIPv4(uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()))
+func randIPv4() instrumentation.NetaddrIP {
+	return instrumentation.NetaddrIPv4(uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()))
 }
 
-func randIPv6() netaddrIP {
-	return netaddrIPv6Raw([16]byte{
+func randIPv6() instrumentation.NetaddrIP {
+	return instrumentation.NetaddrIPv6Raw([16]byte{
 		uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()),
 		uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()),
 		uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()),
@@ -252,7 +253,7 @@ func randIPv6() netaddrIP {
 	})
 }
 
-func randGlobalIPv4() netaddrIP {
+func randGlobalIPv4() instrumentation.NetaddrIP {
 	for {
 		ip := randIPv4()
 		if isGlobal(ip) {
@@ -261,7 +262,7 @@ func randGlobalIPv4() netaddrIP {
 	}
 }
 
-func randGlobalIPv6() netaddrIP {
+func randGlobalIPv6() instrumentation.NetaddrIP {
 	for {
 		ip := randIPv6()
 		if isGlobal(ip) {
@@ -270,7 +271,7 @@ func randGlobalIPv6() netaddrIP {
 	}
 }
 
-func randPrivateIPv4() netaddrIP {
+func randPrivateIPv4() instrumentation.NetaddrIP {
 	for {
 		ip := randIPv4()
 		if !isGlobal(ip) && ip.IsPrivate() {
@@ -279,7 +280,7 @@ func randPrivateIPv4() netaddrIP {
 	}
 }
 
-func randPrivateIPv6() netaddrIP {
+func randPrivateIPv6() instrumentation.NetaddrIP {
 	for {
 		ip := randIPv6()
 		if !isGlobal(ip) && ip.IsPrivate() {

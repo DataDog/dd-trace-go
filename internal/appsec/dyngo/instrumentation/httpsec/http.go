@@ -41,7 +41,7 @@ type (
 		// PathParams corresponds to the address `server.request.path_params`
 		PathParams map[string]string
 		// ClientIP corresponds to the addres `http.client_ip`
-		ClientIP netaddrIP
+		ClientIP instrumentation.NetaddrIP
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -310,8 +310,8 @@ func (f OnSDKBodyOperationFinish) Call(op dyngo.Operation, v interface{}) {
 	f(op.(*SDKBodyOperation), v.(SDKBodyOperationRes))
 }
 
-// IPFromRequest returns the resolved client IP for a specific request. The returned IP can be invalid.
-func IPFromRequest(r *http.Request) netaddrIP {
+// IPFromHeaders returns the resolved client IP for set of normalized headers. The returned IP can be invalid.
+func IPFromHeaders(hdrs map[string]string, remoteAddr string) instrumentation.NetaddrIP {
 	ipHeaders := defaultIPHeaders
 	if len(clientIPHeader) > 0 {
 		ipHeaders = []string{clientIPHeader}
@@ -319,13 +319,13 @@ func IPFromRequest(r *http.Request) netaddrIP {
 	var headers []string
 	var ips []string
 	for _, hdr := range ipHeaders {
-		if v := r.Header.Get(hdr); v != "" {
+		if v, ok := hdrs[hdr]; ok && v != "" {
 			headers = append(headers, hdr)
 			ips = append(ips, v)
 		}
 	}
 	if len(ips) == 0 {
-		if remoteIP := parseIP(r.RemoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
+		if remoteIP := parseIP(remoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
 			return remoteIP
 		}
 	} else if len(ips) == 1 {
@@ -337,7 +337,13 @@ func IPFromRequest(r *http.Request) netaddrIP {
 		}
 	}
 
-	return netaddrIP{}
+	return instrumentation.NetaddrIP{}
+}
+
+// IPFromRequest returns the resolved client IP for a specific request. The returned IP can be invalid.
+func IPFromRequest(r *http.Request) instrumentation.NetaddrIP {
+	normalized := NormalizeHTTPHeaders(r.Header)
+	return IPFromHeaders(normalized, r.RemoteAddr)
 }
 
 var (

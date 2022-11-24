@@ -193,8 +193,9 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 
 // newGRPCWAFEventListener returns the WAF event listener to register in order
 // to enable it.
-func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Duration, limiter Limiter) dyngo.EventListener {
+func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration, limiter Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
+	actionHandler := grpcsec.NewActionsHandler()
 
 	return grpcsec.OnHandlerOperationStart(func(op *grpcsec.HandlerOperation, handlerArgs grpcsec.HandlerOperationArgs) {
 		// Limit the maximum number of security events, as a streaming RPC could
@@ -210,6 +211,34 @@ func newGRPCWAFEventListener(handle *waf.Handle, _ []string, timeout time.Durati
 			events []json.RawMessage
 			mu     sync.Mutex // events mutex
 		)
+
+		wafCtx := waf.NewContext(handle)
+		if wafCtx == nil {
+			// The WAF event listener got concurrently released
+			return
+		}
+
+		// The same address is used for gRPC and http when it comes to client ip
+		values := map[string]interface{}{}
+		for _, addr := range addresses {
+			if addr == httpClientIPAddr && handlerArgs.ClientIP.IsValid() {
+				values[httpClientIPAddr] = handlerArgs.ClientIP.String()
+			}
+		}
+
+		matches, actionIds := runWAF(wafCtx, values, timeout)
+		wafCtx.Close()
+		if len(matches) > 0 {
+			interrupt := false
+			for _, id := range actionIds {
+				interrupt = actionHandler.Apply(id, op) || interrupt
+			}
+			op.AddSecurityEvents(matches)
+			log.Debug("appsec: WAF detected an attack before executing the request")
+			if interrupt {
+				return
+			}
+		}
 
 		op.On(grpcsec.OnReceiveOperationFinish(func(_ grpcsec.ReceiveOperation, res grpcsec.ReceiveOperationRes) {
 			if atomic.LoadUint32(&nbEvents) == maxWAFEventsPerRequest {

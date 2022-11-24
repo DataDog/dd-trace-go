@@ -48,6 +48,7 @@ type (
 		// Message received by the gRPC handler.
 		// Corresponds to the address `grpc.server.request.metadata`.
 		Metadata map[string][]string
+		ClientIP instrumentation.NetaddrIP
 	}
 	// HandlerOperationRes is the grpc handler results. Empty as of today.
 	HandlerOperationRes struct{}

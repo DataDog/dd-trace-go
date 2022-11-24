@@ -29,7 +29,7 @@ const (
 )
 
 var (
-	ipv6SpecialNetworks = []*netaddrIPPrefix{
+	ipv6SpecialNetworks = []*instrumentation.NetaddrIPPrefix{
 		ippref("fec0::/10"), // site local
 	}
 	defaultIPHeaders = []string{
@@ -98,8 +98,8 @@ func NormalizeHTTPHeaders(headers map[string][]string) (normalized map[string]st
 }
 
 // ippref returns the IP network from an IP address string s. If not possible, it returns nil.
-func ippref(s string) *netaddrIPPrefix {
-	if prefix, err := netaddrParseIPPrefix(s); err == nil {
+func ippref(s string) *instrumentation.NetaddrIPPrefix {
+	if prefix, err := instrumentation.NetaddrParseIPPrefix(s); err == nil {
 		return &prefix
 	}
 	return nil
@@ -144,19 +144,19 @@ func SetIPTags(span instrumentation.TagSetter, r *http.Request) {
 	}
 }
 
-func parseIP(s string) netaddrIP {
-	if ip, err := netaddrParseIP(s); err == nil {
+func parseIP(s string) instrumentation.NetaddrIP {
+	if ip, err := instrumentation.NetaddrParseIP(s); err == nil {
 		return ip
 	}
 	if h, _, err := net.SplitHostPort(s); err == nil {
-		if ip, err := netaddrParseIP(h); err == nil {
+		if ip, err := instrumentation.NetaddrParseIP(h); err == nil {
 			return ip
 		}
 	}
-	return netaddrIP{}
+	return instrumentation.NetaddrIP{}
 }
 
-func isGlobal(ip netaddrIP) bool {
+func isGlobal(ip instrumentation.NetaddrIP) bool {
 	// IsPrivate also checks for ipv6 ULA.
 	// We care to check for these addresses are not considered public, hence not global.
 	// See https://www.rfc-editor.org/rfc/rfc4193.txt for more details.
