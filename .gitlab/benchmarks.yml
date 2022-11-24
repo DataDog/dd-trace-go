@@ -33,6 +33,7 @@ upload-to-s3:
   trigger:
     project: DataDog/apm-reliability/relenv-microbenchmarking-platform
     branch: ddyurchenko/temp-s3-uploader
+    strategy: depend
   variables:
     UPSTREAM_PROJECT_ID: $CI_PROJECT_ID
     UPSTREAM_PROJECT_NAME: $CI_PROJECT_NAME
