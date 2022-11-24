@@ -155,6 +155,17 @@ func TestASMDataCallback(t *testing.T) {
 			},
 			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
 		},
+		{
+			name: "merging-entries",
+			update: map[string][]byte{
+				"some/path/1": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
+				"some/path/2": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138445,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":0,"value":"user5"}]}]}`),
+			},
+			statuses: map[string]rc.ApplyStatus{
+				"some/path/1": {State: rc.ApplyStateAcknowledged},
+				"some/path/2": {State: rc.ApplyStateAcknowledged},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			statuses := handle.asmDataCallback(tc.update)
